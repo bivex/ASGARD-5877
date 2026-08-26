@@ -35,8 +35,11 @@ type raw_op_kind =
   | OP_IMUL_RR
   | OP_IMUL_RI
   | OP_XOR_RR
+  | OP_XOR_RI
   | OP_AND_RR
+  | OP_AND_RI
   | OP_OR_RR
+  | OP_OR_RI
   | OP_CMP_RR
   | OP_CMP_RI
   | OP_PUSH_R
@@ -49,8 +52,8 @@ type raw_op_kind =
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_ADD_RR; OP_ADD_RI;
-  OP_SUB_RR; OP_SUB_RI; OP_IMUL_RR; OP_IMUL_RI; OP_XOR_RR;
-  OP_AND_RR; OP_OR_RR; OP_CMP_RR; OP_CMP_RI; OP_PUSH_R;
+  OP_SUB_RR; OP_SUB_RI; OP_IMUL_RR; OP_IMUL_RI; OP_XOR_RR; OP_XOR_RI;
+  OP_AND_RR; OP_AND_RI; OP_OR_RR; OP_OR_RI; OP_CMP_RR; OP_CMP_RI; OP_PUSH_R;
   OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_RET; OP_EXIT;
 ]
 
@@ -65,8 +68,11 @@ let op_kind_to_handler_name = function
   | OP_IMUL_RR -> "H_IMUL_RR"
   | OP_IMUL_RI -> "H_IMUL_RI"
   | OP_XOR_RR -> "H_XOR_RR"
+  | OP_XOR_RI -> "H_XOR_RI"
   | OP_AND_RR -> "H_AND_RR"
+  | OP_AND_RI -> "H_AND_RI"
   | OP_OR_RR -> "H_OR_RR"
+  | OP_OR_RI -> "H_OR_RI"
   | OP_CMP_RR -> "H_CMP_RR"
   | OP_CMP_RI -> "H_CMP_RI"
   | OP_PUSH_R -> "H_PUSH_R"
@@ -76,6 +82,7 @@ let op_kind_to_handler_name = function
   | OP_CMOV -> "H_CMOV"
   | OP_RET -> "H_RET"
   | OP_EXIT -> "H_EXIT"
+
 
 let shuffle_array rng arr =
   let n = Array.length arr in
@@ -176,8 +183,12 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "    H_IMUL_RR: ctx.gprs[dst] *= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_IMUL_RI: ctx.gprs[dst] *= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_XOR_RR: ctx.gprs[dst] ^= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_XOR_RI: ctx.gprs[dst] ^= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_AND_RR: ctx.gprs[dst] &= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_AND_RI: ctx.gprs[dst] &= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_OR_RR: ctx.gprs[dst] |= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_OR_RI: ctx.gprs[dst] |= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
+
   Buffer.add_string b "    H_CMP_RI: {\n";
   Buffer.add_string b "        uint64_t a = ctx.gprs[dst]; uint64_t b = (uint64_t)imm;\n";
   Buffer.add_string b "        uint64_t res = a - b;\n";
@@ -372,10 +383,17 @@ let compile_and_package
               encode_raw_word (get_opcode OP_IMUL_RI) (reg_to_index d) 0 imm
           | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
               encode_raw_word (get_opcode OP_XOR_RR) (reg_to_index d) (reg_to_index s) 0L
+          | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              encode_raw_word (get_opcode OP_XOR_RI) (reg_to_index d) 0 imm
           | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
               encode_raw_word (get_opcode OP_AND_RR) (reg_to_index d) (reg_to_index s) 0L
+          | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              encode_raw_word (get_opcode OP_AND_RI) (reg_to_index d) 0 imm
           | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
               encode_raw_word (get_opcode OP_OR_RR) (reg_to_index d) (reg_to_index s) 0L
+          | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              encode_raw_word (get_opcode OP_OR_RI) (reg_to_index d) 0 imm
+
           | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg s } ->
               encode_raw_word (get_opcode OP_CMP_RR) (reg_to_index d) (reg_to_index s) 0L
           | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
