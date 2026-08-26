@@ -1,0 +1,4 @@
+(library
+ (name random_visa_application)
+ (public_name random_visa.application)
+ (libraries random_visa_domain random_visa_ports))

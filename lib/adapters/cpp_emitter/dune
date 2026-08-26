@@ -1,0 +1,4 @@
+(library
+ (name random_visa_cpp_emitter)
+ (public_name random_visa.adapters.cpp_emitter)
+ (libraries random_visa_domain random_visa_ports))

@@ -1,0 +1,10 @@
+(ocamllex lexer)
+
+(menhir
+ (modules parser)
+ (flags --explain))
+
+(library
+ (name random_visa_sail_parser)
+ (public_name random_visa.adapters.sail_parser)
+ (libraries random_visa_domain random_visa_ports))

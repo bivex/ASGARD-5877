@@ -1,0 +1,4 @@
+(library
+ (name random_visa_sail_export)
+ (public_name random_visa.adapters.sail_export)
+ (libraries random_visa_domain random_visa_ports))

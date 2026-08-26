@@ -1,0 +1,14 @@
+(executable
+ (public_name random_visa)
+ (name main)
+ (libraries
+  cmdliner
+  random_visa_domain
+  random_visa_ports
+  random_visa_application
+  random_visa_sail_export
+  random_visa_sail_parser
+  random_visa_cpp_emitter
+  random_visa_c11_emitter
+  random_visa_compiler_adapter
+  random_visa_assembler))

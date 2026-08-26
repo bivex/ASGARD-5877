@@ -1,0 +1,13 @@
+_build/
+*.install
+*.vbc
+*.bin
+.DS_Store
+build/
+generated_emulator/
+parsed_emulator/
+c_emulator/
+archc_emulator/
+pydrofoil_emulator/
+*.sail.tmp
+scratch/

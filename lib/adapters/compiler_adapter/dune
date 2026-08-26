@@ -1,0 +1,4 @@
+(library
+ (name random_visa_compiler_adapter)
+ (public_name random_visa.adapters.compiler_adapter)
+ (libraries random_visa_domain random_visa_ports unix))

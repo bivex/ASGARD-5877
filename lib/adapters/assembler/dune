@@ -1,0 +1,4 @@
+(library
+ (name random_visa_assembler)
+ (public_name random_visa.adapters.assembler)
+ (libraries random_visa_domain random_visa_ports))

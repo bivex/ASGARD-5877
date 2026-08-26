@@ -1,0 +1,4 @@
+(library
+ (name random_visa_domain)
+ (public_name random_visa.domain)
+ (libraries))

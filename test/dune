@@ -1,0 +1,30 @@
+(test
+ (name run_tests)
+ (modules
+  test_domain_invariants
+  test_isa_grammar
+  test_hw_cost
+  test_families_generation
+  test_sail_parser_roundtrip
+  test_properties
+  test_golden
+  test_cpp_emulator
+  test_c11_emulator
+  test_assembler
+  test_assembler_deep
+  test_multi_vlen
+  test_cli
+  run_tests)
+ (libraries
+  random_visa_domain
+  random_visa_ports
+  random_visa_application
+  random_visa_sail_export
+  random_visa_sail_parser
+  random_visa_cpp_emitter
+  random_visa_c11_emitter
+  random_visa_compiler_adapter
+  random_visa_assembler
+  alcotest
+  qcheck
+  qcheck-alcotest))
