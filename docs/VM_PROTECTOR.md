@@ -204,3 +204,102 @@ $$\text{DRS} = \min\left(25, \frac{H}{8.0} \times 25\right) + \min\left(25, \fra
 * **0.0 – 39.9**: Weak Obfuscation (vulnerable to standard IDA / Ghidra decompilation).
 * **40.0 – 69.9**: Strong Obfuscation (defeats symbolic execution, requires custom devirtualizer).
 * **70.0 – 100.0**: Maximum Hardening (full CFF + recursive MBA + positional PRF encryption).
+
+---
+
+## 7. Marker-Based Region Protection (VMProtect-Style SDK)
+
+Instead of virtualizing entire monolithic binaries, developers place fine-grained marker delimiters around sensitive licensing, cryptographic, and anti-tamper logic:
+
+```c
+#include "asgard_obf.h"
+
+int64_t verify_license(int64_t hwid, int64_t user_serial) {
+    int64_t is_valid = 0;
+
+    // 🔒 VIRTUALIZED IN DIRECT THREADED VM WITH CFF + MBA
+    ASGARD_BEGIN_ULTRA("LicenseValidation");
+
+    int64_t secret_mult = 0x5877;
+    int64_t secret_bias = 0x1337;
+    int64_t expected_key = ((hwid ^ secret_mult) * 42) + secret_bias;
+
+    if (user_serial == expected_key) {
+        is_valid = 1;
+    } else {
+        is_valid = 0;
+    }
+
+    ASGARD_END();
+    // 🔓 END OF VIRTUALIZED REGION
+
+    return is_valid;
+}
+```
+
+### Supported Marker Tiers
+* `ASGARD_BEGIN_VIRTUALIZE("Tag")`: Pure bytecode virtualization with rolling key PRF.
+* `ASGARD_BEGIN_MUTATION("Tag")`: MBA mutation and polymorphic arithmetic rewriting.
+* `ASGARD_BEGIN_ULTRA("Tag")`: Full Virtualization + Control-Flow Flattening (CFF) + Recursive MBA.
+* `ASGARD_END()`: Region delimiter.
+
+---
+
+## 8. Zero-Bloat Runtime & Anti-Analysis Metadata Stripping
+
+To prevent reverse engineers from identifying the VM runtime via standard library artifacts, the C++ runtime was re-engineered for **zero standard library overhead**:
+
+1. **Elimination of C++ `std::vector` & `std::iostream`**:
+   * Fixed 512-word stack array inside `VMContext` (`uint64_t stack[512]`).
+   * Pure C runtime functions (`printf`, `fopen`, `fread`, `fclose`) with zero dynamic heap allocations.
+2. **Hidden Visibility & Inlining**:
+   * All VM handlers and `execute_threaded` are marked `__attribute__((always_inline, visibility("hidden")))`.
+   * Function names never enter the Mach-O/ELF export or symbol tables.
+3. **Hardened Linker Flags**:
+   * `-fno-rtti -fno-exceptions -fno-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x && strip -x`.
+4. **Hex-Rays / IDA Pro Output**:
+   * Symbol table contains **only `_main`** and standard OS syscall stubs (`_printf`).
+   * No `std::length_error`, `___cxa_throw`, `typeinfo`, or plaintext trap strings exist in the binary.
+
+---
+
+## 9. Production Multi-File Project Builder (`random_visa project`)
+
+For production codebases with multiple source files (`.c`, `.cpp`, `.s`) across directories:
+
+```bash
+./random_visa project -d ./src -o ./bin/secure_app --cff --mba -s 42
+```
+
+### Pipeline Workflow
+```
+[src/license.c] ───► [c_macro_obf] ───► [clang -S] ───► [extract markers] ───► [compile obj] ──┐
+[src/crypto.c]  ───► [c_macro_obf] ───► [clang -S] ───► [extract markers] ───► [compile obj] ──┼─► [clang Link & Strip] ──► ./bin/secure_app
+[src/auth.c]    ───► [c_macro_obf] ───► [clang -S] ───► [extract markers] ───► [compile obj] ──┤
+[src/main.c]    ───► [c_macro_obf] ───► [clang -S] ───► [extract markers] ───► [compile obj] ──┘
+```
+
+---
+
+## 10. CMake & Makefile Integration
+
+### Makefile
+```makefile
+ASGARD = ./random_visa
+
+all:
+	$(ASGARD) project -d src -o ./bin/secure_app --cff --mba -s 42
+```
+
+### CMake (`CMakeLists.txt`)
+```cmake
+cmake_minimum_required(VERSION 3.15)
+project(MySecureApp C)
+
+add_custom_target(asgard_protect ALL
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/random_visa project -d ${CMAKE_CURRENT_SOURCE_DIR}/src -o ${CMAKE_CURRENT_BINARY_DIR}/secure_app --cff --mba
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Building Hardened Multi-File Binary via ASGARD-5877..."
+)
+```
+

@@ -233,19 +233,93 @@ dune exec -- random_visa disassemble -s ./my_chip/custom_rvv_isa.sail -i program
 
 ---
 
-## 🔒 C/C++ Macro Obfuscation Guide (`random_visa c-obf`)
+## 🔒 Hardened C/C++ Protection Guide
+
+### 1. VMProtect-Style Marker Delimiters (1-Click Protection)
+
+Protect any critical algorithm directly in your C or C++ codebase using marker delimiters from `asgard_obf.h`:
+
+```c
+#include <stdio.h>
+#include <stdint.h>
+#include "asgard_obf.h"
+
+int64_t verify_license(int64_t hwid, int64_t user_serial) {
+    int64_t is_valid = 0;
+
+    // 🔒 ASGARD VIRTUALIZATION REGION (Direct Threaded VM + CFF + MBA)
+    ASGARD_BEGIN_ULTRA("LicenseValidation");
+
+    int64_t secret_mult = 0x5877;
+    int64_t secret_bias = 0x1337;
+    int64_t expected_key = ((hwid ^ secret_mult) * 42) + secret_bias;
+
+    if (user_serial == expected_key) {
+        is_valid = 1;
+    } else {
+        is_valid = 0;
+    }
+
+    ASGARD_END();
+    // 🔓 END OF VIRTUALIZED REGION
+
+    return is_valid;
+}
+```
+
+Protect and compile the source file in **1 single command**:
+```bash
+./random_visa protect -i examples/app.c -o ./binaries/app_dist --cff --mba --compile true
+```
+
+* **Auto-Detection**: Scans and virtualizes marked slices into Turing-complete VM-IR with CFF and MBA.
+* **Stack String Encryption**: Replaces strings with stack-decrypted literals (`ASG_STR`).
+* **Zero C++ Stdlib Bloat**: Strips all RTTI, exception handling, and iostream bloat so IDA Pro sees only `_main`.
+
+---
+
+### 2. Multi-File Project Builder (`random_visa project`)
+
+For real-world production projects containing multiple source files across directories:
+
+```bash
+# Build an entire multi-file project with scattered markers in one command
+./random_visa project -d examples/multi_file_project/src -o ./bin/secure_app --cff --mba -s 42
+```
+
+#### Makefile Integration:
+```makefile
+ASGARD = ../../random_visa
+
+all:
+	$(ASGARD) project -d src -o ./bin/secure_app --cff --mba -s 42
+```
+
+#### CMake Integration (`CMakeLists.txt`):
+```cmake
+add_custom_target(asgard_protect ALL
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/random_visa project -d ${CMAKE_CURRENT_SOURCE_DIR}/src -o ${CMAKE_CURRENT_BINARY_DIR}/secure_app --cff --mba
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Building Hardened Binary via ASGARD-5877 VM Protector..."
+)
+```
+
+---
+
+### 3. Source-Level Macro Obfuscation (`random_visa c-obf`)
 
 Obfuscate any standard C/C++ source code with stack string encryption, constant blinding, and MBA expansions:
 
 ```bash
 # Obfuscate C source and generate companion header
-dune exec -- random_visa c-obf \
+./random_visa c-obf \
   -i examples/demo_c_app.c \
   -o ./protected_c/main.c \
   --header ./protected_c/asgard_obf.h \
   --seed 42 \
   --compile true
 ```
+
 
 ---
 
