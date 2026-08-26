@@ -1,0 +1,3 @@
+(library
+ (name vm_ir)
+ (public_name random_visa.vm_ir))

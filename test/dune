@@ -16,6 +16,7 @@
   test_cli
   test_vanguard_9292
   test_vanguard_emulator_e2e
+  test_vm_ir
   run_tests)
  (libraries
   random_visa_domain
@@ -28,6 +29,7 @@
   random_visa_compiler_adapter
   random_visa_assembler
   vanguard_9292
+  vm_ir
   alcotest
   qcheck
   qcheck-alcotest))
