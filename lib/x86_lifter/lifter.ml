@@ -61,10 +61,11 @@ let lift_instr mnem ops =
   | "pop", [ op ] ->
       let* ir_op = to_ir_operand op in
       Ok [ Ir.Pop ir_op ]
-  | "mov", [ dst; src ] ->
+  | ("mov" | "movzx" | "movsx" | "movsxd"), [ dst; src ] ->
       let* ir_dst = to_ir_operand dst in
       let* ir_src = to_ir_operand src in
       Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
+
   | "lea", [ dst; OpMem addr ] -> (
       match dst with
       | OpReg r ->

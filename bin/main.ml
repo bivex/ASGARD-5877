@@ -348,7 +348,7 @@ let vanguard_cmd =
   let term = Term.(ret (const run_vanguard $ out_dir $ seed $ n)) in
   Cmd.v (Cmd.info "vanguard" ~doc) term
 
-(* 7. PROTECT COMMAND (Full x86_64 VM-Protector Pipeline) *)
+(* 7. PROTECT COMMAND (Full Automated x86_64 & C/C++ VM-Protector Pipeline) *)
 let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_and_run =
   let rng =
     match seed with
@@ -359,13 +359,59 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
   in
 
   if not (Sys.file_exists input_file) then begin
-    prerr_endline (Printf.sprintf "Input assembly file not found: %s" input_file);
+    prerr_endline (Printf.sprintf "Input file not found: %s" input_file);
     `Error (false, "File not found")
   end else begin
-    let ic = open_in input_file in
+    (try Sys.mkdir out_dir 0o755 with _ -> ());
+    let is_c_src = String.ends_with ~suffix:".c" input_file || String.ends_with ~suffix:".cpp" input_file in
+
+    let asm_source_file =
+      if is_c_src then begin
+        let hdr_path = Filename.concat out_dir "asgard_obf.h" in
+        let obf_c_path = Filename.concat out_dir "app_obf.c" in
+        let seed_val = Random.State.int rng 0x3FFFFFFF in
+        let config = {
+          C_macro_obf.seed = seed_val;
+          mba_depth;
+          obfuscate_strings = true;
+          obfuscate_constants = true;
+          obfuscate_arithmetic = true;
+          inject_opaque_predicates = true;
+          macro_prefix = "ASG_";
+        } in
+        (match C_macro_obf.transform_file ~config ~in_file:input_file ~out_file:obf_c_path ~header_file:(Some hdr_path) () with
+        | Ok () -> ()
+        | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
+
+        let asm_out = Filename.concat out_dir "app.s" in
+        let gen_asm_cmd = Printf.sprintf "clang -S -target x86_64-apple-darwin -masm=intel -O1 -fno-stack-protector -I%s -fno-asynchronous-unwind-tables %s -o %s" out_dir obf_c_path asm_out in
+        let _ = Sys.command gen_asm_cmd in
+        asm_out
+
+
+      end else input_file
+    in
+
+    let ic = open_in asm_source_file in
     let len = in_channel_length ic in
     let text = really_input_string ic len in
     close_in ic;
+
+    let raw_lines =
+      match X86_lifter.X86_parser.parse_lines text with
+      | Ok lines -> lines
+      | Error err ->
+          prerr_endline (Printf.sprintf "Parser warning: %s, falling back to full function" err);
+          []
+    in
+
+    let regions =
+      if raw_lines <> [] then X86_lifter.Lifter.extract_marked_regions raw_lines
+      else []
+    in
+
+    if List.length regions > 1 || (List.length regions = 1 && (match fst (List.hd regions) with X86_lifter.X86_parser.ModeUltra "main" -> false | _ -> true)) then
+      Printf.printf "[VM-Protector] Auto-detected %d marker protected region(s) in source.\n" (List.length regions);
 
     match X86_lifter.Lifter.lift_function text with
     | Error err ->
@@ -380,8 +426,6 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
             ~mba_depth
             lifted_func
         in
-
-        (try Sys.mkdir out_dir 0o755 with _ -> ());
 
         let hdr_path = Filename.concat out_dir "threaded_vm.hpp" in
         let oc_h = open_out hdr_path in
@@ -409,15 +453,17 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
         Printf.printf "Generated Protected Bytecode: %s (%d bytes)\n" bc_path (List.length pkg.bytecode * 8);
 
         if compile_and_run then begin
-          let bin_path = Filename.concat out_dir "protected_runner" in
-          let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -fvisibility-inlines-hidden -Wl,-dead_strip -Wl,-x -I%s %s -o %s && strip -x %s" out_dir runner_path bin_path bin_path in
-          Printf.printf "\n[1/2] Compiling Native Direct Threaded VM (Zero-Bloat / Stripped) with clang++ -O3...\n";
+          let bin_path = Filename.concat out_dir (if is_c_src then "protected_app" else "protected_runner") in
+          let comp_src = if is_c_src then Filename.concat out_dir "app_obf.c" else runner_path in
+          let compiler = if is_c_src then "clang -O3" else "clang++ -std=c++20 -O3 -fvisibility-inlines-hidden" in
+          let comp_cmd = Printf.sprintf "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x -I%s %s -o %s && strip -x %s" compiler out_dir comp_src bin_path bin_path in
+          Printf.printf "\n[1/2] Compiling Native Protected Binary (Zero-Bloat / Stripped) with %s...\n" (if is_c_src then "clang -O3" else "clang++ -O3");
           let comp_status = Sys.command comp_cmd in
           if comp_status <> 0 then begin
             prerr_endline "Native compilation failed";
             `Error (false, "Compilation error")
           end else begin
-            Printf.printf "[2/2] Launching Protected Binary in Threaded VM:\n";
+            Printf.printf "[2/2] Launching Protected Binary:\n";
             Printf.printf "--------------------------------------------------------\n";
             let run_cmd = Printf.sprintf "%s" bin_path in
             let _ = Sys.command run_cmd in
@@ -427,6 +473,7 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
         end else `Ok ()
 
   end
+
 
 let protect_cmd =
   let doc = "Virtualize and protect x86_64 assembly function with CFF, MBA, rolling key, and Direct Threaded VM" in

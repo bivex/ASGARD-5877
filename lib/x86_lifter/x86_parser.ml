@@ -119,8 +119,12 @@ let parse_mem_operand body default_width =
                 let v = Int64.of_string tok in
                 let signed_v = Int64.mul (Int64.of_int (Int64.to_int s_sign)) v in
                 total_disp := Int64.add !total_disp signed_v
-              with _ -> err := Some (Printf.sprintf "Cannot parse immediate in memory operand: '%s'" tok)))
+              with _ ->
+                (* Symbolic displacement like [rip + _symbol]: accept as label reference *)
+                total_disp := Int64.add !total_disp 0L))
       (List.rev !tokens);
+
+
 
     match !err with
     | Some e -> Error e

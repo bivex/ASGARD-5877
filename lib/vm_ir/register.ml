@@ -129,9 +129,10 @@ let of_string str =
   | "r13" -> Ok r13 | "r13d" -> Ok (Gpr (R13, B32))| "r13w" -> Ok (Gpr (R13, B16))| "r13b" -> Ok (Gpr (R13, B8))
   | "r14" -> Ok r14 | "r14d" -> Ok (Gpr (R14, B32))| "r14w" -> Ok (Gpr (R14, B16))| "r14b" -> Ok (Gpr (R14, B8))
   | "r15" -> Ok r15 | "r15d" -> Ok (Gpr (R15, B32))| "r15w" -> Ok (Gpr (R15, B16))| "r15b" -> Ok (Gpr (R15, B8))
-  | "vip" -> Ok vip | "vsp" -> Ok vsp | "vkey" -> Ok vkey
+  | "vip" | "rip" -> Ok vip | "vsp" -> Ok vsp | "vkey" -> Ok vkey
   | "vtmp0" -> Ok vtmp0 | "vtmp1" -> Ok vtmp1 | "vtmp2" -> Ok vtmp2 | "vtmp3" -> Ok vtmp3
   | other -> Error (Printf.sprintf "Unknown register '%s'" other)
+
 
 let gpr_index = function
   | RAX -> 0 | RCX -> 1 | RDX -> 2 | RBX -> 3
