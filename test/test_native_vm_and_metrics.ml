@@ -179,7 +179,7 @@ func_super_ops:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok func ->
-      let pkg = Vm_emitter.compile_and_package ~rng func in
+      let pkg = Vm_emitter.compile_and_package ~rng ~enable_junk:false func in
       (* Original had 6 instrs, fused has fewer (4 instructions) *)
       Alcotest.(check bool) "bytecode is compacted by fusion" true (List.length pkg.bytecode < 6);
 
@@ -219,6 +219,60 @@ func_super_ops:
 
       let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
       ()
+
+let test_dynamic_junk_bytecode () =
+  let rng = Random.State.make [| 133742 |] in
+  let asm = {|
+func_junk_test:
+    mov rax, 40
+    add rax, 2
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let pkg_clean = Vm_emitter.compile_and_package ~rng ~enable_junk:false func in
+      let pkg_junk = Vm_emitter.compile_and_package ~rng ~enable_junk:true func in
+      (* Junk injection increases the instruction count in bytecode with phantom operations *)
+      Alcotest.(check bool) "junk increases bytecode size" true (List.length pkg_junk.bytecode >= List.length pkg_clean.bytecode);
+
+      let tmp_dir = Filename.temp_file "junk_vm_" "_dir" in
+      (try Sys.remove tmp_dir with _ -> ());
+      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+      let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
+      let oc_h = open_out hdr_path in
+      output_string oc_h pkg_junk.cpp_runtime_source;
+      close_out oc_h;
+
+      let runner_path = Filename.concat tmp_dir "runner.cpp" in
+      let oc_r = open_out runner_path in
+      output_string oc_r pkg_junk.runner_source;
+      close_out oc_r;
+
+      let bin_path = Filename.concat tmp_dir "runner" in
+      let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+      let comp_status = Sys.command comp_cmd in
+      Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
+
+      let run_cmd = bin_path in
+      let ic = Unix.open_process_in run_cmd in
+      let out_buf = Buffer.create 256 in
+      (try
+         while true do
+           Buffer.add_string out_buf (input_line ic);
+           Buffer.add_char out_buf '\n'
+         done
+       with End_of_file -> ());
+      let status = Unix.close_process_in ic in
+      Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+      let out_str = Buffer.contents out_buf in
+      (* rax should be 40 + 2 = 42 despite phantom junk and taint siphoning *)
+      Alcotest.(check bool) "rax is 42" true (String.contains out_str '4' && String.contains out_str '2');
+
+      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      ()
+
 
 let test_ephemeral_self_consuming_scrubbing () =
   let rng = Random.State.make [| 5877 |] in
@@ -305,6 +359,8 @@ let tests = [
   Alcotest.test_case "threaded_vm_with_cff" `Slow test_threaded_vm_with_cff;
   Alcotest.test_case "super_operators_execution" `Slow test_super_operators_execution;
   Alcotest.test_case "ephemeral_self_consuming_scrubbing" `Slow test_ephemeral_self_consuming_scrubbing;
+  Alcotest.test_case "dynamic_junk_bytecode" `Slow test_dynamic_junk_bytecode;
 ]
+
 
 

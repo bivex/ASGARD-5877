@@ -428,6 +428,82 @@ type vm_op =
   | Fused_Xor_Add of { dst : Register.t; src : Register.t; imm : int64 }
   | Fused_Cmp_Cmov of { cmp_dst : Register.t; cmp_imm : int64; cond : Flags.condition; cmov_dst : Register.t; cmov_src : Register.t }
 
+let extract_real_regs instrs =
+  let set = Hashtbl.create 8 in
+
+  List.iter
+    (fun (i : Ir.instr) ->
+      match i with
+      | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->
+          Hashtbl.replace set d (); Hashtbl.replace set s ()
+      | Ir.Mov { dst = Ir.Reg d; _ } -> Hashtbl.replace set d ()
+      | Ir.Alu { dst = d; src1 = Ir.Reg s1; src2 = Ir.Reg s2; _ } ->
+          Hashtbl.replace set d (); Hashtbl.replace set s1 (); Hashtbl.replace set s2 ()
+      | Ir.Alu { dst = d; src1 = Ir.Reg s1; _ } ->
+          Hashtbl.replace set d (); Hashtbl.replace set s1 ()
+      | Ir.Cmp { src1 = Ir.Reg s1; src2 = Ir.Reg s2 } ->
+          Hashtbl.replace set s1 (); Hashtbl.replace set s2 ()
+      | Ir.Cmp { src1 = Ir.Reg s1; _ } -> Hashtbl.replace set s1 ()
+      | Ir.Push (Ir.Reg r) | Ir.Pop (Ir.Reg r) | Ir.Cmov { dst = r; _ } -> Hashtbl.replace set r ()
+      | _ -> ())
+    instrs;
+  Hashtbl.fold (fun r () acc ->
+    match r with
+    | Register.Gpr _ -> r :: acc
+    | _ -> acc) set []
+
+let generate_junk_instrs rng ~real_regs =
+  let vdst = Register.Vreg (Register.VTMP2, Register.B64) in
+  let imm = Int64.of_int32 (Random.State.int32 rng Int32.max_int) in
+  match Random.State.int rng 5 with
+  | 0 ->
+      (* Phantom constant load *)
+      [ Ir.Mov { dst = Ir.Reg vdst; src = Ir.Imm imm } ]
+  | 1 ->
+      (* Phantom arithmetic accumulation *)
+      [ Ir.Alu { op = Ir.Add; dst = vdst; src1 = Ir.Reg vdst; src2 = Ir.Imm imm; set_flags = false } ]
+  | 2 ->
+      (* Phantom non-linear XOR-MUL chain *)
+      [
+        Ir.Alu { op = Ir.Xor; dst = vdst; src1 = Ir.Reg vdst; src2 = Ir.Imm imm; set_flags = false };
+        Ir.Alu { op = Ir.Imul; dst = vdst; src1 = Ir.Reg vdst; src2 = Ir.Imm 0x5877L; set_flags = false };
+      ]
+  | 3 ->
+      (* Dead Taint Siphoning: Copy real register into phantom register without altering real register *)
+      if List.length real_regs > 0 then
+        let r = List.nth real_regs (Random.State.int rng (List.length real_regs)) in
+        [
+          Ir.Mov { dst = Ir.Reg vdst; src = Ir.Reg r };
+          Ir.Alu { op = Ir.Xor; dst = vdst; src1 = Ir.Reg vdst; src2 = Ir.Imm imm; set_flags = false };
+        ]
+      else
+        [ Ir.Alu { op = Ir.Add; dst = vdst; src1 = Ir.Reg vdst; src2 = Ir.Imm imm; set_flags = false } ]
+  | _ ->
+      (* Phantom bitwise OR *)
+      [ Ir.Alu { op = Ir.Or; dst = vdst; src1 = Ir.Reg vdst; src2 = Ir.Imm imm; set_flags = false } ]
+
+let inject_junk_instructions ~rng instrs =
+  let real_regs = extract_real_regs instrs in
+  let rec aux = function
+    | [] -> []
+    | [Ir.Ret] -> [Ir.Ret]
+    | [Ir.Vm_exit] -> [Ir.Vm_exit]
+    | (Ir.Cmp _ as cmp) :: (Ir.Cmov _ as cmov) :: rest ->
+        let junk = if Random.State.int rng 100 < 35 then generate_junk_instrs rng ~real_regs else [] in
+        cmp :: cmov :: (junk @ aux rest)
+    | (Ir.Cmp _ as cmp) :: (Ir.Jcc _ as jcc) :: rest ->
+        cmp :: jcc :: aux rest
+    | (Ir.Jmp _ as j) :: rest ->
+        j :: aux rest
+    | (Ir.Jcc _ as j) :: rest ->
+        j :: aux rest
+    | hd :: rest ->
+        let junk = if Random.State.int rng 100 < 35 then generate_junk_instrs rng ~real_regs else [] in
+        hd :: (junk @ aux rest)
+  in
+  aux instrs
+
+
 let rec fuse_block_instructions instrs =
   match instrs with
   | [] -> []
@@ -468,6 +544,7 @@ let compile_and_package
     ~rng
     ?(enable_cff = false)
     ?(enable_mba = false)
+    ?(enable_junk = true)
     ?(mba_depth = 2)
     (func : Ir.func) =
   let target_func =
@@ -499,7 +576,7 @@ let compile_and_package
     Hashtbl.find kind_to_code kind
   in
 
-  (* Linearize blocks and calculate block start offsets in bytecode with Super-Operator fusion *)
+  (* Linearize blocks and calculate block start offsets in bytecode with Super-Operator fusion and Junk insertion *)
   let entry_block = Hashtbl.find target_func.cfg.blocks target_func.cfg.entry_id in
   let other_blocks =
     Hashtbl.fold
@@ -512,9 +589,11 @@ let compile_and_package
   let block_fused_ops = Hashtbl.create (List.length sorted_blocks) in
   List.iter
     (fun (b : Ir.basic_block) ->
-      let fused = fuse_block_instructions b.instrs in
+      let instrs = if enable_junk then inject_junk_instructions ~rng b.instrs else b.instrs in
+      let fused = fuse_block_instructions instrs in
       Hashtbl.replace block_fused_ops b.id fused)
     sorted_blocks;
+
 
   let block_offsets = Hashtbl.create (List.length sorted_blocks) in
   let cur_offset = ref 0 in

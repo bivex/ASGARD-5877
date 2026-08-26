@@ -11,6 +11,8 @@ val compile_and_package :
   rng:Random.State.t ->
   ?enable_cff:bool ->
   ?enable_mba:bool ->
+  ?enable_junk:bool ->
   ?mba_depth:int ->
   Ir.func ->
   vm_package
+
