@@ -198,15 +198,22 @@ let lower_to_ir ~dst ~env expr =
   List.rev !instrs
 
 let obfuscate_alu ~rng ~depth ~dst ~src1 ~src2 op =
-  let base_expr =
-    match op with
-    | Ir.Add -> Add (Var "a", Var "b")
-    | Ir.Sub -> Sub (Var "a", Var "b")
-    | Ir.Xor -> Xor (Var "a", Var "b")
-    | Ir.And -> And (Var "a", Var "b")
-    | Ir.Or  -> Or  (Var "a", Var "b")
-    | _ -> failwith "Mba.obfuscate_alu: unsupported op"
-  in
-  let mba_tree = rewrite ~rng ~depth base_expr in
-  let env = [ ("a", src1); ("b", src2) ] in
-  lower_to_ir ~dst ~env mba_tree
+  match op with
+  | Ir.Add ->
+      let mba_tree = rewrite ~rng ~depth (Add (Var "a", Var "b")) in
+      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+  | Ir.Sub ->
+      let mba_tree = rewrite ~rng ~depth (Sub (Var "a", Var "b")) in
+      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+  | Ir.Xor ->
+      let mba_tree = rewrite ~rng ~depth (Xor (Var "a", Var "b")) in
+      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+  | Ir.And ->
+      let mba_tree = rewrite ~rng ~depth (And (Var "a", Var "b")) in
+      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+  | Ir.Or ->
+      let mba_tree = rewrite ~rng ~depth (Or (Var "a", Var "b")) in
+      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+  | unsupported ->
+      [ Ir.Alu { op = unsupported; dst; src1; src2; set_flags = false } ]
+

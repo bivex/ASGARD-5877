@@ -1,0 +1,1581 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "DPX-OCaml",
+          "semanticVersion": "0.1.0",
+          "rules": [
+            {
+              "id": "DPX-OCAML-ABSTRACT_DATA_TYPE_INTERFACE",
+              "name": "abstract_data_type_interface",
+              "shortDescription": {
+                "text": "OCaml Pattern: Abstract Data Type Interface"
+              },
+              "fullDescription": {
+                "text": "Module 'Vector_config' encapsulates Abstract Data Type (ADT) via primary type `t` with constructor 'make'"
+              },
+              "properties": {
+                "category": "module_system"
+              }
+            },
+            {
+              "id": "DPX-OCAML-FIRST_CLASS_MODULE",
+              "name": "first_class_module",
+              "shortDescription": {
+                "text": "OCaml Pattern: First Class Module"
+              },
+              "fullDescription": {
+                "text": "Module 'C11_emitter_adapter' utilizes First-Class Modules for dynamic runtime dispatch and pluggable strategy injection"
+              },
+              "properties": {
+                "category": "module_system"
+              }
+            },
+            {
+              "id": "DPX-OCAML-MODULE_INCLUSION_EXTENDER",
+              "name": "module_inclusion_extender",
+              "shortDescription": {
+                "text": "OCaml Pattern: Module Inclusion Extender"
+              },
+              "fullDescription": {
+                "text": "Module 'Compiler_adapter' extends and composes functionality from 1 included module(s) (Ports.Compiler)"
+              },
+              "properties": {
+                "category": "module_system"
+              }
+            },
+            {
+              "id": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+              "name": "polymorphic_variants",
+              "shortDescription": {
+                "text": "OCaml Pattern: Polymorphic Variants"
+              },
+              "fullDescription": {
+                "text": "Module 'Test_domain_invariants' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+              },
+              "properties": {
+                "category": "functional_idiom"
+              }
+            },
+            {
+              "id": "DPX-OCAML-UNCHECKED_EXCEPTION_RAISE",
+              "name": "unchecked_exception_raise",
+              "shortDescription": {
+                "text": "OCaml Pattern: Unchecked Exception Raise"
+              },
+              "fullDescription": {
+                "text": "Type Safety Audit: Function 'res' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead"
+              },
+              "properties": {
+                "category": "type_safety"
+              }
+            },
+            {
+              "id": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+              "name": "defensive_catch_all_exn",
+              "shortDescription": {
+                "text": "OCaml Pattern: Defensive Catch All Exn"
+              },
+              "fullDescription": {
+                "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_cpp_emulator' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+              },
+              "properties": {
+                "category": "resilience"
+              }
+            },
+            {
+              "id": "DPX-OCAML-MUTABLE_REF_OVERUSE",
+              "name": "mutable_ref_overuse",
+              "shortDescription": {
+                "text": "OCaml Pattern: Mutable Ref Overuse"
+              },
+              "fullDescription": {
+                "text": "Functional Purity Audit: Module 'C_macro_obf' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators"
+              },
+              "properties": {
+                "category": "principle"
+              }
+            },
+            {
+              "id": "DPX-OCAML-PHYSICAL_EQUALITY_SMELL",
+              "name": "physical_equality_smell",
+              "shortDescription": {
+                "text": "OCaml Pattern: Physical Equality Smell"
+              },
+              "fullDescription": {
+                "text": "Type Safety Hazard (Physical Equality): Function 'NUM_VREGS' in 'Test_sail_parser_roundtrip' uses physical pointer equality (`==` / `!=`); use structural value equality (`=` / `<>`) to avoid subtle value comparison bugs"
+              },
+              "properties": {
+                "category": "type_safety"
+              }
+            },
+            {
+              "id": "DPX-OCAML-GOD_MODULE_SRP",
+              "name": "god_module_srp",
+              "shortDescription": {
+                "text": "OCaml Pattern: God Module Srp"
+              },
+              "fullDescription": {
+                "text": "SRP Violation (God Module): Module 'Test_vm_ir' defines 44 functions across 220 lines of code, indicating multiple mixed domain responsibilities"
+              },
+              "properties": {
+                "category": "principle"
+              }
+            },
+            {
+              "id": "DPX-OCAML-CYCLOMATIC_COMPLEXITY_KISS",
+              "name": "cyclomatic_complexity_kiss",
+              "shortDescription": {
+                "text": "OCaml Pattern: Cyclomatic Complexity Kiss"
+              },
+              "fullDescription": {
+                "text": "KISS Violation (High Complexity): Function 'res' in 'Assembler_adapter' has cyclomatic complexity of 20; decompose nested pattern matches into helper functions"
+              },
+              "properties": {
+                "category": "principle"
+              }
+            },
+            {
+              "id": "DPX-OCAML-DUPLICATE_CODE_DRY",
+              "name": "duplicate_code_dry",
+              "shortDescription": {
+                "text": "OCaml Pattern: Duplicate Code Dry"
+              },
+              "fullDescription": {
+                "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vd, Assembler_adapter.vd"
+              },
+              "properties": {
+                "category": "principle"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "DPX-OCAML-ABSTRACT_DATA_TYPE_INTERFACE",
+          "level": "note",
+          "message": {
+            "text": "Module 'Vector_config' encapsulates Abstract Data Type (ADT) via primary type `t` with constructor 'make'"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/domain/vector_config.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-ABSTRACT_DATA_TYPE_INTERFACE",
+          "level": "note",
+          "message": {
+            "text": "Module 'Generation_profile' encapsulates Abstract Data Type (ADT) via primary type `t` with constructor 'make'"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/domain/generation_profile.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-FIRST_CLASS_MODULE",
+          "level": "note",
+          "message": {
+            "text": "Module 'C11_emitter_adapter' utilizes First-Class Modules for dynamic runtime dispatch and pluggable strategy injection"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-MODULE_INCLUSION_EXTENDER",
+          "level": "note",
+          "message": {
+            "text": "Module 'Compiler_adapter' extends and composes functionality from 1 included module(s) (Ports.Compiler)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/compiler_adapter/compiler_adapter.mli"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-MODULE_INCLUSION_EXTENDER",
+          "level": "note",
+          "message": {
+            "text": "Module 'Sail_export_adapter' extends and composes functionality from 1 included module(s) (Ports.Sail_spec_writer)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_export/sail_export_adapter.mli"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-MODULE_INCLUSION_EXTENDER",
+          "level": "note",
+          "message": {
+            "text": "Module 'Cpp_emitter_adapter' extends and composes functionality from 1 included module(s) (Ports.Cpp_code_emitter)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/cpp_emitter/cpp_emitter_adapter.mli"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_domain_invariants' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_vm_ir' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_vm_ir.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_vanguard_9292' adopts Polymorphic Variants (``Junk_opcode, ``Unknown_opcode) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_hw_cost' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_hw_cost.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_native_vm_and_metrics' adopts Polymorphic Variants (``Quick, ``Slow) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_native_vm_and_metrics.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_families_generation' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_isa_grammar' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_isa_grammar.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_cli' adopts Polymorphic Variants (``Slow, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_cli.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_x86_lifter' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_x86_lifter.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_multi_vlen' adopts Polymorphic Variants (``Slow, ``Slow) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_multi_vlen.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_assembler' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_anti_analysis' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_sail_parser_roundtrip' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_sail_parser_roundtrip.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_assembler_deep' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_assembler_deep.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Test_c_macro_obf' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Main' adopts Polymorphic Variants (``Error, ``Ok) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/bin/main.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-POLYMORPHIC_VARIANTS",
+          "level": "note",
+          "message": {
+            "text": "Module 'Vanguard_9292' adopts Polymorphic Variants (``Dst, ``Src1) providing open tag subtyping without nominal declarations"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_9292.mli"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-UNCHECKED_EXCEPTION_RAISE",
+          "level": "error",
+          "message": {
+            "text": "Type Safety Audit: Function 'res' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml"
+                },
+                "region": {
+                  "startLine": 7,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_cpp_emulator' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_cpp_emulator.ml"
+                },
+                "region": {
+                  "startLine": 10,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_native_vm_and_metrics' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_native_vm_and_metrics.ml"
+                },
+                "region": {
+                  "startLine": 116,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_cli' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_cli.ml"
+                },
+                "region": {
+                  "startLine": 69,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_multi_vlen' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_multi_vlen.ml"
+                },
+                "region": {
+                  "startLine": 13,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_vbc' in 'Test_assembler' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml"
+                },
+                "region": {
+                  "startLine": 146,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'bad_res' in 'Test_assembler' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml"
+                },
+                "region": {
+                  "startLine": 166,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_assembler' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml"
+                },
+                "region": {
+                  "startLine": 175,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_file' in 'Test_sail_parser_roundtrip' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_sail_parser_roundtrip.ml"
+                },
+                "region": {
+                  "startLine": 72,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_c11_emulator' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_c11_emulator.ml"
+                },
+                "region": {
+                  "startLine": 46,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_vanguard_emulator_e2e' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml"
+                },
+                "region": {
+                  "startLine": 9,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'bin_path' in 'Main' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/bin/main.ml"
+                },
+                "region": {
+                  "startLine": 545,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'build_dir' in 'Main' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/bin/main.ml"
+                },
+                "region": {
+                  "startLine": 629,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DEFENSIVE_CATCH_ALL_EXN",
+          "level": "error",
+          "message": {
+            "text": "Resilience Smell (Defensive Catch-All): Function 'd' in 'C_macro_obf' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml"
+                },
+                "region": {
+                  "startLine": 313,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-MUTABLE_REF_OVERUSE",
+          "level": "error",
+          "message": {
+            "text": "Functional Purity Audit: Module 'C_macro_obf' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-MUTABLE_REF_OVERUSE",
+          "level": "error",
+          "message": {
+            "text": "Functional Purity Audit: Module 'Assembler_adapter' defines 8 mutable references / fields, breaking immutability; favor pure recursive accumulators"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-MUTABLE_REF_OVERUSE",
+          "level": "error",
+          "message": {
+            "text": "Functional Purity Audit: Module 'Sail_parser_adapter' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-MUTABLE_REF_OVERUSE",
+          "level": "error",
+          "message": {
+            "text": "Functional Purity Audit: Module 'Vm_eval' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/vm_ir/vm_eval.mli"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-PHYSICAL_EQUALITY_SMELL",
+          "level": "error",
+          "message": {
+            "text": "Type Safety Hazard (Physical Equality): Function 'NUM_VREGS' in 'Test_sail_parser_roundtrip' uses physical pointer equality (`==` / `!=`); use structural value equality (`=` / `<>`) to avoid subtle value comparison bugs"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_sail_parser_roundtrip.ml"
+                },
+                "region": {
+                  "startLine": 12,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-PHYSICAL_EQUALITY_SMELL",
+          "level": "error",
+          "message": {
+            "text": "Type Safety Hazard (Physical Equality): Function 'add' in 'C_macro_obf' uses physical pointer equality (`==` / `!=`); use structural value equality (`=` / `<>`) to avoid subtle value comparison bugs"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml"
+                },
+                "region": {
+                  "startLine": 42,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-PHYSICAL_EQUALITY_SMELL",
+          "level": "error",
+          "message": {
+            "text": "Type Safety Hazard (Physical Equality): Function 'expr' in 'C11_emitter_adapter' uses physical pointer equality (`==` / `!=`); use structural value equality (`=` / `<>`) to avoid subtle value comparison bugs"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml"
+                },
+                "region": {
+                  "startLine": 91,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-PHYSICAL_EQUALITY_SMELL",
+          "level": "error",
+          "message": {
+            "text": "Type Safety Hazard (Physical Equality): Function 'word' in 'C11_emitter_adapter' uses physical pointer equality (`==` / `!=`); use structural value equality (`=` / `<>`) to avoid subtle value comparison bugs"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml"
+                },
+                "region": {
+                  "startLine": 144,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-PHYSICAL_EQUALITY_SMELL",
+          "level": "error",
+          "message": {
+            "text": "Type Safety Hazard (Physical Equality): Function 'func' in 'Sail_ast' uses physical pointer equality (`==` / `!=`); use structural value equality (`=` / `<>`) to avoid subtle value comparison bugs"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/domain/sail_ast.ml"
+                },
+                "region": {
+                  "startLine": 57,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Test_vm_ir' defines 44 functions across 220 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_vm_ir.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Test_vanguard_9292' defines 39 functions across 150 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Test_native_vm_and_metrics' defines 32 functions across 169 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_native_vm_and_metrics.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Test_families_generation' defines 37 functions across 233 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Test_anti_analysis' defines 50 functions across 214 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Main' defines 108 functions across 805 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/bin/main.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'C_macro_obf' defines 44 functions across 341 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Assembler_adapter' defines 57 functions across 363 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Register' defines 34 functions across 158 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/vm_ir/register.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-GOD_MODULE_SRP",
+          "level": "error",
+          "message": {
+            "text": "SRP Violation (God Module): Module 'Flags' defines 38 functions across 250 lines of code, indicating multiple mixed domain responsibilities"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/vm_ir/flags.ml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-CYCLOMATIC_COMPLEXITY_KISS",
+          "level": "error",
+          "message": {
+            "text": "KISS Violation (High Complexity): Function 'res' in 'Assembler_adapter' has cyclomatic complexity of 20; decompose nested pattern matches into helper functions"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml"
+                },
+                "region": {
+                  "startLine": 87,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-CYCLOMATIC_COMPLEXITY_KISS",
+          "level": "error",
+          "message": {
+            "text": "KISS Violation (High Complexity): Function 'b' in 'Sail_parser_adapter' has cyclomatic complexity of 16; decompose nested pattern matches into helper functions"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml"
+                },
+                "region": {
+                  "startLine": 110,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vd, Assembler_adapter.vd"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml"
+                },
+                "region": {
+                  "startLine": 77,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.funct3, Vector_isa_spec.funct3"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml"
+                },
+                "region": {
+                  "startLine": 78,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vs1, Assembler_adapter.vs1"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml"
+                },
+                "region": {
+                  "startLine": 79,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vs2, Assembler_adapter.vs2"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml"
+                },
+                "region": {
+                  "startLine": 80,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vm, Assembler_adapter.vm"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml"
+                },
+                "region": {
+                  "startLine": 81,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 3 location(s): Test_hw_cost.inst1, Test_assembler.inst_vv, Test_assembler_deep.inst1"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_hw_cost.ml"
+                },
+                "region": {
+                  "startLine": 44,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_native_vm_and_metrics.oc_h, Main.oc_h"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_native_vm_and_metrics.ml"
+                },
+                "region": {
+                  "startLine": 121,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_native_vm_and_metrics.oc_r, Main.oc_r"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_native_vm_and_metrics.ml"
+                },
+                "region": {
+                  "startLine": 126,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_native_vm_and_metrics.out_buf, Test_vanguard_emulator_e2e.out_buf"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_native_vm_and_metrics.ml"
+                },
+                "region": {
+                  "startLine": 148,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_native_vm_and_metrics.status, Test_vanguard_emulator_e2e.status"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_native_vm_and_metrics.ml"
+                },
+                "region": {
+                  "startLine": 155,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 4 location(s): Test_families_generation.by_base, Test_families_generation.weights, Test_properties.by_f6"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml"
+                },
+                "region": {
+                  "startLine": 27,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 3 location(s): Test_cli.buf, Test_assembler.buf, Test_c11_emulator.buf"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_cli.ml"
+                },
+                "region": {
+                  "startLine": 3,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "DPX-OCAML-DUPLICATE_CODE_DRY",
+          "level": "error",
+          "message": {
+            "text": "DRY Violation: Identical function logic duplicated across 2 location(s): Test_vanguard_emulator_e2e.oc, Main.oc"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml"
+                },
+                "region": {
+                  "startLine": 26,
+                  "startColumn": 1
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

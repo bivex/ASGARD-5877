@@ -2,11 +2,12 @@ open Random_visa_domain
 
 let spec_with ?(vlen = 128) ?(elen = 64) ?(sew = Types.Sew.E32) ?(lmul = Types.Lmul.M1) insts =
   match Vector_config.make ~vlen ~elen ~default_sew:sew ~default_lmul:lmul () with
-  | Error err -> failwith (Errors.to_string err)
+  | Error err -> Alcotest.fail (Errors.to_string err)
   | Ok config ->
       match Vector_isa_spec.of_instructions ~name:"CostTest" ~config insts with
-      | Error err -> failwith (Errors.to_string err)
+      | Error err -> Alcotest.fail (Errors.to_string err)
       | Ok s -> s
+
 
 let test_read_ports_reflect_two_source_instructions () =
   let inst =

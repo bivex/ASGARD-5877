@@ -1,6 +1,7 @@
 let unwrap = function
   | Ok v -> v
-  | Error err -> failwith (Errors.to_string err)
+  | Error err -> invalid_arg (Errors.to_string err)
+
 
 let f_vv_vx_vi = [
   Types.Instruction_format.OP_VV;
@@ -99,14 +100,15 @@ let sample_family ~rng ~profile ~candidates =
   let total = List.fold_left ( +. ) 0.0 weights in
   let threshold = Random.State.float rng total in
   let rec pick acc = function
-    | [], [] -> failwith "Empty candidates"
+    | [], _ -> List.hd candidates
     | [ c ], _ -> c
     | c :: cs, w :: ws ->
         let acc' = acc +. w in
         if threshold < acc' then c else pick acc' (cs, ws)
-    | _ -> failwith "Mismatched lengths"
+    | c :: _, [] -> c
   in
   pick 0.0 (candidates, weights)
+
 
 let assign_encodings families =
   let ordered =

@@ -20,7 +20,8 @@ let get_bin () =
   | Some p -> p
   | None ->
       let cur = Sys.getcwd () in
-      failwith (Printf.sprintf "Binary not found in candidates from cwd '%s'" cur)
+      Alcotest.fail (Printf.sprintf "Binary not found in candidates from cwd '%s'" cur)
+
 
 let test_cli_generate_and_execution () =
   let bin = get_bin () in
