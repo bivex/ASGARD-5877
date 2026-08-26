@@ -49,12 +49,20 @@ type raw_op_kind =
   | OP_CMOV
   | OP_RET
   | OP_EXIT
+  | OP_FUSED_MOV_ADD_RRI
+  | OP_FUSED_ADD_IMUL_RRI
+  | OP_FUSED_ADD_XOR_RRI
+  | OP_FUSED_SUB_XOR_RRI
+  | OP_FUSED_XOR_ADD_RRI
+  | OP_FUSED_CMP_CMOV
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_ADD_RR; OP_ADD_RI;
   OP_SUB_RR; OP_SUB_RI; OP_IMUL_RR; OP_IMUL_RI; OP_XOR_RR; OP_XOR_RI;
   OP_AND_RR; OP_AND_RI; OP_OR_RR; OP_OR_RI; OP_CMP_RR; OP_CMP_RI; OP_PUSH_R;
   OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_RET; OP_EXIT;
+  OP_FUSED_MOV_ADD_RRI; OP_FUSED_ADD_IMUL_RRI; OP_FUSED_ADD_XOR_RRI;
+  OP_FUSED_SUB_XOR_RRI; OP_FUSED_XOR_ADD_RRI; OP_FUSED_CMP_CMOV;
 ]
 
 let op_kind_to_handler_name = function
@@ -82,6 +90,13 @@ let op_kind_to_handler_name = function
   | OP_CMOV -> "H_CMOV"
   | OP_RET -> "H_RET"
   | OP_EXIT -> "H_EXIT"
+  | OP_FUSED_MOV_ADD_RRI -> "H_FUSED_MOV_ADD_RRI"
+  | OP_FUSED_ADD_IMUL_RRI -> "H_FUSED_ADD_IMUL_RRI"
+  | OP_FUSED_ADD_XOR_RRI -> "H_FUSED_ADD_XOR_RRI"
+  | OP_FUSED_SUB_XOR_RRI -> "H_FUSED_SUB_XOR_RRI"
+  | OP_FUSED_XOR_ADD_RRI -> "H_FUSED_XOR_ADD_RRI"
+  | OP_FUSED_CMP_CMOV -> "H_FUSED_CMP_CMOV"
+
 
 
 let shuffle_array rng arr =
@@ -277,9 +292,48 @@ let emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler =
   Buffer.add_string b "    H_RET: case_ret: ctx.executed_instructions++; goto EXIT_VM;\n";
   Buffer.add_string b "    H_EXIT: ctx.executed_instructions++; goto EXIT_VM;\n\n";
 
+  (* Super-Operators (Fused Instruction Handlers - TODD PROEBSTING SOTA) *)
+  Buffer.add_string b "    H_FUSED_MOV_ADD_RRI: {\n";
+  Buffer.add_string b "        ctx.set_reg(dst, ctx.get_reg(src) + (uint64_t)imm);\n";
+  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
+  Buffer.add_string b "        FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FUSED_ADD_IMUL_RRI: {\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) + ctx.get_reg(src)) * (uint64_t)imm);\n";
+  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
+  Buffer.add_string b "        FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FUSED_ADD_XOR_RRI: {\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) + ctx.get_reg(src)) ^ (uint64_t)imm);\n";
+  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
+  Buffer.add_string b "        FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FUSED_SUB_XOR_RRI: {\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) - ctx.get_reg(src)) ^ (uint64_t)imm);\n";
+  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
+  Buffer.add_string b "        FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FUSED_XOR_ADD_RRI: {\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + (uint64_t)imm);\n";
+  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
+  Buffer.add_string b "        FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FUSED_CMP_CMOV: {\n";
+  Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
+  Buffer.add_string b "        uint64_t res = a - b;\n";
+  Buffer.add_string b "        ctx.zf = (res == 0);\n";
+  Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
+  Buffer.add_string b "        ctx.cf = (a < b);\n";
+  Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 50) & 0x0F);\n";
+  Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_reg(dst, ctx.get_reg(src));\n";
+  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
+  Buffer.add_string b "        FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n\n";
+
   Buffer.add_string b "    H_DECOY:\n";
   Buffer.add_string b "        ctx.trapped = true;\n";
   Buffer.add_string b "        goto EXIT_VM;\n\n";
+
 
   Buffer.add_string b "    EXIT_VM:\n";
   Buffer.add_string b "    return !ctx.trapped;\n";
@@ -330,6 +384,51 @@ let emit_runner_cpp bytecode =
   Buffer.add_string b "}\n";
   Buffer.contents b
 
+type vm_op =
+  | Raw of Ir.instr
+  | Fused_Mov_Add of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_Add_Imul of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_Add_Xor of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_Sub_Xor of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_Xor_Add of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_Cmp_Cmov of { cmp_dst : Register.t; cmp_imm : int64; cond : Flags.condition; cmov_dst : Register.t; cmov_src : Register.t }
+
+let rec fuse_block_instructions instrs =
+  match instrs with
+  | [] -> []
+  | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ::
+    Ir.Alu { op = Ir.Add; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
+    when d = d2 && d = d3 ->
+      Fused_Mov_Add { dst = d; src = s; imm } :: fuse_block_instructions rest
+
+  | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
+    Ir.Alu { op = Ir.Imul; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
+    when d = d1 && d = d2 && d = d3 ->
+      Fused_Add_Imul { dst = d; src = s; imm } :: fuse_block_instructions rest
+
+  | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
+    Ir.Alu { op = Ir.Xor; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
+    when d = d1 && d = d2 && d = d3 ->
+      Fused_Add_Xor { dst = d; src = s; imm } :: fuse_block_instructions rest
+
+  | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
+    Ir.Alu { op = Ir.Xor; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
+    when d = d1 && d = d2 && d = d3 ->
+      Fused_Sub_Xor { dst = d; src = s; imm } :: fuse_block_instructions rest
+
+  | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
+    Ir.Alu { op = Ir.Add; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
+    when d = d1 && d = d2 && d = d3 ->
+      Fused_Xor_Add { dst = d; src = s; imm } :: fuse_block_instructions rest
+
+  | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ::
+    Ir.Cmov { cond; dst = d2; src = Ir.Reg s } :: rest
+    when d = d2 ->
+      Fused_Cmp_Cmov { cmp_dst = d; cmp_imm = imm; cond; cmov_dst = d2; cmov_src = s } :: fuse_block_instructions rest
+
+  | hd :: rest ->
+      Raw hd :: fuse_block_instructions rest
+
 let compile_and_package
     ~rng
     ?(enable_cff = false)
@@ -360,7 +459,7 @@ let compile_and_package
     Hashtbl.find kind_to_code kind
   in
 
-  (* Linearize blocks and calculate block start offsets in bytecode *)
+  (* Linearize blocks and calculate block start offsets in bytecode with Super-Operator fusion *)
   let entry_block = Hashtbl.find target_func.cfg.blocks target_func.cfg.entry_id in
   let other_blocks =
     Hashtbl.fold
@@ -370,12 +469,20 @@ let compile_and_package
   let sorted_other = List.sort (fun (a : Ir.basic_block) (b : Ir.basic_block) -> Int.compare a.id b.id) other_blocks in
   let sorted_blocks = entry_block :: sorted_other in
 
+  let block_fused_ops = Hashtbl.create (List.length sorted_blocks) in
+  List.iter
+    (fun (b : Ir.basic_block) ->
+      let fused = fuse_block_instructions b.instrs in
+      Hashtbl.replace block_fused_ops b.id fused)
+    sorted_blocks;
+
   let block_offsets = Hashtbl.create (List.length sorted_blocks) in
   let cur_offset = ref 0 in
   List.iter
     (fun (b : Ir.basic_block) ->
+      let fused = Hashtbl.find block_fused_ops b.id in
       Hashtbl.replace block_offsets b.id !cur_offset;
-      cur_offset := !cur_offset + List.length b.instrs)
+      cur_offset := !cur_offset + List.length fused)
     sorted_blocks;
 
   let get_block_offset id =
@@ -395,85 +502,98 @@ let compile_and_package
 
   let cur_idx = ref 0 in
   let bytecode = ref [] in
-  let encode_raw_word op dst src imm =
+  let encode_raw_word ?(extra_bits = 0L) op dst src imm =
     let w = ref 0L in
     w := Int64.logor !w (Int64.of_int op);
     w := Int64.logor !w (Int64.shift_left (Int64.of_int dst) 8);
     w := Int64.logor !w (Int64.shift_left (Int64.of_int src) 13);
     let imm_masked = Int64.logand imm 0xFFFFFFFFL in
     w := Int64.logor !w (Int64.shift_left imm_masked 18);
+    w := Int64.logor !w (Int64.shift_left (Int64.logand extra_bits 0x3FFFL) 50);
     let mask = Int64.of_int32 (key_for_offset key_seed !cur_idx) in
     incr cur_idx;
     let masked_w = Int64.logxor !w mask in
     bytecode := masked_w :: !bytecode
   in
 
-  (* Encode instructions *)
+  (* Encode instructions (both Fused Super-Operators and Standard Raw Ops) *)
   List.iter
     (fun (b : Ir.basic_block) ->
+      let ops = Hashtbl.find block_fused_ops b.id in
       List.iter
-        (fun instr ->
-          match instr with
-          | Ir.Nop -> encode_raw_word (get_opcode OP_NOP) 0 0 0L
-          | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->
-              encode_raw_word (get_opcode OP_MOV_RR) (reg_to_index d) (reg_to_index s) 0L
-          | Ir.Mov { dst = Ir.Reg d; src = Ir.Imm imm } ->
-              encode_raw_word (get_opcode OP_MOV_RI) (reg_to_index d) 0 imm
-          | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-              encode_raw_word (get_opcode OP_ADD_RR) (reg_to_index d) (reg_to_index s) 0L
-          | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-              encode_raw_word (get_opcode OP_ADD_RI) (reg_to_index d) 0 imm
-          | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-              encode_raw_word (get_opcode OP_SUB_RR) (reg_to_index d) (reg_to_index s) 0L
-          | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-              encode_raw_word (get_opcode OP_SUB_RI) (reg_to_index d) 0 imm
-          | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-              encode_raw_word (get_opcode OP_IMUL_RR) (reg_to_index d) (reg_to_index s) 0L
-          | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-              encode_raw_word (get_opcode OP_IMUL_RI) (reg_to_index d) 0 imm
-          | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-              encode_raw_word (get_opcode OP_XOR_RR) (reg_to_index d) (reg_to_index s) 0L
-          | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-              encode_raw_word (get_opcode OP_XOR_RI) (reg_to_index d) 0 imm
-          | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-              encode_raw_word (get_opcode OP_AND_RR) (reg_to_index d) (reg_to_index s) 0L
-          | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-              encode_raw_word (get_opcode OP_AND_RI) (reg_to_index d) 0 imm
-          | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-              encode_raw_word (get_opcode OP_OR_RR) (reg_to_index d) (reg_to_index s) 0L
-          | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-              encode_raw_word (get_opcode OP_OR_RI) (reg_to_index d) 0 imm
-
-          | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg s } ->
-              encode_raw_word (get_opcode OP_CMP_RR) (reg_to_index d) (reg_to_index s) 0L
-          | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
-              encode_raw_word (get_opcode OP_CMP_RI) (reg_to_index d) 0 imm
-          | Ir.Push (Ir.Reg d) ->
-              encode_raw_word (get_opcode OP_PUSH_R) (reg_to_index d) 0 0L
-          | Ir.Pop (Ir.Reg d) ->
-              encode_raw_word (get_opcode OP_POP_R) (reg_to_index d) 0 0L
-          | Ir.Jmp (Ir.BlockId bid) ->
-              encode_raw_word (get_opcode OP_JMP) 0 0 (Int64.of_int (get_block_offset bid))
-          | Ir.Jcc { cond; target_true = Ir.BlockId tid; target_false = Ir.BlockId fid } ->
-              let c = cond_to_code cond in
-              let t_off = get_block_offset tid in
-              let f_off = get_block_offset fid in
-              let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int t_off) 4) in
-              let imm = Int64.logor imm (Int64.shift_left (Int64.of_int f_off) 14) in
-              encode_raw_word (get_opcode OP_JCC) 0 0 imm
-          | Ir.Cmov { cond; dst; src = Ir.Reg s } ->
-              encode_raw_word (get_opcode OP_CMOV) (reg_to_index dst) (reg_to_index s) (Int64.of_int (cond_to_code cond))
-          | Ir.Ret -> encode_raw_word (get_opcode OP_RET) 0 0 0L
-          | Ir.Vm_exit -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
-          | _ -> encode_raw_word (get_opcode OP_NOP) 0 0 0L)
-        b.instrs)
+        (function
+          | Fused_Mov_Add { dst; src; imm } ->
+              encode_raw_word (get_opcode OP_FUSED_MOV_ADD_RRI) (reg_to_index dst) (reg_to_index src) imm
+          | Fused_Add_Imul { dst; src; imm } ->
+              encode_raw_word (get_opcode OP_FUSED_ADD_IMUL_RRI) (reg_to_index dst) (reg_to_index src) imm
+          | Fused_Add_Xor { dst; src; imm } ->
+              encode_raw_word (get_opcode OP_FUSED_ADD_XOR_RRI) (reg_to_index dst) (reg_to_index src) imm
+          | Fused_Sub_Xor { dst; src; imm } ->
+              encode_raw_word (get_opcode OP_FUSED_SUB_XOR_RRI) (reg_to_index dst) (reg_to_index src) imm
+          | Fused_Xor_Add { dst; src; imm } ->
+              encode_raw_word (get_opcode OP_FUSED_XOR_ADD_RRI) (reg_to_index dst) (reg_to_index src) imm
+          | Fused_Cmp_Cmov { cmp_dst = _; cmp_imm; cond; cmov_dst; cmov_src } ->
+              encode_raw_word ~extra_bits:(Int64.of_int (cond_to_code cond))
+                (get_opcode OP_FUSED_CMP_CMOV) (reg_to_index cmov_dst) (reg_to_index cmov_src) cmp_imm
+          | Raw instr -> (
+              match instr with
+              | Ir.Nop -> encode_raw_word (get_opcode OP_NOP) 0 0 0L
+              | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->
+                  encode_raw_word (get_opcode OP_MOV_RR) (reg_to_index d) (reg_to_index s) 0L
+              | Ir.Mov { dst = Ir.Reg d; src = Ir.Imm imm } ->
+                  encode_raw_word (get_opcode OP_MOV_RI) (reg_to_index d) 0 imm
+              | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+                  encode_raw_word (get_opcode OP_ADD_RR) (reg_to_index d) (reg_to_index s) 0L
+              | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word (get_opcode OP_ADD_RI) (reg_to_index d) 0 imm
+              | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+                  encode_raw_word (get_opcode OP_SUB_RR) (reg_to_index d) (reg_to_index s) 0L
+              | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word (get_opcode OP_SUB_RI) (reg_to_index d) 0 imm
+              | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+                  encode_raw_word (get_opcode OP_IMUL_RR) (reg_to_index d) (reg_to_index s) 0L
+              | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word (get_opcode OP_IMUL_RI) (reg_to_index d) 0 imm
+              | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+                  encode_raw_word (get_opcode OP_XOR_RR) (reg_to_index d) (reg_to_index s) 0L
+              | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word (get_opcode OP_XOR_RI) (reg_to_index d) 0 imm
+              | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+                  encode_raw_word (get_opcode OP_AND_RR) (reg_to_index d) (reg_to_index s) 0L
+              | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word (get_opcode OP_AND_RI) (reg_to_index d) 0 imm
+              | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+                  encode_raw_word (get_opcode OP_OR_RR) (reg_to_index d) (reg_to_index s) 0L
+              | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word (get_opcode OP_OR_RI) (reg_to_index d) 0 imm
+              | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg s } ->
+                  encode_raw_word (get_opcode OP_CMP_RR) (reg_to_index d) (reg_to_index s) 0L
+              | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
+                  encode_raw_word (get_opcode OP_CMP_RI) (reg_to_index d) 0 imm
+              | Ir.Push (Ir.Reg d) ->
+                  encode_raw_word (get_opcode OP_PUSH_R) (reg_to_index d) 0 0L
+              | Ir.Pop (Ir.Reg d) ->
+                  encode_raw_word (get_opcode OP_POP_R) (reg_to_index d) 0 0L
+              | Ir.Jmp (Ir.BlockId bid) ->
+                  encode_raw_word (get_opcode OP_JMP) 0 0 (Int64.of_int (get_block_offset bid))
+              | Ir.Jcc { cond; target_true = Ir.BlockId tid; target_false = Ir.BlockId fid } ->
+                  let c = cond_to_code cond in
+                  let t_off = get_block_offset tid in
+                  let f_off = get_block_offset fid in
+                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int t_off) 4) in
+                  let imm = Int64.logor imm (Int64.shift_left (Int64.of_int f_off) 14) in
+                  encode_raw_word (get_opcode OP_JCC) 0 0 imm
+              | Ir.Cmov { cond; dst; src = Ir.Reg s } ->
+                  encode_raw_word (get_opcode OP_CMOV) (reg_to_index dst) (reg_to_index s) (Int64.of_int (cond_to_code cond))
+              | Ir.Ret -> encode_raw_word (get_opcode OP_RET) 0 0 0L
+              | Ir.Vm_exit -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
+              | _ -> encode_raw_word (get_opcode OP_NOP) 0 0 0L))
+        ops)
     sorted_blocks;
 
   let final_bytecode = List.rev !bytecode in
   let cpp_src = emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler in
   let runner_src = emit_runner_cpp final_bytecode in
-
-
 
   let decoy_count = 256 - List.length all_op_kinds in
   let mba_nodes = if enable_mba then mba_depth * 15 else 0 in
@@ -491,3 +611,4 @@ let compile_and_package
     runner_source = runner_src;
     metrics;
   }
+
