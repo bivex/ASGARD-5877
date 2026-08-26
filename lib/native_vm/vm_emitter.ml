@@ -89,13 +89,13 @@ let shuffle_array rng arr =
 let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
-  Buffer.add_string b "#include <cstdint>\n#include <cstddef>\n#include <array>\n#include <vector>\n#include <iostream>\n#include <iomanip>\n\n";
+  Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n";
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
 
   (* Key Derivation for Bytecode Offset *)
-  Buffer.add_string b "inline uint32_t key_for_offset(uint32_t seed, size_t offset) noexcept {\n";
-  Buffer.add_string b "    uint64_t x = static_cast<uint64_t>(seed) ^ (static_cast<uint64_t>(offset) * 0x9E3779B97F4A7C15ULL);\n";
-  Buffer.add_string b "    uint32_t x32 = static_cast<uint32_t>(x);\n";
+  Buffer.add_string b "static inline uint32_t key_for_offset(uint32_t seed, size_t offset) noexcept {\n";
+  Buffer.add_string b "    uint64_t x = (uint64_t)seed ^ ((uint64_t)offset * 0x9E3779B97F4A7C15ULL);\n";
+  Buffer.add_string b "    uint32_t x32 = (uint32_t)x;\n";
   Buffer.add_string b "    x32 ^= x32 << 13;\n";
   Buffer.add_string b "    x32 ^= x32 >> 17;\n";
   Buffer.add_string b "    x32 ^= x32 << 5;\n";
@@ -104,20 +104,18 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
 
   (* VMContext *)
   Buffer.add_string b "struct VMContext {\n";
-  Buffer.add_string b "    alignas(16) std::array<uint64_t, 32> gprs{}; // 0..15: GPRs, 16..19: VTMPs, 20: vIP, 21: vSP\n";
-  Buffer.add_string b "    std::vector<uint64_t> stack;\n";
-  Buffer.add_string b "    bool cf{false}, zf{false}, sf{false}, of{false};\n";
-  Buffer.add_string b "    bool trapped{false};\n";
-  Buffer.add_string b "    size_t executed_instructions{0};\n\n";
-  Buffer.add_string b "    inline void push(uint64_t v) { stack.push_back(v); }\n";
-  Buffer.add_string b "    inline uint64_t pop() {\n";
-  Buffer.add_string b "        if (stack.empty()) return 0;\n";
-  Buffer.add_string b "        uint64_t v = stack.back(); stack.pop_back(); return v;\n";
-  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    uint64_t gprs[32]; // 0..15: GPRs, 16..19: VTMPs, 20: vIP, 21: vSP\n";
+  Buffer.add_string b "    uint64_t stack[512];\n";
+  Buffer.add_string b "    size_t sp;\n";
+  Buffer.add_string b "    bool cf, zf, sf, of;\n";
+  Buffer.add_string b "    bool trapped;\n";
+  Buffer.add_string b "    size_t executed_instructions;\n\n";
+  Buffer.add_string b "    inline void push(uint64_t v) noexcept { if (sp < 512) stack[sp++] = v; }\n";
+  Buffer.add_string b "    inline uint64_t pop() noexcept { return sp > 0 ? stack[--sp] : 0ULL; }\n";
   Buffer.add_string b "};\n\n";
 
   (* Helper condition check *)
-  Buffer.add_string b "inline bool eval_condition(const VMContext& ctx, uint8_t cond) noexcept {\n";
+  Buffer.add_string b "static inline bool eval_condition(const VMContext& ctx, uint8_t cond) noexcept {\n";
   Buffer.add_string b "    switch (cond) {\n";
   Buffer.add_string b "        case 0: return ctx.zf;                         // E\n";
   Buffer.add_string b "        case 1: return !ctx.zf;                        // NE\n";
@@ -136,7 +134,7 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "}\n\n";
 
   (* execute_threaded function *)
-  Buffer.add_string b (Printf.sprintf "inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU) {\n" key_seed);
+  Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU) {\n" key_seed);
   Buffer.add_string b "    const uint64_t* vIP = bytecode;\n";
   Buffer.add_string b "    const uint64_t* vIP_end = bytecode + count;\n\n";
 
@@ -155,13 +153,13 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
 
   Buffer.add_string b "    #define FETCH_NEXT() do { \\\n";
   Buffer.add_string b "        if (vIP >= vIP_end) goto EXIT_VM; \\\n";
-  Buffer.add_string b "        size_t off = static_cast<size_t>(vIP - bytecode); \\\n";
+  Buffer.add_string b "        size_t off = (size_t)(vIP - bytecode); \\\n";
   Buffer.add_string b "        uint32_t k = key_for_offset(seed, off); \\\n";
-  Buffer.add_string b "        word = *vIP++ ^ static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(k))); \\\n";
-  Buffer.add_string b "        op = static_cast<uint8_t>(word & 0xFF); \\\n";
-  Buffer.add_string b "        dst = static_cast<uint8_t>((word >> 8) & 0x1F); \\\n";
-  Buffer.add_string b "        src = static_cast<uint8_t>((word >> 13) & 0x1F); \\\n";
-  Buffer.add_string b "        imm = static_cast<int64_t>(static_cast<int32_t>((word >> 18) & 0xFFFFFFFFULL)); \\\n";
+  Buffer.add_string b "        word = *vIP++ ^ (uint64_t)((int64_t)((int32_t)k)); \\\n";
+  Buffer.add_string b "        op = (uint8_t)(word & 0xFF); \\\n";
+  Buffer.add_string b "        dst = (uint8_t)((word >> 8) & 0x1F); \\\n";
+  Buffer.add_string b "        src = (uint8_t)((word >> 13) & 0x1F); \\\n";
+  Buffer.add_string b "        imm = (int64_t)((int32_t)((word >> 18) & 0xFFFFFFFFULL)); \\\n";
   Buffer.add_string b "        goto *dispatch_table[op]; \\\n";
   Buffer.add_string b "    } while(0)\n\n";
 
@@ -170,7 +168,7 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   (* Handlers *)
   Buffer.add_string b "    H_NOP: ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_MOV_RR: ctx.gprs[dst] = ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_MOV_RI: ctx.gprs[dst] = static_cast<uint64_t>(imm); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_MOV_RI: ctx.gprs[dst] = (uint64_t)imm; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_ADD_RR: ctx.gprs[dst] += ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_ADD_RI: ctx.gprs[dst] += imm; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_SUB_RR: ctx.gprs[dst] -= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
@@ -181,10 +179,10 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "    H_AND_RR: ctx.gprs[dst] &= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_OR_RR: ctx.gprs[dst] |= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_CMP_RI: {\n";
-  Buffer.add_string b "        uint64_t a = ctx.gprs[dst]; uint64_t b = static_cast<uint64_t>(imm);\n";
+  Buffer.add_string b "        uint64_t a = ctx.gprs[dst]; uint64_t b = (uint64_t)imm;\n";
   Buffer.add_string b "        uint64_t res = a - b;\n";
   Buffer.add_string b "        ctx.zf = (res == 0);\n";
-  Buffer.add_string b "        ctx.sf = (static_cast<int64_t>(res) < 0);\n";
+  Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
   Buffer.add_string b "        ctx.cf = (a < b);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -192,7 +190,7 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "        uint64_t a = ctx.gprs[dst]; uint64_t b = ctx.gprs[src];\n";
   Buffer.add_string b "        uint64_t res = a - b;\n";
   Buffer.add_string b "        ctx.zf = (res == 0);\n";
-  Buffer.add_string b "        ctx.sf = (static_cast<int64_t>(res) < 0);\n";
+  Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
   Buffer.add_string b "        ctx.cf = (a < b);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -203,14 +201,14 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_JCC: {\n";
-  Buffer.add_string b "        uint8_t cond = static_cast<uint8_t>((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        uint16_t t_true = static_cast<uint16_t>((word >> 22) & 0x3FF);\n";
-  Buffer.add_string b "        uint16_t t_false = static_cast<uint16_t>((word >> 32) & 0x3FF);\n";
+  Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
+  Buffer.add_string b "        uint16_t t_true = (uint16_t)((word >> 22) & 0x3FF);\n";
+  Buffer.add_string b "        uint16_t t_false = (uint16_t)((word >> 32) & 0x3FF);\n";
   Buffer.add_string b "        vIP = bytecode + (eval_condition(ctx, cond) ? t_true : t_false);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMOV: {\n";
-  Buffer.add_string b "        uint8_t cond = static_cast<uint8_t>((word >> 18) & 0x0F);\n";
+  Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
   Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.gprs[dst] = ctx.gprs[src];\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -218,7 +216,6 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "    H_EXIT: ctx.executed_instructions++; goto EXIT_VM;\n\n";
 
   Buffer.add_string b "    H_DECOY:\n";
-  Buffer.add_string b "        std::cerr << \"[VANGUARD-TRAP] Decoy trap triggered! Trapping VM.\\n\";\n";
   Buffer.add_string b "        ctx.trapped = true;\n";
   Buffer.add_string b "        goto EXIT_VM;\n\n";
 
@@ -231,7 +228,7 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
 let emit_runner_cpp bytecode =
   let b = Buffer.create 2048 in
   Buffer.add_string b "#include \"threaded_vm.hpp\"\n";
-  Buffer.add_string b "#include <fstream>\n#include <iostream>\n#include <vector>\n\n";
+  Buffer.add_string b "#include <stdio.h>\n#include <stdlib.h>\n\n";
   Buffer.add_string b "/* Self-contained embedded encrypted bytecode */\n";
   Buffer.add_string b "static const uint64_t embedded_bytecode[] = {\n";
   List.iter
@@ -242,29 +239,34 @@ let emit_runner_cpp bytecode =
   Buffer.add_string b "int main(int argc, char** argv) {\n";
   Buffer.add_string b "    const uint64_t* bc_ptr = embedded_bytecode;\n";
   Buffer.add_string b "    size_t bc_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);\n";
-  Buffer.add_string b "    std::vector<uint64_t> override_words;\n\n";
+  Buffer.add_string b "    uint64_t* heap_bc = NULL;\n\n";
   Buffer.add_string b "    if (argc >= 2) {\n";
-  Buffer.add_string b "        std::ifstream file(argv[1], std::ios::binary);\n";
-  Buffer.add_string b "        if (file.is_open()) {\n";
-  Buffer.add_string b "            uint64_t w;\n";
-  Buffer.add_string b "            while (file.read(reinterpret_cast<char*>(&w), sizeof(w))) {\n";
-  Buffer.add_string b "                override_words.push_back(w);\n";
+  Buffer.add_string b "        FILE* f = fopen(argv[1], \"rb\");\n";
+  Buffer.add_string b "        if (f) {\n";
+  Buffer.add_string b "            fseek(f, 0, SEEK_END);\n";
+  Buffer.add_string b "            long sz = ftell(f);\n";
+  Buffer.add_string b "            fseek(f, 0, SEEK_SET);\n";
+  Buffer.add_string b "            if (sz > 0 && (sz % 8) == 0) {\n";
+  Buffer.add_string b "                size_t count = (size_t)sz / 8;\n";
+  Buffer.add_string b "                heap_bc = (uint64_t*)malloc((size_t)sz);\n";
+  Buffer.add_string b "                if (heap_bc && fread(heap_bc, 8, count, f) == count) {\n";
+  Buffer.add_string b "                    bc_ptr = heap_bc;\n";
+  Buffer.add_string b "                    bc_len = count;\n";
+  Buffer.add_string b "                }\n";
   Buffer.add_string b "            }\n";
-  Buffer.add_string b "            bc_ptr = override_words.data();\n";
-  Buffer.add_string b "            bc_len = override_words.size();\n";
+  Buffer.add_string b "            fclose(f);\n";
   Buffer.add_string b "        }\n";
   Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    vanguard_threaded_vm::VMContext ctx;\n";
+  Buffer.add_string b "    vanguard_threaded_vm::VMContext ctx = {};\n";
   Buffer.add_string b "    bool ok = vanguard_threaded_vm::execute_threaded(ctx, bc_ptr, bc_len);\n";
-  Buffer.add_string b "    if (!ok) {\n";
-  Buffer.add_string b "        std::cerr << \"[VM] Execution failed / trapped!\\n\";\n";
-  Buffer.add_string b "        return 2;\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    std::cout << \"[VM] Execution SUCCESS! Verified \" << ctx.executed_instructions\n";
-  Buffer.add_string b "              << \" instructions. RAX: \" << ctx.gprs[0] << \"\\n\";\n";
+  Buffer.add_string b "    if (heap_bc) free(heap_bc);\n\n";
+  Buffer.add_string b "    if (!ok) return 2;\n";
+  Buffer.add_string b "    printf(\"[VM] Execution SUCCESS! Verified %zu instructions. RAX: %llu\\n\",\n";
+  Buffer.add_string b "           ctx.executed_instructions, (unsigned long long)ctx.gprs[0]);\n";
   Buffer.add_string b "    return 0;\n";
   Buffer.add_string b "}\n";
   Buffer.contents b
+
 
 
 let compile_and_package

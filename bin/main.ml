@@ -410,8 +410,8 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
 
         if compile_and_run then begin
           let bin_path = Filename.concat out_dir "protected_runner" in
-          let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" out_dir runner_path bin_path in
-          Printf.printf "\n[1/2] Compiling Native Direct Threaded VM with clang++ -O2...\n";
+          let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -fvisibility-inlines-hidden -Wl,-dead_strip -Wl,-x -I%s %s -o %s && strip -x %s" out_dir runner_path bin_path bin_path in
+          Printf.printf "\n[1/2] Compiling Native Direct Threaded VM (Zero-Bloat / Stripped) with clang++ -O3...\n";
           let comp_status = Sys.command comp_cmd in
           if comp_status <> 0 then begin
             prerr_endline "Native compilation failed";
@@ -419,12 +419,13 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
           end else begin
             Printf.printf "[2/2] Launching Protected Binary in Threaded VM:\n";
             Printf.printf "--------------------------------------------------------\n";
-            let run_cmd = Printf.sprintf "%s %s" bin_path bc_path in
+            let run_cmd = Printf.sprintf "%s" bin_path in
             let _ = Sys.command run_cmd in
             Printf.printf "--------------------------------------------------------\n\n";
             `Ok ()
           end
         end else `Ok ()
+
   end
 
 let protect_cmd =
