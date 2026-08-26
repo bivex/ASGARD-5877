@@ -202,11 +202,14 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
   Buffer.add_string b "    }\n";
   Buffer.add_string b "}\n\n";
 
-  (* execute_threaded function *)
+  (* execute_threaded function with Ephemeral Self-Consuming Bytecode *)
   Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU) {\n" key_seed);
   Buffer.add_string b "    if (ctx.reg_mask == 0) ctx.init(seed);\n";
-  Buffer.add_string b "    const uint64_t* vIP = bytecode;\n";
-  Buffer.add_string b "    const uint64_t* vIP_end = bytecode + count;\n\n";
+  Buffer.add_string b "    /* Ephemeral Working Buffer: Isolated stack frame execution */\n";
+  Buffer.add_string b "    uint64_t stack_buf[256];\n";
+  Buffer.add_string b "    uint64_t* work_bc = (count <= 256) ? stack_buf : (uint64_t*)__builtin_alloca(count * sizeof(uint64_t));\n";
+  Buffer.add_string b "    for (size_t i = 0; i < count; ++i) work_bc[i] = bytecode[i];\n\n";
+  Buffer.add_string b "    size_t vIP_idx = 0;\n\n";
 
   Buffer.add_string b "    static const void* const dispatch_table[256] = {\n";
   for i = 0 to 255 do
@@ -222,10 +225,12 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
   Buffer.add_string b "    int64_t imm = 0;\n\n";
 
   Buffer.add_string b "    #define FETCH_NEXT() do { \\\n";
-  Buffer.add_string b "        if (vIP >= vIP_end) goto EXIT_VM; \\\n";
-  Buffer.add_string b "        size_t off = (size_t)(vIP - bytecode); \\\n";
-  Buffer.add_string b "        uint32_t k = key_for_offset(seed, off); \\\n";
-  Buffer.add_string b "        word = *vIP++ ^ (uint64_t)((int64_t)((int32_t)k)); \\\n";
+  Buffer.add_string b "        if (vIP_idx >= count) goto EXIT_VM; \\\n";
+  Buffer.add_string b "        uint32_t k = key_for_offset(seed, vIP_idx); \\\n";
+  Buffer.add_string b "        word = bytecode[vIP_idx] ^ (uint64_t)((int64_t)((int32_t)k)); \\\n";
+  Buffer.add_string b "        /* Ephemeral Self-Consuming: Overwrite scratch RAM buffer with rolling noise */ \\\n";
+  Buffer.add_string b "        work_bc[vIP_idx] = ((uint64_t)k * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL; \\\n";
+  Buffer.add_string b "        vIP_idx++; \\\n";
   Buffer.add_string b "        op = (uint8_t)(word & 0xFF); \\\n";
   Buffer.add_string b "        dst = (uint8_t)((word >> 8) & 0x1F); \\\n";
   Buffer.add_string b "        src = (uint8_t)((word >> 13) & 0x1F); \\\n";
@@ -297,14 +302,14 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
   Buffer.add_string b "    H_PUSH_R: ctx.push(ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_POP_R: ctx.set_reg(dst, ctx.pop()); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_JMP: {\n";
-  Buffer.add_string b "        vIP = bytecode + imm;\n";
+  Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_JCC: {\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
   Buffer.add_string b "        uint16_t t_true = (uint16_t)((word >> 22) & 0x3FF);\n";
   Buffer.add_string b "        uint16_t t_false = (uint16_t)((word >> 32) & 0x3FF);\n";
-  Buffer.add_string b "        vIP = bytecode + (eval_condition(ctx, cond) ? t_true : t_false);\n";
+  Buffer.add_string b "        vIP_idx = eval_condition(ctx, cond) ? (size_t)t_true : (size_t)t_false;\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMOV: {\n";
@@ -314,6 +319,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_RET: case_ret: ctx.executed_instructions++; goto EXIT_VM;\n";
   Buffer.add_string b "    H_EXIT: ctx.executed_instructions++; goto EXIT_VM;\n\n";
+
 
   (* Super-Operators (Fused Instruction Handlers - TODD PROEBSTING SOTA) *)
   Buffer.add_string b "    H_FUSED_MOV_ADD_RRI: {\n";
@@ -359,10 +365,15 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
 
 
   Buffer.add_string b "    EXIT_VM:\n";
+  Buffer.add_string b "    /* Ephemeral Complete Memory Sanitization: Scrub all working memory */\n";
+  Buffer.add_string b "    for (size_t i = 0; i < count; ++i) {\n";
+  Buffer.add_string b "        work_bc[i] = 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed + (uint64_t)i);\n";
+  Buffer.add_string b "    }\n";
   Buffer.add_string b "    return !ctx.trapped;\n";
   Buffer.add_string b "}\n\n";
   Buffer.add_string b "} // namespace vanguard_threaded_vm\n";
   Buffer.contents b
+
 
 
 let emit_runner_cpp ~reg_perm bytecode =
