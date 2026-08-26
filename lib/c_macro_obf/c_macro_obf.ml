@@ -67,18 +67,24 @@ let generate_header ?(config = default_config) () =
   add ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\");
   add "    static const uint8_t _enc[] = enc_bytes; \\";
   add "    char* _buf = (char*)__builtin_alloca((len) + 1); \\";
+  add "    volatile uint32_t _vkey = (uint32_t)(key); \\";
+  add "    volatile const uint8_t* _venc = _enc; \\";
   add "    for (size_t _i = 0; _i < (size_t)(len); ++_i) { \\";
-  add "        uint8_t _k = (uint8_t)(((uint32_t)(key) ^ (uint32_t)(_i * 0x5DU)) & 0xFFU); \\";
-  add "        _buf[_i] = (char)(_enc[_i] ^ _k); \\";
+  add "        uint8_t _k = (uint8_t)((_vkey ^ (uint32_t)(_i * 0x5DU)) & 0xFFU); \\";
+  add "        _buf[_i] = (char)(_venc[_i] ^ _k); \\";
   add "    } \\";
   add "    _buf[len] = '\\0'; \\";
+  add "    __asm__ volatile(\"\" : \"+r\"(_buf) : : \"memory\"); \\";
   add "    _buf; \\";
   add "})";
+
   add "#else";
   add ("static " ^ p ^ "INLINE char* " ^ p ^ "decrypt_str(char* buf, const uint8_t* enc, size_t len, uint32_t key) {");
+  add "    volatile uint32_t vkey = key;";
+  add "    volatile const uint8_t* venc = enc;";
   add "    for (size_t i = 0; i < len; ++i) {";
-  add "        uint8_t k = (uint8_t)((key ^ (uint32_t)(i * 0x5DU)) & 0xFFU);";
-  add "        buf[i] = (char)(enc[i] ^ k);";
+  add "        uint8_t k = (uint8_t)((vkey ^ (uint32_t)(i * 0x5DU)) & 0xFFU);";
+  add "        buf[i] = (char)(venc[i] ^ k);";
   add "    }";
   add "    buf[len] = '\\0';";
   add "    return buf;";
@@ -375,8 +381,8 @@ let generate_header ?(config = default_config) () =
   add ("    sa.sa_sigaction = " ^ p ^ "signal_dispatcher_handler;");
   add "    sa.sa_flags = SA_SIGINFO;";
   add "    sigemptyset(&sa.sa_mask);";
-  add "    sigaction(SIGFPE, &sa, (void*)0);";
-  add "    sigaction(SIGILL, &sa, (void*)0);";
+  add "    sigaction(SIGFPE, &sa, NULL);";
+  add "    sigaction(SIGILL, &sa, NULL);";
   add "}";
   add "";
   add ("#define " ^ p ^ "SIG_DISPATCH_SETUP() " ^ p ^ "install_signal_dispatcher()");
@@ -476,8 +482,9 @@ let generate_header ?(config = default_config) () =
   add ("    sa.sa_sigaction = " ^ p ^ "nanomite_trap_handler;");
   add "    sa.sa_flags = SA_SIGINFO;";
   add "    sigemptyset(&sa.sa_mask);";
-  add "    sigaction(SIGTRAP, &sa, (void*)0);";
+  add "    sigaction(SIGTRAP, &sa, NULL);";
   add "}";
+
   add "";
   add ("#define " ^ p ^ "NANOMITE_INIT() " ^ p ^ "install_nanomites()");
   add ("#define " ^ p ^ "NANOMITE_REGISTER(id, t_true, t_false, key) " ^ p ^ "register_nanomite((id), (uintptr_t)(t_true), (uintptr_t)(t_false), (uint32_t)(key))");

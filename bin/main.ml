@@ -683,35 +683,84 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
           let text = really_input_string ic len in
           close_in ic;
 
+          let is_virtualized = ref false in
           (match X86_lifter.X86_parser.parse_lines text with
           | Ok lines ->
-              let regions = X86_lifter.Lifter.extract_marked_regions lines in
+              let regions = X86_lifter.Lifter.extract_marked_regions ~require_markers:true lines in
               if regions <> [] then begin
+
                 total_markers := !total_markers + List.length regions;
-                List.iter
-                  (fun (_mode, rlines) ->
+                let vm_src_buf = Buffer.create 4096 in
+                Buffer.add_string vm_src_buf "#include \"threaded_vm.hpp\"\n#include \"asgard_obf.h\"\n#include <stdint.h>\n#include <stdbool.h>\n\n";
+
+                let region_success = ref false in
+                List.iteri
+                  (fun r_idx (_mode, rlines) ->
                     match X86_lifter.Lifter.lift_lines rlines with
                     | Ok func ->
-                        let _pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~enable_cff ~enable_mba ~mba_depth func in
-                        ()
+                        let clean_name =
+                          let n = func.name in
+                          if String.starts_with ~prefix:"_" n then String.sub n 1 (String.length n - 1) else n
+                        in
+                        let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~enable_cff ~enable_mba ~mba_depth func in
+                        let vm_hdr_path = Filename.concat build_dir "threaded_vm.hpp" in
+                        let oc_h = open_out vm_hdr_path in
+                        output_string oc_h pkg.cpp_runtime_source;
+                        close_out oc_h;
+
+                        Buffer.add_string vm_src_buf (Printf.sprintf "static const uint64_t embedded_bc_%s_%d[] = {\n" clean_name r_idx);
+                        List.iter
+                          (fun w -> Buffer.add_string vm_src_buf (Printf.sprintf "    0x%016LXULL,\n" w))
+                          pkg.bytecode;
+                        Buffer.add_string vm_src_buf "};\n\n";
+
+                        Buffer.add_string vm_src_buf (Printf.sprintf "extern \"C\" uint64_t %s(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4) {\n" clean_name);
+                        Buffer.add_string vm_src_buf "    vanguard_threaded_vm::VMContext ctx = {};\n";
+                        Buffer.add_string vm_src_buf "    ctx.init();\n";
+                        Buffer.add_string vm_src_buf "    ctx.set_rdi(a1);\n";
+                        Buffer.add_string vm_src_buf "    ctx.set_rsi(a2);\n";
+                        Buffer.add_string vm_src_buf "    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a3);\n";
+                        Buffer.add_string vm_src_buf "    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a4);\n";
+                        Buffer.add_string vm_src_buf (Printf.sprintf "    vanguard_threaded_vm::execute_threaded(ctx, embedded_bc_%s_%d, sizeof(embedded_bc_%s_%d)/sizeof(embedded_bc_%s_%d[0]));\n" clean_name r_idx clean_name r_idx clean_name r_idx);
+                        Buffer.add_string vm_src_buf "    return ctx.get_rax();\n";
+                        Buffer.add_string vm_src_buf "}\n\n";
+                        region_success := true
                     | Error _ -> ())
                   regions;
 
-                Printf.printf "  -> Protected %d marked region(s) (CFF: %s, MBA: %s, Depth: %d)\n"
-                  (List.length regions)
-                  (if enable_cff then "ON" else "OFF")
-                  (if enable_mba then "ON" else "OFF")
-                  mba_depth
+                if !region_success then begin
+                  let vm_cpp_path = Filename.concat build_dir (base ^ "_vm.cpp") in
+                  let oc_v = open_out vm_cpp_path in
+                  output_string oc_v (Buffer.contents vm_src_buf);
+                  close_out oc_v;
+
+                  let obj_out = Filename.concat build_dir (base ^ ".o") in
+                  let comp_obj_cmd = Printf.sprintf "clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden %s -c %s -o %s" inc_flags vm_cpp_path obj_out in
+                  let st = Sys.command comp_obj_cmd in
+                  if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile VM wrapper for %s" in_file)
+                  else (
+                    obj_files := obj_out :: !obj_files;
+                    is_virtualized := true
+                  );
+
+                  Printf.printf "  -> Protected %d marked region(s) (CFF: %s, MBA: %s, Depth: %d)\n"
+                    (List.length regions)
+                    (if enable_cff then "ON" else "OFF")
+                    (if enable_mba then "ON" else "OFF")
+                    mba_depth
+                end
               end
           | Error _ -> ());
 
-
-          let obj_out = Filename.concat build_dir (base ^ ".o") in
-          let comp_obj_cmd = Printf.sprintf "clang -O3 -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden %s -c %s -o %s" inc_flags obf_c_path obj_out in
-          let st = Sys.command comp_obj_cmd in
-          if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile %s" in_file)
-          else obj_files := obj_out :: !obj_files
+          if not !is_virtualized then begin
+            let obj_out = Filename.concat build_dir (base ^ ".o") in
+            let comp_obj_cmd = Printf.sprintf "clang -O3 -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden %s -c %s -o %s" inc_flags obf_c_path obj_out in
+            let st = Sys.command comp_obj_cmd in
+            if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile %s" in_file)
+            else obj_files := obj_out :: !obj_files
+          end
         end else begin
+
 
           let obj_out = Filename.concat build_dir (base ^ ".o") in
           let comp_obj_cmd = Printf.sprintf "clang -c %s -o %s" in_file obj_out in

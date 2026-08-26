@@ -192,7 +192,15 @@ let resolve_cfg_labels (cfg : Ir.cfg) =
 
   Ok { cfg with blocks = resolved_blocks }
 
+let is_func_label lbl =
+  let s = String.lowercase_ascii lbl in
+  not (String.starts_with ~prefix:"ltmp" s
+       || String.starts_with ~prefix:"lbb" s
+       || String.starts_with ~prefix:"." s)
+
+
 let lift_lines ?(options = default_options) raw_lines =
+
   let block_id = ref 0 in
   let current_label = ref options.function_name in
   let current_instrs = ref [] in
@@ -218,6 +226,7 @@ let lift_lines ?(options = default_options) raw_lines =
         if !current_instrs <> [] then flush_block ();
         current_label := lbl;
         process rest
+
     | X86_parser.LineInstr (mnem, ops) :: rest -> (
         match lift_instr mnem ops with
         | Error e -> Error e
@@ -262,11 +271,16 @@ let lift_lines ?(options = default_options) raw_lines =
   done;
 
   let final_blocks = List.rev !patched_blocks in
-  let func = Ir.make_func ~name:options.function_name ~entry_id:0 ~blocks:final_blocks in
+  let detected_name =
+    match final_blocks with
+    | b :: _ when b.label <> "" && is_func_label b.label && b.label <> default_options.function_name -> b.label
+    | _ -> options.function_name
+  in
+  let func = Ir.make_func ~name:detected_name ~entry_id:0 ~blocks:final_blocks in
   resolve_cfg_labels func.cfg
   |> Result.map (fun resolved_cfg -> { func with cfg = resolved_cfg })
 
-let extract_marked_regions raw_lines =
+let extract_marked_regions ?(require_markers = false) raw_lines =
   let has_markers =
     List.exists
       (function
@@ -275,27 +289,37 @@ let extract_marked_regions raw_lines =
       raw_lines
   in
   if not has_markers then
-    [ (X86_parser.ModeUltra "main", raw_lines) ]
+    if require_markers then []
+    else [ (X86_parser.ModeUltra "main", raw_lines) ]
   else
     let regions = ref [] in
     let current_mode = ref None in
     let current_lines = ref [] in
+    let last_label = ref "main" in
 
     List.iter
       (function
+        | X86_parser.LineLabel lbl ->
+            if !current_mode = None then (
+              if is_func_label lbl then last_label := lbl
+            ) else (
+              current_lines := X86_parser.LineLabel lbl :: !current_lines
+            )
+
         | X86_parser.LineMarkerBegin mode ->
-            current_mode := Some mode;
+            current_mode := Some (mode, !last_label);
             current_lines := []
         | X86_parser.LineMarkerEnd -> (
             match !current_mode with
-            | Some m ->
-                regions := (m, List.rev !current_lines) :: !regions;
+            | Some (m, fn_lbl) ->
+                regions := (m, X86_parser.LineLabel fn_lbl :: List.rev !current_lines) :: !regions;
                 current_mode := None;
                 current_lines := []
             | None -> ())
         | line ->
             if !current_mode <> None then
               current_lines := line :: !current_lines)
+
       raw_lines;
 
     if !regions = [] then
@@ -306,4 +330,5 @@ let extract_marked_regions raw_lines =
 let lift_function ?options text =
   let* raw_lines = X86_parser.parse_lines text in
   lift_lines ?options raw_lines
+
 
