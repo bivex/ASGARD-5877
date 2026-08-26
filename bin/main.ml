@@ -384,7 +384,7 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
         | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
 
         let asm_out = Filename.concat out_dir "app.s" in
-        let gen_asm_cmd = Printf.sprintf "clang -S -target x86_64-apple-darwin -masm=intel -O1 -fno-stack-protector -I%s -fno-asynchronous-unwind-tables %s -o %s" out_dir obf_c_path asm_out in
+        let gen_asm_cmd = Printf.sprintf "clang -S -target x86_64-apple-darwin -masm=intel -O1 -fno-stack-protector -Wno-format-security -I%s -fno-asynchronous-unwind-tables %s -o %s" out_dir obf_c_path asm_out in
         let _ = Sys.command gen_asm_cmd in
         asm_out
 
@@ -455,8 +455,9 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
         if compile_and_run then begin
           let bin_path = Filename.concat out_dir (if is_c_src then "protected_app" else "protected_runner") in
           let comp_src = if is_c_src then Filename.concat out_dir "app_obf.c" else runner_path in
-          let compiler = if is_c_src then "clang -O3" else "clang++ -std=c++20 -O3 -fvisibility-inlines-hidden" in
+          let compiler = if is_c_src then "clang -O3 -Wno-format-security" else "clang++ -std=c++20 -O3 -Wno-format-security -fvisibility-inlines-hidden" in
           let comp_cmd = Printf.sprintf "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x -I%s %s -o %s && strip -x %s" compiler out_dir comp_src bin_path bin_path in
+
           Printf.printf "\n[1/2] Compiling Native Protected Binary (Zero-Bloat / Stripped) with %s...\n" (if is_c_src then "clang -O3" else "clang++ -O3");
           let comp_status = Sys.command comp_cmd in
           if comp_status <> 0 then begin

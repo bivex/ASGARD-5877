@@ -51,20 +51,22 @@ let parse_cmovcc_mnemonic mnem =
 
 let lift_instr mnem ops =
   match mnem, ops with
-  | "nop", [] -> Ok [ Ir.Nop ]
+  | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align"), _ -> Ok [ Ir.Nop ]
   | "ret", [] -> Ok [ Ir.Ret ]
   | "vm_enter", [] -> Ok [ Ir.Vm_enter ]
   | "vm_exit", [] -> Ok [ Ir.Vm_exit ]
+
   | "push", [ op ] ->
       let* ir_op = to_ir_operand op in
       Ok [ Ir.Push ir_op ]
   | "pop", [ op ] ->
       let* ir_op = to_ir_operand op in
       Ok [ Ir.Pop ir_op ]
-  | ("mov" | "movzx" | "movsx" | "movsxd"), [ dst; src ] ->
+  | ("mov" | "movabs" | "movzx" | "movsx" | "movsxd"), [ dst; src ] ->
       let* ir_dst = to_ir_operand dst in
       let* ir_src = to_ir_operand src in
       Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
+
 
   | "lea", [ dst; OpMem addr ] -> (
       match dst with
@@ -75,6 +77,16 @@ let lift_instr mnem ops =
       let* ir_a = to_ir_operand a in
       let* ir_b = to_ir_operand b in
       Ok [ Ir.Xchg (ir_a, ir_b) ]
+  | "imul", [ dst; src; imm ] ->
+      let* ir_src = to_ir_operand src in
+      let* ir_imm = to_ir_operand imm in
+      (match dst with
+      | OpReg r ->
+          Ok [
+            Ir.Mov { dst = Ir.Reg r; src = ir_src };
+            Ir.Alu { op = Ir.Imul; dst = r; src1 = Ir.Reg r; src2 = ir_imm; set_flags = true };
+          ]
+      | _ -> Error "3-operand IMUL destination must be a register")
   | ("add" | "adc" | "sub" | "sbb" | "and" | "or" | "xor" | "shl" | "shr" | "sar" | "rol" | "ror" | "imul"), [ dst; src ] ->
       let alu_op = match mnem with
         | "add" -> Ir.Add | "adc" -> Ir.Adc | "sub" -> Ir.Sub | "sbb" -> Ir.Sbb
@@ -96,6 +108,7 @@ let lift_instr mnem ops =
             Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg Register.vtmp0 };
           ]
       | OpImm _ | OpLabel _ -> Error "Destination cannot be immediate or label")
+
   | ("inc" | "dec" | "not" | "neg"), [ dst ] ->
       let un_op = match mnem with
         | "inc" -> Ir.Inc | "dec" -> Ir.Dec | "not" -> Ir.Not | "neg" -> Ir.Neg
