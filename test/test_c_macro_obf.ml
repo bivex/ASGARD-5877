@@ -18,7 +18,10 @@ let test_header_generation () =
   check bool "contains ASG_STR" true (String.length hdr > 500);
   check bool "contains ASG_MBA_ADD" true (contains_sub hdr "ASG_MBA_ADD");
   check bool "contains ASG_OPAQUE_TRUE" true (contains_sub hdr "ASG_OPAQUE_TRUE");
-  check bool "contains ASG_CFF_BEGIN" true (contains_sub hdr "ASG_CFF_BEGIN")
+  check bool "contains ASG_CFF_BEGIN" true (contains_sub hdr "ASG_CFF_BEGIN");
+  check bool "contains ASG_hash_api_str" true (contains_sub hdr "ASG_hash_api_str");
+  check bool "contains ASG_TIMING_GUARD" true (contains_sub hdr "ASG_TIMING_GUARD_START")
+
 
 let test_string_obfuscation () =
   let raw = "Secret_ASGARD_Key_999" in
