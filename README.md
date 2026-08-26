@@ -1,54 +1,41 @@
 # Random Vector ISA (vISA) & Industrial VM-Protector Toolchain in OCaml
 
 [![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4+-orange.svg)](https://ocaml.org)
-[![Build & Tests](https://img.shields.io/badge/Tests-95%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
+[![Build & Tests](https://img.shields.io/badge/Tests-102%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%2F%20DDD-blue.svg)]()
 [![Target Spec](https://img.shields.io/badge/ISA-RISC--V%20Vector%201.0%20%2B%20x86__64-red.svg)](https://github.com/riscv/riscv-v-spec)
 
 A high-assurance, multi-purpose toolchain written in pure **OCaml 5**:
 1. **RISC-V Vector ISA Synthesis**: Deterministic, collision-free vector instruction sets with formal Sail specifications, silicon cost audits, and native CPU emulators (C++20 SIMD & C11 bare-metal).
-2. **Hardened Code Virtualization (VM-Protector)**: Translation of real x86_64 machine code into a randomized, encrypted virtual architecture with Mixed Boolean-Arithmetic (MBA), Control-Flow Flattening (CFF) with opaque predicates, a C++ Direct Threaded Code runtime (Computed GOTO), positional rolling XOR stream encryption, and decoy junk traps.
-3. **C/C++ Preprocessor Macro Obfuscation (`c-obf`)**: Source-level hardening with stack-allocated string encryption (`__builtin_alloca`), constant blinding, MBA macros, and macro-based Control-Flow Flattening.
+2. **Hardened Code Virtualization (VM-Protector)**: Translation of real x86_64 machine code into a randomized, encrypted virtual architecture with Mixed Boolean-Arithmetic (MBA), Control-Flow Flattening (CFF), Super-Operators, Direct Threaded Code runtime (Computed GOTO), Ephemeral Self-Consuming Bytecode, Dead Taint Siphoning, and Hardware Breakpoint / Nanomite probes.
+3. **C/C++ Preprocessor Macro Obfuscation (`c-obf`)**: Source-level hardening with stack-allocated volatile string encryption, API hashing, constant blinding, MBA macros, Exception-based signal jumping, and Nanomite dispatching.
+
 
 ---
 
-## ⚡ Key Capabilities
+## ⚡ Key Capabilities & Protection Matrix
 
-### 1. Hardened x86_64 VM-Protector (`random_visa protect`)
-* **x86_64 $\to$ Turing-Complete VM-IR Lifter**:
-  * Full Intel syntax parsing supporting all 16 64-bit GPRs, 32-bit zero-extension (`eax` zeroing upper bits of `rax`), sub-registers (`ax`, `al`), and SIB memory addressing `[base + index*scale + disp]`.
-  * Automatically lowers complex memory Read-Modify-Write instructions (`add [rsp - 8], 10`) into atomic VM-IR sequences using scratch registers.
-  * Resolves conditional branch fallthrough targets automatically into an explicit Control Flow Graph (CFG).
-* **Lazy Flags Evaluation Engine**:
-  * Real VM-protector style (QEMU/Bochs): computes CF, ZF, SF, OF, PF, AF algebraically on demand from `CC_OP_ADD`, `CC_OP_SUB`, etc., thwarting symbolic execution engines (angr / Triton).
-* **Mixed Boolean-Arithmetic (MBA) Engine**:
-  * Transforms arithmetic operations (`+`, `-`, `^`, `&`, `|`) into undecidable non-linear polynomial expansions (Zhou / Eyrolles identities formally proven in F* 2026.08.23 + Z3 5.0.0).
-* **Control-Flow Flattening (CFF) & Opaque Predicates**:
-  * Destroys CFG topology using Chenxi Wang's flattening algorithm. Replaces conditional jumps with branchless `CMOV` state selectors and centralized state dispatchers.
-  * Injects number-theoretic invariant opaque predicates ($x(x + 1) \pmod 2 == 0$) to induce path explosion in SMT solvers.
-* **Direct Threaded Code C++ Runtime (Computed GOTO)**:
-  * Eliminates central `switch` loops. Handlers jump directly to the next handler using GCC/Clang `goto *dispatch_table[op]`.
-  * Jump-safe positional rolling XOR key stream ($k = \text{PRF}(\text{seed}, \text{offset})$) ensuring every instruction word is positionally encrypted and loop-safe.
-  * Decoy / Junk traps taking up >90% of opcode space: jumping to an unmapped handler traps and halts the VM.
+ASGARD-5877 implements **14+ state-of-the-art protection layers**, combining theoretical compiler transformations with hardware-assisted anti-reverse engineering techniques:
 
-### 2. C/C++ Source-Level Macro Obfuscator (`random_visa c-obf`)
-* **Stack-Allocated String Encryption (`ASG_STR`)**: Replaces plaintext strings with XOR-encrypted compound literals decrypted on stack via `__builtin_alloca` with zero runtime memory leaks.
-* **Multi-Layer MBA Macros**: `#define ASG_MBA_ADD(a, b)`, `ASG_MBA_SUB`, `ASG_MBA_XOR`, `ASG_MBA_AND`, `ASG_MBA_OR`.
-* **Constant Blinding**: Rewrites integer literals into blinded identities: `((c1 ^ k1) + k2) - k2`.
-* **CFF Preprocessor DSL**: State machine macros (`ASG_CFF_BEGIN`, `ASG_CFF_STATE`, `ASG_CFF_NEXT`, `ASG_CFF_EXIT`).
+| # | Protection Vector | Threat Model Addressed | Mechanism & Implementation |
+|---|:---|:---|:---|
+| **1** | **Custom ISA Virtualization** | Static Decompilation (IDA / Hex-Rays / Ghidra) | 100% native x86_64 machine code elimination; lifted into randomized Turing-Complete VM-IR. |
+| **2** | **Multi-Layer Non-Linear MBA** | Algebraic Simplifiers / Theorem Provers (Z3, SMT) | Zhou / Eyrolles polynomial expansions ($d \ge 2$), transforming linear ALU into undecidable systems. |
+| **3** | **Control-Flow Flattening (CFF)** | CFG Recovery & Graph Dominator Analysis | Chenxi Wang dispatcher topology flattening; conditional jumps lowered to branchless `CMOV`. |
+| **4** | **Super-Operators / Instruction Fusion** | Virtual Instruction Trace De-obfuscation | Todd Proebsting fusion patterns (`FUSED_MOV_ADD`, `FUSED_ADD_IMUL`, `FUSED_CMP_CMOV`) collapsing opcodes. |
+| **5** | **Direct Threading / Computed GOTO** | Indirect Branch Tracking & Hardware BTB Sniffing | Zero central `switch` loops; handlers dispatch directly via `&&label` jump tables with PRF key stream. |
+| **6** | **Randomized Register Permutation** | DFG (Data Flow Graph) Data-Dependency Analysis | Bijective permutation $\pi \in S_{32}$ of architectural registers + XOR `reg_mask` blinding. |
+| **7** | **Ephemeral Self-Consuming Bytecode** | Process Memory Dumps (Scylla, CheatEngine, Volatility)| Bytecode memory is continuously overwritten with noise on every fetch; epilogue wipes RAM buffer. |
+| **8** | **Dynamic Junk Bytecode & Taint Siphoning** | Symbolic Execution Engines (angr, Triton, Miasm) | Dead registers (`VTMP2`) with phantom non-linear DFG paths to explode solver constraint search. |
+| **9** | **Virtual Stack Scrambling** | Shadow Stack / Memory Call-Stack Probing | Non-linear affine index permutation ($f(sp) = (sp \cdot 37 + 13) \pmod{256}$) + slot-level dynamic encryption. |
+| **10** | **Bytecode & Section HMAC Integrity** | Breakpoint Injection (0xCC / `int3`) & NOP Patching | Rolling 64-bit polynomial HMAC checksum verified at runtime; mismatch poisons VM context. |
+| **11** | **Active Anti-Debugging & HW Breakpoints** | Dynamic Debugging (LLDB, x64dbg, CheatEngine) | Mach thread state (`DR0..DR7`), `sysctl(KERN_PROC_PID, P_TRACED)`, `/proc/self/status` `TracerPid`. |
+| **12** | **Opaque Signal / Exception Dispatching** | Static/Dynamic Control Flow Disassembly | Deliberate `SIGILL` / `SIGFPE` / `VEH` triggers with `ucontext_t` (`RIP`/`PC`) hijacking. |
+| **13** | **Multithreaded Nanomites** | Dynamic Single-Stepping & Debugger Attachment | Replaces conditional branches with `SIGTRAP` breakpoints resolved via encrypted tables. |
+| **14** | **Anti-ConstExpr Volatile String Barriers** | Compile-Time Optimizer String De-obfuscation | Volatile pointers + inline `__asm__ volatile("" : "+r" : : "memory")` preventing Clang `-O3` constant folding. |
+| **15** | **Compile-Time API Hashing (IAT Erasure)**| Import Address Table (IAT) Inspection | 32-bit polynomial API name hashing (`ASG_API_CALL`) resolving functions directly from memory headers. |
+| **16** | **Hardware Timing Watchdog** | Instruction Tracing & Step-by-Step Analysis | CPU cycle counter validation (`rdtsc` / ARM `cntvct_el0`) detecting trace slowdowns. |
 
-### 3. RISC-V Vector ISA Synthesis & Formal Toolchain
-* **Deterministic Randomized ISA Synthesis**: Generates compliant 32-bit RISC-V Vector instruction sets across 28 instruction families (Integer Arithmetic, Saturating DSP, Widening Double-Precision, Mask Logic, and Reductions).
-* **Guaranteed Zero Encoding Collisions**:
-  * Enforces an exclusive **1-family = 1-`funct6` monopoly invariant**, preventing opcode packing collisions.
-* **Formal Sail Export & Round-Trip Parser**:
-  * Emits formal Sail definitions with first-class `mapping clause encdec` bitfields. Menhir LR(1) parser with 100% round-trip fidelity.
-* **Hardware Feasibility & Silicon Cost Model (`Hw_cost`)**:
-  * Evaluates register file read/write port sizing (2–3 read ports, 1 write port), audits ALU bandwidth, and checks $ELEN$/$VLEN$ limits.
-* **Dual Native CPU Emulators (C++20 SIMD & C11 Bare-Metal)**.
-
-* **Vector Assembler & Bytecode Toolchain**:
-  * Assembles human-readable assembly (`.s` / `.asm`) into binary Vector ByteCode (`.vbc`).
 
 ---
 
@@ -325,7 +312,7 @@ Obfuscate any standard C/C++ source code with stack string encryption, constant 
 
 ## 🧪 Test Coverage & Invariant Verification
 
-The project includes **95 test suites** covering domain invariants, parsers, property tests, native runtimes, and macro obfuscation:
+The project includes **102 test suites** covering domain invariants, formal parsers, property tests, native virtual runtimes, anti-analysis guards, and macro obfuscation:
 
 | Subsystem | Suites | Verified Invariants |
 |---|:---:|---|
@@ -343,16 +330,16 @@ The project includes **95 test suites** covering domain invariants, parsers, pro
 | **Vanguard-9292 Obfuscation** | 6 | Field layout randomization, rolling keys, junk opcode detection |
 | **Vanguard Emulator E2E** | 1 | Native emulator integration with decoy trap traps |
 | **VM-IR & Lazy Flags** | 7 | GPR sub-registers (zero-extension), lazy flags algebra (1,000 seeds), Fibonacci function |
-| **x86_64 Lifter & CFG** | 6 | SIB addressing, linear math, abs branch, factorial loop, memory RMW, array sum |
+| **x86_64 Lifter & CFG** | 7 | SIB addressing, linear math, abs branch, factorial loop, memory RMW, array sum, marker extraction |
 | **Anti-Analysis (MBA & CFF)**| 6 | MBA algebraic soundness (1,000 seeds), stack lowering, CFF Fibonacci/Factorial/Abs |
-| **Native Threaded VM & Metrics**| 3 | Shannon entropy, Direct Threaded Code (Computed GOTO), CFF execution, decoy traps |
-| **C Macro Obfuscation** | 4 | Standalone header generation, stack string encryption, constant blinding, Clang E2E |
-
+| **Native Threaded VM & Metrics**| 7 | Shannon entropy, Computed GOTO, Super-operators, Ephemeral memory scrubbing, Dynamic junk bytecode, HMAC integrity, Affine stack scrambling |
+| **C Macro Obfuscation** | 6 | Standalone header generation, volatile stack string encryption, constant blinding, Clang E2E, Signal-based dispatching, Nanomite trap-and-trace |
 
 Run all tests:
 ```bash
 dune test
 ```
+
 
 ---
 
