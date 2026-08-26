@@ -93,7 +93,7 @@ let shuffle_array rng arr =
     arr.(j) <- tmp
   done
 
-let emit_cpp_threaded_header ~key_seed opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler =
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n";
@@ -109,14 +109,38 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "    return x32 == 0 ? 0x1337BEEFU : x32;\n";
   Buffer.add_string b "}\n\n";
 
-  (* VMContext *)
+  (* Blinded VMContext (Resisting VMPredator & Memory Taint Analysis) *)
   Buffer.add_string b "struct VMContext {\n";
-  Buffer.add_string b "    uint64_t gprs[32]; // 0..15: GPRs, 16..19: VTMPs, 20: vIP, 21: vSP\n";
+  Buffer.add_string b "    uint64_t gprs[32]; // Blinded in memory: actual_val = gprs[i] ^ reg_mask\n";
   Buffer.add_string b "    uint64_t stack[512];\n";
   Buffer.add_string b "    size_t sp;\n";
+  Buffer.add_string b "    uint64_t reg_mask;\n";
   Buffer.add_string b "    bool cf, zf, sf, of;\n";
   Buffer.add_string b "    bool trapped;\n";
   Buffer.add_string b "    size_t executed_instructions;\n\n";
+  Buffer.add_string b "    inline void init(uint32_t seed = 0x13375877U) noexcept {\n";
+  Buffer.add_string b "        reg_mask = 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed * 0x9E3779B97F4A7C15ULL);\n";
+  Buffer.add_string b "        for (size_t i = 0; i < 32; ++i) gprs[i] = reg_mask; // Initialized to 0 (0 ^ reg_mask)\n";
+  Buffer.add_string b "        sp = 0;\n";
+  Buffer.add_string b "        cf = zf = sf = of = false;\n";
+  Buffer.add_string b "        trapped = false;\n";
+  Buffer.add_string b "        executed_instructions = 0;\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline uint64_t get_reg(uint8_t i) const noexcept {\n";
+  Buffer.add_string b "        return gprs[i] ^ reg_mask;\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline void set_reg(uint8_t i, uint64_t v) noexcept {\n";
+  Buffer.add_string b "        gprs[i] = v ^ reg_mask;\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline void evolve_mask(uint32_t k) noexcept {\n";
+  Buffer.add_string b "        uint64_t delta = ((uint64_t)k * 0x6A09E667F3BCC908ULL) ^ 0x1337ULL;\n";
+  Buffer.add_string b "        uint64_t old_mask = reg_mask;\n";
+  Buffer.add_string b "        uint64_t new_mask = (reg_mask ^ delta) + 0x5877ULL;\n";
+  Buffer.add_string b "        for (size_t i = 0; i < 32; ++i) {\n";
+  Buffer.add_string b "            gprs[i] = (gprs[i] ^ old_mask) ^ new_mask;\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "        reg_mask = new_mask;\n";
+  Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline void push(uint64_t v) noexcept { if (sp < 512) stack[sp++] = v; }\n";
   Buffer.add_string b "    inline uint64_t pop() noexcept { return sp > 0 ? stack[--sp] : 0ULL; }\n";
   Buffer.add_string b "};\n\n";
@@ -142,6 +166,7 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
 
   (* execute_threaded function *)
   Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU) {\n" key_seed);
+  Buffer.add_string b "    if (ctx.reg_mask == 0) ctx.init(seed);\n";
   Buffer.add_string b "    const uint64_t* vIP = bytecode;\n";
   Buffer.add_string b "    const uint64_t* vIP_end = bytecode + count;\n\n";
 
@@ -167,30 +192,56 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "        dst = (uint8_t)((word >> 8) & 0x1F); \\\n";
   Buffer.add_string b "        src = (uint8_t)((word >> 13) & 0x1F); \\\n";
   Buffer.add_string b "        imm = (int64_t)((int32_t)((word >> 18) & 0xFFFFFFFFULL)); \\\n";
+  Buffer.add_string b "        ctx.evolve_mask(k); \\\n";
   Buffer.add_string b "        goto *dispatch_table[op]; \\\n";
   Buffer.add_string b "    } while(0)\n\n";
 
   Buffer.add_string b "    FETCH_NEXT();\n\n";
 
-  (* Handlers *)
+  (* Polymorphic SOTA Handlers (Synthesized Non-Linear Variants) *)
+  let pick_poly_add () =
+    match Random.State.int rng 3 with
+    | 0 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) + 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
+    | 1 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) + (ctx.get_reg(dst) & ctx.get_reg(src)))"
+    | _ -> "(2 * (ctx.get_reg(dst) | ctx.get_reg(src)) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+  in
+  let pick_poly_sub () =
+    match Random.State.int rng 2 with
+    | 0 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) - 2 * ((~ctx.get_reg(dst)) & ctx.get_reg(src)))"
+    | _ -> "(2 * (ctx.get_reg(dst) & (~ctx.get_reg(src))) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+  in
+  let pick_poly_xor () =
+    match Random.State.int rng 2 with
+    | 0 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) ^ (ctx.get_reg(dst) & ctx.get_reg(src)))"
+    | _ -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
+  in
+
   Buffer.add_string b "    H_NOP: ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_MOV_RR: ctx.gprs[dst] = ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_MOV_RI: ctx.gprs[dst] = (uint64_t)imm; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_ADD_RR: ctx.gprs[dst] += ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_ADD_RI: ctx.gprs[dst] += imm; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_SUB_RR: ctx.gprs[dst] -= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_SUB_RI: ctx.gprs[dst] -= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_IMUL_RR: ctx.gprs[dst] *= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_IMUL_RI: ctx.gprs[dst] *= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_XOR_RR: ctx.gprs[dst] ^= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_XOR_RI: ctx.gprs[dst] ^= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_AND_RR: ctx.gprs[dst] &= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_AND_RI: ctx.gprs[dst] &= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_OR_RR: ctx.gprs[dst] |= ctx.gprs[src]; ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_OR_RI: ctx.gprs[dst] |= imm; ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_MOV_RR: ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_MOV_RI: ctx.set_reg(dst, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b (Printf.sprintf "    H_ADD_RR: ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT();\n" (pick_poly_add ()));
+  Buffer.add_string b "    H_ADD_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b (Printf.sprintf "    H_SUB_RR: ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT();\n" (pick_poly_sub ()));
+  Buffer.add_string b "    H_SUB_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) - 2 * ((~ctx.get_reg(dst)) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_IMUL_RR: {\n";
+  Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
+  Buffer.add_string b "        ctx.set_reg(dst, ((a & b) * (a | b)) + ((a & (~b)) * ((~a) & b)));\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_IMUL_RI: {\n";
+  Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
+  Buffer.add_string b "        ctx.set_reg(dst, ((a & b) * (a | b)) + ((a & (~b)) * ((~a) & b)));\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b (Printf.sprintf "    H_XOR_RR: ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT();\n" (pick_poly_xor ()));
+  Buffer.add_string b "    H_XOR_RI: ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)imm) ^ (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_AND_RR: ctx.set_reg(dst, (ctx.get_reg(dst) + ctx.get_reg(src)) - (ctx.get_reg(dst) | ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_AND_RI: ctx.set_reg(dst, (ctx.get_reg(dst) + (uint64_t)imm) - (ctx.get_reg(dst) | (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_OR_RR: ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + (ctx.get_reg(dst) & ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_OR_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
 
   Buffer.add_string b "    H_CMP_RI: {\n";
-  Buffer.add_string b "        uint64_t a = ctx.gprs[dst]; uint64_t b = (uint64_t)imm;\n";
+  Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
   Buffer.add_string b "        uint64_t res = a - b;\n";
   Buffer.add_string b "        ctx.zf = (res == 0);\n";
   Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
@@ -198,15 +249,15 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMP_RR: {\n";
-  Buffer.add_string b "        uint64_t a = ctx.gprs[dst]; uint64_t b = ctx.gprs[src];\n";
+  Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
   Buffer.add_string b "        uint64_t res = a - b;\n";
   Buffer.add_string b "        ctx.zf = (res == 0);\n";
   Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
   Buffer.add_string b "        ctx.cf = (a < b);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_PUSH_R: ctx.push(ctx.gprs[dst]); ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_POP_R: ctx.gprs[dst] = ctx.pop(); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_PUSH_R: ctx.push(ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_POP_R: ctx.set_reg(dst, ctx.pop()); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_JMP: {\n";
   Buffer.add_string b "        vIP = bytecode + imm;\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
@@ -220,7 +271,7 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMOV: {\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.gprs[dst] = ctx.gprs[src];\n";
+  Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_reg(dst, ctx.get_reg(src));\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_RET: case_ret: ctx.executed_instructions++; goto EXIT_VM;\n";
@@ -235,6 +286,7 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "}\n\n";
   Buffer.add_string b "} // namespace vanguard_threaded_vm\n";
   Buffer.contents b
+
 
 let emit_runner_cpp bytecode =
   let b = Buffer.create 2048 in
@@ -273,12 +325,10 @@ let emit_runner_cpp bytecode =
   Buffer.add_string b "    if (heap_bc) free(heap_bc);\n\n";
   Buffer.add_string b "    if (!ok) return 2;\n";
   Buffer.add_string b "    printf(\"[VM] Execution SUCCESS! Verified %zu instructions. RAX: %llu\\n\",\n";
-  Buffer.add_string b "           ctx.executed_instructions, (unsigned long long)ctx.gprs[0]);\n";
+  Buffer.add_string b "           ctx.executed_instructions, (unsigned long long)ctx.get_reg(0));\n";
   Buffer.add_string b "    return 0;\n";
   Buffer.add_string b "}\n";
   Buffer.contents b
-
-
 
 let compile_and_package
     ~rng
@@ -420,8 +470,9 @@ let compile_and_package
     sorted_blocks;
 
   let final_bytecode = List.rev !bytecode in
-  let cpp_src = emit_cpp_threaded_header ~key_seed opcode_to_handler in
+  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler in
   let runner_src = emit_runner_cpp final_bytecode in
+
 
 
   let decoy_count = 256 - List.length all_op_kinds in
