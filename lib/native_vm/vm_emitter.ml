@@ -108,8 +108,9 @@ let shuffle_array rng arr =
     arr.(j) <- tmp
   done
 
-let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_handler =
   let b = Buffer.create 4096 in
+
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n";
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
@@ -178,10 +179,33 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
   Buffer.add_string b "        }\n";
   Buffer.add_string b "        reg_mask = new_mask;\n";
   Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void push(uint64_t v) noexcept { if (sp < 512) stack[sp++] = v; }\n";
-  Buffer.add_string b "    inline uint64_t pop() noexcept { return sp > 0 ? stack[--sp] : 0ULL; }\n";
+  Buffer.add_string b "    /* Virtual Stack Scrambling (Non-linear Permutation & Dynamic Memory Encryption) */\n";
+  Buffer.add_string b "    static inline constexpr size_t STACK_SIZE = 512;\n";
+  Buffer.add_string b "    static inline constexpr size_t STACK_STRIDE = 37;\n";
+  Buffer.add_string b "    static inline constexpr size_t STACK_OFFSET = 13;\n\n";
+  Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n";
+  Buffer.add_string b "        return (index * STACK_STRIDE + STACK_OFFSET) & (STACK_SIZE - 1);\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline void push(uint64_t v) noexcept {\n";
+  Buffer.add_string b "        if (sp < STACK_SIZE) {\n";
+  Buffer.add_string b "            size_t phys_idx = scramble_stack_idx(sp);\n";
+  Buffer.add_string b "            uint64_t enc_mask = ((uint64_t)sp * 0x9E3779B97F4A7C15ULL) ^ 0xA5A5A5A55A5A5A5AULL;\n";
+  Buffer.add_string b "            stack[phys_idx] = v ^ enc_mask;\n";
+  Buffer.add_string b "            sp++;\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline uint64_t pop() noexcept {\n";
+  Buffer.add_string b "        if (sp > 0) {\n";
+  Buffer.add_string b "            sp--;\n";
+  Buffer.add_string b "            size_t phys_idx = scramble_stack_idx(sp);\n";
+  Buffer.add_string b "            uint64_t enc_mask = ((uint64_t)sp * 0x9E3779B97F4A7C15ULL) ^ 0xA5A5A5A55A5A5A5AULL;\n";
+  Buffer.add_string b "            uint64_t val = stack[phys_idx] ^ enc_mask;\n";
+  Buffer.add_string b "            stack[phys_idx] = 0xDEADBEEFCAFE1337ULL ^ enc_mask; // Ephemeral slot wipe\n";
+  Buffer.add_string b "            return val;\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "        return 0ULL;\n";
+  Buffer.add_string b "    }\n";
   Buffer.add_string b "};\n\n";
-
 
   (* Helper condition check *)
   Buffer.add_string b "static inline bool eval_condition(const VMContext& ctx, uint8_t cond) noexcept {\n";
@@ -202,14 +226,27 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
   Buffer.add_string b "    }\n";
   Buffer.add_string b "}\n\n";
 
-  (* execute_threaded function with Ephemeral Self-Consuming Bytecode *)
+  (* execute_threaded function with Bytecode Integrity Checksumming *)
   Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU) {\n" key_seed);
   Buffer.add_string b "    if (ctx.reg_mask == 0) ctx.init(seed);\n";
+  Buffer.add_string b "    /* High-Speed Continuous Bytecode Integrity Guard (Anti-Patching / Breakpoint Detection) */\n";
+  Buffer.add_string b "    uint64_t full_hash = 0x811C9DC5C9DC5119ULL ^ (uint64_t)seed;\n";
+  Buffer.add_string b "    for (size_t i = 0; i < count; ++i) {\n";
+  Buffer.add_string b "        full_hash = ((full_hash ^ bytecode[i]) * 0x100000001B3ULL) + (uint64_t)i;\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b (Printf.sprintf "    if (full_hash != 0x%016LXULL) {\n" expected_hash);
+  Buffer.add_string b "        /* Anti-Patching Tripwire: Silent Context Poisoning */\n";
+  Buffer.add_string b "        ctx.reg_mask ^= 0xDEADBEEF5A5A5A5AULL;\n";
+  Buffer.add_string b "        ctx.trapped = true;\n";
+  Buffer.add_string b "        return false;\n";
+  Buffer.add_string b "    }\n\n";
+
   Buffer.add_string b "    /* Ephemeral Working Buffer: Isolated stack frame execution */\n";
   Buffer.add_string b "    uint64_t stack_buf[256];\n";
   Buffer.add_string b "    uint64_t* work_bc = (count <= 256) ? stack_buf : (uint64_t*)__builtin_alloca(count * sizeof(uint64_t));\n";
   Buffer.add_string b "    for (size_t i = 0; i < count; ++i) work_bc[i] = bytecode[i];\n\n";
   Buffer.add_string b "    size_t vIP_idx = 0;\n\n";
+
 
   Buffer.add_string b "    static const void* const dispatch_table[256] = {\n";
   for i = 0 to 255 do
@@ -711,7 +748,18 @@ let compile_and_package
     sorted_blocks;
 
   let final_bytecode = List.rev !bytecode in
-  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler in
+  let compute_bytecode_hash seed bc =
+    let h = ref (Int64.logxor 0x811C9DC5C9DC5119L (Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL)) in
+    List.iteri
+      (fun i w ->
+        let mixed = Int64.logxor !h w in
+        let mul = Int64.mul mixed 0x100000001B3L in
+        h := Int64.add mul (Int64.of_int i))
+      bc;
+    !h
+  in
+  let expected_hash = compute_bytecode_hash key_seed final_bytecode in
+  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_handler in
   let runner_src = emit_runner_cpp ~reg_perm final_bytecode in
 
   let decoy_count = 256 - List.length all_op_kinds in
@@ -730,5 +778,6 @@ let compile_and_package
     runner_source = runner_src;
     metrics;
   }
+
 
 

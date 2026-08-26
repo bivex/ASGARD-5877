@@ -353,6 +353,99 @@ int main() {
       let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
       ()
 
+let test_integrity_checksumming_and_stack_scrambling () =
+  let rng = Random.State.make [| 2026 |] in
+  (* Test using Push and Pop to verify Stack Scrambling *)
+  let asm = {|
+func_integrity_stack:
+    mov rax, 100
+    push rax
+    mov rax, 200
+    pop rbx
+    add rax, rbx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let pkg = Vm_emitter.compile_and_package ~rng func in
+      let tmp_dir = Filename.temp_file "integ_vm_" "_dir" in
+      (try Sys.remove tmp_dir with _ -> ());
+      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+      let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
+      let oc_h = open_out hdr_path in
+      output_string oc_h pkg.cpp_runtime_source;
+      close_out oc_h;
+
+      let custom_runner = Printf.sprintf {|
+#include "threaded_vm.hpp"
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+static uint64_t embedded_bytecode[] = {
+%s
+};
+
+int main() {
+    size_t count = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);
+
+    // Test 1: Normal execution with intact bytecode & scrambled stack
+    vanguard_threaded_vm::VMContext ctx1 = {};
+    ctx1.init();
+    bool ok1 = vanguard_threaded_vm::execute_threaded(ctx1, embedded_bytecode, count);
+    printf("[DIAG] ok1=%%d, rax=%%llu, trapped=%%d\n", ok1, (unsigned long long)ctx1.get_rax(), ctx1.trapped);
+    if (!ok1 || ctx1.get_rax() != 300ULL) return 1;
+
+    // Test 2: Tamper with 1 byte in bytecode -> Anti-Patching Tripwire must detect and abort!
+    uint64_t tampered_bytecode[64];
+    memcpy(tampered_bytecode, embedded_bytecode, sizeof(embedded_bytecode));
+    tampered_bytecode[0] ^= 0x90ULL; // Patch with NOP-like perturbation
+
+    vanguard_threaded_vm::VMContext ctx2 = {};
+    ctx2.init();
+    bool ok2 = vanguard_threaded_vm::execute_threaded(ctx2, tampered_bytecode, count);
+    printf("[DIAG] ok2=%%d, trapped2=%%d\n", ok2, ctx2.trapped);
+    if (ok2) return 2; // Tripwire should return false on tampered bytecode!
+    if (!ctx2.trapped) return 3; // Tripwire must set trapped = true
+
+    printf("[INTEGRITY & STACK SCRAMBLING TEST PASSED]\n");
+    return 0;
+}
+
+|}
+        (String.concat "\n" (List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) pkg.bytecode))
+      in
+
+      let runner_path = Filename.concat tmp_dir "runner.cpp" in
+      let oc_r = open_out runner_path in
+      output_string oc_r custom_runner;
+      close_out oc_r;
+
+      let bin_path = Filename.concat tmp_dir "runner" in
+      let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+      let comp_status = Sys.command comp_cmd in
+      Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
+
+      let run_cmd = bin_path in
+      let ic = Unix.open_process_in run_cmd in
+      let out_buf = Buffer.create 256 in
+      (try
+         while true do
+           Buffer.add_string out_buf (input_line ic);
+           Buffer.add_char out_buf '\n'
+         done
+       with End_of_file -> ());
+      let status = Unix.close_process_in ic in
+      let out_str = Buffer.contents out_buf in
+      Printf.printf "\n%s\n%!" out_str;
+      Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+      Alcotest.(check bool) "integrity test passed" true (String.contains out_str 'I' && String.contains out_str 'P');
+
+      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      ()
+
 let tests = [
   Alcotest.test_case "metrics_calculation" `Quick test_metrics_calculation;
   Alcotest.test_case "threaded_vm_compilation_and_execution" `Slow test_threaded_vm_compilation_and_execution;
@@ -360,7 +453,9 @@ let tests = [
   Alcotest.test_case "super_operators_execution" `Slow test_super_operators_execution;
   Alcotest.test_case "ephemeral_self_consuming_scrubbing" `Slow test_ephemeral_self_consuming_scrubbing;
   Alcotest.test_case "dynamic_junk_bytecode" `Slow test_dynamic_junk_bytecode;
+  Alcotest.test_case "integrity_checksumming_and_stack_scrambling" `Slow test_integrity_checksumming_and_stack_scrambling;
 ]
+
 
 
 
