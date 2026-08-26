@@ -112,6 +112,13 @@ let generate_header ?(config = default_config) () =
   add ("#define " ^ p ^ "MBA_ADD_L2(a, b) (" ^ p ^ "MBA_XOR((a), (b)) + 2 * " ^ p ^ "MBA_AND((a), (b)))");
   add ("#define " ^ p ^ "MBA_SUB_L2(a, b) (" ^ p ^ "MBA_XOR((a), (b)) - 2 * " ^ p ^ "MBA_AND(" ^ p ^ "MBA_NOT(a), (b)))");
   add "";
+  add "/* Non-Linear MBA (NLMBA): Non-linear cross-product expansion resisting 1-bit linear solvers (SiMBA/GAMBA) */";
+  add ("#define " ^ p ^ "NLMBA_MUL(a, b) ((((a) & (b)) * ((a) | (b))) + (((a) & (~(b))) * ((~(a)) & (b))))");
+  add ("#define " ^ p ^ "ZERO_INV1(a, b) ((((a) | (b)) + ((a) & (b))) - ((a) + (b)))");
+  add ("#define " ^ p ^ "ZERO_INV2(a, b) (((a) ^ (b)) - (((a) | (b)) - ((a) & (b))))");
+  add ("#define " ^ p ^ "ZERO_INV3(a, b) ((((a) & (b)) + ((a) & (~(b)))) - (a))");
+
+  add "";
   add "/* ------------------------------------------------------------------------- */";
   add "/* 3. CONSTANT BLINDING MACROS                                              */";
   add "/* ------------------------------------------------------------------------- */";
