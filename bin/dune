@@ -1,5 +1,6 @@
 (executable
  (public_name random_visa)
+ (package random_visa)
  (name main)
  (libraries
   cmdliner
@@ -11,4 +12,5 @@
   random_visa_cpp_emitter
   random_visa_c11_emitter
   random_visa_compiler_adapter
-  random_visa_assembler))
+  random_visa_assembler
+  vanguard_9292))

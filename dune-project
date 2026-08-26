@@ -15,3 +15,11 @@
   alcotest
   qcheck
   qcheck-alcotest))
+
+(package
+ (name vanguard-9292)
+ (synopsis "Polymorphic Dynamic Bytecode Obfuscation Layer for Random vISA")
+ (depends
+  (ocaml (>= 4.14.0))
+  (dune (>= 3.0))
+  random_visa))

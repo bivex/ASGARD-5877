@@ -1,0 +1,4 @@
+(library
+ (name vanguard_9292)
+ (public_name vanguard-9292)
+ (libraries random_visa_domain))

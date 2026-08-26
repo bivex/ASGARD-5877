@@ -14,6 +14,7 @@
   test_assembler_deep
   test_multi_vlen
   test_cli
+  test_vanguard_9292
   run_tests)
  (libraries
   random_visa_domain
@@ -25,6 +26,7 @@
   random_visa_c11_emitter
   random_visa_compiler_adapter
   random_visa_assembler
+  vanguard_9292
   alcotest
   qcheck
   qcheck-alcotest))
