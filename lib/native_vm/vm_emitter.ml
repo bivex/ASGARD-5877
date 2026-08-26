@@ -108,11 +108,26 @@ let shuffle_array rng arr =
     arr.(j) <- tmp
   done
 
-let emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler =
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n";
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
+
+  Buffer.add_string b "/* ------------------------------------------------------------------------- */\n";
+  Buffer.add_string b "/* Randomized Architectural Register Map (π ∈ S_32)                          */\n";
+  Buffer.add_string b "/* ------------------------------------------------------------------------- */\n";
+  Buffer.add_string b "enum RegMap : uint8_t {\n";
+  let gpr_names = [|
+    "REG_RAX"; "REG_RCX"; "REG_RDX"; "REG_RBX"; "REG_RSP"; "REG_RBP"; "REG_RSI"; "REG_RDI";
+    "REG_R8";  "REG_R9";  "REG_R10"; "REG_R11"; "REG_R12"; "REG_R13"; "REG_R14"; "REG_R15";
+    "REG_VTMP0"; "REG_VTMP1"; "REG_VTMP2"; "REG_VTMP3"; "REG_VIP"; "REG_VSP"; "REG_VKEY"
+  |] in
+  Array.iteri
+    (fun i name ->
+      Buffer.add_string b (Printf.sprintf "    %s = %d,\n" name reg_perm.(i)))
+    gpr_names;
+  Buffer.add_string b "};\n\n";
 
   (* Key Derivation for Bytecode Offset *)
   Buffer.add_string b "static inline uint32_t key_for_offset(uint32_t seed, size_t offset) noexcept {\n";
@@ -147,6 +162,13 @@ let emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler =
   Buffer.add_string b "    inline void set_reg(uint8_t i, uint64_t v) noexcept {\n";
   Buffer.add_string b "        gprs[i] = v ^ reg_mask;\n";
   Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    // Named architectural register accessors via randomized permutation\n";
+  Buffer.add_string b "    inline uint64_t get_rax() const noexcept { return get_reg(REG_RAX); }\n";
+  Buffer.add_string b "    inline void set_rax(uint64_t v) noexcept { set_reg(REG_RAX, v); }\n";
+  Buffer.add_string b "    inline uint64_t get_rdi() const noexcept { return get_reg(REG_RDI); }\n";
+  Buffer.add_string b "    inline void set_rdi(uint64_t v) noexcept { set_reg(REG_RDI, v); }\n";
+  Buffer.add_string b "    inline uint64_t get_rsi() const noexcept { return get_reg(REG_RSI); }\n";
+  Buffer.add_string b "    inline void set_rsi(uint64_t v) noexcept { set_reg(REG_RSI, v); }\n\n";
   Buffer.add_string b "    inline void evolve_mask(uint32_t k) noexcept {\n";
   Buffer.add_string b "        uint64_t delta = ((uint64_t)k * 0x6A09E667F3BCC908ULL) ^ 0x1337ULL;\n";
   Buffer.add_string b "        uint64_t old_mask = reg_mask;\n";
@@ -159,6 +181,7 @@ let emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler =
   Buffer.add_string b "    inline void push(uint64_t v) noexcept { if (sp < 512) stack[sp++] = v; }\n";
   Buffer.add_string b "    inline uint64_t pop() noexcept { return sp > 0 ? stack[--sp] : 0ULL; }\n";
   Buffer.add_string b "};\n\n";
+
 
   (* Helper condition check *)
   Buffer.add_string b "static inline bool eval_condition(const VMContext& ctx, uint8_t cond) noexcept {\n";
@@ -342,7 +365,8 @@ let emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler =
   Buffer.contents b
 
 
-let emit_runner_cpp bytecode =
+let emit_runner_cpp ~reg_perm bytecode =
+  let _ = reg_perm in
   let b = Buffer.create 2048 in
   Buffer.add_string b "#include \"threaded_vm.hpp\"\n";
   Buffer.add_string b "#include <stdio.h>\n#include <stdlib.h>\n\n";
@@ -379,7 +403,7 @@ let emit_runner_cpp bytecode =
   Buffer.add_string b "    if (heap_bc) free(heap_bc);\n\n";
   Buffer.add_string b "    if (!ok) return 2;\n";
   Buffer.add_string b "    printf(\"[VM] Execution SUCCESS! Verified %zu instructions. RAX: %llu\\n\",\n";
-  Buffer.add_string b "           ctx.executed_instructions, (unsigned long long)ctx.get_reg(0));\n";
+  Buffer.add_string b "           ctx.executed_instructions, (unsigned long long)ctx.get_rax());\n";
   Buffer.add_string b "    return 0;\n";
   Buffer.add_string b "}\n";
   Buffer.contents b
@@ -442,6 +466,11 @@ let compile_and_package
       | Error _ -> func
     else func
   in
+
+  (* Generate randomized bijective register permutation π ∈ S_32 *)
+  let reg_perm = Array.init 32 (fun i -> i) in
+  shuffle_array rng reg_perm;
+  let get_reg_idx r = reg_perm.(reg_to_index r) in
 
   (* Set up opcode bijection and junk decoys *)
   let slots = Array.init 256 (fun i -> i) in
@@ -523,57 +552,57 @@ let compile_and_package
       List.iter
         (function
           | Fused_Mov_Add { dst; src; imm } ->
-              encode_raw_word (get_opcode OP_FUSED_MOV_ADD_RRI) (reg_to_index dst) (reg_to_index src) imm
+              encode_raw_word (get_opcode OP_FUSED_MOV_ADD_RRI) (get_reg_idx dst) (get_reg_idx src) imm
           | Fused_Add_Imul { dst; src; imm } ->
-              encode_raw_word (get_opcode OP_FUSED_ADD_IMUL_RRI) (reg_to_index dst) (reg_to_index src) imm
+              encode_raw_word (get_opcode OP_FUSED_ADD_IMUL_RRI) (get_reg_idx dst) (get_reg_idx src) imm
           | Fused_Add_Xor { dst; src; imm } ->
-              encode_raw_word (get_opcode OP_FUSED_ADD_XOR_RRI) (reg_to_index dst) (reg_to_index src) imm
+              encode_raw_word (get_opcode OP_FUSED_ADD_XOR_RRI) (get_reg_idx dst) (get_reg_idx src) imm
           | Fused_Sub_Xor { dst; src; imm } ->
-              encode_raw_word (get_opcode OP_FUSED_SUB_XOR_RRI) (reg_to_index dst) (reg_to_index src) imm
+              encode_raw_word (get_opcode OP_FUSED_SUB_XOR_RRI) (get_reg_idx dst) (get_reg_idx src) imm
           | Fused_Xor_Add { dst; src; imm } ->
-              encode_raw_word (get_opcode OP_FUSED_XOR_ADD_RRI) (reg_to_index dst) (reg_to_index src) imm
+              encode_raw_word (get_opcode OP_FUSED_XOR_ADD_RRI) (get_reg_idx dst) (get_reg_idx src) imm
           | Fused_Cmp_Cmov { cmp_dst = _; cmp_imm; cond; cmov_dst; cmov_src } ->
               encode_raw_word ~extra_bits:(Int64.of_int (cond_to_code cond))
-                (get_opcode OP_FUSED_CMP_CMOV) (reg_to_index cmov_dst) (reg_to_index cmov_src) cmp_imm
+                (get_opcode OP_FUSED_CMP_CMOV) (get_reg_idx cmov_dst) (get_reg_idx cmov_src) cmp_imm
           | Raw instr -> (
               match instr with
               | Ir.Nop -> encode_raw_word (get_opcode OP_NOP) 0 0 0L
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->
-                  encode_raw_word (get_opcode OP_MOV_RR) (reg_to_index d) (reg_to_index s) 0L
+                  encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Imm imm } ->
-                  encode_raw_word (get_opcode OP_MOV_RI) (reg_to_index d) 0 imm
+                  encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-                  encode_raw_word (get_opcode OP_ADD_RR) (reg_to_index d) (reg_to_index s) 0L
+                  encode_raw_word (get_opcode OP_ADD_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-                  encode_raw_word (get_opcode OP_ADD_RI) (reg_to_index d) 0 imm
+                  encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-                  encode_raw_word (get_opcode OP_SUB_RR) (reg_to_index d) (reg_to_index s) 0L
+                  encode_raw_word (get_opcode OP_SUB_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-                  encode_raw_word (get_opcode OP_SUB_RI) (reg_to_index d) 0 imm
+                  encode_raw_word (get_opcode OP_SUB_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-                  encode_raw_word (get_opcode OP_IMUL_RR) (reg_to_index d) (reg_to_index s) 0L
+                  encode_raw_word (get_opcode OP_IMUL_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-                  encode_raw_word (get_opcode OP_IMUL_RI) (reg_to_index d) 0 imm
+                  encode_raw_word (get_opcode OP_IMUL_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-                  encode_raw_word (get_opcode OP_XOR_RR) (reg_to_index d) (reg_to_index s) 0L
+                  encode_raw_word (get_opcode OP_XOR_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-                  encode_raw_word (get_opcode OP_XOR_RI) (reg_to_index d) 0 imm
+                  encode_raw_word (get_opcode OP_XOR_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-                  encode_raw_word (get_opcode OP_AND_RR) (reg_to_index d) (reg_to_index s) 0L
+                  encode_raw_word (get_opcode OP_AND_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-                  encode_raw_word (get_opcode OP_AND_RI) (reg_to_index d) 0 imm
+                  encode_raw_word (get_opcode OP_AND_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
-                  encode_raw_word (get_opcode OP_OR_RR) (reg_to_index d) (reg_to_index s) 0L
+                  encode_raw_word (get_opcode OP_OR_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
-                  encode_raw_word (get_opcode OP_OR_RI) (reg_to_index d) 0 imm
+                  encode_raw_word (get_opcode OP_OR_RI) (get_reg_idx d) 0 imm
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg s } ->
-                  encode_raw_word (get_opcode OP_CMP_RR) (reg_to_index d) (reg_to_index s) 0L
+                  encode_raw_word (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
-                  encode_raw_word (get_opcode OP_CMP_RI) (reg_to_index d) 0 imm
+                  encode_raw_word (get_opcode OP_CMP_RI) (get_reg_idx d) 0 imm
               | Ir.Push (Ir.Reg d) ->
-                  encode_raw_word (get_opcode OP_PUSH_R) (reg_to_index d) 0 0L
+                  encode_raw_word (get_opcode OP_PUSH_R) (get_reg_idx d) 0 0L
               | Ir.Pop (Ir.Reg d) ->
-                  encode_raw_word (get_opcode OP_POP_R) (reg_to_index d) 0 0L
+                  encode_raw_word (get_opcode OP_POP_R) (get_reg_idx d) 0 0L
               | Ir.Jmp (Ir.BlockId bid) ->
                   encode_raw_word (get_opcode OP_JMP) 0 0 (Int64.of_int (get_block_offset bid))
               | Ir.Jcc { cond; target_true = Ir.BlockId tid; target_false = Ir.BlockId fid } ->
@@ -584,7 +613,7 @@ let compile_and_package
                   let imm = Int64.logor imm (Int64.shift_left (Int64.of_int f_off) 14) in
                   encode_raw_word (get_opcode OP_JCC) 0 0 imm
               | Ir.Cmov { cond; dst; src = Ir.Reg s } ->
-                  encode_raw_word (get_opcode OP_CMOV) (reg_to_index dst) (reg_to_index s) (Int64.of_int (cond_to_code cond))
+                  encode_raw_word (get_opcode OP_CMOV) (get_reg_idx dst) (get_reg_idx s) (Int64.of_int (cond_to_code cond))
               | Ir.Ret -> encode_raw_word (get_opcode OP_RET) 0 0 0L
               | Ir.Vm_exit -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
               | _ -> encode_raw_word (get_opcode OP_NOP) 0 0 0L))
@@ -592,8 +621,8 @@ let compile_and_package
     sorted_blocks;
 
   let final_bytecode = List.rev !bytecode in
-  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed opcode_to_handler in
-  let runner_src = emit_runner_cpp final_bytecode in
+  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed ~reg_perm opcode_to_handler in
+  let runner_src = emit_runner_cpp ~reg_perm final_bytecode in
 
   let decoy_count = 256 - List.length all_op_kinds in
   let mba_nodes = if enable_mba then mba_depth * 15 else 0 in
@@ -611,4 +640,5 @@ let compile_and_package
     runner_source = runner_src;
     metrics;
   }
+
 

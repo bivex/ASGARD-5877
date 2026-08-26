@@ -52,13 +52,13 @@ bool verify_license_in_vm(uint64_t hwid, uint64_t user_serial) {
     vanguard_threaded_vm::VMContext ctx = {};
     ctx.init();
 
-    // Standard x86_64 Calling Convention in ASGARD-5877 VM:
-    // RAX = ctx.get_reg(0) (Return Value)
-    // RSI = ctx.get_reg(6) (Arg 2: Serial Key)
-    // RDI = ctx.get_reg(7) (Arg 1: HWID)
-    ctx.set_reg(0, 0);           // RAX
-    ctx.set_reg(7, hwid);        // RDI (HWID)
-    ctx.set_reg(6, user_serial); // RSI (Serial Key)
+    // Standard x86_64 Calling Convention with Randomized Register Mapping (π ∈ S_32):
+    // RAX = ctx.get_rax() (Return Value)
+    // RSI = ctx.get_rsi() (Arg 2: Serial Key)
+    // RDI = ctx.get_rdi() (Arg 1: HWID)
+    ctx.set_rax(0);           // RAX
+    ctx.set_rdi(hwid);        // RDI (HWID)
+    ctx.set_rsi(user_serial); // RSI (Serial Key)
 
     // Execute in Direct Threaded VM with rolling key decryption & blinded context
     bool success = vanguard_threaded_vm::execute_threaded(
@@ -68,8 +68,9 @@ bool verify_license_in_vm(uint64_t hwid, uint64_t user_serial) {
     );
 
     // Return true if VM executed successfully and returned RAX == 1
-    return success && (ctx.get_reg(0) == 1ULL);
+    return success && (ctx.get_rax() == 1ULL);
 }
+
 
 
 
