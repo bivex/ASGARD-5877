@@ -1,15 +1,14 @@
 # Random Vector ISA (vISA) & Industrial VM-Protector Toolchain in OCaml
 
 [![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4+-orange.svg)](https://ocaml.org)
-[![Build & Tests](https://img.shields.io/badge/Tests-91%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
+[![Build & Tests](https://img.shields.io/badge/Tests-95%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%2F%20DDD-blue.svg)]()
 [![Target Spec](https://img.shields.io/badge/ISA-RISC--V%20Vector%201.0%20%2B%20x86__64-red.svg)](https://github.com/riscv/riscv-v-spec)
 
-A dual-purpose, high-assurance **RISC-V Vector ISA (vISA) synthesizer** and **VMProtect / Themida-style Virtual Machine Code Protector (VM-Protector)** written in pure **OCaml 5**.
-
-Designed for CPU architects, formal verification teams, and binary security / reverse engineering researchers who need:
+A high-assurance, multi-purpose toolchain written in pure **OCaml 5**:
 1. **RISC-V Vector ISA Synthesis**: Deterministic, collision-free vector instruction sets with formal Sail specifications, silicon cost audits, and native CPU emulators (C++20 SIMD & C11 bare-metal).
-2. **Hardened Code Virtualization (VM-Protector)**: Translation of real x86_64 machine code into a randomized, encrypted virtual architecture featuring Mixed Boolean-Arithmetic (MBA), Control-Flow Flattening (CFF) with opaque predicates, a C++ Direct Threaded Code runtime (Computed GOTO), positional rolling XOR stream encryption, decoy junk traps, and automated Devirtualization Resistance Scoring (DRS).
+2. **Hardened Code Virtualization (VM-Protector)**: Translation of real x86_64 machine code into a randomized, encrypted virtual architecture with Mixed Boolean-Arithmetic (MBA), Control-Flow Flattening (CFF) with opaque predicates, a C++ Direct Threaded Code runtime (Computed GOTO), positional rolling XOR stream encryption, and decoy junk traps.
+3. **C/C++ Preprocessor Macro Obfuscation (`c-obf`)**: Source-level hardening with stack-allocated string encryption (`__builtin_alloca`), constant blinding, MBA macros, and macro-based Control-Flow Flattening.
 
 ---
 
@@ -23,7 +22,7 @@ Designed for CPU architects, formal verification teams, and binary security / re
 * **Lazy Flags Evaluation Engine**:
   * Real VM-protector style (QEMU/Bochs): computes CF, ZF, SF, OF, PF, AF algebraically on demand from `CC_OP_ADD`, `CC_OP_SUB`, etc., thwarting symbolic execution engines (angr / Triton).
 * **Mixed Boolean-Arithmetic (MBA) Engine**:
-  * Transforms arithmetic operations (`+`, `-`, `^`, `&`, `|`) into undecidable non-linear polynomial expansions (Zhou / Eyrolles identities) with stack-oriented lowering (`Push`/`Pop`) to eliminate register pressure.
+  * Transforms arithmetic operations (`+`, `-`, `^`, `&`, `|`) into undecidable non-linear polynomial expansions (Zhou / Eyrolles identities formally proven in F* 2026.08.23 + Z3 5.0.0).
 * **Control-Flow Flattening (CFF) & Opaque Predicates**:
   * Destroys CFG topology using Chenxi Wang's flattening algorithm. Replaces conditional jumps with branchless `CMOV` state selectors and centralized state dispatchers.
   * Injects number-theoretic invariant opaque predicates ($x(x + 1) \pmod 2 == 0$) to induce path explosion in SMT solvers.
@@ -31,10 +30,14 @@ Designed for CPU architects, formal verification teams, and binary security / re
   * Eliminates central `switch` loops. Handlers jump directly to the next handler using GCC/Clang `goto *dispatch_table[op]`.
   * Jump-safe positional rolling XOR key stream ($k = \text{PRF}(\text{seed}, \text{offset})$) ensuring every instruction word is positionally encrypted and loop-safe.
   * Decoy / Junk traps taking up >90% of opcode space: jumping to an unmapped handler traps and halts the VM.
-* **Devirtualization Resistance Scoring (DRS)**:
-  * Computes Shannon bytecode entropy (bits/byte), cyclomatic complexity, flattening depth, and decoy density, outputting a composite 0–100 hardness score.
 
-### 2. RISC-V Vector ISA Synthesis & Formal Toolchain
+### 2. C/C++ Source-Level Macro Obfuscator (`random_visa c-obf`)
+* **Stack-Allocated String Encryption (`ASG_STR`)**: Replaces plaintext strings with XOR-encrypted compound literals decrypted on stack via `__builtin_alloca` with zero runtime memory leaks.
+* **Multi-Layer MBA Macros**: `#define ASG_MBA_ADD(a, b)`, `ASG_MBA_SUB`, `ASG_MBA_XOR`, `ASG_MBA_AND`, `ASG_MBA_OR`.
+* **Constant Blinding**: Rewrites integer literals into blinded identities: `((c1 ^ k1) + k2) - k2`.
+* **CFF Preprocessor DSL**: State machine macros (`ASG_CFF_BEGIN`, `ASG_CFF_STATE`, `ASG_CFF_NEXT`, `ASG_CFF_EXIT`).
+
+### 3. RISC-V Vector ISA Synthesis & Formal Toolchain
 * **Deterministic Randomized ISA Synthesis**: Generates compliant 32-bit RISC-V Vector instruction sets across 28 instruction families (Integer Arithmetic, Saturating DSP, Widening Double-Precision, Mask Logic, and Reductions).
 * **Guaranteed Zero Encoding Collisions**:
   * Enforces an exclusive **1-family = 1-`funct6` monopoly invariant**, preventing opcode packing collisions.
@@ -43,6 +46,7 @@ Designed for CPU architects, formal verification teams, and binary security / re
 * **Hardware Feasibility & Silicon Cost Model (`Hw_cost`)**:
   * Evaluates register file read/write port sizing (2–3 read ports, 1 write port), audits ALU bandwidth, and checks $ELEN$/$VLEN$ limits.
 * **Dual Native CPU Emulators (C++20 SIMD & C11 Bare-Metal)**.
+
 * **Vector Assembler & Bytecode Toolchain**:
   * Assembles human-readable assembly (`.s` / `.asm`) into binary Vector ByteCode (`.vbc`).
 
@@ -229,9 +233,25 @@ dune exec -- random_visa disassemble -s ./my_chip/custom_rvv_isa.sail -i program
 
 ---
 
+## 🔒 C/C++ Macro Obfuscation Guide (`random_visa c-obf`)
+
+Obfuscate any standard C/C++ source code with stack string encryption, constant blinding, and MBA expansions:
+
+```bash
+# Obfuscate C source and generate companion header
+dune exec -- random_visa c-obf \
+  -i examples/demo_c_app.c \
+  -o ./protected_c/main.c \
+  --header ./protected_c/asgard_obf.h \
+  --seed 42 \
+  --compile true
+```
+
+---
+
 ## 🧪 Test Coverage & Invariant Verification
 
-The project includes **91 test suites** covering domain invariants, parsers, property tests, and native runtimes:
+The project includes **95 test suites** covering domain invariants, parsers, property tests, native runtimes, and macro obfuscation:
 
 | Subsystem | Suites | Verified Invariants |
 |---|:---:|---|
@@ -252,6 +272,8 @@ The project includes **91 test suites** covering domain invariants, parsers, pro
 | **x86_64 Lifter & CFG** | 6 | SIB addressing, linear math, abs branch, factorial loop, memory RMW, array sum |
 | **Anti-Analysis (MBA & CFF)**| 6 | MBA algebraic soundness (1,000 seeds), stack lowering, CFF Fibonacci/Factorial/Abs |
 | **Native Threaded VM & Metrics**| 3 | Shannon entropy, Direct Threaded Code (Computed GOTO), CFF execution, decoy traps |
+| **C Macro Obfuscation** | 4 | Standalone header generation, stack string encryption, constant blinding, Clang E2E |
+
 
 Run all tests:
 ```bash

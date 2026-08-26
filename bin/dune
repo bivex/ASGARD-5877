@@ -18,4 +18,5 @@
   x86_lifter
   mba_engine
   cff
-  native_vm))
+  native_vm
+  c_macro_obf))

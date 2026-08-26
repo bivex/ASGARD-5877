@@ -460,6 +460,91 @@ let protect_cmd =
   let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ cff $ mba $ mba_depth $ compile)) in
   Cmd.v (Cmd.info "protect" ~doc) term
 
+let run_c_obf input out_file out_header seed strings consts mba_depth compile =
+  let seed_val = match seed with Some s -> s | None -> Random.self_init (); Random.int 0x7FFFFFFF in
+  let config = {
+    C_macro_obf.seed = seed_val;
+    mba_depth;
+    obfuscate_strings = strings;
+    obfuscate_constants = consts;
+    obfuscate_arithmetic = true;
+    inject_opaque_predicates = true;
+    macro_prefix = "ASG_";
+  } in
+  let header_path = match out_header with
+    | Some p -> p
+    | None ->
+        let dir = Filename.dirname out_file in
+        Filename.concat (if dir = "" then "." else dir) "asgard_obf.h"
+  in
+  match C_macro_obf.transform_file ~config ~in_file:input ~out_file ~header_file:(Some header_path) () with
+  | Error msg ->
+      prerr_endline ("C Macro Obfuscation failed: " ^ msg);
+      `Error (false, msg)
+  | Ok () ->
+      Printf.printf "=== C MACRO OBFUSCATION COMPLETE ===\n";
+      Printf.printf "  Input C Source:       %s\n" input;
+      Printf.printf "  Obfuscated Output:    %s\n" out_file;
+      Printf.printf "  Generated Header:     %s\n" header_path;
+      Printf.printf "  Random Seed:          0x%X\n" seed_val;
+      Printf.printf "  String Encryption:    %s\n" (if strings then "ENABLED" else "DISABLED");
+      Printf.printf "  Constant Blinding:    %s\n" (if consts then "ENABLED" else "DISABLED");
+      Printf.printf "  MBA Depth:            %d\n" mba_depth;
+      Printf.printf "====================================\n\n";
+      if compile then begin
+        let bin_path = (try Filename.chop_extension out_file with _ -> out_file) ^ "_bin" in
+        let comp_cmd = Printf.sprintf "clang -O2 -I%s %s -o %s" (Filename.dirname header_path) out_file bin_path in
+        Printf.printf "[1/2] Compiling obfuscated C source with clang -O2...\n";
+        let status = Sys.command comp_cmd in
+        if status <> 0 then begin
+          prerr_endline "Clang compilation failed!";
+          `Error (false, "Compilation error")
+        end else begin
+          Printf.printf "[2/2] Running Obfuscated Binary (%s):\n" bin_path;
+          Printf.printf "--------------------------------------------------------\n";
+          let _ = Sys.command bin_path in
+          Printf.printf "--------------------------------------------------------\n\n";
+          `Ok ()
+        end
+      end else `Ok ()
+
+let c_obf_cmd =
+  let doc = "Obfuscate C source code via polymorphic macros, stack string encryption, and MBA" in
+  let input =
+    let doc = "Input C source file (.c)" in
+    Arg.(required & opt (some string) None & info [ "i"; "input" ] ~docv:"FILE" ~doc)
+  in
+  let out_file =
+    let doc = "Output obfuscated C source file" in
+    Arg.(value & opt string "./obfuscated.c" & info [ "o"; "output" ] ~docv:"FILE" ~doc)
+  in
+  let out_header =
+    let doc = "Output companion header file path (defaults to asgard_obf.h next to output)" in
+    Arg.(value & opt (some string) None & info [ "header" ] ~docv:"FILE" ~doc)
+  in
+  let seed =
+    let doc = "Randomization seed" in
+    Arg.(value & opt (some int) None & info [ "s"; "seed" ] ~docv:"SEED" ~doc)
+  in
+  let strings =
+    let doc = "Enable compile-time stack string encryption" in
+    Arg.(value & opt bool true & info [ "strings" ] ~docv:"BOOL" ~doc)
+  in
+  let consts =
+    let doc = "Enable constant blinding" in
+    Arg.(value & opt bool true & info [ "constants" ] ~docv:"BOOL" ~doc)
+  in
+  let mba_depth =
+    let doc = "Mixed Boolean-Arithmetic expansion depth (1..4)" in
+    Arg.(value & opt int 2 & info [ "mba-depth" ] ~docv:"DEPTH" ~doc)
+  in
+  let compile =
+    let doc = "Compile obfuscated C with clang -O2 and execute" in
+    Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
+  in
+  let term = Term.(ret (const run_c_obf $ input $ out_file $ out_header $ seed $ strings $ consts $ mba_depth $ compile)) in
+  Cmd.v (Cmd.info "c-obf" ~doc) term
+
 (* ROOT CLI GROUP *)
 let main_cmd =
   let doc = "Random Vector ISA Synthesizer, Formal Sail Exporter, and VM-Protector in OCaml" in
@@ -472,6 +557,8 @@ let main_cmd =
     cost_cmd;
     vanguard_cmd;
     protect_cmd;
+    c_obf_cmd;
   ]
 
 let () = exit (Cmd.eval main_cmd)
+

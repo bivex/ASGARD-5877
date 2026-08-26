@@ -20,6 +20,7 @@
   test_x86_lifter
   test_anti_analysis
   test_native_vm_and_metrics
+  test_c_macro_obf
   run_tests)
  (libraries
   random_visa_domain
@@ -37,6 +38,7 @@
   mba_engine
   cff
   native_vm
+  c_macro_obf
   alcotest
   qcheck
   qcheck-alcotest))
