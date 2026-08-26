@@ -57,8 +57,16 @@ let test_mba_eval_and_soundness () =
       let rewritten_or = Mba.rewrite ~rng ~depth:2 expr_or in
       let expected_or = Int64.logor x y in
       let actual_or = Mba.eval env rewritten_or in
-      Alcotest.(check int64) "mba or matches" expected_or actual_or)
+      Alcotest.(check int64) "mba or matches" expected_or actual_or;
+
+      (* 6. Mul (NLMBA) *)
+      let expr_mul = Mba.Mul (Mba.Var "a", Mba.Var "b") in
+      let rewritten_mul = Mba.rewrite ~rng ~depth:2 expr_mul in
+      let expected_mul = Int64.mul x y in
+      let actual_mul = Mba.eval env rewritten_mul in
+      Alcotest.(check int64) "mba mul matches" expected_mul actual_mul)
     test_pairs
+
 
 let test_mba_lowering_to_vm_ir () =
   let rng = Random.State.make [| 777 |] in
@@ -196,12 +204,15 @@ let prop_mba_equivalence_1000 =
       let add_tree = Mba.rewrite ~rng ~depth:2 (Mba.Add (Mba.Var "a", Mba.Var "b")) in
       let sub_tree = Mba.rewrite ~rng ~depth:2 (Mba.Sub (Mba.Var "a", Mba.Var "b")) in
       let xor_tree = Mba.rewrite ~rng ~depth:2 (Mba.Xor (Mba.Var "a", Mba.Var "b")) in
+      let mul_tree = Mba.rewrite ~rng ~depth:2 (Mba.Mul (Mba.Var "a", Mba.Var "b")) in
 
       let ok_add = Mba.eval env add_tree = Int64.add x y in
       let ok_sub = Mba.eval env sub_tree = Int64.sub x y in
       let ok_xor = Mba.eval env xor_tree = Int64.logxor x y in
+      let ok_mul = Mba.eval env mul_tree = Int64.mul x y in
 
-      ok_add && ok_sub && ok_xor)
+      ok_add && ok_sub && ok_xor && ok_mul)
+
 
 let tests = [
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
