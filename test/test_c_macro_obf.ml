@@ -123,11 +123,66 @@ int main() {
     check bool "signal dispatched to secret handler" true (contains_sub out_str "SIGNAL_DISPATCH_OK")
   )
 
+let test_nanomites_dispatching_e2e () =
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let in_c = Filename.concat tmp_dir "nano_test.c" in
+    let hdr_file = Filename.concat tmp_dir "asgard_obf.h" in
+    let bin_file = Filename.concat tmp_dir "nano_bin" in
+
+    let hdr_content = generate_header () in
+    Test_helpers.write_file_string hdr_file hdr_content;
+
+    let sample_src = {|
+#include "asgard_obf.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+static int g_license_val = 0;
+
+void valid_license_path(void) {
+    g_license_val = 9999;
+    printf("[NANOMITE_BRANCH_TRUE] License Granted: %d\n", g_license_val);
+    exit(0);
+}
+
+void invalid_license_path(void) {
+    printf("[NANOMITE_BRANCH_FALSE] Access Denied\n");
+    exit(1);
+}
+
+int main() {
+    ASG_NANOMITE_INIT();
+    ASG_NANOMITE_REGISTER(42, valid_license_path, invalid_license_path, 0x13375877);
+
+    int is_valid = 1;
+    // Dispatches via SIGTRAP hardware breakpoint trap!
+    ASG_NANOMITE_DISPATCH(42, is_valid);
+
+    return 2;
+}
+|} in
+    Test_helpers.write_file_string in_c sample_src;
+
+    let comp_cmd = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir in_c bin_file in
+    let comp_status = Sys.command comp_cmd in
+    check int "clang compilation returns 0" 0 comp_status;
+
+    let out_log = Filename.concat tmp_dir "nano_output.log" in
+    let run_cmd = Printf.sprintf "%s > %s" bin_file out_log in
+    let run_status = Sys.command run_cmd in
+    check int "nanomite execution returns 0" 0 run_status;
+
+    let out_str = Test_helpers.read_file_string out_log in
+    check bool "nanomite dispatched to true branch" true (contains_sub out_str "NANOMITE_BRANCH_TRUE")
+  )
+
 let tests = [
   ("header_generation", `Quick, test_header_generation);
   ("string_obfuscation", `Quick, test_string_obfuscation);
   ("constant_blinding", `Quick, test_constant_blinding);
   ("e2e_c_transformation_and_execution", `Quick, test_e2e_c_transformation_and_execution);
   ("signal_based_dispatching_e2e", `Quick, test_signal_based_dispatching_e2e);
+  ("nanomites_dispatching_e2e", `Quick, test_nanomites_dispatching_e2e);
 ]
+
 
