@@ -16,4 +16,5 @@ let () =
     ("Vanguard-9292 Obfuscation", Test_vanguard_9292.tests);
     ("Vanguard Emulator E2E", Test_vanguard_emulator_e2e.tests);
     ("VM-IR & Lazy Flags", Test_vm_ir.tests);
+    ("x86_64 Lifter & CFG", Test_x86_lifter.tests);
   ]

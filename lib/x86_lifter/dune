@@ -1,0 +1,4 @@
+(library
+ (name x86_lifter)
+ (public_name random_visa.x86_lifter)
+ (libraries vm_ir))
