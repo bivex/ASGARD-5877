@@ -28,6 +28,7 @@ val make :
   ?is_reduction:bool ->
   ?description:string ->
   ?sail_function:Sail_ast.function_def ->
+  ?sew:Types.Sew.t ->
   unit ->
   t
 
@@ -47,4 +48,6 @@ val synthesize_sail_function :
   unary_op:Types.Unary_op.t option ->
   element_kind:Types.Element_kind.t ->
   is_widening:bool ->
+  ?sew:Types.Sew.t ->
+  unit ->
   Sail_ast.function_def

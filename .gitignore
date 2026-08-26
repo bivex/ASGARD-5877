@@ -11,3 +11,5 @@ archc_emulator/
 pydrofoil_emulator/
 *.sail.tmp
 scratch/
+output/
+generated_isa/

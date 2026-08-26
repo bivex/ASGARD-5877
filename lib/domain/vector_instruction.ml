@@ -13,7 +13,7 @@ type t = {
   sail_function : Sail_ast.function_def;
 }
 
-let synthesize_sail_function ~mnemonic ~format ~binary_op ~unary_op ~element_kind ~is_widening =
+let synthesize_sail_function ~mnemonic ~format ~binary_op ~unary_op ~element_kind ~is_widening ?(sew = Types.Sew.E32) () =
   let fn_name = Printf.sprintf "execute_%s" mnemonic in
   let params = [
     ("vd_idx", Sail_ast.Bits 5);
@@ -21,8 +21,8 @@ let synthesize_sail_function ~mnemonic ~format ~binary_op ~unary_op ~element_kin
     ("vs1_or_imm", Sail_ast.Bits 5);
     ("vm", Sail_ast.Bits 1);
   ] in
-  let src_bits = 32 in
-  let dst_bits = if is_widening then 64 else 32 in
+  let src_bits = Types.Sew.to_bits sew in
+  let dst_bits = if is_widening then src_bits * 2 else src_bits in
   let loop_var = "i" in
   let mask_cond = Sail_ast.Mask_check ("v0", Sail_ast.Var loop_var, Sail_ast.Var "vm") in
   let elem_vs2 = Sail_ast.Vector_elem ("vs2", Sail_ast.Var loop_var, src_bits) in
@@ -90,12 +90,13 @@ let make
     ?(is_reduction = false)
     ?(description = "")
     ?sail_function
+    ?(sew = Types.Sew.E32)
     () =
   let sail_fn =
     match sail_function with
     | Some fn -> fn
     | None ->
-        synthesize_sail_function ~mnemonic ~format ~binary_op ~unary_op ~element_kind ~is_widening
+        synthesize_sail_function ~mnemonic ~format ~binary_op ~unary_op ~element_kind ~is_widening ~sew ()
   in
   {
     mnemonic;

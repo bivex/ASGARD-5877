@@ -29,15 +29,19 @@ module Element_kind : sig
 end
 
 module Instruction_format : sig
+  (** Logical operand addressing format.
+      Note: funct3 is scoped per-funct6. Widening instructions (e.g. vwadd.vv)
+      share the vector-vector funct3 = 0b000 (OPIVV) encoding with OP_VV,
+      and are distinguished by their dedicated per-family funct6. *)
   type t =
-    | OP_VV
-    | OP_VX
-    | OP_VI
-    | OP_MVV
-    | OP_RED
-    | OP_WIDENING
-    | OP_MEM_LOAD
-    | OP_MEM_STORE
+    | OP_VV       (** Vector-Vector (funct3 = 0b000 / OPIVV) *)
+    | OP_VX       (** Vector-Scalar (funct3 = 0b100 / OPIVX) *)
+    | OP_VI       (** Vector-Immediate (funct3 = 0b011 / OPIVI) *)
+    | OP_MVV      (** Vector-Unary / Mask / Misc (funct3 = 0b010 / OPMVV) *)
+    | OP_RED      (** Vector-Reduction (funct3 = 0b001 / OPRED) *)
+    | OP_WIDENING (** Widening Vector-Vector alias (funct3 = 0b000 / OPWVV) *)
+    | OP_MEM_LOAD (** Vector Unit-Stride Load (reserved) *)
+    | OP_MEM_STORE (** Vector Unit-Stride Store (reserved) *)
 
   val to_string : t -> string
   val to_suffix : t -> string

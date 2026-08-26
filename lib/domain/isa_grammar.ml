@@ -115,27 +115,17 @@ let assign_encodings families =
         Stdlib.compare b.weight a.weight)
       families
   in
-  let allocated = Hashtbl.create 64 in
+  let allocated_f6 = Hashtbl.create 64 in
   let allocate_for_family fam =
     let rec find_f6 candidate =
       if candidate >= 64 then
         Error (Errors.Encoding_space_exhausted fam.Instruction_family.mnemonic_base)
-      else
-        let collides =
-          List.exists
-            (fun fmt ->
-              let f3 = Types.Instruction_format.to_funct3 fmt in
-              Hashtbl.mem allocated (candidate, f3))
-            fam.Instruction_family.formats
-        in
-        if collides then find_f6 (candidate + 1)
-        else (
-          List.iter
-            (fun fmt ->
-              let f3 = Types.Instruction_format.to_funct3 fmt in
-              Hashtbl.add allocated (candidate, f3) ())
-            fam.Instruction_family.formats;
-          Ok candidate)
+      else if Hashtbl.mem allocated_f6 candidate then
+        find_f6 (candidate + 1)
+      else begin
+        Hashtbl.add allocated_f6 candidate ();
+        Ok candidate
+      end
     in
     find_f6 0
   in
@@ -231,6 +221,7 @@ let generate_isa
                                 ~element_kind:fam.element_kind
                                 ~is_widening:fam.is_widening
                                 ~description
+                                ~sew:config.default_sew
                                 ()
                             in
                             match Vector_isa_spec.add_instruction spec_acc inst with
