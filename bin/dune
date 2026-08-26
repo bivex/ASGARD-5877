@@ -13,4 +13,9 @@
   random_visa_c11_emitter
   random_visa_compiler_adapter
   random_visa_assembler
-  vanguard_9292))
+  vanguard_9292
+  vm_ir
+  x86_lifter
+  mba_engine
+  cff
+  native_vm))

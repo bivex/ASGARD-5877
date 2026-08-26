@@ -19,6 +19,7 @@
   test_vm_ir
   test_x86_lifter
   test_anti_analysis
+  test_native_vm_and_metrics
   run_tests)
  (libraries
   random_visa_domain
@@ -35,6 +36,7 @@
   x86_lifter
   mba_engine
   cff
+  native_vm
   alcotest
   qcheck
   qcheck-alcotest))

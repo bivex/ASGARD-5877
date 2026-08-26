@@ -18,4 +18,5 @@ let () =
     ("VM-IR & Lazy Flags", Test_vm_ir.tests);
     ("x86_64 Lifter & CFG", Test_x86_lifter.tests);
     ("Anti-Analysis (MBA & CFF)", Test_anti_analysis.tests);
+    ("Native Threaded VM & Metrics", Test_native_vm_and_metrics.tests);
   ]

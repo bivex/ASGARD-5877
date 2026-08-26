@@ -1,31 +1,46 @@
-# Random Vector ISA (vISA) Toolchain in OCaml
+# Random Vector ISA (vISA) & VM-Protector Toolchain in OCaml
 
 [![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4+-orange.svg)](https://ocaml.org)
-[![Build & Tests](https://img.shields.io/badge/Tests-62%20passing%20(3000%2B%20QCheck)-brightgreen.svg)]()
+[![Build & Tests](https://img.shields.io/badge/Tests-91%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%2F%20DDD-blue.svg)]()
-[![Target Spec](https://img.shields.io/badge/ISA-RISC--V%20Vector%201.0-red.svg)](https://github.com/riscv/riscv-v-spec)
+[![Target Spec](https://img.shields.io/badge/ISA-RISC--V%20Vector%201.0%20%2B%20x86__64-red.svg)](https://github.com/riscv/riscv-v-spec)
 
-A high-assurance, randomized **RISC-V Vector ISA (vISA)** synthesizer, formal **Sail** specification exporter, bi-directional parser, hardware cost analyzer, and multi-backend CPU emulator generator written in pure **OCaml 5**.
+A high-assurance, dual-purpose **RISC-V Vector ISA (vISA) synthesizer** and **industrial-grade Virtual Machine Code Protector (VM-Protector)** written in pure **OCaml 5**.
 
-Designed for CPU architects, compiler engineers (LLVM, GCC), and formal verification teams who need to generate diverse, mathematically consistent, and collision-free vector instruction sets with verifiable silicon feasibility and ready-to-run native CPU emulators.
+Designed for CPU architects, formal verification teams, and reverse-engineering / binary defense researchers who need:
+1. Deterministic, collision-free vector instruction sets with formal Sail specs and native emulators.
+2. Hardened **code virtualization** that translates real x86_64 machine code into a randomized, encrypted virtual architecture with Control-Flow Flattening (CFF), Mixed Boolean-Arithmetic (MBA), and a C++ Direct Threaded Code runtime (Computed GOTO).
 
 ---
 
 ## ⚡ Key Capabilities
 
+### 1. Hardened x86_64 VM-Protector (`random_visa protect`)
+* **x86_64 $\to$ Turing-Complete VM-IR Lifter**:
+  * Full Intel syntax parsing supporting 16 64-bit GPRs, 32-bit zero-extension, and SIB memory addressing `[base + index*scale + disp]`.
+  * Lowers complex memory Read-Modify-Write instructions (`add [rsp - 8], 10`) into atomic VM-IR sequences.
+  * Resolves conditional branch fallthrough targets automatically into an explicit Control Flow Graph (CFG).
+* **Lazy Flags Evaluation Engine**:
+  * Real VM-protector style (QEMU/Bochs): computes CF, ZF, SF, OF, PF, AF algebraically on demand from `CC_OP_ADD`, `CC_OP_SUB`, etc., thwarting symbolic execution engines.
+* **Mixed Boolean-Arithmetic (MBA) Engine**:
+  * Transforms arithmetic operations (`+`, `-`, `^`, `&`, `|`) into undecidable non-linear polynomial expansions (Zhou / Eyrolles identities) with stack-oriented lowering.
+* **Control-Flow Flattening (CFF) & Opaque Predicates**:
+  * Destroys CFG topology using Chenxi Wang's flattening algorithm. Replaces conditional jumps with branchless `CMOV` state selectors and centralized state dispatchers.
+  * Injects number-theoretic invariant opaque predicates ($x(x + 1) \pmod 2 == 0$) to induce path explosion in SMT solvers (angr / Triton).
+* **Direct Threaded Code C++ Runtime (Computed GOTO)**:
+  * Eliminates central `switch` loops. Handlers jump directly to the next handler using GCC/Clang `goto *dispatch_table[op]`.
+  * Per-offset rolling XOR key stream (`xorshift32` + golden ratio PRF) ensuring every byte is positionally encrypted and jump-safe.
+  * Decoy / Junk traps taking up >90% of opcode space: jumping to an unmapped handler traps and halts the VM.
+* **Devirtualization Resistance Scoring (DRS)**:
+  * Computes Shannon bytecode entropy, cyclomatic complexity, flattening depth, and decoy density, outputting a composite 0–100 hardness score.
+
+### 2. RISC-V Vector ISA Synthesis & Formal Toolchain
 * **Deterministic Randomized ISA Synthesis**: Generates compliant 32-bit RISC-V Vector instruction sets across 28 instruction families (Integer Arithmetic, Saturating DSP, Widening Double-Precision, Mask Logic, and Reductions).
 * **Guaranteed Zero Encoding Collisions**:
   * Enforces an exclusive **1-family = 1-`funct6` monopoly invariant**, preventing opcode packing collisions.
-  * Aggregate root (`Vector_isa_spec`) verifies collision-freedom and unique mnemonics at object construction time.
 * **Formal Sail Export & Round-Trip Parser**:
-  * Emits formal Sail definitions with first-class `mapping clause encdec` bitfields.
-  * Includes a conflict-free LR(1) **Menhir** parser and **ocamllex** lexer capable of parsing `.sail` specifications back into the domain AST with 100% round-trip fidelity.
-* **Hardware Feasibility & Silicon Cost Model (`Hw_cost`)**:
-  * Evaluates register file read/write port sizing (2–3 read ports, 1 write port).
-  * Audits ALU bandwidth and warns if widening destination exceeds $ELEN$ or if vector groups exceed $VLEN$.
-* **Dual Native CPU Emulators**:
-  * **C++20 Emulator**: Emits clean, multi-file C++20 projects (`isa_state.hpp`, `decoder.hpp`, `instructions.cpp`, `main.cpp`) with SIMD-vectorized execution, masked execution via `v0.t`, and CLI runners supporting `--bin` and `--hex`.
-  * **C11 Bare-Metal Emulator**: Generates zero-dependency C11 source suitable for embedded microcontrollers, featuring fail-fast compile-time checks on unsupported features.
+  * Emits formal Sail definitions with first-class `mapping clause encdec` bitfields. Menhir LR(1) parser with 100% round-trip fidelity.
+* **Dual Native CPU Emulators (C++20 SIMD & C11 Bare-Metal)**.
 * **Vector Assembler & Bytecode Toolchain**:
   * Assembles human-readable assembly (`.s` / `.asm`) into binary Vector ByteCode (`.vbc`).
   * `.vbc` format includes a 16-byte magic header (`\x7fVBC`), version, VLEN, ELEN, and instruction count.
