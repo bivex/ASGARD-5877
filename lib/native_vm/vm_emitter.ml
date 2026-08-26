@@ -228,38 +228,44 @@ let emit_cpp_threaded_header ~key_seed opcode_to_handler =
   Buffer.add_string b "} // namespace vanguard_threaded_vm\n";
   Buffer.contents b
 
-let emit_runner_cpp () =
-  {|#include "threaded_vm.hpp"
-#include <fstream>
-#include <iostream>
-#include <vector>
+let emit_runner_cpp bytecode =
+  let b = Buffer.create 2048 in
+  Buffer.add_string b "#include \"threaded_vm.hpp\"\n";
+  Buffer.add_string b "#include <fstream>\n#include <iostream>\n#include <vector>\n\n";
+  Buffer.add_string b "/* Self-contained embedded encrypted bytecode */\n";
+  Buffer.add_string b "static const uint64_t embedded_bytecode[] = {\n";
+  List.iter
+    (fun w ->
+      Buffer.add_string b (Printf.sprintf "    0x%016LXULL,\n" w))
+    bytecode;
+  Buffer.add_string b "};\n\n";
+  Buffer.add_string b "int main(int argc, char** argv) {\n";
+  Buffer.add_string b "    const uint64_t* bc_ptr = embedded_bytecode;\n";
+  Buffer.add_string b "    size_t bc_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);\n";
+  Buffer.add_string b "    std::vector<uint64_t> override_words;\n\n";
+  Buffer.add_string b "    if (argc >= 2) {\n";
+  Buffer.add_string b "        std::ifstream file(argv[1], std::ios::binary);\n";
+  Buffer.add_string b "        if (file.is_open()) {\n";
+  Buffer.add_string b "            uint64_t w;\n";
+  Buffer.add_string b "            while (file.read(reinterpret_cast<char*>(&w), sizeof(w))) {\n";
+  Buffer.add_string b "                override_words.push_back(w);\n";
+  Buffer.add_string b "            }\n";
+  Buffer.add_string b "            bc_ptr = override_words.data();\n";
+  Buffer.add_string b "            bc_len = override_words.size();\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    vanguard_threaded_vm::VMContext ctx;\n";
+  Buffer.add_string b "    bool ok = vanguard_threaded_vm::execute_threaded(ctx, bc_ptr, bc_len);\n";
+  Buffer.add_string b "    if (!ok) {\n";
+  Buffer.add_string b "        std::cerr << \"[VM] Execution failed / trapped!\\n\";\n";
+  Buffer.add_string b "        return 2;\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    std::cout << \"[VM] Execution SUCCESS! Verified \" << ctx.executed_instructions\n";
+  Buffer.add_string b "              << \" instructions. RAX: \" << ctx.gprs[0] << \"\\n\";\n";
+  Buffer.add_string b "    return 0;\n";
+  Buffer.add_string b "}\n";
+  Buffer.contents b
 
-int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <bytecode.vanguard>\n";
-        return 1;
-    }
-    std::ifstream file(argv[1], std::ios::binary);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open bytecode: " << argv[1] << "\n";
-        return 1;
-    }
-    std::vector<uint64_t> words;
-    uint64_t w;
-    while (file.read(reinterpret_cast<char*>(&w), sizeof(w))) {
-        words.push_back(w);
-    }
-    vanguard_threaded_vm::VMContext ctx;
-    bool ok = vanguard_threaded_vm::execute_threaded(ctx, words.data(), words.size());
-    if (!ok) {
-        std::cerr << "[VM] Execution failed / trapped!\n";
-        return 2;
-    }
-    std::cout << "[VM] Execution SUCCESS! Verified " << ctx.executed_instructions
-              << " instructions. RAX: " << ctx.gprs[0] << "\n";
-    return 0;
-}
-|}
 
 let compile_and_package
     ~rng
@@ -395,7 +401,8 @@ let compile_and_package
 
   let final_bytecode = List.rev !bytecode in
   let cpp_src = emit_cpp_threaded_header ~key_seed opcode_to_handler in
-  let runner_src = emit_runner_cpp () in
+  let runner_src = emit_runner_cpp final_bytecode in
+
 
   let decoy_count = 256 - List.length all_op_kinds in
   let mba_nodes = if enable_mba then mba_depth * 15 else 0 in
