@@ -15,6 +15,7 @@
   test_multi_vlen
   test_cli
   test_vanguard_9292
+  test_vanguard_emulator_e2e
   run_tests)
  (libraries
   random_visa_domain

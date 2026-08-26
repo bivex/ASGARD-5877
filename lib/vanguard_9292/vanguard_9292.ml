@@ -279,3 +279,260 @@ let decode_word (t : t) ~key (raw : int64) =
               `Src2 src2,
               `Imm imm,
               `Mask mask )
+
+let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
+  let find_field kind =
+    match List.find_opt (fun f -> f.kind = kind) t.layout.fields with
+    | Some f -> (f.bit_offset, f.bit_width)
+    | None -> (0, 0)
+  in
+  let op_off, op_w = find_field Opcode in
+  let dst_off, dst_w = find_field Dst in
+  let s1_off, s1_w = find_field Src1 in
+  let s2_off, s2_w = find_field Src2 in
+  let imm_off, imm_w = find_field Imm in
+  let mask_off, _ = find_field Mask in
+
+  let mask_expr width =
+    if width >= 64 then "0xFFFFFFFFFFFFFFFFULL"
+    else Printf.sprintf "0x%LXULL" (Int64.sub (Int64.shift_left 1L width) 1L)
+  in
+
+  let b = Buffer.create 4096 in
+  Buffer.add_string b "#pragma once\n";
+  Buffer.add_string b "#include \"isa_state.hpp\"\n";
+  Buffer.add_string b "#include \"decoder.hpp\"\n";
+  Buffer.add_string b "#include \"instructions.hpp\"\n";
+  Buffer.add_string b "#include <cstdint>\n#include <iostream>\n#include <iomanip>\n\n";
+  Buffer.add_string b "namespace vanguard_vm {\n\n";
+
+  (* RollingKey class *)
+  Buffer.add_string b "struct RollingKey {\n";
+  Buffer.add_string b "    uint32_t state;\n";
+  Buffer.add_string b "    inline explicit RollingKey(uint32_t seed) noexcept\n";
+  Buffer.add_string b "        : state(seed == 0 ? 0x1337BEEFU : seed) {}\n\n";
+  Buffer.add_string b "    inline uint32_t next() noexcept {\n";
+  Buffer.add_string b "        uint32_t x = state;\n";
+  Buffer.add_string b "        x ^= x << 13;\n";
+  Buffer.add_string b "        x ^= x >> 17;\n";
+  Buffer.add_string b "        x ^= x << 5;\n";
+  Buffer.add_string b "        if (x == 0) x = 0x1337BEEFU;\n";
+  Buffer.add_string b "        state = x;\n";
+  Buffer.add_string b "        return x;\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "};\n\n";
+
+  (* VanguardDecoder class *)
+  Buffer.add_string b "class VanguardDecoder {\npublic:\n";
+  Buffer.add_string b "    RollingKey key;\n";
+  Buffer.add_string b "    bool trapped{false};\n";
+  Buffer.add_string b "    size_t executed_instructions{0};\n\n";
+  Buffer.add_string b (Printf.sprintf "    explicit VanguardDecoder(uint32_t seed = 0x%08lXU) noexcept : key(seed) {}\n\n" t.key_seed);
+  Buffer.add_string b "    bool decode_and_execute(visa_emulator::EmulatorState& state, uint64_t raw_word) {\n";
+  Buffer.add_string b "        uint32_t k = key.next();\n";
+  Buffer.add_string b "        uint64_t word = raw_word ^ static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(k)));\n\n";
+  Buffer.add_string b (Printf.sprintf "        uint32_t opcode = (word >> %d) & %s;\n" op_off (mask_expr op_w));
+  Buffer.add_string b (Printf.sprintf "        size_t dst = (word >> %d) & %s;\n" dst_off (mask_expr dst_w));
+  Buffer.add_string b (Printf.sprintf "        size_t src1 = (word >> %d) & %s;\n" s1_off (mask_expr s1_w));
+  Buffer.add_string b (Printf.sprintf "        size_t src2 = (word >> %d) & %s;\n" s2_off (mask_expr s2_w));
+  Buffer.add_string b (Printf.sprintf "        int64_t imm = (word >> %d) & %s;\n" imm_off (mask_expr imm_w));
+  Buffer.add_string b (Printf.sprintf "        bool mask = ((word >> %d) & 1) != 0;\n\n" mask_off);
+
+  Buffer.add_string b "        visa_emulator::DecodedInstruction dec;\n";
+  Buffer.add_string b "        dec.vd = static_cast<uint8_t>(dst);\n";
+  Buffer.add_string b "        dec.vs2 = static_cast<uint8_t>(src2);\n";
+  Buffer.add_string b "        dec.vs1 = static_cast<uint8_t>(src1);\n";
+  Buffer.add_string b "        dec.rs1 = static_cast<uint8_t>(src1);\n";
+  Buffer.add_string b "        dec.imm = static_cast<int8_t>(imm);\n";
+  Buffer.add_string b "        dec.vm = mask ? 1 : 0;\n\n";
+
+  Buffer.add_string b "        switch (opcode) {\n";
+
+  (* Instruction cases *)
+  List.iter
+    (fun (inst : Vector_instruction.t) ->
+      match Opcode_map.encode t.opcodes inst.mnemonic with
+      | None -> ()
+      | Some code ->
+          Buffer.add_string b (Printf.sprintf "            case 0x%02X: // %s\n" code inst.mnemonic);
+          Buffer.add_string b (Printf.sprintf "                dec.id = visa_emulator::InstId::%s;\n" (String.uppercase_ascii inst.mnemonic));
+          Buffer.add_string b (Printf.sprintf "                dec.mnemonic = \"%s\";\n" inst.mnemonic);
+          Buffer.add_string b "                if (!visa_emulator::InstructionExecutor::execute(state, dec)) return false;\n";
+          Buffer.add_string b "                executed_instructions++;\n";
+          Buffer.add_string b "                return true;\n")
+    spec.instructions;
+
+  (* Decoy junk opcode traps *)
+  let junk_codes = ref [] in
+  for c = 0 to (1 lsl t.opcodes.opcode_bits) - 1 do
+    if Opcode_map.is_junk t.opcodes c then junk_codes := c :: !junk_codes
+  done;
+
+  if !junk_codes <> [] then begin
+    Buffer.add_string b "\n            // Decoy Junk Trap Opcode Handlers\n";
+    List.iter
+      (fun c -> Buffer.add_string b (Printf.sprintf "            case 0x%02X:\n" c))
+      (List.rev !junk_codes);
+    Buffer.add_string b "                std::cerr << \"[VANGUARD-TRAP] Decoy junk opcode caught at runtime: 0x\" << std::hex << opcode << \"\\n\";\n";
+    Buffer.add_string b "                trapped = true;\n";
+    Buffer.add_string b "                return false;\n";
+  end;
+
+  Buffer.add_string b "            default:\n";
+  Buffer.add_string b "                std::cerr << \"[VANGUARD-TRAP] Unmapped opcode caught: 0x\" << std::hex << opcode << \"\\n\";\n";
+  Buffer.add_string b "                trapped = true;\n";
+  Buffer.add_string b "                return false;\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "};\n\n";
+  Buffer.add_string b "} // namespace vanguard_vm\n";
+  Buffer.contents b
+
+let split_tokens str =
+  let parts = ref [] in
+  let buf = Buffer.create 16 in
+  let push () =
+    if Buffer.length buf > 0 then begin
+      parts := Buffer.contents buf :: !parts;
+      Buffer.clear buf
+    end
+  in
+  for i = 0 to String.length str - 1 do
+    let c = str.[i] in
+    if c = ' ' || c = '\t' || c = ',' then push ()
+    else Buffer.add_char buf c
+  done;
+  push ();
+  List.rev !parts
+
+let parse_reg reg_str =
+  let s = String.trim (String.lowercase_ascii reg_str) in
+  let body =
+    if String.length s > 0 && (s.[0] = 'v' || s.[0] = 'x') then
+      String.sub s 1 (String.length s - 1)
+    else s
+  in
+  match int_of_string_opt body with
+  | Some idx when idx >= 0 && idx <= 31 -> Ok idx
+  | _ -> Error (Printf.sprintf "Invalid register '%s'" reg_str)
+
+let parse_imm imm_str =
+  match int_of_string_opt (String.trim imm_str) with
+  | Some v -> Ok v
+  | None -> Error (Printf.sprintf "Invalid immediate '%s'" imm_str)
+
+let strip_comments line =
+  let rec find_comment i =
+    if i >= String.length line then String.length line
+    else if line.[i] = '#' then i
+    else if i + 1 < String.length line && line.[i] = '/' && line.[i + 1] = '/' then i
+    else find_comment (i + 1)
+  in
+  String.trim (String.sub line 0 (find_comment 0))
+
+let assemble_program (t : t) (spec : Vector_isa_spec.t) source_text =
+  let key = Rolling_key.make ~seed:t.key_seed in
+  let lines = String.split_on_char '\n' source_text in
+  let rec loop line_no acc = function
+    | [] -> Ok (List.rev acc)
+    | raw_line :: rest ->
+        let line = strip_comments raw_line in
+        if line = "" || String.ends_with ~suffix:":" line then
+          loop (line_no + 1) acc rest
+        else
+          match split_tokens line with
+          | [] -> loop (line_no + 1) acc rest
+          | mnem_raw :: operands -> (
+              let mnem = String.lowercase_ascii mnem_raw in
+              match Vector_isa_spec.get_by_mnemonic spec mnem with
+              | None -> Error (Printf.sprintf "Line %d: Unknown instruction '%s'" line_no mnem_raw)
+              | Some inst -> (
+                  let mask = ref true in
+                  let ops = ref operands in
+                  if !ops <> [] then begin
+                    let last = String.lowercase_ascii (List.hd (List.rev !ops)) in
+                    if last = "v0.t" || last = "masked" then begin
+                      mask := false;
+                      let rec drop_last = function [] | [ _ ] -> [] | x :: xs -> x :: drop_last xs in
+                      ops := drop_last !ops
+                    end
+                  end;
+                  let parse_ops =
+                    match inst.format with
+                    | Types.Instruction_format.OP_VV
+                    | Types.Instruction_format.OP_RED
+                    | Types.Instruction_format.OP_WIDENING -> (
+                        match !ops with
+                        | [ d; s2; s1 ] -> (
+                            match parse_reg d, parse_reg s2, parse_reg s1 with
+                            | Ok rd, Ok rs2, Ok rs1 -> Ok (rd, rs1, rs2, 0)
+                            | Error e, _, _ | _, Error e, _ | _, _, Error e -> Error e)
+                        | _ -> Error (Printf.sprintf "Line %d: %s expects 3 operands" line_no mnem))
+                    | Types.Instruction_format.OP_VX -> (
+                        match !ops with
+                        | [ d; s2; s1 ] -> (
+                            match parse_reg d, parse_reg s2, parse_reg s1 with
+                            | Ok rd, Ok rs2, Ok rs1 -> Ok (rd, rs1, rs2, 0)
+                            | Error e, _, _ | _, Error e, _ | _, _, Error e -> Error e)
+                        | _ -> Error (Printf.sprintf "Line %d: %s expects 3 operands" line_no mnem))
+                    | Types.Instruction_format.OP_VI -> (
+                        match !ops with
+                        | [ d; s2; imm_str ] -> (
+                            match parse_reg d, parse_reg s2, parse_imm imm_str with
+                            | Ok rd, Ok rs2, Ok imm -> Ok (rd, 0, rs2, imm)
+                            | Error e, _, _ | _, Error e, _ | _, _, Error e -> Error e)
+                        | _ -> Error (Printf.sprintf "Line %d: %s expects vd, vs2, simm" line_no mnem))
+                    | Types.Instruction_format.OP_MVV -> (
+                        match !ops with
+                        | [ d; s2 ] -> (
+                            match parse_reg d, parse_reg s2 with
+                            | Ok rd, Ok rs2 -> Ok (rd, 0, rs2, 0)
+                            | Error e, _ | _, Error e -> Error e)
+                        | _ -> Error (Printf.sprintf "Line %d: %s expects vd, vs2" line_no mnem))
+                    | _ -> Error (Printf.sprintf "Line %d: Unsupported format" line_no)
+                  in
+                  match parse_ops with
+                  | Error err -> Error err
+                  | Ok (dst, src1, src2, imm) -> (
+                      match encode_word t ~mnemonic:inst.mnemonic ~dst ~src1 ~src2 ~imm ~mask:!mask ~key with
+                      | Error err -> Error (Printf.sprintf "Line %d: %s" line_no err)
+                      | Ok word -> loop (line_no + 1) (word :: acc) rest)))
+  in
+  loop 1 [] lines
+
+let write_bytecode_file words filepath =
+  try
+    let oc = open_out_bin filepath in
+    List.iter
+      (fun w ->
+        for byte_idx = 0 to 7 do
+          let shift = byte_idx * 8 in
+          let b = Int64.to_int (Int64.logand (Int64.shift_right_logical w shift) 0xFFL) in
+          output_byte oc b
+        done)
+      words;
+    close_out oc;
+    Ok filepath
+  with exn ->
+    Error (Printf.sprintf "Failed to write bytecode to %s: %s" filepath (Printexc.to_string exn))
+
+let read_bytecode_file filepath =
+  try
+    let ic = open_in_bin filepath in
+    let len = in_channel_length ic in
+    let bytes = really_input_string ic len in
+    close_in ic;
+    let count = len / 8 in
+    let words = ref [] in
+    for i = 0 to count - 1 do
+      let offset = i * 8 in
+      let w = ref 0L in
+      for byte_idx = 0 to 7 do
+        let b = Int64.of_int (Char.code bytes.[offset + byte_idx]) in
+        w := Int64.logor !w (Int64.shift_left b (byte_idx * 8))
+      done;
+      words := !w :: !words
+    done;
+    Ok (List.rev !words)
+  with exn ->
+    Error (Printf.sprintf "Failed to read bytecode from %s: %s" filepath (Printexc.to_string exn))

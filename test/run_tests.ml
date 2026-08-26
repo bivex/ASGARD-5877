@@ -14,4 +14,5 @@ let () =
     ("Multi-VLEN Emulation", Test_multi_vlen.tests);
     ("CLI Integration E2E", Test_cli.tests);
     ("Vanguard-9292 Obfuscation", Test_vanguard_9292.tests);
+    ("Vanguard Emulator E2E", Test_vanguard_emulator_e2e.tests);
   ]

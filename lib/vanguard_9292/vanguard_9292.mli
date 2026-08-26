@@ -118,3 +118,18 @@ val decode_word :
   ( string * [ `Dst of int ] * [ `Src1 of int ] * [ `Src2 of int ] * [ `Imm of int ] * [ `Mask of bool ],
     [ `Junk_opcode | `Unknown_opcode of int | `Corrupted_field of string ] )
   result
+
+(** Emits C++ Vanguard decoder header (vanguard_decoder.hpp) implementing
+    runtime xorshift32 rolling key, bitfield unpacker, and trap dispatch. *)
+val emit_cpp_decoder : t -> Random_visa_domain.Vector_isa_spec.t -> string
+
+(** Assembles assembly text into protected Vanguard-9292 bytecode words. *)
+val assemble_program :
+  t ->
+  Random_visa_domain.Vector_isa_spec.t ->
+  string ->
+  (int64 list, string) result
+
+val write_bytecode_file : int64 list -> string -> (string, string) result
+
+val read_bytecode_file : string -> (int64 list, string) result
