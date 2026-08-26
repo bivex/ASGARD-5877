@@ -20,7 +20,10 @@ let test_header_generation () =
   check bool "contains ASG_OPAQUE_TRUE" true (contains_sub hdr "ASG_OPAQUE_TRUE");
   check bool "contains ASG_CFF_BEGIN" true (contains_sub hdr "ASG_CFF_BEGIN");
   check bool "contains ASG_hash_api_str" true (contains_sub hdr "ASG_hash_api_str");
-  check bool "contains ASG_TIMING_GUARD" true (contains_sub hdr "ASG_TIMING_GUARD_START")
+  check bool "contains ASG_TIMING_GUARD" true (contains_sub hdr "ASG_TIMING_GUARD_START");
+  check bool "contains ASG_ANTI_DEBUG_GUARD" true (contains_sub hdr "ASG_ANTI_DEBUG_GUARD");
+  check bool "contains ASG_is_debugger_present" true (contains_sub hdr "ASG_is_debugger_present")
+
 
 
 let test_string_obfuscation () =

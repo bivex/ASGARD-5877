@@ -110,10 +110,11 @@ let shuffle_array rng arr =
 
 let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_handler =
   let b = Buffer.create 4096 in
-
   Buffer.add_string b "#pragma once\n";
-  Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n\n";
+  Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n";
+  Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
+
 
   Buffer.add_string b "/* ------------------------------------------------------------------------- */\n";
   Buffer.add_string b "/* Randomized Architectural Register Map (π ∈ S_32)                          */\n";
@@ -240,6 +241,17 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_h
   Buffer.add_string b "        ctx.trapped = true;\n";
   Buffer.add_string b "        return false;\n";
   Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    /* Active Anti-Debugging & Hardware Breakpoint Probe */\n";
+  Buffer.add_string b "#if defined(__APPLE__)\n";
+  Buffer.add_string b "    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };\n";
+  Buffer.add_string b "    struct kinfo_proc kinfo = {};\n";
+  Buffer.add_string b "    size_t ksize = sizeof(kinfo);\n";
+  Buffer.add_string b "    if (sysctl(mib, 4, &kinfo, &ksize, (void*)0, 0) == 0 && (kinfo.kp_proc.p_flag & P_TRACED)) {\n";
+  Buffer.add_string b "        ctx.reg_mask ^= 0xCAFEBABE13375877ULL;\n";
+  Buffer.add_string b "        ctx.trapped = true;\n";
+  Buffer.add_string b "        return false;\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "#endif\n\n";
 
   Buffer.add_string b "    /* Ephemeral Working Buffer: Isolated stack frame execution */\n";
   Buffer.add_string b "    uint64_t stack_buf[256];\n";
