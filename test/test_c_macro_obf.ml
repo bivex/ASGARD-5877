@@ -78,11 +78,56 @@ let test_e2e_c_transformation_and_execution () =
     check string "output matches expected decrypted string and computation"
       "[ASGARD_C_OBFUSCATION_SUCCESS] SUM=1379 XOR=1299" line)
 
+let test_signal_based_dispatching_e2e () =
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let in_c = Filename.concat tmp_dir "sig_test.c" in
+    let hdr_file = Filename.concat tmp_dir "asgard_obf.h" in
+    let bin_file = Filename.concat tmp_dir "sig_bin" in
 
+    let hdr_content = generate_header () in
+    Test_helpers.write_file_string hdr_file hdr_content;
+
+    let sample_src = {|
+#include "asgard_obf.h"
+#include <stdio.h>
+#include <stdlib.h>
+
+static int g_secret_state = 0;
+
+void secret_handler(void) {
+    g_secret_state = 1337;
+    printf("[SIGNAL_DISPATCH_OK] State=%d\n", g_secret_state);
+    exit(0);
+}
+
+int main() {
+    ASG_SIG_DISPATCH_SETUP();
+    printf("[DISPATCHING_VIA_EXCEPTION]\n");
+    ASG_SIG_JUMP(secret_handler);
+    // Decompiler sees dead end / unreachable, but program continues into secret_handler!
+    return 1;
+}
+|} in
+    Test_helpers.write_file_string in_c sample_src;
+
+    let comp_cmd = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir in_c bin_file in
+    let comp_status = Sys.command comp_cmd in
+    check int "clang compilation returns 0" 0 comp_status;
+
+    let out_log = Filename.concat tmp_dir "sig_output.log" in
+    let run_cmd = Printf.sprintf "%s > %s" bin_file out_log in
+    let run_status = Sys.command run_cmd in
+    check int "signal dispatch execution returns 0" 0 run_status;
+
+    let out_str = Test_helpers.read_file_string out_log in
+    check bool "signal dispatched to secret handler" true (contains_sub out_str "SIGNAL_DISPATCH_OK")
+  )
 
 let tests = [
   ("header_generation", `Quick, test_header_generation);
   ("string_obfuscation", `Quick, test_string_obfuscation);
   ("constant_blinding", `Quick, test_constant_blinding);
   ("e2e_c_transformation_and_execution", `Quick, test_e2e_c_transformation_and_execution);
+  ("signal_based_dispatching_e2e", `Quick, test_signal_based_dispatching_e2e);
 ]
+
