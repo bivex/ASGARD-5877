@@ -99,3 +99,20 @@ The OCaml implementation enforces these contracts through:
    - 1,000 seeds: Zero encoding collisions.
    - 1,000 seeds: Formal Sail export $\to$ Menhir parse round-trip identity.
    - 1,000 seeds: Per-`funct6` single-family monopoly and unique `funct3` allocation.
+
+---
+
+## 5. Dual Architecture: Virtual Machine Code Protector (VM-Protector)
+
+In addition to RISC-V Vector ISA synthesis, ASGARD-5877 includes an industrial **VMProtect / Themida-style code virtualization engine**:
+
+* **x86_64 $\to$ VM-IR Lifter (`lib/x86_lifter/`, `lib/vm_ir/`)**: Intel syntax parser with full SIB addressing `[base + index*scale + disp]`, 32-bit zero-extension semantics, and algebraic Lazy Flags reconstruction (CF, ZF, SF, OF, PF, AF).
+* **F\* Formally Verified MBA Engine (`lib/mba_engine/`, `fstar/`)**: Mixed Boolean-Arithmetic polynomial expansions verified against SMT solver Z3 5.0.0.
+* **Control-Flow Flattening (`lib/cff/`)**: Chenxi Wang CFG flattening with branchless `CMOV` state transition selectors and number-theoretic opaque predicates ($x(x+1) \pmod 2 == 0$).
+* **Direct Threaded Code C++ Runtime (`lib/native_vm/`)**: GCC/Clang computed goto (`goto *dispatch_table[op]`), positional rolling PRF key stream ($k = \text{PRF}(\text{seed}, \text{offset})$), and $>91.8\%$ decoy traps.
+* **Devirtualization Resistance Scoring (`Metrics.ml`)**: Automated evaluation of Shannon bytecode entropy ($H \in [0, 8]$), cyclomatic complexity, flattening depth, and decoy density (DRS score 0–100).
+
+### Detailed Documentation Index
+* [VM Protector Architecture & Specification](file:///Volumes/External/Code/ASGARD-5877/docs/VM_PROTECTOR.md)
+* [Formal Verification & F* Proof Workflow](file:///Volumes/External/Code/ASGARD-5877/docs/FORMAL_VERIFICATION.md)
+* [Devirtualization Resistance & Entropy Model](file:///Volumes/External/Code/ASGARD-5877/docs/ENTROPY_MODEL.md)
