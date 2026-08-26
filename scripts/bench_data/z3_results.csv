@@ -1,0 +1,5 @@
+depth,ast_nodes,time_ms,sat_result
+1,24,16.576,unsat
+2,42,95.999,unsat
+3,60,26.153,sat
+4,78,34.428,unsat
