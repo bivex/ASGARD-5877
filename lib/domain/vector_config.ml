@@ -28,10 +28,16 @@ let make
   else
     Ok { vlen; elen; default_sew; default_lmul; tail_policy; mask_policy; num_vregs }
 
-let default =
-  match make () with
-  | Ok cfg -> cfg
-  | Error _ -> failwith "Failed to construct default VectorConfig"
+let default = {
+  vlen = 128;
+  elen = 64;
+  default_sew = Types.Sew.E32;
+  default_lmul = Types.Lmul.M1;
+  tail_policy = Types.Tail_policy.Agnostic;
+  mask_policy = Types.Mask_policy.Agnostic;
+  num_vregs = 32;
+}
+
 
 let vlen_bytes t = t.vlen / 8
 

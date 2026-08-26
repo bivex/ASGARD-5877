@@ -33,22 +33,23 @@ let weight_for t cls =
   | Some w -> w
   | None -> 0.0
 
-let rvv_like =
-  match make ~name:"rvv-like" ~class_weights:[
+let rvv_like = {
+  name = "rvv-like";
+  class_weights = [
     (Instruction_class.Arith, 55.0);
     (Instruction_class.Saturating, 12.0);
     (Instruction_class.Widening, 18.0);
     (Instruction_class.Compare, 15.0);
-  ] with
-  | Ok p -> p
-  | Error _ -> failwith "Failed to construct rvv-like profile"
+  ];
+}
 
-let uniform =
-  match make ~name:"uniform" ~class_weights:[
+let uniform = {
+  name = "uniform";
+  class_weights = [
     (Instruction_class.Arith, 25.0);
     (Instruction_class.Saturating, 25.0);
     (Instruction_class.Widening, 25.0);
     (Instruction_class.Compare, 25.0);
-  ] with
-  | Ok p -> p
-  | Error _ -> failwith "Failed to construct uniform profile"
+  ];
+}
+
