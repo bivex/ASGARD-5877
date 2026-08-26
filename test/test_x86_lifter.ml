@@ -145,6 +145,36 @@ array_sum:
           (* 10 + 20 + 30 + 40 = 100 *)
           Alcotest.(check int64) "array sum = 100" 100L (get_reg state Register.rax)
 
+let test_marker_region_extraction () =
+  let asm_with_markers = {|
+func_with_markers:
+    mov rdx, 10
+    ; --- START PROTECTED REGION ---
+    .byte 0xEB, 0x0E, 'A','S','G','A','R','D','_','B','E','G','_','U','_','_'
+    mov rax, rdi
+    add rax, rsi
+    imul rax, 2
+    .byte 0xEB, 0x0E, 'A','S','G','A','R','D','_','E','N','D','_','_','_','_'
+    ; --- END PROTECTED REGION ---
+    ret
+|} in
+  let raw_lines = Result.get_ok (X86_parser.parse_lines asm_with_markers) in
+  let regions = Lifter.extract_marked_regions raw_lines in
+  Alcotest.(check int) "detected 1 marked region" 1 (List.length regions);
+  let (mode, lines) = List.hd regions in
+  Alcotest.(check string) "mode is ULTRA" "ULTRA(region)" (X86_parser.marker_mode_to_string mode);
+  match Lifter.lift_lines lines with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 15L;
+      set_reg state Register.rsi 5L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* (15 + 5) * 2 = 40 *)
+          Alcotest.(check int64) "virtualized slice result (15+5)*2 = 40" 40L (get_reg state Register.rax)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -152,4 +182,6 @@ let tests = [
   Alcotest.test_case "lift_and_eval_factorial_loop" `Quick test_lift_and_eval_factorial_loop;
   Alcotest.test_case "lift_and_eval_mem_rmw" `Quick test_lift_and_eval_mem_rmw;
   Alcotest.test_case "lift_and_eval_array_sum_sib" `Quick test_lift_and_eval_array_sum_sib;
+  Alcotest.test_case "marker_region_extraction" `Quick test_marker_region_extraction;
 ]
+

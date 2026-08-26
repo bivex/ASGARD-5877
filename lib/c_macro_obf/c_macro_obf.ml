@@ -154,8 +154,28 @@ let generate_header ?(config = default_config) () =
   add "        } \\";
   add "    }";
   add "";
+  add "/* ------------------------------------------------------------------------- */";
+  add "/* 6. MARKER-BASED REGION PROTECTION (VMProtect Style SDK)                   */";
+  add "/* ------------------------------------------------------------------------- */";
+  add "#if defined(__GNUC__) || defined(__clang__)";
+  add "  #define ASGARD_BEGIN_VIRTUALIZE(tag) \\";
+  add "      __asm__ volatile (\".byte 0xEB, 0x0E, 'A','S','G','A','R','D','_','B','E','G','_','V','_','_' \\n\\t\")";
+  add "  #define ASGARD_BEGIN_MUTATION(tag) \\";
+  add "      __asm__ volatile (\".byte 0xEB, 0x0E, 'A','S','G','A','R','D','_','B','E','G','_','M','_','_' \\n\\t\")";
+  add "  #define ASGARD_BEGIN_ULTRA(tag) \\";
+  add "      __asm__ volatile (\".byte 0xEB, 0x0E, 'A','S','G','A','R','D','_','B','E','G','_','U','_','_' \\n\\t\")";
+  add "  #define ASGARD_END() \\";
+  add "      __asm__ volatile (\".byte 0xEB, 0x0E, 'A','S','G','A','R','D','_','E','N','D','_','_','_','_' \\n\\t\")";
+  add "#else";
+  add "  #define ASGARD_BEGIN_VIRTUALIZE(tag)";
+  add "  #define ASGARD_BEGIN_MUTATION(tag)";
+  add "  #define ASGARD_BEGIN_ULTRA(tag)";
+  add "  #define ASGARD_END()";
+  add "#endif";
+  add "";
   add "#endif /* _ASGARD_OBF_H_ */";
   Buffer.contents b
+
 
 (** Obfuscate a raw string into an inline stack-decrypted C macro expression *)
 let obfuscate_string_literal ~prefix ~seed s =

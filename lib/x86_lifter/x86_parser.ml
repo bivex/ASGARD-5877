@@ -13,11 +13,23 @@ type raw_op =
   | OpMem of raw_mem
   | OpLabel of string
 
+type marker_mode =
+  | ModeVirtualize of string
+  | ModeMutation of string
+  | ModeUltra of string
+
 type raw_line =
   | LineLabel of string
   | LineInstr of string * raw_op list
   | LineDirective of string
+  | LineMarkerBegin of marker_mode
+  | LineMarkerEnd
   | LineEmpty
+
+let marker_mode_to_string = function
+  | ModeVirtualize tag -> Printf.sprintf "VIRTUALIZE(%s)" tag
+  | ModeMutation tag -> Printf.sprintf "MUTATION(%s)" tag
+  | ModeUltra tag -> Printf.sprintf "ULTRA(%s)" tag
 
 let strip_comments line =
   let len = String.length line in
@@ -55,96 +67,138 @@ let parse_mem_operand body default_width =
     Error (Printf.sprintf "Invalid memory syntax '%s'" body)
   else
     let inner = String.trim (String.sub s 1 (len - 2)) in
-    (* Tokenize by + and - *)
     let tokens = ref [] in
     let buf = Buffer.create 16 in
-    let current_sign = ref 1L in
-    let push_token () =
-      if Buffer.length buf > 0 then begin
-        tokens := (!current_sign, Buffer.contents buf) :: !tokens;
-        Buffer.clear buf
-      end
+    let sign = ref 1L in
+
+    let flush is_pos =
+      let t = String.trim (Buffer.contents buf) in
+      Buffer.clear buf;
+      if t <> "" then tokens := (!sign, t) :: !tokens;
+      sign := if is_pos then 1L else -1L
     in
+
     for i = 0 to String.length inner - 1 do
       let c = inner.[i] in
-      if c = '+' then begin
-        push_token ();
-        current_sign := 1L
-      end else if c = '-' then begin
-        push_token ();
-        current_sign := -1L
-      end else if c <> ' ' && c <> '\t' then
-        Buffer.add_char buf c
+      if c = '+' then flush true
+      else if c = '-' then flush false
+      else Buffer.add_char buf c
     done;
-    push_token ();
-    let token_list = List.rev !tokens in
+    flush true;
 
-    let base = ref None in
-    let index = ref None in
-    let disp = ref 0L in
+    let base_reg = ref None in
+    let index_reg = ref None in
+    let total_disp = ref 0L in
     let err = ref None in
 
     List.iter
-      (fun (sign, tok) ->
-        if Option.is_some !err then ()
+      (fun (s_sign, tok) ->
+        if !err <> None then ()
+        else if String.contains tok '*' then (
+          let parts = split_tokens tok '*' in
+          match parts with
+          | [ r_str; scale_str ] -> (
+              match Register.of_string r_str with
+              | Ok r -> (
+                  try
+                    let scale = int_of_string scale_str in
+                    if scale = 1 || scale = 2 || scale = 4 || scale = 8 then
+                      index_reg := Some (r, scale)
+                    else err := Some (Printf.sprintf "Invalid SIB scale %d" scale)
+                  with _ -> err := Some (Printf.sprintf "Invalid scale number '%s'" scale_str))
+              | Error _ -> err := Some (Printf.sprintf "Invalid index register '%s'" r_str))
+          | _ -> err := Some (Printf.sprintf "Malformed indexed term '%s'" tok))
         else
-          (* Check if it's an immediate/disp *)
-          match Int64.of_string_opt tok with
-          | Some imm ->
-              disp := Int64.add !disp (Int64.mul sign imm)
-          | None -> (
-              (* Check if index with scale: reg*scale or scale*reg *)
-              if String.contains tok '*' then
-                let parts = split_tokens tok '*' in
-                match parts with
-                | [ p1; p2 ] -> (
-                    match Int64.of_string_opt p1, Register.of_string p2 with
-                    | Some scale, Ok reg ->
-                        index := Some (reg, Int64.to_int scale)
-                    | _, _ -> (
-                        match Register.of_string p1, Int64.of_string_opt p2 with
-                        | Ok reg, Some scale ->
-                            index := Some (reg, Int64.to_int scale)
-                        | _, _ -> err := Some (Printf.sprintf "Invalid scaled index in '%s'" tok)))
-                | _ -> err := Some (Printf.sprintf "Invalid scaled index in '%s'" tok)
-              else
-                (* Plain register: if base is free, set base; else set index with scale 1 *)
-                match Register.of_string tok with
-                | Ok reg ->
-                    if Option.is_none !base then base := Some reg
-                    else if Option.is_none !index then index := Some (reg, 1)
-                    else err := Some (Printf.sprintf "Multiple index registers in '%s'" inner)
-                | Error e -> err := Some e))
-      token_list;
+          match Register.of_string tok with
+          | Ok r ->
+              if !base_reg = None then base_reg := Some r
+              else if !index_reg = None then index_reg := Some (r, 1)
+              else err := Some "Multiple base/index registers in memory operand"
+          | Error _ -> (
+              try
+                let v = Int64.of_string tok in
+                let signed_v = Int64.mul (Int64.of_int (Int64.to_int s_sign)) v in
+                total_disp := Int64.add !total_disp signed_v
+              with _ -> err := Some (Printf.sprintf "Cannot parse immediate in memory operand: '%s'" tok)))
+      (List.rev !tokens);
 
     match !err with
     | Some e -> Error e
-    | None -> Ok { base = !base; index = !index; disp = !disp; width = default_width }
+    | None ->
+        Ok
+          {
+            base = !base_reg;
+            index = !index_reg;
+            disp = !total_disp;
+            width = default_width;
+          }
 
 let parse_operand str default_width =
-  let s = String.trim str in
-  let width, stripped = parse_width_prefix s in
-  let effective_width = if s <> stripped then width else default_width in
+  let width, stripped = parse_width_prefix str in
+  let w = if width <> Register.B64 then width else default_width in
   if String.starts_with ~prefix:"[" stripped && String.ends_with ~suffix:"]" stripped then
-    match parse_mem_operand stripped effective_width with
-    | Ok mem -> Ok (OpMem mem)
+    match parse_mem_operand stripped w with
+    | Ok m -> Ok (OpMem m)
     | Error e -> Error e
   else
     match Register.of_string stripped with
     | Ok reg -> Ok (OpReg reg)
     | Error _ -> (
-        match Int64.of_string_opt stripped with
-        | Some imm -> Ok (OpImm imm)
-        | None ->
-            (* Treat as symbolic label *)
+        try
+          let v = Int64.of_string stripped in
+          Ok (OpImm v)
+        with _ ->
+          if String.starts_with ~prefix:"offset " (String.lowercase_ascii stripped) then
+            let lbl = String.trim (String.sub stripped 7 (String.length stripped - 7)) in
+            Ok (OpLabel (String.lowercase_ascii lbl))
+          else
             Ok (OpLabel (String.lowercase_ascii stripped)))
+
+let contains_sub s sub =
+  let len_s = String.length s in
+  let len_sub = String.length sub in
+  if len_sub > len_s then false
+  else
+    let found = ref false in
+    for i = 0 to len_s - len_sub do
+      if not !found && String.sub s i len_sub = sub then found := true
+    done;
+    !found
+
+let normalize_alphas s =
+  let b = Buffer.create (String.length s) in
+  String.iter
+    (fun c ->
+      if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c = '_' then
+        Buffer.add_char b (Char.uppercase_ascii c))
+    s;
+  Buffer.contents b
+
 
 let parse_line line =
   let clean = strip_comments line in
+  let norm = normalize_alphas clean in
   if clean = "" then Ok LineEmpty
+  else if contains_sub norm "ASGARD" then begin
+    (* Marker detection *)
+    if contains_sub norm "BEG" || contains_sub norm "BEGIN" then
+      if contains_sub norm "_V" || contains_sub norm "VIRTUAL" then
+        Ok (LineMarkerBegin (ModeVirtualize "region"))
+      else if contains_sub norm "_M" || contains_sub norm "MUTAT" then
+        Ok (LineMarkerBegin (ModeMutation "region"))
+      else
+        Ok (LineMarkerBegin (ModeUltra "region"))
+    else if contains_sub norm "END" then
+      Ok LineMarkerEnd
+    else if String.starts_with ~prefix:"." clean && not (String.contains clean ':') && not (String.starts_with ~prefix:".L" clean) && not (String.starts_with ~prefix:".l" clean) then
+      Ok (LineDirective clean)
+    else
+      Ok (LineDirective clean)
+  end
   else if String.starts_with ~prefix:"." clean && not (String.contains clean ':') && not (String.starts_with ~prefix:".L" clean) && not (String.starts_with ~prefix:".l" clean) then
     Ok (LineDirective clean)
   else if String.ends_with ~suffix:":" clean then
+
     let lbl = String.lowercase_ascii (String.trim (String.sub clean 0 (String.length clean - 1))) in
     Ok (LineLabel lbl)
   else
@@ -158,7 +212,6 @@ let parse_line line =
       find 0
     in
     if first_space = -1 then
-      (* 0-operand instruction: e.g. ret, nop, vm_enter *)
       Ok (LineInstr (String.lowercase_ascii clean, []))
     else
       let mnem = String.lowercase_ascii (String.trim (String.sub clean 0 first_space)) in
@@ -175,11 +228,42 @@ let parse_line line =
 
 let parse_lines text =
   let lines = String.split_on_char '\n' text in
-  let rec loop line_no acc = function
+  let rec loop line_no acc pending_bytes = function
     | [] -> Ok (List.rev acc)
-    | l :: rest -> (
-        match parse_line l with
-        | Error e -> Error (Printf.sprintf "Line %d: %s" line_no e)
-        | Ok parsed -> loop (line_no + 1) (parsed :: acc) rest)
+    | l :: rest ->
+        let clean = strip_comments l in
+        let upper = String.uppercase_ascii clean in
+        if String.starts_with ~prefix:".BYTE" upper then
+          let parts = split_tokens (String.sub clean 5 (String.length clean - 5)) ',' in
+          let new_bytes =
+            List.filter_map
+              (fun p ->
+                let p = String.trim p in
+                if String.starts_with ~prefix:"'" p && String.ends_with ~suffix:"'" p && String.length p = 3 then
+                  Some (Char.uppercase_ascii p.[1])
+                else
+                  try
+                    let v = int_of_string p in
+                    if v >= 32 && v <= 126 then Some (Char.uppercase_ascii (Char.chr v)) else None
+                  with _ -> None)
+              parts
+          in
+          let total_chars = pending_bytes @ new_bytes in
+          let str = String.of_seq (List.to_seq total_chars) in
+          if contains_sub str "ASGARD_BEG_V" || contains_sub str "ASGARD_BEGIN_V" then
+            loop (line_no + 1) (LineMarkerBegin (ModeVirtualize "region") :: acc) [] rest
+          else if contains_sub str "ASGARD_BEG_M" || contains_sub str "ASGARD_BEGIN_M" then
+            loop (line_no + 1) (LineMarkerBegin (ModeMutation "region") :: acc) [] rest
+          else if contains_sub str "ASGARD_BEG" || contains_sub str "ASGARD_BEGIN" then
+            loop (line_no + 1) (LineMarkerBegin (ModeUltra "region") :: acc) [] rest
+          else if contains_sub str "ASGARD_END" then
+            loop (line_no + 1) (LineMarkerEnd :: acc) [] rest
+          else
+            loop (line_no + 1) acc total_chars rest
+        else
+          match parse_line l with
+          | Error e -> Error (Printf.sprintf "Line %d: %s" line_no e)
+          | Ok parsed -> loop (line_no + 1) (parsed :: acc) [] rest
   in
-  loop 1 [] lines
+  loop 1 [] [] lines
+

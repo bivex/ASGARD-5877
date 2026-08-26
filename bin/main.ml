@@ -461,7 +461,8 @@ let protect_cmd =
   Cmd.v (Cmd.info "protect" ~doc) term
 
 let run_c_obf input out_file out_header seed strings consts mba_depth compile =
-  let seed_val = match seed with Some s -> s | None -> Random.self_init (); Random.int 0x7FFFFFFF in
+  let seed_val = match seed with Some s -> s | None -> Random.self_init (); Random.int 0x3FFFFFFF in
+
   let config = {
     C_macro_obf.seed = seed_val;
     mba_depth;

@@ -197,7 +197,8 @@ let lift_lines ?(options = default_options) raw_lines =
     | [] ->
         flush_block ();
         Ok (List.rev !raw_blocks)
-    | X86_parser.LineEmpty :: rest | X86_parser.LineDirective _ :: rest ->
+    | X86_parser.LineEmpty :: rest | X86_parser.LineDirective _ :: rest
+    | X86_parser.LineMarkerBegin _ :: rest | X86_parser.LineMarkerEnd :: rest ->
         process rest
     | X86_parser.LineLabel lbl :: rest ->
         if !current_instrs <> [] then flush_block ();
@@ -214,6 +215,7 @@ let lift_lines ?(options = default_options) raw_lines =
   in
 
   let* blocks = process raw_lines in
+
 
   (* Patch fallthrough jumps between consecutive blocks *)
   let patched_blocks = ref [] in
@@ -250,6 +252,44 @@ let lift_lines ?(options = default_options) raw_lines =
   resolve_cfg_labels func.cfg
   |> Result.map (fun resolved_cfg -> { func with cfg = resolved_cfg })
 
+let extract_marked_regions raw_lines =
+  let has_markers =
+    List.exists
+      (function
+        | X86_parser.LineMarkerBegin _ | X86_parser.LineMarkerEnd -> true
+        | _ -> false)
+      raw_lines
+  in
+  if not has_markers then
+    [ (X86_parser.ModeUltra "main", raw_lines) ]
+  else
+    let regions = ref [] in
+    let current_mode = ref None in
+    let current_lines = ref [] in
+
+    List.iter
+      (function
+        | X86_parser.LineMarkerBegin mode ->
+            current_mode := Some mode;
+            current_lines := []
+        | X86_parser.LineMarkerEnd -> (
+            match !current_mode with
+            | Some m ->
+                regions := (m, List.rev !current_lines) :: !regions;
+                current_mode := None;
+                current_lines := []
+            | None -> ())
+        | line ->
+            if !current_mode <> None then
+              current_lines := line :: !current_lines)
+      raw_lines;
+
+    if !regions = [] then
+      [ (X86_parser.ModeUltra "main", raw_lines) ]
+    else
+      List.rev !regions
+
 let lift_function ?options text =
   let* raw_lines = X86_parser.parse_lines text in
   lift_lines ?options raw_lines
+
