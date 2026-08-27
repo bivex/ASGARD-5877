@@ -21,6 +21,7 @@ let () =
     ("Native Threaded VM & Metrics", Test_native_vm_and_metrics.tests);
     ("C Macro Obfuscation", Test_c_macro_obf.tests);
     ("VM Runtime Profile", Test_runtime_profile.tests);
+    ("Compiler Pipeline & Equivalence", Test_compiler_pipeline.tests);
   ]
 
 
