@@ -1,4 +1,4 @@
-.PHONY: all build test clean corpus corpus-arm64 benchmark benchmark-arm64
+.PHONY: all build test clean corpus corpus-arm64 benchmark benchmark-arm64 coverage
 
 all: build
 
@@ -7,6 +7,9 @@ build:
 
 test:
 	@dune test
+
+coverage:
+	@./scripts/coverage.sh
 
 corpus:
 	@./scripts/build_corpus.sh
