@@ -10,12 +10,14 @@ echo "========================================================================="
 echo "Host: $(uname -s) $(uname -m) | Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "-------------------------------------------------------------------------"
 
-echo "[1/2] Building OCaml Pipeline CLI..."
+echo "[1/3] Building OCaml Pipeline CLI & Metal GPU Math Bridge..."
 cd "$ROOT_DIR"
 dune build bin/main.exe
+mkdir -p "$ROOT_DIR/binaries"
+clang++ -O3 -fobjc-arc -framework Metal -framework Foundation "$ROOT_DIR/lib/gpu_synth/asgard_gpu_math_bridge.mm" -o "$ROOT_DIR/binaries/asgard_gpu_math_bridge"
 
 echo ""
-echo "[2/2] Compiling Real Multi-Build ARM64 Corpus (8 Builds with CFF & MBA)..."
+echo "[2/3] Compiling Real Multi-Build ARM64 Corpus (8 Builds with CFF & MBA)..."
 "$ROOT_DIR/scripts/build_corpus_arm64.sh"
 
 echo ""
