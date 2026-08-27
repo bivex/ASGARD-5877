@@ -25,6 +25,24 @@ let raw_to_ir_operand = function
       }
   | OpLabel _ -> Ir.Imm 0L
 
+let map_cond_str s =
+  match String.lowercase_ascii (String.trim s) with
+  | "eq" -> Flags.E
+  | "ne" -> Flags.NE
+  | "lt" -> Flags.L
+  | "le" -> Flags.LE
+  | "gt" -> Flags.G
+  | "ge" -> Flags.GE
+  | "hi" -> Flags.A
+  | "ls" -> Flags.BE
+  | "hs" | "cs" -> Flags.AE
+  | "lo" | "cc" -> Flags.B
+  | "mi" -> Flags.S
+  | "pl" -> Flags.NS
+  | "vs" -> Flags.O
+  | "vc" -> Flags.NO
+  | _ -> Flags.E
+
 let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string) result =
   match (mnemonic, ops) with
   | ("nop", []) -> Ok [ Ir.Nop ]
@@ -60,23 +78,33 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
 
   | ("mul", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = Mul; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
+  | ("madd", [ OpReg dst; OpReg src1; OpReg src2; OpReg src3 ]) ->
+      Ok [
+        Ir.Alu { op = Mul; dst; src1 = Reg src1; src2 = Reg src2; set_flags = false };
+        Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg src3; set_flags = false };
+      ]
+  | ("msub", [ OpReg dst; OpReg src1; OpReg src2; OpReg src3 ]) ->
+      Ok [
+        Ir.Alu { op = Mul; dst; src1 = Reg src1; src2 = Reg src2; set_flags = false };
+        Ir.Alu { op = Sub; dst; src1 = Reg src3; src2 = Reg dst; set_flags = false };
+      ]
   | ("sdiv", [ OpReg dst; OpReg src1; OpReg src2 ]) ->
       Ok [ Ir.Alu { op = Idiv; dst; src1 = Reg src1; src2 = Reg src2; set_flags = false } ]
   | ("udiv", [ OpReg dst; OpReg src1; OpReg src2 ]) ->
       Ok [ Ir.Alu { op = Div; dst; src1 = Reg src1; src2 = Reg src2; set_flags = false } ]
 
   (* Logic *)
-  | ("and", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | ("and", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Ok [ Ir.Alu { op = And; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
-  | ("ands", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | ("ands", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Ok [ Ir.Alu { op = And; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = true } ]
 
-  | ("orr", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | ("orr", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Ok [ Ir.Alu { op = Or; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
-  | ("eor", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | ("eor", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Ok [ Ir.Alu { op = Xor; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
 
-  (* Shifts *)
+  (* Shifts & Bitfields *)
   | ("lsl", [ OpReg dst; OpReg src1; OpImm shift ]) ->
       Ok [ Ir.Alu { op = Shl; dst; src1 = Reg src1; src2 = Imm shift; set_flags = false } ]
   | ("lsr", [ OpReg dst; OpReg src1; OpImm shift ]) ->
@@ -85,14 +113,62 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Alu { op = Sar; dst; src1 = Reg src1; src2 = Imm shift; set_flags = false } ]
   | ("ror", [ OpReg dst; OpReg src1; OpImm shift ]) ->
       Ok [ Ir.Alu { op = Ror; dst; src1 = Reg src1; src2 = Imm shift; set_flags = false } ]
+  | ("ubfx", (OpReg dst :: OpReg src :: OpImm lsb :: OpImm width :: _)) ->
+      let w = min 64 (max 1 (Int64.to_int width)) in
+      let mask = if w = 64 then -1L else Int64.sub (Int64.shift_left 1L w) 1L in
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Reg src };
+        Ir.Alu { op = Shr; dst; src1 = Reg dst; src2 = Imm lsb; set_flags = false };
+        Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm mask; set_flags = false };
+      ]
+  | ("sbfx", (OpReg dst :: OpReg src :: OpImm lsb :: OpImm width :: _)) ->
+      let w = min 64 (max 1 (Int64.to_int width)) in
+      let shift_left_amt = max 0 (64 - (Int64.to_int lsb + w)) in
+      let shift_right_amt = 64 - w in
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Reg src };
+        Ir.Alu { op = Shl; dst; src1 = Reg dst; src2 = Imm (Int64.of_int shift_left_amt); set_flags = false };
+        Ir.Alu { op = Sar; dst; src1 = Reg dst; src2 = Imm (Int64.of_int shift_right_amt); set_flags = false };
+      ]
+  | ("extr", (OpReg dst :: OpReg src1 :: OpReg _ :: OpImm shift :: _)) ->
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Reg src1 };
+        Ir.Alu { op = Ror; dst; src1 = Reg dst; src2 = Imm shift; set_flags = false };
+      ]
   | ("neg", [ OpReg dst; OpReg src ]) ->
       Ok [ Ir.Unary { op = Neg; dst; src = Reg src; set_flags = false } ]
 
   (* Comparisons *)
-  | ("cmp", [ OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | ("cmp", (OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Ok [ Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 } ]
-  | ("tst", [ OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | ("tst", (OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Ok [ Ir.Test { src1 = Reg src1; src2 = raw_to_ir_operand src2 } ]
+
+  (* Conditional Set / Select *)
+  | ("cset", [ OpReg dst; cond_op ]) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Imm 0L };
+        Ir.Setcc { cond = map_cond_str c_str; dst = Reg dst };
+      ]
+  | ("cset", (OpReg dst :: _)) ->
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Imm 0L };
+        Ir.Setcc { cond = E; dst = Reg dst };
+      ]
+  | ("csel", (OpReg dst :: OpReg src1 :: OpReg src2 :: cond_op :: _)) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Reg src2 };
+        Ir.Cmov { cond = map_cond_str c_str; dst; src = Reg src1 };
+      ]
+  | ("cinc", (OpReg dst :: OpReg src :: cond_op :: _)) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Reg src };
+        Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Imm 1L; set_flags = false };
+        Ir.Cmov { cond = Flags.condition_negate (map_cond_str c_str); dst; src = Reg src };
+      ]
 
   (* Memory Load / Store *)
   | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb"), [ OpReg dst; OpMem m ]) ->
@@ -121,6 +197,22 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Jcc { cond = G; target_true = Label target; target_false = TargetImm 0L } ]
   | ("b.ge", [ OpLabel target ]) ->
       Ok [ Ir.Jcc { cond = GE; target_true = Label target; target_false = TargetImm 0L } ]
+  | ("b.hi", [ OpLabel target ]) ->
+      Ok [ Ir.Jcc { cond = A; target_true = Label target; target_false = TargetImm 0L } ]
+  | ("b.ls", [ OpLabel target ]) ->
+      Ok [ Ir.Jcc { cond = BE; target_true = Label target; target_false = TargetImm 0L } ]
+  | (("b.hs" | "b.cs"), [ OpLabel target ]) ->
+      Ok [ Ir.Jcc { cond = AE; target_true = Label target; target_false = TargetImm 0L } ]
+  | (("b.lo" | "b.cc"), [ OpLabel target ]) ->
+      Ok [ Ir.Jcc { cond = B; target_true = Label target; target_false = TargetImm 0L } ]
+  | ("b.mi", [ OpLabel target ]) ->
+      Ok [ Ir.Jcc { cond = S; target_true = Label target; target_false = TargetImm 0L } ]
+  | ("b.pl", [ OpLabel target ]) ->
+      Ok [ Ir.Jcc { cond = NS; target_true = Label target; target_false = TargetImm 0L } ]
+  | ("b.vs", [ OpLabel target ]) ->
+      Ok [ Ir.Jcc { cond = O; target_true = Label target; target_false = TargetImm 0L } ]
+  | ("b.vc", [ OpLabel target ]) ->
+      Ok [ Ir.Jcc { cond = NO; target_true = Label target; target_false = TargetImm 0L } ]
   | ("cbz", [ OpReg r; OpLabel target ]) ->
       Ok [
         Ir.Cmp { src1 = Reg r; src2 = Imm 0L };
