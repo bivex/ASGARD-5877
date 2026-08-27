@@ -176,6 +176,78 @@ int main() {
     check bool "nanomite dispatched to true branch" true (contains_sub out_str "NANOMITE_BRANCH_TRUE")
   )
 
+
+let test_nanomite_auto_lift_e2e () =
+  (* Source with two if/else blocks that should be auto-lifted to nanomites *)
+  let src = {|
+#include <stdio.h>
+#include <stdint.h>
+
+int check_key(int key) {
+    if (key == 42) {
+        printf("correct!\n");
+        return 1;
+    } else {
+        printf("wrong!\n");
+        return 0;
+    }
+}
+
+int main(void) {
+    int x = 1;
+    if (x > 0) {
+        printf("pos\n");
+    } else {
+        printf("neg\n");
+    }
+    check_key(42);
+    return 0;
+}
+|} in
+  let (body, preamble) = C_macro_obf.lift_nanomites_in_source src in
+  (* 1. No raw "if (" should remain in the transformed body *)
+  Alcotest.(check bool) "no raw if in body" false
+    (contains_sub body "if (");
+  (* 2. Two DISPATCH calls generated *)
+  let dispatch_count =
+    let s = ref 0 in
+    let idx = ref 0 in
+    while !idx < String.length body do
+      (if !idx + 20 < String.length body &&
+          String.sub body !idx 20 = "ASG_NANOMITE_DISPATC"
+       then incr s);
+      incr idx
+    done;
+    !s
+  in
+  Alcotest.(check int) "two dispatch calls" 2 dispatch_count;
+  (* 3. Preamble contains the constructor auto-init *)
+  Alcotest.(check bool) "auto-init constructor present" true
+    (contains_sub preamble "_asg_nanomite_auto_init_");
+  (* 4. Preamble contains NANOMITE_INIT and two REGISTER calls *)
+  Alcotest.(check bool) "NANOMITE_INIT in preamble" true
+    (contains_sub preamble "NANOMITE_INIT");
+  let reg_count =
+    let s = ref 0 in
+    let idx = ref 0 in
+    while !idx < String.length preamble do
+      (if !idx + 18 < String.length preamble &&
+          String.sub preamble !idx 18 = "NANOMITE_REGISTER("
+       then incr s);
+      incr idx
+    done;
+    !s
+  in
+  Alcotest.(check int) "two register calls" 2 reg_count;
+  (* 5. Leading #include present in preamble (include ordering fix) *)
+  Alcotest.(check bool) "includes preserved in preamble" true
+    (contains_sub preamble "#include");
+  (* 6. return values stripped → no raw "return 1;" or "return 0;" in branch fns *)
+  Alcotest.(check bool) "return 1 stripped" false
+    (contains_sub preamble "return 1;");
+  Alcotest.(check bool) "return 0 stripped" false
+    (contains_sub preamble "return 0;")
+
 let tests = [
   ("header_generation", `Quick, test_header_generation);
   ("string_obfuscation", `Quick, test_string_obfuscation);
@@ -183,6 +255,7 @@ let tests = [
   ("e2e_c_transformation_and_execution", `Quick, test_e2e_c_transformation_and_execution);
   ("signal_based_dispatching_e2e", `Quick, test_signal_based_dispatching_e2e);
   ("nanomites_dispatching_e2e", `Quick, test_nanomites_dispatching_e2e);
+  ("nanomite_auto_lift_e2e", `Quick, test_nanomite_auto_lift_e2e);
 ]
 
 
