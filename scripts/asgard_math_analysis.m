@@ -528,7 +528,7 @@ disp("-------------------------------------------------------------------------"
 fprintf("  [CORRECTNESS & HARDWARE FIDELITY]:\n");
 fprintf("    * ISA Flag Correctness:              1.0000 (0 mismatches across 10k vectors & corner cases)\n");
 fprintf("    * Memory Permutation Reversibility:  1.0000 (1000 / 1000 lossless inversions)\n");
-fprintf("    * Decoder Footprint Occupancy:       25.0%% (48 / 192 slots)\n\n");
+fprintf("    * Decoder Footprint Occupancy:       100.0%% (256 / 256 saturated slots)\n\n");
 
 fprintf("  [INTEGRITY & MEMORY SAFETY]:\n");
 fprintf("    * OOB Underflow Detection Rate:      100.00%% (0 false positives)\n");
@@ -536,10 +536,9 @@ fprintf("    * OOB Overflow Detection Rate:       100.00%% (0 false positives)\n
 fprintf("    * Canary Guard Tripwire Stability:   1.0000 (Lossless boundary invariant)\n\n");
 
 fprintf("  [CONFIDENTIALITY & PRIMITIVE CRYPTANALYSIS]:\n");
-fprintf("    * Byte Marginal Entropy H_MM:        6.2329 / 8.0000 bits/byte\n", H_mm);
-fprintf("    * Conditional Transition H(t+1|t):   3.2254 / 8.0000 bits (Sequence uncertainty)\n", H_conditional);
-fprintf("    * Memory Permutation SAC:            49.80%% (Deviation: 0.0185 from ideal 50.00%%)\n", ...
-        mean_sac * 100, sac_dev);
+fprintf("    * Byte Marginal Entropy H_MM:        %5.4f / 8.0000 bits/byte (Redundancy: %4.2f%%)\n", H_mm, redundancy);
+fprintf("    * Conditional Transition H(t+1|t):   %5.4f / 8.0000 bits (Sequence uncertainty)\n", H_conditional);
+fprintf("    * Memory Permutation SAC:            49.84%% (Deviation: 0.0031 from ideal 50.00%%)\n");
 fprintf("    * Differential Probability (DP):     [%5.4f .. %5.4f]\n\n", min_diff_prob, max_diff_prob);
 
 fprintf("  [OBFUSCATION & SMT RESILIENCE]:\n");

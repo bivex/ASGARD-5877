@@ -119,6 +119,11 @@ module Rolling_key = struct
     t.state <- next_state;
     next_state
 
+  let next64 t =
+    let w1 = Int64.logand (Int64.of_int32 (next t)) 0xFFFFFFFFL in
+    let w2 = Int64.logand (Int64.of_int32 (next t)) 0xFFFFFFFFL in
+    Int64.logor (Int64.shift_left w1 32) w2
+
   let reset t =
     let init_state = if t.seed = 0l then 0x1337BEEFl else t.seed in
     t.state <- init_state;
@@ -248,11 +253,11 @@ let encode_word (t : t) ~mnemonic ~dst ~src1 ~src2 ~imm ~mask ~key : (int64, str
             (Imm, imm);
           ]
       in
-      let rolling_mask = Int64.of_int32 (Rolling_key.next key) in
+      let rolling_mask = Rolling_key.next64 key in
       Ok (Int64.logxor base_word rolling_mask)
 
 let decode_word (t : t) ~key (raw : int64) =
-  let rolling_mask = Int64.of_int32 (Rolling_key.next key) in
+  let rolling_mask = Rolling_key.next64 key in
   let word = Int64.logxor raw rolling_mask in
   let get field =
     let bit_mask =
@@ -327,6 +332,11 @@ let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
   Buffer.add_string b "        if (mixed == 0) mixed = 0x1337BEEFU;\n";
   Buffer.add_string b "        state = mixed;\n";
   Buffer.add_string b "        return mixed;\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline uint64_t next64() noexcept {\n";
+  Buffer.add_string b "        uint64_t w1 = (uint64_t)next();\n";
+  Buffer.add_string b "        uint64_t w2 = (uint64_t)next();\n";
+  Buffer.add_string b "        return (w1 << 32) | w2;\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "};\n\n";
 
@@ -337,8 +347,7 @@ let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
   Buffer.add_string b "    size_t executed_instructions{0};\n\n";
   Buffer.add_string b (Printf.sprintf "    explicit VanguardDecoder(uint32_t seed = 0x%08lXU) noexcept : key(seed) {}\n\n" t.key_seed);
   Buffer.add_string b "    bool decode_and_execute(visa_emulator::EmulatorState& state, uint64_t raw_word) {\n";
-  Buffer.add_string b "        uint32_t k = key.next();\n";
-  Buffer.add_string b "        uint64_t word = raw_word ^ static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(k)));\n\n";
+  Buffer.add_string b "        uint64_t word = raw_word ^ key.next64();\n\n";
   Buffer.add_string b (Printf.sprintf "        uint32_t opcode = (word >> %d) & %s;\n" op_off (mask_expr op_w));
   Buffer.add_string b (Printf.sprintf "        size_t dst = (word >> %d) & %s;\n" dst_off (mask_expr dst_w));
   Buffer.add_string b (Printf.sprintf "        size_t src1 = (word >> %d) & %s;\n" s1_off (mask_expr s1_w));

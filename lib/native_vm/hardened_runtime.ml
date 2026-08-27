@@ -136,6 +136,9 @@ let emit_anti_emulation_probes () =
   {|#pragma once
 #include <stdint.h>
 #include <stdbool.h>
+#if defined(__APPLE__)
+#include <mach/mach_time.h>
+#endif
 
 namespace asgard_anti_emulation {
 
@@ -158,7 +161,7 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
         penalty ^= 0xDEADBEEF5A5A1337ULL; // Emulation slow-path detected
     }
 #elif defined(__aarch64__)
-    // ARM64 Virtual Counter Overhead Probe
+    // ARM64 Virtual Counter Overhead & Multi-Source Jitter Probe
     uint64_t t0, t1;
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t0));
     for (int i = 0; i < 64; ++i) { __asm__ volatile("nop"); }
@@ -166,6 +169,15 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
     if ((t1 - t0) > 30000ULL) {
         penalty ^= 0xFEEDFACE5877CAFEULL;
     }
+#if defined(__APPLE__)
+    // Multi-source differential verification (detecting timer spoofing / freeze)
+    uint64_t m0 = mach_absolute_time();
+    for (int i = 0; i < 32; ++i) { __asm__ volatile("nop"); }
+    uint64_t m1 = mach_absolute_time();
+    if (m1 == m0 && (t1 - t0) > 1000ULL) {
+        penalty ^= 0x5877AABBCCDDEEFFULL;
+    }
+#endif
 #endif
 
 

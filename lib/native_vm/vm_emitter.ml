@@ -161,14 +161,13 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     gpr_names;
   Buffer.add_string b "};\n\n";
 
-  (* Key Derivation for Bytecode Offset *)
-  Buffer.add_string b "static inline uint32_t key_for_offset(uint32_t seed, size_t offset) noexcept {\n";
-  Buffer.add_string b "    uint64_t x = (uint64_t)seed ^ ((uint64_t)offset * 0x9E3779B97F4A7C15ULL);\n";
-  Buffer.add_string b "    uint32_t x32 = (uint32_t)x;\n";
-  Buffer.add_string b "    x32 ^= x32 << 13;\n";
-  Buffer.add_string b "    x32 ^= x32 >> 17;\n";
-  Buffer.add_string b "    x32 ^= x32 << 5;\n";
-  Buffer.add_string b "    return x32 == 0 ? 0x1337BEEFU : x32;\n";
+  (* 64-bit Cryptographic Key Derivation for Bytecode Offset (SplitMix64) *)
+  Buffer.add_string b "static inline uint64_t key64_for_offset(uint32_t seed, size_t offset) noexcept {\n";
+  Buffer.add_string b "    uint64_t s64 = (uint64_t)seed;\n";
+  Buffer.add_string b "    uint64_t x0 = ((s64 << 32) | (s64 ^ 0x9E3779B9ULL)) ^ ((uint64_t)offset * 0x517CC1B727220A95ULL);\n";
+  Buffer.add_string b "    uint64_t x1 = (x0 ^ (x0 >> 30)) * 0xBF58476D1CE4E5B9ULL;\n";
+  Buffer.add_string b "    uint64_t x2 = (x1 ^ (x1 >> 27)) * 0x94D049BB133111EBULL;\n";
+  Buffer.add_string b "    return x2 ^ (x2 >> 31);\n";
   Buffer.add_string b "}\n\n";
 
   (* Blinded VMContext with Canary Guard Zones (Resisting VMPredator & Memory Scanners) *)
@@ -335,16 +334,16 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
 
   Buffer.add_string b "    #define FETCH_NEXT() do { \\\n";
   Buffer.add_string b "        if (vIP_idx >= count) goto EXIT_VM; \\\n";
-  Buffer.add_string b "        uint32_t k = key_for_offset(seed, vIP_idx); \\\n";
-  Buffer.add_string b "        word = bytecode[vIP_idx] ^ (uint64_t)((int64_t)((int32_t)k)); \\\n";
+  Buffer.add_string b "        uint64_t k = key64_for_offset(seed, vIP_idx); \\\n";
+  Buffer.add_string b "        word = bytecode[vIP_idx] ^ k; \\\n";
   Buffer.add_string b "        /* Ephemeral Self-Consuming: Overwrite scratch RAM buffer with rolling noise */ \\\n";
-  Buffer.add_string b "        work_bc[vIP_idx] = ((uint64_t)k * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL; \\\n";
+  Buffer.add_string b "        work_bc[vIP_idx] = (k * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL; \\\n";
   Buffer.add_string b "        vIP_idx++; \\\n";
   Buffer.add_string b "        op = (uint8_t)(word & 0xFF); \\\n";
   Buffer.add_string b "        dst = (uint8_t)((word >> 8) & 0x1F); \\\n";
   Buffer.add_string b "        src = (uint8_t)((word >> 13) & 0x1F); \\\n";
   Buffer.add_string b "        imm = (int64_t)((int32_t)((word >> 18) & 0xFFFFFFFFULL)); \\\n";
-  Buffer.add_string b "        ctx.evolve_mask(k); \\\n";
+  Buffer.add_string b "        ctx.evolve_mask((uint32_t)k); \\\n";
   Buffer.add_string b (Printf.sprintf "        uint8_t domain_idx = (uint8_t)((op ^ (uint8_t)(k & 0x07)) %% %d); \\\n" num_domains);
   Buffer.add_string b "        goto *all_dispatch_domains[domain_idx][op]; \\\n";
   Buffer.add_string b "    } while(0)\n\n";
@@ -527,6 +526,22 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        FETCH_NEXT();\n";
   Buffer.add_string b "    }\n\n";
 
+  Buffer.add_string b "    H_DECOY_0: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_1: { ctx.set_reg(dst, ctx.get_reg(dst) + (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_2: { ctx.set_reg(dst, ctx.get_reg(dst) * 0x9E37ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_3: { ctx.set_reg(dst, (ctx.get_reg(dst) << 3) | (ctx.get_reg(dst) >> 61)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_4: { ctx.set_reg(dst, ctx.get_reg(src) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_5: { ctx.set_reg(dst, ctx.get_reg(dst) & ~ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_6: { ctx.set_reg(dst, ctx.get_reg(dst) | 0xCAFEBABEULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_7: { ctx.set_reg(dst, (ctx.get_reg(dst) >> 5) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_8: { ctx.set_reg(dst, ctx.get_reg(dst) - 0x1337ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_9: { ctx.set_reg(dst, ctx.get_reg(dst) ^ (ctx.get_reg(src) + 1)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_10: { ctx.set_reg(dst, (ctx.get_reg(dst) * 6364136223846793005ULL) + 1); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_11: { ctx.set_reg(dst, (ctx.get_reg(dst) << 7) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_12: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0xDEADBEEFULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_13: { ctx.set_reg(dst, ctx.get_reg(dst) + ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_14: { ctx.set_reg(dst, ctx.get_reg(dst) ^ (uint64_t)(imm * 3)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_DECOY_15: { ctx.set_reg(dst, ~ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_DECOY:\n";
   Buffer.add_string b "        ctx.trapped = true;\n";
   Buffer.add_string b "        goto EXIT_VM;\n\n";
@@ -730,7 +745,7 @@ let compile_and_package
   shuffle_array rng reg_perm;
   let get_reg_idx r = reg_perm.(reg_to_index r) in
 
-  (* Set up opcode bijection and junk decoys *)
+  (* Set up opcode bijection and junk decoys with 100% table saturation *)
   let slots = Array.init 256 (fun i -> i) in
   shuffle_array rng slots;
   let kind_to_code = Hashtbl.create 32 in
@@ -741,6 +756,13 @@ let compile_and_package
       Hashtbl.replace kind_to_code kind code;
       opcode_to_handler.(code) <- op_kind_to_handler_name kind)
     all_op_kinds;
+
+  (* Saturate all remaining opcode slots with polymorphic decoy handlers *)
+  for i = List.length all_op_kinds to 255 do
+    let code = slots.(i) in
+    let decoy_idx = i mod 16 in
+    opcode_to_handler.(code) <- Printf.sprintf "H_DECOY_%d" decoy_idx
+  done;
 
   let get_opcode kind =
     Hashtbl.find kind_to_code kind
@@ -779,14 +801,13 @@ let compile_and_package
   in
 
   let key_seed = Random.State.int32 rng Int32.max_int in
-  let key_for_offset seed offset =
-    let off_hash = Int64.mul (Int64.of_int offset) 0x9E3779B97F4A7C15L in
-    let x = Int64.logxor (Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL) off_hash in
-    let x32 = Int64.to_int32 x in
-    let x32 = Int32.logxor x32 (Int32.shift_left x32 13) in
-    let x32 = Int32.logxor x32 (Int32.shift_right_logical x32 17) in
-    let x32 = Int32.logxor x32 (Int32.shift_left x32 5) in
-    if x32 = 0l then 0x1337BEEFl else x32
+  let key64_for_offset seed offset =
+    let s64 = Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL in
+    let x0 = Int64.logxor (Int64.logor (Int64.shift_left s64 32) (Int64.logxor s64 0x9E3779B9L))
+                          (Int64.mul (Int64.of_int offset) 0x517CC1B727220A95L) in
+    let x1 = Int64.mul (Int64.logxor x0 (Int64.shift_right_logical x0 30)) 0xBF58476D1CE4E5B9L in
+    let x2 = Int64.mul (Int64.logxor x1 (Int64.shift_right_logical x1 27)) 0x94D049BB133111EBL in
+    Int64.logxor x2 (Int64.shift_right_logical x2 31)
   in
 
   let cur_idx = ref 0 in
@@ -799,7 +820,7 @@ let compile_and_package
     let imm_masked = Int64.logand imm 0xFFFFFFFFL in
     w := Int64.logor !w (Int64.shift_left imm_masked 18);
     w := Int64.logor !w (Int64.shift_left (Int64.logand extra_bits 0x3FFFL) 50);
-    let mask = Int64.of_int32 (key_for_offset key_seed !cur_idx) in
+    let mask = key64_for_offset key_seed !cur_idx in
     incr cur_idx;
     let masked_w = Int64.logxor !w mask in
     bytecode := masked_w :: !bytecode
