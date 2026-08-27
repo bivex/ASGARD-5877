@@ -90,6 +90,16 @@ let test_rns_arithmetic () =
     check int64 (Printf.sprintf "RNS Mul %Ld * %Ld" a b) (Int64.mul a b) d_mul;
   ) pairs
 
+let test_egraph_saturation () =
+  let eg = Egraph.create () in
+  let e_init = Egraph.Xor (Egraph.Var Register.rax, Egraph.Var Register.rbx) in
+  let root = Egraph.add eg e_init in
+  Egraph.saturate ~max_iters:2 eg;
+  let extracted = Egraph.extract_max_complexity eg root in
+  let init_cost = Egraph.complexity_of_expr e_init in
+  let sat_cost = Egraph.complexity_of_expr extracted in
+  check bool "E-Graph saturation increases complexity" true (sat_cost >= init_cost)
+
 let tests = [
   ("Seed Determinism", `Quick, test_seed_determinism);
   ("IR Verifier Success", `Quick, test_ir_verify_success);
@@ -99,4 +109,5 @@ let tests = [
   ("End-to-End Compiler Pipeline", `Quick, test_end_to_end_pipeline);
   ("RNS Roundtrip & CRT", `Quick, test_rns_roundtrip);
   ("RNS Modular Arithmetic", `Quick, test_rns_arithmetic);
+  ("E-Graph Equality Saturation", `Quick, test_egraph_saturation);
 ]
