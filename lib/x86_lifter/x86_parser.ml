@@ -179,11 +179,27 @@ let normalize_alphas s =
   Buffer.contents b
 
 
+let is_asgard_marker s =
+  let len = String.length s in
+  if len < 6 then false
+  else
+    let rec check i =
+      if i + 6 > len then false
+      else if (s.[i] = 'A' || s.[i] = 'a') &&
+              (s.[i+1] = 'S' || s.[i+1] = 's') &&
+              (s.[i+2] = 'G' || s.[i+2] = 'g') &&
+              (s.[i+3] = 'A' || s.[i+3] = 'a') &&
+              (s.[i+4] = 'R' || s.[i+4] = 'r') &&
+              (s.[i+5] = 'D' || s.[i+5] = 'd') then true
+      else check (i + 1)
+    in
+    check 0
+
 let parse_line line =
   let clean = strip_comments line in
-  let norm = normalize_alphas clean in
   if clean = "" then Ok LineEmpty
-  else if contains_sub norm "ASGARD" then begin
+  else if is_asgard_marker clean then begin
+    let norm = normalize_alphas clean in
     (* Marker detection *)
     if contains_sub norm "BEG" || contains_sub norm "BEGIN" then
       if contains_sub norm "_V" || contains_sub norm "VIRTUAL" then
@@ -194,15 +210,12 @@ let parse_line line =
         Ok (LineMarkerBegin (ModeUltra "region"))
     else if contains_sub norm "END" then
       Ok LineMarkerEnd
-    else if String.starts_with ~prefix:"." clean && not (String.contains clean ':') && not (String.starts_with ~prefix:".L" clean) && not (String.starts_with ~prefix:".l" clean) then
-      Ok (LineDirective clean)
     else
       Ok (LineDirective clean)
   end
   else if String.starts_with ~prefix:"." clean && not (String.contains clean ':') && not (String.starts_with ~prefix:".L" clean) && not (String.starts_with ~prefix:".l" clean) then
     Ok (LineDirective clean)
   else if String.ends_with ~suffix:":" clean then
-
     let lbl = String.lowercase_ascii (String.trim (String.sub clean 0 (String.length clean - 1))) in
     Ok (LineLabel lbl)
   else

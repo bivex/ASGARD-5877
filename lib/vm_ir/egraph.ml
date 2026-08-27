@@ -96,7 +96,14 @@ let union (t : t) (id1 : eclass_id) (id2 : eclass_id) : unit =
     Hashtbl.replace t.union_find root2 root1;
     let cls1 = Hashtbl.find t.classes root1 in
     let cls2 = Hashtbl.find t.classes root2 in
-    cls1.nodes <- cls1.nodes @ cls2.nodes
+    (* Deduplicating merge *)
+    let rec merge_unique acc = function
+      | [] -> acc
+      | n :: rest ->
+          if List.mem n acc then merge_unique acc rest
+          else merge_unique (n :: acc) rest
+    in
+    cls1.nodes <- merge_unique cls1.nodes cls2.nodes
   end
 
 let rebuild (t : t) : unit =
@@ -109,30 +116,37 @@ let rebuild (t : t) : unit =
 (** Equality saturation with MBA & modular algebraic expansion rules *)
 let saturate ?(max_iters = 3) ?rng (t : t) : unit =
   ignore rng;
+  let applied_rules = Hashtbl.create 64 in
   for _ = 1 to max_iters do
     let pending_unions = ref [] in
     Hashtbl.iter (fun id cls ->
       List.iter (fun node ->
-        match node with
-        | EXor (a, b) ->
-            (* Rule: a ^ b == (a | b) - (a & b) *)
-            let or_node = add_node t (EOr (a, b)) in
-            let and_node = add_node t (EAnd (a, b)) in
-            let sub_node = add_node t (ESub (or_node, and_node)) in
-            pending_unions := (id, sub_node) :: !pending_unions
-        | EAdd (a, b) ->
-            (* Rule: a + b == (a ^ b) + 2 * (a & b) *)
-            let xor_node = add_node t (EXor (a, b)) in
-            let and_node = add_node t (EAnd (a, b)) in
-            let two_node = add_node t (EConst 2L) in
-            let mul_node = add_node t (EMul (two_node, and_node)) in
-            let add_node = add_node t (EAdd (xor_node, mul_node)) in
-            pending_unions := (id, add_node) :: !pending_unions
-        | _ -> ()
+        let key = (id, node) in
+        if not (Hashtbl.mem applied_rules key) then begin
+          Hashtbl.replace applied_rules key true;
+          match node with
+          | EXor (a, b) ->
+              (* Rule: a ^ b == (a | b) - (a & b) *)
+              let or_node = add_node t (EOr (a, b)) in
+              let and_node = add_node t (EAnd (a, b)) in
+              let sub_node = add_node t (ESub (or_node, and_node)) in
+              pending_unions := (id, sub_node) :: !pending_unions
+          | EAdd (a, b) ->
+              (* Rule: a + b == (a ^ b) + 2 * (a & b) *)
+              let xor_node = add_node t (EXor (a, b)) in
+              let and_node = add_node t (EAnd (a, b)) in
+              let two_node = add_node t (EConst 2L) in
+              let mul_node = add_node t (EMul (two_node, and_node)) in
+              let add_node = add_node t (EAdd (xor_node, mul_node)) in
+              pending_unions := (id, add_node) :: !pending_unions
+          | _ -> ()
+        end
       ) cls.nodes
     ) t.classes;
-    List.iter (fun (id1, id2) -> union t id1 id2) !pending_unions;
-    rebuild t
+    if !pending_unions <> [] then begin
+      List.iter (fun (id1, id2) -> union t id1 id2) !pending_unions;
+      rebuild t
+    end
   done
 
 (** Cost metric maximizing AST complexity (inverted cost function) *)
