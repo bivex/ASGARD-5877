@@ -21,6 +21,7 @@
   test_anti_analysis
   test_native_vm_and_metrics
   test_c_macro_obf
+  test_runtime_profile
   test_helpers
   run_tests)
  (libraries

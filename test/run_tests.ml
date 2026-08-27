@@ -20,5 +20,7 @@ let () =
     ("Anti-Analysis (MBA & CFF)", Test_anti_analysis.tests);
     ("Native Threaded VM & Metrics", Test_native_vm_and_metrics.tests);
     ("C Macro Obfuscation", Test_c_macro_obf.tests);
+    ("VM Runtime Profile", Test_runtime_profile.tests);
   ]
+
 
