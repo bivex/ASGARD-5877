@@ -1,0 +1,6 @@
+(set-logic QF_BV)
+(declare-const x (_ BitVec 64))
+(declare-const y (_ BitVec 64))
+; Depth 1 MBA: (x ^ y) == (x | y) - (x & y)
+(assert (distinct (bvxor x y) (bvsub (bvor x y) (bvand x y))))
+(check-sat)

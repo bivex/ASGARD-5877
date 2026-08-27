@@ -1,0 +1,7 @@
+depth,ast_nodes,time_mean_ms,time_std_ms,time_min_ms,time_max_ms,sat_result,description
+1,14,17.62,0.71,16.81,19.12,unsat,Linear MBA: (x ^ y) == (x | y) - (x & y)
+2,26,47.71,1.72,45.38,50.66,unsat,Affine MBA: (x ^ y) == (x + y) - 2*(x & y)
+3,48,2056.40,46.01,2018.12,2113.50,TIMEOUT (>2000ms),Non-Linear MBA (NLMBA): ((x & y)*(x | y)) + ((x & ~y)*(~x & y)) == x*y
+4,72,11.76,0.47,11.22,13.00,sat,Disjoint Bitmask Partition: 0x5555... / 0xAAAA...
+5,98,22.76,0.44,22.04,23.51,unsat,Polynomial Opaque Invariant: Z(x, y, z) == 0
+6,144,2101.41,28.57,2020.21,2114.11,TIMEOUT (>2000ms),Nested NLMBA with Multiplicative Cross-Terms

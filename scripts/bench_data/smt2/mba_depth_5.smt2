@@ -1,0 +1,8 @@
+(set-logic QF_BV)
+(declare-const x (_ BitVec 64))
+(declare-const y (_ BitVec 64))
+(declare-const z (_ BitVec 64))
+; Depth 5 Tri-variable NLMBA polynomial opaque zero invariant Z(x, y, z)
+(define-fun z_inv () (_ BitVec 64) (bvsub (bvadd (bvor (bvxor x y) z) (bvand (bvxor x y) z)) (bvadd (bvxor x y) z)))
+(assert (distinct (_ bv0 64) z_inv))
+(check-sat)
