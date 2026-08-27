@@ -27,6 +27,7 @@
   test_multi_vm
   test_gpu_synth
   test_rd_jit_vm
+  test_arxiv_innovations
   test_helpers
   run_tests)
  (libraries

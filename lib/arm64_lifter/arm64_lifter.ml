@@ -231,3 +231,5 @@ let lift_function ?(options = default_options) (asm : string) : (Ir.func, string
   match Arm64_parser.parse_lines asm with
   | Error err -> Error err
   | Ok lines -> lift_lines ~options lines
+
+module Literal_stitcher = Literal_stitcher

@@ -131,3 +131,5 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     let all_blocks = (entry_block :: trap_block :: !disp_blocks) @ transformed_blocks in
     let new_func = Ir.make_func ~name:func.name ~entry_id:entry_block_id ~blocks:all_blocks in
     Ok new_func
+
+module Pop_coupler = Pop_coupler

@@ -20,3 +20,5 @@ val inject_opaque_predicate :
   trap_block_id:int ->
   Ir.basic_block ->
   Ir.basic_block
+
+module Pop_coupler : module type of Pop_coupler
