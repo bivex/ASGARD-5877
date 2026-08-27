@@ -36,14 +36,21 @@ disp("-------------------------------------------------------------------------"
 disp("\n[1] STRUCTURAL INFORMATION-THEORETIC & CONDITIONAL ENTROPY");
 disp("-------------------------------------------------------------------------");
 
-corpus_dir = "binaries/corpus_build";
+corpus_dir = getenv("ASGARD_CORPUS_DIR");
+if isempty(corpus_dir)
+    corpus_dir = "binaries/corpus_build";
+end
 corpus_files = dir(fullfile(corpus_dir, "*", "protected.vanguard"));
 
 all_bytes = [];
 
 if isempty(corpus_files)
-    fprintf("  [!] Corpus not found in %s. Automatically invoking scripts/build_corpus.sh...\n", corpus_dir);
-    system("./scripts/build_corpus.sh");
+    fprintf("  [!] Corpus not found in %s. Automatically invoking corpus builder...\n", corpus_dir);
+    if index(corpus_dir, "arm64") > 0
+        system("./scripts/build_corpus_arm64.sh");
+    else
+        system("./scripts/build_corpus.sh");
+    end
     corpus_files = dir(fullfile(corpus_dir, "*", "protected.vanguard"));
 end
 

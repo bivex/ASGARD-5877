@@ -16,6 +16,7 @@
   vanguard_9292
   vm_ir
   x86_lifter
+  arm64_lifter
   mba_engine
   cff
   native_vm
