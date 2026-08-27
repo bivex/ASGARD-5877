@@ -678,10 +678,22 @@ let lift_ifs_to_nanomites ?(config = default_config) src =
   let len = String.length src in
   let buf = Buffer.create (len * 2) in
   let sites = ref [] in
+  let in_marker = ref false in
   let i = ref 0 in
   while !i < len do
     let c = src.[!i] in
-    if c = '/' && !i + 1 < len && src.[!i + 1] = '/' then begin
+    (* Marker detection: preserve VM virtualization regions *)
+    if !i + 12 <= len && String.sub src !i 12 = "ASGARD_BEGIN" then begin
+      in_marker := true;
+      Buffer.add_char buf c;
+      incr i
+    end
+    else if !i + 10 <= len && String.sub src !i 10 = "ASGARD_END" then begin
+      in_marker := false;
+      Buffer.add_char buf c;
+      incr i
+    end
+    else if c = '/' && !i + 1 < len && src.[!i + 1] = '/' then begin
       while !i < len && src.[!i] <> '\n' do
         Buffer.add_char buf src.[!i]; incr i
       done
@@ -702,20 +714,33 @@ let lift_ifs_to_nanomites ?(config = default_config) src =
     else if c = '"' then begin
       Buffer.add_char buf c; incr i;
       let escaped = ref false in
-      while !i < len && (not (!escaped) || src.[!i] <> '"') do
+      let closed = ref false in
+      while !i < len && not !closed do
         let sc = src.[!i] in
         Buffer.add_char buf sc;
-        escaped := (sc = '\\' && not !escaped);
-        incr i
-      done;
-      if !i < len then begin Buffer.add_char buf src.[!i]; incr i end
+        if !escaped then begin
+          escaped := false;
+          incr i
+        end
+        else if sc = '\\' then begin
+          escaped := true;
+          incr i
+        end
+        else if sc = '"' then begin
+          closed := true;
+          incr i
+        end
+        else begin
+          incr i
+        end
+      done
     end
     else if c = '#' then begin
       while !i < len && src.[!i] <> '\n' do
         Buffer.add_char buf src.[!i]; incr i
       done
     end
-    else if c = 'i' && !i + 1 < len && src.[!i + 1] = 'f' then begin
+    else if (not !in_marker) && c = 'i' && !i + 1 < len && src.[!i + 1] = 'f' then begin
       match try_parse_if src !i rng seed_ref p with
       | None ->
         Buffer.add_char buf c; incr i
