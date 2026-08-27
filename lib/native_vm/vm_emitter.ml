@@ -122,7 +122,14 @@ let shuffle_array rng arr =
     arr.(j) <- tmp
   done
 
-let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) opcode_to_handler =
+  let profile = match runtime_profile with
+    | Some p -> p
+    | None -> Random_visa_domain.Vm_runtime_profile.generate ~seed:(Int64.of_int32 key_seed) ~total_opcodes:256 ()
+  in
+  let stride = profile.dispatch.context_layout.affine_a in
+  let offset = profile.dispatch.context_layout.affine_b in
+  let num_domains = profile.dispatch.num_domains in
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n";
@@ -196,8 +203,8 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_h
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    /* Virtual Stack Scrambling (Non-linear Permutation & Dynamic Memory Encryption) */\n";
   Buffer.add_string b "    static inline constexpr size_t STACK_SIZE = 512;\n";
-  Buffer.add_string b "    static inline constexpr size_t STACK_STRIDE = 37;\n";
-  Buffer.add_string b "    static inline constexpr size_t STACK_OFFSET = 13;\n\n";
+  Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_STRIDE = %d;\n" stride);
+  Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_OFFSET = %d;\n\n" offset);
   Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n";
   Buffer.add_string b "        return (index * STACK_STRIDE + STACK_OFFSET) & (STACK_SIZE - 1);\n";
   Buffer.add_string b "    }\n\n";
@@ -241,7 +248,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_h
   Buffer.add_string b "    }\n";
   Buffer.add_string b "}\n\n";
 
-  (* execute_threaded function with Bytecode Integrity Checksumming *)
+  (* execute_threaded function with Multi-Domain Dispatch and Bytecode Integrity Checksumming *)
   Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU) {\n" key_seed);
   Buffer.add_string b "    if (ctx.reg_mask == 0) ctx.init(seed);\n";
   Buffer.add_string b "    /* High-Speed Continuous Bytecode Integrity Guard (Anti-Patching / Breakpoint Detection) */\n";
@@ -273,11 +280,19 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_h
   Buffer.add_string b "    for (size_t i = 0; i < count; ++i) work_bc[i] = bytecode[i];\n\n";
   Buffer.add_string b "    size_t vIP_idx = 0;\n\n";
 
+  (* Multi-Domain Dispatch Tables *)
+  for d = 0 to num_domains - 1 do
+    Buffer.add_string b (Printf.sprintf "    static const void* const dispatch_domain%d[256] = {\n" d);
+    for i = 0 to 255 do
+      let h_name = opcode_to_handler.(i) in
+      Buffer.add_string b (Printf.sprintf "        &&%s,\n" h_name)
+    done;
+    Buffer.add_string b "    };\n\n"
+  done;
 
-  Buffer.add_string b "    static const void* const dispatch_table[256] = {\n";
-  for i = 0 to 255 do
-    let h_name = opcode_to_handler.(i) in
-    Buffer.add_string b (Printf.sprintf "        &&%s,\n" h_name)
+  Buffer.add_string b (Printf.sprintf "    static const void* const* const all_dispatch_domains[%d] = {\n" num_domains);
+  for d = 0 to num_domains - 1 do
+    Buffer.add_string b (Printf.sprintf "        dispatch_domain%d,\n" d)
   done;
   Buffer.add_string b "    };\n\n";
 
@@ -299,10 +314,13 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_h
   Buffer.add_string b "        src = (uint8_t)((word >> 13) & 0x1F); \\\n";
   Buffer.add_string b "        imm = (int64_t)((int32_t)((word >> 18) & 0xFFFFFFFFULL)); \\\n";
   Buffer.add_string b "        ctx.evolve_mask(k); \\\n";
-  Buffer.add_string b "        goto *dispatch_table[op]; \\\n";
+  Buffer.add_string b (Printf.sprintf "        uint8_t domain_idx = (uint8_t)((op ^ (uint8_t)(k & 0x07)) %% %d); \\\n" num_domains);
+  Buffer.add_string b "        goto *all_dispatch_domains[domain_idx][op]; \\\n";
   Buffer.add_string b "    } while(0)\n\n";
 
+
   Buffer.add_string b "    FETCH_NEXT();\n\n";
+
 
   (* Polymorphic SOTA Handlers (Synthesized Non-Linear Variants) *)
   let pick_poly_add () =
@@ -638,11 +656,13 @@ let rec fuse_block_instructions instrs =
 
 let compile_and_package
     ~rng
+    ?runtime_profile
     ?(enable_cff = false)
     ?(enable_mba = false)
     ?(enable_junk = true)
     ?(mba_depth = 2)
     (func : Ir.func) =
+
   let target_func =
     if enable_cff then
       match Cff.flatten_func ~rng func with
@@ -834,8 +854,9 @@ let compile_and_package
     !h
   in
   let expected_hash = compute_bytecode_hash key_seed final_bytecode in
-  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash opcode_to_handler in
+  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile opcode_to_handler in
   let runner_src = emit_runner_cpp ~reg_perm final_bytecode in
+
 
   let decoy_count = 256 - List.length all_op_kinds in
   let mba_nodes = if enable_mba then mba_depth * 15 else 0 in

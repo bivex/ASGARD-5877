@@ -690,8 +690,9 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
               if regions <> [] then begin
 
                 total_markers := !total_markers + List.length regions;
+                let vm_hdr_filename = base ^ "_threaded_vm.hpp" in
                 let vm_src_buf = Buffer.create 4096 in
-                Buffer.add_string vm_src_buf "#include \"threaded_vm.hpp\"\n#include \"asgard_obf.h\"\n#include <stdint.h>\n#include <stdbool.h>\n\n";
+                Buffer.add_string vm_src_buf (Printf.sprintf "#include \"%s\"\n#include \"asgard_obf.h\"\n#include <stdint.h>\n#include <stdbool.h>\n\n" vm_hdr_filename);
 
                 let region_success = ref false in
                 List.iteri
@@ -703,10 +704,11 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
                           if String.starts_with ~prefix:"_" n then String.sub n 1 (String.length n - 1) else n
                         in
                         let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~enable_cff ~enable_mba ~mba_depth func in
-                        let vm_hdr_path = Filename.concat build_dir "threaded_vm.hpp" in
+                        let vm_hdr_path = Filename.concat build_dir vm_hdr_filename in
                         let oc_h = open_out vm_hdr_path in
                         output_string oc_h pkg.cpp_runtime_source;
                         close_out oc_h;
+
 
                         Buffer.add_string vm_src_buf (Printf.sprintf "static const uint64_t embedded_bc_%s_%d[] = {\n" clean_name r_idx);
                         List.iter

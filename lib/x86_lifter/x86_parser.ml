@@ -237,23 +237,30 @@ let parse_lines text =
     | l :: rest ->
         let clean = strip_comments l in
         let upper = String.uppercase_ascii clean in
-        if String.starts_with ~prefix:".BYTE" upper then
-          let parts = split_tokens (String.sub clean 5 (String.length clean - 5)) ',' in
-          let new_bytes =
-            List.filter_map
-              (fun p ->
-                let p = String.trim p in
-                if String.starts_with ~prefix:"'" p && String.ends_with ~suffix:"'" p && String.length p = 3 then
-                  Some (Char.uppercase_ascii p.[1])
-                else
-                  try
-                    let v = int_of_string p in
-                    if v >= 32 && v <= 126 then Some (Char.uppercase_ascii (Char.chr v)) else None
-                  with _ -> None)
-              parts
+        if String.starts_with ~prefix:".BYTE" upper
+           || String.starts_with ~prefix:".ASCII" upper
+           || String.starts_with ~prefix:".ASCIZ" upper
+           || String.starts_with ~prefix:".STRING" upper then
+          let str =
+            if String.starts_with ~prefix:".BYTE" upper then
+              let parts = split_tokens (String.sub clean 5 (String.length clean - 5)) ',' in
+              let new_bytes =
+                List.filter_map
+                  (fun p ->
+                    let p = String.trim p in
+                    if String.starts_with ~prefix:"'" p && String.ends_with ~suffix:"'" p && String.length p = 3 then
+                      Some (Char.uppercase_ascii p.[1])
+                    else
+                      try
+                        let v = int_of_string p in
+                        if v >= 32 && v <= 126 then Some (Char.uppercase_ascii (Char.chr v)) else None
+                      with _ -> None)
+                  parts
+              in
+              let total_chars = pending_bytes @ new_bytes in
+              String.of_seq (List.to_seq total_chars)
+            else upper
           in
-          let total_chars = pending_bytes @ new_bytes in
-          let str = String.of_seq (List.to_seq total_chars) in
           if contains_sub str "ASGARD_BEG_V" || contains_sub str "ASGARD_BEGIN_V" then
             loop (line_no + 1) (LineMarkerBegin (ModeVirtualize "region") :: acc) [] rest
           else if contains_sub str "ASGARD_BEG_M" || contains_sub str "ASGARD_BEGIN_M" then
@@ -263,7 +270,8 @@ let parse_lines text =
           else if contains_sub str "ASGARD_END" then
             loop (line_no + 1) (LineMarkerEnd :: acc) [] rest
           else
-            loop (line_no + 1) acc total_chars rest
+            loop (line_no + 1) acc [] rest
+
         else
           match parse_line l with
           | Error e -> Error (Printf.sprintf "Line %d: %s" line_no e)

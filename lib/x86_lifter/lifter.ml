@@ -200,8 +200,8 @@ let is_func_label lbl =
 
 
 let lift_lines ?(options = default_options) raw_lines =
-
   let block_id = ref 0 in
+  let func_name = ref options.function_name in
   let current_label = ref options.function_name in
   let current_instrs = ref [] in
   let raw_blocks = ref [] in
@@ -223,6 +223,7 @@ let lift_lines ?(options = default_options) raw_lines =
     | X86_parser.LineMarkerBegin _ :: rest | X86_parser.LineMarkerEnd :: rest ->
         process rest
     | X86_parser.LineLabel lbl :: rest ->
+        if is_func_label lbl then func_name := lbl;
         if !current_instrs <> [] then flush_block ();
         current_label := lbl;
         process rest
@@ -260,6 +261,7 @@ let lift_lines ?(options = default_options) raw_lines =
                   List.rev (Ir.Jcc { cond; target_true; target_false = Ir.BlockId next_id } :: prev_rev)
               | None ->
                   List.rev (Ir.Jcc { cond; target_true; target_false = Ir.Label "exit" } :: prev_rev))
+
           | _ ->
               if is_terminator last then b.instrs
               else
@@ -272,9 +274,10 @@ let lift_lines ?(options = default_options) raw_lines =
 
   let final_blocks = List.rev !patched_blocks in
   let detected_name =
-    match final_blocks with
-    | b :: _ when b.label <> "" && is_func_label b.label && b.label <> default_options.function_name -> b.label
-    | _ -> options.function_name
+    if is_func_label !func_name && !func_name <> default_options.function_name then !func_name
+    else match final_blocks with
+      | b :: _ when b.label <> "" && is_func_label b.label && b.label <> default_options.function_name -> b.label
+      | _ -> options.function_name
   in
   let func = Ir.make_func ~name:detected_name ~entry_id:0 ~blocks:final_blocks in
   resolve_cfg_labels func.cfg
