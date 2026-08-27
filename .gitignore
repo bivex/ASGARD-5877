@@ -16,3 +16,4 @@ generated_isa/
 my_emulator/
 vanguard_demo/
 *.vanguard
+/binaries/corpus_build
