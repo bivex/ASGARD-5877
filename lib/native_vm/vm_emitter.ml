@@ -186,7 +186,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    bool trapped;\n";
   Buffer.add_string b "    size_t executed_instructions;\n";
   Buffer.add_string b "    uint64_t canary_tail = CANARY_VAL;\n\n";
-  Buffer.add_string b "    inline void init(uint32_t seed = 0x13375877U) noexcept {\n";
+  Buffer.add_string b (Printf.sprintf "    inline void init(uint32_t seed = 0x%08lXU) noexcept {\n" key_seed);
   Buffer.add_string b "        init_seed = seed;\n";
   Buffer.add_string b "        poison_penalty = (key64_for_offset(seed, 0x5877) ^ 0xCAA7E1D8718BF877ULL) | 1ULL;\n";
   Buffer.add_string b "        reg_mask = 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed * 0x9E3779B97F4A7C15ULL);\n";
