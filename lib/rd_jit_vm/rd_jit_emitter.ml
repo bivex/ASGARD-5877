@@ -108,10 +108,20 @@ public:
     inline void* get_exec_ptr() { return rw_buf; }
 
     inline void begin_synthesis() {
+#if defined(__APPLE__) && defined(__aarch64__)
+        if (__builtin_available(macOS 11.0, *)) {
+            pthread_jit_write_protect_np(0);
+        }
+#endif
         mprotect(rw_buf, capacity, PROT_READ | PROT_WRITE);
     }
 
     inline void commit_and_flush(size_t bytes_written) {
+#if defined(__APPLE__) && defined(__aarch64__)
+        if (__builtin_available(macOS 11.0, *)) {
+            pthread_jit_write_protect_np(1);
+        }
+#endif
         mprotect(rw_buf, capacity, PROT_READ | PROT_EXEC);
 #if defined(__APPLE__)
         sys_dcache_flush(rw_buf, bytes_written);
@@ -122,8 +132,18 @@ public:
     }
 
     inline void atomic_zeroize(size_t bytes) {
+#if defined(__APPLE__) && defined(__aarch64__)
+        if (__builtin_available(macOS 11.0, *)) {
+            pthread_jit_write_protect_np(0);
+        }
+#endif
         mprotect(rw_buf, capacity, PROT_READ | PROT_WRITE);
         memset(rw_buf, 0, bytes);
+#if defined(__APPLE__) && defined(__aarch64__)
+        if (__builtin_available(macOS 11.0, *)) {
+            pthread_jit_write_protect_np(1);
+        }
+#endif
     }
 };
 
