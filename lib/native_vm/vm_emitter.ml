@@ -137,7 +137,13 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n";
   Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
+  Buffer.add_string b (Hardened_runtime.emit_anti_emulation_probes ());
+  Buffer.add_string b "\n";
+  Buffer.add_string b (Hardened_runtime.emit_dual_mapping_header ());
+  Buffer.add_string b "\n";
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
+
+
 
 
   Buffer.add_string b "/* ------------------------------------------------------------------------- */\n";
@@ -294,7 +300,13 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        ctx.trapped = true;\n";
   Buffer.add_string b "        return false;\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b "#endif\n\n";
+  Buffer.add_string b "#endif\n\n\
+    /* Anti-Emulation & Hypervisor Timing Differential Probe */\n\
+    uint64_t emu_penalty = asgard_anti_emulation::evaluate_emulation_differential();\n\
+    if (emu_penalty != 0) {\n\
+        ctx.reg_mask ^= emu_penalty;\n\
+    }\n\n
+";
 
   Buffer.add_string b "    /* Ephemeral Working Buffer: Isolated stack frame execution */\n";
   Buffer.add_string b "    uint64_t stack_buf[256];\n";
