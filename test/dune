@@ -26,6 +26,7 @@
   test_arm64_lifter
   test_multi_vm
   test_gpu_synth
+  test_rd_jit_vm
   test_helpers
   run_tests)
  (libraries
@@ -44,6 +45,7 @@
   arm64_lifter
   multi_vm
   gpu_synth
+  rd_jit_vm
   mba_engine
   cff
   native_vm

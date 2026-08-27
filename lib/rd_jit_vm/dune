@@ -1,0 +1,4 @@
+(library
+ (name rd_jit_vm)
+ (public_name random_visa.rd_jit_vm)
+ (libraries vm_ir mba_engine cff native_vm multi_vm))
