@@ -36,7 +36,7 @@ kernel void gpu_compute_sac_matrix_kernel(
 
     uint32_t cl = l0;
     uint32_t cr = r0;
-    for (int r = 0; r < 6; ++r) {
+    for (int r = 0; r < 8; ++r) {
         speck64_round_gpu(cl, cr, speck_keys[r]);
     }
 
@@ -52,7 +52,7 @@ kernel void gpu_compute_sac_matrix_kernel(
 
         uint32_t mcl = ml0;
         uint32_t mcr = mr0;
-        for (int r = 0; r < 6; ++r) {
+        for (int r = 0; r < 8; ++r) {
             speck64_round_gpu(mcl, mcr, speck_keys[r]);
         }
 
@@ -95,7 +95,7 @@ int main(int argc, char** argv) {
         id<MTLComputePipelineState> pipe_sac = [device newComputePipelineStateWithFunction:fn_sac error:&error];
 
         const uint32_t NUM_THREADS = 65536;
-        uint32_t keys[6] = { 305419896, 2309737967, 3735928559, 3405691582, 123456789, 987654321 };
+        uint32_t keys[8] = { 305419896, 2309737967, 3735928559, 3405691582, 123456789, 987654321, 2863311530, 1431655765 };
         id<MTLBuffer> buf_keys = [device newBufferWithBytes:keys length:sizeof(keys) options:MTLResourceStorageModeShared];
 
         size_t matrix_size = 64 * 64 * sizeof(uint32_t);

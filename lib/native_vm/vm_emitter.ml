@@ -214,14 +214,14 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        }\n";
   Buffer.add_string b "        reg_mask = new_mask;\n";
   Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    /* Virtual Stack Scrambling (6-Round Speck-64 ARX Permutation Core) */\n";
+  Buffer.add_string b "    /* Virtual Stack Scrambling (8-Round Speck-64 ARX Permutation Core) */\n";
   Buffer.add_string b "    static inline constexpr size_t STACK_SIZE = 512;\n";
   Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_STRIDE = %d;\n" stride);
   Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_OFFSET = %d;\n\n" offset);
   Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n";
   Buffer.add_string b "        uint32_t x = (uint32_t)((index * STACK_STRIDE + STACK_OFFSET) & 0xFFFF);\n";
   Buffer.add_string b "        uint32_t y = (uint32_t)(index ^ 0x1337U);\n";
-  Buffer.add_string b "        for (size_t r = 0; r < 6; ++r) {\n";
+  Buffer.add_string b "        for (size_t r = 0; r < 8; ++r) {\n";
   Buffer.add_string b "            uint32_t rot_rx = ((x >> 8) | (x << 24));\n";
   Buffer.add_string b "            x = (rot_rx + y) ^ 0x9E3779B9U;\n";
   Buffer.add_string b "            uint32_t rot_ly = ((y << 3) | (y >> 29));\n";

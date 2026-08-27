@@ -23,14 +23,14 @@ for i in $(seq 1 $BUILD_COUNT); do
     
     echo "[Build $i/$BUILD_COUNT] Compiling ARM64 with Seed 0x$(printf '%08X' $SEED)..."
     
-    # Compile with ARM64 Lifter, CFF and MBA
+    # Compile with ARM64 Lifter, CFF and Deep MBA (D=4)
     dune exec bin/main.exe -- protect-arm64 \
         -i "$ROOT_DIR/examples/demo_c_app.c" \
         -o "$TARGET_DIR" \
         --seed "$SEED" \
         --cff \
         --mba \
-        --mba-depth 2 \
+        --mba-depth 4 \
         --compile true > /dev/null 2>&1
     
     FILE_SIZE=$(wc -c < "$TARGET_DIR/protected.vanguard")
