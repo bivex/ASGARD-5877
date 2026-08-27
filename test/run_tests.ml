@@ -23,6 +23,7 @@ let () =
     ("VM Runtime Profile", Test_runtime_profile.tests);
     ("Compiler Pipeline & Equivalence", Test_compiler_pipeline.tests);
     ("ARM64 Lifter & CFG", Test_arm64_lifter.tests);
+    ("Multi-VM & Direct Zero-Bridge", Test_multi_vm.tests);
   ]
 
 

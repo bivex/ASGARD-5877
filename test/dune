@@ -24,6 +24,7 @@
   test_runtime_profile
   test_compiler_pipeline
   test_arm64_lifter
+  test_multi_vm
   test_helpers
   run_tests)
  (libraries
@@ -40,6 +41,7 @@
   vm_ir
   x86_lifter
   arm64_lifter
+  multi_vm
   mba_engine
   cff
   native_vm
