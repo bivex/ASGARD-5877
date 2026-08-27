@@ -25,6 +25,7 @@
   test_compiler_pipeline
   test_arm64_lifter
   test_multi_vm
+  test_gpu_synth
   test_helpers
   run_tests)
  (libraries
@@ -42,6 +43,7 @@
   x86_lifter
   arm64_lifter
   multi_vm
+  gpu_synth
   mba_engine
   cff
   native_vm

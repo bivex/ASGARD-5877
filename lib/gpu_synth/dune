@@ -1,0 +1,11 @@
+(library
+ (name gpu_synth)
+ (public_name random_visa.gpu_synth)
+ (foreign_stubs
+  (language c)
+  (names gpu_synth_stubs))
+ (foreign_stubs
+  (language cxx)
+  (names metal_runtime)
+  (flags :standard -fobjc-arc -x objective-c++))
+ (c_library_flags -framework Metal -framework Foundation -lstdc++))

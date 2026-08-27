@@ -24,6 +24,7 @@ let () =
     ("Compiler Pipeline & Equivalence", Test_compiler_pipeline.tests);
     ("ARM64 Lifter & CFG", Test_arm64_lifter.tests);
     ("Multi-VM & Direct Zero-Bridge", Test_multi_vm.tests);
+    ("GPU Metal Acceleration & Synthesis", Test_gpu_synth.tests);
   ]
 
 
