@@ -22,6 +22,7 @@ let () =
     ("C Macro Obfuscation", Test_c_macro_obf.tests);
     ("VM Runtime Profile", Test_runtime_profile.tests);
     ("Compiler Pipeline & Equivalence", Test_compiler_pipeline.tests);
+    ("ARM64 Lifter & CFG", Test_arm64_lifter.tests);
   ]
 
 

@@ -23,6 +23,7 @@
   test_c_macro_obf
   test_runtime_profile
   test_compiler_pipeline
+  test_arm64_lifter
   test_helpers
   run_tests)
  (libraries
@@ -38,6 +39,7 @@
   vanguard_9292
   vm_ir
   x86_lifter
+  arm64_lifter
   mba_engine
   cff
   native_vm
