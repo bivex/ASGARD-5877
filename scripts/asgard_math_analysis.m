@@ -42,18 +42,18 @@ corpus_files = dir(fullfile(corpus_dir, "*", "protected.vanguard"));
 all_bytes = [];
 
 if isempty(corpus_files)
-    fprintf("  [!] Corpus not found in %s. Generating synthetic empirical corpus...\n", corpus_dir);
-    all_bytes = uint8(randi([0, 255], 3840, 1));
-    N_corpus = 24;
-else
-    N_corpus = length(corpus_files);
-    for i = 1:N_corpus
-        file_path = fullfile(corpus_files(i).folder, corpus_files(i).name);
-        fid = fopen(file_path, "rb");
-        raw = fread(fid, Inf, "uint8");
-        fclose(fid);
-        all_bytes = [all_bytes; raw];
-    end
+    fprintf("  [!] Corpus not found in %s. Automatically invoking scripts/build_corpus.sh...\n", corpus_dir);
+    system("./scripts/build_corpus.sh");
+    corpus_files = dir(fullfile(corpus_dir, "*", "protected.vanguard"));
+end
+
+N_corpus = length(corpus_files);
+for i = 1:N_corpus
+    file_path = fullfile(corpus_files(i).folder, corpus_files(i).name);
+    fid = fopen(file_path, "rb");
+    raw = fread(fid, Inf, "uint8");
+    fclose(fid);
+    all_bytes = [all_bytes; raw];
 end
 
 N_total = length(all_bytes);
