@@ -18,3 +18,4 @@ vanguard_demo/
 *.vanguard
 /binaries/corpus_build
 /binaries/corpus_build_arm64
+binaries/asgard_gpu_math_bridge
