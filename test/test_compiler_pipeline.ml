@@ -58,6 +58,38 @@ let test_end_to_end_pipeline () =
       | Error msg -> fail msg)
   | Error msg -> fail ("Pipeline compilation failed: " ^ msg)
 
+let test_rns_roundtrip () =
+  let test_vals = [ 0L; 1L; 42L; 1337L; 0x13375877L; 0x7FFFFFFFFFFFFFFFL ] in
+  List.iter (fun x ->
+    let enc = Rns.encode x in
+    let dec = Rns.decode enc in
+    check int64 (Printf.sprintf "RNS Roundtrip 0x%016LX" x) x dec
+  ) test_vals
+
+let test_rns_arithmetic () =
+  let pairs = [
+    (100L, 200L);
+    (0x1337L, 0x5877L);
+    (42L, 58L);
+    (1000L, 500L);
+  ] in
+  List.iter (fun (a, b) ->
+    let ea = Rns.encode a in
+    let eb = Rns.encode b in
+    let e_sum = Rns.add ea eb in
+    let d_sum = Rns.decode e_sum in
+    check int64 (Printf.sprintf "RNS Add %Ld + %Ld" a b) (Int64.add a b) d_sum;
+
+    let e_sub = Rns.sub ea eb in
+    let d_sub = Rns.decode e_sub in
+    if a >= b then
+      check int64 (Printf.sprintf "RNS Sub %Ld - %Ld" a b) (Int64.sub a b) d_sub;
+
+    let e_mul = Rns.mul ea eb in
+    let d_mul = Rns.decode e_mul in
+    check int64 (Printf.sprintf "RNS Mul %Ld * %Ld" a b) (Int64.mul a b) d_mul;
+  ) pairs
+
 let tests = [
   ("Seed Determinism", `Quick, test_seed_determinism);
   ("IR Verifier Success", `Quick, test_ir_verify_success);
@@ -65,4 +97,6 @@ let tests = [
   ("Reference VM Evaluation", `Quick, test_reference_vm_evaluation);
   ("Semantic Transform Equivalence", `Quick, test_semantic_diversification_equivalence);
   ("End-to-End Compiler Pipeline", `Quick, test_end_to_end_pipeline);
+  ("RNS Roundtrip & CRT", `Quick, test_rns_roundtrip);
+  ("RNS Modular Arithmetic", `Quick, test_rns_arithmetic);
 ]
