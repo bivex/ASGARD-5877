@@ -165,15 +165,19 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    return x32 == 0 ? 0x1337BEEFU : x32;\n";
   Buffer.add_string b "}\n\n";
 
-  (* Blinded VMContext (Resisting VMPredator & Memory Taint Analysis) *)
+  (* Blinded VMContext with Canary Guard Zones (Resisting VMPredator & Memory Scanners) *)
   Buffer.add_string b "struct VMContext {\n";
+
+  Buffer.add_string b "    static inline constexpr uint64_t CANARY_VAL = 0xCAFEBABE13375877ULL;\n";
+  Buffer.add_string b "    uint64_t canary_head = CANARY_VAL;\n";
   Buffer.add_string b "    uint64_t gprs[32]; // Blinded in memory: actual_val = gprs[i] ^ reg_mask\n";
   Buffer.add_string b "    uint64_t stack[512];\n";
   Buffer.add_string b "    size_t sp;\n";
   Buffer.add_string b "    uint64_t reg_mask;\n";
   Buffer.add_string b "    bool cf, zf, sf, of;\n";
   Buffer.add_string b "    bool trapped;\n";
-  Buffer.add_string b "    size_t executed_instructions;\n\n";
+  Buffer.add_string b "    size_t executed_instructions;\n";
+  Buffer.add_string b "    uint64_t canary_tail = CANARY_VAL;\n\n";
   Buffer.add_string b "    inline void init(uint32_t seed = 0x13375877U) noexcept {\n";
   Buffer.add_string b "        reg_mask = 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed * 0x9E3779B97F4A7C15ULL);\n";
   Buffer.add_string b "        for (size_t i = 0; i < 32; ++i) gprs[i] = reg_mask; // Initialized to 0 (0 ^ reg_mask)\n";
@@ -181,6 +185,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        cf = zf = sf = of = false;\n";
   Buffer.add_string b "        trapped = false;\n";
   Buffer.add_string b "        executed_instructions = 0;\n";
+  Buffer.add_string b "        canary_head = canary_tail = CANARY_VAL;\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline uint64_t get_reg(uint8_t i) const noexcept {\n";
   Buffer.add_string b "        return gprs[i] ^ reg_mask;\n";
@@ -204,14 +209,26 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        }\n";
   Buffer.add_string b "        reg_mask = new_mask;\n";
   Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    /* Virtual Stack Scrambling (Non-linear Permutation & Dynamic Memory Encryption) */\n";
+  Buffer.add_string b "    /* Virtual Stack Scrambling (2-Round Non-Linear Feistel Network + Affine Map) */\n";
   Buffer.add_string b "    static inline constexpr size_t STACK_SIZE = 512;\n";
   Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_STRIDE = %d;\n" stride);
-  Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_OFFSET = %d;\n\n" offset);
+  Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_OFFSET = %d;\n" offset);
+  Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t FEISTEL_K0 = %d;\n" profile.dispatch.context_layout.feistel_k0);
+  Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t FEISTEL_K1 = %d;\n\n" profile.dispatch.context_layout.feistel_k1);
   Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n";
-  Buffer.add_string b "        return (index * STACK_STRIDE + STACK_OFFSET) & (STACK_SIZE - 1);\n";
+  Buffer.add_string b "        size_t aff = (index * STACK_STRIDE + STACK_OFFSET) & 0xFF;\n";
+  Buffer.add_string b "        size_t l0 = (aff >> 4) & 0x0F;\n";
+  Buffer.add_string b "        size_t r0 = aff & 0x0F;\n";
+  Buffer.add_string b "        size_t f0 = (((r0 * 7 + FEISTEL_K0) & 0x0F) ^ (r0 >> 1));\n";
+  Buffer.add_string b "        size_t l1 = r0;\n";
+  Buffer.add_string b "        size_t r1 = l0 ^ f0;\n";
+  Buffer.add_string b "        size_t f1 = (((r1 * 11 + FEISTEL_K1) & 0x0F) ^ (r1 >> 1));\n";
+  Buffer.add_string b "        size_t l2 = r1;\n";
+  Buffer.add_string b "        size_t r2 = l1 ^ f1;\n";
+  Buffer.add_string b "        return (((l2 << 4) | r2) & (STACK_SIZE - 1));\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline void push(uint64_t v) noexcept {\n";
+  Buffer.add_string b "        if (canary_head != CANARY_VAL || canary_tail != CANARY_VAL) { reg_mask ^= 0xDEADBEEFULL; trapped = true; }\n";
   Buffer.add_string b "        if (sp < STACK_SIZE) {\n";
   Buffer.add_string b "            size_t phys_idx = scramble_stack_idx(sp);\n";
   Buffer.add_string b "            uint64_t enc_mask = ((uint64_t)sp * 0x9E3779B97F4A7C15ULL) ^ 0xA5A5A5A55A5A5A5AULL;\n";
@@ -220,6 +237,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        }\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline uint64_t pop() noexcept {\n";
+  Buffer.add_string b "        if (canary_head != CANARY_VAL || canary_tail != CANARY_VAL) { reg_mask ^= 0xDEADBEEFULL; trapped = true; }\n";
   Buffer.add_string b "        if (sp > 0) {\n";
   Buffer.add_string b "            sp--;\n";
   Buffer.add_string b "            size_t phys_idx = scramble_stack_idx(sp);\n";
@@ -231,6 +249,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        return 0ULL;\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "};\n\n";
+
 
   (* Helper condition check *)
   Buffer.add_string b "static inline bool eval_condition(const VMContext& ctx, uint8_t cond) noexcept {\n";
@@ -343,6 +362,17 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     | _ -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
   in
 
+  Buffer.add_string b "    #if defined(__x86_64__)\n";
+  Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = __builtin_ia32_rdtsc()\n";
+  Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1 = __builtin_ia32_rdtsc(); if ((_t1 - _t0) > 100000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
+  Buffer.add_string b "    #elif defined(__aarch64__)\n";
+  Buffer.add_string b "    #define PROBE_START() uint64_t _t0; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t0))\n";
+  Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 100000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
+  Buffer.add_string b "    #else\n";
+  Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = 0\n";
+  Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n";
+  Buffer.add_string b "    #endif\n\n";
+
   Buffer.add_string b "    H_NOP: ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_MOV_RR: ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_MOV_RI: ctx.set_reg(dst, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT();\n";
@@ -351,26 +381,31 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) & 0xFFFFFFFFULL) | high_val);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b (Printf.sprintf "    H_ADD_RR: ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT();\n" (pick_poly_add ()));
-  Buffer.add_string b "    H_ADD_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b (Printf.sprintf "    H_SUB_RR: ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT();\n" (pick_poly_sub ()));
-  Buffer.add_string b "    H_SUB_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) - 2 * ((~ctx.get_reg(dst)) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b (Printf.sprintf "    H_ADD_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (pick_poly_add ()));
+  Buffer.add_string b "    H_ADD_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b (Printf.sprintf "    H_SUB_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (pick_poly_sub ()));
+  Buffer.add_string b "    H_SUB_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) - 2 * ((~ctx.get_reg(dst)) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_IMUL_RR: {\n";
+  Buffer.add_string b "        PROBE_START();\n";
   Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
   Buffer.add_string b "        ctx.set_reg(dst, ((a & b) * (a | b)) + ((a & (~b)) * ((~a) & b)));\n";
+  Buffer.add_string b "        PROBE_CHECK();\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_IMUL_RI: {\n";
+  Buffer.add_string b "        PROBE_START();\n";
   Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
   Buffer.add_string b "        ctx.set_reg(dst, ((a & b) * (a | b)) + ((a & (~b)) * ((~a) & b)));\n";
+  Buffer.add_string b "        PROBE_CHECK();\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b (Printf.sprintf "    H_XOR_RR: ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT();\n" (pick_poly_xor ()));
-  Buffer.add_string b "    H_XOR_RI: ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)imm) ^ (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b (Printf.sprintf "    H_XOR_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (pick_poly_xor ()));
+  Buffer.add_string b "    H_XOR_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)imm) ^ (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_AND_RR: ctx.set_reg(dst, (ctx.get_reg(dst) + ctx.get_reg(src)) - (ctx.get_reg(dst) | ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_AND_RI: ctx.set_reg(dst, (ctx.get_reg(dst) + (uint64_t)imm) - (ctx.get_reg(dst) | (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_OR_RR: ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + (ctx.get_reg(dst) & ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_OR_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
+
   Buffer.add_string b "    H_ROL_RI: {\n";
   Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
   Buffer.add_string b "        ctx.set_reg(dst, (val << shift) | (val >> ((64 - shift) & 63)));\n";

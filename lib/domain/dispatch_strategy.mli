@@ -9,8 +9,11 @@ type context_layout = {
   register_pins : (int * host_reg_pin) list;
   affine_a      : int;
   affine_b      : int;
+  feistel_k0    : int;
+  feistel_k1    : int;
   frame_size    : int;
 }
+
 
 type thread_domain = {
   domain_id     : int;
