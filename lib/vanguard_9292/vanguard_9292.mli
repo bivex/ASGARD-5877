@@ -67,7 +67,7 @@ end
     Deterministic PRNG (xorshift32) that renders static opcode fingerprinting
     useless, while allowing VM runtime to reproduce the exact stream. *)
 module Rolling_key : sig
-  type t = { seed : int32; mutable state : int32 }
+  type t = { seed : int32; mutable state : int32; mutable counter : int32 }
 
   val make : seed:int32 -> t
 

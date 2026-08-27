@@ -100,25 +100,29 @@ module Opcode_map = struct
 end
 
 module Rolling_key = struct
-  type t = { seed : int32; mutable state : int32 }
+  type t = { seed : int32; mutable state : int32; mutable counter : int32 }
 
   let make ~seed =
     let init_state = if seed = 0l then 0x1337BEEFl else seed in
-    { seed; state = init_state }
+    { seed; state = init_state; counter = 0l }
 
   let next t =
+    t.counter <- Int32.add t.counter 1l;
     let open Int32 in
     let x = t.state in
     let x = logxor x (shift_left x 13) in
     let x = logxor x (shift_right_logical x 17) in
     let x = logxor x (shift_left x 5) in
-    let next_state = if x = 0l then 0x1337BEEFl else x in
+    let rot = logor (shift_left x 7) (shift_right_logical x 25) in
+    let mixed = add rot (mul t.counter 0x9E3779B9l) in
+    let next_state = if mixed = 0l then 0x1337BEEFl else mixed in
     t.state <- next_state;
     next_state
 
   let reset t =
     let init_state = if t.seed = 0l then 0x1337BEEFl else t.seed in
-    t.state <- init_state
+    t.state <- init_state;
+    t.counter <- 0l
 end
 
 type t = {
@@ -309,16 +313,20 @@ let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
   (* RollingKey class *)
   Buffer.add_string b "struct RollingKey {\n";
   Buffer.add_string b "    uint32_t state;\n";
+  Buffer.add_string b "    uint32_t counter{0};\n";
   Buffer.add_string b "    inline explicit RollingKey(uint32_t seed) noexcept\n";
-  Buffer.add_string b "        : state(seed == 0 ? 0x1337BEEFU : seed) {}\n\n";
+  Buffer.add_string b "        : state(seed == 0 ? 0x1337BEEFU : seed), counter(0) {}\n\n";
   Buffer.add_string b "    inline uint32_t next() noexcept {\n";
+  Buffer.add_string b "        counter++;\n";
   Buffer.add_string b "        uint32_t x = state;\n";
   Buffer.add_string b "        x ^= x << 13;\n";
   Buffer.add_string b "        x ^= x >> 17;\n";
   Buffer.add_string b "        x ^= x << 5;\n";
-  Buffer.add_string b "        if (x == 0) x = 0x1337BEEFU;\n";
-  Buffer.add_string b "        state = x;\n";
-  Buffer.add_string b "        return x;\n";
+  Buffer.add_string b "        uint32_t rot = (x << 7) | (x >> 25);\n";
+  Buffer.add_string b "        uint32_t mixed = rot + (counter * 0x9E3779B9U);\n";
+  Buffer.add_string b "        if (mixed == 0) mixed = 0x1337BEEFU;\n";
+  Buffer.add_string b "        state = mixed;\n";
+  Buffer.add_string b "        return mixed;\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "};\n\n";
 
