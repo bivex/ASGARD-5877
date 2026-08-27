@@ -53,6 +53,7 @@ type raw_op_kind =
   | OP_JCC
   | OP_CMOV
   | OP_SETCC
+  | OP_CALL
   | OP_RET
   | OP_EXIT
   | OP_FUSED_MOV_ADD_RRI
@@ -67,7 +68,7 @@ let all_op_kinds = [
   OP_SUB_RR; OP_SUB_RI; OP_IMUL_RR; OP_IMUL_RI; OP_XOR_RR; OP_XOR_RI;
   OP_AND_RR; OP_AND_RI; OP_OR_RR; OP_OR_RI; OP_ROL_RI; OP_ROR_RI; OP_SHL_RI; OP_SHR_RI;
   OP_CMP_RR; OP_CMP_RI; OP_PUSH_R;
-  OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_SETCC; OP_RET; OP_EXIT;
+  OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_SETCC; OP_CALL; OP_RET; OP_EXIT;
   OP_FUSED_MOV_ADD_RRI; OP_FUSED_ADD_IMUL_RRI; OP_FUSED_ADD_XOR_RRI;
   OP_FUSED_SUB_XOR_RRI; OP_FUSED_XOR_ADD_RRI; OP_FUSED_CMP_CMOV;
 ]
@@ -101,6 +102,7 @@ let op_kind_to_handler_name = function
   | OP_JCC -> "H_JCC"
   | OP_CMOV -> "H_CMOV"
   | OP_SETCC -> "H_SETCC"
+  | OP_CALL -> "H_CALL"
   | OP_RET -> "H_RET"
   | OP_EXIT -> "H_EXIT"
   | OP_FUSED_MOV_ADD_RRI -> "H_FUSED_MOV_ADD_RRI"
@@ -109,6 +111,7 @@ let op_kind_to_handler_name = function
   | OP_FUSED_SUB_XOR_RRI -> "H_FUSED_SUB_XOR_RRI"
   | OP_FUSED_XOR_ADD_RRI -> "H_FUSED_XOR_ADD_RRI"
   | OP_FUSED_CMP_CMOV -> "H_FUSED_CMP_CMOV"
+
 
 
 
@@ -414,9 +417,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_JCC: {\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        uint16_t t_true = (uint16_t)((word >> 22) & 0x3FF);\n";
-  Buffer.add_string b "        uint16_t t_false = (uint16_t)((word >> 32) & 0x3FF);\n";
-  Buffer.add_string b "        vIP_idx = eval_condition(ctx, cond) ? (size_t)t_true : (size_t)t_false;\n";
+  Buffer.add_string b "        uint64_t t_true = (uint64_t)((word >> 22) & 0x3FF);\n";
+  Buffer.add_string b "        uint64_t t_false = (uint64_t)((word >> 32) & 0x3FF);\n";
+  Buffer.add_string b "        uint64_t c = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
+  Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMOV: {\n";
@@ -430,7 +434,13 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        ctx.set_reg(dst, val);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_CALL: {\n";
+  Buffer.add_string b "        ctx.push((uint64_t)vIP_idx);\n";
+  Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_RET: case_ret: ctx.executed_instructions++; goto EXIT_VM;\n";
+
 
   Buffer.add_string b "    H_EXIT: ctx.executed_instructions++; goto EXIT_VM;\n\n";
 
@@ -835,10 +845,15 @@ let compile_and_package
                   encode_raw_word (get_opcode OP_CMOV) (get_reg_idx dst) (get_reg_idx s) (Int64.of_int (cond_to_code cond))
               | Ir.Setcc { cond; dst = Ir.Reg d } ->
                   encode_raw_word (get_opcode OP_SETCC) (get_reg_idx d) 0 (Int64.of_int (cond_to_code cond))
+              | Ir.Call (Ir.BlockId bid) ->
+                  encode_raw_word (get_opcode OP_CALL) 0 0 (Int64.of_int (get_block_offset bid))
+              | Ir.Call (Ir.TargetImm imm) ->
+                  encode_raw_word (get_opcode OP_CALL) 0 0 imm
               | Ir.Ret -> encode_raw_word (get_opcode OP_RET) 0 0 0L
 
               | Ir.Vm_exit -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
               | _ -> encode_raw_word (get_opcode OP_NOP) 0 0 0L))
+
         ops)
     sorted_blocks;
 
