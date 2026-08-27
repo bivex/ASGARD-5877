@@ -58,8 +58,8 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   | ("subs", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = Sub; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = true } ]
 
-  | ("mul", [ OpReg dst; OpReg src1; OpReg src2 ]) ->
-      Ok [ Ir.Alu { op = Mul; dst; src1 = Reg src1; src2 = Reg src2; set_flags = false } ]
+  | ("mul", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Ok [ Ir.Alu { op = Mul; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
   | ("sdiv", [ OpReg dst; OpReg src1; OpReg src2 ]) ->
       Ok [ Ir.Alu { op = Idiv; dst; src1 = Reg src1; src2 = Reg src2; set_flags = false } ]
   | ("udiv", [ OpReg dst; OpReg src1; OpReg src2 ]) ->

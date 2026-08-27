@@ -88,8 +88,9 @@ let map_arm64_reg str =
 let parse_imm str =
   let s = String.trim str in
   let s = if String.starts_with ~prefix:"#" s then String.sub s 1 (String.length s - 1) else s in
-  if String.contains s '@' || String.starts_with ~prefix:"_" s || String.starts_with ~prefix:"L" s then
-    Ok 0L
+  if String.contains s '@' || String.starts_with ~prefix:"_" s ||
+     String.starts_with ~prefix:"L" s || String.starts_with ~prefix:"." s then
+    Error (Printf.sprintf "Not an immediate: %s" s)
   else
     try
       if String.starts_with ~prefix:"0x" (String.lowercase_ascii s) ||
@@ -97,7 +98,7 @@ let parse_imm str =
         Ok (Int64.of_string s)
       else
         Ok (Int64.of_string s)
-    with _ -> Ok 0L
+    with _ -> Error (Printf.sprintf "Invalid immediate '%s'" str)
 
 let parse_mem str width =
   let s = String.trim str in
@@ -154,12 +155,13 @@ let parse_operand str default_width =
   else if String.starts_with ~prefix:"#" s then
     match parse_imm s with
     | Ok i -> Ok (OpImm i)
-    | Error err -> Error err
+    | Error _ -> Ok (OpLabel s)
   else
     match map_arm64_reg s with
     | Ok r -> Ok (OpReg r)
     | Error _ ->
-        if String.contains s '@' || String.starts_with ~prefix:"_" s || String.starts_with ~prefix:"L" s then
+        if String.contains s '@' || String.starts_with ~prefix:"_" s ||
+           String.starts_with ~prefix:"L" s || String.starts_with ~prefix:"." s then
           Ok (OpLabel s)
         else
           match parse_imm s with
@@ -172,7 +174,7 @@ let parse_line raw =
   else if String.ends_with ~suffix:":" line then
     let lbl = String.sub line 0 (String.length line - 1) |> String.trim in
     Ok (LineLabel lbl)
-  else if String.starts_with ~prefix:"." line then
+  else if String.starts_with ~prefix:"." line && not (String.contains line ' ') then
     Ok (LineDirective line)
   else
     let first_space =
@@ -195,7 +197,6 @@ let parse_line raw =
     if args_str = "" then
       Ok (LineInstr (mnemonic, []))
     else
-      (* Group bracketed memory operands like [sp, #16] so commas inside aren't split *)
       let rec group_brackets acc in_bracket cur = function
         | [] -> List.rev (if cur = "" then acc else String.trim cur :: acc)
         | ',' :: rest when not in_bracket ->
