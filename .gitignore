@@ -23,3 +23,4 @@ binaries/asgard_gpu_math_bridge
 *.nam
 *.til
 *.i64
+*.html
