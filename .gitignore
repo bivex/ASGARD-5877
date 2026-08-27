@@ -17,3 +17,4 @@ my_emulator/
 vanguard_demo/
 *.vanguard
 /binaries/corpus_build
+/binaries/corpus_build_arm64

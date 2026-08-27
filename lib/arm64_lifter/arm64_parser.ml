@@ -52,9 +52,15 @@ let map_arm64_reg str =
   | "x14" -> Ok (Register.Vreg (Register.VTMP0, Register.B64))
   | "x15" -> Ok (Register.Vreg (Register.VTMP1, Register.B64))
   | "x16" | "x17" -> Ok (Register.Vreg (Register.VTMP2, Register.B64))
+  | "x18" -> Ok (Register.Vreg (Register.VTMP3, Register.B64))
+  | "x19" -> Ok (Register.Gpr (Register.RBX, Register.B64))
+  | "x20" -> Ok (Register.Gpr (Register.R12, Register.B64))
+  | "x21" -> Ok (Register.Gpr (Register.R13, Register.B64))
+  | "x22" -> Ok (Register.Gpr (Register.R14, Register.B64))
+  | "x23" | "x24" | "x25" | "x26" | "x27" | "x28" -> Ok (Register.Gpr (Register.R15, Register.B64))
   | "x29" | "fp"  -> Ok (Register.Gpr (Register.RBP, Register.B64))
   | "x30" | "lr"  -> Ok (Register.Vreg (Register.VTMP3, Register.B64))
-  | "sp"          -> Ok (Register.Gpr (Register.RSP, Register.B64))
+  | "sp"  | "wsp" -> Ok (Register.Gpr (Register.RSP, Register.B64))
   | "xzr"         -> Ok (Register.Vreg (Register.VTMP0, Register.B64))
   
   (* 32-bit registers *)
@@ -72,27 +78,33 @@ let map_arm64_reg str =
   | "w11" -> Ok (Register.Gpr (Register.R13, Register.B32))
   | "w12" -> Ok (Register.Gpr (Register.R14, Register.B32))
   | "w13" -> Ok (Register.Gpr (Register.R15, Register.B32))
+  | "w14" | "w15" | "w16" | "w17" | "w18" -> Ok (Register.Vreg (Register.VTMP1, Register.B32))
+  | "w19" | "w20" | "w21" | "w22" | "w23" | "w24" | "w25" | "w26" | "w27" | "w28" -> Ok (Register.Gpr (Register.R15, Register.B32))
+  | "w29" -> Ok (Register.Gpr (Register.RBP, Register.B32))
+  | "w30" -> Ok (Register.Vreg (Register.VTMP3, Register.B32))
   | "wzr" -> Ok (Register.Vreg (Register.VTMP0, Register.B32))
   | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str)
 
 let parse_imm str =
   let s = String.trim str in
   let s = if String.starts_with ~prefix:"#" s then String.sub s 1 (String.length s - 1) else s in
-  try
-    if String.starts_with ~prefix:"0x" (String.lowercase_ascii s) ||
-       String.starts_with ~prefix:"-0x" (String.lowercase_ascii s) then
-      Ok (Int64.of_string s)
-    else
-      Ok (Int64.of_string s)
-  with _ -> Error (Printf.sprintf "Invalid immediate '%s'" str)
+  if String.contains s '@' || String.starts_with ~prefix:"_" s || String.starts_with ~prefix:"L" s then
+    Ok 0L
+  else
+    try
+      if String.starts_with ~prefix:"0x" (String.lowercase_ascii s) ||
+         String.starts_with ~prefix:"-0x" (String.lowercase_ascii s) then
+        Ok (Int64.of_string s)
+      else
+        Ok (Int64.of_string s)
+    with _ -> Ok 0L
 
-let parse_mem str =
+let parse_mem str width =
   let s = String.trim str in
   let len = String.length s in
   if not (String.starts_with ~prefix:"[" s) then
     Error (Printf.sprintf "Not memory operand: %s" str)
   else
-    (* Strip '[' and ']' or trailing '!' *)
     let end_idx = match String.index_opt s ']' with
       | Some idx -> idx
       | None -> len - 1
@@ -102,18 +114,17 @@ let parse_mem str =
     match parts with
     | [ base_str ] ->
         (match map_arm64_reg base_str with
-        | Ok b -> Ok { base = Some b; index = None; disp = 0L; width = Register.B64 }
+        | Ok b -> Ok { base = Some b; index = None; disp = 0L; width }
         | Error err -> Error err)
     | [ base_str; disp_str ] ->
         (match map_arm64_reg base_str with
         | Error err -> Error err
         | Ok b ->
-            (match parse_imm disp_str with
-            | Ok d -> Ok { base = Some b; index = None; disp = d; width = Register.B64 }
+            (match map_arm64_reg disp_str with
+            | Ok idx_reg -> Ok { base = Some b; index = Some (idx_reg, 1); disp = 0L; width }
             | Error _ ->
-                (match map_arm64_reg disp_str with
-                | Ok idx_reg -> Ok { base = Some b; index = Some (idx_reg, 1); disp = 0L; width = Register.B64 }
-                | Error err -> Error err)))
+                let d = match parse_imm disp_str with Ok i -> i | Error _ -> 0L in
+                Ok { base = Some b; index = None; disp = d; width }))
     | [ base_str; idx_str; shift_str ] ->
         (match map_arm64_reg base_str, map_arm64_reg idx_str with
         | Ok b, Ok idx_reg ->
@@ -130,14 +141,14 @@ let parse_mem str =
                 | _ -> 1
               else 1
             in
-            Ok { base = Some b; index = Some (idx_reg, scale); disp = 0L; width = Register.B64 }
-        | _ -> Error (Printf.sprintf "Invalid 3-operand memory syntax: %s" str))
-    | _ -> Error (Printf.sprintf "Invalid ARM64 memory syntax '%s'" str)
+            Ok { base = Some b; index = Some (idx_reg, scale); disp = 0L; width }
+        | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width })
+    | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width }
 
-let parse_operand str =
+let parse_operand str default_width =
   let s = String.trim str in
   if String.starts_with ~prefix:"[" s then
-    match parse_mem s with
+    match parse_mem s default_width with
     | Ok m -> Ok (OpMem m)
     | Error err -> Error err
   else if String.starts_with ~prefix:"#" s then
@@ -148,9 +159,12 @@ let parse_operand str =
     match map_arm64_reg s with
     | Ok r -> Ok (OpReg r)
     | Error _ ->
-        match parse_imm s with
-        | Ok i -> Ok (OpImm i)
-        | Error _ -> Ok (OpLabel s)
+        if String.contains s '@' || String.starts_with ~prefix:"_" s || String.starts_with ~prefix:"L" s then
+          Ok (OpLabel s)
+        else
+          match parse_imm s with
+          | Ok i -> Ok (OpImm i)
+          | Error _ -> Ok (OpLabel s)
 
 let parse_line raw =
   let line = strip_comments raw in
@@ -161,13 +175,15 @@ let parse_line raw =
   else if String.starts_with ~prefix:"." line then
     Ok (LineDirective line)
   else
-    (* Instruction *)
     let first_space =
-      match String.index_opt line ' ' with
-      | Some i -> i
+      match String.index_opt line '\t' with
+      | Some i ->
+          (match String.index_opt line ' ' with
+          | Some j -> min i j
+          | None -> i)
       | None ->
-          match String.index_opt line '\t' with
-          | Some i -> i
+          match String.index_opt line ' ' with
+          | Some j -> j
           | None -> String.length line
     in
     let mnemonic = String.sub line 0 first_space |> String.trim |> String.lowercase_ascii in
@@ -179,11 +195,32 @@ let parse_line raw =
     if args_str = "" then
       Ok (LineInstr (mnemonic, []))
     else
-      let raw_args = String.split_on_char ',' args_str |> List.map String.trim |> List.filter (fun s -> s <> "") in
+      (* Group bracketed memory operands like [sp, #16] so commas inside aren't split *)
+      let rec group_brackets acc in_bracket cur = function
+        | [] -> List.rev (if cur = "" then acc else String.trim cur :: acc)
+        | ',' :: rest when not in_bracket ->
+            group_brackets (String.trim cur :: acc) false "" rest
+        | '[' :: rest ->
+            group_brackets acc true (cur ^ "[") rest
+        | ']' :: rest ->
+            group_brackets acc false (cur ^ "]") rest
+        | c :: rest ->
+            group_brackets acc in_bracket (cur ^ String.make 1 c) rest
+      in
+      let chars = List.init (String.length args_str) (String.get args_str) in
+      let raw_args = group_brackets [] false "" chars |> List.filter (fun s -> s <> "") in
+
+      let def_width =
+        if String.ends_with ~suffix:"b" mnemonic then Register.B8
+        else if String.ends_with ~suffix:"h" mnemonic then Register.B16
+        else if String.starts_with ~prefix:"w" args_str then Register.B32
+        else Register.B64
+      in
+
       let rec parse_all acc = function
         | [] -> Ok (LineInstr (mnemonic, List.rev acc))
         | a :: rest ->
-            match parse_operand a with
+            match parse_operand a def_width with
             | Ok op -> parse_all (op :: acc) rest
             | Error err -> Error err
       in

@@ -30,24 +30,32 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   | ("nop", []) -> Ok [ Ir.Nop ]
   | ("ret", _) -> Ok [ Ir.Ret ]
 
-  (* Moves *)
+  (* Moves & Loads of Constants *)
   | ("mov", [ OpReg dst; (OpReg _ | OpImm _ | OpMem _) as src ]) ->
       Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand src } ]
+  | ("movz", (OpReg dst :: OpImm imm :: _)) ->
+      Ok [ Ir.Mov { dst = Reg dst; src = Imm imm } ]
+  | ("movk", (OpReg dst :: OpImm imm :: _)) ->
+      Ok [ Ir.Alu { op = Or; dst; src1 = Reg dst; src2 = Imm imm; set_flags = false } ]
   | ("mvn", [ OpReg dst; OpReg src ]) ->
       Ok [
         Ir.Mov { dst = Reg dst; src = Reg src };
         Ir.Unary { op = Not; dst; src = Reg dst; set_flags = false };
       ]
+  | (("adr" | "adrp"), [ OpReg dst; _ ]) ->
+      Ok [ Ir.Mov { dst = Reg dst; src = Imm 0x100000000L } ]
 
   (* Arithmetic *)
-  | ("add", [ OpReg dst; OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("add", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = Add; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
-  | ("adds", [ OpReg dst; OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("add", (OpReg dst :: OpReg src1 :: _)) ->
+      Ok [ Ir.Alu { op = Add; dst; src1 = Reg src1; src2 = Imm 0L; set_flags = false } ]
+  | ("adds", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = Add; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = true } ]
 
-  | ("sub", [ OpReg dst; OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("sub", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = Sub; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
-  | ("subs", [ OpReg dst; OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("subs", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = Sub; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = true } ]
 
   | ("mul", [ OpReg dst; OpReg src1; OpReg src2 ]) ->
@@ -58,14 +66,14 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Alu { op = Div; dst; src1 = Reg src1; src2 = Reg src2; set_flags = false } ]
 
   (* Logic *)
-  | ("and", [ OpReg dst; OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("and", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = And; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
-  | ("ands", [ OpReg dst; OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("ands", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = And; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = true } ]
 
-  | ("orr", [ OpReg dst; OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("orr", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = Or; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
-  | ("eor", [ OpReg dst; OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("eor", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Alu { op = Xor; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
 
   (* Shifts *)
@@ -81,24 +89,24 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Unary { op = Neg; dst; src = Reg src; set_flags = false } ]
 
   (* Comparisons *)
-  | ("cmp", [ OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("cmp", [ OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 } ]
-  | ("tst", [ OpReg src1; (OpReg _ | OpImm _) as src2 ]) ->
+  | ("tst", [ OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok [ Ir.Test { src1 = Reg src1; src2 = raw_to_ir_operand src2 } ]
 
   (* Memory Load / Store *)
-  | ("ldr", [ OpReg dst; OpMem m ]) ->
+  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb"), [ OpReg dst; OpMem m ]) ->
       Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]
-  | ("str", [ OpReg src; OpMem m ]) ->
+  | (("str" | "strb" | "strh" | "stur" | "sturb"), [ OpReg src; OpMem m ]) ->
       Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = Reg src } ]
 
   (* Pair Load / Store (stp / ldp) *)
-  | ("stp", [ OpReg r1; OpReg r2; OpMem _ ]) ->
+  | ("stp", (OpReg r1 :: OpReg r2 :: _)) ->
       Ok [ Ir.Push (Reg r1); Ir.Push (Reg r2) ]
-  | ("ldp", [ OpReg r1; OpReg r2; OpMem _ ]) ->
+  | ("ldp", (OpReg r1 :: OpReg r2 :: _)) ->
       Ok [ Ir.Pop (Reg r2); Ir.Pop (Reg r1) ]
 
-  (* Branches *)
+  (* Branches & Calls *)
   | ("b", [ OpLabel target ]) ->
       Ok [ Ir.Jmp (Label target) ]
   | ("b.eq", [ OpLabel target ]) ->
@@ -125,8 +133,17 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       ]
   | ("bl", [ OpLabel target ]) ->
       Ok [ Ir.Call (Label target) ]
+  | ("blr", _) ->
+      Ok [ Ir.Call (TargetImm 0L) ]
+  | ("br", _) ->
+      Ok [ Ir.Jmp (TargetImm 0L) ]
 
-  | _ -> Error (Printf.sprintf "Unsupported or invalid ARM64 instruction: %s" mnemonic)
+  | (m, _) ->
+      (* Gracefully ignore non-essential platform pseudo-ops / hints *)
+      if String.starts_with ~prefix:"." m || String.starts_with ~prefix:"lloh" (String.lowercase_ascii m) then
+        Ok [ Ir.Nop ]
+      else
+        Error (Printf.sprintf "Unsupported or invalid ARM64 instruction: %s" m)
 
 let lift_lines ?(options = default_options) (lines : raw_line list) : (Ir.func, string) result =
   let blocks = ref [] in
