@@ -53,6 +53,13 @@ let () =
       let oc_r = open_out (Filename.concat out_dir "runner.cpp") in
       output_string oc_r pkg.runner_source;
       close_out oc_r;
+      let oc_eb = open_out (Filename.concat out_dir "embedded_bytecode.hpp") in
+      Printf.fprintf oc_eb "#pragma once\n#include <stdint.h>\n#include <stddef.h>\n\nnamespace vanguard_threaded_vm {\nstatic const uint64_t embedded_bytecode[] = {\n";
+      List.iter
+        (fun w -> Printf.fprintf oc_eb "    0x%016LXULL,\n" w)
+        pkg.bytecode;
+      Printf.fprintf oc_eb "};\nstatic const size_t embedded_bytecode_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);\n}\n";
+      close_out oc_eb;
       let oc_b = open_out_bin (Filename.concat out_dir "protected.vanguard") in
       List.iter
         (fun w ->

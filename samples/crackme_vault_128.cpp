@@ -1,4 +1,5 @@
 #include "threaded_vm.hpp"
+#include "embedded_bytecode.hpp"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -76,20 +77,18 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Load Bytecode
-    const char* bc_file = (argc >= 3) ? argv[2] : "protected.vanguard";
-    size_t bc_len = 0;
-    uint64_t* bc_ptr = load_bytecode(bc_file, &bc_len);
-    if (!bc_ptr) {
-        // Try loading from same directory as executable
-        char fallback_path[512];
-        snprintf(fallback_path, sizeof(fallback_path), "./binaries/crackme_arm64/protected.vanguard");
-        bc_ptr = load_bytecode(fallback_path, &bc_len);
-    }
+    // Use embedded bytecode by default, or load from file if specified
+    const uint64_t* bc_ptr = vanguard_threaded_vm::embedded_bytecode;
+    size_t bc_len = vanguard_threaded_vm::embedded_bytecode_len;
+    uint64_t* heap_bc = nullptr;
 
-    if (!bc_ptr) {
-        printf("\n[-] Error: Could not locate protected.vanguard bytecode payload\n");
-        return 1;
+    if (argc >= 3) {
+        heap_bc = load_bytecode(argv[2], &bc_len);
+        if (heap_bc) {
+            bc_ptr = heap_bc;
+        } else {
+            printf("\n[-] Warning: Could not load '%s', falling back to embedded bytecode payload.\n", argv[2]);
+        }
     }
 
     // Initialize Vanguard Virtual Machine Context
@@ -100,7 +99,7 @@ int main(int argc, char** argv) {
 
     // Execute Virtual Machine Bytecode
     bool vm_ok = vanguard_threaded_vm::execute_threaded(ctx, bc_ptr, bc_len);
-    free(bc_ptr);
+    if (heap_bc) free(heap_bc);
 
     if (!vm_ok) {
         printf("\n[-] FATAL: Virtual Machine execution faulted (tampering detected)\n");
