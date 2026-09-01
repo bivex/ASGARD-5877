@@ -29,6 +29,7 @@
   test_rd_jit_vm
   test_arxiv_innovations
   test_egraph_expansion
+  test_anti_pushan
   test_helpers
   run_tests)
  (libraries
