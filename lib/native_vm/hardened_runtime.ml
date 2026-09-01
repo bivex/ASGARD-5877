@@ -186,3 +186,178 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
 
 } // namespace asgard_anti_emulation
 |}
+
+let emit_introspective_smc_header () =
+  {|#pragma once
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+
+namespace asgard_smc {
+
+// Introspective Self-Modifying Code (SMC) + Hardware Timing Probe (Morse & Kojsik, 2026)
+static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_probe(uint64_t seed) noexcept {
+    uint64_t penalty = 0;
+    asgard_memory::DualMappedBuffer buf = asgard_memory::DualMappedBuffer::allocate(4096);
+    if (!buf.rw_alias || !buf.rx_alias) {
+        return 0; // If dual-mapping is unsupported in environment, degrade gracefully
+    }
+
+#if defined(__aarch64__)
+    // Emit ARM64:
+    // movz w0, #0x5877, lsl #0  -> 0x528b0ee0
+    // add w0, w0, #0x12         -> 0x11004800
+    // ret                       -> 0xd65f03c0
+    uint32_t* code_rw = (uint32_t*)buf.rw_alias;
+    code_rw[0] = 0x528b0ee0; // movz w0, #0x5877
+    code_rw[1] = 0x11004800; // add w0, w0, #0x12
+    code_rw[2] = 0xd65f03c0; // ret
+
+    uint64_t t0;
+    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t0));
+
+    // Dynamic Self-Modification via RW alias: mutate immediate in add (bits 10..21)
+    uint32_t imm_val = (uint32_t)(seed & 0x7F);
+    code_rw[1] = 0x11000000 | (imm_val << 10);
+
+    // Hardware icache invalidation & pipeline clear
+    __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + 16);
+
+    // Execute via RX alias
+    typedef uint32_t (*smc_fn_t)();
+    smc_fn_t fn = (smc_fn_t)buf.rx_alias;
+    uint32_t result = fn();
+
+    uint64_t t1;
+    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t1));
+
+    uint32_t expected = 0x5877 + imm_val;
+    if (result != expected) {
+        penalty ^= 0xBAD5A5A558771337ULL;
+    }
+    if ((t1 - t0) > 100000ULL) {
+        penalty ^= 0xDEAD1337CAFE5877ULL; // JIT/hypervisor emulation slow-path
+    }
+#elif defined(__x86_64__)
+    // Emit x86_64:
+    // mov eax, 0x5877  -> B8 77 58 00 00
+    // add eax, 0x12    -> 05 12 00 00 00
+    // ret              -> C3
+    uint8_t* code_rw = (uint8_t*)buf.rw_alias;
+    code_rw[0] = 0xB8; code_rw[1] = 0x77; code_rw[2] = 0x58; code_rw[3] = 0x00; code_rw[4] = 0x00;
+    code_rw[5] = 0x05; code_rw[6] = 0x12; code_rw[7] = 0x00; code_rw[8] = 0x00; code_rw[9] = 0x00;
+    code_rw[10] = 0xC3;
+
+    uint64_t t0 = __builtin_ia32_rdtsc();
+
+    // Dynamic Self-Modification via RW alias
+    uint8_t imm_val = (uint8_t)(seed & 0x7F);
+    code_rw[6] = imm_val;
+
+    // Hardware icache invalidation & pipeline clear
+    __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + 16);
+
+    // Execute via RX alias
+    typedef uint32_t (*smc_fn_t)();
+    smc_fn_t fn = (smc_fn_t)buf.rx_alias;
+    uint32_t result = fn();
+
+    uint64_t t1 = __builtin_ia32_rdtsc();
+
+    uint32_t expected = 0x5877 + imm_val;
+    if (result != expected) {
+        penalty ^= 0xBAD5A5A558771337ULL;
+    }
+    if ((t1 - t0) > 100000ULL) {
+        penalty ^= 0xDEAD1337CAFE5877ULL;
+    }
+#endif
+
+    buf.release();
+    return penalty;
+}
+
+} // namespace asgard_smc
+|}
+
+let emit_memory_integrity_scanner_header () =
+  {|#pragma once
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/thread_act.h>
+#include <mach/thread_status.h>
+#include <mach/vm_map.h>
+#elif defined(__linux__)
+#include <stdio.h>
+#include <string.h>
+#endif
+
+namespace asgard_mem_integrity {
+
+// MEM-SBOM Style Memory Forensics & Injection Scanner
+static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity() noexcept {
+    uint64_t penalty = 0;
+
+#if defined(__APPLE__)
+    // 1. Thread Debug Register Inspection (DR0-DR3 / DBGBVR detection)
+    mach_port_t thread = mach_thread_self();
+#if defined(__aarch64__) && defined(ARM_DEBUG_STATE64)
+    arm_debug_state64_t dbg_state = {};
+    mach_msg_type_number_t count = ARM_DEBUG_STATE64_COUNT;
+    if (thread_get_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&dbg_state, &count) == KERN_SUCCESS) {
+        for (int i = 0; i < 16; ++i) {
+            if (dbg_state.__bcr[i] & 1) { // Breakpoint control enabled
+                penalty ^= 0xCAFEBABE00000001ULL ^ ((uint64_t)i << 32);
+            }
+        }
+    }
+#elif defined(__x86_64__) && defined(x86_DEBUG_STATE64)
+    x86_debug_state64_t dbg_state = {};
+    mach_msg_type_number_t count = x86_DEBUG_STATE64_COUNT;
+    if (thread_get_state(thread, x86_DEBUG_STATE64, (thread_state_t)&dbg_state, &count) == KERN_SUCCESS) {
+        if (dbg_state.__dr7 & 0x000000FF) { // DR0-DR3 active
+            penalty ^= 0xCAFEBABE00000002ULL;
+        }
+    }
+#endif
+    mach_port_deallocate(mach_task_self(), thread);
+
+    // 2. Suspicious Anonymous RWX Memory Scanner (Anti-Frida / Shellcode Injection)
+    vm_address_t address = 0;
+    vm_size_t size = 0;
+    uint32_t depth = 1;
+    struct vm_region_submap_info_64 info = {};
+    mach_msg_type_number_t info_cnt = VM_REGION_SUBMAP_INFO_COUNT_64;
+    int suspicious_rwx = 0;
+    while (vm_region_recurse_64(mach_task_self(), &address, &size, &depth, (vm_region_recurse_info_t)&info, &info_cnt) == KERN_SUCCESS) {
+        if ((info.protection & VM_PROT_WRITE) && (info.protection & VM_PROT_EXECUTE)) {
+            suspicious_rwx++;
+        }
+        address += size;
+    }
+    if (suspicious_rwx > 2) {
+        penalty ^= 0x5877F81DA0000001ULL;
+    }
+#elif defined(__linux__)
+    FILE* fp = fopen("/proc/self/maps", "r");
+    if (fp) {
+        char line[512];
+        while (fgets(line, sizeof(line), fp)) {
+            if (strstr(line, "rwxp")) { // Anonymous RWX page
+                penalty ^= 0x5877F81DA0000002ULL;
+                break;
+            }
+        }
+        fclose(fp);
+    }
+#endif
+
+    return penalty;
+}
+
+} // namespace asgard_mem_integrity
+|}
+

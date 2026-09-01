@@ -141,6 +141,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "\n";
   Buffer.add_string b (Hardened_runtime.emit_dual_mapping_header ());
   Buffer.add_string b "\n";
+  Buffer.add_string b (Hardened_runtime.emit_introspective_smc_header ());
+  Buffer.add_string b "\n";
+  Buffer.add_string b (Hardened_runtime.emit_memory_integrity_scanner_header ());
+  Buffer.add_string b "\n";
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
 
 
@@ -328,6 +332,16 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     uint64_t emu_penalty = asgard_anti_emulation::evaluate_emulation_differential();\n\
     if (emu_penalty != 0) {\n\
         ctx.reg_mask ^= emu_penalty;\n\
+    }\n\n\
+    /* Introspective Self-Modifying Code (SMC) & Hardware Timing Probe (Morse & Kojsik, 2026) */\n\
+    uint64_t smc_penalty = asgard_smc::execute_introspective_smc_probe((uint64_t)seed);\n\
+    if (smc_penalty != 0) {\n\
+        ctx.reg_mask ^= smc_penalty;\n\
+    }\n\n\
+    /* In-Memory MEM-SBOM Forensics & Hardware Breakpoint Probe */\n\
+    uint64_t mem_penalty = asgard_mem_integrity::evaluate_memory_integrity();\n\
+    if (mem_penalty != 0) {\n\
+        ctx.reg_mask ^= mem_penalty;\n\
     }\n\n
 ";
 
