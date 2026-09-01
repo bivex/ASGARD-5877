@@ -1,0 +1,30 @@
+{
+  "cff": {
+    "enabled": false,
+    "obfuscate_states": false,
+    "inject_opaque_predicates": false
+  },
+  "mba": {
+    "enabled": false,
+    "depth": 0,
+    "engine": "poly"
+  },
+  "anti_pushan": {
+    "enabled": true,
+    "running_key": true
+  },
+  "anti_tamper": {
+    "enabled": true,
+    "smc": true,
+    "hardware_timing_probes": true,
+    "memory_integrity_scanner": true,
+    "anti_emulation": true
+  },
+  "vm_runtime": {
+    "num_dispatch_domains": 8,
+    "enable_junk_instructions": true,
+    "enable_super_operators": true,
+    "stack_scrambling": true,
+    "memory_sanitization": true
+  }
+}

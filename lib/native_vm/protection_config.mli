@@ -55,9 +55,11 @@ type t = {
   c_macro : c_macro_config;
 }
 
-val default : t
-val max_security : t
+val minimal : t
 val lightweight : t
+val default : t
+val high : t
+val max_security : t
 val stealth : t
 
 val from_preset : string -> (t, string) result

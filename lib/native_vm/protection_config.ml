@@ -207,13 +207,93 @@ let stealth : t = {
   };
 }
 
+let minimal : t = {
+  seed = None;
+  cff = {
+    enabled = false;
+    obfuscate_states = false;
+    inject_opaque_predicates = false;
+  };
+  mba = {
+    enabled = false;
+    depth = 0;
+    engine = `Poly;
+  };
+  anti_pushan = {
+    enabled = false;
+    running_key = false;
+  };
+  anti_tamper = {
+    enabled = false;
+    smc = false;
+    hardware_timing_probes = false;
+    memory_integrity_scanner = false;
+    anti_emulation = false;
+  };
+  vm_runtime = {
+    num_dispatch_domains = 1;
+    enable_junk_instructions = false;
+    enable_super_operators = false;
+    stack_scrambling = false;
+    memory_sanitization = false;
+  };
+  c_macro = {
+    enabled = false;
+    obfuscate_strings = false;
+    obfuscate_constants = false;
+    obfuscate_arithmetic = false;
+    nanomites = false;
+  };
+}
+
+let high : t = {
+  seed = None;
+  cff = {
+    enabled = true;
+    obfuscate_states = true;
+    inject_opaque_predicates = false;
+  };
+  mba = {
+    enabled = true;
+    depth = 3;
+    engine = `Egraph;
+  };
+  anti_pushan = {
+    enabled = true;
+    running_key = true;
+  };
+  anti_tamper = {
+    enabled = true;
+    smc = true;
+    hardware_timing_probes = true;
+    memory_integrity_scanner = true;
+    anti_emulation = true;
+  };
+  vm_runtime = {
+    num_dispatch_domains = 8;
+    enable_junk_instructions = true;
+    enable_super_operators = true;
+    stack_scrambling = true;
+    memory_sanitization = true;
+  };
+  c_macro = {
+    enabled = true;
+    obfuscate_strings = true;
+    obfuscate_constants = true;
+    obfuscate_arithmetic = true;
+    nanomites = true;
+  };
+}
+
 let from_preset name =
   match String.lowercase_ascii (String.trim name) with
-  | "default" | "std" | "standard" -> Ok default
-  | "max" | "max_security" | "paranoid" | "military" -> Ok max_security
-  | "light" | "lightweight" | "fast" | "perf" -> Ok lightweight
+  | "min" | "minimal" | "none" | "zero" | "0" -> Ok minimal
+  | "light" | "lightweight" | "fast" | "low" | "1" -> Ok lightweight
+  | "default" | "std" | "standard" | "medium" | "med" | "2" -> Ok default
+  | "high" | "hardened" | "strong" | "3" -> Ok high
+  | "max" | "max_security" | "paranoid" | "military" | "insane" | "4" -> Ok max_security
   | "stealth" | "covert" -> Ok stealth
-  | other -> Error (Printf.sprintf "Unknown protection preset '%s'. Available: default, max_security, lightweight, stealth" other)
+  | other -> Error (Printf.sprintf "Unknown protection preset '%s'. Available: min (0), lightweight (1), default/medium (2), high (3), max (4), stealth" other)
 
 let json_get_obj key json =
   match json with

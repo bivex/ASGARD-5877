@@ -51,8 +51,40 @@ let encrypt_flag token flag_str =
   List.rev !bytes
 
 let () =
+  let preset_str = ref "default" in
+  let config_file = ref "" in
+  let num_rounds = ref 16 in
+  let out_dir = ref "/Volumes/External/Code/ASGARD-5877/binaries/crackme_arm64" in
+
+  let speclist = [
+    ("-p", Arg.Set_string preset_str, " Protection preset: min, light, default, high, max, stealth");
+    ("--preset", Arg.Set_string preset_str, " Protection preset: min, light, default, high, max, stealth");
+    ("-c", Arg.Set_string config_file, " Custom JSON protection config path");
+    ("--config", Arg.Set_string config_file, " Custom JSON protection config path");
+    ("-r", Arg.Set_int num_rounds, " Number of ARX sponge rounds (default: 16)");
+    ("--rounds", Arg.Set_int num_rounds, " Number of ARX sponge rounds (default: 16)");
+    ("-o", Arg.Set_string out_dir, " Output directory for generated sources and binary");
+    ("--output", Arg.Set_string out_dir, " Output directory for generated sources and binary");
+  ] in
+  Arg.parse speclist (fun _ -> ()) "ASGARD-5877 Cryptographic Hardened Crackme Generator\nUsage: gen_crypto_crackme [options]";
+
+  let base_config =
+    if !config_file <> "" then
+      match Protection_config.from_file !config_file with
+      | Ok c -> c
+      | Error err -> failwith (Printf.sprintf "Failed to load config '%s': %s" !config_file err)
+    else
+      match Protection_config.from_preset !preset_str with
+      | Ok c -> c
+      | Error err -> failwith err
+  in
+  let config = { base_config with
+    cff = { base_config.cff with enabled = false; inject_opaque_predicates = false };
+    mba = { base_config.mba with enabled = false };
+  } in
+
   let rng = Random.State.make [| 0x5877_BEEF |] in
-  let asm = generate_unrolled_arx_asm 16 in
+  let asm = generate_unrolled_arx_asm !num_rounds in
   match Lifter.lift_function asm with
   | Error err -> failwith err
   | Ok func ->
@@ -64,15 +96,11 @@ let () =
         | Ok () -> ()
       in
       let token = Vm_eval.get_reg st Register.rax in
-      Printf.printf "[Vm_eval] Golden Token: 0x%016LX\n" token;
+      Printf.printf "[Vm_eval] Golden Token: 0x%016LX (Rounds: %d)\n" token !num_rounds;
       let flag = "FLAG{128BIT_WIDE_ARX_SPONGE_UNBRUTEFORCEABLE_2026}" in
       let cipher_bytes = encrypt_flag token flag in
-      let config = { Protection_config.default with
-        cff = { enabled = false; obfuscate_states = false; inject_opaque_predicates = false };
-        mba = { enabled = false; depth = 0; engine = `Poly };
-      } in
       let pkg = Vm_emitter.compile_and_package ~rng ~config func in
-      let out_dir = "/Volumes/External/Code/ASGARD-5877/binaries/crackme_arm64" in
+      let out_dir = !out_dir in
       let oc_h = open_out (Filename.concat out_dir "threaded_vm.hpp") in
       output_string oc_h pkg.cpp_runtime_source;
       close_out oc_h;
