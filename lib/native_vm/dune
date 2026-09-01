@@ -1,5 +1,5 @@
 (library
  (name native_vm)
  (public_name random_visa.native_vm)
- (libraries random_visa_domain vm_ir x86_lifter mba_engine cff vanguard_9292))
+ (libraries random_visa_domain vm_ir x86_lifter mba_engine cff vanguard_9292 yojson))
 

@@ -349,9 +349,43 @@ let vanguard_cmd =
   Cmd.v (Cmd.info "vanguard" ~doc) term
 
 (* 7. PROTECT COMMAND (Full Automated x86_64 & C/C++ VM-Protector Pipeline) *)
-let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_and_run =
-  let rng =
+let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth compile_and_run =
+  let base_cfg =
+    match config_file with
+    | Some path -> (
+        match Native_vm.Protection_config.from_file path with
+        | Ok c -> c
+        | Error err ->
+            prerr_endline (Printf.sprintf "[Config] Warning: %s, using default" err);
+            Native_vm.Protection_config.default)
+    | None -> (
+        match preset with
+        | Some p -> (
+            match Native_vm.Protection_config.from_preset p with
+            | Ok c -> c
+            | Error err ->
+                prerr_endline (Printf.sprintf "[Preset] Warning: %s, using default" err);
+                Native_vm.Protection_config.default)
+        | None -> Native_vm.Protection_config.default)
+  in
+
+  let resolved_cff = if enable_cff then true else base_cfg.cff.enabled in
+  let resolved_mba = if enable_mba then true else base_cfg.mba.enabled in
+  let resolved_mba_depth = if mba_depth <> 2 then mba_depth else base_cfg.mba.depth in
+  let resolved_seed =
     match seed with
+    | Some s -> Some s
+    | None -> base_cfg.seed
+  in
+  let effective_cfg = {
+    base_cfg with
+    seed = resolved_seed;
+    cff = { base_cfg.cff with enabled = resolved_cff };
+    mba = { base_cfg.mba with enabled = resolved_mba; depth = resolved_mba_depth };
+  } in
+
+  let rng =
+    match effective_cfg.seed with
     | Some s -> Random.State.make [| s |]
     | None ->
         let s = Random.self_init (); Random.bits () in
@@ -372,11 +406,11 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
         let seed_val = Random.State.int rng 0x3FFFFFFF in
         let config = {
           C_macro_obf.seed = seed_val;
-          mba_depth;
-          obfuscate_strings = true;
-          obfuscate_constants = true;
-          obfuscate_arithmetic = true;
-          inject_opaque_predicates = true;
+          mba_depth = effective_cfg.mba.depth;
+          obfuscate_strings = effective_cfg.c_macro.obfuscate_strings;
+          obfuscate_constants = effective_cfg.c_macro.obfuscate_constants;
+          obfuscate_arithmetic = effective_cfg.c_macro.obfuscate_arithmetic;
+          inject_opaque_predicates = effective_cfg.c_macro.nanomites;
           macro_prefix = "ASG_";
         } in
         (match C_macro_obf.transform_file ~config ~in_file:input_file ~out_file:obf_c_path ~header_file:(Some hdr_path) () with
@@ -387,8 +421,6 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
         let gen_asm_cmd = Printf.sprintf "clang -S -target x86_64-apple-darwin -masm=intel -O1 -fno-stack-protector -Wno-format-security -I%s -fno-asynchronous-unwind-tables %s -o %s" out_dir obf_c_path asm_out in
         let _ = Sys.command gen_asm_cmd in
         asm_out
-
-
       end else input_file
     in
 
@@ -421,9 +453,7 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
         let pkg =
           Native_vm.Vm_emitter.compile_and_package
             ~rng
-            ~enable_cff
-            ~enable_mba
-            ~mba_depth
+            ~config:effective_cfg
             lifted_func
         in
 
@@ -472,9 +502,7 @@ let run_protect input_file out_dir seed enable_cff enable_mba mba_depth compile_
             `Ok ()
           end
         end else `Ok ()
-
   end
-
 
 let protect_cmd =
   let doc = "Virtualize and protect x86_64 assembly function with CFF, MBA, rolling key, and Direct Threaded VM" in
@@ -489,6 +517,14 @@ let protect_cmd =
   let seed =
     let doc = "Randomization seed" in
     Arg.(value & opt (some int) None & info [ "s"; "seed" ] ~docv:"SEED" ~doc)
+  in
+  let config_file =
+    let doc = "Path to JSON protection configuration file" in
+    Arg.(value & opt (some string) None & info [ "c"; "config" ] ~docv:"FILE" ~doc)
+  in
+  let preset =
+    let doc = "Protection preset (default, max_security, lightweight, stealth)" in
+    Arg.(value & opt (some string) None & info [ "p"; "preset" ] ~docv:"PRESET" ~doc)
   in
   let cff =
     let doc = "Enable Control-Flow Flattening (CFF) with state dispatcher" in
@@ -506,13 +542,47 @@ let protect_cmd =
     let doc = "Compile native C++ runner and execute protected binary" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ cff $ mba $ mba_depth $ compile)) in
+  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ compile)) in
   Cmd.v (Cmd.info "protect" ~doc) term
 
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline) *)
-let run_protect_arm64 input_file out_dir seed enable_cff enable_mba mba_depth compile_and_run =
-  let rng =
+let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth compile_and_run =
+  let base_cfg =
+    match config_file with
+    | Some path -> (
+        match Native_vm.Protection_config.from_file path with
+        | Ok c -> c
+        | Error err ->
+            prerr_endline (Printf.sprintf "[Config] Warning: %s, using default" err);
+            Native_vm.Protection_config.default)
+    | None -> (
+        match preset with
+        | Some p -> (
+            match Native_vm.Protection_config.from_preset p with
+            | Ok c -> c
+            | Error err ->
+                prerr_endline (Printf.sprintf "[Preset] Warning: %s, using default" err);
+                Native_vm.Protection_config.default)
+        | None -> Native_vm.Protection_config.default)
+  in
+
+  let resolved_cff = if enable_cff then true else base_cfg.cff.enabled in
+  let resolved_mba = if enable_mba then true else base_cfg.mba.enabled in
+  let resolved_mba_depth = if mba_depth <> 2 then mba_depth else base_cfg.mba.depth in
+  let resolved_seed =
     match seed with
+    | Some s -> Some s
+    | None -> base_cfg.seed
+  in
+  let effective_cfg = {
+    base_cfg with
+    seed = resolved_seed;
+    cff = { base_cfg.cff with enabled = resolved_cff };
+    mba = { base_cfg.mba with enabled = resolved_mba; depth = resolved_mba_depth };
+  } in
+
+  let rng =
+    match effective_cfg.seed with
     | Some s -> Random.State.make [| s |]
     | None ->
         let s = Random.self_init (); Random.bits () in
@@ -533,11 +603,11 @@ let run_protect_arm64 input_file out_dir seed enable_cff enable_mba mba_depth co
         let seed_val = Random.State.int rng 0x3FFFFFFF in
         let config = {
           C_macro_obf.seed = seed_val;
-          mba_depth;
-          obfuscate_strings = true;
-          obfuscate_constants = true;
-          obfuscate_arithmetic = true;
-          inject_opaque_predicates = true;
+          mba_depth = effective_cfg.mba.depth;
+          obfuscate_strings = effective_cfg.c_macro.obfuscate_strings;
+          obfuscate_constants = effective_cfg.c_macro.obfuscate_constants;
+          obfuscate_arithmetic = effective_cfg.c_macro.obfuscate_arithmetic;
+          inject_opaque_predicates = effective_cfg.c_macro.nanomites;
           macro_prefix = "ASG_";
         } in
         (match C_macro_obf.transform_file ~config ~in_file:input_file ~out_file:obf_c_path ~header_file:(Some hdr_path) () with
@@ -564,9 +634,7 @@ let run_protect_arm64 input_file out_dir seed enable_cff enable_mba mba_depth co
         let pkg =
           Native_vm.Vm_emitter.compile_and_package
             ~rng
-            ~enable_cff
-            ~enable_mba
-            ~mba_depth
+            ~config:effective_cfg
             lifted_func
         in
 
@@ -631,6 +699,14 @@ let protect_arm64_cmd =
     let doc = "Randomization seed" in
     Arg.(value & opt (some int) None & info [ "s"; "seed" ] ~docv:"SEED" ~doc)
   in
+  let config_file =
+    let doc = "Path to JSON protection configuration file" in
+    Arg.(value & opt (some string) None & info [ "c"; "config" ] ~docv:"FILE" ~doc)
+  in
+  let preset =
+    let doc = "Protection preset (default, max_security, lightweight, stealth)" in
+    Arg.(value & opt (some string) None & info [ "p"; "preset" ] ~docv:"PRESET" ~doc)
+  in
   let cff =
     let doc = "Enable Control-Flow Flattening (CFF) with state dispatcher" in
     Arg.(value & flag & info [ "cff"; "flatten" ] ~doc)
@@ -647,7 +723,7 @@ let protect_arm64_cmd =
     let doc = "Compile native C++ runner and execute protected ARM64 binary" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ cff $ mba $ mba_depth $ compile)) in
+  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ compile)) in
   Cmd.v (Cmd.info "protect-arm64" ~doc) term
 
 let run_c_obf input out_file out_header seed strings consts mba_depth compile =
@@ -975,6 +1051,34 @@ let project_cmd =
   let term = Term.(ret (const run_project $ src_dir $ inputs $ out_bin $ seed $ cff $ mba $ mba_depth $ compile)) in
   Cmd.v (Cmd.info "project" ~doc) term
 
+let run_init_config out_file preset =
+  let cfg =
+    match preset with
+    | Some p -> (
+        match Native_vm.Protection_config.from_preset p with
+        | Ok c -> c
+        | Error err ->
+            prerr_endline (Printf.sprintf "Preset error: %s, using default" err);
+            Native_vm.Protection_config.default)
+    | None -> Native_vm.Protection_config.default
+  in
+  Native_vm.Protection_config.save_to_file out_file cfg;
+  Printf.printf "[ASGARD-5877] Protection configuration saved: %s\n" out_file;
+  `Ok ()
+
+let init_config_cmd =
+  let doc = "Generate an annotated JSON protection configuration file for target binary" in
+  let out_file =
+    let doc = "Output configuration file path" in
+    Arg.(value & opt string "asgard.json" & info [ "o"; "output" ] ~docv:"FILE" ~doc)
+  in
+  let preset =
+    let doc = "Protection preset template (default, max_security, lightweight, stealth)" in
+    Arg.(value & opt (some string) None & info [ "p"; "preset" ] ~docv:"PRESET" ~doc)
+  in
+  let term = Term.(ret (const run_init_config $ out_file $ preset)) in
+  Cmd.v (Cmd.info "init-config" ~doc) term
+
 (* ROOT CLI GROUP *)
 let main_cmd =
   let doc = "Random Vector ISA Synthesizer, Formal Sail Exporter, and VM-Protector in OCaml" in
@@ -990,8 +1094,10 @@ let main_cmd =
     protect_arm64_cmd;
     c_obf_cmd;
     project_cmd;
+    init_config_cmd;
   ]
 
 
 let () = exit (Cmd.eval main_cmd)
+
 

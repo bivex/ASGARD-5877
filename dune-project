@@ -14,7 +14,8 @@
   menhir
   alcotest
   qcheck
-  qcheck-alcotest))
+  qcheck-alcotest
+  yojson))
 
 (package
  (name vanguard-9292)

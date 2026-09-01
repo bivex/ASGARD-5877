@@ -769,15 +769,33 @@ let rec fuse_block_instructions instrs =
 let compile_and_package
     ~rng
     ?runtime_profile
+    ?config
     ?(enable_cff = false)
     ?(enable_mba = false)
     ?(enable_junk = true)
     ?(mba_depth = 2)
     (func : Ir.func) =
 
+  let (enable_cff, enable_mba, enable_junk, mba_depth, mba_engine) =
+    match config with
+    | Some (c : Protection_config.t) ->
+        (c.cff.enabled, c.mba.enabled, c.vm_runtime.enable_junk_instructions, c.mba.depth, c.mba.engine)
+    | None ->
+        (enable_cff, enable_mba, enable_junk, mba_depth, `Egraph)
+  in
+
   let target_func =
     if enable_cff then
-      match Cff.flatten_func ~rng func with
+      let cff_opts =
+        match config with
+        | Some c ->
+            {
+              Cff.inject_opaque_predicates = c.cff.inject_opaque_predicates;
+              obfuscate_states = c.cff.obfuscate_states;
+            }
+        | None -> Cff.default_cff_options
+      in
+      match Cff.flatten_func ~options:cff_opts ~rng func with
       | Ok f -> f
       | Error _ -> func
     else func
@@ -830,7 +848,10 @@ let compile_and_package
             (function
               | Ir.Alu { op; dst; src1; src2; set_flags = false } -> (
                   try
-                    Mba_engine.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 op
+                    match mba_engine with
+                    | `Egraph -> Mba_engine.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 op
+                    | `Poly -> Mba_engine.Mba.obfuscate_alu ~rng ~depth:mba_depth ~dst ~src1 ~src2 op
+                    | `Ncfg -> Mba_engine.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 op
                   with _ ->
                     [ Ir.Alu { op; dst; src1; src2; set_flags = false } ])
               | other -> [ other ])

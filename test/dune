@@ -31,6 +31,7 @@
   test_egraph_expansion
   test_anti_pushan
   test_anti_tamper_smc
+  test_protection_config
   test_helpers
   run_tests)
  (libraries
