@@ -8,7 +8,7 @@
 #define FLAG_LEN 50
 
 static const uint8_t g_cipher_payload[FLAG_LEN] = {
-    0xD2, 0xAA, 0x86, 0x55, 0x77, 0xAD, 0x9E, 0x70, 0x5C, 0x35, 0x94, 0xBD, 0x52, 0x46, 0x7A, 0xA9,
+0xD2, 0xAA, 0x86, 0x55, 0x77, 0xAD, 0x9E, 0x70, 0x5C, 0x35, 0x94, 0xBD, 0x52, 0x46, 0x7A, 0xA9,
     0xDE, 0xC6, 0xA7, 0x53, 0x64, 0x87, 0xB8, 0x8B, 0x52, 0x3F, 0xC8, 0xD2, 0x0C, 0xCF, 0xEE, 0x80,
     0x11, 0x75, 0xB9, 0x76, 0x10, 0xF5, 0x37, 0xF3, 0x10, 0x64, 0x3B, 0x5C, 0x0C, 0x67, 0x22, 0x2C,
     0xDA, 0xF7
@@ -24,34 +24,24 @@ static inline uint64_t splitmix64(uint64_t* state) {
 
 static uint64_t* load_bytecode(const char* filepath, size_t* out_len) {
     FILE* f = fopen(filepath, "rb");
-    if (!f) return NULL;
+    if (!f) return nullptr;
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (sz <= 0 || (sz % 8) != 0) {
-        fclose(f);
-        return NULL;
-    }
+    if (sz <= 0 || sz % 8 != 0) { fclose(f); return nullptr; }
     size_t count = (size_t)sz / 8;
-    uint64_t* buf = (uint64_t*)malloc((size_t)sz);
-    if (!buf || fread(buf, 8, count, f) != count) {
-        if (buf) free(buf);
-        fclose(f);
-        return NULL;
-    }
+    uint64_t* bc = (uint64_t*)malloc(sz);
+    if (!bc) { fclose(f); return nullptr; }
+    if (fread(bc, 8, count, f) != count) { free(bc); fclose(f); return nullptr; }
     fclose(f);
     *out_len = count;
-    return buf;
+    return bc;
 }
 
 int main(int argc, char** argv) {
-    printf("=========================================================================\n");
-    printf("        ASGARD-5877 CRYPTOGRAPHIC HARDENED 128-BIT LICENSE VAULT         \n");
-    printf("=========================================================================\n");
-
     if (argc < 2) {
-        printf("[*] Usage: %s <LICENSE-KEY> [path/to/protected.vanguard]\n", argv[0]);
-        printf("[*] Format: ASGARD-XXXXXXXXXXXXXXXX-XXXXXXXXXXXXXXXX (128-bit key)\n");
+        printf("Usage: %s <LICENSE_KEY_128> [optional_bytecode_path]\n", argv[0]);
+        printf("Key Format: ASGARD-xxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxx\n");
         return 1;
     }
 
@@ -62,9 +52,8 @@ int main(int argc, char** argv) {
     }
 
     uint64_t k_hi = 0, k_lo = 0;
-    int parsed = sscanf(key + 7, "%llx-%llx", (unsigned long long*)&k_hi, (unsigned long long*)&k_lo);
+    int parsed = sscanf(key + 7, "%016llx-%016llx", (unsigned long long*)&k_hi, (unsigned long long*)&k_lo);
     if (parsed != 2) {
-        // Try alternate 8-chunk format: XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
         unsigned int p[8] = {0};
         int parsed8 = sscanf(key + 7, "%04x-%04x-%04x-%04x-%04x-%04x-%04x-%04x",
                              &p[0], &p[1], &p[2], &p[3], &p[4], &p[5], &p[6], &p[7]);
@@ -77,27 +66,19 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Use embedded bytecode by default, or load from file if specified
     const uint64_t* bc_ptr = vanguard_threaded_vm::embedded_bytecode;
     size_t bc_len = vanguard_threaded_vm::embedded_bytecode_len;
     uint64_t* heap_bc = nullptr;
-
     if (argc >= 3) {
         heap_bc = load_bytecode(argv[2], &bc_len);
-        if (heap_bc) {
-            bc_ptr = heap_bc;
-        } else {
-            printf("\n[-] Warning: Could not load '%s', falling back to embedded bytecode payload.\n", argv[2]);
-        }
+        if (heap_bc) bc_ptr = heap_bc;
     }
 
-    // Initialize Vanguard Virtual Machine Context
     vanguard_threaded_vm::VMContext ctx = {};
     ctx.init();
     ctx.set_rdi(k_hi);
     ctx.set_rsi(k_lo);
 
-    // Execute Virtual Machine Bytecode
     bool vm_ok = vanguard_threaded_vm::execute_threaded(ctx, bc_ptr, bc_len);
     if (heap_bc) free(heap_bc);
 
@@ -107,8 +88,6 @@ int main(int argc, char** argv) {
     }
 
     uint64_t vm_token = ctx.get_rax();
-
-    // Decrypt Payload (Oracle-Free Trapdoor)
     uint64_t state = vm_token;
     char flag_out[FLAG_LEN + 1];
     for (int i = 0; i < FLAG_LEN; i++) {
@@ -117,14 +96,19 @@ int main(int argc, char** argv) {
     }
     flag_out[FLAG_LEN] = '\0';
 
-    // Verify header signature
     if (strncmp(flag_out, "FLAG{", 5) == 0 && flag_out[FLAG_LEN - 1] == '}') {
-        printf("\n[+] SUCCESS! 128-BIT KEY VALIDATED (Derived Token: 0x%016llX)\n", (unsigned long long)vm_token);
+        printf("=========================================================================\n");
+        printf("        ASGARD-5877 CRYPTOGRAPHIC HARDENED 128-BIT LICENSE VAULT         \n");
+        printf("=========================================================================\n\n");
+        printf("[+] SUCCESS! 128-BIT KEY VALIDATED (Derived Token: 0x%016llX)\n", (unsigned long long)vm_token);
         printf("[+] PAYLOAD UNLOCKED: %s\n", flag_out);
         printf("=========================================================================\n");
         return 0;
     } else {
-        printf("\n[-] ACCESS DENIED: Invalid License Key! Decryption resulted in corrupt state.\n");
+        printf("=========================================================================\n");
+        printf("        ASGARD-5877 CRYPTOGRAPHIC HARDENED 128-BIT LICENSE VAULT         \n");
+        printf("=========================================================================\n\n");
+        printf("[-] ACCESS DENIED: Invalid License Key! Decryption resulted in corrupt state.\n");
         return 1;
     }
 }

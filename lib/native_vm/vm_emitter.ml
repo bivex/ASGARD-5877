@@ -250,15 +250,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_STRIDE = %d;\n" stride);
   Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_OFFSET = %d;\n\n" offset);
   Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n";
-  Buffer.add_string b "        uint32_t x = (uint32_t)((index * STACK_STRIDE + STACK_OFFSET) & 0xFFFF);\n";
-  Buffer.add_string b "        uint32_t y = (uint32_t)(index ^ 0x1337U);\n";
-  Buffer.add_string b "        for (size_t r = 0; r < 8; ++r) {\n";
-  Buffer.add_string b "            uint32_t rot_rx = ((x >> 8) | (x << 24));\n";
-  Buffer.add_string b "            x = (rot_rx + y) ^ 0x9E3779B9U;\n";
-  Buffer.add_string b "            uint32_t rot_ly = ((y << 3) | (y >> 29));\n";
-  Buffer.add_string b "            y = rot_ly ^ x;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        return (size_t)((x ^ y) & (STACK_SIZE - 1));\n";
+  Buffer.add_string b "        return (size_t)((index * STACK_STRIDE + STACK_OFFSET) & (STACK_SIZE - 1));\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline void push(uint64_t v) noexcept {\n";
   Buffer.add_string b "        if (!verify_canaries()) { reg_mask ^= poison_penalty; trapped = true; }\n";
@@ -426,9 +418,9 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
 
   Buffer.add_string b "    H_NOP: ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_MOV_RR: ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_MOV_RI: ctx.set_reg(dst, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    H_MOV_RI: ctx.set_reg(dst, (uint64_t)(uint32_t)imm); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_MOV_HIGH: {\n";
-  Buffer.add_string b "        uint64_t high_val = (uint64_t)imm << 32;\n";
+  Buffer.add_string b "        uint64_t high_val = (uint64_t)(uint32_t)imm << 32;\n";
   Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) & 0xFFFFFFFFULL) | high_val);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -733,36 +725,37 @@ let inject_junk_instructions ~rng instrs =
 
 
 let rec fuse_block_instructions instrs =
+  let fits_i32 v = v >= -2147483648L && v <= 2147483647L in
   match instrs with
   | [] -> []
   | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ::
     Ir.Alu { op = Ir.Add; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
-    when d = d2 && d = d3 ->
+    when d = d2 && d = d3 && fits_i32 imm ->
       Fused_Mov_Add { dst = d; src = s; imm } :: fuse_block_instructions rest
 
   | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
     Ir.Alu { op = Ir.Imul; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
-    when d = d1 && d = d2 && d = d3 ->
+    when d = d1 && d = d2 && d = d3 && fits_i32 imm ->
       Fused_Add_Imul { dst = d; src = s; imm } :: fuse_block_instructions rest
 
   | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
     Ir.Alu { op = Ir.Xor; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
-    when d = d1 && d = d2 && d = d3 ->
+    when d = d1 && d = d2 && d = d3 && fits_i32 imm ->
       Fused_Add_Xor { dst = d; src = s; imm } :: fuse_block_instructions rest
 
   | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
     Ir.Alu { op = Ir.Xor; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
-    when d = d1 && d = d2 && d = d3 ->
+    when d = d1 && d = d2 && d = d3 && fits_i32 imm ->
       Fused_Sub_Xor { dst = d; src = s; imm } :: fuse_block_instructions rest
 
   | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
     Ir.Alu { op = Ir.Add; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
-    when d = d1 && d = d2 && d = d3 ->
+    when d = d1 && d = d2 && d = d3 && fits_i32 imm ->
       Fused_Xor_Add { dst = d; src = s; imm } :: fuse_block_instructions rest
 
   | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ::
     Ir.Cmov { cond; dst = d2; src = Ir.Reg s } :: rest
-    when d = d2 ->
+    when d = d2 && fits_i32 imm ->
       Fused_Cmp_Cmov { cmp_dst = d; cmp_imm = imm; cond; cmov_dst = d2; cmov_src = s } :: fuse_block_instructions rest
 
   | hd :: rest ->
@@ -848,7 +841,7 @@ let compile_and_package
         if enable_mba then
           List.concat_map
             (function
-              | Ir.Alu { op; dst; src1; src2; set_flags = false } -> (
+              | Ir.Alu { op; dst; src1; src2; _ } -> (
                   try
                     match mba_engine with
                     | `Egraph -> Mba_engine.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 op
@@ -866,13 +859,18 @@ let compile_and_package
     sorted_blocks;
 
 
+  let words_of_fused = function
+    | Raw (Ir.Mov { src = Ir.Imm imm; _ }) when Int64.shift_right_logical imm 32 <> 0L -> 2
+    | _ -> 1
+  in
   let block_offsets = Hashtbl.create (List.length sorted_blocks) in
   let cur_offset = ref 0 in
   List.iter
     (fun (b : Ir.basic_block) ->
       let fused = Hashtbl.find block_fused_ops b.id in
       Hashtbl.replace block_offsets b.id !cur_offset;
-      cur_offset := !cur_offset + List.length fused)
+      let count = List.fold_left (fun acc op -> acc + words_of_fused op) 0 fused in
+      cur_offset := !cur_offset + count)
     sorted_blocks;
 
   let get_block_offset id =

@@ -617,7 +617,9 @@ let expand ~rng ?(config = default_config) e = fst (expand_full ~rng ~config e)
 (* VM-IR integration (mirrors [Mba.obfuscate_alu])                     *)
 (* ------------------------------------------------------------------ *)
 
-let obfuscate_alu ~rng ?(config = default_config) ~dst ~src1 ~src2 op =
+let default_op_config = { node_limit = 80; time_budget_s = 0.05; iter_limit = 4 }
+
+let obfuscate_alu ~rng ?(config = default_op_config) ~dst ~src1 ~src2 op =
   let expr_of = function
     | Ir.Add -> Some (Add (Var "a", Var "b"))
     | Ir.Sub -> Some (Sub (Var "a", Var "b"))

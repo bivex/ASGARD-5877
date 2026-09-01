@@ -160,9 +160,16 @@ let lower_to_ir ~dst ~env expr =
   let instrs = ref [] in
   let emit i = instrs := i :: !instrs in
 
+  (* Snapshot environment variables into dedicated registers (r14, r15) to prevent clobbering CFF state (vtmp3) *)
+  let src_a = Option.value ~default:(Ir.Imm 0L) (List.assoc_opt "a" env) in
+  let src_b = Option.value ~default:(Ir.Imm 0L) (List.assoc_opt "b" env) in
+  emit (Ir.Mov { dst = Ir.Reg Register.r14; src = src_a });
+  emit (Ir.Mov { dst = Ir.Reg Register.r15; src = src_b });
+  let local_env = [ ("a", Ir.Reg Register.r14); ("b", Ir.Reg Register.r15) ] in
+
   let rec compile target_reg = function
     | Var v -> (
-        match List.assoc_opt v env with
+        match List.assoc_opt v local_env with
         | Some op -> emit (Ir.Mov { dst = Ir.Reg target_reg; src = op })
         | None -> emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Imm 0L }))
     | Const c -> emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Imm c })
@@ -210,12 +217,13 @@ let lower_to_ir ~dst ~env expr =
                        src2 = Ir.Reg Register.vtmp1; set_flags = false })
     | Not a ->
         compile target_reg a;
-        emit (Ir.Unary { op = Ir.Not; dst = target_reg; src = Ir.Reg target_reg;
-                         set_flags = false })
+        emit (Ir.Alu { op = Ir.Xor; dst = target_reg; src1 = Ir.Reg target_reg;
+                       src2 = Ir.Imm (-1L); set_flags = false })
     | Neg a ->
         compile target_reg a;
-        emit (Ir.Unary { op = Ir.Neg; dst = target_reg; src = Ir.Reg target_reg;
-                         set_flags = false })
+        emit (Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm 0L });
+        emit (Ir.Alu { op = Ir.Sub; dst = target_reg; src1 = Ir.Reg Register.vtmp0;
+                       src2 = Ir.Reg target_reg; set_flags = false })
   in
   compile dst expr;
   List.rev !instrs

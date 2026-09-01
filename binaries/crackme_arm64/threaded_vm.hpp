@@ -432,15 +432,7 @@ struct VMContext {
     static inline constexpr size_t STACK_OFFSET = 124;
 
     inline size_t scramble_stack_idx(size_t index) const noexcept {
-        uint32_t x = (uint32_t)((index * STACK_STRIDE + STACK_OFFSET) & 0xFFFF);
-        uint32_t y = (uint32_t)(index ^ 0x1337U);
-        for (size_t r = 0; r < 8; ++r) {
-            uint32_t rot_rx = ((x >> 8) | (x << 24));
-            x = (rot_rx + y) ^ 0x9E3779B9U;
-            uint32_t rot_ly = ((y << 3) | (y >> 29));
-            y = rot_ly ^ x;
-        }
-        return (size_t)((x ^ y) & (STACK_SIZE - 1));
+        return (size_t)((index * STACK_STRIDE + STACK_OFFSET) & (STACK_SIZE - 1));
     }
 
     inline void push(uint64_t v) noexcept {
@@ -1359,9 +1351,9 @@ ctx.reg_mask ^= mem_penalty;
 
     H_NOP: ctx.executed_instructions++; FETCH_NEXT();
     H_MOV_RR: ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT();
-    H_MOV_RI: ctx.set_reg(dst, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT();
+    H_MOV_RI: ctx.set_reg(dst, (uint64_t)(uint32_t)imm); ctx.executed_instructions++; FETCH_NEXT();
     H_MOV_HIGH: {
-        uint64_t high_val = (uint64_t)imm << 32;
+        uint64_t high_val = (uint64_t)(uint32_t)imm << 32;
         ctx.set_reg(dst, (ctx.get_reg(dst) & 0xFFFFFFFFULL) | high_val);
         ctx.executed_instructions++; FETCH_NEXT();
     }
