@@ -27,6 +27,7 @@ let () =
     ("GPU Metal Acceleration & Synthesis", Test_gpu_synth.tests);
     ("Register-Driven JIT VM & RNS", Test_rd_jit_vm.tests);
     ("arXiv Innovations (POP/DefUse/NCFG/LitStitch)", Test_arxiv_innovations.tests);
+    ("E-graph Equality Expansion (Scrambler)", Test_egraph_expansion.tests);
   ]
 
 
