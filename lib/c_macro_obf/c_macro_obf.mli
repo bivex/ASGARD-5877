@@ -17,6 +17,11 @@ type config = {
   obfuscate_constants : bool;
   obfuscate_arithmetic : bool;
   inject_opaque_predicates : bool;
+  api_hashing : bool;
+  anti_debug : bool;
+  signal_dispatch : bool;
+  timing_guard : bool;
+  timing_threshold_ticks : int64;
   macro_prefix : string;
 }
 

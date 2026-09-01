@@ -52,10 +52,17 @@ type vm_runtime_config = {
 
 type c_macro_config = {
   enabled : bool;
+  macro_prefix : string;
   obfuscate_strings : bool;
   obfuscate_constants : bool;
   obfuscate_arithmetic : bool;
+  opaque_predicates : bool;
+  api_hashing : bool;
+  anti_debug : bool;
+  signal_dispatch : bool;
   nanomites : bool;
+  timing_guard : bool;
+  timing_threshold_ticks : int64;
 }
 
 type t = {

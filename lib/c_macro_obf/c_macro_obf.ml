@@ -7,6 +7,11 @@ type config = {
   obfuscate_constants : bool;
   obfuscate_arithmetic : bool;
   inject_opaque_predicates : bool;
+  api_hashing : bool;
+  anti_debug : bool;
+  signal_dispatch : bool;
+  timing_guard : bool;
+  timing_threshold_ticks : int64;
   macro_prefix : string;
 }
 
@@ -17,6 +22,11 @@ let default_config = {
   obfuscate_constants = true;
   obfuscate_arithmetic = true;
   inject_opaque_predicates = true;
+  api_hashing = true;
+  anti_debug = true;
+  signal_dispatch = true;
+  timing_guard = true;
+  timing_threshold_ticks = 50000000L;
   macro_prefix = "ASG_";
 }
 

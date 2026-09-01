@@ -38,9 +38,16 @@
   },
   "c_macro": {
     "enabled": true,
+    "macro_prefix": "ASG_",
     "obfuscate_strings": true,
     "obfuscate_constants": true,
     "obfuscate_arithmetic": true,
-    "nanomites": true
+    "opaque_predicates": true,
+    "api_hashing": true,
+    "anti_debug": true,
+    "signal_dispatch": true,
+    "nanomites": true,
+    "timing_guard": true,
+    "timing_threshold_ticks": 5000000000
   }
 }

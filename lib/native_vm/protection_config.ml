@@ -48,10 +48,17 @@ type vm_runtime_config = {
 
 type c_macro_config = {
   enabled : bool;
+  macro_prefix : string;
   obfuscate_strings : bool;
   obfuscate_constants : bool;
   obfuscate_arithmetic : bool;
+  opaque_predicates : bool;
+  api_hashing : bool;
+  anti_debug : bool;
+  signal_dispatch : bool;
   nanomites : bool;
+  timing_guard : bool;
+  timing_threshold_ticks : int64;
 }
 
 type t = {
@@ -100,10 +107,17 @@ let default : t = {
   };
   c_macro = {
     enabled = true;
+    macro_prefix = "ASG_";
     obfuscate_strings = true;
     obfuscate_constants = true;
     obfuscate_arithmetic = true;
+    opaque_predicates = true;
+    api_hashing = true;
+    anti_debug = true;
+    signal_dispatch = true;
     nanomites = true;
+    timing_guard = true;
+    timing_threshold_ticks = 50000000L;
   };
 }
 
@@ -141,10 +155,17 @@ let max_security : t = {
   };
   c_macro = {
     enabled = true;
+    macro_prefix = "ASG_";
     obfuscate_strings = true;
     obfuscate_constants = true;
     obfuscate_arithmetic = true;
+    opaque_predicates = true;
+    api_hashing = true;
+    anti_debug = true;
+    signal_dispatch = true;
     nanomites = true;
+    timing_guard = true;
+    timing_threshold_ticks = 25000000L;
   };
 }
 
@@ -182,10 +203,17 @@ let lightweight : t = {
   };
   c_macro = {
     enabled = false;
+    macro_prefix = "ASG_";
     obfuscate_strings = false;
     obfuscate_constants = false;
     obfuscate_arithmetic = false;
+    opaque_predicates = false;
+    api_hashing = false;
+    anti_debug = false;
+    signal_dispatch = false;
     nanomites = false;
+    timing_guard = false;
+    timing_threshold_ticks = 100000000L;
   };
 }
 
@@ -223,10 +251,17 @@ let stealth : t = {
   };
   c_macro = {
     enabled = true;
+    macro_prefix = "ASG_";
     obfuscate_strings = true;
     obfuscate_constants = true;
     obfuscate_arithmetic = true;
+    opaque_predicates = true;
+    api_hashing = true;
+    anti_debug = false;
+    signal_dispatch = false;
     nanomites = false;
+    timing_guard = true;
+    timing_threshold_ticks = 50000000L;
   };
 }
 
@@ -264,10 +299,17 @@ let minimal : t = {
   };
   c_macro = {
     enabled = false;
+    macro_prefix = "ASG_";
     obfuscate_strings = false;
     obfuscate_constants = false;
     obfuscate_arithmetic = false;
+    opaque_predicates = false;
+    api_hashing = false;
+    anti_debug = false;
+    signal_dispatch = false;
     nanomites = false;
+    timing_guard = false;
+    timing_threshold_ticks = 500000000L;
   };
 }
 
@@ -305,10 +347,17 @@ let high : t = {
   };
   c_macro = {
     enabled = true;
+    macro_prefix = "ASG_";
     obfuscate_strings = true;
     obfuscate_constants = true;
     obfuscate_arithmetic = true;
+    opaque_predicates = true;
+    api_hashing = true;
+    anti_debug = true;
+    signal_dispatch = true;
     nanomites = true;
+    timing_guard = true;
+    timing_threshold_ticks = 50000000L;
   };
 }
 
@@ -351,6 +400,15 @@ let json_get_string key default json =
   | `Assoc kvs -> (
       match List.assoc_opt key kvs with
       | Some (`String s) -> s
+      | _ -> default)
+  | _ -> default
+
+let json_get_int64 key default json =
+  match json with
+  | `Assoc kvs -> (
+      match List.assoc_opt key kvs with
+      | Some (`Int i) -> Int64.of_int i
+      | Some (`String s) -> (try Int64.of_string s with _ -> default)
       | _ -> default)
   | _ -> default
 
@@ -487,10 +545,17 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
       | Some obj ->
           {
             enabled = json_get_bool "enabled" base.c_macro.enabled obj;
+            macro_prefix = json_get_string "macro_prefix" base.c_macro.macro_prefix obj;
             obfuscate_strings = json_get_bool "obfuscate_strings" base.c_macro.obfuscate_strings obj;
             obfuscate_constants = json_get_bool "obfuscate_constants" base.c_macro.obfuscate_constants obj;
             obfuscate_arithmetic = json_get_bool "obfuscate_arithmetic" base.c_macro.obfuscate_arithmetic obj;
+            opaque_predicates = json_get_bool "opaque_predicates" base.c_macro.opaque_predicates obj;
+            api_hashing = json_get_bool "api_hashing" base.c_macro.api_hashing obj;
+            anti_debug = json_get_bool "anti_debug" base.c_macro.anti_debug obj;
+            signal_dispatch = json_get_bool "signal_dispatch" base.c_macro.signal_dispatch obj;
             nanomites = json_get_bool "nanomites" base.c_macro.nanomites obj;
+            timing_guard = json_get_bool "timing_guard" base.c_macro.timing_guard obj;
+            timing_threshold_ticks = json_get_int64 "timing_threshold_ticks" base.c_macro.timing_threshold_ticks obj;
           }
     in
 
@@ -543,10 +608,17 @@ let to_yojson (cfg : t) : Yojson.Basic.t =
     ]);
     ("c_macro", `Assoc [
       ("enabled", `Bool cfg.c_macro.enabled);
+      ("macro_prefix", `String cfg.c_macro.macro_prefix);
       ("obfuscate_strings", `Bool cfg.c_macro.obfuscate_strings);
       ("obfuscate_constants", `Bool cfg.c_macro.obfuscate_constants);
       ("obfuscate_arithmetic", `Bool cfg.c_macro.obfuscate_arithmetic);
+      ("opaque_predicates", `Bool cfg.c_macro.opaque_predicates);
+      ("api_hashing", `Bool cfg.c_macro.api_hashing);
+      ("anti_debug", `Bool cfg.c_macro.anti_debug);
+      ("signal_dispatch", `Bool cfg.c_macro.signal_dispatch);
       ("nanomites", `Bool cfg.c_macro.nanomites);
+      ("timing_guard", `Bool cfg.c_macro.timing_guard);
+      ("timing_threshold_ticks", `String (Int64.to_string cfg.c_macro.timing_threshold_ticks));
     ]);
   ] in
   `Assoc kvs
