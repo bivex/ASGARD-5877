@@ -50,7 +50,11 @@ let generate_header ?(config = default_config) () =
   add "";
   add "#include <stdint.h>";
   add "#include <stddef.h>";
+  add "#include <stdlib.h>";
   add "#include <string.h>";
+  add "#ifndef __cplusplus";
+  add "  #include <stdbool.h>";
+  add "#endif";
   add "";
   add "#if defined(__GNUC__) || defined(__clang__)";
   add ("  #define " ^ p ^ "INLINE __attribute__((always_inline)) inline");

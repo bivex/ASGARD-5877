@@ -1,3 +1,4 @@
+#include "asgard_obf.h"
 #include "threaded_vm.hpp"
 #include "embedded_bytecode.hpp"
 #include <stdio.h>
@@ -39,6 +40,12 @@ static uint64_t* load_bytecode(const char* filepath, size_t* out_len) {
 }
 
 int main(int argc, char** argv) {
+    ASG_TIMING_GUARD_START(t_guard);
+    ASG_ANTI_DEBUG_GUARD({
+        printf("\n[-] ACCESS DENIED: Security integrity violation detected!\n");
+        return 1;
+    });
+
     if (argc < 2) {
         printf("Usage: %s <LICENSE_KEY_128> [optional_bytecode_path]\n", argv[0]);
         printf("Key Format: ASGARD-xxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxx\n");
@@ -79,7 +86,9 @@ int main(int argc, char** argv) {
     ctx.set_rdi(k_hi);
     ctx.set_rsi(k_lo);
 
+    ASGARD_BEGIN_VIRTUALIZE("vault_engine");
     bool vm_ok = vanguard_threaded_vm::execute_threaded(ctx, bc_ptr, bc_len);
+    ASGARD_END();
     if (heap_bc) free(heap_bc);
 
     if (!vm_ok) {
@@ -95,6 +104,11 @@ int main(int argc, char** argv) {
         flag_out[i] = (char)(g_cipher_payload[i] ^ (k & 0xFF));
     }
     flag_out[FLAG_LEN] = '\0';
+
+    ASG_TIMING_GUARD_CHECK(t_guard, 5000000000ULL, {
+        printf("\n[-] ACCESS DENIED: Execution timeout / hardware debugger anomaly detected!\n");
+        return 1;
+    });
 
     if (strncmp(flag_out, "FLAG{", 5) == 0 && flag_out[FLAG_LEN - 1] == '}') {
         printf("=========================================================================\n");
