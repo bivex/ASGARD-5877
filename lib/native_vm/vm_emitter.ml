@@ -824,7 +824,20 @@ let compile_and_package
   let block_fused_ops = Hashtbl.create (List.length sorted_blocks) in
   List.iter
     (fun (b : Ir.basic_block) ->
-      let instrs = if enable_junk then inject_junk_instructions ~rng b.instrs else b.instrs in
+      let instrs =
+        if enable_mba then
+          List.concat_map
+            (function
+              | Ir.Alu { op; dst; src1; src2; set_flags = false } -> (
+                  try
+                    Mba_engine.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 op
+                  with _ ->
+                    [ Ir.Alu { op; dst; src1; src2; set_flags = false } ])
+              | other -> [ other ])
+            b.instrs
+        else b.instrs
+      in
+      let instrs = if enable_junk then inject_junk_instructions ~rng instrs else instrs in
       let fused = fuse_block_instructions instrs in
       Hashtbl.replace block_fused_ops b.id fused)
     sorted_blocks;
