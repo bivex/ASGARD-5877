@@ -328,11 +328,11 @@ static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity(
     // 2. Suspicious Anonymous RWX Memory Scanner (Anti-Frida / Shellcode Injection)
     vm_address_t address = 0;
     vm_size_t size = 0;
-    uint32_t depth = 1;
-    struct vm_region_submap_info_64 info = {};
-    mach_msg_type_number_t info_cnt = VM_REGION_SUBMAP_INFO_COUNT_64;
+    mach_port_t object_name = MACH_PORT_NULL;
+    struct vm_region_basic_info_64 info = {};
+    mach_msg_type_number_t info_cnt = VM_REGION_BASIC_INFO_COUNT_64;
     int suspicious_rwx = 0;
-    while (vm_region_recurse_64(mach_task_self(), &address, &size, &depth, (vm_region_recurse_info_t)&info, &info_cnt) == KERN_SUCCESS) {
+    while (vm_region_64(mach_task_self(), &address, &size, VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &info_cnt, &object_name) == KERN_SUCCESS) {
         if ((info.protection & VM_PROT_WRITE) && (info.protection & VM_PROT_EXECUTE)) {
             suspicious_rwx++;
         }

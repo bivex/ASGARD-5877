@@ -56,7 +56,7 @@ let default : t = {
   cff = {
     enabled = true;
     obfuscate_states = true;
-    inject_opaque_predicates = true;
+    inject_opaque_predicates = false;
   };
   mba = {
     enabled = true;
@@ -95,7 +95,7 @@ let max_security : t = {
   cff = {
     enabled = true;
     obfuscate_states = true;
-    inject_opaque_predicates = true;
+    inject_opaque_predicates = false;
   };
   mba = {
     enabled = true;

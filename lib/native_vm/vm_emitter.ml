@@ -485,6 +485,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        ctx.zf = (res == 0);\n";
   Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
   Buffer.add_string b "        ctx.cf = (a < b);\n";
+  Buffer.add_string b "        ctx.of = ((((a ^ b) & (a ^ res)) >> 63) != 0);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMP_RR: {\n";
@@ -493,6 +494,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        ctx.zf = (res == 0);\n";
   Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
   Buffer.add_string b "        ctx.cf = (a < b);\n";
+  Buffer.add_string b "        ctx.of = ((((a ^ b) & (a ^ res)) >> 63) != 0);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_PUSH_R: ctx.push(ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT();\n";
@@ -503,8 +505,8 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_JCC: {\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        uint64_t t_true = (uint64_t)((word >> 22) & 0x3FF);\n";
-  Buffer.add_string b "        uint64_t t_false = (uint64_t)((word >> 32) & 0x3FF);\n";
+  Buffer.add_string b "        uint64_t t_true = (uint64_t)((word >> 22) & 0x1FFFFFULL);\n";
+  Buffer.add_string b "        uint64_t t_false = (uint64_t)((word >> 43) & 0x1FFFFFULL);\n";
   Buffer.add_string b "        uint64_t c = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
   Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
@@ -894,9 +896,10 @@ let compile_and_package
     w := Int64.logor !w (Int64.of_int op);
     w := Int64.logor !w (Int64.shift_left (Int64.of_int dst) 8);
     w := Int64.logor !w (Int64.shift_left (Int64.of_int src) 13);
-    let imm_masked = Int64.logand imm 0xFFFFFFFFL in
+    let imm_masked = Int64.logand imm 0x3FFFFFFFFFFL in
     w := Int64.logor !w (Int64.shift_left imm_masked 18);
-    w := Int64.logor !w (Int64.shift_left (Int64.logand extra_bits 0x3FFFL) 50);
+    if extra_bits <> 0L then
+      w := Int64.logor !w (Int64.shift_left (Int64.logand extra_bits 0x3FFFL) 50);
     let mask = key64_for_offset key_seed !cur_idx in
     incr cur_idx;
     let masked_w = Int64.logxor !w mask in
@@ -966,6 +969,12 @@ let compile_and_package
               | Ir.Alu { op = Ir.Shr; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
                   encode_raw_word (get_opcode OP_SHR_RI) (get_reg_idx d) 0 imm
 
+              | Ir.Unary { op = Ir.Inc; dst; _ } ->
+                  encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx dst) 0 1L
+              | Ir.Unary { op = Ir.Dec; dst; _ } ->
+                  encode_raw_word (get_opcode OP_SUB_RI) (get_reg_idx dst) 0 1L
+              | Ir.Unary { op = Ir.Not; dst; _ } ->
+                  encode_raw_word (get_opcode OP_XOR_RI) (get_reg_idx dst) 0 0xFFFFFFFF_FFFFFFFFL
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
@@ -981,7 +990,7 @@ let compile_and_package
                   let t_off = get_block_offset tid in
                   let f_off = get_block_offset fid in
                   let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int t_off) 4) in
-                  let imm = Int64.logor imm (Int64.shift_left (Int64.of_int f_off) 14) in
+                  let imm = Int64.logor imm (Int64.shift_left (Int64.of_int f_off) 25) in
                   encode_raw_word (get_opcode OP_JCC) 0 0 imm
               | Ir.Cmov { cond; dst; src = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_CMOV) (get_reg_idx dst) (get_reg_idx s) (Int64.of_int (cond_to_code cond))

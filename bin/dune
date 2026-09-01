@@ -47,3 +47,18 @@
   native_vm
   c_macro_obf))
 
+(executable
+ (name gen_crypto_crackme)
+ (libraries
+  vm_ir
+  x86_lifter
+  arm64_lifter
+  multi_vm
+  mba_engine
+  cff
+  native_vm
+  c_macro_obf))
+
+
+
+

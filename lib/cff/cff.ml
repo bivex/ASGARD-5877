@@ -109,13 +109,25 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                 | Ir.Jcc { cond; target_true = Ir.BlockId t_id; target_false = Ir.BlockId f_id } ->
                     let state_true = get_state t_id in
                     let state_false = get_state f_id in
-                    body @ [
-                      Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
-                      Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
-                      Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                      Ir.Mov { dst = Ir.Reg Register.vtmp3; src = Ir.Reg Register.vtmp1 };
-                      Ir.Jmp (Ir.BlockId disp_base_id);
-                    ]
+                    (match body_rev with
+                    | Ir.Cmp cmp_args :: prev_body_rev ->
+                        let prev_body = List.rev prev_body_rev in
+                        prev_body @ [
+                          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
+                          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
+                          Ir.Cmp cmp_args;
+                          Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
+                          Ir.Mov { dst = Ir.Reg Register.vtmp3; src = Ir.Reg Register.vtmp1 };
+                          Ir.Jmp (Ir.BlockId disp_base_id);
+                        ]
+                    | _ ->
+                        body @ [
+                          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
+                          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
+                          Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
+                          Ir.Mov { dst = Ir.Reg Register.vtmp3; src = Ir.Reg Register.vtmp1 };
+                          Ir.Jmp (Ir.BlockId disp_base_id);
+                        ])
                 | Ir.Ret | Ir.Vm_exit | Ir.Trap _ ->
                     b.instrs
                 | other ->
