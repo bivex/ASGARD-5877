@@ -1,4 +1,13 @@
 {
+  "crypto": {
+    "rounds": 16,
+    "key_bits": 128
+  },
+  "bloat": {
+    "mode": "balanced",
+    "target_size_budget_kb": 500,
+    "junk_density": 0.5
+  },
   "cff": {
     "enabled": false,
     "obfuscate_states": false,
@@ -26,5 +35,12 @@
     "enable_super_operators": true,
     "stack_scrambling": true,
     "memory_sanitization": true
+  },
+  "c_macro": {
+    "enabled": true,
+    "obfuscate_strings": true,
+    "obfuscate_constants": true,
+    "obfuscate_arithmetic": true,
+    "nanomites": true
   }
 }

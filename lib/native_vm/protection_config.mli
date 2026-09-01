@@ -10,6 +10,19 @@ type mba_config = {
   engine : mba_engine;
 }
 
+type crypto_config = {
+  rounds : int;
+  key_bits : int;
+}
+
+type bloat_mode = [ `Compact | `Balanced | `Heavy | `Insane ]
+
+type bloat_config = {
+  mode : bloat_mode;
+  target_size_budget_kb : int option;
+  junk_density : float;
+}
+
 type cff_config = {
   enabled : bool;
   obfuscate_states : bool;
@@ -47,6 +60,8 @@ type c_macro_config = {
 
 type t = {
   seed : int option;
+  crypto : crypto_config;
+  bloat : bloat_config;
   cff : cff_config;
   mba : mba_config;
   anti_pushan : anti_pushan_config;

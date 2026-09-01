@@ -53,7 +53,7 @@ let encrypt_flag token flag_str =
 let () =
   let preset_str = ref "default" in
   let config_file = ref "" in
-  let num_rounds = ref 16 in
+  let num_rounds = ref 0 in
   let out_dir = ref "/Volumes/External/Code/ASGARD-5877/binaries/crackme_arm64" in
 
   let speclist = [
@@ -61,8 +61,8 @@ let () =
     ("--preset", Arg.Set_string preset_str, " Protection preset: min, light, default, high, max, stealth");
     ("-c", Arg.Set_string config_file, " Custom JSON protection config path");
     ("--config", Arg.Set_string config_file, " Custom JSON protection config path");
-    ("-r", Arg.Set_int num_rounds, " Number of ARX sponge rounds (default: 16)");
-    ("--rounds", Arg.Set_int num_rounds, " Number of ARX sponge rounds (default: 16)");
+    ("-r", Arg.Set_int num_rounds, " Number of ARX sponge rounds (default: from config)");
+    ("--rounds", Arg.Set_int num_rounds, " Number of ARX sponge rounds (default: from config)");
     ("-o", Arg.Set_string out_dir, " Output directory for generated sources and binary");
     ("--output", Arg.Set_string out_dir, " Output directory for generated sources and binary");
   ] in
@@ -78,13 +78,15 @@ let () =
       | Ok c -> c
       | Error err -> failwith err
   in
+  let actual_rounds = if !num_rounds > 0 then !num_rounds else base_config.crypto.rounds in
   let config = { base_config with
+    crypto = { base_config.crypto with rounds = actual_rounds };
     cff = { base_config.cff with enabled = false; inject_opaque_predicates = false };
     mba = { base_config.mba with enabled = false };
   } in
 
   let rng = Random.State.make [| 0x5877_BEEF |] in
-  let asm = generate_unrolled_arx_asm !num_rounds in
+  let asm = generate_unrolled_arx_asm actual_rounds in
   match Lifter.lift_function asm with
   | Error err -> failwith err
   | Ok func ->
@@ -96,7 +98,7 @@ let () =
         | Ok () -> ()
       in
       let token = Vm_eval.get_reg st Register.rax in
-      Printf.printf "[Vm_eval] Golden Token: 0x%016LX (Rounds: %d)\n" token !num_rounds;
+      Printf.printf "[Vm_eval] Golden Token: 0x%016LX (Rounds: %d)\n" token actual_rounds;
       let flag = "FLAG{128BIT_WIDE_ARX_SPONGE_UNBRUTEFORCEABLE_2026}" in
       let cipher_bytes = encrypt_flag token flag in
       let pkg = Vm_emitter.compile_and_package ~rng ~config func in

@@ -6,6 +6,19 @@ type mba_config = {
   engine : mba_engine;
 }
 
+type crypto_config = {
+  rounds : int;
+  key_bits : int;
+}
+
+type bloat_mode = [ `Compact | `Balanced | `Heavy | `Insane ]
+
+type bloat_config = {
+  mode : bloat_mode;
+  target_size_budget_kb : int option;
+  junk_density : float;
+}
+
 type cff_config = {
   enabled : bool;
   obfuscate_states : bool;
@@ -43,6 +56,8 @@ type c_macro_config = {
 
 type t = {
   seed : int option;
+  crypto : crypto_config;
+  bloat : bloat_config;
   cff : cff_config;
   mba : mba_config;
   anti_pushan : anti_pushan_config;
@@ -53,6 +68,8 @@ type t = {
 
 let default : t = {
   seed = None;
+  crypto = { rounds = 16; key_bits = 128 };
+  bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5 };
   cff = {
     enabled = true;
     obfuscate_states = true;
@@ -92,6 +109,8 @@ let default : t = {
 
 let max_security : t = {
   seed = None;
+  crypto = { rounds = 64; key_bits = 128 };
+  bloat = { mode = `Insane; target_size_budget_kb = Some 5000; junk_density = 2.0 };
   cff = {
     enabled = true;
     obfuscate_states = true;
@@ -131,6 +150,8 @@ let max_security : t = {
 
 let lightweight : t = {
   seed = None;
+  crypto = { rounds = 16; key_bits = 128 };
+  bloat = { mode = `Compact; target_size_budget_kb = Some 250; junk_density = 0.2 };
   cff = {
     enabled = false;
     obfuscate_states = false;
@@ -170,6 +191,8 @@ let lightweight : t = {
 
 let stealth : t = {
   seed = None;
+  crypto = { rounds = 16; key_bits = 128 };
+  bloat = { mode = `Balanced; target_size_budget_kb = Some 500; junk_density = 0.3 };
   cff = {
     enabled = true;
     obfuscate_states = true;
@@ -209,6 +232,8 @@ let stealth : t = {
 
 let minimal : t = {
   seed = None;
+  crypto = { rounds = 8; key_bits = 128 };
+  bloat = { mode = `Compact; target_size_budget_kb = Some 100; junk_density = 0.0 };
   cff = {
     enabled = false;
     obfuscate_states = false;
@@ -248,6 +273,8 @@ let minimal : t = {
 
 let high : t = {
   seed = None;
+  crypto = { rounds = 32; key_bits = 128 };
+  bloat = { mode = `Heavy; target_size_budget_kb = Some 2500; junk_density = 1.0 };
   cff = {
     enabled = true;
     obfuscate_states = true;
@@ -335,6 +362,28 @@ let json_get_int_opt key json =
       | _ -> None)
   | _ -> None
 
+let parse_bloat_mode str =
+  match String.lowercase_ascii (String.trim str) with
+  | "compact" | "min" | "low" -> `Compact
+  | "heavy" | "high" -> `Heavy
+  | "insane" | "max" -> `Insane
+  | "balanced" | _ -> `Balanced
+
+let string_of_bloat_mode = function
+  | `Compact -> "compact"
+  | `Balanced -> "balanced"
+  | `Heavy -> "heavy"
+  | `Insane -> "insane"
+
+let json_get_float key default json =
+  match json with
+  | `Assoc kvs -> (
+      match List.assoc_opt key kvs with
+      | Some (`Float f) -> f
+      | Some (`Int i) -> float_of_int i
+      | _ -> default)
+  | _ -> default
+
 let parse_mba_engine str =
   match String.lowercase_ascii (String.trim str) with
   | "egraph" | "e-graph" | "scrambler" -> `Egraph
@@ -350,6 +399,28 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
   try
     let base = default in
     let seed = json_get_int_opt "seed" json in
+
+    let crypto =
+      match json_get_obj "crypto" json with
+      | None -> base.crypto
+      | Some obj ->
+          {
+            rounds = json_get_int "rounds" base.crypto.rounds obj;
+            key_bits = json_get_int "key_bits" base.crypto.key_bits obj;
+          }
+    in
+
+    let bloat =
+      match json_get_obj "bloat" json with
+      | None -> base.bloat
+      | Some obj ->
+          let mode_str = json_get_string "mode" (string_of_bloat_mode base.bloat.mode) obj in
+          {
+            mode = parse_bloat_mode mode_str;
+            target_size_budget_kb = json_get_int_opt "target_size_budget_kb" obj;
+            junk_density = json_get_float "junk_density" base.bloat.junk_density obj;
+          }
+    in
 
     let cff =
       match json_get_obj "cff" json with
@@ -423,7 +494,7 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
           }
     in
 
-    Ok { seed; cff; mba; anti_pushan; anti_tamper; vm_runtime; c_macro }
+    Ok { seed; crypto; bloat; cff; mba; anti_pushan; anti_tamper; vm_runtime; c_macro }
   with exn ->
     Error (Printf.sprintf "JSON configuration parsing failed: %s" (Printexc.to_string exn))
 
@@ -434,6 +505,14 @@ let to_yojson (cfg : t) : Yojson.Basic.t =
     | None -> []
   in
   let kvs = seed_field @ [
+    ("crypto", `Assoc [
+      ("rounds", `Int cfg.crypto.rounds);
+      ("key_bits", `Int cfg.crypto.key_bits);
+    ]);
+    ("bloat", `Assoc ([
+      ("mode", `String (string_of_bloat_mode cfg.bloat.mode));
+      ("junk_density", `Float cfg.bloat.junk_density);
+    ] @ (match cfg.bloat.target_size_budget_kb with Some b -> [ ("target_size_budget_kb", `Int b) ] | None -> [])));
     ("cff", `Assoc [
       ("enabled", `Bool cfg.cff.enabled);
       ("obfuscate_states", `Bool cfg.cff.obfuscate_states);
