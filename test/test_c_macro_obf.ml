@@ -248,6 +248,65 @@ int main(void) {
   Alcotest.(check bool) "return 0 stripped" false
     (contains_sub preamble "return 0;")
 
+let test_arithmetic_rewriter () =
+  (* 1. Unit: verify MBA macros are emitted for basic operators *)
+  let src_simple =
+    "int64_t a = 10;\n" ^
+    "int64_t b = 4;\n" ^
+    "int64_t sum = a + b;\n" ^
+    "int64_t diff = a - b;\n" ^
+    "int64_t x = a ^ b;\n" ^
+    "int64_t y = a & b;\n" ^
+    "int64_t z = a | b;\n"
+  in
+  let rewritten = C_macro_obf.rewrite_arithmetic_in_source
+    ~prefix:"ASG_" ~depth:1 src_simple in
+  Alcotest.(check bool) "sum uses ASG_MBA_ADD"  true  (contains_sub rewritten "ASG_MBA_ADD");
+  Alcotest.(check bool) "diff uses ASG_MBA_SUB" true  (contains_sub rewritten "ASG_MBA_SUB");
+  Alcotest.(check bool) "xor uses ASG_MBA_XOR"  true  (contains_sub rewritten "ASG_MBA_XOR");
+  Alcotest.(check bool) "and uses ASG_MBA_AND"  true  (contains_sub rewritten "ASG_MBA_AND");
+  Alcotest.(check bool) "or uses ASG_MBA_OR"    true  (contains_sub rewritten "ASG_MBA_OR");
+  (* depth=0 should suppress all MBA macros *)
+  let rewritten0 = C_macro_obf.rewrite_arithmetic_in_source
+    ~prefix:"ASG_" ~depth:0 src_simple in
+  Alcotest.(check bool) "depth=0: no ASG_MBA_ADD" false (contains_sub rewritten0 "ASG_MBA_ADD");
+  (* 2. E2E: compile and execute rewritten arithmetic *)
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let in_c    = Filename.concat tmp_dir "arith.c" in
+    let out_c   = Filename.concat tmp_dir "arith_obf.c" in
+    let hdr     = Filename.concat tmp_dir "asgard_obf.h" in
+    let bin     = Filename.concat tmp_dir "arith_bin" in
+    let src =
+      "#include <stdio.h>\n" ^
+      "#include <stdint.h>\n" ^
+      "int main() {\n" ^
+      "    int64_t a = 1337;\n" ^
+      "    int64_t b = 42;\n" ^
+      "    int64_t sum  = a + b;\n" ^
+      "    int64_t diff = a - b;\n" ^
+      "    int64_t xval = a ^ b;\n" ^
+      "    int64_t aval = a & b;\n" ^
+      "    int64_t oval = a | b;\n" ^
+      "    printf(\"%lld %lld %lld %lld %lld\\n\",\n" ^
+      "           (long long)sum, (long long)diff,\n" ^
+      "           (long long)xval, (long long)aval, (long long)oval);\n" ^
+      "    return 0;\n" ^
+      "}\n"
+    in
+    Test_helpers.write_file_string in_c src;
+    let cfg = { C_macro_obf.default_config with obfuscate_arithmetic = true; mba_depth = 1 } in
+    let res = C_macro_obf.transform_file ~config:cfg ~in_file:in_c ~out_file:out_c
+                ~header_file:(Some hdr) () in
+    Alcotest.(check (result unit string)) "arith transform ok" (Ok ()) res;
+    let comp = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir out_c bin in
+    Alcotest.(check int) "arith compile ok" 0 (Sys.command comp);
+    let log = Filename.concat tmp_dir "out.log" in
+    Alcotest.(check int) "arith run ok" 0 (Sys.command (bin ^ " > " ^ log));
+    let line = List.hd (String.split_on_char '\n' (Test_helpers.read_file_string log)) in
+    (* 1337+42=1379 1337-42=1295 1337^42=1299 1337&42=40 1337|42=1339 *)
+    Alcotest.(check string) "arith results correct"
+      "1379 1295 1299 40 1339" line)
+
 let tests = [
   ("header_generation", `Quick, test_header_generation);
   ("string_obfuscation", `Quick, test_string_obfuscation);
@@ -256,6 +315,7 @@ let tests = [
   ("signal_based_dispatching_e2e", `Quick, test_signal_based_dispatching_e2e);
   ("nanomites_dispatching_e2e", `Quick, test_nanomites_dispatching_e2e);
   ("nanomite_auto_lift_e2e", `Quick, test_nanomite_auto_lift_e2e);
+  ("arithmetic_ast_rewriter_e2e", `Quick, test_arithmetic_rewriter);
 ]
 
 

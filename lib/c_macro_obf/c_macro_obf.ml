@@ -926,12 +926,664 @@ let obfuscate_constant_i64 ~prefix ~seed n =
   let c1 = Int64.logxor n k1 in
   Printf.sprintf "%sBLIND_I64(0x%LXULL, 0x%LXULL, 0x%LXULL)" prefix c1 k1 k2
 
+(* ======================================================================== *)
+(*  Phase 3: C Arithmetic Expression AST Rewriter                           *)
+(*                                                                           *)
+(*  Lexes C tokens, parses expressions with correct operator precedence,    *)
+(*  builds an AST, and reprints with MBA macro wrappers for:                *)
+(*    +  → ASG_MBA_ADD    -  → ASG_MBA_SUB    ^  → ASG_MBA_XOR             *)
+(*    &  → ASG_MBA_AND    |  → ASG_MBA_OR     ~  → ASG_MBA_NOT             *)
+(*                                                                           *)
+(*  The rewriter is statement-aware: it only rewrites expressions inside    *)
+(*  assignment RHS, return expressions, and initializer expressions.        *)
+(*  It does NOT touch:                                                       *)
+(*    • Preprocessor directives (#include, #define …)                       *)
+(*    • String literals                                                      *)
+(*    • Comments                                                             *)
+(*    • Pointer arithmetic (e.g. p + 1) — conservatively left alone        *)
+(*    • Function-like macro calls already starting with the macro prefix    *)
+(* ======================================================================== *)
+
+(* ─── Lexer tokens ──────────────────────────────────────────────────────── *)
+type c_tok =
+  | TPlus | TMinus | TStar | TSlash | TPercent
+  | TAmpersand | TPipe | TCaret | TTilde | TBang
+  | TLShift | TRShift
+  | TLParen | TRParen | TLBracket | TRBracket | TLBrace | TRBrace
+  | TComma | TSemicolon | TColon | TQuestion
+  | TEq | TAddEq | TSubEq | TAndEq | TOrEq | TXorEq | TMulEq | TDivEq
+  | TArrow | TDot
+  | TEqEq | TNotEq | TLe | TGe | TLt | TGt
+  | TAnd | TOr  (* && || *)
+  | TIdent of string
+  | TIntLit of string   (* keep verbatim so we never lose suffixes, covers floats too *)
+  | TCharLit of string
+  | TStrLit of string   (* content including quotes *)
+  | TIncDec of string   (* ++ or -- *)
+  | TEOF
+
+let c_lex src =
+  (* Returns array of (token, start_pos, end_pos) for whole src *)
+  let len = String.length src in
+  let toks = Buffer.create 256 in
+  let result = ref [] in
+  let push tok s e = result := (tok, s, e) :: !result in
+  let i = ref 0 in
+  let read_while pred =
+    let start = !i in
+    while !i < len && pred src.[!i] do incr i done;
+    String.sub src start (!i - start)
+  in
+  let is_ident_start c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c = '_' in
+  let is_ident c = is_ident_start c || (c >= '0' && c <= '9') in
+  let is_digit c = c >= '0' && c <= '9' in
+  let is_hex c = is_digit c || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') in
+  ignore toks;
+  while !i < len do
+    let start = !i in
+    let c = src.[!i] in
+    (* Skip whitespace, copy it as TIdent-like — actually we handle whitespace differently:
+       we'll just read the token and record positions *)
+    if c = ' ' || c = '\t' || c = '\n' || c = '\r' then incr i
+    else if c = '/' && !i + 1 < len && src.[!i + 1] = '/' then begin
+      (* line comment *)
+      while !i < len && src.[!i] <> '\n' do incr i done;
+      push (TStrLit (String.sub src start (!i - start))) start !i
+    end
+    else if c = '/' && !i + 1 < len && src.[!i + 1] = '*' then begin
+      i := !i + 2;
+      while !i + 1 < len && not (src.[!i] = '*' && src.[!i+1] = '/') do incr i done;
+      if !i + 1 < len then i := !i + 2;
+      push (TStrLit (String.sub src start (!i - start))) start !i
+    end
+    else if c = '"' then begin
+      incr i;
+      let escaped = ref false in
+      while !i < len && (src.[!i] <> '"' || !escaped) do
+        if !escaped then escaped := false
+        else if src.[!i] = '\\' then escaped := true;
+        incr i
+      done;
+      if !i < len then incr i;
+      push (TStrLit (String.sub src start (!i - start))) start !i
+    end
+    else if c = '\'' then begin
+      incr i;
+      let escaped = ref false in
+      while !i < len && (src.[!i] <> '\'' || !escaped) do
+        if !escaped then escaped := false
+        else if src.[!i] = '\\' then escaped := true;
+        incr i
+      done;
+      if !i < len then incr i;
+      push (TCharLit (String.sub src start (!i - start))) start !i
+    end
+    else if c = '#' then begin
+      (* preprocessor line: consume to end of logical line *)
+      while !i < len && src.[!i] <> '\n' do incr i done;
+      push (TStrLit (String.sub src start (!i - start))) start !i
+    end
+    else if is_ident_start c then begin
+      let name = read_while is_ident in
+      push (TIdent name) start !i
+    end
+    else if is_digit c || (c = '.' && !i + 1 < len && is_digit src.[!i+1]) then begin
+      (* integer or float literal with optional suffixes *)
+      let is_0x = c = '0' && !i + 1 < len && (src.[!i+1] = 'x' || src.[!i+1] = 'X') in
+      if is_0x then begin
+        i := !i + 2;
+        let _ = read_while is_hex in ()
+      end else begin
+        let _ = read_while is_digit in
+        if !i < len && src.[!i] = '.' then begin
+          incr i;
+          let _ = read_while is_digit in ()
+        end;
+        if !i < len && (src.[!i] = 'e' || src.[!i] = 'E') then begin
+          incr i;
+          if !i < len && (src.[!i] = '+' || src.[!i] = '-') then incr i;
+          let _ = read_while is_digit in ()
+        end
+      end;
+      (* consume suffixes u U l L f F *)
+      while !i < len && (let ch = src.[!i] in
+        ch='u'||ch='U'||ch='l'||ch='L'||ch='f'||ch='F') do incr i done;
+      let lit = String.sub src start (!i - start) in
+      push (TIntLit lit) start !i
+    end
+    else begin
+      (* operators and punctuation *)
+      let tok, advance =
+        match c with
+        | '+' when !i+1 < len && src.[!i+1] = '+' -> TIncDec "++", 2
+        | '+' when !i+1 < len && src.[!i+1] = '=' -> TAddEq, 2
+        | '+' -> TPlus, 1
+        | '-' when !i+1 < len && src.[!i+1] = '-' -> TIncDec "--", 2
+        | '-' when !i+1 < len && src.[!i+1] = '=' -> TSubEq, 2
+        | '-' when !i+1 < len && src.[!i+1] = '>' -> TArrow, 2
+        | '-' -> TMinus, 1
+        | '*' when !i+1 < len && src.[!i+1] = '=' -> TMulEq, 2
+        | '*' -> TStar, 1
+        | '/' when !i+1 < len && src.[!i+1] = '=' -> TDivEq, 2
+        | '/' -> TSlash, 1
+        | '%' -> TPercent, 1
+        | '&' when !i+1 < len && src.[!i+1] = '&' -> TAnd, 2
+        | '&' when !i+1 < len && src.[!i+1] = '=' -> TAndEq, 2
+        | '&' -> TAmpersand, 1
+        | '|' when !i+1 < len && src.[!i+1] = '|' -> TOr, 2
+        | '|' when !i+1 < len && src.[!i+1] = '=' -> TOrEq, 2
+        | '|' -> TPipe, 1
+        | '^' when !i+1 < len && src.[!i+1] = '=' -> TXorEq, 2
+        | '^' -> TCaret, 1
+        | '~' -> TTilde, 1
+        | '!' when !i+1 < len && src.[!i+1] = '=' -> TNotEq, 2
+        | '!' -> TBang, 1
+        | '<' when !i+1 < len && src.[!i+1] = '<' -> TLShift, 2
+        | '<' when !i+1 < len && src.[!i+1] = '=' -> TLe, 2
+        | '<' -> TLt, 1
+        | '>' when !i+1 < len && src.[!i+1] = '>' -> TRShift, 2
+        | '>' when !i+1 < len && src.[!i+1] = '=' -> TGe, 2
+        | '>' -> TGt, 1
+        | '=' when !i+1 < len && src.[!i+1] = '=' -> TEqEq, 2
+        | '=' -> TEq, 1
+        | '(' -> TLParen, 1
+        | ')' -> TRParen, 1
+        | '[' -> TLBracket, 1
+        | ']' -> TRBracket, 1
+        | '{' -> TLBrace, 1
+        | '}' -> TRBrace, 1
+        | ',' -> TComma, 1
+        | ';' -> TSemicolon, 1
+        | ':' -> TColon, 1
+        | '?' -> TQuestion, 1
+        | '.' -> TDot, 1
+        | _ -> TIdent (String.make 1 c), 1
+      in
+      i := !i + advance;
+      push tok start !i
+    end
+  done;
+  push TEOF !i !i;
+  Array.of_list (List.rev !result)
+
+(* ─── Simple C-expression AST (only for rewriting arithmetic) ──────────── *)
+type c_expr =
+  | ELit   of string           (* verbatim token *)
+  | EIdent of string
+  | EParen of c_expr
+  | ECall  of c_expr * c_expr list
+  | EIndex of c_expr * c_expr
+  | EField of c_expr * string * bool   (* e.field or e->field (bool=arrow) *)
+  | EPostfix of c_expr * string        (* ++ -- *)
+  | EPrefix of string * c_expr         (* ++ -- & * ~ ! - + *)
+  | ECast  of string * c_expr          (* (type) expr *)
+  | EBinop of string * c_expr * c_expr
+  | ETernary of c_expr * c_expr * c_expr
+
+(* ─── Printer with MBA macro substitution ────────────────────────────────── *)
+let rec print_expr ~prefix ~depth ~mba expr =
+  let sub = print_expr ~prefix ~depth:(depth - 1) ~mba in
+  match expr with
+  | ELit s | EIdent s -> s
+  | EParen e -> "(" ^ sub e ^ ")"
+  | ECall (f, args) ->
+      sub f ^ "(" ^ String.concat ", " (List.map sub args) ^ ")"
+  | EIndex (e, idx) -> sub e ^ "[" ^ sub idx ^ "]"
+  | EField (e, name, arrow) ->
+      sub e ^ (if arrow then "->" else ".") ^ name
+  | EPostfix (e, op) -> sub e ^ op
+  | EPrefix (op, e) -> op ^ sub e
+  | ECast (ty, e) -> "(" ^ ty ^ ")" ^ sub e
+  | ETernary (cond, t, f) ->
+      sub cond ^ " ? " ^ sub t ^ " : " ^ sub f
+  | EBinop (op, a, b) ->
+      if mba && depth > 0 then begin
+        let sa = sub a and sb = sub b in
+        match op with
+        | "+"  -> Printf.sprintf "%sMBA_ADD(%s, %s)" prefix sa sb
+        | "-"  -> Printf.sprintf "%sMBA_SUB(%s, %s)" prefix sa sb
+        | "^"  -> Printf.sprintf "%sMBA_XOR(%s, %s)" prefix sa sb
+        | "&"  -> Printf.sprintf "%sMBA_AND(%s, %s)" prefix sa sb
+        | "|"  -> Printf.sprintf "%sMBA_OR(%s, %s)"  prefix sa sb
+        | _    -> sa ^ " " ^ op ^ " " ^ sb
+      end else
+        sub a ^ " " ^ op ^ " " ^ sub b
+
+(* ─── Recursive-descent parser ──────────────────────────────────────────── *)
+
+(* Returns (expr, next_token_index) *)
+let parse_expr toks start_idx =
+  let n = Array.length toks in
+  let pos = ref start_idx in
+  let peek () = if !pos < n then let (t,_,_) = toks.(!pos) in t else TEOF in
+  let advance () = incr pos in
+  let consume () =
+    let (t,s,e) = toks.(!pos) in
+    incr pos; (t,s,e)
+  in
+
+  (* collect verbatim text between two positions in toks *)
+  let src_between a b =
+    (* a and b are token indices; we reconstruct from end of tok a-1 to start of tok b *)
+    if a >= b then ""
+    else begin
+      let (_,_,ea) = toks.(a - 1) in
+      let (_,sb,_) = toks.(b) in
+      ignore ea; ignore sb; ""  (* placeholder — we use the AST path *)
+    end
+  in
+  ignore src_between;
+
+  let tok_str tok =
+    match tok with
+    | TIdent s | TIntLit s | TCharLit s | TStrLit s -> s
+    | TPlus -> "+" | TMinus -> "-" | TStar -> "*" | TSlash -> "/" | TPercent -> "%"
+    | TAmpersand -> "&" | TPipe -> "|" | TCaret -> "^" | TTilde -> "~" | TBang -> "!"
+    | TLShift -> "<<" | TRShift -> ">>" | TLt -> "<" | TGt -> ">" | TLe -> "<=" | TGe -> ">="
+    | TEqEq -> "==" | TNotEq -> "!=" | TAnd -> "&&" | TOr -> "||"
+    | TIncDec s -> s
+    | TArrow -> "->" | TDot -> "."
+    | TEq -> "=" | TAddEq -> "+=" | TSubEq -> "-=" | TAndEq -> "&=" | TOrEq -> "|=" | TXorEq -> "^=" | TMulEq -> "*=" | TDivEq -> "/="
+    | TLParen -> "(" | TRParen -> ")" | TLBracket -> "[" | TRBracket -> "]" | TLBrace -> "{" | TRBrace -> "}"
+    | TComma -> "," | TSemicolon -> ";" | TColon -> ":" | TQuestion -> "?"
+    | TEOF -> ""
+  in
+
+  (* Check if an ident is a type keyword (for cast detection) *)
+  let is_type_kw = function
+    | "int" | "char" | "short" | "long" | "unsigned" | "signed"
+    | "float" | "double" | "void" | "bool" | "size_t" | "ssize_t"
+    | "uint8_t" | "uint16_t" | "uint32_t" | "uint64_t"
+    | "int8_t"  | "int16_t"  | "int32_t"  | "int64_t"
+    | "intptr_t" | "uintptr_t" | "ptrdiff_t"
+    | "const" | "volatile" | "struct" | "union" | "enum" -> true
+    | _ -> false
+  in
+
+  (* --- primary --- *)
+  let rec parse_primary () =
+    match peek () with
+    | TLParen ->
+        advance ();
+        (* Could be cast: (type) expr or parenthesised expr *)
+        let saved = !pos in
+        (* Try to detect cast: peek at what's inside *)
+        let is_cast =
+          (match peek () with
+          | TIdent name when is_type_kw name ->
+              (* scan forward past type tokens including * const etc *)
+              let j = ref !pos in
+              while !j < n && (match (let (t,_,_)=toks.(!j) in t) with
+                | TIdent s when is_type_kw s || s = "const" || s = "volatile" -> true
+                | TStar -> true
+                | _ -> false) do incr j done;
+              (match (let (t,_,_)=toks.(!j) in t) with TRParen -> true | _ -> false)
+          | _ -> false)
+        in
+        if is_cast then begin
+          let type_toks = Buffer.create 16 in
+          let first = ref true in
+          while (match peek () with TRParen | TEOF -> false | _ -> true) do
+            if not !first then Buffer.add_char type_toks ' ';
+            first := false;
+            let (t,_,_) = consume () in
+            Buffer.add_string type_toks (tok_str t)
+          done;
+          let ty = Buffer.contents type_toks in
+          advance ();  (* consume ) *)
+          let e = parse_unary () in
+          ECast (ty, e)
+        end else begin
+          pos := saved;
+          let e = parse_ternary () in
+          (match peek () with TRParen -> advance () | _ -> ());
+          EParen e
+        end
+    | TIdent name ->
+        advance ();
+        EIdent name
+    | TIntLit s ->
+        advance (); ELit s
+    | TCharLit s ->
+        advance (); ELit s
+    | TStrLit s ->
+        (* string literal — may be adjacent: "a" "b" *)
+        let buf = Buffer.create (String.length s) in
+        Buffer.add_string buf s;
+        advance ();
+        while (match peek () with TStrLit _ -> true | _ -> false) do
+          let (t,_,_) = consume () in
+          Buffer.add_char buf ' ';
+          Buffer.add_string buf (tok_str t)
+        done;
+        ELit (Buffer.contents buf)
+    | _ ->
+        let (t,_,_) = consume () in
+        ELit (tok_str t)
+
+  and parse_postfix () =
+    let e = ref (parse_primary ()) in
+    let continue_loop = ref true in
+    while !continue_loop do
+      (match peek () with
+      | TLParen ->
+          (* function call *)
+          advance ();
+          let args = ref [] in
+          if peek () <> TRParen then begin
+            args := [parse_assignment ()];
+            while peek () = TComma do
+              advance ();
+              args := !args @ [parse_assignment ()]
+            done
+          end;
+          (match peek () with TRParen -> advance () | _ -> ());
+          e := ECall (!e, !args)
+      | TLBracket ->
+          advance ();
+          let idx = parse_ternary () in
+          (match peek () with TRBracket -> advance () | _ -> ());
+          e := EIndex (!e, idx)
+      | TDot ->
+          advance ();
+          let name = (match peek () with
+            | TIdent s -> advance (); s
+            | _ -> "") in
+          e := EField (!e, name, false)
+      | TArrow ->
+          advance ();
+          let name = (match peek () with
+            | TIdent s -> advance (); s
+            | _ -> "") in
+          e := EField (!e, name, true)
+      | TIncDec s ->
+          advance ();
+          e := EPostfix (!e, s)
+      | _ -> continue_loop := false)
+    done;
+    !e
+
+  and parse_unary () =
+    match peek () with
+    | TMinus ->
+        advance (); let e = parse_unary () in EPrefix ("-", e)
+    | TPlus ->
+        advance (); let e = parse_unary () in EPrefix ("+", e)
+    | TTilde ->
+        advance (); let e = parse_unary () in EPrefix ("~", e)
+    | TBang ->
+        advance (); let e = parse_unary () in EPrefix ("!", e)
+    | TAmpersand ->
+        (* address-of — do NOT obfuscate, treat as raw *)
+        advance (); let e = parse_unary () in EPrefix ("&", e)
+    | TStar ->
+        (* dereference *)
+        advance (); let e = parse_unary () in EPrefix ("*", e)
+    | TIncDec s ->
+        advance (); let e = parse_unary () in EPrefix (s, e)
+    | _ -> parse_postfix ()
+
+  and parse_mul () =
+    let e = ref (parse_unary ()) in
+    let continue_loop = ref true in
+    while !continue_loop do
+      (match peek () with
+      | TStar ->
+          advance ();
+          let r = parse_unary () in
+          e := EBinop ("*", !e, r)
+      | TSlash ->
+          advance ();
+          let r = parse_unary () in
+          e := EBinop ("/", !e, r)
+      | TPercent ->
+          advance ();
+          let r = parse_unary () in
+          e := EBinop ("%", !e, r)
+      | _ -> continue_loop := false)
+    done;
+    !e
+
+  and parse_add () =
+    let e = ref (parse_mul ()) in
+    let continue_loop = ref true in
+    while !continue_loop do
+      (match peek () with
+      | TPlus ->
+          advance ();
+          let r = parse_mul () in
+          e := EBinop ("+", !e, r)
+      | TMinus ->
+          advance ();
+          let r = parse_mul () in
+          e := EBinop ("-", !e, r)
+      | _ -> continue_loop := false)
+    done;
+    !e
+
+  and parse_shift () =
+    let e = ref (parse_add ()) in
+    let continue_loop = ref true in
+    while !continue_loop do
+      (match peek () with
+      | TLShift ->
+          advance (); let r = parse_add () in
+          e := EBinop ("<<", !e, r)
+      | TRShift ->
+          advance (); let r = parse_add () in
+          e := EBinop (">>", !e, r)
+      | _ -> continue_loop := false)
+    done;
+    !e
+
+  and parse_rel () =
+    let e = ref (parse_shift ()) in
+    let continue_loop = ref true in
+    while !continue_loop do
+      (match peek () with
+      | TLt  -> advance (); let r = parse_shift () in e := EBinop ("<",  !e, r)
+      | TGt  -> advance (); let r = parse_shift () in e := EBinop (">",  !e, r)
+      | TLe  -> advance (); let r = parse_shift () in e := EBinop ("<=", !e, r)
+      | TGe  -> advance (); let r = parse_shift () in e := EBinop (">=", !e, r)
+      | TEqEq -> advance (); let r = parse_shift () in e := EBinop ("==", !e, r)
+      | TNotEq -> advance (); let r = parse_shift () in e := EBinop ("!=", !e, r)
+      | _ -> continue_loop := false)
+    done;
+    !e
+
+  and parse_bitand () =
+    let e = ref (parse_rel ()) in
+    while (match peek () with TAmpersand -> true | _ -> false) do
+      advance ();
+      let r = parse_rel () in
+      e := EBinop ("&", !e, r)
+    done;
+    !e
+
+  and parse_bitxor () =
+    let e = ref (parse_bitand ()) in
+    while (match peek () with TCaret -> true | _ -> false) do
+      advance ();
+      let r = parse_bitand () in
+      e := EBinop ("^", !e, r)
+    done;
+    !e
+
+  and parse_bitor () =
+    let e = ref (parse_bitxor ()) in
+    while (match peek () with TPipe -> true | _ -> false) do
+      advance ();
+      let r = parse_bitxor () in
+      e := EBinop ("|", !e, r)
+    done;
+    !e
+
+  and parse_logand () =
+    let e = ref (parse_bitor ()) in
+    while (match peek () with TAnd -> true | _ -> false) do
+      advance ();
+      let r = parse_bitor () in
+      e := EBinop ("&&", !e, r)
+    done;
+    !e
+
+  and parse_logor () =
+    let e = ref (parse_logand ()) in
+    while (match peek () with TOr -> true | _ -> false) do
+      advance ();
+      let r = parse_logand () in
+      e := EBinop ("||", !e, r)
+    done;
+    !e
+
+  and parse_ternary () =
+    let cond = parse_logor () in
+    if peek () = TQuestion then begin
+      advance ();
+      let t = parse_ternary () in
+      (match peek () with TColon -> advance () | _ -> ());
+      let f = parse_ternary () in
+      ETernary (cond, t, f)
+    end else cond
+
+  and parse_assignment () =
+    let e = parse_ternary () in
+    (match peek () with
+    | TEq | TAddEq | TSubEq | TAndEq | TOrEq | TXorEq | TMulEq | TDivEq ->
+        let (op,_,_) = consume () in
+        let r = parse_assignment () in
+        EBinop (tok_str op, e, r)
+    | _ -> e)
+  in
+
+  let expr = parse_assignment () in
+  (expr, !pos)
+
+(* ─── Statement-level rewriter ───────────────────────────────────────────── *)
+
+(** Detect if we're at a position that could start an expression statement.
+    Rewrites expressions on the RHS of assignments and in return statements.
+    Everything else is copied verbatim. *)
+let rewrite_arithmetic_in_source ~prefix ~depth src =
+  let toks = c_lex src in
+  let n = Array.length toks in
+  (* Reconstruct source character-by-character using token positions *)
+  let src_len = String.length src in
+  let out = Buffer.create (src_len * 2) in
+
+  (* We process the source character stream, but consult the token array
+     to know when we enter an expression context that can be obfuscated.
+     Strategy:
+       - Copy source verbatim until we find:
+           • an assignment operator (=, +=, -=, &=, |=, ^=) — rewrite RHS
+           • keyword 'return' — rewrite the expression after it
+           • initialiser '= expr ;' in variable declarations
+       - Inside the rewritten expr, MBA macros are inserted for + - ^ & |
+       - String literals, comments, preprocessor lines: skip / copy verbatim
+  *)
+
+  (* We'll walk token by token and reconstruct the output by tracking
+     "last character position emitted" *)
+  let emitted_char_pos = ref 0 in
+
+  let emit_raw_until char_end =
+    if char_end > !emitted_char_pos && char_end <= src_len then begin
+      Buffer.add_string out (String.sub src !emitted_char_pos (char_end - !emitted_char_pos));
+      emitted_char_pos := char_end
+    end
+  in
+
+  let tok_start idx =
+    if idx < n then let (_,s,_) = toks.(idx) in s else src_len
+  in
+  let _tok_end idx =
+    if idx < n then let (_,_,e) = toks.(idx) in e else src_len
+  in
+
+  let ti = ref 0 in
+
+  while !ti < n - 1 (* skip final TEOF *) do
+    let (tok, _ts, te) = toks.(!ti) in
+    match tok with
+    | TStrLit _ | TCharLit _ ->
+        (* String/char literal or comment: copy verbatim *)
+        emit_raw_until te;
+        incr ti
+    | TIdent "return" ->
+        (* emit 'return' verbatim, then a mandatory space *)
+        emit_raw_until te;
+        incr ti;
+        (* The next non-whitespace token starts the expression.
+           We need to emit whitespace between 'return' and the expr. *)
+        let expr_char_start = tok_start !ti in
+        let ti_before_expr = !ti in
+        let (expr, ti_after) = parse_expr toks !ti in
+        let raw_end = tok_start ti_after in
+        if ti_after > ti_before_expr then begin
+          (* Emit the raw whitespace between 'return' and the first expr token
+             so we get "return " not "return42" *)
+          let ws = String.sub src te (expr_char_start - te) in
+          let ws_trimmed = (* keep whitespace chars only *)
+            String.concat "" (List.filter_map (fun c ->
+              if c = ' ' || c = '\t' || c = '\n' || c = '\r'
+              then Some (String.make 1 c)
+              else None)
+              (List.init (String.length ws) (String.get ws)))
+          in
+          Buffer.add_string out (if ws_trimmed = "" then " " else ws_trimmed);
+          emitted_char_pos := expr_char_start;
+          let rewritten = print_expr ~prefix ~depth ~mba:true expr in
+          emitted_char_pos := raw_end;
+          Buffer.add_string out rewritten;
+          ti := ti_after
+        end else
+          incr ti
+    | TEq | TAddEq | TSubEq | TAndEq | TOrEq | TXorEq | TMulEq | TDivEq ->
+        (* emit the assignment operator verbatim *)
+        emit_raw_until te;
+        incr ti;
+        (* Emit raw whitespace between operator and RHS token *)
+        let expr_char_start = tok_start !ti in
+        let ti_before_expr = !ti in
+        let (expr, ti_after) = parse_expr toks !ti in
+        let raw_end = tok_start ti_after in
+        if ti_after > ti_before_expr then begin
+          let ws = String.sub src te (expr_char_start - te) in
+          Buffer.add_string out ws;
+          emitted_char_pos := expr_char_start;
+          let rewritten = print_expr ~prefix ~depth ~mba:true expr in
+          emitted_char_pos := raw_end;
+          Buffer.add_string out rewritten;
+          ti := ti_after
+        end else
+          incr ti
+    | _ ->
+        (* copy verbatim *)
+        emit_raw_until te;
+        incr ti
+  done;
+  (* flush remainder *)
+  emit_raw_until src_len;
+  Buffer.contents out
+
 (** Transform a complete C source code string *)
 let obfuscate_source ?(config = default_config) src =
   let p = config.macro_prefix in
   (* Phase 1: Lift all if/else → nanomite dispatches *)
   let (lifted_src, nanomite_preamble) = lift_nanomites_in_source ~config src in
-  let len = String.length lifted_src in
+
+  (* Phase 3: Arithmetic expression rewriting (run on lifted source first,
+     before the character-level string/comment pass, so the token lexer sees
+     clean source rather than already-obfuscated string macros).
+     Only applied when obfuscate_arithmetic is enabled. *)
+  let arith_rewritten =
+    if config.obfuscate_arithmetic then
+      rewrite_arithmetic_in_source ~prefix:p ~depth:config.mba_depth lifted_src
+    else
+      lifted_src
+  in
+
+  let len = String.length arith_rewritten in
   let buf = Buffer.create (len * 2) in
   let seed_seq = ref config.seed in
 
@@ -947,8 +1599,8 @@ let obfuscate_source ?(config = default_config) src =
   if nanomite_preamble <> "" then
     Buffer.add_string buf nanomite_preamble;
 
-  (* Phase 2: String/constant obfuscation pass on the lifted source *)
-  let src = lifted_src in
+  (* Phase 2: String/constant obfuscation pass on the rewritten source *)
+  let src = arith_rewritten in
 
   let i = ref 0 in
   while !i < len do

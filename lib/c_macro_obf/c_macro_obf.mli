@@ -49,6 +49,15 @@ val lift_nanomites_in_source : ?config:config -> string -> string * string
     internally before the string/constant obfuscation pass). *)
 val obfuscate_source : ?config:config -> string -> string
 
+(** Rewrite arithmetic and bitwise expressions in a C source string, replacing
+    [a + b] → [PFX_MBA_ADD(a, b)], [a - b] → [PFX_MBA_SUB(a, b)],
+    [a ^ b] → [PFX_MBA_XOR(a, b)], [a & b] → [PFX_MBA_AND(a, b)],
+    [a | b] → [PFX_MBA_OR(a, b)].
+    Only rewrites the RHS of assignments and [return] expressions.
+    String literals, comments, and preprocessor directives are left untouched.
+    [depth = 0] disables all rewriting (pass-through). *)
+val rewrite_arithmetic_in_source : prefix:string -> depth:int -> string -> string
+
 (** Transform a C source file on disk and optionally emit the companion header file. *)
 val transform_file :
   ?config:config ->
