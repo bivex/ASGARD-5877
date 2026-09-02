@@ -81,8 +81,6 @@ let () =
   let actual_rounds = if !num_rounds > 0 then !num_rounds else base_config.crypto.rounds in
   let config = { base_config with
     crypto = { base_config.crypto with rounds = actual_rounds };
-    cff = { base_config.cff with enabled = false; inject_opaque_predicates = false };
-    mba = { base_config.mba with enabled = false };
   } in
 
   let rng = Random.State.make [| 0x5877_BEEF |] in

@@ -404,14 +404,19 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
         let hdr_path = Filename.concat out_dir "asgard_obf.h" in
         let obf_c_path = Filename.concat out_dir "app_obf.c" in
         let seed_val = Random.State.int rng 0x3FFFFFFF in
-        let config = {
-          C_macro_obf.seed = seed_val;
+        let config : C_macro_obf.config = {
+          seed = seed_val;
           mba_depth = effective_cfg.mba.depth;
+          macro_prefix = effective_cfg.c_macro.macro_prefix;
           obfuscate_strings = effective_cfg.c_macro.obfuscate_strings;
           obfuscate_constants = effective_cfg.c_macro.obfuscate_constants;
           obfuscate_arithmetic = effective_cfg.c_macro.obfuscate_arithmetic;
-          inject_opaque_predicates = effective_cfg.c_macro.nanomites;
-          macro_prefix = "ASG_";
+          inject_opaque_predicates = effective_cfg.c_macro.opaque_predicates;
+          api_hashing = effective_cfg.c_macro.api_hashing;
+          anti_debug = effective_cfg.c_macro.anti_debug;
+          signal_dispatch = effective_cfg.c_macro.signal_dispatch;
+          timing_guard = effective_cfg.c_macro.timing_guard;
+          timing_threshold_ticks = effective_cfg.c_macro.timing_threshold_ticks;
         } in
         (match C_macro_obf.transform_file ~config ~in_file:input_file ~out_file:obf_c_path ~header_file:(Some hdr_path) () with
         | Ok () -> ()
@@ -601,14 +606,19 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
         let hdr_path = Filename.concat out_dir "asgard_obf.h" in
         let obf_c_path = Filename.concat out_dir "app_obf.c" in
         let seed_val = Random.State.int rng 0x3FFFFFFF in
-        let config = {
-          C_macro_obf.seed = seed_val;
+        let config : C_macro_obf.config = {
+          seed = seed_val;
           mba_depth = effective_cfg.mba.depth;
+          macro_prefix = effective_cfg.c_macro.macro_prefix;
           obfuscate_strings = effective_cfg.c_macro.obfuscate_strings;
           obfuscate_constants = effective_cfg.c_macro.obfuscate_constants;
           obfuscate_arithmetic = effective_cfg.c_macro.obfuscate_arithmetic;
-          inject_opaque_predicates = effective_cfg.c_macro.nanomites;
-          macro_prefix = "ASG_";
+          inject_opaque_predicates = effective_cfg.c_macro.opaque_predicates;
+          api_hashing = effective_cfg.c_macro.api_hashing;
+          anti_debug = effective_cfg.c_macro.anti_debug;
+          signal_dispatch = effective_cfg.c_macro.signal_dispatch;
+          timing_guard = effective_cfg.c_macro.timing_guard;
+          timing_threshold_ticks = effective_cfg.c_macro.timing_threshold_ticks;
         } in
         (match C_macro_obf.transform_file ~config ~in_file:input_file ~out_file:obf_c_path ~header_file:(Some hdr_path) () with
         | Ok () -> ()
@@ -729,13 +739,18 @@ let protect_arm64_cmd =
 let run_c_obf input out_file out_header seed strings consts mba_depth compile =
   let seed_val = match seed with Some s -> s | None -> Random.self_init (); Random.int 0x3FFFFFFF in
 
-  let config = {
-    C_macro_obf.seed = seed_val;
+  let config : C_macro_obf.config = {
+    seed = seed_val;
     mba_depth;
     obfuscate_strings = strings;
     obfuscate_constants = consts;
     obfuscate_arithmetic = true;
     inject_opaque_predicates = true;
+    api_hashing = true;
+    anti_debug = true;
+    signal_dispatch = true;
+    timing_guard = true;
+    timing_threshold_ticks = 50000000L;
     macro_prefix = "ASG_";
   } in
   let header_path = match out_header with
@@ -849,13 +864,18 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
 
     let hdr_path = Filename.concat build_dir "asgard_obf.h" in
     let seed_val = Random.State.int rng 0x3FFFFFFF in
-    let config = {
-      C_macro_obf.seed = seed_val;
+    let config : C_macro_obf.config = {
+      seed = seed_val;
       mba_depth;
       obfuscate_strings = true;
       obfuscate_constants = true;
       obfuscate_arithmetic = true;
       inject_opaque_predicates = true;
+      api_hashing = true;
+      anti_debug = true;
+      signal_dispatch = true;
+      timing_guard = true;
+      timing_threshold_ticks = 50000000L;
       macro_prefix = "ASG_";
     } in
 

@@ -125,26 +125,43 @@ let shuffle_array rng arr =
     arr.(j) <- tmp
   done
 
-let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) opcode_to_handler =
   let profile = match runtime_profile with
     | Some p -> p
     | None -> Random_visa_domain.Vm_runtime_profile.generate ~seed:(Int64.of_int32 key_seed) ~total_opcodes:256 ()
   in
   let stride = profile.dispatch.context_layout.affine_a in
   let offset = profile.dispatch.context_layout.affine_b in
-  let num_domains = profile.dispatch.num_domains in
+  let num_domains =
+    match config with
+    | Some c -> max 1 c.vm_runtime.num_dispatch_domains
+    | None -> profile.dispatch.num_domains
+  in
+  let enable_smc = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.smc | None -> true in
+  let enable_anti_emu = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.anti_emulation | None -> true in
+  let enable_mem_scan = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.memory_integrity_scanner | None -> true in
+  let enable_timing_probes = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.hardware_timing_probes | None -> true in
+  let enable_running_key = match config with Some c -> c.anti_pushan.enabled && c.anti_pushan.running_key | None -> true in
+  let enable_stack_scramble = match config with Some c -> c.vm_runtime.stack_scrambling | None -> true in
+  let enable_mem_sanitize = match config with Some c -> c.vm_runtime.memory_sanitization | None -> true in
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n";
   Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
-  Buffer.add_string b (Hardened_runtime.emit_anti_emulation_probes ());
-  Buffer.add_string b "\n";
+  if enable_anti_emu then begin
+    Buffer.add_string b (Hardened_runtime.emit_anti_emulation_probes ());
+    Buffer.add_string b "\n";
+  end;
   Buffer.add_string b (Hardened_runtime.emit_dual_mapping_header ());
   Buffer.add_string b "\n";
-  Buffer.add_string b (Hardened_runtime.emit_introspective_smc_header ());
-  Buffer.add_string b "\n";
-  Buffer.add_string b (Hardened_runtime.emit_memory_integrity_scanner_header ());
-  Buffer.add_string b "\n";
+  if enable_smc then begin
+    Buffer.add_string b (Hardened_runtime.emit_introspective_smc_header ());
+    Buffer.add_string b "\n";
+  end;
+  if enable_mem_scan then begin
+    Buffer.add_string b (Hardened_runtime.emit_memory_integrity_scanner_header ());
+    Buffer.add_string b "\n";
+  end;
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
 
 
@@ -249,9 +266,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    static inline constexpr size_t STACK_SIZE = 512;\n";
   Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_STRIDE = %d;\n" stride);
   Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_OFFSET = %d;\n\n" offset);
-  Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n";
-  Buffer.add_string b "        return (size_t)((index * STACK_STRIDE + STACK_OFFSET) & (STACK_SIZE - 1));\n";
-  Buffer.add_string b "    }\n\n";
+  if enable_stack_scramble then
+    Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n        return (size_t)((index * STACK_STRIDE + STACK_OFFSET) & (STACK_SIZE - 1));\n    }\n\n"
+  else
+    Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n        return index;\n    }\n\n";
   Buffer.add_string b "    inline void push(uint64_t v) noexcept {\n";
   Buffer.add_string b "        if (!verify_canaries()) { reg_mask ^= poison_penalty; trapped = true; }\n";
   Buffer.add_string b "        if (sp < STACK_SIZE) {\n";
@@ -268,7 +286,8 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "            size_t phys_idx = scramble_stack_idx(sp);\n";
   Buffer.add_string b "            uint64_t enc_mask = ((uint64_t)sp * 0x9E3779B97F4A7C15ULL) ^ 0xA5A5A5A55A5A5A5AULL;\n";
   Buffer.add_string b "            uint64_t val = stack[phys_idx] ^ enc_mask;\n";
-  Buffer.add_string b "            stack[phys_idx] = 0xDEADBEEFCAFE1337ULL ^ enc_mask; // Ephemeral slot wipe\n";
+  if enable_mem_sanitize then
+    Buffer.add_string b "            stack[phys_idx] = 0xDEADBEEFCAFE1337ULL ^ enc_mask; // Ephemeral slot wipe\n";
   Buffer.add_string b "            return val;\n";
   Buffer.add_string b "        }\n";
   Buffer.add_string b "        return 0ULL;\n";
@@ -319,23 +338,28 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        ctx.trapped = true;\n";
   Buffer.add_string b "        return false;\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b "#endif\n\n\
-    /* Anti-Emulation & Hypervisor Timing Differential Probe */\n\
-    uint64_t emu_penalty = asgard_anti_emulation::evaluate_emulation_differential();\n\
-    if (emu_penalty != 0) {\n\
-        ctx.reg_mask ^= emu_penalty;\n\
-    }\n\n\
-    /* Introspective Self-Modifying Code (SMC) & Hardware Timing Probe (Morse & Kojsik, 2026) */\n\
-    uint64_t smc_penalty = asgard_smc::execute_introspective_smc_probe((uint64_t)seed);\n\
-    if (smc_penalty != 0) {\n\
-        ctx.reg_mask ^= smc_penalty;\n\
-    }\n\n\
-    /* In-Memory MEM-SBOM Forensics & Hardware Breakpoint Probe */\n\
-    uint64_t mem_penalty = asgard_mem_integrity::evaluate_memory_integrity();\n\
-    if (mem_penalty != 0) {\n\
-        ctx.reg_mask ^= mem_penalty;\n\
-    }\n\n
-";
+  Buffer.add_string b "#endif\n\n";
+  if enable_anti_emu then begin
+    Buffer.add_string b "    /* Anti-Emulation & Hypervisor Timing Differential Probe */\n";
+    Buffer.add_string b "    uint64_t emu_penalty = asgard_anti_emulation::evaluate_emulation_differential();\n";
+    Buffer.add_string b "    if (emu_penalty != 0) {\n";
+    Buffer.add_string b "        ctx.reg_mask ^= emu_penalty;\n";
+    Buffer.add_string b "    }\n\n";
+  end;
+  if enable_smc then begin
+    Buffer.add_string b "    /* Introspective Self-Modifying Code (SMC) & Hardware Timing Probe (Morse & Kojsik, 2026) */\n";
+    Buffer.add_string b "    uint64_t smc_penalty = asgard_smc::execute_introspective_smc_probe((uint64_t)seed);\n";
+    Buffer.add_string b "    if (smc_penalty != 0) {\n";
+    Buffer.add_string b "        ctx.reg_mask ^= smc_penalty;\n";
+    Buffer.add_string b "    }\n\n";
+  end;
+  if enable_mem_scan then begin
+    Buffer.add_string b "    /* In-Memory MEM-SBOM Forensics & Hardware Breakpoint Probe */\n";
+    Buffer.add_string b "    uint64_t mem_penalty = asgard_mem_integrity::evaluate_memory_integrity();\n";
+    Buffer.add_string b "    if (mem_penalty != 0) {\n";
+    Buffer.add_string b "        ctx.reg_mask ^= mem_penalty;\n";
+    Buffer.add_string b "    }\n\n";
+  end;
 
   Buffer.add_string b "    /* Ephemeral Working Buffer: Isolated stack frame execution */\n";
   Buffer.add_string b "    uint64_t stack_buf[256];\n";
@@ -368,24 +392,26 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    #define FETCH_NEXT() do { \\\n";
   Buffer.add_string b "        if (vIP_idx >= count) goto EXIT_VM; \\\n";
   Buffer.add_string b "        uint64_t k_pos = key64_for_offset(seed, vIP_idx); \\\n";
-  Buffer.add_string b "        uint64_t k_dyn = k_pos ^ ctx.running_key; \\\n";
+  if enable_running_key then
+    Buffer.add_string b "        uint64_t k_dyn = k_pos ^ ctx.running_key; \\\n"
+  else
+    Buffer.add_string b "        uint64_t k_dyn = k_pos; \\\n";
   Buffer.add_string b "        word = bytecode[vIP_idx] ^ k_pos; \\\n";
-  Buffer.add_string b "        /* Ephemeral Self-Consuming: Overwrite scratch RAM buffer with dynamic rolling noise */ \\\n";
-  Buffer.add_string b "        work_bc[vIP_idx] = (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL; \\\n";
+  if enable_mem_sanitize then
+    Buffer.add_string b "        /* Ephemeral Self-Consuming: Overwrite scratch RAM buffer with dynamic rolling noise */ \\\n        work_bc[vIP_idx] = (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL; \\\n";
   Buffer.add_string b "        vIP_idx++; \\\n";
   Buffer.add_string b "        op = (uint8_t)(word & 0xFF); \\\n";
   Buffer.add_string b "        dst = (uint8_t)((word >> 8) & 0x1F); \\\n";
   Buffer.add_string b "        src = (uint8_t)((word >> 13) & 0x1F); \\\n";
   Buffer.add_string b "        imm = (int64_t)((int32_t)((word >> 18) & 0xFFFFFFFFULL)); \\\n";
   Buffer.add_string b "        ctx.evolve_mask((uint32_t)k_dyn); \\\n";
-  Buffer.add_string b "        ctx.advance_running_key(op, dst, imm); \\\n";
+  if enable_running_key then
+    Buffer.add_string b "        ctx.advance_running_key(op, dst, imm); \\\n";
   Buffer.add_string b (Printf.sprintf "        uint8_t domain_idx = (uint8_t)((op ^ (uint8_t)(k_dyn & 0x07)) %% %d); \\\n" num_domains);
   Buffer.add_string b "        goto *all_dispatch_domains[domain_idx][op]; \\\n";
   Buffer.add_string b "    } while(0)\n\n";
 
-
   Buffer.add_string b "    FETCH_NEXT();\n\n";
-
 
   (* Polymorphic SOTA Handlers (Synthesized Non-Linear Variants) *)
   let pick_poly_add () =
@@ -405,16 +431,21 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     | _ -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
   in
 
-  Buffer.add_string b "    #if defined(__x86_64__)\n";
-  Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = __builtin_ia32_rdtsc()\n";
-  Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1 = __builtin_ia32_rdtsc(); if ((_t1 - _t0) > 100000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
-  Buffer.add_string b "    #elif defined(__aarch64__)\n";
-  Buffer.add_string b "    #define PROBE_START() uint64_t _t0; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t0))\n";
-  Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 100000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
-  Buffer.add_string b "    #else\n";
-  Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = 0\n";
-  Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n";
-  Buffer.add_string b "    #endif\n\n";
+  if enable_timing_probes then begin
+    Buffer.add_string b "    #if defined(__x86_64__)\n";
+    Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = __builtin_ia32_rdtsc()\n";
+    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1 = __builtin_ia32_rdtsc(); if ((_t1 - _t0) > 100000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
+    Buffer.add_string b "    #elif defined(__aarch64__)\n";
+    Buffer.add_string b "    #define PROBE_START() uint64_t _t0; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t0))\n";
+    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 100000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
+    Buffer.add_string b "    #else\n";
+    Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = 0\n";
+    Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n";
+    Buffer.add_string b "    #endif\n\n";
+  end else begin
+    Buffer.add_string b "    #define PROBE_START() do {} while(0)\n";
+    Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n\n";
+  end;
 
   Buffer.add_string b "    H_NOP: ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_MOV_RR: ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT();\n";
@@ -854,7 +885,12 @@ let compile_and_package
         else b.instrs
       in
       let instrs = if enable_junk then inject_junk_instructions ~rng instrs else instrs in
-      let fused = fuse_block_instructions instrs in
+      let enable_super_ops =
+        match config with
+        | Some (c : Protection_config.t) -> c.vm_runtime.enable_super_operators
+        | None -> true
+      in
+      let fused = if enable_super_ops then fuse_block_instructions instrs else List.map (fun i -> Raw i) instrs in
       Hashtbl.replace block_fused_ops b.id fused)
     sorted_blocks;
 
@@ -1018,7 +1054,7 @@ let compile_and_package
     !h
   in
   let expected_hash = compute_bytecode_hash key_seed final_bytecode in
-  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile opcode_to_handler in
+  let cpp_src = emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config opcode_to_handler in
   let runner_src = emit_runner_cpp ~reg_perm final_bytecode in
 
 

@@ -174,56 +174,68 @@ let lower_to_ir ~dst ~env expr =
         | None -> emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Imm 0L }))
     | Const c -> emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Imm c })
     | Add (a, b) ->
-        compile target_reg a;
-        emit (Ir.Push (Ir.Reg target_reg));
+        compile Register.vtmp0 a;
+        emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Alu { op = Ir.Add; dst = target_reg; src1 = Ir.Reg Register.vtmp0;
-                       src2 = Ir.Reg Register.vtmp1; set_flags = false })
+        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
+        emit (Ir.Alu { op = Ir.Add; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+                       src2 = Ir.Reg Register.vtmp1; set_flags = false });
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
     | Sub (a, b) ->
-        compile target_reg a;
-        emit (Ir.Push (Ir.Reg target_reg));
+        compile Register.vtmp0 a;
+        emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Alu { op = Ir.Sub; dst = target_reg; src1 = Ir.Reg Register.vtmp0;
-                       src2 = Ir.Reg Register.vtmp1; set_flags = false })
+        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
+        emit (Ir.Alu { op = Ir.Sub; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+                       src2 = Ir.Reg Register.vtmp1; set_flags = false });
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
     | Mul (a, b) ->
-        compile target_reg a;
-        emit (Ir.Push (Ir.Reg target_reg));
+        compile Register.vtmp0 a;
+        emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Alu { op = Ir.Imul; dst = target_reg; src1 = Ir.Reg Register.vtmp0;
-                       src2 = Ir.Reg Register.vtmp1; set_flags = false })
+        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
+        emit (Ir.Alu { op = Ir.Imul; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+                       src2 = Ir.Reg Register.vtmp1; set_flags = false });
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
     | And (a, b) ->
-        compile target_reg a;
-        emit (Ir.Push (Ir.Reg target_reg));
+        compile Register.vtmp0 a;
+        emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Alu { op = Ir.And; dst = target_reg; src1 = Ir.Reg Register.vtmp0;
-                       src2 = Ir.Reg Register.vtmp1; set_flags = false })
+        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
+        emit (Ir.Alu { op = Ir.And; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+                       src2 = Ir.Reg Register.vtmp1; set_flags = false });
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
     | Or (a, b) ->
-        compile target_reg a;
-        emit (Ir.Push (Ir.Reg target_reg));
+        compile Register.vtmp0 a;
+        emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Alu { op = Ir.Or; dst = target_reg; src1 = Ir.Reg Register.vtmp0;
-                       src2 = Ir.Reg Register.vtmp1; set_flags = false })
+        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
+        emit (Ir.Alu { op = Ir.Or; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+                       src2 = Ir.Reg Register.vtmp1; set_flags = false });
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
     | Xor (a, b) ->
-        compile target_reg a;
-        emit (Ir.Push (Ir.Reg target_reg));
+        compile Register.vtmp0 a;
+        emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Alu { op = Ir.Xor; dst = target_reg; src1 = Ir.Reg Register.vtmp0;
-                       src2 = Ir.Reg Register.vtmp1; set_flags = false })
+        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
+        emit (Ir.Alu { op = Ir.Xor; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+                       src2 = Ir.Reg Register.vtmp1; set_flags = false });
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
     | Not a ->
         compile target_reg a;
         emit (Ir.Alu { op = Ir.Xor; dst = target_reg; src1 = Ir.Reg target_reg;
                        src2 = Ir.Imm (-1L); set_flags = false })
     | Neg a ->
-        compile target_reg a;
-        emit (Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm 0L });
-        emit (Ir.Alu { op = Ir.Sub; dst = target_reg; src1 = Ir.Reg Register.vtmp0;
-                       src2 = Ir.Reg target_reg; set_flags = false })
+        compile Register.vtmp1 a;
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Imm 0L });
+        emit (Ir.Alu { op = Ir.Sub; dst = target_reg; src1 = Ir.Reg target_reg;
+                       src2 = Ir.Reg Register.vtmp1; set_flags = false })
   in
   compile dst expr;
   List.rev !instrs
