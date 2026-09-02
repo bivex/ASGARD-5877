@@ -12,6 +12,7 @@ depends: [
   "alcotest"
   "qcheck"
   "qcheck-alcotest"
+  "yojson"
   "odoc" {with-doc}
 ]
 build: [

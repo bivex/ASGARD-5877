@@ -400,7 +400,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
     let is_c_src = String.ends_with ~suffix:".c" input_file || String.ends_with ~suffix:".cpp" input_file in
 
     let asm_source_file =
-      if is_c_src then begin
+      if is_c_src && effective_cfg.c_macro.enabled then begin
         let hdr_path = Filename.concat out_dir "asgard_obf.h" in
         let obf_c_path = Filename.concat out_dir "app_obf.c" in
         let seed_val = Random.State.int rng 0x3FFFFFFF in
@@ -602,7 +602,7 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
     let is_c_src = String.ends_with ~suffix:".c" input_file || String.ends_with ~suffix:".cpp" input_file in
 
     let asm_source_file =
-      if is_c_src then begin
+      if is_c_src && effective_cfg.c_macro.enabled then begin
         let hdr_path = Filename.concat out_dir "asgard_obf.h" in
         let obf_c_path = Filename.concat out_dir "app_obf.c" in
         let seed_val = Random.State.int rng 0x3FFFFFFF in
