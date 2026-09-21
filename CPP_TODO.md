@@ -19,7 +19,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | # | Engine Subsystem | OCaml Module | C++ Status | Priority | Impact / Threat Model |
 |---|:---|:---|:---:|:---:|:---|
 | 1 | **Residue Number System (RNS-4)** | [`lib/vm_ir/rns.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rns.ml) | ✅ **DONE** | Complete | Breaks linear SMT solvers ($M > 2^{64}$) |
-| 2 | **Multi-VM Zero-Bridge** | [`lib/multi_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/) | ✅ **DONE** | Complete | $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ affine morphing |
+| 2 | **Multi-VM Zero-Bridge** | [`lib/multi_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/) | ✅ **DONE** | Complete | $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ affine morphing in bytecode |
 | 3 | **Nanomites & Hardware Signal Dispatch** | [`lib/c_macro_obf/c_nanomites.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml) | ⏳ **PENDING** | **HIGH** | Breaks static disassemblers & DSE branching |
 | 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | ⏳ **PENDING** | **HIGH** | Prevents replay attacks & opcode recording |
 | 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/anti_tamper_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/anti_tamper_emitter.ml) | ⏳ **PENDING** | **HIGH** | Neutralizes RAM process dumpers |
@@ -31,7 +31,28 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-## Detailed Feature Specifications & TODOs
+## Completed Runtime Implementations
+
+### A. Residue Number System (RNS-4) Arithmetic Engine
+* **Status**: ✅ Fully Operational (`lib/vm_ir/rns.ml`, `lib/native_vm/vm_handlers_emitter.ml`)
+* **Mathematical Primitive**: Moduli set $\mathcal{M} = \{2^{16}-15, 2^{16}-17, 2^{16}-39, 2^{16}-57\}$, total dynamic range $M = \prod m_i \approx 2^{63.999}$.
+* **Implementation Details**:
+  - Injected 64-bit to 4-channel residue decomposition in `VMContext`.
+  - Arithmetic operations (`ADD`, `SUB`, `MUL`) split into parallel modular channels, immune to linear SMT solvers.
+  - Reconstructed back to 64-bit integer via Garner's algorithm in `H_RNS_RECONSTRUCT`.
+
+### B. Multi-VM Zero-Bridge Dynamic Affine Morphing
+* **Status**: ✅ Fully Operational (`lib/multi_vm/`, `lib/native_vm/`)
+* **Mathematical Primitive**: Invertible affine transformation $y = A \cdot x + b \pmod{2^{64}}$ over $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ coupled with non-linear Trace Digest $\text{Murmur3}(VIP \oplus \text{TraceKey})$.
+* **Implementation Details**:
+  - Opcodes `OP_BRIDGE_TO_FLOW` (0x55) and `OP_BRIDGE_TO_MATH` (0x56) mapped to handlers `H_BRIDGE_TO_FLOW` and `H_BRIDGE_TO_MATH`.
+  - Bytecode emitted dynamically at engine boundary transitions (`inject_bridge_transitions` in `multi_vm_emitter.ml`).
+  - In-place $16 \times 16$ affine register transformation executed in C++ `VMContext` (`in_place_morph_math_to_flow`, `in_place_morph_flow_to_math`), scrambling the entire register bank between functional VM partitions.
+  - Tested E2E with both standalone ARM64/x86_64 protected binaries and Dune test suite (`test/test_multi_vm.ml`).
+
+---
+
+## Detailed Feature Specifications & TODOs (Pending Features)
 
 ### 1. Nanomite Exception & Signal Dispatch in VM Handlers
 * **Status**: ⏳ Pending (Available in C Macro Obfuscator, but unused in VM branching)
@@ -142,6 +163,6 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 Each feature implementation must fulfill:
 1. **Compilation Guarantee**: Must compile cleanly under `clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions` on macOS ARM64 and Linux x86_64.
-2. **Zero-Regression Invariant**: All 160 Dune test suites in `ASGARD-5877` must pass (`dune runtest`).
+2. **Zero-Regression Invariant**: All 161 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
 3. **Architectural Cleanliness**: Run `dpx arch /Volumes/External/Code/ASGARD-5877/` after changes; must maintain **0 architectural errors and 0 warnings**.
 4. **Standalone Execution**: Generated binaries must execute with exit code 0 and maintain correct input-output semantics compared to unvirtualized baseline code.
