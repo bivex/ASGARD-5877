@@ -55,15 +55,12 @@ let run
                       let comp_success, comp_out, exec_out =
                         match (compile_and_test, compiler) with
                         | true, Some (module C : Ports.Compiler) -> (
-                            match C.compile ~project_dir:output_dir with
+                            match Compile_and_verify.run (module C) ~project_dir:output_dir with
+                            | Ok output -> (true, "Compilation succeeded", output)
                             | Error (Errors.Compilation_error msg) ->
                                 (false, msg, "")
                             | Error other ->
-                                (false, Errors.to_string other, "")
-                            | Ok () -> (
-                                match C.run_tests ~project_dir:output_dir with
-                                | Ok output -> (true, "Compilation succeeded", output)
-                                | Error err -> (false, "Tests failed", Errors.to_string err)))
+                                (false, "Tests failed", Errors.to_string other))
                         | _ -> (false, "Compilation skipped", "")
                       in
                       Ok {

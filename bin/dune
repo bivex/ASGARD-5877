@@ -2,6 +2,7 @@
  (public_name random_visa)
  (package random_visa)
  (name main)
+ (modules main cli_isa cli_vanguard cli_protect cli_protect_arm64 cli_project)
  (libraries
   cmdliner
   random_visa_domain
@@ -25,6 +26,7 @@
 
 (executable
  (name profile_bottlenecks)
+ (modules profile_bottlenecks)
  (libraries
   vm_ir
   x86_lifter
@@ -37,6 +39,7 @@
 
 (executable
  (name gen_crackme_vm)
+ (modules gen_crackme_vm)
  (libraries
   vm_ir
   x86_lifter
@@ -49,6 +52,7 @@
 
 (executable
  (name gen_crypto_crackme)
+ (modules gen_crypto_crackme)
  (libraries
   vm_ir
   x86_lifter
@@ -58,7 +62,3 @@
   cff
   native_vm
   c_macro_obf))
-
-
-
-
