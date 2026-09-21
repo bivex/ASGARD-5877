@@ -38,7 +38,10 @@ let json_get_int64 key default json =
   | `Assoc kvs -> (
       match List.assoc_opt key kvs with
       | Some (`Int i) -> Int64.of_int i
-      | Some (`String s) -> (try Int64.of_string s with _ -> default)
+      | Some (`String s) -> (
+          match Int64.of_string_opt s with
+          | Some v -> v
+          | None -> default)
       | _ -> default)
   | _ -> default
 

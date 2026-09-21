@@ -19,7 +19,7 @@ let update_trace_digest prev_digest opcode vip =
 
 let mod_inverse_64 a =
   if Int64.logand a 1L = 0L then
-    failwith "mod_inverse_64: even numbers are not invertible modulo 2^64"
+    invalid_arg "mod_inverse_64: even numbers are not invertible modulo 2^64"
   else
     let rec iter x i =
       if i >= 6 then x

@@ -152,7 +152,7 @@ let transform_file ?(config = default_config) ~in_file ~out_file ~header_file ()
     let ensure_dir p =
       let d = Filename.dirname p in
       if d <> "" && d <> "." && not (Sys.file_exists d) then
-        try Sys.mkdir d 0o755 with _ -> ()
+        try Sys.mkdir d 0o755 with Sys_error _ -> ()
     in
     ensure_dir out_file;
     (match header_file with Some h -> ensure_dir h | None -> ());
