@@ -1,7 +1,7 @@
 open Cmdliner
 
 (* 7. PROTECT COMMAND (Full Automated x86_64 & C/C++ VM-Protector Pipeline) *)
-let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth compile_and_run =
+let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm compile_and_run =
   let base_cfg =
     match config_file with
     | Some path -> (
@@ -107,21 +107,42 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
         prerr_endline (Printf.sprintf "Lifter failed: %s" err);
         `Error (false, err)
     | Ok lifted_func ->
-        let pkg =
-          Native_vm.Vm_emitter.compile_and_package
-            ~rng
-            ~config:effective_cfg
-            lifted_func
+        let (runtime_src, runner_src, bc, metrics, hdr_name) =
+          if enable_multi_vm then
+            let mv_pkg =
+              Multi_vm.Multi_vm_emitter.compile_and_package
+                ~rng
+                ~enable_cff:resolved_cff
+                ~enable_mba:resolved_mba
+                ~mba_depth:resolved_mba_depth
+                lifted_func
+            in
+            (mv_pkg.cpp_runtime_source, mv_pkg.runner_source, mv_pkg.bytecode, mv_pkg.metrics, "multi_vm_runtime.hpp")
+          else
+            let pkg =
+              Native_vm.Vm_emitter.compile_and_package
+                ~rng
+                ~config:effective_cfg
+                lifted_func
+            in
+            (pkg.cpp_runtime_source, pkg.runner_source, pkg.bytecode, pkg.metrics, "threaded_vm.hpp")
         in
 
-        let hdr_path = Filename.concat out_dir "threaded_vm.hpp" in
+        let hdr_path = Filename.concat out_dir hdr_name in
         let oc_h = open_out hdr_path in
-        output_string oc_h pkg.cpp_runtime_source;
+        output_string oc_h runtime_src;
         close_out oc_h;
+
+        if enable_multi_vm then begin
+          let comp_hdr = Filename.concat out_dir "threaded_vm.hpp" in
+          let oc_ch = open_out comp_hdr in
+          output_string oc_ch runtime_src;
+          close_out oc_ch;
+        end;
 
         let runner_path = Filename.concat out_dir "runner.cpp" in
         let oc_r = open_out runner_path in
-        output_string oc_r pkg.runner_source;
+        output_string oc_r runner_src;
         close_out oc_r;
 
         let bc_path = Filename.concat out_dir "protected.vanguard" in
@@ -132,12 +153,12 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
               let b = Int64.to_int (Int64.logand (Int64.shift_right_logical w (i * 8)) 0xFFL) in
               output_byte oc_b b
             done)
-          pkg.bytecode;
+          bc;
         close_out oc_b;
 
-        print_endline (Native_vm.Metrics.report_to_string pkg.metrics);
-        Printf.printf "Generated Threaded VM Header: %s\n" hdr_path;
-        Printf.printf "Generated Protected Bytecode: %s (%d bytes)\n" bc_path (List.length pkg.bytecode * 8);
+        print_endline (Native_vm.Metrics.report_to_string metrics);
+        Printf.printf "Generated VM Runtime Header: %s\n" hdr_path;
+        Printf.printf "Generated Protected Bytecode: %s (%d bytes)\n" bc_path (List.length bc * 8);
 
         if compile_and_run then begin
           let bin_path = Filename.concat out_dir (if is_c_src then "protected_app" else "protected_runner") in
@@ -195,11 +216,15 @@ let protect_cmd =
     let doc = "Mixed Boolean-Arithmetic recursion depth (1..4)" in
     Arg.(value & opt int 2 & info [ "mba-depth" ] ~docv:"DEPTH" ~doc)
   in
+  let multi_vm =
+    let doc = "Enable Heterogeneous Dual-VM Runtime (Math-VM & Flow-VM with Affine GL16 Zero-Bridge)" in
+    Arg.(value & flag & info [ "multi-vm" ] ~doc)
+  in
   let compile =
     let doc = "Compile native C++ runner and execute protected binary" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ compile)) in
+  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ compile)) in
   Cmd.v (Cmd.info "protect" ~doc) term
 
 let run_c_obf input out_file out_header seed strings consts mba_depth compile =

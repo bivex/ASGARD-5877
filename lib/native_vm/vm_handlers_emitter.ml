@@ -1,14 +1,16 @@
 let emit_handlers_hpp b ~rng ~enable_timing_probes =
   let pick_poly_add () =
-    match Random.State.int rng 3 with
+    match Random.State.int rng 4 with
     | 0 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) + 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
     | 1 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) + (ctx.get_reg(dst) & ctx.get_reg(src)))"
-    | _ -> "(2 * (ctx.get_reg(dst) | ctx.get_reg(src)) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+    | 2 -> "(2 * (ctx.get_reg(dst) | ctx.get_reg(src)) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+    | _ -> "ctx.rns_add(ctx.get_reg(dst), ctx.get_reg(src))"
   in
   let pick_poly_sub () =
-    match Random.State.int rng 2 with
+    match Random.State.int rng 3 with
     | 0 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) - 2 * ((~ctx.get_reg(dst)) & ctx.get_reg(src)))"
-    | _ -> "(2 * (ctx.get_reg(dst) & (~ctx.get_reg(src))) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+    | 1 -> "(2 * (ctx.get_reg(dst) & (~ctx.get_reg(src))) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+    | _ -> "ctx.rns_sub(ctx.get_reg(dst), ctx.get_reg(src))"
   in
   let pick_poly_xor () =
     match Random.State.int rng 2 with

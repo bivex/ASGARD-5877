@@ -85,6 +85,16 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    inline void set_rdi(uint64_t v) noexcept { set_reg(REG_RDI, v); }\n";
   Buffer.add_string b "    inline uint64_t get_rsi() const noexcept { return get_reg(REG_RSI); }\n";
   Buffer.add_string b "    inline void set_rsi(uint64_t v) noexcept { set_reg(REG_RSI, v); }\n\n";
+  Buffer.add_string b "    // RNS-4 Residue Arithmetic Engine (Garner CRT)\n";
+  Buffer.add_string b "    inline uint64_t rns_add(uint64_t a, uint64_t b) const noexcept {\n";
+  Buffer.add_string b "        return asgard_rns::decode(asgard_rns::add(asgard_rns::encode(a), asgard_rns::encode(b)));\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    inline uint64_t rns_sub(uint64_t a, uint64_t b) const noexcept {\n";
+  Buffer.add_string b "        return asgard_rns::decode(asgard_rns::sub(asgard_rns::encode(a), asgard_rns::encode(b)));\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    inline uint64_t rns_mul(uint64_t a, uint64_t b) const noexcept {\n";
+  Buffer.add_string b "        return asgard_rns::decode(asgard_rns::mul(asgard_rns::encode(a), asgard_rns::encode(b)));\n";
+  Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline void evolve_mask(uint32_t k) noexcept {\n";
   Buffer.add_string b "        uint64_t delta = ((uint64_t)k * 0x6A09E667F3BCC908ULL) ^ 0x1337ULL;\n";
   Buffer.add_string b "        uint64_t old_mask = reg_mask;\n";

@@ -21,6 +21,8 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n";
   Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
+  Buffer.add_string b (Vm_ir.Rns.emit_cpp_rns_header ());
+  Buffer.add_string b "\n";
   if enable_anti_emu then begin
     Buffer.add_string b (Hardened_runtime.emit_anti_emulation_probes ());
     Buffer.add_string b "\n";

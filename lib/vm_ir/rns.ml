@@ -128,3 +128,85 @@ let decode (r : rns_val) : int64 =
   let term_v4 = Int64.mul v4 (Int64.mul (Int64.mul m1 m2) m3) in
   
   Int64.add (Int64.add v1 term_v2) (Int64.add term_v3 term_v4)
+
+let emit_cpp_rns_header () =
+  Printf.sprintf {|#pragma once
+// =========================================================================
+// ASGARD-5877: RESIDUE NUMBER SYSTEM (RNS-4) & GARNER CRT ARITHMETIC
+// Non-Linear Diophantine Residue Channels for Anti-SMT Hardening
+// =========================================================================
+#include <stdint.h>
+
+namespace asgard_rns {
+
+static constexpr uint64_t M1 = %LdULL;
+static constexpr uint64_t M2 = %LdULL;
+static constexpr uint64_t M3 = %LdULL;
+static constexpr uint64_t M4 = %LdULL;
+
+static constexpr uint64_t INV_M1_M2 = %LdULL;
+static constexpr uint64_t INV_M1_M3 = %LdULL;
+static constexpr uint64_t INV_M1_M4 = %LdULL;
+static constexpr uint64_t INV_M2_M3 = %LdULL;
+static constexpr uint64_t INV_M2_M4 = %LdULL;
+static constexpr uint64_t INV_M3_M4 = %LdULL;
+
+struct RNSVal {
+    uint64_t r1, r2, r3, r4;
+};
+
+static inline __attribute__((always_inline)) RNSVal encode(uint64_t x) noexcept {
+    return { x %% M1, x %% M2, x %% M3, x %% M4 };
+}
+
+static inline __attribute__((always_inline)) RNSVal add(RNSVal a, RNSVal b) noexcept {
+    return { (a.r1 + b.r1) %% M1,
+             (a.r2 + b.r2) %% M2,
+             (a.r3 + b.r3) %% M3,
+             (a.r4 + b.r4) %% M4 };
+}
+
+static inline __attribute__((always_inline)) RNSVal sub(RNSVal a, RNSVal b) noexcept {
+    return { (a.r1 + M1 - (b.r1 %% M1)) %% M1,
+             (a.r2 + M2 - (b.r2 %% M2)) %% M2,
+             (a.r3 + M3 - (b.r3 %% M3)) %% M3,
+             (a.r4 + M4 - (b.r4 %% M4)) %% M4 };
+}
+
+static inline __attribute__((always_inline)) RNSVal mul(RNSVal a, RNSVal b) noexcept {
+    return { (a.r1 * (b.r1 %% M1)) %% M1,
+             (a.r2 * (b.r2 %% M2)) %% M2,
+             (a.r3 * (b.r3 %% M3)) %% M3,
+             (a.r4 * (b.r4 %% M4)) %% M4 };
+}
+
+static inline __attribute__((always_inline)) uint64_t decode(RNSVal r) noexcept {
+    uint64_t v1 = r.r1;
+    uint64_t diff2 = (r.r2 + M2 - (v1 %% M2)) %% M2;
+    uint64_t v2 = (diff2 * INV_M1_M2) %% M2;
+
+    uint64_t diff1_3 = (r.r3 + M3 - (v1 %% M3)) %% M3;
+    uint64_t term1_3 = (diff1_3 * INV_M1_M3) %% M3;
+    uint64_t diff2_3 = (term1_3 + M3 - (v2 %% M3)) %% M3;
+    uint64_t v3 = (diff2_3 * INV_M2_M3) %% M3;
+
+    uint64_t diff1_4 = (r.r4 + M4 - (v1 %% M4)) %% M4;
+    uint64_t term1_4 = (diff1_4 * INV_M1_M4) %% M4;
+    uint64_t diff2_4 = (term1_4 + M4 - (v2 %% M4)) %% M4;
+    uint64_t term2_4 = (diff2_4 * INV_M2_M4) %% M4;
+    uint64_t diff3_4 = (term2_4 + M4 - (v3 %% M4)) %% M4;
+    uint64_t v4 = (diff3_4 * INV_M3_M4) %% M4;
+
+    uint64_t term_v2 = v2 * M1;
+    uint64_t term_v3 = v3 * (M1 * M2);
+    uint64_t term_v4 = v4 * (M1 * M2 * M3);
+
+    return v1 + term_v2 + term_v3 + term_v4;
+}
+
+} // namespace asgard_rns
+|}
+    m1 m2 m3 m4
+    inv_m1_mod_m2 inv_m1_mod_m3 inv_m1_mod_m4
+    inv_m2_mod_m3 inv_m2_mod_m4
+    inv_m3_mod_m4

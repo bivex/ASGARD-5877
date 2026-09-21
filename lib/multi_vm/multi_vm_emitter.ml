@@ -92,13 +92,16 @@ static inline void bridge_switch_to_math(SharedVMContext& ctx) {
 %s
 |} bridge_cpp base_pkg.cpp_runtime_source in
 
+  let bc_lines = String.concat ",\n" (List.map (fun w -> Printf.sprintf "    0x%016LXULL" w) base_pkg.bytecode) in
   let runner_cpp = Printf.sprintf {|#include "multi_vm_runtime.hpp"
 #include <iostream>
 #include <vector>
 #include <chrono>
 
-extern "C" const uint64_t embedded_bytecode[];
-extern "C" const size_t embedded_bytecode_len;
+extern "C" __attribute__((weak)) const uint64_t embedded_bytecode[] = {
+%s
+};
+extern "C" __attribute__((weak)) const size_t embedded_bytecode_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);
 
 int main(int argc, char** argv) {
     std::cout << "[ASGARD-MULTI-VM] Initializing In-Place Heterogeneous Dual-VM Runtime...\n";
@@ -123,7 +126,7 @@ int main(int argc, char** argv) {
     std::cout << "  Execution Time: " << elapsed_us << " us\n";
     return 0;
 }
-|} partition.math_blocks partition.flow_blocks partition.inter_vm_transitions in
+|} bc_lines partition.math_blocks partition.flow_blocks partition.inter_vm_transitions in
 
   {
     bridge;
