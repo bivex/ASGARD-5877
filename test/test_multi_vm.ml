@@ -90,10 +90,47 @@ let test_multi_vm_compilation_e2e () =
       let run_st = Sys.command (Printf.sprintf "%s > /dev/null 2>&1" bin_file) in
       check int "Run status == 0" 0 run_st
 
+let test_multi_vm_branch_transitions_e2e () =
+  let rng = Random.State.make [| 9292 |] in
+  let asm = {|
+    mov x0, #42
+    cmp x0, #40
+    b.gt .Lgreater
+    mov x0, #1
+    ret
+.Lgreater:
+    add x0, x0, #8
+    ret
+  |} in
+  match Arm64_lifter.lift_function asm with
+  | Error err -> fail ("Failed to lift: " ^ err)
+  | Ok func ->
+      let pkg = Multi_vm_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
+      check bool "Has active zero-bridge transitions" true (pkg.partition.inter_vm_transitions >= 1);
+      let temp_dir = "/tmp/asgard_multi_vm_branch_test" in
+      let _ = Sys.command (Printf.sprintf "mkdir -p %s" temp_dir) in
+      let hdr_file = Filename.concat temp_dir "multi_vm_runtime.hpp" in
+      let oc_h = open_out hdr_file in
+      output_string oc_h pkg.cpp_runtime_source;
+      close_out oc_h;
+
+      let runner_file = Filename.concat temp_dir "runner.cpp" in
+      let oc_r = open_out runner_file in
+      output_string oc_r pkg.runner_source;
+      close_out oc_r;
+
+      let bin_file = Filename.concat temp_dir "multi_vm_branch_app" in
+      let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
+      let status = Sys.command cmd in
+      check int "Compilation status == 0" 0 status;
+      let run_st = Sys.command (Printf.sprintf "%s > /dev/null 2>&1" bin_file) in
+      check int "Run status == 0" 0 run_st
+
 let tests = [
   ("Modular Inverse Modulo 2^64", `Quick, test_modular_inverse_64);
   ("Affine Bridge Roundtrip (1000 vectors)", `Quick, test_affine_bridge_roundtrip_1000);
   ("Trace Digest Coupling", `Quick, test_trace_digest_coupling);
   ("AST Functional Partitioning", `Quick, test_ast_functional_partitioning);
   ("Multi-VM C++ E2E Compilation & Exec", `Quick, test_multi_vm_compilation_e2e);
+  ("Multi-VM Branch Morphing E2E", `Quick, test_multi_vm_branch_transitions_e2e);
 ]

@@ -177,6 +177,17 @@ let emit_handlers_hpp b ~rng ~enable_timing_probes =
   Buffer.add_string b "        FETCH_NEXT();\n";
   Buffer.add_string b "    }\n\n";
 
+  Buffer.add_string b "    H_BRIDGE_TO_FLOW: {\n";
+  Buffer.add_string b "        ctx.morph_math_to_flow((uint64_t)imm);\n";
+  Buffer.add_string b "        ctx.executed_instructions++;\n";
+  Buffer.add_string b "        FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_BRIDGE_TO_MATH: {\n";
+  Buffer.add_string b "        ctx.morph_flow_to_math((uint64_t)imm);\n";
+  Buffer.add_string b "        ctx.executed_instructions++;\n";
+  Buffer.add_string b "        FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+
   Buffer.add_string b "    H_DECOY_0: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_DECOY_1: { ctx.set_reg(dst, ctx.get_reg(dst) + (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_DECOY_2: { ctx.set_reg(dst, ctx.get_reg(dst) * 0x9E37ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";

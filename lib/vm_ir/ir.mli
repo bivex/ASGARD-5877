@@ -62,6 +62,8 @@ type instr =
   | Vm_enter
   | Vm_exit
   | Trap of string
+  | Bridge_to_flow of int64
+  | Bridge_to_math of int64
 
 type basic_block = {
   id : int;

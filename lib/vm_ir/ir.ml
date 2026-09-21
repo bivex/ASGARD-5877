@@ -62,6 +62,8 @@ type instr =
   | Vm_enter
   | Vm_exit
   | Trap of string
+  | Bridge_to_flow of int64
+  | Bridge_to_math of int64
 
 type basic_block = {
   id : int;
@@ -157,6 +159,8 @@ let instr_to_string = function
   | Vm_enter -> "vm_enter"
   | Vm_exit -> "vm_exit"
   | Trap msg -> Printf.sprintf "trap \"%s\"" msg
+  | Bridge_to_flow d -> Printf.sprintf "bridge_to_flow 0x%LX" d
+  | Bridge_to_math d -> Printf.sprintf "bridge_to_math 0x%LX" d
 
 let block_to_string b =
   let b_lines = List.map (fun i -> "    " ^ instr_to_string i) b.instrs in

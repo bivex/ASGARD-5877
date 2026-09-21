@@ -269,6 +269,8 @@ let step state = function
       state.trapped <- Some msg;
       state.halted <- true;
       Error (Printf.sprintf "VM Trapped: %s" msg)
+  | Bridge_to_flow _ | Bridge_to_math _ ->
+      Ok None
 
 let run_block state (b : basic_block) =
   let rec loop = function

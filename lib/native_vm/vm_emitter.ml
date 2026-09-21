@@ -259,6 +259,8 @@ let compile_and_package
                   encode_raw_word (get_opcode OP_CALL) 0 0 imm
               | Ir.Ret -> encode_raw_word (get_opcode OP_RET) 0 0 0L
               | Ir.Vm_exit -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
+              | Ir.Bridge_to_flow imm -> encode_raw_word (get_opcode OP_BRIDGE_TO_FLOW) 0 0 imm
+              | Ir.Bridge_to_math imm -> encode_raw_word (get_opcode OP_BRIDGE_TO_MATH) 0 0 imm
               | _ -> encode_raw_word (get_opcode OP_NOP) 0 0 0L))
         ops)
     sorted_blocks;

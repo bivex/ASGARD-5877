@@ -55,6 +55,8 @@ type raw_op_kind =
   | OP_FUSED_SUB_XOR_RRI
   | OP_FUSED_XOR_ADD_RRI
   | OP_FUSED_CMP_CMOV
+  | OP_BRIDGE_TO_FLOW
+  | OP_BRIDGE_TO_MATH
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
@@ -64,6 +66,7 @@ let all_op_kinds = [
   OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_SETCC; OP_CALL; OP_RET; OP_EXIT;
   OP_FUSED_MOV_ADD_RRI; OP_FUSED_ADD_IMUL_RRI; OP_FUSED_ADD_XOR_RRI;
   OP_FUSED_SUB_XOR_RRI; OP_FUSED_XOR_ADD_RRI; OP_FUSED_CMP_CMOV;
+  OP_BRIDGE_TO_FLOW; OP_BRIDGE_TO_MATH;
 ]
 
 let op_kind_to_handler_name = function
@@ -104,6 +107,8 @@ let op_kind_to_handler_name = function
   | OP_FUSED_SUB_XOR_RRI -> "H_FUSED_SUB_XOR_RRI"
   | OP_FUSED_XOR_ADD_RRI -> "H_FUSED_XOR_ADD_RRI"
   | OP_FUSED_CMP_CMOV -> "H_FUSED_CMP_CMOV"
+  | OP_BRIDGE_TO_FLOW -> "H_BRIDGE_TO_FLOW"
+  | OP_BRIDGE_TO_MATH -> "H_BRIDGE_TO_MATH"
 
 type fused_op =
   | Raw of Ir.instr
