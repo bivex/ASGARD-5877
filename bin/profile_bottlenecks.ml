@@ -76,13 +76,13 @@ let () =
   (* 1.4 E-Graph Equality Saturation & Extraction *)
   let r_a = Register.Gpr (Register.RAX, Register.B64) in
   let r_b = Register.Gpr (Register.RCX, Register.B64) in
-  let sample_expr = Egraph.Xor (Egraph.Var r_a, Egraph.Var r_b) in
+  let sample_expr = Ir_egraph.Xor (Ir_egraph.Var r_a, Ir_egraph.Var r_b) in
   let (t_egraph, _) = time_it (fun () ->
     for _ = 1 to n_iters do
-      let g = Egraph.create () in
-      let root = Egraph.add g sample_expr in
-      Egraph.saturate ~max_iters:3 g;
-      ignore (Egraph.extract_max_complexity g root)
+      let g = Ir_egraph.create () in
+      let root = Ir_egraph.add g sample_expr in
+      Ir_egraph.saturate ~max_iters:3 g;
+      ignore (Ir_egraph.extract_max_complexity g root)
     done
   ) in
   Printf.printf "  %-32s | %8.2f ms  | %6.3f us/op   | %8.0f op/s\n"

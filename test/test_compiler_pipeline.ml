@@ -50,7 +50,7 @@ let test_semantic_diversification_equivalence () =
 let test_end_to_end_pipeline () =
   let f = make_sample_func () in
   let seed = Seed.create ~master_seed:0x9999888877776666L () in
-  match Pipeline.compile ~seed ~strategy:Register_allocator.Randomized f with
+  match Ir_pipeline.compile ~seed ~strategy:Register_allocator.Randomized f with
   | Ok res ->
       check bool "Equivalence verified" true res.equivalence_verified;
       (match Reference_vm.evaluate res.diversified_func with
@@ -91,13 +91,13 @@ let test_rns_arithmetic () =
   ) pairs
 
 let test_egraph_saturation () =
-  let eg = Egraph.create () in
-  let e_init = Egraph.Xor (Egraph.Var Register.rax, Egraph.Var Register.rbx) in
-  let root = Egraph.add eg e_init in
-  Egraph.saturate ~max_iters:2 eg;
-  let extracted = Egraph.extract_max_complexity eg root in
-  let init_cost = Egraph.complexity_of_expr e_init in
-  let sat_cost = Egraph.complexity_of_expr extracted in
+  let eg = Ir_egraph.create () in
+  let e_init = Ir_egraph.Xor (Ir_egraph.Var Register.rax, Ir_egraph.Var Register.rbx) in
+  let root = Ir_egraph.add eg e_init in
+  Ir_egraph.saturate ~max_iters:2 eg;
+  let extracted = Ir_egraph.extract_max_complexity eg root in
+  let init_cost = Ir_egraph.complexity_of_expr e_init in
+  let sat_cost = Ir_egraph.complexity_of_expr extracted in
   check bool "E-Graph saturation increases complexity" true (sat_cost >= init_cost)
 
 let tests = [
