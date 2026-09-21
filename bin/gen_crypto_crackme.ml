@@ -54,7 +54,11 @@ let () =
   let preset_str = ref "default" in
   let config_file = ref "" in
   let num_rounds = ref 0 in
-  let out_dir = ref "/Volumes/External/Code/ASGARD-5877/binaries/crackme_arm64" in
+  let default_out_dir =
+    if Sys.file_exists "binaries/crackme_arm64" then "binaries/crackme_arm64"
+    else Filename.concat (Sys.getcwd ()) "binaries/crackme_arm64"
+  in
+  let out_dir = ref default_out_dir in
 
   let speclist = [
     ("-p", Arg.Set_string preset_str, " Protection preset: min, light, default, high, max, stealth");
@@ -143,7 +147,11 @@ let () =
       close_out oc_macro;
 
       (* Update samples/crackme_vault_128.cpp with fresh ciphertext and C macro hardening *)
-      let oc_cpp = open_out "/Volumes/External/Code/ASGARD-5877/samples/crackme_vault_128.cpp" in
+      let sample_cpp_path =
+        if Sys.file_exists "samples" then "samples/crackme_vault_128.cpp"
+        else Filename.concat (Sys.getcwd ()) "samples/crackme_vault_128.cpp"
+      in
+      let oc_cpp = open_out sample_cpp_path in
       Printf.fprintf oc_cpp "#include \"asgard_obf.h\"\n#include \"threaded_vm.hpp\"\n#include \"embedded_bytecode.hpp\"\n#include <stdio.h>\n#include <stdlib.h>\n#include <stdint.h>\n#include <string.h>\n\n#define FLAG_LEN %d\n\nstatic const uint8_t g_cipher_payload[FLAG_LEN] = {\n" (String.length flag);
       List.iteri (fun idx b ->
         Printf.fprintf oc_cpp "0x%02X%s" b (if idx = List.length cipher_bytes - 1 then "\n" else if idx mod 16 = 15 then ",\n    " else ", ")

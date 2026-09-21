@@ -55,7 +55,10 @@ let () =
   | Error err -> failwith err
   | Ok func ->
       let pkg = Vm_emitter.compile_and_package ~rng ~enable_cff:true ~enable_mba:true ~mba_depth:4 func in
-      let out_dir = "/Volumes/External/Code/ASGARD-5877/binaries/crackme_arm64" in
+      let out_dir =
+        if Sys.file_exists "binaries/crackme_arm64" then "binaries/crackme_arm64"
+        else Filename.concat (Sys.getcwd ()) "binaries/crackme_arm64"
+      in
       let oc_h = open_out (Filename.concat out_dir "threaded_vm.hpp") in
       output_string oc_h pkg.cpp_runtime_source;
       close_out oc_h;
