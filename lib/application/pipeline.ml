@@ -1,5 +1,8 @@
 open Random_visa_domain
 open Random_visa_ports
+open Ports
+
+module type _S = Ports.Sail_spec_writer
 
 type pipeline_result = {
   spec_name : string;
@@ -54,7 +57,7 @@ let run
                   | Ok emitted_files ->
                       let comp_success, comp_out, exec_out =
                         match (compile_and_test, compiler) with
-                        | true, Some (module C : Ports.Compiler) -> (
+                        | true, Some (module C : Compiler) -> (
                             match Compile_and_verify.run (module C) ~project_dir:output_dir with
                             | Ok output -> (true, "Compilation succeeded", output)
                             | Error (Errors.Compilation_error msg) ->

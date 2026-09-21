@@ -1,4 +1,3 @@
 (library
  (name c_macro_obf)
- (public_name random_visa.c_macro_obf)
- (libraries vm_ir mba_engine))
+ (public_name random_visa.c_macro_obf))

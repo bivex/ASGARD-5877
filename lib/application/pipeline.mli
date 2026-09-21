@@ -1,5 +1,6 @@
 open Random_visa_domain
 open Random_visa_ports
+open Ports
 
 type pipeline_result = {
   spec_name : string;
@@ -17,9 +18,9 @@ type pipeline_result = {
 }
 
 val run :
-  sail_writer:(module Ports.Sail_spec_writer) ->
-  cpp_emitter:(module Ports.Cpp_code_emitter) ->
-  ?compiler:(module Ports.Compiler) ->
+  sail_writer:(module Sail_spec_writer) ->
+  cpp_emitter:(module Cpp_code_emitter) ->
+  ?compiler:(module Compiler) ->
   rng:Random.State.t ->
   name:string ->
   num_instructions:int ->
