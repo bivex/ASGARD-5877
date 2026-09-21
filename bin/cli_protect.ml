@@ -167,6 +167,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
           let comp_cmd = Printf.sprintf "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x -I%s %s -o %s && strip -x %s" compiler out_dir comp_src bin_path bin_path in
 
           Printf.printf "\n[1/2] Compiling Native Protected Binary (Zero-Bloat / Stripped) with %s...\n" (if is_c_src then "clang -O3" else "clang++ -O3");
+          flush stdout;
           let comp_status = Sys.command comp_cmd in
           if comp_status <> 0 then begin
             prerr_endline "Native compilation failed";
@@ -174,9 +175,11 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
           end else begin
             Printf.printf "[2/2] Launching Protected Binary:\n";
             Printf.printf "--------------------------------------------------------\n";
+            flush stdout;
             let run_cmd = Printf.sprintf "%s" bin_path in
             let _ = Sys.command run_cmd in
             Printf.printf "--------------------------------------------------------\n\n";
+            flush stdout;
             `Ok ()
           end
         end else `Ok ()

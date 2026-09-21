@@ -109,12 +109,14 @@ int main(int argc, char** argv) {
     std::cout << "  Engine 2: Flow-VM (Stack/CFF Markov Oriented, " << %d << " blocks)\n";
     std::cout << "  Zero-Bridge Transitions: " << %d << " affine morphing junctions\n";
 
-    asgard_multi_vm::SharedVMContext shared_ctx;
+    asgard_multi_vm::SharedVMContext shared_ctx = {};
     shared_ctx.math.init(ASGARD_INITIAL_DIGEST);
-    shared_ctx.math.gprs[vanguard_threaded_vm::REG_RDI] = (argc > 1) ? atoll(argv[1]) : 42;
+
+    vanguard_threaded_vm::VMContext base_ctx = {};
+    base_ctx.init();
+    base_ctx.set_rdi((argc > 1) ? (uint64_t)atoll(argv[1]) : 42ULL);
 
     auto t0 = std::chrono::high_resolution_clock::now();
-    vanguard_threaded_vm::VMContext& base_ctx = *(reinterpret_cast<vanguard_threaded_vm::VMContext*>(&shared_ctx.math));
     vanguard_threaded_vm::execute_threaded(base_ctx, embedded_bytecode, embedded_bytecode_len);
     auto t1 = std::chrono::high_resolution_clock::now();
 
