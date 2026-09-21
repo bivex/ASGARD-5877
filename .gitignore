@@ -24,3 +24,5 @@ binaries/asgard_gpu_math_bridge
 *.til
 *.i64
 *.html
+__pycache__/
+*.pyc
