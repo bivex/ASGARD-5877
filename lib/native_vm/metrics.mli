@@ -1,13 +1,13 @@
 open Vm_ir
 
-type metrics_report = {
-  shannon_entropy : float;          (** Bits per byte (0.0 to 8.0) *)
-  cyclomatic_complexity : int;       (** M = E - V + 2P *)
-  flattening_depth : int;            (** Number of dispatcher stages *)
-  decoy_density : float;             (** Percentage of decoy trap handlers *)
-  mba_node_count : int;              (** Total AST nodes in arithmetic operations *)
-  devirtualization_resistance_score : float; (** Composite score 0.0 - 100.0 *)
-}
+type metrics_report
+
+val shannon_entropy : metrics_report -> float
+val cyclomatic_complexity : metrics_report -> int
+val flattening_depth : metrics_report -> int
+val decoy_density : metrics_report -> float
+val mba_node_count : metrics_report -> int
+val devirtualization_resistance_score : metrics_report -> float
 
 val calculate_shannon_entropy : int64 list -> float
 val calculate_cfg_complexity : Ir.func -> int

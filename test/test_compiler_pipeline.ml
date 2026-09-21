@@ -12,10 +12,10 @@ let make_sample_func () =
 let test_seed_determinism () =
   let s1 = Seed.create ~master_seed:0x123456789ABCDEFL () in
   let s2 = Seed.create ~master_seed:0x123456789ABCDEFL () in
-  check int64 "Master seed match" s1.master_seed s2.master_seed;
-  check int64 "Opcode seed match" s1.opcode_seed s2.opcode_seed;
-  check int64 "Register seed match" s1.register_seed s2.register_seed;
-  check int64 "CFG seed match" s1.cfg_seed s2.cfg_seed
+  check int64 "Master seed match" (Seed.master_seed s1) (Seed.master_seed s2);
+  check int64 "Opcode seed match" (Seed.opcode_seed s1) (Seed.opcode_seed s2);
+  check int64 "Register seed match" (Seed.register_seed s1) (Seed.register_seed s2);
+  check int64 "CFG seed match" (Seed.cfg_seed s1) (Seed.cfg_seed s2)
 
 let test_ir_verify_success () =
   let f = make_sample_func () in

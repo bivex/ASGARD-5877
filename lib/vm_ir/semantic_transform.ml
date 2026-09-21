@@ -135,7 +135,7 @@ let transform_block ~rng (b : basic_block) : basic_block =
   { b with instrs = new_instrs }
 
 let transform_func ~(seed : Seed.t) (f : func) : func =
-  let rng = Seed.make_rng seed.mba_seed in
+  let rng = Seed.make_rng (Seed.mba_seed seed) in
   let new_blocks = Hashtbl.create (Hashtbl.length f.cfg.blocks) in
   Hashtbl.iter (fun id b ->
     let tb = transform_block ~rng b in

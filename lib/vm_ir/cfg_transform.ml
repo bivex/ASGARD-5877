@@ -47,7 +47,7 @@ let split_block_with_opaque (max_id : int ref) (rng : Random.State.t) (b : basic
     [ b1; b2; decoy ]
 
 let transform ~(seed : Seed.t) (f : func) : func =
-  let rng = Seed.make_rng seed.cfg_seed in
+  let rng = Seed.make_rng (Seed.cfg_seed seed) in
   let max_id = ref 0 in
   Hashtbl.iter (fun id _ -> if id > !max_id then max_id := id) f.cfg.blocks;
   

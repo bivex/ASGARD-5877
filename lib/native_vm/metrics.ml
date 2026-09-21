@@ -86,3 +86,10 @@ let report_to_string r =
                           else "STANDARD PROTECTION"));
   Buffer.add_string b "====================================================================\n";
   Buffer.contents b
+
+let shannon_entropy r = r.shannon_entropy
+let cyclomatic_complexity r = r.cyclomatic_complexity
+let flattening_depth r = r.flattening_depth
+let decoy_density r = r.decoy_density
+let mba_node_count r = r.mba_node_count
+let devirtualization_resistance_score r = r.devirtualization_resistance_score

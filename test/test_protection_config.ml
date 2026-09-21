@@ -67,7 +67,7 @@ func_cfg_test:
       let pkg_max = Vm_emitter.compile_and_package ~rng ~config:config_max func in
       Alcotest.(check bool) "max_security bytecode emitted" true (List.length pkg_max.bytecode > 0);
       Alcotest.(check bool) "max_security DRS > lightweight DRS" true
-        (pkg_max.metrics.devirtualization_resistance_score >= pkg.metrics.devirtualization_resistance_score)
+        (Native_vm.Metrics.devirtualization_resistance_score pkg_max.metrics >= Native_vm.Metrics.devirtualization_resistance_score pkg.metrics)
 
 let tests = [
   Alcotest.test_case "presets" `Quick test_presets;

@@ -32,7 +32,7 @@ func_compute:
   | Ok func ->
       let pkg = Vm_emitter.compile_and_package ~rng func in
       Alcotest.(check bool) "bytecode not empty" true (List.length pkg.bytecode > 0);
-      Alcotest.(check bool) "DRS score calculated" true (pkg.metrics.devirtualization_resistance_score > 20.0);
+      Alcotest.(check bool) "DRS score calculated" true (Metrics.devirtualization_resistance_score pkg.metrics > 20.0);
 
       let tmp_dir = Filename.temp_file "threaded_vm_" "_dir" in
       (try Sys.remove tmp_dir with _ -> ());
@@ -111,7 +111,7 @@ func_cff_test:
   | Error e -> Alcotest.fail e
   | Ok func ->
       let pkg = Vm_emitter.compile_and_package ~rng ~enable_cff:true func in
-      Alcotest.(check bool) "flattening depth >= 3" true (pkg.metrics.flattening_depth >= 3);
+      Alcotest.(check bool) "flattening depth >= 3" true (Metrics.flattening_depth pkg.metrics >= 3);
 
       let tmp_dir = Filename.temp_file "cff_vm_" "_dir" in
       (try Sys.remove tmp_dir with _ -> ());

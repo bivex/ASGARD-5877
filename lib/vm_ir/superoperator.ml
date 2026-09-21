@@ -43,7 +43,7 @@ let fuse_and_interleave_block ~(rng : Random.State.t) (b : basic_block) : basic_
   { b with instrs = transformed }
 
 let transform_func ~(seed : Seed.t) (f : func) : func =
-  let rng = Seed.make_rng seed.superop_seed in
+  let rng = Seed.make_rng (Seed.superop_seed seed) in
   let new_blocks = Hashtbl.create (Hashtbl.length f.cfg.blocks) in
   Hashtbl.iter (fun id b ->
     let tb = fuse_and_interleave_block ~rng b in

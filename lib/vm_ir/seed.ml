@@ -61,3 +61,11 @@ let to_string (t : t) : string =
   Printf.sprintf
     "Seed(master=0x%LX, op=0x%LX, reg=0x%LX, cfg=0x%LX, const=0x%LX, mba=0x%LX, superop=0x%LX)"
     t.master_seed t.opcode_seed t.register_seed t.cfg_seed t.constant_seed t.mba_seed t.superop_seed
+
+let master_seed (t : t) : int64 = t.master_seed
+let opcode_seed (t : t) : int64 = t.opcode_seed
+let register_seed (t : t) : int64 = t.register_seed
+let cfg_seed (t : t) : int64 = t.cfg_seed
+let constant_seed (t : t) : int64 = t.constant_seed
+let mba_seed (t : t) : int64 = t.mba_seed
+let superop_seed (t : t) : int64 = t.superop_seed

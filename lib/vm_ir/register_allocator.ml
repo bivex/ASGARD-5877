@@ -13,7 +13,7 @@ let strategy_to_string = function
 
 let build_register_map (strategy : strategy) (seed : Seed.t) =
   let map = Hashtbl.create 16 in
-  let rng = Seed.make_rng seed.register_seed in
+  let rng = Seed.make_rng (Seed.register_seed seed) in
   match strategy with
   | LinearScan ->
       for i = 0 to 15 do
