@@ -51,6 +51,7 @@ type vm_runtime_config = {
   stack_scrambling : bool;
   memory_sanitization : bool;
   vector_isa : bool;
+  egraph_expansion : bool;
 }
 
 type c_macro_config = {

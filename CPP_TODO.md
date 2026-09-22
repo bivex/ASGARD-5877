@@ -27,7 +27,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ✅ **DONE** | Complete | Hides scalar logic in NEON/AVX vectors |
 | 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ✅ **DONE** | Complete | Thwarts userspace hooks (Frida, DTrace) |
 | 9 | **GPU Metal Compute Acceleration** | [`lib/gpu_synth/`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/) | ⏳ **PENDING** | **LOW** | Offloads crypto checks to Apple GPU |
-| 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | ⏳ **PENDING** | **LOW** | Algebraic expansion of VM handler logic |
+| 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | ✅ **DONE** | Complete | Algebraic expansion of VM handler logic |
 
 ---
 
@@ -157,15 +157,17 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-### 4. E-Graph Equality Saturation Scrambler
-* **Status**: ⏳ Pending
-* **Academic Reference**: *EqSat / Egg: Equality Saturation for Rewrite Optimization & De-canonicalization*
-* **Current State in OCaml**:
-  - [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) implements e-classes, e-nodes, union-find with Congruence Closure, and saturation rewrite rules.
-  - Tested in `test/test_e_graph.ml` for term expansion and cost-based extraction.
-* **Required C++ Changes**:
-  - [ ] Pipe E-Graph equality expansion pass into the C++ handler emission pipeline (`vm_handlers_emitter.ml`).
-  - [ ] Apply saturated term rewrites to synthesize obfuscated dispatch expressions and handler state updates.
+### I. E-Graph Equality Saturation Scrambler
+* **Status**: ✅ Fully Operational (`lib/native_vm/egraph_cpp_emitter.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml`, `test/test_egraph_expansion.ml`, `test/test_protection_config.ml`)
+* **Academic Reference**: *EqSat / Egg: Equality Saturation for Rewrite Optimization & De-canonicalization (arXiv:2603.03624)*
+* **Mathematical & Architectural Primitive**: Equality saturation + max-complexity extraction → per-seed unique algebraic handler forms:
+  - **`Egraph_cpp_emitter`** (new module): `expr_to_cpp ~a_cpp ~b_cpp` renders a `Mba.expr` tree as a parenthesized C++ `uint64_t` expression string. Variables `"a"`/`"b"` → `ctx.get_reg(dst)`/`ctx.get_reg(src)`. Consts emitted as `0x...ull` hex literals.
+  - **5 public helpers**: `egraph_add_rr`, `egraph_sub_rr`, `egraph_xor_rr`, `egraph_and_rr`, `egraph_or_rr` — each calls `Mba_engine.Egraph.expand` with `node_limit=120, time_budget_s=0.08, iter_limit=6` and renders the max-complexity extracted form.
+  - **`vm_handlers_emitter.ml`**: new `~enable_egraph_expansion` labeled parameter. When `true`, `H_ADD_RR`, `H_SUB_RR`, `H_XOR_RR`, `H_AND_RR`, `H_OR_RR` bodies are replaced with egraph-saturated C++ expressions; when `false`, fall back to existing `pick_poly_*` variants.
+  - **`vm_runtime_emitter.ml`**: extracts `enable_egraph_expansion` from config and threads it into `emit_handlers_hpp`.
+  - **`vm_runtime_config`** field: `egraph_expansion : bool` — wired through `protection_types.ml/.mli`, `protection_config.mli`, all 6 presets (default=true, max_security=true, high=true, stealth=true, lightweight=false, minimal=false), and JSON serialization roundtrip.
+  - **Semantic invariant**: Every emitted expression is algebraically equivalent to the original op over Z₂⁶⁴ — verified by `test_rule_verification` (24 MBA identity rules, 240 trials).
+* **Verified by Tests**: `test/test_egraph_expansion.ml` test 8 (`egraph_cpp_handler_expansion_e2e`) — generates ADD/SUB/XOR/AND/OR expressions via E-Graph, substitutes `ctx.get_reg(dst)→a, ctx.get_reg(src)→b`, compiles with `clang++ -std=c++20 -O2`, executes with `a=100, b=37`, asserts all 5 results match reference arithmetic.
 
 ---
 
@@ -173,6 +175,6 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 Each feature implementation must fulfill:
 1. **Compilation Guarantee**: Must compile cleanly under `clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions` on macOS ARM64 and Linux x86_64.
-2. **Zero-Regression Invariant**: All 171 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
+2. **Zero-Regression Invariant**: All 172 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
 3. **Architectural Cleanliness**: Run `dpx arch /Volumes/External/Code/ASGARD-5877/` after changes; must maintain **0 architectural errors and 0 warnings**.
 4. **Standalone Execution**: Generated binaries must execute with exit code 0 and maintain correct input-output semantics compared to unvirtualized baseline code.

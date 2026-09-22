@@ -172,6 +172,7 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
             stack_scrambling = json_get_bool "stack_scrambling" base.vm_runtime.stack_scrambling obj;
             memory_sanitization = json_get_bool "memory_sanitization" base.vm_runtime.memory_sanitization obj;
             vector_isa = json_get_bool "vector_isa" base.vm_runtime.vector_isa obj;
+            egraph_expansion = json_get_bool "egraph_expansion" base.vm_runtime.egraph_expansion obj;
           }
     in
 
@@ -244,6 +245,7 @@ let to_yojson (cfg : t) : Yojson.Basic.t =
       ("stack_scrambling", `Bool cfg.vm_runtime.stack_scrambling);
       ("memory_sanitization", `Bool cfg.vm_runtime.memory_sanitization);
       ("vector_isa", `Bool cfg.vm_runtime.vector_isa);
+      ("egraph_expansion", `Bool cfg.vm_runtime.egraph_expansion);
     ]);
     ("c_macro", `Assoc [
       ("enabled", `Bool cfg.c_macro.enabled);

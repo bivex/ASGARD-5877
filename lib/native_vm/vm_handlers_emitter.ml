@@ -1,4 +1,4 @@
-let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_nanomites =
+let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_nanomites ~enable_egraph_expansion =
   (* Anti-Pushan re-anchoring: every handler that reassigns vIP_idx lands at a new
      basic block, so the rolling key chain must restart from that block's anchor. *)
   let maybe_reanchor () =
@@ -22,6 +22,28 @@ let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_n
     match Random.State.int rng 2 with
     | 0 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) ^ (ctx.get_reg(dst) & ctx.get_reg(src)))"
     | _ -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
+  in
+
+  (* Handler expression selectors — use E-graph saturation when enabled *)
+  let h_add_rr_expr () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_add_rr ~rng
+    else pick_poly_add ()
+  in
+  let h_sub_rr_expr () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_sub_rr ~rng
+    else pick_poly_sub ()
+  in
+  let h_xor_rr_expr () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_xor_rr ~rng
+    else pick_poly_xor ()
+  in
+  let h_and_rr_expr () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_and_rr ~rng
+    else "(ctx.get_reg(dst) & ctx.get_reg(src))"
+  in
+  let h_or_rr_expr () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_or_rr ~rng
+    else "(ctx.get_reg(dst) | ctx.get_reg(src))"
   in
 
   if enable_timing_probes then begin
@@ -48,9 +70,9 @@ let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_n
   Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) & 0xFFFFFFFFULL) | high_val);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b (Printf.sprintf "    H_ADD_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (pick_poly_add ()));
+  Buffer.add_string b (Printf.sprintf "    H_ADD_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_add_rr_expr ()));
   Buffer.add_string b "    H_ADD_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b (Printf.sprintf "    H_SUB_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (pick_poly_sub ()));
+  Buffer.add_string b (Printf.sprintf "    H_SUB_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_sub_rr_expr ()));
   Buffer.add_string b "    H_SUB_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) - 2 * ((~ctx.get_reg(dst)) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_IMUL_RR: {\n";
   Buffer.add_string b "        PROBE_START();\n";
@@ -66,11 +88,11 @@ let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_n
   Buffer.add_string b "        PROBE_CHECK();\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b (Printf.sprintf "    H_XOR_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (pick_poly_xor ()));
+  Buffer.add_string b (Printf.sprintf "    H_XOR_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_xor_rr_expr ()));
   Buffer.add_string b "    H_XOR_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)imm) ^ (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_AND_RR: ctx.set_reg(dst, (ctx.get_reg(dst) + ctx.get_reg(src)) - (ctx.get_reg(dst) | ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b (Printf.sprintf "    H_AND_RR: { ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_and_rr_expr ()));
   Buffer.add_string b "    H_AND_RI: ctx.set_reg(dst, (ctx.get_reg(dst) + (uint64_t)imm) - (ctx.get_reg(dst) | (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_OR_RR: ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + (ctx.get_reg(dst) & ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b (Printf.sprintf "    H_OR_RR: { ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_or_rr_expr ()));
   Buffer.add_string b "    H_OR_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
 
   Buffer.add_string b "    H_ROL_RI: {\n";

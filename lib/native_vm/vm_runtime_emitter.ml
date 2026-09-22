@@ -20,6 +20,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_stack_scramble = match config with Some c -> c.vm_runtime.stack_scrambling | None -> true in
   let enable_mem_sanitize = match config with Some c -> c.vm_runtime.memory_sanitization | None -> true in
   let enable_vector_isa = match config with Some c -> c.vm_runtime.vector_isa | None -> true in
+  let enable_egraph_expansion = match config with Some c -> c.vm_runtime.egraph_expansion | None -> true in
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n";
@@ -178,7 +179,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b "    ctx.reanchor_running_key(0);\n";
   Buffer.add_string b "    FETCH_NEXT();\n\n";
 
-  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_nanomites;
+  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_nanomites ~enable_egraph_expansion;
 
   Buffer.add_string b "    EXIT_VM:\n";
   if enable_mem_sanitize then begin

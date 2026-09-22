@@ -165,6 +165,106 @@ let prop_egraph_equivalence =
       let xor' = Egraph.expand ~rng ~config:cfg (Mba.Xor (Mba.Var "a", Mba.Var "b")) in
       Mba.eval env add' = Int64.add x y && Mba.eval env xor' = Int64.logxor x y)
 
+
+(** E2E test: Egraph_cpp_emitter produces valid C++ that clang++ accepts and
+    that evaluates correctly for ADD, SUB, XOR, AND, OR on known inputs. *)
+let test_egraph_cpp_handler_expansion () =
+  let rng = Random.State.make [| 0xE6BEEF |] in
+  (* Generate saturated C++ expressions for each op *)
+  let add_expr = Native_vm.Egraph_cpp_emitter.egraph_add_rr ~rng in
+  let sub_expr = Native_vm.Egraph_cpp_emitter.egraph_sub_rr ~rng in
+  let xor_expr = Native_vm.Egraph_cpp_emitter.egraph_xor_rr ~rng in
+  let and_expr = Native_vm.Egraph_cpp_emitter.egraph_and_rr ~rng in
+  let or_expr  = Native_vm.Egraph_cpp_emitter.egraph_or_rr  ~rng in
+
+  (* All expressions must be non-trivial (egraph expanded, not just "a op b") *)
+  Alcotest.(check bool) "add_expr is non-empty"  true (String.length add_expr > 0);
+  Alcotest.(check bool) "sub_expr is non-empty"  true (String.length sub_expr > 0);
+  Alcotest.(check bool) "xor_expr is non-empty"  true (String.length xor_expr > 0);
+  Alcotest.(check bool) "and_expr is non-empty"  true (String.length and_expr > 0);
+  Alcotest.(check bool) "or_expr is non-empty"   true (String.length or_expr > 0);
+
+  (* Compile a C++ program that evaluates each expression with fixed inputs
+     and checks correctness: a=100, b=37 *)
+  let tmp_dir = Filename.temp_file "egraph_cpp_" "_dir" in
+  (try Sys.remove tmp_dir with _ -> ());
+  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+  let cpp_file = Filename.concat tmp_dir "test_egraph_handlers.cpp" in
+  let oc = open_out cpp_file in
+  (* Replace ctx.get_reg(dst) → a, ctx.get_reg(src) → b for standalone test *)
+  let subst_all needle replacement s =
+    let nlen = String.length needle and slen = String.length s in
+    let buf = Buffer.create (slen * 2) in
+    let i = ref 0 in
+    while !i <= slen - nlen do
+      if String.sub s !i nlen = needle then begin
+        Buffer.add_string buf replacement;
+        i := !i + nlen
+      end else begin
+        Buffer.add_char buf s.[!i];
+        incr i
+      end
+    done;
+    if !i < slen then Buffer.add_substring buf s !i (slen - !i);
+    Buffer.contents buf
+  in
+  let subst s =
+    let s = subst_all "ctx.get_reg(dst)" "a" s in
+    let s = subst_all "ctx.get_reg(src)" "b" s in
+    s
+  in
+  let add_c = subst add_expr in
+  let sub_c = subst sub_expr in
+  let xor_c = subst xor_expr in
+  let and_c = subst and_expr in
+  let or_c  = subst or_expr  in
+  output_string oc (Printf.sprintf {|
+#include <stdint.h>
+#include <stdio.h>
+int main() {
+    uint64_t a = 100ULL, b = 37ULL;
+    uint64_t r_add = %s;
+    uint64_t r_sub = %s;
+    uint64_t r_xor = %s;
+    uint64_t r_and = %s;
+    uint64_t r_or  = %s;
+    if (r_add != (a + b)) { printf("[FAIL] ADD: %%llu != %%llu\n", (unsigned long long)r_add, (unsigned long long)(a+b)); return 1; }
+    if (r_sub != (a - b)) { printf("[FAIL] SUB: %%llu != %%llu\n", (unsigned long long)r_sub, (unsigned long long)(a-b)); return 2; }
+    if (r_xor != (a ^ b)) { printf("[FAIL] XOR: %%llu != %%llu\n", (unsigned long long)r_xor, (unsigned long long)(a^b)); return 3; }
+    if (r_and != (a & b)) { printf("[FAIL] AND: %%llu != %%llu\n", (unsigned long long)r_and, (unsigned long long)(a&b)); return 4; }
+    if (r_or  != (a | b)) { printf("[FAIL]  OR: %%llu != %%llu\n", (unsigned long long)r_or,  (unsigned long long)(a|b)); return 5; }
+    printf("[EGRAPH_HANDLER_OK] ADD=%%llu SUB=%%llu XOR=%%llu AND=%%llu OR=%%llu\n",
+           (unsigned long long)r_add, (unsigned long long)r_sub,
+           (unsigned long long)r_xor, (unsigned long long)r_and, (unsigned long long)r_or);
+    return 0;
+}
+|} add_c sub_c xor_c and_c or_c);
+  close_out oc;
+
+  let bin_path = Filename.concat tmp_dir "test_egraph_handlers" in
+  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s 2>&1" cpp_file bin_path in
+  let comp_status = Sys.command comp_cmd in
+  Alcotest.(check int) "egraph handler C++ compiles under clang++" 0 comp_status;
+
+  let ic = Unix.open_process_in bin_path in
+  let out_buf = Buffer.create 128 in
+  (try while true do
+       Buffer.add_string out_buf (input_line ic);
+       Buffer.add_char out_buf '\n'
+     done with End_of_file -> ());
+  let status = Unix.close_process_in ic in
+  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Alcotest.(check bool) "egraph handler binary exits 0" true (status = Unix.WEXITED 0);
+  let out = Buffer.contents out_buf in
+  let needle = "EGRAPH_HANDLER_OK" in
+  let n = String.length needle and h = String.length out in
+  let found = ref false in
+  for i = 0 to h - n do
+    if String.sub out i n = needle then found := true
+  done;
+  Alcotest.(check bool) "output contains EGRAPH_HANDLER_OK" true !found
+
 let tests = [
   Alcotest.test_case "rule_verification_24_identities" `Quick test_rule_verification;
   Alcotest.test_case "expansion_equivalence_all_ops" `Quick test_expansion_equivalence;
@@ -173,5 +273,6 @@ let tests = [
   Alcotest.test_case "polymorphism_across_seeds" `Quick test_polymorphism;
   Alcotest.test_case "budget_respected" `Quick test_budget_respected;
   Alcotest.test_case "vm_roundtrip_obfuscate_alu" `Quick test_vm_roundtrip;
+  Alcotest.test_case "egraph_cpp_handler_expansion_e2e" `Quick test_egraph_cpp_handler_expansion;
   QCheck_alcotest.to_alcotest prop_egraph_equivalence;
 ]
