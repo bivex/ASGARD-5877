@@ -138,17 +138,14 @@ let compile_and_package
   in
 
   let key_seed = Random.State.int32 rng Int32.max_int in
-  let key64_for_offset seed offset =
-    let s64 = Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL in
-    let x0 = Int64.logxor (Int64.logor (Int64.shift_left s64 32) (Int64.logxor s64 0x9E3779B9L))
-                          (Int64.mul (Int64.of_int offset) 0x517CC1B727220A95L) in
-    let x1 = Int64.mul (Int64.logxor x0 (Int64.shift_right_logical x0 30)) 0xBF58476D1CE4E5B9L in
-    let x2 = Int64.mul (Int64.logxor x1 (Int64.shift_right_logical x1 27)) 0x94D049BB133111EBL in
-    Int64.logxor x2 (Int64.shift_right_logical x2 31)
-  in
 
   let cur_idx = ref 0 in
   let bytecode = ref [] in
+  (* Anti-Pushan block-chained rolling key: OCaml mirror of the C++ keystream.
+     [cur_key] tracks ctx.running_key word by word; it stays 0L when the feature
+     is disabled, making the mask byte-identical to the legacy positional PRF. *)
+  let enable_rolling = Protection_config.rolling_key_enabled config in
+  let cur_key = ref 0L in
   let encode_raw_word ?(extra_bits = 0L) op dst src imm =
     let w = ref 0L in
     w := Int64.logor !w (Int64.of_int op);
@@ -158,9 +155,17 @@ let compile_and_package
     w := Int64.logor !w (Int64.shift_left imm_masked 18);
     if extra_bits <> 0L then
       w := Int64.logor !w (Int64.shift_left (Int64.logand extra_bits 0x3FFFL) 50);
-    let mask = key64_for_offset key_seed !cur_idx in
+    let k_pos = Rolling_key.key64_for_offset key_seed !cur_idx in
+    let mask = Int64.logxor k_pos !cur_key in
     incr cur_idx;
     let masked_w = Int64.logxor !w mask in
+    if enable_rolling then begin
+      (* Advance exactly like FETCH_NEXT does: op is the randomized opcode byte,
+         imm is re-read from the packed word (32-bit sign-extended window), never
+         from the source immediate — the 46→32 bit truncation must match. *)
+      let (dop, ddst, _, dimm) = Rolling_key.decode_fields !w in
+      cur_key := Rolling_key.advance_key_step !cur_key dop ddst dimm
+    end;
     bytecode := masked_w :: !bytecode
   in
 
@@ -168,6 +173,12 @@ let compile_and_package
   List.iter
     (fun (b : Ir.basic_block) ->
       let ops = Hashtbl.find block_fused_ops b.id in
+      (* Loop-safety: re-anchor the chain at every block entry, mirroring the
+         runtime reanchor in H_JMP/H_JCC/H_CALL and the offset-0 entry probe.
+         Blocks are encoded in layout order, so the offset below is exactly
+         where this block's first word will land. *)
+      if enable_rolling then
+        cur_key := Rolling_key.anchor_key key_seed (get_block_offset b.id);
       List.iter
         (function
           | Fused_Mov_Add { dst; src; imm } ->

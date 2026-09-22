@@ -72,3 +72,11 @@ type t = {
   vm_runtime : vm_runtime_config;
   c_macro : c_macro_config;
 }
+
+(* Single source of truth for the Anti-Pushan rolling-key gate: the encoder
+   (vm_emitter) and the C++ runtime emitter (vm_runtime_emitter) must agree on
+   it, or the predicted keystream diverges from the runtime one. *)
+let rolling_key_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.anti_pushan.enabled && c.anti_pushan.running_key
+  | None -> true

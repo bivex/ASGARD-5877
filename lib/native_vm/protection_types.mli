@@ -74,3 +74,8 @@ type t = {
   vm_runtime : vm_runtime_config;
   c_macro : c_macro_config;
 }
+
+val rolling_key_enabled : t option -> bool
+(** Anti-Pushan block-chained rolling key gate: [true] unless a config explicitly
+    disables it.  Shared by the encoder and the C++ runtime emitter so both sides
+    derive the same keystream. *)

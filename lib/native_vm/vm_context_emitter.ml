@@ -65,6 +65,16 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "        running_key = advance_key_step(running_key, op, dst, imm);\n";
   Buffer.add_string b "        gprs[REG_VKEY] = running_key ^ reg_mask;\n";
   Buffer.add_string b "    }\n\n";
+  (* Anti-Pushan block-chained rolling key: domain-separated block-entry anchor.
+     The xor-domains keep the anchor PRF distinct from k_pos, otherwise the first
+     in-block mask (k_pos ^ anchor) would collapse to zero. *)
+  Buffer.add_string b "    static inline uint64_t anchor_key(uint32_t seed, uint64_t off) noexcept {\n";
+  Buffer.add_string b "        return key64_for_offset(seed ^ 0x5BD1E995U, (size_t)(off ^ 0x13375877ULL));\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline void reanchor_running_key(uint64_t off) noexcept {\n";
+  Buffer.add_string b "        running_key = anchor_key(init_seed, off);\n";
+  Buffer.add_string b "        gprs[REG_VKEY] = running_key ^ reg_mask;\n";
+  Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline uint64_t get_vkey() const noexcept { return running_key; }\n\n";
   Buffer.add_string b "    inline bool verify_canaries() const noexcept {\n";
   Buffer.add_string b "        if (canary_head != CANARY_VAL || canary_tail != CANARY_VAL) return false;\n";

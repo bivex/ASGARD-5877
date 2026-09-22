@@ -115,6 +115,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
                 ~enable_cff:resolved_cff
                 ~enable_mba:resolved_mba
                 ~mba_depth:resolved_mba_depth
+                ~config:effective_cfg
                 lifted_func
             in
             (mv_pkg.cpp_runtime_source, mv_pkg.runner_source, mv_pkg.bytecode, mv_pkg.metrics, "multi_vm_runtime.hpp")

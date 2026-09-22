@@ -14,7 +14,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_anti_emu = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.anti_emulation | None -> true in
   let enable_mem_scan = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.memory_integrity_scanner | None -> true in
   let enable_timing_probes = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.hardware_timing_probes | None -> true in
-  let enable_running_key = match config with Some c -> c.anti_pushan.enabled && c.anti_pushan.running_key | None -> true in
+  let enable_running_key = Protection_config.rolling_key_enabled config in
   let enable_stack_scramble = match config with Some c -> c.vm_runtime.stack_scrambling | None -> true in
   let enable_mem_sanitize = match config with Some c -> c.vm_runtime.memory_sanitization | None -> true in
   let b = Buffer.create 4096 in
@@ -123,7 +123,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b "        uint64_t k_dyn = k_pos ^ ctx.running_key; \\\n"
   else
     Buffer.add_string b "        uint64_t k_dyn = k_pos; \\\n";
-  Buffer.add_string b "        word = bytecode[vIP_idx] ^ k_pos; \\\n";
+  Buffer.add_string b "        word = bytecode[vIP_idx] ^ k_dyn; \\\n";
   if enable_mem_sanitize then
     Buffer.add_string b "        /* Ephemeral Self-Consuming: Overwrite scratch RAM buffer with dynamic rolling noise */ \\\n        work_bc[vIP_idx] = (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL; \\\n";
   Buffer.add_string b "        vIP_idx++; \\\n";
@@ -138,9 +138,12 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        goto *all_dispatch_domains[domain_idx][op]; \\\n";
   Buffer.add_string b "    } while(0)\n\n";
 
+  (* Anti-Pushan: entry block always starts at offset 0 — anchor the chain there. *)
+  if enable_running_key then
+    Buffer.add_string b "    ctx.reanchor_running_key(0);\n";
   Buffer.add_string b "    FETCH_NEXT();\n\n";
 
-  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_timing_probes;
+  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes;
 
   Buffer.add_string b "    EXIT_VM:\n";
   Buffer.add_string b "    /* Ephemeral Complete Memory Sanitization: Scrub all working memory */\n";

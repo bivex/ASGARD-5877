@@ -21,7 +21,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 1 | **Residue Number System (RNS-4)** | [`lib/vm_ir/rns.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rns.ml) | ✅ **DONE** | Complete | Breaks linear SMT solvers ($M > 2^{64}$) |
 | 2 | **Multi-VM Zero-Bridge** | [`lib/multi_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/) | ✅ **DONE** | Complete | $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ affine morphing in bytecode |
 | 3 | **Nanomites & Hardware Signal Dispatch** | [`lib/c_macro_obf/c_nanomites.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml) | ⏳ **PENDING** | **HIGH** | Breaks static disassemblers & DSE branching |
-| 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | ⏳ **PENDING** | **HIGH** | Prevents replay attacks & opcode recording |
+| 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | ✅ **DONE** | Complete | Prevents replay attacks & opcode recording |
 | 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/anti_tamper_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/anti_tamper_emitter.ml) | ⏳ **PENDING** | **HIGH** | Neutralizes RAM process dumpers |
 | 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ⏳ **PENDING** | **MEDIUM** | Eliminates static handler jump tables |
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ⏳ **PENDING** | **MEDIUM** | Hides scalar logic in NEON/AVX vectors |
@@ -71,23 +71,17 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 ---
 
 ### 2. Anti-Pushan Dynamic Rolling Keys in VM Dispatch Loop
-* **Status**: ⏳ Pending
+* **Status**: ✅ Fully Operational (`lib/vm_ir/rolling_key.ml`, `lib/native_vm/vm_emitter.ml`, `vm_runtime_emitter.ml`, `vm_handlers_emitter.ml`, `vm_context_emitter.ml`)
 * **Academic Reference**: *Pushan et al., Dynamic Key Synchronization in Virtual Machines*
-* **Current State in OCaml**:
-  - [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) generates a stateful rolling PRNG:
-    $$K_{i+1} = (K_i \cdot 0x9E3779B97F4A7C15 + \text{Opcode}_i) \oplus \text{ROL}_{13}(K_i)$$
-  - In `vm_runtime_emitter.ml`, opcodes are currently looked up via a static handler table without per-instruction key mutation.
-* **Required C++ Changes**:
-  - [ ] In `threaded_vm.hpp`, update `FETCH_NEXT()` macro to mutate `ctx.running_key` on every instruction dispatch:
-    ```cpp
-    #define FETCH_NEXT() do { \
-        uint64_t raw_word = *vip++; \
-        ctx.running_key = (ctx.running_key * 0x9E3779B97F4A7C15ULL) ^ (raw_word >> 32); \
-        uint8_t op = (uint8_t)((raw_word ^ ctx.running_key) & 0xFF); \
-        goto *handler_table[op]; \
-    } while (0)
-    ```
-  - [ ] In `vm_emitter.ml`, encode bytecode words using the corresponding dynamic key sequence predicted at compile-time.
+* **Mathematical Primitive**: block-chained keystream — within a basic block the word mask is $m_j = k_{\text{pos}}(j) \oplus K_j$, where the chain anchor is the domain-separated PRF $K_0 = \text{PRF}(\text{seed} \oplus 0\text{x}5\text{BD}1\text{E}995,\ \text{block\_offset} \oplus 0\text{x}13375877)$ and each step mixes the decoded instruction itself:
+  $$K_{j+1} = \big(\text{ROR}_{23}(K_j \oplus (\text{op}_j \cdot 0x9E3779B97F4A7C15 + (\text{dst}_j \ll 24) + \text{imm}_j)) \cdot 0xBF58476D1CE4E5B9\big) \oplus 0x5877CAFE1337BEEF$$
+* **Implementation Details**:
+  - `lib/vm_ir/rolling_key.ml` is the canonical OCaml mirror of the C++ keystream (`key64_for_offset` / `anchor_key` / `advance_key_step` / `decode_fields`); the encoder simulates at compile time exactly what `FETCH_NEXT` does at runtime, including the 46→32-bit sign-extended immediate truncation.
+  - `FETCH_NEXT` decrypts as `word = bytecode[vIP] ^ k_pos ^ running_key`, then advances the key from the decoded `(op, dst, imm)`; the running key also feeds `evolve_mask`, the self-consuming scrub noise, and the dispatch-domain selector.
+  - **Loop safety by construction**: every inter-block transition goes through an explicit terminal — `H_JMP` / `H_JCC` (carries both targets, no fall-through) / `H_CALL` — and each re-anchors `running_key = anchor_key(seed, vIP)` right after assigning `vIP_idx`; the VM entry does `reanchor_running_key(0)`. The keystream at any fetch therefore matches the encoder's prediction regardless of how many loop iterations executed.
+  - The mask is coupled to the blinded architectural `REG_VKEY` register; flag `anti_pushan.running_key` toggles the scheme, and with it off the encoder keeps `cur_key = 0` — byte-identical legacy positional output.
+  - Tested by `test/test_anti_pushan.ml`: golden PRF vectors, mirror replay of the anchor+advance chain over real ciphertext, legacy-identity on flag-off, and E2E clang++ execution of loops (`5! = 120`) and both branch paths.
+* **Honest boundary**: a full sequential static walk still recovers the stream — this is the limit of deterministic static bytecode. True cross-block history dependence (anchoring on real handler addresses) is the next candidate: anti-VMPredator address-bound bytecode (matrix row synergy).
 
 ---
 
@@ -163,6 +157,6 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 Each feature implementation must fulfill:
 1. **Compilation Guarantee**: Must compile cleanly under `clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions` on macOS ARM64 and Linux x86_64.
-2. **Zero-Regression Invariant**: All 161 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
+2. **Zero-Regression Invariant**: All 165 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
 3. **Architectural Cleanliness**: Run `dpx arch /Volumes/External/Code/ASGARD-5877/` after changes; must maintain **0 architectural errors and 0 warnings**.
 4. **Standalone Execution**: Generated binaries must execute with exit code 0 and maintain correct input-output semantics compared to unvirtualized baseline code.

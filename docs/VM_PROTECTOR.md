@@ -171,13 +171,21 @@ static const void* const dispatch_table[256] = {
 
 Each instruction handler directly computes the address of the next handler and jumps directly via `goto *dispatch_table[op]`.
 
-### 5.2 Positional Rolling PRF Key Stream
-To ensure compatibility with loops, backwards jumps, and CFF dispatchers without losing keystream synchronization, every bytecode word is encrypted with a position-dependent pseudorandom function:
+### 5.2 Block-Chained Rolling PRF Key Stream (Anti-Pushan)
+To ensure compatibility with loops, backwards jumps, and CFF dispatchers without losing keystream synchronization, every bytecode word is encrypted with a position-dependent pseudorandom function *xor-linked to an execution-history chain*:
 
-$$k(\text{seed}, \text{offset}) = \text{xorshift32}\left(\text{seed} \oplus (\text{offset} \cdot \text{0x9E3779B97F4A7C15})\right)$$
+$$\text{word}_j = \text{plain}_j \oplus k_{\text{pos}}(j) \oplus K_j$$
 
-* **Determinism**: Jumps to any valid instruction offset immediately decrypt the correct instruction word.
-* **Integrity**: Patching a single byte in memory or single-stepping desynchronizes the PRF, triggering an illegal opcode jump into `&&H_DECOY`.
+where the per-block chain is anchored at every basic-block entry by the domain-separated PRF $K_0 = \text{PRF}(\text{seed} \oplus 0\text{x}5\text{BD}1\text{E}995,\ \text{block\_offset} \oplus 0\text{x}13375877)$ (SplitMix64-family `key64_for_offset`), and each step mixes the decoded instruction itself:
+
+$$K_{j+1} = \big(\text{ROR}_{23}(K_j \oplus (\text{op}_j \cdot 0x9E3779B97F4A7C15 + (\text{dst}_j \ll 24) + \text{imm}_j)) \cdot 0xBF58476D1CE4E5B9\big) \oplus 0x5877CAFE1337BEEF$$
+
+* **Determinism / loop safety**: every inter-block transition passes through an explicit terminal (`H_JMP` / `H_JCC` carrying both targets / `H_CALL`), and each re-anchors `running_key = anchor_key(seed, vIP)` immediately after assigning `vIP_idx`; the VM entry anchors at offset 0. The keystream at any fetch therefore matches the compile-time encoder's prediction regardless of loop iteration count — no fall-through exists to desynchronize the chain.
+* **History coupling**: a static tool cannot decode word $j$ of a block in isolation (random access); it must replay the `anchor + advance` chain from the block entry, mixing every prior decoded `(op, dst, imm)` — exactly what symbolic block-emulators like Pushan refuse to model. The mask is additionally coupled to the blinded architectural `REG_VKEY` register.
+* **Integrity**: patching a single byte in memory or single-stepping desynchronizes the chain, triggering an illegal opcode jump into `&&H_DECOY`.
+* **Canonical mirror**: [`lib/vm_ir/rolling_key.ml`](../lib/vm_ir/rolling_key.ml) re-derives the entire keystream in OCaml bit-for-bit (including the 46→32-bit sign-extended immediate truncation that `FETCH_NEXT` applies); `test/test_anti_pushan.ml` pins the correspondence with golden vectors and a ciphertext replay check.
+* **Honest boundary**: a full *sequential* static walk still recovers the stream — the limit of deterministic static bytecode. True cross-block history dependence (anchoring on real handler addresses) is the planned anti-VMPredator address-bound bytecode extension (see `CPP_TODO.md`).
+* Toggled by `anti_pushan.running_key`; when disabled the encoder keeps `cur_key = 0` and the output is byte-identical to the legacy positional-only mask.
 
 ### 5.3 Decoy Trap Density (>91.8%)
 Out of 256 possible 8-bit opcodes:

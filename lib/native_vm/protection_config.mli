@@ -93,3 +93,8 @@ val from_file : string -> (t, string) result
 val to_json_string : ?pretty:bool -> t -> string
 
 val save_to_file : string -> t -> unit
+
+val rolling_key_enabled : t option -> bool
+(** Anti-Pushan block-chained rolling key gate: [true] unless a config explicitly
+    disables it.  Re-exported from [Protection_types] so the encoder and the C++
+    runtime emitter share one source of truth for the keystream. *)

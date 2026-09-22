@@ -1,4 +1,10 @@
-let emit_handlers_hpp b ~rng ~enable_timing_probes =
+let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes =
+  (* Anti-Pushan re-anchoring: every handler that reassigns vIP_idx lands at a new
+     basic block, so the rolling key chain must restart from that block's anchor. *)
+  let maybe_reanchor () =
+    if enable_running_key then
+      Buffer.add_string b "        ctx.reanchor_running_key((uint64_t)vIP_idx);\n"
+  in
   let pick_poly_add () =
     match Random.State.int rng 4 with
     | 0 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) + 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
@@ -110,6 +116,7 @@ let emit_handlers_hpp b ~rng ~enable_timing_probes =
   Buffer.add_string b "    H_POP_R: ctx.set_reg(dst, ctx.pop()); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_JMP: {\n";
   Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+  maybe_reanchor ();
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_JCC: {\n";
@@ -118,6 +125,7 @@ let emit_handlers_hpp b ~rng ~enable_timing_probes =
   Buffer.add_string b "        uint64_t t_false = (uint64_t)((word >> 43) & 0x1FFFFFULL);\n";
   Buffer.add_string b "        uint64_t c = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
   Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
+  maybe_reanchor ();
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMOV: {\n";
@@ -134,6 +142,7 @@ let emit_handlers_hpp b ~rng ~enable_timing_probes =
   Buffer.add_string b "    H_CALL: {\n";
   Buffer.add_string b "        ctx.push((uint64_t)vIP_idx);\n";
   Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+  maybe_reanchor ();
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_RET: case_ret: ctx.executed_instructions++; goto EXIT_VM;\n";

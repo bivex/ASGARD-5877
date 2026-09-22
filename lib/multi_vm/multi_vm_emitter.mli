@@ -14,5 +14,6 @@ val compile_and_package :
   ?enable_cff:bool ->
   ?enable_mba:bool ->
   ?mba_depth:int ->
+  ?config:Native_vm.Protection_config.t ->
   Ir.func ->
   multi_vm_package

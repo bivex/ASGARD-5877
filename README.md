@@ -132,7 +132,6 @@ ASGARD-5877/
 │   │   └── pop_coupler.ml{,i}    # Path-Oriented Protections (POP) trace digest coupling
 │   ├── native_vm/                # Native Direct Threaded C++ VM Engine
 │   │   ├── vm_emitter.ml{,i}     # Direct Threaded Code runtime emitter (&&label, 256 saturated slots)
-│   │   ├── anti_pushan.ml{,i}    # Non-linear rolling key and branch/loop rekeying
 │   │   ├── anti_tamper_smc.ml{,i} # Dynamic Anti-Tamper & Self-Modifying Code (Layer 3)
 │   │   ├── protection_config.ml{,i} # JSON protection schema and preset configurations
 │   │   ├── protection_types.ml{,i} # Multi-layer protection configuration types

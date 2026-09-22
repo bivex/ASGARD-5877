@@ -69,7 +69,7 @@ let inject_bridge_transitions (bridge : Bridge.affine_bridge) (partition : Parti
     ) f.cfg.blocks;
     ({ f with cfg = { f.cfg with blocks = new_blocks } }, !trans_count)
 
-let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_depth = 2) (f : Ir.func) : multi_vm_package =
+let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_depth = 2) ?config (f : Ir.func) : multi_vm_package =
   let bridge = Bridge.generate_bridge rng in
   let partition = Partitioner.partition_function f in
   let (bridged_func, actual_transitions) = inject_bridge_transitions bridge partition f in
@@ -81,6 +81,7 @@ let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_dep
       ~enable_cff
       ~enable_mba
       ~mba_depth
+      ?config
       bridged_func
   in
 
