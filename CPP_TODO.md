@@ -25,7 +25,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml) | ✅ **DONE** | Complete | Neutralizes RAM process dumpers |
 | 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ⏳ **PENDING** | **MEDIUM** | Eliminates static handler jump tables |
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ⏳ **PENDING** | **MEDIUM** | Hides scalar logic in NEON/AVX vectors |
-| 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ⏳ **PENDING** | **MEDIUM** | Thwarts userspace hooks (Frida, DTrace) |
+| 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ✅ **DONE** | Complete | Thwarts userspace hooks (Frida, DTrace) |
 | 9 | **GPU Metal Compute Acceleration** | [`lib/gpu_synth/`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/) | ⏳ **PENDING** | **LOW** | Offloads crypto checks to Apple GPU |
 | 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | ⏳ **PENDING** | **LOW** | Algebraic expansion of VM handler logic |
 
@@ -96,25 +96,26 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **Anti-Analysis & DSE Immunity**: Obfuscates the Control Flow Graph from static decompilers (Ghidra, IDA Pro, Binary Ninja) by replacing explicit branch edges with signal interrupts, defeating dynamic symbolic execution (DSE / angr) engines that do not model operating system signal delivery.
   - **Verified by Tests**: Verified in `test/test_anti_tamper_smc.ml` (`test_nanomite_signal_dispatch`) with full C++20 compilation and execution under `clang++ -std=c++20 -O2`.
 
+### F. Direct Syscall Invocation (Bypass libc & Dynamic Linker)
+* **Status**: ✅ Fully Operational (`lib/native_vm/hardened_runtime.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_presets.ml`, `test/test_anti_tamper_smc.ml`)
+* **Academic Reference**: *Hell's Gate / Syscall Stubs for Anti-Hooking & Direct Kernel Transition*
+* **Mathematical & Architectural Primitive**: Bare-metal kernel transitions bypassing libc and dynamic linker symbol resolution (`libsystem_kernel.dylib` / `libc.so`):
+  - **Multi-Architecture Kernel Inline Assembly**: Zero-overhead direct syscall wrappers (`direct_syscall_0` through `direct_syscall_6`) across target ABIs:
+    - **ARM64 Darwin**: Direct trap via `svc #0x80`, loading syscall number into `x16` and arguments into `x0..x5`.
+    - **x86_64 Darwin**: Direct trap via `syscall`, loading `0x2000000 | sys_num` into `rax` and arguments into `rdi, rsi, rdx, r10, r8, r9`.
+    - **x86_64 Linux**: Standard System V kernel trap via `syscall` with syscall number in `rax`.
+    - **ARM64 Linux**: Linux aarch64 kernel trap via `svc #0` with syscall number in `x8` and arguments in `x0..x5`.
+  - **Hook-Resistant Anti-Debugger Kernel Probes**: `asgard_syscalls::sys_check_debugger_present()` queries kernel debugging state (`P_TRACED`) completely without invoking libc `sysctl()` or `getpid()`:
+    - Darwin: Direct syscall `SYS___sysctl (202)` querying `CTL_KERN, KERN_PROC, KERN_PROC_PID, sys_getpid()` with `kinfo_proc`.
+    - Linux: Direct syscall `SYS_openat (-100, "/proc/self/status", O_RDONLY, 0)` and `SYS_read`, parsing `TracerPid:` directly from buffer memory with zero dynamic allocations.
+  - **Dynamic Interposition Immunity**: Immune to user-space dynamic interception frameworks (Frida `Interceptor.attach`, DTrace, Substrate, `DYLD_INSERT_LIBRARIES`, `LD_PRELOAD`).
+  - **Verified by Tests**: Verified in `test/test_anti_tamper_smc.ml` (`test_direct_syscalls_e2e`) verifying `sys_getpid`, `sys_check_debugger_present`, and `sys_write` under `clang++ -std=c++20 -O2`.
+
 ---
 
 ## Detailed Feature Specifications & TODOs (Pending Features)
 
-### 1. Direct Syscall Invocation (Bypassing libc & Dynamic Linker)
-* **Status**: ⏳ Pending
-* **Academic Reference**: *Hell's Gate / Syscall Stubs for Anti-Hooking*
-* **Current State in OCaml**:
-  - [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) has direct assembly templates for Linux `syscall` and Darwin `svc 0x80`.
-  - C++ runtime currently uses standard C runtime calls (`sysctl`, `malloc`, `free`, `printf`).
-* **Required C++ Changes**:
-  - [ ] Emit inline assembly stubs for critical syscalls (`sysctl`, `mprotect`, `write`, `exit`) in `threaded_vm.hpp`:
-    - ARM64 Darwin: `svc #0x80` with syscall number in `x16`.
-    - x86_64 Linux: `syscall` with syscall number in `rax`.
-  - [ ] Resolve syscall numbers dynamically from in-memory Mach-O / ELF headers to bypass inline hooks placed by monitoring agents (Frida, DynamoRIO).
-
----
-
-### 2. RD-JIT VM (Runtime Native Machine Code JIT Compilation)
+### 1. RD-JIT VM (Runtime Native Machine Code JIT Compilation)
 * **Status**: ⏳ Pending
 * **Academic Reference**: *Register-Driven Just-In-Time Virtualization*
 * **Current State in OCaml**:
@@ -127,7 +128,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-### 3. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
+### 2. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
 * **Status**: ⏳ Pending
 * **Academic Reference**: *RISC-V Vector 1.0 Formal Spec & SIMD Obfuscation*
 * **Current State in OCaml**:
@@ -140,7 +141,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-### 4. Apple Metal Compute Acceleration (`gpu_synth`) in Protected App
+### 3. Apple Metal Compute Acceleration (`gpu_synth`) in Protected App
 * **Status**: ⏳ Pending
 * **Academic Reference**: *GPGPU-Assisted Software Protection & Integrity Attestation*
 * **Current State in OCaml**:
@@ -149,6 +150,18 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - [ ] Add option `--gpu-guard` in CLI.
   - [ ] Emit an embedded Metal Shading Language (`.metal`) string inside `threaded_vm.hpp`.
   - [ ] At application startup, initialize `MTLCreateSystemDefaultDevice()` and dispatch an asynchronous compute kernel verifying runtime code integrity on the GPU parallel grid.
+
+---
+
+### 4. E-Graph Equality Saturation Scrambler
+* **Status**: ⏳ Pending
+* **Academic Reference**: *EqSat / Egg: Equality Saturation for Rewrite Optimization & De-canonicalization*
+* **Current State in OCaml**:
+  - [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) implements e-classes, e-nodes, union-find with Congruence Closure, and saturation rewrite rules.
+  - Tested in `test/test_e_graph.ml` for term expansion and cost-based extraction.
+* **Required C++ Changes**:
+  - [ ] Pipe E-Graph equality expansion pass into the C++ handler emission pipeline (`vm_handlers_emitter.ml`).
+  - [ ] Apply saturated term rewrites to synthesize obfuscated dispatch expressions and handler state updates.
 
 ---
 

@@ -25,6 +25,7 @@ let default : t = {
     memory_integrity_scanner = true;
     anti_emulation = true;
     nanomites = true;
+    direct_syscalls = true;
   };
   vm_runtime = {
     num_dispatch_domains = 4;
@@ -74,6 +75,7 @@ let max_security : t = {
     memory_integrity_scanner = true;
     anti_emulation = true;
     nanomites = true;
+    direct_syscalls = true;
   };
   vm_runtime = {
     num_dispatch_domains = 8;
@@ -123,6 +125,7 @@ let lightweight : t = {
     memory_integrity_scanner = false;
     anti_emulation = false;
     nanomites = false;
+    direct_syscalls = false;
   };
   vm_runtime = {
     num_dispatch_domains = 2;
@@ -172,6 +175,7 @@ let stealth : t = {
     memory_integrity_scanner = false;
     anti_emulation = true;
     nanomites = false;
+    direct_syscalls = true;
   };
   vm_runtime = {
     num_dispatch_domains = 4;
@@ -221,6 +225,7 @@ let minimal : t = {
     memory_integrity_scanner = false;
     anti_emulation = false;
     nanomites = false;
+    direct_syscalls = false;
   };
   vm_runtime = {
     num_dispatch_domains = 1;
@@ -270,6 +275,7 @@ let high : t = {
     memory_integrity_scanner = true;
     anti_emulation = true;
     nanomites = true;
+    direct_syscalls = true;
   };
   vm_runtime = {
     num_dispatch_domains = 8;

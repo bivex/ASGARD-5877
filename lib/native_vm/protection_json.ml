@@ -157,6 +157,7 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
             memory_integrity_scanner = json_get_bool "memory_integrity_scanner" base.anti_tamper.memory_integrity_scanner obj;
             anti_emulation = json_get_bool "anti_emulation" base.anti_tamper.anti_emulation obj;
             nanomites = json_get_bool "nanomites" base.anti_tamper.nanomites obj;
+            direct_syscalls = json_get_bool "direct_syscalls" base.anti_tamper.direct_syscalls obj;
           }
     in
 
@@ -233,6 +234,7 @@ let to_yojson (cfg : t) : Yojson.Basic.t =
       ("memory_integrity_scanner", `Bool cfg.anti_tamper.memory_integrity_scanner);
       ("anti_emulation", `Bool cfg.anti_tamper.anti_emulation);
       ("nanomites", `Bool cfg.anti_tamper.nanomites);
+      ("direct_syscalls", `Bool cfg.anti_tamper.direct_syscalls);
     ]);
     ("vm_runtime", `Assoc [
       ("num_dispatch_domains", `Int cfg.vm_runtime.num_dispatch_domains);

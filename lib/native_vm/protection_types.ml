@@ -37,6 +37,7 @@ type anti_tamper_config = {
   memory_integrity_scanner : bool;
   anti_emulation : bool;
   nanomites : bool;
+  direct_syscalls : bool;
 }
 
 type vm_runtime_config = {

@@ -15,6 +15,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_mem_scan = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.memory_integrity_scanner | None -> true in
   let enable_timing_probes = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.hardware_timing_probes | None -> true in
   let enable_nanomites = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.nanomites | None -> true in
+  let enable_direct_syscalls = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.direct_syscalls | None -> true in
   let enable_running_key = Protection_config.rolling_key_enabled config in
   let enable_stack_scramble = match config with Some c -> c.vm_runtime.stack_scrambling | None -> true in
   let enable_mem_sanitize = match config with Some c -> c.vm_runtime.memory_sanitization | None -> true in
@@ -24,6 +25,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
   Buffer.add_string b (Vm_ir.Rns.emit_cpp_rns_header ());
   Buffer.add_string b "\n";
+  if enable_direct_syscalls then begin
+    Buffer.add_string b (Hardened_runtime.emit_direct_syscalls_header ());
+    Buffer.add_string b "\n";
+  end;
   if enable_anti_emu then begin
     Buffer.add_string b (Hardened_runtime.emit_anti_emulation_probes ());
     Buffer.add_string b "\n";
@@ -68,17 +73,26 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "        ctx.trapped = true;\n";
   Buffer.add_string b "        return false;\n";
   Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    /* Active Anti-Debugging & Hardware Breakpoint Probe */\n";
-  Buffer.add_string b "#if defined(__APPLE__)\n";
-  Buffer.add_string b "    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };\n";
-  Buffer.add_string b "    struct kinfo_proc kinfo = {};\n";
-  Buffer.add_string b "    size_t ksize = sizeof(kinfo);\n";
-  Buffer.add_string b "    if (sysctl(mib, 4, &kinfo, &ksize, (void*)0, 0) == 0 && (kinfo.kp_proc.p_flag & P_TRACED)) {\n";
-  Buffer.add_string b "        ctx.reg_mask ^= 0xCAFEBABE13375877ULL;\n";
-  Buffer.add_string b "        ctx.trapped = true;\n";
-  Buffer.add_string b "        return false;\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "#endif\n\n";
+  if enable_direct_syscalls then begin
+    Buffer.add_string b "    /* Active Anti-Debugging Probe (Bypassing libc via Direct Kernel Syscalls) */\n";
+    Buffer.add_string b "    if (asgard_syscalls::sys_check_debugger_present()) {\n";
+    Buffer.add_string b "        ctx.reg_mask ^= 0xCAFEBABE13375877ULL;\n";
+    Buffer.add_string b "        ctx.trapped = true;\n";
+    Buffer.add_string b "        return false;\n";
+    Buffer.add_string b "    }\n\n";
+  end else begin
+    Buffer.add_string b "    /* Active Anti-Debugging & Hardware Breakpoint Probe */\n";
+    Buffer.add_string b "#if defined(__APPLE__)\n";
+    Buffer.add_string b "    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };\n";
+    Buffer.add_string b "    struct kinfo_proc kinfo = {};\n";
+    Buffer.add_string b "    size_t ksize = sizeof(kinfo);\n";
+    Buffer.add_string b "    if (sysctl(mib, 4, &kinfo, &ksize, (void*)0, 0) == 0 && (kinfo.kp_proc.p_flag & P_TRACED)) {\n";
+    Buffer.add_string b "        ctx.reg_mask ^= 0xCAFEBABE13375877ULL;\n";
+    Buffer.add_string b "        ctx.trapped = true;\n";
+    Buffer.add_string b "        return false;\n";
+    Buffer.add_string b "    }\n";
+    Buffer.add_string b "#endif\n\n";
+  end;
   if enable_anti_emu then begin
     Buffer.add_string b "    /* Anti-Emulation & Hypervisor Timing Differential Probe */\n";
     Buffer.add_string b "    uint64_t emu_penalty = asgard_anti_emulation::evaluate_emulation_differential();\n";

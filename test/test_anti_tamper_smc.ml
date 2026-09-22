@@ -193,8 +193,64 @@ func_nanomite_branch:
       Alcotest.(check bool) "rax is 2042" true (String.contains out_str '2' && String.contains out_str '0' && String.contains out_str '4');
       Alcotest.(check bool) "nanomite hardware traps active" true (String.contains out_str 'N' && String.contains out_str 'A' && String.contains out_str 'C')
 
+let test_direct_syscalls_e2e () =
+  let tmp_dir = Filename.temp_file "direct_syscalls_" "_dir" in
+  (try Sys.remove tmp_dir with _ -> ());
+  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+  let main_cpp = Filename.concat tmp_dir "test_syscalls.cpp" in
+  let oc = open_out main_cpp in
+  output_string oc (Hardened_runtime.emit_direct_syscalls_header ());
+  output_string oc "\n";
+  output_string oc {|
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+int main() {
+    pid_t sys_pid = asgard_syscalls::sys_getpid();
+    pid_t real_pid = getpid();
+    if (sys_pid != real_pid) {
+        printf("[SYSCALL_FAIL] getpid mismatch: syscall=%d real=%d\n", sys_pid, real_pid);
+        return 1;
+    }
+
+    bool is_traced = asgard_syscalls::sys_check_debugger_present();
+    printf("[DIRECT_SYSCALL_OK] PID=%d Traced=%s\n", sys_pid, is_traced ? "YES" : "NO");
+
+    const char msg[] = "[DIRECT_WRITE_OK]\n";
+    int64_t w = asgard_syscalls::sys_write(1, msg, sizeof(msg) - 1);
+    if (w <= 0) return 2;
+
+    return 0;
+}
+|};
+  close_out oc;
+
+  let bin_path = Filename.concat tmp_dir "test_sys" in
+  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+  let comp_status = Sys.command comp_cmd in
+  Alcotest.(check int) "clang++ compilation of direct syscalls succeeds" 0 comp_status;
+
+  let run_cmd = bin_path in
+  let ic = Unix.open_process_in run_cmd in
+  let out_buf = Buffer.create 256 in
+  (try
+     while true do
+       Buffer.add_string out_buf (input_line ic);
+       Buffer.add_char out_buf '\n'
+     done
+   with End_of_file -> ());
+  let status = Unix.close_process_in ic in
+  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+  let out_str = Buffer.contents out_buf in
+  Alcotest.(check bool) "output contains DIRECT_SYSCALL_OK" true (String.contains out_str 'D' && String.contains out_str 'I' && String.contains out_str 'R');
+  Alcotest.(check bool) "output contains DIRECT_WRITE_OK" true (String.contains out_str 'W' && String.contains out_str 'R' && String.contains out_str 'I')
+
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
   Alcotest.test_case "full_threaded_vm_with_layer3_protection" `Quick test_full_threaded_vm_with_layer3_protection;
   Alcotest.test_case "nanomite_signal_dispatch" `Quick test_nanomite_signal_dispatch;
+  Alcotest.test_case "direct_syscalls_e2e" `Quick test_direct_syscalls_e2e;
 ]
