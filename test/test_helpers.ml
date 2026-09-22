@@ -24,3 +24,27 @@ let write_file_string path content =
   let oc = open_out path in
   output_string oc content;
   close_out oc
+
+let write_bytecode_bin path (words : int64 list) =
+  let oc = open_out_bin path in
+  List.iter
+    (fun w ->
+      for i = 0 to 7 do
+        let b = Int64.to_int (Int64.logand (Int64.shift_right_logical w (i * 8)) 0xFFL) in
+        output_byte oc b
+      done)
+    words;
+  close_out oc
+
+let run_command_capture cmd =
+  let ic = Unix.open_process_in cmd in
+  let out_buf = Buffer.create 256 in
+  (try
+     while true do
+       Buffer.add_string out_buf (input_line ic);
+       Buffer.add_char out_buf '\n'
+     done
+   with End_of_file -> ());
+  let status = Unix.close_process_in ic in
+  (status, Buffer.contents out_buf)
+

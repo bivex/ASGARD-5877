@@ -18,7 +18,8 @@ let () =
     ("VM-IR & Lazy Flags", Test_vm_ir.tests);
     ("x86_64 Lifter & CFG", Test_x86_lifter.tests);
     ("Anti-Analysis (MBA & CFF)", Test_anti_analysis.tests);
-    ("Native Threaded VM & Metrics", Test_native_vm_and_metrics.tests);
+    ("Native Threaded VM", Test_native_vm.tests);
+    ("Devirtualization Metrics", Test_metrics.tests);
     ("C Macro Obfuscation", Test_c_macro_obf.tests);
     ("VM Runtime Profile", Test_runtime_profile.tests);
     ("Compiler Pipeline & Equivalence", Test_compiler_pipeline.tests);

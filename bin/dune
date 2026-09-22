@@ -38,7 +38,8 @@
   mba_engine
   cff
   native_vm
-  c_macro_obf))
+  c_macro_obf
+  protect_adapters))
 
 (executable
  (name gen_crackme_vm)

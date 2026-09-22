@@ -19,7 +19,8 @@
   test_vm_ir
   test_x86_lifter
   test_anti_analysis
-  test_native_vm_and_metrics
+  test_native_vm
+  test_metrics
   test_c_macro_obf
   test_runtime_profile
   test_compiler_pipeline
