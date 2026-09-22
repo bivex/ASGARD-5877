@@ -24,7 +24,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | ✅ **DONE** | Complete | Prevents replay attacks & opcode recording |
 | 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml) | ✅ **DONE** | Complete | Neutralizes RAM process dumpers |
 | 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ✅ **DONE** | Complete | Eliminates static handler jump tables |
-| 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ⏳ **PENDING** | **MEDIUM** | Hides scalar logic in NEON/AVX vectors |
+| 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ✅ **DONE** | Complete | Hides scalar logic in NEON/AVX vectors |
 | 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ✅ **DONE** | Complete | Thwarts userspace hooks (Frida, DTrace) |
 | 9 | **GPU Metal Compute Acceleration** | [`lib/gpu_synth/`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/) | ⏳ **PENDING** | **LOW** | Offloads crypto checks to Apple GPU |
 | 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | ⏳ **PENDING** | **LOW** | Algebraic expansion of VM handler logic |
@@ -130,16 +130,18 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ## Detailed Feature Specifications & TODOs (Pending Features)
 
-### 1. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
-* **Status**: ⏳ Pending
+### H. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
+* **Status**: ✅ Fully Operational (`lib/native_vm/vm_context_emitter.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_transform.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml`, `test/test_anti_tamper_smc.ml`)
 * **Academic Reference**: *RISC-V Vector 1.0 Formal Spec & SIMD Obfuscation*
-* **Current State in OCaml**:
-  - [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) implements full RVV vector operations (`vadd.vv`, `vsub.vv`, `vmul.vv`, `vredsum`).
-  - C++ VM currently only has 64-bit scalar GPRs.
-* **Required C++ Changes**:
-  - [ ] Add 128-bit vector register bank (`uint64_t vregs[32][2]`) to `VMContext` in `vm_context_emitter.ml`.
-  - [ ] In `vm_handlers_emitter.ml`, add SIMD handlers using ARM NEON intrinsics (`<arm_neon.h>`) or x86 AVX2 (`<immintrin.h>`).
-  - [ ] Map scalar arithmetic across vectorized lanes with random decoy lanes to confuse taint analysis engines.
+* **Mathematical & Architectural Primitive**: 128-bit dual-lane vector register bank with platform-native SIMD intrinsics:
+  - **Vector Register Bank**: `uint64_t vregs[32][2]` added to `VMContext` — 32 128-bit registers, each stored as `[lane0=lo, lane1=hi]`, zero-initialized in `init()`. Accessed via `get_vreg_lane(i, lane)` and `set_vreg(i, lo, hi)`.
+  - **New Opcodes**: `OP_VADD_VV`, `OP_VSUB_VV`, `OP_VMUL_VV`, `OP_VXOR_VV` added to `raw_op_kind`, `all_op_kinds`, and `op_kind_to_handler_name`. Decoy saturation: 256 − 43 = **213** polymorphic decoy slots.
+  - **NEON Handlers (ARM64)**: `vaddq_u64` / `vsubq_u64` / `veorq_u64` via `<arm_neon.h>` using `vcombine_u64` / `vcreate_u64` / `vgetq_lane_u64`.
+  - **SSE Handlers (x86_64)**: `_mm_add_epi64` / `_mm_sub_epi64` / `_mm_xor_si128` via `<immintrin.h>` using `_mm_set_epi64x` / `_mm_extract_epi64`.
+  - **Scalar Fallback**: Lane-wise `+`, `−`, `*`, `^` for non-NEON/SSE targets.
+  - **`H_VMUL_VV`**: Scalar lane-wise 64-bit multiply (no universal 64×64→64 SIMD mul across all ISAs).
+  - **SIMD Include Guard**: `vector_isa : bool` flag in `vm_runtime_config` controls whether `#include <arm_neon.h>` / `#include <immintrin.h>` is emitted. Wired through protection presets (default=true, max_security=true, lightweight=false, minimal=false) and JSON serialization.
+* **Verified by Tests**: `test/test_anti_tamper_smc.ml` (`test_vector_isa_e2e`) — compiles NEON VADD and VXOR handlers under `clang++ -std=c++20 -O2` on ARM64 macOS and verifies [10+3=13, 20+7=27] and self-XOR=0 arithmetic correctness.
 
 ---
 
@@ -171,6 +173,6 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 Each feature implementation must fulfill:
 1. **Compilation Guarantee**: Must compile cleanly under `clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions` on macOS ARM64 and Linux x86_64.
-2. **Zero-Regression Invariant**: All 165 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
+2. **Zero-Regression Invariant**: All 171 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
 3. **Architectural Cleanliness**: Run `dpx arch /Volumes/External/Code/ASGARD-5877/` after changes; must maintain **0 architectural errors and 0 warnings**.
 4. **Standalone Execution**: Generated binaries must execute with exit code 0 and maintain correct input-output semantics compared to unvirtualized baseline code.

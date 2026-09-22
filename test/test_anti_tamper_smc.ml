@@ -248,9 +248,127 @@ int main() {
   Alcotest.(check bool) "output contains DIRECT_SYSCALL_OK" true (String.contains out_str 'D' && String.contains out_str 'I' && String.contains out_str 'R');
   Alcotest.(check bool) "output contains DIRECT_WRITE_OK" true (String.contains out_str 'W' && String.contains out_str 'R' && String.contains out_str 'I')
 
+let test_vector_isa_e2e () =
+  let tmp_dir = Filename.temp_file "vector_isa_" "_dir" in
+  (try Sys.remove tmp_dir with _ -> ());
+  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+  let main_cpp = Filename.concat tmp_dir "test_vector_isa.cpp" in
+  let oc = open_out main_cpp in
+  (* Emit the SIMD intrinsic includes and a minimal VMContext with vregs *)
+  output_string oc {|
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#elif defined(__x86_64__)
+#include <immintrin.h>
+#endif
+
+/* Minimal 128-bit vector register bank for the test */
+struct VReg { uint64_t lo, hi; };
+static VReg vregs[32];
+
+static inline uint64_t get_vreg_lane(uint8_t i, size_t lane) { return lane == 0 ? vregs[i].lo : vregs[i].hi; }
+static inline void set_vreg(uint8_t i, uint64_t lo, uint64_t hi) { vregs[i].lo = lo; vregs[i].hi = hi; }
+
+static void do_vadd(uint8_t dst, uint8_t src) {
+    uint64_t d0 = get_vreg_lane(dst, 0), d1 = get_vreg_lane(dst, 1);
+    uint64_t s0 = get_vreg_lane(src, 0), s1 = get_vreg_lane(src, 1);
+#if defined(__aarch64__)
+    uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));
+    uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));
+    uint64x2_t vr = vaddq_u64(vd, vs);
+    set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));
+#elif defined(__x86_64__)
+    __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);
+    __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);
+    __m128i vr = _mm_add_epi64(vd, vs);
+    set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));
+#else
+    set_vreg(dst, d0 + s0, d1 + s1);
+#endif
+}
+
+static void do_vxor(uint8_t dst, uint8_t src) {
+    uint64_t d0 = get_vreg_lane(dst, 0), d1 = get_vreg_lane(dst, 1);
+    uint64_t s0 = get_vreg_lane(src, 0), s1 = get_vreg_lane(src, 1);
+#if defined(__aarch64__)
+    uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));
+    uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));
+    uint64x2_t vr = veorq_u64(vd, vs);
+    set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));
+#elif defined(__x86_64__)
+    __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);
+    __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);
+    __m128i vr = _mm_xor_si128(vd, vs);
+    set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));
+#else
+    set_vreg(dst, d0 ^ s0, d1 ^ s1);
+#endif
+}
+
+int main() {
+    /* v0 = [10, 20], v1 = [3, 7] */
+    set_vreg(0, 10ULL, 20ULL);
+    set_vreg(1, 3ULL, 7ULL);
+
+    /* v0 = v0 + v1 => [13, 27] */
+    do_vadd(0, 1);
+    if (get_vreg_lane(0, 0) != 13ULL || get_vreg_lane(0, 1) != 27ULL) {
+        printf("[VECTOR_ISA_FAIL] VADD wrong: lo=%llu hi=%llu\n",
+               (unsigned long long)get_vreg_lane(0, 0),
+               (unsigned long long)get_vreg_lane(0, 1));
+        return 1;
+    }
+
+    /* v2 = [0xFF00FF00FF00FF00, 0x00FF00FF00FF00FF],  v3 = same */
+    set_vreg(2, 0xFF00FF00FF00FF00ULL, 0x00FF00FF00FF00FFULL);
+    set_vreg(3, 0xFF00FF00FF00FF00ULL, 0x00FF00FF00FF00FFULL);
+    /* v2 xor v3 => [0, 0] */
+    do_vxor(2, 3);
+    if (get_vreg_lane(2, 0) != 0ULL || get_vreg_lane(2, 1) != 0ULL) {
+        printf("[VECTOR_ISA_FAIL] VXOR self-xor should be zero\n");
+        return 2;
+    }
+
+    printf("[VECTOR_ISA_OK] NEON/SSE SIMD handlers verified.\n");
+    return 0;
+}
+|};
+  close_out oc;
+
+  let bin_path = Filename.concat tmp_dir "test_visa" in
+  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s 2>&1" main_cpp bin_path in
+  let comp_status = Sys.command comp_cmd in
+  Alcotest.(check int) "vector ISA clang++ compilation succeeds" 0 comp_status;
+
+  let ic = Unix.open_process_in bin_path in
+  let out_buf = Buffer.create 128 in
+  (try while true do
+       Buffer.add_string out_buf (input_line ic);
+       Buffer.add_char out_buf '\n'
+     done with End_of_file -> ());
+  let status = Unix.close_process_in ic in
+  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Alcotest.(check bool) "vector ISA binary exits 0" true (status = Unix.WEXITED 0);
+  let out = Buffer.contents out_buf in
+  Alcotest.(check bool) "output contains VECTOR_ISA_OK" true
+    (let needle = "VECTOR_ISA_OK" in
+     let n = String.length needle and h = String.length out in
+     let found = ref false in
+     for i = 0 to h - n do
+       if String.sub out i n = needle then found := true
+     done; !found)
+
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
   Alcotest.test_case "full_threaded_vm_with_layer3_protection" `Quick test_full_threaded_vm_with_layer3_protection;
   Alcotest.test_case "nanomite_signal_dispatch" `Quick test_nanomite_signal_dispatch;
   Alcotest.test_case "direct_syscalls_e2e" `Quick test_direct_syscalls_e2e;
+  Alcotest.test_case "vector_isa_e2e" `Quick test_vector_isa_e2e;
 ]

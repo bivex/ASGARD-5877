@@ -50,6 +50,7 @@ type vm_runtime_config = {
   enable_super_operators : bool;
   stack_scrambling : bool;
   memory_sanitization : bool;
+  vector_isa : bool;
 }
 
 type c_macro_config = {

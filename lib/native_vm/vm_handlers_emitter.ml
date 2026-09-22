@@ -233,6 +233,72 @@ let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_n
   Buffer.add_string b "        FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
 
+  (* Vector ISA handlers: NEON on aarch64, SSE on x86_64, scalar fallback *)
+  Buffer.add_string b "    H_VADD_VV: {\n";
+  Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
+  Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
+  Buffer.add_string b "#if defined(__aarch64__)\n";
+  Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
+  Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
+  Buffer.add_string b "        uint64x2_t vr = vaddq_u64(vd, vs);\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+  Buffer.add_string b "#elif defined(__x86_64__)\n";
+  Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
+  Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
+  Buffer.add_string b "        __m128i vr = _mm_add_epi64(vd, vs);\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
+  Buffer.add_string b "#else\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, d0 + s0, d1 + s1);\n";
+  Buffer.add_string b "#endif\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+
+  Buffer.add_string b "    H_VSUB_VV: {\n";
+  Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
+  Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
+  Buffer.add_string b "#if defined(__aarch64__)\n";
+  Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
+  Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
+  Buffer.add_string b "        uint64x2_t vr = vsubq_u64(vd, vs);\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+  Buffer.add_string b "#elif defined(__x86_64__)\n";
+  Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
+  Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
+  Buffer.add_string b "        __m128i vr = _mm_sub_epi64(vd, vs);\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
+  Buffer.add_string b "#else\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, d0 - s0, d1 - s1);\n";
+  Buffer.add_string b "#endif\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+
+  Buffer.add_string b "    H_VMUL_VV: {\n";
+  Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
+  Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
+  Buffer.add_string b "        // Scalar lane-wise multiply (no direct 64-bit SIMD mul on all targets)\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, d0 * s0, d1 * s1);\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+
+  Buffer.add_string b "    H_VXOR_VV: {\n";
+  Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
+  Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
+  Buffer.add_string b "#if defined(__aarch64__)\n";
+  Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
+  Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
+  Buffer.add_string b "        uint64x2_t vr = veorq_u64(vd, vs);\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+  Buffer.add_string b "#elif defined(__x86_64__)\n";
+  Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
+  Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
+  Buffer.add_string b "        __m128i vr = _mm_xor_si128(vd, vs);\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
+  Buffer.add_string b "#else\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, d0 ^ s0, d1 ^ s1);\n";
+  Buffer.add_string b "#endif\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n\n";
+
   Buffer.add_string b "    H_DECOY_0: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_DECOY_1: { ctx.set_reg(dst, ctx.get_reg(dst) + (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_DECOY_2: { ctx.set_reg(dst, ctx.get_reg(dst) * 0x9E37ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";

@@ -19,10 +19,14 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_running_key = Protection_config.rolling_key_enabled config in
   let enable_stack_scramble = match config with Some c -> c.vm_runtime.stack_scrambling | None -> true in
   let enable_mem_sanitize = match config with Some c -> c.vm_runtime.memory_sanitization | None -> true in
+  let enable_vector_isa = match config with Some c -> c.vm_runtime.vector_isa | None -> true in
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n";
   Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
+  if enable_vector_isa then begin
+    Buffer.add_string b "#if defined(__aarch64__)\n#include <arm_neon.h>\n#elif defined(__x86_64__)\n#include <immintrin.h>\n#endif\n\n";
+  end;
   Buffer.add_string b (Vm_ir.Rns.emit_cpp_rns_header ());
   Buffer.add_string b "\n";
   if enable_direct_syscalls then begin

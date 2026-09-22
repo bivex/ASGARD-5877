@@ -30,6 +30,7 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    uint64_t canary_head = CANARY_VAL;\n";
   Buffer.add_string b "    uint64_t mid_canaries[32]; // Interleaved dynamic canaries across every 16 stack frames\n";
   Buffer.add_string b "    uint64_t gprs[32]; // Blinded in memory: actual_val = gprs[i] ^ reg_mask\n";
+  Buffer.add_string b "    uint64_t vregs[32][2]; // 128-bit vector register bank: lane[0]=low, lane[1]=high\n";
   Buffer.add_string b "    uint64_t stack[512];\n";
   Buffer.add_string b "    size_t sp;\n";
   Buffer.add_string b "    uint64_t reg_mask;\n";
@@ -48,6 +49,8 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "        for (size_t i = 0; i < 32; ++i) {\n";
   Buffer.add_string b "            gprs[i] = reg_mask; // Initialized to 0 (0 ^ reg_mask)\n";
   Buffer.add_string b "            mid_canaries[i] = CANARY_VAL ^ ((uint64_t)i * 0x517CC1B727220A95ULL) ^ (uint64_t)seed;\n";
+  Buffer.add_string b "            vregs[i][0] = 0ULL;\n";
+  Buffer.add_string b "            vregs[i][1] = 0ULL;\n";
   Buffer.add_string b "        }\n";
   Buffer.add_string b "        gprs[REG_VKEY] = running_key ^ reg_mask;\n";
   Buffer.add_string b "        sp = 0;\n";
@@ -87,6 +90,14 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline void set_reg(uint8_t i, uint64_t v) noexcept {\n";
   Buffer.add_string b "        gprs[i] = v ^ reg_mask;\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    // 128-bit vector register accessors (two 64-bit lanes)\n";
+  Buffer.add_string b "    inline uint64_t get_vreg_lane(uint8_t i, size_t lane) const noexcept {\n";
+  Buffer.add_string b "        return vregs[i & 31][lane & 1];\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline void set_vreg(uint8_t i, uint64_t lo, uint64_t hi) noexcept {\n";
+  Buffer.add_string b "        vregs[i & 31][0] = lo;\n";
+  Buffer.add_string b "        vregs[i & 31][1] = hi;\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    // Named architectural register accessors via randomized permutation\n";
   Buffer.add_string b "    inline uint64_t get_rax() const noexcept { return get_reg(REG_RAX); }\n";

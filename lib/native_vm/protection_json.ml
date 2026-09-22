@@ -171,6 +171,7 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
             enable_super_operators = json_get_bool "enable_super_operators" base.vm_runtime.enable_super_operators obj;
             stack_scrambling = json_get_bool "stack_scrambling" base.vm_runtime.stack_scrambling obj;
             memory_sanitization = json_get_bool "memory_sanitization" base.vm_runtime.memory_sanitization obj;
+            vector_isa = json_get_bool "vector_isa" base.vm_runtime.vector_isa obj;
           }
     in
 
@@ -242,6 +243,7 @@ let to_yojson (cfg : t) : Yojson.Basic.t =
       ("enable_super_operators", `Bool cfg.vm_runtime.enable_super_operators);
       ("stack_scrambling", `Bool cfg.vm_runtime.stack_scrambling);
       ("memory_sanitization", `Bool cfg.vm_runtime.memory_sanitization);
+      ("vector_isa", `Bool cfg.vm_runtime.vector_isa);
     ]);
     ("c_macro", `Assoc [
       ("enabled", `Bool cfg.c_macro.enabled);

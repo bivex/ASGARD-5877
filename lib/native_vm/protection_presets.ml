@@ -33,6 +33,7 @@ let default : t = {
     enable_super_operators = true;
     stack_scrambling = true;
     memory_sanitization = true;
+    vector_isa = true;
   };
   c_macro = {
     enabled = true;
@@ -83,6 +84,7 @@ let max_security : t = {
     enable_super_operators = true;
     stack_scrambling = true;
     memory_sanitization = true;
+    vector_isa = true;
   };
   c_macro = {
     enabled = true;
@@ -133,6 +135,7 @@ let lightweight : t = {
     enable_super_operators = true;
     stack_scrambling = false;
     memory_sanitization = false;
+    vector_isa = false;
   };
   c_macro = {
     enabled = false;
@@ -183,6 +186,7 @@ let stealth : t = {
     enable_super_operators = true;
     stack_scrambling = true;
     memory_sanitization = true;
+    vector_isa = true;
   };
   c_macro = {
     enabled = true;
@@ -233,6 +237,7 @@ let minimal : t = {
     enable_super_operators = false;
     stack_scrambling = false;
     memory_sanitization = false;
+    vector_isa = false;
   };
   c_macro = {
     enabled = false;
@@ -283,6 +288,7 @@ let high : t = {
     enable_super_operators = true;
     stack_scrambling = true;
     memory_sanitization = true;
+    vector_isa = true;
   };
   c_macro = {
     enabled = true;

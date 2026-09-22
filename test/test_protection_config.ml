@@ -25,7 +25,8 @@ let test_json_roundtrip () =
       Alcotest.(check bool) "anti_tamper.nanomites matches" original.anti_tamper.nanomites parsed.anti_tamper.nanomites;
       Alcotest.(check bool) "anti_tamper.direct_syscalls matches" original.anti_tamper.direct_syscalls parsed.anti_tamper.direct_syscalls;
       Alcotest.(check bool) "anti_pushan.running_key matches" original.anti_pushan.running_key parsed.anti_pushan.running_key;
-      Alcotest.(check int) "vm_runtime.num_dispatch_domains matches" original.vm_runtime.num_dispatch_domains parsed.vm_runtime.num_dispatch_domains
+      Alcotest.(check int) "vm_runtime.num_dispatch_domains matches" original.vm_runtime.num_dispatch_domains parsed.vm_runtime.num_dispatch_domains;
+      Alcotest.(check bool) "vm_runtime.vector_isa matches" original.vm_runtime.vector_isa parsed.vm_runtime.vector_isa
 
 let test_partial_json_parsing () =
   let partial_json = {|
