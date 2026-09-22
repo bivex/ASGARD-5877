@@ -44,9 +44,22 @@ let strip_comments line =
   String.trim (String.sub line 0 (find_start 0 false))
 
 let split_tokens str delim =
-  String.split_on_char delim str
-  |> List.map String.trim
-  |> List.filter (fun s -> s <> "")
+  let len = String.length str in
+  let rec scan i start in_bracket acc =
+    if i >= len then
+      let piece = String.trim (String.sub str start (len - start)) in
+      List.rev (if piece = "" then acc else piece :: acc)
+    else
+      match str.[i] with
+      | '[' -> scan (i + 1) start true acc
+      | ']' -> scan (i + 1) start false acc
+      | c when c = delim && not in_bracket ->
+          let piece = String.trim (String.sub str start (i - start)) in
+          let acc' = if piece = "" then acc else piece :: acc in
+          scan (i + 1) (i + 1) false acc'
+      | _ -> scan (i + 1) start in_bracket acc
+  in
+  scan 0 0 false []
 
 let parse_width_prefix str =
   let s = String.lowercase_ascii (String.trim str) in
@@ -249,11 +262,15 @@ let parse_lines text =
     | [] -> Ok (List.rev acc)
     | l :: rest ->
         let clean = strip_comments l in
-        let upper = String.uppercase_ascii clean in
-        if String.starts_with ~prefix:".BYTE" upper
-           || String.starts_with ~prefix:".ASCII" upper
-           || String.starts_with ~prefix:".ASCIZ" upper
-           || String.starts_with ~prefix:".STRING" upper then
+        if clean = "" then loop (line_no + 1) (LineEmpty :: acc) pending_bytes rest
+        else if String.length clean >= 5 && clean.[0] = '.' &&
+                (let c = clean.[1] in c = 'b' || c = 'B' || c = 'a' || c = 'A' || c = 's' || c = 'S') &&
+                (let upper = String.uppercase_ascii clean in
+                 String.starts_with ~prefix:".BYTE" upper
+                 || String.starts_with ~prefix:".ASCII" upper
+                 || String.starts_with ~prefix:".ASCIZ" upper
+                 || String.starts_with ~prefix:".STRING" upper) then
+          let upper = String.uppercase_ascii clean in
           let str =
             if String.starts_with ~prefix:".BYTE" upper then
               let parts = split_tokens (String.sub clean 5 (String.length clean - 5)) ',' in
@@ -284,7 +301,6 @@ let parse_lines text =
             loop (line_no + 1) (LineMarkerEnd :: acc) [] rest
           else
             loop (line_no + 1) acc [] rest
-
         else
           match parse_line l with
           | Error e -> Error (Printf.sprintf "Line %d: %s" line_no e)

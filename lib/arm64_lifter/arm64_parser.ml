@@ -241,19 +241,24 @@ let parse_line raw =
     if args_str = "" then
       Ok (LineInstr (mnemonic, []))
     else
-      let rec group_brackets acc in_bracket cur = function
-        | [] -> List.rev (if cur = "" then acc else String.trim cur :: acc)
-        | ',' :: rest when not in_bracket ->
-            group_brackets (String.trim cur :: acc) false "" rest
-        | '[' :: rest ->
-            group_brackets acc true (cur ^ "[") rest
-        | ']' :: rest ->
-            group_brackets acc false (cur ^ "]") rest
-        | c :: rest ->
-            group_brackets acc in_bracket (cur ^ String.make 1 c) rest
+      let raw_args =
+        let len = String.length args_str in
+        let rec scan i start in_bracket acc =
+          if i >= len then
+            let piece = String.trim (String.sub args_str start (len - start)) in
+            List.rev (if piece = "" then acc else piece :: acc)
+          else
+            match args_str.[i] with
+            | '[' -> scan (i + 1) start true acc
+            | ']' -> scan (i + 1) start false acc
+            | ',' when not in_bracket ->
+                let piece = String.trim (String.sub args_str start (i - start)) in
+                let acc' = if piece = "" then acc else piece :: acc in
+                scan (i + 1) (i + 1) false acc'
+            | _ -> scan (i + 1) start in_bracket acc
+        in
+        scan 0 0 false []
       in
-      let chars = List.init (String.length args_str) (String.get args_str) in
-      let raw_args = group_brackets [] false "" chars |> List.filter (fun s -> s <> "") in
 
       let def_width =
         if String.ends_with ~suffix:"b" mnemonic || mnemonic = "ldrsb" then Register.B8
@@ -296,31 +301,37 @@ let parse_lines text =
     | [] -> Ok (List.rev acc)
     | l :: rest ->
         let clean = strip_comments l in
-        let upper = String.uppercase_ascii clean in
-        if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" then
-          let acc' = match acc with
-            | LineInstr ("b", _) :: prev -> prev
-            | _ -> acc
-          in
-          loop (LineMarkerBegin (ModeVirtualize "region") :: acc') rest
-        else if contains_sub upper "ASGARD_BEG_M" || contains_sub upper "ASGARD_BEGIN_M" then
-          let acc' = match acc with
-            | LineInstr ("b", _) :: prev -> prev
-            | _ -> acc
-          in
-          loop (LineMarkerBegin (ModeMutation "region") :: acc') rest
-        else if contains_sub upper "ASGARD_BEG" || contains_sub upper "ASGARD_BEGIN" then
-          let acc' = match acc with
-            | LineInstr ("b", _) :: prev -> prev
-            | _ -> acc
-          in
-          loop (LineMarkerBegin (ModeUltra "region") :: acc') rest
-        else if contains_sub upper "ASGARD_END" then
-          let acc' = match acc with
-            | LineInstr ("b", _) :: prev -> prev
-            | _ -> acc
-          in
-          loop (LineMarkerEnd :: acc') rest
+        if clean = "" then loop (LineEmpty :: acc) rest
+        else if contains_sub clean "ASGARD_" || contains_sub clean "asgard_" then
+          let upper = String.uppercase_ascii clean in
+          if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" then
+            let acc' = match acc with
+              | LineInstr ("b", _) :: prev -> prev
+              | _ -> acc
+            in
+            loop (LineMarkerBegin (ModeVirtualize "region") :: acc') rest
+          else if contains_sub upper "ASGARD_BEG_M" || contains_sub upper "ASGARD_BEGIN_M" then
+            let acc' = match acc with
+              | LineInstr ("b", _) :: prev -> prev
+              | _ -> acc
+            in
+            loop (LineMarkerBegin (ModeMutation "region") :: acc') rest
+          else if contains_sub upper "ASGARD_BEG" || contains_sub upper "ASGARD_BEGIN" then
+            let acc' = match acc with
+              | LineInstr ("b", _) :: prev -> prev
+              | _ -> acc
+            in
+            loop (LineMarkerBegin (ModeUltra "region") :: acc') rest
+          else if contains_sub upper "ASGARD_END" then
+            let acc' = match acc with
+              | LineInstr ("b", _) :: prev -> prev
+              | _ -> acc
+            in
+            loop (LineMarkerEnd :: acc') rest
+          else
+            match parse_line l with
+            | Ok res -> loop (res :: acc) rest
+            | Error err -> Error err
         else
           match parse_line l with
           | Ok res -> loop (res :: acc) rest

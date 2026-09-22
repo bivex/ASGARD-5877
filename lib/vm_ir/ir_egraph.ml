@@ -117,7 +117,10 @@ let rebuild (t : t) : unit =
 let saturate ?(max_iters = 3) ?rng (t : t) : unit =
   ignore rng;
   let applied_rules = Hashtbl.create 64 in
-  for _ = 1 to max_iters do
+  let iter = ref 0 in
+  let stop = ref false in
+  while not !stop && !iter < max_iters do
+    incr iter;
     let pending_unions = ref [] in
     Hashtbl.iter (fun id cls ->
       List.iter (fun node ->
@@ -143,7 +146,8 @@ let saturate ?(max_iters = 3) ?rng (t : t) : unit =
         end
       ) cls.nodes
     ) t.classes;
-    if !pending_unions <> [] then begin
+    if !pending_unions = [] then stop := true
+    else begin
       List.iter (fun (id1, id2) -> union t id1 id2) !pending_unions;
       rebuild t
     end
