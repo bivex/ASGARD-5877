@@ -159,9 +159,15 @@ func_nanomite_branch:
       output_string oc_h pkg.cpp_runtime_source;
       close_out oc_h;
 
+      let runner_source_with_check =
+        pkg.runner_source ^ "\n__attribute__((destructor)) static void _check_nanomite_traps() {\n"
+        ^ "    printf(\"[NANOMITES_ACTIVE] Traps Handled: %llu\\n\",\n"
+        ^ "           (unsigned long long)asgard_nanomites::g_nanomite_dispatcher.traps_handled);\n"
+        ^ "}\n"
+      in
       let runner_path = Filename.concat tmp_dir "runner.cpp" in
       let oc_r = open_out runner_path in
-      output_string oc_r pkg.runner_source;
+      output_string oc_r runner_source_with_check;
       close_out oc_r;
 
       let bin_path = Filename.concat tmp_dir "runner" in
@@ -184,7 +190,8 @@ func_nanomite_branch:
       let out_str = Buffer.contents out_buf in
       (* 42 < 50, so .Lless branch taken: 42 + 2000 = 2042 *)
       Alcotest.(check bool) "output contains SUCCESS" true (String.contains out_str 'S' && String.contains out_str 'U' && String.contains out_str 'C');
-      Alcotest.(check bool) "rax is 2042" true (String.contains out_str '2' && String.contains out_str '0' && String.contains out_str '4')
+      Alcotest.(check bool) "rax is 2042" true (String.contains out_str '2' && String.contains out_str '0' && String.contains out_str '4');
+      Alcotest.(check bool) "nanomite hardware traps active" true (String.contains out_str 'N' && String.contains out_str 'A' && String.contains out_str 'C')
 
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
