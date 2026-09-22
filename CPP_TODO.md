@@ -26,7 +26,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ✅ **DONE** | Complete | Eliminates static handler jump tables |
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ✅ **DONE** | Complete | Hides scalar logic in NEON/AVX vectors |
 | 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ✅ **DONE** | Complete | Thwarts userspace hooks (Frida, DTrace) |
-| 9 | **GPU Metal Compute Acceleration** | [`lib/gpu_synth/`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/) | ⏳ **PENDING** | **LOW** | Offloads crypto checks to Apple GPU |
+
 | 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | ✅ **DONE** | Complete | Algebraic expansion of VM handler logic |
 
 ---
@@ -128,7 +128,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-## Detailed Feature Specifications & TODOs (Pending Features)
+## Completed Feature Specifications
 
 ### H. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
 * **Status**: ✅ Fully Operational (`lib/native_vm/vm_context_emitter.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_transform.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml`, `test/test_anti_tamper_smc.ml`)
@@ -145,17 +145,6 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-### 2. Apple Metal Compute Acceleration (`gpu_synth`) in Protected App
-* **Status**: ⏳ Pending
-* **Academic Reference**: *GPGPU-Assisted Software Protection & Integrity Attestation*
-* **Current State in OCaml**:
-  - [`lib/gpu_synth/`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/) runs Metal 3.0 compute shaders for offline MBA synthesis.
-* **Required C++ Changes**:
-  - [ ] Add option `--gpu-guard` in CLI.
-  - [ ] Emit an embedded Metal Shading Language (`.metal`) string inside `threaded_vm.hpp`.
-  - [ ] At application startup, initialize `MTLCreateSystemDefaultDevice()` and dispatch an asynchronous compute kernel verifying runtime code integrity on the GPU parallel grid.
-
----
 
 ### I. E-Graph Equality Saturation Scrambler
 * **Status**: ✅ Fully Operational (`lib/native_vm/egraph_cpp_emitter.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml`, `test/test_egraph_expansion.ml`, `test/test_protection_config.ml`)
