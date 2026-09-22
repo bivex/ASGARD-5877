@@ -247,7 +247,7 @@ graph TD
   Gen_crypto_crackme -. "ref" .-> Native_vm_Vm_emitter
   Gen_crypto_crackme -. "ref" .-> C_macro_obf_C_macro_obf
   Gen_crypto_crackme -. "ref" .-> Native_vm_Metrics
-  Main =>|"ref"| Cli_isa
+  Main ==>|"ref"| Cli_isa
   Main -->|"ref"| Cli_vanguard
   Main -->|"ref"| Cli_protect
   Main -->|"ref"| Cli_protect_arm64
@@ -267,24 +267,24 @@ graph TD
   Profile_bottlenecks -. "ref" .-> Native_vm_Vm_emitter
   Profile_bottlenecks -. "ref" .-> Protect_adapters_C_trampoline_adapter
   Random_visa_assembler_Assembler_adapter -->|"include · cross-lib"| Random_visa_ports_Ports
-  Random_visa_assembler_Assembler_adapter =>|"ref · cross-lib"| Random_visa_domain_Errors
-  Random_visa_assembler_Assembler_adapter =>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
+  Random_visa_assembler_Assembler_adapter ==>|"ref · cross-lib"| Random_visa_domain_Errors
+  Random_visa_assembler_Assembler_adapter ==>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
   Random_visa_assembler_Assembler_adapter -->|"ref · cross-lib"| Random_visa_domain_Vector_instruction
-  Random_visa_assembler_Assembler_adapter =>|"ref · cross-lib"| Random_visa_domain_Types
+  Random_visa_assembler_Assembler_adapter ==>|"ref · cross-lib"| Random_visa_domain_Types
   Random_visa_c11_emitter_C11_emitter_adapter -->|"include · cross-lib"| Random_visa_ports_Ports
-  Random_visa_c11_emitter_C11_emitter_adapter =>|"ref · cross-lib"| Random_visa_domain_Vector_instruction
-  Random_visa_c11_emitter_C11_emitter_adapter =>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
+  Random_visa_c11_emitter_C11_emitter_adapter ==>|"ref · cross-lib"| Random_visa_domain_Vector_instruction
+  Random_visa_c11_emitter_C11_emitter_adapter ==>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
   Random_visa_c11_emitter_C11_emitter_adapter -->|"ref · cross-lib"| Random_visa_domain_Types
   Random_visa_c11_emitter_C11_emitter_adapter -->|"ref · cross-lib"| Random_visa_domain_Errors
   Random_visa_compiler_adapter_Compiler_adapter -->|"include · cross-lib"| Random_visa_ports_Ports
   Random_visa_compiler_adapter_Compiler_adapter -->|"ref · cross-lib"| Random_visa_domain_Errors
   Random_visa_cpp_emitter_Cpp_emitter_adapter -->|"include · cross-lib"| Random_visa_ports_Ports
   Random_visa_cpp_emitter_Cpp_emitter_adapter -->|"ref"| Random_visa_cpp_emitter_Cpp_header_emitters
-  Random_visa_cpp_emitter_Cpp_emitter_adapter =>|"ref · cross-lib"| Random_visa_domain_Vector_instruction
-  Random_visa_cpp_emitter_Cpp_emitter_adapter =>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
+  Random_visa_cpp_emitter_Cpp_emitter_adapter ==>|"ref · cross-lib"| Random_visa_domain_Vector_instruction
+  Random_visa_cpp_emitter_Cpp_emitter_adapter ==>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
   Random_visa_cpp_emitter_Cpp_emitter_adapter -->|"ref · cross-lib"| Random_visa_domain_Types
   Random_visa_cpp_emitter_Cpp_emitter_adapter -->|"ref · cross-lib"| Random_visa_domain_Errors
-  Random_visa_cpp_emitter_Cpp_header_emitters =>|"ref · cross-lib"| Random_visa_domain_Vector_instruction
+  Random_visa_cpp_emitter_Cpp_header_emitters ==>|"ref · cross-lib"| Random_visa_domain_Vector_instruction
   Random_visa_cpp_emitter_Cpp_header_emitters -->|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
   Random_visa_cpp_emitter_Cpp_header_emitters -->|"ref · cross-lib"| Random_visa_domain_Types
   Protect_adapters_Arm64_lifter_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
@@ -296,9 +296,9 @@ graph TD
   Protect_adapters_C_trampoline_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
   Protect_adapters_Clang_toolchain_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
   Protect_adapters_Config_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
-  Protect_adapters_Config_adapter =>|"ref · cross-lib"| Native_vm_Protection_config
+  Protect_adapters_Config_adapter ==>|"ref · cross-lib"| Native_vm_Protection_config
   Protect_adapters_Vm_packagers -->|"open · cross-lib"| Random_visa_ports_Protect_ports
-  Protect_adapters_Vm_packagers =>|"ref · cross-lib"| Native_vm_Metrics
+  Protect_adapters_Vm_packagers ==>|"ref · cross-lib"| Native_vm_Metrics
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Vm_ir_Ir
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Native_vm_Protection_config
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Native_vm_Vm_emitter
@@ -312,8 +312,8 @@ graph TD
   Random_visa_sail_export_Sail_export_adapter -->|"ref · cross-lib"| Random_visa_domain_Errors
   Random_visa_sail_parser_Sail_parser_adapter -->|"open"| Random_visa_sail_parser_Ast
   Random_visa_sail_parser_Sail_parser_adapter -->|"include · cross-lib"| Random_visa_ports_Ports
-  Random_visa_sail_parser_Sail_parser_adapter =>|"ref · cross-lib"| Random_visa_domain_Sail_ast
-  Random_visa_sail_parser_Sail_parser_adapter =>|"ref · cross-lib"| Random_visa_domain_Types
+  Random_visa_sail_parser_Sail_parser_adapter ==>|"ref · cross-lib"| Random_visa_domain_Sail_ast
+  Random_visa_sail_parser_Sail_parser_adapter ==>|"ref · cross-lib"| Random_visa_domain_Types
   Random_visa_sail_parser_Sail_parser_adapter -->|"ref · cross-lib"| Random_visa_domain_Isa_grammar
   Random_visa_sail_parser_Sail_parser_adapter -->|"ref · cross-lib"| Random_visa_domain_Instruction_family
   Random_visa_sail_parser_Sail_parser_adapter -->|"ref · cross-lib"| Random_visa_domain_Instruction_class
@@ -345,123 +345,123 @@ graph TD
   Random_visa_application_Synthesize_isa -->|"ref · cross-lib"| Random_visa_domain_Errors
   Arm64_lifter_Arm64_alu -->|"open"| Arm64_lifter_Arm64_types
   Arm64_lifter_Arm64_alu -->|"open"| Arm64_lifter_Arm64_common
-  Arm64_lifter_Arm64_alu =>|"ref · cross-lib"| Vm_ir_Ir
-  Arm64_lifter_Arm64_alu =>|"ref · cross-lib"| Vm_ir_Register
+  Arm64_lifter_Arm64_alu ==>|"ref · cross-lib"| Vm_ir_Ir
+  Arm64_lifter_Arm64_alu ==>|"ref · cross-lib"| Vm_ir_Register
   Arm64_lifter_Arm64_alu -->|"ref · cross-lib"| Vm_ir_Flags
   Arm64_lifter_Arm64_branch -->|"open"| Arm64_lifter_Arm64_types
   Arm64_lifter_Arm64_branch -->|"open · cross-lib"| Vm_ir_Flags
-  Arm64_lifter_Arm64_branch =>|"ref · cross-lib"| Vm_ir_Ir
-  Arm64_lifter_Arm64_branch =>|"ref · cross-lib"| Vm_ir_Register
+  Arm64_lifter_Arm64_branch ==>|"ref · cross-lib"| Vm_ir_Ir
+  Arm64_lifter_Arm64_branch ==>|"ref · cross-lib"| Vm_ir_Register
   Arm64_lifter_Arm64_common -->|"open"| Arm64_lifter_Arm64_types
-  Arm64_lifter_Arm64_common =>|"ref · cross-lib"| Vm_ir_Ir
-  Arm64_lifter_Arm64_common =>|"ref · cross-lib"| Vm_ir_Register
-  Arm64_lifter_Arm64_common =>|"ref · cross-lib"| Vm_ir_Flags
+  Arm64_lifter_Arm64_common ==>|"ref · cross-lib"| Vm_ir_Ir
+  Arm64_lifter_Arm64_common ==>|"ref · cross-lib"| Vm_ir_Register
+  Arm64_lifter_Arm64_common ==>|"ref · cross-lib"| Vm_ir_Flags
   Arm64_lifter_Arm64_lifter -->|"open"| Arm64_lifter_Arm64_types
   Arm64_lifter_Arm64_lifter -->|"open"| Arm64_lifter_Arm64_common
-  Arm64_lifter_Arm64_lifter =>|"ref · cross-lib"| Vm_ir_Ir
+  Arm64_lifter_Arm64_lifter ==>|"ref · cross-lib"| Vm_ir_Ir
   Arm64_lifter_Arm64_lifter -->|"ref"| Arm64_lifter_Arm64_alu
   Arm64_lifter_Arm64_lifter -->|"ref"| Arm64_lifter_Arm64_mem
   Arm64_lifter_Arm64_lifter -->|"ref"| Arm64_lifter_Arm64_branch
   Arm64_lifter_Arm64_mem -->|"open"| Arm64_lifter_Arm64_types
   Arm64_lifter_Arm64_mem -->|"open"| Arm64_lifter_Arm64_common
-  Arm64_lifter_Arm64_mem =>|"ref · cross-lib"| Vm_ir_Ir
-  Arm64_lifter_Arm64_mem =>|"ref · cross-lib"| Vm_ir_Register
+  Arm64_lifter_Arm64_mem ==>|"ref · cross-lib"| Vm_ir_Ir
+  Arm64_lifter_Arm64_mem ==>|"ref · cross-lib"| Vm_ir_Register
   Arm64_lifter_Arm64_parser -->|"open"| Arm64_lifter_Arm64_regs
   Arm64_lifter_Arm64_parser -->|"include"| Arm64_lifter_Arm64_types
-  Arm64_lifter_Arm64_regs =>|"ref · cross-lib"| Vm_ir_Register
-  Arm64_lifter_Arm64_types =>|"ref · cross-lib"| Vm_ir_Register
+  Arm64_lifter_Arm64_regs ==>|"ref · cross-lib"| Vm_ir_Register
+  Arm64_lifter_Arm64_types ==>|"ref · cross-lib"| Vm_ir_Register
   C_macro_obf_C_arith_rewriter -->|"open"| C_macro_obf_C_expr_lexer
   C_macro_obf_C_arith_rewriter -->|"open"| C_macro_obf_C_expr_parser
   C_macro_obf_C_expr_parser -->|"open"| C_macro_obf_C_expr_lexer
   C_macro_obf_C_macro_header -->|"open"| C_macro_obf_C_macro_config
   C_macro_obf_C_macro_header -->|"ref"| C_macro_obf_C_macro_templates
   C_macro_obf_C_macro_header -->|"ref"| C_macro_obf_C_macro_guards
-  C_macro_obf_C_macro_obf =>|"ref"| C_macro_obf_C_macro_config
+  C_macro_obf_C_macro_obf ==>|"ref"| C_macro_obf_C_macro_config
   C_macro_obf_C_macro_obf -->|"ref"| C_macro_obf_C_macro_header
   C_macro_obf_C_macro_obf -->|"ref"| C_macro_obf_C_nanomites
   C_macro_obf_C_macro_obf -->|"ref"| C_macro_obf_C_arith_rewriter
   C_macro_obf_C_nanomites -->|"open"| C_macro_obf_C_macro_config
-  Cff_Cff =>|"ref · cross-lib"| Vm_ir_Ir
-  Cff_Cff =>|"ref · cross-lib"| Vm_ir_Register
+  Cff_Cff ==>|"ref · cross-lib"| Vm_ir_Ir
+  Cff_Cff ==>|"ref · cross-lib"| Vm_ir_Register
   Cff_Cff -->|"ref · cross-lib"| Vm_ir_Flags
-  Cff_Pop_coupler =>|"ref · cross-lib"| Vm_ir_Register
-  Cff_Pop_coupler =>|"ref · cross-lib"| Vm_ir_Ir
-  Random_visa_domain_Generation_profile =>|"ref"| Random_visa_domain_Instruction_class
-  Random_visa_domain_Generation_profile =>|"ref"| Random_visa_domain_Errors
-  Random_visa_domain_Hw_cost =>|"ref"| Random_visa_domain_Types
+  Cff_Pop_coupler ==>|"ref · cross-lib"| Vm_ir_Register
+  Cff_Pop_coupler ==>|"ref · cross-lib"| Vm_ir_Ir
+  Random_visa_domain_Generation_profile ==>|"ref"| Random_visa_domain_Instruction_class
+  Random_visa_domain_Generation_profile ==>|"ref"| Random_visa_domain_Errors
+  Random_visa_domain_Hw_cost ==>|"ref"| Random_visa_domain_Types
   Random_visa_domain_Hw_cost -->|"ref"| Random_visa_domain_Vector_isa_spec
   Random_visa_domain_Hw_cost -->|"ref"| Random_visa_domain_Vector_instruction
   Random_visa_domain_Instruction_class -->|"ref"| Random_visa_domain_Errors
-  Random_visa_domain_Instruction_family =>|"ref"| Random_visa_domain_Instruction_class
-  Random_visa_domain_Instruction_family =>|"ref"| Random_visa_domain_Types
-  Random_visa_domain_Instruction_family =>|"ref"| Random_visa_domain_Errors
-  Random_visa_domain_Isa_grammar =>|"ref"| Random_visa_domain_Errors
-  Random_visa_domain_Isa_grammar =>|"ref"| Random_visa_domain_Types
-  Random_visa_domain_Isa_grammar =>|"ref"| Random_visa_domain_Instruction_family
-  Random_visa_domain_Isa_grammar =>|"ref"| Random_visa_domain_Instruction_class
-  Random_visa_domain_Isa_grammar =>|"ref"| Random_visa_domain_Generation_profile
+  Random_visa_domain_Instruction_family ==>|"ref"| Random_visa_domain_Instruction_class
+  Random_visa_domain_Instruction_family ==>|"ref"| Random_visa_domain_Types
+  Random_visa_domain_Instruction_family ==>|"ref"| Random_visa_domain_Errors
+  Random_visa_domain_Isa_grammar ==>|"ref"| Random_visa_domain_Errors
+  Random_visa_domain_Isa_grammar ==>|"ref"| Random_visa_domain_Types
+  Random_visa_domain_Isa_grammar ==>|"ref"| Random_visa_domain_Instruction_family
+  Random_visa_domain_Isa_grammar ==>|"ref"| Random_visa_domain_Instruction_class
+  Random_visa_domain_Isa_grammar ==>|"ref"| Random_visa_domain_Generation_profile
   Random_visa_domain_Isa_grammar -->|"ref"| Random_visa_domain_Vector_config
   Random_visa_domain_Isa_grammar -->|"ref"| Random_visa_domain_Vector_isa_spec
   Random_visa_domain_Isa_grammar -->|"ref"| Random_visa_domain_Vector_instruction
-  Random_visa_domain_Sail_ast =>|"ref"| Random_visa_domain_Types
-  Random_visa_domain_Types =>|"ref"| Random_visa_domain_Errors
-  Random_visa_domain_Vector_config =>|"ref"| Random_visa_domain_Types
+  Random_visa_domain_Sail_ast ==>|"ref"| Random_visa_domain_Types
+  Random_visa_domain_Types ==>|"ref"| Random_visa_domain_Errors
+  Random_visa_domain_Vector_config ==>|"ref"| Random_visa_domain_Types
   Random_visa_domain_Vector_config -->|"ref"| Random_visa_domain_Errors
-  Random_visa_domain_Vector_instruction =>|"ref"| Random_visa_domain_Types
-  Random_visa_domain_Vector_instruction =>|"ref"| Random_visa_domain_Sail_ast
-  Random_visa_domain_Vector_isa_spec =>|"ref"| Random_visa_domain_Vector_config
-  Random_visa_domain_Vector_isa_spec =>|"ref"| Random_visa_domain_Vector_instruction
+  Random_visa_domain_Vector_instruction ==>|"ref"| Random_visa_domain_Types
+  Random_visa_domain_Vector_instruction ==>|"ref"| Random_visa_domain_Sail_ast
+  Random_visa_domain_Vector_isa_spec ==>|"ref"| Random_visa_domain_Vector_config
+  Random_visa_domain_Vector_isa_spec ==>|"ref"| Random_visa_domain_Vector_instruction
   Random_visa_domain_Vector_isa_spec -->|"ref"| Random_visa_domain_Errors
   Random_visa_domain_Vector_isa_spec -->|"ref"| Random_visa_domain_Types
   Random_visa_domain_Vector_isa_spec -->|"ref"| Random_visa_domain_Sail_ast
   Random_visa_domain_Vm_runtime_profile -->|"ref"| Random_visa_domain_Dispatch_strategy
   Random_visa_domain_Vm_runtime_profile -->|"ref"| Random_visa_domain_Mutation_profile
-  Mba_engine_Egraph =>|"open"| Mba_engine_Mba
+  Mba_engine_Egraph ==>|"open"| Mba_engine_Mba
   Mba_engine_Egraph -->|"include"| Mba_engine_Egraph_types
   Mba_engine_Egraph -->|"include"| Mba_engine_Egraph_rules
   Mba_engine_Egraph -->|"ref"| Mba_engine_Egraph_extract
-  Mba_engine_Egraph =>|"ref · cross-lib"| Vm_ir_Ir
+  Mba_engine_Egraph ==>|"ref · cross-lib"| Vm_ir_Ir
   Mba_engine_Egraph -->|"ref · cross-lib"| Vm_ir_Register
   Mba_engine_Egraph_extract -->|"open"| Mba_engine_Mba
   Mba_engine_Egraph_extract -->|"open"| Mba_engine_Egraph_types
   Mba_engine_Egraph_rules -->|"open"| Mba_engine_Mba
   Mba_engine_Egraph_rules -->|"open"| Mba_engine_Egraph_types
   Mba_engine_Egraph_types -->|"open"| Mba_engine_Mba
-  Mba_engine_Mba =>|"ref · cross-lib"| Vm_ir_Ir
-  Mba_engine_Mba =>|"ref · cross-lib"| Vm_ir_Register
+  Mba_engine_Mba ==>|"ref · cross-lib"| Vm_ir_Ir
+  Mba_engine_Mba ==>|"ref · cross-lib"| Vm_ir_Register
   Mba_engine_Ncfg_synth -->|"open"| Mba_engine_Mba
-  Multi_vm_Multi_vm_emitter =>|"ref"| Multi_vm_Bridge
-  Multi_vm_Multi_vm_emitter =>|"ref"| Multi_vm_Partitioner
+  Multi_vm_Multi_vm_emitter ==>|"ref"| Multi_vm_Bridge
+  Multi_vm_Multi_vm_emitter ==>|"ref"| Multi_vm_Partitioner
   Multi_vm_Multi_vm_emitter -->|"ref · cross-lib"| Native_vm_Metrics
-  Multi_vm_Multi_vm_emitter =>|"ref · cross-lib"| Vm_ir_Ir
+  Multi_vm_Multi_vm_emitter ==>|"ref · cross-lib"| Vm_ir_Ir
   Multi_vm_Multi_vm_emitter -->|"ref · cross-lib"| Native_vm_Vm_emitter
   Multi_vm_Multi_vm_emitter -->|"ref · cross-lib"| Native_vm_Protection_config
-  Multi_vm_Partitioner =>|"ref · cross-lib"| Vm_ir_Ir
-  Native_vm_Defuse_scrambler =>|"ref · cross-lib"| Vm_ir_Ir
-  Native_vm_Defuse_scrambler =>|"ref · cross-lib"| Vm_ir_Register
+  Multi_vm_Partitioner ==>|"ref · cross-lib"| Vm_ir_Ir
+  Native_vm_Defuse_scrambler ==>|"ref · cross-lib"| Vm_ir_Ir
+  Native_vm_Defuse_scrambler ==>|"ref · cross-lib"| Vm_ir_Register
   Native_vm_Egraph_cpp_emitter -->|"open · cross-lib"| Mba_engine_Mba
   Native_vm_Egraph_cpp_emitter -->|"ref · cross-lib"| Mba_engine_Egraph
   Native_vm_Hardened_runtime -->|"ref"| Native_vm_Runtime_syscalls
   Native_vm_Hardened_runtime -->|"ref"| Native_vm_Runtime_dual_map
   Native_vm_Hardened_runtime -->|"ref"| Native_vm_Runtime_probes
   Native_vm_Hardened_runtime -->|"ref"| Native_vm_Runtime_smc
-  Native_vm_Metrics =>|"ref · cross-lib"| Vm_ir_Ir
+  Native_vm_Metrics ==>|"ref · cross-lib"| Vm_ir_Ir
   Native_vm_Protection_config -->|"include"| Native_vm_Protection_types
   Native_vm_Protection_config -->|"include"| Native_vm_Protection_presets
   Native_vm_Protection_config -->|"ref"| Native_vm_Protection_json
   Native_vm_Protection_json -->|"open"| Native_vm_Protection_types
   Native_vm_Protection_json -->|"open"| Native_vm_Protection_presets
   Native_vm_Protection_presets -->|"open"| Native_vm_Protection_types
-  Native_vm_Vm_alu_handlers =>|"ref"| Native_vm_Egraph_cpp_emitter
+  Native_vm_Vm_alu_handlers ==>|"ref"| Native_vm_Egraph_cpp_emitter
   Native_vm_Vm_emitter -->|"open"| Native_vm_Vm_transform
   Native_vm_Vm_emitter -->|"ref"| Native_vm_Metrics
-  Native_vm_Vm_emitter =>|"ref · cross-lib"| Vm_ir_Ir
+  Native_vm_Vm_emitter ==>|"ref · cross-lib"| Vm_ir_Ir
   Native_vm_Vm_emitter -->|"ref"| Native_vm_Protection_config
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Cff_Cff
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Mba_engine_Egraph
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Mba_engine_Mba
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Vm_ir_Rolling_key
-  Native_vm_Vm_emitter =>|"ref · cross-lib"| Vm_ir_Register
+  Native_vm_Vm_emitter ==>|"ref · cross-lib"| Vm_ir_Register
   Native_vm_Vm_emitter -->|"ref"| Native_vm_Vm_runtime_emitter
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Random_visa_domain_Vm_runtime_profile
   Native_vm_Vm_handlers_emitter -->|"ref"| Native_vm_Vm_alu_handlers
@@ -470,22 +470,22 @@ graph TD
   Native_vm_Vm_runtime_emitter -->|"ref · cross-lib"| Random_visa_domain_Vm_runtime_profile
   Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Protection_config
   Native_vm_Vm_runtime_emitter -->|"ref · cross-lib"| Vm_ir_Rns
-  Native_vm_Vm_runtime_emitter =>|"ref"| Native_vm_Hardened_runtime
+  Native_vm_Vm_runtime_emitter ==>|"ref"| Native_vm_Hardened_runtime
   Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Vm_context_emitter
   Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Vm_handlers_emitter
-  Native_vm_Vm_transform =>|"ref · cross-lib"| Vm_ir_Register
-  Native_vm_Vm_transform =>|"ref · cross-lib"| Vm_ir_Flags
-  Native_vm_Vm_transform =>|"ref · cross-lib"| Vm_ir_Ir
-  Random_visa_ports_Ports =>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
-  Random_visa_ports_Ports =>|"ref · cross-lib"| Random_visa_domain_Errors
+  Native_vm_Vm_transform ==>|"ref · cross-lib"| Vm_ir_Register
+  Native_vm_Vm_transform ==>|"ref · cross-lib"| Vm_ir_Flags
+  Native_vm_Vm_transform ==>|"ref · cross-lib"| Vm_ir_Ir
+  Random_visa_ports_Ports ==>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
+  Random_visa_ports_Ports ==>|"ref · cross-lib"| Random_visa_domain_Errors
   Rd_jit_vm_Rd_jit_emitter -->|"include"| Rd_jit_vm_Rd_jit_types
   Rd_jit_vm_Rd_jit_emitter -->|"ref"| Rd_jit_vm_Rd_jit_buffer
   Rd_jit_vm_Rd_jit_emitter -->|"ref"| Rd_jit_vm_Rd_jit_synth
-  Rd_jit_vm_Rd_jit_emitter =>|"ref · cross-lib"| Vm_ir_Ir
+  Rd_jit_vm_Rd_jit_emitter ==>|"ref · cross-lib"| Vm_ir_Ir
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Native_vm_Protection_config
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Cff_Cff
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Native_vm_Vm_emitter
-  Rd_jit_vm_Rd_jit_emitter =>|"ref · cross-lib"| Native_vm_Vm_transform
+  Rd_jit_vm_Rd_jit_emitter ==>|"ref · cross-lib"| Native_vm_Vm_transform
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Vm_ir_Rns
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Native_vm_Metrics
   Rd_jit_vm_Rd_jit_types -->|"ref · cross-lib"| Native_vm_Metrics
@@ -496,55 +496,55 @@ graph TD
   Vanguard_9292_Vanguard_9292 -->|"ref"| Vanguard_9292_Vanguard_asm
   Vanguard_9292_Vanguard_asm -->|"open"| Vanguard_9292_Vanguard_types
   Vanguard_9292_Vanguard_asm -->|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
-  Vanguard_9292_Vanguard_asm =>|"ref · cross-lib"| Random_visa_domain_Types
+  Vanguard_9292_Vanguard_asm ==>|"ref · cross-lib"| Random_visa_domain_Types
   Vanguard_9292_Vanguard_decoder -->|"open"| Vanguard_9292_Vanguard_types
   Vanguard_9292_Vanguard_decoder -->|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
   Vanguard_9292_Vanguard_decoder -->|"ref · cross-lib"| Random_visa_domain_Vector_instruction
   Vm_ir_Cfg_transform -->|"open"| Vm_ir_Ir
-  Vm_ir_Cfg_transform =>|"open"| Vm_ir_Register
+  Vm_ir_Cfg_transform ==>|"open"| Vm_ir_Register
   Vm_ir_Cfg_transform -->|"ref"| Vm_ir_Opaque_predicates
   Vm_ir_Cfg_transform -->|"ref"| Vm_ir_Seed
   Vm_ir_Equivalence -->|"open"| Vm_ir_Ir
-  Vm_ir_Equivalence =>|"ref"| Vm_ir_Register
+  Vm_ir_Equivalence ==>|"ref"| Vm_ir_Register
   Vm_ir_Equivalence -->|"ref"| Vm_ir_Seed
   Vm_ir_Equivalence -->|"ref"| Vm_ir_Reference_vm
   Vm_ir_Flags -->|"open"| Vm_ir_Register
-  Vm_ir_Ir =>|"open"| Vm_ir_Register
+  Vm_ir_Ir ==>|"open"| Vm_ir_Register
   Vm_ir_Ir -->|"open"| Vm_ir_Flags
   Vm_ir_Ir_egraph -->|"ref"| Vm_ir_Register
-  Vm_ir_Ir_pipeline =>|"ref"| Vm_ir_Ir
+  Vm_ir_Ir_pipeline ==>|"ref"| Vm_ir_Ir
   Vm_ir_Ir_pipeline -->|"ref"| Vm_ir_Seed
-  Vm_ir_Ir_pipeline =>|"ref"| Vm_ir_Register_allocator
+  Vm_ir_Ir_pipeline ==>|"ref"| Vm_ir_Register_allocator
   Vm_ir_Ir_pipeline -->|"ref"| Vm_ir_Ir_verify
   Vm_ir_Ir_pipeline -->|"ref"| Vm_ir_Semantic_transform
   Vm_ir_Ir_pipeline -->|"ref"| Vm_ir_Superoperator
   Vm_ir_Ir_pipeline -->|"ref"| Vm_ir_Cfg_transform
   Vm_ir_Ir_pipeline -->|"ref"| Vm_ir_Equivalence
-  Vm_ir_Ir_verify =>|"open"| Vm_ir_Ir
+  Vm_ir_Ir_verify ==>|"open"| Vm_ir_Ir
   Vm_ir_Ir_verify -->|"ref"| Vm_ir_Register
   Vm_ir_Opaque_predicates -->|"open"| Vm_ir_Ir
-  Vm_ir_Opaque_predicates =>|"ref"| Vm_ir_Flags
+  Vm_ir_Opaque_predicates ==>|"ref"| Vm_ir_Flags
   Vm_ir_Opaque_predicates -->|"ref"| Vm_ir_Register
   Vm_ir_Reference_vm -->|"open"| Vm_ir_Ir
-  Vm_ir_Reference_vm =>|"ref"| Vm_ir_Register
-  Vm_ir_Reference_vm =>|"ref"| Vm_ir_Vm_eval
+  Vm_ir_Reference_vm ==>|"ref"| Vm_ir_Register
+  Vm_ir_Reference_vm ==>|"ref"| Vm_ir_Vm_eval
   Vm_ir_Register_allocator -->|"open"| Vm_ir_Ir
-  Vm_ir_Register_allocator =>|"open"| Vm_ir_Register
-  Vm_ir_Register_allocator =>|"ref"| Vm_ir_Seed
-  Vm_ir_Semantic_transform =>|"open"| Vm_ir_Ir
+  Vm_ir_Register_allocator ==>|"open"| Vm_ir_Register
+  Vm_ir_Register_allocator ==>|"ref"| Vm_ir_Seed
+  Vm_ir_Semantic_transform ==>|"open"| Vm_ir_Ir
   Vm_ir_Semantic_transform -->|"open"| Vm_ir_Register
   Vm_ir_Semantic_transform -->|"ref"| Vm_ir_Seed
-  Vm_ir_Superoperator =>|"open"| Vm_ir_Ir
+  Vm_ir_Superoperator ==>|"open"| Vm_ir_Ir
   Vm_ir_Superoperator -->|"open"| Vm_ir_Register
   Vm_ir_Superoperator -->|"ref"| Vm_ir_Seed
-  Vm_ir_Vm_eval =>|"open"| Vm_ir_Register
+  Vm_ir_Vm_eval ==>|"open"| Vm_ir_Register
   Vm_ir_Vm_eval -->|"open"| Vm_ir_Flags
   Vm_ir_Vm_eval -->|"open"| Vm_ir_Ir
-  X86_lifter_Lifter =>|"open"| X86_lifter_X86_parser
-  X86_lifter_Lifter =>|"ref · cross-lib"| Vm_ir_Ir
-  X86_lifter_Lifter =>|"ref · cross-lib"| Vm_ir_Register
+  X86_lifter_Lifter ==>|"open"| X86_lifter_X86_parser
+  X86_lifter_Lifter ==>|"ref · cross-lib"| Vm_ir_Ir
+  X86_lifter_Lifter ==>|"ref · cross-lib"| Vm_ir_Register
   X86_lifter_Lifter -->|"ref · cross-lib"| Vm_ir_Flags
-  X86_lifter_X86_parser =>|"ref · cross-lib"| Vm_ir_Register
+  X86_lifter_X86_parser ==>|"ref · cross-lib"| Vm_ir_Register
   Run_tests -->|"ref"| Test_domain_invariants
   Run_tests -->|"ref"| Test_isa_grammar
   Run_tests -->|"ref"| Test_hw_cost
@@ -578,28 +578,28 @@ graph TD
   Run_tests -->|"ref"| Test_anti_tamper_smc
   Run_tests -->|"ref"| Test_protection_config
   Test_anti_analysis -->|"open"| Vm_ir_Vm_eval
-  Test_anti_analysis =>|"ref"| Mba_engine_Mba
-  Test_anti_analysis =>|"ref"| Vm_ir_Register
-  Test_anti_analysis =>|"ref"| Vm_ir_Ir
+  Test_anti_analysis ==>|"ref"| Mba_engine_Mba
+  Test_anti_analysis ==>|"ref"| Vm_ir_Register
+  Test_anti_analysis ==>|"ref"| Vm_ir_Ir
   Test_anti_analysis -->|"ref"| Vm_ir_Flags
   Test_anti_analysis -->|"ref"| Cff_Cff
   Test_anti_analysis -->|"ref"| X86_lifter_Lifter
-  Test_anti_pushan =>|"ref"| Native_vm_Vm_emitter
-  Test_anti_pushan =>|"ref"| X86_lifter_Lifter
-  Test_anti_pushan =>|"ref"| Vm_ir_Rolling_key
+  Test_anti_pushan ==>|"ref"| Native_vm_Vm_emitter
+  Test_anti_pushan ==>|"ref"| X86_lifter_Lifter
+  Test_anti_pushan ==>|"ref"| Vm_ir_Rolling_key
   Test_anti_pushan -->|"ref"| Native_vm_Protection_config
-  Test_anti_tamper_smc =>|"ref"| Native_vm_Hardened_runtime
+  Test_anti_tamper_smc ==>|"ref"| Native_vm_Hardened_runtime
   Test_anti_tamper_smc -->|"ref"| X86_lifter_Lifter
   Test_anti_tamper_smc -->|"ref"| Native_vm_Vm_emitter
   Test_anti_tamper_smc -->|"ref"| Native_vm_Protection_config
   Test_arm64_lifter -->|"open"| Arm64_lifter_Arm64_lifter
-  Test_arm64_lifter =>|"ref"| Vm_ir_Reference_vm
-  Test_arxiv_innovations =>|"ref"| Cff_Pop_coupler
-  Test_arxiv_innovations =>|"ref"| Vm_ir_Ir
+  Test_arm64_lifter ==>|"ref"| Vm_ir_Reference_vm
+  Test_arxiv_innovations ==>|"ref"| Cff_Pop_coupler
+  Test_arxiv_innovations ==>|"ref"| Vm_ir_Ir
   Test_arxiv_innovations -->|"ref"| Vm_ir_Register
   Test_arxiv_innovations -->|"ref"| Native_vm_Defuse_scrambler
   Test_arxiv_innovations -->|"ref"| Mba_engine_Ncfg_synth
-  Test_arxiv_innovations =>|"ref"| Mba_engine_Mba
+  Test_arxiv_innovations ==>|"ref"| Mba_engine_Mba
   Test_arxiv_innovations -->|"ref"| Arm64_lifter_Literal_stitcher
   Test_assembler -. "ref" .-> Random_visa_assembler_Assembler_adapter
   Test_assembler -. "ref" .-> Random_visa_domain_Vector_instruction
@@ -623,19 +623,19 @@ graph TD
   Test_c11_emulator -. "ref" .-> Random_visa_domain_Generation_profile
   Test_c11_emulator -. "ref" .-> Random_visa_domain_Instruction_class
   Test_c11_emulator -. "ref" .-> Random_visa_domain_Isa_grammar
-  Test_c_macro_obf =>|"open"| C_macro_obf_C_macro_obf
-  Test_c_macro_obf =>|"ref"| Test_helpers
-  Test_compiler_pipeline =>|"ref"| Vm_ir_Ir
-  Test_compiler_pipeline =>|"ref"| Vm_ir_Register
-  Test_compiler_pipeline =>|"ref"| Vm_ir_Seed
+  Test_c_macro_obf ==>|"open"| C_macro_obf_C_macro_obf
+  Test_c_macro_obf ==>|"ref"| Test_helpers
+  Test_compiler_pipeline ==>|"ref"| Vm_ir_Ir
+  Test_compiler_pipeline ==>|"ref"| Vm_ir_Register
+  Test_compiler_pipeline ==>|"ref"| Vm_ir_Seed
   Test_compiler_pipeline -->|"ref"| Vm_ir_Ir_verify
   Test_compiler_pipeline -->|"ref"| Vm_ir_Reference_vm
   Test_compiler_pipeline -->|"ref"| Vm_ir_Semantic_transform
   Test_compiler_pipeline -->|"ref"| Vm_ir_Equivalence
   Test_compiler_pipeline -->|"ref"| Vm_ir_Ir_pipeline
   Test_compiler_pipeline -->|"ref"| Vm_ir_Register_allocator
-  Test_compiler_pipeline =>|"ref"| Vm_ir_Rns
-  Test_compiler_pipeline =>|"ref"| Vm_ir_Ir_egraph
+  Test_compiler_pipeline ==>|"ref"| Vm_ir_Rns
+  Test_compiler_pipeline ==>|"ref"| Vm_ir_Ir_egraph
   Test_cpp_emulator -. "ref" .-> Random_visa_domain_Isa_grammar
   Test_cpp_emulator -. "ref" .-> Random_visa_domain_Errors
   Test_cpp_emulator -. "ref" .-> Random_visa_cpp_emitter_Cpp_emitter_adapter
@@ -647,11 +647,11 @@ graph TD
   Test_domain_invariants -. "ref" .-> Random_visa_domain_Vector_isa_spec
   Test_domain_invariants -. "ref" .-> Random_visa_domain_Sail_ast
   Test_egraph_expansion -->|"open"| Vm_ir_Vm_eval
-  Test_egraph_expansion =>|"ref"| Mba_engine_Mba
-  Test_egraph_expansion =>|"ref"| Mba_engine_Egraph
-  Test_egraph_expansion =>|"ref"| Vm_ir_Register
-  Test_egraph_expansion =>|"ref"| Vm_ir_Ir
-  Test_egraph_expansion =>|"ref"| Native_vm_Egraph_cpp_emitter
+  Test_egraph_expansion ==>|"ref"| Mba_engine_Mba
+  Test_egraph_expansion ==>|"ref"| Mba_engine_Egraph
+  Test_egraph_expansion ==>|"ref"| Vm_ir_Register
+  Test_egraph_expansion ==>|"ref"| Vm_ir_Ir
+  Test_egraph_expansion ==>|"ref"| Native_vm_Egraph_cpp_emitter
   Test_families_generation -. "ref" .-> Random_visa_domain_Isa_grammar
   Test_families_generation -. "ref" .-> Random_visa_domain_Errors
   Test_families_generation -. "ref" .-> Random_visa_domain_Vector_instruction
@@ -676,29 +676,29 @@ graph TD
   Test_isa_grammar -. "ref" .-> Random_visa_domain_Types
   Test_isa_grammar -. "ref" .-> Random_visa_domain_Errors
   Test_isa_grammar -. "ref" .-> Random_visa_domain_Generation_profile
-  Test_metrics =>|"ref"| Native_vm_Metrics
-  Test_metrics =>|"ref"| Vm_ir_Ir
+  Test_metrics ==>|"ref"| Native_vm_Metrics
+  Test_metrics ==>|"ref"| Vm_ir_Ir
   Test_metrics -->|"ref"| Vm_ir_Flags
   Test_multi_vlen -. "ref" .-> Random_visa_domain_Vector_config
   Test_multi_vlen -. "ref" .-> Random_visa_domain_Errors
   Test_multi_vlen -. "ref" .-> Random_visa_domain_Isa_grammar
   Test_multi_vlen -. "ref" .-> Random_visa_cpp_emitter_Cpp_emitter_adapter
   Test_multi_vlen -. "ref" .-> Random_visa_compiler_adapter_Compiler_adapter
-  Test_multi_vm =>|"ref"| Multi_vm_Bridge
+  Test_multi_vm ==>|"ref"| Multi_vm_Bridge
   Test_multi_vm -->|"ref"| Arm64_lifter_Arm64_lifter
   Test_multi_vm -->|"ref"| Multi_vm_Partitioner
   Test_multi_vm -->|"ref"| Multi_vm_Multi_vm_emitter
   Test_native_vm -->|"open"| Test_helpers
-  Test_native_vm =>|"ref"| Native_vm_Vm_emitter
-  Test_native_vm =>|"ref"| X86_lifter_Lifter
+  Test_native_vm ==>|"ref"| Native_vm_Vm_emitter
+  Test_native_vm ==>|"ref"| X86_lifter_Lifter
   Test_native_vm -->|"ref"| Native_vm_Metrics
-  Test_native_vm =>|"ref"| Vm_ir_Ir
+  Test_native_vm ==>|"ref"| Vm_ir_Ir
   Test_native_vm -->|"ref"| Vm_ir_Register
   Test_properties -. "ref" .-> Random_visa_domain_Isa_grammar
   Test_properties -. "ref" .-> Random_visa_domain_Vector_instruction
   Test_properties -. "ref" .-> Random_visa_domain_Vector_isa_spec
   Test_properties -. "ref" .-> Random_visa_sail_parser_Sail_parser_adapter
-  Test_protection_config =>|"ref"| Native_vm_Protection_config
+  Test_protection_config ==>|"ref"| Native_vm_Protection_config
   Test_protection_config -->|"ref"| X86_lifter_Lifter
   Test_protection_config -->|"ref"| Native_vm_Vm_emitter
   Test_protection_config -->|"ref"| Native_vm_Metrics
@@ -722,12 +722,12 @@ graph TD
   Test_vanguard_emulator_e2e -. "ref" .-> Random_visa_domain_Isa_grammar
   Test_vanguard_emulator_e2e -. "ref" .-> Random_visa_domain_Errors
   Test_vanguard_emulator_e2e -. "ref" .-> Random_visa_cpp_emitter_Cpp_emitter_adapter
-  Test_vanguard_emulator_e2e =>|"ref"| Vanguard_9292_Vanguard_9292
-  Test_vm_ir =>|"open"| Vm_ir_Register
+  Test_vanguard_emulator_e2e ==>|"ref"| Vanguard_9292_Vanguard_9292
+  Test_vm_ir ==>|"open"| Vm_ir_Register
   Test_vm_ir -->|"open"| Vm_ir_Flags
   Test_vm_ir -->|"open"| Vm_ir_Ir
   Test_vm_ir -->|"open"| Vm_ir_Vm_eval
   Test_x86_lifter -->|"open"| Vm_ir_Vm_eval
   Test_x86_lifter -->|"ref"| X86_lifter_X86_parser
-  Test_x86_lifter =>|"ref"| Vm_ir_Register
-  Test_x86_lifter =>|"ref"| X86_lifter_Lifter
+  Test_x86_lifter ==>|"ref"| Vm_ir_Register
+  Test_x86_lifter ==>|"ref"| X86_lifter_Lifter
