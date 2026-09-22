@@ -95,6 +95,8 @@ module Opcode_map = struct
 
   let is_junk t code =
     code >= 0 && code < (1 lsl t.opcode_bits) && Option.is_none (decode t code)
+
+  let opcode_bits t = t.opcode_bits
 end
 
 module Rolling_key = struct

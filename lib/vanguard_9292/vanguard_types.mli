@@ -30,11 +30,7 @@ val make_layout :
   (instruction_word_layout, string) result
 
 module Opcode_map : sig
-  type t = {
-    forward : (string, int) Hashtbl.t;
-    reverse : (int, string) Hashtbl.t;
-    opcode_bits : int;
-  }
+  type t
 
   val shuffle : Random.State.t -> 'a array -> unit
 
@@ -49,10 +45,12 @@ module Opcode_map : sig
   val decode : t -> int -> string option
 
   val is_junk : t -> int -> bool
+
+  val opcode_bits : t -> int
 end
 
 module Rolling_key : sig
-  type t = { seed : int32; mutable state : int32; mutable counter : int32 }
+  type t
 
   val make : seed:int32 -> t
 

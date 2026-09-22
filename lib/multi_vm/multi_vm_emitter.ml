@@ -10,7 +10,7 @@ type multi_vm_package = {
 }
 
 let inject_bridge_transitions (bridge : Bridge.affine_bridge) (partition : Partitioner.partition_report) (f : Ir.func) : Ir.func * int =
-  let digest = bridge.initial_digest in
+  let digest = Bridge.initial_digest bridge in
   if partition.inter_vm_transitions = 0 then
     (* Homogeneous engine or single block: inject a zero-bridge roundtrip (Math -> Flow -> Math) *)
     let new_blocks = Hashtbl.create (Hashtbl.length f.cfg.blocks) in

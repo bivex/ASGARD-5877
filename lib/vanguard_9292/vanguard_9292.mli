@@ -42,11 +42,7 @@ val make_layout :
 (** Bijection between mnemonic and numeric opcode, randomized without
     frequency correlation to defeat static frequency analysis. *)
 module Opcode_map : sig
-  type t = {
-    forward : (string, int) Hashtbl.t;
-    reverse : (int, string) Hashtbl.t;
-    opcode_bits : int;
-  }
+  type t
 
   val shuffle : Random.State.t -> int array -> unit
 
@@ -61,13 +57,15 @@ module Opcode_map : sig
   val decode : t -> int -> string option
 
   val is_junk : t -> int -> bool
+
+  val opcode_bits : t -> int
 end
 
 (** Rolling XOR key dependent on the stream position of the instruction.
     Deterministic PRNG (xorshift32) that renders static opcode fingerprinting
     useless, while allowing VM runtime to reproduce the exact stream. *)
 module Rolling_key : sig
-  type t = { seed : int32; mutable state : int32; mutable counter : int32 }
+  type t
 
   val make : seed:int32 -> t
 

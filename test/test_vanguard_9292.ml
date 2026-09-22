@@ -27,7 +27,7 @@ let test_opcode_map_and_junk () =
   match Opcode_map.generate ~rng ~mnemonics ~opcode_bits:6 with
   | Error err -> Alcotest.fail err
   | Ok map ->
-      Alcotest.(check int) "opcode bits is 6" 6 map.opcode_bits;
+      Alcotest.(check int) "opcode bits is 6" 6 (Opcode_map.opcode_bits map);
       (* Verify bijection *)
       List.iter
         (fun mnem ->

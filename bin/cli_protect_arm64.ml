@@ -2,7 +2,6 @@ open Cmdliner
 open Random_visa_ports
 open Protect_ports
 open Random_visa_application
-open Protect_adapters
 
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline via Hexagonal Architecture) *)
 let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile_and_run =
@@ -52,16 +51,22 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
         Random.State.make [| s |]
   in
 
-  let lifter = (module Arm64_lifter_adapter : Lifter) in
-  let c_macro_obfuscator = (module C_macro_obf_adapter : C_macro_obfuscator) in
-  let trampoline_engine = (module C_trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
-  let toolchain = (module Clang_toolchain_adapter : Toolchain) in
+  let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
+  let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
+  let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
+  let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
+  let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+
+  let lifter = (module Arm64_adapter : Lifter) in
+  let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
+  let trampoline_engine = (module Trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
+  let toolchain = (module Toolchain_adapter : Toolchain) in
 
   let vm_packager =
     if resolved_engine = "jit" then
-      (module Vm_packagers.Jit_vm_packager : Vm_packager)
+      (module Vm_packager_adapters.Jit_vm_packager : Vm_packager)
     else
-      (module Vm_packagers.Threaded_vm_packager : Vm_packager)
+      (module Vm_packager_adapters.Threaded_vm_packager : Vm_packager)
   in
 
   match

@@ -1,11 +1,8 @@
-type matrix = int64 array array
+type matrix
+type affine_bridge
 
-type affine_bridge = {
-  forward_matrix : matrix;
-  inverse_matrix : matrix;
-  dim : int;
-  initial_digest : int64;
-}
+val initial_digest : affine_bridge -> int64
+val dim : affine_bridge -> int
 
 (** Compute modular inverse in Z/(2^64)Z via Newton-Raphson iterations. *)
 val mod_inverse_64 : int64 -> int64

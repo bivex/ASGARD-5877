@@ -102,3 +102,12 @@ val rolling_key_enabled : t option -> bool
 (** Anti-Pushan block-chained rolling key gate: [true] unless a config explicitly
     disables it.  Re-exported from [Protection_types] so the encoder and the C++
     runtime emitter share one source of truth for the keystream. *)
+
+type builder
+(** Mutable builder for [Protection_config.t]. *)
+
+val create_builder : ?base:t -> unit -> builder
+val with_cff : bool -> builder -> builder
+val with_mba : ?depth:int -> bool -> builder -> builder
+val with_seed : int option -> builder -> builder
+val build : builder -> t

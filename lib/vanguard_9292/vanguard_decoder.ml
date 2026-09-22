@@ -93,7 +93,7 @@ let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
 
   (* Decoy junk opcode traps *)
   let junk_codes = ref [] in
-  for c = 0 to (1 lsl t.opcodes.opcode_bits) - 1 do
+  for c = 0 to (1 lsl (Opcode_map.opcode_bits t.opcodes)) - 1 do
     if Opcode_map.is_junk t.opcodes c then junk_codes := c :: !junk_codes
   done;
 

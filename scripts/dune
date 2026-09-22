@@ -1,0 +1,3 @@
+(executable
+ (name coverage_audit)
+ (modules coverage_audit))

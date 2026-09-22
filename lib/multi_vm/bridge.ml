@@ -7,6 +7,9 @@ type affine_bridge = {
   initial_digest : int64;
 }
 
+let initial_digest b = b.initial_digest
+let dim b = b.dim
+
 let rol64 v s =
   let s = s land 63 in
   Int64.logor (Int64.shift_left v s) (Int64.shift_right_logical v (64 - s))

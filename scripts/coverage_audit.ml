@@ -1,12 +1,3 @@
-type module_coverage = {
-  name : string;
-  loc : int;
-  test_suite : string;
-  test_count : int;
-  coverage_pct : float;
-  status : string;
-}
-
 let count_lines file =
   if not (Sys.file_exists file) then 0
   else
