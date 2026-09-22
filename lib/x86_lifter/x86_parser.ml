@@ -176,11 +176,17 @@ let contains_sub s sub =
   let len_sub = String.length sub in
   if len_sub > len_s then false
   else
-    let found = ref false in
-    for i = 0 to len_s - len_sub do
-      if not !found && String.sub s i len_sub = sub then found := true
-    done;
-    !found
+    let rec at i j =
+      if j >= len_sub then true
+      else if String.unsafe_get s (i + j) <> String.unsafe_get sub j then false
+      else at i (j + 1)
+    in
+    let rec check i =
+      if i + len_sub > len_s then false
+      else if at i 0 then true
+      else check (i + 1)
+    in
+    check 0
 
 let normalize_alphas s =
   let b = Buffer.create (String.length s) in

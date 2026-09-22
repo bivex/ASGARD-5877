@@ -34,6 +34,7 @@ type t = {
   union_find : (eclass_id, eclass_id) Hashtbl.t;
   classes : (eclass_id, eclass) Hashtbl.t;
   hashcons : (enode, eclass_id) Hashtbl.t;
+  extract_cache : (eclass_id, expr) Hashtbl.t;
 }
 
 let create () : t =
@@ -42,6 +43,7 @@ let create () : t =
     union_find = Hashtbl.create 64;
     classes = Hashtbl.create 64;
     hashcons = Hashtbl.create 64;
+    extract_cache = Hashtbl.create 16;
   }
 
 let rec find (t : t) (id : eclass_id) : eclass_id =
@@ -107,6 +109,8 @@ let union (t : t) (id1 : eclass_id) (id2 : eclass_id) : unit =
   end
 
 let rebuild (t : t) : unit =
+  (* Invalidate extraction cache whenever the egraph topology changes *)
+  Hashtbl.clear t.extract_cache;
   Hashtbl.clear t.hashcons;
   Hashtbl.iter (fun id cls ->
     cls.nodes <- List.map (canonicalize_node t) cls.nodes;
@@ -161,10 +165,9 @@ let rec complexity_of_expr = function
       2 + complexity_of_expr a + complexity_of_expr b
 
 let extract_max_complexity (t : t) (root : eclass_id) : expr =
-  let visited = Hashtbl.create 32 in
   let rec extract id =
     let can_id = find t id in
-    match Hashtbl.find_opt visited can_id with
+    match Hashtbl.find_opt t.extract_cache can_id with
     | Some e -> e
     | None ->
         let cls = Hashtbl.find t.classes can_id in
@@ -189,7 +192,7 @@ let extract_max_complexity (t : t) (root : eclass_id) : expr =
             best := exp
           end
         ) cls.nodes;
-        Hashtbl.replace visited can_id !best;
+        Hashtbl.replace t.extract_cache can_id !best;
         !best
   in
   extract root

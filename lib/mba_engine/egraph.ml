@@ -12,28 +12,31 @@ type config = { node_limit : int; time_budget_s : float; iter_limit : int }
 
 let default_config = { node_limit = 2000; time_budget_s = 1.0; iter_limit = 24 }
 
-let shuffled rng n =
-  let a = Array.init n (fun i -> i) in
+let shuffle_inplace rng a n =
+  (* Reset indices 0..n-1, then Fisher-Yates in-place — no allocation *)
+  for i = 0 to n - 1 do a.(i) <- i done;
   for i = n - 1 downto 1 do
     let j = Random.State.int rng (i + 1) in
     let t = a.(i) in
     a.(i) <- a.(j);
     a.(j) <- t
-  done;
-  a
+  done
 
 let saturate ~rng ~config eg =
   let rules_arr = Array.of_list rules in
+  let n_rules = Array.length rules_arr in
   let t0 = Sys.time () in
   let iters = ref 0 in
   let stop = ref false in
+  (* Pre-allocate scratch arrays: no heap allocation inside the loop *)
+  let rule_order = Array.make n_rules 0 in
   let over_budget () =
     eg.next_id >= config.node_limit
     || Sys.time () -. t0 >= config.time_budget_s
   in
   while not !stop do
     incr iters;
-    let order = shuffled rng (Array.length rules_arr) in
+    shuffle_inplace rng rule_order n_rules;
     let nodes_before = node_count eg in
     let ids = class_ids eg in
     (* 1. Match phase on the frozen graph snapshot of this iteration *)
@@ -48,11 +51,13 @@ let saturate ~rng ~config eg =
                let substs = match_ eg pl cid [] in
                List.iter (fun s -> matches := (pr, s, cid) :: !matches) substs)
              ids)
-         order
+         rule_order
      with Exit -> ());
     (* 2. Apply phase: instantiate and merge with budget checks *)
-    let app_order = shuffled rng (List.length !matches) in
     let matches_arr = Array.of_list !matches in
+    let n_matches = Array.length matches_arr in
+    let app_order = Array.make n_matches 0 in
+    shuffle_inplace rng app_order n_matches;
     (try
        Array.iter
          (fun idx ->

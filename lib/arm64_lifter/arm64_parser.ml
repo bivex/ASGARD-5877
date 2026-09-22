@@ -290,9 +290,14 @@ let parse_lines text =
     let hlen = String.length haystack and nlen = String.length needle in
     if nlen > hlen then false
     else
+      let rec at i j =
+        if j >= nlen then true
+        else if String.unsafe_get haystack (i + j) <> String.unsafe_get needle j then false
+        else at i (j + 1)
+      in
       let rec check i =
         if i + nlen > hlen then false
-        else if String.sub haystack i nlen = needle then true
+        else if at i 0 then true
         else check (i + 1)
       in
       check 0
