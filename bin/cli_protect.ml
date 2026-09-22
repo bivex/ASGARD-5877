@@ -1,6 +1,10 @@
 open Cmdliner
+open Random_visa_ports
+open Protect_ports
+open Random_visa_application
+open Protect_adapters
 
-(* 7. PROTECT COMMAND (Full Automated x86_64 & C/C++ VM-Protector Pipeline) *)
+(* 7. PROTECT COMMAND (Automated x86_64 & C/C++ VM-Protector Pipeline via Hexagonal Architecture) *)
 let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile_and_run =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
@@ -49,171 +53,54 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
         Random.State.make [| s |]
   in
 
-  if not (Sys.file_exists input_file) then begin
-    prerr_endline (Printf.sprintf "Input file not found: %s" input_file);
-    `Error (false, "File not found")
-  end else begin
-    (try Sys.mkdir out_dir 0o755 with _ -> ());
-    let is_c_src = String.ends_with ~suffix:".c" input_file || String.ends_with ~suffix:".cpp" input_file in
+  let lifter = (module X86_lifter_adapter : Lifter) in
+  let c_macro_obfuscator = (module C_macro_obf_adapter : C_macro_obfuscator) in
+  let trampoline_engine = (module C_trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
+  let toolchain = (module Clang_toolchain_adapter : Toolchain) in
 
-    let asm_source_file =
-      if is_c_src && effective_cfg.c_macro.enabled then begin
-        let hdr_path = Filename.concat out_dir "asgard_obf.h" in
-        let obf_c_path = Filename.concat out_dir "app_obf.c" in
-        let seed_val = Random.State.int rng 0x3FFFFFFF in
-        let config : C_macro_obf.config = {
-          seed = seed_val;
-          mba_depth = effective_cfg.mba.depth;
-          macro_prefix = effective_cfg.c_macro.macro_prefix;
-          obfuscate_strings = effective_cfg.c_macro.obfuscate_strings;
-          obfuscate_constants = effective_cfg.c_macro.obfuscate_constants;
-          obfuscate_arithmetic = effective_cfg.c_macro.obfuscate_arithmetic;
-          inject_opaque_predicates = effective_cfg.c_macro.opaque_predicates;
-          api_hashing = effective_cfg.c_macro.api_hashing;
-          anti_debug = effective_cfg.c_macro.anti_debug;
-          signal_dispatch = effective_cfg.c_macro.signal_dispatch;
-          nanomites = effective_cfg.c_macro.nanomites;
-          timing_guard = effective_cfg.c_macro.timing_guard;
-          timing_threshold_ticks = effective_cfg.c_macro.timing_threshold_ticks;
-        } in
-        (match C_macro_obf.transform_file ~config ~in_file:input_file ~out_file:obf_c_path ~header_file:(Some hdr_path) () with
-        | Ok () -> ()
-        | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
+  let vm_packager =
+    if resolved_engine = "jit" then
+      (module Vm_packagers.Jit_vm_packager : Vm_packager)
+    else if resolved_engine = "multi_vm" then
+      (module Vm_packagers.Multi_vm_packager : Vm_packager)
+    else
+      (module Vm_packagers.Threaded_vm_packager : Vm_packager)
+  in
 
-        let asm_out = Filename.concat out_dir "app.s" in
-        let gen_asm_cmd = Printf.sprintf "clang -S -target x86_64-apple-darwin -masm=intel -O1 -fno-stack-protector -Wno-format-security -I%s -fno-asynchronous-unwind-tables %s -o %s" out_dir obf_c_path asm_out in
-        let _ = Sys.command gen_asm_cmd in
-        asm_out
-      end else input_file
-    in
-
-    let ic = open_in asm_source_file in
-    let len = in_channel_length ic in
-    let text = really_input_string ic len in
-    close_in ic;
-
-    let raw_lines =
-      match X86_lifter.X86_parser.parse_lines text with
-      | Ok lines -> lines
-      | Error err ->
-          prerr_endline (Printf.sprintf "Parser warning: %s, falling back to full function" err);
-          []
-    in
-
-    let has_markers =
-      raw_lines <> [] && X86_lifter.Lifter.extract_marked_regions ~require_markers:true raw_lines <> []
-    in
-
-    let regions =
-      if raw_lines <> [] then X86_lifter.Lifter.extract_marked_regions raw_lines
-      else []
-    in
-
-    if has_markers then
-      Printf.printf "[VM-Protector] Auto-detected %d marker protected region(s) in source.\n" (List.length regions);
-
-    let lift_res =
-      if has_markers && regions <> [] then
-        let (_mode, rlines) = List.hd regions in
-        X86_lifter.Lifter.lift_lines rlines
-      else
-        X86_lifter.Lifter.lift_function text
-    in
-
-    match lift_res with
-    | Error err ->
-        prerr_endline (Printf.sprintf "Lifter failed: %s" err);
-        `Error (false, err)
-    | Ok lifted_func ->
-        let (runtime_src, runner_src, bc, metrics, hdr_name) =
-          if resolved_engine = "jit" then
-            let jit_pkg =
-              Rd_jit_vm.Rd_jit_emitter.compile_and_package
-                ~rng
-                ?config:(Some effective_cfg)
-                ~enable_cff:resolved_cff
-                ~enable_mba:resolved_mba
-                ~mba_depth:resolved_mba_depth
-                lifted_func
-            in
-            (jit_pkg.cpp_runtime_source, jit_pkg.runner_source, jit_pkg.bytecode, jit_pkg.metrics, "jit_vm_runtime.hpp")
-          else if resolved_engine = "multi_vm" then
-            let mv_pkg =
-              Multi_vm.Multi_vm_emitter.compile_and_package
-                ~rng
-                ~enable_cff:resolved_cff
-                ~enable_mba:resolved_mba
-                ~mba_depth:resolved_mba_depth
-                ~config:effective_cfg
-                lifted_func
-            in
-            (mv_pkg.cpp_runtime_source, mv_pkg.runner_source, mv_pkg.bytecode, mv_pkg.metrics, "multi_vm_runtime.hpp")
-          else
-            let pkg =
-              Native_vm.Vm_emitter.compile_and_package
-                ~rng
-                ~config:effective_cfg
-                lifted_func
-            in
-            (pkg.cpp_runtime_source, pkg.runner_source, pkg.bytecode, pkg.metrics, "threaded_vm.hpp")
-        in
-
-        let hdr_path = Filename.concat out_dir hdr_name in
-        let oc_h = open_out hdr_path in
-        output_string oc_h runtime_src;
-        close_out oc_h;
-
-        if resolved_engine <> "threaded" then begin
-          let comp_hdr = Filename.concat out_dir "threaded_vm.hpp" in
-          let oc_ch = open_out comp_hdr in
-          output_string oc_ch runtime_src;
-          close_out oc_ch;
-        end;
-
-        let runner_path = Filename.concat out_dir "runner.cpp" in
-        let oc_r = open_out runner_path in
-        output_string oc_r runner_src;
-        close_out oc_r;
-
-        let bc_path = Filename.concat out_dir "protected.vanguard" in
-        let oc_b = open_out_bin bc_path in
-        List.iter
-          (fun w ->
-            for i = 0 to 7 do
-              let b = Int64.to_int (Int64.logand (Int64.shift_right_logical w (i * 8)) 0xFFL) in
-              output_byte oc_b b
-            done)
-          bc;
-        close_out oc_b;
-
-        print_endline (Native_vm.Metrics.report_to_string metrics);
-        Printf.printf "Generated VM Runtime Header: %s\n" hdr_path;
-        Printf.printf "Generated Protected Bytecode: %s (%d bytes)\n" bc_path (List.length bc * 8);
-
-        if compile_and_run then begin
-          let bin_path = Filename.concat out_dir (if is_c_src then "protected_app" else "protected_runner") in
-          let comp_src = if is_c_src then Filename.concat out_dir "app_obf.c" else runner_path in
-          let compiler = if is_c_src then "clang -O3 -Wno-format-security" else "clang++ -std=c++20 -O3 -Wno-format-security -fvisibility-inlines-hidden" in
-          let comp_cmd = Printf.sprintf "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x -I%s %s -o %s && strip -x %s" compiler out_dir comp_src bin_path bin_path in
-
-          Printf.printf "\n[1/2] Compiling Native Protected Binary (Zero-Bloat / Stripped) with %s...\n" (if is_c_src then "clang -O3" else "clang++ -O3");
-          flush stdout;
-          let comp_status = Sys.command comp_cmd in
-          if comp_status <> 0 then begin
-            prerr_endline "Native compilation failed";
-            `Error (false, "Compilation error")
-          end else begin
-            Printf.printf "[2/2] Launching Protected Binary:\n";
-            Printf.printf "--------------------------------------------------------\n";
-            flush stdout;
-            let run_cmd = Printf.sprintf "%s" bin_path in
-            let _ = Sys.command run_cmd in
-            Printf.printf "--------------------------------------------------------\n\n";
-            flush stdout;
-            `Ok ()
-          end
-        end else `Ok ()
-  end
+  match
+    Protect_pipeline.run
+      ~lifter
+      ~c_macro_obfuscator
+      ~vm_packager
+      ~trampoline_engine
+      ~toolchain
+      ~rng
+      ~config:effective_cfg
+      ~input_file
+      ~out_dir
+      ~compile_and_run
+      ()
+  with
+  | Error err ->
+      prerr_endline (Printf.sprintf "VM Protection failed: %s" err);
+      `Error (false, err)
+  | Ok res ->
+      print_endline (Native_vm.Metrics.report_to_string res.metrics);
+      Printf.printf "Generated VM Runtime Header: %s\n" res.header_path;
+      Printf.printf "Generated Protected Bytecode: %s (%d bytes)\n" res.bytecode_path res.bytecode_length_bytes;
+      (match res.binary_path with
+      | Some bin ->
+          Printf.printf "\n[1/2] Compiling Native Protected Binary (Zero-Bloat / Stripped)...\n";
+          Printf.printf "[2/2] Launching Protected Binary (%s):\n" bin;
+          Printf.printf "--------------------------------------------------------\n";
+          (match res.execution_output with
+          | Some (code, out) ->
+              print_string out;
+              Printf.printf "--------------------------------------------------------\n\n";
+              Printf.printf "--- Target Execution Complete (Return Code: %d) ---\n" code
+          | None -> ());
+      | None -> ());
+      `Ok ()
 
 let protect_cmd =
   let doc = "Virtualize and protect x86_64 assembly function with CFF, MBA, rolling key, and Direct Threaded VM" in

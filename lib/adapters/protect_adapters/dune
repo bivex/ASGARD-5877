@@ -1,0 +1,13 @@
+(library
+ (name protect_adapters)
+ (public_name random_visa.protect_adapters)
+ (libraries
+  random_visa_ports
+  vm_ir
+  native_vm
+  x86_lifter
+  arm64_lifter
+  c_macro_obf
+  rd_jit_vm
+  multi_vm
+  unix))
