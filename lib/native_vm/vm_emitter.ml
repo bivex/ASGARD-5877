@@ -289,7 +289,7 @@ let compile_and_package
   in
   let expected_hash = compute_bytecode_hash key_seed final_bytecode in
   let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config opcode_to_handler in
-  let runner_src = Vm_runtime_emitter.emit_runner_cpp ~reg_perm final_bytecode in
+  let runner_src = Vm_runtime_emitter.emit_runner_cpp ~key_seed:(Int64.of_int32 key_seed) ~reg_perm final_bytecode in
 
   let decoy_count = 256 - List.length all_op_kinds in
   let mba_nodes = if enable_mba then mba_depth * 15 else 0 in

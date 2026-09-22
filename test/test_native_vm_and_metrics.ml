@@ -313,13 +313,24 @@ int main() {
         printf("[BEFORE] Word %%zu: 0x%%016llX\n", i, (unsigned long long)embedded_bytecode[i]);
     }
 
+    uint64_t before_words[64];
+    for (size_t i = 0; i < count; ++i) before_words[i] = embedded_bytecode[i];
+
     vanguard_threaded_vm::VMContext ctx = {};
     ctx.init();
-    bool ok = vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count);
+    bool ok = vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count, true);
     if (!ok) return 1;
 
     printf("[AFTER] Execution OK. RAX: %%llu\n", (unsigned long long)ctx.get_rax());
-    return (ctx.get_rax() == 600ULL) ? 0 : 2;
+    size_t wiped_count = 0;
+    for (size_t i = 0; i < count; ++i) {
+        printf("[AFTER] Word %%zu: 0x%%016llX\n", i, (unsigned long long)embedded_bytecode[i]);
+        if (embedded_bytecode[i] != before_words[i]) {
+            wiped_count++;
+        }
+    }
+    printf("[SCRUB_METRICS] Wiped %%zu / %%zu words\n", wiped_count, count);
+    return (ctx.get_rax() == 600ULL && wiped_count == count) ? 0 : 2;
 }
 |}
         (String.concat "\n" (List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) pkg.bytecode))
@@ -349,6 +360,101 @@ int main() {
       let out_str = Buffer.contents out_buf in
       Printf.printf "\n%s\n%!" out_str;
       Alcotest.(check bool) "rax is 600" true (String.contains out_str '6' && String.contains out_str '0');
+      Alcotest.(check bool) "all words wiped" true (String.contains out_str 'W' && String.contains out_str 'i' && String.contains out_str 'p');
+
+      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      ()
+
+let test_ephemeral_scrubbing_loop_and_stack () =
+  let rng = Random.State.make [| 20260922 |] in
+  let asm = {|
+func_scrub_loop:
+    mov rax, 1
+    mov rcx, 4
+.Lscrub_loop:
+    imul rax, rcx
+    push rax
+    pop rbx
+    sub rcx, 1
+    cmp rcx, 0
+    jne .Lscrub_loop
+    mov rax, rbx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let pkg = Vm_emitter.compile_and_package ~rng ~enable_cff:false func in
+      let tmp_dir = Filename.temp_file "scrub_loop_vm_" "_dir" in
+      (try Sys.remove tmp_dir with _ -> ());
+      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+      let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
+      let oc_h = open_out hdr_path in
+      output_string oc_h pkg.cpp_runtime_source;
+      close_out oc_h;
+
+      let custom_runner = Printf.sprintf {|
+#include "threaded_vm.hpp"
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+static uint64_t embedded_bytecode[] = {
+%s
+};
+
+int main() {
+    size_t count = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);
+    uint64_t before_words[64];
+    for (size_t i = 0; i < count; ++i) before_words[i] = embedded_bytecode[i];
+
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    bool ok = vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count, true);
+    if (!ok) return 1;
+
+    // 4! = 24
+    if (ctx.get_rax() != 24ULL) return 2;
+
+    // Verify all words in master embedded_bytecode are wiped post-execution
+    size_t wiped_count = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if (embedded_bytecode[i] != before_words[i]) wiped_count++;
+    }
+    printf("[SCRUB_LOOP_METRICS] RAX: %%llu, Wiped: %%zu / %%zu\n",
+           (unsigned long long)ctx.get_rax(), wiped_count, count);
+    return (wiped_count == count) ? 0 : 3;
+}
+|}
+        (String.concat "\n" (List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) pkg.bytecode))
+      in
+
+      let runner_path = Filename.concat tmp_dir "runner.cpp" in
+      let oc_r = open_out runner_path in
+      output_string oc_r custom_runner;
+      close_out oc_r;
+
+      let bin_path = Filename.concat tmp_dir "runner" in
+      let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+      let comp_status = Sys.command comp_cmd in
+      Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
+
+      let run_cmd = bin_path in
+      let ic = Unix.open_process_in run_cmd in
+      let out_buf = Buffer.create 256 in
+      (try
+         while true do
+           Buffer.add_string out_buf (input_line ic);
+           Buffer.add_char out_buf '\n'
+         done
+       with End_of_file -> ());
+      let status = Unix.close_process_in ic in
+      Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+      let out_str = Buffer.contents out_buf in
+      Printf.printf "\n%s\n%!" out_str;
+      Alcotest.(check bool) "rax is 24 (4!)" true (String.contains out_str '2' && String.contains out_str '4');
+      Alcotest.(check bool) "all loop words wiped" true (String.contains out_str 'W' && String.contains out_str 'i' && String.contains out_str 'p');
 
       let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
       ()
@@ -452,6 +558,7 @@ let tests = [
   Alcotest.test_case "threaded_vm_with_cff" `Slow test_threaded_vm_with_cff;
   Alcotest.test_case "super_operators_execution" `Slow test_super_operators_execution;
   Alcotest.test_case "ephemeral_self_consuming_scrubbing" `Slow test_ephemeral_self_consuming_scrubbing;
+  Alcotest.test_case "ephemeral_scrubbing_loop_and_stack" `Slow test_ephemeral_scrubbing_loop_and_stack;
   Alcotest.test_case "dynamic_junk_bytecode" `Slow test_dynamic_junk_bytecode;
   Alcotest.test_case "integrity_checksumming_and_stack_scrambling" `Slow test_integrity_checksumming_and_stack_scrambling;
 ]

@@ -42,7 +42,11 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Vm_context_emitter.emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize;
 
   (* execute_threaded function with Multi-Domain Dispatch and Bytecode Integrity Checksumming *)
-  Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU) {\n" key_seed);
+  Buffer.add_string b "#define SCRUB_WORD(ptr, val) do { \\\n";
+  Buffer.add_string b "    *(reinterpret_cast<volatile uint64_t*>(ptr)) = (val); \\\n";
+  Buffer.add_string b "} while(0)\n\n";
+
+  Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU, bool scrub_source = false) {\n" key_seed);
   Buffer.add_string b "    if (ctx.reg_mask == 0) ctx.init(seed);\n";
   Buffer.add_string b "    /* High-Speed Continuous Bytecode Integrity Guard (Anti-Patching / Breakpoint Detection) */\n";
   Buffer.add_string b "    uint64_t full_hash = 0x811C9DC5C9DC5119ULL ^ (uint64_t)seed;\n";
@@ -91,7 +95,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    /* Ephemeral Working Buffer: Isolated stack frame execution */\n";
   Buffer.add_string b "    uint64_t stack_buf[256];\n";
   Buffer.add_string b "    uint64_t* work_bc = (count <= 256) ? stack_buf : (uint64_t*)__builtin_alloca(count * sizeof(uint64_t));\n";
-  Buffer.add_string b "    for (size_t i = 0; i < count; ++i) work_bc[i] = bytecode[i];\n\n";
+  if enable_mem_sanitize then
+    Buffer.add_string b "    for (size_t i = 0; i < count; ++i) work_bc[i] = 0x5877CAFE1337BEEFULL ^ ((uint64_t)seed + (uint64_t)i);\n\n"
+  else
+    Buffer.add_string b "    for (size_t i = 0; i < count; ++i) work_bc[i] = bytecode[i];\n\n";
   Buffer.add_string b "    size_t vIP_idx = 0;\n\n";
 
   (* Multi-Domain Dispatch Tables *)
@@ -123,9 +130,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b "        uint64_t k_dyn = k_pos ^ ctx.running_key; \\\n"
   else
     Buffer.add_string b "        uint64_t k_dyn = k_pos; \\\n";
-  Buffer.add_string b "        word = bytecode[vIP_idx] ^ k_dyn; \\\n";
+  Buffer.add_string b "        work_bc[vIP_idx] = bytecode[vIP_idx]; \\\n";
+  Buffer.add_string b "        word = work_bc[vIP_idx] ^ k_dyn; \\\n";
   if enable_mem_sanitize then
-    Buffer.add_string b "        /* Ephemeral Self-Consuming: Overwrite scratch RAM buffer with dynamic rolling noise */ \\\n        work_bc[vIP_idx] = (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL; \\\n";
+    Buffer.add_string b "        /* Ephemeral Self-Consuming: Overwrite scratch RAM buffer with dynamic rolling noise */ \\\n        SCRUB_WORD(&work_bc[vIP_idx], (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL); \\\n";
   Buffer.add_string b "        vIP_idx++; \\\n";
   Buffer.add_string b "        op = (uint8_t)(word & 0xFF); \\\n";
   Buffer.add_string b "        dst = (uint8_t)((word >> 8) & 0x1F); \\\n";
@@ -146,29 +154,38 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes;
 
   Buffer.add_string b "    EXIT_VM:\n";
-  Buffer.add_string b "    /* Ephemeral Complete Memory Sanitization: Scrub all working memory */\n";
-  Buffer.add_string b "    for (size_t i = 0; i < count; ++i) {\n";
-  Buffer.add_string b "        work_bc[i] = 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed + (uint64_t)i);\n";
-  Buffer.add_string b "    }\n";
+  if enable_mem_sanitize then begin
+    Buffer.add_string b "    /* Ephemeral Complete Memory Sanitization: Scrub all working memory */\n";
+    Buffer.add_string b "    for (size_t i = 0; i < count; ++i) {\n";
+    Buffer.add_string b "        SCRUB_WORD(&work_bc[i], 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed + (uint64_t)i));\n";
+    Buffer.add_string b "    }\n";
+    Buffer.add_string b "    if (scrub_source && bytecode) {\n";
+    Buffer.add_string b "        for (size_t i = 0; i < count; ++i) {\n";
+    Buffer.add_string b "            SCRUB_WORD(&const_cast<uint64_t*>(bytecode)[i], 0xDEADBEEFCAFEBABEULL ^ ((uint64_t)seed + (uint64_t)i));\n";
+    Buffer.add_string b "        }\n";
+    Buffer.add_string b "    }\n";
+  end;
   Buffer.add_string b "    return !ctx.trapped;\n";
   Buffer.add_string b "}\n\n";
+  Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, bool scrub_source) {\n    return execute_threaded(ctx, bytecode, count, 0x%08lXU, scrub_source);\n}\n\n" key_seed);
   Buffer.add_string b "} // namespace vanguard_threaded_vm\n";
   Buffer.contents b
 
-let emit_runner_cpp ~reg_perm bytecode =
+let emit_runner_cpp ?(key_seed = 0x5877CAFEL) ~reg_perm bytecode =
+  let _ = key_seed in
   let _ = reg_perm in
   let b = Buffer.create 2048 in
   Buffer.add_string b "#include \"threaded_vm.hpp\"\n";
   Buffer.add_string b "#include <stdio.h>\n#include <stdlib.h>\n\n";
-  Buffer.add_string b "/* Self-contained embedded encrypted bytecode */\n";
-  Buffer.add_string b "static const uint64_t embedded_bytecode[] = {\n";
+  Buffer.add_string b "/* Self-contained embedded encrypted bytecode (Mutable for Ephemeral Memory Scrubbing) */\n";
+  Buffer.add_string b "static uint64_t embedded_bytecode[] = {\n";
   List.iter
     (fun w ->
       Buffer.add_string b (Printf.sprintf "    0x%016LXULL,\n" w))
     bytecode;
   Buffer.add_string b "};\n\n";
   Buffer.add_string b "int main(int argc, char** argv) {\n";
-  Buffer.add_string b "    const uint64_t* bc_ptr = embedded_bytecode;\n";
+  Buffer.add_string b "    uint64_t* bc_ptr = embedded_bytecode;\n";
   Buffer.add_string b "    size_t bc_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);\n";
   Buffer.add_string b "    uint64_t* heap_bc = NULL;\n\n";
   Buffer.add_string b "    if (argc >= 2) {\n";
@@ -189,8 +206,14 @@ let emit_runner_cpp ~reg_perm bytecode =
   Buffer.add_string b "        }\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    vanguard_threaded_vm::VMContext ctx = {};\n";
-  Buffer.add_string b "    bool ok = vanguard_threaded_vm::execute_threaded(ctx, bc_ptr, bc_len);\n";
-  Buffer.add_string b "    if (heap_bc) free(heap_bc);\n\n";
+  Buffer.add_string b "    bool ok = vanguard_threaded_vm::execute_threaded(ctx, bc_ptr, bc_len, true);\n";
+  Buffer.add_string b "    if (heap_bc) {\n";
+  Buffer.add_string b "        /* Ephemeral Heap Sanitization: Scrub all dynamically allocated bytecode before free */\n";
+  Buffer.add_string b "        for (size_t i = 0; i < bc_len; ++i) {\n";
+  Buffer.add_string b "            SCRUB_WORD(&heap_bc[i], 0xDEADBEEFCAFEBABEULL ^ (uint64_t)i);\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "        free(heap_bc);\n";
+  Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    if (!ok) return 2;\n";
   Buffer.add_string b "    printf(\"[VM] Execution SUCCESS! Verified %zu instructions. RAX: %llu\\n\",\n";
   Buffer.add_string b "           ctx.executed_instructions, (unsigned long long)ctx.get_rax());\n";
