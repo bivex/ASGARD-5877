@@ -29,6 +29,7 @@
  (name profile_bottlenecks)
  (modules profile_bottlenecks)
  (libraries
+  landmarks
   vm_ir
   x86_lifter
   arm64_lifter

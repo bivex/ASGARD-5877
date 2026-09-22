@@ -29,3 +29,4 @@ __pycache__/
 *.profraw
 *.profdata
 protected_license_arm64/
+profile_results.json
