@@ -1,61 +1,70 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include "asgard_obf.h"
 
-/* Simple license key checker:
-   Valid key = "ASGARD-5877-GOLD" (obfuscated at compile time via XOR) */
+/*
+ * ASGARD-5877 Developer Experience:
+ * Simply wrap the sensitive function or logic with two markers:
+ *   ASGARD_BEGIN_VIRTUALIZE("tag");
+ *   ... clean, idiomatic C code ...
+ *   ASGARD_END();
+ *
+ * ASGARD automatically covers the region with:
+ *   - Stack string encryption (ASG_STR)
+ *   - Constant blinding (ASG_BLIND_*)
+ *   - Mixed Boolean-Arithmetic (ASG_MBA_*)
+ *   - Opaque predicates & control-flow hardening
+ */
 
-static const uint8_t key_enc[] = {
-    0x41^0xA5, 0x53^0xA5, 0x47^0xA5, 0x41^0xA5, 0x52^0xA5,
-    0x44^0xA5, 0x2D^0xA5, 0x35^0xA5, 0x38^0xA5, 0x37^0xA5,
-    0x37^0xA5, 0x2D^0xA5, 0x47^0xA5, 0x4F^0xA5, 0x4C^0xA5,
-    0x44^0xA5, 0x00
-};
+static int verify_license(const char* input) {
+    ASGARD_BEGIN_VIRTUALIZE("verify_license");
 
-static int check_key(const char* input) {
-    int64_t license_code = 0x5877;
-    int64_t user_id      = 1337;
-    int64_t multiplier   = 42;
-    int64_t hash = license_code + user_id;
-    hash = hash ^ multiplier;
+    const char* expected = "ASGARD-5877-GOLD";
+    int ok = 1;
 
-    uint8_t decoded[17];
-    for (int i = 0; i < 16; i++)
-        decoded[i] = key_enc[i] ^ 0xA5;
-    decoded[16] = 0;
-
-    return strcmp(input, (char*)decoded) == 0;
-}
-
-int main() {
-    char buf[64];
-    printf("=========================================\n");
-    printf("[ASGARD SECURE AGENT] License Validator\n");
-    printf("=========================================\n");
-    printf("Enter license key: ");
-    fflush(stdout);
-
-    if (!fgets(buf, sizeof(buf), stdin)) {
-        printf("[!] ERROR: no input\n");
-        return 2;
+    for (int i = 0; i < 16; i++) {
+        if (input[i] != expected[i]) {
+            ok = 0;
+        }
     }
-    /* strip newline */
-    buf[strcspn(buf, "\r\n")] = 0;
+    if (input[16] != '\0') {
+        ok = 0;
+    }
 
-    if (check_key(buf)) {
+    if (ok) {
         int64_t license_code = 0x5877;
-        int64_t user_id      = 1337;
-        int64_t multiplier   = 42;
-        int64_t hash = license_code + user_id;
-        hash = hash ^ multiplier;
+        int64_t user_id = 1337;
+        int64_t multiplier = 42;
+        int64_t token = (license_code + user_id) ^ multiplier;
 
         printf("[+] ACCESS GRANTED\n");
-        printf("    Token:  0x%llX\n", (unsigned long long)(uint64_t)hash);
-        printf("    Flag:   FLAG{ASGARD_VALID_LICENSE_%llX}\n", (unsigned long long)(uint64_t)hash);
-        return 0;
+        printf("    Token:  0x%llX\n", (unsigned long long)token);
+        printf("    Flag:   FLAG{ASGARD_VALID_LICENSE_%llX}\n", (unsigned long long)token);
     } else {
         printf("[-] ACCESS DENIED — invalid key\n");
         printf("    Hint:   nice try\n");
-        return 1;
     }
+
+    ASGARD_END();
+    return ok;
+}
+
+int main(void) {
+    char buf[64];
+
+    puts("=========================================");
+    puts("[ASGARD SECURE AGENT] License Validator");
+    puts("=========================================");
+    printf("Enter license key: ");
+    fflush(stdout);
+
+    buf[0] = '\0';
+    if (!fgets(buf, (int)sizeof(buf), stdin)) {
+        return 2;
+    }
+    buf[strcspn(buf, "\r\n")] = '\0';
+
+    int ok = verify_license(buf);
+    return ok ? 0 : 1;
 }

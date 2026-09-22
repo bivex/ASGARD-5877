@@ -127,6 +127,26 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Alu { op = Or; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
   | ("eor", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Ok [ Ir.Alu { op = Xor; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = false } ]
+  | ("bic", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
+      Ok [
+        Ir.Unary { op = Not; dst = Register.vtmp1; src = raw_to_ir_operand src2; set_flags = false };
+        Ir.Alu { op = And; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
+      ]
+  | ("bics", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
+      Ok [
+        Ir.Unary { op = Not; dst = Register.vtmp1; src = raw_to_ir_operand src2; set_flags = false };
+        Ir.Alu { op = And; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = true };
+      ]
+  | ("orn", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
+      Ok [
+        Ir.Unary { op = Not; dst = Register.vtmp1; src = raw_to_ir_operand src2; set_flags = false };
+        Ir.Alu { op = Or; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
+      ]
+  | ("eon", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
+      Ok [
+        Ir.Unary { op = Not; dst = Register.vtmp1; src = raw_to_ir_operand src2; set_flags = false };
+        Ir.Alu { op = Xor; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
+      ]
 
   (* Shifts & Bitfields *)
   | ("lsl", [ OpReg dst; OpReg src1; OpImm shift ]) ->
