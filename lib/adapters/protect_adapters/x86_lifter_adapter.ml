@@ -1,11 +1,10 @@
 open Random_visa_ports
 open Protect_ports
-open Vm_ir
 
 let arch_name = "x86_64"
 let target_arch = X86_64
 
-let lift_source (text : string) : (Ir.func * (string * string) list, error) result =
+let lift_source (text : string) : (ir_func * (string * string) list, error) result =
   let raw_lines =
     match X86_lifter.X86_parser.parse_lines text with
     | Ok lines -> lines
@@ -26,5 +25,5 @@ let lift_source (text : string) : (Ir.func * (string * string) list, error) resu
       X86_lifter.Lifter.lift_function text
   in
   match lift_res with
-  | Ok f -> Ok (f, [])
+  | Ok f -> Ok (wrap_ir f, [])
   | Error err -> Error err

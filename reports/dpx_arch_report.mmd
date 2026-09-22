@@ -69,6 +69,7 @@ graph TD
     Protect_adapters_C_macro_obf_adapter["C_macro_obf_adapter 📄"]
     Protect_adapters_C_trampoline_adapter["C_trampoline_adapter 📄"]
     Protect_adapters_Clang_toolchain_adapter["Clang_toolchain_adapter 📄"]
+    Protect_adapters_Config_adapter["Config_adapter 📄"]
     Protect_adapters_Vm_packagers["Vm_packagers 📄"]
     Protect_adapters_X86_lifter_adapter["X86_lifter_adapter 📄"]
   end
@@ -215,24 +216,21 @@ graph TD
   Cli_project -. "ref" .-> X86_lifter_Lifter
   Cli_project -. "ref" .-> Native_vm_Vm_emitter
   Cli_protect -. "open" .-> Random_visa_ports_Protect_ports
-  Cli_protect -. "ref" .-> Native_vm_Protection_config
+  Cli_protect -. "ref" .-> Protect_adapters_Config_adapter
   Cli_protect -. "ref" .-> Protect_adapters_X86_lifter_adapter
   Cli_protect -. "ref" .-> Protect_adapters_C_macro_obf_adapter
   Cli_protect -. "ref" .-> Protect_adapters_C_trampoline_adapter
   Cli_protect -. "ref" .-> Protect_adapters_Clang_toolchain_adapter
   Cli_protect -. "ref" .-> Protect_adapters_Vm_packagers
   Cli_protect -. "ref" .-> Random_visa_application_Protect_pipeline
-  Cli_protect -. "ref" .-> Native_vm_Metrics
-  Cli_protect -. "ref" .-> C_macro_obf_C_macro_obf
   Cli_protect_arm64 -. "open" .-> Random_visa_ports_Protect_ports
-  Cli_protect_arm64 -. "ref" .-> Native_vm_Protection_config
+  Cli_protect_arm64 -. "ref" .-> Protect_adapters_Config_adapter
   Cli_protect_arm64 -. "ref" .-> Protect_adapters_Arm64_lifter_adapter
   Cli_protect_arm64 -. "ref" .-> Protect_adapters_C_macro_obf_adapter
   Cli_protect_arm64 -. "ref" .-> Protect_adapters_C_trampoline_adapter
   Cli_protect_arm64 -. "ref" .-> Protect_adapters_Clang_toolchain_adapter
   Cli_protect_arm64 -. "ref" .-> Protect_adapters_Vm_packagers
   Cli_protect_arm64 -. "ref" .-> Random_visa_application_Protect_pipeline
-  Cli_protect_arm64 -. "ref" .-> Native_vm_Metrics
   Cli_vanguard -. "ref" .-> Random_visa_domain_Isa_grammar
   Cli_vanguard -. "ref" .-> Random_visa_domain_Errors
   Cli_vanguard -. "ref" .-> Random_visa_cpp_emitter_Cpp_emitter_adapter
@@ -290,7 +288,6 @@ graph TD
   Random_visa_cpp_emitter_Cpp_header_emitters -->|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
   Random_visa_cpp_emitter_Cpp_header_emitters -->|"ref · cross-lib"| Random_visa_domain_Types
   Protect_adapters_Arm64_lifter_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
-  Protect_adapters_Arm64_lifter_adapter -->|"ref · cross-lib"| Vm_ir_Ir
   Protect_adapters_Arm64_lifter_adapter -->|"ref · cross-lib"| Arm64_lifter_Arm64_parser
   Protect_adapters_Arm64_lifter_adapter -->|"ref · cross-lib"| Arm64_lifter_Arm64_lifter
   Protect_adapters_C_macro_obf_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
@@ -298,14 +295,16 @@ graph TD
   Protect_adapters_C_macro_obf_adapter -->|"ref · cross-lib"| C_macro_obf_C_macro_obf
   Protect_adapters_C_trampoline_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
   Protect_adapters_Clang_toolchain_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
+  Protect_adapters_Config_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
+  Protect_adapters_Config_adapter =>|"ref · cross-lib"| Native_vm_Protection_config
   Protect_adapters_Vm_packagers -->|"open · cross-lib"| Random_visa_ports_Protect_ports
-  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Native_vm_Protection_config
+  Protect_adapters_Vm_packagers =>|"ref · cross-lib"| Native_vm_Metrics
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Vm_ir_Ir
+  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Native_vm_Protection_config
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Native_vm_Vm_emitter
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Rd_jit_vm_Rd_jit_emitter
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Multi_vm_Multi_vm_emitter
   Protect_adapters_X86_lifter_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
-  Protect_adapters_X86_lifter_adapter -->|"ref · cross-lib"| Vm_ir_Ir
   Protect_adapters_X86_lifter_adapter -->|"ref · cross-lib"| X86_lifter_X86_parser
   Protect_adapters_X86_lifter_adapter -->|"ref · cross-lib"| X86_lifter_Lifter
   Random_visa_sail_export_Sail_export_adapter -->|"include · cross-lib"| Random_visa_ports_Ports
@@ -339,7 +338,6 @@ graph TD
   Random_visa_application_Pipeline -->|"ref"| Random_visa_application_Compile_and_verify
   Random_visa_application_Pipeline -->|"ref · cross-lib"| Random_visa_domain_Errors
   Random_visa_application_Protect_pipeline -->|"open · cross-lib"| Random_visa_ports_Protect_ports
-  Random_visa_application_Protect_pipeline -->|"ref · cross-lib"| Native_vm_Protection_config
   Random_visa_application_Synthesize_isa -->|"ref · cross-lib"| Random_visa_domain_Vector_config
   Random_visa_application_Synthesize_isa -->|"ref · cross-lib"| Random_visa_domain_Generation_profile
   Random_visa_application_Synthesize_isa -->|"ref · cross-lib"| Random_visa_domain_Isa_grammar
@@ -480,9 +478,6 @@ graph TD
   Native_vm_Vm_transform =>|"ref · cross-lib"| Vm_ir_Ir
   Random_visa_ports_Ports =>|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
   Random_visa_ports_Ports =>|"ref · cross-lib"| Random_visa_domain_Errors
-  Random_visa_ports_Protect_ports -->|"ref · cross-lib"| Native_vm_Metrics
-  Random_visa_ports_Protect_ports -->|"ref · cross-lib"| Vm_ir_Ir
-  Random_visa_ports_Protect_ports -->|"ref · cross-lib"| Native_vm_Protection_config
   Rd_jit_vm_Rd_jit_emitter -->|"include"| Rd_jit_vm_Rd_jit_types
   Rd_jit_vm_Rd_jit_emitter -->|"ref"| Rd_jit_vm_Rd_jit_buffer
   Rd_jit_vm_Rd_jit_emitter -->|"ref"| Rd_jit_vm_Rd_jit_synth

@@ -1,6 +1,5 @@
 open Random_visa_ports
 open Protect_ports
-open Native_vm
 
 let run
     ~(lifter : (module Lifter))
@@ -9,7 +8,7 @@ let run
     ?trampoline_engine
     ?toolchain
     ~(rng : Random.State.t)
-    ~(config : Protection_config.t)
+    ~(config : protection_config)
     ~(input_file : string)
     ~(out_dir : string)
     ?(compile_and_run = false)
@@ -27,7 +26,7 @@ let run
 
     (* 1. Optional C/C++ macro pre-transformation and clang frontend *)
     let asm_source_file_res =
-      if is_c_src && config.c_macro.enabled then
+      if is_c_src && is_c_macro_enabled config then
         match (c_macro_obfuscator, toolchain) with
         | Some (module C : C_macro_obfuscator), Some (module T : Toolchain) ->
             let hdr_path = Filename.concat out_dir "asgard_obf.h" in

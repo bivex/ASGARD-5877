@@ -1,11 +1,10 @@
 open Random_visa_ports
 open Protect_ports
-open Vm_ir
 
 let arch_name = "arm64"
 let target_arch = Arm64
 
-let lift_source (text : string) : (Ir.func * (string * string) list, error) result =
+let lift_source (text : string) : (ir_func * (string * string) list, error) result =
   let constants = Arm64_lifter.Arm64_parser.extract_constants text in
   let raw_lines =
     match Arm64_lifter.Arm64_parser.parse_lines text with
@@ -24,5 +23,5 @@ let lift_source (text : string) : (Ir.func * (string * string) list, error) resu
       Arm64_lifter.lift_function text
   in
   match lift_res with
-  | Ok f -> Ok (f, constants)
+  | Ok f -> Ok (wrap_ir f, constants)
   | Error err -> Error err

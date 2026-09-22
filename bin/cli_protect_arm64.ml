@@ -9,42 +9,17 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
     if enable_jit || engine = "jit" then "jit"
     else "threaded"
   in
-  let base_cfg =
-    match config_file with
-    | Some path -> (
-        match Native_vm.Protection_config.from_file path with
-        | Ok c -> c
-        | Error err ->
-            prerr_endline (Printf.sprintf "[Config] Warning: %s, using default" err);
-            Native_vm.Protection_config.default)
-    | None -> (
-        match preset with
-        | Some p -> (
-            match Native_vm.Protection_config.from_preset p with
-            | Ok c -> c
-            | Error err ->
-                prerr_endline (Printf.sprintf "[Preset] Warning: %s, using default" err);
-                Native_vm.Protection_config.default)
-        | None -> Native_vm.Protection_config.default)
+  let effective_cfg =
+    Protect_adapters.Config_adapter.resolve
+      ~config_file
+      ~preset
+      ~enable_cff
+      ~enable_mba
+      ~mba_depth
+      ~seed
   in
-
-  let resolved_cff = if enable_cff then true else base_cfg.cff.enabled in
-  let resolved_mba = if enable_mba then true else base_cfg.mba.enabled in
-  let resolved_mba_depth = if mba_depth <> 2 then mba_depth else base_cfg.mba.depth in
-  let resolved_seed =
-    match seed with
-    | Some s -> Some s
-    | None -> base_cfg.seed
-  in
-  let effective_cfg = {
-    base_cfg with
-    seed = resolved_seed;
-    cff = { base_cfg.cff with enabled = resolved_cff };
-    mba = { base_cfg.mba with enabled = resolved_mba; depth = resolved_mba_depth };
-  } in
-
   let rng =
-    match effective_cfg.seed with
+    match Protect_ports.seed effective_cfg with
     | Some s -> Random.State.make [| s |]
     | None ->
         let s = Random.self_init (); Random.bits () in
@@ -87,7 +62,7 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
       prerr_endline (Printf.sprintf "ARM64 VM Protection failed: %s" err);
       `Error (false, err)
   | Ok res ->
-      print_endline (Native_vm.Metrics.report_to_string res.metrics);
+      print_endline res.metrics.formatted_summary;
       Printf.printf "Generated ARM64 VM Header: %s\n" res.header_path;
       Printf.printf "Generated ARM64 Protected Bytecode: %s (%d bytes)\n" res.bytecode_path res.bytecode_length_bytes;
       (match res.binary_path with

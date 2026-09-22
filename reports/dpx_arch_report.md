@@ -2,11 +2,11 @@
 
 - **Target Path:** `/Volumes/External/Code/ASGARD-5877`
 - **Dune Project:** Yes
-- **Files Scanned:** `253`
-- **Modules Count:** `158`
-- **Dependency Edges:** `534`
+- **Files Scanned:** `255`
+- **Modules Count:** `159`
+- **Dependency Edges:** `528`
 - **Cycles / Circular Dependencies:** `0` (Clean DAG)
-- **Scan Elapsed Time:** `0.242s`
+- **Scan Elapsed Time:** `0.238s`
 
 ## 📊 Architecture Health Summary
 
@@ -14,7 +14,7 @@
 |---|:---:|---|
 | **Errors (❌)** | **0** | **0 errors — No circular dependencies or broken abstractions** |
 | **Warnings (⚠️)** | **0** | **0 warnings — All God Modules (>400 LOC) eradicated** |
-| **Info (ℹ️)** | **23** | **Domain AST / ADT types & test runner hub (benign by design)** |
+| **Info (ℹ️)** | **22** | **Domain AST / ADT types & test runner hub (benign by design)** |
 
 ## 📚 Dune Libraries & Dependencies
 
@@ -27,14 +27,14 @@
 | **mba_engine** | 6 | `vm_ir` | — |
 | **multi_vm** | 3 | `native_vm`, `vm_ir` | — |
 | **native_vm** | 20 | `cff`, `mba_engine`, `random_visa_domain`, `vm_ir` | `yojson` |
-| **protect_adapters** | 6 | `arm64_lifter`, `c_macro_obf`, `multi_vm`, `native_vm`, `random_visa_ports`, `rd_jit_vm`, `vm_ir`, `x86_lifter` | `unix` |
-| **random_visa_application** | 7 | `native_vm`, `random_visa_domain`, `random_visa_ports` | — |
+| **protect_adapters** | 7 | `arm64_lifter`, `c_macro_obf`, `multi_vm`, `native_vm`, `random_visa_ports`, `rd_jit_vm`, `vm_ir`, `x86_lifter` | `unix` |
+| **random_visa_application** | 7 | `random_visa_domain`, `random_visa_ports` | — |
 | **random_visa_assembler** | 1 | `random_visa_domain`, `random_visa_ports` | — |
 | **random_visa_c11_emitter** | 1 | `random_visa_domain`, `random_visa_ports` | — |
 | **random_visa_compiler_adapter** | 1 | `random_visa_domain`, `random_visa_ports` | `unix` |
 | **random_visa_cpp_emitter** | 2 | `random_visa_domain`, `random_visa_ports` | — |
 | **random_visa_domain** | 14 | — | — |
-| **random_visa_ports** | 2 | `native_vm`, `random_visa_domain`, `vm_ir` | — |
+| **random_visa_ports** | 2 | `random_visa_domain` | — |
 | **random_visa_sail_export** | 1 | `random_visa_domain`, `random_visa_ports` | — |
 | **random_visa_sail_parser** | 2 | `random_visa_domain`, `random_visa_ports` | — |
 | **rd_jit_vm** | 4 | `cff`, `native_vm`, `vm_ir` | — |
@@ -52,18 +52,27 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 |---|---|:---:|:---:|---|
 | `Cli_isa` | `bin/cli_isa.ml` | 214 | No | `—` |
 | `Cli_project` | `bin/cli_project.ml` | 218 | No | `—` |
-| `Cli_protect` | `bin/cli_protect.ml` | 268 | No | `—` |
-| `Cli_protect_arm64` | `bin/cli_protect_arm64.ml` | 146 | No | `—` |
+| `Cli_protect` | `bin/cli_protect.ml` | 200 | No | `—` |
+| `Cli_protect_arm64` | `bin/cli_protect_arm64.ml` | 123 | No | `—` |
 | `Cli_vanguard` | `bin/cli_vanguard.ml` | 120 | No | `—` |
 | `Gen_crackme_vm` | `bin/gen_crackme_vm.ml` | 71 | No | `—` |
 | `Gen_crypto_crackme` | `bin/gen_crypto_crackme.ml` | 154 | No | `—` |
 | `Main` | `bin/main.ml` | 19 | No | `—` |
 | `Profile_bottlenecks` | `bin/profile_bottlenecks.ml` | 355 | No | `—` |
 
-### Application / Ports Layer (0 modules)
+### Application & Ports Layer (9 modules)
 
 | Module | File | LOC | Interface (.mli) | Dune Library |
 |---|---|:---:|:---:|---|
+| `Compile_and_verify` | `lib/application/compile_and_verify.ml` | 5 | Yes | `random_visa_application` |
+| `Export_sail` | `lib/application/export_sail.ml` | 5 | Yes | `random_visa_application` |
+| `Generate_emulator` | `lib/application/generate_emulator.ml` | 5 | Yes | `random_visa_application` |
+| `Import_sail` | `lib/application/import_sail.ml` | 5 | Yes | `random_visa_application` |
+| `Pipeline` | `lib/application/pipeline.ml` | 79 | Yes | `random_visa_application` |
+| `Ports` | `lib/ports/ports.ml` | 24 | Yes | `random_visa_ports` |
+| `Protect_pipeline` | `lib/application/protect_pipeline.ml` | 136 | Yes | `random_visa_application` |
+| `Protect_ports` | `lib/ports/protect_ports.ml` | 99 | Yes | `random_visa_ports` |
+| `Synthesize_isa` | `lib/application/synthesize_isa.ml` | 8 | Yes | `random_visa_application` |
 
 ### Domain Layer (14 modules)
 
@@ -84,24 +93,25 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Vector_isa_spec` | `lib/domain/vector_isa_spec.ml` | 109 | Yes | `random_visa_domain` |
 | `Vm_runtime_profile` | `lib/domain/vm_runtime_profile.ml` | 19 | Yes | `random_visa_domain` |
 
-### Adapters / Infrastructure (14 modules)
+### Adapters / Infrastructure (15 modules)
 
 | Module | File | LOC | Interface (.mli) | Dune Library |
 |---|---|:---:|:---:|---|
-| `Arm64_lifter_adapter` | `lib/adapters/protect_adapters/arm64_lifter_adapter.ml` | 26 | Yes | `protect_adapters` |
+| `Arm64_lifter_adapter` | `lib/adapters/protect_adapters/arm64_lifter_adapter.ml` | 25 | Yes | `protect_adapters` |
 | `Assembler_adapter` | `lib/adapters/assembler/assembler_adapter.ml` | 341 | Yes | `random_visa_assembler` |
 | `Ast` | `lib/adapters/sail_parser/ast.ml` | 35 | No | `random_visa_sail_parser` |
 | `C11_emitter_adapter` | `lib/adapters/c11_emitter/c11_emitter_adapter.ml` | 288 | Yes | `random_visa_c11_emitter` |
-| `C_macro_obf_adapter` | `lib/adapters/protect_adapters/c_macro_obf_adapter.ml` | 26 | Yes | `protect_adapters` |
+| `C_macro_obf_adapter` | `lib/adapters/protect_adapters/c_macro_obf_adapter.ml` | 78 | Yes | `protect_adapters` |
 | `C_trampoline_adapter` | `lib/adapters/protect_adapters/c_trampoline_adapter.ml` | 112 | Yes | `protect_adapters` |
 | `Clang_toolchain_adapter` | `lib/adapters/protect_adapters/clang_toolchain_adapter.ml` | 48 | Yes | `protect_adapters` |
 | `Compiler_adapter` | `lib/adapters/compiler_adapter/compiler_adapter.ml` | 77 | Yes | `random_visa_compiler_adapter` |
+| `Config_adapter` | `lib/adapters/protect_adapters/config_adapter.ml` | 71 | Yes | `protect_adapters` |
 | `Cpp_emitter_adapter` | `lib/adapters/cpp_emitter/cpp_emitter_adapter.ml` | 226 | Yes | `random_visa_cpp_emitter` |
 | `Cpp_header_emitters` | `lib/adapters/cpp_emitter/cpp_header_emitters.ml` | 164 | No | `random_visa_cpp_emitter` |
 | `Sail_export_adapter` | `lib/adapters/sail_export/sail_export_adapter.ml` | 23 | Yes | `random_visa_sail_export` |
 | `Sail_parser_adapter` | `lib/adapters/sail_parser/sail_parser_adapter.ml` | 219 | Yes | `random_visa_sail_parser` |
-| `Vm_packagers` | `lib/adapters/protect_adapters/vm_packagers.ml` | 55 | Yes | `protect_adapters` |
-| `X86_lifter_adapter` | `lib/adapters/protect_adapters/x86_lifter_adapter.ml` | 28 | Yes | `protect_adapters` |
+| `Vm_packagers` | `lib/adapters/protect_adapters/vm_packagers.ml` | 69 | Yes | `protect_adapters` |
+| `X86_lifter_adapter` | `lib/adapters/protect_adapters/x86_lifter_adapter.ml` | 27 | Yes | `protect_adapters` |
 
 ### VM, Decompilation & Hardening Pipeline (112 modules)
 
@@ -228,7 +238,7 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Arm64_branch` | `arm64_lifter` | unknown | 74 | 1 | 4 | 0.80 | 1.00 | 0.80 |
 | `Arm64_common` | `arm64_lifter` | unknown | 89 | 3 | 4 | 0.57 | 1.00 | 0.57 |
 | `Arm64_lifter` | `arm64_lifter` | unknown | 179 | 5 | 6 | 0.55 | 0.00 | 0.46 |
-| `Arm64_lifter_adapter` | `protect_adapters` | adapters | 26 | 1 | 4 | 0.80 | 1.00 | 0.80 |
+| `Arm64_lifter_adapter` | `protect_adapters` | adapters | 25 | 1 | 3 | 0.75 | 1.00 | 0.75 |
 | `Arm64_mem` | `arm64_lifter` | unknown | 183 | 1 | 4 | 0.80 | 1.00 | 0.80 |
 | `Arm64_parser` | `arm64_lifter` | unknown | 303 | 2 | 2 | 0.50 | 1.00 | 0.50 |
 | `Arm64_regs` | `arm64_lifter` | unknown | 88 | 1 | 1 | 0.50 | 1.00 | 0.50 |
@@ -243,8 +253,8 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `C_macro_config` | `c_macro_obf` | unknown | 41 | 3 | 0 | 0.00 | 0.00 | 1.00 |
 | `C_macro_guards` | `c_macro_obf` | unknown | 327 | 1 | 0 | 0.00 | 0.00 | 1.00 |
 | `C_macro_header` | `c_macro_obf` | unknown | 50 | 1 | 3 | 0.75 | 0.00 | 0.25 |
-| `C_macro_obf` | `c_macro_obf` | unknown | 215 | 6 | 4 | 0.40 | 0.00 | 0.60 |
-| `C_macro_obf_adapter` | `protect_adapters` | adapters | 26 | 2 | 3 | 0.60 | 1.00 | 0.60 |
+| `C_macro_obf` | `c_macro_obf` | unknown | 215 | 5 | 4 | 0.44 | 0.00 | 0.56 |
+| `C_macro_obf_adapter` | `protect_adapters` | adapters | 78 | 2 | 3 | 0.60 | 1.00 | 0.60 |
 | `C_macro_templates` | `c_macro_obf` | unknown | 186 | 1 | 0 | 0.00 | 0.00 | 1.00 |
 | `C_nanomites` | `c_macro_obf` | unknown | 334 | 1 | 1 | 0.50 | 0.00 | 0.50 |
 | `C_trampoline_adapter` | `protect_adapters` | adapters | 112 | 3 | 1 | 0.25 | 1.00 | 0.25 |
@@ -253,11 +263,12 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Clang_toolchain_adapter` | `protect_adapters` | adapters | 48 | 2 | 1 | 0.33 | 1.00 | 0.33 |
 | `Cli_isa` | `—` | api | 214 | 1 | 8 | 0.89 | 0.00 | 0.11 |
 | `Cli_project` | `—` | api | 218 | 1 | 4 | 0.80 | 0.00 | 0.20 |
-| `Cli_protect` | `—` | api | 268 | 1 | 10 | 0.91 | 0.00 | 0.09 |
-| `Cli_protect_arm64` | `—` | api | 146 | 1 | 9 | 0.90 | 0.00 | 0.10 |
+| `Cli_protect` | `—` | api | 200 | 1 | 8 | 0.89 | 0.00 | 0.11 |
+| `Cli_protect_arm64` | `—` | api | 123 | 1 | 8 | 0.89 | 0.00 | 0.11 |
 | `Cli_vanguard` | `—` | api | 120 | 1 | 6 | 0.86 | 0.00 | 0.14 |
 | `Compile_and_verify` | `random_visa_application` | ports | 5 | 1 | 1 | 0.50 | 1.00 | 0.50 |
 | `Compiler_adapter` | `random_visa_compiler_adapter` | adapters | 77 | 3 | 2 | 0.40 | 1.00 | 0.40 |
+| `Config_adapter` | `protect_adapters` | adapters | 71 | 2 | 2 | 0.50 | 1.00 | 0.50 |
 | `Coverage_audit` | `—` | unknown | 71 | 0 | 0 | 0.00 | 0.00 | 1.00 |
 | `Cpp_emitter_adapter` | `random_visa_cpp_emitter` | adapters | 226 | 5 | 6 | 0.55 | 1.00 | 0.55 |
 | `Cpp_header_emitters` | `random_visa_cpp_emitter` | adapters | 164 | 1 | 3 | 0.75 | 0.00 | 0.25 |
@@ -282,7 +293,7 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Import_sail` | `random_visa_application` | ports | 5 | 1 | 2 | 0.67 | 1.00 | 0.67 |
 | `Instruction_class` | `random_visa_domain` | domain | 44 | 8 | 1 | 0.11 | 0.00 | 0.89 |
 | `Instruction_family` | `random_visa_domain` | domain | 54 | 3 | 3 | 0.50 | 0.00 | 0.50 |
-| `Ir` | `vm_ir` | unknown | 200 | 38 | 2 | 0.05 | 0.00 | 0.95 |
+| `Ir` | `vm_ir` | unknown | 200 | 35 | 2 | 0.05 | 0.00 | 0.95 |
 | `Ir_egraph` | `vm_ir` | unknown | 184 | 2 | 1 | 0.33 | 0.33 | 0.33 |
 | `Ir_pipeline` | `vm_ir` | unknown | 46 | 1 | 8 | 0.89 | 0.00 | 0.11 |
 | `Ir_verify` | `vm_ir` | unknown | 56 | 2 | 2 | 0.50 | 0.00 | 0.50 |
@@ -291,7 +302,7 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Literal_stitcher` | `arm64_lifter` | unknown | 23 | 1 | 0 | 0.00 | 1.00 | 0.00 |
 | `Main` | `—` | api | 19 | 0 | 5 | 1.00 | 0.00 | 0.00 |
 | `Mba` | `mba_engine` | unknown | 234 | 10 | 2 | 0.17 | 0.00 | 0.83 |
-| `Metrics` | `native_vm` | unknown | 86 | 12 | 1 | 0.08 | 1.00 | 0.08 |
+| `Metrics` | `native_vm` | unknown | 86 | 10 | 1 | 0.09 | 1.00 | 0.09 |
 | `Multi_vm_emitter` | `multi_vm` | unknown | 175 | 2 | 6 | 0.75 | 0.00 | 0.25 |
 | `Mutation_profile` | `random_visa_domain` | domain | 47 | 2 | 0 | 0.00 | 0.00 | 1.00 |
 | `Ncfg_synth` | `mba_engine` | unknown | 51 | 1 | 1 | 0.50 | 1.00 | 0.50 |
@@ -301,9 +312,9 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Pop_coupler` | `cff` | unknown | 55 | 1 | 2 | 0.67 | 0.00 | 0.33 |
 | `Ports` | `random_visa_ports` | ports | 24 | 8 | 2 | 0.20 | 1.00 | 0.20 |
 | `Profile_bottlenecks` | `—` | api | 355 | 0 | 14 | 1.00 | 0.00 | 0.00 |
-| `Protect_pipeline` | `random_visa_application` | ports | 137 | 2 | 2 | 0.50 | 1.00 | 0.50 |
-| `Protect_ports` | `random_visa_ports` | ports | 68 | 9 | 3 | 0.25 | 0.00 | 0.75 |
-| `Protection_config` | `native_vm` | unknown | 23 | 15 | 3 | 0.17 | 0.08 | 0.75 |
+| `Protect_pipeline` | `random_visa_application` | ports | 136 | 2 | 1 | 0.33 | 1.00 | 0.33 |
+| `Protect_ports` | `random_visa_ports` | ports | 99 | 10 | 0 | 0.00 | 0.25 | 0.75 |
+| `Protection_config` | `native_vm` | unknown | 23 | 12 | 3 | 0.20 | 0.08 | 0.72 |
 | `Protection_json` | `native_vm` | unknown | 268 | 1 | 2 | 0.67 | 0.00 | 0.33 |
 | `Protection_presets` | `native_vm` | unknown | 316 | 2 | 1 | 0.33 | 0.00 | 0.67 |
 | `Protection_types` | `native_vm` | unknown | 75 | 3 | 0 | 0.00 | 0.00 | 1.00 |
@@ -376,11 +387,11 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Vm_eval` | `vm_ir` | unknown | 312 | 6 | 3 | 0.33 | 0.00 | 0.67 |
 | `Vm_handlers_emitter` | `native_vm` | unknown | 8 | 1 | 3 | 0.75 | 1.00 | 0.75 |
 | `Vm_mem_handlers` | `native_vm` | unknown | 239 | 1 | 0 | 0.00 | 1.00 | 0.00 |
-| `Vm_packagers` | `protect_adapters` | adapters | 55 | 2 | 6 | 0.75 | 1.00 | 0.75 |
+| `Vm_packagers` | `protect_adapters` | adapters | 69 | 2 | 7 | 0.78 | 1.00 | 0.78 |
 | `Vm_runtime_emitter` | `native_vm` | unknown | 291 | 1 | 6 | 0.86 | 0.00 | 0.14 |
 | `Vm_runtime_profile` | `random_visa_domain` | domain | 19 | 3 | 2 | 0.40 | 0.00 | 0.60 |
 | `Vm_transform` | `native_vm` | unknown | 276 | 2 | 3 | 0.60 | 0.00 | 0.40 |
-| `X86_lifter_adapter` | `protect_adapters` | adapters | 28 | 1 | 4 | 0.80 | 1.00 | 0.80 |
+| `X86_lifter_adapter` | `protect_adapters` | adapters | 27 | 1 | 3 | 0.75 | 1.00 | 0.75 |
 | `X86_parser` | `x86_lifter` | unknown | 292 | 4 | 1 | 0.20 | 0.00 | 0.80 |
 
 ## 🔍 Architecture Issues Breakdown
@@ -389,16 +400,15 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 |---|---|---|---|
 | ℹ️ **INFO** | `hub_module` | `Run_tests` | hub/spaghetti module: Run_tests depends on 32 other modules |
 | ℹ️ **INFO** | `leaky_interface` | `Arm64_lifter.Arm64_types` | leaky interface: Arm64_types.mli exports 5 types, but none are abstract. Implementation details are fully exposed to 6 clients. |
-| ℹ️ **INFO** | `leaky_interface` | `C_macro_obf.C_macro_obf` | leaky interface: C_macro_obf.mli exports 2 types, but none are abstract. Implementation details are fully exposed to 6 clients. |
+| ℹ️ **INFO** | `leaky_interface` | `C_macro_obf.C_macro_obf` | leaky interface: C_macro_obf.mli exports 2 types, but none are abstract. Implementation details are fully exposed to 5 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `Mba_engine.Egraph` | leaky interface: Egraph.mli exports 2 types, but none are abstract. Implementation details are fully exposed to 3 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `Mba_engine.Egraph_types` | leaky interface: Egraph_types.mli exports 2 types, but none are abstract. Implementation details are fully exposed to 3 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `Native_vm.Protection_types` | leaky interface: Protection_types.mli exports 11 types, but none are abstract. Implementation details are fully exposed to 3 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `Random_visa_domain.Hw_cost` | leaky interface: Hw_cost.mli exports 2 types, but none are abstract. Implementation details are fully exposed to 3 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `Random_visa_domain.Sail_ast` | leaky interface: Sail_ast.mli exports 5 types, but none are abstract. Implementation details are fully exposed to 5 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `Random_visa_domain.Types` | leaky interface: Types.mli exports 8 types, but none are abstract. Implementation details are fully exposed to 23 clients. |
-| ℹ️ **INFO** | `leaky_interface` | `Random_visa_ports.Protect_ports` | leaky interface: Protect_ports.mli exports 5 types, but none are abstract. Implementation details are fully exposed to 9 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `Vm_ir.Flags` | leaky interface: Flags.mli exports 3 types, but none are abstract. Implementation details are fully exposed to 12 clients. |
-| ℹ️ **INFO** | `leaky_interface` | `Vm_ir.Ir` | leaky interface: Ir.mli exports 12 types, but none are abstract. Implementation details are fully exposed to 38 clients. |
+| ℹ️ **INFO** | `leaky_interface` | `Vm_ir.Ir` | leaky interface: Ir.mli exports 12 types, but none are abstract. Implementation details are fully exposed to 35 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `Vm_ir.Register` | leaky interface: Register.mli exports 4 types, but none are abstract. Implementation details are fully exposed to 36 clients. |
 | ℹ️ **INFO** | `leaky_interface` | `X86_lifter.X86_parser` | leaky interface: X86_parser.mli exports 4 types, but none are abstract. Implementation details are fully exposed to 4 clients. |
 | ℹ️ **INFO** | `zone_of_pain` | `Mba_engine.Mba` | zone of pain: Mba is rigidly concrete (A=0.00) yet heavily depended on by 10 modules (I=0.17, D=0.83) (domain AST / data model: benign by design) |
@@ -407,7 +417,7 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | ℹ️ **INFO** | `zone_of_pain` | `Random_visa_domain.Vector_instruction` | zone of pain: Vector_instruction is rigidly concrete (A=0.00) yet heavily depended on by 20 modules (I=0.09, D=0.91) (domain AST / data model: benign by design) |
 | ℹ️ **INFO** | `zone_of_pain` | `Random_visa_domain.Vector_isa_spec` | zone of pain: Vector_isa_spec is rigidly concrete (A=0.00) yet heavily depended on by 25 modules (I=0.17, D=0.83) (domain AST / data model: benign by design) |
 | ℹ️ **INFO** | `zone_of_pain` | `Vm_ir.Flags` | zone of pain: Flags is rigidly concrete (A=0.00) yet heavily depended on by 12 modules (I=0.08, D=0.92) (domain AST / data model: benign by design) |
-| ℹ️ **INFO** | `zone_of_pain` | `Vm_ir.Ir` | zone of pain: Ir is rigidly concrete (A=0.00) yet heavily depended on by 38 modules (I=0.05, D=0.95) (domain AST / data model: benign by design) |
+| ℹ️ **INFO** | `zone_of_pain` | `Vm_ir.Ir` | zone of pain: Ir is rigidly concrete (A=0.00) yet heavily depended on by 35 modules (I=0.05, D=0.95) (domain AST / data model: benign by design) |
 | ℹ️ **INFO** | `zone_of_pain` | `Vm_ir.Register` | zone of pain: Register is rigidly concrete (A=0.00) yet heavily depended on by 36 modules (I=0.00, D=1.00) (domain AST / data model: benign by design) |
 | ℹ️ **INFO** | `zone_of_pain` | `Vm_ir.Rns` | zone of pain: Rns is rigidly concrete (A=0.00) yet heavily depended on by 5 modules (I=0.00, D=1.00) (domain AST / data model: benign by design) |
 

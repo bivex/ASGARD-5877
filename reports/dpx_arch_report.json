@@ -1,9 +1,9 @@
 {
   "project_path": "/Volumes/External/Code/ASGARD-5877",
   "has_dune_manifest": true,
-  "files_scanned": 253,
-  "modules_count": 158,
-  "edges_count": 534,
+  "files_scanned": 255,
+  "modules_count": 159,
+  "edges_count": 528,
   "elapsed_seconds": 0.238,
   "graph": {
     "project_path": "/Volumes/External/Code/ASGARD-5877",
@@ -56,7 +56,7 @@
         "id": "Cli_protect",
         "name": "Cli_protect",
         "file_path": "/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml",
-        "loc": 268,
+        "loc": 200,
         "dune_library": "",
         "layer": "api",
         "has_interface": false,
@@ -68,17 +68,17 @@
         "cycle_id": null,
         "metrics": {
           "ca": 1,
-          "ce": 10,
-          "instability": 0.909,
+          "ce": 8,
+          "instability": 0.889,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.091
+          "main_sequence_distance": 0.111
         }
       },
       "Cli_protect_arm64": {
         "id": "Cli_protect_arm64",
         "name": "Cli_protect_arm64",
         "file_path": "/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml",
-        "loc": 146,
+        "loc": 123,
         "dune_library": "",
         "layer": "api",
         "has_interface": false,
@@ -90,10 +90,10 @@
         "cycle_id": null,
         "metrics": {
           "ca": 1,
-          "ce": 9,
-          "instability": 0.9,
+          "ce": 8,
+          "instability": 0.889,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.1
+          "main_sequence_distance": 0.111
         }
       },
       "Cli_vanguard": {
@@ -320,7 +320,7 @@
         "id": "Protect_adapters.Arm64_lifter_adapter",
         "name": "Arm64_lifter_adapter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/arm64_lifter_adapter.ml",
-        "loc": 26,
+        "loc": 25,
         "dune_library": "protect_adapters",
         "layer": "adapters",
         "has_interface": true,
@@ -332,17 +332,17 @@
         "cycle_id": null,
         "metrics": {
           "ca": 1,
-          "ce": 4,
-          "instability": 0.8,
+          "ce": 3,
+          "instability": 0.75,
           "abstractness": 1.0,
-          "main_sequence_distance": 0.8
+          "main_sequence_distance": 0.75
         }
       },
       "Protect_adapters.C_macro_obf_adapter": {
         "id": "Protect_adapters.C_macro_obf_adapter",
         "name": "C_macro_obf_adapter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_macro_obf_adapter.ml",
-        "loc": 26,
+        "loc": 78,
         "dune_library": "protect_adapters",
         "layer": "adapters",
         "has_interface": true,
@@ -406,11 +406,33 @@
           "main_sequence_distance": 0.333
         }
       },
+      "Protect_adapters.Config_adapter": {
+        "id": "Protect_adapters.Config_adapter",
+        "name": "Config_adapter",
+        "file_path": "/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/config_adapter.ml",
+        "loc": 71,
+        "dune_library": "protect_adapters",
+        "layer": "adapters",
+        "has_interface": true,
+        "is_entry": false,
+        "is_abstract": false,
+        "exported_types": 0,
+        "abstract_types": 0,
+        "submodules": [],
+        "cycle_id": null,
+        "metrics": {
+          "ca": 2,
+          "ce": 2,
+          "instability": 0.5,
+          "abstractness": 1.0,
+          "main_sequence_distance": 0.5
+        }
+      },
       "Protect_adapters.Vm_packagers": {
         "id": "Protect_adapters.Vm_packagers",
         "name": "Vm_packagers",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/vm_packagers.ml",
-        "loc": 55,
+        "loc": 69,
         "dune_library": "protect_adapters",
         "layer": "adapters",
         "has_interface": true,
@@ -426,17 +448,17 @@
         "cycle_id": null,
         "metrics": {
           "ca": 2,
-          "ce": 6,
-          "instability": 0.75,
+          "ce": 7,
+          "instability": 0.778,
           "abstractness": 1.0,
-          "main_sequence_distance": 0.75
+          "main_sequence_distance": 0.778
         }
       },
       "Protect_adapters.X86_lifter_adapter": {
         "id": "Protect_adapters.X86_lifter_adapter",
         "name": "X86_lifter_adapter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/x86_lifter_adapter.ml",
-        "loc": 28,
+        "loc": 27,
         "dune_library": "protect_adapters",
         "layer": "adapters",
         "has_interface": true,
@@ -448,10 +470,10 @@
         "cycle_id": null,
         "metrics": {
           "ca": 1,
-          "ce": 4,
-          "instability": 0.8,
+          "ce": 3,
+          "instability": 0.75,
           "abstractness": 1.0,
-          "main_sequence_distance": 0.8
+          "main_sequence_distance": 0.75
         }
       },
       "Random_visa_sail_export.Sail_export_adapter": {
@@ -634,7 +656,7 @@
         "id": "Random_visa_application.Protect_pipeline",
         "name": "Protect_pipeline",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/application/protect_pipeline.ml",
-        "loc": 137,
+        "loc": 136,
         "dune_library": "random_visa_application",
         "layer": "ports",
         "has_interface": true,
@@ -646,10 +668,10 @@
         "cycle_id": null,
         "metrics": {
           "ca": 2,
-          "ce": 2,
-          "instability": 0.5,
+          "ce": 1,
+          "instability": 0.333,
           "abstractness": 1.0,
-          "main_sequence_distance": 0.5
+          "main_sequence_distance": 0.333
         }
       },
       "Random_visa_application.Synthesize_isa": {
@@ -1019,11 +1041,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 6,
+          "ca": 5,
           "ce": 4,
-          "instability": 0.4,
+          "instability": 0.444,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.6
+          "main_sequence_distance": 0.556
         }
       },
       "C_macro_obf.C_macro_templates": {
@@ -1732,11 +1754,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 12,
+          "ca": 10,
           "ce": 1,
-          "instability": 0.077,
+          "instability": 0.091,
           "abstractness": 1.0,
-          "main_sequence_distance": 0.077
+          "main_sequence_distance": 0.091
         }
       },
       "Native_vm.Protection_config": {
@@ -1754,11 +1776,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 15,
+          "ca": 12,
           "ce": 3,
-          "instability": 0.167,
+          "instability": 0.2,
           "abstractness": 0.083,
-          "main_sequence_distance": 0.75
+          "main_sequence_distance": 0.717
         }
       },
       "Native_vm.Protection_json": {
@@ -2117,21 +2139,21 @@
         "id": "Random_visa_ports.Protect_ports",
         "name": "Protect_ports",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/ports/protect_ports.ml",
-        "loc": 68,
+        "loc": 99,
         "dune_library": "random_visa_ports",
         "layer": "ports",
         "has_interface": true,
         "is_entry": false,
-        "is_abstract": false,
-        "exported_types": 5,
-        "abstract_types": 0,
+        "is_abstract": true,
+        "exported_types": 8,
+        "abstract_types": 2,
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 9,
-          "ce": 3,
-          "instability": 0.25,
-          "abstractness": 0.0,
+          "ca": 10,
+          "ce": 0,
+          "instability": 0.0,
+          "abstractness": 0.25,
           "main_sequence_distance": 0.75
         }
       },
@@ -2398,11 +2420,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 38,
+          "ca": 35,
           "ce": 2,
-          "instability": 0.05,
+          "instability": 0.054,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.95
+          "main_sequence_distance": 0.946
         }
       },
       "Vm_ir.Ir_egraph": {
@@ -3607,15 +3629,15 @@
         "source": "Cli_protect",
         "target": "Random_visa_ports.Protect_ports",
         "kind": "open",
-        "weight": 1,
+        "weight": 2,
         "cross_library": false,
         "cross_layer": true
       },
       {
         "source": "Cli_protect",
-        "target": "Native_vm.Protection_config",
+        "target": "Protect_adapters.Config_adapter",
         "kind": "qualified_reference",
-        "weight": 9,
+        "weight": 2,
         "cross_library": false,
         "cross_layer": true
       },
@@ -3631,7 +3653,7 @@
         "source": "Cli_protect",
         "target": "Protect_adapters.C_macro_obf_adapter",
         "kind": "qualified_reference",
-        "weight": 1,
+        "weight": 2,
         "cross_library": false,
         "cross_layer": true
       },
@@ -3668,34 +3690,18 @@
         "cross_layer": true
       },
       {
-        "source": "Cli_protect",
-        "target": "Native_vm.Metrics",
-        "kind": "qualified_reference",
-        "weight": 1,
-        "cross_library": false,
-        "cross_layer": true
-      },
-      {
-        "source": "Cli_protect",
-        "target": "C_macro_obf.C_macro_obf",
-        "kind": "qualified_reference",
+        "source": "Cli_protect_arm64",
+        "target": "Random_visa_ports.Protect_ports",
+        "kind": "open",
         "weight": 2,
         "cross_library": false,
         "cross_layer": true
       },
       {
         "source": "Cli_protect_arm64",
-        "target": "Random_visa_ports.Protect_ports",
-        "kind": "open",
-        "weight": 1,
-        "cross_library": false,
-        "cross_layer": true
-      },
-      {
-        "source": "Cli_protect_arm64",
-        "target": "Native_vm.Protection_config",
+        "target": "Protect_adapters.Config_adapter",
         "kind": "qualified_reference",
-        "weight": 5,
+        "weight": 1,
         "cross_library": false,
         "cross_layer": true
       },
@@ -3742,14 +3748,6 @@
       {
         "source": "Cli_protect_arm64",
         "target": "Random_visa_application.Protect_pipeline",
-        "kind": "qualified_reference",
-        "weight": 1,
-        "cross_library": false,
-        "cross_layer": true
-      },
-      {
-        "source": "Cli_protect_arm64",
-        "target": "Native_vm.Metrics",
         "kind": "qualified_reference",
         "weight": 1,
         "cross_library": false,
@@ -4213,14 +4211,6 @@
       },
       {
         "source": "Protect_adapters.Arm64_lifter_adapter",
-        "target": "Vm_ir.Ir",
-        "kind": "qualified_reference",
-        "weight": 2,
-        "cross_library": true,
-        "cross_layer": true
-      },
-      {
-        "source": "Protect_adapters.Arm64_lifter_adapter",
         "target": "Arm64_lifter.Arm64_parser",
         "kind": "qualified_reference",
         "weight": 2,
@@ -4247,7 +4237,7 @@
         "source": "Protect_adapters.C_macro_obf_adapter",
         "target": "Native_vm.Protection_config",
         "kind": "qualified_reference",
-        "weight": 2,
+        "weight": 1,
         "cross_library": true,
         "cross_layer": true
       },
@@ -4255,7 +4245,7 @@
         "source": "Protect_adapters.C_macro_obf_adapter",
         "target": "C_macro_obf.C_macro_obf",
         "kind": "qualified_reference",
-        "weight": 2,
+        "weight": 4,
         "cross_library": true,
         "cross_layer": true
       },
@@ -4276,7 +4266,7 @@
         "cross_layer": true
       },
       {
-        "source": "Protect_adapters.Vm_packagers",
+        "source": "Protect_adapters.Config_adapter",
         "target": "Random_visa_ports.Protect_ports",
         "kind": "open",
         "weight": 2,
@@ -4284,8 +4274,32 @@
         "cross_layer": true
       },
       {
-        "source": "Protect_adapters.Vm_packagers",
+        "source": "Protect_adapters.Config_adapter",
         "target": "Native_vm.Protection_config",
+        "kind": "qualified_reference",
+        "weight": 8,
+        "cross_library": true,
+        "cross_layer": true
+      },
+      {
+        "source": "Protect_adapters.Vm_packagers",
+        "target": "Random_visa_ports.Protect_ports",
+        "kind": "open",
+        "weight": 3,
+        "cross_library": true,
+        "cross_layer": true
+      },
+      {
+        "source": "Protect_adapters.Vm_packagers",
+        "target": "Native_vm.Metrics",
+        "kind": "qualified_reference",
+        "weight": 6,
+        "cross_library": true,
+        "cross_layer": true
+      },
+      {
+        "source": "Protect_adapters.Vm_packagers",
+        "target": "Vm_ir.Ir",
         "kind": "qualified_reference",
         "weight": 3,
         "cross_library": true,
@@ -4293,7 +4307,7 @@
       },
       {
         "source": "Protect_adapters.Vm_packagers",
-        "target": "Vm_ir.Ir",
+        "target": "Native_vm.Protection_config",
         "kind": "qualified_reference",
         "weight": 3,
         "cross_library": true,
@@ -4327,14 +4341,6 @@
         "source": "Protect_adapters.X86_lifter_adapter",
         "target": "Random_visa_ports.Protect_ports",
         "kind": "open",
-        "weight": 2,
-        "cross_library": true,
-        "cross_layer": true
-      },
-      {
-        "source": "Protect_adapters.X86_lifter_adapter",
-        "target": "Vm_ir.Ir",
-        "kind": "qualified_reference",
         "weight": 2,
         "cross_library": true,
         "cross_layer": true
@@ -4602,14 +4608,6 @@
         "weight": 2,
         "cross_library": true,
         "cross_layer": false
-      },
-      {
-        "source": "Random_visa_application.Protect_pipeline",
-        "target": "Native_vm.Protection_config",
-        "kind": "qualified_reference",
-        "weight": 2,
-        "cross_library": true,
-        "cross_layer": true
       },
       {
         "source": "Random_visa_application.Synthesize_isa",
@@ -5728,30 +5726,6 @@
         "target": "Random_visa_domain.Errors",
         "kind": "qualified_reference",
         "weight": 22,
-        "cross_library": true,
-        "cross_layer": true
-      },
-      {
-        "source": "Random_visa_ports.Protect_ports",
-        "target": "Native_vm.Metrics",
-        "kind": "qualified_reference",
-        "weight": 4,
-        "cross_library": true,
-        "cross_layer": true
-      },
-      {
-        "source": "Random_visa_ports.Protect_ports",
-        "target": "Vm_ir.Ir",
-        "kind": "qualified_reference",
-        "weight": 4,
-        "cross_library": true,
-        "cross_layer": true
-      },
-      {
-        "source": "Random_visa_ports.Protect_ports",
-        "target": "Native_vm.Protection_config",
-        "kind": "qualified_reference",
-        "weight": 4,
         "cross_library": true,
         "cross_layer": true
       },
@@ -7817,8 +7791,7 @@
       ],
       "random_visa_application": [
         "random_visa_domain",
-        "random_visa_ports",
-        "native_vm"
+        "random_visa_ports"
       ],
       "arm64_lifter": [
         "vm_ir"
@@ -7840,9 +7813,7 @@
         "cff"
       ],
       "random_visa_ports": [
-        "random_visa_domain",
-        "vm_ir",
-        "native_vm"
+        "random_visa_domain"
       ],
       "rd_jit_vm": [
         "vm_ir",
@@ -7888,7 +7859,7 @@
       "severity": "info",
       "kind": "leaky_interface",
       "subject": "C_macro_obf.C_macro_obf",
-      "message": "leaky interface: C_macro_obf.mli exports 2 types, but none are abstract. Implementation details are fully exposed to 6 clients.",
+      "message": "leaky interface: C_macro_obf.mli exports 2 types, but none are abstract. Implementation details are fully exposed to 5 clients.",
       "related": []
     },
     {
@@ -7936,13 +7907,6 @@
     {
       "severity": "info",
       "kind": "leaky_interface",
-      "subject": "Random_visa_ports.Protect_ports",
-      "message": "leaky interface: Protect_ports.mli exports 5 types, but none are abstract. Implementation details are fully exposed to 9 clients.",
-      "related": []
-    },
-    {
-      "severity": "info",
-      "kind": "leaky_interface",
       "subject": "Vm_ir.Flags",
       "message": "leaky interface: Flags.mli exports 3 types, but none are abstract. Implementation details are fully exposed to 12 clients.",
       "related": []
@@ -7951,7 +7915,7 @@
       "severity": "info",
       "kind": "leaky_interface",
       "subject": "Vm_ir.Ir",
-      "message": "leaky interface: Ir.mli exports 12 types, but none are abstract. Implementation details are fully exposed to 38 clients.",
+      "message": "leaky interface: Ir.mli exports 12 types, but none are abstract. Implementation details are fully exposed to 35 clients.",
       "related": []
     },
     {
@@ -8014,7 +7978,7 @@
       "severity": "info",
       "kind": "zone_of_pain",
       "subject": "Vm_ir.Ir",
-      "message": "zone of pain: Ir is rigidly concrete (A=0.00) yet heavily depended on by 38 modules (I=0.05, D=0.95) (domain AST / data model: benign by design)",
+      "message": "zone of pain: Ir is rigidly concrete (A=0.00) yet heavily depended on by 35 modules (I=0.05, D=0.95) (domain AST / data model: benign by design)",
       "related": []
     },
     {

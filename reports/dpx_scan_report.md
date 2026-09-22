@@ -1,9 +1,9 @@
 # 🐫 DPX-OCaml: Module Architecture & Functional Pattern Report
 
 - **Target Path:** `/Volumes/External/Code/ASGARD-5877`
-- **Files Scanned:** `253`
-- **Total Patterns & Findings:** `171`
-- **Analysis Elapsed Time:** `0.219s`
+- **Files Scanned:** `255`
+- **Total Patterns & Findings:** `168`
+- **Analysis Elapsed Time:** `0.209s`
 
 ## 📊 Breakdown by Category
 
@@ -13,8 +13,8 @@
 | **FUNCTIONAL_IDIOM** | 38 |
 | **BEHAVIORAL** | 4 |
 | **TYPE_SAFETY** | 8 |
-| **RESILIENCE** | 16 |
-| **PRINCIPLE** | 90 |
+| **RESILIENCE** | 15 |
+| **PRINCIPLE** | 88 |
 
 ## 📋 Detailed Pattern Findings
 
@@ -729,16 +729,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_prof_dir' in 'Profile_bottlenecks' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:171:1`
 
-### #80 DEFENSIVE_CATCH_ALL_EXN on `Cli_protect.bin_path`
-- **Category:** `resilience`
-- **Confidence:** **85%** [VERY_HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:202:1`
-- **Summary:** Resilience Smell (Defensive Catch-All): Function 'bin_path' in 'Cli_protect' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only
-
-#### Evidence Trail:
-- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'bin_path' in 'Cli_protect' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:202:1`
-
-### #81 DEFENSIVE_CATCH_ALL_EXN on `Cli_project.build_dir`
+### #80 DEFENSIVE_CATCH_ALL_EXN on `Cli_project.build_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:34:1`
@@ -747,7 +738,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'build_dir' in 'Cli_project' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:34:1`
 
-### #82 MUTABLE_REF_OVERUSE on `Test_c_macro_obf`
+### #81 MUTABLE_REF_OVERUSE on `Test_c_macro_obf`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
@@ -756,7 +747,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Test_c_macro_obf' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
 
-### #83 MUTABLE_REF_OVERUSE on `Cli_project`
+### #82 MUTABLE_REF_OVERUSE on `Cli_project`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
@@ -765,7 +756,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Cli_project' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
 
-### #84 MUTABLE_REF_OVERUSE on `Gen_crypto_crackme`
+### #83 MUTABLE_REF_OVERUSE on `Gen_crypto_crackme`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:1:1`
@@ -774,7 +765,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Gen_crypto_crackme' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:1:1`
 
-### #85 MUTABLE_REF_OVERUSE on `Coverage_audit`
+### #84 MUTABLE_REF_OVERUSE on `Coverage_audit`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/scripts/coverage_audit.ml:1:1`
@@ -783,7 +774,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Coverage_audit' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/scripts/coverage_audit.ml:1:1`
 
-### #86 MUTABLE_REF_OVERUSE on `Vanguard_asm`
+### #85 MUTABLE_REF_OVERUSE on `Vanguard_asm`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:1:1`
@@ -792,7 +783,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Vanguard_asm' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:1:1`
 
-### #87 MUTABLE_REF_OVERUSE on `Arm64_lifter`
+### #86 MUTABLE_REF_OVERUSE on `Arm64_lifter`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
@@ -801,7 +792,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Arm64_lifter' defines 10 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
 
-### #88 MUTABLE_REF_OVERUSE on `Partitioner`
+### #87 MUTABLE_REF_OVERUSE on `Partitioner`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/partitioner.ml:1:1`
@@ -810,7 +801,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Partitioner' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/partitioner.ml:1:1`
 
-### #89 MUTABLE_REF_OVERUSE on `C_expr_parser`
+### #88 MUTABLE_REF_OVERUSE on `C_expr_parser`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_expr_parser.ml:1:1`
@@ -819,7 +810,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_expr_parser' defines 19 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_expr_parser.ml:1:1`
 
-### #90 MUTABLE_REF_OVERUSE on `C_macro_obf`
+### #89 MUTABLE_REF_OVERUSE on `C_macro_obf`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
@@ -828,7 +819,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_macro_obf' defines 7 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
 
-### #91 MUTABLE_REF_OVERUSE on `C_nanomites`
+### #90 MUTABLE_REF_OVERUSE on `C_nanomites`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
@@ -837,7 +828,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_nanomites' defines 29 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
 
-### #92 MUTABLE_REF_OVERUSE on `C_expr_lexer`
+### #91 MUTABLE_REF_OVERUSE on `C_expr_lexer`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_expr_lexer.ml:1:1`
@@ -846,7 +837,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_expr_lexer' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_expr_lexer.ml:1:1`
 
-### #93 MUTABLE_REF_OVERUSE on `Assembler_adapter`
+### #92 MUTABLE_REF_OVERUSE on `Assembler_adapter`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:1:1`
@@ -855,7 +846,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Assembler_adapter' defines 8 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:1:1`
 
-### #94 MUTABLE_REF_OVERUSE on `Sail_parser_adapter`
+### #93 MUTABLE_REF_OVERUSE on `Sail_parser_adapter`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml:1:1`
@@ -864,7 +855,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Sail_parser_adapter' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml:1:1`
 
-### #95 MUTABLE_REF_OVERUSE on `C_trampoline_adapter`
+### #94 MUTABLE_REF_OVERUSE on `C_trampoline_adapter`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:1:1`
@@ -873,7 +864,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_trampoline_adapter' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:1:1`
 
-### #96 MUTABLE_REF_OVERUSE on `Ir_egraph`
+### #95 MUTABLE_REF_OVERUSE on `Ir_egraph`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir_egraph.ml:1:1`
@@ -882,7 +873,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Ir_egraph' defines 7 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir_egraph.ml:1:1`
 
-### #97 MUTABLE_REF_OVERUSE on `Vm_eval`
+### #96 MUTABLE_REF_OVERUSE on `Vm_eval`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/vm_eval.mli:1:1`
@@ -891,7 +882,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Vm_eval' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/vm_eval.mli:1:1`
 
-### #98 MUTABLE_REF_OVERUSE on `Egraph_types`
+### #97 MUTABLE_REF_OVERUSE on `Egraph_types`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/mba_engine/egraph_types.ml:1:1`
@@ -900,7 +891,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Egraph_types' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/mba_engine/egraph_types.ml:1:1`
 
-### #99 GOD_MODULE_SRP on `Test_vm_ir`
+### #98 GOD_MODULE_SRP on `Test_vm_ir`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vm_ir.ml:1:1`
@@ -909,7 +900,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_vm_ir' defines 44 functions across 220 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_vm_ir.ml:1:1`
 
-### #100 GOD_MODULE_SRP on `Test_vanguard_9292`
+### #99 GOD_MODULE_SRP on `Test_vanguard_9292`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:1:1`
@@ -918,7 +909,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_vanguard_9292' defines 39 functions across 150 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:1:1`
 
-### #101 GOD_MODULE_SRP on `Test_families_generation`
+### #100 GOD_MODULE_SRP on `Test_families_generation`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:1:1`
@@ -927,7 +918,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_families_generation' defines 37 functions across 233 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:1:1`
 
-### #102 GOD_MODULE_SRP on `Test_egraph_expansion`
+### #101 GOD_MODULE_SRP on `Test_egraph_expansion`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:1:1`
@@ -936,7 +927,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_egraph_expansion' defines 62 functions across 279 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:1:1`
 
-### #103 GOD_MODULE_SRP on `Test_anti_pushan`
+### #102 GOD_MODULE_SRP on `Test_anti_pushan`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:1:1`
@@ -945,7 +936,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_pushan' defines 53 functions across 282 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:1:1`
 
-### #104 GOD_MODULE_SRP on `Test_arxiv_innovations`
+### #103 GOD_MODULE_SRP on `Test_arxiv_innovations`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:1:1`
@@ -954,7 +945,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_arxiv_innovations' defines 38 functions across 161 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:1:1`
 
-### #105 GOD_MODULE_SRP on `Test_anti_analysis`
+### #104 GOD_MODULE_SRP on `Test_anti_analysis`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:1:1`
@@ -963,7 +954,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_analysis' defines 56 functions across 225 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:1:1`
 
-### #106 GOD_MODULE_SRP on `Test_compiler_pipeline`
+### #105 GOD_MODULE_SRP on `Test_compiler_pipeline`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_compiler_pipeline.ml:1:1`
@@ -972,7 +963,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_compiler_pipeline' defines 37 functions across 114 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_compiler_pipeline.ml:1:1`
 
-### #107 GOD_MODULE_SRP on `Test_anti_tamper_smc`
+### #106 GOD_MODULE_SRP on `Test_anti_tamper_smc`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
@@ -981,7 +972,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_tamper_smc' defines 31 functions across 377 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
 
-### #108 GOD_MODULE_SRP on `Test_multi_vm`
+### #107 GOD_MODULE_SRP on `Test_multi_vm`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:1:1`
@@ -990,7 +981,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_multi_vm' defines 35 functions across 137 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:1:1`
 
-### #109 GOD_MODULE_SRP on `Test_c_macro_obf`
+### #108 GOD_MODULE_SRP on `Test_c_macro_obf`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
@@ -999,7 +990,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_c_macro_obf' defines 50 functions across 364 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
 
-### #110 GOD_MODULE_SRP on `Cli_isa`
+### #109 GOD_MODULE_SRP on `Cli_isa`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:1:1`
@@ -1008,7 +999,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Cli_isa' defines 35 functions across 227 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:1:1`
 
-### #111 GOD_MODULE_SRP on `Profile_bottlenecks`
+### #110 GOD_MODULE_SRP on `Profile_bottlenecks`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:1:1`
@@ -1017,16 +1008,16 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Profile_bottlenecks' defines 78 functions across 401 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:1:1`
 
-### #112 GOD_MODULE_SRP on `Cli_protect`
+### #111 GOD_MODULE_SRP on `Cli_protect`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Cli_protect' defines 47 functions across 282 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Cli_protect' defines 33 functions across 211 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Cli_protect' defines 47 functions across 282 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Cli_protect' defines 33 functions across 211 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:1:1`
 
-### #113 GOD_MODULE_SRP on `Cli_project`
+### #112 GOD_MODULE_SRP on `Cli_project`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
@@ -1035,7 +1026,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Cli_project' defines 57 functions across 244 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
 
-### #114 GOD_MODULE_SRP on `Gen_crypto_crackme`
+### #113 GOD_MODULE_SRP on `Gen_crypto_crackme`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:1:1`
@@ -1044,7 +1035,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Gen_crypto_crackme' defines 36 functions across 165 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:1:1`
 
-### #115 GOD_MODULE_SRP on `Vanguard_types`
+### #114 GOD_MODULE_SRP on `Vanguard_types`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:1:1`
@@ -1053,7 +1044,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Vanguard_types' defines 48 functions across 205 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:1:1`
 
-### #116 GOD_MODULE_SRP on `Vanguard_asm`
+### #115 GOD_MODULE_SRP on `Vanguard_asm`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:1:1`
@@ -1062,7 +1053,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Vanguard_asm' defines 34 functions across 152 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:1:1`
 
-### #117 GOD_MODULE_SRP on `Arm64_lifter`
+### #116 GOD_MODULE_SRP on `Arm64_lifter`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
@@ -1071,7 +1062,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Arm64_lifter' defines 30 functions across 200 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
 
-### #118 GOD_MODULE_SRP on `Protection_json`
+### #117 GOD_MODULE_SRP on `Protection_json`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_json.ml:1:1`
@@ -1080,7 +1071,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Protection_json' defines 34 functions across 295 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_json.ml:1:1`
 
-### #119 GOD_MODULE_SRP on `C_macro_obf`
+### #118 GOD_MODULE_SRP on `C_macro_obf`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
@@ -1089,7 +1080,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C_macro_obf' defines 30 functions across 233 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
 
-### #120 GOD_MODULE_SRP on `C_nanomites`
+### #119 GOD_MODULE_SRP on `C_nanomites`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
@@ -1098,7 +1089,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C_nanomites' defines 50 functions across 345 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
 
-### #121 GOD_MODULE_SRP on `C11_emitter_adapter`
+### #120 GOD_MODULE_SRP on `C11_emitter_adapter`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:1:1`
@@ -1107,7 +1098,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C11_emitter_adapter' defines 30 functions across 306 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:1:1`
 
-### #122 GOD_MODULE_SRP on `Assembler_adapter`
+### #121 GOD_MODULE_SRP on `Assembler_adapter`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:1:1`
@@ -1116,7 +1107,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Assembler_adapter' defines 57 functions across 363 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:1:1`
 
-### #123 GOD_MODULE_SRP on `Ir_egraph`
+### #122 GOD_MODULE_SRP on `Ir_egraph`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir_egraph.ml:1:1`
@@ -1125,7 +1116,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Ir_egraph' defines 36 functions across 199 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir_egraph.ml:1:1`
 
-### #124 GOD_MODULE_SRP on `Register`
+### #123 GOD_MODULE_SRP on `Register`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/register.ml:1:1`
@@ -1134,7 +1125,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Register' defines 45 functions across 206 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/register.ml:1:1`
 
-### #125 GOD_MODULE_SRP on `Flags`
+### #124 GOD_MODULE_SRP on `Flags`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/flags.ml:1:1`
@@ -1143,7 +1134,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Flags' defines 38 functions across 250 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/flags.ml:1:1`
 
-### #126 GOD_MODULE_SRP on `Egraph_rules`
+### #125 GOD_MODULE_SRP on `Egraph_rules`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/mba_engine/egraph_rules.ml:1:1`
@@ -1152,7 +1143,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Egraph_rules' defines 37 functions across 172 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/mba_engine/egraph_rules.ml:1:1`
 
-### #127 CYCLOMATIC_COMPLEXITY_KISS on `Vanguard_asm.parse_ops`
+### #126 CYCLOMATIC_COMPLEXITY_KISS on `Vanguard_asm.parse_ops`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:73:1`
@@ -1161,7 +1152,7 @@
 #### Evidence Trail:
 - `+75%` **[KISS_HIGH_MATCH_COMPLEXITY]** KISS Violation (High Complexity): Function 'parse_ops' in 'Vanguard_asm' has cyclomatic complexity of 12; decompose nested pattern matches into helper functions -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:73:1`
 
-### #128 CYCLOMATIC_COMPLEXITY_KISS on `Assembler_adapter.res`
+### #127 CYCLOMATIC_COMPLEXITY_KISS on `Assembler_adapter.res`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:87:1`
@@ -1170,7 +1161,7 @@
 #### Evidence Trail:
 - `+75%` **[KISS_HIGH_MATCH_COMPLEXITY]** KISS Violation (High Complexity): Function 'res' in 'Assembler_adapter' has cyclomatic complexity of 20; decompose nested pattern matches into helper functions -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:87:1`
 
-### #129 CYCLOMATIC_COMPLEXITY_KISS on `Sail_parser_adapter.b`
+### #128 CYCLOMATIC_COMPLEXITY_KISS on `Sail_parser_adapter.b`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml:110:1`
@@ -1179,7 +1170,7 @@
 #### Evidence Trail:
 - `+75%` **[KISS_HIGH_MATCH_COMPLEXITY]** KISS Violation (High Complexity): Function 'b' in 'Sail_parser_adapter' has cyclomatic complexity of 16; decompose nested pattern matches into helper functions -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml:110:1`
 
-### #130 DUPLICATE_CODE_DRY on `Test_domain_invariants.vd`
+### #129 DUPLICATE_CODE_DRY on `Test_domain_invariants.vd`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:77:1`
@@ -1188,7 +1179,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vd, Assembler_adapter.vd -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:77:1`
 
-### #131 DUPLICATE_CODE_DRY on `Test_domain_invariants.funct3`
+### #130 DUPLICATE_CODE_DRY on `Test_domain_invariants.funct3`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:78:1`
@@ -1197,7 +1188,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.funct3, Vector_isa_spec.funct3 -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:78:1`
 
-### #132 DUPLICATE_CODE_DRY on `Test_domain_invariants.vs1`
+### #131 DUPLICATE_CODE_DRY on `Test_domain_invariants.vs1`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:79:1`
@@ -1206,7 +1197,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vs1, Assembler_adapter.vs1 -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:79:1`
 
-### #133 DUPLICATE_CODE_DRY on `Test_domain_invariants.vs2`
+### #132 DUPLICATE_CODE_DRY on `Test_domain_invariants.vs2`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:80:1`
@@ -1215,7 +1206,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vs2, Assembler_adapter.vs2 -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:80:1`
 
-### #134 DUPLICATE_CODE_DRY on `Test_domain_invariants.vm`
+### #133 DUPLICATE_CODE_DRY on `Test_domain_invariants.vm`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:81:1`
@@ -1224,7 +1215,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vm, Assembler_adapter.vm -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:81:1`
 
-### #135 DUPLICATE_CODE_DRY on `Test_protection_config.asm`
+### #134 DUPLICATE_CODE_DRY on `Test_protection_config.asm`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_protection_config.ml:57:1`
@@ -1233,7 +1224,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 5 location(s): Test_protection_config.asm, Test_x86_lifter.asm, Test_native_vm.asm -> `/Volumes/External/Code/ASGARD-5877/test/test_protection_config.ml:57:1`
 
-### #136 DUPLICATE_CODE_DRY on `Test_vanguard_9292.prop_vanguard_roundtrip`
+### #135 DUPLICATE_CODE_DRY on `Test_vanguard_9292.prop_vanguard_roundtrip`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:114:1`
@@ -1242,7 +1233,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 4 location(s): Test_vanguard_9292.prop_vanguard_roundtrip, Test_properties.prop_no_encoding_collisions, Test_properties.prop_sail_roundtrip_identity -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:114:1`
 
-### #137 DUPLICATE_CODE_DRY on `Test_hw_cost.inst1`
+### #136 DUPLICATE_CODE_DRY on `Test_hw_cost.inst1`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_hw_cost.ml:44:1`
@@ -1251,7 +1242,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Test_hw_cost.inst1, Test_assembler.inst_vv, Test_assembler_deep.inst1 -> `/Volumes/External/Code/ASGARD-5877/test/test_hw_cost.ml:44:1`
 
-### #138 DUPLICATE_CODE_DRY on `Test_families_generation.by_base`
+### #137 DUPLICATE_CODE_DRY on `Test_families_generation.by_base`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:27:1`
@@ -1260,7 +1251,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 5 location(s): Test_families_generation.by_base, Test_families_generation.weights, Test_properties.by_f6 -> `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:27:1`
 
-### #139 DUPLICATE_CODE_DRY on `Test_egraph_expansion.block`
+### #138 DUPLICATE_CODE_DRY on `Test_egraph_expansion.block`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:126:1`
@@ -1269,7 +1260,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.block, Test_anti_analysis.block -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:126:1`
 
-### #140 DUPLICATE_CODE_DRY on `Test_egraph_expansion.tmp_dir`
+### #139 DUPLICATE_CODE_DRY on `Test_egraph_expansion.tmp_dir`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:189:1`
@@ -1278,7 +1269,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.tmp_dir, Test_anti_tamper_smc.tmp_dir -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:189:1`
 
-### #141 DUPLICATE_CODE_DRY on `Test_egraph_expansion.comp_status`
+### #140 DUPLICATE_CODE_DRY on `Test_egraph_expansion.comp_status`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:247:1`
@@ -1287,7 +1278,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.comp_status, Test_anti_tamper_smc.comp_status -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:247:1`
 
-### #142 DUPLICATE_CODE_DRY on `Test_egraph_expansion.out_buf`
+### #141 DUPLICATE_CODE_DRY on `Test_egraph_expansion.out_buf`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:251:1`
@@ -1296,7 +1287,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.out_buf, Test_anti_tamper_smc.out_buf -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:251:1`
 
-### #143 DUPLICATE_CODE_DRY on `Test_egraph_expansion._`
+### #142 DUPLICATE_CODE_DRY on `Test_egraph_expansion._`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:257:1`
@@ -1305,7 +1296,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion._, Test_anti_tamper_smc._ -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:257:1`
 
-### #144 DUPLICATE_CODE_DRY on `Test_cli.buf`
+### #143 DUPLICATE_CODE_DRY on `Test_cli.buf`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_cli.ml:3:1`
@@ -1314,7 +1305,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Test_cli.buf, Test_assembler.buf, Test_c11_emulator.buf -> `/Volumes/External/Code/ASGARD-5877/test/test_cli.ml:3:1`
 
-### #145 DUPLICATE_CODE_DRY on `Test_anti_pushan.out_buf`
+### #144 DUPLICATE_CODE_DRY on `Test_anti_pushan.out_buf`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:39:1`
@@ -1323,7 +1314,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Test_anti_pushan.out_buf, Test_helpers.out_buf, Test_vanguard_emulator_e2e.out_buf -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:39:1`
 
-### #146 DUPLICATE_CODE_DRY on `Test_arxiv_innovations.f_scrambled`
+### #145 DUPLICATE_CODE_DRY on `Test_arxiv_innovations.f_scrambled`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:55:1`
@@ -1332,7 +1323,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_arxiv_innovations.f_scrambled, Test_arxiv_innovations.f_s -> `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:55:1`
 
-### #147 DUPLICATE_CODE_DRY on `Test_assembler.status`
+### #146 DUPLICATE_CODE_DRY on `Test_assembler.status`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:209:1`
@@ -1341,7 +1332,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Test_assembler.status, Test_c11_emulator.status, Test_vanguard_emulator_e2e.status -> `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:209:1`
 
-### #148 DUPLICATE_CODE_DRY on `Test_multi_vm.asm`
+### #147 DUPLICATE_CODE_DRY on `Test_multi_vm.asm`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:95:1`
@@ -1350,7 +1341,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.asm, Test_rd_jit_vm.asm -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:95:1`
 
-### #149 DUPLICATE_CODE_DRY on `Test_multi_vm.oc_h`
+### #148 DUPLICATE_CODE_DRY on `Test_multi_vm.oc_h`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:113:1`
@@ -1359,7 +1350,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.oc_h, Test_rd_jit_vm.oc_h -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:113:1`
 
-### #150 DUPLICATE_CODE_DRY on `Test_multi_vm.oc_r`
+### #149 DUPLICATE_CODE_DRY on `Test_multi_vm.oc_r`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:118:1`
@@ -1368,7 +1359,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.oc_r, Test_rd_jit_vm.oc_r -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:118:1`
 
-### #151 DUPLICATE_CODE_DRY on `Test_vanguard_emulator_e2e.oc`
+### #150 DUPLICATE_CODE_DRY on `Test_vanguard_emulator_e2e.oc`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:26:1`
@@ -1377,7 +1368,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_vanguard_emulator_e2e.oc, Cli_vanguard.oc -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:26:1`
 
-### #152 DUPLICATE_CODE_DRY on `Test_vanguard_emulator_e2e.oc_r`
+### #151 DUPLICATE_CODE_DRY on `Test_vanguard_emulator_e2e.oc_r`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:59:1`
@@ -1386,7 +1377,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_vanguard_emulator_e2e.oc_r, Cli_vanguard.oc_r -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:59:1`
 
-### #153 DUPLICATE_CODE_DRY on `Test_c_macro_obf.found`
+### #152 DUPLICATE_CODE_DRY on `Test_c_macro_obf.found`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:9:1`
@@ -1395,7 +1386,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_c_macro_obf.found, C_macro_header.found -> `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:9:1`
 
-### #154 DUPLICATE_CODE_DRY on `Cli_vanguard.rng`
+### #153 DUPLICATE_CODE_DRY on `Cli_vanguard.rng`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_vanguard.ml:7:1`
@@ -1404,7 +1395,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Cli_vanguard.rng, Cli_isa.rng, Cli_project.rng -> `/Volumes/External/Code/ASGARD-5877/bin/cli_vanguard.ml:7:1`
 
-### #155 DUPLICATE_CODE_DRY on `Cli_isa.s`
+### #154 DUPLICATE_CODE_DRY on `Cli_isa.s`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:34:1`
@@ -1413,52 +1404,34 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 4 location(s): Cli_isa.s, Cli_protect_arm64.s, Cli_protect.s -> `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:34:1`
 
-### #156 DUPLICATE_CODE_DRY on `Cli_protect_arm64.base_cfg`
+### #155 DUPLICATE_CODE_DRY on `Cli_protect_arm64.effective_cfg`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:12:1`
-- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.base_cfg, Cli_protect.base_cfg
-
-#### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.base_cfg, Cli_protect.base_cfg -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:12:1`
-
-### #157 DUPLICATE_CODE_DRY on `Cli_protect_arm64.resolved_mba_depth`
-- **Category:** `principle`
-- **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:33:1`
-- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.resolved_mba_depth, Cli_protect.resolved_mba_depth
-
-#### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.resolved_mba_depth, Cli_protect.resolved_mba_depth -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:33:1`
-
-### #158 DUPLICATE_CODE_DRY on `Cli_protect_arm64.effective_cfg`
-- **Category:** `principle`
-- **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:39:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.effective_cfg, Cli_protect.effective_cfg
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.effective_cfg, Cli_protect.effective_cfg -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:39:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.effective_cfg, Cli_protect.effective_cfg -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:12:1`
 
-### #159 DUPLICATE_CODE_DRY on `Cli_protect_arm64.rng`
+### #156 DUPLICATE_CODE_DRY on `Cli_protect_arm64.rng`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:46:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:21:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.rng, Cli_protect.rng
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.rng, Cli_protect.rng -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:46:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.rng, Cli_protect.rng -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:21:1`
 
-### #160 DUPLICATE_CODE_DRY on `Cli_protect_arm64.trampoline_engine`
+### #157 DUPLICATE_CODE_DRY on `Cli_protect_arm64.trampoline_engine`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:62:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:37:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.trampoline_engine, Cli_protect.trampoline_engine
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.trampoline_engine, Cli_protect.trampoline_engine -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:62:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.trampoline_engine, Cli_protect.trampoline_engine -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:37:1`
 
-### #161 DUPLICATE_CODE_DRY on `Gen_crackme_vm.out_dir`
+### #158 DUPLICATE_CODE_DRY on `Gen_crackme_vm.out_dir`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:58:1`
@@ -1467,7 +1440,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Gen_crackme_vm.out_dir, Gen_crypto_crackme.default_out_dir, Gen_crypto_crackme.sample_cpp_path -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:58:1`
 
-### #162 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_h`
+### #159 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_h`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:62:1`
@@ -1476,7 +1449,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Gen_crackme_vm.oc_h, Gen_crypto_crackme.oc_h -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:62:1`
 
-### #163 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_r`
+### #160 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_r`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:65:1`
@@ -1485,7 +1458,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Gen_crackme_vm.oc_r, Gen_crypto_crackme.oc_r -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:65:1`
 
-### #164 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_b`
+### #161 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_b`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:68:1`
@@ -1494,7 +1467,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Gen_crackme_vm.oc_b, Gen_crypto_crackme.oc_b -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:68:1`
 
-### #165 DUPLICATE_CODE_DRY on `Vanguard_types.n`
+### #162 DUPLICATE_CODE_DRY on `Vanguard_types.n`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:77:1`
@@ -1503,7 +1476,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_types.n, Opcode_map.n -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:77:1`
 
-### #166 DUPLICATE_CODE_DRY on `Vanguard_types.next_state`
+### #163 DUPLICATE_CODE_DRY on `Vanguard_types.next_state`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:118:1`
@@ -1512,7 +1485,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_types.next_state, Rolling_key.next_state -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:118:1`
 
-### #167 DUPLICATE_CODE_DRY on `Vanguard_types.w2`
+### #164 DUPLICATE_CODE_DRY on `Vanguard_types.w2`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:124:1`
@@ -1521,7 +1494,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_types.w2, Rolling_key.w2 -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:124:1`
 
-### #168 DUPLICATE_CODE_DRY on `Vanguard_asm.push`
+### #165 DUPLICATE_CODE_DRY on `Vanguard_asm.push`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:7:1`
@@ -1530,7 +1503,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_asm.push, Assembler_adapter.push -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:7:1`
 
-### #169 DUPLICATE_CODE_DRY on `Vanguard_asm.c`
+### #166 DUPLICATE_CODE_DRY on `Vanguard_asm.c`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:14:1`
@@ -1539,7 +1512,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_asm.c, Assembler_adapter.c -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:14:1`
 
-### #170 DUPLICATE_CODE_DRY on `C11_emitter_adapter.cur`
+### #167 DUPLICATE_CODE_DRY on `C11_emitter_adapter.cur`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:23:1`
@@ -1548,7 +1521,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): C11_emitter_adapter.cur, Cpp_header_emitters.cur -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:23:1`
 
-### #171 DUPLICATE_CODE_DRY on `C11_emitter_adapter.sorted`
+### #168 DUPLICATE_CODE_DRY on `C11_emitter_adapter.sorted`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:29:1`

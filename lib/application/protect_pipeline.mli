@@ -1,6 +1,5 @@
 open Random_visa_ports
 open Protect_ports
-open Native_vm
 
 val run :
   lifter:(module Lifter) ->
@@ -9,7 +8,7 @@ val run :
   ?trampoline_engine:(module Trampoline_engine) ->
   ?toolchain:(module Toolchain) ->
   rng:Random.State.t ->
-  config:Protection_config.t ->
+  config:protection_config ->
   input_file:string ->
   out_dir:string ->
   ?compile_and_run:bool ->
