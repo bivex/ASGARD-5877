@@ -102,6 +102,7 @@ let parse_imm str =
 
 let parse_mem str width =
   let s = String.trim str in
+  let s = if String.ends_with ~suffix:"!" s then String.trim (String.sub s 0 (String.length s - 1)) else s in
   let len = String.length s in
   if not (String.starts_with ~prefix:"[" s) then
     Error (Printf.sprintf "Not memory operand: %s" str)
@@ -214,8 +215,8 @@ let parse_line raw =
       let raw_args = group_brackets [] false "" chars |> List.filter (fun s -> s <> "") in
 
       let def_width =
-        if String.ends_with ~suffix:"b" mnemonic then Register.B8
-        else if String.ends_with ~suffix:"h" mnemonic then Register.B16
+        if String.ends_with ~suffix:"b" mnemonic || mnemonic = "ldrsb" then Register.B8
+        else if String.ends_with ~suffix:"h" mnemonic || mnemonic = "ldrsh" then Register.B16
         else if String.starts_with ~prefix:"w" args_str then Register.B32
         else Register.B64
       in

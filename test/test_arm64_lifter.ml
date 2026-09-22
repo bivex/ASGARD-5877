@@ -70,9 +70,33 @@ let test_arm64_lift_cbz_cbnz () =
       | Ok snap -> check int64 "ARM64 cbz branches to 777" 777L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_byte_memory () =
+  let asm = {|
+    mov x1, #0x1000
+    mov w2, #0x42
+    strb w2, [x1, #1]
+    sturb wzr, [x1, #2]
+    mov w3, #0x7F
+    strb w3, [x1, #3]
+    ldrb w0, [x1, #1]
+    ldurb w4, [x1, #2]
+    add x0, x0, x4
+    ldrsb w5, [x1, #3]
+    add x0, x0, x5
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_byte_mem" } asm with
+  | Error err -> fail ("Failed to lift ARM64 byte memory: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ARM64 byte memory 0x42 + 0 + 0x7F = 0xC1 (193)" 193L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
   ("ARM64 Lift Loop (5! factorial)", `Quick, test_arm64_lift_loop_factorial);
   ("ARM64 Lift Compare & Branch (cbz)", `Quick, test_arm64_lift_cbz_cbnz);
+  ("ARM64 Lift Byte Memory (strb/sturb/ldrb/ldrsb)", `Quick, test_arm64_lift_byte_memory);
 ]
+

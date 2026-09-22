@@ -230,10 +230,10 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       ]
 
   (* Memory Load / Store *)
-  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb"), [ OpReg dst; OpMem m ]) ->
+  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh"), [ OpReg dst; OpMem m ]) ->
       Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]
-  | (("str" | "strb" | "strh" | "stur" | "sturb"), [ OpReg src; OpMem m ]) ->
-      Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = Reg src } ]
+  | (("str" | "strb" | "strh" | "stur" | "sturb"), [ (OpReg _ | OpImm _) as src; OpMem m ]) ->
+      Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand src } ]
 
   (* Pair Load / Store (stp / ldp) *)
   | ("stp", (OpReg r1 :: OpReg r2 :: _)) ->
