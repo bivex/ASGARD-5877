@@ -13,11 +13,23 @@ type raw_op =
   | OpMem of raw_mem
   | OpLabel of string
 
+type marker_mode =
+  | ModeVirtualize of string
+  | ModeMutation of string
+  | ModeUltra of string
+
 type raw_line =
   | LineLabel of string
   | LineInstr of string * raw_op list
   | LineDirective of string
+  | LineMarkerBegin of marker_mode
+  | LineMarkerEnd
   | LineEmpty
+
+let marker_mode_to_string = function
+  | ModeVirtualize s -> "VIRTUALIZE(" ^ s ^ ")"
+  | ModeMutation s -> "MUTATION(" ^ s ^ ")"
+  | ModeUltra s -> "ULTRA(" ^ s ^ ")"
 
 let strip_comments line =
   let len = String.length line in
@@ -177,7 +189,7 @@ let parse_line raw =
   else if String.ends_with ~suffix:":" line then
     let lbl = String.sub line 0 (String.length line - 1) |> String.trim in
     Ok (LineLabel lbl)
-  else if String.starts_with ~prefix:"." line && not (String.contains line ' ') then
+  else if String.starts_with ~prefix:"." line then
     Ok (LineDirective line)
   else
     let first_space =
@@ -232,11 +244,50 @@ let parse_line raw =
 
 let parse_lines text =
   let lines = String.split_on_char '\n' text in
+  let contains_sub haystack needle =
+    let hlen = String.length haystack and nlen = String.length needle in
+    if nlen > hlen then false
+    else
+      let rec check i =
+        if i + nlen > hlen then false
+        else if String.sub haystack i nlen = needle then true
+        else check (i + 1)
+      in
+      check 0
+  in
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
     | l :: rest ->
-        match parse_line l with
-        | Ok res -> loop (res :: acc) rest
-        | Error err -> Error err
+        let clean = strip_comments l in
+        let upper = String.uppercase_ascii clean in
+        if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" then
+          let acc' = match acc with
+            | LineInstr ("b", _) :: prev -> prev
+            | _ -> acc
+          in
+          loop (LineMarkerBegin (ModeVirtualize "region") :: acc') rest
+        else if contains_sub upper "ASGARD_BEG_M" || contains_sub upper "ASGARD_BEGIN_M" then
+          let acc' = match acc with
+            | LineInstr ("b", _) :: prev -> prev
+            | _ -> acc
+          in
+          loop (LineMarkerBegin (ModeMutation "region") :: acc') rest
+        else if contains_sub upper "ASGARD_BEG" || contains_sub upper "ASGARD_BEGIN" then
+          let acc' = match acc with
+            | LineInstr ("b", _) :: prev -> prev
+            | _ -> acc
+          in
+          loop (LineMarkerBegin (ModeUltra "region") :: acc') rest
+        else if contains_sub upper "ASGARD_END" then
+          let acc' = match acc with
+            | LineInstr ("b", _) :: prev -> prev
+            | _ -> acc
+          in
+          loop (LineMarkerEnd :: acc') rest
+        else
+          match parse_line l with
+          | Ok res -> loop (res :: acc) rest
+          | Error err -> Error err
   in
   loop [] lines
+

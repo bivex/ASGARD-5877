@@ -9,4 +9,10 @@ val default_options : options
 val lift_function : ?options:options -> string -> (Ir.func, string) result
 val lift_lines : ?options:options -> Arm64_parser.raw_line list -> (Ir.func, string) result
 
+val extract_marked_regions :
+  ?require_markers:bool ->
+  Arm64_parser.raw_line list ->
+  (Arm64_parser.marker_mode * Arm64_parser.raw_line list) list
+
+module Arm64_parser : module type of Arm64_parser
 module Literal_stitcher : module type of Literal_stitcher

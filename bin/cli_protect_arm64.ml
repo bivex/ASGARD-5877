@@ -90,7 +90,31 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
     let text = really_input_string ic len in
     close_in ic;
 
-    match Arm64_lifter.lift_function text with
+    let raw_lines =
+      match Arm64_lifter.Arm64_parser.parse_lines text with
+      | Ok lines -> lines
+      | Error err ->
+          prerr_endline (Printf.sprintf "ARM64 Parser warning: %s, falling back to full function" err);
+          []
+    in
+
+    let regions =
+      if raw_lines <> [] then Arm64_lifter.extract_marked_regions ~require_markers:true raw_lines
+      else []
+    in
+
+    if regions <> [] then
+      Printf.printf "[VM-Protector-ARM64] Auto-detected %d marker protected region(s) in source.\n" (List.length regions);
+
+    let lift_res =
+      if regions <> [] then
+        let (_mode, rlines) = List.hd regions in
+        Arm64_lifter.lift_lines rlines
+      else
+        Arm64_lifter.lift_function text
+    in
+
+    match lift_res with
     | Error err ->
         prerr_endline (Printf.sprintf "ARM64 Lifter failed: %s" err);
         `Error (false, err)

@@ -99,15 +99,27 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
           []
     in
 
+    let has_markers =
+      raw_lines <> [] && X86_lifter.Lifter.extract_marked_regions ~require_markers:true raw_lines <> []
+    in
+
     let regions =
       if raw_lines <> [] then X86_lifter.Lifter.extract_marked_regions raw_lines
       else []
     in
 
-    if List.length regions > 1 || (List.length regions = 1 && (match fst (List.hd regions) with X86_lifter.X86_parser.ModeUltra "main" -> false | _ -> true)) then
+    if has_markers then
       Printf.printf "[VM-Protector] Auto-detected %d marker protected region(s) in source.\n" (List.length regions);
 
-    match X86_lifter.Lifter.lift_function text with
+    let lift_res =
+      if has_markers && regions <> [] then
+        let (_mode, rlines) = List.hd regions in
+        X86_lifter.Lifter.lift_lines rlines
+      else
+        X86_lifter.Lifter.lift_function text
+    in
+
+    match lift_res with
     | Error err ->
         prerr_endline (Printf.sprintf "Lifter failed: %s" err);
         `Error (false, err)

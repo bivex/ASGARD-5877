@@ -340,7 +340,7 @@ let lift_lines ?(options = default_options) (lines : raw_line list) : (Ir.func, 
     | [] ->
         flush_block ();
         Ok (List.rev !blocks)
-    | LineEmpty :: rest | LineDirective _ :: rest -> process rest
+    | LineEmpty :: rest | LineDirective _ :: rest | LineMarkerBegin _ :: rest | LineMarkerEnd :: rest -> process rest
     | LineLabel lbl :: rest ->
         if !cur_instrs <> [] then flush_block ();
         cur_label := lbl;
@@ -403,4 +403,51 @@ let lift_function ?(options = default_options) (asm : string) : (Ir.func, string
   | Error err -> Error err
   | Ok lines -> lift_lines ~options lines
 
+let extract_marked_regions ?(require_markers = false) (raw_lines : Arm64_parser.raw_line list) =
+  let has_markers =
+    List.exists
+      (function
+        | Arm64_parser.LineMarkerBegin _ | Arm64_parser.LineMarkerEnd -> true
+        | _ -> false)
+      raw_lines
+  in
+  if not has_markers then
+    if require_markers then []
+    else [ (Arm64_parser.ModeUltra "main", raw_lines) ]
+  else
+    let regions = ref [] in
+    let current_mode = ref None in
+    let current_lines = ref [] in
+    let last_label = ref "main" in
+
+    List.iter
+      (function
+        | Arm64_parser.LineLabel lbl ->
+            if !current_mode = None then (
+              if not (String.starts_with ~prefix:"L" lbl) then last_label := lbl
+            ) else (
+              current_lines := Arm64_parser.LineLabel lbl :: !current_lines
+            )
+
+        | Arm64_parser.LineMarkerBegin mode ->
+            current_mode := Some (mode, !last_label);
+            current_lines := []
+        | Arm64_parser.LineMarkerEnd -> (
+            match !current_mode with
+            | Some (m, fn_lbl) ->
+                regions := (m, Arm64_parser.LineLabel fn_lbl :: List.rev !current_lines) :: !regions;
+                current_mode := None;
+                current_lines := []
+            | None -> ())
+        | line ->
+            if !current_mode <> None then
+              current_lines := line :: !current_lines)
+      raw_lines;
+
+    if !regions = [] then
+      [ (Arm64_parser.ModeUltra "main", raw_lines) ]
+    else
+      List.rev !regions
+
+module Arm64_parser = Arm64_parser
 module Literal_stitcher = Literal_stitcher

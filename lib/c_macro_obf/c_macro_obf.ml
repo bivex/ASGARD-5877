@@ -102,42 +102,81 @@ let obfuscate_source ?(config = default_config) src =
       done
     end
     else if c = '"' && config.obfuscate_strings then begin
-      incr i;
-      let str_buf = Buffer.create 32 in
-      let escaped = ref false in
-      let closed = ref false in
-      while !i < len && not !closed do
-        let sc = src.[!i] in
-        if !escaped then begin
-          (match sc with
-          | 'n' -> Buffer.add_char str_buf '\n'
-          | 't' -> Buffer.add_char str_buf '\t'
-          | 'r' -> Buffer.add_char str_buf '\r'
-          | '\\' -> Buffer.add_char str_buf '\\'
-          | '"' -> Buffer.add_char str_buf '"'
-          | '0' -> Buffer.add_char str_buf '\000'
-          | other ->
-              Buffer.add_char str_buf '\\';
-              Buffer.add_char str_buf other);
-          escaped := false;
-          incr i
-        end
-        else if sc = '\\' then begin
-          escaped := true;
-          incr i
-        end
-        else if sc = '"' then begin
-          closed := true;
-          incr i
-        end
-        else begin
-          Buffer.add_char str_buf sc;
-          incr i
-        end
-      done;
-      let raw_str = Buffer.contents str_buf in
-      let obf_str = obfuscate_string_literal ~prefix:p ~seed:(next_seed ()) raw_str in
-      Buffer.add_string buf obf_str
+      let is_marker_tag () =
+        let p = ref (!i - 1) in
+        while !p >= 0 && (src.[!p] = ' ' || src.[!p] = '\t' || src.[!p] = '\n' || src.[!p] = '\r' || src.[!p] = '(') do
+          decr p
+        done;
+        let end_id = !p in
+        while !p >= 0 && (let ch = src.[!p] in (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch = '_') do
+          decr p
+        done;
+        let start_id = !p + 1 in
+        if end_id >= start_id then
+          let id = String.sub src start_id (end_id - start_id + 1) in
+          String.starts_with ~prefix:"ASGARD_BEGIN" id
+        else false
+      in
+      if is_marker_tag () then begin
+        Buffer.add_char buf c;
+        incr i;
+        let escaped = ref false in
+        let closed = ref false in
+        while !i < len && not !closed do
+          let sc = src.[!i] in
+          Buffer.add_char buf sc;
+          if !escaped then begin
+            escaped := false;
+            incr i
+          end
+          else if sc = '\\' then begin
+            escaped := true;
+            incr i
+          end
+          else if sc = '"' then begin
+            closed := true;
+            incr i
+          end
+          else incr i
+        done
+      end else begin
+        incr i;
+        let str_buf = Buffer.create 32 in
+        let escaped = ref false in
+        let closed = ref false in
+        while !i < len && not !closed do
+          let sc = src.[!i] in
+          if !escaped then begin
+            (match sc with
+            | 'n' -> Buffer.add_char str_buf '\n'
+            | 't' -> Buffer.add_char str_buf '\t'
+            | 'r' -> Buffer.add_char str_buf '\r'
+            | '\\' -> Buffer.add_char str_buf '\\'
+            | '"' -> Buffer.add_char str_buf '"'
+            | '0' -> Buffer.add_char str_buf '\000'
+            | other ->
+                Buffer.add_char str_buf '\\';
+                Buffer.add_char str_buf other);
+            escaped := false;
+            incr i
+          end
+          else if sc = '\\' then begin
+            escaped := true;
+            incr i
+          end
+          else if sc = '"' then begin
+            closed := true;
+            incr i
+          end
+          else begin
+            Buffer.add_char str_buf sc;
+            incr i
+          end
+        done;
+        let raw_str = Buffer.contents str_buf in
+        let obf_str = obfuscate_string_literal ~prefix:p ~seed:(next_seed ()) raw_str in
+        Buffer.add_string buf obf_str
+      end
     end
     else begin
       Buffer.add_char buf c;
