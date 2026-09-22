@@ -1,7 +1,12 @@
 open Cmdliner
 
 (* 7. PROTECT COMMAND (Full Automated x86_64 & C/C++ VM-Protector Pipeline) *)
-let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm compile_and_run =
+let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile_and_run =
+  let resolved_engine =
+    if enable_jit || engine = "jit" then "jit"
+    else if enable_multi_vm || engine = "multi_vm" || engine = "multi-vm" then "multi_vm"
+    else "threaded"
+  in
   let base_cfg =
     match config_file with
     | Some path -> (
@@ -108,7 +113,18 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
         `Error (false, err)
     | Ok lifted_func ->
         let (runtime_src, runner_src, bc, metrics, hdr_name) =
-          if enable_multi_vm then
+          if resolved_engine = "jit" then
+            let jit_pkg =
+              Rd_jit_vm.Rd_jit_emitter.compile_and_package
+                ~rng
+                ?config:(Some effective_cfg)
+                ~enable_cff:resolved_cff
+                ~enable_mba:resolved_mba
+                ~mba_depth:resolved_mba_depth
+                lifted_func
+            in
+            (jit_pkg.cpp_runtime_source, jit_pkg.runner_source, jit_pkg.bytecode, jit_pkg.metrics, "jit_vm_runtime.hpp")
+          else if resolved_engine = "multi_vm" then
             let mv_pkg =
               Multi_vm.Multi_vm_emitter.compile_and_package
                 ~rng
@@ -134,7 +150,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
         output_string oc_h runtime_src;
         close_out oc_h;
 
-        if enable_multi_vm then begin
+        if resolved_engine <> "threaded" then begin
           let comp_hdr = Filename.concat out_dir "threaded_vm.hpp" in
           let oc_ch = open_out comp_hdr in
           output_string oc_ch runtime_src;
@@ -224,11 +240,19 @@ let protect_cmd =
     let doc = "Enable Heterogeneous Dual-VM Runtime (Math-VM & Flow-VM with Affine GL16 Zero-Bridge)" in
     Arg.(value & flag & info [ "multi-vm" ] ~doc)
   in
+  let engine =
+    let doc = "Virtual machine execution engine: threaded, multi_vm, or jit" in
+    Arg.(value & opt string "threaded" & info [ "engine" ] ~docv:"ENGINE" ~doc)
+  in
+  let jit =
+    let doc = "Enable Register-Driven JIT VM (RD-JIT with ephemeral native code synthesis)" in
+    Arg.(value & flag & info [ "jit" ] ~doc)
+  in
   let compile =
     let doc = "Compile native C++ runner and execute protected binary" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ compile)) in
+  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ engine $ jit $ compile)) in
   Cmd.v (Cmd.info "protect" ~doc) term
 
 let run_c_obf input out_file out_header seed strings consts mba_depth compile =

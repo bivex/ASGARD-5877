@@ -1,7 +1,11 @@
 open Cmdliner
 
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline) *)
-let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth compile_and_run =
+let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile_and_run =
+  let resolved_engine =
+    if enable_jit || engine = "jit" then "jit"
+    else "threaded"
+  in
   let base_cfg =
     match config_file with
     | Some path -> (
@@ -91,21 +95,43 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
         prerr_endline (Printf.sprintf "ARM64 Lifter failed: %s" err);
         `Error (false, err)
     | Ok lifted_func ->
-        let pkg =
-          Native_vm.Vm_emitter.compile_and_package
-            ~rng
-            ~config:effective_cfg
-            lifted_func
+        let (runtime_src, runner_src, bc, metrics, hdr_name) =
+          if resolved_engine = "jit" then
+            let jit_pkg =
+              Rd_jit_vm.Rd_jit_emitter.compile_and_package
+                ~rng
+                ?config:(Some effective_cfg)
+                ~enable_cff:resolved_cff
+                ~enable_mba:resolved_mba
+                ~mba_depth:resolved_mba_depth
+                lifted_func
+            in
+            (jit_pkg.cpp_runtime_source, jit_pkg.runner_source, jit_pkg.bytecode, jit_pkg.metrics, "jit_vm_runtime.hpp")
+          else
+            let pkg =
+              Native_vm.Vm_emitter.compile_and_package
+                ~rng
+                ~config:effective_cfg
+                lifted_func
+            in
+            (pkg.cpp_runtime_source, pkg.runner_source, pkg.bytecode, pkg.metrics, "threaded_vm.hpp")
         in
 
-        let hdr_path = Filename.concat out_dir "threaded_vm.hpp" in
+        let hdr_path = Filename.concat out_dir hdr_name in
         let oc_h = open_out hdr_path in
-        output_string oc_h pkg.cpp_runtime_source;
+        output_string oc_h runtime_src;
         close_out oc_h;
+
+        if resolved_engine <> "threaded" then begin
+          let comp_hdr = Filename.concat out_dir "threaded_vm.hpp" in
+          let oc_ch = open_out comp_hdr in
+          output_string oc_ch runtime_src;
+          close_out oc_ch;
+        end;
 
         let runner_path = Filename.concat out_dir "runner.cpp" in
         let oc_r = open_out runner_path in
-        output_string oc_r pkg.runner_source;
+        output_string oc_r runner_src;
         close_out oc_r;
 
         let bc_path = Filename.concat out_dir "protected.vanguard" in
@@ -116,12 +142,12 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
               let b = Int64.to_int (Int64.logand (Int64.shift_right_logical w (i * 8)) 0xFFL) in
               output_byte oc_b b
             done)
-          pkg.bytecode;
+          bc;
         close_out oc_b;
 
-        print_endline (Native_vm.Metrics.report_to_string pkg.metrics);
-        Printf.printf "Generated ARM64 Threaded VM Header: %s\n" hdr_path;
-        Printf.printf "Generated ARM64 Protected Bytecode: %s (%d bytes)\n" bc_path (List.length pkg.bytecode * 8);
+        print_endline (Native_vm.Metrics.report_to_string metrics);
+        Printf.printf "Generated ARM64 VM Header: %s\n" hdr_path;
+        Printf.printf "Generated ARM64 Protected Bytecode: %s (%d bytes)\n" bc_path (List.length bc * 8);
 
         if compile_and_run then begin
           let bin_path = Filename.concat out_dir (if is_c_src then "protected_app" else "protected_runner") in
@@ -146,7 +172,7 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
   end
 
 let protect_arm64_cmd =
-  let doc = "Virtualize and protect ARM64 assembly or C source with ARM64 Lifter, CFF, MBA, and Direct Threaded VM" in
+  let doc = "Virtualize and protect ARM64 assembly or C source with ARM64 Lifter, CFF, MBA, and Direct Threaded or RD-JIT VM" in
   let input =
     let doc = "Input ARM64 assembly (.s / .asm) or C source (.c)" in
     Arg.(required & opt (some string) None & info [ "i"; "input" ] ~docv:"FILE" ~doc)
@@ -179,9 +205,17 @@ let protect_arm64_cmd =
     let doc = "Mixed Boolean-Arithmetic recursion depth (1..4)" in
     Arg.(value & opt int 2 & info [ "mba-depth" ] ~docv:"DEPTH" ~doc)
   in
+  let engine =
+    let doc = "Virtual machine execution engine: threaded or jit" in
+    Arg.(value & opt string "threaded" & info [ "engine" ] ~docv:"ENGINE" ~doc)
+  in
+  let jit =
+    let doc = "Enable Register-Driven JIT VM (RD-JIT with ephemeral native code synthesis)" in
+    Arg.(value & flag & info [ "jit" ] ~doc)
+  in
   let compile =
     let doc = "Compile native C++ runner and execute protected ARM64 binary" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ compile)) in
+  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ compile)) in
   Cmd.v (Cmd.info "protect-arm64" ~doc) term

@@ -23,7 +23,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 3 | **Nanomites & Hardware Signal Dispatch** | [`lib/native_vm/hardened_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/hardened_runtime.ml) | ✅ **DONE** | Complete | Breaks static disassemblers & DSE branching |
 | 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | ✅ **DONE** | Complete | Prevents replay attacks & opcode recording |
 | 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml) | ✅ **DONE** | Complete | Neutralizes RAM process dumpers |
-| 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ⏳ **PENDING** | **MEDIUM** | Eliminates static handler jump tables |
+| 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ✅ **DONE** | Complete | Eliminates static handler jump tables |
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ⏳ **PENDING** | **MEDIUM** | Hides scalar logic in NEON/AVX vectors |
 | 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ✅ **DONE** | Complete | Thwarts userspace hooks (Frida, DTrace) |
 | 9 | **GPU Metal Compute Acceleration** | [`lib/gpu_synth/`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/) | ⏳ **PENDING** | **LOW** | Offloads crypto checks to Apple GPU |
@@ -111,24 +111,26 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **Dynamic Interposition Immunity**: Immune to user-space dynamic interception frameworks (Frida `Interceptor.attach`, DTrace, Substrate, `DYLD_INSERT_LIBRARIES`, `LD_PRELOAD`).
   - **Verified by Tests**: Verified in `test/test_anti_tamper_smc.ml` (`test_direct_syscalls_e2e`) verifying `sys_getpid`, `sys_check_debugger_present`, and `sys_write` under `clang++ -std=c++20 -O2`.
 
+### G. RD-JIT VM (Register-Driven Dynamic Native Code Synthesis)
+* **Status**: ✅ Fully Operational (`lib/rd_jit_vm/rd_jit_emitter.ml`, `bin/cli_protect.ml`, `bin/cli_protect_arm64.ml`, `test/test_rd_jit_vm.ml`)
+* **Academic Reference**: *Register-Driven Just-In-Time Virtualization & Ephemeral Code Synthesis*
+* **Mathematical & Architectural Primitive**: On-the-fly ephemeral machine code synthesis with zero static handler dispatch tables:
+  - **Dual-Mapping W^X Memory Manager (`DualMappedJITBuffer`)**: Dual-mapped virtual memory architecture bypassing W^X protections:
+    - macOS / Apple Silicon: `vm_allocate` + `vm_remap` (`VM_PROT_READ | VM_PROT_EXECUTE`) mapping identical physical pages to writable view `rw_buf` and executable view `rx_buf`, with `MAP_JIT` / `pthread_jit_write_protect_np` fallback.
+    - Linux: `memfd_create("asgard_rd_jit_wx", MFD_CLOEXEC)` with dual shared `mmap` mappings (`PROT_READ|PROT_WRITE` and `PROT_READ|PROT_EXEC`).
+  - **Ephemeral Native Machine Code Synthesizer**: Converts basic block instructions just-in-time into raw CPU machine opcodes:
+    - ARM64: dynamic generation of `LDR/STR` unsigned offset, `MOVZ/MOVK` 64-bit immediate materialization, `ADD`, `SUB`, `MUL`, `EOR`, `AND`, `ORR`, and `RET` (`0xd65f03c0`).
+    - x86_64: dynamic generation of REX-prefixed `MOV`, `ADD`, `SUB`, `IMUL`, `XOR`, `AND`, `OR`, and `RET` (`0xc3`).
+  - **RNS-4 Moduli Residue Synchronization**: Parallel modular channels ($M = \prod m_i > 2^{64}$) synchronized post-execution in `RD_JIT_Context` using Garner's CRT recovery.
+  - **$O(1)$ Machine Code RAM Lifetime & Atomic Scrub**: Immediately upon block retirement, `atomic_zeroize` scrubs the write view with `volatile` wipes, leaving 0 trace of synthesized machine code in process RAM.
+  - **CLI Integration**: Added CLI flags `--engine=jit` and `--jit` to `random_visa protect` and `random_visa protect-arm64`.
+  - **Verified by Tests**: Tested in `test/test_rd_jit_vm.ml` with E2E multi-op arithmetic execution under `clang++ -std=c++20 -O2`.
+
 ---
 
 ## Detailed Feature Specifications & TODOs (Pending Features)
 
-### 1. RD-JIT VM (Runtime Native Machine Code JIT Compilation)
-* **Status**: ⏳ Pending
-* **Academic Reference**: *Register-Driven Just-In-Time Virtualization*
-* **Current State in OCaml**:
-  - [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) compiles IR blocks directly into raw ARM64/x86_64 machine code fragments with ephemeral lifetimes.
-  - Fully tested in Dune test suite (`test/test_rd_jit_vm.ml`), but not yet emitted as an alternative execution mode in C++ CLI (`--jit`).
-* **Required C++ Changes**:
-  - [ ] Add CLI flag `random_visa protect --engine=jit`.
-  - [ ] Emit `jit_vm_runtime.hpp` containing `DualMappedBuffer` with executable page permissions.
-  - [ ] On function entry, translate basic blocks to native machine code fragments on-the-fly, execute them directly, and invalidate cache.
-
----
-
-### 2. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
+### 1. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
 * **Status**: ⏳ Pending
 * **Academic Reference**: *RISC-V Vector 1.0 Formal Spec & SIMD Obfuscation*
 * **Current State in OCaml**:
@@ -141,7 +143,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-### 3. Apple Metal Compute Acceleration (`gpu_synth`) in Protected App
+### 2. Apple Metal Compute Acceleration (`gpu_synth`) in Protected App
 * **Status**: ⏳ Pending
 * **Academic Reference**: *GPGPU-Assisted Software Protection & Integrity Attestation*
 * **Current State in OCaml**:

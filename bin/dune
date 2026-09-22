@@ -19,6 +19,7 @@
   x86_lifter
   arm64_lifter
   multi_vm
+  rd_jit_vm
   mba_engine
   cff
   native_vm
