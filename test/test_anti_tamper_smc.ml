@@ -125,7 +125,69 @@ func_layer3_vm:
       (* (500 + 20) * 3 = 1560 *)
       Alcotest.(check bool) "rax is 1560" true (String.contains out_str '1' && String.contains out_str '5' && String.contains out_str '6')
 
+let test_nanomite_signal_dispatch () =
+  let rng = Random.State.make [| 0x7777 |] in
+  let asm = {|
+func_nanomite_branch:
+    mov rax, 42
+    cmp rax, 50
+    jl .Lless
+    add rax, 1000
+    ret
+.Lless:
+    add rax, 2000
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let config = {
+        Protection_config.default with
+        anti_tamper = {
+          Protection_config.default.anti_tamper with
+          nanomites = true;
+        }
+      } in
+      let pkg = Vm_emitter.compile_and_package ~rng ~config func in
+
+      let tmp_dir = Filename.temp_file "vm_nanomite_" "_dir" in
+      (try Sys.remove tmp_dir with _ -> ());
+      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+      let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
+      let oc_h = open_out hdr_path in
+      output_string oc_h pkg.cpp_runtime_source;
+      close_out oc_h;
+
+      let runner_path = Filename.concat tmp_dir "runner.cpp" in
+      let oc_r = open_out runner_path in
+      output_string oc_r pkg.runner_source;
+      close_out oc_r;
+
+      let bin_path = Filename.concat tmp_dir "runner" in
+      let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+      let comp_status = Sys.command comp_cmd in
+      Alcotest.(check int) "clang++ compilation succeeds with nanomites" 0 comp_status;
+
+      let run_cmd = bin_path in
+      let ic = Unix.open_process_in run_cmd in
+      let out_buf = Buffer.create 256 in
+      (try
+         while true do
+           Buffer.add_string out_buf (input_line ic);
+           Buffer.add_char out_buf '\n'
+         done
+       with End_of_file -> ());
+      let status = Unix.close_process_in ic in
+      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+      let out_str = Buffer.contents out_buf in
+      (* 42 < 50, so .Lless branch taken: 42 + 2000 = 2042 *)
+      Alcotest.(check bool) "output contains SUCCESS" true (String.contains out_str 'S' && String.contains out_str 'U' && String.contains out_str 'C');
+      Alcotest.(check bool) "rax is 2042" true (String.contains out_str '2' && String.contains out_str '0' && String.contains out_str '4')
+
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
   Alcotest.test_case "full_threaded_vm_with_layer3_protection" `Quick test_full_threaded_vm_with_layer3_protection;
+  Alcotest.test_case "nanomite_signal_dispatch" `Quick test_nanomite_signal_dispatch;
 ]

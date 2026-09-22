@@ -14,6 +14,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_anti_emu = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.anti_emulation | None -> true in
   let enable_mem_scan = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.memory_integrity_scanner | None -> true in
   let enable_timing_probes = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.hardware_timing_probes | None -> true in
+  let enable_nanomites = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.nanomites | None -> true in
   let enable_running_key = Protection_config.rolling_key_enabled config in
   let enable_stack_scramble = match config with Some c -> c.vm_runtime.stack_scrambling | None -> true in
   let enable_mem_sanitize = match config with Some c -> c.vm_runtime.memory_sanitization | None -> true in
@@ -37,6 +38,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b (Hardened_runtime.emit_memory_integrity_scanner_header ());
     Buffer.add_string b "\n";
   end;
+  if enable_nanomites then begin
+    Buffer.add_string b (Hardened_runtime.emit_nanomite_engine_header ());
+    Buffer.add_string b "\n";
+  end;
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
 
   Vm_context_emitter.emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize;
@@ -48,6 +53,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
 
   Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = 0x%08lXU, bool scrub_source = false) {\n" key_seed);
   Buffer.add_string b "    if (ctx.reg_mask == 0) ctx.init(seed);\n";
+  if enable_nanomites then begin
+    Buffer.add_string b "    /* Nanomite Hardware Signal Dispatcher (Hardware TRAP/Branch Interceptor) */\n";
+    Buffer.add_string b "    asgard_nanomites::install_nanomite_handlers(seed);\n\n";
+  end;
   Buffer.add_string b "    /* High-Speed Continuous Bytecode Integrity Guard (Anti-Patching / Breakpoint Detection) */\n";
   Buffer.add_string b "    uint64_t full_hash = 0x811C9DC5C9DC5119ULL ^ (uint64_t)seed;\n";
   Buffer.add_string b "    for (size_t i = 0; i < count; ++i) {\n";
@@ -151,7 +160,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b "    ctx.reanchor_running_key(0);\n";
   Buffer.add_string b "    FETCH_NEXT();\n\n";
 
-  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes;
+  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_nanomites;
 
   Buffer.add_string b "    EXIT_VM:\n";
   if enable_mem_sanitize then begin

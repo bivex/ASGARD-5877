@@ -20,7 +20,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 |---|:---|:---|:---:|:---:|:---|
 | 1 | **Residue Number System (RNS-4)** | [`lib/vm_ir/rns.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rns.ml) | ✅ **DONE** | Complete | Breaks linear SMT solvers ($M > 2^{64}$) |
 | 2 | **Multi-VM Zero-Bridge** | [`lib/multi_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/) | ✅ **DONE** | Complete | $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ affine morphing in bytecode |
-| 3 | **Nanomites & Hardware Signal Dispatch** | [`lib/c_macro_obf/c_nanomites.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml) | ⏳ **PENDING** | **HIGH** | Breaks static disassemblers & DSE branching |
+| 3 | **Nanomites & Hardware Signal Dispatch** | [`lib/native_vm/hardened_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/hardened_runtime.ml) | ✅ **DONE** | Complete | Breaks static disassemblers & DSE branching |
 | 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | ✅ **DONE** | Complete | Prevents replay attacks & opcode recording |
 | 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml) | ✅ **DONE** | Complete | Neutralizes RAM process dumpers |
 | 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ⏳ **PENDING** | **MEDIUM** | Eliminates static handler jump tables |
@@ -79,27 +79,28 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **Master Bytecode & Heap Sanitization**: In `runner.cpp`, embedded bytecode is stored in non-`const` segment `static uint64_t embedded_bytecode[]`. When `execute_threaded(..., scrub_source = true)` exits, the master bytecode array is completely scrubbed with `0xDEADBEEFCAFEBABEULL ^ (seed + i)`. Any dynamically allocated `heap_bc` is securely wiped prior to `free()`.
   - **Verified by Tests**: Tested in `test/test_native_vm_and_metrics.ml` (`test_ephemeral_self_consuming_scrubbing`, `test_ephemeral_scrubbing_loop_and_stack` with `4! = 24`), and E2E with ARM64 protected applications.
 
+### E. Nanomites & Hardware Signal Dispatch in VM Handlers
+* **Status**: ✅ Fully Operational (`lib/native_vm/hardened_runtime.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `test/test_anti_tamper_smc.ml`)
+* **Academic Reference**: *Banescu et al. (2016), Code Virtualization with Signal-Driven Traps*
+* **Mathematical & Architectural Primitive**: Dynamic exception and hardware signal-driven branch redirection:
+  - **Branch Replacement with Software/Hardware Traps**: Conditional branches (`H_JCC`), direct jumps (`H_JMP`), and calls (`H_CALL`) no longer execute direct linear jumps or standard control-flow statements. Instead, branches register entry descriptors into `asgard_nanomites::g_nanomite_dispatcher` with XOR-encrypted targets keyed by `(seed ^ vIP_idx)`:
+    ```cpp
+    asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;
+    asgard_nanomites::g_nanomite_dispatcher.current_condition = (uint32_t)c;
+    asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, t_true, t_false, (uint64_t)(seed ^ (uint32_t)vIP_idx));
+    raise(SIGTRAP);
+    vIP_idx = (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target;
+    ```
+  - **POSIX & Darwin Signal Dispatcher**: An OS-level signal handler with `sigaction(SIGTRAP / SIGILL, ...)` captures synchronous trap interrupts. On signal delivery, the handler extracts the hardware instruction pointer from `ucontext_t` (`uc->uc_mcontext->__ss.__pc` on ARM64 macOS, `__rip` on x86_64, `pc` / `REG_RIP` on Linux), executes a 64-bit Murmur3 mix keyed by `seed`, decrypts the selected branch target, and sets `resolved_target`.
+  - **Anti-Pushan Rolling Key Coherence**: Integrates directly with the Anti-Pushan rolling key re-anchoring pipeline. Every nanomite-resolved jump immediately triggers `reanchor_running_key((uint64_t)vIP_idx)`, guaranteeing 100% loop safety and keystream synchronization.
+  - **Anti-Analysis & DSE Immunity**: Obfuscates the Control Flow Graph from static decompilers (Ghidra, IDA Pro, Binary Ninja) by replacing explicit branch edges with signal interrupts, defeating dynamic symbolic execution (DSE / angr) engines that do not model operating system signal delivery.
+  - **Verified by Tests**: Verified in `test/test_anti_tamper_smc.ml` (`test_nanomite_signal_dispatch`) with full C++20 compilation and execution under `clang++ -std=c++20 -O2`.
+
 ---
 
 ## Detailed Feature Specifications & TODOs (Pending Features)
 
-### 1. Nanomite Exception & Signal Dispatch in VM Handlers
-* **Status**: ⏳ Pending (Available in C Macro Obfuscator, but unused in VM branching)
-* **Academic Reference**: *Banescu et al. (2016), Code Virtualization with Signal-Driven Traps*
-* **Current State in OCaml**:
-  - [`lib/c_macro_obf/c_nanomites.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml) generates `ASG_NANOMITE_REGISTER` tables and signal handlers for C code.
-  - In `vm_handlers_emitter.ml`, conditional branch handlers (`H_JZ`, `H_JNZ`, `H_JGE`, `H_JL`) currently use standard C++ branch statements:
-    ```cpp
-    H_JZ: if (ctx.flags.zf) { ctx.vip = (uint64_t)target; } FETCH_NEXT();
-    ```
-* **Required C++ Changes**:
-  - [ ] Replace direct branch targets in `vm_handlers_emitter.ml` with invalid opcode traps (`__builtin_trap()`, `ud2` on x86, `.inst 0x00000000` / `brk #0` on ARM64).
-  - [ ] Emit a Mach Exception Handler (`mach_port_t`, `thread_set_exception_ports`) on macOS and a POSIX `sigaction(SIGTRAP / SIGILL)` handler on Linux in `threaded_vm.hpp`.
-  - [ ] On trap, look up the target address in a cryptographically keyed nanomite lookup map (`murmur3_hash(pc ^ seed)`) and resume execution by mutating the saved thread context (`ucontext_t` / `arm_thread_state64_t`).
-
----
-
-### 2. Direct Syscall Invocation (Bypassing libc & Dynamic Linker)
+### 1. Direct Syscall Invocation (Bypassing libc & Dynamic Linker)
 * **Status**: ⏳ Pending
 * **Academic Reference**: *Hell's Gate / Syscall Stubs for Anti-Hooking*
 * **Current State in OCaml**:
@@ -113,7 +114,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-### 3. RD-JIT VM (Runtime Native Machine Code JIT Compilation)
+### 2. RD-JIT VM (Runtime Native Machine Code JIT Compilation)
 * **Status**: ⏳ Pending
 * **Academic Reference**: *Register-Driven Just-In-Time Virtualization*
 * **Current State in OCaml**:
@@ -126,7 +127,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-### 4. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
+### 3. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
 * **Status**: ⏳ Pending
 * **Academic Reference**: *RISC-V Vector 1.0 Formal Spec & SIMD Obfuscation*
 * **Current State in OCaml**:
@@ -139,7 +140,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
-### 5. Apple Metal Compute Acceleration (`gpu_synth`) in Protected App
+### 4. Apple Metal Compute Acceleration (`gpu_synth`) in Protected App
 * **Status**: ⏳ Pending
 * **Academic Reference**: *GPGPU-Assisted Software Protection & Integrity Attestation*
 * **Current State in OCaml**:

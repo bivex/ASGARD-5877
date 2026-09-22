@@ -361,3 +361,129 @@ static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity(
 } // namespace asgard_mem_integrity
 |}
 
+let emit_nanomite_engine_header () =
+  {|#pragma once
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+#include <signal.h>
+#include <string.h>
+
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/thread_act.h>
+#include <sys/ucontext.h>
+#elif defined(__linux__)
+#include <ucontext.h>
+#endif
+
+#define ASGARD_NANOMITES_ENABLED 1
+
+namespace asgard_nanomites {
+
+struct NanomiteEntry {
+    uint32_t trap_id;
+    uint64_t target_true;
+    uint64_t target_false;
+    uint64_t key;
+};
+
+// Cryptographically keyed 64-bit Murmur3 Finalizer Mix
+static inline uint64_t murmur3_mix64(uint64_t k) noexcept {
+    k ^= k >> 33;
+    k *= 0xff51afd7ed558ccdULL;
+    k ^= k >> 33;
+    k *= 0xc4ceb9fe1a85ec53ULL;
+    k ^= k >> 33;
+    return k;
+}
+
+class NanomiteDispatcher {
+public:
+    static constexpr size_t TABLE_CAPACITY = 2048;
+    NanomiteEntry table[TABLE_CAPACITY];
+    volatile uint32_t current_trap_id = 0;
+    volatile uint32_t current_condition = 0;
+    volatile uint64_t resolved_target = 0;
+    volatile uint64_t traps_handled = 0;
+    uint32_t seed = 0x5877CAFEU;
+    bool installed = false;
+
+    void register_nanomite(uint32_t trap_id, uint64_t t_true, uint64_t t_false, uint64_t key) noexcept {
+        size_t idx = (size_t)(trap_id % TABLE_CAPACITY);
+        table[idx].trap_id = trap_id;
+        table[idx].target_true = t_true ^ key;
+        table[idx].target_false = t_false ^ key;
+        table[idx].key = key;
+    }
+
+    uint64_t resolve_target(uint32_t trap_id, uint32_t cond, uint64_t pc_val) noexcept {
+        volatile uint64_t mixed = murmur3_mix64(pc_val ^ (uint64_t)seed);
+        (void)mixed;
+        size_t idx = (size_t)(trap_id % TABLE_CAPACITY);
+        if (table[idx].trap_id == trap_id) {
+            uint64_t enc = cond ? table[idx].target_true : table[idx].target_false;
+            return enc ^ table[idx].key;
+        }
+        return 0;
+    }
+};
+
+inline NanomiteDispatcher g_nanomite_dispatcher;
+
+#if (defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)
+static void nanomite_trap_handler(int sig, siginfo_t* info, void* ucontext_ptr) {
+    (void)sig; (void)info;
+    uint64_t pc_val = 0;
+#if defined(__APPLE__)
+    ucontext_t* uc = (ucontext_t*)ucontext_ptr;
+#if defined(__arm64__) || defined(__aarch64__)
+    if (uc && uc->uc_mcontext) {
+        pc_val = (uint64_t)uc->uc_mcontext->__ss.__pc;
+    }
+#elif defined(__x86_64__)
+    if (uc && uc->uc_mcontext) {
+        pc_val = (uint64_t)uc->uc_mcontext->__ss.__rip;
+    }
+#endif
+#elif defined(__linux__)
+    ucontext_t* uc = (ucontext_t*)ucontext_ptr;
+#if defined(__arm64__) || defined(__aarch64__)
+    if (uc) {
+        pc_val = (uint64_t)uc->uc_mcontext.pc;
+    }
+#elif defined(__x86_64__)
+    if (uc) {
+        pc_val = (uint64_t)uc->uc_mcontext.gregs[REG_RIP];
+    }
+#endif
+#endif
+
+    g_nanomite_dispatcher.traps_handled = g_nanomite_dispatcher.traps_handled + 1;
+    uint32_t tid = g_nanomite_dispatcher.current_trap_id;
+    uint32_t cond = g_nanomite_dispatcher.current_condition;
+    g_nanomite_dispatcher.resolved_target = g_nanomite_dispatcher.resolve_target(tid, cond, pc_val);
+}
+
+static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
+    g_nanomite_dispatcher.seed = seed;
+    if (g_nanomite_dispatcher.installed) return;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = nanomite_trap_handler;
+    sa.sa_flags = SA_SIGINFO;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTRAP, &sa, NULL);
+    sigaction(SIGILL, &sa, NULL);
+    g_nanomite_dispatcher.installed = true;
+}
+#else
+static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
+    g_nanomite_dispatcher.seed = seed;
+    g_nanomite_dispatcher.installed = true;
+}
+#endif
+
+} // namespace asgard_nanomites
+|}
+

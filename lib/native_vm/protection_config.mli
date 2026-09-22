@@ -40,6 +40,7 @@ type anti_tamper_config = {
   hardware_timing_probes : bool;
   memory_integrity_scanner : bool;
   anti_emulation : bool;
+  nanomites : bool;
 }
 
 type vm_runtime_config = {

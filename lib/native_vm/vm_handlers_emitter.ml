@@ -1,4 +1,4 @@
-let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes =
+let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_nanomites =
   (* Anti-Pushan re-anchoring: every handler that reassigns vIP_idx lands at a new
      basic block, so the rolling key chain must restart from that block's anchor. *)
   let maybe_reanchor () =
@@ -115,7 +115,19 @@ let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes =
   Buffer.add_string b "    H_PUSH_R: ctx.push(ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_POP_R: ctx.set_reg(dst, ctx.pop()); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    H_JMP: {\n";
-  Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+  if enable_nanomites then begin
+    Buffer.add_string b "#if (defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
+    Buffer.add_string b "        raise(SIGTRAP);\n";
+    Buffer.add_string b "        vIP_idx = (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target;\n";
+    Buffer.add_string b "#else\n";
+    Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+    Buffer.add_string b "#endif\n";
+  end else begin
+    Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+  end;
   maybe_reanchor ();
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -124,7 +136,19 @@ let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes =
   Buffer.add_string b "        uint64_t t_true = (uint64_t)((word >> 22) & 0x1FFFFFULL);\n";
   Buffer.add_string b "        uint64_t t_false = (uint64_t)((word >> 43) & 0x1FFFFFULL);\n";
   Buffer.add_string b "        uint64_t c = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
-  Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
+  if enable_nanomites then begin
+    Buffer.add_string b "#if (defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = (uint32_t)c;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, t_true, t_false, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
+    Buffer.add_string b "        raise(SIGTRAP);\n";
+    Buffer.add_string b "        vIP_idx = (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target;\n";
+    Buffer.add_string b "#else\n";
+    Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
+    Buffer.add_string b "#endif\n";
+  end else begin
+    Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
+  end;
   maybe_reanchor ();
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -141,7 +165,19 @@ let emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes =
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CALL: {\n";
   Buffer.add_string b "        ctx.push((uint64_t)vIP_idx);\n";
-  Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+  if enable_nanomites then begin
+    Buffer.add_string b "#if (defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
+    Buffer.add_string b "        raise(SIGTRAP);\n";
+    Buffer.add_string b "        vIP_idx = (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target;\n";
+    Buffer.add_string b "#else\n";
+    Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+    Buffer.add_string b "#endif\n";
+  end else begin
+    Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+  end;
   maybe_reanchor ();
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
