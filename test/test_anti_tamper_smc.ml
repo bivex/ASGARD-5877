@@ -143,6 +143,8 @@ func_nanomite_branch:
   | Ok func ->
       let config = {
         Protection_config.default with
+        cff = { Protection_config.default.cff with enabled = false };
+        mba = { Protection_config.default.mba with enabled = false };
         anti_tamper = {
           Protection_config.default.anti_tamper with
           nanomites = true;

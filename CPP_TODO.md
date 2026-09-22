@@ -26,8 +26,13 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ✅ **DONE** | Complete | Eliminates static handler jump tables |
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ✅ **DONE** | Complete | Hides scalar logic in NEON/AVX vectors |
 | 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ✅ **DONE** | Complete | Thwarts userspace hooks (Frida, DTrace) |
-
 | 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | ✅ **DONE** | Complete | Algebraic expansion of VM handler logic |
+| 11| **Macro Header Tree-Shaking & Dead Code Elimination** | [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | ⏳ **PLANNED** | High | Eliminates 73.3% unused functions in `asgard_obf.h` |
+| 12| **External Libc FFI Call Trampoline (`H_CALL_EXTERN`)** | [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/), [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | ⏳ **PLANNED** | Critical | Enables external calls (`printf`, `memcpy`, `malloc`) from inside `ASGARD_BEGIN_VIRTUALIZE` |
+| 13| **ARM64 Pre/Post-Indexed Addressing with Writeback** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | ⏳ **PLANNED** | High | Supports Clang `-O2`/`-O3` idiomatic loops & stack writeback (`[xN, #imm]!`, `[xN], #imm`) |
+| 14| **Floating-Point & Scalar FP (SIMD) Emulation** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ⏳ **PLANNED** | Medium | Lifts `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `d0-d31` inside virtualized region |
+| 15| **Constant Pool & Relocatable Data Section Bridge** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ⏳ **PLANNED** | High | Resolves `adrp` + `add` PC-relative string literals & jump tables in sliced blocks |
+| 16| **ARMv8.1-A Atomics & Memory Ordering Support** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ⏳ **PLANNED** | Low | Supports multithreaded synchronization (`ldaxr`, `stlxr`, `cas`) in virtualized routines |
 
 ---
 
@@ -160,10 +165,151 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 ---
 
+## Empirical Coverage Analysis & Dead Code Audit (`llvm-cov`)
+
+Following the end-to-end virtualization of [`examples/license_check.c`](file:///Volumes/External/Code/ASGARD-5877/examples/license_check.c) under Apple Silicon ARM64 using the boundary marker paradigm (`ASGARD_BEGIN_VIRTUALIZE` / `ASGARD_END()`), code coverage was measured using `xcrun llvm-cov`:
+
+```
+Filename                  Regions    Missed Regions     Cover   Lines    Missed Lines     Cover
+------------------------------------------------------------------------------------------------
+app_obf.c                      28                 1    96.43%      70               7    90.00%
+asgard_obf.h                   15                11    26.67%      60              44    26.67%
+threaded_vm.hpp              1950              1720    11.79%    2210            1949    11.81%
+------------------------------------------------------------------------------------------------
+TOTAL                        1993              1732    13.10%    2340            2000    14.53%
+```
+
+### Analysis of Coverage Gaps & Dead Code:
+
+1. **Header Bloat & Dead Code in `asgard_obf.h` (73.3% functions unexecuted)**:
+   - `asgard_obf.h` unconditionally emits all runtime guard helpers:
+     - Anti-debug checks: `ASG_check_ptrace_sysctl`, `ASG_check_hw_breakpoints`
+     - Timing anomaly detectors: `ASG_read_cpu_ticks`, `ASG_timing_probe`
+     - Dynamic API hash resolution: `ASG_hash_api_str`, `ASG_resolve_api_by_hash`
+     - Exception / trap dispatchers: `ASG_sigill_dispatcher`
+   - In target applications where only string encryption or VM markers are active, 8 of the 11 emitted functions are completely dead.
+   - **Impact**: Unnecessary binary size expansion, suspicious export/import signatures flagged by AV/EDR heuristics, and dead code clutter.
+   - **Remediation**: *Item 11 (Header Tree-Shaking & Dead Code Elimination)*.
+
+2. **Decoy Handlers in `threaded_vm.hpp` (88.2% dead-by-design honeypots)**:
+   - `threaded_vm.hpp` emits 256 opcode slots across 8 dispatch domains. With 43 functional VM opcodes active, the remaining 213 slots per domain (1,721 total handlers) are saturated with polymorphic MBA decoy handlers (`H_DECOY_0` .. `H_DECOY_15`).
+   - These handlers are intentional dead code (honeypots designed to resist static decompilation and dynamic symbolic execution).
+   - **Remediation**: Keep decoys for high-security presets, but introduce tunable decoy saturation (e.g., lightweight mode with compact 64-entry jump tables) for size-constrained binaries.
+
+3. **Virtualization Boundary Impedance (Idiomatic C vs Lifter Limits)**:
+   - The user philosophy requires wrapping arbitrary idiomatic C functions inside:
+     ```c
+     ASGARD_BEGIN_VIRTUALIZE("func_name");
+     /* Standard idiomatic C code */
+     ASGARD_END();
+     ```
+   - Standard C idioms (libc calls like `printf` or `strlen`, pre/post-indexed pointer increments like `*p++`, float/double arithmetic, and PC-relative string constants) currently break or fail to lift.
+   - **Remediation**: *Items 12, 13, 14, 15, 16* bridge these fundamental architectural gaps.
+
+---
+
+## Active Development & Technical Parity Roadmap
+
+### J. Macro Header Tree-Shaking & Dead Code Elimination
+* **Status**: ⏳ **PLANNED** (Item 11)
+* **Target Module**: [`lib/c_macro_obf/c_macro_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_emitter.ml)
+* **Technical Gap**:
+  Currently, `emit_header` dumps the entire arsenal of anti-tamper, ptrace, hardware breakpoint, timing probe, and API hashing functions into `asgard_obf.h` regardless of whether the source file invokes `ASG_ANTI_DEBUG()`, `ASG_RESOLVE_API()`, or simply `ASG_STR()` / `ASGARD_BEGIN_VIRTUALIZE`.
+* **Architecture & Implementation Plan**:
+  1. Add AST reference scanner in `c_macro_obf.ml` that determines the subset of macro tags actually present in the source AST (`has_api_hash`, `has_anti_debug`, `has_timing_guard`, `has_signal_dispatch`).
+  2. Guard each utility function in `asgard_obf.h` behind conditional generation flags (`emit_ptrace_probe`, `emit_api_resolver`, `emit_timing_probes`).
+  3. Guarantee that files using only VM boundary markers emit 0 dead C macro functions in the final compiled translation unit.
+
+### K. External Libc FFI Call Trampoline (`H_CALL_EXTERN`)
+* **Status**: ⏳ **PLANNED** (Item 12 — Critical)
+* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/vm_ir/ir.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir.ml)
+* **Technical Gap**:
+  In `threaded_vm.hpp`, `H_CALL` executes:
+  ```cpp
+  vIP_idx = (size_t)imm;
+  ```
+  When idiomatic C inside `ASGARD_BEGIN_VIRTUALIZE` calls external functions (e.g. `printf`, `puts`, `malloc`, `free`, `strlen`, `memcpy`), Clang emits branch-with-link `bl _printf`. Currently, the lifter attempts to interpret the external symbol offset as an internal bytecode index, triggering out-of-bounds fetches and segmentation faults.
+* **Architecture & Implementation Plan**:
+  1. **New IR Constructor**: `Ir.Call_extern of { target_symbol : string; arg_regs : Ir.reg list; ret_reg : Ir.reg option }`.
+  2. **Lifter Symbol Slicing**: When `arm64_lifter` encounters `bl <symbol>` where `<symbol>` is outside the slice, encode it as `OP_CALL_EXTERN` with an index into an external symbol table.
+  3. **C++ VM FFI Bridge**:
+     - Marshal host calling convention registers: copy `ctx.get_reg(REG_X0..X7)` to host CPU registers.
+     - Call through host function pointer `reinterpret_cast<uint64_t(*)(uint64_t, ...)>(sym_ptr)`.
+     - Write return value `x0` back to `ctx.set_reg(REG_X0, ret_val)`.
+     - Re-anchor Anti-Pushan rolling key (`reanchor_running_key(vIP_idx)`) to ensure post-call keystream synchronization.
+
+### L. ARM64 Pre/Post-Indexed Memory Writeback Addressing (`!`)
+* **Status**: ⏳ **PLANNED** (Item 13)
+* **Target Modules**: [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml)
+* **Technical Gap**:
+  Clang `-O2`/`-O3` emits optimized ARM64 memory addressing modes:
+  - **Pre-indexed with writeback**: `ldr x0, [x1, #8]!`, `stp x29, x30, [sp, #-16]!`
+  - **Post-indexed with writeback**: `ldr x0, [x1], #8`, `ldp x29, x30, [sp], #16`
+  The current parser either rejects the exclamation mark (`!`) and trailing post-index comma, or treats them as basic base+offset loads without updating the base register, silently corrupting stack pointers and loop iterators.
+* **Architecture & Implementation Plan**:
+  1. Extend `arm64_parser.ml` operand grammar:
+     - `MemPreIndex of reg * int64` (e.g. `[x1, #8]!`)
+     - `MemPostIndex of reg * int64` (e.g. `[x1], #8`)
+  2. Lift into two consecutive micro-operations in `arm64_lifter.ml`:
+     - For pre-index: `base = base + imm; dst = *base;`
+     - For post-index: `dst = *base; base = base + imm;`
+  3. Support 64-bit pair variants (`ldp`/`stp` with writeback) by expanding into paired loads/stores with atomic stack pointer adjustment.
+
+### M. Floating-Point & Scalar FP (SIMD) Emulation in VM
+* **Status**: ⏳ **PLANNED** (Item 14)
+* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_context_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_context_emitter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml)
+* **Technical Gap**:
+  `arm64_lifter.ml` has no mapping for FP registers `d0–d31` / `s0–s31` and FP instructions `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `fmov`, `fcvtzs`, `scvtf`. Virtualizing any scientific, graphics, or floating-point routine crashes the lifter with syntax errors.
+* **Architecture & Implementation Plan**:
+  1. Add FP register tokens `D0..D31` and `S0..S31` to `arm64_parser.ml`.
+  2. In `VMContext`, leverage existing 128-bit vector register bank `uint64_t vregs[32][2]` to store 64-bit doubles in lane 0 (`reinterpret_cast<double&>(vregs[i][0])`).
+  3. Implement VM handlers: `H_FADD_DD`, `H_FSUB_DD`, `H_FMUL_DD`, `H_FDIV_DD`, `H_FCMP_DD`, `H_FCVTZS`, `H_SCVTF`.
+  4. Ensure IEEE 754 flag handling (overflow, underflow, NaN propagation) in `ctx.flags`.
+
+### N. Constant Pool & Relocatable Data Section Bridge
+* **Status**: ⏳ **PLANNED** (Item 15)
+* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml)
+* **Technical Gap**:
+  String literals and jump table constants compiled by Clang reside in `__TEXT,__cstring` or `__DATA,__const`, referenced via PC-relative pairs:
+  ```asm
+  adrp x0, l_.str@PAGE
+  add  x0, x0, l_.str@PAGEOFF
+  ```
+  When the lifter slices the assembly out of the host function and places it into VM bytecode, the host PC is lost. Executing `adrp` relative to the VM dispatch loop produces an invalid host memory address.
+* **Architecture & Implementation Plan**:
+  1. Detect `adrp` + `add` pairs targeting symbol labels during assembly parsing.
+  2. Generate a symbol relocation table embedded into `vm_package` with host pointer fixups:
+     ```cpp
+     struct RelocEntry { uint32_t vIP; const void* host_target; };
+     ```
+  3. At VM initialization, bind relocatable addresses directly into `ctx.regs[dst]`, allowing seamless pointer access to host string literals and read-only tables without breaking address space layout randomization (ASLR).
+
+### O. ARMv8.1-A Atomics & Memory Ordering Support
+* **Status**: ⏳ **PLANNED** (Item 16)
+* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml)
+* **Technical Gap**:
+  Idiomatic multithreaded C code using `<stdatomic.h>` or synchronization primitives generates atomic instructions (`ldaxr`, `stlxr`, `cas`, `ldadd`, `swp`). The lifter currently rejects these mnemonics.
+* **Architecture & Implementation Plan**:
+  1. Add ARM64 atomic mnemonics to parser (`ldaxr`, `stlxr`, `ldadd`, `cas`).
+  2. Map atomic operations to VM handlers using C++20 `<atomic>` primitives:
+     ```cpp
+     std::atomic_ref<uint64_t> ref(*reinterpret_cast<uint64_t*>(addr));
+     ```
+  3. Emulate exclusive load/store monitor state (`exclusive_addr`, `exclusive_valid`) in `VMContext` to support lock-free algorithms inside virtualized blocks.
+
+---
+
 ## Verification & Acceptance Criteria
 
 Each feature implementation must fulfill:
 1. **Compilation Guarantee**: Must compile cleanly under `clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions` on macOS ARM64 and Linux x86_64.
 2. **Zero-Regression Invariant**: All 172 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
 3. **Architectural Cleanliness**: Run `dpx arch /Volumes/External/Code/ASGARD-5877/` after changes; must maintain **0 architectural errors and 0 warnings**.
-4. **Standalone Execution**: Generated binaries must execute with exit code 0 and maintain correct input-output semantics compared to unvirtualized baseline code.
+4. **Standalone Execution & Clean Boundary Marker**: Any idiomatic C program wrapped strictly with:
+   ```c
+   ASGARD_BEGIN_VIRTUALIZE("func");
+   /* Clean standard C */
+   ASGARD_END();
+   ```
+   must compile, lift, and execute with identical semantics and exit code 0, without requiring manual obfuscation workarounds.
+
