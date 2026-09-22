@@ -13,7 +13,7 @@ type state = {
 }
 
 let make_state ?(stack_base = 0x7FFFFFFF0000L) () =
-  {
+  let s = {
     vregs = Hashtbl.create 32;
     memory = Hashtbl.create 1024;
     flags = empty_flags;
@@ -21,7 +21,9 @@ let make_state ?(stack_base = 0x7FFFFFFF0000L) () =
     vip = 0x80000000L;
     halted = false;
     trapped = None;
-  }
+  } in
+  Hashtbl.replace s.vregs (Register.with_width Register.rsp Register.B64) stack_base;
+  s
 
 let get_mask = function
   | B8  -> 0xFFL
@@ -241,6 +243,9 @@ let step state = function
   | Jcc { cond; target_true; target_false } ->
       if evaluate_condition state.flags cond then Ok (Some target_true)
       else Ok (Some target_false)
+  | Call (Label _lbl) ->
+      (* External host/libc call mock: preserves or sets return register and continues synchronously *)
+      Ok None
   | Call t ->
       state.vsp <- Int64.sub state.vsp 8L;
       write_mem state state.vsp B64 state.vip;

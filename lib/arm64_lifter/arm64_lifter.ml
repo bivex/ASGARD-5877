@@ -249,15 +249,152 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
         Ir.Cmov { cond = Flags.condition_negate (map_cond_str c_str); dst; src = Reg src };
       ]
 
-  (* Memory Load / Store *)
-  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh"), [ OpReg dst; OpMem m ]) ->
-      Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]
-  | (("str" | "strb" | "strh" | "stur" | "sturb"), [ (OpReg _ | OpImm _) as src; OpMem m ]) ->
-      Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand src } ]
+  (* Memory Load / Store with Pre/Post-Indexed Writeback *)
+  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh"), [ OpReg dst; OpMem m ]) -> (
+      match m.wb with
+      | WbNone ->
+          Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]
+      | WbPre ->
+          (match m.base with
+          | Some base_reg ->
+              let effective_mem = { m with disp = 0L; wb = WbNone } in
+              Ok [
+                Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
+                Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem effective_mem) };
+              ]
+          | None ->
+              Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ])
+      | WbPost post_imm ->
+          (match m.base with
+          | Some base_reg ->
+              let effective_mem = { m with disp = 0L; wb = WbNone } in
+              Ok [
+                Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem effective_mem) };
+                Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm post_imm; set_flags = false };
+              ]
+          | None ->
+              Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ])
+    )
+  | (("str" | "strb" | "strh" | "stur" | "sturb"), [ (OpReg _ | OpImm _) as src; OpMem m ]) -> (
+      match m.wb with
+      | WbNone ->
+          Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand src } ]
+      | WbPre ->
+          (match m.base with
+          | Some base_reg ->
+              let effective_mem = { m with disp = 0L; wb = WbNone } in
+              Ok [
+                Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
+                Ir.Mov { dst = raw_to_ir_operand (OpMem effective_mem); src = raw_to_ir_operand src };
+              ]
+          | None ->
+              Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand src } ])
+      | WbPost post_imm ->
+          (match m.base with
+          | Some base_reg ->
+              let effective_mem = { m with disp = 0L; wb = WbNone } in
+              Ok [
+                Ir.Mov { dst = raw_to_ir_operand (OpMem effective_mem); src = raw_to_ir_operand src };
+                Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm post_imm; set_flags = false };
+              ]
+          | None ->
+              Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand src } ])
+    )
 
-  (* Pair Load / Store (stp / ldp) *)
+  (* Pair Load / Store (stp / ldp) with Pre/Post-Indexed Writeback *)
+  | ("stp", [ OpReg r1; OpReg r2; OpMem m ]) ->
+      let stride = Int64.of_int (Register.width_to_bytes (Register.get_width r1)) in
+      let w = Register.get_width r1 in
+      (match m.wb with
+      | WbPre ->
+          (match m.base with
+          | Some base_reg ->
+              let m1 = { base = Some base_reg; index = None; disp = 0L; width = w; wb = WbNone } in
+              let m2 = { base = Some base_reg; index = None; disp = stride; width = w; wb = WbNone } in
+              Ok [
+                Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
+                Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = Reg r1 };
+                Ir.Mov { dst = raw_to_ir_operand (OpMem m2); src = Reg r2 };
+              ]
+          | None ->
+              let m1 = { m with width = w } in
+              let m2 = { m with disp = Int64.add m.disp stride; width = w } in
+              Ok [
+                Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = Reg r1 };
+                Ir.Mov { dst = raw_to_ir_operand (OpMem m2); src = Reg r2 };
+              ])
+      | WbPost post_imm ->
+          (match m.base with
+          | Some base_reg ->
+              let m1 = { base = Some base_reg; index = None; disp = 0L; width = w; wb = WbNone } in
+              let m2 = { base = Some base_reg; index = None; disp = stride; width = w; wb = WbNone } in
+              Ok [
+                Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = Reg r1 };
+                Ir.Mov { dst = raw_to_ir_operand (OpMem m2); src = Reg r2 };
+                Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm post_imm; set_flags = false };
+              ]
+          | None ->
+              let m1 = { m with width = w } in
+              let m2 = { m with disp = Int64.add m.disp stride; width = w } in
+              Ok [
+                Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = Reg r1 };
+                Ir.Mov { dst = raw_to_ir_operand (OpMem m2); src = Reg r2 };
+              ])
+      | WbNone ->
+          let m1 = { m with width = w } in
+          let m2 = { m with disp = Int64.add m.disp stride; width = w } in
+          Ok [
+            Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = Reg r1 };
+            Ir.Mov { dst = raw_to_ir_operand (OpMem m2); src = Reg r2 };
+          ])
   | ("stp", (OpReg r1 :: OpReg r2 :: _)) ->
       Ok [ Ir.Push (Reg r1); Ir.Push (Reg r2) ]
+
+  | ("ldp", [ OpReg r1; OpReg r2; OpMem m ]) ->
+      let stride = Int64.of_int (Register.width_to_bytes (Register.get_width r1)) in
+      let w = Register.get_width r1 in
+      (match m.wb with
+      | WbPre ->
+          (match m.base with
+          | Some base_reg ->
+              let m1 = { base = Some base_reg; index = None; disp = 0L; width = w; wb = WbNone } in
+              let m2 = { base = Some base_reg; index = None; disp = stride; width = w; wb = WbNone } in
+              Ok [
+                Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
+                Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
+                Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+              ]
+          | None ->
+              let m1 = { m with width = w } in
+              let m2 = { m with disp = Int64.add m.disp stride; width = w } in
+              Ok [
+                Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
+                Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+              ])
+      | WbPost post_imm ->
+          (match m.base with
+          | Some base_reg ->
+              let m1 = { base = Some base_reg; index = None; disp = 0L; width = w; wb = WbNone } in
+              let m2 = { base = Some base_reg; index = None; disp = stride; width = w; wb = WbNone } in
+              Ok [
+                Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
+                Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+                Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm post_imm; set_flags = false };
+              ]
+          | None ->
+              let m1 = { m with width = w } in
+              let m2 = { m with disp = Int64.add m.disp stride; width = w } in
+              Ok [
+                Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
+                Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+              ])
+      | WbNone ->
+          let m1 = { m with width = w } in
+          let m2 = { m with disp = Int64.add m.disp stride; width = w } in
+          Ok [
+            Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
+            Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+          ])
   | ("ldp", (OpReg r1 :: OpReg r2 :: _)) ->
       Ok [ Ir.Pop (Reg r2); Ir.Pop (Reg r1) ]
 

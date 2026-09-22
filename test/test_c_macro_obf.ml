@@ -307,8 +307,50 @@ let test_arithmetic_rewriter () =
     Alcotest.(check string) "arith results correct"
       "1379 1295 1299 40 1339" line)
 
+let test_header_tree_shaking () =
+  let src_minimal = {|
+    #include "asgard_obf.h"
+    int main() {
+        ASGARD_BEGIN_VIRTUALIZE("test");
+        const char* s = ASG_STR(((const uint8_t[]){0x01}), 1, 0x123U);
+        ASGARD_END();
+        return 0;
+    }
+  |} in
+  let hdr_shaken = generate_header ~source:src_minimal () in
+  Alcotest.(check bool) "contains ASG_STR in shaken header" true (contains_sub hdr_shaken "ASG_STR");
+  Alcotest.(check bool) "no check_ptrace_sysctl" false (contains_sub hdr_shaken "check_ptrace_sysctl");
+  Alcotest.(check bool) "no check_hw_breakpoints" false (contains_sub hdr_shaken "check_hw_breakpoints");
+  Alcotest.(check bool) "no read_cpu_ticks" false (contains_sub hdr_shaken "read_cpu_ticks");
+  Alcotest.(check bool) "no hash_api_str" false (contains_sub hdr_shaken "hash_api_str");
+  Alcotest.(check bool) "no nanomite_table" false (contains_sub hdr_shaken "nanomite_table");
+  Alcotest.(check bool) "no signal_dispatcher" false (contains_sub hdr_shaken "signal_dispatcher_handler");
+
+  let src_anti_debug = {|
+    #include "asgard_obf.h"
+    int main() {
+        ASG_ANTI_DEBUG_GUARD(exit(1));
+        return 0;
+    }
+  |} in
+  let hdr_debug = generate_header ~source:src_anti_debug () in
+  Alcotest.(check bool) "contains check_ptrace_sysctl when used" true (contains_sub hdr_debug "check_ptrace_sysctl");
+  Alcotest.(check bool) "no read_cpu_ticks when unused" false (contains_sub hdr_debug "read_cpu_ticks");
+
+  let src_timing = {|
+    #include "asgard_obf.h"
+    int main() {
+        ASG_TIMING_GUARD_START(t);
+        return 0;
+    }
+  |} in
+  let hdr_timing = generate_header ~source:src_timing () in
+  Alcotest.(check bool) "contains read_cpu_ticks when used" true (contains_sub hdr_timing "read_cpu_ticks");
+  Alcotest.(check bool) "no check_ptrace_sysctl when unused" false (contains_sub hdr_timing "check_ptrace_sysctl")
+
 let tests = [
   ("header_generation", `Quick, test_header_generation);
+  ("header_tree_shaking", `Quick, test_header_tree_shaking);
   ("string_obfuscation", `Quick, test_string_obfuscation);
   ("constant_blinding", `Quick, test_constant_blinding);
   ("e2e_c_transformation_and_execution", `Quick, test_e2e_c_transformation_and_execution);

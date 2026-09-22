@@ -1,10 +1,16 @@
 open Vm_ir
 
+type writeback =
+  | WbNone
+  | WbPre
+  | WbPost of int64
+
 type raw_mem = {
   base : Register.t option;
   index : (Register.t * int) option;
   disp : int64;
   width : Register.width;
+  wb : writeback;
 }
 
 type raw_op =

@@ -1,4 +1,4 @@
-let emit_base_macros b ~p =
+let emit_base_macros ?(emit_api_hash = true) b ~p =
   let add s = Buffer.add_string b (s ^ "\n") in
   add "/* ========================================================================= */";
   add "/*  ASGARD-5877 Polymorphic C/C++ Obfuscation & Hardening Macro Header       */";
@@ -157,27 +157,29 @@ let emit_base_macros b ~p =
   add "  #define ASGARD_BEGIN_ULTRA(tag)";
   add "  #define ASGARD_END()";
   add "#endif";
-  add "";
-  add "/* ------------------------------------------------------------------------- */";
-  add "/* 7. COMPILE-TIME API HASHING & DYNAMIC RESOLUTION (IAT Elimination)        */";
-  add "/* ------------------------------------------------------------------------- */";
-  add ("static inline uint32_t " ^ p ^ "hash_api_str(const char* str) {");
-  add "    uint32_t hash = 0x811C9DC5U;";
-  add "    while (*str) {";
-  add "        hash ^= (uint8_t)(*str++);";
-  add "        hash *= 0x01000193U;";
-  add "    }";
-  add "    return hash;";
-  add "}";
-  add "";
-  add "#if (defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)";
-  add "#include <dlfcn.h>";
-  add ("static inline void* " ^ p ^ "resolve_api_by_hash(const char* const* known_symbols, size_t count, uint32_t target_hash) {");
-  add "    for (size_t i = 0; i < count; ++i) {";
-  add ("        if (" ^ p ^ "hash_api_str(known_symbols[i]) == target_hash) {");
-  add "            return dlsym(RTLD_DEFAULT, known_symbols[i]);";
-  add "        }";
-  add "    }";
-  add "    return (void*)0;";
-  add "}";
-  add "#endif"
+  if emit_api_hash then begin
+    add "";
+    add "/* ------------------------------------------------------------------------- */";
+    add "/* 7. COMPILE-TIME API HASHING & DYNAMIC RESOLUTION (IAT Elimination)        */";
+    add "/* ------------------------------------------------------------------------- */";
+    add ("static inline uint32_t " ^ p ^ "hash_api_str(const char* str) {");
+    add "    uint32_t hash = 0x811C9DC5U;";
+    add "    while (*str) {";
+    add "        hash ^= (uint8_t)(*str++);";
+    add "        hash *= 0x01000193U;";
+    add "    }";
+    add "    return hash;";
+    add "}";
+    add "";
+    add "#if (defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)";
+    add "#include <dlfcn.h>";
+    add ("static inline void* " ^ p ^ "resolve_api_by_hash(const char* const* known_symbols, size_t count, uint32_t target_hash) {");
+    add "    for (size_t i = 0; i < count; ++i) {";
+    add ("        if (" ^ p ^ "hash_api_str(known_symbols[i]) == target_hash) {");
+    add "            return dlsym(RTLD_DEFAULT, known_symbols[i]);";
+    add "        }";
+    add "    }";
+    add "    return (void*)0;";
+    add "}";
+    add "#endif"
+  end

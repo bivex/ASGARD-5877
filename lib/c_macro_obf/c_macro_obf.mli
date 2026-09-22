@@ -27,8 +27,19 @@ type config = {
 
 val default_config : config
 
-(** Generate a polymorphic, standalone C/C++ header containing all obfuscation macros. *)
-val generate_header : ?config:config -> unit -> string
+type feature_usage = {
+  has_api_hashing : bool;
+  has_anti_debug : bool;
+  has_signal_dispatch : bool;
+  has_timing_guard : bool;
+  has_nanomites : bool;
+}
+
+val detect_features : prefix:string -> string -> feature_usage
+
+(** Generate a polymorphic, standalone C/C++ header containing all obfuscation macros.
+    If [source] is provided, tree-shaking is performed to eliminate uncalled helper functions. *)
+val generate_header : ?config:config -> ?source:string -> unit -> string
 
 (** Obfuscate a raw string into an inline stack-decrypted C macro expression. *)
 val obfuscate_string_literal : prefix:string -> seed:int -> string -> string

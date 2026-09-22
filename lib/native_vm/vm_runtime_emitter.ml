@@ -1,4 +1,4 @@
-let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) ?(external_symbols = []) opcode_to_handler =
   let profile = match runtime_profile with
     | Some p -> p
     | None -> Random_visa_domain.Vm_runtime_profile.generate ~seed:(Int64.of_int32 key_seed) ~total_opcodes:256 ()
@@ -23,7 +23,8 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_egraph_expansion = match config with Some c -> c.vm_runtime.egraph_expansion | None -> true in
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
-  Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n";
+  Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n#include <stdio.h>\n";
+  Buffer.add_string b "#if !defined(_WIN32) && !defined(_WIN64)\n#include <dlfcn.h>\n#endif\n#if !defined(RTLD_DEFAULT)\n#define RTLD_DEFAULT ((void*)0)\n#endif\n";
   Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
   if enable_vector_isa then begin
     Buffer.add_string b "#if defined(__aarch64__)\n#include <arm_neon.h>\n#elif defined(__x86_64__)\n#include <immintrin.h>\n#endif\n\n";
@@ -53,6 +54,15 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b "\n";
   end;
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
+
+  Buffer.add_string b "static const char* const g_external_symbols[] = {\n";
+  if external_symbols = [] then
+    Buffer.add_string b "    \"\"\n"
+  else
+    List.iter
+      (fun s -> Buffer.add_string b (Printf.sprintf "    \"%s\",\n" (String.escaped s)))
+      external_symbols;
+  Buffer.add_string b "};\n\n";
 
   Vm_context_emitter.emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize;
 

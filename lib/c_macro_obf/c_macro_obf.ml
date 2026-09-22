@@ -16,6 +16,14 @@ type config = C_macro_config.config = {
 }
 
 let default_config = C_macro_config.default_config
+type feature_usage = C_macro_header.feature_usage = {
+  has_api_hashing : bool;
+  has_anti_debug : bool;
+  has_signal_dispatch : bool;
+  has_timing_guard : bool;
+  has_nanomites : bool;
+}
+let detect_features = C_macro_header.detect_features
 let generate_header = C_macro_header.generate_header
 
 let obfuscate_string_literal ~prefix ~seed s =
@@ -209,7 +217,7 @@ let transform_file ?(config = default_config) ~in_file ~out_file ~header_file ()
     (match header_file with
     | Some h_path ->
         let hoc = open_out h_path in
-        output_string hoc (generate_header ~config ());
+        output_string hoc (generate_header ~config ~source:obf_content ());
         close_out hoc
     | None -> ());
 

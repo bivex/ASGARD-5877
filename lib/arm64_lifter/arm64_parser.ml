@@ -1,10 +1,16 @@
 open Vm_ir
 
+type writeback =
+  | WbNone
+  | WbPre
+  | WbPost of int64
+
 type raw_mem = {
   base : Register.t option;
   index : (Register.t * int) option;
   disp : int64;
   width : Register.width;
+  wb : writeback;
 }
 
 type raw_op =
@@ -114,7 +120,9 @@ let parse_imm str =
 
 let parse_mem str width =
   let s = String.trim str in
-  let s = if String.ends_with ~suffix:"!" s then String.trim (String.sub s 0 (String.length s - 1)) else s in
+  let is_pre_wb = String.ends_with ~suffix:"!" s in
+  let s = if is_pre_wb then String.trim (String.sub s 0 (String.length s - 1)) else s in
+  let wb = if is_pre_wb then WbPre else WbNone in
   let len = String.length s in
   if not (String.starts_with ~prefix:"[" s) then
     Error (Printf.sprintf "Not memory operand: %s" str)
@@ -128,17 +136,17 @@ let parse_mem str width =
     match parts with
     | [ base_str ] ->
         (match map_arm64_reg base_str with
-        | Ok b -> Ok { base = Some b; index = None; disp = 0L; width }
+        | Ok b -> Ok { base = Some b; index = None; disp = 0L; width; wb }
         | Error err -> Error err)
     | [ base_str; disp_str ] ->
         (match map_arm64_reg base_str with
         | Error err -> Error err
         | Ok b ->
             (match map_arm64_reg disp_str with
-            | Ok idx_reg -> Ok { base = Some b; index = Some (idx_reg, 1); disp = 0L; width }
+            | Ok idx_reg -> Ok { base = Some b; index = Some (idx_reg, 1); disp = 0L; width; wb }
             | Error _ ->
                 let d = match parse_imm disp_str with Ok i -> i | Error _ -> 0L in
-                Ok { base = Some b; index = None; disp = d; width }))
+                Ok { base = Some b; index = None; disp = d; width; wb }))
     | [ base_str; idx_str; shift_str ] ->
         (match map_arm64_reg base_str, map_arm64_reg idx_str with
         | Ok b, Ok idx_reg ->
@@ -155,9 +163,9 @@ let parse_mem str width =
                 | _ -> 1
               else 1
             in
-            Ok { base = Some b; index = Some (idx_reg, scale); disp = 0L; width }
-        | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width })
-    | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width }
+            Ok { base = Some b; index = Some (idx_reg, scale); disp = 0L; width; wb }
+        | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width; wb })
+    | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width; wb }
 
 let parse_operand str default_width =
   let s = String.trim str in
@@ -233,8 +241,16 @@ let parse_line raw =
         else Register.B64
       in
 
+      let normalize_post_index ops =
+        match ops with
+        | [OpReg r; OpMem m; OpImm disp] ->
+            [OpReg r; OpMem { m with wb = WbPost disp }]
+        | [OpReg r1; OpReg r2; OpMem m; OpImm disp] ->
+            [OpReg r1; OpReg r2; OpMem { m with wb = WbPost disp }]
+        | other -> other
+      in
       let rec parse_all acc = function
-        | [] -> Ok (LineInstr (mnemonic, List.rev acc))
+        | [] -> Ok (LineInstr (mnemonic, normalize_post_index (List.rev acc)))
         | a :: rest ->
             match parse_operand a def_width with
             | Ok op -> parse_all (op :: acc) rest

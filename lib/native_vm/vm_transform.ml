@@ -61,6 +61,13 @@ type raw_op_kind =
   | OP_VSUB_VV
   | OP_VMUL_VV
   | OP_VXOR_VV
+  | OP_CALL_EXTERN
+  | OP_LOAD_64
+  | OP_LOAD_32
+  | OP_LOAD_8
+  | OP_STORE_64
+  | OP_STORE_32
+  | OP_STORE_8
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
@@ -72,6 +79,8 @@ let all_op_kinds = [
   OP_FUSED_SUB_XOR_RRI; OP_FUSED_XOR_ADD_RRI; OP_FUSED_CMP_CMOV;
   OP_BRIDGE_TO_FLOW; OP_BRIDGE_TO_MATH;
   OP_VADD_VV; OP_VSUB_VV; OP_VMUL_VV; OP_VXOR_VV;
+  OP_CALL_EXTERN; OP_LOAD_64; OP_LOAD_32; OP_LOAD_8;
+  OP_STORE_64; OP_STORE_32; OP_STORE_8;
 ]
 
 let op_kind_to_handler_name = function
@@ -118,6 +127,13 @@ let op_kind_to_handler_name = function
   | OP_VSUB_VV -> "H_VSUB_VV"
   | OP_VMUL_VV -> "H_VMUL_VV"
   | OP_VXOR_VV -> "H_VXOR_VV"
+  | OP_CALL_EXTERN -> "H_CALL_EXTERN"
+  | OP_LOAD_64 -> "H_LOAD_64"
+  | OP_LOAD_32 -> "H_LOAD_32"
+  | OP_LOAD_8 -> "H_LOAD_8"
+  | OP_STORE_64 -> "H_STORE_64"
+  | OP_STORE_32 -> "H_STORE_32"
+  | OP_STORE_8 -> "H_STORE_8"
 
 type fused_op =
   | Raw of Ir.instr

@@ -169,6 +169,18 @@ let compile_and_package
     bytecode := masked_w :: !bytecode
   in
 
+  let external_symbols = ref [] in
+  let external_sym_tbl = Hashtbl.create 16 in
+  let get_ext_sym_idx sym =
+    match Hashtbl.find_opt external_sym_tbl sym with
+    | Some idx -> idx
+    | None ->
+        let idx = List.length !external_symbols in
+        external_symbols := !external_symbols @ [ sym ];
+        Hashtbl.replace external_sym_tbl sym idx;
+        idx
+  in
+
   (* Encode instructions (both Fused Super-Operators and Standard Raw Ops) *)
   List.iter
     (fun (b : Ir.basic_block) ->
@@ -205,6 +217,24 @@ let compile_and_package
                   encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx d) 0 low;
                   if high <> 0L then
                     encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx d) 0 high
+              | Ir.Mov { dst = Ir.Reg d; src = Ir.Mem m } ->
+                  let op =
+                    match m.width with
+                    | Register.B64 -> OP_LOAD_64
+                    | Register.B32 -> OP_LOAD_32
+                    | _ -> OP_LOAD_8
+                  in
+                  let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
+                  encode_raw_word (get_opcode op) (get_reg_idx d) base_idx m.disp
+              | Ir.Mov { dst = Ir.Mem m; src = Ir.Reg s } ->
+                  let op =
+                    match m.width with
+                    | Register.B64 -> OP_STORE_64
+                    | Register.B32 -> OP_STORE_32
+                    | _ -> OP_STORE_8
+                  in
+                  let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
+                  encode_raw_word (get_opcode op) base_idx (get_reg_idx s) m.disp
               | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
                   encode_raw_word (get_opcode OP_ADD_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
@@ -268,6 +298,9 @@ let compile_and_package
                   encode_raw_word (get_opcode OP_CALL) 0 0 (Int64.of_int (get_block_offset bid))
               | Ir.Call (Ir.TargetImm imm) ->
                   encode_raw_word (get_opcode OP_CALL) 0 0 imm
+              | Ir.Call (Ir.Label sym) ->
+                  let sym_idx = get_ext_sym_idx sym in
+                  encode_raw_word (get_opcode OP_CALL_EXTERN) 0 0 (Int64.of_int sym_idx)
               | Ir.Ret -> encode_raw_word (get_opcode OP_RET) 0 0 0L
               | Ir.Vm_exit -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
               | Ir.Bridge_to_flow imm -> encode_raw_word (get_opcode OP_BRIDGE_TO_FLOW) 0 0 imm
@@ -288,7 +321,7 @@ let compile_and_package
     !h
   in
   let expected_hash = compute_bytecode_hash key_seed final_bytecode in
-  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config opcode_to_handler in
+  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config ~external_symbols:!external_symbols opcode_to_handler in
   let runner_src = Vm_runtime_emitter.emit_runner_cpp ~key_seed:(Int64.of_int32 key_seed) ~reg_perm final_bytecode in
 
   let decoy_count = 256 - List.length all_op_kinds in

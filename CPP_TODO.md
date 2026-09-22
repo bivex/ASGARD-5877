@@ -211,49 +211,37 @@ TOTAL                        1993              1732    13.10%    2340           
 ## Active Development & Technical Parity Roadmap
 
 ### J. Macro Header Tree-Shaking & Dead Code Elimination
-* **Status**: ⏳ **PLANNED** (Item 11)
-* **Target Module**: [`lib/c_macro_obf/c_macro_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_emitter.ml)
-* **Technical Gap**:
-  Currently, `emit_header` dumps the entire arsenal of anti-tamper, ptrace, hardware breakpoint, timing probe, and API hashing functions into `asgard_obf.h` regardless of whether the source file invokes `ASG_ANTI_DEBUG()`, `ASG_RESOLVE_API()`, or simply `ASG_STR()` / `ASGARD_BEGIN_VIRTUALIZE`.
-* **Architecture & Implementation Plan**:
-  1. Add AST reference scanner in `c_macro_obf.ml` that determines the subset of macro tags actually present in the source AST (`has_api_hash`, `has_anti_debug`, `has_timing_guard`, `has_signal_dispatch`).
-  2. Guard each utility function in `asgard_obf.h` behind conditional generation flags (`emit_ptrace_probe`, `emit_api_resolver`, `emit_timing_probes`).
-  3. Guarantee that files using only VM boundary markers emit 0 dead C macro functions in the final compiled translation unit.
+* **Status**: ✅ **DONE** (Item 11)
+* **Target Module**: [`lib/c_macro_obf/c_macro_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_emitter.ml), [`lib/c_macro_obf/c_macro_header.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_header.ml)
+* **Technical Solution**:
+  1. Implemented AST reference scanner `detect_features` in `c_macro_header.ml` that determines the subset of macro tags actually present in the source AST (`has_api_hash`, `has_anti_debug`, `has_timing_guard`, `has_signal_dispatch`, `has_nanomites`).
+  2. Guarded each utility function in `asgard_obf.h` behind conditional generation flags (`emit_api_hash`, `emit_timing`, `emit_anti_debug`, `emit_signal`, `emit_nanomites`).
+  3. Verified with `test_header_tree_shaking` in `test/test_c_macro_obf.ml`: source files using only VM boundary markers emit 0 dead C macro functions in `asgard_obf.h`.
 
 ### K. External Libc FFI Call Trampoline (`H_CALL_EXTERN`)
-* **Status**: ⏳ **PLANNED** (Item 12 — Critical)
-* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/vm_ir/ir.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir.ml)
-* **Technical Gap**:
-  In `threaded_vm.hpp`, `H_CALL` executes:
-  ```cpp
-  vIP_idx = (size_t)imm;
-  ```
-  When idiomatic C inside `ASGARD_BEGIN_VIRTUALIZE` calls external functions (e.g. `printf`, `puts`, `malloc`, `free`, `strlen`, `memcpy`), Clang emits branch-with-link `bl _printf`. Currently, the lifter attempts to interpret the external symbol offset as an internal bytecode index, triggering out-of-bounds fetches and segmentation faults.
-* **Architecture & Implementation Plan**:
-  1. **New IR Constructor**: `Ir.Call_extern of { target_symbol : string; arg_regs : Ir.reg list; ret_reg : Ir.reg option }`.
-  2. **Lifter Symbol Slicing**: When `arm64_lifter` encounters `bl <symbol>` where `<symbol>` is outside the slice, encode it as `OP_CALL_EXTERN` with an index into an external symbol table.
-  3. **C++ VM FFI Bridge**:
-     - Marshal host calling convention registers: copy `ctx.get_reg(REG_X0..X7)` to host CPU registers.
-     - Call through host function pointer `reinterpret_cast<uint64_t(*)(uint64_t, ...)>(sym_ptr)`.
-     - Write return value `x0` back to `ctx.set_reg(REG_X0, ret_val)`.
-     - Re-anchor Anti-Pushan rolling key (`reanchor_running_key(vIP_idx)`) to ensure post-call keystream synchronization.
+* **Status**: ✅ **DONE** (Item 12 — Critical)
+* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/native_vm/vm_transform.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml), [`lib/native_vm/vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml)
+* **Technical Solution**:
+  1. Added `OP_CALL_EXTERN` to VM IR and transform layers, as well as native memory load/store opcodes (`OP_LOAD_64`, `OP_LOAD_32`, `OP_LOAD_8`, `OP_STORE_64`, `OP_STORE_32`, `OP_STORE_8`).
+  2. External symbols invoked via `Ir.Call (Ir.Label sym)` (e.g. `printf`, `puts`, `malloc`, `abs`) are mapped to an external symbol index and emitted as `OP_CALL_EXTERN (sym_idx)`.
+  3. C++ VM FFI Bridge in `H_CALL_EXTERN`:
+     - Dynamically resolves external function pointer via `dlsym(RTLD_DEFAULT, sym)` with Darwin/Linux underscore normalization.
+     - Marshals host calling convention registers (`ctx.get_reg(REG_RAX..REG_R9)` for arguments $a_0 \dots a_7$).
+     - Synchronously calls `extern_fn_t` and writes return value back to `ctx.set_reg(REG_RAX, ret_val)`.
+     - Re-anchors Anti-Pushan rolling key (`maybe_reanchor()`) post-call.
+  4. Verified in `test/test_native_vm_and_metrics.ml` (`test_external_libc_call_trampoline`) with libc `abs(-42) = 42` under `clang++ -std=c++20 -O2`.
 
 ### L. ARM64 Pre/Post-Indexed Memory Writeback Addressing (`!`)
-* **Status**: ⏳ **PLANNED** (Item 13)
+* **Status**: ✅ **DONE** (Item 13)
 * **Target Modules**: [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml)
-* **Technical Gap**:
-  Clang `-O2`/`-O3` emits optimized ARM64 memory addressing modes:
-  - **Pre-indexed with writeback**: `ldr x0, [x1, #8]!`, `stp x29, x30, [sp, #-16]!`
-  - **Post-indexed with writeback**: `ldr x0, [x1], #8`, `ldp x29, x30, [sp], #16`
-  The current parser either rejects the exclamation mark (`!`) and trailing post-index comma, or treats them as basic base+offset loads without updating the base register, silently corrupting stack pointers and loop iterators.
-* **Architecture & Implementation Plan**:
-  1. Extend `arm64_parser.ml` operand grammar:
-     - `MemPreIndex of reg * int64` (e.g. `[x1, #8]!`)
-     - `MemPostIndex of reg * int64` (e.g. `[x1], #8`)
-  2. Lift into two consecutive micro-operations in `arm64_lifter.ml`:
-     - For pre-index: `base = base + imm; dst = *base;`
-     - For post-index: `dst = *base; base = base + imm;`
-  3. Support 64-bit pair variants (`ldp`/`stp` with writeback) by expanding into paired loads/stores with atomic stack pointer adjustment.
+* **Technical Solution**:
+  1. Extended `arm64_parser.ml` with `type writeback = WbNone | WbPre | WbPost of int64` in `raw_mem`.
+  2. Pre-index with writeback (`[x1, #8]!`) detected via trailing `!` in `parse_mem`. Post-index with writeback (`[x1], #8` / `[sp], #16`) normalized into `WbPost disp` in `parse_line`.
+  3. Lifted into sequential micro-operations in `arm64_lifter.ml`:
+     - Pre-index: `base = base + disp; dst = *base;`
+     - Post-index: `dst = *base; base = base + imm;`
+     - Pair operations (`stp`/`ldp`) expanded with lane stride arithmetic and base register writeback.
+  4. Verified in `test/test_arm64_lifter.ml` (`test_arm64_lift_pre_post_writeback`, `test_arm64_lift_post_index`, `test_arm64_lift_pair_stp_ldp`); all 177 project tests pass.
 
 ### M. Floating-Point & Scalar FP (SIMD) Emulation in VM
 * **Status**: ⏳ **PLANNED** (Item 14)

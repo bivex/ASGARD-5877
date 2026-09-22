@@ -1,5 +1,6 @@
 open X86_lifter
 open Native_vm
+open Vm_ir
 
 let test_metrics_calculation () =
   let sample_bytecode = [
@@ -552,6 +553,62 @@ int main() {
       let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
       ()
 
+let test_external_libc_call_trampoline () =
+  let rng = Random.State.make [| 20260923 |] in
+  (* Test calling libc abs(-42) -> 42 *)
+  let entry_block = {
+    Ir.id = 0;
+    label = "entry";
+    instrs = [
+      Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm (-42L) };
+      Ir.Call (Ir.Label "abs");
+      Ir.Ret;
+    ];
+  } in
+  let blocks = Hashtbl.create 1 in
+  Hashtbl.replace blocks 0 entry_block;
+  let func = {
+    Ir.name = "test_extern_call";
+    cfg = { Ir.entry_id = 0; blocks };
+  } in
+  let pkg = Vm_emitter.compile_and_package ~rng func in
+  let tmp_dir = Filename.temp_file "extern_call_" "_dir" in
+  (try Sys.remove tmp_dir with _ -> ());
+  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+  let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
+  let oc_h = open_out hdr_path in
+  output_string oc_h pkg.cpp_runtime_source;
+  close_out oc_h;
+
+  let runner_path = Filename.concat tmp_dir "runner.cpp" in
+  let oc_r = open_out runner_path in
+  output_string oc_r pkg.runner_source;
+  close_out oc_r;
+
+  let bin_path = Filename.concat tmp_dir "runner" in
+  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+  let comp_status = Sys.command comp_cmd in
+  Alcotest.(check int) "clang++ compilation succeeds with external call" 0 comp_status;
+
+  let run_cmd = bin_path in
+  let ic = Unix.open_process_in run_cmd in
+  let out_buf = Buffer.create 256 in
+  (try
+     while true do
+       Buffer.add_string out_buf (input_line ic);
+       Buffer.add_char out_buf '\n'
+     done
+   with End_of_file -> ());
+  let status = Unix.close_process_in ic in
+  let out_str = Buffer.contents out_buf in
+  Printf.printf "\n[External Call Output]\n%s\n%!" out_str;
+  Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+  Alcotest.(check bool) "returned abs(-42) = 42" true (String.contains out_str '4' && String.contains out_str '2');
+
+  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  ()
+
 let tests = [
   Alcotest.test_case "metrics_calculation" `Quick test_metrics_calculation;
   Alcotest.test_case "threaded_vm_compilation_and_execution" `Slow test_threaded_vm_compilation_and_execution;
@@ -561,6 +618,7 @@ let tests = [
   Alcotest.test_case "ephemeral_scrubbing_loop_and_stack" `Slow test_ephemeral_scrubbing_loop_and_stack;
   Alcotest.test_case "dynamic_junk_bytecode" `Slow test_dynamic_junk_bytecode;
   Alcotest.test_case "integrity_checksumming_and_stack_scrambling" `Slow test_integrity_checksumming_and_stack_scrambling;
+  Alcotest.test_case "external_libc_call_trampoline" `Slow test_external_libc_call_trampoline;
 ]
 
 
