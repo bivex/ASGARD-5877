@@ -1,35 +1,35 @@
-# ASGARD-5877: High-Assurance Virtualization-Based Obfuscation (VBO) & ISA Compiler Toolchain in OCaml
+# ASGARD-5877: High-Assurance Virtualization-Based Obfuscation (VBO) and ISA Compiler Toolchain in OCaml
 
 [![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4+-orange.svg)](https://ocaml.org)
-[![Build & Tests](https://img.shields.io/badge/Tests-160%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
+[![Build and Tests](https://img.shields.io/badge/Tests-177%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%2F%20DDD%20(DPX%20Certified)-blue.svg)]()
 [![Targets](https://img.shields.io/badge/ISA-ARM64%20%7C%20x86__64%20%7C%20RISC--V%20Vector%201.0-red.svg)](https://github.com/riscv/riscv-v-spec)
 [![GPU Accelerated](https://img.shields.io/badge/GPU-Apple%20Metal%203.0%20(65k%20Threads)-purple.svg)]()
 
-**ASGARD-5877** is an industrial-grade, mathematically verified code virtualization and binary protection compiler written in pure **OCaml 5**:
+ASGARD-5877 is an industrial-grade, mathematically verified code virtualization and binary protection compiler written in pure OCaml 5:
 
-1. **Hardened Multi-Architecture Code Virtualization (VBO)**: Lifts native **ARM64 (Apple Silicon)** and **x86_64** machine code into a polymorphic, non-standard Turing-Complete Virtual Machine Architecture. Features 256-slot saturated jump tables with Computed GOTO, 4th-order Non-Linear Mixed Boolean-Arithmetic (MBA), Control-Flow Flattening (CFF), Super-Operator chain fusion, ephemeral self-consuming memory scrubbing, and multi-source jitter time watchdogs.
-2. **Cutting-Edge Academic Hardening (arXiv 2019–2026)**:
-   * **Path-Oriented Protections (POP)** (*arXiv:1908.01549*): Cumulative ARX trace digest coupling inducing $O(2^N)$ state explosions against Dynamic Symbolic Execution (angr / Triton / Miasm).
-   * **Anti-LLVM Def-Use Chain Scrambler** (*arXiv:2601.12916*): Breaks compiler data-flow graphs and Tigress VM deobfuscators via non-linear register aliasing and unresolvable side-effects.
-   * **NCFG MBA Synthesizer** (*arXiv:2506.23634*): Non-Context-Free Grammar expansions resistant to neural Transformer and LLM-based deobfuscators (gMBA).
-   * **ARM64 Literal Stitching** (*arXiv:2407.08924*): `ADR` + `BR` dynamic pool jumping disrupting linear and recursive disassemblers (IDA Pro / Ghidra).
-   * **E-Graph Equality Saturation**: Algebraic term rewriting for MBA rules to synthesize optimal, impenetrable obfuscation expressions.
-   * **Anti-Pushan Non-Linear Rolling Keys**: Context-dependent key evolution across loop iterations and conditional branches defeating symbolic state recovery.
-   * **Dynamic Anti-Tamper & Self-Modifying Code (SMC)**: Runtime attestation with in-band bytecode mutation and integrity verification trapdoors.
-3. **Hardware & GPU Acceleration**:
-   * **Apple Metal 3.0 GPU Engine**: Parallel MBA synthesis ($65,536$ grid threads) and Strict Avalanche Criterion (SAC) verification ($P \approx 50.00\%$).
-   * **Residue Number System (RNS-4) & JIT VM**: Modular arithmetic virtualization across non-trivial coprimes with Garner's Chinese Remainder Theorem reconstruction.
+1. **Hardened Multi-Architecture Code Virtualization (VBO)**: Lifts native ARM64 (Apple Silicon) and x86_64 machine code into a polymorphic, non-standard Turing-Complete Virtual Machine Architecture. Features 256-slot saturated jump tables with Computed GOTO, 4th-order Non-Linear Mixed Boolean-Arithmetic (MBA), Control-Flow Flattening (CFF), Super-Operator chain fusion, ephemeral self-consuming memory scrubbing, and multi-source jitter time watchdogs.
+2. **Cutting-Edge Academic Hardening (arXiv 2019-2026)**:
+   - **Path-Oriented Protections (POP)** (*arXiv:1908.01549*): Cumulative ARX trace digest coupling inducing $O(2^N)$ state explosions against Dynamic Symbolic Execution (angr / Triton / Miasm).
+   - **Anti-LLVM Def-Use Chain Scrambler** (*arXiv:2601.12916*): Breaks compiler data-flow graphs and Tigress VM deobfuscators via non-linear register aliasing and unresolvable side-effects.
+   - **NCFG MBA Synthesizer** (*arXiv:2506.23634*): Non-Context-Free Grammar expansions resistant to neural Transformer and LLM-based deobfuscators (gMBA).
+   - **ARM64 Literal Stitching** (*arXiv:2407.08924*): `ADR` + `BR` dynamic pool jumping disrupting linear and recursive disassemblers (IDA Pro / Ghidra).
+   - **E-Graph Equality Saturation**: Algebraic term rewriting for MBA rules to synthesize optimal, impenetrable obfuscation expressions.
+   - **Anti-Pushan Non-Linear Rolling Keys**: Context-dependent key evolution across loop iterations and conditional branches defeating symbolic state recovery.
+   - **Dynamic Anti-Tamper and Self-Modifying Code (SMC)**: Runtime attestation with in-band bytecode mutation and integrity verification trapdoors.
+3. **Hardware and GPU Acceleration**:
+   - **Apple Metal 3.0 GPU Engine**: Parallel MBA synthesis (65,536 grid threads) and Strict Avalanche Criterion (SAC) verification ($P \approx 50.00\%$).
+   - **Residue Number System (RNS-4) and JIT VM**: Modular arithmetic virtualization across non-trivial coprimes with Garner's Chinese Remainder Theorem reconstruction.
 4. **RISC-V Vector ISA Synthesis**: Deterministic, collision-free vector instruction sets with formal Sail specifications, silicon cost audits, and native C++20 SIMD / C11 emulators.
-5. **Architectural Assurance**: Strict Ports & Adapters (Hexagonal / DDD) structure certified by DPX-OCaml (0 architectural cycles, 0 dead library dependencies, 100% `.mli` encapsulation).
+5. **Architectural Assurance**: Strict Ports and Adapters (Hexagonal / DDD) structure certified by DPX-OCaml (0 architectural cycles, 0 dead library dependencies, 100% `.mli` encapsulation).
 
 ---
 
-## ⚡ Key Capabilities & Protection Matrix
+## Key Capabilities and Protection Matrix
 
-| # | Protection Vector | Threat Model Addressed | Mechanism & Implementation |
+| # | Protection Vector | Threat Model Addressed | Mechanism and Implementation |
 |---|:---|:---|:---|
-| **1** | **ARM64 & x86_64 Virtualization** | Static Decompilation (IDA / Hex-Rays / Ghidra) | 100% native machine code elimination; lifted into randomized Turing-Complete VM-IR. |
+| **1** | **ARM64 and x86_64 Virtualization** | Static Decompilation (IDA / Hex-Rays / Ghidra) | 100% native machine code elimination; lifted into randomized Turing-Complete VM-IR. |
 | **2** | **4th-Order Non-Linear MBA** | SMT Solvers & Algebraic Simplifiers (Z3, Arybo) | Non-linear polynomial expansions ($D=4$), creating undecidable system constraints ($>1.24\text{M}$ clauses). |
 | **3** | **E-Graph Equality Saturation** | SMT Simplification & Canonicalization | E-Graph equality rewrites synthesizing expanded algebraic equivalences and scrambling ASTs. |
 | **4** | **Control-Flow Flattening (CFF)** | CFG Recovery & Dominator Tree Analysis | Chenxi Wang state dispatcher topology flattening; conditional jumps lowered to branchless `CMOV`. |
@@ -50,7 +50,7 @@
 
 ---
 
-## 📊 Security & Cryptanalysis Benchmark (ASGARD v1.2)
+## Security and Cryptanalysis Benchmark
 
 Evaluated across real multi-build ARM64 binaries on Apple Silicon:
 
@@ -89,38 +89,38 @@ Evaluated across real multi-build ARM64 binaries on Apple Silicon:
 
 ---
 
-## 🏗️ Architecture & Codebase Layout
+## Architecture and Codebase Layout
 
-The project follows a **Hexagonal / Ports & Adapters Architecture** verified with zero cyclical dependencies and complete interface isolation:
+The project follows a Hexagonal / Ports and Adapters Architecture verified with zero cyclical dependencies and complete interface isolation:
 
-```
+```text
 ASGARD-5877/
-├── bin/                          # CLI Drivers & Executables
-│   ├── main.ml                   # Primary CLI (`random_visa` commands)
+├── bin/                          # CLI Drivers and Executables
+│   ├── main.ml                   # Primary CLI (random_visa command group)
 │   ├── cli_isa.ml                # Vector ISA CLI handler
 │   ├── cli_vanguard.ml           # Vanguard-9292 CLI handler
-│   ├── cli_protect.ml            # x86_64 protection CLI handler
-│   ├── cli_protect_arm64.ml      # ARM64 protection CLI handler
+│   ├── cli_protect.ml            # x86_64 and C obfuscation CLI handler
+│   ├── cli_protect_arm64.ml      # ARM64 protection and in-place trampoline CLI
 │   ├── cli_project.ml            # Multi-file project protection CLI handler
-│   ├── profile_bottlenecks.ml    # Comprehensive compiler & VM profiler
+│   ├── profile_bottlenecks.ml    # Compiler and VM profiler
 │   ├── gen_crackme_vm.ml         # Standalone VBO VM CrackMe generator
 │   └── gen_crypto_crackme.ml     # ARX-KDF cryptographic CrackMe generator
 ├── lib/
-│   ├── domain/                   # Core DDD Entities & Value Objects (ISA, AST, Encodings)
+│   ├── domain/                   # Core DDD Entities and Value Objects (ISA, AST, Encodings)
 │   ├── ports/                    # Port interfaces (Spec Writers, Code Emitters, Compilers)
 │   ├── adapters/                 # Outbound Adapters (Sail Export, C11/C++ Emitters, Assembler)
-│   ├── application/              # Use Cases & Orchestration Pipelines (Pipeline, Project_pipeline)
+│   ├── application/              # Use Cases and Orchestration Pipelines (Pipeline, Project_pipeline)
 │   ├── vm_ir/                    # Turing-Complete Micro-IR, Lazy Flags, Reference Evaluator
-│   │   ├── register.ml{,i}       # 32 architectural registers + subregisters + virtual registers
+│   │   ├── register.ml{,i}       # Architectural registers, subregisters, and virtual registers
 │   │   ├── flags.ml{,i}          # Lazy Flags algebraic condition evaluator
 │   │   └── ir.ml{,i}             # SIB memory operands, ALU, branches, CFG basic blocks
-│   ├── arm64_lifter/             # Native ARM64 Lifter & Parser (Apple Silicon)
+│   ├── arm64_lifter/             # Native ARM64 Lifter and Parser (Apple Silicon)
 │   │   ├── arm64_parser.ml{,i}   # AArch64 mnemonic, bitfield, and register parser
-│   │   ├── arm64_lifter.ml{,i}   # Extended conditions (b.hi..b.vc), cset/csel, ubfx/sbfx, madd/msub
+│   │   ├── arm64_lifter.ml{,i}   # Extended conditions, cset/csel, ubfx/sbfx, madd/msub, indexed load/store
 │   │   └── literal_stitcher.ml{,i} # Disassembler disruption via ADR/BR literal stitching
 │   ├── x86_lifter/               # Intel x86_64 Machine Code Lifter
 │   │   ├── x86_parser.ml{,i}     # AT&T / Intel syntax x86_64 assembly parser
-│   │   └── x86_lifter.ml{,i}     # x86_64 -> VM-IR lifting rules
+│   │   └── x86_lifter.ml{,i}     # x86_64 to VM-IR lifting rules
 │   ├── mba_engine/               # Mixed Boolean-Arithmetic Engine
 │   │   ├── mba.ml{,i}            # 4th-order non-linear polynomial expansions
 │   │   ├── egraph.ml{,i}         # E-graph equality saturation engine
@@ -128,11 +128,11 @@ ASGARD-5877/
 │   │   ├── ncfg_synth.ml{,i}     # Non-Context-Free Grammar Transformer-resistant MBA
 │   │   └── rns_mba.ml{,i}        # Modular residue MBA expansion
 │   ├── cff/                      # Control-Flow Flattening Engine
-│   │   ├── cff.ml{,i}            # Wang state dispatcher & invariant opaque predicates
+│   │   ├── cff.ml{,i}            # Wang state dispatcher and invariant opaque predicates
 │   │   └── pop_coupler.ml{,i}    # Path-Oriented Protections (POP) trace digest coupling
 │   ├── native_vm/                # Native Direct Threaded C++ VM Engine
 │   │   ├── vm_emitter.ml{,i}     # Direct Threaded Code runtime emitter (&&label, 256 saturated slots)
-│   │   ├── anti_tamper_smc.ml{,i} # Dynamic Anti-Tamper & Self-Modifying Code (Layer 3)
+│   │   ├── anti_tamper_smc.ml{,i} # Dynamic Anti-Tamper and Self-Modifying Code (Layer 3)
 │   │   ├── protection_config.ml{,i} # JSON protection schema and preset configurations
 │   │   ├── protection_types.ml{,i} # Multi-layer protection configuration types
 │   │   ├── defuse_scrambler.ml{,i} # Anti-LLVM def-use chain scrambler
@@ -141,60 +141,120 @@ ASGARD-5877/
 │   ├── multi_vm/                 # Multi-VM Metamorphic Architecture
 │   │   ├── bridge.ml{,i}         # Affine invertible transformation matrices in GL(16, Z/2^64Z)
 │   │   └── multi_vm.ml{,i}       # Multi-VM execution interleaving
-│   ├── rd_jit_vm/                # Register-Driven JIT VM & Modular Arithmetic
+│   ├── rd_jit_vm/                # Register-Driven JIT VM and Modular Arithmetic
 │   │   ├── rns.ml{,i}            # RNS-4 Garner CRT modular arithmetic
 │   │   └── rd_jit_vm.ml{,i}      # Register-driven VM execution model
 │   ├── gpu_synth/                # GPU Acceleration Subsystem
 │   │   └── metal_synth.ml{,i}    # Apple Metal 3.0 compute pipeline and kernels
 │   ├── c_macro_obf/              # Preprocessor C/C++ Macro Obfuscation Engine
-│   └── vanguard_9292/            # Vanguard Polymorphic VM Codec & Bytecode Engine
+│   └── vanguard_9292/            # Vanguard Polymorphic VM Codec and Bytecode Engine
+├── docs/                         # Specifications and Documentation
+│   ├── markdown-style-guide.md   # Repository Markdown standards
+│   ├── VM_PROTECTOR.md           # VM architecture, handlers, and trampoline design
+│   ├── ENTROPY_MODEL.md          # Information-theoretic entropy models
+│   └── FORMAL_VERIFICATION.md    # Formal verification and Sail specifications
+├── examples/                     # Practical Protection Examples
+│   ├── license_check.c           # Boundary marker protection demo
+│   └── demo_c_app.c              # Whole-application protection demo
 ├── binaries/                     # Pre-compiled binaries and challenge artifacts
 │   ├── crackme_arm64/            # Standalone VBO VM CrackMe challenge (crackme, crackme.zip)
 │   └── corpus_build_arm64/       # Multi-build polymorphic ARM64 binaries
-├── samples/                      # Example source codes & challenges
+├── samples/                      # Source samples and challenges
 │   ├── crackme_vm.cpp            # Host C++ application embedding Vanguard VM bytecode
 │   ├── sample_auth.c             # Sample authentication logic
 │   └── README.md                 # CrackMe documentation and solutions
 ├── scripts/                      # Unified benchmark and multi-build runners
 │   ├── run_benchmark_arm64.sh    # End-to-end security benchmark runner
 │   └── build_corpus_arm64.sh     # Polymorphic corpus compilation script
-└── test/                         # Comprehensive Verification Suite (160 tests, 31 suites)
+└── test/                         # Comprehensive Verification Suite (177 tests, 31 suites)
 ```
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
-* **OCaml**: `>= 5.0.0` (tested on OCaml 5.4.1)
-* **Dune**: `>= 3.0`
-* **C++ Compiler**: `clang++` supporting C++20
-* **Platform**: macOS (Apple Silicon ARM64) or Linux (x86_64)
+- **OCaml**: `>= 5.0.0` (tested on OCaml 5.4.1)
+- **Dune**: `>= 3.0`
+- **C++ Compiler**: `clang++` supporting C++20
+- **Platform**: macOS (Apple Silicon ARM64) or Linux (x86_64)
 
 Install OPAM dependencies:
+
 ```bash
 opam install dune menhir cmdliner alcotest qcheck qcheck-alcotest yojson
 ```
 
-### Build & Run Tests
+### Build and Run Tests
 
 ```bash
 # Build the entire toolchain and executables
 eval $(opam env)
 dune build
 
-# Run all 160 tests across 31 verification suites
+# Run all 177 tests across 31 verification suites
 dune runtest
 ```
 
 ---
 
-## 🛡️ Protecting Applications with ASGARD-5877
+## Protecting Applications with ASGARD-5877
 
-### 1. Protecting ARM64 Binaries on Apple Silicon
+### 1. In-Place Function Virtualization via Boundary Markers (ARM64)
 
-Protect an ARM64 C or assembly source with full CFF, MBA Depth 4, and Direct-Threaded VM:
+For standard C and C++ codebases, specific sensitive routines can be marked for virtualization without modifying signatures, caller logic, or project build structures.
+
+#### Marking the Source Code
+
+Include `asgard_markers.h` (or declare the boundary macros) and encapsulate the sensitive function body:
+
+```c
+#include "asgard_markers.h"
+
+int verify_license(const char* key) {
+    ASGARD_BEGIN_VIRTUALIZE("verify_license");
+
+    // Verification logic executed exclusively inside the virtual machine
+    unsigned long long hash = 0xCBF29CE484222325ULL;
+    for (int i = 0; key[i] != '\0'; i++) {
+        hash = (hash ^ (unsigned char)key[i]) * 0x100000001B3ULL;
+    }
+    if (hash == 0x7A3F9B1C4D8E2E6AULL) {
+        return 1;
+    }
+    return 0;
+
+    ASGARD_END();
+}
+```
+
+#### Running the Virtualizer
+
+Execute the `protect-arm64` command:
+
+```bash
+dune exec random_visa -- protect-arm64 \
+  -i examples/license_check.c \
+  -o ./protected_license_arm64 \
+  --cff \
+  --mba \
+  --mba-depth 4 \
+  --seed 0x5877 \
+  --compile true
+```
+
+The compiler executes the following pipeline:
+- Disassembles and isolates the marked function body.
+- Lifts ARM64 instructions to VM-IR (`arm64_lifter`) with support for indexed memory addressing (`[base, index, lsl #shift]`), pre/post-indexed writebacks, and constant pool embedding.
+- Applies Control-Flow Flattening (CFF) and 4th-order non-linear MBA rewriting.
+- Generates a hardened Direct-Threaded C++ VM runtime (`threaded_vm.hpp`) with encrypted bytecode.
+- Emits an in-place C++ trampoline substituting the marked function body with `run_virtual_machine(...)` while preserving calling conventions and return values.
+- Compiles the final hardened binary with dead-code elimination and symbol hiding (`-fvisibility=hidden -Wl,-dead_strip`).
+
+### 2. Whole-File Assembly or C Virtualization (ARM64)
+
+Protect a full ARM64 C source or assembly file:
 
 ```bash
 dune exec random_visa -- protect-arm64 \
@@ -207,9 +267,9 @@ dune exec random_visa -- protect-arm64 \
   --compile true
 ```
 
-### 2. Multi-File Project Protection (`project` mode)
+### 3. Multi-File Project Protection (`project` mode)
 
-Protect a full C/C++ project where functions marked with `ASGARD_PROTECT_START` / `ASGARD_PROTECT_END` are virtualized and unified into a single zero-bloat runtime:
+Protect an entire C/C++ project where functions marked with `ASGARD_PROTECT_START` / `ASGARD_PROTECT_END` are virtualized and unified into a single runtime:
 
 ```bash
 dune exec random_visa -- project \
@@ -219,19 +279,19 @@ dune exec random_visa -- project \
   --compile true
 ```
 
-### 3. Generate Protection Configuration (`init-config`)
+### 4. Configuration Presets and Schema (`init-config`)
 
 Generate an annotated JSON configuration file with custom protection parameters:
 
 ```bash
 dune exec random_visa -- init-config \
   --output asgard_config.json \
-  --preset maximum
+  --preset max
 ```
 
 Available presets: `min`, `light`, `default`, `high`, `max`, `stealth`.
 
-### 4. Vanguard-9292 Polymorphic VM Generation
+### 5. Vanguard-9292 Polymorphic VM Generation
 
 Generate polymorphic bytecode with rolling key protection and execute on the C++ emulator:
 
@@ -242,7 +302,7 @@ dune exec random_visa -- vanguard \
   --seed 42
 ```
 
-### 5. Compiler Pipeline & VM Profiler
+### 6. Compiler Pipeline and VM Profiler
 
 Run the built-in micro-profiler to inspect latencies and memory allocations across lifters, e-graphs, CFF, and RNS arithmetic:
 
@@ -250,33 +310,38 @@ Run the built-in micro-profiler to inspect latencies and memory allocations acro
 dune exec ./bin/profile_bottlenecks.exe
 ```
 
-### 6. Standalone CTF CrackMe Challenge (VBO VM)
+### 7. Standalone CTF CrackMe Challenge (VBO VM)
 
-The repository includes a standalone ARM64 CrackMe challenge running inside the **Vanguard Direct-Threaded Virtual Machine**:
+The repository includes a standalone ARM64 CrackMe challenge running inside the Vanguard Direct-Threaded Virtual Machine:
 
-* **Location:** [`binaries/crackme_arm64/crackme`](file:///Volumes/External/Code/ASGARD-5877/binaries/crackme_arm64/crackme)
-* **Upload Archive:** [`binaries/crackme_arm64/crackme.zip`](file:///Volumes/External/Code/ASGARD-5877/binaries/crackme_arm64/crackme.zip)
+- **Executable:** [`binaries/crackme_arm64/crackme`](binaries/crackme_arm64/crackme)
+- **Archive:** [`binaries/crackme_arm64/crackme.zip`](binaries/crackme_arm64/crackme.zip)
 
-#### Validating the CrackMe:
+#### Validating the CrackMe
+
 ```bash
-# 1. Invalid key (rejected inside VM, RAX = 0):
-$ ./binaries/crackme_arm64/crackme FLAG-1111-2222-3333-4444
-[-] ACCESS DENIED: Verification Failed! Incorrect Key.
+# 1. Invalid key (rejected inside VM, return code 0):
+./binaries/crackme_arm64/crackme FLAG-1111-2222-3333-4444
 
-# 2. Valid key (VM executes 112 instructions across 14 CFF blocks and unlocks flag):
-$ ./binaries/crackme_arm64/crackme FLAG-7A3F-9B1C-4D8E-2E6A
-[+] SUCCESS! KEY VALIDATED (Token: 0x7A3F9B1C4D8E2E6A)
-[+] FLAG{VBO_VIRTUAL_MACHINE_CRACKME_SOLVED_2026}
+# Output:
+# [-] ACCESS DENIED: Verification Failed! Incorrect Key.
+
+# 2. Valid key (VM executes 112 instructions across 14 CFF blocks):
+./binaries/crackme_arm64/crackme FLAG-7A3F-9B1C-4D8E-2E6A
+
+# Output:
+# [+] SUCCESS! KEY VALIDATED (Token: 0x7A3F9B1C4D8E2E6A)
+# [+] FLAG{VBO_VIRTUAL_MACHINE_CRACKME_SOLVED_2026}
 ```
 
 ---
 
-## 🧪 Comprehensive Verification Suite
+## Comprehensive Verification Suite
 
-ASGARD-5877 includes **160 tests** across **31 suites** verified on every build:
+ASGARD-5877 includes **177 tests** across **31 suites** verified on every build:
 
 1. **Domain Invariants**: Verification of aggregate roots and instruction semantics.
-2. **ISA Grammar**: AST node validation, operand constraints, and type soundess.
+2. **ISA Grammar**: AST node validation, operand constraints, and type soundness.
 3. **HW Cost**: Silicon cost model audits, read/write port allocations, and area metrics.
 4. **Families Generation**: Randomized instruction family distributions and constraints.
 5. **Sail Parser Roundtrip**: AST-to-Sail printer and Sail-to-AST recursive-descent parser equivalence.
@@ -284,31 +349,41 @@ ASGARD-5877 includes **160 tests** across **31 suites** verified on every build:
 7. **Property Tests (QCheck 1000+)**: Invariants over 5,000+ randomized permutations.
 8. **C++ Emulator E2E**: End-to-end execution of generated C++ SIMD emulators.
 9. **C11 Emulator E2E**: Verification of zero-dependency C11 reference emulators.
-10. **Assembler & Bytecode**: Direct `.vbc` vector binary encoding and decoding.
+10. **Assembler and Bytecode**: Direct `.vbc` vector binary encoding and decoding.
 11. **Assembler Deep Cases**: Boundary condition test cases for mnemonic parsers.
 12. **Multi-VLEN Emulation**: Scalable vector lengths (VLEN = 64, 128, 256, 512, 1024).
 13. **CLI Integration E2E**: Comprehensive test of all command-line verbs.
 14. **Vanguard-9292 Obfuscation**: 1,000-seed bitfield layout validation, rolling keys, and junk opcode traps.
 15. **Vanguard Emulator E2E**: Full execution of encrypted Vanguard instruction streams.
-16. **VM-IR & Lazy Flags**: Zero-extension register algebra and lazy flags arithmetic.
-17. **x86_64 Lifter & CFG**: Disassembly and basic block lifting of x86_64 machine code.
-18. **Anti-Analysis (MBA & CFF)**: Algebraic equivalence of 4th-order polynomial expansions.
-19. **Native Threaded VM & Metrics**: Direct Threading, super-operators, ephemeral scrubbing, dynamic canaries, and DRS score.
+16. **VM-IR and Lazy Flags**: Zero-extension register algebra and lazy flags arithmetic.
+17. **x86_64 Lifter and CFG**: Disassembly and basic block lifting of x86_64 machine code.
+18. **Anti-Analysis (MBA and CFF)**: Algebraic equivalence of 4th-order polynomial expansions.
+19. **Native Threaded VM and Metrics**: Direct Threading, super-operators, ephemeral scrubbing, dynamic canaries, and DRS score.
 20. **C Macro Obfuscation**: Polymorphic macro expansions and stack string encryption.
 21. **VM Runtime Profile**: Micro-architectural latency measurements.
-22. **Compiler Pipeline & Equivalence**: End-to-end preservation of semantics across lifting, lowering, and virtualization.
-23. **ARM64 Lifter & CFG**: Extended conditions (`b.hi`..`b.vc`), `cset`, `csel`, `madd`/`msub`, `ubfx`/`sbfx`.
-24. **Multi-VM & Direct Zero-Bridge**: Invertible affine bridge transformations $\pmod{2^{64}}$.
-25. **GPU Metal Acceleration & Synthesis**: Metal GPU parallel MBA synthesis (65k threads) and SAC diffusion verification.
-26. **Register-Driven JIT VM & RNS**: RNS-4 modular arithmetic and Garner CRT reconstruction.
+22. **Compiler Pipeline and Equivalence**: End-to-end preservation of semantics across lifting, lowering, and virtualization.
+23. **ARM64 Lifter and CFG**: Extended conditions (`b.hi`..`b.vc`), `cset`, `csel`, `madd`/`msub`, `ubfx`/`sbfx`, and indexed memory operands.
+24. **Multi-VM and Direct Zero-Bridge**: Invertible affine bridge transformations $\pmod{2^{64}}$.
+25. **GPU Metal Acceleration and Synthesis**: Metal GPU parallel MBA synthesis (65k threads) and SAC diffusion verification.
+26. **Register-Driven JIT VM and RNS**: RNS-4 modular arithmetic and Garner CRT reconstruction.
 27. **arXiv Innovations (POP/DefUse/NCFG/LitStitch)**: POP digest determinism, Def-Use scrambling, NCFG 2,000-vector soundness, ARM64 literal stitching.
 28. **E-graph Equality Expansion (Scrambler)**: Equality saturation and algebraic term rewriting.
 29. **Anti-Pushan Rolling Key**: Context-dependent key evolution across loop iterations and branches.
-30. **Dynamic Anti-Tamper & SMC (Layer 3)**: Self-modifying bytecode runtime attestation.
+30. **Dynamic Anti-Tamper and SMC (Layer 3)**: Self-modifying bytecode runtime attestation.
 31. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, and preset generators.
 
 ---
 
-## 📄 License
+## Documentation
 
-Distributed under the MIT License. See `LICENSE` for details.
+- [`docs/markdown-style-guide.md`](docs/markdown-style-guide.md): Repository documentation and formatting standards.
+- [`docs/VM_PROTECTOR.md`](docs/VM_PROTECTOR.md): In-depth guide to VM architecture, handlers, CFF, and trampoline generation.
+- [`docs/ENTROPY_MODEL.md`](docs/ENTROPY_MODEL.md): Information-theoretic entropy verification and Shannon metric models.
+- [`docs/FORMAL_VERIFICATION.md`](docs/FORMAL_VERIFICATION.md): Formal Sail ISA verification and property testing proofs.
+- [`CPP_TODO.md`](CPP_TODO.md): C++ and ARM64 virtualization implementation status and roadmap.
+
+---
+
+## License
+
+Distributed under the MIT License.
