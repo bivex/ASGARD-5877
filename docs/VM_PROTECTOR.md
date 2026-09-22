@@ -225,7 +225,7 @@ Instead of virtualizing entire monolithic binaries, developers place fine-graine
 int64_t verify_license(int64_t hwid, int64_t user_serial) {
     int64_t is_valid = 0;
 
-    // 🔒 VIRTUALIZED IN DIRECT THREADED VM WITH CFF + MBA
+    // VIRTUALIZED IN DIRECT THREADED VM WITH CFF + MBA
     ASGARD_BEGIN_ULTRA("LicenseValidation");
 
     int64_t secret_mult = 0x5877;
@@ -239,17 +239,17 @@ int64_t verify_license(int64_t hwid, int64_t user_serial) {
     }
 
     ASGARD_END();
-    // 🔓 END OF VIRTUALIZED REGION
+    // END OF VIRTUALIZED REGION
 
     return is_valid;
 }
 ```
 
 ### Supported Marker Tiers
-* `ASGARD_BEGIN_VIRTUALIZE("Tag")`: Pure bytecode virtualization with rolling key PRF.
-* `ASGARD_BEGIN_MUTATION("Tag")`: MBA mutation and polymorphic arithmetic rewriting.
-* `ASGARD_BEGIN_ULTRA("Tag")`: Full Virtualization + Control-Flow Flattening (CFF) + Recursive MBA.
-* `ASGARD_END()`: Region delimiter.
+- `ASGARD_BEGIN_VIRTUALIZE("Tag")`: Pure bytecode virtualization with rolling key PRF.
+- `ASGARD_BEGIN_MUTATION("Tag")`: MBA mutation and polymorphic arithmetic rewriting.
+- `ASGARD_BEGIN_ULTRA("Tag")`: Full Virtualization + Control-Flow Flattening (CFF) + Recursive MBA.
+- `ASGARD_END()`: Region delimiter.
 
 ---
 

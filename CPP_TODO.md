@@ -18,51 +18,51 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 
 | # | Engine Subsystem | OCaml Module | C++ Status | Priority | Impact / Threat Model |
 |---|:---|:---|:---:|:---:|:---|
-| 1 | **Residue Number System (RNS-4)** | [`lib/vm_ir/rns.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rns.ml) | ✅ **DONE** | Complete | Breaks linear SMT solvers ($M > 2^{64}$) |
-| 2 | **Multi-VM Zero-Bridge** | [`lib/multi_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/) | ✅ **DONE** | Complete | $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ affine morphing in bytecode |
-| 3 | **Nanomites & Hardware Signal Dispatch** | [`lib/native_vm/hardened_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/hardened_runtime.ml) | ✅ **DONE** | Complete | Breaks static disassemblers & DSE branching |
-| 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | ✅ **DONE** | Complete | Prevents replay attacks & opcode recording |
-| 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml) | ✅ **DONE** | Complete | Neutralizes RAM process dumpers |
-| 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | ✅ **DONE** | Complete | Eliminates static handler jump tables |
-| 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ✅ **DONE** | Complete | Hides scalar logic in NEON/AVX vectors |
-| 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ✅ **DONE** | Complete | Thwarts userspace hooks (Frida, DTrace) |
-| 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | ✅ **DONE** | Complete | Algebraic expansion of VM handler logic |
-| 11| **Macro Header Tree-Shaking & Dead Code Elimination** | [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | ✅ **DONE** | Complete | Eliminates 100% dead functions in `asgard_obf.h` (line cover 26.67% → 96.97%) |
-| 12| **External Libc FFI Call Trampoline (`H_CALL_EXTERN`)** | [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/), [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | ✅ **DONE** | Complete | Dynamic FFI dispatch via `dlsym` + host calling convention register marshaling |
-| 13| **ARM64 Pre/Post-Indexed Addressing with Writeback** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | ✅ **DONE** | Complete | Full lifting of Clang `-O2`/`-O3` writeback memory operands (`[xN, #imm]!`, `[xN], #imm`, `ldp/stp`) |
-| 14| **Floating-Point & Scalar FP (SIMD) Emulation** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ✅ **DONE** | Complete | Lifts `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `d0-d31` inside virtualized region |
-| 15| **Constant Pool & Relocatable Data Section Bridge** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ✅ **DONE** | Complete | Resolves `adrp` + `add` PC-relative string literals (`_enc@PAGE`) in sliced blocks via embedded `g_asgard_constants` |
-| 16| **ARMv8.1-A Atomics & Memory Ordering Support** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ✅ **DONE** | Complete | Supports multithreaded synchronization (`ldaxr`, `stlxr`, `cas`, `ldadd`, `swp`) in virtualized routines via `std::atomic` |
-| 17| **In-Place C Function Virtualization Trampoline** | [`bin/cli_protect_arm64.ml`](file:///Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml), [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | ✅ **DONE** | Complete | Automated zero-config C function virtualization trampoline with `asgard_vm_call(...)` |
-| 18| **ARM64 Register-Indexed Addressing & Keystream Coherence** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ✅ **DONE** | Complete | Slices `[base, index{, lsl #scale}]`, fixes `movk lsl #shift`, consecutive label aliasing, and keystream sync |
+| 1 | **Residue Number System (RNS-4)** | [`lib/vm_ir/rns.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rns.ml) | DONE | Complete | Breaks linear SMT solvers ($M > 2^{64}$) |
+| 2 | **Multi-VM Zero-Bridge** | [`lib/multi_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/) | DONE | Complete | $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ affine morphing in bytecode |
+| 3 | **Nanomites & Hardware Signal Dispatch** | [`lib/native_vm/hardened_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/hardened_runtime.ml) | DONE | Complete | Breaks static disassemblers & DSE branching |
+| 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | DONE | Complete | Prevents replay attacks & opcode recording |
+| 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml) | DONE | Complete | Neutralizes RAM process dumpers |
+| 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | DONE | Complete | Eliminates static handler jump tables |
+| 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | DONE | Complete | Hides scalar logic in NEON/AVX vectors |
+| 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | DONE | Complete | Thwarts userspace hooks (Frida, DTrace) |
+| 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | DONE | Complete | Algebraic expansion of VM handler logic |
+| 11| **Macro Header Tree-Shaking & Dead Code Elimination** | [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | DONE | Complete | Eliminates 100% dead functions in `asgard_obf.h` (line cover 26.67% → 96.97%) |
+| 12| **External Libc FFI Call Trampoline (`H_CALL_EXTERN`)** | [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/), [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | DONE | Complete | Dynamic FFI dispatch via `dlsym` + host calling convention register marshaling |
+| 13| **ARM64 Pre/Post-Indexed Addressing with Writeback** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | DONE | Complete | Full lifting of Clang `-O2`/`-O3` writeback memory operands (`[xN, #imm]!`, `[xN], #imm`, `ldp/stp`) |
+| 14| **Floating-Point & Scalar FP (SIMD) Emulation** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | DONE | Complete | Lifts `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `d0-d31` inside virtualized region |
+| 15| **Constant Pool & Relocatable Data Section Bridge** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | DONE | Complete | Resolves `adrp` + `add` PC-relative string literals (`_enc@PAGE`) in sliced blocks via embedded `g_asgard_constants` |
+| 16| **ARMv8.1-A Atomics & Memory Ordering Support** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | DONE | Complete | Supports multithreaded synchronization (`ldaxr`, `stlxr`, `cas`, `ldadd`, `swp`) in virtualized routines via `std::atomic` |
+| 17| **In-Place C Function Virtualization Trampoline** | [`bin/cli_protect_arm64.ml`](file:///Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml), [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | DONE | Complete | Automated zero-config C function virtualization trampoline with `asgard_vm_call(...)` |
+| 18| **ARM64 Register-Indexed Addressing & Keystream Coherence** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | DONE | Complete | Slices `[base, index{, lsl #scale}]`, fixes `movk lsl #shift`, consecutive label aliasing, and keystream sync |
 
 ---
 
 ## Completed Runtime Implementations
 
 ### A. Residue Number System (RNS-4) Arithmetic Engine
-* **Status**: ✅ Fully Operational (`lib/vm_ir/rns.ml`, `lib/native_vm/vm_handlers_emitter.ml`)
-* **Mathematical Primitive**: Moduli set $\mathcal{M} = \{2^{16}-15, 2^{16}-17, 2^{16}-39, 2^{16}-57\}$, total dynamic range $M = \prod m_i \approx 2^{63.999}$.
-* **Implementation Details**:
+- **Status**: Fully Operational (`lib/vm_ir/rns.ml`, `lib/native_vm/vm_handlers_emitter.ml`)
+- **Mathematical Primitive**: Moduli set $\mathcal{M} = \{2^{16}-15, 2^{16}-17, 2^{16}-39, 2^{16}-57\}$, total dynamic range $M = \prod m_i \approx 2^{63.999}$.
+- **Implementation Details**:
   - Injected 64-bit to 4-channel residue decomposition in `VMContext`.
   - Arithmetic operations (`ADD`, `SUB`, `MUL`) split into parallel modular channels, immune to linear SMT solvers.
   - Reconstructed back to 64-bit integer via Garner's algorithm in `H_RNS_RECONSTRUCT`.
 
 ### B. Multi-VM Zero-Bridge Dynamic Affine Morphing
-* **Status**: ✅ Fully Operational (`lib/multi_vm/`, `lib/native_vm/`)
-* **Mathematical Primitive**: Invertible affine transformation $y = A \cdot x + b \pmod{2^{64}}$ over $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ coupled with non-linear Trace Digest $\text{Murmur3}(VIP \oplus \text{TraceKey})$.
-* **Implementation Details**:
+- **Status**: Fully Operational (`lib/multi_vm/`, `lib/native_vm/`)
+- **Mathematical Primitive**: Invertible affine transformation $y = A \cdot x + b \pmod{2^{64}}$ over $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ coupled with non-linear Trace Digest $\text{Murmur3}(VIP \oplus \text{TraceKey})$.
+- **Implementation Details**:
   - Opcodes `OP_BRIDGE_TO_FLOW` (0x55) and `OP_BRIDGE_TO_MATH` (0x56) mapped to handlers `H_BRIDGE_TO_FLOW` and `H_BRIDGE_TO_MATH`.
   - Bytecode emitted dynamically at engine boundary transitions (`inject_bridge_transitions` in `multi_vm_emitter.ml`).
   - In-place $16 \times 16$ affine register transformation executed in C++ `VMContext` (`in_place_morph_math_to_flow`, `in_place_morph_flow_to_math`), scrambling the entire register bank between functional VM partitions.
   - Tested E2E with both standalone ARM64/x86_64 protected binaries and Dune test suite (`test/test_multi_vm.ml`).
 
 ### C. Anti-Pushan Dynamic Rolling Keys in VM Dispatch Loop
-* **Status**: ✅ Fully Operational (`lib/vm_ir/rolling_key.ml`, `lib/native_vm/vm_emitter.ml`, `vm_runtime_emitter.ml`, `vm_handlers_emitter.ml`, `vm_context_emitter.ml`)
-* **Academic Reference**: *Pushan et al., Dynamic Key Synchronization in Virtual Machines*
-* **Mathematical Primitive**: block-chained keystream — within a basic block the word mask is $m_j = k_{\text{pos}}(j) \oplus K_j$, where the chain anchor is the domain-separated PRF $K_0 = \text{PRF}(\text{seed} \oplus 0\text{x}5\text{BD}1\text{E}995,\ \text{block\_offset} \oplus 0\text{x}13375877)$ and each step mixes the decoded instruction itself:
+- **Status**: Fully Operational (`lib/vm_ir/rolling_key.ml`, `lib/native_vm/vm_emitter.ml`, `vm_runtime_emitter.ml`, `vm_handlers_emitter.ml`, `vm_context_emitter.ml`)
+- **Academic Reference**: *Pushan et al., Dynamic Key Synchronization in Virtual Machines*
+- **Mathematical Primitive**: block-chained keystream — within a basic block the word mask is $m_j = k_{\text{pos}}(j) \oplus K_j$, where the chain anchor is the domain-separated PRF $K_0 = \text{PRF}(\text{seed} \oplus 0\text{x}5\text{BD}1\text{E}995,\ \text{block\_offset} \oplus 0\text{x}13375877)$ and each step mixes the decoded instruction itself:
   $$K_{j+1} = \big(\text{ROR}_{23}(K_j \oplus (\text{op}_j \cdot 0x9E3779B97F4A7C15 + (\text{dst}_j \ll 24) + \text{imm}_j)) \cdot 0xBF58476D1CE4E5B9\big) \oplus 0x5877CAFE1337BEEF$$
-* **Implementation Details**:
+- **Implementation Details**:
   - `lib/vm_ir/rolling_key.ml` is the canonical OCaml mirror of the C++ keystream (`key64_for_offset` / `anchor_key` / `advance_key_step` / `decode_fields`); the encoder simulates at compile time exactly what `FETCH_NEXT` does at runtime, including the 46→32-bit sign-extended immediate truncation.
   - `FETCH_NEXT` decrypts as `word = bytecode[vIP] ^ k_pos ^ running_key`, then advances the key from the decoded `(op, dst, imm)`; the running key also feeds `evolve_mask`, the self-consuming scrub noise, and the dispatch-domain selector.
   - **Loop safety by construction**: every inter-block transition goes through an explicit terminal — `H_JMP` / `H_JCC` (carries both targets, no fall-through) / `H_CALL` — and each re-anchors `running_key = anchor_key(seed, vIP)` right after assigning `vIP_idx`; the VM entry does `reanchor_running_key(0)`. The keystream at any fetch therefore matches the encoder's prediction regardless of how many loop iterations executed.
@@ -70,9 +70,9 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - Tested by `test/test_anti_pushan.ml`: golden PRF vectors, mirror replay of the anchor+advance chain over real ciphertext, legacy-identity on flag-off, and E2E clang++ execution of loops (`5! = 120`) and both branch paths.
 
 ### D. Ephemeral Memory Bytecode Scrubbing ($O(1)$ RAM Lifetime)
-* **Status**: ✅ Fully Operational (`lib/native_vm/vm_runtime_emitter.ml`, `test/test_native_vm_and_metrics.ml`)
-* **Academic Reference**: *Memory Analysis Resistance in Bytecode VMs (Pushan / VMP / Themida)*
-* **Mathematical & Architectural Primitive**: Dual-tier volatile memory scrubbing and just-in-time instruction staging:
+- **Status**: Fully Operational (`lib/native_vm/vm_runtime_emitter.ml`, `test/test_native_vm_and_metrics.ml`)
+- **Academic Reference**: *Memory Analysis Resistance in Bytecode VMs (Pushan / VMP / Themida)*
+- **Mathematical & Architectural Primitive**: Dual-tier volatile memory scrubbing and just-in-time instruction staging:
   - **Per-Fetch Ephemeral Stack Staging**: Instructions are staged just-in-time into isolated stack/alloca buffer `work_bc[vIP_idx] = bytecode[vIP_idx]`, decoded into CPU register `word = work_bc[vIP_idx] ^ k_dyn`, and immediately overwritten with dynamic rolling keystream noise:
     ```cpp
     #define SCRUB_WORD(ptr, val) do { \
@@ -87,9 +87,9 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **Verified by Tests**: Tested in `test/test_native_vm_and_metrics.ml` (`test_ephemeral_self_consuming_scrubbing`, `test_ephemeral_scrubbing_loop_and_stack` with `4! = 24`), and E2E with ARM64 protected applications.
 
 ### E. Nanomites & Hardware Signal Dispatch in VM Handlers
-* **Status**: ✅ Fully Operational (`lib/native_vm/hardened_runtime.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `test/test_anti_tamper_smc.ml`)
-* **Academic Reference**: *Banescu et al. (2016), Code Virtualization with Signal-Driven Traps*
-* **Mathematical & Architectural Primitive**: Dynamic exception and hardware signal-driven branch redirection:
+- **Status**: Fully Operational (`lib/native_vm/hardened_runtime.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `test/test_anti_tamper_smc.ml`)
+- **Academic Reference**: *Banescu et al. (2016), Code Virtualization with Signal-Driven Traps*
+- **Mathematical & Architectural Primitive**: Dynamic exception and hardware signal-driven branch redirection:
   - **Branch Replacement with Software/Hardware Traps**: Conditional branches (`H_JCC`), direct jumps (`H_JMP`), and calls (`H_CALL`) no longer execute direct linear jumps or standard control-flow statements. Instead, branches register entry descriptors into `asgard_nanomites::g_nanomite_dispatcher` with XOR-encrypted targets keyed by `(seed ^ vIP_idx)`:
     ```cpp
     asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;
@@ -104,9 +104,9 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **Verified by Tests**: Verified in `test/test_anti_tamper_smc.ml` (`test_nanomite_signal_dispatch`) with full C++20 compilation and execution under `clang++ -std=c++20 -O2`.
 
 ### F. Direct Syscall Invocation (Bypass libc & Dynamic Linker)
-* **Status**: ✅ Fully Operational (`lib/native_vm/hardened_runtime.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_presets.ml`, `test/test_anti_tamper_smc.ml`)
-* **Academic Reference**: *Hell's Gate / Syscall Stubs for Anti-Hooking & Direct Kernel Transition*
-* **Mathematical & Architectural Primitive**: Bare-metal kernel transitions bypassing libc and dynamic linker symbol resolution (`libsystem_kernel.dylib` / `libc.so`):
+- **Status**: Fully Operational (`lib/native_vm/hardened_runtime.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_presets.ml`, `test/test_anti_tamper_smc.ml`)
+- **Academic Reference**: *Hell's Gate / Syscall Stubs for Anti-Hooking & Direct Kernel Transition*
+- **Mathematical & Architectural Primitive**: Bare-metal kernel transitions bypassing libc and dynamic linker symbol resolution (`libsystem_kernel.dylib` / `libc.so`):
   - **Multi-Architecture Kernel Inline Assembly**: Zero-overhead direct syscall wrappers (`direct_syscall_0` through `direct_syscall_6`) across target ABIs:
     - **ARM64 Darwin**: Direct trap via `svc #0x80`, loading syscall number into `x16` and arguments into `x0..x5`.
     - **x86_64 Darwin**: Direct trap via `syscall`, loading `0x2000000 | sys_num` into `rax` and arguments into `rdi, rsi, rdx, r10, r8, r9`.
@@ -119,9 +119,9 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **Verified by Tests**: Verified in `test/test_anti_tamper_smc.ml` (`test_direct_syscalls_e2e`) verifying `sys_getpid`, `sys_check_debugger_present`, and `sys_write` under `clang++ -std=c++20 -O2`.
 
 ### G. RD-JIT VM (Register-Driven Dynamic Native Code Synthesis)
-* **Status**: ✅ Fully Operational (`lib/rd_jit_vm/rd_jit_emitter.ml`, `bin/cli_protect.ml`, `bin/cli_protect_arm64.ml`, `test/test_rd_jit_vm.ml`)
-* **Academic Reference**: *Register-Driven Just-In-Time Virtualization & Ephemeral Code Synthesis*
-* **Mathematical & Architectural Primitive**: On-the-fly ephemeral machine code synthesis with zero static handler dispatch tables:
+- **Status**: Fully Operational (`lib/rd_jit_vm/rd_jit_emitter.ml`, `bin/cli_protect.ml`, `bin/cli_protect_arm64.ml`, `test/test_rd_jit_vm.ml`)
+- **Academic Reference**: *Register-Driven Just-In-Time Virtualization & Ephemeral Code Synthesis*
+- **Mathematical & Architectural Primitive**: On-the-fly ephemeral machine code synthesis with zero static handler dispatch tables:
   - **Dual-Mapping W^X Memory Manager (`DualMappedJITBuffer`)**: Dual-mapped virtual memory architecture bypassing W^X protections:
     - macOS / Apple Silicon: `vm_allocate` + `vm_remap` (`VM_PROT_READ | VM_PROT_EXECUTE`) mapping identical physical pages to writable view `rw_buf` and executable view `rx_buf`, with `MAP_JIT` / `pthread_jit_write_protect_np` fallback.
     - Linux: `memfd_create("asgard_rd_jit_wx", MFD_CLOEXEC)` with dual shared `mmap` mappings (`PROT_READ|PROT_WRITE` and `PROT_READ|PROT_EXEC`).
@@ -138,9 +138,9 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 ## Completed Feature Specifications
 
 ### H. Vector ISA (V-ISA / SIMD) Handlers in C++ VM
-* **Status**: ✅ Fully Operational (`lib/native_vm/vm_context_emitter.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_transform.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml`, `test/test_anti_tamper_smc.ml`)
-* **Academic Reference**: *RISC-V Vector 1.0 Formal Spec & SIMD Obfuscation*
-* **Mathematical & Architectural Primitive**: 128-bit dual-lane vector register bank with platform-native SIMD intrinsics:
+- **Status**: Fully Operational (`lib/native_vm/vm_context_emitter.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_transform.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml`, `test/test_anti_tamper_smc.ml`)
+- **Academic Reference**: *RISC-V Vector 1.0 Formal Spec & SIMD Obfuscation*
+- **Mathematical & Architectural Primitive**: 128-bit dual-lane vector register bank with platform-native SIMD intrinsics:
   - **Vector Register Bank**: `uint64_t vregs[32][2]` added to `VMContext` — 32 128-bit registers, each stored as `[lane0=lo, lane1=hi]`, zero-initialized in `init()`. Accessed via `get_vreg_lane(i, lane)` and `set_vreg(i, lo, hi)`.
   - **New Opcodes**: `OP_VADD_VV`, `OP_VSUB_VV`, `OP_VMUL_VV`, `OP_VXOR_VV` added to `raw_op_kind`, `all_op_kinds`, and `op_kind_to_handler_name`. Decoy saturation: 256 − 43 = **213** polymorphic decoy slots.
   - **NEON Handlers (ARM64)**: `vaddq_u64` / `vsubq_u64` / `veorq_u64` via `<arm_neon.h>` using `vcombine_u64` / `vcreate_u64` / `vgetq_lane_u64`.
@@ -148,22 +148,22 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **Scalar Fallback**: Lane-wise `+`, `−`, `*`, `^` for non-NEON/SSE targets.
   - **`H_VMUL_VV`**: Scalar lane-wise 64-bit multiply (no universal 64×64→64 SIMD mul across all ISAs).
   - **SIMD Include Guard**: `vector_isa : bool` flag in `vm_runtime_config` controls whether `#include <arm_neon.h>` / `#include <immintrin.h>` is emitted. Wired through protection presets (default=true, max_security=true, lightweight=false, minimal=false) and JSON serialization.
-* **Verified by Tests**: `test/test_anti_tamper_smc.ml` (`test_vector_isa_e2e`) — compiles NEON VADD and VXOR handlers under `clang++ -std=c++20 -O2` on ARM64 macOS and verifies [10+3=13, 20+7=27] and self-XOR=0 arithmetic correctness.
+- **Verified by Tests**: `test/test_anti_tamper_smc.ml` (`test_vector_isa_e2e`) — compiles NEON VADD and VXOR handlers under `clang++ -std=c++20 -O2` on ARM64 macOS and verifies [10+3=13, 20+7=27] and self-XOR=0 arithmetic correctness.
 
 ---
 
 
 ### I. E-Graph Equality Saturation Scrambler
-* **Status**: ✅ Fully Operational (`lib/native_vm/egraph_cpp_emitter.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml`, `test/test_egraph_expansion.ml`, `test/test_protection_config.ml`)
-* **Academic Reference**: *EqSat / Egg: Equality Saturation for Rewrite Optimization & De-canonicalization (arXiv:2603.03624)*
-* **Mathematical & Architectural Primitive**: Equality saturation + max-complexity extraction → per-seed unique algebraic handler forms:
+- **Status**: Fully Operational (`lib/native_vm/egraph_cpp_emitter.ml`, `lib/native_vm/vm_handlers_emitter.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml`, `test/test_egraph_expansion.ml`, `test/test_protection_config.ml`)
+- **Academic Reference**: *EqSat / Egg: Equality Saturation for Rewrite Optimization & De-canonicalization (arXiv:2603.03624)*
+- **Mathematical & Architectural Primitive**: Equality saturation + max-complexity extraction → per-seed unique algebraic handler forms:
   - **`Egraph_cpp_emitter`** (new module): `expr_to_cpp ~a_cpp ~b_cpp` renders a `Mba.expr` tree as a parenthesized C++ `uint64_t` expression string. Variables `"a"`/`"b"` → `ctx.get_reg(dst)`/`ctx.get_reg(src)`. Consts emitted as `0x...ull` hex literals.
   - **5 public helpers**: `egraph_add_rr`, `egraph_sub_rr`, `egraph_xor_rr`, `egraph_and_rr`, `egraph_or_rr` — each calls `Mba_engine.Egraph.expand` with `node_limit=120, time_budget_s=0.08, iter_limit=6` and renders the max-complexity extracted form.
   - **`vm_handlers_emitter.ml`**: new `~enable_egraph_expansion` labeled parameter. When `true`, `H_ADD_RR`, `H_SUB_RR`, `H_XOR_RR`, `H_AND_RR`, `H_OR_RR` bodies are replaced with egraph-saturated C++ expressions; when `false`, fall back to existing `pick_poly_*` variants.
   - **`vm_runtime_emitter.ml`**: extracts `enable_egraph_expansion` from config and threads it into `emit_handlers_hpp`.
   - **`vm_runtime_config`** field: `egraph_expansion : bool` — wired through `protection_types.ml/.mli`, `protection_config.mli`, all 6 presets (default=true, max_security=true, high=true, stealth=true, lightweight=false, minimal=false), and JSON serialization roundtrip.
   - **Semantic invariant**: Every emitted expression is algebraically equivalent to the original op over Z₂⁶⁴ — verified by `test_rule_verification` (24 MBA identity rules, 240 trials).
-* **Verified by Tests**: `test/test_egraph_expansion.ml` test 8 (`egraph_cpp_handler_expansion_e2e`) — generates ADD/SUB/XOR/AND/OR expressions via E-Graph, substitutes `ctx.get_reg(dst)→a, ctx.get_reg(src)→b`, compiles with `clang++ -std=c++20 -O2`, executes with `a=100, b=37`, asserts all 5 results match reference arithmetic.
+- **Verified by Tests**: `test/test_egraph_expansion.ml` test 8 (`egraph_cpp_handler_expansion_e2e`) — generates ADD/SUB/XOR/AND/OR expressions via E-Graph, substitutes `ctx.get_reg(dst)→a, ctx.get_reg(src)→b`, compiles with `clang++ -std=c++20 -O2`, executes with `a=100, b=37`, asserts all 5 results match reference arithmetic.
 
 ---
 
@@ -213,17 +213,17 @@ TOTAL                        1993              1732    13.10%    2340           
 ## Active Development & Technical Parity Roadmap
 
 ### J. Macro Header Tree-Shaking & Dead Code Elimination
-* **Status**: ✅ **DONE** (Item 11)
-* **Target Module**: [`lib/c_macro_obf/c_macro_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_emitter.ml), [`lib/c_macro_obf/c_macro_header.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_header.ml)
-* **Technical Solution**:
+- **Status**: DONE (Item 11)
+- **Target Module**: [`lib/c_macro_obf/c_macro_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_emitter.ml), [`lib/c_macro_obf/c_macro_header.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_header.ml)
+- **Technical Solution**:
   1. Implemented AST reference scanner `detect_features` in `c_macro_header.ml` that determines the subset of macro tags actually present in the source AST (`has_api_hash`, `has_anti_debug`, `has_timing_guard`, `has_signal_dispatch`, `has_nanomites`).
   2. Guarded each utility function in `asgard_obf.h` behind conditional generation flags (`emit_api_hash`, `emit_timing`, `emit_anti_debug`, `emit_signal`, `emit_nanomites`).
   3. Verified with `test_header_tree_shaking` in `test/test_c_macro_obf.ml`: source files using only VM boundary markers emit 0 dead C macro functions in `asgard_obf.h`.
 
 ### K. External Libc FFI Call Trampoline (`H_CALL_EXTERN`)
-* **Status**: ✅ **DONE** (Item 12 — Critical)
-* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/native_vm/vm_transform.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml), [`lib/native_vm/vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml)
-* **Technical Solution**:
+- **Status**: DONE (Item 12 — Critical)
+- **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/native_vm/vm_transform.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml), [`lib/native_vm/vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml)
+- **Technical Solution**:
   1. Added `OP_CALL_EXTERN` to VM IR and transform layers, as well as native memory load/store opcodes (`OP_LOAD_64`, `OP_LOAD_32`, `OP_LOAD_8`, `OP_STORE_64`, `OP_STORE_32`, `OP_STORE_8`).
   2. External symbols invoked via `Ir.Call (Ir.Label sym)` (e.g. `printf`, `puts`, `malloc`, `abs`) are mapped to an external symbol index and emitted as `OP_CALL_EXTERN (sym_idx)`.
   3. C++ VM FFI Bridge in `H_CALL_EXTERN`:
@@ -234,9 +234,9 @@ TOTAL                        1993              1732    13.10%    2340           
   4. Verified in `test/test_native_vm_and_metrics.ml` (`test_external_libc_call_trampoline`) with libc `abs(-42) = 42` under `clang++ -std=c++20 -O2`.
 
 ### L. ARM64 Pre/Post-Indexed Memory Writeback Addressing (`!`)
-* **Status**: ✅ **DONE** (Item 13)
-* **Target Modules**: [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml)
-* **Technical Solution**:
+- **Status**: DONE (Item 13)
+- **Target Modules**: [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml)
+- **Technical Solution**:
   1. Extended `arm64_parser.ml` with `type writeback = WbNone | WbPre | WbPost of int64` in `raw_mem`.
   2. Pre-index with writeback (`[x1, #8]!`) detected via trailing `!` in `parse_mem`. Post-index with writeback (`[x1], #8` / `[sp], #16`) normalized into `WbPost disp` in `parse_line`.
   3. Lifted into sequential micro-operations in `arm64_lifter.ml`:
@@ -246,40 +246,40 @@ TOTAL                        1993              1732    13.10%    2340           
   4. Verified in `test/test_arm64_lifter.ml` (`test_arm64_lift_pre_post_writeback`, `test_arm64_lift_post_index`, `test_arm64_lift_pair_stp_ldp`); all 177 project tests pass.
 
 ### M. Floating-Point & Scalar FP (SIMD) Emulation in VM
-* **Status**: ✅ **DONE** (Item 14)
-* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/vm_ir/ir.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir.ml)
-* **Technical Solution**:
+- **Status**: DONE (Item 14)
+- **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/vm_ir/ir.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir.ml)
+- **Technical Solution**:
   1. Added FP register tokens `D0..D31` and `S0..S31` to `arm64_parser.ml`.
   2. Implemented IEEE 754 float/double handlers in `vm_handlers_emitter.ml`: `H_FADD_DD`, `H_FSUB_DD`, `H_FMUL_DD`, `H_FDIV_DD`, `H_FCMP_DD`, `H_FCVTZS`, `H_SCVTF`.
   3. Mapped scalar FP lanes into `VMContext` vector registers (`std::bit_cast<double>`).
 
 ### N. Constant Pool & Relocatable Data Section Bridge
-* **Status**: ✅ **DONE** (Item 15)
-* **Target Modules**: [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml)
-* **Technical Solution**:
+- **Status**: DONE (Item 15)
+- **Target Modules**: [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml)
+- **Technical Solution**:
   1. Constant table extractor `extract_constants` extracts `.ascii`, `.asciz`, `.string` byte tables from assembly with full escape support (`\b`, `\f`, `\v`, `\a`, `\n`, `\t`, `\r`, `\xHH`, octal).
   2. Embedded into `g_asgard_constants[]` table in `threaded_vm.hpp`.
   3. Lifted `adrp` + `add` pairs into `Ir.Load_symbol { dst; sym; addend }`, resolved dynamically via `asgard_resolve_constant(sym_name)` in `H_RESOLVE_SYM`.
 
 ### O. ARMv8.1-A Atomics & Memory Ordering Support
-* **Status**: ✅ **DONE** (Item 16)
-* **Target Modules**: [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/vm_ir/ir.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir.ml), [`lib/native_vm/vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml)
-* **Technical Solution**:
+- **Status**: DONE (Item 16)
+- **Target Modules**: [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/vm_ir/ir.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir.ml), [`lib/native_vm/vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml)
+- **Technical Solution**:
   1. Implemented C++20 `std::atomic` handlers: `H_ATOMIC_LOAD`, `H_ATOMIC_STORE`, `H_ATOMIC_CAS`, `H_ATOMIC_ADD`, `H_ATOMIC_SWP`.
   2. Full sequential consistency (`std::memory_order_seq_cst`) support for virtualized lock-free routines.
 
 ### P. In-Place C Function Virtualization Trampoline
-* **Status**: ✅ **DONE** (Item 17)
-* **Target Modules**: [`bin/cli_protect_arm64.ml`](file:///Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml), [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/)
-* **Technical Solution**:
+- **Status**: DONE (Item 17)
+- **Target Modules**: [`bin/cli_protect_arm64.ml`](file:///Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml), [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/)
+- **Technical Solution**:
   1. Automatic source scanner detects enclosing C function signature around `ASGARD_BEGIN_VIRTUALIZE("tag")`.
   2. In-place replacement of the function body with C++ trampoline `vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)arg0, ...)`.
   3. Zero user configuration required: user writes clean C with markers, tool delivers self-contained C++ source.
 
 ### Q. ARM64 Register-Indexed Addressing & Keystream Coherence
-* **Status**: ✅ **DONE** (Item 18)
-* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/mba_engine/mba.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/mba_engine/mba.ml), [`lib/native_vm/vm_transform.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml)
-* **Technical Solution**:
+- **Status**: DONE (Item 18)
+- **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/mba_engine/mba.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/mba_engine/mba.ml), [`lib/native_vm/vm_transform.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml)
+- **Technical Solution**:
   1. `lower_mem_operand` transforms indexed memory operands `[base, index{, lsl #scale}]` into effective address computation micro-ops (`vtmp0 = base + (index << scale)`) prior to `ldr`/`str`.
   2. Isolated MBA scratch registers (`vtmp0` operating in-place; decoy `VX26` for junk instructions; `VX24`/`VX25` snapshots).
   3. Fixed `H_CALL_EXTERN` keystream desynchronization by removing erroneous `maybe_reanchor()` on fallthrough calls.
