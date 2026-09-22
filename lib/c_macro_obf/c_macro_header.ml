@@ -41,12 +41,12 @@ let generate_header ?(config = default_config) ?source () =
           config.timing_guard && u.has_timing_guard,
           config.anti_debug && u.has_anti_debug,
           config.signal_dispatch && u.has_signal_dispatch,
-          u.has_nanomites )
+          config.nanomites && u.has_nanomites )
     | None ->
-        ( config.api_hashing,
-          config.timing_guard,
-          config.anti_debug,
-          config.signal_dispatch,
+        ( true,
+          true,
+          true,
+          true,
           true )
   in
   C_macro_templates.emit_base_macros ~emit_api_hash b ~p;

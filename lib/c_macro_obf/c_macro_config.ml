@@ -8,6 +8,7 @@ type config = {
   api_hashing : bool;
   anti_debug : bool;
   signal_dispatch : bool;
+  nanomites : bool;
   timing_guard : bool;
   timing_threshold_ticks : int64;
   macro_prefix : string;
@@ -22,7 +23,8 @@ let default_config = {
   inject_opaque_predicates = true;
   api_hashing = true;
   anti_debug = true;
-  signal_dispatch = true;
+  signal_dispatch = false;
+  nanomites = false;
   timing_guard = true;
   timing_threshold_ticks = 50000000L;
   macro_prefix = "ASG_";

@@ -27,12 +27,14 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | ✅ **DONE** | Complete | Hides scalar logic in NEON/AVX vectors |
 | 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | ✅ **DONE** | Complete | Thwarts userspace hooks (Frida, DTrace) |
 | 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | ✅ **DONE** | Complete | Algebraic expansion of VM handler logic |
-| 11| **Macro Header Tree-Shaking & Dead Code Elimination** | [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | ⏳ **PLANNED** | High | Eliminates 73.3% unused functions in `asgard_obf.h` |
-| 12| **External Libc FFI Call Trampoline (`H_CALL_EXTERN`)** | [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/), [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | ⏳ **PLANNED** | Critical | Enables external calls (`printf`, `memcpy`, `malloc`) from inside `ASGARD_BEGIN_VIRTUALIZE` |
-| 13| **ARM64 Pre/Post-Indexed Addressing with Writeback** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | ⏳ **PLANNED** | High | Supports Clang `-O2`/`-O3` idiomatic loops & stack writeback (`[xN, #imm]!`, `[xN], #imm`) |
-| 14| **Floating-Point & Scalar FP (SIMD) Emulation** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ⏳ **PLANNED** | Medium | Lifts `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `d0-d31` inside virtualized region |
-| 15| **Constant Pool & Relocatable Data Section Bridge** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ⏳ **PLANNED** | High | Resolves `adrp` + `add` PC-relative string literals & jump tables in sliced blocks |
-| 16| **ARMv8.1-A Atomics & Memory Ordering Support** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ⏳ **PLANNED** | Low | Supports multithreaded synchronization (`ldaxr`, `stlxr`, `cas`) in virtualized routines |
+| 11| **Macro Header Tree-Shaking & Dead Code Elimination** | [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | ✅ **DONE** | Complete | Eliminates 100% dead functions in `asgard_obf.h` (line cover 26.67% → 96.97%) |
+| 12| **External Libc FFI Call Trampoline (`H_CALL_EXTERN`)** | [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/), [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | ✅ **DONE** | Complete | Dynamic FFI dispatch via `dlsym` + host calling convention register marshaling |
+| 13| **ARM64 Pre/Post-Indexed Addressing with Writeback** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | ✅ **DONE** | Complete | Full lifting of Clang `-O2`/`-O3` writeback memory operands (`[xN, #imm]!`, `[xN], #imm`, `ldp/stp`) |
+| 14| **Floating-Point & Scalar FP (SIMD) Emulation** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ✅ **DONE** | Complete | Lifts `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `d0-d31` inside virtualized region |
+| 15| **Constant Pool & Relocatable Data Section Bridge** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ✅ **DONE** | Complete | Resolves `adrp` + `add` PC-relative string literals (`_enc@PAGE`) in sliced blocks via embedded `g_asgard_constants` |
+| 16| **ARMv8.1-A Atomics & Memory Ordering Support** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ✅ **DONE** | Complete | Supports multithreaded synchronization (`ldaxr`, `stlxr`, `cas`, `ldadd`, `swp`) in virtualized routines via `std::atomic` |
+| 17| **In-Place C Function Virtualization Trampoline** | [`bin/cli_protect_arm64.ml`](file:///Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml), [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | ✅ **DONE** | Complete | Automated zero-config C function virtualization trampoline with `asgard_vm_call(...)` |
+| 18| **ARM64 Register-Indexed Addressing & Keystream Coherence** | [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/), [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/) | ✅ **DONE** | Complete | Slices `[base, index{, lsl #scale}]`, fixes `movk lsl #shift`, consecutive label aliasing, and keystream sync |
 
 ---
 
@@ -244,46 +246,45 @@ TOTAL                        1993              1732    13.10%    2340           
   4. Verified in `test/test_arm64_lifter.ml` (`test_arm64_lift_pre_post_writeback`, `test_arm64_lift_post_index`, `test_arm64_lift_pair_stp_ldp`); all 177 project tests pass.
 
 ### M. Floating-Point & Scalar FP (SIMD) Emulation in VM
-* **Status**: ⏳ **PLANNED** (Item 14)
-* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_context_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_context_emitter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml)
-* **Technical Gap**:
-  `arm64_lifter.ml` has no mapping for FP registers `d0–d31` / `s0–s31` and FP instructions `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `fmov`, `fcvtzs`, `scvtf`. Virtualizing any scientific, graphics, or floating-point routine crashes the lifter with syntax errors.
-* **Architecture & Implementation Plan**:
-  1. Add FP register tokens `D0..D31` and `S0..S31` to `arm64_parser.ml`.
-  2. In `VMContext`, leverage existing 128-bit vector register bank `uint64_t vregs[32][2]` to store 64-bit doubles in lane 0 (`reinterpret_cast<double&>(vregs[i][0])`).
-  3. Implement VM handlers: `H_FADD_DD`, `H_FSUB_DD`, `H_FMUL_DD`, `H_FDIV_DD`, `H_FCMP_DD`, `H_FCVTZS`, `H_SCVTF`.
-  4. Ensure IEEE 754 flag handling (overflow, underflow, NaN propagation) in `ctx.flags`.
+* **Status**: ✅ **DONE** (Item 14)
+* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/vm_ir/ir.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir.ml)
+* **Technical Solution**:
+  1. Added FP register tokens `D0..D31` and `S0..S31` to `arm64_parser.ml`.
+  2. Implemented IEEE 754 float/double handlers in `vm_handlers_emitter.ml`: `H_FADD_DD`, `H_FSUB_DD`, `H_FMUL_DD`, `H_FDIV_DD`, `H_FCMP_DD`, `H_FCVTZS`, `H_SCVTF`.
+  3. Mapped scalar FP lanes into `VMContext` vector registers (`std::bit_cast<double>`).
 
 ### N. Constant Pool & Relocatable Data Section Bridge
-* **Status**: ⏳ **PLANNED** (Item 15)
-* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml)
-* **Technical Gap**:
-  String literals and jump table constants compiled by Clang reside in `__TEXT,__cstring` or `__DATA,__const`, referenced via PC-relative pairs:
-  ```asm
-  adrp x0, l_.str@PAGE
-  add  x0, x0, l_.str@PAGEOFF
-  ```
-  When the lifter slices the assembly out of the host function and places it into VM bytecode, the host PC is lost. Executing `adrp` relative to the VM dispatch loop produces an invalid host memory address.
-* **Architecture & Implementation Plan**:
-  1. Detect `adrp` + `add` pairs targeting symbol labels during assembly parsing.
-  2. Generate a symbol relocation table embedded into `vm_package` with host pointer fixups:
-     ```cpp
-     struct RelocEntry { uint32_t vIP; const void* host_target; };
-     ```
-  3. At VM initialization, bind relocatable addresses directly into `ctx.regs[dst]`, allowing seamless pointer access to host string literals and read-only tables without breaking address space layout randomization (ASLR).
+* **Status**: ✅ **DONE** (Item 15)
+* **Target Modules**: [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml)
+* **Technical Solution**:
+  1. Constant table extractor `extract_constants` extracts `.ascii`, `.asciz`, `.string` byte tables from assembly with full escape support (`\b`, `\f`, `\v`, `\a`, `\n`, `\t`, `\r`, `\xHH`, octal).
+  2. Embedded into `g_asgard_constants[]` table in `threaded_vm.hpp`.
+  3. Lifted `adrp` + `add` pairs into `Ir.Load_symbol { dst; sym; addend }`, resolved dynamically via `asgard_resolve_constant(sym_name)` in `H_RESOLVE_SYM`.
 
 ### O. ARMv8.1-A Atomics & Memory Ordering Support
-* **Status**: ⏳ **PLANNED** (Item 16)
-* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml)
-* **Technical Gap**:
-  Idiomatic multithreaded C code using `<stdatomic.h>` or synchronization primitives generates atomic instructions (`ldaxr`, `stlxr`, `cas`, `ldadd`, `swp`). The lifter currently rejects these mnemonics.
-* **Architecture & Implementation Plan**:
-  1. Add ARM64 atomic mnemonics to parser (`ldaxr`, `stlxr`, `ldadd`, `cas`).
-  2. Map atomic operations to VM handlers using C++20 `<atomic>` primitives:
-     ```cpp
-     std::atomic_ref<uint64_t> ref(*reinterpret_cast<uint64_t*>(addr));
-     ```
-  3. Emulate exclusive load/store monitor state (`exclusive_addr`, `exclusive_valid`) in `VMContext` to support lock-free algorithms inside virtualized blocks.
+* **Status**: ✅ **DONE** (Item 16)
+* **Target Modules**: [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/vm_ir/ir.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir.ml), [`lib/native_vm/vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml)
+* **Technical Solution**:
+  1. Implemented C++20 `std::atomic` handlers: `H_ATOMIC_LOAD`, `H_ATOMIC_STORE`, `H_ATOMIC_CAS`, `H_ATOMIC_ADD`, `H_ATOMIC_SWP`.
+  2. Full sequential consistency (`std::memory_order_seq_cst`) support for virtualized lock-free routines.
+
+### P. In-Place C Function Virtualization Trampoline
+* **Status**: ✅ **DONE** (Item 17)
+* **Target Modules**: [`bin/cli_protect_arm64.ml`](file:///Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml), [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/)
+* **Technical Solution**:
+  1. Automatic source scanner detects enclosing C function signature around `ASGARD_BEGIN_VIRTUALIZE("tag")`.
+  2. In-place replacement of the function body with C++ trampoline `vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)arg0, ...)`.
+  3. Zero user configuration required: user writes clean C with markers, tool delivers self-contained C++ source.
+
+### Q. ARM64 Register-Indexed Addressing & Keystream Coherence
+* **Status**: ✅ **DONE** (Item 18)
+* **Target Modules**: [`lib/arm64_lifter/arm64_lifter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml), [`lib/arm64_lifter/arm64_parser.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_parser.ml), [`lib/native_vm/vm_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_handlers_emitter.ml), [`lib/mba_engine/mba.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/mba_engine/mba.ml), [`lib/native_vm/vm_transform.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml)
+* **Technical Solution**:
+  1. `lower_mem_operand` transforms indexed memory operands `[base, index{, lsl #scale}]` into effective address computation micro-ops (`vtmp0 = base + (index << scale)`) prior to `ldr`/`str`.
+  2. Isolated MBA scratch registers (`vtmp0` operating in-place; decoy `VX26` for junk instructions; `VX24`/`VX25` snapshots).
+  3. Fixed `H_CALL_EXTERN` keystream desynchronization by removing erroneous `maybe_reanchor()` on fallthrough calls.
+  4. Implemented `lsl #shift` handling and 16-bit lane masking for `movk` and `movz`.
+  5. Implemented `cur_labels` and `label_aliases` in `lift_lines` to preserve branch targets across consecutive labels (e.g. `LBB1_17:` followed by `Ltmp1:`).
 
 ---
 

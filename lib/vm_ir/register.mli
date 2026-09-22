@@ -35,10 +35,21 @@ type vreg =
   | VTMP1     (** Scratch register 1 *)
   | VTMP2     (** Scratch register 2 *)
   | VTMP3     (** Scratch register 3 *)
+  | VZERO     (** Architectural Zero Register (wzr / xzr) *)
+  | VX18
+  | VX19
+  | VX20
+  | VX21
+  | VX22
+  | VX23
+  | VX24
+  | VX25
+  | VX26
 
 type t =
   | Gpr of gpr * width
   | Vreg of vreg * width
+  | Fpr of int * width
 
 val rax : t
 val rbx : t
@@ -64,6 +75,15 @@ val vtmp0 : t
 val vtmp1 : t
 val vtmp2 : t
 val vtmp3 : t
+val vx18 : t
+val vx19 : t
+val vx20 : t
+val vx21 : t
+val vx22 : t
+val vx23 : t
+val vx24 : t
+val vx25 : t
+val vx26 : t
 
 val to_string : t -> string
 val of_string : string -> (t, string) result

@@ -46,7 +46,8 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
       inject_opaque_predicates = true;
       api_hashing = true;
       anti_debug = true;
-      signal_dispatch = true;
+      signal_dispatch = false;
+      nanomites = false;
       timing_guard = true;
       timing_threshold_ticks = 50000000L;
       macro_prefix = "ASG_";

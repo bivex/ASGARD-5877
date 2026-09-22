@@ -72,6 +72,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
           api_hashing = effective_cfg.c_macro.api_hashing;
           anti_debug = effective_cfg.c_macro.anti_debug;
           signal_dispatch = effective_cfg.c_macro.signal_dispatch;
+          nanomites = effective_cfg.c_macro.nanomites;
           timing_guard = effective_cfg.c_macro.timing_guard;
           timing_threshold_ticks = effective_cfg.c_macro.timing_threshold_ticks;
         } in
@@ -279,7 +280,8 @@ let run_c_obf input out_file out_header seed strings consts mba_depth compile =
     inject_opaque_predicates = true;
     api_hashing = true;
     anti_debug = true;
-    signal_dispatch = true;
+    signal_dispatch = false;
+    nanomites = false;
     timing_guard = true;
     timing_threshold_ticks = 50000000L;
     macro_prefix = "ASG_";

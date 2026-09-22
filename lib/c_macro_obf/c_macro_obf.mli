@@ -20,6 +20,7 @@ type config = {
   api_hashing : bool;
   anti_debug : bool;
   signal_dispatch : bool;
+  nanomites : bool;
   timing_guard : bool;
   timing_threshold_ticks : int64;
   macro_prefix : string;

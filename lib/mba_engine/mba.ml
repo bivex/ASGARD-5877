@@ -160,12 +160,12 @@ let lower_to_ir ~dst ~env expr =
   let instrs = ref [] in
   let emit i = instrs := i :: !instrs in
 
-  (* Snapshot environment variables into dedicated registers (r14, r15) to prevent clobbering CFF state (vtmp3) *)
+  (* Snapshot environment variables into dedicated virtual registers (vx24, vx25) to prevent clobbering architectural registers or CFF state *)
   let src_a = Option.value ~default:(Ir.Imm 0L) (List.assoc_opt "a" env) in
   let src_b = Option.value ~default:(Ir.Imm 0L) (List.assoc_opt "b" env) in
-  emit (Ir.Mov { dst = Ir.Reg Register.r14; src = src_a });
-  emit (Ir.Mov { dst = Ir.Reg Register.r15; src = src_b });
-  let local_env = [ ("a", Ir.Reg Register.r14); ("b", Ir.Reg Register.r15) ] in
+  emit (Ir.Mov { dst = Ir.Reg Register.vx24; src = src_a });
+  emit (Ir.Mov { dst = Ir.Reg Register.vx25; src = src_b });
+  let local_env = [ ("a", Ir.Reg Register.vx24); ("b", Ir.Reg Register.vx25) ] in
 
   let rec compile target_reg = function
     | Var v -> (
@@ -178,64 +178,58 @@ let lower_to_ir ~dst ~env expr =
         emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
-        emit (Ir.Alu { op = Ir.Add; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+        emit (Ir.Alu { op = Ir.Add; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0;
                        src2 = Ir.Reg Register.vtmp1; set_flags = false });
-        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp0 })
     | Sub (a, b) ->
         compile Register.vtmp0 a;
         emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
-        emit (Ir.Alu { op = Ir.Sub; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+        emit (Ir.Alu { op = Ir.Sub; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0;
                        src2 = Ir.Reg Register.vtmp1; set_flags = false });
-        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp0 })
     | Mul (a, b) ->
         compile Register.vtmp0 a;
         emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
-        emit (Ir.Alu { op = Ir.Imul; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+        emit (Ir.Alu { op = Ir.Imul; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0;
                        src2 = Ir.Reg Register.vtmp1; set_flags = false });
-        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp0 })
     | And (a, b) ->
         compile Register.vtmp0 a;
         emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
-        emit (Ir.Alu { op = Ir.And; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+        emit (Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0;
                        src2 = Ir.Reg Register.vtmp1; set_flags = false });
-        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp0 })
     | Or (a, b) ->
         compile Register.vtmp0 a;
         emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
-        emit (Ir.Alu { op = Ir.Or; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+        emit (Ir.Alu { op = Ir.Or; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0;
                        src2 = Ir.Reg Register.vtmp1; set_flags = false });
-        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp0 })
     | Xor (a, b) ->
         compile Register.vtmp0 a;
         emit (Ir.Push (Ir.Reg Register.vtmp0));
         compile Register.vtmp1 b;
         emit (Ir.Pop (Ir.Reg Register.vtmp0));
-        emit (Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 });
-        emit (Ir.Alu { op = Ir.Xor; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2;
+        emit (Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0;
                        src2 = Ir.Reg Register.vtmp1; set_flags = false });
-        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp2 })
+        emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Reg Register.vtmp0 })
     | Not a ->
         compile target_reg a;
         emit (Ir.Alu { op = Ir.Xor; dst = target_reg; src1 = Ir.Reg target_reg;
                        src2 = Ir.Imm (-1L); set_flags = false })
     | Neg a ->
-        compile Register.vtmp1 a;
+        compile Register.vtmp0 a;
         emit (Ir.Mov { dst = Ir.Reg target_reg; src = Ir.Imm 0L });
         emit (Ir.Alu { op = Ir.Sub; dst = target_reg; src1 = Ir.Reg target_reg;
-                       src2 = Ir.Reg Register.vtmp1; set_flags = false })
+                       src2 = Ir.Reg Register.vtmp0; set_flags = false })
   in
   compile dst expr;
   List.rev !instrs

@@ -15,6 +15,7 @@ val compile_and_package :
   ?enable_mba:bool ->
   ?enable_junk:bool ->
   ?mba_depth:int ->
+  ?constants:(string * string) list ->
   Ir.func ->
   vm_package
 

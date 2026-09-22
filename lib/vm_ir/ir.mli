@@ -42,6 +42,10 @@ type target =
   | BlockId of int
   | TargetImm of int64
 
+type fp_binop = Fadd | Fsub | Fmul | Fdiv
+type fp_conv = Fcvtzs | Scvtf
+type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
+
 type instr =
   | Nop
   | Mov of { dst : operand; src : operand }
@@ -64,6 +68,11 @@ type instr =
   | Trap of string
   | Bridge_to_flow of int64
   | Bridge_to_math of int64
+  | Load_symbol of { dst : Register.t; sym : string; addend : int64 }
+  | Fp_binop of { op : fp_binop; dst : int; src1 : int; src2 : int }
+  | Fp_cmp of { src1 : int; src2 : int }
+  | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
+  | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
 
 type basic_block = {
   id : int;

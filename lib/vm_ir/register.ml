@@ -42,10 +42,21 @@ type vreg =
   | VTMP1
   | VTMP2
   | VTMP3
+  | VZERO
+  | VX18
+  | VX19
+  | VX20
+  | VX21
+  | VX22
+  | VX23
+  | VX24
+  | VX25
+  | VX26
 
 type t =
   | Gpr of gpr * width
   | Vreg of vreg * width
+  | Fpr of int * width
 
 let rax = Gpr (RAX, B64)
 let rcx = Gpr (RCX, B64)
@@ -71,6 +82,16 @@ let vtmp0 = Vreg (VTMP0, B64)
 let vtmp1 = Vreg (VTMP1, B64)
 let vtmp2 = Vreg (VTMP2, B64)
 let vtmp3 = Vreg (VTMP3, B64)
+let vzero = Vreg (VZERO, B64)
+let vx18  = Vreg (VX18,  B64)
+let vx19  = Vreg (VX19,  B64)
+let vx20  = Vreg (VX20,  B64)
+let vx21  = Vreg (VX21,  B64)
+let vx22  = Vreg (VX22,  B64)
+let vx23  = Vreg (VX23,  B64)
+let vx24  = Vreg (VX24,  B64)
+let vx25  = Vreg (VX25,  B64)
+let vx26  = Vreg (VX26,  B64)
 
 let gpr_to_string g w =
   match g, w with
@@ -100,6 +121,16 @@ let vreg_to_string v w =
     | VTMP1 -> "vtmp1"
     | VTMP2 -> "vtmp2"
     | VTMP3 -> "vtmp3"
+    | VZERO -> "vzero"
+    | VX18 -> "vx18"
+    | VX19 -> "vx19"
+    | VX20 -> "vx20"
+    | VX21 -> "vx21"
+    | VX22 -> "vx22"
+    | VX23 -> "vx23"
+    | VX24 -> "vx24"
+    | VX25 -> "vx25"
+    | VX26 -> "vx26"
   in
   match w with
   | B64 -> prefix
@@ -110,9 +141,21 @@ let vreg_to_string v w =
 let to_string = function
   | Gpr (g, w) -> gpr_to_string g w
   | Vreg (v, w) -> vreg_to_string v w
+  | Fpr (i, B32) -> Printf.sprintf "s%d" i
+  | Fpr (i, _)   -> Printf.sprintf "d%d" i
 
 let of_string str =
-  match String.lowercase_ascii (String.trim str) with
+  let s = String.lowercase_ascii (String.trim str) in
+  if String.length s >= 2 && s.[0] = 'd' then
+    match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
+    | Some i when i >= 0 && i < 32 -> Ok (Fpr (i, B64))
+    | _ -> Error (Printf.sprintf "Unknown register '%s'" str)
+  else if String.length s >= 2 && s.[0] = 's' && s <> "sp" && s <> "si" && s <> "spl" && s <> "sil" then
+    match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
+    | Some i when i >= 0 && i < 32 -> Ok (Fpr (i, B32))
+    | _ -> Error (Printf.sprintf "Unknown register '%s'" str)
+  else
+  match s with
   | "rax" -> Ok rax | "eax" -> Ok (Gpr (RAX, B32)) | "ax" -> Ok (Gpr (RAX, B16)) | "al" -> Ok (Gpr (RAX, B8))
   | "rcx" -> Ok rcx | "ecx" -> Ok (Gpr (RCX, B32)) | "cx" -> Ok (Gpr (RCX, B16)) | "cl" -> Ok (Gpr (RCX, B8))
   | "rdx" -> Ok rdx | "edx" -> Ok (Gpr (RDX, B32)) | "dx" -> Ok (Gpr (RDX, B16)) | "dl" -> Ok (Gpr (RDX, B8))
@@ -131,6 +174,9 @@ let of_string str =
   | "r15" -> Ok r15 | "r15d" -> Ok (Gpr (R15, B32))| "r15w" -> Ok (Gpr (R15, B16))| "r15b" -> Ok (Gpr (R15, B8))
   | "vip" | "rip" -> Ok vip | "vsp" -> Ok vsp | "vkey" -> Ok vkey
   | "vtmp0" -> Ok vtmp0 | "vtmp1" -> Ok vtmp1 | "vtmp2" -> Ok vtmp2 | "vtmp3" -> Ok vtmp3
+  | "vzero" | "xzr" | "wzr" -> Ok vzero
+  | "vx18" -> Ok vx18 | "vx19" -> Ok vx19 | "vx20" -> Ok vx20 | "vx21" -> Ok vx21
+  | "vx22" -> Ok vx22 | "vx23" -> Ok vx23 | "vx24" -> Ok vx24 | "vx25" -> Ok vx25 | "vx26" -> Ok vx26
   | other -> Error (Printf.sprintf "Unknown register '%s'" other)
 
 
@@ -150,8 +196,10 @@ let gpr_of_index = function
 let get_width = function
   | Gpr (_, w) -> w
   | Vreg (_, w) -> w
+  | Fpr (_, w) -> w
 
 let with_width reg w =
   match reg with
   | Gpr (g, _) -> Gpr (g, w)
   | Vreg (v, _) -> Vreg (v, w)
+  | Fpr (i, _) -> Fpr (i, w)

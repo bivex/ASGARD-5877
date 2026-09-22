@@ -42,6 +42,10 @@ type target =
   | BlockId of int
   | TargetImm of int64
 
+type fp_binop = Fadd | Fsub | Fmul | Fdiv
+type fp_conv = Fcvtzs | Scvtf
+type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
+
 type instr =
   | Nop
   | Mov of { dst : operand; src : operand }
@@ -64,6 +68,11 @@ type instr =
   | Trap of string
   | Bridge_to_flow of int64
   | Bridge_to_math of int64
+  | Load_symbol of { dst : Register.t; sym : string; addend : int64 }
+  | Fp_binop of { op : fp_binop; dst : int; src1 : int; src2 : int }
+  | Fp_cmp of { src1 : int; src2 : int }
+  | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
+  | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
 
 type basic_block = {
   id : int;
@@ -161,6 +170,19 @@ let instr_to_string = function
   | Trap msg -> Printf.sprintf "trap \"%s\"" msg
   | Bridge_to_flow d -> Printf.sprintf "bridge_to_flow 0x%LX" d
   | Bridge_to_math d -> Printf.sprintf "bridge_to_math 0x%LX" d
+  | Load_symbol { dst; sym; addend } ->
+      Printf.sprintf "load_sym %s, %s + 0x%LX" (Register.to_string dst) sym addend
+  | Fp_binop { op; dst; src1; src2 } ->
+      let op_s = match op with Fadd -> "fadd" | Fsub -> "fsub" | Fmul -> "fmul" | Fdiv -> "fdiv" in
+      Printf.sprintf "%s d%d, d%d, d%d" op_s dst src1 src2
+  | Fp_cmp { src1; src2 } ->
+      Printf.sprintf "fcmp d%d, d%d" src1 src2
+  | Fp_conv { op; dst; src } ->
+      let op_s = match op with Fcvtzs -> "fcvtzs" | Scvtf -> "scvtf" in
+      Printf.sprintf "%s %s, %s" op_s (Register.to_string dst) (Register.to_string src)
+  | Atomic_mem { op; dst; addr; src; imm } ->
+      let op_s = match op with AtLoad -> "at_load" | AtStore -> "at_store" | AtCas -> "at_cas" | AtAdd -> "at_add" | AtSwp -> "at_swp" in
+      Printf.sprintf "%s %s, [%s + 0x%LX], %s" op_s (Register.to_string dst) (Register.to_string addr) imm (Register.to_string src)
 
 let block_to_string b =
   let b_lines = List.map (fun i -> "    " ^ instr_to_string i) b.instrs in

@@ -25,6 +25,7 @@ let compile_and_package
     ?(enable_mba = false)
     ?(enable_junk = true)
     ?(mba_depth = 2)
+    ?(constants = [])
     (func : Ir.func) =
 
   let (enable_cff, enable_mba, enable_junk, mba_depth, mba_engine) =
@@ -305,6 +306,34 @@ let compile_and_package
               | Ir.Vm_exit -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
               | Ir.Bridge_to_flow imm -> encode_raw_word (get_opcode OP_BRIDGE_TO_FLOW) 0 0 imm
               | Ir.Bridge_to_math imm -> encode_raw_word (get_opcode OP_BRIDGE_TO_MATH) 0 0 imm
+              | Ir.Load_symbol { dst; sym; addend } ->
+                  let sym_idx = get_ext_sym_idx sym in
+                  encode_raw_word (get_opcode OP_RESOLVE_SYM) (get_reg_idx dst) 0 (Int64.of_int sym_idx);
+                  if addend <> 0L then
+                    encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx dst) 0 addend
+              | Ir.Fp_binop { op; dst; src1; src2 } ->
+                  let op_kind = match op with Fadd -> OP_FADD_DD | Fsub -> OP_FSUB_DD | Fmul -> OP_FMUL_DD | Fdiv -> OP_FDIV_DD in
+                  encode_raw_word (get_opcode op_kind) (dst mod 32) (src1 mod 32) (Int64.of_int (src2 mod 32))
+              | Ir.Fp_cmp { src1; src2 } ->
+                  encode_raw_word (get_opcode OP_FCMP_DD) 0 (src1 mod 32) (Int64.of_int (src2 mod 32))
+              | Ir.Fp_conv { op = Fcvtzs; dst; src } ->
+                  let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
+                  encode_raw_word (get_opcode OP_FCVTZS) (get_reg_idx dst) s_idx 0L
+              | Ir.Fp_conv { op = Scvtf; dst; src } ->
+                  let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
+                  encode_raw_word (get_opcode OP_SCVTF) d_idx (get_reg_idx src) 0L
+              | Ir.Atomic_mem { op; dst; addr; src; imm } -> (
+                  match op with
+                  | AtLoad ->
+                      encode_raw_word (get_opcode OP_ATOMIC_LOAD) (get_reg_idx dst) (get_reg_idx addr) imm
+                  | AtStore ->
+                      encode_raw_word (get_opcode OP_ATOMIC_STORE) (get_reg_idx addr) (get_reg_idx src) imm
+                  | AtCas ->
+                      encode_raw_word (get_opcode OP_ATOMIC_CAS) (get_reg_idx addr) (get_reg_idx src) imm
+                  | AtAdd ->
+                      encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx src) imm
+                  | AtSwp ->
+                      encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx src) imm)
               | _ -> encode_raw_word (get_opcode OP_NOP) 0 0 0L))
         ops)
     sorted_blocks;
@@ -321,7 +350,7 @@ let compile_and_package
     !h
   in
   let expected_hash = compute_bytecode_hash key_seed final_bytecode in
-  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config ~external_symbols:!external_symbols opcode_to_handler in
+  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config ~external_symbols:!external_symbols ~constants opcode_to_handler in
   let runner_src = Vm_runtime_emitter.emit_runner_cpp ~key_seed:(Int64.of_int32 key_seed) ~reg_perm final_bytecode in
 
   let decoy_count = 256 - List.length all_op_kinds in

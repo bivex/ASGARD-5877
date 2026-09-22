@@ -1,5 +1,117 @@
 open Cmdliner
 
+let embed_c_vm_trampoline ~c_src ~bytecode ~out_path =
+  let bc_buf = Buffer.create (List.length bytecode * 25 + 200) in
+  Buffer.add_string bc_buf "\n#include \"threaded_vm.hpp\"\n\n";
+  Buffer.add_string bc_buf "static uint64_t embedded_bytecode[] = {\n";
+  List.iter
+    (fun w -> Buffer.add_string bc_buf (Printf.sprintf "    0x%016LXULL,\n" w))
+    bytecode;
+  Buffer.add_string bc_buf "};\n\n";
+  let bc_header = Buffer.contents bc_buf in
+
+  let find_marker str =
+    let len = String.length str in
+    let in_line_comment = ref false in
+    let in_block_comment = ref false in
+    let in_string = ref false in
+    let result = ref None in
+    let i = ref 0 in
+    while !i < len && !result = None do
+      if !in_line_comment then (
+        if str.[!i] = '\n' then in_line_comment := false;
+        incr i
+      ) else if !in_block_comment then (
+        if !i + 1 < len && str.[!i] = '*' && str.[!i + 1] = '/' then (
+          in_block_comment := false;
+          i := !i + 2
+        ) else incr i
+      ) else if !in_string then (
+        if str.[!i] = '\\' then i := !i + 2
+        else if str.[!i] = '"' then (in_string := false; incr i)
+        else incr i
+      ) else (
+        if !i + 1 < len && str.[!i] = '/' && str.[!i + 1] = '/' then (
+          in_line_comment := true;
+          i := !i + 2
+        ) else if !i + 1 < len && str.[!i] = '/' && str.[!i + 1] = '*' then (
+          in_block_comment := true;
+          i := !i + 2
+        ) else if str.[!i] = '"' then (
+          in_string := true;
+          incr i
+        ) else if !i + 12 <= len && String.sub str !i 12 = "ASGARD_BEGIN" then (
+          result := Some !i
+        ) else incr i
+      )
+    done;
+    !result
+  in
+
+  let rec rfind_char str c start =
+    if start < 0 then None
+    else if str.[start] = c then Some start
+    else rfind_char str c (start - 1)
+  in
+
+  match find_marker c_src with
+  | None ->
+      let oc = open_out out_path in
+      output_string oc (bc_header ^ c_src);
+      close_out oc
+  | Some beg_idx ->
+        (match rfind_char c_src '{' beg_idx with
+        | None ->
+            let oc = open_out out_path in
+            output_string oc (bc_header ^ c_src);
+            close_out oc
+        | Some open_brace_idx ->
+            let sig_end = open_brace_idx in
+            let rparen_opt = rfind_char c_src ')' sig_end in
+            let args_to_pass =
+              match rparen_opt with
+              | None -> ""
+              | Some rparen ->
+                  (match rfind_char c_src '(' rparen with
+                  | None -> ""
+                  | Some lparen ->
+                      let param_str = String.sub c_src (lparen + 1) (rparen - lparen - 1) |> String.trim in
+                      if param_str = "" || param_str = "void" then ""
+                      else
+                        let raw_params = String.split_on_char ',' param_str |> List.map String.trim in
+                        let arg_names = List.filter_map
+                          (fun p ->
+                            let tokens = String.split_on_char ' ' p |> List.map String.trim |> List.filter (fun s -> s <> "" && s <> "*" && s <> "const" && s <> "volatile") in
+                            match List.rev tokens with
+                            | last :: _ ->
+                                let clean = String.trim (String.map (function '*' -> ' ' | c -> c) last) in
+                                if clean = "" then None else Some (Printf.sprintf "(uint64_t)%s" clean)
+                            | [] -> None)
+                          raw_params
+                        in
+                        String.concat ", " arg_names)
+            in
+            let len = String.length c_src in
+            let rec find_closing depth i =
+              if i >= len then len - 1
+              else if c_src.[i] = '{' then find_closing (depth + 1) (i + 1)
+              else if c_src.[i] = '}' then
+                if depth = 1 then i
+                else find_closing (depth - 1) (i + 1)
+              else find_closing depth (i + 1)
+            in
+            let close_brace_idx = find_closing 1 (open_brace_idx + 1) in
+            let before_body = String.sub c_src 0 (open_brace_idx + 1) in
+            let after_body = String.sub c_src close_brace_idx (len - close_brace_idx) in
+            let comma_args = if args_to_pass = "" then "" else ", " ^ args_to_pass in
+            let trampoline_body =
+              Printf.sprintf "\n    return (int)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0])%s);\n" comma_args
+            in
+            let full_out = bc_header ^ before_body ^ trampoline_body ^ after_body in
+            let oc = open_out out_path in
+            output_string oc full_out;
+            close_out oc)
+
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline) *)
 let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile_and_run =
   let resolved_engine =
@@ -71,6 +183,7 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
           api_hashing = effective_cfg.c_macro.api_hashing;
           anti_debug = effective_cfg.c_macro.anti_debug;
           signal_dispatch = effective_cfg.c_macro.signal_dispatch;
+          nanomites = effective_cfg.c_macro.nanomites;
           timing_guard = effective_cfg.c_macro.timing_guard;
           timing_threshold_ticks = effective_cfg.c_macro.timing_threshold_ticks;
         } in
@@ -79,7 +192,7 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
         | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
 
         let asm_out = Filename.concat out_dir "app_arm64.s" in
-        let gen_asm_cmd = Printf.sprintf "clang -S -target arm64-apple-darwin -O1 -fno-stack-protector -Wno-format-security -I%s -fno-asynchronous-unwind-tables %s -o %s" out_dir obf_c_path asm_out in
+        let gen_asm_cmd = Printf.sprintf "clang -S -target arm64-apple-darwin -O1 -fno-inline -fno-stack-protector -fno-stack-check -mno-stack-arg-probe -Wno-format-security -I%s -fno-asynchronous-unwind-tables %s -o %s" out_dir obf_c_path asm_out in
         let _ = Sys.command gen_asm_cmd in
         asm_out
       end else input_file
@@ -89,6 +202,8 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
     let len = in_channel_length ic in
     let text = really_input_string ic len in
     close_in ic;
+
+    let constants = Arm64_lifter.Arm64_parser.extract_constants text in
 
     let raw_lines =
       match Arm64_lifter.Arm64_parser.parse_lines text with
@@ -136,6 +251,7 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
               Native_vm.Vm_emitter.compile_and_package
                 ~rng
                 ~config:effective_cfg
+                ~constants
                 lifted_func
             in
             (pkg.cpp_runtime_source, pkg.runner_source, pkg.bytecode, pkg.metrics, "threaded_vm.hpp")
@@ -169,17 +285,33 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
           bc;
         close_out oc_b;
 
+        let virt_cpp_path = Filename.concat out_dir "app_virtualized.cpp" in
+        if is_c_src && regions <> [] then begin
+          let obf_c_file = Filename.concat out_dir "app_obf.c" in
+          let c_src_content =
+            if Sys.file_exists obf_c_file then (
+              let ic = open_in obf_c_file in
+              let len = in_channel_length ic in
+              let s = really_input_string ic len in
+              close_in ic;
+              s
+            ) else ""
+          in
+          embed_c_vm_trampoline ~c_src:c_src_content ~bytecode:bc ~out_path:virt_cpp_path;
+          Printf.printf "[VM-Protector-ARM64] Generated In-Place Trampoline C++ Source: %s\n" virt_cpp_path
+        end;
+
         print_endline (Native_vm.Metrics.report_to_string metrics);
         Printf.printf "Generated ARM64 VM Header: %s\n" hdr_path;
         Printf.printf "Generated ARM64 Protected Bytecode: %s (%d bytes)\n" bc_path (List.length bc * 8);
 
         if compile_and_run then begin
           let bin_path = Filename.concat out_dir (if is_c_src then "protected_app" else "protected_runner") in
-          let comp_src = if is_c_src then Filename.concat out_dir "app_obf.c" else runner_path in
-          let compiler = if is_c_src then "clang -O3 -target arm64-apple-darwin -Wno-format-security" else "clang++ -std=c++20 -O3 -target arm64-apple-darwin -Wno-format-security -fvisibility-inlines-hidden" in
+          let comp_src = if is_c_src && regions <> [] then virt_cpp_path else if is_c_src then Filename.concat out_dir "app_obf.c" else runner_path in
+          let compiler = if is_c_src && regions = [] then "clang -O3 -target arm64-apple-darwin -Wno-format-security" else "clang++ -std=c++20 -O3 -target arm64-apple-darwin -Wno-format-security -fvisibility-inlines-hidden" in
           let comp_cmd = Printf.sprintf "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x -I%s %s -o %s && strip -x %s" compiler out_dir comp_src bin_path bin_path in
 
-          Printf.printf "\n[1/2] Compiling Native ARM64 Protected Binary with %s...\n" (if is_c_src then "clang -O3" else "clang++ -O3");
+          Printf.printf "\n[1/2] Compiling Native ARM64 Protected Binary with %s...\n" (if is_c_src && regions = [] then "clang -O3" else "clang++ -std=c++20 -O3");
           let comp_status = Sys.command comp_cmd in
           if comp_status <> 0 then begin
             prerr_endline "Native ARM64 compilation failed";

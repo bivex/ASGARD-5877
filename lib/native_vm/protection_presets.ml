@@ -45,8 +45,8 @@ let default : t = {
     opaque_predicates = true;
     api_hashing = true;
     anti_debug = true;
-    signal_dispatch = true;
-    nanomites = true;
+    signal_dispatch = false;
+    nanomites = false;
     timing_guard = true;
     timing_threshold_ticks = 50000000L;
   };

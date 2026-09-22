@@ -1,4 +1,4 @@
-let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) ?(external_symbols = []) opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) ?(external_symbols = []) ?(constants = []) opcode_to_handler =
   let profile = match runtime_profile with
     | Some p -> p
     | None -> Random_visa_domain.Vm_runtime_profile.generate ~seed:(Int64.of_int32 key_seed) ~total_opcodes:256 ()
@@ -23,7 +23,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_egraph_expansion = match config with Some c -> c.vm_runtime.egraph_expansion | None -> true in
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
-  Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n#include <stdio.h>\n";
+  Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <atomic>\n#include <bit>\n#include <cstring>\n";
   Buffer.add_string b "#if !defined(_WIN32) && !defined(_WIN64)\n#include <dlfcn.h>\n#endif\n#if !defined(RTLD_DEFAULT)\n#define RTLD_DEFAULT ((void*)0)\n#endif\n";
   Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
   if enable_vector_isa then begin
@@ -63,6 +63,35 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
       (fun s -> Buffer.add_string b (Printf.sprintf "    \"%s\",\n" (String.escaped s)))
       external_symbols;
   Buffer.add_string b "};\n\n";
+
+  Buffer.add_string b "struct AsgardConstantEntry {\n    const char* name;\n    const uint8_t* data;\n    size_t size;\n};\n\n";
+  if constants = [] then begin
+    Buffer.add_string b "static const AsgardConstantEntry g_asgard_constants[] = { { \"\", nullptr, 0 } };\n\n";
+  end else begin
+    List.iteri
+      (fun idx (_name, bytes) ->
+        Buffer.add_string b (Printf.sprintf "static const uint8_t cdata_%d[] = { " idx);
+        for i = 0 to String.length bytes - 1 do
+          Buffer.add_string b (Printf.sprintf "0x%02X, " (Char.code bytes.[i]))
+        done;
+        Buffer.add_string b "0x00 };\n")
+      constants;
+    Buffer.add_string b "static const AsgardConstantEntry g_asgard_constants[] = {\n";
+    List.iteri
+      (fun idx (name, bytes) ->
+        Buffer.add_string b (Printf.sprintf "    { \"%s\", cdata_%d, %d },\n" (String.escaped name) idx (String.length bytes)))
+      constants;
+    Buffer.add_string b "};\n\n";
+  end;
+
+  Buffer.add_string b "static inline void* asgard_resolve_constant(const char* name) {\n";
+  Buffer.add_string b "    if (!name || name[0] == '\\0') return nullptr;\n";
+  Buffer.add_string b "    for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {\n";
+  Buffer.add_string b "        if (g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name) == 0) return (void*)g_asgard_constants[i].data;\n";
+  Buffer.add_string b "        if (name[0] == '_' && g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name + 1) == 0) return (void*)g_asgard_constants[i].data;\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    return nullptr;\n";
+  Buffer.add_string b "}\n\n";
 
   Vm_context_emitter.emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize;
 
@@ -206,6 +235,23 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    return !ctx.trapped;\n";
   Buffer.add_string b "}\n\n";
   Buffer.add_string b (Printf.sprintf "__attribute__((always_inline, visibility(\"hidden\"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, bool scrub_source) {\n    return execute_threaded(ctx, bytecode, count, 0x%08lXU, scrub_source);\n}\n\n" key_seed);
+  Buffer.add_string b "static inline uint64_t asgard_vm_call(const uint64_t* bc, size_t len, uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0, uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {\n";
+  Buffer.add_string b "    vanguard_threaded_vm::VMContext ctx = {};\n";
+  Buffer.add_string b (Printf.sprintf "    ctx.init(0x%08lXU);\n" key_seed);
+  Buffer.add_string b "    alignas(16) static thread_local uint8_t host_stack[1048576];\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_RSP, (uint64_t)(host_stack + sizeof(host_stack) - 8192));\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_RBP, (uint64_t)(host_stack + sizeof(host_stack) - 8192));\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a1);\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a2);\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_RBX, a3);\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a4);\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a5);\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a6);\n";
+  Buffer.add_string b "    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a7);\n";
+  Buffer.add_string b "    vanguard_threaded_vm::execute_threaded(ctx, bc, len, false);\n";
+  Buffer.add_string b "    return ctx.get_rax();\n";
+  Buffer.add_string b "}\n\n";
   Buffer.add_string b "} // namespace vanguard_threaded_vm\n";
   Buffer.contents b
 

@@ -49,7 +49,7 @@ let remap_register (map : (int, int) Hashtbl.t) (r : Register.t) : Register.t =
           | Ok new_g -> Gpr (new_g, w)
           | Error _ -> r)
       | None -> r)
-  | Vreg _ -> r
+  | Vreg _ | Fpr _ -> r
 
 let remap_operand (map : (int, int) Hashtbl.t) = function
   | Reg r -> Reg (remap_register map r)
@@ -77,7 +77,8 @@ let remap_instr (map : (int, int) Hashtbl.t) (instr : instr) : instr =
   | Test { src1; src2 } -> Test { src1 = remap_operand map src1; src2 = remap_operand map src2 }
   | Setcc { cond; dst } -> Setcc { cond; dst = remap_operand map dst }
   | Cmov { cond; dst; src } -> Cmov { cond; dst = remap_register map dst; src = remap_operand map src }
-  | Jmp _ | Jcc _ | Call _ | Ret | Vm_enter | Vm_exit | Trap _ | Nop | Bridge_to_flow _ | Bridge_to_math _ -> instr
+  | Jmp _ | Jcc _ | Call _ | Ret | Vm_enter | Vm_exit | Trap _ | Nop | Bridge_to_flow _ | Bridge_to_math _
+  | Load_symbol _ | Fp_binop _ | Fp_cmp _ | Fp_conv _ | Atomic_mem _ -> instr
 
 let allocate ~(strategy : strategy) ~(seed : Seed.t) (f : func) : func =
   let reg_map = build_register_map strategy seed in

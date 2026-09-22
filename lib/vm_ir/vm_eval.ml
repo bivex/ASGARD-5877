@@ -276,6 +276,11 @@ let step state = function
       Error (Printf.sprintf "VM Trapped: %s" msg)
   | Bridge_to_flow _ | Bridge_to_math _ ->
       Ok None
+  | Load_symbol { dst; addend; _ } ->
+      set_reg state dst addend;
+      Ok None
+  | Fp_binop _ | Fp_cmp _ | Fp_conv _ | Atomic_mem _ ->
+      Ok None
 
 let run_block state (b : basic_block) =
   let rec loop = function

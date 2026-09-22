@@ -9,6 +9,17 @@ let reg_to_index = function
   | Register.Vreg (Register.VIP, _)   -> 20
   | Register.Vreg (Register.VSP, _)   -> 21
   | Register.Vreg (Register.VKEY, _)  -> 22
+  | Register.Vreg (Register.VX18, _)  -> 23
+  | Register.Vreg (Register.VX19, _)  -> 24
+  | Register.Vreg (Register.VX20, _)  -> 25
+  | Register.Vreg (Register.VX21, _)  -> 26
+  | Register.Vreg (Register.VX22, _)  -> 27
+  | Register.Vreg (Register.VX23, _)  -> 28
+  | Register.Vreg (Register.VX24, _)  -> 29
+  | Register.Vreg (Register.VX25, _)  -> 30
+  | Register.Vreg (Register.VX26, _)  -> 31
+  | Register.Vreg (Register.VZERO, _) -> 16
+  | Register.Fpr (i, _) -> (23 + (i mod 9)) mod 32
 
 let cond_to_code = function
   | Flags.E -> 0 | Flags.NE -> 1 | Flags.B -> 2 | Flags.AE -> 3
@@ -68,6 +79,19 @@ type raw_op_kind =
   | OP_STORE_64
   | OP_STORE_32
   | OP_STORE_8
+  | OP_RESOLVE_SYM
+  | OP_FADD_DD
+  | OP_FSUB_DD
+  | OP_FMUL_DD
+  | OP_FDIV_DD
+  | OP_FCMP_DD
+  | OP_FCVTZS
+  | OP_SCVTF
+  | OP_ATOMIC_LOAD
+  | OP_ATOMIC_STORE
+  | OP_ATOMIC_CAS
+  | OP_ATOMIC_ADD
+  | OP_ATOMIC_SWP
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
@@ -81,6 +105,10 @@ let all_op_kinds = [
   OP_VADD_VV; OP_VSUB_VV; OP_VMUL_VV; OP_VXOR_VV;
   OP_CALL_EXTERN; OP_LOAD_64; OP_LOAD_32; OP_LOAD_8;
   OP_STORE_64; OP_STORE_32; OP_STORE_8;
+  OP_RESOLVE_SYM;
+  OP_FADD_DD; OP_FSUB_DD; OP_FMUL_DD; OP_FDIV_DD; OP_FCMP_DD;
+  OP_FCVTZS; OP_SCVTF;
+  OP_ATOMIC_LOAD; OP_ATOMIC_STORE; OP_ATOMIC_CAS; OP_ATOMIC_ADD; OP_ATOMIC_SWP;
 ]
 
 let op_kind_to_handler_name = function
@@ -134,6 +162,19 @@ let op_kind_to_handler_name = function
   | OP_STORE_64 -> "H_STORE_64"
   | OP_STORE_32 -> "H_STORE_32"
   | OP_STORE_8 -> "H_STORE_8"
+  | OP_RESOLVE_SYM -> "H_RESOLVE_SYM"
+  | OP_FADD_DD -> "H_FADD_DD"
+  | OP_FSUB_DD -> "H_FSUB_DD"
+  | OP_FMUL_DD -> "H_FMUL_DD"
+  | OP_FDIV_DD -> "H_FDIV_DD"
+  | OP_FCMP_DD -> "H_FCMP_DD"
+  | OP_FCVTZS -> "H_FCVTZS"
+  | OP_SCVTF -> "H_SCVTF"
+  | OP_ATOMIC_LOAD -> "H_ATOMIC_LOAD"
+  | OP_ATOMIC_STORE -> "H_ATOMIC_STORE"
+  | OP_ATOMIC_CAS -> "H_ATOMIC_CAS"
+  | OP_ATOMIC_ADD -> "H_ATOMIC_ADD"
+  | OP_ATOMIC_SWP -> "H_ATOMIC_SWP"
 
 type fused_op =
   | Raw of Ir.instr
@@ -168,7 +209,7 @@ let extract_real_regs instrs =
     | _ -> acc) set []
 
 let generate_junk_instrs rng ~real_regs =
-  let vdst = Register.Vreg (Register.VTMP2, Register.B64) in
+  let vdst = Register.Vreg (Register.VX26, Register.B64) in
   let imm = Int64.of_int32 (Random.State.int32 rng Int32.max_int) in
   match Random.State.int rng 5 with
   | 0 ->

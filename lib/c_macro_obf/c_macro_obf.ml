@@ -10,6 +10,7 @@ type config = C_macro_config.config = {
   api_hashing : bool;
   anti_debug : bool;
   signal_dispatch : bool;
+  nanomites : bool;
   timing_guard : bool;
   timing_threshold_ticks : int64;
   macro_prefix : string;
@@ -55,7 +56,12 @@ let rewrite_arithmetic_in_source = C_arith_rewriter.rewrite_arithmetic_in_source
 (** Transform a complete C source code string *)
 let obfuscate_source ?(config = default_config) src =
   let p = config.macro_prefix in
-  let (lifted_src, nanomite_preamble) = lift_nanomites_in_source ~config src in
+  let (lifted_src, nanomite_preamble) =
+    if config.nanomites then
+      lift_nanomites_in_source ~config src
+    else
+      (src, "")
+  in
 
   let arith_rewritten =
     if config.obfuscate_arithmetic then

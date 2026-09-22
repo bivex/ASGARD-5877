@@ -70,16 +70,19 @@ let map_arm64_reg str =
   | "x14" -> Ok (Register.Vreg (Register.VTMP0, Register.B64))
   | "x15" -> Ok (Register.Vreg (Register.VTMP1, Register.B64))
   | "x16" | "x17" -> Ok (Register.Vreg (Register.VTMP2, Register.B64))
-  | "x18" -> Ok (Register.Vreg (Register.VTMP3, Register.B64))
-  | "x19" -> Ok (Register.Gpr (Register.RBX, Register.B64))
-  | "x20" -> Ok (Register.Gpr (Register.R12, Register.B64))
-  | "x21" -> Ok (Register.Gpr (Register.R13, Register.B64))
-  | "x22" -> Ok (Register.Gpr (Register.R14, Register.B64))
-  | "x23" | "x24" | "x25" | "x26" | "x27" | "x28" -> Ok (Register.Gpr (Register.R15, Register.B64))
+  | "x18" -> Ok (Register.Vreg (Register.VX18, Register.B64))
+  | "x19" -> Ok (Register.Vreg (Register.VX19, Register.B64))
+  | "x20" -> Ok (Register.Vreg (Register.VX20, Register.B64))
+  | "x21" -> Ok (Register.Vreg (Register.VX21, Register.B64))
+  | "x22" -> Ok (Register.Vreg (Register.VX22, Register.B64))
+  | "x23" -> Ok (Register.Vreg (Register.VX23, Register.B64))
+  | "x24" -> Ok (Register.Vreg (Register.VX24, Register.B64))
+  | "x25" -> Ok (Register.Vreg (Register.VX25, Register.B64))
+  | "x26" | "x27" | "x28" -> Ok (Register.Vreg (Register.VX26, Register.B64))
   | "x29" | "fp"  -> Ok (Register.Gpr (Register.RBP, Register.B64))
   | "x30" | "lr"  -> Ok (Register.Vreg (Register.VTMP3, Register.B64))
   | "sp"  | "wsp" -> Ok (Register.Gpr (Register.RSP, Register.B64))
-  | "xzr"         -> Ok (Register.Vreg (Register.VTMP0, Register.B64))
+  | "xzr"         -> Ok (Register.Vreg (Register.VZERO, Register.B64))
   
   (* 32-bit registers *)
   | "w0"  -> Ok (Register.Gpr (Register.RAX, Register.B32))
@@ -96,11 +99,29 @@ let map_arm64_reg str =
   | "w11" -> Ok (Register.Gpr (Register.R13, Register.B32))
   | "w12" -> Ok (Register.Gpr (Register.R14, Register.B32))
   | "w13" -> Ok (Register.Gpr (Register.R15, Register.B32))
-  | "w14" | "w15" | "w16" | "w17" | "w18" -> Ok (Register.Vreg (Register.VTMP1, Register.B32))
-  | "w19" | "w20" | "w21" | "w22" | "w23" | "w24" | "w25" | "w26" | "w27" | "w28" -> Ok (Register.Gpr (Register.R15, Register.B32))
+  | "w14" -> Ok (Register.Vreg (Register.VTMP0, Register.B32))
+  | "w15" -> Ok (Register.Vreg (Register.VTMP1, Register.B32))
+  | "w16" | "w17" -> Ok (Register.Vreg (Register.VTMP2, Register.B32))
+  | "w18" -> Ok (Register.Vreg (Register.VX18, Register.B32))
+  | "w19" -> Ok (Register.Vreg (Register.VX19, Register.B32))
+  | "w20" -> Ok (Register.Vreg (Register.VX20, Register.B32))
+  | "w21" -> Ok (Register.Vreg (Register.VX21, Register.B32))
+  | "w22" -> Ok (Register.Vreg (Register.VX22, Register.B32))
+  | "w23" -> Ok (Register.Vreg (Register.VX23, Register.B32))
+  | "w24" -> Ok (Register.Vreg (Register.VX24, Register.B32))
+  | "w25" -> Ok (Register.Vreg (Register.VX25, Register.B32))
+  | "w26" | "w27" | "w28" -> Ok (Register.Vreg (Register.VX26, Register.B32))
   | "w29" -> Ok (Register.Gpr (Register.RBP, Register.B32))
   | "w30" -> Ok (Register.Vreg (Register.VTMP3, Register.B32))
-  | "wzr" -> Ok (Register.Vreg (Register.VTMP0, Register.B32))
+  | "wzr" -> Ok (Register.Vreg (Register.VZERO, Register.B32))
+  | s when String.length s >= 2 && s.[0] = 'd' -> (
+      match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
+      | Some i when i >= 0 && i < 32 -> Ok (Register.Fpr (i, Register.B64))
+      | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str))
+  | s when String.length s >= 2 && s.[0] = 's' && s <> "sp" && s <> "si" -> (
+      match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
+      | Some i when i >= 0 && i < 32 -> Ok (Register.Fpr (i, Register.B32))
+      | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str))
   | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str)
 
 let parse_imm str =
@@ -306,4 +327,95 @@ let parse_lines text =
           | Error err -> Error err
   in
   loop [] lines
+
+let unescape_asm_str s =
+  let len = String.length s in
+  let buf = Buffer.create len in
+  let i = ref 0 in
+  while !i < len do
+    if s.[!i] = '\\' && !i + 1 < len then begin
+      incr i;
+      match s.[!i] with
+      | '0' .. '7' ->
+          let oct_str = Buffer.create 3 in
+          Buffer.add_char oct_str s.[!i];
+          if !i + 1 < len && (let c = s.[!i + 1] in c >= '0' && c <= '7') then (
+            incr i; Buffer.add_char oct_str s.[!i];
+            if !i + 1 < len && (let c = s.[!i + 1] in c >= '0' && c <= '7') then (
+              incr i; Buffer.add_char oct_str s.[!i]
+            )
+          );
+          let oct_val = try int_of_string ("0o" ^ Buffer.contents oct_str) with _ -> 0 in
+          Buffer.add_char buf (Char.chr (oct_val land 0xFF));
+          incr i
+      | 'b' -> Buffer.add_char buf '\b'; incr i
+      | 'f' -> Buffer.add_char buf '\012'; incr i
+      | 'v' -> Buffer.add_char buf '\011'; incr i
+      | 'a' -> Buffer.add_char buf '\007'; incr i
+      | 'n' -> Buffer.add_char buf '\n'; incr i
+      | 't' -> Buffer.add_char buf '\t'; incr i
+      | 'r' -> Buffer.add_char buf '\r'; incr i
+      | '\\' -> Buffer.add_char buf '\\'; incr i
+      | '"' -> Buffer.add_char buf '"'; incr i
+      | '\'' -> Buffer.add_char buf '\''; incr i
+      | '?' -> Buffer.add_char buf '?'; incr i
+      | 'x' when !i + 2 < len &&
+                 (let is_hex c = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') in
+                  is_hex s.[!i + 1] && is_hex s.[!i + 2]) ->
+          let v = int_of_string ("0x" ^ String.sub s (!i + 1) 2) in
+          Buffer.add_char buf (Char.chr (v land 0xFF));
+          i := !i + 3
+      | other -> Buffer.add_char buf other; incr i
+    end else begin
+      Buffer.add_char buf s.[!i];
+      incr i
+    end
+  done;
+  Buffer.contents buf
+
+let extract_constants text =
+  let lines = String.split_on_char '\n' text in
+  let constants = ref [] in
+  let cur_label = ref None in
+  List.iter
+    (fun l ->
+      let clean = strip_comments l in
+      if String.ends_with ~suffix:":" clean then (
+        let lbl = String.trim (String.sub clean 0 (String.length clean - 1)) in
+        cur_label := Some lbl
+      ) else (
+        match !cur_label with
+        | None -> ()
+        | Some lbl ->
+            let trimmed = String.trim clean in
+            if String.starts_with ~prefix:".ascii" trimmed || String.starts_with ~prefix:".asciz" trimmed || String.starts_with ~prefix:".string" trimmed then (
+              let is_asciz = String.starts_with ~prefix:".asciz" trimmed || String.starts_with ~prefix:".string" trimmed in
+              match String.index_opt trimmed '"' with
+              | Some q1 ->
+                  (match String.rindex_opt trimmed '"' with
+                  | Some q2 when q2 > q1 ->
+                      let raw_str = String.sub trimmed (q1 + 1) (q2 - q1 - 1) in
+                      let unescaped = unescape_asm_str raw_str in
+                      let data = if is_asciz then unescaped ^ "\000" else unescaped in
+                      constants := (lbl, data) :: !constants;
+                      cur_label := None
+                  | _ -> ())
+              | None -> ()
+            ) else if String.starts_with ~prefix:".byte" trimmed then (
+              let rest = String.sub trimmed 5 (String.length trimmed - 5) in
+              let parts = String.split_on_char ',' rest |> List.map String.trim in
+              let buf = Buffer.create (List.length parts) in
+              List.iter
+                (fun p ->
+                  let v = try int_of_string p land 0xFF with _ -> 0 in
+                  Buffer.add_char buf (Char.chr v))
+                parts;
+              constants := (lbl, Buffer.contents buf) :: !constants;
+              cur_label := None
+            ) else if String.starts_with ~prefix:"." trimmed && not (String.starts_with ~prefix:".p2align" trimmed || String.starts_with ~prefix:".align" trimmed) then (
+              ()
+            )
+      ))
+    lines;
+  List.rev !constants
 
