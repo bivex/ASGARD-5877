@@ -1,10 +1,10 @@
 {
   "project_path": "/Volumes/External/Code/ASGARD-5877",
   "has_dune_manifest": true,
-  "files_scanned": 255,
-  "modules_count": 159,
-  "edges_count": 528,
-  "elapsed_seconds": 0.318,
+  "files_scanned": 259,
+  "modules_count": 162,
+  "edges_count": 545,
+  "elapsed_seconds": 0.24,
   "graph": {
     "project_path": "/Volumes/External/Code/ASGARD-5877",
     "nodes": {
@@ -204,6 +204,28 @@
           "instability": 1.0,
           "abstractness": 0.0,
           "main_sequence_distance": 0.0
+        }
+      },
+      "Mba_Verified": {
+        "id": "Mba_Verified",
+        "name": "Mba_Verified",
+        "file_path": "/Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml",
+        "loc": 76,
+        "dune_library": "",
+        "layer": "unknown",
+        "has_interface": false,
+        "is_entry": false,
+        "is_abstract": false,
+        "exported_types": 3,
+        "abstract_types": 0,
+        "submodules": [],
+        "cycle_id": null,
+        "metrics": {
+          "ca": 0,
+          "ce": 0,
+          "instability": 0.0,
+          "abstractness": 0.0,
+          "main_sequence_distance": 1.0
         }
       },
       "Random_visa_assembler.Assembler_adapter": {
@@ -421,11 +443,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 2,
+          "ca": 3,
           "ce": 2,
-          "instability": 0.5,
+          "instability": 0.4,
           "abstractness": 1.0,
-          "main_sequence_distance": 0.5
+          "main_sequence_distance": 0.4
         }
       },
       "Protect_adapters.Vm_packagers": {
@@ -667,11 +689,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 2,
+          "ca": 3,
           "ce": 1,
-          "instability": 0.333,
+          "instability": 0.25,
           "abstractness": 1.0,
-          "main_sequence_distance": 0.333
+          "main_sequence_distance": 0.25
         }
       },
       "Random_visa_application.Synthesize_isa": {
@@ -700,7 +722,7 @@
         "id": "Arm64_lifter.Arm64_alu",
         "name": "Arm64_alu",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_alu.ml",
-        "loc": 236,
+        "loc": 230,
         "dune_library": "arm64_lifter",
         "layer": "unknown",
         "has_interface": true,
@@ -766,7 +788,7 @@
         "id": "Arm64_lifter.Arm64_lifter",
         "name": "Arm64_lifter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml",
-        "loc": 179,
+        "loc": 182,
         "dune_library": "arm64_lifter",
         "layer": "unknown",
         "has_interface": true,
@@ -778,10 +800,10 @@
         "cycle_id": null,
         "metrics": {
           "ca": 5,
-          "ce": 6,
-          "instability": 0.545,
+          "ce": 7,
+          "instability": 0.583,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.455
+          "main_sequence_distance": 0.417
         }
       },
       "Arm64_lifter.Arm64_mem": {
@@ -1776,11 +1798,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 12,
+          "ca": 13,
           "ce": 3,
-          "instability": 0.2,
+          "instability": 0.188,
           "abstractness": 0.083,
-          "main_sequence_distance": 0.717
+          "main_sequence_distance": 0.729
         }
       },
       "Native_vm.Protection_json": {
@@ -1941,7 +1963,7 @@
         "id": "Native_vm.Vm_alu_handlers",
         "name": "Vm_alu_handlers",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_alu_handlers.ml",
-        "loc": 127,
+        "loc": 145,
         "dune_library": "native_vm",
         "layer": "unknown",
         "has_interface": true,
@@ -2007,7 +2029,7 @@
         "id": "Native_vm.Vm_emitter",
         "name": "Vm_emitter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_emitter.ml",
-        "loc": 351,
+        "loc": 359,
         "dune_library": "native_vm",
         "layer": "unknown",
         "has_interface": true,
@@ -2018,11 +2040,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 11,
+          "ca": 13,
           "ce": 11,
-          "instability": 0.5,
+          "instability": 0.458,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.5
+          "main_sequence_distance": 0.542
         }
       },
       "Native_vm.Vm_handlers_emitter": {
@@ -2051,7 +2073,7 @@
         "id": "Native_vm.Vm_mem_handlers",
         "name": "Vm_mem_handlers",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_mem_handlers.ml",
-        "loc": 239,
+        "loc": 249,
         "dune_library": "native_vm",
         "layer": "unknown",
         "has_interface": true,
@@ -2095,7 +2117,7 @@
         "id": "Native_vm.Vm_transform",
         "name": "Vm_transform",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml",
-        "loc": 276,
+        "loc": 287,
         "dune_library": "native_vm",
         "layer": "unknown",
         "has_interface": false,
@@ -2150,7 +2172,7 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 10,
+          "ca": 11,
           "ce": 0,
           "instability": 0.0,
           "abstractness": 0.25,
@@ -2420,11 +2442,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 35,
+          "ca": 38,
           "ce": 2,
-          "instability": 0.054,
+          "instability": 0.05,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.946
+          "main_sequence_distance": 0.95
         }
       },
       "Vm_ir.Ir_egraph": {
@@ -2552,7 +2574,7 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 36,
+          "ca": 39,
           "ce": 0,
           "instability": 0.0,
           "abstractness": 0.0,
@@ -2669,6 +2691,28 @@
           "main_sequence_distance": 0.5
         }
       },
+      "Vm_ir.Subreg_write": {
+        "id": "Vm_ir.Subreg_write",
+        "name": "Subreg_write",
+        "file_path": "/Volumes/External/Code/ASGARD-5877/lib/vm_ir/subreg_write.ml",
+        "loc": 59,
+        "dune_library": "vm_ir",
+        "layer": "unknown",
+        "has_interface": true,
+        "is_entry": false,
+        "is_abstract": false,
+        "exported_types": 0,
+        "abstract_types": 0,
+        "submodules": [],
+        "cycle_id": null,
+        "metrics": {
+          "ca": 2,
+          "ce": 2,
+          "instability": 0.5,
+          "abstractness": 1.0,
+          "main_sequence_distance": 0.5
+        }
+      },
       "Vm_ir.Superoperator": {
         "id": "Vm_ir.Superoperator",
         "name": "Superoperator",
@@ -2695,7 +2739,7 @@
         "id": "Vm_ir.Vm_eval",
         "name": "Vm_eval",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/vm_ir/vm_eval.ml",
-        "loc": 312,
+        "loc": 316,
         "dune_library": "vm_ir",
         "layer": "unknown",
         "has_interface": true,
@@ -2717,7 +2761,7 @@
         "id": "X86_lifter.Lifter",
         "name": "Lifter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/x86_lifter/lifter.ml",
-        "loc": 300,
+        "loc": 383,
         "dune_library": "x86_lifter",
         "layer": "unknown",
         "has_interface": true,
@@ -2728,11 +2772,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 11,
-          "ce": 4,
-          "instability": 0.267,
+          "ca": 12,
+          "ce": 5,
+          "instability": 0.294,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.733
+          "main_sequence_distance": 0.706
         }
       },
       "X86_lifter.X86_parser": {
@@ -2783,7 +2827,7 @@
         "id": "Run_tests",
         "name": "Run_tests",
         "file_path": "/Volumes/External/Code/ASGARD-5877/test/run_tests.ml",
-        "loc": 35,
+        "loc": 36,
         "dune_library": "",
         "layer": "unknown",
         "has_interface": false,
@@ -2795,7 +2839,7 @@
         "cycle_id": null,
         "metrics": {
           "ca": 0,
-          "ce": 32,
+          "ce": 33,
           "instability": 1.0,
           "abstractness": 0.0,
           "main_sequence_distance": 0.0
@@ -2871,7 +2915,7 @@
         "id": "Test_arm64_lifter",
         "name": "Test_arm64_lifter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/test/test_arm64_lifter.ml",
-        "loc": 152,
+        "loc": 183,
         "dune_library": "",
         "layer": "unknown",
         "has_interface": false,
@@ -2883,10 +2927,10 @@
         "cycle_id": null,
         "metrics": {
           "ca": 1,
-          "ce": 2,
-          "instability": 0.667,
+          "ce": 4,
+          "instability": 0.8,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.333
+          "main_sequence_distance": 0.2
         }
       },
       "Test_arxiv_innovations": {
@@ -3179,7 +3223,7 @@
         "id": "Test_helpers",
         "name": "Test_helpers",
         "file_path": "/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml",
-        "loc": 44,
+        "loc": 89,
         "dune_library": "",
         "layer": "unknown",
         "has_interface": false,
@@ -3190,11 +3234,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 2,
-          "ce": 0,
-          "instability": 0.0,
+          "ca": 3,
+          "ce": 1,
+          "instability": 0.25,
           "abstractness": 0.0,
-          "main_sequence_distance": 1.0
+          "main_sequence_distance": 0.75
         }
       },
       "Test_hw_cost": {
@@ -3307,11 +3351,33 @@
           "main_sequence_distance": 0.2
         }
       },
+      "Test_native_semantics": {
+        "id": "Test_native_semantics",
+        "name": "Test_native_semantics",
+        "file_path": "/Volumes/External/Code/ASGARD-5877/test/test_native_semantics.ml",
+        "loc": 283,
+        "dune_library": "",
+        "layer": "unknown",
+        "has_interface": false,
+        "is_entry": false,
+        "is_abstract": false,
+        "exported_types": 0,
+        "abstract_types": 0,
+        "submodules": [],
+        "cycle_id": null,
+        "metrics": {
+          "ca": 1,
+          "ce": 9,
+          "instability": 0.9,
+          "abstractness": 0.0,
+          "main_sequence_distance": 0.1
+        }
+      },
       "Test_native_vm": {
         "id": "Test_native_vm",
         "name": "Test_native_vm",
         "file_path": "/Volumes/External/Code/ASGARD-5877/test/test_native_vm.ml",
-        "loc": 290,
+        "loc": 280,
         "dune_library": "",
         "layer": "unknown",
         "has_interface": false,
@@ -3509,7 +3575,7 @@
         "id": "Test_x86_lifter",
         "name": "Test_x86_lifter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/test/test_x86_lifter.ml",
-        "loc": 174,
+        "loc": 292,
         "dune_library": "",
         "layer": "unknown",
         "has_interface": false,
@@ -4669,7 +4735,7 @@
         "source": "Arm64_lifter.Arm64_alu",
         "target": "Vm_ir.Ir",
         "kind": "qualified_reference",
-        "weight": 76,
+        "weight": 68,
         "cross_library": true,
         "cross_layer": false
       },
@@ -4677,7 +4743,7 @@
         "source": "Arm64_lifter.Arm64_alu",
         "target": "Vm_ir.Register",
         "kind": "qualified_reference",
-        "weight": 57,
+        "weight": 45,
         "cross_library": true,
         "cross_layer": false
       },
@@ -4799,6 +4865,14 @@
         "kind": "qualified_reference",
         "weight": 1,
         "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Arm64_lifter.Arm64_lifter",
+        "target": "Vm_ir.Subreg_write",
+        "kind": "qualified_reference",
+        "weight": 1,
+        "cross_library": true,
         "cross_layer": false
       },
       {
@@ -5549,7 +5623,7 @@
         "source": "Native_vm.Vm_emitter",
         "target": "Vm_ir.Ir",
         "kind": "qualified_reference",
-        "weight": 129,
+        "weight": 141,
         "cross_library": true,
         "cross_layer": false
       },
@@ -5597,7 +5671,7 @@
         "source": "Native_vm.Vm_emitter",
         "target": "Vm_ir.Register",
         "kind": "qualified_reference",
-        "weight": 6,
+        "weight": 8,
         "cross_library": true,
         "cross_layer": false
       },
@@ -6178,6 +6252,22 @@
         "cross_layer": false
       },
       {
+        "source": "Vm_ir.Subreg_write",
+        "target": "Vm_ir.Ir",
+        "kind": "open",
+        "weight": 2,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Vm_ir.Subreg_write",
+        "target": "Vm_ir.Register",
+        "kind": "qualified_reference",
+        "weight": 5,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
         "source": "Vm_ir.Superoperator",
         "target": "Vm_ir.Ir",
         "kind": "open",
@@ -6229,7 +6319,7 @@
         "source": "X86_lifter.Lifter",
         "target": "X86_lifter.X86_parser",
         "kind": "open",
-        "weight": 29,
+        "weight": 31,
         "cross_library": false,
         "cross_layer": false
       },
@@ -6237,7 +6327,7 @@
         "source": "X86_lifter.Lifter",
         "target": "Vm_ir.Ir",
         "kind": "qualified_reference",
-        "weight": 104,
+        "weight": 175,
         "cross_library": true,
         "cross_layer": false
       },
@@ -6245,7 +6335,7 @@
         "source": "X86_lifter.Lifter",
         "target": "Vm_ir.Register",
         "kind": "qualified_reference",
-        "weight": 9,
+        "weight": 57,
         "cross_library": true,
         "cross_layer": false
       },
@@ -6254,6 +6344,14 @@
         "target": "Vm_ir.Flags",
         "kind": "qualified_reference",
         "weight": 3,
+        "cross_library": true,
+        "cross_layer": false
+      },
+      {
+        "source": "X86_lifter.Lifter",
+        "target": "Vm_ir.Subreg_write",
+        "kind": "qualified_reference",
+        "weight": 1,
         "cross_library": true,
         "cross_layer": false
       },
@@ -6412,6 +6510,14 @@
       {
         "source": "Run_tests",
         "target": "Test_native_vm",
+        "kind": "qualified_reference",
+        "weight": 1,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Run_tests",
+        "target": "Test_native_semantics",
         "kind": "qualified_reference",
         "weight": 1,
         "cross_library": false,
@@ -6653,7 +6759,23 @@
         "source": "Test_arm64_lifter",
         "target": "Vm_ir.Reference_vm",
         "kind": "qualified_reference",
-        "weight": 8,
+        "weight": 9,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Test_arm64_lifter",
+        "target": "Vm_ir.Ir",
+        "kind": "qualified_reference",
+        "weight": 5,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Test_arm64_lifter",
+        "target": "Vm_ir.Register",
+        "kind": "qualified_reference",
+        "weight": 2,
         "cross_library": false,
         "cross_layer": false
       },
@@ -7218,6 +7340,14 @@
         "cross_layer": false
       },
       {
+        "source": "Test_helpers",
+        "target": "Native_vm.Vm_emitter",
+        "kind": "qualified_reference",
+        "weight": 2,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
         "source": "Test_hw_cost",
         "target": "Random_visa_domain.Types",
         "kind": "qualified_reference",
@@ -7410,6 +7540,78 @@
         "cross_layer": false
       },
       {
+        "source": "Test_native_semantics",
+        "target": "Test_helpers",
+        "kind": "open",
+        "weight": 1,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Test_native_semantics",
+        "target": "X86_lifter.Lifter",
+        "kind": "qualified_reference",
+        "weight": 1,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Test_native_semantics",
+        "target": "Native_vm.Vm_emitter",
+        "kind": "qualified_reference",
+        "weight": 2,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Test_native_semantics",
+        "target": "Protect_adapters.Config_adapter",
+        "kind": "qualified_reference",
+        "weight": 2,
+        "cross_library": false,
+        "cross_layer": true
+      },
+      {
+        "source": "Test_native_semantics",
+        "target": "Random_visa_ports.Protect_ports",
+        "kind": "qualified_reference",
+        "weight": 7,
+        "cross_library": false,
+        "cross_layer": true
+      },
+      {
+        "source": "Test_native_semantics",
+        "target": "Random_visa_application.Protect_pipeline",
+        "kind": "qualified_reference",
+        "weight": 1,
+        "cross_library": false,
+        "cross_layer": true
+      },
+      {
+        "source": "Test_native_semantics",
+        "target": "Vm_ir.Ir",
+        "kind": "qualified_reference",
+        "weight": 6,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Test_native_semantics",
+        "target": "Vm_ir.Register",
+        "kind": "qualified_reference",
+        "weight": 2,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
+        "source": "Test_native_semantics",
+        "target": "Native_vm.Protection_config",
+        "kind": "qualified_reference",
+        "weight": 1,
+        "cross_library": false,
+        "cross_layer": false
+      },
+      {
         "source": "Test_native_vm",
         "target": "Test_helpers",
         "kind": "open",
@@ -7419,17 +7621,17 @@
       },
       {
         "source": "Test_native_vm",
-        "target": "Native_vm.Vm_emitter",
+        "target": "X86_lifter.Lifter",
         "kind": "qualified_reference",
-        "weight": 10,
+        "weight": 7,
         "cross_library": false,
         "cross_layer": false
       },
       {
         "source": "Test_native_vm",
-        "target": "X86_lifter.Lifter",
+        "target": "Native_vm.Vm_emitter",
         "kind": "qualified_reference",
-        "weight": 7,
+        "weight": 9,
         "cross_library": false,
         "cross_layer": false
       },
@@ -7741,7 +7943,7 @@
         "source": "Test_x86_lifter",
         "target": "Vm_ir.Register",
         "kind": "qualified_reference",
-        "weight": 26,
+        "weight": 47,
         "cross_library": false,
         "cross_layer": false
       },
@@ -7749,7 +7951,7 @@
         "source": "Test_x86_lifter",
         "target": "X86_lifter.Lifter",
         "kind": "qualified_reference",
-        "weight": 7,
+        "weight": 13,
         "cross_library": false,
         "cross_layer": false
       }
@@ -7845,7 +8047,14 @@
       "severity": "info",
       "kind": "hub_module",
       "subject": "Run_tests",
-      "message": "hub/spaghetti module: Run_tests depends on 32 other modules",
+      "message": "hub/spaghetti module: Run_tests depends on 33 other modules",
+      "related": []
+    },
+    {
+      "severity": "info",
+      "kind": "interface_bypass",
+      "subject": "Test_helpers",
+      "message": "interface bypass: Test_helpers is used by 3 modules but has no .mli contract",
       "related": []
     },
     {
@@ -7915,14 +8124,14 @@
       "severity": "info",
       "kind": "leaky_interface",
       "subject": "Vm_ir.Ir",
-      "message": "leaky interface: Ir.mli exports 12 types, but none are abstract. Implementation details are fully exposed to 35 clients.",
+      "message": "leaky interface: Ir.mli exports 12 types, but none are abstract. Implementation details are fully exposed to 38 clients.",
       "related": []
     },
     {
       "severity": "info",
       "kind": "leaky_interface",
       "subject": "Vm_ir.Register",
-      "message": "leaky interface: Register.mli exports 4 types, but none are abstract. Implementation details are fully exposed to 36 clients.",
+      "message": "leaky interface: Register.mli exports 4 types, but none are abstract. Implementation details are fully exposed to 39 clients.",
       "related": []
     },
     {
@@ -7930,6 +8139,13 @@
       "kind": "leaky_interface",
       "subject": "X86_lifter.X86_parser",
       "message": "leaky interface: X86_parser.mli exports 4 types, but none are abstract. Implementation details are fully exposed to 4 clients.",
+      "related": []
+    },
+    {
+      "severity": "info",
+      "kind": "orphan_module",
+      "subject": "Mba_Verified",
+      "message": "orphan module: nothing depends on Mba_Verified and it is not an entry point",
       "related": []
     },
     {
@@ -7978,14 +8194,14 @@
       "severity": "info",
       "kind": "zone_of_pain",
       "subject": "Vm_ir.Ir",
-      "message": "zone of pain: Ir is rigidly concrete (A=0.00) yet heavily depended on by 35 modules (I=0.05, D=0.95) (domain AST / data model: benign by design)",
+      "message": "zone of pain: Ir is rigidly concrete (A=0.00) yet heavily depended on by 38 modules (I=0.05, D=0.95) (domain AST / data model: benign by design)",
       "related": []
     },
     {
       "severity": "info",
       "kind": "zone_of_pain",
       "subject": "Vm_ir.Register",
-      "message": "zone of pain: Register is rigidly concrete (A=0.00) yet heavily depended on by 36 modules (I=0.00, D=1.00) (domain AST / data model: benign by design)",
+      "message": "zone of pain: Register is rigidly concrete (A=0.00) yet heavily depended on by 39 modules (I=0.00, D=1.00) (domain AST / data model: benign by design)",
       "related": []
     },
     {

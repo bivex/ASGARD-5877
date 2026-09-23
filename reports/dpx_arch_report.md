@@ -2,11 +2,11 @@
 
 - **Target Path:** `/Volumes/External/Code/ASGARD-5877`
 - **Dune Project:** Yes
-- **Files Scanned:** `255`
-- **Modules Count:** `159`
-- **Dependency Edges:** `528`
+- **Files Scanned:** `259`
+- **Modules Count:** `162`
+- **Dependency Edges:** `545`
 - **Cycles / Circular Dependencies:** `0` (Clean DAG)
-- **Scan Elapsed Time:** `0.238s`
+- **Scan Elapsed Time:** `0.24s`
 
 ## 📊 Architecture Health Summary
 
@@ -14,7 +14,7 @@
 |---|:---:|---|
 | **Errors (❌)** | **0** | **0 errors — No circular dependencies or broken abstractions** |
 | **Warnings (⚠️)** | **0** | **0 warnings — All God Modules (>400 LOC) eradicated** |
-| **Info (ℹ️)** | **22** | **Domain AST / ADT types & test runner hub (benign by design)** |
+| **Info (ℹ️)** | **24** | **Domain AST / ADT types & test runner hub (benign by design)** |
 
 ## 📚 Dune Libraries & Dependencies
 
@@ -199,13 +199,14 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Test_families_generation` | `test/test_families_generation.ml` | 219 | No | `—` |
 | `Test_golden` | `test/test_golden.ml` | 30 | No | `—` |
 | `Test_gpu_synth` | `test/test_gpu_synth.ml` | 27 | No | `—` |
-| `Test_helpers` | `test/test_helpers.ml` | 44 | No | `—` |
+| `Test_helpers` | `test/test_helpers.ml` | 89 | No | `—` |
 | `Test_hw_cost` | `test/test_hw_cost.ml` | 116 | No | `—` |
 | `Test_isa_grammar` | `test/test_isa_grammar.ml` | 129 | No | `—` |
 | `Test_metrics` | `test/test_metrics.ml` | 80 | No | `—` |
 | `Test_multi_vlen` | `test/test_multi_vlen.ml` | 33 | No | `—` |
 | `Test_multi_vm` | `test/test_multi_vm.ml` | 124 | No | `—` |
-| `Test_native_vm` | `test/test_native_vm.ml` | 290 | No | `—` |
+| `Test_native_semantics` | `test/test_native_semantics.ml` | 283 | No | `—` |
+| `Test_native_vm` | `test/test_native_vm.ml` | 280 | No | `—` |
 | `Test_properties` | `test/test_properties.ml` | 95 | No | `—` |
 | `Test_protection_config` | `test/test_protection_config.ml` | 73 | No | `—` |
 | `Test_rd_jit_vm` | `test/test_rd_jit_vm.ml` | 90 | No | `—` |
@@ -356,13 +357,14 @@ Dependencies must strictly point inward: `API / Entry Points → Domain Layer �
 | `Test_families_generation` | `—` | unknown | 219 | 1 | 8 | 0.89 | 0.00 | 0.11 |
 | `Test_golden` | `—` | unknown | 30 | 1 | 3 | 0.75 | 0.00 | 0.25 |
 | `Test_gpu_synth` | `—` | unknown | 27 | 1 | 1 | 0.50 | 0.00 | 0.50 |
-| `Test_helpers` | `—` | unknown | 44 | 2 | 0 | 0.00 | 0.00 | 1.00 |
+| `Test_helpers` | `—` | unknown | 89 | 2 | 0 | 0.00 | 0.00 | 1.00 |
 | `Test_hw_cost` | `—` | unknown | 116 | 1 | 6 | 0.86 | 0.00 | 0.14 |
 | `Test_isa_grammar` | `—` | unknown | 129 | 1 | 6 | 0.86 | 0.00 | 0.14 |
 | `Test_metrics` | `—` | unknown | 80 | 1 | 3 | 0.75 | 0.00 | 0.25 |
 | `Test_multi_vlen` | `—` | unknown | 33 | 1 | 5 | 0.83 | 0.00 | 0.17 |
 | `Test_multi_vm` | `—` | unknown | 124 | 1 | 4 | 0.80 | 0.00 | 0.20 |
-| `Test_native_vm` | `—` | unknown | 290 | 1 | 6 | 0.86 | 0.00 | 0.14 |
+| `Test_native_semantics` | `—` | unknown | 283 | 0 | 6 | 1.00 | 0.00 | 0.00 |
+| `Test_native_vm` | `—` | unknown | 280 | 1 | 6 | 0.86 | 0.00 | 0.14 |
 | `Test_properties` | `—` | unknown | 95 | 1 | 4 | 0.80 | 0.00 | 0.20 |
 | `Test_protection_config` | `—` | unknown | 73 | 1 | 4 | 0.80 | 0.00 | 0.20 |
 | `Test_rd_jit_vm` | `—` | unknown | 90 | 1 | 3 | 0.75 | 0.00 | 0.25 |

@@ -3,17 +3,6 @@ open Native_vm
 open Vm_ir
 open Test_helpers
 
-let compile_and_prepare_vm tmp_dir (pkg : Vm_emitter.vm_package) =
-  let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
-  write_file_string hdr_path pkg.cpp_runtime_source;
-  let runner_path = Filename.concat tmp_dir "runner.cpp" in
-  write_file_string runner_path pkg.runner_source;
-  let bin_path = Filename.concat tmp_dir "runner" in
-  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
-  let comp_status = Sys.command comp_cmd in
-  Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
-  bin_path
-
 let test_threaded_vm_compilation_and_execution () =
   let rng = Random.State.make [| 2026 |] in
   let asm = {|
@@ -302,138 +291,6 @@ let test_external_libc_call_trampoline () =
     Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
     Alcotest.(check bool) "returned abs(-42) = 42" true (String.contains out_str '4' && String.contains out_str '2'))
 
-(* Custom-runner helper for several packages inside one temp dir: each package
-   gets its own header/runner/binary named after [name], so independent VM
-   images (different key material) coexist without clobbering each other. *)
-let run_custom_vm ~(name : string) tmp_dir (pkg : Vm_emitter.vm_package) (checks_body : string) =
-  let hdr_path = Filename.concat tmp_dir (name ^ "_vm.hpp") in
-  write_file_string hdr_path pkg.cpp_runtime_source;
-  let custom_runner =
-    Printf.sprintf {|
-#include "%s_vm.hpp"
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-
-static uint64_t embedded_bytecode[] = {
-%s
-};
-
-int main() {
-    size_t count = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);
-%s
-    return 0;
-}
-|}
-      name
-      (String.concat "\n" (List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) pkg.bytecode))
-      checks_body
-  in
-  let runner_path = Filename.concat tmp_dir (name ^ "_runner.cpp") in
-  write_file_string runner_path custom_runner;
-  let bin_path = Filename.concat tmp_dir name in
-  let comp_status =
-    Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path)
-  in
-  Alcotest.(check int) (name ^ ": clang++ compilation succeeds") 0 comp_status;
-  let status, _ = run_command_capture bin_path in
-  Alcotest.(check bool) (name ^ ": runner exits 0") true (status = Unix.WEXITED 0)
-
-(* TODO item 5, native side: idiv/div at B64 through the custom runner, checking
-   both halves of the division — quotient in rax, remainder in rdx (the rdx
-   accessor exists only via the RegMap enum, there is no get_rdx method). *)
-let test_native_div_idiv_with_remainder () =
-  let mk_pkg ~seed asm =
-    let rng = Random.State.make [| seed |] in
-    match Lifter.lift_function asm with
-    | Error e -> Alcotest.fail e
-    | Ok func -> Vm_emitter.compile_and_package ~rng func
-  in
-  let pkg_idiv64 =
-    mk_pkg ~seed:20260924 {|
-func_native_idiv64:
-    mov rax, rdi
-    cqo
-    idiv rsi
-    ret
-|}
-  in
-  let pkg_div64 =
-    mk_pkg ~seed:20260925 {|
-func_native_div64:
-    mov rax, rdi
-    xor rdx, rdx
-    div rsi
-    ret
-|}
-  in
-  with_temp_dir (fun tmp_dir ->
-      run_custom_vm ~name:"idiv64" tmp_dir pkg_idiv64 {|
-    vanguard_threaded_vm::VMContext ctx = {};
-    ctx.init();
-    ctx.set_rdi((uint64_t)(-47));
-    ctx.set_rsi(5);
-    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
-    if (ctx.get_rax() != (uint64_t)(-9)) return 2;
-    if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != (uint64_t)(-2)) return 3;
-|};
-      run_custom_vm ~name:"div64" tmp_dir pkg_div64 {|
-    vanguard_threaded_vm::VMContext ctx = {};
-    ctx.init();
-    ctx.set_rdi(0xFFFFFFFFFFFFFFFFULL);
-    ctx.set_rsi(2);
-    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
-    if (ctx.get_rax() != 0x7FFFFFFFFFFFFFFFULL) return 2;
-    if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 1ULL) return 3;
-|})
-
-(* TODO item 6, native side: a B32 write must zero the upper half of the backing
-   slot in the width-blind VM.  The first runner drives the whole 32-bit idiv
-   lowering (which interleaves B32 writes with the div reconstruction); the
-   second isolates the zero-extension itself — mov eax, esi after esi was loaded
-   with garbage in the upper half, which previously diverged natively. *)
-let test_native_b32_subregister_semantics () =
-  let mk_pkg ~seed asm =
-    let rng = Random.State.make [| seed |] in
-    match Lifter.lift_function asm with
-    | Error e -> Alcotest.fail e
-    | Ok func -> Vm_emitter.compile_and_package ~rng func
-  in
-  let pkg_idiv32 =
-    mk_pkg ~seed:20260926 {|
-func_native_idiv32:
-    mov eax, edi
-    cdq
-    idiv esi
-    ret
-|}
-  in
-  let pkg_zext =
-    mk_pkg ~seed:20260927 {|
-func_native_zext:
-    mov rsi, rdi
-    mov eax, esi
-    ret
-|}
-  in
-  with_temp_dir (fun tmp_dir ->
-      run_custom_vm ~name:"idiv32" tmp_dir pkg_idiv32 {|
-    vanguard_threaded_vm::VMContext ctx = {};
-    ctx.init();
-    ctx.set_rdi((uint64_t)(-47));
-    ctx.set_rsi(5);
-    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
-    if (ctx.get_rax() != 0xFFFFFFF7ULL) return 2;
-    if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 0xFFFFFFFEULL) return 3;
-|};
-      run_custom_vm ~name:"zext32" tmp_dir pkg_zext {|
-    vanguard_threaded_vm::VMContext ctx = {};
-    ctx.init();
-    ctx.set_rdi(0x123456789AULL);
-    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
-    if (ctx.get_rax() != 0x3456789AULL) return 2;
-|})
-
 let tests = [
   Alcotest.test_case "threaded_vm_compilation_and_execution" `Slow test_threaded_vm_compilation_and_execution;
   Alcotest.test_case "threaded_vm_with_cff" `Slow test_threaded_vm_with_cff;
@@ -443,6 +300,4 @@ let tests = [
   Alcotest.test_case "dynamic_junk_bytecode" `Slow test_dynamic_junk_bytecode;
   Alcotest.test_case "integrity_checksumming_and_stack_scrambling" `Slow test_integrity_checksumming_and_stack_scrambling;
   Alcotest.test_case "external_libc_call_trampoline" `Slow test_external_libc_call_trampoline;
-  Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
-  Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
 ]

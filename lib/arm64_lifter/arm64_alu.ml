@@ -2,6 +2,18 @@ open Vm_ir
 open Arm64_types
 open Arm64_common
 
+(* Shifted-register ALU operand (e.g. `add w8, w8, w0, lsr #16`): materialise the
+   shifted source into vtmp1, then apply the op through [emit_3addr_alu] so the
+   src1 = dst emitter convention holds even for 3-operand forms. *)
+let emit_shifted_alu ~op ~dst ~src1 ~src2 ~shift_op ~shift =
+  [
+    Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
+    Ir.Alu { op = shift_op; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
+  ]
+  @ emit_3addr_alu ~op ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false
+
+let shift_op_of_label = function "lsl" | "LSL" -> Ir.Shl | _ -> Ir.Shr
+
 let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   match (mnemonic, ops) with
   (* Moves & Loads of Constants *)
@@ -60,11 +72,15 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Some [ Ir.Nop ]
       else
         Some [ Ir.Load_symbol { dst; sym; addend = 0L } ]
+  | ("add", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR") as sh) :: OpImm shift :: _)) ->
+      Some (emit_shifted_alu ~op:Add ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
   | ("add", (OpReg dst :: OpReg src1 :: _)) ->
       Some (emit_3addr_alu ~op:Add ~dst ~src1 ~src2:(OpImm 0L) ~set_flags:false)
   | ("adds", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Some (emit_3addr_alu ~op:Add ~dst ~src1 ~src2 ~set_flags:true)
 
+  | ("sub", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR") as sh) :: OpImm shift :: _)) ->
+      Some (emit_shifted_alu ~op:Sub ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
   | ("sub", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Some (emit_3addr_alu ~op:Sub ~dst ~src1 ~src2 ~set_flags:false)
   | ("subs", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
@@ -88,30 +104,10 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Alu { op = Div; dst; src1 = Reg src1; src2 = Reg src2; set_flags = false } ]
 
   (* Logic & Shifted Register Operands *)
-  | ("orr", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel ("lsl" | "LSL") :: OpImm shift :: _)) ->
-      Some [
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-        Ir.Alu { op = Or; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
-      ]
-  | ("orr", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel ("lsr" | "LSR") :: OpImm shift :: _)) ->
-      Some [
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-        Ir.Alu { op = Or; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
-      ]
-  | ("eor", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel ("lsl" | "LSL") :: OpImm shift :: _)) ->
-      Some [
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-        Ir.Alu { op = Xor; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
-      ]
-  | ("eor", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel ("lsr" | "LSR") :: OpImm shift :: _)) ->
-      Some [
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-        Ir.Alu { op = Xor; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
-      ]
+  | ("orr", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR") as sh) :: OpImm shift :: _)) ->
+      Some (emit_shifted_alu ~op:Or ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
+  | ("eor", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR") as sh) :: OpImm shift :: _)) ->
+      Some (emit_shifted_alu ~op:Xor ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
   | ("and", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Some (emit_3addr_alu ~op:And ~dst ~src1 ~src2 ~set_flags:false)
   | ("ands", (OpReg dst :: OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->

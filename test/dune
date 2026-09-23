@@ -20,6 +20,7 @@
   test_x86_lifter
   test_anti_analysis
   test_native_vm
+  test_native_semantics
   test_metrics
   test_c_macro_obf
   test_runtime_profile
@@ -39,6 +40,7 @@
   random_visa_domain
   random_visa_ports
   random_visa_application
+  random_visa.protect_adapters
   random_visa_sail_export
   random_visa_sail_parser
   random_visa_cpp_emitter

@@ -151,6 +151,7 @@ graph TD
     Vm_ir_Rolling_key["Rolling_key 📄"]
     Vm_ir_Seed["Seed 📄"]
     Vm_ir_Semantic_transform["Semantic_transform 📄"]
+    Vm_ir_Subreg_write["Subreg_write 📄"]
     Vm_ir_Superoperator["Superoperator 📄"]
     Vm_ir_Vm_eval["Vm_eval 📄"]
   end
@@ -168,6 +169,7 @@ graph TD
     Gen_crackme_vm["Gen_crackme_vm 🚪"]
     Gen_crypto_crackme["Gen_crypto_crackme 🚪"]
     Main["Main 🚪"]
+    Mba_Verified["Mba_Verified"]
     Profile_bottlenecks["Profile_bottlenecks 🚪"]
   end
   Cli_isa -. "ref" .-> Random_visa_domain_Hw_cost
@@ -329,6 +331,7 @@ graph TD
   Arm64_lifter_Arm64_lifter -->|"ref"| Arm64_lifter_Arm64_alu
   Arm64_lifter_Arm64_lifter -->|"ref"| Arm64_lifter_Arm64_mem
   Arm64_lifter_Arm64_lifter -->|"ref"| Arm64_lifter_Arm64_branch
+  Arm64_lifter_Arm64_lifter -->|"ref · cross-lib"| Vm_ir_Subreg_write
   Arm64_lifter_Arm64_mem -->|"open"| Arm64_lifter_Arm64_types
   Arm64_lifter_Arm64_mem -->|"open"| Arm64_lifter_Arm64_common
   Arm64_lifter_Arm64_mem ==>|"ref · cross-lib"| Vm_ir_Ir
@@ -501,6 +504,8 @@ graph TD
   Vm_ir_Semantic_transform ==>|"open"| Vm_ir_Ir
   Vm_ir_Semantic_transform -->|"open"| Vm_ir_Register
   Vm_ir_Semantic_transform -->|"ref"| Vm_ir_Seed
+  Vm_ir_Subreg_write -->|"open"| Vm_ir_Ir
+  Vm_ir_Subreg_write ==>|"ref"| Vm_ir_Register
   Vm_ir_Superoperator ==>|"open"| Vm_ir_Ir
   Vm_ir_Superoperator -->|"open"| Vm_ir_Register
   Vm_ir_Superoperator -->|"ref"| Vm_ir_Seed
@@ -511,4 +516,5 @@ graph TD
   X86_lifter_Lifter ==>|"ref · cross-lib"| Vm_ir_Ir
   X86_lifter_Lifter ==>|"ref · cross-lib"| Vm_ir_Register
   X86_lifter_Lifter -->|"ref · cross-lib"| Vm_ir_Flags
+  X86_lifter_Lifter -->|"ref · cross-lib"| Vm_ir_Subreg_write
   X86_lifter_X86_parser ==>|"ref · cross-lib"| Vm_ir_Register

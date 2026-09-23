@@ -19,6 +19,7 @@ let () =
     ("x86_64 Lifter & CFG", Test_x86_lifter.tests);
     ("Anti-Analysis (MBA & CFF)", Test_anti_analysis.tests);
     ("Native Threaded VM", Test_native_vm.tests);
+    ("Native VM Sub-width Semantics", Test_native_semantics.tests);
     ("Devirtualization Metrics", Test_metrics.tests);
     ("C Macro Obfuscation", Test_c_macro_obf.tests);
     ("VM Runtime Profile", Test_runtime_profile.tests);

@@ -223,6 +223,7 @@ let compile_and_package
                     match m.width with
                     | Register.B64 -> OP_LOAD_64
                     | Register.B32 -> OP_LOAD_32
+                    | Register.B16 -> OP_LOAD_16
                     | _ -> OP_LOAD_8
                   in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
@@ -232,6 +233,7 @@ let compile_and_package
                     match m.width with
                     | Register.B64 -> OP_STORE_64
                     | Register.B32 -> OP_STORE_32
+                    | Register.B16 -> OP_STORE_16
                     | _ -> OP_STORE_8
                   in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in

@@ -103,6 +103,11 @@ let emit_mem_and_ffi_handlers b =
   Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint32_t*>(addr)));\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_LOAD_16: {\n";
+  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint16_t*>(addr)));\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_LOAD_8: {\n";
   Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
   Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint8_t*>(addr)));\n";
@@ -116,6 +121,11 @@ let emit_mem_and_ffi_handlers b =
   Buffer.add_string b "    H_STORE_32: {\n";
   Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
   Buffer.add_string b "        *reinterpret_cast<uint32_t*>(addr) = (uint32_t)ctx.get_reg(src);\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_STORE_16: {\n";
+  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+  Buffer.add_string b "        *reinterpret_cast<uint16_t*>(addr) = (uint16_t)ctx.get_reg(src);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_STORE_8: {\n";

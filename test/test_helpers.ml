@@ -48,3 +48,53 @@ let run_command_capture cmd =
   let status = Unix.close_process_in ic in
   (status, Buffer.contents out_buf)
 
+(* Compile a threaded-VM package's generated runtime + runner into an executable. *)
+let compile_and_prepare_vm tmp_dir (pkg : Native_vm.Vm_emitter.vm_package) =
+  let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
+  write_file_string hdr_path pkg.cpp_runtime_source;
+  let runner_path = Filename.concat tmp_dir "runner.cpp" in
+  write_file_string runner_path pkg.runner_source;
+  let bin_path = Filename.concat tmp_dir "runner" in
+  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+  let comp_status = Sys.command comp_cmd in
+  Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
+  bin_path
+
+(* Custom-runner helper for several packages inside one temp dir: each package
+   gets its own header/runner/binary named after [name], so independent VM
+   images (different key material) coexist without clobbering each other. *)
+let run_custom_vm ~(name : string) tmp_dir (pkg : Native_vm.Vm_emitter.vm_package) (checks_body : string) =
+  let hdr_path = Filename.concat tmp_dir (name ^ "_vm.hpp") in
+  write_file_string hdr_path pkg.cpp_runtime_source;
+  let custom_runner =
+    Printf.sprintf {|
+#include "%s_vm.hpp"
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+
+static uint64_t embedded_bytecode[] = {
+%s
+};
+
+int main() {
+    size_t count = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);
+%s
+    return 0;
+}
+|}
+      name
+      (String.concat "\n" (List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) pkg.bytecode))
+      checks_body
+  in
+  let runner_path = Filename.concat tmp_dir (name ^ "_runner.cpp") in
+  write_file_string runner_path custom_runner;
+  let bin_path = Filename.concat tmp_dir name in
+  let comp_status =
+    Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path)
+  in
+  Alcotest.(check int) (name ^ ": clang++ compilation succeeds") 0 comp_status;
+  let status, _ = run_command_capture bin_path in
+  Alcotest.(check bool) (name ^ ": runner exits 0") true (status = Unix.WEXITED 0)
+
+

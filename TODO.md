@@ -8,23 +8,31 @@
 
 ## P0 — корректность движка (ломается на обычном `-O2` коде)
 
-### 1. Нет 16-битного доступа к памяти: `ldrh`/`strh` читают/пишут 1 байт вместо 2
+### 1. Нет 16-битного доступа к памяти: `ldrh`/`strh` читают/пишут 1 байт вместо 2 — ВЫПОЛНЕНО 2026-09-23
 
-- **Где**: `lib/native_vm/vm_emitter.ml:225-226` (load) и `:234-235` (store) — матч ширины
-  `B64 → OP_LOAD_64 | B32 → OP_LOAD_32 | _ → OP_LOAD_8`, ветки `B16` нет, и она падает в `_`.
-- **Следствие**: `ldrh`/`ldrsh`/`strh` (ширина `Register.B16` из парсера) транслируются в
-  `H_LOAD_8`/`H_STORE_8` — теряется второй байт. Любой `short`/`uint16_t` в виртуализируемом
-  коде даёт неверный результат.
-- **Чинить**:
-  1. Добавить опкоды `OP_LOAD_16` / `OP_STORE_16` в `lib/native_vm/vm_transform.ml`
-     (конструкторы `:76-81`, аллокация таблицы `:106-107`, имена хендлеров `:159-162`).
-  2. Добавить C++ хендлеры `H_LOAD_16` / `H_STORE_16` рядом с существующими в
-     `lib/native_vm/vm_mem_handlers.ml:98-125` (`uint16_t` с правильным расширением).
-  3. В `vm_emitter.ml:225/234` добавить ветку `Register.B16 → OP_LOAD_16` / `OP_STORE_16`.
-  4. ⚠️ Добавление опкодов сдвигает аллокацию слотов 256-слотовой таблицы и зеркала
-     rolling-key (`lib/vm_ir/rolling_key.ml`) — прогнать `test_anti_pushan.ml` на golden-векторах.
-- **Приёмка**: юнит-тест lift `ldrh`/`strh` в `test/test_arm64_lifter.ml` + E2E C-программа с
-  `uint16_t` арифметикой внутри `ASGARD_BEGIN_VIRTUALIZE` (clang -O2/-O3, exit code совпадает).
+- Сделано по плану: опкоды `OP_LOAD_16`/`OP_STORE_16` в `vm_transform.ml` (аллокация
+  слотов сдвинулась — OCaml-эмиттер и C++ dispatch-таблица синхронны, golden-векторы
+  anti-pushan не зависят от опкодов и остались зелёными), C++ хендлеры `H_LOAD_16`/
+  `H_STORE_16` в `vm_mem_handlers.ml` (`uint16_t`, zero-extend — точно семантика
+  `ldrh wX`), ветки `B16` в матчах ширины load/store в `vm_emitter.ml`.
+- Тесты: юнит `ARM64 Lift Halfword Memory (strh/ldrh)` в `test_arm64_lifter.ml`
+  (пинит ровно 1 B16-store и 1 B16-load в IR + результат эвалюатора 0xBFAD); нативный
+  `native_b16_word_memory` (word-слот через `[rsp-16]`, оба байта: 0xCACAFE; старый
+  byte-only баг давал 0xFE); полный E2E `e2e_uint16_pipeline` (uint16-арифметика внутри
+  `ASGARD_BEGIN_VIRTUALIZE` через весь пайплайн, protected-app exit 0) и
+  `e2e_uint16_clang_o2_o3` (тот же регион под clang -O2/-O3, lift + `asgard_vm_call`,
+  результат 0xF6AA; старый баг давал 0x5A) — вынесены в новый файл
+  `test/test_native_semantics.ml` (сюда же переехали div/idiv и B32-тесты пунктов 5/6,
+  чтобы `test_native_vm.ml` не стал god-module).
+- **Найдено попутно (серьёзное, тот же класс что п.9)**: arm64-лифтер молча неверно
+  поднимал 3-операндные ALU со сдвинутым операндом — `add w8, w8, w0, lsr #16`
+  (канон clang для uint16-арифметики!) матчился catch-all'ом как `+0`, а старые
+  явные паттерны `orr/eor` c `lsl/lsr` кодировали src1≠dst, который эмиттер
+  отбрасывает. Фикс в `arm64_alu.ml`: общий `emit_shifted_alu` — сдвиг материализуется
+  в `vtmp1`, затем op через `emit_3addr_alu` с сохранением конвенции src1=dst;
+  add/sub/orr/eor теперь через один хелпер. Без него E2E-тест не проходил.
+- Остаточные ограничения: `ldrsh` (знак-расширяющая загрузка) по-прежнему
+  zero-extend'ит — это территория пункта 2.
 
 ### 2. Нет знакового расширения при загрузках: `ldrsb`/`ldrsh`/`movsx`/`movsxd`
 
