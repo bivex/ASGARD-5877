@@ -168,16 +168,36 @@
 
 ## P3 — новая фича (следующий кандидат stage-2)
 
-### 7. Anti-VMPredator address-bound bytecode (не начат)
+### 7. Anti-VMPredator address-bound bytecode — ВЫПОЛНЕНО 2026-09-24
 
-- **Контекст**: `docs/VM_PROTECTOR.md:187` честно фиксирует границу текущих rolling keys —
-  последовательный статический проход всё равно восстанавливает keystream.
-- **Дизайн**: ключ дешифровки секции байткода = хеш реальных адресов хендлеров в памяти
-  (dump/relocation/patch рендерит байткод бесполезным; даёт настоящее межблочное
-  history-связывание, которого нет у rolling keys).
-- **Чинить** (= реализовать): считать хеш на этапе init C++-рантайма, миксовать в
-  `anchor_key`, зеркалить в OCaml-энкодере невозможно (адреса известны только в рантайме) —
-  поэтому шифрование байткода переносится в runtime-init, обновить `test_anti_pushan.ml`.
+- **Контекст**: `docs/VM_PROTECTOR.md:187` фиксировал границу стандартных rolling keys —
+  последовательный статический проход / дамп может восстановить keystream при отсутствии привязки
+  к живому адресному пространству процесса.
+- **Дизайн и реализация**:
+  - Ключ дешифровки и keystream рантайма привязаны к реальным in-memory адресам хендлеров VM:
+    - `lib/native_vm/protection_types.ml(i)`, `protection_config.mli`, `protection_presets.ml`, `protection_json.ml`:
+      добавлено поле `address_bound : bool` в `anti_pushan_config` (активно в `max_security`, поддержано в JSON roundtrip).
+    - `lib/native_vm/vm_context_emitter.ml`: функция `compute_handlers_hash(all_dispatch_domains, num_domains)`
+      вычисляет криптографический хеш реальных указателей на хендлеры всех доменов диспетчеризации.
+    - `anchor_key(seed, off, addr_hash)` и `reanchor_running_key(off, addr_hash)`:
+      подмешивают хеш адресов в начальный ключ блока, обеспечивая нелинейную диффузию адресов хендлеров во все слова блока.
+    - `lib/native_vm/vm_control_handlers.ml`: все терминаторы и ветвления (`H_JMP`, `H_JCC`, `H_CALL`)
+      пере-анкорят цепочку с передачей `g_handlers_hash`.
+    - `lib/native_vm/vm_runtime_emitter.ml`: генерирует метаданные блоков `g_block_offsets` и `g_block_lengths`,
+      на этапе runtime-init в эфемерном буфере синтезирует `bound_bc[idx] = bytecode[idx] ^ k_pos ^ rk(g_handlers_hash)`,
+      выполняет чтение из `bound_bc` и гарантирует его полное обнуление `SCRUB_WORD` при выходе из VM.
+    - `lib/native_vm/vm_emitter.ml`: при включённом `address_bound` байткод в `.rodata` маскируется только `k_pos`,
+      перенося наложение dynamic rolling key на этап runtime init с привязкой к адресам; вычисляются `block_spans` для рантайма.
+    - Попутно исправлен дефект в `lib/native_vm/vm_mem_handlers.ml` и `vm_runtime_emitter.ml`:
+      небезопасные SIMD-хендлеры NEON/SSE теперь строго ограждены `#if defined(ASGARD_VECTOR_ISA)`.
+- **Тесты (2 новых теста, 209 всего в 33 сьютах)**:
+  - `anti_vmpredator_address_bound_execution` в `test_anti_pushan.ml`: E2E компиляция и выполнение
+    программы с циклами и ветвлениями под `address_bound = true`, верификация макроса и буфера `bound_bc`,
+    100% точность результата (факториал 5 = 120).
+  - `anti_vmpredator_tamper_detection` в `test_anti_pushan.ml`: проверка детекции вмешательства — любая модификация
+    или эмуляция без связывания адресов (`g_handlers_hash`) рассинхронизирует `running_key` на ветвлениях
+    и немедленно крашит/абортит выполнение.
+  - JSON roundtrip в `test_protection_config.ml`: сохранение и загрузка `anti_pushan.address_bound`.
 
 ---
 

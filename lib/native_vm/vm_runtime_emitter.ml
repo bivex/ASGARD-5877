@@ -1,4 +1,4 @@
-let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) ?(external_symbols = []) ?(constants = []) opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) ?(external_symbols = []) ?(constants = []) ?(block_spans = []) opcode_to_handler =
   let profile = match runtime_profile with
     | Some p -> p
     | None -> Random_visa_domain.Vm_runtime_profile.generate ~seed:(Int64.of_int32 key_seed) ~total_opcodes:256 ()
@@ -18,6 +18,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_nanomites = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.nanomites | None -> true in
   let enable_direct_syscalls = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.direct_syscalls | None -> true in
   let enable_running_key = Protection_config.rolling_key_enabled config in
+  let enable_address_bound = Protection_config.address_bound_enabled config in
   let enable_stack_scramble = match config with Some c -> c.vm_runtime.stack_scrambling | None -> true in
   let enable_mem_sanitize = match config with Some c -> c.vm_runtime.memory_sanitization | None -> true in
   let enable_vector_isa = match config with Some c -> c.vm_runtime.vector_isa | None -> true in
@@ -28,6 +29,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "#if !defined(_WIN32) && !defined(_WIN64)\n#include <dlfcn.h>\n#endif\n#if !defined(RTLD_DEFAULT)\n#define RTLD_DEFAULT ((void*)0)\n#endif\n";
   Buffer.add_string b "#if defined(__APPLE__)\n#include <sys/types.h>\n#include <sys/sysctl.h>\n#include <unistd.h>\n#include <mach/mach.h>\n#include <mach/thread_act.h>\n#elif defined(__linux__)\n#include <fcntl.h>\n#include <unistd.h>\n#include <string.h>\n#elif defined(_WIN32) || defined(_WIN64)\n#include <windows.h>\n#endif\n\n";
   if enable_vector_isa then begin
+    Buffer.add_string b "#define ASGARD_VECTOR_ISA 1\n";
     Buffer.add_string b "#if defined(__aarch64__)\n#include <arm_neon.h>\n#elif defined(__x86_64__)\n#include <immintrin.h>\n#endif\n\n";
   end;
   Buffer.add_string b (Vm_ir.Rns.emit_cpp_rns_header ());
@@ -56,6 +58,16 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b "\n";
   end;
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
+  if enable_address_bound then begin
+    Buffer.add_string b "#define ASGARD_ADDRESS_BOUND_BYTECODE 1\n";
+    Buffer.add_string b (Printf.sprintf "static const size_t g_num_blocks = %d;\n" (List.length block_spans));
+    Buffer.add_string b "static const size_t g_block_offsets[] = {\n";
+    List.iter (fun (off, _) -> Buffer.add_string b (Printf.sprintf "    %d,\n" off)) block_spans;
+    Buffer.add_string b "};\n";
+    Buffer.add_string b "static const size_t g_block_lengths[] = {\n";
+    List.iter (fun (_, len) -> Buffer.add_string b (Printf.sprintf "    %d,\n" len)) block_spans;
+    Buffer.add_string b "};\n\n";
+  end;
 
   Buffer.add_string b "static const char* const g_external_symbols[] = {\n";
   if external_symbols = [] then
@@ -186,6 +198,27 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   done;
   Buffer.add_string b "    };\n\n";
 
+  Buffer.add_string b (Printf.sprintf "    uint64_t g_handlers_hash = compute_handlers_hash((const void* const* const*)all_dispatch_domains, %d);\n\n" num_domains);
+  if enable_address_bound then begin
+    Buffer.add_string b "    uint64_t bound_buf[256];\n";
+    Buffer.add_string b "    uint64_t* bound_bc = (count <= 256) ? bound_buf : (uint64_t*)__builtin_alloca(count * sizeof(uint64_t));\n";
+    Buffer.add_string b "    for (size_t b = 0; b < g_num_blocks; ++b) {\n";
+    Buffer.add_string b "        size_t off = g_block_offsets[b];\n";
+    Buffer.add_string b "        size_t len = g_block_lengths[b];\n";
+    Buffer.add_string b "        uint64_t rk = VMContext::anchor_key(seed, (uint64_t)off, g_handlers_hash);\n";
+    Buffer.add_string b "        for (size_t j = 0; j < len; ++j) {\n";
+    Buffer.add_string b "            size_t idx = off + j;\n";
+    Buffer.add_string b "            uint64_t k_pos = key64_for_offset(seed, idx);\n";
+    Buffer.add_string b "            uint64_t plain = bytecode[idx] ^ k_pos;\n";
+    Buffer.add_string b "            bound_bc[idx] = plain ^ k_pos ^ rk;\n";
+    Buffer.add_string b "            uint8_t b_op = (uint8_t)(plain & 0xFF);\n";
+    Buffer.add_string b "            uint8_t b_dst = (uint8_t)((plain >> 8) & 0x1F);\n";
+    Buffer.add_string b "            int64_t b_imm = (int64_t)((int32_t)((plain >> 18) & 0xFFFFFFFFULL));\n";
+    Buffer.add_string b "            rk = VMContext::advance_key_step(rk, b_op, b_dst, b_imm);\n";
+    Buffer.add_string b "        }\n";
+    Buffer.add_string b "    }\n\n";
+  end;
+
   Buffer.add_string b "    uint64_t word = 0;\n";
   Buffer.add_string b "    uint8_t op = 0;\n";
   Buffer.add_string b "    uint8_t dst = 0;\n";
@@ -199,7 +232,10 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b "        uint64_t k_dyn = k_pos ^ ctx.running_key; \\\n"
   else
     Buffer.add_string b "        uint64_t k_dyn = k_pos; \\\n";
-  Buffer.add_string b "        work_bc[vIP_idx] = bytecode[vIP_idx]; \\\n";
+  if enable_address_bound then
+    Buffer.add_string b "        work_bc[vIP_idx] = bound_bc[vIP_idx]; \\\n"
+  else
+    Buffer.add_string b "        work_bc[vIP_idx] = bytecode[vIP_idx]; \\\n";
   Buffer.add_string b "        word = work_bc[vIP_idx] ^ k_dyn; \\\n";
   if enable_mem_sanitize then
     Buffer.add_string b "        /* Ephemeral Self-Consuming: Overwrite scratch RAM buffer with dynamic rolling noise */ \\\n        SCRUB_WORD(&work_bc[vIP_idx], (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL); \\\n";
@@ -216,11 +252,15 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b "    } while(0)\n\n";
 
   (* Anti-Pushan: entry block always starts at offset 0 — anchor the chain there. *)
-  if enable_running_key then
-    Buffer.add_string b "    ctx.reanchor_running_key(0);\n";
+  if enable_running_key then begin
+    if enable_address_bound then
+      Buffer.add_string b "    ctx.reanchor_running_key(0, g_handlers_hash);\n"
+    else
+      Buffer.add_string b "    ctx.reanchor_running_key(0);\n";
+  end;
   Buffer.add_string b "    FETCH_NEXT();\n\n";
 
-  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_timing_probes ~enable_nanomites ~enable_egraph_expansion;
+  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_address_bound ~enable_timing_probes ~enable_nanomites ~enable_egraph_expansion;
 
   Buffer.add_string b "    EXIT_VM:\n";
   if enable_mem_sanitize then begin
@@ -228,6 +268,11 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b "    for (size_t i = 0; i < count; ++i) {\n";
     Buffer.add_string b "        SCRUB_WORD(&work_bc[i], 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed + (uint64_t)i));\n";
     Buffer.add_string b "    }\n";
+    if enable_address_bound then begin
+      Buffer.add_string b "    for (size_t i = 0; i < count; ++i) {\n";
+      Buffer.add_string b "        SCRUB_WORD(&bound_bc[i], 0xDEADBEEF5877CAFEULL ^ ((uint64_t)seed + (uint64_t)i));\n";
+      Buffer.add_string b "    }\n";
+    end;
     Buffer.add_string b "    if (scrub_source && bytecode) {\n";
     Buffer.add_string b "        for (size_t i = 0; i < count; ++i) {\n";
     Buffer.add_string b "            SCRUB_WORD(&const_cast<uint64_t*>(bytecode)[i], 0xDEADBEEFCAFEBABEULL ^ ((uint64_t)seed + (uint64_t)i));\n";

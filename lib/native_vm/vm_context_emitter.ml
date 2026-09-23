@@ -24,6 +24,19 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    uint64_t x2 = (x1 ^ (x1 >> 27)) * 0x94D049BB133111EBULL;\n";
   Buffer.add_string b "    return x2 ^ (x2 >> 31);\n";
   Buffer.add_string b "}\n\n";
+  Buffer.add_string b "static inline uint64_t compute_handlers_hash(const void* const* const* all_domains, size_t num_domains) noexcept {\n";
+  Buffer.add_string b "    uint64_t h = 0x5877CAFEBABE1337ULL;\n";
+  Buffer.add_string b "    for (size_t d = 0; d < num_domains; ++d) {\n";
+  Buffer.add_string b "        const void* const* domain = all_domains[d];\n";
+  Buffer.add_string b "        for (size_t op = 0; op < 256; ++op) {\n";
+  Buffer.add_string b "            uint64_t ptr_val = (uint64_t)(uintptr_t)domain[op];\n";
+  Buffer.add_string b "            h ^= ptr_val * 0x9E3779B97F4A7C15ULL;\n";
+  Buffer.add_string b "            h = (h >> 27) | (h << 37);\n";
+  Buffer.add_string b "            h *= 0xBF58476D1CE4E5B9ULL;\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    return h ^ (h >> 31);\n";
+  Buffer.add_string b "}\n\n";
 
   (* Blinded VMContext with Canary Guard Zones *)
   Buffer.add_string b "struct VMContext {\n";
@@ -72,11 +85,11 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   (* Anti-Pushan block-chained rolling key: domain-separated block-entry anchor.
      The xor-domains keep the anchor PRF distinct from k_pos, otherwise the first
      in-block mask (k_pos ^ anchor) would collapse to zero. *)
-  Buffer.add_string b "    static inline uint64_t anchor_key(uint32_t seed, uint64_t off) noexcept {\n";
-  Buffer.add_string b "        return key64_for_offset(seed ^ 0x5BD1E995U, (size_t)(off ^ 0x13375877ULL));\n";
+  Buffer.add_string b "    static inline uint64_t anchor_key(uint32_t seed, uint64_t off, uint64_t addr_hash = 0) noexcept {\n";
+  Buffer.add_string b "        return key64_for_offset(seed ^ 0x5BD1E995U, (size_t)(off ^ 0x13375877ULL)) ^ addr_hash;\n";
   Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void reanchor_running_key(uint64_t off) noexcept {\n";
-  Buffer.add_string b "        running_key = anchor_key(init_seed, off);\n";
+  Buffer.add_string b "    inline void reanchor_running_key(uint64_t off, uint64_t addr_hash = 0) noexcept {\n";
+  Buffer.add_string b "        running_key = anchor_key(init_seed, off, addr_hash);\n";
   Buffer.add_string b "        gprs[REG_VKEY] = running_key ^ reg_mask;\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline uint64_t get_vkey() const noexcept { return running_key; }\n\n";

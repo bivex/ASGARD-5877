@@ -17,6 +17,7 @@ let default : t = {
   anti_pushan = {
     enabled = true;
     running_key = true;
+    address_bound = false;
   };
   anti_tamper = {
     enabled = true;
@@ -70,6 +71,7 @@ let max_security : t = {
   anti_pushan = {
     enabled = true;
     running_key = true;
+    address_bound = true;
   };
   anti_tamper = {
     enabled = true;
@@ -123,6 +125,7 @@ let lightweight : t = {
   anti_pushan = {
     enabled = true;
     running_key = true;
+    address_bound = false;
   };
   anti_tamper = {
     enabled = false;
@@ -176,6 +179,7 @@ let stealth : t = {
   anti_pushan = {
     enabled = true;
     running_key = true;
+    address_bound = false;
   };
   anti_tamper = {
     enabled = true;
@@ -229,6 +233,7 @@ let minimal : t = {
   anti_pushan = {
     enabled = false;
     running_key = false;
+    address_bound = false;
   };
   anti_tamper = {
     enabled = false;
@@ -282,6 +287,7 @@ let high : t = {
   anti_pushan = {
     enabled = true;
     running_key = true;
+    address_bound = false;
   };
   anti_tamper = {
     enabled = true;

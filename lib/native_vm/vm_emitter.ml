@@ -147,6 +147,7 @@ let compile_and_package
      [cur_key] tracks ctx.running_key word by word; it stays 0L when the feature
      is disabled, making the mask byte-identical to the legacy positional PRF. *)
   let enable_rolling = Protection_config.rolling_key_enabled config in
+  let enable_address_bound = Protection_config.address_bound_enabled config in
   let cur_key = ref 0L in
   let assert_src1_eq_dst ~op ~dst ~src1 =
     match src1 with
@@ -168,10 +169,10 @@ let compile_and_package
     if extra_bits <> 0L then
       w := Int64.logor !w (Int64.shift_left (Int64.logand extra_bits 0x3FFFL) 50);
     let k_pos = Rolling_key.key64_for_offset key_seed !cur_idx in
-    let mask = Int64.logxor k_pos !cur_key in
+    let mask = if enable_address_bound then k_pos else Int64.logxor k_pos !cur_key in
     incr cur_idx;
     let masked_w = Int64.logxor !w mask in
-    if enable_rolling then begin
+    if enable_rolling && not enable_address_bound then begin
       (* Advance exactly like FETCH_NEXT does: op is the randomized opcode byte,
          imm is re-read from the packed word (32-bit sign-extended window), never
          from the source immediate — the 46→32 bit truncation must match. *)
@@ -201,7 +202,7 @@ let compile_and_package
          runtime reanchor in H_JMP/H_JCC/H_CALL and the offset-0 entry probe.
          Blocks are encoded in layout order, so the offset below is exactly
          where this block's first word will land. *)
-      if enable_rolling then
+      if enable_rolling && not enable_address_bound then
         cur_key := Rolling_key.anchor_key key_seed (get_block_offset b.id);
       List.iter
         (function
@@ -395,7 +396,16 @@ let compile_and_package
     !h
   in
   let expected_hash = compute_bytecode_hash key_seed final_bytecode in
-  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config ~external_symbols:!external_symbols ~constants opcode_to_handler in
+  let block_spans =
+    List.map
+      (fun (b : Ir.basic_block) ->
+        let off = get_block_offset b.id in
+        let fused = Hashtbl.find block_fused_ops b.id in
+        let len = List.fold_left (fun acc op -> acc + words_of_fused op) 0 fused in
+        (off, len))
+      sorted_blocks
+  in
+  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config ~external_symbols:!external_symbols ~constants ~block_spans opcode_to_handler in
   let runner_src = Vm_runtime_emitter.emit_runner_cpp ~key_seed:(Int64.of_int32 key_seed) ~reg_perm final_bytecode in
 
   let decoy_count = 256 - List.length all_op_kinds in

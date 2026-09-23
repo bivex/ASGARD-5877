@@ -30,6 +30,7 @@ type cff_config = {
 type anti_pushan_config = {
   enabled : bool;
   running_key : bool;
+  address_bound : bool;
 }
 
 type anti_tamper_config = {
@@ -84,3 +85,7 @@ val rolling_key_enabled : t option -> bool
 (** Anti-Pushan block-chained rolling key gate: [true] unless a config explicitly
     disables it.  Shared by the encoder and the C++ runtime emitter so both sides
     derive the same keystream. *)
+
+val address_bound_enabled : t option -> bool
+(** Anti-VMPredator address-bound bytecode gate: [true] when running_key and address_bound
+    are both enabled. Binds bytecode decryption to runtime handler addresses. *)

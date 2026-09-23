@@ -149,7 +149,7 @@ func_rk_mirror:
   | Error e -> Alcotest.fail e
   | Ok func ->
       let on_cfg = Protection_config.lightweight in
-      let off_cfg = { on_cfg with anti_pushan = { enabled = false; running_key = false } } in
+      let off_cfg = { on_cfg with anti_pushan = { enabled = false; running_key = false; address_bound = false } } in
       let pkg_on = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xC0FFEE |]) ~config:on_cfg func in
       let pkg_off = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xC0FFEE |]) ~config:off_cfg func in
       let bc_on = Array.of_list pkg_on.bytecode in
@@ -195,7 +195,7 @@ func_rk_legacy:
   | Ok func ->
       let off_cfg =
         let base = Protection_config.lightweight in
-        { base with anti_pushan = { enabled = false; running_key = false } }
+        { base with anti_pushan = { enabled = false; running_key = false; address_bound = false } }
       in
       let pkg_off = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xFEED |]) ~config:off_cfg func in
       let pkg_on = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xFEED |]) ~config:Protection_config.lightweight func in
@@ -270,6 +270,96 @@ func_branch_div:
       (* 42 < 50 -> rax = 42 + 2000 = 2042 *)
       Alcotest.(check bool) "rax is 2042" true (String.contains out_str '2' && String.contains out_str '0' && String.contains out_str '4')
 
+let string_contains s sub =
+  let len_s = String.length s in
+  let len_sub = String.length sub in
+  if len_sub > len_s then false
+  else
+    let rec check i =
+      if i + len_sub > len_s then false
+      else if String.sub s i len_sub = sub then true
+      else check (i + 1)
+    in
+    check 0
+
+let replace_first ~pattern ~with_str s =
+  let len_p = String.length pattern in
+  let len_s = String.length s in
+  let rec find i =
+    if i + len_p > len_s then s
+    else if String.sub s i len_p = pattern then
+      String.sub s 0 i ^ with_str ^ String.sub s (i + len_p) (len_s - (i + len_p))
+    else
+      find (i + 1)
+  in
+  find 0
+
+let test_anti_vmpredator_address_bound_execution () =
+  let rng = Random.State.make [| 0xABCD |] in
+  let asm = {|
+func_addr_bound:
+    mov rax, 1
+    mov rcx, 5
+.Lloop:
+    imul rax, rcx
+    sub rcx, 1
+    cmp rcx, 0
+    jne .Lloop
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let addr_cfg =
+        let base = Protection_config.lightweight in
+        { base with anti_pushan = { enabled = true; running_key = true; address_bound = true } }
+      in
+      let pkg = Vm_emitter.compile_and_package ~rng ~config:addr_cfg func in
+      Alcotest.(check bool) "contains address-bound macro" true
+        (string_contains pkg.cpp_runtime_source "#define ASGARD_ADDRESS_BOUND_BYTECODE 1");
+      Alcotest.(check bool) "contains compute_handlers_hash" true
+        (string_contains pkg.cpp_runtime_source "compute_handlers_hash");
+      Alcotest.(check bool) "contains bound_bc allocation" true
+        (string_contains pkg.cpp_runtime_source "bound_bc");
+      let status, out_str = compile_and_run ~tmp_prefix:"anti_vmpredator_exec_" pkg in
+      Alcotest.(check bool) "address-bound execution succeeds" true (status = Unix.WEXITED 0);
+      (* 5! = 120 *)
+      Alcotest.(check bool) "rax is 120 (5!)" true (string_contains out_str "120")
+
+let test_anti_vmpredator_tamper_detection () =
+  let rng = Random.State.make [| 0xDEAD |] in
+  let asm = {|
+func_tamper:
+    mov rax, 1
+    mov rcx, 5
+.Lloop:
+    imul rax, rcx
+    sub rcx, 1
+    cmp rcx, 0
+    jne .Lloop
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let addr_cfg =
+        let base = Protection_config.lightweight in
+        { base with anti_pushan = { enabled = true; running_key = true; address_bound = true } }
+      in
+      let pkg = Vm_emitter.compile_and_package ~rng ~config:addr_cfg func in
+      (* Simulate an emulator or hook tampering with handler address binding on branch *)
+      let tampered_src =
+        replace_first
+          ~pattern:"ctx.reanchor_running_key((uint64_t)vIP_idx, g_handlers_hash);"
+          ~with_str:"ctx.reanchor_running_key((uint64_t)vIP_idx, 0ULL);"
+          pkg.cpp_runtime_source
+      in
+      Alcotest.(check bool) "tampered replacement applied" true (tampered_src <> pkg.cpp_runtime_source);
+      let tampered_pkg = { pkg with cpp_runtime_source = tampered_src } in
+      let status, out_str = compile_and_run ~tmp_prefix:"anti_vmpredator_tamper_" tampered_pkg in
+      let succeeded_and_120 = (status = Unix.WEXITED 0) && string_contains out_str "120" in
+      Alcotest.(check bool) "tampered handler binding aborts/fails execution" false succeeded_and_120
+
 let tests = [
   Alcotest.test_case "running_key_advances_on_execution" `Quick test_running_key_advances_on_execution;
   Alcotest.test_case "rolling_key_derivation_vectors" `Quick test_rolling_key_derivation_vectors;
@@ -278,4 +368,7 @@ let tests = [
   Alcotest.test_case "disabled_flag_is_legacy_bytecode" `Quick test_disabled_flag_is_legacy_bytecode;
   Alcotest.test_case "loop_history_soundness" `Quick test_loop_history_soundness;
   Alcotest.test_case "branch_path_history_diversity" `Quick test_branch_path_history_diversity;
+  Alcotest.test_case "anti_vmpredator_address_bound_execution" `Quick test_anti_vmpredator_address_bound_execution;
+  Alcotest.test_case "anti_vmpredator_tamper_detection" `Quick test_anti_vmpredator_tamper_detection;
 ]
+

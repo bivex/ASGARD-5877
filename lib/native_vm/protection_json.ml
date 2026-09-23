@@ -143,6 +143,7 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
           {
             enabled = json_get_bool "enabled" base.anti_pushan.enabled obj;
             running_key = json_get_bool "running_key" base.anti_pushan.running_key obj;
+            address_bound = json_get_bool "address_bound" base.anti_pushan.address_bound obj;
           }
     in
 
@@ -229,6 +230,7 @@ let to_yojson (cfg : t) : Yojson.Basic.t =
     ("anti_pushan", `Assoc [
       ("enabled", `Bool cfg.anti_pushan.enabled);
       ("running_key", `Bool cfg.anti_pushan.running_key);
+      ("address_bound", `Bool cfg.anti_pushan.address_bound);
     ]);
     ("anti_tamper", `Assoc [
       ("enabled", `Bool cfg.anti_tamper.enabled);

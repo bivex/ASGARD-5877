@@ -1,7 +1,11 @@
-let emit_control_handlers b ~enable_nanomites ~enable_running_key =
+let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_address_bound = false) () =
   let maybe_reanchor () =
-    if enable_running_key then
-      Buffer.add_string b "        ctx.reanchor_running_key((uint64_t)vIP_idx);\n"
+    if enable_running_key then begin
+      if enable_address_bound then
+        Buffer.add_string b "        ctx.reanchor_running_key((uint64_t)vIP_idx, g_handlers_hash);\n"
+      else
+        Buffer.add_string b "        ctx.reanchor_running_key((uint64_t)vIP_idx);\n"
+    end
   in
 
   Buffer.add_string b "    H_JMP: {\n";
