@@ -5,7 +5,7 @@ let is_terminator = function
   | Ir.Jmp _ | Ir.Jcc _ | Ir.Ret | Ir.Trap _ | Ir.Vm_exit -> true
   | _ -> false
 
-let raw_to_ir_operand = function
+let raw_to_ir_operand ?(is_signed = false) = function
   | OpReg (Register.Vreg (Register.VZERO, _)) -> Ir.Imm 0L
   | OpReg r -> Ir.Reg r
   | OpImm i -> Ir.Imm i
@@ -15,6 +15,7 @@ let raw_to_ir_operand = function
         index = m.index;
         disp = m.disp;
         width = m.width;
+        is_signed;
       }
   | OpLabel _ -> Ir.Imm 0L
 

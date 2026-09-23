@@ -293,6 +293,79 @@ zext_check:
           (* writing esi/eax must zero the upper half of rax, not merge it *)
           Alcotest.(check int64) "mov eax zeroes upper 32" 66L (get_reg state Register.rax)
 
+let test_lift_and_eval_movsx_mem () =
+  let asm = {|
+movsx_mem:
+    mov byte ptr [rsp - 8], dil
+    mov word ptr [rsp - 16], si
+    mov dword ptr [rsp - 24], edx
+    movsx rax, byte ptr [rsp - 8]
+    movsx rcx, word ptr [rsp - 16]
+    add rax, rcx
+    movsxd rcx, dword ptr [rsp - 24]
+    add rax, rcx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 0xFBL; (* -5 *)
+      set_reg state Register.rsi 0xFED4L; (* -300 *)
+      set_reg state Register.rdx 0xFFFE7960L; (* -100000 *)
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* (-5) + (-300) + (-100000) = -100305 *)
+          Alcotest.(check int64) "movsx/movsxd mem sum = -100305" (-100305L) (get_reg state Register.rax)
+
+let test_lift_and_eval_movsx_reg () =
+  let asm = {|
+movsx_reg:
+    mov cl, dil
+    movsx eax, cl
+    mov dx, si
+    movsx r8, dx
+    mov r10d, r9d
+    movsxd r11, r10d
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 0xFBL; (* -5 in cl *)
+      set_reg state Register.rsi 0xFED4L; (* -300 in dx *)
+      set_reg state Register.r9 0xFFFE7960L; (* -100000 in r10d *)
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* eax is 32-bit: sign-extended byte to 32 bits = 0x00000000FFFFFFFB *)
+          Alcotest.(check int64) "movsx eax, cl" 0xFFFFFFFBL (get_reg state Register.rax);
+          (* r8 is 64-bit: sign-extended word to 64 bits = -300 *)
+          Alcotest.(check int64) "movsx r8, dx" (-300L) (get_reg state Register.r8);
+          (* r11 is 64-bit: sign-extended dword to 64 bits = -100000 *)
+          Alcotest.(check int64) "movsxd r11, r10d" (-100000L) (get_reg state Register.r11)
+
+let test_lift_and_eval_movzx_reg () =
+  let asm = {|
+movzx_reg:
+    mov rcx, rdi
+    movzx eax, cl
+    movzx rdx, cx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 0x12345678_9ABCDEFBL;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "movzx eax, cl zeroes upper bits" 0xFBL (get_reg state Register.rax);
+          Alcotest.(check int64) "movzx rdx, cx zeroes upper bits" 0xDEFBL (get_reg state Register.rdx)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -307,5 +380,8 @@ let tests = [
   Alcotest.test_case "lift_and_eval_div32_unsigned" `Quick test_lift_and_eval_div32_unsigned;
   Alcotest.test_case "lift_and_eval_cdqe_sext" `Quick test_lift_and_eval_cdqe_sext;
   Alcotest.test_case "lift_and_eval_b32_write_zero_extends" `Quick test_lift_and_eval_b32_write_zero_extends;
+  Alcotest.test_case "lift_and_eval_movsx_mem" `Quick test_lift_and_eval_movsx_mem;
+  Alcotest.test_case "lift_and_eval_movsx_reg" `Quick test_lift_and_eval_movsx_reg;
+  Alcotest.test_case "lift_and_eval_movzx_reg" `Quick test_lift_and_eval_movzx_reg;
 ]
 

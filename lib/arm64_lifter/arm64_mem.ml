@@ -5,7 +5,12 @@ open Arm64_common
 let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   match (mnemonic, ops) with
   (* Memory Load with Pre/Post-Indexed Writeback *)
-  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh"), [ OpReg dst; OpMem m ]) ->
+  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw"), [ OpReg dst; OpMem m ]) ->
+      let is_signed =
+        match mnemonic with
+        | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw" -> true
+        | _ -> false
+      in
       let scratch =
         if Register.to_string dst = Register.to_string Register.vtmp0 then Register.vtmp1
         else Register.vtmp0
@@ -13,27 +18,27 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       let (m, addr_prep) = lower_mem_operand ~scratch_reg:scratch m in
       (match m.wb with
       | WbNone ->
-          Some (addr_prep @ [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ])
+          Some (addr_prep @ [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand ~is_signed (OpMem m) } ])
       | WbPre ->
           (match m.base with
           | Some base_reg ->
               let effective_mem = { m with disp = 0L; wb = WbNone } in
               Some (addr_prep @ [
                 Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
-                Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem effective_mem) };
+                Ir.Mov { dst = Reg dst; src = raw_to_ir_operand ~is_signed (OpMem effective_mem) };
               ])
           | None ->
-              Some (addr_prep @ [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]))
+              Some (addr_prep @ [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand ~is_signed (OpMem m) } ]))
       | WbPost post_imm ->
           (match m.base with
           | Some base_reg ->
               let effective_mem = { m with disp = 0L; wb = WbNone } in
               Some (addr_prep @ [
-                Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem effective_mem) };
+                Ir.Mov { dst = Reg dst; src = raw_to_ir_operand ~is_signed (OpMem effective_mem) };
                 Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm post_imm; set_flags = false };
               ])
           | None ->
-              Some (addr_prep @ [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]))
+              Some (addr_prep @ [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand ~is_signed (OpMem m) } ]))
       )
 
   (* Memory Store with Pre/Post-Indexed Writeback *)

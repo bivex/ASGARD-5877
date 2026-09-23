@@ -285,10 +285,119 @@ int main(void) {
 |})
         [ ("-O2", "u16o2"); ("-O3", "u16o3") ])
 
+(* TODO item 2 acceptance, part 1: native execution of signed loads (movsx/movsxd)
+   through the width-blind threaded VM.  Values -5 (int8), -300 (int16), -100000 (int32)
+   are written to the stack, loaded with sign-extension, and summed.  Old zero-extending
+   handlers yield positive numbers (>4 billion for int32), making the sum diverge. *)
+let test_native_signed_loads () =
+  let pkg =
+    mk_pkg ~seed:20260935 {|
+func_native_signed_loads:
+    mov byte ptr [rsp - 8], dil
+    mov word ptr [rsp - 16], si
+    mov dword ptr [rsp - 24], edx
+    movsx rax, byte ptr [rsp - 8]
+    movsx rcx, word ptr [rsp - 16]
+    add rax, rcx
+    movsxd rcx, dword ptr [rsp - 24]
+    add rax, rcx
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_signed_loads" tmp_dir pkg {|
+    static uint64_t scratch[8] = {0};
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    ctx.set_reg(vanguard_threaded_vm::REG_RSP, (uint64_t)(scratch + 4));
+    ctx.set_rdi((uint64_t)(-5LL));
+    ctx.set_rsi((uint64_t)(-300LL));
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, (uint64_t)(-100000LL));
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    int64_t sum = (int64_t)ctx.get_rax();
+    if (sum != -100305LL) return 2;
+|})
+
+(* TODO item 2 acceptance, part 2: E2E C code with signed char, short, and int
+   compiled under clang -O2 and -O3, lifted via the marker region and executed
+   natively via asgard_vm_call. *)
+let test_e2e_signed_loads_clang_o2_o3 () =
+  let c_src = {|
+#include <stdint.h>
+#define ASGARD_BEGIN_VIRTUALIZE(tag) \
+    __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_V____\" \n\t .balign 4 \n 1:\n\t")
+#define ASGARD_END() \
+    __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_END______\" \n\t .balign 4 \n 1:\n\t")
+
+static int64_t signed_math(int64_t a, int64_t b, int64_t c) {
+    ASGARD_BEGIN_VIRTUALIZE("signed_math");
+    volatile signed char x = (signed char)a;
+    volatile short y = (short)b;
+    volatile int z = (int)c;
+    int64_t sum = (int64_t)x + (int64_t)y + (int64_t)z;
+    ASGARD_END();
+    return sum;
+}
+
+int main(void) {
+    return (signed_math(-5, -300, -100000) == -100305LL) ? 0 : 1;
+}
+|} in
+  let cfg =
+    Config_adapter.resolve
+      ~config_file:None
+      ~preset:None
+      ~enable_cff:false
+      ~enable_mba:false
+      ~mba_depth:2
+      ~seed:(Some 20260936)
+  in
+  with_temp_dir (fun tmp_dir ->
+      let c_path = Filename.concat tmp_dir "s_math.c" in
+      write_file_string c_path c_src;
+      List.iter
+        (fun (opt, name) ->
+          let asm_path = Filename.concat tmp_dir (name ^ ".s") in
+          let comp_status =
+            Sys.command
+              (Printf.sprintf
+                 "clang -S %s -fno-inline -fno-stack-protector -fno-asynchronous-unwind-tables -o %s %s"
+                 opt asm_path c_path)
+          in
+          Alcotest.(check int) (name ^ ": clang -S compiles") 0 comp_status;
+          let asm_text = read_file_string asm_path in
+          let lifted = Arm64_lifter_adapter.lift_source asm_text in
+          let func =
+            match lifted with
+            | Error err -> Alcotest.fail (Printf.sprintf "%s: lift failed: %s" name err)
+            | Ok (f, _) -> f
+          in
+          let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+          let signed_ops = ref 0 in
+          Hashtbl.iter
+            (fun _ (b : Ir.basic_block) ->
+              List.iter
+                (function
+                  | Ir.Mov { src = Ir.Mem { is_signed = true; _ }; _ } -> incr signed_ops
+                  | _ -> ())
+                b.instrs)
+            unwrapped.cfg.blocks;
+          Alcotest.(check bool) (name ^ ": lifted region contains signed loads") true (!signed_ops >= 3);
+          let rng = Random.State.make [| 20260936 |] in
+          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg unwrapped in
+          run_custom_vm ~name tmp_dir pkg {|
+    uint64_t r = vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)(-5LL), (uint64_t)(-300LL), (uint64_t)(-100000LL));
+    if ((int64_t)r != -100305LL) return 1;
+|})
+        [ ("-O2", "s_o2"); ("-O3", "s_o3") ])
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
   Alcotest.test_case "native_b16_word_memory" `Slow test_native_b16_word_memory;
+  Alcotest.test_case "native_signed_loads" `Slow test_native_signed_loads;
   Alcotest.test_case "e2e_uint16_pipeline" `Slow test_e2e_uint16_pipeline;
   Alcotest.test_case "e2e_uint16_clang_o2_o3" `Slow test_e2e_uint16_clang_o2_o3;
+  Alcotest.test_case "e2e_signed_loads_clang_o2_o3" `Slow test_e2e_signed_loads_clang_o2_o3;
 ]

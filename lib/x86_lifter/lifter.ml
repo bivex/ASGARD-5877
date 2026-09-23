@@ -15,7 +15,7 @@ let to_ir_operand = function
   | X86_parser.OpReg r -> Ok (Ir.Reg r)
   | X86_parser.OpImm i -> Ok (Ir.Imm i)
   | X86_parser.OpMem m ->
-      Ok (Ir.Mem { base = m.base; index = m.index; disp = m.disp; width = m.width })
+      Ok (Ir.Mem { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false })
   | X86_parser.OpLabel l ->
       Error (Printf.sprintf "Label '%s' cannot be used directly as a value operand" l)
 
@@ -129,16 +129,60 @@ let lift_instr mnem ops =
   | "pop", [ op ] ->
       let* ir_op = to_ir_operand op in
       Ok [ Ir.Pop ir_op ]
-  | ("mov" | "movabs" | "movzx" | "movsx" | "movsxd"), [ dst; src ] ->
+  | ("mov" | "movabs"), [ dst; src ] ->
       let* ir_dst = to_ir_operand dst in
       let* ir_src = to_ir_operand src in
       Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
-
+  | ("movzx" | "movzxb" | "movzxw" | "movzbq" | "movzwq"), [ dst; src ] -> (
+      let* ir_dst = to_ir_operand dst in
+      match (dst, src) with
+      | (X86_parser.OpReg _, X86_parser.OpMem m) ->
+          let ir_mem = Ir.Mem { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          Ok [ Ir.Mov { dst = ir_dst; src = ir_mem } ]
+      | (X86_parser.OpReg d, X86_parser.OpReg s) ->
+          let mask =
+            match Register.get_width s with
+            | Register.B8 -> 0xFFL
+            | Register.B16 -> 0xFFFFL
+            | _ -> 0xFFFFFFFFL
+          in
+          let d64 = Register.with_width d Register.B64 in
+          Ok [
+            Ir.Mov { dst = Ir.Reg d64; src = Ir.Reg s };
+            Ir.Alu { op = Ir.And; dst = d64; src1 = Ir.Reg d64; src2 = Ir.Imm mask; set_flags = false };
+            Ir.Mov { dst = Ir.Reg d; src = Ir.Reg d64 };
+          ]
+      | _ -> Error "Invalid operands for movzx")
+  | ("movsx" | "movsxd" | "movsxb" | "movsxw" | "movsbq" | "movswq" | "movslq"), [ dst; src ] -> (
+      let* ir_dst = to_ir_operand dst in
+      match (dst, src) with
+      | (X86_parser.OpReg _, X86_parser.OpMem m) ->
+          let ir_mem = Ir.Mem { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = true } in
+          Ok [ Ir.Mov { dst = ir_dst; src = ir_mem } ]
+      | (X86_parser.OpReg d, X86_parser.OpReg s) ->
+          let shift =
+            match Register.get_width s with
+            | Register.B8 -> 56L
+            | Register.B16 -> 48L
+            | Register.B32 -> 32L
+            | Register.B64 -> 0L
+          in
+          let d64 = Register.with_width d Register.B64 in
+          if shift = 0L then
+            Ok [ Ir.Mov { dst = ir_dst; src = Ir.Reg s } ]
+          else
+            Ok [
+              Ir.Mov { dst = Ir.Reg d64; src = Ir.Reg s };
+              Ir.Alu { op = Ir.Shl; dst = d64; src1 = Ir.Reg d64; src2 = Ir.Imm shift; set_flags = false };
+              Ir.Alu { op = Ir.Sar; dst = d64; src1 = Ir.Reg d64; src2 = Ir.Imm shift; set_flags = false };
+              Ir.Mov { dst = Ir.Reg d; src = Ir.Reg d64 };
+            ]
+      | _ -> Error "Invalid operands for movsx/movsxd")
 
   | "lea", [ dst; OpMem addr ] -> (
       match dst with
       | OpReg r ->
-          Ok [ Ir.Lea { dst = r; addr = { base = addr.base; index = addr.index; disp = addr.disp; width = addr.width } } ]
+          Ok [ Ir.Lea { dst = r; addr = { base = addr.base; index = addr.index; disp = addr.disp; width = addr.width; is_signed = false } } ]
       | _ -> Error "LEA destination must be a register")
   | "xchg", [ a; b ] ->
       let* ir_a = to_ir_operand a in
@@ -168,7 +212,7 @@ let lift_instr mnem ops =
       | OpReg r ->
           Ok [ Ir.Alu { op = alu_op; dst = r; src1 = Ir.Reg r; src2 = ir_src; set_flags = true } ]
       | OpMem m ->
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width } in
+          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
           Ok [
             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
             Ir.Alu { op = alu_op; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = ir_src; set_flags = true };
@@ -185,7 +229,7 @@ let lift_instr mnem ops =
       | OpReg r ->
           Ok [ Ir.Unary { op = un_op; dst = r; src = Ir.Reg r; set_flags = true } ]
       | OpMem m ->
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width } in
+          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
           Ok [
             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
             Ir.Unary { op = un_op; dst = Register.vtmp0; src = Ir.Reg Register.vtmp0; set_flags = true };

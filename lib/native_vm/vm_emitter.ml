@@ -220,11 +220,18 @@ let compile_and_package
                     encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx d) 0 high
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Mem m } ->
                   let op =
-                    match m.width with
-                    | Register.B64 -> OP_LOAD_64
-                    | Register.B32 -> OP_LOAD_32
-                    | Register.B16 -> OP_LOAD_16
-                    | _ -> OP_LOAD_8
+                    if m.is_signed then
+                      match m.width with
+                      | Register.B32 -> OP_LOAD_S32
+                      | Register.B16 -> OP_LOAD_S16
+                      | Register.B8  -> OP_LOAD_S8
+                      | Register.B64 -> OP_LOAD_64
+                    else
+                      match m.width with
+                      | Register.B64 -> OP_LOAD_64
+                      | Register.B32 -> OP_LOAD_32
+                      | Register.B16 -> OP_LOAD_16
+                      | _ -> OP_LOAD_8
                   in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word (get_opcode op) (get_reg_idx d) base_idx m.disp

@@ -171,7 +171,7 @@ let test_memory_and_stack () =
   (* Complex addressing: lea rdi, [rax + rbx*2 + 0x20] *)
   set_reg state rax 100L;
   set_reg state rbx 50L;
-  let mem_spec = { base = Some rax; index = Some (rbx, 2); disp = 0x20L; width = B64 } in
+  let mem_spec = { base = Some rax; index = Some (rbx, 2); disp = 0x20L; width = B64; is_signed = false } in
   let _ = step state (Lea { dst = rdi; addr = mem_spec }) in
   (* 100 + 50*2 + 32 = 232 *)
   Alcotest.(check int64) "lea effective addr" 232L (get_reg state rdi)

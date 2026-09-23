@@ -65,14 +65,27 @@ let read_byte state addr =
 let write_byte state addr b =
   Hashtbl.replace state.memory addr (b land 0xFF)
 
-let read_mem state addr width =
+let read_mem ?(signed = false) state addr width =
   let num_bytes = Register.width_to_bytes width in
   let res = ref 0L in
   for i = 0 to num_bytes - 1 do
     let b = Int64.of_int (read_byte state (Int64.add addr (Int64.of_int i))) in
     res := Int64.logor !res (Int64.shift_left b (i * 8))
   done;
-  !res
+  if signed then
+    match width with
+    | B8 ->
+        let v = Int64.logand !res 0xFFL in
+        if Int64.logand v 0x80L <> 0L then Int64.logor v (Int64.lognot 0xFFL) else v
+    | B16 ->
+        let v = Int64.logand !res 0xFFFFL in
+        if Int64.logand v 0x8000L <> 0L then Int64.logor v (Int64.lognot 0xFFFFL) else v
+    | B32 ->
+        let v = Int64.logand !res 0xFFFFFFFFL in
+        if Int64.logand v 0x80000000L <> 0L then Int64.logor v (Int64.lognot 0xFFFFFFFFL) else v
+    | B64 -> !res
+  else
+    !res
 
 let write_mem state addr width value =
   let num_bytes = Register.width_to_bytes width in
@@ -99,7 +112,7 @@ let eval_operand state = function
   | Imm i -> i
   | Mem m ->
       let addr = eval_mem_addr state m in
-      read_mem state addr m.width
+      read_mem ~signed:m.is_signed state addr m.width
 
 let write_operand state op value =
   match op with

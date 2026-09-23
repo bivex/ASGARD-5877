@@ -146,14 +146,14 @@ let to_string = function
 
 let of_string str =
   let s = String.lowercase_ascii (String.trim str) in
-  if String.length s >= 2 && s.[0] = 'd' then
-    match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
-    | Some i when i >= 0 && i < 32 -> Ok (Fpr (i, B64))
-    | _ -> Error (Printf.sprintf "Unknown register '%s'" str)
-  else if String.length s >= 2 && s.[0] = 's' && s <> "sp" && s <> "si" && s <> "spl" && s <> "sil" then
-    match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
-    | Some i when i >= 0 && i < 32 -> Ok (Fpr (i, B32))
-    | _ -> Error (Printf.sprintf "Unknown register '%s'" str)
+  if String.length s >= 2 && s.[0] = 'd' &&
+     (match int_of_string_opt (String.sub s 1 (String.length s - 1)) with Some i -> i >= 0 && i < 32 | None -> false) then
+    let i = int_of_string (String.sub s 1 (String.length s - 1)) in
+    Ok (Fpr (i, B64))
+  else if String.length s >= 2 && s.[0] = 's' &&
+     (match int_of_string_opt (String.sub s 1 (String.length s - 1)) with Some i -> i >= 0 && i < 32 | None -> false) then
+    let i = int_of_string (String.sub s 1 (String.length s - 1)) in
+    Ok (Fpr (i, B32))
   else
   match s with
   | "rax" -> Ok rax | "eax" -> Ok (Gpr (RAX, B32)) | "ax" -> Ok (Gpr (RAX, B16)) | "al" -> Ok (Gpr (RAX, B8))

@@ -180,6 +180,41 @@ let test_arm64_lift_pair_stp_ldp () =
       | Ok snap -> check int64 "ARM64 stp/ldp writeback 111 + 222 = 333" 333L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_signed_memory () =
+  let asm = {|
+    mov x1, #0x1000
+    mov w2, #0xFB
+    strb w2, [x1, #1]
+    mov w2, #0xFED4
+    strh w2, [x1, #2]
+    mov w2, #0xFFFE7960
+    str w2, [x1, #4]
+    ldrsb x0, [x1, #1]
+    ldrsh x4, [x1, #2]
+    add x0, x0, x4
+    ldrsw x5, [x1, #4]
+    add x0, x0, x5
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_signed_mem" } asm with
+  | Error err -> fail ("Failed to lift ARM64 signed memory: " ^ err)
+  | Ok f ->
+      let signed_loads = ref 0 in
+      Hashtbl.iter
+        (fun _ (b : Ir.basic_block) ->
+          List.iter
+            (function
+              | Ir.Mov { src = Ir.Mem { is_signed = true; _ }; _ } -> incr signed_loads
+              | _ -> ())
+            b.instrs)
+        f.cfg.blocks;
+      check int "3 signed loads lifted with is_signed=true" 3 !signed_loads;
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          (* (-5) + (-300) + (-100000) = -100305 *)
+          check int64 "ARM64 signed memory sum = -100305" (-100305L) snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -187,6 +222,7 @@ let tests = [
   ("ARM64 Lift Compare & Branch (cbz)", `Quick, test_arm64_lift_cbz_cbnz);
   ("ARM64 Lift Byte Memory (strb/sturb/ldrb/ldrsb)", `Quick, test_arm64_lift_byte_memory);
   ("ARM64 Lift Halfword Memory (strh/ldrh)", `Quick, test_arm64_lift_halfword_memory);
+  ("ARM64 Lift Signed Memory (ldrsb/ldrsh/ldrsw)", `Quick, test_arm64_lift_signed_memory);
   ("ARM64 Lift Pre-index Writeback (!)", `Quick, test_arm64_lift_pre_post_writeback);
   ("ARM64 Lift Post-index Writeback ([x], #imm)", `Quick, test_arm64_lift_post_index);
   ("ARM64 Lift Pair stp/ldp Writeback", `Quick, test_arm64_lift_pair_stp_ldp);

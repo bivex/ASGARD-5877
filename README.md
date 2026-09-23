@@ -166,7 +166,7 @@ ASGARD-5877/
 ├── scripts/                      # Unified benchmark and multi-build runners
 │   ├── run_benchmark_arm64.sh    # End-to-end security benchmark runner
 │   └── build_corpus_arm64.sh     # Polymorphic corpus compilation script
-└── test/                         # Comprehensive Verification Suite (190 tests, 32 suites)
+└── test/                         # Comprehensive Verification Suite (200 tests, 33 suites)
 ```
 
 ---
@@ -193,7 +193,7 @@ opam install dune menhir cmdliner alcotest qcheck qcheck-alcotest yojson
 eval $(opam env)
 dune build
 
-# Run all 190 tests across 32 verification suites
+# Run all 200 tests across 33 verification suites
 dune runtest
 ```
 
@@ -338,7 +338,7 @@ The repository includes a standalone ARM64 CrackMe challenge running inside the 
 
 ## Comprehensive Verification Suite
 
-ASGARD-5877 includes **190 tests** across **32 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
+ASGARD-5877 includes **200 tests** across **33 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
 
 1. **Domain Invariants**: Verification of aggregate roots and instruction semantics.
 2. **ISA Grammar**: AST node validation, operand constraints, and type soundness.
@@ -359,19 +359,20 @@ ASGARD-5877 includes **190 tests** across **32 suites** verified on every build 
 17. **x86_64 Lifter and CFG**: Disassembly and basic block lifting of x86_64 machine code.
 18. **Anti-Analysis (MBA and CFF)**: Algebraic equivalence of 4th-order polynomial expansions.
 19. **Native Threaded VM**: Direct Threading, super-operators, ephemeral scrubbing, and dynamic canaries.
-20. **Devirtualization Metrics**: DRS (Devirtualization Resistance Score) computation.
-21. **C Macro Obfuscation**: Polymorphic macro expansions and stack string encryption.
-22. **VM Runtime Profile**: Micro-architectural latency measurements.
-23. **Compiler Pipeline and Equivalence**: End-to-end preservation of semantics across lifting, lowering, and virtualization.
-24. **ARM64 Lifter and CFG**: Extended conditions (`b.hi`..`b.vc`), `cset`, `csel`, `madd`/`msub`, `ubfx`/`sbfx`, and indexed memory operands.
-25. **Multi-VM and Direct Zero-Bridge**: Invertible affine bridge transformations $\pmod{2^{64}}$.
-26. **GPU Metal Acceleration and Synthesis**: Metal GPU parallel MBA synthesis (65k threads) and SAC diffusion verification.
-27. **Register-Driven JIT VM and RNS**: RNS-4 modular arithmetic and Garner CRT reconstruction.
-28. **arXiv Innovations (POP/DefUse/NCFG/LitStitch)**: POP digest determinism, Def-Use scrambling, NCFG 2,000-vector soundness, ARM64 literal stitching.
-29. **E-graph Equality Expansion (Scrambler)**: Equality saturation and algebraic term rewriting.
-30. **Anti-Pushan Rolling Key**: Context-dependent key evolution across loop iterations and branches.
-31. **Dynamic Anti-Tamper and SMC (Layer 3)**: Self-modifying bytecode runtime attestation.
-32. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, and preset generators.
+20. **Native VM Sub-width Semantics**: Word-granular B16 memory, signed loads (movsx/movsxd/ldrsb/ldrsh/ldrsw), div/idiv remainder, and B32 sub-register zero-extension.
+21. **Devirtualization Metrics**: DRS (Devirtualization Resistance Score) computation.
+22. **C Macro Obfuscation**: Polymorphic macro expansions and stack string encryption.
+23. **VM Runtime Profile**: Micro-architectural latency measurements.
+24. **Compiler Pipeline and Equivalence**: End-to-end preservation of semantics across lifting, lowering, and virtualization.
+25. **ARM64 Lifter and CFG**: Extended conditions (`b.hi`..`b.vc`), `cset`, `csel`, `madd`/`msub`, `ubfx`/`sbfx`, and indexed memory operands.
+26. **Multi-VM and Direct Zero-Bridge**: Invertible affine bridge transformations $\pmod{2^{64}}$.
+27. **GPU Metal Acceleration and Synthesis**: Metal GPU parallel MBA synthesis (65k threads) and SAC diffusion verification.
+28. **Register-Driven JIT VM and RNS**: RNS-4 modular arithmetic and Garner CRT reconstruction.
+29. **arXiv Innovations (POP/DefUse/NCFG/LitStitch)**: POP digest determinism, Def-Use scrambling, NCFG 2,000-vector soundness, ARM64 literal stitching.
+30. **E-graph Equality Expansion (Scrambler)**: Equality saturation and algebraic term rewriting.
+31. **Anti-Pushan Rolling Key**: Context-dependent key evolution across loop iterations and branches.
+32. **Dynamic Anti-Tamper and SMC (Layer 3)**: Self-modifying bytecode runtime attestation.
+33. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, and preset generators.
 
 ---
 

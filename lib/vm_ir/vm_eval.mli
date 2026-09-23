@@ -17,7 +17,7 @@ val make_state : ?stack_base:int64 -> unit -> state
 val get_reg : state -> Register.t -> int64
 val set_reg : state -> Register.t -> int64 -> unit
 
-val read_mem : state -> int64 -> width -> int64
+val read_mem : ?signed:bool -> state -> int64 -> width -> int64
 val write_mem : state -> int64 -> width -> int64 -> unit
 
 val eval_operand : state -> operand -> int64

@@ -2,7 +2,7 @@ open Vm_ir
 open Arm64_types
 
 val is_terminator : Ir.instr -> bool
-val raw_to_ir_operand : raw_op -> Ir.operand
+val raw_to_ir_operand : ?is_signed:bool -> raw_op -> Ir.operand
 val map_cond_str : string -> Flags.condition
 val strip_page_suffix : string -> string
 val emit_3addr_alu :

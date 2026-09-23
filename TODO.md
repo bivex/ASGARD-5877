@@ -34,23 +34,29 @@
 - Остаточные ограничения: `ldrsh` (знак-расширяющая загрузка) по-прежнему
   zero-extend'ит — это территория пункта 2.
 
-### 2. Нет знакового расширения при загрузках: `ldrsb`/`ldrsh`/`movsx`/`movsxd`
+### 2. Нет знакового расширения при загрузках: `ldrsb`/`ldrsh`/`movsx`/`movsxd` — ВЫПОЛНЕНО 2026-09-24
 
-- **Где (arm64)**: `lib/arm64_lifter/arm64_mem.ml:8` — `ldrsb`/`ldrsh` идут тем же паттерном,
-  что `ldrb`/`ldrh`; хендлер `H_LOAD_8` zero-extend'ит:
-  `lib/native_vm/vm_mem_handlers.ml:106-110` (`(uint64_t)(*reinterpret_cast<const uint8_t*>)`).
-- **Где (x86)**: `lib/x86_lifter/lifter.ml:65` — `movsx | movsxd | movzx` сведены к голому
-  `Ir.Mov`, различие знак/ноль теряется ещё в лифтере.
-- **Следствие**: любой `signed char` / `short` со значением ≥ 0x80 в виртуализированном коде
-  даёт неверный результат. Тесты этого не ловят — в корпусе нет отрицательных узких значений.
-- **Чинить**:
-  1. Ввести в VM-IR знак-расширяющие загрузки: `OP_LOAD_S8` / `OP_LOAD_S16`
-     (+ при необходимости `OP_LOAD_S32`), хендлеры через `int8_t`/`int16_t` → sign-extend.
-  2. В arm64-лифтере развести `ldrsb`/`ldrsh` (знак) и `ldrb`/`ldrh`/`ldurb` (ноль) —
-     либо флагом в mem-операнде, либо отдельным IR-опом.
-  3. В x86-лифтере развести `movsx`/`movsxd` (знак) и `movzx` (ноль) по аналогии.
-- **Приёмка**: тест на `signed char x = -5;` и `short y = -300;` внутри виртуализации,
-  значения доходят до выхода без искажения; плюс golden-тест лифтера.
+- Сделано по плану:
+  - Опкоды `OP_LOAD_S8` / `OP_LOAD_S16` / `OP_LOAD_S32` в `vm_transform.ml`, нативные C++ хендлеры
+    `H_LOAD_S8` / `H_LOAD_S16` / `H_LOAD_S32` в `vm_mem_handlers.ml` (`(uint64_t)(int64_t)(*reinterpret_cast<const int8_t*/int16_t*/int32_t*>)`),
+    ветки в `vm_emitter.ml` с проверкой `m.is_signed`.
+  - В `Ir.mem_ref` добавлен флаг `is_signed : bool`, поддержан в `Vm_eval.read_mem` со знаковым
+    расширением до int64.
+  - ARM64: в `arm64_parser.ml` и `arm64_mem.ml` разведены `ldrsb`/`ldrsh`/`ldrsw`/`ldursb`/`ldursh`/`ldursw`
+    (`is_signed = true`, ширина B8/B16/B32) от `ldrb`/`ldrh`/`ldur`/`ldurb` (`is_signed = false`).
+  - x86: в `lifter.ml` разведены `movsx`/`movsxd` (и псевдонимы `movsxb`/`movsxw`/`movsbq`/`movswq`/`movslq`)
+    от `movzx`. Для памяти выставляется `is_signed = true`, для регистров материализуется точное знаковое
+    расширение через пару `Shl`/`Sar` на B64 (с последующим `subreg_write` занулением верхней половины для B32 dst).
+    Для `movzx` с регистровым источником добавлено маскирование через `And` (`0xFF`/`0xFFFF`).
+  - **Найдено попутно (серьёзное)**: парсер регистров `Register.of_string` при проверке префикса `d` для FP-регистров
+    `d0`..`d31` безусловно падал с ошибкой при нечисловом суффиксе, блокируя x86-регистры `dx`, `di`, `dil`, `dl`.
+    Исправлено: нечисловые `d`- и `s`-регистры корректно проваливаются в общий `match s with`.
+- Тесты: 6 новых тестов (200 всего в 32 сьютах):
+  - ARM64: юнит `ARM64 Lift Signed Memory (ldrsb/ldrsh/ldrsw)` в `test_arm64_lifter.ml` (-5, -300, -100000 -> -100305).
+  - x86: 3 юнита в `test_x86_lifter.ml` (`lift_and_eval_movsx_mem`, `lift_and_eval_movsx_reg`, `lift_and_eval_movzx_reg`).
+  - Native & E2E: `native_signed_loads` (выполнение стековых знаковых загрузок в threaded VM) и
+    `e2e_signed_loads_clang_o2_o3` (C-функция с `volatile signed char/short/int`, компиляция clang -O2/-O3,
+    проверка наличия signed mem ops в IR и результат -100305 через `asgard_vm_call`) в `test_native_semantics.ml`.
 
 ---
 

@@ -30,6 +30,7 @@ type mem_ref = {
   index : (Register.t * int) option; (** (index_reg, scale 1|2|4|8) *)
   disp : int64;
   width : width;
+  is_signed : bool;
 }
 
 type operand =

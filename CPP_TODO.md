@@ -293,7 +293,7 @@ TOTAL                        1993              1732    13.10%    2340           
 
 Each feature implementation must fulfill:
 1. **Compilation Guarantee**: Must compile cleanly under `clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions` on macOS ARM64 and Linux x86_64.
-2. **Zero-Regression Invariant**: All 190 Dune tests in `ASGARD-5877` must pass (`dune runtest`); suite registry lives in `test/run_tests.ml`.
+2. **Zero-Regression Invariant**: All 200 Dune tests in `ASGARD-5877` must pass (`dune runtest`); suite registry lives in `test/run_tests.ml`.
 3. **Architectural Cleanliness**: Run `dpx arch /Volumes/External/Code/ASGARD-5877/` after changes; must maintain **0 architectural errors and 0 warnings**.
 4. **Standalone Execution & Clean Boundary Marker**: Any idiomatic C program wrapped strictly with:
    ```c

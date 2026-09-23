@@ -30,6 +30,7 @@ type mem_ref = {
   index : (Register.t * int) option;
   disp : int64;
   width : width;
+  is_signed : bool;
 }
 
 type operand =
@@ -102,9 +103,9 @@ let unary_op_to_string = function
 
 let mem_ref_to_string m =
   let size_prefix = match m.width with
-    | B8 -> "byte ptr "
-    | B16 -> "word ptr "
-    | B32 -> "dword ptr "
+    | B8 -> if m.is_signed then "sbyte ptr " else "byte ptr "
+    | B16 -> if m.is_signed then "sword ptr " else "word ptr "
+    | B32 -> if m.is_signed then "sdword ptr " else "dword ptr "
     | B64 -> "qword ptr "
   in
   let parts = ref [] in
