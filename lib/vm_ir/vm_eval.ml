@@ -199,8 +199,12 @@ let step state = function
         | Mul | Imul ->
             let res = Int64.mul v1 v2 in
             res
-        | Div | Idiv ->
+        | Div ->
             if v2 = 0L then 0L
+            else Int64.unsigned_div v1 v2
+        | Idiv ->
+            if v2 = 0L then 0L
+            else if v2 = -1L then Int64.neg v1
             else Int64.div v1 v2
       in
       let raw_res = compute_alu () in

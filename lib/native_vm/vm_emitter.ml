@@ -248,6 +248,10 @@ let compile_and_package
                   encode_raw_word (get_opcode OP_IMUL_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
                   encode_raw_word (get_opcode OP_IMUL_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Div; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+                  encode_raw_word (get_opcode OP_DIV_RR) (get_reg_idx d) (get_reg_idx s) 0L
+              | Ir.Alu { op = Ir.Idiv; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+                  encode_raw_word (get_opcode OP_IDIV_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
                   encode_raw_word (get_opcode OP_XOR_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
@@ -268,6 +272,8 @@ let compile_and_package
                   encode_raw_word (get_opcode OP_SHL_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = Ir.Shr; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
                   encode_raw_word (get_opcode OP_SHR_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Sar; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word (get_opcode OP_SAR_RI) (get_reg_idx d) 0 imm
               | Ir.Unary { op = Ir.Inc; dst; _ } ->
                   encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx dst) 0 1L
               | Ir.Unary { op = Ir.Dec; dst; _ } ->

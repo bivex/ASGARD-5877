@@ -49,6 +49,73 @@ let parse_cmovcc_mnemonic mnem =
     | Ok cond -> Some cond
     | Error _ -> None
 
+(* div/idiv lowering (TODO item 5).  x86 divides the implicit rdx:rax dividend
+   by the explicit divisor, leaving the quotient in rax/eax and the remainder
+   in rdx/edx.  The VM only models a plain 64-bit division, so both halves are
+   reconstructed from rax alone: compiler-emitted code always canonicalizes rdx
+   first (cqo/cdq or xor edx,edx), and with a canonical rdx the 128-bit
+   dividend's value equals rax's extended 64-bit value, making a 64-bit
+   division exact.  The remainder is rebuilt as dividend - quotient*divisor,
+   which wraps correctly through the INT64_MIN / -1 corner in both machines.
+   vx18 materializes the divisor (register, memory, even rax/rdx all take the
+   same path) and vx19 saves the dividend; both are reserved for this pass.
+   No flags are touched, mirroring x86 where div/idiv leave flags undefined.
+
+   Encoding constraint: the threaded-VM bytecode carries two register fields
+   per ALU word and the emitter drops [src1] whenever it differs from [dst]
+   (vm_emitter encodes only [dst] and [src2]; the native handler computes
+   dst OP src).  Every instruction produced here therefore keeps src1 = dst;
+   the remainder subtraction accumulates in vx19 and is moved out afterwards
+   instead of computing vx19 - rdx directly into rdx. *)
+let lift_x86_div ~signed divisor =
+  let width_of = function
+    | X86_parser.OpReg r -> Register.get_width r
+    | X86_parser.OpMem m -> m.width
+    | _ -> Register.B64
+  in
+  let div_op = if signed then Ir.Idiv else Ir.Div in
+  match width_of divisor with
+  | Register.B64 ->
+      let* ir_div = to_ir_operand divisor in
+      Ok
+        [ Ir.Mov { dst = Ir.Reg Register.vx18; src = ir_div };
+          Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Reg Register.rax };
+          Ir.Alu { op = div_op; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.vx18; set_flags = false };
+          Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
+          Ir.Alu { op = Ir.Imul; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Reg Register.vx18; set_flags = false };
+          Ir.Alu { op = Ir.Sub; dst = Register.vx19; src1 = Ir.Reg Register.vx19; src2 = Ir.Reg Register.rdx; set_flags = false };
+          Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.vx19 } ]
+  | Register.B32 ->
+      let* ir_div = to_ir_operand divisor in
+      let eax = Register.with_width Register.rax Register.B32 in
+      let edx = Register.with_width Register.rdx Register.B32 in
+      (* Re-canonicalize both operands at B64: sext32 when signed, zext32 when
+         unsigned.  Shl32/Sar32 is exact regardless of stale upper bits, and
+         And 0xFFFFFFFF is idempotent on an already-truncated evaluator slot. *)
+      let canonicalize r =
+        if signed then
+          [ Ir.Alu { op = Ir.Shl; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm 32L; set_flags = false };
+            Ir.Alu { op = Ir.Sar; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm 32L; set_flags = false } ]
+        else
+          [ Ir.Alu { op = Ir.And; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm 0xFFFFFFFFL; set_flags = false } ]
+      in
+      Ok
+        ([ Ir.Mov { dst = Ir.Reg Register.vx18; src = ir_div } ]
+        @ canonicalize Register.vx18
+        @ [ Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Reg Register.rax } ]
+        @ canonicalize Register.rax
+        @ [ (* rax = quotient (full 64-bit value) *)
+            Ir.Alu { op = div_op; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.vx18; set_flags = false };
+            (* save the full quotient before the eax write truncates the slot *)
+            Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
+            Ir.Mov { dst = Ir.Reg eax; src = Ir.Reg Register.rdx };
+            (* rdx = remainder, then edx write re-truncates for the ISA view *)
+            Ir.Alu { op = Ir.Imul; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Reg Register.vx18; set_flags = false };
+            Ir.Alu { op = Ir.Sub; dst = Register.vx19; src1 = Ir.Reg Register.vx19; src2 = Ir.Reg Register.rdx; set_flags = false };
+            Ir.Mov { dst = Ir.Reg edx; src = Ir.Reg Register.vx19 } ])
+  | _ ->
+      Error (Printf.sprintf "%s is only modeled at 32/64-bit width" (if signed then "idiv" else "div"))
+
 let lift_instr mnem ops =
   match mnem, ops with
   | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align"), _ -> Ok [ Ir.Nop ]
@@ -150,6 +217,21 @@ let lift_instr mnem ops =
       (match dst with
       | OpReg r -> Ok [ Ir.Cmov { cond; dst = r; src = ir_src } ]
       | _ -> Error "CMOV destination must be a register")
+  | ("div" | "idiv"), [ divisor ] -> lift_x86_div ~signed:(mnem = "idiv") divisor
+  | (* rdx canonicalization is folded into the div expansion; the dividend is
+       reconstructed from rax alone, so the instruction itself is a no-op. *)
+    ("cdq" | "cltd"), [] ->
+      Ok [ Ir.Nop ]
+  | ("cqo" | "cqto"), [] ->
+      Ok [ Ir.Nop ]
+  | (* cdqe/cltq sign-extend eax into rax: exact at B64 even with a stale
+       upper half, because both shifts displace the stale bits. *)
+    ("cdqe" | "cltq"), [] ->
+      Ok
+        [ Ir.Alu { op = Ir.Shl; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 32L; set_flags = false };
+          Ir.Alu { op = Ir.Sar; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 32L; set_flags = false } ]
+  | ("mul" | "imul"), [ _ ] ->
+      Error "1-operand MUL/IMUL (128-bit product with high half in rdx) is not modeled; use the 2/3-operand forms"
   | other, _ ->
       Error (Printf.sprintf "Unsupported or invalid instruction '%s' with %d operands" other (List.length ops))
 
@@ -240,6 +322,9 @@ let lift_lines ?(options = default_options) raw_lines =
 
   let* blocks = process raw_lines in
 
+  (* Zero-extend B32 sub-register writes (TODO item 6): widen each block before
+     terminator patching so the pairs precede any appended jump/ret. *)
+  let blocks = List.map Subreg_write.expand_block blocks in
 
   (* Patch fallthrough jumps between consecutive blocks *)
   let patched_blocks = ref [] in

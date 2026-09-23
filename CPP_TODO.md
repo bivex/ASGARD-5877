@@ -26,6 +26,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | DONE | Complete | Eliminates static handler jump tables |
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | DONE | Complete | Hides scalar logic in NEON/AVX vectors |
 | 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | DONE | Complete | Thwarts userspace hooks (Frida, DTrace) |
+| 9 | **GPU Metal Compute Acceleration** | [`lib/gpu_synth/`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/) | REMOVED | — | Dropped from roadmap (commit `9b90920`); silent-fallback hazards tracked in `TODO.md` item 3 |
 | 10| **E-Graph Equality Saturation Scrambler** | [`lib/vm_ir/e_graph.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/e_graph.ml) | DONE | Complete | Algebraic expansion of VM handler logic |
 | 11| **Macro Header Tree-Shaking & Dead Code Elimination** | [`lib/c_macro_obf/`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/) | DONE | Complete | Eliminates 100% dead functions in `asgard_obf.h` (line cover 26.67% → 96.97%) |
 | 12| **External Libc FFI Call Trampoline (`H_CALL_EXTERN`)** | [`lib/native_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/), [`lib/arm64_lifter/`](file:///Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/) | DONE | Complete | Dynamic FFI dispatch via `dlsym` + host calling convention register marshaling |
@@ -243,7 +244,7 @@ TOTAL                        1993              1732    13.10%    2340           
      - Pre-index: `base = base + disp; dst = *base;`
      - Post-index: `dst = *base; base = base + imm;`
      - Pair operations (`stp`/`ldp`) expanded with lane stride arithmetic and base register writeback.
-  4. Verified in `test/test_arm64_lifter.ml` (`test_arm64_lift_pre_post_writeback`, `test_arm64_lift_post_index`, `test_arm64_lift_pair_stp_ldp`); all 177 project tests pass.
+  4. Verified in `test/test_arm64_lifter.ml` (`test_arm64_lift_pre_post_writeback`, `test_arm64_lift_post_index`, `test_arm64_lift_pair_stp_ldp`); all 190 project tests pass.
 
 ### M. Floating-Point & Scalar FP (SIMD) Emulation in VM
 - **Status**: DONE (Item 14)
@@ -292,7 +293,7 @@ TOTAL                        1993              1732    13.10%    2340           
 
 Each feature implementation must fulfill:
 1. **Compilation Guarantee**: Must compile cleanly under `clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions` on macOS ARM64 and Linux x86_64.
-2. **Zero-Regression Invariant**: All 172 Dune tests in `ASGARD-5877` must pass (`dune runtest`).
+2. **Zero-Regression Invariant**: All 190 Dune tests in `ASGARD-5877` must pass (`dune runtest`); suite registry lives in `test/run_tests.ml`.
 3. **Architectural Cleanliness**: Run `dpx arch /Volumes/External/Code/ASGARD-5877/` after changes; must maintain **0 architectural errors and 0 warnings**.
 4. **Standalone Execution & Clean Boundary Marker**: Any idiomatic C program wrapped strictly with:
    ```c

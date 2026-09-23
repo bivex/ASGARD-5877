@@ -109,6 +109,24 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion =
   Buffer.add_string b "        ctx.set_reg(dst, val >> shift);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_SAR_RI: {\n";
+  Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)((int64_t)val >> shift));\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  (* Division contract: divisor 0 yields quotient 0 (mirrors vm_eval), and
+     INT64_MIN / -1 wraps to INT64_MIN instead of raising #DE / UB. *)
+  Buffer.add_string b "    H_DIV_RR: {\n";
+  Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (b == 0) ? 0ULL : (a / b));\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_IDIV_RR: {\n";
+  Buffer.add_string b "        int64_t a = (int64_t)ctx.get_reg(dst); int64_t b = (int64_t)ctx.get_reg(src);\n";
+  Buffer.add_string b "        int64_t q = (b == 0) ? 0 : ((b == -1) ? (int64_t)(0 - (uint64_t)a) : (a / b));\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)q);\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
 
   Buffer.add_string b "    H_CMP_RI: {\n";
   Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";

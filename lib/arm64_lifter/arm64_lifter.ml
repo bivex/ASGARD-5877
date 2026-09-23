@@ -77,6 +77,10 @@ let lift_lines ?(options = default_options) (lines : raw_line list) : (Ir.func, 
       let label_map = label_aliases in
       List.iter (fun (b : Ir.basic_block) -> Hashtbl.replace label_map b.label b.id) bb_list;
 
+      (* Zero-extend B32 sub-register writes (TODO item 6): widen blocks before
+         terminator patching so the pairs precede any appended jump/ret. *)
+      let bb_list = List.map Subreg_write.expand_block bb_list in
+
       (* Fix terminator and patch label targets to BlockId *)
       let patched_blocks = List.mapi (fun idx (b : Ir.basic_block) ->
         let fallthrough_id = if idx + 1 < List.length bb_list then (List.nth bb_list (idx + 1)).id else 0 in

@@ -175,6 +175,124 @@ func_with_markers:
           (* (15 + 5) * 2 = 40 *)
           Alcotest.(check int64) "virtualized slice result (15+5)*2 = 40" 40L (get_reg state Register.rax)
 
+let test_lift_and_eval_div64_signed () =
+  let asm = {|
+div64_signed:
+    mov rax, rdi
+    cqo
+    idiv rsi
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi (-47L);
+      set_reg state Register.rsi 5L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "idiv -47/5 quotient = -9" (-9L) (get_reg state Register.rax);
+          Alcotest.(check int64) "idiv -47/5 remainder = -2" (-2L) (get_reg state Register.rdx)
+
+let test_lift_and_eval_div64_unsigned () =
+  let asm = {|
+div64_unsigned:
+    mov rax, rdi
+    xor rdx, rdx
+    div rsi
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi (-1L); (* 0xFFFFFFFFFFFFFFFF as unsigned *)
+      set_reg state Register.rsi 2L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "div max/2 quotient" 0x7FFFFFFFFFFFFFFFL (get_reg state Register.rax);
+          Alcotest.(check int64) "div max/2 remainder = 1" 1L (get_reg state Register.rdx)
+
+let test_lift_and_eval_idiv32_signed () =
+  let asm = {|
+div32_signed:
+    mov eax, edi
+    cdq
+    idiv ecx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi (-47L);
+      set_reg state Register.rcx 5L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* eax = zext32(-9), edx = zext32(-2) *)
+          Alcotest.(check int64) "idivl -47/5 eax" 4294967287L (get_reg state Register.rax);
+          Alcotest.(check int64) "idivl -47/5 edx" 4294967294L (get_reg state Register.rdx)
+
+let test_lift_and_eval_div32_unsigned () =
+  let asm = {|
+div32_unsigned:
+    mov eax, edi
+    xor edx, edx
+    div ecx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 4294967295L;
+      set_reg state Register.rcx 10L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "divl 0xFFFFFFFF/10 eax" 429496729L (get_reg state Register.rax);
+          Alcotest.(check int64) "divl 0xFFFFFFFF/10 edx" 5L (get_reg state Register.rdx)
+
+let test_lift_and_eval_cdqe_sext () =
+  let asm = {|
+cdqe_check:
+    mov eax, edi
+    cdqe
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi (-47L);
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* eax = 0xFFFFFFD1 before cdqe; afterwards rax = sext32 = -47 *)
+          Alcotest.(check int64) "cdqe sign-extends eax into rax" (-47L) (get_reg state Register.rax)
+
+let test_lift_and_eval_b32_write_zero_extends () =
+  let asm = {|
+zext_check:
+    mov rax, rdi
+    mov eax, esi
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 0x123456789AL;
+      set_reg state Register.rsi 66L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* writing esi/eax must zero the upper half of rax, not merge it *)
+          Alcotest.(check int64) "mov eax zeroes upper 32" 66L (get_reg state Register.rax)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -183,5 +301,11 @@ let tests = [
   Alcotest.test_case "lift_and_eval_mem_rmw" `Quick test_lift_and_eval_mem_rmw;
   Alcotest.test_case "lift_and_eval_array_sum_sib" `Quick test_lift_and_eval_array_sum_sib;
   Alcotest.test_case "marker_region_extraction" `Quick test_marker_region_extraction;
+  Alcotest.test_case "lift_and_eval_div64_signed" `Quick test_lift_and_eval_div64_signed;
+  Alcotest.test_case "lift_and_eval_div64_unsigned" `Quick test_lift_and_eval_div64_unsigned;
+  Alcotest.test_case "lift_and_eval_idiv32_signed" `Quick test_lift_and_eval_idiv32_signed;
+  Alcotest.test_case "lift_and_eval_div32_unsigned" `Quick test_lift_and_eval_div32_unsigned;
+  Alcotest.test_case "lift_and_eval_cdqe_sext" `Quick test_lift_and_eval_cdqe_sext;
+  Alcotest.test_case "lift_and_eval_b32_write_zero_extends" `Quick test_lift_and_eval_b32_write_zero_extends;
 ]
 

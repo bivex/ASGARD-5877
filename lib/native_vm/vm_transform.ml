@@ -49,6 +49,9 @@ type raw_op_kind =
   | OP_ROR_RI
   | OP_SHL_RI
   | OP_SHR_RI
+  | OP_SAR_RI
+  | OP_DIV_RR
+  | OP_IDIV_RR
   | OP_CMP_RR
   | OP_CMP_RI
   | OP_PUSH_R
@@ -97,6 +100,7 @@ let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
   OP_SUB_RR; OP_SUB_RI; OP_IMUL_RR; OP_IMUL_RI; OP_XOR_RR; OP_XOR_RI;
   OP_AND_RR; OP_AND_RI; OP_OR_RR; OP_OR_RI; OP_ROL_RI; OP_ROR_RI; OP_SHL_RI; OP_SHR_RI;
+  OP_SAR_RI; OP_DIV_RR; OP_IDIV_RR;
   OP_CMP_RR; OP_CMP_RI; OP_PUSH_R;
   OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_SETCC; OP_CALL; OP_RET; OP_EXIT;
   OP_FUSED_MOV_ADD_RRI; OP_FUSED_ADD_IMUL_RRI; OP_FUSED_ADD_XOR_RRI;
@@ -132,6 +136,9 @@ let op_kind_to_handler_name = function
   | OP_ROR_RI -> "H_ROR_RI"
   | OP_SHL_RI -> "H_SHL_RI"
   | OP_SHR_RI -> "H_SHR_RI"
+  | OP_SAR_RI -> "H_SAR_RI"
+  | OP_DIV_RR -> "H_DIV_RR"
+  | OP_IDIV_RR -> "H_IDIV_RR"
   | OP_CMP_RR -> "H_CMP_RR"
   | OP_CMP_RI -> "H_CMP_RI"
   | OP_PUSH_R -> "H_PUSH_R"
