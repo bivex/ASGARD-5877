@@ -62,19 +62,22 @@
 
 ## P1 — защита молча выключается (security-critical)
 
-### 3. `gpu_synth` при сбое тихо возвращает небезопасные данные
+### 3. `gpu_synth` при сбое тихо возвращает небезопасные данные — ВЫПОЛНЕНО 2026-09-24
 
-- **Где**: `lib/gpu_synth/gpu_synth.ml` (весь файл, 29 строк):
-  - `batch_encrypt_gpu` при недоступном GPU/errors → `List.map (fun _ -> bytecode) keys` —
-    **открытый байткод для каждого ключа** вместо шифрованного;
-  - `synthesize_mba_gpu` → константа-заглушка `0x9E3779B97F4A7C15`;
-  - `verify_sac_gpu` → фейковые `50.0`.
-- **Следствие**: на машине без Metal (или после сбоя компиляции шейдера) защитный слой
-  выглядит включённым, но работает вхолостую / отдаёт plaintext.
-- **Чинить**: убрать тихий fallback — вернуть `Result`/`option` и обрабатывать на вызовах;
-  путь «GPU недоступен» должен быть явным решением конфигурации, а не исключением `Sys_error`.
-  Если фича заморожена — вырезать модуль из пайплайна и убрать бейдж «GPU Metal 3.0 (65k Threads)»
-  из `README.md` (он удалён из роадмапа ещё в коммите `9b90920`).
+- **Где**: `lib/gpu_synth/gpu_synth.ml` и `lib/gpu_synth/gpu_synth.mli`.
+- **Сделано**:
+  - Убран тихий fallback, возвращавший открытый байткод (`List.map (fun _ -> bytecode) keys`),
+    фейковую константу `0x9E3779B97F4A7C15L` и фейковый SAC `50.0`.
+  - Введён явный тип ошибки `type gpu_error = Gpu_unavailable | Gpu_execution_failed of string` и
+    функция форматирования `string_of_error : gpu_error -> string`.
+  - Все функции (`synthesize_mba_gpu`, `batch_encrypt_gpu`, `verify_sac_gpu`) теперь возвращают
+    `(..., gpu_error) result`.
+  - Исключения из C stubs (`caml_failwith` при неуспешном статусе Metal/GPU) и `Sys_error` перехватываются
+    и конвертируются в `Error (Gpu_execution_failed msg)`, а отсутствие GPU — в `Error Gpu_unavailable`.
+- **Тесты**:
+  - `test/test_gpu_synth.ml` обновлён: все тесты матчат `Ok` и громко падают при `Error`.
+  - Добавлен тест форматирования ошибок `test_gpu_error_formatting`.
+  - Все 205 тестов в сьютах проходят успешно.
 
 ### 4. SMC деградирует в no-op без диагностики
 
