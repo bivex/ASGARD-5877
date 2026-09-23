@@ -79,13 +79,23 @@
   - Добавлен тест форматирования ошибок `test_gpu_error_formatting`.
   - Все 205 тестов в сьютах проходят успешно.
 
-### 4. SMC деградирует в no-op без диагностики
+### 4. SMC деградирует в no-op без диагностики — ВЫПОЛНЕНО 2026-09-24
 
-- **Где**: `lib/native_vm/runtime_smc.ml:14` — `return 0; // If dual-mapping is unsupported,
-  degrade gracefully`. На W^X-платформах слой самомодификации молча выключен.
-- **Чинить**: как минимум — лог/флаг сборки, отражающий реальный режим (full SMC / degraded);
-  в идеале — отказ сборки при требуемом профиле `maxsec` и недоступном dual-mapping
-  (сейчас `protected_arm64_maxsec` может собраться без SMC и никто не узнает).
+- **Где**: `lib/native_vm/runtime_smc.ml`, `lib/native_vm/runtime_dual_map.ml`, `lib/native_vm/vm_runtime_emitter.ml`, `lib/native_vm/protection_types.ml(i)`, `lib/native_vm/protection_presets.ml`, `lib/native_vm/protection_json.ml`.
+- **Сделано**:
+  - Устранена молчаливая деградация без диагностики:
+    - Введён `enum SmcStatus : uint32_t { SMC_STATUS_NOT_EXECUTED = 0, SMC_STATUS_ACTIVE = 1, SMC_STATUS_DEGRADED = 2, SMC_STATUS_FAILED = 3 };`
+    - Добавлены функции диагностики `get_smc_status()`, `get_smc_status_string()`, `is_smc_active()`, `is_smc_degraded()`.
+    - Добавлен метод проверки поддержки платформы `DualMappedBuffer::is_supported()`.
+  - Реализован строгий режим SMC (`ASGARD_SMC_STRICT`):
+    - Compile-time: если платформа не поддерживает dual-mapping (`!defined(__APPLE__) && (!defined(__linux__) || !defined(MFD_CLOEXEC))`) при активном strict SMC — генерируется `#error "ASGARD Security Violation: Strict SMC requested (max_security profile), but target platform does not support dual-mapping W^X memory aliasing!"`.
+    - Runtime: при сбое аллокации dual-mapping в strict-режиме статус переводится в `SMC_STATUS_FAILED`, выводится диагностическая ошибка, и возвращается штраф `0xDEAD53C0CAFE0001ULL`, ломающий регистровый контекст VM (`ctx.reg_mask`) и предотвращающий скрытное продолжение выполнения.
+    - В нестрогом режиме статус переводится в `SMC_STATUS_DEGRADED` с логированием при диагностическом режиме вместо молчаливого no-op.
+  - Поддержан флаг `smc_strict : bool` в `anti_tamper_config` (активен по умолчанию в пресете `max_security`, поддержан в JSON serialization/roundtrip, при генерации VM header включает `#define ASGARD_SMC_STRICT 1`).
+- **Тесты (2 новых теста, 207 всего в 33 сьютах)**:
+  - `test_smc_diagnostics_and_modes` в `test_anti_tamper_smc.ml`: проверка начального состояния `NOT_EXECUTED`, перехода в `SMC_STATUS_ACTIVE` / `"FULL_SMC"`, работы предикатов `is_smc_active()`.
+  - `test_smc_strict_mode_and_max_security` в `test_anti_tamper_smc.ml`: проверка флага `smc_strict` в `max_security`, генерации `#define ASGARD_SMC_STRICT 1` в заголовке, компиляции и выполнения под clang++ с активным `ASGARD_SMC_STRICT`.
+  - JSON roundtrip в `test_protection_config.ml`: проверка сохранения и загрузки `anti_tamper.smc_strict`.
 
 ---
 

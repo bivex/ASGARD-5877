@@ -19,6 +19,16 @@ struct DualMappedBuffer {
     const void* rx_alias = nullptr; // Executable view for execution
     size_t size = 0;
 
+    static inline bool is_supported() noexcept {
+#if defined(__APPLE__)
+        return true;
+#elif defined(__linux__) && defined(MFD_CLOEXEC)
+        return true;
+#else
+        return false;
+#endif
+    }
+
     static DualMappedBuffer allocate(size_t required_size) noexcept {
         DualMappedBuffer buf = {};
         size_t page_sz = 4096;

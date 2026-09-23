@@ -153,6 +153,7 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
           {
             enabled = json_get_bool "enabled" base.anti_tamper.enabled obj;
             smc = json_get_bool "smc" base.anti_tamper.smc obj;
+            smc_strict = json_get_bool "smc_strict" base.anti_tamper.smc_strict obj;
             hardware_timing_probes = json_get_bool "hardware_timing_probes" base.anti_tamper.hardware_timing_probes obj;
             memory_integrity_scanner = json_get_bool "memory_integrity_scanner" base.anti_tamper.memory_integrity_scanner obj;
             anti_emulation = json_get_bool "anti_emulation" base.anti_tamper.anti_emulation obj;
@@ -232,6 +233,7 @@ let to_yojson (cfg : t) : Yojson.Basic.t =
     ("anti_tamper", `Assoc [
       ("enabled", `Bool cfg.anti_tamper.enabled);
       ("smc", `Bool cfg.anti_tamper.smc);
+      ("smc_strict", `Bool cfg.anti_tamper.smc_strict);
       ("hardware_timing_probes", `Bool cfg.anti_tamper.hardware_timing_probes);
       ("memory_integrity_scanner", `Bool cfg.anti_tamper.memory_integrity_scanner);
       ("anti_emulation", `Bool cfg.anti_tamper.anti_emulation);

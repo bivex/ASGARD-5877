@@ -367,10 +367,170 @@ int main() {
        if String.sub out i n = needle then found := true
      done; !found)
 
+let test_smc_diagnostics_and_modes () =
+  let tmp_dir = Filename.temp_file "smc_diag_" "_dir" in
+  (try Sys.remove tmp_dir with _ -> ());
+  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+  let main_cpp = Filename.concat tmp_dir "test_diag.cpp" in
+  let oc = open_out main_cpp in
+  output_string oc (Hardened_runtime.emit_dual_mapping_header ());
+  output_string oc "\n";
+  output_string oc (Hardened_runtime.emit_introspective_smc_header ());
+  output_string oc "\n";
+  output_string oc {|
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main() {
+    // 1. Initial state should be NOT_EXECUTED
+    if (asgard_smc::get_smc_status() != asgard_smc::SMC_STATUS_NOT_EXECUTED) {
+        printf("[FAIL] Initial SMC status should be NOT_EXECUTED (0), got %u\n", asgard_smc::get_smc_status());
+        return 1;
+    }
+    if (strcmp(asgard_smc::get_smc_status_string(), "NOT_EXECUTED") != 0) {
+        printf("[FAIL] Initial SMC status string wrong: %s\n", asgard_smc::get_smc_status_string());
+        return 2;
+    }
+
+    // 2. Execute SMC probe
+    uint64_t penalty = asgard_smc::execute_introspective_smc_probe(0x55);
+    if (penalty != 0) {
+        printf("[FAIL] SMC penalty non-zero: %llu\n", (unsigned long long)penalty);
+        return 3;
+    }
+
+    // 3. Status must now be ACTIVE on macOS/Linux with dual-mapping
+    if (asgard_smc::get_smc_status() != asgard_smc::SMC_STATUS_ACTIVE) {
+        printf("[FAIL] After probe, status should be SMC_STATUS_ACTIVE (1), got %u\n", asgard_smc::get_smc_status());
+        return 4;
+    }
+    if (strcmp(asgard_smc::get_smc_status_string(), "FULL_SMC") != 0) {
+        printf("[FAIL] Status string should be FULL_SMC, got %s\n", asgard_smc::get_smc_status_string());
+        return 5;
+    }
+    if (!asgard_smc::is_smc_active() || asgard_smc::is_smc_degraded()) {
+        printf("[FAIL] is_smc_active() should be true and is_smc_degraded() false\n");
+        return 6;
+    }
+
+    printf("[SMC_DIAG_OK] All SMC diagnostic checks passed!\n");
+    return 0;
+}
+|};
+  close_out oc;
+
+  let bin_path = Filename.concat tmp_dir "test_diag" in
+  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+  let comp_status = Sys.command comp_cmd in
+  Alcotest.(check int) "clang++ compilation of SMC diagnostics succeeds" 0 comp_status;
+
+  let ic = Unix.open_process_in bin_path in
+  let out_buf = Buffer.create 256 in
+  (try while true do
+       Buffer.add_string out_buf (input_line ic);
+       Buffer.add_char out_buf '\n'
+     done with End_of_file -> ());
+  let status = Unix.close_process_in ic in
+  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+  let out_str = Buffer.contents out_buf in
+  Alcotest.(check bool) "output contains SMC_DIAG_OK" true
+    (let needle = "SMC_DIAG_OK" in
+     let n = String.length needle and h = String.length out_str in
+     let found = ref false in
+     for i = 0 to h - n do
+       if String.sub out_str i n = needle then found := true
+     done; !found)
+
+let test_smc_strict_mode_and_max_security () =
+  (* Check that max_security has smc_strict = true *)
+  Alcotest.(check bool) "max_security has smc_strict enabled" true
+    Protection_config.max_security.anti_tamper.smc_strict;
+  Alcotest.(check bool) "default config has smc_strict disabled" false
+    Protection_config.default.anti_tamper.smc_strict;
+
+  (* Verify that vm_runtime_emitter emits ASGARD_SMC_STRICT when config is max_security *)
+  let rng = Random.State.make [| 0x1234 |] in
+  let asm = {|
+func_strict_test:
+    mov rax, 42
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let pkg = Vm_emitter.compile_and_package ~rng ~config:Protection_config.max_security func in
+      Alcotest.(check bool) "ASGARD_SMC_STRICT emitted in max_security C++ header" true
+        (let needle = "#define ASGARD_SMC_STRICT 1" in
+         let n = String.length needle and h = String.length pkg.cpp_runtime_source in
+         let found = ref false in
+         for i = 0 to h - n do
+           if String.sub pkg.cpp_runtime_source i n = needle then found := true
+         done; !found);
+
+      (* Also test compilation & execution with ASGARD_SMC_STRICT *)
+      let tmp_dir = Filename.temp_file "smc_strict_" "_dir" in
+      (try Sys.remove tmp_dir with _ -> ());
+      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+
+      let main_cpp = Filename.concat tmp_dir "test_strict.cpp" in
+      let oc = open_out main_cpp in
+      output_string oc "#define ASGARD_SMC_STRICT 1\n";
+      output_string oc (Hardened_runtime.emit_dual_mapping_header ());
+      output_string oc "\n";
+      output_string oc (Hardened_runtime.emit_introspective_smc_header ());
+      output_string oc "\n";
+      output_string oc {|
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    uint64_t smc_penalty = asgard_smc::execute_introspective_smc_probe(0x77);
+    if (smc_penalty != 0) {
+        printf("[FAIL] Strict SMC probe should succeed on supported platform, penalty=%llu\n", (unsigned long long)smc_penalty);
+        return 1;
+    }
+    if (asgard_smc::get_smc_status() != asgard_smc::SMC_STATUS_ACTIVE) {
+        printf("[FAIL] Strict SMC status should be ACTIVE, got %u\n", asgard_smc::get_smc_status());
+        return 2;
+    }
+    printf("[STRICT_SMC_OK] Strict SMC compiled and verified!\n");
+    return 0;
+}
+|};
+      close_out oc;
+
+      let bin_path = Filename.concat tmp_dir "test_strict" in
+      let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+      let comp_status = Sys.command comp_cmd in
+      Alcotest.(check int) "clang++ compilation with ASGARD_SMC_STRICT succeeds" 0 comp_status;
+
+      let ic = Unix.open_process_in bin_path in
+      let out_buf = Buffer.create 256 in
+      (try while true do
+           Buffer.add_string out_buf (input_line ic);
+           Buffer.add_char out_buf '\n'
+         done with End_of_file -> ());
+      let status = Unix.close_process_in ic in
+      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+      let out_str = Buffer.contents out_buf in
+      Alcotest.(check bool) "output contains STRICT_SMC_OK" true
+        (let needle = "STRICT_SMC_OK" in
+         let n = String.length needle and h = String.length out_str in
+         let found = ref false in
+         for i = 0 to h - n do
+           if String.sub out_str i n = needle then found := true
+         done; !found)
+
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
   Alcotest.test_case "full_threaded_vm_with_layer3_protection" `Quick test_full_threaded_vm_with_layer3_protection;
   Alcotest.test_case "nanomite_signal_dispatch" `Quick test_nanomite_signal_dispatch;
   Alcotest.test_case "direct_syscalls_e2e" `Quick test_direct_syscalls_e2e;
   Alcotest.test_case "vector_isa_e2e" `Quick test_vector_isa_e2e;
+  Alcotest.test_case "smc_diagnostics_and_modes" `Quick test_smc_diagnostics_and_modes;
+  Alcotest.test_case "smc_strict_mode_and_max_security" `Quick test_smc_strict_mode_and_max_security;
 ]

@@ -35,6 +35,7 @@ type anti_pushan_config = {
 type anti_tamper_config = {
   enabled : bool;
   smc : bool;
+  smc_strict : bool;
   hardware_timing_probes : bool;
   memory_integrity_scanner : bool;
   anti_emulation : bool;

@@ -11,6 +11,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     | None -> profile.dispatch.num_domains
   in
   let enable_smc = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.smc | None -> true in
+  let enable_smc_strict = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.smc && c.anti_tamper.smc_strict | None -> false in
   let enable_anti_emu = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.anti_emulation | None -> true in
   let enable_mem_scan = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.memory_integrity_scanner | None -> true in
   let enable_timing_probes = match config with Some c -> c.anti_tamper.enabled && c.anti_tamper.hardware_timing_probes | None -> true in
@@ -42,6 +43,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   Buffer.add_string b (Hardened_runtime.emit_dual_mapping_header ());
   Buffer.add_string b "\n";
   if enable_smc then begin
+    if enable_smc_strict then Buffer.add_string b "#define ASGARD_SMC_STRICT 1\n";
     Buffer.add_string b (Hardened_runtime.emit_introspective_smc_header ());
     Buffer.add_string b "\n";
   end;

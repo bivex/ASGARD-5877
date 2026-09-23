@@ -3,15 +3,64 @@ let emit_introspective_smc_header () =
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdio.h>
+
+#if defined(ASGARD_SMC_STRICT)
+#  if !defined(__APPLE__) && (!defined(__linux__) || !defined(MFD_CLOEXEC))
+#    error "ASGARD Security Violation: Strict SMC requested (max_security profile), but target platform does not support dual-mapping W^X memory aliasing!"
+#  endif
+#endif
 
 namespace asgard_smc {
+
+enum SmcStatus : uint32_t {
+    SMC_STATUS_NOT_EXECUTED = 0,
+    SMC_STATUS_ACTIVE       = 1,
+    SMC_STATUS_DEGRADED     = 2,
+    SMC_STATUS_FAILED       = 3
+};
+
+inline volatile uint32_t g_smc_status = SMC_STATUS_NOT_EXECUTED;
+
+static inline __attribute__((always_inline)) uint32_t get_smc_status() noexcept {
+    return g_smc_status;
+}
+
+static inline __attribute__((always_inline)) const char* get_smc_status_string() noexcept {
+    switch (g_smc_status) {
+        case SMC_STATUS_ACTIVE:   return "FULL_SMC";
+        case SMC_STATUS_DEGRADED: return "DEGRADED_NO_DUAL_MAP";
+        case SMC_STATUS_FAILED:   return "FAILED_VERIFICATION";
+        default:                  return "NOT_EXECUTED";
+    }
+}
+
+static inline __attribute__((always_inline)) bool is_smc_active() noexcept {
+    return g_smc_status == SMC_STATUS_ACTIVE;
+}
+
+static inline __attribute__((always_inline)) bool is_smc_degraded() noexcept {
+    return g_smc_status == SMC_STATUS_DEGRADED;
+}
 
 // Introspective Self-Modifying Code (SMC) + Hardware Timing Probe (Morse & Kojsik, 2026)
 static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_probe(uint64_t seed) noexcept {
     uint64_t penalty = 0;
     asgard_memory::DualMappedBuffer buf = asgard_memory::DualMappedBuffer::allocate(4096);
     if (!buf.rw_alias || !buf.rx_alias) {
-        return 0; // If dual-mapping is unsupported in environment, degrade gracefully
+#if defined(ASGARD_SMC_STRICT)
+        g_smc_status = SMC_STATUS_FAILED;
+#if !defined(ASGARD_QUIET)
+        fprintf(stderr, "[ASGARD_SMC_ERROR] Strict SMC required by max_security profile, but dual-mapping buffer allocation failed!\n");
+#endif
+        return 0xDEAD53C0CAFE0001ULL; // Non-zero penalty that corrupts VM context and forces abort/divergence
+#else
+        g_smc_status = SMC_STATUS_DEGRADED;
+#if !defined(ASGARD_QUIET) && defined(ASGARD_DEBUG_DIAGNOSTICS)
+        fprintf(stderr, "[ASGARD_SMC_WARN] Dual-mapping unsupported or failed; SMC degraded gracefully.\n");
+#endif
+        return 0; // If dual-mapping is unsupported and not in strict mode, degrade gracefully
+#endif
     }
 
 #if defined(__aarch64__)
@@ -82,9 +131,18 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     if ((t1 - t0) > 100000ULL) {
         penalty ^= 0xDEAD1337CAFE5877ULL;
     }
+#else
+#if defined(ASGARD_SMC_STRICT)
+    penalty ^= 0xDEAD53C0CAFE0002ULL;
+#endif
 #endif
 
     buf.release();
+    if (penalty != 0) {
+        g_smc_status = SMC_STATUS_FAILED;
+    } else {
+        g_smc_status = SMC_STATUS_ACTIVE;
+    }
     return penalty;
 }
 
