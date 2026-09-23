@@ -126,19 +126,30 @@
   `Fp_conv`/`Atomic_mem` исключены (эвалюатор их no-op'ит); arm64 w18–w28
   (Vreg-B32) проходят мимо фильтра GPR — зануление для них не добавляется.
 
-### 9. (новый, из разбора п.5) Эмиттер молча теряет src1 ≠ dst у RR-ALU
+### 9. (новый, из разбора п.5) Эмиттер молча теряет src1 ≠ dst у RR-ALU — ВЫПОЛНЕНО 2026-09-24
 
-- **Где**: `lib/native_vm/vm_emitter.ml` — все ветки вида
-  `Alu { op; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s }` кодируют только `(d, s)`.
-- **Следствие**: любой IR с src1≠dst (натурален для arm64 3-операндного ассемблера)
-  компилируется в неверный байткод без диагностики. Сейчас безопасно только потому,
-  что все продюсеры IR держат src1=dst по конвенции, зафиксированной в комментарии
-  `lift_x86_div`.
-- **Чинить**: расширить кодировку RR-слов до трёх регистровых полей (пример — уже
-  существующие fused super-ops) + зеркально в C++-рантайме и `vm_transform.ml`;
-  после изменения опкод-таблицы — обязательные golden-векторы `test_anti_pushan.ml`.
-  Альтернатива-минимум: диагностика `assert src1 = dst` на эмиттере (громкий отказ
-  вместо тихой порчи).
+- **Где было**: `lib/native_vm/vm_emitter.ml` и `lib/rd_jit_vm/rd_jit_emitter.ml` — все ветки вида
+  `Alu { op; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s }` кодировали только `(d, s)` и игнорировали `src1`.
+  Нативные хендлеры вычисляют `dst = dst OP src`, что требовало `src1 = dst`.
+- **Сделано**:
+  - Новый общий пасс нормализации `canonicalize_3addr_alu` в `lib/native_vm/vm_transform.ml`:
+    - При `src1 = dst`: без изменений (2-адресный канон).
+    - При `src1 ≠ dst`:
+      - Для `src2 = Imm imm`: `Mov dst, src1` + `Alu dst, dst, imm`.
+      - Для `src2 = Reg s2` при `s2 ≠ dst`: `Mov dst, src1` + `Alu dst, dst, s2` (без разрушения s2).
+      - Для `src2 = Reg s2` при `s2 == dst` (hazard clobber case):
+        - Коммутативные операции (`Add`, `Imul`, `Mul`, `Xor`, `And`, `Or`): обмен операндами `Alu dst, dst, src1` — 0 лишних инструкций, точное сохранение флагов.
+        - Некоммутативные операции (`Sub`, `Div`, `Idiv`, сдвиги): сохранение старого `dst` в свободный темп (`vtmp0`/`vtmp1`/`vtmp2`), загрузка `dst := src1`, вычисление `Alu dst, dst, scratch`.
+      - Для `Unary`: аналогично `Mov dst, src` + `Unary dst, dst`.
+  - Подключён в `vm_emitter.ml` (до `fuse_block_instructions` и после MBA; благодаря этому `Mov + Alu` последовательности сворачиваются в fused super-ops `Fused_Mov_Add`) и в `rd_jit_emitter.ml`.
+  - В `vm_emitter.ml` и `rd_jit_emitter.ml` добавлена строгая диагностика `assert_src1_eq_dst`: ненормализованная 3-адресная операция немедленно падает громким compile-time исключением вместо тихой порчи байткода.
+  - Поддержан опкод `Ir.Mul` (наряду с `Ir.Imul`) в `vm_emitter.ml`, `rd_jit_emitter.ml` и `arm64_common.ml`.
+  - В `arm64_alu.ml` исправлен баг `bic/bics/orn/eon`: операнд `src2` теперь явно копируется в `vtmp1` перед битовой инверсией `Not`.
+- **Тесты (4 новых теста, 204 всего в 33 сьютах)**:
+  - Unit `canonicalize_3addr_alu_unit` в `test_native_semantics.ml`: проверка всех веток разложения (distinct registers, commutative hazard swap, non-commutative scratch preservation, immediate).
+  - Native `native_3addr_alu` в `test_native_semantics.ml`: прямое нативное исполнение 3-адресного IR (add, sub-hazard, imul, idiv) в `execute_threaded`.
+  - Lifter unit `ARM64 Lift 3-Address ALU (madd/msub/sdiv/bic)` в `test_arm64_lifter.ml`: reference VM evaluation.
+  - Native E2E `native_arm64_3addr_madd_msub_sdiv_bic` в `test_native_semantics.ml`: полный пайплайн от ARM64 assembly (madd, msub, sdiv, bic) до нативного исполнения в threaded VM (результат 310).
 
 ---
 

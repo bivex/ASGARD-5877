@@ -94,7 +94,8 @@ int main() {
     Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path)
   in
   Alcotest.(check int) (name ^ ": clang++ compilation succeeds") 0 comp_status;
-  let status, _ = run_command_capture bin_path in
+  let status, out = run_command_capture bin_path in
+  if status <> Unix.WEXITED 0 then Printf.eprintf "[%s output]: %s\n%!" name out;
   Alcotest.(check bool) (name ^ ": runner exits 0") true (status = Unix.WEXITED 0)
 
 

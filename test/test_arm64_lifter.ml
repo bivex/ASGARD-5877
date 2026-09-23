@@ -215,6 +215,33 @@ let test_arm64_lift_signed_memory () =
           check int64 "ARM64 signed memory sum = -100305" (-100305L) snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_3addr_madd_msub_sdiv_bic () =
+  let asm = {|
+    mov x1, #7
+    mov x2, #6
+    mov x3, #100
+    madd x4, x1, x2, x3
+    msub x5, x1, x2, x3
+    sdiv x6, x3, x1
+    bic x7, x3, x1
+    add x0, x4, x5
+    add x0, x0, x6
+    add x0, x0, x7
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_3addr" } asm with
+  | Error err -> fail ("Failed to lift ARM64 3-address ALU: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          (* madd: 100 + 7 * 6 = 142
+             msub: 100 - 7 * 6 = 58
+             sdiv: 100 / 7 = 14
+             bic:  100 & ~7 = 96
+             sum:  142 + 58 + 14 + 96 = 310 *)
+          check int64 "ARM64 3-addr ALU sum = 310" 310L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -226,6 +253,7 @@ let tests = [
   ("ARM64 Lift Pre-index Writeback (!)", `Quick, test_arm64_lift_pre_post_writeback);
   ("ARM64 Lift Post-index Writeback ([x], #imm)", `Quick, test_arm64_lift_post_index);
   ("ARM64 Lift Pair stp/ldp Writeback", `Quick, test_arm64_lift_pair_stp_ldp);
+  ("ARM64 Lift 3-Address ALU (madd/msub/sdiv/bic)", `Quick, test_arm64_lift_3addr_madd_msub_sdiv_bic);
 ]
 
 

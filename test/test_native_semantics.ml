@@ -392,6 +392,129 @@ int main(void) {
 |})
         [ ("-O2", "s_o2"); ("-O3", "s_o3") ])
 
+(* Item 9: 3-address ALU canonicalization unit test *)
+let test_canonicalize_3addr_alu_unit () =
+  (* 1. Distinct registers: add rax, rbx, rcx *)
+  let i1 = Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rbx; src2 = Ir.Reg Register.rcx; set_flags = false } in
+  let c1 = Vm_transform.canonicalize_3addr_alu [ i1 ] in
+  Alcotest.(check int) "distinct 3addr decomposes into 2 instrs" 2 (List.length c1);
+  (match c1 with
+   | [ Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s };
+       Ir.Alu { op = Ir.Add; dst = d2; src1 = Ir.Reg s1; src2 = Ir.Reg s2; _ } ] ->
+       Alcotest.(check string) "mov dst is rax" "rax" (Register.to_string d);
+       Alcotest.(check string) "mov src is rbx" "rbx" (Register.to_string s);
+       Alcotest.(check string) "alu dst is rax" "rax" (Register.to_string d2);
+       Alcotest.(check string) "alu src1 is rax" "rax" (Register.to_string s1);
+       Alcotest.(check string) "alu src2 is rcx" "rcx" (Register.to_string s2)
+   | _ -> Alcotest.fail "unexpected decomposition for distinct 3addr");
+
+  (* 2. Commutative hazard: add rax, rbx, rax (dst == src2) *)
+  let i2 = Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rbx; src2 = Ir.Reg Register.rax; set_flags = false } in
+  let c2 = Vm_transform.canonicalize_3addr_alu [ i2 ] in
+  Alcotest.(check int) "commutative hazard swaps operands with 0 extra mov" 1 (List.length c2);
+  (match c2 with
+   | [ Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg s1; src2 = Ir.Reg s2; _ } ] ->
+       Alcotest.(check string) "alu dst is rax" "rax" (Register.to_string d);
+       Alcotest.(check string) "alu src1 is rax" "rax" (Register.to_string s1);
+       Alcotest.(check string) "alu src2 is rbx" "rbx" (Register.to_string s2)
+   | _ -> Alcotest.fail "unexpected decomposition for commutative hazard");
+
+  (* 3. Non-commutative hazard: sub rax, rbx, rax (dst == src2) *)
+  let i3 = Ir.Alu { op = Ir.Sub; dst = Register.rax; src1 = Ir.Reg Register.rbx; src2 = Ir.Reg Register.rax; set_flags = false } in
+  let c3 = Vm_transform.canonicalize_3addr_alu [ i3 ] in
+  Alcotest.(check int) "non-commutative hazard uses scratch with 3 instrs" 3 (List.length c3);
+  (match c3 with
+   | [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg old_dst };
+       Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s1 };
+       Ir.Alu { op = Ir.Sub; dst = d2; src1 = Ir.Reg s1_2; src2 = Ir.Reg s2; _ } ] ->
+       Alcotest.(check string) "scratch saved from rax" "rax" (Register.to_string old_dst);
+       Alcotest.(check string) "dst loaded from rbx" "rax" (Register.to_string d);
+       Alcotest.(check string) "src was rbx" "rbx" (Register.to_string s1);
+       Alcotest.(check string) "alu dst is rax" "rax" (Register.to_string d2);
+       Alcotest.(check string) "alu src1 is rax" "rax" (Register.to_string s1_2);
+       Alcotest.(check string) "alu src2 is scratch" (Register.to_string scratch) (Register.to_string s2)
+   | _ -> Alcotest.fail "unexpected decomposition for non-commutative hazard");
+
+  (* 4. 3-address with immediate: add rax, rbx, 42 *)
+  let i4 = Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rbx; src2 = Ir.Imm 42L; set_flags = false } in
+  let c4 = Vm_transform.canonicalize_3addr_alu [ i4 ] in
+  Alcotest.(check int) "immediate 3addr decomposes into 2 instrs" 2 (List.length c4);
+  (match c4 with
+   | [ Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s };
+       Ir.Alu { op = Ir.Add; dst = d2; src1 = Ir.Reg s1; src2 = Ir.Imm 42L; _ } ] ->
+       Alcotest.(check string) "mov dst is rax" "rax" (Register.to_string d);
+       Alcotest.(check string) "mov src is rbx" "rbx" (Register.to_string s);
+       Alcotest.(check string) "alu dst is rax" "rax" (Register.to_string d2);
+       Alcotest.(check string) "alu src1 is rax" "rax" (Register.to_string s1)
+   | _ -> Alcotest.fail "unexpected decomposition for immediate 3addr")
+
+(* Item 9: Native threaded VM execution with 3-address ALU IR (distinct + hazard) *)
+let test_native_3addr_alu () =
+  let block = {
+    Ir.id = 0;
+    label = "entry";
+    instrs = [
+      (* rax = rdi + rsi = 10 + 20 = 30 *)
+      Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rdi; src2 = Ir.Reg Register.rsi; set_flags = false };
+      (* rax = rdx - rax = 50 - 30 = 20 (hazard: s2 == dst with non-commutative Sub) *)
+      Ir.Alu { op = Ir.Sub; dst = Register.rax; src1 = Ir.Reg Register.rdx; src2 = Ir.Reg Register.rax; set_flags = false };
+      (* rcx = rdi * rsi = 10 * 20 = 200 *)
+      Ir.Alu { op = Ir.Imul; dst = Register.rcx; src1 = Ir.Reg Register.rdi; src2 = Ir.Reg Register.rsi; set_flags = false };
+      (* rcx = rcx / rdx = 200 / 50 = 4 *)
+      Ir.Alu { op = Ir.Idiv; dst = Register.rcx; src1 = Ir.Reg Register.rcx; src2 = Ir.Reg Register.rdx; set_flags = false };
+      (* rax = rax + rcx = 20 + 4 = 24 *)
+      Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.rcx; set_flags = false };
+      Ir.Ret;
+    ];
+  } in
+  let blocks = Hashtbl.create 1 in
+  Hashtbl.replace blocks 0 block;
+  let func = { Ir.name = "func_3addr_test"; cfg = { entry_id = 0; blocks } } in
+  let rng = Random.State.make [| 20260937 |] in
+  let pkg = Vm_emitter.compile_and_package ~rng func in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_3addr" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    ctx.set_rdi(10);
+    ctx.set_rsi(20);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, 50);
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    if (ctx.get_rax() != 24) return 2;
+|})
+
+(* Item 9: Native threaded VM execution of ARM64 madd/msub/sdiv/bic *)
+let test_native_arm64_3addr_madd_msub_sdiv_bic () =
+  let asm = {|
+    mov x1, #7
+    mov x2, #6
+    mov x3, #100
+    madd x4, x1, x2, x3
+    msub x5, x1, x2, x3
+    sdiv x6, x3, x1
+    bic x7, x3, x1
+    add x0, x4, x5
+    add x0, x0, x6
+    add x0, x0, x7
+    ret
+  |} in
+  let lifted = Arm64_lifter_adapter.lift_source asm in
+  let func =
+    match lifted with
+    | Error err -> Alcotest.fail ("lift failed: " ^ err)
+    | Ok (f, _) -> f
+  in
+  let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+  let rng = Random.State.make [| 20260938 |] in
+  let pkg = Vm_emitter.compile_and_package ~rng unwrapped in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"arm64_3addr_native" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    if (ctx.get_rax() != 310) return 2;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -400,4 +523,7 @@ let tests = [
   Alcotest.test_case "e2e_uint16_pipeline" `Slow test_e2e_uint16_pipeline;
   Alcotest.test_case "e2e_uint16_clang_o2_o3" `Slow test_e2e_uint16_clang_o2_o3;
   Alcotest.test_case "e2e_signed_loads_clang_o2_o3" `Slow test_e2e_signed_loads_clang_o2_o3;
+  Alcotest.test_case "canonicalize_3addr_alu_unit" `Quick test_canonicalize_3addr_alu_unit;
+  Alcotest.test_case "native_3addr_alu" `Slow test_native_3addr_alu;
+  Alcotest.test_case "native_arm64_3addr_madd_msub_sdiv_bic" `Slow test_native_arm64_3addr_madd_msub_sdiv_bic;
 ]

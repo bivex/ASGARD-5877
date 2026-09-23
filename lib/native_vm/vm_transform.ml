@@ -272,6 +272,105 @@ let inject_junk_instructions ~rng instrs =
   in
   aux instrs
 
+let is_commutative_alu_op = function
+  | Ir.Add | Ir.Imul | Ir.Mul | Ir.Xor | Ir.And | Ir.Or -> true
+  | _ -> false
+
+let pick_scratch_reg (d : Register.t) (s : Register.t) : Register.t =
+  let d_str = Register.to_string d in
+  let s_str = Register.to_string s in
+  let w = Register.get_width d in
+  let candidates = [ Register.vtmp0; Register.vtmp1; Register.vtmp2 ] in
+  let chosen =
+    List.find
+      (fun cand ->
+        let c_str = Register.to_string cand in
+        c_str <> d_str && c_str <> s_str)
+      candidates
+  in
+  Register.with_width chosen w
+
+let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
+  match instr with
+  | Ir.Alu { op; dst; src1 = Ir.Reg s1; src2 = Ir.Imm imm; set_flags } ->
+      if Register.to_string s1 = Register.to_string dst then
+        [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Imm imm; set_flags } ]
+      else
+        [
+          Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s1 };
+          Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Imm imm; set_flags };
+        ]
+
+  | Ir.Alu { op; dst; src1 = Ir.Reg s1; src2 = Ir.Reg s2; set_flags } ->
+      let d_str = Register.to_string dst in
+      let s1_str = Register.to_string s1 in
+      let s2_str = Register.to_string s2 in
+      if s1_str = d_str then
+        (* Already 2-address: dst = dst OP s2 *)
+        [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s2; set_flags } ]
+      else if s2_str = d_str then
+        (* Hazard case: dst = s1 OP dst *)
+        if is_commutative_alu_op op then
+          (* Commutative: s1 OP dst == dst OP s1 *)
+          [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s1; set_flags } ]
+        else
+          (* Non-commutative: e.g. dst = s1 - dst. Must not clobber dst when loading s1. *)
+          let scratch = pick_scratch_reg dst s1 in
+          [
+            Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
+            Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s1 };
+            Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags };
+          ]
+      else
+        (* Normal 3-address: dst = s1 OP s2, where dst != s1 and dst != s2 *)
+        [
+          Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s1 };
+          Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s2; set_flags };
+        ]
+
+  | Ir.Alu { op; dst; src1 = Ir.Reg s1; src2 = Ir.Mem m; set_flags } ->
+      let scratch = pick_scratch_reg dst s1 in
+      let load_m = Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m } in
+      let alu = Ir.Alu { op; dst; src1 = Ir.Reg s1; src2 = Ir.Reg scratch; set_flags } in
+      load_m :: canonicalize_instr alu
+
+  | Ir.Alu { op; dst; src1 = Ir.Imm imm; src2; set_flags } ->
+      if is_commutative_alu_op op then
+        canonicalize_instr (Ir.Alu { op; dst; src1 = src2; src2 = Ir.Imm imm; set_flags })
+      else
+        (match src2 with
+        | Ir.Reg s2 when Register.to_string s2 = Register.to_string dst ->
+            let scratch = pick_scratch_reg dst dst in
+            [
+              Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
+              Ir.Mov { dst = Ir.Reg dst; src = Ir.Imm imm };
+              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags };
+            ]
+        | _ ->
+            [
+              Ir.Mov { dst = Ir.Reg dst; src = Ir.Imm imm };
+              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2; set_flags };
+            ])
+
+  | Ir.Unary { op; dst; src = Ir.Reg s; set_flags } ->
+      if Register.to_string s = Register.to_string dst then
+        [ Ir.Unary { op; dst; src = Ir.Reg dst; set_flags } ]
+      else
+        [
+          Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s };
+          Ir.Unary { op; dst; src = Ir.Reg dst; set_flags };
+        ]
+  | Ir.Unary { op; dst; src; set_flags } ->
+      [
+        Ir.Mov { dst = Ir.Reg dst; src };
+        Ir.Unary { op; dst; src = Ir.Reg dst; set_flags };
+      ]
+
+  | other -> [ other ]
+
+let canonicalize_3addr_alu (instrs : Ir.instr list) : Ir.instr list =
+  List.concat_map canonicalize_instr instrs
+
 let rec fuse_block_instructions instrs =
   let fits_i32 v = v >= -2147483648L && v <= 2147483647L in
   match instrs with

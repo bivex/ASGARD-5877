@@ -51,7 +51,7 @@ let emit_3addr_alu ~op ~dst ~src1 ~src2 ~set_flags =
     match raw_to_ir_operand src2 with
     | Ir.Reg r2 when Register.to_string dst = Register.to_string r2 ->
         (match op with
-        | Ir.Add | Ir.Imul | Ir.Xor | Ir.And | Ir.Or ->
+        | Ir.Add | Ir.Imul | Ir.Mul | Ir.Xor | Ir.And | Ir.Or ->
             [ Ir.Alu { op; dst; src1 = Reg dst; src2 = Reg src1; set_flags } ]
         | _ ->
             [

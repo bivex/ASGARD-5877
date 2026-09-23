@@ -110,6 +110,7 @@ let compile_and_package
             b.instrs
         else b.instrs
       in
+      let instrs = canonicalize_3addr_alu instrs in
       let instrs = if enable_junk then inject_junk_instructions ~rng instrs else instrs in
       let enable_super_ops =
         match config with
@@ -147,6 +148,16 @@ let compile_and_package
      is disabled, making the mask byte-identical to the legacy positional PRF. *)
   let enable_rolling = Protection_config.rolling_key_enabled config in
   let cur_key = ref 0L in
+  let assert_src1_eq_dst ~op ~dst ~src1 =
+    match src1 with
+    | Ir.Reg s1 when Register.to_string s1 = Register.to_string dst -> ()
+    | Ir.Reg s1 ->
+        failwith (Printf.sprintf "vm_emitter: uncanonicalized 3-address ALU (op=%s): dst=%s, src1=%s (must be canonicalized to src1=dst)"
+          (Ir.alu_op_to_string op) (Register.to_string dst) (Register.to_string s1))
+    | _ ->
+        failwith (Printf.sprintf "vm_emitter: invalid ALU src1 (op=%s): dst=%s, src1=%s (must be Reg dst)"
+          (Ir.alu_op_to_string op) (Register.to_string dst) (Ir.operand_to_string src1))
+  in
   let encode_raw_word ?(extra_bits = 0L) op dst src imm =
     let w = ref 0L in
     w := Int64.logor !w (Int64.of_int op);
@@ -245,43 +256,62 @@ let compile_and_package
                   in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word (get_opcode op) base_idx (get_reg_idx s) m.disp
-              | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.Add; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Add ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ADD_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Add; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Add ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.Sub; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Sub ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SUB_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Sub; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Sub; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Sub ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SUB_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Imul ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_IMUL_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Imul; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Imul ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_IMUL_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Div; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.Div; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Div ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_DIV_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Idiv; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.Idiv; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Idiv ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_IDIV_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.Xor; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Xor ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_XOR_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Xor; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Xor; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Xor ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_XOR_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.And; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.And ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_AND_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.And; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.And ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_AND_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.Or; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Or ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_OR_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Or; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Or; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Or ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_OR_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Rol; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Rol; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Rol ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ROL_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Ror; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Ror; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Ror ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ROR_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Shl; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Shl; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Shl ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SHL_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Shr; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Shr; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Shr ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SHR_RI) (get_reg_idx d) 0 imm
-              | Ir.Alu { op = Ir.Sar; dst = d; src1 = Ir.Reg _; src2 = Ir.Imm imm; _ } ->
+              | Ir.Alu { op = Ir.Sar; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Sar ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SAR_RI) (get_reg_idx d) 0 imm
               | Ir.Unary { op = Ir.Inc; dst; _ } ->
                   encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx dst) 0 1L
