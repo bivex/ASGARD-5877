@@ -146,6 +146,21 @@ let to_string = function
 
 let of_string str =
   let s = String.lowercase_ascii (String.trim str) in
+  let vector_index =
+    let rec find = function
+      | [] -> None
+      | prefix :: rest ->
+          if String.length s > String.length prefix && String.starts_with ~prefix s then
+            match int_of_string_opt (String.sub s (String.length prefix) (String.length s - String.length prefix)) with
+            | Some i when i >= 0 && i < 32 -> Some i
+            | _ -> None
+          else find rest
+    in
+    find [ "xmm"; "ymm"; "zmm" ]
+  in
+  (match vector_index with
+  | Some i -> Ok (Fpr (i, B64))
+  | None ->
   if String.length s >= 2 && s.[0] = 'd' &&
      (match int_of_string_opt (String.sub s 1 (String.length s - 1)) with Some i -> i >= 0 && i < 32 | None -> false) then
     let i = int_of_string (String.sub s 1 (String.length s - 1)) in
@@ -177,8 +192,7 @@ let of_string str =
   | "vzero" | "xzr" | "wzr" -> Ok vzero
   | "vx18" -> Ok vx18 | "vx19" -> Ok vx19 | "vx20" -> Ok vx20 | "vx21" -> Ok vx21
   | "vx22" -> Ok vx22 | "vx23" -> Ok vx23 | "vx24" -> Ok vx24 | "vx25" -> Ok vx25 | "vx26" -> Ok vx26
-  | other -> Error (Printf.sprintf "Unknown register '%s'" other)
-
+   | other -> Error (Printf.sprintf "Unknown register '%s'" other))
 
 let gpr_index = function
   | RAX -> 0 | RCX -> 1 | RDX -> 2 | RBX -> 3

@@ -45,6 +45,8 @@ type target =
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv
 type fp_conv = Fcvtzs | Scvtf
+type vec_op = Vadd | Vsub | Vmul | Vand | Vor | Vxor
+type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
 type instr =
@@ -73,6 +75,10 @@ type instr =
   | Fp_binop of { op : fp_binop; dst : int; src1 : int; src2 : int }
   | Fp_cmp of { src1 : int; src2 : int }
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
+  | Vec_mov of { dst : int; src : int; bits : int }
+  | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
+  | Vec_load of { dst : int; addr : mem_ref; bits : int }
+  | Vec_store of { src : int; addr : mem_ref; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
 
 type basic_block = {
@@ -100,6 +106,11 @@ let alu_op_to_string = function
 
 let unary_op_to_string = function
   | Not -> "not" | Neg -> "neg" | Inc -> "inc" | Dec -> "dec"
+
+let vec_elem_to_string = function
+  | VInt -> "int"
+  | VF32 -> "f32"
+  | VF64 -> "f64"
 
 let mem_ref_to_string m =
   let size_prefix = match m.width with
@@ -181,6 +192,12 @@ let instr_to_string = function
   | Fp_conv { op; dst; src } ->
       let op_s = match op with Fcvtzs -> "fcvtzs" | Scvtf -> "scvtf" in
       Printf.sprintf "%s %s, %s" op_s (Register.to_string dst) (Register.to_string src)
+  | Vec_mov { dst; src; bits } -> Printf.sprintf "vec_mov.%d v%d, v%d" bits dst src
+  | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
+      let op_s = match op with Vadd -> "vec_add" | Vsub -> "vec_sub" | Vmul -> "vec_mul" | Vand -> "vec_and" | Vor -> "vec_or" | Vxor -> "vec_xor" in
+      Printf.sprintf "%s.%d.%d.%s v%d, v%d, v%d" op_s bits lane_bits (vec_elem_to_string elem) dst src1 src2
+  | Vec_load { dst; addr; bits } -> Printf.sprintf "vec_load.%d v%d, %s" bits dst (mem_ref_to_string addr)
+  | Vec_store { src; addr; bits } -> Printf.sprintf "vec_store.%d v%d, %s" bits src (mem_ref_to_string addr)
   | Atomic_mem { op; dst; addr; src; imm } ->
       let op_s = match op with AtLoad -> "at_load" | AtStore -> "at_store" | AtCas -> "at_cas" | AtAdd -> "at_add" | AtSwp -> "at_swp" in
       Printf.sprintf "%s %s, [%s + 0x%LX], %s" op_s (Register.to_string dst) (Register.to_string addr) imm (Register.to_string src)

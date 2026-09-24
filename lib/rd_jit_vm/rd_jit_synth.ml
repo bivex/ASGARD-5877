@@ -1,4 +1,15 @@
-let header () =
+let external_symbols_header symbols =
+  let entries =
+    match symbols with
+    | [] -> [ "    \"\"" ]
+    | xs -> List.map (fun s -> Printf.sprintf "    \"%s\"" (String.escaped s)) xs
+  in
+  "static const char* const g_rd_jit_external_symbols[] = {\n"
+  ^ String.concat ",\n" entries
+  ^ "\n};\n\n"
+
+let header ?(external_symbols = []) () =
+  ignore external_symbols;
   {|
 enum JITOpKind : uint8_t {
     JIT_OP_NOP = 0,
@@ -8,9 +19,10 @@ enum JITOpKind : uint8_t {
     JIT_OP_ADD_RI,
     JIT_OP_SUB_RR,
     JIT_OP_SUB_RI,
-    JIT_OP_MUL_RR,
-    JIT_OP_MUL_RI,
-    JIT_OP_XOR_RR,
+     JIT_OP_MUL_RR,
+     JIT_OP_MUL_RI,
+     JIT_OP_CALL_EXTERN,
+     JIT_OP_XOR_RR,
     JIT_OP_XOR_RI,
     JIT_OP_AND_RR,
     JIT_OP_AND_RI,
@@ -34,6 +46,76 @@ struct JITBlock {
 };
 
 typedef void (*JITBlockFn)(RD_JIT_Context* ctx);
+
+#include <stdio.h>
+#include <string.h>
+#if !defined(_WIN32) && !defined(_WIN64)
+#include <dlfcn.h>
+#endif
+
+static inline void asgard_rd_jit_call_extern(RD_JIT_Context* ctx, uint64_t sym_idx) {
+    const size_t count = sizeof(g_rd_jit_external_symbols) / sizeof(g_rd_jit_external_symbols[0]);
+    if (!ctx || sym_idx >= count || g_rd_jit_external_symbols[sym_idx][0] == '\0') return;
+    const char* sym_name = g_rd_jit_external_symbols[sym_idx];
+    void* sym_ptr = nullptr;
+#if !defined(_WIN32) && !defined(_WIN64)
+    sym_ptr = dlsym(RTLD_DEFAULT, sym_name);
+    if (!sym_ptr && sym_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, sym_name + 1);
+    if (!sym_ptr) {
+        char alt_name[256];
+        snprintf(alt_name, sizeof(alt_name), "_%s", sym_name);
+        sym_ptr = dlsym(RTLD_DEFAULT, alt_name);
+    }
+#endif
+    if (!sym_ptr) return;
+    const char* clean_name = (sym_name[0] == '_') ? sym_name + 1 : sym_name;
+    const uint64_t a0 = ctx->gprs[0];
+    const uint64_t a1 = ctx->gprs[1];
+    const uint64_t a2 = ctx->gprs[2];
+    const uint64_t a3 = ctx->gprs[3];
+    const uint64_t a4 = ctx->gprs[4];
+    const uint64_t a5 = ctx->gprs[5];
+    const uint64_t a6 = ctx->gprs[6];
+    const uint64_t a7 = ctx->gprs[7];
+    const uint64_t* stk = reinterpret_cast<const uint64_t*>(ctx->gprs[4]);
+    uint64_t ret = 0;
+#if defined(__APPLE__) && defined(__aarch64__)
+    if (strcmp(clean_name, "printf") == 0) {
+        typedef int (*printf_fn_t)(const char*, ...);
+        ret = (uint64_t)reinterpret_cast<printf_fn_t>(sym_ptr)((const char*)a0, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+    } else if (strcmp(clean_name, "fprintf") == 0 || strcmp(clean_name, "dprintf") == 0) {
+        typedef int (*fprintf_fn_t)(void*, const char*, ...);
+        ret = (uint64_t)reinterpret_cast<fprintf_fn_t>(sym_ptr)((void*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+    } else if (strcmp(clean_name, "sprintf") == 0) {
+        typedef int (*sprintf_fn_t)(char*, const char*, ...);
+        ret = (uint64_t)reinterpret_cast<sprintf_fn_t>(sym_ptr)((char*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+    } else if (strcmp(clean_name, "snprintf") == 0) {
+        typedef int (*snprintf_fn_t)(char*, size_t, const char*, ...);
+        ret = (uint64_t)reinterpret_cast<snprintf_fn_t>(sym_ptr)((char*)a0, (size_t)a1, (const char*)a2, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+    } else {
+        typedef uint64_t (*extern_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+        ret = reinterpret_cast<extern_fn_t>(sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
+    }
+#else
+    if (strcmp(clean_name, "printf") == 0) {
+        typedef int (*printf_fn_t)(const char*, ...);
+        ret = (uint64_t)reinterpret_cast<printf_fn_t>(sym_ptr)((const char*)a0, a1, a2, a3, a4, a5, a6, a7);
+    } else if (strcmp(clean_name, "fprintf") == 0 || strcmp(clean_name, "dprintf") == 0) {
+        typedef int (*fprintf_fn_t)(void*, const char*, ...);
+        ret = (uint64_t)reinterpret_cast<fprintf_fn_t>(sym_ptr)((void*)a0, (const char*)a1, a2, a3, a4, a5, a6, a7);
+    } else if (strcmp(clean_name, "sprintf") == 0) {
+        typedef int (*sprintf_fn_t)(char*, const char*, ...);
+        ret = (uint64_t)reinterpret_cast<sprintf_fn_t>(sym_ptr)((char*)a0, (const char*)a1, a2, a3, a4, a5, a6, a7);
+    } else if (strcmp(clean_name, "snprintf") == 0) {
+        typedef int (*snprintf_fn_t)(char*, size_t, const char*, ...);
+        ret = (uint64_t)reinterpret_cast<snprintf_fn_t>(sym_ptr)((char*)a0, (size_t)a1, (const char*)a2, a3, a4, a5, a6, a7);
+    } else {
+        typedef uint64_t (*extern_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+        ret = reinterpret_cast<extern_fn_t>(sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
+    }
+#endif
+    ctx->gprs[0] = ret;
+}
 
 #if defined(__aarch64__)
 static inline void emit_arm64_imm(uint32_t* code, size_t& idx, uint8_t reg, uint64_t imm) {
@@ -105,13 +187,20 @@ static inline void synthesize_and_execute_block(DualMappedJITBuffer& jit, RD_JIT
                 code[idx++] = 0x9b0a7d29; // mul x9, x9, x10
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
-            case JIT_OP_MUL_RI:
-                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
-                emit_arm64_imm(code, idx, 10, in.imm);
-                code[idx++] = 0x9b0a7d29;
-                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
-                break;
-            case JIT_OP_XOR_RR:
+             case JIT_OP_MUL_RI:
+                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                 emit_arm64_imm(code, idx, 10, in.imm);
+                 code[idx++] = 0x9b0a7d29;
+                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                 break;
+              case JIT_OP_CALL_EXTERN:
+                  emit_arm64_imm(code, idx, 1, in.imm);
+                  code[idx++] = 0xf81f0ffe;
+                  emit_arm64_imm(code, idx, 16, (uintptr_t)&asgard_rd_jit_call_extern);
+                  code[idx++] = 0xd63f0000 | (16 << 5);
+                  code[idx++] = 0xf84107fe;
+                  break;
+             case JIT_OP_XOR_RR:
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
                 code[idx++] = 0xca0a0129; // eor x9, x9, x10
@@ -182,12 +271,19 @@ static inline void synthesize_and_execute_block(DualMappedJITBuffer& jit, RD_JIT
                 code[idx++] = 0x48; code[idx++] = 0x29; code[idx++] = 0xd0;
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
-            case JIT_OP_MUL_RR:
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
-                code[idx++] = 0x48; code[idx++] = 0x0f; code[idx++] = 0xaf; code[idx++] = 0xc2; // imul rax, rdx
-                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
-                break;
+             case JIT_OP_MUL_RR:
+                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
+                 code[idx++] = 0x48; code[idx++] = 0x0f; code[idx++] = 0xaf; code[idx++] = 0xc2; // imul rax, rdx
+                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
+                 break;
+             case JIT_OP_CALL_EXTERN:
+                 code[idx++] = 0x48; code[idx++] = 0xbe; emit_u64(in.imm);
+                 code[idx++] = 0x49; code[idx++] = 0xbb; emit_u64((uint64_t)(uintptr_t)&asgard_rd_jit_call_extern);
+                 code[idx++] = 0x48; code[idx++] = 0x83; code[idx++] = 0xec; code[idx++] = 0x08;
+                 code[idx++] = 0x41; code[idx++] = 0xff; code[idx++] = 0xd3;
+                 code[idx++] = 0x48; code[idx++] = 0x83; code[idx++] = 0xc4; code[idx++] = 0x08;
+                 break;
             case JIT_OP_XOR_RR:
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
@@ -219,9 +315,10 @@ static inline void synthesize_and_execute_block(DualMappedJITBuffer& jit, RD_JIT
             case JIT_OP_ADD_RI: ctx.set_reg(in.dst, ctx.get_reg(in.dst) + in.imm); break;
             case JIT_OP_SUB_RR: ctx.set_reg(in.dst, ctx.get_reg(in.dst) - ctx.get_reg(in.src)); break;
             case JIT_OP_SUB_RI: ctx.set_reg(in.dst, ctx.get_reg(in.dst) - in.imm); break;
-            case JIT_OP_MUL_RR: ctx.set_reg(in.dst, ctx.get_reg(in.dst) * ctx.get_reg(in.src)); break;
-            case JIT_OP_MUL_RI: ctx.set_reg(in.dst, ctx.get_reg(in.dst) * in.imm); break;
-            case JIT_OP_XOR_RR: ctx.set_reg(in.dst, ctx.get_reg(in.dst) ^ ctx.get_reg(in.src)); break;
+             case JIT_OP_MUL_RR: ctx.set_reg(in.dst, ctx.get_reg(in.dst) * ctx.get_reg(in.src)); break;
+             case JIT_OP_MUL_RI: ctx.set_reg(in.dst, ctx.get_reg(in.dst) * in.imm); break;
+             case JIT_OP_CALL_EXTERN: asgard_rd_jit_call_extern(&ctx, in.imm); break;
+             case JIT_OP_XOR_RR: ctx.set_reg(in.dst, ctx.get_reg(in.dst) ^ ctx.get_reg(in.src)); break;
             case JIT_OP_XOR_RI: ctx.set_reg(in.dst, ctx.get_reg(in.dst) ^ in.imm); break;
             default: break;
         }

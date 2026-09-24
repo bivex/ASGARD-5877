@@ -45,6 +45,8 @@ type target =
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv
 type fp_conv = Fcvtzs | Scvtf
+type vec_op = Vadd | Vsub | Vmul | Vand | Vor | Vxor
+type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
 type instr =
@@ -73,6 +75,10 @@ type instr =
   | Fp_binop of { op : fp_binop; dst : int; src1 : int; src2 : int }
   | Fp_cmp of { src1 : int; src2 : int }
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
+  | Vec_mov of { dst : int; src : int; bits : int }
+  | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
+  | Vec_load of { dst : int; addr : mem_ref; bits : int }
+  | Vec_store of { src : int; addr : mem_ref; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
 
 type basic_block = {

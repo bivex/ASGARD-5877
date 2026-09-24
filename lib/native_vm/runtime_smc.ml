@@ -236,7 +236,12 @@ public:
 
 inline NanomiteDispatcher g_nanomite_dispatcher;
 
-#if (defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)
+#if defined(__APPLE__)
+static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
+    g_nanomite_dispatcher.seed = seed;
+    g_nanomite_dispatcher.installed = true;
+}
+#elif defined(__linux__) && !defined(_MSC_VER)
 static void nanomite_trap_handler(int sig, siginfo_t* info, void* ucontext_ptr) {
     (void)sig; (void)info;
     uint64_t pc_val = 0;

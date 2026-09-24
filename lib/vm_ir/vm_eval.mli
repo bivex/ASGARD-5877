@@ -4,6 +4,7 @@ open Ir
 
 type state = {
   vregs : (Register.t, int64) Hashtbl.t;
+  vectors : (int, int64 array) Hashtbl.t;
   memory : (int64, int) Hashtbl.t;
   mutable flags : cc_op;
   mutable vsp : int64;

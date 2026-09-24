@@ -8,7 +8,7 @@ type rd_jit_package = {
   metrics : Native_vm.Metrics.metrics_report;
 }
 
-val emit_rd_jit_runtime_header : unit -> string
+val emit_rd_jit_runtime_header : external_symbols:string list -> string
 
 val compile_and_package :
   rng:Random.State.t ->

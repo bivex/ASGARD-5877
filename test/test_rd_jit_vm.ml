@@ -91,9 +91,38 @@ let test_rd_jit_multi_op_arithmetic_e2e () =
       (* 50 + 30 = 80, 80 - 15 = 65 *)
       check bool "Contains Result 65" true (String.length out_str > 0 && (try ignore (String.index out_str ':'); true with _ -> false))
 
+let test_rd_jit_call_extern_e2e () =
+  let block = {
+    Ir.id = 0;
+    label = "entry";
+    instrs = [
+      Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm (-7L) };
+      Ir.Call (Ir.Label "abs");
+      Ir.Ret;
+    ];
+  } in
+  let blocks = Hashtbl.create 1 in
+  Hashtbl.replace blocks 0 block;
+  let func = { Ir.name = "rd_jit_call_extern"; cfg = { Ir.entry_id = 0; blocks } } in
+  let rng = Random.State.make [| 4242 |] in
+  let pkg = Rd_jit_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+      let hdr_file = Filename.concat tmp_dir "jit_vm_runtime.hpp" in
+      let runner_file = Filename.concat tmp_dir "runner.cpp" in
+      let bin_file = Filename.concat tmp_dir "rd_jit_call_extern" in
+      Test_helpers.write_file_string hdr_file pkg.cpp_runtime_source;
+      Test_helpers.write_file_string runner_file pkg.runner_source;
+      let compile_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_file bin_file in
+      check int "RD-JIT extern compilation" 0 (Sys.command compile_cmd);
+      let log_file = Filename.concat tmp_dir "out.log" in
+      check int "RD-JIT extern execution" 0 (Sys.command (Printf.sprintf "%s > %s 2>&1" bin_file log_file));
+      let output = Test_helpers.read_file_string log_file in
+      check bool "RD-JIT extern result" true (String.contains output ':' && String.contains output '7'))
+
 let tests = [
   ("RD JIT RNS Moduli Invariants", `Quick, test_rd_jit_rns_moduli);
   ("RD JIT Package Code Generation", `Quick, test_rd_jit_package_generation);
   ("RD JIT Ephemeral Execution E2E", `Quick, test_rd_jit_cpp_compilation_e2e);
   ("RD JIT Multi-Op Ephemeral Execution E2E", `Quick, test_rd_jit_multi_op_arithmetic_e2e);
+  ("RD JIT CALL_EXTERN E2E", `Quick, test_rd_jit_call_extern_e2e);
 ]

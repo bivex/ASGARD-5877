@@ -1,8 +1,10 @@
 open Vm_ir
 include Rd_jit_types
 
-let emit_rd_jit_runtime_header () =
-  Rd_jit_buffer.header () ^ Rd_jit_synth.header ()
+let emit_rd_jit_runtime_header ~external_symbols =
+  Rd_jit_buffer.header ()
+  ^ Rd_jit_synth.external_symbols_header external_symbols
+  ^ Rd_jit_synth.header ~external_symbols ()
 
 let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false) ?(mba_depth = 2) (func : Ir.func) : rd_jit_package =
   let (enable_cff, enable_mba, mba_depth) =
@@ -39,8 +41,6 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
       target_func
   in
 
-  let rd_jit_hdr = emit_rd_jit_runtime_header () in
-
   let entry_block = Hashtbl.find target_func.cfg.blocks target_func.cfg.entry_id in
   let other_blocks =
     Hashtbl.fold
@@ -52,6 +52,17 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
 
   let block_decls = Buffer.create 2048 in
   let block_entries = Buffer.create 512 in
+  let external_symbols = ref [] in
+  let external_sym_tbl = Hashtbl.create 16 in
+  let get_ext_sym_idx sym =
+    match Hashtbl.find_opt external_sym_tbl sym with
+    | Some idx -> idx
+    | None ->
+        let idx = List.length !external_symbols in
+        external_symbols := !external_symbols @ [ sym ];
+        Hashtbl.replace external_sym_tbl sym idx;
+        idx
+  in
 
   let assert_src1_eq_dst ~op ~dst ~src1 =
     match src1 with
@@ -111,10 +122,13 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
             | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Reg s; _ } ->
                 assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
                 ("asgard_rd_jit::JIT_OP_OR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-            | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Imm imm; _ } ->
-                assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
-                ("asgard_rd_jit::JIT_OP_OR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-            | Ir.Ret -> ("asgard_rd_jit::JIT_OP_RET", 0, 0, 0L)
+             | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Imm imm; _ } ->
+                 assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
+                 ("asgard_rd_jit::JIT_OP_OR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+             | Ir.Call (Ir.Label sym) ->
+                 let sym_idx = get_ext_sym_idx sym in
+                 ("asgard_rd_jit::JIT_OP_CALL_EXTERN", 0, 0, Int64.of_int sym_idx)
+             | Ir.Ret -> ("asgard_rd_jit::JIT_OP_RET", 0, 0, 0L)
             | Ir.Vm_exit -> ("asgard_rd_jit::JIT_OP_EXIT", 0, 0, 0L)
             | _ -> ("asgard_rd_jit::JIT_OP_NOP", 0, 0, 0L)
           in
@@ -126,7 +140,9 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
       Buffer.add_string block_decls (Printf.sprintf "static const asgard_rd_jit::JITInstr jit_block_%d_instrs[] = {\n%s};\n" idx (Buffer.contents c_instrs));
       Buffer.add_string block_entries (Printf.sprintf "    { %d, %d, jit_block_%d_instrs },\n" idx !count idx)
     )
-    sorted_blocks;
+     sorted_blocks;
+
+  let rd_jit_hdr = emit_rd_jit_runtime_header ~external_symbols:!external_symbols in
 
   let runner_cpp = Printf.sprintf {|#if __has_include("jit_vm_runtime.hpp")
 #include "jit_vm_runtime.hpp"

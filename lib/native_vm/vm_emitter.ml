@@ -241,6 +241,21 @@ let compile_and_package
         idx
   in
 
+  let vector_index i = i mod 32 in
+  let vector_op_code = function
+    | Ir.Vadd -> 0 | Ir.Vsub -> 1 | Ir.Vmul -> 2 | Ir.Vand -> 3 | Ir.Vor -> 4 | Ir.Vxor -> 5
+  in
+  let vector_elem_code = function
+    | Ir.VInt -> 0 | Ir.VF32 -> 1 | Ir.VF64 -> 2
+  in
+  let vector_imm ~src2 ~bits ~lane_bits ~elem op =
+    let w = Int64.of_int src2 in
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int bits) 5) in
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int lane_bits) 14) in
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 20) in
+    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 23)
+  in
+
   (* Encode instructions (both Fused Super-Operators and Standard Raw Ops) *)
   List.iter
     (fun (b : Ir.basic_block) ->
@@ -361,12 +376,14 @@ let compile_and_package
               | Ir.Alu { op = Ir.Sar; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sar ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SAR_RI) (get_reg_idx d) 0 imm
-              | Ir.Unary { op = Ir.Inc; dst; _ } ->
-                  encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx dst) 0 1L
-              | Ir.Unary { op = Ir.Dec; dst; _ } ->
-                  encode_raw_word (get_opcode OP_SUB_RI) (get_reg_idx dst) 0 1L
-              | Ir.Unary { op = Ir.Not; dst; _ } ->
-                  encode_raw_word (get_opcode OP_XOR_RI) (get_reg_idx dst) 0 0xFFFFFFFF_FFFFFFFFL
+               | Ir.Unary { op = Ir.Inc; dst; _ } ->
+                   encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx dst) 0 1L
+               | Ir.Unary { op = Ir.Dec; dst; _ } ->
+                   encode_raw_word (get_opcode OP_SUB_RI) (get_reg_idx dst) 0 1L
+               | Ir.Unary { op = Ir.Neg; dst; _ } ->
+                   encode_raw_word (get_opcode OP_NEG_RR) (get_reg_idx dst) 0 0L
+               | Ir.Unary { op = Ir.Not; dst; _ } ->
+                   encode_raw_word (get_opcode OP_NOT_RR) (get_reg_idx dst) 0 0L
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
@@ -415,7 +432,18 @@ let compile_and_package
               | Ir.Fp_conv { op = Scvtf; dst; src } ->
                   let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
                   encode_raw_word (get_opcode OP_SCVTF) d_idx (get_reg_idx src) 0L
-              | Ir.Atomic_mem { op; dst; addr; src; imm } -> (
+               | Ir.Vec_mov { dst; src; bits } ->
+                   encode_raw_word (get_opcode OP_VEC_MOV) (vector_index dst) (vector_index src) (Int64.of_int bits)
+                | Ir.Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
+                    encode_raw_word (get_opcode OP_VEC_BINOP) (vector_index dst) (vector_index src1)
+                      (vector_imm ~src2:(vector_index src2) ~bits ~lane_bits ~elem op)
+               | Ir.Vec_load { dst; addr; bits } ->
+                   let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
+                   encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_VEC_LOAD) (vector_index dst) base_idx addr.disp
+               | Ir.Vec_store { src; addr; bits } ->
+                   let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
+                   encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_VEC_STORE) base_idx (vector_index src) addr.disp
+               | Ir.Atomic_mem { op; dst; addr; src; imm } -> (
                   match op with
                   | AtLoad ->
                       encode_raw_word (get_opcode OP_ATOMIC_LOAD) (get_reg_idx dst) (get_reg_idx addr) imm

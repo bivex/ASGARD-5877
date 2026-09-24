@@ -515,6 +515,55 @@ let test_native_arm64_3addr_madd_msub_sdiv_bic () =
     if (ctx.get_rax() != 310) return 2;
 |})
 
+let test_native_b8_b16_merge () =
+  let pkg =
+    mk_pkg ~seed:20260940 {|
+func_native_merge:
+    mov rax, 0x1122334455667788
+    mov al, 0x99
+    mov ax, 0xAABB
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_b8_b16_merge" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    if (ctx.get_rax() != 0x112233445566AABBULL) return 2;
+|})
+
+let test_native_vector_fp () =
+  let pkg =
+    mk_pkg ~seed:20260939 {|
+func_native_vector_fp:
+    vaddps ymm3, ymm4, ymm5
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_vector_fp" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    ctx.vregs[4][0] = static_cast<uint64_t>(std::bit_cast<uint32_t>(1.0f)) |
+                       (static_cast<uint64_t>(std::bit_cast<uint32_t>(2.0f)) << 32);
+    ctx.vregs[4][1] = static_cast<uint64_t>(std::bit_cast<uint32_t>(3.0f)) |
+                       (static_cast<uint64_t>(std::bit_cast<uint32_t>(4.0f)) << 32);
+    ctx.vregs[5][0] = static_cast<uint64_t>(std::bit_cast<uint32_t>(10.0f)) |
+                       (static_cast<uint64_t>(std::bit_cast<uint32_t>(20.0f)) << 32);
+    ctx.vregs[5][1] = static_cast<uint64_t>(std::bit_cast<uint32_t>(30.0f)) |
+                       (static_cast<uint64_t>(std::bit_cast<uint32_t>(40.0f)) << 32);
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    uint32_t lane0 = static_cast<uint32_t>(ctx.vregs[3][0]);
+    uint32_t lane1 = static_cast<uint32_t>(ctx.vregs[3][0] >> 32);
+    uint32_t lane2 = static_cast<uint32_t>(ctx.vregs[3][1]);
+    uint32_t lane3 = static_cast<uint32_t>(ctx.vregs[3][1] >> 32);
+    if (std::bit_cast<float>(lane0) != 11.0f) return 2;
+    if (std::bit_cast<float>(lane1) != 22.0f) return 3;
+    if (std::bit_cast<float>(lane2) != 33.0f) return 4;
+    if (std::bit_cast<float>(lane3) != 44.0f) return 5;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -526,4 +575,6 @@ let tests = [
   Alcotest.test_case "canonicalize_3addr_alu_unit" `Quick test_canonicalize_3addr_alu_unit;
   Alcotest.test_case "native_3addr_alu" `Slow test_native_3addr_alu;
   Alcotest.test_case "native_arm64_3addr_madd_msub_sdiv_bic" `Slow test_native_arm64_3addr_madd_msub_sdiv_bic;
+  Alcotest.test_case "native_b8_b16_merge" `Slow test_native_b8_b16_merge;
+  Alcotest.test_case "native_vector_fp" `Slow test_native_vector_fp;
 ]

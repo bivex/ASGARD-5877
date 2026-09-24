@@ -366,6 +366,180 @@ movzx_reg:
           Alcotest.(check int64) "movzx eax, cl zeroes upper bits" 0xFBL (get_reg state Register.rax);
           Alcotest.(check int64) "movzx rdx, cx zeroes upper bits" 0xDEFBL (get_reg state Register.rdx)
 
+let test_lift_one_operand_mul () =
+  let asm = {|
+mul8:
+    mov al, 0x10
+    mov cl, 0x20
+    mul cl
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 0L;
+      set_reg state Register.rsi 0L;
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "one operand B8 mul" 0x200L (get_reg state Register.rax))
+
+let test_lift_one_operand_mul_signed () =
+  let asm = {|
+mul8_signed:
+    mov al, 0xF6
+    mov bl, 0x03
+    imul bl
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () -> Alcotest.(check int64) "one operand signed B8 imul" 0xFFE2L (get_reg state Register.rax))
+
+let test_lift_one_operand_mul64 () =
+  let asm = {|
+mul64:
+    mov rax, 0x123456789ABCDEF0
+    mov rcx, 0xFEDCBA9876543210
+    mul rcx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "one operand B64 mul low" 0x236D88FE5618CF00L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B64 mul high" 0x121FA00AD77D7422L (get_reg state Register.rdx))
+
+let test_lift_narrow_division () =
+  let asm = {|
+div8_unsigned:
+    mov ax, 0x1234
+    mov cl, 0x10
+    div cl
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "one operand B8 div" 0x0423L (get_reg state Register.rax))
+
+let test_lift_narrow_division_signed () =
+  let asm = {|
+div8_signed:
+    mov ax, 0xFFF0
+    mov cl, 0x02
+    idiv cl
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () -> Alcotest.(check int64) "one operand signed B8 idiv" 0x00F8L (get_reg state Register.rax))
+
+let test_lift_narrow_division16 () =
+  let asm = {|
+div16_unsigned:
+    xor edx, edx
+    mov ax, 0x1234
+    mov cx, 0x10
+    div cx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "one operand B16 div quotient" 0x0123L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B16 div remainder" 4L (get_reg state Register.rdx))
+
+let test_division_by_zero_fault () =
+  let asm = {|
+division_by_zero:
+    xor edx, edx
+    mov rax, 1
+    xor rcx, rcx
+    div rcx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.(check string) "division by zero faults" "VM divide by zero" e
+      | Ok () -> Alcotest.fail "division by zero did not fault")
+
+let test_b8_b16_merge_semantics () =
+  let asm = {|
+merge_subregs:
+    mov rax, 0x1122334455667788
+    mov al, 0x99
+    mov ax, 0xAABB
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () -> Alcotest.(check int64) "B8/B16 merge" 0x112233445566AABBL (get_reg state Register.rax))
+
+let test_lift_sse_avx () =
+  let asm = {|
+vector_ops:
+    movaps xmm0, xmm1
+    paddq xmm0, xmm2
+    vaddps ymm3, ymm4, ymm5
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let fbits value = Int64.logand (Int64.of_int32 (Int32.bits_of_float value)) 0xFFFFFFFFL in
+      let pack_f32s a b c d =
+        let chunk0 = Int64.logor (fbits a) (Int64.shift_left (fbits b) 32) in
+        let chunk1 = Int64.logor (fbits c) (Int64.shift_left (fbits d) 32) in
+        [| chunk0; chunk1; 0L; 0L; 0L; 0L; 0L; 0L |]
+      in
+      let state = make_state () in
+      Hashtbl.replace state.vectors 1 [|10L; 20L; 0L; 0L; 0L; 0L; 0L; 0L|];
+      Hashtbl.replace state.vectors 2 [|3L; 4L; 30L; 40L; 0L; 0L; 0L; 0L|];
+      Hashtbl.replace state.vectors 4 (pack_f32s 1.0 2.0 3.0 4.0);
+      Hashtbl.replace state.vectors 5 (pack_f32s 10.0 20.0 30.0 40.0);
+      Hashtbl.replace state.vectors 0 [|100L; 200L; 300L; 400L; 0L; 0L; 0L; 0L|];
+      Hashtbl.replace state.vectors 3 [|0L; 0L; 0L; 0L; 0L; 0L; 0L; 0L|];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let xmm0 = Hashtbl.find state.vectors 0 in
+          let ymm3 = Hashtbl.find state.vectors 3 in
+          Alcotest.(check int64) "SSE paddq" 13L xmm0.(0);
+          Alcotest.(check int64) "SSE paddq high" 24L xmm0.(1);
+          Alcotest.(check int64) "AVX vaddps lane0" (fbits 11.0) (Int64.logand ymm3.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "AVX vaddps lane1" (fbits 22.0) (Int64.logand (Int64.shift_right_logical ymm3.(0) 32) 0xFFFFFFFFL);
+          Alcotest.(check int64) "AVX vaddps lane2" (fbits 33.0) (Int64.logand ymm3.(1) 0xFFFFFFFFL);
+          Alcotest.(check int64) "AVX vaddps lane3" (fbits 44.0) (Int64.logand (Int64.shift_right_logical ymm3.(1) 32) 0xFFFFFFFFL))
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -382,6 +556,15 @@ let tests = [
   Alcotest.test_case "lift_and_eval_b32_write_zero_extends" `Quick test_lift_and_eval_b32_write_zero_extends;
   Alcotest.test_case "lift_and_eval_movsx_mem" `Quick test_lift_and_eval_movsx_mem;
   Alcotest.test_case "lift_and_eval_movsx_reg" `Quick test_lift_and_eval_movsx_reg;
-  Alcotest.test_case "lift_and_eval_movzx_reg" `Quick test_lift_and_eval_movzx_reg;
-]
+    Alcotest.test_case "lift_and_eval_movzx_reg" `Quick test_lift_and_eval_movzx_reg;
+    Alcotest.test_case "lift_one_operand_mul_b8" `Quick test_lift_one_operand_mul;
+    Alcotest.test_case "lift_one_operand_mul_b8_signed" `Quick test_lift_one_operand_mul_signed;
+    Alcotest.test_case "lift_one_operand_mul_b64" `Quick test_lift_one_operand_mul64;
+    Alcotest.test_case "lift_narrow_division_b8" `Quick test_lift_narrow_division;
+    Alcotest.test_case "lift_narrow_division_b8_signed" `Quick test_lift_narrow_division_signed;
+  Alcotest.test_case "lift_narrow_division_b16" `Quick test_lift_narrow_division16;
+  Alcotest.test_case "division_by_zero_fault" `Quick test_division_by_zero_fault;
+  Alcotest.test_case "b8_b16_merge_semantics" `Quick test_b8_b16_merge_semantics;
+    Alcotest.test_case "lift_sse_avx" `Quick test_lift_sse_avx;
+ ]
 

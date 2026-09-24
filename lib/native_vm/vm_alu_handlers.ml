@@ -84,6 +84,8 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "    H_ADD_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b (Printf.sprintf "    H_SUB_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_sub_rr_expr ()));
   Buffer.add_string b "    H_SUB_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) - 2 * ((~ctx.get_reg(dst)) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_NEG_RR: { PROBE_START(); ctx.set_reg(dst, 0ULL - ctx.get_reg(dst)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+  Buffer.add_string b "    H_NOT_RR: { PROBE_START(); ctx.set_reg(dst, ~ctx.get_reg(dst)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b "    H_IMUL_RR: {\n";
   Buffer.add_string b "        PROBE_START();\n";
   Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
@@ -132,19 +134,19 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)((int64_t)val >> shift));\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
-  (* Division contract: divisor 0 yields quotient 0 (mirrors vm_eval), and
-     INT64_MIN / -1 wraps to INT64_MIN instead of raising #DE / UB. *)
-  Buffer.add_string b "    H_DIV_RR: {\n";
-  Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (b == 0) ? 0ULL : (a / b));\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_IDIV_RR: {\n";
-  Buffer.add_string b "        int64_t a = (int64_t)ctx.get_reg(dst); int64_t b = (int64_t)ctx.get_reg(src);\n";
-  Buffer.add_string b "        int64_t q = (b == 0) ? 0 : ((b == -1) ? (int64_t)(0 - (uint64_t)a) : (a / b));\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)q);\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+    Buffer.add_string b "    H_DIV_RR: {\n";
+   Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
+   Buffer.add_string b "        if (b == 0) { ctx.trapped = true; goto EXIT_VM; }\n";
+   Buffer.add_string b "        ctx.set_reg(dst, a / b);\n";
+   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+   Buffer.add_string b "    }\n";
+   Buffer.add_string b "    H_IDIV_RR: {\n";
+   Buffer.add_string b "        int64_t a = (int64_t)ctx.get_reg(dst); int64_t b = (int64_t)ctx.get_reg(src);\n";
+    Buffer.add_string b "        if (b == 0 || (b == -1 && a == INT64_MIN)) { ctx.trapped = true; goto EXIT_VM; }\n";
+   Buffer.add_string b "        int64_t q = (b == -1) ? (int64_t)(0 - (uint64_t)a) : (a / b);\n";
+   Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)q);\n";
+   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+   Buffer.add_string b "    }\n";
 
   Buffer.add_string b "    H_CMP_RI: {\n";
   Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";

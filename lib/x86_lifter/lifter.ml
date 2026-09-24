@@ -67,54 +67,332 @@ let parse_cmovcc_mnemonic mnem =
    dst OP src).  Every instruction produced here therefore keeps src1 = dst;
    the remainder subtraction accumulates in vx19 and is moved out afterwards
    instead of computing vx19 - rdx directly into rdx. *)
+let width_mask = function
+  | Register.B8 -> 0xFFL
+  | Register.B16 -> 0xFFFFL
+  | Register.B32 -> 0xFFFFFFFFL
+  | Register.B64 -> -1L
+
+let width_bits = Register.width_to_bits
+
+let mov_reg dst src = Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg src }
+
+let canonicalize_reg ~signed r width =
+  if signed then
+    let shift = Int64.of_int (64 - width_bits width) in
+    [ Ir.Alu { op = Ir.Shl; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm shift; set_flags = false };
+      Ir.Alu { op = Ir.Sar; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm shift; set_flags = false } ]
+  else
+    [ Ir.Alu { op = Ir.And; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm (width_mask width); set_flags = false } ]
+
+let sign_extend_bits r bits =
+  let shift = 64 - bits in
+  if shift = 0 then []
+  else
+    [ Ir.Alu { op = Ir.Shl; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm (Int64.of_int shift); set_flags = false };
+      Ir.Alu { op = Ir.Sar; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm (Int64.of_int shift); set_flags = false } ]
+
+let mask_reg r width =
+  [ Ir.Alu { op = Ir.And; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm (width_mask width); set_flags = false } ]
+
+let load_dividend_parts width =
+  let low = Register.vx19 in
+  let high = Register.vx20 in
+  match width with
+  | Register.B8 ->
+      [ Ir.Mov { dst = Ir.Reg low; src = Ir.Reg Register.rax };
+        Ir.Alu { op = Ir.And; dst = low; src1 = Ir.Reg low; src2 = Ir.Imm 0xFFL; set_flags = false };
+        Ir.Mov { dst = Ir.Reg high; src = Ir.Reg Register.rax };
+        Ir.Alu { op = Ir.And; dst = high; src1 = Ir.Reg high; src2 = Ir.Imm 0xFFFFL; set_flags = false };
+        Ir.Alu { op = Ir.Shr; dst = high; src1 = Ir.Reg high; src2 = Ir.Imm 8L; set_flags = false } ]
+  | _ ->
+      [ Ir.Mov { dst = Ir.Reg low; src = Ir.Reg Register.rax };
+        Ir.Mov { dst = Ir.Reg high; src = Ir.Reg Register.rdx } ]
+
+let lift_x86_div_narrow ~signed width divisor =
+  let* ir_div = to_ir_operand divisor in
+  let div_op = if signed then Ir.Idiv else Ir.Div in
+  let divisor_reg = Register.vx18 in
+  let low_reg = Register.vx19 in
+  let high_reg = Register.vx20 in
+  let dividend_reg = Register.vx21 in
+  let quotient_reg = Register.vx22 in
+  let remainder_reg = Register.vx23 in
+  let product_reg = Register.vx24 in
+  let bits = width_bits width in
+  let pre =
+    [ Ir.Mov { dst = Ir.Reg divisor_reg; src = ir_div } ]
+    @ canonicalize_reg ~signed divisor_reg width
+    @ load_dividend_parts width
+    @ mask_reg low_reg width
+    @ mask_reg high_reg width
+  in
+  let build_dividend =
+    [ mov_reg dividend_reg high_reg;
+      Ir.Alu { op = Ir.Shl; dst = dividend_reg; src1 = Ir.Reg dividend_reg; src2 = Ir.Imm (Int64.of_int bits); set_flags = false };
+      Ir.Alu { op = Ir.Or; dst = dividend_reg; src1 = Ir.Reg dividend_reg; src2 = Ir.Reg low_reg; set_flags = false } ]
+    @ (if signed then sign_extend_bits dividend_reg (2 * bits) else [])
+  in
+  let divide =
+    [ mov_reg quotient_reg dividend_reg;
+      Ir.Alu { op = div_op; dst = quotient_reg; src1 = Ir.Reg quotient_reg; src2 = Ir.Reg divisor_reg; set_flags = false };
+      mov_reg remainder_reg dividend_reg;
+      mov_reg product_reg quotient_reg;
+      Ir.Alu { op = Ir.Imul; dst = product_reg; src1 = Ir.Reg product_reg; src2 = Ir.Reg divisor_reg; set_flags = false };
+      Ir.Alu { op = Ir.Sub; dst = remainder_reg; src1 = Ir.Reg remainder_reg; src2 = Ir.Reg product_reg; set_flags = false } ]
+  in
+  let write_outputs =
+    match width with
+    | Register.B8 ->
+        let ax = Register.with_width Register.rax Register.B16 in
+        let quotient_byte = Register.vx25 in
+        let high_byte = Register.vx24 in
+        [ Ir.Mov { dst = Ir.Reg quotient_byte; src = Ir.Reg quotient_reg };
+          Ir.Alu { op = Ir.And; dst = quotient_byte; src1 = Ir.Reg quotient_byte; src2 = Ir.Imm 0xFFL; set_flags = false };
+          Ir.Mov { dst = Ir.Reg ax; src = Ir.Reg quotient_byte };
+          Ir.Mov { dst = Ir.Reg high_byte; src = Ir.Reg remainder_reg };
+          Ir.Alu { op = Ir.And; dst = high_byte; src1 = Ir.Reg high_byte; src2 = Ir.Imm 0xFFL; set_flags = false };
+          Ir.Alu { op = Ir.Shl; dst = high_byte; src1 = Ir.Reg high_byte; src2 = Ir.Imm 8L; set_flags = false };
+          Ir.Alu { op = Ir.Or; dst = ax; src1 = Ir.Reg ax; src2 = Ir.Reg high_byte; set_flags = false } ]
+    | Register.B16 ->
+        let ax = Register.with_width Register.rax Register.B16 in
+        let dx = Register.with_width Register.rdx Register.B16 in
+        [ Ir.Mov { dst = Ir.Reg ax; src = Ir.Reg quotient_reg };
+          Ir.Mov { dst = Ir.Reg dx; src = Ir.Reg remainder_reg } ]
+    | Register.B32 ->
+        let eax = Register.with_width Register.rax Register.B32 in
+        let edx = Register.with_width Register.rdx Register.B32 in
+        [ Ir.Mov { dst = Ir.Reg eax; src = Ir.Reg quotient_reg };
+          Ir.Mov { dst = Ir.Reg edx; src = Ir.Reg remainder_reg } ]
+    | Register.B64 -> []
+  in
+  Ok (pre @ build_dividend @ divide @ write_outputs)
+
+let lift_x86_div64 ~signed divisor =
+  let* ir_div = to_ir_operand divisor in
+  let div_op = if signed then Ir.Idiv else Ir.Div in
+  Ok
+    [ Ir.Mov { dst = Ir.Reg Register.vx18; src = ir_div };
+      Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Reg Register.rax };
+      Ir.Alu { op = div_op; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.vx18; set_flags = false };
+      Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
+      Ir.Alu { op = Ir.Imul; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Reg Register.vx18; set_flags = false };
+      Ir.Alu { op = Ir.Sub; dst = Register.vx19; src1 = Ir.Reg Register.vx19; src2 = Ir.Reg Register.rdx; set_flags = false };
+      Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.vx19 } ]
+
 let lift_x86_div ~signed divisor =
   let width_of = function
     | X86_parser.OpReg r -> Register.get_width r
     | X86_parser.OpMem m -> m.width
     | _ -> Register.B64
   in
-  let div_op = if signed then Ir.Idiv else Ir.Div in
   match width_of divisor with
-  | Register.B64 ->
-      let* ir_div = to_ir_operand divisor in
-      Ok
-        [ Ir.Mov { dst = Ir.Reg Register.vx18; src = ir_div };
-          Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Reg Register.rax };
-          Ir.Alu { op = div_op; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.vx18; set_flags = false };
-          Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
-          Ir.Alu { op = Ir.Imul; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Reg Register.vx18; set_flags = false };
-          Ir.Alu { op = Ir.Sub; dst = Register.vx19; src1 = Ir.Reg Register.vx19; src2 = Ir.Reg Register.rdx; set_flags = false };
-          Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.vx19 } ]
-  | Register.B32 ->
-      let* ir_div = to_ir_operand divisor in
-      let eax = Register.with_width Register.rax Register.B32 in
-      let edx = Register.with_width Register.rdx Register.B32 in
-      (* Re-canonicalize both operands at B64: sext32 when signed, zext32 when
-         unsigned.  Shl32/Sar32 is exact regardless of stale upper bits, and
-         And 0xFFFFFFFF is idempotent on an already-truncated evaluator slot. *)
-      let canonicalize r =
-        if signed then
-          [ Ir.Alu { op = Ir.Shl; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm 32L; set_flags = false };
-            Ir.Alu { op = Ir.Sar; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm 32L; set_flags = false } ]
-        else
-          [ Ir.Alu { op = Ir.And; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm 0xFFFFFFFFL; set_flags = false } ]
+  | Register.B64 -> lift_x86_div64 ~signed divisor
+  | (Register.B8 | Register.B16 | Register.B32) as width -> lift_x86_div_narrow ~signed width divisor
+
+let lift_x86_mul_narrow ~signed width divisor =
+  let* ir_div = to_ir_operand divisor in
+  let operand = Register.vx18 in
+  let accumulator = Register.vx19 in
+  let product = Register.vx20 in
+  let high = Register.vx21 in
+  let pre =
+    [ Ir.Mov { dst = Ir.Reg operand; src = ir_div } ]
+    @ canonicalize_reg ~signed operand width
+    @ [ Ir.Mov { dst = Ir.Reg accumulator; src = Ir.Reg Register.rax } ]
+    @ canonicalize_reg ~signed accumulator width
+  in
+  let product_instrs =
+    [ mov_reg product accumulator;
+      Ir.Alu { op = Ir.Imul; dst = product; src1 = Ir.Reg product; src2 = Ir.Reg operand; set_flags = false } ]
+  in
+  let outputs =
+    match width with
+    | Register.B8 ->
+        let ax = Register.with_width Register.rax Register.B16 in
+        [ Ir.Mov { dst = Ir.Reg ax; src = Ir.Reg product } ]
+    | Register.B16 ->
+        let ax = Register.with_width Register.rax Register.B16 in
+        let dx = Register.with_width Register.rdx Register.B16 in
+        [ Ir.Mov { dst = Ir.Reg ax; src = Ir.Reg product };
+          Ir.Mov { dst = Ir.Reg high; src = Ir.Reg product };
+          Ir.Alu { op = Ir.Shr; dst = high; src1 = Ir.Reg high; src2 = Ir.Imm 16L; set_flags = false };
+          Ir.Mov { dst = Ir.Reg dx; src = Ir.Reg high } ]
+    | Register.B32 ->
+        let eax = Register.with_width Register.rax Register.B32 in
+        let edx = Register.with_width Register.rdx Register.B32 in
+        [ Ir.Mov { dst = Ir.Reg eax; src = Ir.Reg product };
+          Ir.Mov { dst = Ir.Reg high; src = Ir.Reg product };
+          Ir.Alu { op = Ir.Shr; dst = high; src1 = Ir.Reg high; src2 = Ir.Imm 32L; set_flags = false };
+          Ir.Mov { dst = Ir.Reg edx; src = Ir.Reg high } ]
+    | Register.B64 -> []
+  in
+  Ok (pre @ product_instrs @ outputs)
+
+let lift_x86_mul64 ~signed divisor =
+  let* ir_div = to_ir_operand divisor in
+  let a = Register.vx18 in
+  let b = Register.vx19 in
+  let product_low = Register.vx20 in
+  let product_high = Register.vx21 in
+  let product = Register.vx22 in
+  let piece_low = Register.vx23 in
+  let piece_high = Register.vx24 in
+  let limb_a = Register.vx25 in
+  let limb_b = Register.vx26 in
+  let extract_limb base idx dst =
+    [ Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg base } ]
+    @ (if idx = 0 then [] else [ Ir.Alu { op = Ir.Shr; dst; src1 = Ir.Reg dst; src2 = Ir.Imm (Int64.of_int (16 * idx)); set_flags = false } ])
+    @ [ Ir.Alu { op = Ir.And; dst; src1 = Ir.Reg dst; src2 = Ir.Imm 0xFFFFL; set_flags = false } ]
+  in
+  let add_piece p0 p1 piece shift =
+    let target, offset, other, propagate =
+      if shift < 64 then p0, shift, p1, true else p1, shift - 64, p0, false
+    in
+    let shifted =
+      if offset = 0 then []
+      else [ Ir.Alu { op = Ir.Shl; dst = piece; src1 = Ir.Reg piece; src2 = Ir.Imm (Int64.of_int offset); set_flags = false } ]
+    in
+    let add =
+      [ Ir.Mov { dst = Ir.Reg limb_a; src = Ir.Reg target };
+        Ir.Mov { dst = Ir.Reg product; src = Ir.Reg piece };
+        Ir.Alu { op = Ir.Add; dst = target; src1 = Ir.Reg target; src2 = Ir.Reg piece; set_flags = false } ]
+    in
+    let carry =
+      if not propagate then []
+      else
+        [ Ir.Alu { op = Ir.And; dst = limb_b; src1 = Ir.Reg limb_a; src2 = Ir.Reg piece; set_flags = false };
+          Ir.Alu { op = Ir.Or; dst = piece; src1 = Ir.Reg limb_a; src2 = Ir.Reg piece; set_flags = false };
+          Ir.Unary { op = Ir.Not; dst = product; src = Ir.Reg target; set_flags = false };
+          Ir.Alu { op = Ir.And; dst = piece; src1 = Ir.Reg piece; src2 = Ir.Reg product; set_flags = false };
+          Ir.Alu { op = Ir.Or; dst = limb_b; src1 = Ir.Reg limb_b; src2 = Ir.Reg piece; set_flags = false };
+          Ir.Alu { op = Ir.Shr; dst = limb_b; src1 = Ir.Reg limb_b; src2 = Ir.Imm 63L; set_flags = false };
+          Ir.Alu { op = Ir.Add; dst = other; src1 = Ir.Reg other; src2 = Ir.Reg limb_b; set_flags = false } ]
+    in
+    shifted @ add @ carry
+  in
+  let pre = [ Ir.Mov { dst = Ir.Reg a; src = Ir.Reg Register.rax }; Ir.Mov { dst = Ir.Reg b; src = ir_div } ] in
+  let product_instrs = ref [ Ir.Mov { dst = Ir.Reg product_low; src = Ir.Imm 0L }; Ir.Mov { dst = Ir.Reg product_high; src = Ir.Imm 0L } ] in
+  for i = 0 to 3 do
+    for j = 0 to 3 do
+      let shift = 16 * (i + j) in
+      let term =
+        [ Ir.Mov { dst = Ir.Reg limb_a; src = Ir.Reg a } ]
+        @ extract_limb limb_a i limb_a
+        @ [ Ir.Mov { dst = Ir.Reg limb_b; src = Ir.Reg b } ]
+        @ extract_limb limb_b j limb_b
+        @ [ Ir.Alu { op = Ir.Imul; dst = product; src1 = Ir.Reg limb_a; src2 = Ir.Reg limb_b; set_flags = false };
+          Ir.Alu { op = Ir.And; dst = piece_low; src1 = Ir.Reg product; src2 = Ir.Imm 0xFFFFL; set_flags = false };
+          Ir.Alu { op = Ir.Shr; dst = piece_high; src1 = Ir.Reg product; src2 = Ir.Imm 16L; set_flags = false } ]
+        @ add_piece product_low product_high piece_low shift
+        @ add_piece product_low product_high piece_high (shift + 16)
       in
-      Ok
-        ([ Ir.Mov { dst = Ir.Reg Register.vx18; src = ir_div } ]
-        @ canonicalize Register.vx18
-        @ [ Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Reg Register.rax } ]
-        @ canonicalize Register.rax
-        @ [ (* rax = quotient (full 64-bit value) *)
-            Ir.Alu { op = div_op; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.vx18; set_flags = false };
-            (* save the full quotient before the eax write truncates the slot *)
-            Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
-            Ir.Mov { dst = Ir.Reg eax; src = Ir.Reg Register.rdx };
-            (* rdx = remainder, then edx write re-truncates for the ISA view *)
-            Ir.Alu { op = Ir.Imul; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Reg Register.vx18; set_flags = false };
-            Ir.Alu { op = Ir.Sub; dst = Register.vx19; src1 = Ir.Reg Register.vx19; src2 = Ir.Reg Register.rdx; set_flags = false };
-            Ir.Mov { dst = Ir.Reg edx; src = Ir.Reg Register.vx19 } ])
-  | _ ->
-      Error (Printf.sprintf "%s is only modeled at 32/64-bit width" (if signed then "idiv" else "div"))
+      product_instrs := !product_instrs @ term
+    done
+  done;
+  let correction =
+    if signed then
+      [ Ir.Mov { dst = Ir.Reg piece_low; src = Ir.Reg a };
+        Ir.Alu { op = Ir.Shr; dst = piece_low; src1 = Ir.Reg piece_low; src2 = Ir.Imm 63L; set_flags = false };
+        Ir.Unary { op = Ir.Neg; dst = piece_low; src = Ir.Reg piece_low; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = piece_low; src1 = Ir.Reg piece_low; src2 = Ir.Reg a; set_flags = false };
+        Ir.Alu { op = Ir.Sub; dst = product_high; src1 = Ir.Reg product_high; src2 = Ir.Reg piece_low; set_flags = false };
+        Ir.Mov { dst = Ir.Reg piece_high; src = Ir.Reg b };
+        Ir.Alu { op = Ir.Shr; dst = piece_high; src1 = Ir.Reg piece_high; src2 = Ir.Imm 63L; set_flags = false };
+        Ir.Unary { op = Ir.Neg; dst = piece_high; src = Ir.Reg piece_high; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = piece_high; src1 = Ir.Reg piece_high; src2 = Ir.Reg b; set_flags = false };
+        Ir.Alu { op = Ir.Sub; dst = product_high; src1 = Ir.Reg product_high; src2 = Ir.Reg piece_high; set_flags = false } ]
+    else []
+  in
+  let outputs =
+    [ Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Reg product_low };
+      Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg product_high } ]
+  in
+  Ok (pre @ !product_instrs @ correction @ outputs)
+
+let lift_x86_mul_one ~signed divisor =
+  let width_of = function
+    | X86_parser.OpReg r -> Register.get_width r
+    | X86_parser.OpMem m -> m.width
+    | _ -> Register.B64
+  in
+  match width_of divisor with
+  | Register.B64 -> lift_x86_mul64 ~signed divisor
+  | (Register.B8 | Register.B16 | Register.B32) as width -> lift_x86_mul_narrow ~signed width divisor
+
+let ir_mem_of_raw (m : X86_parser.raw_mem) : Ir.mem_ref =
+  { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false }
+
+let vector_reg_index = function
+  | X86_parser.OpReg (Register.Fpr (i, _)) -> Some (i mod 32)
+  | _ -> None
+
+let vector_bits mnem = if String.length mnem > 0 && mnem.[0] = 'v' then 256 else 128
+
+let vector_move_mnemonic = function
+  | "movaps" | "movups" | "movdqa" | "movdqu"
+  | "vmovaps" | "vmovups" | "vmovdqa" | "vmovdqu" -> true
+  | _ -> false
+
+let vector_op_of_mnemonic = function
+  | "paddb" | "vpaddb" -> Some (Ir.Vadd, Ir.VInt, 8)
+  | "paddw" | "vpaddw" -> Some (Ir.Vadd, Ir.VInt, 16)
+  | "paddd" | "vpaddd" -> Some (Ir.Vadd, Ir.VInt, 32)
+  | "paddq" | "vpaddq" -> Some (Ir.Vadd, Ir.VInt, 64)
+  | "psubb" | "vpsubb" -> Some (Ir.Vsub, Ir.VInt, 8)
+  | "psubw" | "vpsubw" -> Some (Ir.Vsub, Ir.VInt, 16)
+  | "psubd" | "vpsubd" -> Some (Ir.Vsub, Ir.VInt, 32)
+  | "psubq" | "vpsubq" -> Some (Ir.Vsub, Ir.VInt, 64)
+  | "pand" | "vpand" -> Some (Ir.Vand, Ir.VInt, 64)
+  | "por" | "vpor" -> Some (Ir.Vor, Ir.VInt, 64)
+  | "pxor" | "vpxor" -> Some (Ir.Vxor, Ir.VInt, 64)
+  | "addps" | "vaddps" -> Some (Ir.Vadd, Ir.VF32, 32)
+  | "addpd" | "vaddpd" -> Some (Ir.Vadd, Ir.VF64, 64)
+  | "subps" | "vsubps" -> Some (Ir.Vsub, Ir.VF32, 32)
+  | "subpd" | "vsubpd" -> Some (Ir.Vsub, Ir.VF64, 64)
+  | "mulps" | "vmulps" -> Some (Ir.Vmul, Ir.VF32, 32)
+  | "mulpd" | "vmulpd" -> Some (Ir.Vmul, Ir.VF64, 64)
+  | "andps" | "vandps" | "andpd" | "vandpd" -> Some (Ir.Vand, Ir.VInt, 64)
+  | "orps" | "vorps" | "orpd" | "vorpd" -> Some (Ir.Vor, Ir.VInt, 64)
+  | "xorps" | "vxorps" | "xorpd" | "vxorpd" -> Some (Ir.Vxor, Ir.VInt, 64)
+  | _ -> None
+
+let lift_vector_move mnem dst src =
+  let bits = vector_bits mnem in
+  match dst, src with
+  | X86_parser.OpReg _, X86_parser.OpReg _ -> (
+      match vector_reg_index dst, vector_reg_index src with
+      | Some di, Some si -> Ok [ Ir.Vec_mov { dst = di; src = si; bits } ]
+      | _ -> Error "vector move requires vector registers")
+  | X86_parser.OpReg _, X86_parser.OpMem m -> (
+      match vector_reg_index dst with
+      | Some di -> Ok [ Ir.Vec_load { dst = di; addr = ir_mem_of_raw m; bits } ]
+      | None -> Error "vector load destination must be a vector register")
+  | X86_parser.OpMem m, X86_parser.OpReg _ -> (
+      match vector_reg_index src with
+      | Some si -> Ok [ Ir.Vec_store { src = si; addr = ir_mem_of_raw m; bits } ]
+      | None -> Error "vector store source must be a vector register")
+  | _ -> Error "invalid vector move operands"
+
+let lift_vector_binop mnem ops =
+  match vector_op_of_mnemonic mnem with
+  | None -> Error "unsupported vector operation"
+  | Some (op, elem, lane_bits) ->
+      let bits = vector_bits mnem in
+      let get_index = function
+        | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+        | _ -> None
+      in
+      (match ops with
+      | [dst; src] -> (
+          match get_index dst, get_index src with
+          | Some di, Some si -> Ok [ Ir.Vec_binop { op; elem; dst = di; src1 = di; src2 = si; bits; lane_bits } ]
+          | _ -> Error "vector binary operation requires vector registers")
+      | [dst; src1; src2] -> (
+          match get_index dst, get_index src1, get_index src2 with
+          | Some di, Some s1, Some s2 -> Ok [ Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = s2; bits; lane_bits } ]
+          | _ -> Error "vector binary operation requires vector registers")
+      | _ -> Error "invalid vector binary operation operands")
 
 let lift_instr mnem ops =
   match mnem, ops with
@@ -122,6 +400,12 @@ let lift_instr mnem ops =
   | "ret", [] -> Ok [ Ir.Ret ]
   | "vm_enter", [] -> Ok [ Ir.Vm_enter ]
   | "vm_exit", [] -> Ok [ Ir.Vm_exit ]
+  | ("vzeroupper" | "vzeroall"), [] -> Ok [ Ir.Nop ]
+  | mnem, [ dst; src ] when vector_move_mnemonic mnem -> lift_vector_move mnem dst src
+  | mnem, ops
+    when (List.length ops = 2 || List.length ops = 3)
+         && (match vector_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
+      lift_vector_binop mnem ops
 
   | "push", [ op ] ->
       let* ir_op = to_ir_operand op in
@@ -262,20 +546,30 @@ let lift_instr mnem ops =
       | OpReg r -> Ok [ Ir.Cmov { cond; dst = r; src = ir_src } ]
       | _ -> Error "CMOV destination must be a register")
   | ("div" | "idiv"), [ divisor ] -> lift_x86_div ~signed:(mnem = "idiv") divisor
-  | (* rdx canonicalization is folded into the div expansion; the dividend is
-       reconstructed from rax alone, so the instruction itself is a no-op. *)
-    ("cdq" | "cltd"), [] ->
-      Ok [ Ir.Nop ]
+  | ("cdq" | "cltd"), [] ->
+      Ok
+        [ Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
+          Ir.Alu { op = Ir.Shr; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 31L; set_flags = false };
+          Ir.Unary { op = Ir.Neg; dst = Register.rdx; src = Ir.Reg Register.rdx; set_flags = false } ]
   | ("cqo" | "cqto"), [] ->
-      Ok [ Ir.Nop ]
+      Ok
+        [ Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
+          Ir.Alu { op = Ir.Shr; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 63L; set_flags = false };
+          Ir.Unary { op = Ir.Neg; dst = Register.rdx; src = Ir.Reg Register.rdx; set_flags = false } ]
+  | "cwd", [] ->
+      Ok
+        [ Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
+          Ir.Alu { op = Ir.And; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 0xFFFFL; set_flags = false };
+          Ir.Alu { op = Ir.Shr; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 15L; set_flags = false };
+          Ir.Unary { op = Ir.Neg; dst = Register.rdx; src = Ir.Reg Register.rdx; set_flags = false } ]
   | (* cdqe/cltq sign-extend eax into rax: exact at B64 even with a stale
        upper half, because both shifts displace the stale bits. *)
     ("cdqe" | "cltq"), [] ->
       Ok
         [ Ir.Alu { op = Ir.Shl; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 32L; set_flags = false };
           Ir.Alu { op = Ir.Sar; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 32L; set_flags = false } ]
-  | ("mul" | "imul"), [ _ ] ->
-      Error "1-operand MUL/IMUL (128-bit product with high half in rdx) is not modeled; use the 2/3-operand forms"
+  | ("mul" | "imul"), [ divisor ] ->
+      lift_x86_mul_one ~signed:(mnem = "imul") divisor
   | other, _ ->
       Error (Printf.sprintf "Unsupported or invalid instruction '%s' with %d operands" other (List.length ops))
 

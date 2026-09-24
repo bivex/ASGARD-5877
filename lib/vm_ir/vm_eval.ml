@@ -4,6 +4,7 @@ open Ir
 
 type state = {
   vregs : (Register.t, int64) Hashtbl.t;
+  vectors : (int, int64 array) Hashtbl.t;
   memory : (int64, int) Hashtbl.t;
   mutable flags : cc_op;
   mutable vsp : int64;
@@ -15,6 +16,7 @@ type state = {
 let make_state ?(stack_base = 0x7FFFFFFF0000L) () =
   let s = {
     vregs = Hashtbl.create 32;
+    vectors = Hashtbl.create 32;
     memory = Hashtbl.create 1024;
     flags = empty_flags;
     vsp = stack_base;
@@ -58,6 +60,21 @@ let set_reg state reg value =
         Int64.logor high (truncate_val B8 value)
   in
   Hashtbl.replace state.vregs r64 new_val
+
+let get_vector_lane state idx lane =
+  match Hashtbl.find_opt state.vectors (idx mod 32) with
+  | Some lanes when lane >= 0 && lane < Array.length lanes -> lanes.(lane)
+  | _ -> 0L
+
+let set_vector_lane state idx lane value =
+  let key = idx mod 32 in
+  let lanes =
+    match Hashtbl.find_opt state.vectors key with
+    | Some lanes -> Array.copy lanes
+    | None -> Array.make 8 0L
+  in
+  if lane >= 0 && lane < Array.length lanes then lanes.(lane) <- value;
+  Hashtbl.replace state.vectors key lanes
 
 let read_byte state addr =
   Option.value ~default:0 (Hashtbl.find_opt state.memory addr)
@@ -121,6 +138,86 @@ let write_operand state op value =
       let addr = eval_mem_addr state m in
       write_mem state addr m.width value
   | Imm _ -> ()
+
+let vector_lane_mask = function
+  | 8 -> 0xFFL
+  | 16 -> 0xFFFFL
+  | 32 -> 0xFFFFFFFFL
+  | _ -> -1L
+
+let float32_bits value =
+  Int64.logand (Int64.of_int32 (Int32.bits_of_float value)) 0xFFFFFFFFL
+
+let float64_bits value = Int64.bits_of_float value
+
+let vector_binary_value ~elem ~op ~a ~b =
+  match op, elem with
+  | Vadd, VF32 ->
+      let fa = Int32.float_of_bits (Int64.to_int32 a) in
+      let fb = Int32.float_of_bits (Int64.to_int32 b) in
+      float32_bits (fa +. fb)
+  | Vsub, VF32 ->
+      let fa = Int32.float_of_bits (Int64.to_int32 a) in
+      let fb = Int32.float_of_bits (Int64.to_int32 b) in
+      float32_bits (fa -. fb)
+  | Vmul, VF32 ->
+      let fa = Int32.float_of_bits (Int64.to_int32 a) in
+      let fb = Int32.float_of_bits (Int64.to_int32 b) in
+      float32_bits (fa *. fb)
+  | Vadd, VF64 -> float64_bits (Int64.float_of_bits a +. Int64.float_of_bits b)
+  | Vsub, VF64 -> float64_bits (Int64.float_of_bits a -. Int64.float_of_bits b)
+  | Vmul, VF64 -> float64_bits (Int64.float_of_bits a *. Int64.float_of_bits b)
+  | (Vadd | Vsub | Vmul), VInt -> (
+      match op with
+      | Vadd -> Int64.add a b
+      | Vsub -> Int64.sub a b
+      | Vmul -> Int64.mul a b
+      | Vand | Vor | Vxor -> 0L)
+  | (Vand | Vor | Vxor), (VInt | VF32 | VF64) -> (
+      match op with
+      | Vand -> Int64.logand a b
+      | Vor -> Int64.logor a b
+      | Vxor -> Int64.logxor a b
+      | Vadd | Vsub | Vmul -> 0L)
+
+let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
+  let mask = vector_lane_mask lane_bits in
+  let last = (dst_bits - lane_bits) / lane_bits in
+  for lane = 0 to last do
+    let pos = lane * lane_bits in
+    let chunk = pos / 64 in
+    let shift = pos mod 64 in
+    let packed_mask = Int64.shift_left mask shift in
+    let a_packed = get_vector_lane state src1 chunk in
+    let b_packed = get_vector_lane state src2 chunk in
+    let a = Int64.logand (Int64.shift_right_logical a_packed shift) mask in
+    let b = Int64.logand (Int64.shift_right_logical b_packed shift) mask in
+    let value = vector_binary_value ~elem ~op ~a ~b in
+    let dst_packed = get_vector_lane state dst chunk in
+    let cleared = Int64.logand dst_packed (Int64.lognot packed_mask) in
+    let updated = Int64.logor cleared (Int64.shift_left (Int64.logand value mask) shift) in
+    set_vector_lane state dst chunk updated
+  done
+
+let copy_vector state ~dst_bits ~dst ~src =
+  let chunks = (dst_bits + 63) / 64 in
+  for chunk = 0 to chunks - 1 do
+    set_vector_lane state dst chunk (get_vector_lane state src chunk)
+  done
+
+let load_vector state ~dst_bits ~dst ~addr =
+  let address = eval_mem_addr state addr in
+  let bytes = dst_bits / 8 in
+  for chunk = 0 to (bytes / 8) - 1 do
+    set_vector_lane state dst chunk (read_mem state (Int64.add address (Int64.of_int (chunk * 8))) B64)
+  done
+
+let store_vector state ~src_bits ~src ~addr =
+  let address = eval_mem_addr state addr in
+  let bytes = src_bits / 8 in
+  for chunk = 0 to (bytes / 8) - 1 do
+    write_mem state (Int64.add address (Int64.of_int (chunk * 8))) B64 (get_vector_lane state src chunk)
+  done
 
 let step state = function
   | Nop -> Ok None
@@ -220,9 +317,14 @@ let step state = function
             else if v2 = -1L then Int64.neg v1
             else Int64.div v1 v2
       in
-      let raw_res = compute_alu () in
-      set_reg state dst raw_res;
-      Ok None
+      if (op = Div || op = Idiv) && v2 = 0L then
+        Error "VM divide by zero"
+      else if op = Idiv && v2 = -1L && v1 = Int64.min_int then
+        Error "VM signed division overflow"
+      else
+        let raw_res = compute_alu () in
+        set_reg state dst raw_res;
+        Ok None
   | Unary { op; dst; src; set_flags } ->
       let w = Register.get_width dst in
       let v = eval_operand state src in
@@ -295,6 +397,18 @@ let step state = function
       Ok None
   | Load_symbol { dst; addend; _ } ->
       set_reg state dst addend;
+      Ok None
+  | Vec_mov { dst; src; bits } ->
+      copy_vector state ~dst_bits:bits ~dst ~src;
+      Ok None
+  | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
+      apply_vector_lanes state ~dst_bits:bits ~lane_bits ~elem ~src1 ~src2 ~dst op;
+      Ok None
+  | Vec_load { dst; addr; bits } ->
+      load_vector state ~dst_bits:bits ~dst ~addr;
+      Ok None
+  | Vec_store { src; addr; bits } ->
+      store_vector state ~src_bits:bits ~src ~addr;
       Ok None
   | Fp_binop _ | Fp_cmp _ | Fp_conv _ | Atomic_mem _ ->
       Ok None

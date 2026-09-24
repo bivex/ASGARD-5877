@@ -67,6 +67,12 @@ let parse_width_prefix str =
   let s = String.lowercase_ascii (String.trim str) in
   if String.starts_with ~prefix:"qword ptr" s then
     (Register.B64, String.trim (String.sub s 9 (String.length s - 9)))
+  else if String.starts_with ~prefix:"xmmword ptr" s then
+    (Register.B64, String.trim (String.sub s 11 (String.length s - 11)))
+  else if String.starts_with ~prefix:"ymmword ptr" s then
+    (Register.B64, String.trim (String.sub s 11 (String.length s - 11)))
+  else if String.starts_with ~prefix:"zmmword ptr" s then
+    (Register.B64, String.trim (String.sub s 11 (String.length s - 11)))
   else if String.starts_with ~prefix:"dword ptr" s then
     (Register.B32, String.trim (String.sub s 9 (String.length s - 9)))
   else if String.starts_with ~prefix:"word ptr" s then

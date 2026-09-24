@@ -242,6 +242,19 @@ let test_arm64_lift_3addr_madd_msub_sdiv_bic () =
           check int64 "ARM64 3-addr ALU sum = 310" 310L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_w18_b32_zero_extension () =
+  let asm = {|
+    mov w18, #-1
+    mov x0, x18
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_w18_zext" } asm with
+  | Error err -> fail ("Failed to lift ARM64 w18: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ARM64 w18 zero-extends to 0xffffffff" 0xFFFFFFFFL snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -254,6 +267,7 @@ let tests = [
   ("ARM64 Lift Post-index Writeback ([x], #imm)", `Quick, test_arm64_lift_post_index);
   ("ARM64 Lift Pair stp/ldp Writeback", `Quick, test_arm64_lift_pair_stp_ldp);
   ("ARM64 Lift 3-Address ALU (madd/msub/sdiv/bic)", `Quick, test_arm64_lift_3addr_madd_msub_sdiv_bic);
+  ("ARM64 Lift w18 B32 zero-extension", `Quick, test_arm64_w18_b32_zero_extension);
 ]
 
 
