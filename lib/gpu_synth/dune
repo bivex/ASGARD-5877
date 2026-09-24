@@ -1,6 +1,7 @@
 (library
  (name gpu_synth)
  (public_name random_visa.gpu_synth)
+ (libraries vm_ir mba_engine)
  (foreign_stubs
   (language c)
   (names gpu_synth_stubs))

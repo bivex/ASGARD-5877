@@ -1,4 +1,4 @@
-let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) ?(external_symbols = []) ?(constants = []) ?(block_spans = []) opcode_to_handler =
+let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option) ?(config : Protection_config.t option) ?(external_symbols = []) ?(constants = []) ?(block_spans = []) ?gpu_matrix opcode_to_handler =
   let profile = match runtime_profile with
     | Some p -> p
     | None -> Random_visa_domain.Vm_runtime_profile.generate ~seed:(Int64.of_int32 key_seed) ~total_opcodes:256 ()
@@ -63,6 +63,11 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
     Buffer.add_string b (Hardened_runtime.emit_ephemeral_jit_header ());
     Buffer.add_string b "\n";
   end;
+  (match gpu_matrix with
+   | Some mat ->
+       Buffer.add_string b (Gpu_synth.Gpu_matrix.emit_cpp_constants mat);
+       Buffer.add_string b "\n"
+   | None -> ());
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
   if enable_address_bound then begin
     Buffer.add_string b "#define ASGARD_ADDRESS_BOUND_BYTECODE 1\n";

@@ -79,12 +79,14 @@ let parse_mba_engine str =
   match String.lowercase_ascii (String.trim str) with
   | "egraph" | "e-graph" | "scrambler" -> `Egraph
   | "ncfg" -> `Ncfg
+  | "gpu" | "gpu_metal" | "metal" -> `Gpu_metal
   | "poly" | "polynomial" | _ -> `Poly
 
 let string_of_mba_engine = function
   | `Egraph -> "egraph"
   | `Poly -> "poly"
   | `Ncfg -> "ncfg"
+  | `Gpu_metal -> "gpu_metal"
 
 let from_yojson (json : Yojson.Basic.t) : (t, string) result =
   try

@@ -2,7 +2,7 @@
     Controls what transformations (CFF, MBA/E-graph, Anti-Pushan, SMC, MEM-SBOM,
     Junk code, Dispatch Domains) are enabled or disabled for a target binary. *)
 
-type mba_engine = [ `Egraph | `Poly | `Ncfg ]
+type mba_engine = [ `Egraph | `Poly | `Ncfg | `Gpu_metal ]
 
 type mba_config = {
   enabled : bool;

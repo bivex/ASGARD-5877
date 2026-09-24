@@ -111,6 +111,21 @@ let compile_and_package
     Random.State.make [| Random.State.bits rng |]
   ) in
 
+  (* Initialize GPU-accelerated MBA synthesis pool on Apple Silicon GPU if enabled *)
+  let gpu_mba_pool =
+    if enable_mba then
+      let mba_seed = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+      Some (Gpu_synth.Gpu_mba.create_pool ~seed:mba_seed ~rng ())
+    else None
+  in
+
+  (* Generate unique GPU-verified MBA substitution matrix with SAC diffusion *)
+  let gpu_sub_matrix =
+    if enable_mba then
+      Some (Gpu_synth.Gpu_matrix.generate ~rng ())
+    else None
+  in
+
   (* Result array — index i written only by worker i, no contention *)
   let results = Array.make n_blocks (0, ([] : fused_op list)) in
 
@@ -131,6 +146,10 @@ let compile_and_package
                       | `Egraph -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
                       | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
                       | `Ncfg   -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
+                      | `Gpu_metal -> (
+                          match gpu_mba_pool with
+                          | Some gpool -> Gpu_synth.Gpu_mba.obfuscate_alu ~pool:gpool ~rng:brng ~dst ~src1 ~src2 op
+                          | None -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op)
                     with _ ->
                       [ Ir.Alu { op; dst; src1; src2; set_flags = false } ])
                 | other -> [ other ])
@@ -431,7 +450,7 @@ let compile_and_package
         (off, len))
       sorted_blocks
   in
-  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config ~external_symbols:!external_symbols ~constants ~block_spans opcode_to_handler in
+  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config ~external_symbols:!external_symbols ~constants ~block_spans ?gpu_matrix:gpu_sub_matrix opcode_to_handler in
   let runner_src = Vm_runtime_emitter.emit_runner_cpp ~key_seed:(Int64.of_int32 key_seed) ~reg_perm final_bytecode in
 
   let decoy_count = 256 - List.length all_op_kinds in

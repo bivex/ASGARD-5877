@@ -1,6 +1,6 @@
 (** Types defining multi-layer VM protection and hardening configurations. *)
 
-type mba_engine = [ `Egraph | `Poly | `Ncfg ]
+type mba_engine = [ `Egraph | `Poly | `Ncfg | `Gpu_metal ]
 
 type mba_config = {
   enabled : bool;

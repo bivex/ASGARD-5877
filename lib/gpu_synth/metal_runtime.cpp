@@ -30,7 +30,8 @@ kernel void synthesize_mba_kernel(
     device atomic_uint*    solution_counter [[buffer(2)]],
     uint id [[thread_position_in_grid]])
 {
-    uint64_t seed = (uint64_t)id * 0x9E3779B97F4A7C15ULL + 0x13375877ULL;
+    uint64_t target = (target_patterns != nullptr) ? target_patterns[0] : 0x13375877ULL;
+    uint64_t seed = (uint64_t)id * 0x9E3779B97F4A7C15ULL + target;
     uint64_t a = seed;
     uint64_t b = gpu_rol64(seed, 17) ^ 0xCAFEBABE13375877ULL;
     

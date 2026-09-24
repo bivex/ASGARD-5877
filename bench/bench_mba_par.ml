@@ -91,15 +91,19 @@ let () =
       time_it "MBA poly depth=2 (default)"  5 (fun () ->
         ignore (Vm_emitter.compile_and_package ~rng:(make_rng ()) ~config:cfg_default func));
 
-      (* max_security: MBA Egraph, CFF, all features *)
+      (* max_security: MBA with GPU Metal + CFF + all features *)
       let cfg_max = Protection_config.max_security in
-      time_it "MBA egraph + CFF (max_security)"  3 (fun () ->
+      time_it "MBA GPU Metal + CFF (max_security)"  3 (fun () ->
         ignore (Vm_emitter.compile_and_package ~rng:(make_rng ()) ~config:cfg_max func));
+
+      (* Force CPU Egraph for comparison *)
+      let cfg_cpu_egraph = { cfg_max with mba = { cfg_max.mba with engine = `Egraph } } in
+      time_it "MBA CPU Egraph + CFF (comparison)"  3 (fun () ->
+        ignore (Vm_emitter.compile_and_package ~rng:(make_rng ()) ~config:cfg_cpu_egraph func));
 
       Printf.printf "\nDomain count: %d\n%!" (Domain.recommended_domain_count ())
 
 let () =
-  (* Also measure: how long is one Egraph.obfuscate_alu? *)
   let rng = Random.State.make [| 99 |] in
   let open Vm_ir in
   let dst = Register.vx20 in
@@ -112,4 +116,16 @@ let () =
   done;
   let t1 = Unix.gettimeofday () in
   Printf.printf "\n1 Egraph.obfuscate_alu ADD: %.2f µs avg (n=%d)\n%!"
-    ((t1 -. t0) *. 1e6 /. float_of_int n) n
+    ((t1 -. t0) *. 1e6 /. float_of_int n) n;
+
+  (* Measure GPU MBA lowering speed *)
+  let pool = Gpu_synth.Gpu_mba.create_pool ~rng () in
+  let t2 = Unix.gettimeofday () in
+  for _ = 1 to n do
+    ignore (Gpu_synth.Gpu_mba.obfuscate_alu ~pool ~rng ~dst ~src1 ~src2 Ir.Add)
+  done;
+  let t3 = Unix.gettimeofday () in
+  Printf.printf "1 GPU_MBA.obfuscate_alu ADD: %.2f µs avg (n=%d, pool_size=%d, gpu_backed=%b)\n%!"
+    ((t3 -. t2) *. 1e6 /. float_of_int n) n (Gpu_synth.Gpu_mba.pool_size pool) (Gpu_synth.Gpu_mba.is_gpu_backed pool);
+  Printf.printf "GPU Speedup per ALU op: %.1fx\n%!"
+    (((t1 -. t0) *. 1e6 /. float_of_int n) /. ((t3 -. t2) *. 1e6 /. float_of_int n))

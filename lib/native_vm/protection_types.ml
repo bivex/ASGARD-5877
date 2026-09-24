@@ -1,4 +1,4 @@
-type mba_engine = [ `Egraph | `Poly | `Ncfg ]
+type mba_engine = [ `Egraph | `Poly | `Ncfg | `Gpu_metal ]
 
 type mba_config = {
   enabled : bool;

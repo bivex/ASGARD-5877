@@ -67,7 +67,7 @@ let max_security : t = {
   mba = {
     enabled = true;
     depth = 4;
-    engine = `Egraph;
+    engine = (if Gpu_synth.is_gpu_available () then `Gpu_metal else `Egraph);
   };
   anti_pushan = {
     enabled = true;
