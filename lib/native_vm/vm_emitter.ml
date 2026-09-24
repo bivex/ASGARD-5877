@@ -114,9 +114,8 @@ let compile_and_package
   (* Result array — index i written only by worker i, no contention *)
   let results = Array.make n_blocks (0, ([] : fused_op list)) in
 
-  let n_domains = max 1 (min n_blocks (Domain.recommended_domain_count ())) in
-  let pool = Domainslib.Task.setup_pool ~num_domains:(n_domains - 1) () in
-
+  (* Use global pool — avoids spawn/teardown overhead per call *)
+  let pool = Mba_par.global_pool () in
   Domainslib.Task.run pool (fun () ->
     Domainslib.Task.parallel_for pool ~start:0 ~finish:(n_blocks - 1)
       ~body:(fun i ->
@@ -144,7 +143,6 @@ let compile_and_package
                      else List.map (fun i -> Raw i) instrs in
         results.(i) <- (b.id, fused))
   );
-  Domainslib.Task.teardown_pool pool;
 
   let block_fused_ops = Hashtbl.create n_blocks in
   Array.iter (fun (id, fused) -> Hashtbl.replace block_fused_ops id fused) results;

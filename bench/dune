@@ -1,0 +1,3 @@
+(executables
+ (names bench_mba_par)
+ (libraries native_vm vm_ir x86_lifter unix))
