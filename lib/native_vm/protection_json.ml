@@ -175,6 +175,7 @@ let from_yojson (json : Yojson.Basic.t) : (t, string) result =
             memory_sanitization = json_get_bool "memory_sanitization" base.vm_runtime.memory_sanitization obj;
             vector_isa = json_get_bool "vector_isa" base.vm_runtime.vector_isa obj;
             egraph_expansion = json_get_bool "egraph_expansion" base.vm_runtime.egraph_expansion obj;
+            ephemeral_jit = json_get_bool "ephemeral_jit" base.vm_runtime.ephemeral_jit obj;
           }
     in
 
@@ -250,6 +251,7 @@ let to_yojson (cfg : t) : Yojson.Basic.t =
       ("memory_sanitization", `Bool cfg.vm_runtime.memory_sanitization);
       ("vector_isa", `Bool cfg.vm_runtime.vector_isa);
       ("egraph_expansion", `Bool cfg.vm_runtime.egraph_expansion);
+      ("ephemeral_jit", `Bool cfg.vm_runtime.ephemeral_jit);
     ]);
     ("c_macro", `Assoc [
       ("enabled", `Bool cfg.c_macro.enabled);

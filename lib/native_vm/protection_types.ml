@@ -50,6 +50,7 @@ type vm_runtime_config = {
   memory_sanitization : bool;
   vector_isa : bool;
   egraph_expansion : bool;
+  ephemeral_jit : bool;
 }
 
 type c_macro_config = {
@@ -90,4 +91,9 @@ let rolling_key_enabled (config : t option) : bool =
 let address_bound_enabled (config : t option) : bool =
   match config with
   | Some c -> c.anti_pushan.enabled && c.anti_pushan.running_key && c.anti_pushan.address_bound
+  | None -> false
+
+let ephemeral_jit_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.vm_runtime.ephemeral_jit
   | None -> false

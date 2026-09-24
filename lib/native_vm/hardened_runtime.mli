@@ -13,3 +13,5 @@ val emit_introspective_smc_header : unit -> string
 val emit_memory_integrity_scanner_header : unit -> string
 
 val emit_nanomite_engine_header : unit -> string
+
+val emit_ephemeral_jit_header : unit -> string

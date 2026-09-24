@@ -52,6 +52,7 @@ type vm_runtime_config = {
   memory_sanitization : bool;
   vector_isa : bool;
   egraph_expansion : bool;
+  ephemeral_jit : bool;
 }
 
 type c_macro_config = {
@@ -89,3 +90,7 @@ val rolling_key_enabled : t option -> bool
 val address_bound_enabled : t option -> bool
 (** Anti-VMPredator address-bound bytecode gate: [true] when running_key and address_bound
     are both enabled. Binds bytecode decryption to runtime handler addresses. *)
+
+val ephemeral_jit_enabled : t option -> bool
+(** Ephemeral polymorphic JIT gate: [true] when runtime ephemeral JIT code synthesis
+    is enabled in vm_runtime. *)

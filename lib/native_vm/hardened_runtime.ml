@@ -11,3 +11,5 @@ let emit_introspective_smc_header = Runtime_smc.emit_introspective_smc_header
 let emit_memory_integrity_scanner_header = Runtime_probes.emit_memory_integrity_scanner_header
 
 let emit_nanomite_engine_header = Runtime_smc.emit_nanomite_engine_header
+
+let emit_ephemeral_jit_header = Runtime_ephemeral_jit.emit_ephemeral_jit_header

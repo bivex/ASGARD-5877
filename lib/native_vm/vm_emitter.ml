@@ -91,35 +91,63 @@ let compile_and_package
   let sorted_other = List.sort (fun (a : Ir.basic_block) (b : Ir.basic_block) -> Int.compare a.id b.id) other_blocks in
   let sorted_blocks = entry_block :: sorted_other in
 
-  let block_fused_ops = Hashtbl.create (List.length sorted_blocks) in
-  List.iter
-    (fun (b : Ir.basic_block) ->
-      let instrs =
-        if enable_mba then
-          List.concat_map
-            (function
-              | Ir.Alu { op; dst; src1; src2; _ } -> (
-                  try
-                    match mba_engine with
-                    | `Egraph -> Mba_engine.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 op
-                    | `Poly -> Mba_engine.Mba.obfuscate_alu ~rng ~depth:mba_depth ~dst ~src1 ~src2 op
-                    | `Ncfg -> Mba_engine.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 op
-                  with _ ->
-                    [ Ir.Alu { op; dst; src1; src2; set_flags = false } ])
-              | other -> [ other ])
-            b.instrs
-        else b.instrs
-      in
-      let instrs = canonicalize_3addr_alu instrs in
-      let instrs = if enable_junk then inject_junk_instructions ~rng instrs else instrs in
-      let enable_super_ops =
-        match config with
-        | Some (c : Protection_config.t) -> c.vm_runtime.enable_super_operators
-        | None -> true
-      in
-      let fused = if enable_super_ops then fuse_block_instructions instrs else List.map (fun i -> Raw i) instrs in
-      Hashtbl.replace block_fused_ops b.id fused)
-    sorted_blocks;
+  let enable_super_ops =
+    match config with
+    | Some (c : Protection_config.t) -> c.vm_runtime.enable_super_operators
+    | None -> true
+  in
+
+  (* -----------------------------------------------------------------------
+     Parallel MBA via domainslib Task pool.
+     Each basic block is independent — no shared state between blocks.
+     A fork-per-block RNG ensures deterministic output regardless of
+     scheduling order.
+     ----------------------------------------------------------------------- *)
+  let blocks_arr = Array.of_list sorted_blocks in
+  let n_blocks   = Array.length blocks_arr in
+
+  (* Pre-generate per-block RNGs deterministically from master state *)
+  let block_rngs = Array.init n_blocks (fun _ ->
+    Random.State.make [| Random.State.bits rng |]
+  ) in
+
+  (* Result array — index i written only by worker i, no contention *)
+  let results = Array.make n_blocks (0, ([] : fused_op list)) in
+
+  let n_domains = max 1 (min n_blocks (Domain.recommended_domain_count ())) in
+  let pool = Domainslib.Task.setup_pool ~num_domains:(n_domains - 1) () in
+
+  Domainslib.Task.run pool (fun () ->
+    Domainslib.Task.parallel_for pool ~start:0 ~finish:(n_blocks - 1)
+      ~body:(fun i ->
+        let b    = blocks_arr.(i) in
+        let brng = block_rngs.(i) in
+        let instrs =
+          if enable_mba then
+            List.concat_map
+              (function
+                | Ir.Alu { op; dst; src1; src2; _ } -> (
+                    try
+                      match mba_engine with
+                      | `Egraph -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
+                      | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
+                      | `Ncfg   -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
+                    with _ ->
+                      [ Ir.Alu { op; dst; src1; src2; set_flags = false } ])
+                | other -> [ other ])
+              b.instrs
+          else b.instrs
+        in
+        let instrs = canonicalize_3addr_alu instrs in
+        let instrs = if enable_junk then inject_junk_instructions ~rng:brng instrs else instrs in
+        let fused  = if enable_super_ops then fuse_block_instructions instrs
+                     else List.map (fun i -> Raw i) instrs in
+        results.(i) <- (b.id, fused))
+  );
+  Domainslib.Task.teardown_pool pool;
+
+  let block_fused_ops = Hashtbl.create n_blocks in
+  Array.iter (fun (id, fused) -> Hashtbl.replace block_fused_ops id fused) results;
 
   let words_of_fused = function
     | Raw (Ir.Mov { src = Ir.Imm imm; _ }) when Int64.shift_right_logical imm 32 <> 0L -> 2

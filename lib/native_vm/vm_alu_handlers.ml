@@ -15,7 +15,7 @@ let emit_probes b ~enable_timing_probes =
     Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n\n";
   end
 
-let emit_alu_handlers b ~rng ~enable_egraph_expansion =
+let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = false) () =
   let pick_poly_add () =
     match Random.State.int rng 4 with
     | 0 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) + 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
@@ -64,7 +64,23 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion =
   Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) & 0xFFFFFFFFULL) | high_val);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b (Printf.sprintf "    H_ADD_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_add_rr_expr ()));
+  if enable_ephemeral_jit then begin
+    Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
+    Buffer.add_string b "    H_ADD_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_ADD_RR, dst, src, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_ADD_RI: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_ADD_RI, dst, 0, (uint64_t)imm); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_SUB_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SUB_RR, dst, src, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_SUB_RI: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SUB_RI, dst, 0, (uint64_t)imm); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_IMUL_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_MUL_RR, dst, src, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_IMUL_RI: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_MUL_RI, dst, 0, (uint64_t)imm); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_XOR_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_XOR_RR, dst, src, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_XOR_RI: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_XOR_RI, dst, 0, (uint64_t)imm); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_AND_RR: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_AND_RR, dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_AND_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_AND_RI, dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_OR_RR:  { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_OR_RR,  dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "    H_OR_RI:  { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_OR_RI,  dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    Buffer.add_string b "#else\n"
+  end;
+    Buffer.add_string b (Printf.sprintf "    H_ADD_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_add_rr_expr ()));
   Buffer.add_string b "    H_ADD_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
   Buffer.add_string b (Printf.sprintf "    H_SUB_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_sub_rr_expr ()));
   Buffer.add_string b "    H_SUB_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) - 2 * ((~ctx.get_reg(dst)) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
@@ -88,6 +104,8 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion =
   Buffer.add_string b "    H_AND_RI: ctx.set_reg(dst, (ctx.get_reg(dst) + (uint64_t)imm) - (ctx.get_reg(dst) | (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b (Printf.sprintf "    H_OR_RR: { ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_or_rr_expr ()));
   Buffer.add_string b "    H_OR_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n";
+  if enable_ephemeral_jit then
+    Buffer.add_string b "#endif\n";
 
   Buffer.add_string b "    H_ROL_RI: {\n";
   Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";

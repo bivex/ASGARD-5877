@@ -37,6 +37,7 @@ let default : t = {
     memory_sanitization = true;
     vector_isa = true;
     egraph_expansion = true;
+    ephemeral_jit = false;
   };
   c_macro = {
     enabled = true;
@@ -91,6 +92,7 @@ let max_security : t = {
     memory_sanitization = true;
     vector_isa = true;
     egraph_expansion = true;
+    ephemeral_jit = true;
   };
   c_macro = {
     enabled = true;
@@ -145,6 +147,7 @@ let lightweight : t = {
     memory_sanitization = false;
     vector_isa = false;
     egraph_expansion = false;
+    ephemeral_jit = false;
   };
   c_macro = {
     enabled = false;
@@ -199,6 +202,7 @@ let stealth : t = {
     memory_sanitization = true;
     vector_isa = true;
     egraph_expansion = true;
+    ephemeral_jit = false;
   };
   c_macro = {
     enabled = true;
@@ -253,6 +257,7 @@ let minimal : t = {
     memory_sanitization = false;
     vector_isa = false;
     egraph_expansion = false;
+    ephemeral_jit = false;
   };
   c_macro = {
     enabled = false;
@@ -307,6 +312,7 @@ let high : t = {
     memory_sanitization = true;
     vector_isa = true;
     egraph_expansion = true;
+    ephemeral_jit = false;
   };
   c_macro = {
     enabled = true;

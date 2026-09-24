@@ -1,4 +1,4 @@
 (library
  (name native_vm)
  (public_name random_visa.native_vm)
- (libraries random_visa_domain vm_ir mba_engine cff yojson))
+ (libraries random_visa_domain vm_ir mba_engine cff yojson domainslib))

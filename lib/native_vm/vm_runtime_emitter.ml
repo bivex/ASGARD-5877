@@ -23,6 +23,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   let enable_mem_sanitize = match config with Some c -> c.vm_runtime.memory_sanitization | None -> true in
   let enable_vector_isa = match config with Some c -> c.vm_runtime.vector_isa | None -> true in
   let enable_egraph_expansion = match config with Some c -> c.vm_runtime.egraph_expansion | None -> true in
+  let enable_ephemeral_jit = Protection_config.ephemeral_jit_enabled config in
   let b = Buffer.create 4096 in
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <atomic>\n#include <bit>\n#include <cstring>\n";
@@ -55,6 +56,11 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   end;
   if enable_nanomites then begin
     Buffer.add_string b (Hardened_runtime.emit_nanomite_engine_header ());
+    Buffer.add_string b "\n";
+  end;
+  if enable_ephemeral_jit then begin
+    Buffer.add_string b "#define ASGARD_EPHEMERAL_JIT 1\n";
+    Buffer.add_string b (Hardened_runtime.emit_ephemeral_jit_header ());
     Buffer.add_string b "\n";
   end;
   Buffer.add_string b "namespace vanguard_threaded_vm {\n\n";
@@ -181,6 +187,8 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   else
     Buffer.add_string b "    for (size_t i = 0; i < count; ++i) work_bc[i] = bytecode[i];\n\n";
   Buffer.add_string b "    size_t vIP_idx = 0;\n\n";
+  if enable_ephemeral_jit then
+    Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n    static thread_local asgard_memory::DualMappedBuffer g_ephemeral_jit_buf = asgard_memory::DualMappedBuffer::allocate(4096);\n#endif\n\n";
 
   (* Multi-Domain Dispatch Tables *)
   for d = 0 to num_domains - 1 do
@@ -260,7 +268,7 @@ let emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?(runtime_p
   end;
   Buffer.add_string b "    FETCH_NEXT();\n\n";
 
-  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_address_bound ~enable_timing_probes ~enable_nanomites ~enable_egraph_expansion;
+  Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key ~enable_address_bound ~enable_timing_probes ~enable_nanomites ~enable_egraph_expansion ~enable_ephemeral_jit ();
 
   Buffer.add_string b "    EXIT_VM:\n";
   if enable_mem_sanitize then begin
