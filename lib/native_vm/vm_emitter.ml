@@ -143,7 +143,9 @@ let compile_and_package
                 | Ir.Alu { op; dst; src1; src2; _ } -> (
                     try
                       match mba_engine with
-                      | `Egraph -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
+                      | `Egraph ->
+                          let eg_cfg = { Mba_engine.Egraph.default_op_config with iter_limit = max 1 (min 4 mba_depth) } in
+                          Mba_engine.Egraph.obfuscate_alu ~config:eg_cfg ~rng:brng ~dst ~src1 ~src2 op
                       | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
                       | `Ncfg   -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
                       | `Gpu_metal -> (

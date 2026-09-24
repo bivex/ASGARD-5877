@@ -20,6 +20,7 @@ type config = {
 }
 
 val default_config : config
+val default_op_config : config
 
 (** Saturation / extraction statistics. *)
 type stats = {
