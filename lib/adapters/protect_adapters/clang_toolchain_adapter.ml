@@ -34,7 +34,7 @@ let execute_binary ~(binary_path : string) : (int * string, error) result =
   if not (Sys.file_exists binary_path) then
     Error (Printf.sprintf "Binary not found: %s" binary_path)
   else
-    let in_ch = Unix.open_process_in binary_path in
+    let in_ch = Unix.open_process_in (binary_path ^ " < /dev/null") in
     let buf = Buffer.create 256 in
     (try
        while true do

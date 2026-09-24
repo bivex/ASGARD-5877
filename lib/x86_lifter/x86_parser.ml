@@ -37,7 +37,9 @@ let strip_comments line =
     if i >= len then len
     else
       let c = line.[i] in
-      if c = '"' then find_start (i + 1) (not in_str)
+      if in_str && c = '\\' && i + 1 < len then
+        find_start (i + 2) in_str
+      else if c = '"' then find_start (i + 1) (not in_str)
       else if not in_str && (c = ';' || c = '#' || (c = '/' && i + 1 < len && line.[i + 1] = '/')) then i
       else find_start (i + 1) in_str
   in

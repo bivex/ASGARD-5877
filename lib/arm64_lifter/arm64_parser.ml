@@ -8,11 +8,28 @@ let strip_comments line =
     if i >= len then len
     else
       let c = line.[i] in
-      if c = '"' then find_start (i + 1) (not in_str)
+      if in_str && c = '\\' && i + 1 < len then
+        find_start (i + 2) in_str
+      else if c = '"' then find_start (i + 1) (not in_str)
       else if not in_str && (c = ';' || (c = '/' && i + 1 < len && line.[i + 1] = '/')) then i
       else find_start (i + 1) in_str
   in
   String.trim (String.sub line 0 (find_start 0 false))
+
+let find_string_bounds s =
+  let len = String.length s in
+  match String.index_opt s '"' with
+  | None -> None
+  | Some q1 ->
+      let rec find_close i =
+        if i >= len then None
+        else if s.[i] = '\\' && i + 1 < len then find_close (i + 2)
+        else if s.[i] = '"' then Some i
+        else find_close (i + 1)
+      in
+      match find_close (q1 + 1) with
+      | Some q2 -> Some (q1, q2)
+      | None -> None
 
 let parse_mem str width =
   let s = String.trim str in
@@ -283,16 +300,13 @@ let extract_constants text =
             let trimmed = String.trim clean in
             if String.starts_with ~prefix:".ascii" trimmed || String.starts_with ~prefix:".asciz" trimmed || String.starts_with ~prefix:".string" trimmed then (
               let is_asciz = String.starts_with ~prefix:".asciz" trimmed || String.starts_with ~prefix:".string" trimmed in
-              match String.index_opt trimmed '"' with
-              | Some q1 ->
-                  (match String.rindex_opt trimmed '"' with
-                  | Some q2 when q2 > q1 ->
-                      let raw_str = String.sub trimmed (q1 + 1) (q2 - q1 - 1) in
-                      let unescaped = unescape_asm_str raw_str in
-                      let data = if is_asciz then unescaped ^ "\000" else unescaped in
-                      constants := (lbl, data) :: !constants;
-                      cur_label := None
-                  | _ -> ())
+              match find_string_bounds trimmed with
+              | Some (q1, q2) ->
+                  let raw_str = String.sub trimmed (q1 + 1) (q2 - q1 - 1) in
+                  let unescaped = unescape_asm_str raw_str in
+                  let data = if is_asciz then unescaped ^ "\000" else unescaped in
+                  constants := (lbl, data) :: !constants;
+                  cur_label := None
               | None -> ()
             ) else if String.starts_with ~prefix:".byte" trimmed then (
               let rest = String.sub trimmed 5 (String.length trimmed - 5) in
