@@ -6,6 +6,8 @@ let emit_dual_mapping_header () =
 #if defined(__APPLE__)
 #include <mach/mach.h>
 #include <mach/vm_map.h>
+#include <sys/mman.h>
+#include <pthread.h>
 #elif defined(__linux__)
 #include <sys/mman.h>
 #include <unistd.h>
@@ -35,17 +37,27 @@ struct DualMappedBuffer {
         buf.size = (required_size + page_sz - 1) & ~(page_sz - 1);
 
 #if defined(__APPLE__)
+#if defined(MAP_JIT)
+        void* jptr = mmap(NULL, buf.size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANON | MAP_PRIVATE | MAP_JIT, -1, 0);
+        if (jptr != MAP_FAILED) {
+            buf.rw_alias = jptr;
+            buf.rx_alias = jptr;
+            return buf;
+        }
+#endif
         vm_address_t rw_addr = 0;
         if (vm_allocate(mach_task_self(), &rw_addr, buf.size, VM_FLAGS_ANYWHERE) == KERN_SUCCESS) {
             vm_address_t rx_addr = 0;
             vm_prot_t cur_prot, max_prot;
             if (vm_remap(mach_task_self(), &rx_addr, buf.size, 0, VM_FLAGS_ANYWHERE,
                           mach_task_self(), rw_addr, FALSE, &cur_prot, &max_prot, VM_INHERIT_NONE) == KERN_SUCCESS) {
-                vm_protect(mach_task_self(), rx_addr, buf.size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
-                buf.rw_alias = (void*)rw_addr;
-                buf.rx_alias = (const void*)rx_addr;
-                return buf;
+                if (vm_protect(mach_task_self(), rx_addr, buf.size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE) == KERN_SUCCESS) {
+                    buf.rw_alias = (void*)rw_addr;
+                    buf.rx_alias = (const void*)rx_addr;
+                    return buf;
+                }
             }
+            vm_deallocate(mach_task_self(), rw_addr, buf.size);
         }
 #elif defined(__linux__) && defined(MFD_CLOEXEC)
         int fd = memfd_create("asgard_dual_wx", MFD_CLOEXEC);
@@ -64,8 +76,12 @@ struct DualMappedBuffer {
 
     void release() noexcept {
 #if defined(__APPLE__)
-        if (rw_alias) vm_deallocate(mach_task_self(), (vm_address_t)rw_alias, size);
-        if (rx_alias) vm_deallocate(mach_task_self(), (vm_address_t)rx_alias, size);
+        if (rw_alias == rx_alias && rw_alias != nullptr) {
+            munmap(rw_alias, size);
+        } else {
+            if (rw_alias) vm_deallocate(mach_task_self(), (vm_address_t)rw_alias, size);
+            if (rx_alias) vm_deallocate(mach_task_self(), (vm_address_t)rx_alias, size);
+        }
 #elif defined(__linux__)
         if (rw_alias && rw_alias != MAP_FAILED) munmap(rw_alias, size);
         if (rx_alias && rx_alias != MAP_FAILED) munmap((void*)rx_alias, size);

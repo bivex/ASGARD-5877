@@ -5,6 +5,7 @@ let emit_ephemeral_jit_header () =
 #include <stdbool.h>
 #if defined(__APPLE__)
 #include <libkern/OSCacheControl.h>
+#include <pthread.h>
 #endif
 
 namespace asgard_ephemeral_jit {
@@ -88,6 +89,10 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     uint64_t r_val = next_jit_rng(rng_state);
     size_t code_bytes = 0;
 
+#if defined(__APPLE__) && defined(__aarch64__)
+    pthread_jit_write_protect_np(0);
+#endif
+
 #if defined(__aarch64__)
     uint32_t* code = (uint32_t*)buf.rw_alias;
     size_t idx = 0;
@@ -138,8 +143,8 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
             break;
     }
 
-    // Return value in x0
-    code[idx++] = 0xaa0003e0 | r1; // mov x0, r1
+    // Return value in x0: orr x0, xzr, r1 (Rm=r1 at bits 20..16, Rn=xzr(31) at bits 9..5, Rd=x0(0))
+    code[idx++] = 0xaa0003e0 | (((uint32_t)r1 & 0x1F) << 16); // mov x0, r1
 
     // Metamorphic junk instruction suffix
     if ((r_val & 4) != 0) {
@@ -224,6 +229,9 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
 #if defined(__APPLE__)
     sys_dcache_flush(buf.rw_alias, code_bytes);
     sys_icache_invalidate((void*)buf.rx_alias, code_bytes);
+#if defined(__aarch64__)
+    pthread_jit_write_protect_np(1);
+#endif
 #else
     __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
 #endif
@@ -231,6 +239,10 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     using JITFn = uint64_t (*)();
     auto fn = (JITFn)buf.rx_alias;
     uint64_t result = fn();
+
+#if defined(__APPLE__) && defined(__aarch64__)
+    pthread_jit_write_protect_np(0);
+#endif
 
     ctx.set_reg(dst, result);
 

@@ -4,6 +4,10 @@ let emit_introspective_smc_header () =
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdio.h>
+#if defined(__APPLE__)
+#include <libkern/OSCacheControl.h>
+#include <pthread.h>
+#endif
 
 #if defined(ASGARD_SMC_STRICT)
 #  if !defined(__APPLE__) && (!defined(__linux__) || !defined(MFD_CLOEXEC))
@@ -64,6 +68,9 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     }
 
 #if defined(__aarch64__)
+#if defined(__APPLE__)
+    pthread_jit_write_protect_np(0);
+#endif
     // Emit ARM64:
     // movz w0, #0x5877, lsl #0  -> 0x528b0ee0
     // add w0, w0, #0x12         -> 0x11004800
@@ -81,12 +88,22 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     code_rw[1] = 0x11000000 | (imm_val << 10);
 
     // Hardware icache invalidation & pipeline clear
+#if defined(__APPLE__)
+    sys_dcache_flush(buf.rw_alias, 16);
+    sys_icache_invalidate((void*)buf.rx_alias, 16);
+    pthread_jit_write_protect_np(1);
+#else
     __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + 16);
+#endif
 
     // Execute via RX alias
     typedef uint32_t (*smc_fn_t)();
     smc_fn_t fn = (smc_fn_t)buf.rx_alias;
     uint32_t result = fn();
+
+#if defined(__APPLE__)
+    pthread_jit_write_protect_np(0);
+#endif
 
     uint64_t t1;
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t1));
