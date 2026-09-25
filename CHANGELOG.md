@@ -6,6 +6,36 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Add full RISC-V 64-bit lifter (`RV64I`, `RV64M`, `RV64A`, `RV64F/D`, `RVV`) and pipeline adapter.
+- Add comprehensive test suite for RISC-V instruction lifting and CFG reconstruction (`test/test_riscv_lifter.ml`).
+- Add Register-Driven JIT (RD-JIT) support for `AND`, `OR`, `SHL`, `SHR`, `SAR`, `NOT`, `NEG`, and 64-bit `LOAD`/`STORE` across ARM64, x86_64, and interpreter backends.
+- Add floating-point binops, comparisons, conversions, atomics, and symbol resolution (`OP_RESOLVE_SYM`) in reference VM evaluator.
+- Add return flow preservation in C-macro Nanomite transformations with `ASG_NANOMITE_CHECK_RET`.
+- Add test coverage for C-macro string escape parsing, char literals, multiline defines, and C trampoline signature variations.
+
+### Changed
+
+- Update test suite registry to 239 tests across 34 suites (including RISC-V lifter and extended C macro suites).
+- Ensure compiler pipeline always compiles C sources to assembly via toolchain even when macro obfuscation is disabled.
+- Automatically copy and configure `asgard_obf.h` header in output directory for C protection pipeline.
+
+### Fixed
+
+- Fix 128-bit `RDX:RAX` division lowering in x86_64 lifter and overflow flag (`OF`) computation in `H_FUSED_CMP_CMOV`.
+- Fix canonicalization of `Ir.Cmp`, `Ir.Test`, and `Ir.Cmov` instructions with memory operands into registers with SIB support.
+- Fix x86-64 parser to support both `scale*reg` (e.g. `8*rdx`) and `reg*scale` SIB forms.
+- Fix x86-64 marker jump peeling (`jmp` before ASGARD markers) and flush trailing epilogue blocks as `Ret` terminators.
+- Move `H_NEG_RR` and `H_NOT_RR` opcode labels outside ephemeral JIT `#if/#else` block so handlers are always emitted in dispatch table.
+- Prevent duplicate trampoline embedding when processing multiple C source files and preserve intermediate obfuscated files (`app_obf.c`).
+- Fix C macro obfuscator string unescaping for hex (`\xHH`), octal (`\OOO`), char literals (`'`, `"`), and multiline `#define` continuations.
+- Fix C trampoline parser to handle comment/string-aware nested brace matching, default parameter values (`=`), and array parameters (`[]`).
+- Fix C trampoline return type parsing for `void`, pointer types, and 64-bit scalars without truncation.
+- Fix 64-bit SIMD lane packing/unpacking and prevent zero `lane_bits` loops in VM memory handlers.
+- Synchronize `RSP` and `VSP` stack registers, and evaluate arithmetic flags and shift counts according to operand bit widths.
+- Fix FP register operand indexing in native VM memory handlers.
+
 ## [0.1.0] - 2026-09-25
 
 ### Added
