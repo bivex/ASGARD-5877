@@ -38,7 +38,7 @@ $$\mathcal{S}_{\mathrm{SVM}} = \langle \mathrm{VIP}, \mathrm{VSP}, \mathrm{VKEY}
 
 ### Инвариант баланса стека
 Для любого линейного участка (базового блока) $B$:
-$$\Delta \mathrm{VSP}(B) = \sum_{i \in B} \mathrm{push\_weight}(i) - \sum_{i \in B} \mathrm{pop\_weight}(i)$$
+$$\Delta \mathrm{VSP}(B) = \sum_{i \in B} \mathrm{pushWeight}(i) - \sum_{i \in B} \mathrm{popWeight}(i)$$
 На границах базовых блоков глубина стека $\mathrm{depth}(\mathrm{VSP})$ должна быть детерминирована для обеспечения корректности слияния потоков управления (join points).
 
 ---
@@ -49,23 +49,23 @@ $$\Delta \mathrm{VSP}(B) = \sum_{i \in B} \mathrm{push\_weight}(i) - \sum_{i \in
 
 ### 3.1 Базовые типы, множества и операторы
 
-$$[\mathrm{ADDR}, \mathrm{WORD}, \mathrm{BYTE}, \mathrm{REG\_ID}]$$
+$$[\mathrm{Addr}, \mathrm{Word}, \mathrm{Byte}, \mathrm{RegId}]$$
 
 Производные типы и глобальные константы:
-$$\mathrm{VAL} == \mathrm{WORD}, \quad \mathrm{FLAGS} == \mathrm{WORD}, \quad \mathrm{OFFSET} == \mathbb{Z}$$
-$$\mathrm{WORD\_SIZE} == 8, \quad \mathrm{MAX\_STACK\_DEPTH} : \mathbb{N}, \quad \mathrm{ACTIVE\_REGS} : \mathbb{P} ~ \mathrm{REG\_ID}$$
+$$\mathrm{Val} == \mathrm{Word}, \quad \mathrm{Flags} == \mathrm{Word}, \quad \mathrm{Offset} == \mathbb{Z}$$
+$$\mathrm{WordSize} == 8, \quad \mathrm{MaxStackDepth} : \mathbb{N}, \quad \mathrm{ActiveRegs} : \mathbb{P} ~ \mathrm{RegId}$$
 
 Сигнатуры аксиоматических функций булевой логики и декриптора:
 
 $$\begin{array}{l}
-\mathrm{nor} : \mathrm{VAL} \times \mathrm{VAL} \to \mathrm{VAL} \\
-\mathrm{nand} : \mathrm{VAL} \times \mathrm{VAL} \to \mathrm{VAL} \\
-\mathrm{add\_with\_flags} : \mathrm{VAL} \times \mathrm{VAL} \to \mathrm{VAL} \times \mathrm{FLAGS} \\
-\mathrm{sub\_with\_flags} : \mathrm{VAL} \times \mathrm{VAL} \to \mathrm{VAL} \times \mathrm{FLAGS} \\
-\mathrm{decrypt\_byte} : \mathrm{BYTE} \times \mathrm{WORD} \to \mathrm{BYTE} \\
-\mathrm{derive\_key} : \mathrm{WORD} \times \mathrm{BYTE} \to \mathrm{WORD} \\
-\mathrm{read\_word\_mem} : (\mathrm{ADDR} \rightharpoonup \mathrm{BYTE}) \times \mathrm{ADDR} \to \mathrm{VAL} \\
-\mathrm{write\_word\_mem} : (\mathrm{ADDR} \rightharpoonup \mathrm{BYTE}) \times \mathrm{ADDR} \times \mathrm{VAL} \to (\mathrm{ADDR} \rightharpoonup \mathrm{BYTE})
+\mathrm{nor} : \mathrm{Val} \times \mathrm{Val} \to \mathrm{Val} \\
+\mathrm{nand} : \mathrm{Val} \times \mathrm{Val} \to \mathrm{Val} \\
+\mathrm{addWithFlags} : \mathrm{Val} \times \mathrm{Val} \to \mathrm{Val} \times \mathrm{Flags} \\
+\mathrm{subWithFlags} : \mathrm{Val} \times \mathrm{Val} \to \mathrm{Val} \times \mathrm{Flags} \\
+\mathrm{decryptByte} : \mathrm{Byte} \times \mathrm{Word} \to \mathrm{Byte} \\
+\mathrm{deriveKey} : \mathrm{Word} \times \mathrm{Byte} \to \mathrm{Word} \\
+\mathrm{readWordMem} : (\mathrm{Addr} \rightharpoonup \mathrm{Byte}) \times \mathrm{Addr} \to \mathrm{Val} \\
+\mathrm{writeWordMem} : (\mathrm{Addr} \rightharpoonup \mathrm{Byte}) \times \mathrm{Addr} \times \mathrm{Val} \to (\mathrm{Addr} \rightharpoonup \mathrm{Byte})
 \end{array}$$
 
 ---
@@ -75,25 +75,25 @@ $$\begin{array}{l}
 $$\begin{array}{|l}
 \mathbf{schema} \quad \mathrm{StackVMState} \\
 \hline
-\mathrm{vip} : \mathrm{ADDR} \\
-\mathrm{vsp} : \mathrm{ADDR} \\
-\mathrm{vkey} : \mathrm{WORD} \\
-\mathrm{vdisp} : \mathrm{ADDR} \\
-\mathrm{vstack} : \mathrm{seq} ~ \mathrm{VAL} \\
-\mathrm{vctx} : \mathrm{REG\_ID} \rightharpoonup \mathrm{VAL} \\
-\mathrm{vmem} : \mathrm{ADDR} \rightharpoonup \mathrm{BYTE} \\
-\mathrm{flags} : \mathrm{FLAGS} \\
+\mathrm{vip} : \mathrm{Addr} \\
+\mathrm{vsp} : \mathrm{Addr} \\
+\mathrm{vkey} : \mathrm{Word} \\
+\mathrm{vdisp} : \mathrm{Addr} \\
+\mathrm{vstack} : \mathrm{seq} ~ \mathrm{Val} \\
+\mathrm{vctx} : \mathrm{RegId} \rightharpoonup \mathrm{Val} \\
+\mathrm{vmem} : \mathrm{Addr} \rightharpoonup \mathrm{Byte} \\
+\mathrm{flags} : \mathrm{Flags} \\
 \hline
-|\mathrm{vstack}| \le \mathrm{MAX\_STACK\_DEPTH} \\
-\mathrm{vsp} \bmod \mathrm{WORD\_SIZE} = 0 \\
-\operatorname{dom}(\mathrm{vctx}) = \mathrm{ACTIVE\_REGS} \\
+|\mathrm{vstack}| \le \mathrm{MaxStackDepth} \\
+\mathrm{vsp} \bmod \mathrm{WordSize} = 0 \\
+\mathrm{dom}(\mathrm{vctx}) = \mathrm{ActiveRegs} \\
 \hline
 \end{array}$$
 
 *Предикаты инварианта:*
-1. $|\mathrm{vstack}| \le \mathrm{MAX\_STACK\_DEPTH}$ — виртуальный стек строго ограничен для исключения переполнения памяти.
-2. $\mathrm{vsp} \bmod \mathrm{WORD\_SIZE} = 0$ — аппаратный указатель стека строго выровнен по 8-байтовой границе.
-3. $\operatorname{dom}(\mathrm{vctx}) = \mathrm{ACTIVE\_REGS}$ — все активные регистры архитектуры замаплены во фрейме контекста.
+1. $|\mathrm{vstack}| \le \mathrm{MaxStackDepth}$ — виртуальный стек строго ограничен для исключения переполнения памяти.
+2. $\mathrm{vsp} \bmod \mathrm{WordSize} = 0$ — аппаратный указатель стека строго выровнен по 8-байтовой границе.
+3. $\mathrm{dom}(\mathrm{vctx}) = \mathrm{ActiveRegs}$ — все активные регистры архитектуры замаплены во фрейме контекста.
 
 ---
 
@@ -103,20 +103,20 @@ $$\begin{array}{|l}
 \mathbf{schema} \quad \mathrm{InitStackVMState} \\
 \hline
 \mathrm{StackVMState}' \\
-\mathrm{entry?} : \mathrm{ADDR} \\
-\mathrm{init\_sp?} : \mathrm{ADDR} \\
-\mathrm{seed\_key?} : \mathrm{WORD} \\
-\mathrm{base\_disp?} : \mathrm{ADDR} \\
-\mathrm{init\_ctx?} : \mathrm{REG\_ID} \to \mathrm{VAL} \\
-\mathrm{init\_mem?} : \mathrm{ADDR} \rightharpoonup \mathrm{BYTE} \\
+\mathrm{entry?} : \mathrm{Addr} \\
+\mathrm{initSp?} : \mathrm{Addr} \\
+\mathrm{seedKey?} : \mathrm{Word} \\
+\mathrm{baseDisp?} : \mathrm{Addr} \\
+\mathrm{initCtx?} : \mathrm{RegId} \to \mathrm{Val} \\
+\mathrm{initMem?} : \mathrm{Addr} \rightharpoonup \mathrm{Byte} \\
 \hline
 \mathrm{vip}' = \mathrm{entry?} \\
-\mathrm{vsp}' = \mathrm{init\_sp?} \\
-\mathrm{vkey}' = \mathrm{seed\_key?} \\
-\mathrm{vdisp}' = \mathrm{base\_disp?} \\
+\mathrm{vsp}' = \mathrm{initSp?} \\
+\mathrm{vkey}' = \mathrm{seedKey?} \\
+\mathrm{vdisp}' = \mathrm{baseDisp?} \\
 \mathrm{vstack}' = \langle \rangle \\
-\mathrm{vctx}' = \mathrm{init\_ctx?} \\
-\mathrm{vmem}' = \mathrm{init\_mem?} \\
+\mathrm{vctx}' = \mathrm{initCtx?} \\
+\mathrm{vmem}' = \mathrm{initMem?} \\
 \mathrm{flags}' = 0 \\
 \hline
 \end{array}$$
@@ -129,12 +129,12 @@ $$\begin{array}{|l}
 \mathbf{schema} \quad \mathrm{FetchByte} \\
 \hline
 \Delta \mathrm{StackVMState} \\
-\mathrm{plain!} : \mathrm{BYTE} \\
+\mathrm{plain!} : \mathrm{Byte} \\
 \hline
-\mathrm{vip} \in \operatorname{dom}(\mathrm{vmem}) \\
-\mathrm{plain!} = \mathrm{decrypt\_byte}(\mathrm{vmem}(\mathrm{vip}), \mathrm{vkey}) \\
+\mathrm{vip} \in \mathrm{dom}(\mathrm{vmem}) \\
+\mathrm{plain!} = \mathrm{decryptByte}(\mathrm{vmem}(\mathrm{vip}), \mathrm{vkey}) \\
 \mathrm{vip}' = \mathrm{vip} + 1 \\
-\mathrm{vkey}' = \mathrm{derive\_key}(\mathrm{vkey}, \mathrm{plain!}) \\
+\mathrm{vkey}' = \mathrm{deriveKey}(\mathrm{vkey}, \mathrm{plain!}) \\
 \mathrm{vsp}' = \mathrm{vsp} \\
 \mathrm{vdisp}' = \mathrm{vdisp} \\
 \mathrm{vstack}' = \mathrm{vstack} \\
@@ -154,11 +154,11 @@ $$\begin{array}{|l}
 \mathbf{schema} \quad \mathrm{PushImm} \\
 \hline
 \Delta \mathrm{StackVMState} \\
-\mathrm{imm?} : \mathrm{VAL} \\
+\mathrm{imm?} : \mathrm{Val} \\
 \hline
-|\mathrm{vstack}| < \mathrm{MAX\_STACK\_DEPTH} \\
-\mathrm{vstack}' = \langle \mathrm{imm?} \rangle \mathbin{{}^\frown} \mathrm{vstack} \\
-\mathrm{vsp}' = \mathrm{vsp} - \mathrm{WORD\_SIZE} \\
+|\mathrm{vstack}| < \mathrm{MaxStackDepth} \\
+\mathrm{vstack}' = \langle \mathrm{imm?} \rangle \mathbin{\frown} \mathrm{vstack} \\
+\mathrm{vsp}' = \mathrm{vsp} - \mathrm{WordSize} \\
 \mathrm{vctx}' = \mathrm{vctx} \\
 \mathrm{vmem}' = \mathrm{vmem} \\
 \mathrm{vkey}' = \mathrm{vkey} \\
@@ -174,12 +174,12 @@ $$\begin{array}{|l}
 \mathbf{schema} \quad \mathrm{PushReg} \\
 \hline
 \Delta \mathrm{StackVMState} \\
-r? : \mathrm{REG\_ID} \\
+r? : \mathrm{RegId} \\
 \hline
-r? \in \operatorname{dom}(\mathrm{vctx}) \\
-|\mathrm{vstack}| < \mathrm{MAX\_STACK\_DEPTH} \\
-\mathrm{vstack}' = \langle \mathrm{vctx}(r?) \rangle \mathbin{{}^\frown} \mathrm{vstack} \\
-\mathrm{vsp}' = \mathrm{vsp} - \mathrm{WORD\_SIZE} \\
+r? \in \mathrm{dom}(\mathrm{vctx}) \\
+|\mathrm{vstack}| < \mathrm{MaxStackDepth} \\
+\mathrm{vstack}' = \langle \mathrm{vctx}(r?) \rangle \mathbin{\frown} \mathrm{vstack} \\
+\mathrm{vsp}' = \mathrm{vsp} - \mathrm{WordSize} \\
 \mathrm{vctx}' = \mathrm{vctx} \\
 \mathrm{vmem}' = \mathrm{vmem} \\
 \mathrm{vkey}' = \mathrm{vkey} \\
@@ -195,13 +195,13 @@ $$\begin{array}{|l}
 \mathbf{schema} \quad \mathrm{PopReg} \\
 \hline
 \Delta \mathrm{StackVMState} \\
-r? : \mathrm{REG\_ID} \\
+r? : \mathrm{RegId} \\
 \hline
-r? \in \operatorname{dom}(\mathrm{vctx}) \\
+r? \in \mathrm{dom}(\mathrm{vctx}) \\
 \mathrm{vstack} \ne \langle \rangle \\
-\mathrm{vctx}' = \mathrm{vctx} \oplus \{ r? \mapsto \operatorname{head}(\mathrm{vstack}) \} \\
-\mathrm{vstack}' = \operatorname{tail}(\mathrm{vstack}) \\
-\mathrm{vsp}' = \mathrm{vsp} + \mathrm{WORD\_SIZE} \\
+\mathrm{vctx}' = \mathrm{vctx} \oplus \{ r? \mapsto \mathrm{head}(\mathrm{vstack}) \} \\
+\mathrm{vstack}' = \mathrm{tail}(\mathrm{vstack}) \\
+\mathrm{vsp}' = \mathrm{vsp} + \mathrm{WordSize} \\
 \mathrm{vmem}' = \mathrm{vmem} \\
 \mathrm{vkey}' = \mathrm{vkey} \\
 \mathrm{vip}' = \mathrm{vip} \\
@@ -219,8 +219,8 @@ $$\begin{array}{|l}
 \hline
 |\mathrm{vstack}| \ge 2 \\
 \mathbf{let} ~ a = \mathrm{vstack}(1) \land b = \mathrm{vstack}(2) \bullet \\
-\quad \mathrm{vstack}' = \langle \mathrm{nor}(a, b) \rangle \mathbin{{}^\frown} \operatorname{tail}(\operatorname{tail}(\mathrm{vstack})) \\
-\mathrm{vsp}' = \mathrm{vsp} + \mathrm{WORD\_SIZE} \\
+\quad \mathrm{vstack}' = \langle \mathrm{nor}(a, b) \rangle \mathbin{\frown} \mathrm{tail}(\mathrm{tail}(\mathrm{vstack})) \\
+\mathrm{vsp}' = \mathrm{vsp} + \mathrm{WordSize} \\
 \mathrm{vctx}' = \mathrm{vctx} \\
 \mathrm{vmem}' = \mathrm{vmem} \\
 \mathrm{vkey}' = \mathrm{vkey} \\
@@ -239,10 +239,10 @@ $$\begin{array}{|l}
 \hline
 |\mathrm{vstack}| \ge 2 \\
 \mathbf{let} ~ a = \mathrm{vstack}(1) \land b = \mathrm{vstack}(2) \bullet \\
-\quad \mathbf{let} ~ (res, new\_flags) = \mathrm{add\_with\_flags}(a, b) \bullet \\
-\quad\quad \mathrm{vstack}' = \langle res \rangle \mathbin{{}^\frown} \operatorname{tail}(\operatorname{tail}(\mathrm{vstack})) \land \\
-\quad\quad \mathrm{flags}' = new\_flags \\
-\mathrm{vsp}' = \mathrm{vsp} + \mathrm{WORD\_SIZE} \\
+\quad \mathbf{let} ~ (res, newFlags) = \mathrm{addWithFlags}(a, b) \bullet \\
+\quad\quad \mathrm{vstack}' = \langle res \rangle \mathbin{\frown} \mathrm{tail}(\mathrm{tail}(\mathrm{vstack})) \land \\
+\quad\quad \mathrm{flags}' = newFlags \\
+\mathrm{vsp}' = \mathrm{vsp} + \mathrm{WordSize} \\
 \mathrm{vctx}' = \mathrm{vctx} \\
 \mathrm{vmem}' = \mathrm{vmem} \\
 \mathrm{vkey}' = \mathrm{vkey} \\
@@ -259,9 +259,9 @@ $$\begin{array}{|l}
 \Delta \mathrm{StackVMState} \\
 \hline
 \mathrm{vstack} \ne \langle \rangle \\
-|\mathrm{vstack}| < \mathrm{MAX\_STACK\_DEPTH} \\
-\mathrm{vstack}' = \langle \operatorname{head}(\mathrm{vstack}) \rangle \mathbin{{}^\frown} \mathrm{vstack} \\
-\mathrm{vsp}' = \mathrm{vsp} - \mathrm{WORD\_SIZE} \\
+|\mathrm{vstack}| < \mathrm{MaxStackDepth} \\
+\mathrm{vstack}' = \langle \mathrm{head}(\mathrm{vstack}) \rangle \mathbin{\frown} \mathrm{vstack} \\
+\mathrm{vsp}' = \mathrm{vsp} - \mathrm{WordSize} \\
 \mathrm{vctx}' = \mathrm{vctx} \\
 \mathrm{vmem}' = \mathrm{vmem} \\
 \mathrm{vkey}' = \mathrm{vkey} \\
@@ -279,7 +279,7 @@ $$\begin{array}{|l}
 \Delta \mathrm{StackVMState} \\
 \hline
 |\mathrm{vstack}| \ge 2 \\
-\mathrm{vstack}' = \langle \mathrm{vstack}(2), \mathrm{vstack}(1) \rangle \mathbin{{}^\frown} \operatorname{tail}(\operatorname{tail}(\mathrm{vstack})) \\
+\mathrm{vstack}' = \langle \mathrm{vstack}(2), \mathrm{vstack}(1) \rangle \mathbin{\frown} \mathrm{tail}(\mathrm{tail}(\mathrm{vstack})) \\
 \mathrm{vsp}' = \mathrm{vsp} \\
 \mathrm{vctx}' = \mathrm{vctx} \\
 \mathrm{vmem}' = \mathrm{vmem} \\
@@ -298,9 +298,9 @@ $$\begin{array}{|l}
 \Delta \mathrm{StackVMState} \\
 \hline
 \mathrm{vstack} \ne \langle \rangle \\
-\mathbf{let} ~ addr = \operatorname{head}(\mathrm{vstack}) \bullet \\
-\quad addr \in \operatorname{dom}(\mathrm{vmem}) \land \\
-\quad \mathrm{vstack}' = \langle \mathrm{read\_word\_mem}(\mathrm{vmem}, addr) \rangle \mathbin{{}^\frown} \operatorname{tail}(\mathrm{vstack}) \\
+\mathbf{let} ~ addr = \mathrm{head}(\mathrm{vstack}) \bullet \\
+\quad addr \in \mathrm{dom}(\mathrm{vmem}) \land \\
+\quad \mathrm{vstack}' = \langle \mathrm{readWordMem}(\mathrm{vmem}, addr) \rangle \mathbin{\frown} \mathrm{tail}(\mathrm{vstack}) \\
 \mathrm{vsp}' = \mathrm{vsp} \\
 \mathrm{vctx}' = \mathrm{vctx} \\
 \mathrm{vmem}' = \mathrm{vmem} \\
@@ -320,9 +320,9 @@ $$\begin{array}{|l}
 \hline
 |\mathrm{vstack}| \ge 2 \\
 \mathbf{let} ~ addr = \mathrm{vstack}(1) \land val = \mathrm{vstack}(2) \bullet \\
-\quad \mathrm{vmem}' = \mathrm{write\_word\_mem}(\mathrm{vmem}, addr, val) \\
-\mathrm{vstack}' = \operatorname{tail}(\operatorname{tail}(\mathrm{vstack})) \\
-\mathrm{vsp}' = \mathrm{vsp} + (2 \cdot \mathrm{WORD\_SIZE}) \\
+\quad \mathrm{vmem}' = \mathrm{writeWordMem}(\mathrm{vmem}, addr, val) \\
+\mathrm{vstack}' = \mathrm{tail}(\mathrm{tail}(\mathrm{vstack})) \\
+\mathrm{vsp}' = \mathrm{vsp} + (2 \cdot \mathrm{WordSize}) \\
 \mathrm{vctx}' = \mathrm{vctx} \\
 \mathrm{vkey}' = \mathrm{vkey} \\
 \mathrm{vip}' = \mathrm{vip} \\
@@ -337,7 +337,7 @@ $$\begin{array}{|l}
 \mathbf{schema} \quad \mathrm{ExecDispatchRel} \\
 \hline
 \Delta \mathrm{StackVMState} \\
-\delta? : \mathrm{OFFSET} \\
+\delta? : \mathrm{Offset} \\
 \hline
 \mathrm{vdisp}' = \mathrm{vdisp} + \delta? \\
 \mathrm{vip}' = \mathrm{vip} \\
@@ -358,9 +358,9 @@ $$\begin{array}{|l}
 $$\mathcal{T}_B = \mathcal{O}_1 \mathbin{\mathbf{;}} \mathcal{O}_2 \mathbin{\mathbf{;}} \dots \mathbin{\mathbf{;}} \mathcal{O}_n$$
 
 $$\begin{array}{l}
-\mathbf{Theorem} ~ (\mathrm{Stack\_Conservation}) \bullet \\
+\mathbf{Theorem} ~ (\mathrm{StackConservation}) \bullet \\
 \forall s : \mathrm{StackVMState} \bullet \\
-\quad (\Delta \mathrm{VSP}(B) = 0 \land s \in \operatorname{dom}(\mathcal{T}_B)) \implies \\
+\quad (\Delta \mathrm{VSP}(B) = 0 \land s \in \mathrm{dom}(\mathcal{T}_B)) \implies \\
 \quad\quad |\mathcal{T}_B(s).\mathrm{vstack}| = |s.\mathrm{vstack}| \land \mathcal{T}_B(s).\mathrm{vsp} = s.\mathrm{vsp}
 \end{array}$$
 
