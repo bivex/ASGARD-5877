@@ -217,6 +217,71 @@
 
 ---
 
+### Чеклист реализации: что конкретно доделать (по уровням сложности)
+
+#### Уровень 1: Простые задачи (Quick Wins — 1-2 дня)
+- [ ] **1.1. Скалярный Floating-Point в ARM64 и RISC-V лифтерах**:
+  - [ ] ARM64: добавить маппинг `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `fmov` в `arm64_lifter` (опкоды `FADD_DD`, `FSUB_DD`, `FMUL_DD`, `FDIV_DD`, `FCMP_DD` в VM runtime уже существуют).
+  - [ ] RISC-V: добавить маппинг `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fmin.s/d`, `fmax.s/d`, `feq.s/d`, `flt.s/d`, `fle.s/d`, `flw/fld`, `fsw/fsd` в `riscv_lifter`.
+- [ ] **1.2. Базовые битовые инструкции хоста**:
+  - [ ] x86 & ARM64: `clz`, `ctz` / `bsf`, `bsr`, `popcnt`, `lzcnt`, `tzcnt` (через интринсики хоста `__builtin_clzll`, `__builtin_popcountll`).
+  - [ ] Реверс байт/бит: `bswap` (x86), `rev`, `rev16`, `rev32`, `rbit` (ARM64).
+  - [ ] Битовые тесты: `bt`, `bts`, `btr`, `btc` (разложение через And/Or/Xor + сдвиг битовой маски).
+- [ ] **1.3. Флаговые переключатели x86**:
+  - [ ] `clc`, `stc`, `cmc` (CF = 0 / 1 / ~CF).
+  - [ ] `cld`, `std` (DF = 0 / 1).
+- [ ] **1.4. Системные границы и явные Traps**:
+  - [ ] x86: `syscall`, `sysret`, `cpuid`, `rdtsc`, `rdtscp`, `xgetbv` -> маппинг в `Ir.Trap` / `Ir.Call_Extern`.
+  - [ ] ARM64: `eret` -> `Ir.Trap`.
+  - [ ] RISC-V: `ecall`, `ebreak` -> `Ir.Trap`; базовые CSR `csrrw/csrrs/csrrc` (таймеры `cycle`, `time`).
+
+#### Уровень 2: Средняя сложность (Medium — 3-5 дней)
+- [ ] **2.1. Битовые поля и маски**:
+  - [ ] ARM64: `ubfx`, `sbfx`, `bfi`, `bfxil`, `extr` (через цепочки Shl/Shr/Sar/And/Or).
+  - [ ] x86 (BMI1/BMI2): `andn`, `bextr`, `bzhi`, `rorx`, `sarx`, `shlx`, `shrx`.
+- [ ] **2.2. Двухоперандные сдвиги x86**:
+  - [ ] `shld`, `shrd` (сдвиг регистра-приёмника с затягиванием битов из источника).
+- [ ] **2.3. Расширенные умножения с накоплением**:
+  - [ ] ARM64: `smaddl`, `umaddl`, `smsubl`, `umsubl` (32x32 -> 64 + acc), `smulh`, `umulh` (старшая половина 64-бит).
+- [ ] **2.4. Преобразования типов (FP <-> Integer)**:
+  - [ ] x86: `cvtsi2ss/sd`, `cvtss2si/sd`, `cvtsd2ss`, `cvtss2sd`.
+  - [ ] ARM64: `scvtf/ucvtf`, `fcvtzs/fcvtzu`, `fcvt`.
+  - [ ] RISC-V: `fcvt.w.s/d`, `fcvt.l.s/d`, `fcvt.s.w/l`, `fcvt.d.w/l`.
+- [ ] **2.5. Сложная адресация и память**:
+  - [ ] ARM64: `ldp`/`stp` всех форм адресации (pre-index `[sp, #-16]!`, post-index `[sp], #16`, signed offset `[x29, #32]`).
+  - [ ] x86: `movbe` (load/store + bswap), табличная подстановка `xlat`, поддержка префиксов `FS:` / `GS:` (TLS).
+
+#### Уровень 3: Высокая сложность (Hard — 1-2 недели)
+- [ ] **3.1. Полная каноническая модель EFLAGS**:
+  - [ ] Все operand-size варианты `adc` и `sbb` с точным расчётом флагов (`CF`, `OF`, `AF`, `PF`, `ZF`, `SF`).
+  - [ ] Инструкции работы со стеком флагов: `pushf`/`popf`, сохранение/загрузка `lahf`/`sahf`.
+  - [ ] Единый диспетчер флагов EFLAGS для `setcc`, `cmovcc`, `jcc`.
+- [ ] **3.2. Условные сравнения ARM64**:
+  - [ ] `ccmp`, `ccmn` (условное выставление NZCV флагов без лишних CFG-разветвлений).
+  - [ ] Условные селекторы: `csinc`, `csinv`, `csneg`.
+- [ ] **3.3. Строковые инструкции x86 с префиксами повторения**:
+  - [ ] `stosb/w/d/q`, `lodsb/w/d/q`, `scas*`, `cmps*`.
+  - [ ] Префиксы `rep`, `repe`/`repz`, `repne`/`repnz` с генерацией внутреннего цикла базовых блоков.
+- [ ] **3.4. Атомики и барьеры упорядочивания памяти (SMP)**:
+  - [ ] Явная модель memory barriers: `fence` (RISC-V), `dmb` (ARM64), `mfence` (x86).
+  - [ ] x86: префикс `lock`, `xadd`, `cmpxchg`, `cmpxchg8b/16b`, `xchg` памяти.
+  - [ ] ARM64: `ldxr`/`stxr`, `ldar`/`stlr`, LSE-атомики `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor`.
+- [ ] **3.5. AVX-256 YMM регистры**:
+  - [ ] Расширение векторного банка со 128 до 256 бит для `ymm0..ymm15`.
+  - [ ] Аппаратное зануление верхней половины YMM при записи в XMM.
+  - [ ] Векторные целочисленные операции: `vpsll*`, `vpsrl*`, `vpsra*`, `vpcmpeq*`, `vpcmpgt*`, `vpmov*`, `vpunpck*`, `vpack*`, `vpshuf*`, `vperm*`, `vblend*`.
+
+#### Уровень 4: Архитектурный подпроект (Architectural — 2-4 недели)
+- [ ] **4.1. Параметризованный векторный движок RISC-V (RVV 1.0)**:
+  - [ ] Модель регистров состояния в `VMContext`: `VL`, `VTYPE`, `VLEN` ($\ge 128$), `SEW` (8, 16, 32, 64), `LMUL` (1/8 .. 8), `vstart`, `vmask` (`v0`).
+  - [ ] Инструкции динамической конфигурации вектора: `vsetvli`, `vsetivli`, `vsetvl`.
+  - [ ] Векторная память: unit-stride (`vle*.v`/`vse*.v`), strided (`vlse`/`vsse`), indexed (`vluxei`/`vsuxei`).
+  - [ ] Векторная арифметика/логика/сдвиги: `vadd`, `vsub`, `vrsub`, `vmul`, `vdiv`, `vrem`, `vand`, `vor`, `vxor`, `vsll`, `vsrl`, `vsra`, `vmin`, `vmax`.
+  - [ ] Векторные сравнения и операции над масками: `vmseq`, `vmsne`, `vmslt`, `vmsle`, `vmerge`, `vmv`, логика масок (`vmand`/`vmor`/`vmxor`).
+  - [ ] Редукции и перестановки: `vredsum`, `vredmax`, `vredmin`, `vslideup`, `vslidedown`, `vrgather`, `vcompress`.
+
+---
+
 ### 1. Архитектурное состояние VM (VMContext Core State Model)
 
 Для исполнения произвольного бинарного кода `VMContext` обязан явно выражать:
