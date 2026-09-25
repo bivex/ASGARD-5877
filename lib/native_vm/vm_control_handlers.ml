@@ -17,7 +17,7 @@ let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_addre
     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
     Buffer.add_string b "        raise(SIGTRAP);\n";
-    Buffer.add_string b "        vIP_idx = (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target;\n";
+    Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)imm;\n";
     Buffer.add_string b "#else\n";
     Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
     Buffer.add_string b "#endif\n";
@@ -40,7 +40,7 @@ let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_addre
     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = (uint32_t)c;\n";
     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, t_true, t_false, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
     Buffer.add_string b "        raise(SIGTRAP);\n";
-    Buffer.add_string b "        vIP_idx = (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target;\n";
+    Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)(c * t_true + (1ULL - c) * t_false);\n";
     Buffer.add_string b "#else\n";
     Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
     Buffer.add_string b "#endif\n";
@@ -71,7 +71,7 @@ let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_addre
      Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
      Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
      Buffer.add_string b "        raise(SIGTRAP);\n";
-     Buffer.add_string b "        vIP_idx = (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target;\n";
+     Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)imm;\n";
      Buffer.add_string b "#else\n";
      Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
      Buffer.add_string b "#endif\n";
@@ -127,6 +127,7 @@ let emit_super_operators b =
   Buffer.add_string b "        ctx.zf = (res == 0);\n";
   Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
   Buffer.add_string b "        ctx.cf = (a < b);\n";
+  Buffer.add_string b "        ctx.of = ((((a ^ b) & (a ^ res)) >> 63) != 0);\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 50) & 0x0F);\n";
   Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_reg(dst, ctx.get_reg(src));\n";
   Buffer.add_string b "        ctx.executed_instructions += 2;\n";

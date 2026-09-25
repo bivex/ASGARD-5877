@@ -38,6 +38,7 @@ let run
               match L.target_arch with
               | X86_64 -> "app.s"
               | Arm64 -> "app_arm64.s"
+              | Riscv64 -> "app_riscv64.s"
             in
             let asm_out = Filename.concat out_dir asm_name in
             (match T.compile_to_asm ~arch:L.target_arch ~c_source:obf_c_path ~out_asm:asm_out ~include_dir:out_dir with

@@ -13,6 +13,15 @@ type state = {
   mutable trapped : string option;
 }
 
+let is_sp_reg = function
+  | Gpr (RSP, _) | Vreg (VSP, _) -> true
+  | _ -> false
+
+let sync_sp state value =
+  state.vsp <- value;
+  Hashtbl.replace state.vregs (Register.with_width Register.rsp Register.B64) value;
+  Hashtbl.replace state.vregs (Register.with_width Register.vsp Register.B64) value
+
 let make_state ?(stack_base = 0x7FFFFFFF0000L) () =
   let s = {
     vregs = Hashtbl.create 32;
@@ -25,6 +34,7 @@ let make_state ?(stack_base = 0x7FFFFFFF0000L) () =
     trapped = None;
   } in
   Hashtbl.replace s.vregs (Register.with_width Register.rsp Register.B64) stack_base;
+  Hashtbl.replace s.vregs (Register.with_width Register.vsp Register.B64) stack_base;
   s
 
 let get_mask = function
@@ -36,30 +46,13 @@ let get_mask = function
 let truncate_val w v =
   Int64.logand v (get_mask w)
 
-let get_reg state reg =
-  let w = Register.get_width reg in
-  let r64 = Register.with_width reg B64 in
-  let raw = Option.value ~default:0L (Hashtbl.find_opt state.vregs r64) in
-  truncate_val w raw
-
-let set_reg state reg value =
-  let w = Register.get_width reg in
-  let r64 = Register.with_width reg B64 in
-  let cur = Option.value ~default:0L (Hashtbl.find_opt state.vregs r64) in
-  let new_val =
-    match w with
-    | B64 -> value
-    | B32 ->
-        (* In x86_64, writing to a 32-bit subregister (eax) zero-extends to 64 bits (rax) *)
-        truncate_val B32 value
-    | B16 ->
-        let high = Int64.logand cur (Int64.lognot 0xFFFFL) in
-        Int64.logor high (truncate_val B16 value)
-    | B8 ->
-        let high = Int64.logand cur (Int64.lognot 0xFFL) in
-        Int64.logor high (truncate_val B8 value)
-  in
-  Hashtbl.replace state.vregs r64 new_val
+let sign_extend w v =
+  let v_masked = truncate_val w v in
+  match w with
+  | B8 -> if Int64.logand v_masked 0x80L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFL) else v_masked
+  | B16 -> if Int64.logand v_masked 0x8000L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFFFL) else v_masked
+  | B32 -> if Int64.logand v_masked 0x80000000L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFFFFFFFL) else v_masked
+  | B64 -> v
 
 let get_vector_lane state idx lane =
   match Hashtbl.find_opt state.vectors (idx mod 32) with
@@ -75,6 +68,43 @@ let set_vector_lane state idx lane value =
   in
   if lane >= 0 && lane < Array.length lanes then lanes.(lane) <- value;
   Hashtbl.replace state.vectors key lanes
+
+let get_reg state reg =
+  match reg with
+  | Fpr (i, _) -> get_vector_lane state i 0
+  | _ ->
+      let w = Register.get_width reg in
+      let r64 = Register.with_width reg B64 in
+      let raw =
+        if is_sp_reg reg then state.vsp
+        else Option.value ~default:0L (Hashtbl.find_opt state.vregs r64)
+      in
+      truncate_val w raw
+
+let set_reg state reg value =
+  match reg with
+  | Fpr (i, _) -> set_vector_lane state i 0 value
+  | _ ->
+      let w = Register.get_width reg in
+      let r64 = Register.with_width reg B64 in
+      let cur =
+        if is_sp_reg reg then state.vsp
+        else Option.value ~default:0L (Hashtbl.find_opt state.vregs r64)
+      in
+      let new_val =
+        match w with
+        | B64 -> value
+        | B32 -> truncate_val B32 value
+        | B16 ->
+            let high = Int64.logand cur (Int64.lognot 0xFFFFL) in
+            Int64.logor high (truncate_val B16 value)
+        | B8 ->
+            let high = Int64.logand cur (Int64.lognot 0xFFL) in
+            Int64.logor high (truncate_val B8 value)
+      in
+      Hashtbl.replace state.vregs r64 new_val;
+      if is_sp_reg reg then sync_sp state new_val
+
 
 let read_byte state addr =
   Option.value ~default:0 (Hashtbl.find_opt state.memory addr)
@@ -219,6 +249,19 @@ let store_vector state ~src_bits ~src ~addr =
     write_mem state (Int64.add address (Int64.of_int (chunk * 8))) B64 (get_vector_lane state src chunk)
   done
 
+let operand_width = function
+  | Reg r -> Some (Register.get_width r)
+  | Mem m -> Some m.width
+  | Imm _ -> None
+
+let determine_width op1 op2 =
+  match operand_width op1 with
+  | Some w -> w
+  | None -> (
+      match operand_width op2 with
+      | Some w -> w
+      | None -> B64)
+
 let step state = function
   | Nop -> Ok None
   | Mov { dst; src } ->
@@ -231,12 +274,12 @@ let step state = function
       Ok None
   | Push src ->
       let v = eval_operand state src in
-      state.vsp <- Int64.sub state.vsp 8L;
+      sync_sp state (Int64.sub state.vsp 8L);
       write_mem state state.vsp B64 v;
       Ok None
   | Pop dst ->
       let v = read_mem state state.vsp B64 in
-      state.vsp <- Int64.add state.vsp 8L;
+      sync_sp state (Int64.add state.vsp 8L);
       write_operand state dst v;
       Ok None
   | Xchg (a, b) ->
@@ -284,27 +327,45 @@ let step state = function
             if set_flags then state.flags <- CC_OP_LOGIC { dst = res; width = w };
             res
         | Shl ->
-            let shift = Int64.to_int (Int64.logand v2 63L) in
-            let res = Int64.shift_left v1 shift in
+            let shift_mask = match w with B64 -> 63L | _ -> 31L in
+            let shift = Int64.to_int (Int64.logand v2 shift_mask) in
+            let res = truncate_val w (Int64.shift_left v1 shift) in
             if set_flags then state.flags <- CC_OP_LOGIC { dst = res; width = w };
             res
         | Shr ->
-            let shift = Int64.to_int (Int64.logand v2 63L) in
-            let res = Int64.shift_right_logical v1 shift in
+            let shift_mask = match w with B64 -> 63L | _ -> 31L in
+            let shift = Int64.to_int (Int64.logand v2 shift_mask) in
+            let res = truncate_val w (Int64.shift_right_logical (truncate_val w v1) shift) in
             if set_flags then state.flags <- CC_OP_LOGIC { dst = res; width = w };
             res
         | Sar ->
-            let shift = Int64.to_int (Int64.logand v2 63L) in
-            let res = Int64.shift_right v1 shift in
+            let shift_mask = match w with B64 -> 63L | _ -> 31L in
+            let shift = Int64.to_int (Int64.logand v2 shift_mask) in
+            let v1_signed = sign_extend w v1 in
+            let res = truncate_val w (Int64.shift_right v1_signed shift) in
             if set_flags then state.flags <- CC_OP_LOGIC { dst = res; width = w };
             res
         | Rol ->
-            let shift = Int64.to_int (Int64.logand v2 63L) in
-            let res = Int64.logor (Int64.shift_left v1 shift) (Int64.shift_right_logical v1 (64 - shift)) in
+            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let shift = (Int64.to_int v2) mod bits in
+            let res =
+              if shift = 0 then truncate_val w v1
+              else
+                let v1_trunc = truncate_val w v1 in
+                truncate_val w (Int64.logor (Int64.shift_left v1_trunc shift)
+                                            (Int64.shift_right_logical v1_trunc (bits - shift)))
+            in
             res
         | Ror ->
-            let shift = Int64.to_int (Int64.logand v2 63L) in
-            let res = Int64.logor (Int64.shift_right_logical v1 shift) (Int64.shift_left v1 (64 - shift)) in
+            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let shift = (Int64.to_int v2) mod bits in
+            let res =
+              if shift = 0 then truncate_val w v1
+              else
+                let v1_trunc = truncate_val w v1 in
+                truncate_val w (Int64.logor (Int64.shift_right_logical v1_trunc shift)
+                                            (Int64.shift_left v1_trunc (bits - shift)))
+            in
             res
         | Mul | Imul ->
             let res = Int64.mul v1 v2 in
@@ -347,16 +408,18 @@ let step state = function
       set_reg state dst res;
       Ok None
   | Cmp { src1; src2 } ->
-      let v1 = eval_operand state src1 in
-      let v2 = eval_operand state src2 in
-      let res = Int64.sub v1 v2 in
-      state.flags <- CC_OP_SUB { src1 = v1; src2 = v2; dst = res; width = B64 };
+      let w = determine_width src1 src2 in
+      let v1 = truncate_val w (eval_operand state src1) in
+      let v2 = truncate_val w (eval_operand state src2) in
+      let res = truncate_val w (Int64.sub v1 v2) in
+      state.flags <- CC_OP_SUB { src1 = v1; src2 = v2; dst = res; width = w };
       Ok None
   | Test { src1; src2 } ->
-      let v1 = eval_operand state src1 in
-      let v2 = eval_operand state src2 in
-      let res = Int64.logand v1 v2 in
-      state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
+      let w = determine_width src1 src2 in
+      let v1 = truncate_val w (eval_operand state src1) in
+      let v2 = truncate_val w (eval_operand state src2) in
+      let res = truncate_val w (Int64.logand v1 v2) in
+      state.flags <- CC_OP_LOGIC { dst = res; width = w };
       Ok None
   | Jmp t -> Ok (Some t)
   | Jcc { cond; target_true; target_false } ->
@@ -366,12 +429,12 @@ let step state = function
       (* External host/libc call mock: preserves or sets return register and continues synchronously *)
       Ok None
   | Call t ->
-      state.vsp <- Int64.sub state.vsp 8L;
+      sync_sp state (Int64.sub state.vsp 8L);
       write_mem state state.vsp B64 state.vip;
       Ok (Some t)
   | Ret ->
       let return_addr = read_mem state state.vsp B64 in
-      state.vsp <- Int64.add state.vsp 8L;
+      sync_sp state (Int64.add state.vsp 8L);
       Ok (Some (TargetImm return_addr))
   | Setcc { cond; dst } ->
       let bit = if evaluate_condition state.flags cond then 1L else 0L in
@@ -395,8 +458,14 @@ let step state = function
       Error (Printf.sprintf "VM Trapped: %s" msg)
   | Bridge_to_flow _ | Bridge_to_math _ ->
       Ok None
-  | Load_symbol { dst; addend; _ } ->
-      set_reg state dst addend;
+  | Load_symbol { dst; sym; addend } ->
+      let base_addr =
+        try Int64.of_string sym
+        with _ ->
+          let h = Hashtbl.hash sym in
+          Int64.add 0x100000000L (Int64.shift_left (Int64.of_int (h land 0xFFFFF)) 4)
+      in
+      set_reg state dst (Int64.add base_addr addend);
       Ok None
   | Vec_mov { dst; src; bits } ->
       copy_vector state ~dst_bits:bits ~dst ~src;
@@ -410,7 +479,72 @@ let step state = function
   | Vec_store { src; addr; bits } ->
       store_vector state ~src_bits:bits ~src ~addr;
       Ok None
-  | Fp_binop _ | Fp_cmp _ | Fp_conv _ | Atomic_mem _ ->
+  | Fp_binop { op; dst; src1; src2 } ->
+      let a_bits = get_vector_lane state src1 0 in
+      let b_bits = get_vector_lane state src2 0 in
+      let a = Int64.float_of_bits a_bits in
+      let b = Int64.float_of_bits b_bits in
+      let res =
+        match op with
+        | Fadd -> a +. b
+        | Fsub -> a -. b
+        | Fmul -> a *. b
+        | Fdiv -> if b = 0.0 then 0.0 else a /. b
+      in
+      set_vector_lane state dst 0 (Int64.bits_of_float res);
+      Ok None
+  | Fp_cmp { src1; src2 } ->
+      let a_bits = get_vector_lane state src1 0 in
+      let b_bits = get_vector_lane state src2 0 in
+      let a = Int64.float_of_bits a_bits in
+      let b = Int64.float_of_bits b_bits in
+      let zf = (a = b) in
+      let cf = (a >= b) in
+      let sf = (a < b) in
+      let cf_val = if cf then 1L else 0L in
+      let zf_val = if zf then 64L else 0L in
+      let sf_val = if sf then 128L else 0L in
+      state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf_val (Int64.logor zf_val sf_val)));
+      Ok None
+  | Fp_conv { op = Fcvtzs; dst; src } ->
+      let a_bits = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
+      let a = Int64.float_of_bits a_bits in
+      let v = Int64.of_float a in
+      set_reg state dst v;
+      Ok None
+  | Fp_conv { op = Scvtf; dst; src } ->
+      let v = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
+      let f = Int64.to_float v in
+      let f_bits = Int64.bits_of_float f in
+      (match dst with
+       | Fpr (i, _) -> set_vector_lane state i 0 f_bits
+       | _ -> set_reg state dst f_bits);
+      Ok None
+  | Atomic_mem { op; dst; addr; src; imm } ->
+      let a = Int64.add (get_reg state addr) imm in
+      (match op with
+       | AtLoad ->
+           let v = read_mem state a B64 in
+           set_reg state dst v
+       | AtStore ->
+           let v = get_reg state src in
+           write_mem state a B64 v
+       | AtCas ->
+           let cur = read_mem state a B64 in
+           let exp = get_reg state src in
+           let des = get_reg state Register.rax in
+           if cur = exp then write_mem state a B64 des
+           else set_reg state src cur
+       | AtAdd ->
+           let old = read_mem state a B64 in
+           let v = get_reg state src in
+           write_mem state a B64 (Int64.add old v);
+           set_reg state src old
+       | AtSwp ->
+           let old = read_mem state a B64 in
+           let v = get_reg state src in
+           write_mem state a B64 v;
+           set_reg state src old);
       Ok None
 
 let run_block state (b : basic_block) =

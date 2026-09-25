@@ -2,7 +2,7 @@
 
 type error = string
 
-type target_arch = X86_64 | Arm64
+type target_arch = X86_64 | Arm64 | Riscv64
 
 type vm_engine_kind = Threaded | Jit | MultiVm
 

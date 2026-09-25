@@ -170,6 +170,7 @@ let compile_and_package
 
   let words_of_fused = function
     | Raw (Ir.Mov { src = Ir.Imm imm; _ }) when Int64.shift_right_logical imm 32 <> 0L -> 2
+    | Raw (Ir.Load_symbol { addend; _ }) when addend <> 0L -> 2
     | _ -> 1
   in
   let block_offsets = Hashtbl.create (List.length sorted_blocks) in
@@ -184,6 +185,24 @@ let compile_and_package
 
   let get_block_offset id =
     Option.value ~default:0 (Hashtbl.find_opt block_offsets id)
+  in
+
+  let label_to_block = Hashtbl.create 16 in
+  List.iter
+    (fun (b : Ir.basic_block) ->
+      if b.label <> "" then Hashtbl.replace label_to_block b.label b.id)
+    sorted_blocks;
+
+  let resolve_target = function
+    | Ir.BlockId bid -> Int64.of_int (get_block_offset bid)
+    | Ir.TargetImm imm -> imm
+    | Ir.Label sym -> (
+        match Hashtbl.find_opt label_to_block sym with
+        | Some bid -> Int64.of_int (get_block_offset bid)
+        | None -> (
+            try Int64.of_string sym
+            with _ ->
+              failwith (Printf.sprintf "vm_emitter: unresolved target label '%s'" sym)))
   in
 
   let key_seed = Random.State.int32 rng Int32.max_int in
@@ -251,9 +270,9 @@ let compile_and_package
   let vector_imm ~src2 ~bits ~lane_bits ~elem op =
     let w = Int64.of_int src2 in
     let w = Int64.logor w (Int64.shift_left (Int64.of_int bits) 5) in
-    let w = Int64.logor w (Int64.shift_left (Int64.of_int lane_bits) 14) in
-    let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 20) in
-    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 23)
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int lane_bits) 15) in
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 23) in
+    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 26)
   in
 
   (* Encode instructions (both Fused Super-Operators and Standard Raw Ops) *)
@@ -293,6 +312,8 @@ let compile_and_package
                   if high <> 0L then
                     encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx d) 0 high
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Mem m } ->
+                  if m.index <> None then
+                    failwith "vm_emitter: uncanonicalized SIB indexed memory load (must be canonicalized before emission)";
                   let op =
                     if m.is_signed then
                       match m.width with
@@ -310,6 +331,8 @@ let compile_and_package
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word (get_opcode op) (get_reg_idx d) base_idx m.disp
               | Ir.Mov { dst = Ir.Mem m; src = Ir.Reg s } ->
+                  if m.index <> None then
+                    failwith "vm_emitter: uncanonicalized SIB indexed memory store (must be canonicalized before emission)";
                   let op =
                     match m.width with
                     | Register.B64 -> OP_STORE_64
@@ -392,14 +415,14 @@ let compile_and_package
                   encode_raw_word (get_opcode OP_PUSH_R) (get_reg_idx d) 0 0L
               | Ir.Pop (Ir.Reg d) ->
                   encode_raw_word (get_opcode OP_POP_R) (get_reg_idx d) 0 0L
-              | Ir.Jmp (Ir.BlockId bid) ->
-                  encode_raw_word (get_opcode OP_JMP) 0 0 (Int64.of_int (get_block_offset bid))
-              | Ir.Jcc { cond; target_true = Ir.BlockId tid; target_false = Ir.BlockId fid } ->
+              | Ir.Jmp target ->
+                  encode_raw_word (get_opcode OP_JMP) 0 0 (resolve_target target)
+              | Ir.Jcc { cond; target_true; target_false } ->
                   let c = cond_to_code cond in
-                  let t_off = get_block_offset tid in
-                  let f_off = get_block_offset fid in
-                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int t_off) 4) in
-                  let imm = Int64.logor imm (Int64.shift_left (Int64.of_int f_off) 25) in
+                  let t_off = resolve_target target_true in
+                  let f_off = resolve_target target_false in
+                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.logand t_off 0x1FFFFFL) 4) in
+                  let imm = Int64.logor imm (Int64.shift_left (Int64.logand f_off 0x1FFFFFL) 25) in
                   encode_raw_word (get_opcode OP_JCC) 0 0 imm
               | Ir.Cmov { cond; dst; src = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_CMOV) (get_reg_idx dst) (get_reg_idx s) (Int64.of_int (cond_to_code cond))
@@ -409,11 +432,17 @@ let compile_and_package
                   encode_raw_word (get_opcode OP_CALL) 0 0 (Int64.of_int (get_block_offset bid))
               | Ir.Call (Ir.TargetImm imm) ->
                   encode_raw_word (get_opcode OP_CALL) 0 0 imm
-              | Ir.Call (Ir.Label sym) ->
-                  let sym_idx = get_ext_sym_idx sym in
-                  encode_raw_word (get_opcode OP_CALL_EXTERN) 0 0 (Int64.of_int sym_idx)
+              | Ir.Call (Ir.Label sym) -> (
+                  match Hashtbl.find_opt label_to_block sym with
+                  | Some bid ->
+                      encode_raw_word (get_opcode OP_CALL) 0 0 (Int64.of_int (get_block_offset bid))
+                  | None ->
+                      let sym_idx = get_ext_sym_idx sym in
+                      encode_raw_word (get_opcode OP_CALL_EXTERN) 0 0 (Int64.of_int sym_idx))
               | Ir.Ret -> encode_raw_word (get_opcode OP_RET) 0 0 0L
               | Ir.Vm_exit -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
+              | Ir.Vm_enter -> encode_raw_word (get_opcode OP_NOP) 0 0 0L
+              | Ir.Trap _ -> encode_raw_word (get_opcode OP_EXIT) 0 0 0L
               | Ir.Bridge_to_flow imm -> encode_raw_word (get_opcode OP_BRIDGE_TO_FLOW) 0 0 imm
               | Ir.Bridge_to_math imm -> encode_raw_word (get_opcode OP_BRIDGE_TO_MATH) 0 0 imm
               | Ir.Load_symbol { dst; sym; addend } ->
@@ -432,18 +461,18 @@ let compile_and_package
               | Ir.Fp_conv { op = Scvtf; dst; src } ->
                   let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
                   encode_raw_word (get_opcode OP_SCVTF) d_idx (get_reg_idx src) 0L
-               | Ir.Vec_mov { dst; src; bits } ->
-                   encode_raw_word (get_opcode OP_VEC_MOV) (vector_index dst) (vector_index src) (Int64.of_int bits)
-                | Ir.Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
-                    encode_raw_word (get_opcode OP_VEC_BINOP) (vector_index dst) (vector_index src1)
-                      (vector_imm ~src2:(vector_index src2) ~bits ~lane_bits ~elem op)
-               | Ir.Vec_load { dst; addr; bits } ->
-                   let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
-                   encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_VEC_LOAD) (vector_index dst) base_idx addr.disp
-               | Ir.Vec_store { src; addr; bits } ->
-                   let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
-                   encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_VEC_STORE) base_idx (vector_index src) addr.disp
-               | Ir.Atomic_mem { op; dst; addr; src; imm } -> (
+              | Ir.Vec_mov { dst; src; bits } ->
+                  encode_raw_word (get_opcode OP_VEC_MOV) (vector_index dst) (vector_index src) (Int64.of_int bits)
+              | Ir.Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
+                  encode_raw_word (get_opcode OP_VEC_BINOP) (vector_index dst) (vector_index src1)
+                    (vector_imm ~src2:(vector_index src2) ~bits ~lane_bits ~elem op)
+              | Ir.Vec_load { dst; addr; bits } ->
+                  let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
+                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_VEC_LOAD) (vector_index dst) base_idx addr.disp
+              | Ir.Vec_store { src; addr; bits } ->
+                  let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
+                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_VEC_STORE) base_idx (vector_index src) addr.disp
+              | Ir.Atomic_mem { op; dst; addr; src; imm } -> (
                   match op with
                   | AtLoad ->
                       encode_raw_word (get_opcode OP_ATOMIC_LOAD) (get_reg_idx dst) (get_reg_idx addr) imm
@@ -455,7 +484,8 @@ let compile_and_package
                       encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx src) imm
                   | AtSwp ->
                       encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx src) imm)
-              | _ -> encode_raw_word (get_opcode OP_NOP) 0 0 0L))
+              | other ->
+                  failwith (Printf.sprintf "vm_emitter: unsupported instruction: %s" (Ir.instr_to_string other))))
         ops)
     sorted_blocks;
 

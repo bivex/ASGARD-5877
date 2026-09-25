@@ -215,6 +215,26 @@ div64_unsigned:
           Alcotest.(check int64) "div max/2 quotient" 0x7FFFFFFFFFFFFFFFL (get_reg state Register.rax);
           Alcotest.(check int64) "div max/2 remainder = 1" 1L (get_reg state Register.rdx)
 
+let test_lift_and_eval_div64_with_rdx () =
+  let asm = {|
+div64_rdx:
+    mov rax, rdi
+    mov rdx, 1
+    div rsi
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 0L;
+      set_reg state Register.rsi 2L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "div (1:0)/2 quotient = 2^63" (Int64.min_int) (get_reg state Register.rax);
+          Alcotest.(check int64) "div (1:0)/2 remainder = 0" 0L (get_reg state Register.rdx)
+
 let test_lift_and_eval_idiv32_signed () =
   let asm = {|
 div32_signed:
@@ -550,6 +570,7 @@ let tests = [
   Alcotest.test_case "marker_region_extraction" `Quick test_marker_region_extraction;
   Alcotest.test_case "lift_and_eval_div64_signed" `Quick test_lift_and_eval_div64_signed;
   Alcotest.test_case "lift_and_eval_div64_unsigned" `Quick test_lift_and_eval_div64_unsigned;
+  Alcotest.test_case "lift_and_eval_div64_with_rdx" `Quick test_lift_and_eval_div64_with_rdx;
   Alcotest.test_case "lift_and_eval_idiv32_signed" `Quick test_lift_and_eval_idiv32_signed;
   Alcotest.test_case "lift_and_eval_div32_unsigned" `Quick test_lift_and_eval_div32_unsigned;
   Alcotest.test_case "lift_and_eval_cdqe_sext" `Quick test_lift_and_eval_cdqe_sext;

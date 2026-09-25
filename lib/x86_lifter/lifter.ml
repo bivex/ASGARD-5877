@@ -170,15 +170,112 @@ let lift_x86_div_narrow ~signed width divisor =
 
 let lift_x86_div64 ~signed divisor =
   let* ir_div = to_ir_operand divisor in
+  let d_reg = Register.vx18 in
+  let rem_reg = Register.vx19 in
+  let quo_reg = Register.vx20 in
+  let tmp_rem = Register.vx21 in
+  let tmp_bit = Register.vx22 in
+  let sign_q = Register.vx23 in
+  let sign_r = Register.vx24 in
+  let zero_check = Register.vx25 in
+  let tmp_inv = Register.vtmp3 in
   let div_op = if signed then Ir.Idiv else Ir.Div in
-  Ok
-    [ Ir.Mov { dst = Ir.Reg Register.vx18; src = ir_div };
-      Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Reg Register.rax };
-      Ir.Alu { op = div_op; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.vx18; set_flags = false };
-      Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
-      Ir.Alu { op = Ir.Imul; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Reg Register.vx18; set_flags = false };
-      Ir.Alu { op = Ir.Sub; dst = Register.vx19; src1 = Ir.Reg Register.vx19; src2 = Ir.Reg Register.rdx; set_flags = false };
-      Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.vx19 } ]
+
+  let init_instrs =
+    [ Ir.Mov { dst = Ir.Reg d_reg; src = ir_div };
+      Ir.Mov { dst = Ir.Reg rem_reg; src = Ir.Reg Register.rdx };
+      Ir.Mov { dst = Ir.Reg quo_reg; src = Ir.Reg Register.rax };
+      (* Trigger fault if division by zero *)
+      Ir.Alu { op = div_op; dst = zero_check; src1 = Ir.Imm 0L; src2 = Ir.Reg d_reg; set_flags = false } ]
+  in
+
+  let sign_prep =
+    if signed then
+      [ (* sign_r = rem_reg >> 63 *)
+        Ir.Mov { dst = Ir.Reg sign_r; src = Ir.Reg rem_reg };
+        Ir.Alu { op = Ir.Shr; dst = sign_r; src1 = Ir.Reg sign_r; src2 = Ir.Imm 63L; set_flags = false };
+        (* sign_q = (rem_reg ^ d_reg) >> 63 *)
+        Ir.Mov { dst = Ir.Reg sign_q; src = Ir.Reg rem_reg };
+        Ir.Alu { op = Ir.Xor; dst = sign_q; src1 = Ir.Reg sign_q; src2 = Ir.Reg d_reg; set_flags = false };
+        Ir.Alu { op = Ir.Shr; dst = sign_q; src1 = Ir.Reg sign_q; src2 = Ir.Imm 63L; set_flags = false };
+
+        (* If dividend is negative (sign_r != 0), negate 128-bit (rem_reg : quo_reg) *)
+        (* tmp_bit = not quo_reg + 1 *)
+        Ir.Unary { op = Ir.Not; dst = tmp_bit; src = Ir.Reg quo_reg; set_flags = false };
+        Ir.Alu { op = Ir.Add; dst = tmp_bit; src1 = Ir.Reg tmp_bit; src2 = Ir.Imm 1L; set_flags = false };
+        (* carry in tmp_rem: 1 if tmp_bit == 0, else 0 *)
+        Ir.Mov { dst = Ir.Reg tmp_rem; src = Ir.Imm 0L };
+        Ir.Mov { dst = Ir.Reg tmp_inv; src = Ir.Imm 1L };
+        Ir.Cmp { src1 = Ir.Reg tmp_bit; src2 = Ir.Imm 0L };
+        Ir.Cmov { cond = Flags.E; dst = tmp_rem; src = Ir.Reg tmp_inv };
+        (* not rem_reg + carry *)
+        Ir.Unary { op = Ir.Not; dst = tmp_inv; src = Ir.Reg rem_reg; set_flags = false };
+        Ir.Alu { op = Ir.Add; dst = tmp_inv; src1 = Ir.Reg tmp_inv; src2 = Ir.Reg tmp_rem; set_flags = false };
+        (* Conditionally apply negation if sign_r != 0 *)
+        Ir.Cmp { src1 = Ir.Reg sign_r; src2 = Ir.Imm 0L };
+        Ir.Cmov { cond = Flags.NE; dst = quo_reg; src = Ir.Reg tmp_bit };
+        Ir.Cmp { src1 = Ir.Reg sign_r; src2 = Ir.Imm 0L };
+        Ir.Cmov { cond = Flags.NE; dst = rem_reg; src = Ir.Reg tmp_inv };
+
+        (* If divisor is negative (d_reg < 0), negate d_reg *)
+        Ir.Unary { op = Ir.Neg; dst = tmp_bit; src = Ir.Reg d_reg; set_flags = false };
+        Ir.Cmp { src1 = Ir.Reg d_reg; src2 = Ir.Imm 0L };
+        Ir.Cmov { cond = Flags.L; dst = d_reg; src = Ir.Reg tmp_bit } ]
+    else []
+  in
+
+  let div_steps = ref [] in
+  for _ = 0 to 63 do
+    let step =
+      [ (* 1. tmp_bit = (quo_reg >> 63) & 1 *)
+        Ir.Mov { dst = Ir.Reg tmp_bit; src = Ir.Reg quo_reg };
+        Ir.Alu { op = Ir.Shr; dst = tmp_bit; src1 = Ir.Reg tmp_bit; src2 = Ir.Imm 63L; set_flags = false };
+
+        (* 2. quo_reg = quo_reg << 1 *)
+        Ir.Alu { op = Ir.Shl; dst = quo_reg; src1 = Ir.Reg quo_reg; src2 = Ir.Imm 1L; set_flags = false };
+
+        (* 3. rem_reg = (rem_reg << 1) | tmp_bit *)
+        Ir.Alu { op = Ir.Shl; dst = rem_reg; src1 = Ir.Reg rem_reg; src2 = Ir.Imm 1L; set_flags = false };
+        Ir.Alu { op = Ir.Or; dst = rem_reg; src1 = Ir.Reg rem_reg; src2 = Ir.Reg tmp_bit; set_flags = false };
+
+        (* 4. tmp_rem = rem_reg - d_reg *)
+        Ir.Mov { dst = Ir.Reg tmp_rem; src = Ir.Reg rem_reg };
+        Ir.Alu { op = Ir.Sub; dst = tmp_rem; src1 = Ir.Reg tmp_rem; src2 = Ir.Reg d_reg; set_flags = false };
+
+        (* 5. Prepare quo_reg | 1 in tmp_bit *)
+        Ir.Mov { dst = Ir.Reg tmp_bit; src = Ir.Reg quo_reg };
+        Ir.Alu { op = Ir.Or; dst = tmp_bit; src1 = Ir.Reg tmp_bit; src2 = Ir.Imm 1L; set_flags = false };
+
+        (* 6. Atomic cmp + cmov for quo_reg *)
+        Ir.Cmp { src1 = Ir.Reg rem_reg; src2 = Ir.Reg d_reg };
+        Ir.Cmov { cond = Flags.AE; dst = quo_reg; src = Ir.Reg tmp_bit };
+
+        (* 7. Atomic cmp + cmov for rem_reg *)
+        Ir.Cmp { src1 = Ir.Reg rem_reg; src2 = Ir.Reg d_reg };
+        Ir.Cmov { cond = Flags.AE; dst = rem_reg; src = Ir.Reg tmp_rem } ]
+    in
+    div_steps := !div_steps @ step
+  done;
+
+  let sign_post =
+    if signed then
+      [ (* If sign_q != 0, quo_reg = -quo_reg *)
+        Ir.Unary { op = Ir.Neg; dst = tmp_bit; src = Ir.Reg quo_reg; set_flags = false };
+        Ir.Cmp { src1 = Ir.Reg sign_q; src2 = Ir.Imm 0L };
+        Ir.Cmov { cond = Flags.NE; dst = quo_reg; src = Ir.Reg tmp_bit };
+
+        (* If sign_r != 0, rem_reg = -rem_reg *)
+        Ir.Unary { op = Ir.Neg; dst = tmp_bit; src = Ir.Reg rem_reg; set_flags = false };
+        Ir.Cmp { src1 = Ir.Reg sign_r; src2 = Ir.Imm 0L };
+        Ir.Cmov { cond = Flags.NE; dst = rem_reg; src = Ir.Reg tmp_bit } ]
+    else []
+  in
+
+  let out_instrs =
+    [ Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Reg quo_reg };
+      Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg rem_reg } ]
+  in
+  Ok (init_instrs @ sign_prep @ !div_steps @ sign_post @ out_instrs)
 
 let lift_x86_div ~signed divisor =
   let width_of = function

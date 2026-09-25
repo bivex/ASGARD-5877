@@ -122,13 +122,30 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
             | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Reg s; _ } ->
                 assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
                 ("asgard_rd_jit::JIT_OP_OR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-             | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Imm imm; _ } ->
-                 assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
-                 ("asgard_rd_jit::JIT_OP_OR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-             | Ir.Call (Ir.Label sym) ->
-                 let sym_idx = get_ext_sym_idx sym in
-                 ("asgard_rd_jit::JIT_OP_CALL_EXTERN", 0, 0, Int64.of_int sym_idx)
-             | Ir.Ret -> ("asgard_rd_jit::JIT_OP_RET", 0, 0, 0L)
+            | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Imm imm; _ } ->
+                assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
+                ("asgard_rd_jit::JIT_OP_OR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+            | Ir.Alu { op = Ir.Shl; dst; src1; src2 = Ir.Imm imm; _ } ->
+                assert_src1_eq_dst ~op:Ir.Shl ~dst ~src1;
+                ("asgard_rd_jit::JIT_OP_SHL_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+            | Ir.Alu { op = Ir.Shr; dst; src1; src2 = Ir.Imm imm; _ } ->
+                assert_src1_eq_dst ~op:Ir.Shr ~dst ~src1;
+                ("asgard_rd_jit::JIT_OP_SHR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+            | Ir.Alu { op = Ir.Sar; dst; src1; src2 = Ir.Imm imm; _ } ->
+                assert_src1_eq_dst ~op:Ir.Sar ~dst ~src1;
+                ("asgard_rd_jit::JIT_OP_SAR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+            | Ir.Unary { op = Ir.Not; dst; src = _; _ } ->
+                ("asgard_rd_jit::JIT_OP_NOT_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+            | Ir.Unary { op = Ir.Neg; dst; src = _; _ } ->
+                ("asgard_rd_jit::JIT_OP_NEG_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+            | Ir.Mov { dst = Ir.Reg d; src = Ir.Mem { base = Some b; disp; _ } } ->
+                ("asgard_rd_jit::JIT_OP_LOAD_64", Native_vm.Vm_transform.reg_to_index d mod 16, Native_vm.Vm_transform.reg_to_index b mod 16, disp)
+            | Ir.Mov { dst = Ir.Mem { base = Some b; disp; _ }; src = Ir.Reg s } ->
+                ("asgard_rd_jit::JIT_OP_STORE_64", Native_vm.Vm_transform.reg_to_index b mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, disp)
+            | Ir.Call (Ir.Label sym) ->
+                let sym_idx = get_ext_sym_idx sym in
+                ("asgard_rd_jit::JIT_OP_CALL_EXTERN", 0, 0, Int64.of_int sym_idx)
+            | Ir.Ret -> ("asgard_rd_jit::JIT_OP_RET", 0, 0, 0L)
             | Ir.Vm_exit -> ("asgard_rd_jit::JIT_OP_EXIT", 0, 0, 0L)
             | _ -> ("asgard_rd_jit::JIT_OP_NOP", 0, 0, 0L)
           in

@@ -6,6 +6,7 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
     match arch with
     | X86_64 -> ("-target x86_64-apple-darwin -masm=intel", "")
     | Arm64 -> ("-target arm64-apple-darwin -fno-inline -fno-stack-check -mno-stack-arg-probe", "")
+    | Riscv64 -> ("-target riscv64-unknown-elf -march=rv64gcv -mabi=lp64d -fno-inline", "")
   in
   let cmd =
     Printf.sprintf

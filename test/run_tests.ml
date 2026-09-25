@@ -33,6 +33,7 @@ let () =
     ("Anti-Pushan Rolling Key", Test_anti_pushan.tests);
     ("Dynamic Anti-Tamper & SMC (Layer 3)", Test_anti_tamper_smc.tests);
     ("Protection Config (JSON/Presets)", Test_protection_config.tests);
+    ("RISC-V Lifter & CFG", Test_riscv_lifter.tests);
   ]
 
 

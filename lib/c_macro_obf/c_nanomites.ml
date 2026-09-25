@@ -55,13 +55,14 @@ let scan_balanced_parens s i =
 
 (** One parsed nanomite site. *)
 type nanomite_site = {
-  ns_id       : int;
-  ns_cond     : string;
-  ns_then_fn  : string;
-  ns_else_fn  : string;
-  ns_then_src : string;
-  ns_else_src : string;
-  ns_key      : int;
+  ns_id         : int;
+  ns_cond       : string;
+  ns_then_fn    : string;
+  ns_else_fn    : string;
+  ns_then_src   : string;
+  ns_else_src   : string;
+  ns_key        : int;
+  ns_has_return : bool;
 }
 
 (** Try to parse one [if (cond) { then } [else { else }]] starting at [pos].
@@ -115,14 +116,36 @@ let try_parse_if src pos rng_state seed_ref prefix =
               let idx = !seed_ref land 0x7FFFF in
               let then_fn = Printf.sprintf "%sasgbranch_t_%d" prefix idx in
               let else_fn = Printf.sprintf "%sasgbranch_f_%d" prefix idx in
+              let contains_return body =
+                let blen = String.length body in
+                let found = ref false in
+                let bi = ref 0 in
+                while !bi + 6 <= blen && not !found do
+                  if String.sub body !bi 6 = "return" then
+                    let before_ok = !bi = 0 ||
+                      (let c = body.[!bi - 1] in
+                       not (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c = '_'))
+                    in
+                    let after_idx = !bi + 6 in
+                    let after_ok = after_idx >= blen ||
+                      (let c = body.[after_idx] in
+                       not (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c = '_'))
+                    in
+                    if before_ok && after_ok then found := true else incr bi
+                  else incr bi
+                done;
+                !found
+              in
+              let has_return = contains_return then_body || contains_return else_body in
               Some ({
-                ns_id       = id;
-                ns_cond     = cond_text;
-                ns_then_fn  = then_fn;
-                ns_else_fn  = else_fn;
-                ns_then_src = then_body;
-                ns_else_src = else_body;
-                ns_key      = key;
+                ns_id         = id;
+                ns_cond       = cond_text;
+                ns_then_fn    = then_fn;
+                ns_else_fn    = else_fn;
+                ns_then_src   = then_body;
+                ns_else_src   = else_body;
+                ns_key        = key;
+                ns_has_return = has_return;
               }, total_end)
 
 (** Lift all if-statements in [src] to nanomites.
@@ -201,8 +224,12 @@ let lift_ifs_to_nanomites ?(config = default_config) src =
       | None ->
         Buffer.add_char buf c; incr i
       | Some (site, end_pos) ->
-        Buffer.add_string buf
-          (Printf.sprintf "ASG_NANOMITE_DISPATCH(%d, (%s));" site.ns_id site.ns_cond);
+        if site.ns_has_return then
+          Buffer.add_string buf
+            (Printf.sprintf "ASG_NANOMITE_DISPATCH(%d, (%s)); ASG_NANOMITE_CHECK_RET();" site.ns_id site.ns_cond)
+        else
+          Buffer.add_string buf
+            (Printf.sprintf "ASG_NANOMITE_DISPATCH(%d, (%s));" site.ns_id site.ns_cond);
         sites := site :: !sites;
         i := end_pos
     end
@@ -231,8 +258,8 @@ let strip_returns_from_body body =
       (* skip optional whitespace *)
       while !after < len && (body.[!after] = ' ' || body.[!after] = '\t') do incr after done;
       if !after < len && body.[!after] = ';' then begin
-        (* bare return; → (void)0; *)
-        Buffer.add_string buf "(void)0;";
+        (* bare return; → _asg_nanomite_returned = 1; return; *)
+        Buffer.add_string buf "_asg_nanomite_returned = 1; return;";
         i := !after + 1
       end else begin
         (* return <expr>; — find the matching semicolon at depth 0 *)
@@ -253,9 +280,9 @@ let strip_returns_from_body body =
           let expr = String.sub body expr_start (!sc_pos - expr_start) in
           let trimmed = String.trim expr in
           if trimmed = "" then
-            Buffer.add_string buf "(void)0;"
+            Buffer.add_string buf "_asg_nanomite_returned = 1; return;"
           else
-            Buffer.add_string buf (Printf.sprintf "(void)(%s);" trimmed);
+            Buffer.add_string buf (Printf.sprintf "_asg_nanomite_retval = (uint64_t)(%s); _asg_nanomite_returned = 1; return;" trimmed);
           i := !sc_pos + 1
         end else begin
           (* malformed: copy verbatim *)
@@ -302,6 +329,9 @@ let split_leading_directives src =
 let emit_nanomite_preamble ?(config = default_config) sites =
   let p = config.macro_prefix in
   let buf = Buffer.create 1024 in
+  Buffer.add_string buf "static volatile int _asg_nanomite_returned = 0;\n";
+  Buffer.add_string buf "static volatile uint64_t _asg_nanomite_retval = 0;\n";
+  Buffer.add_string buf "#define ASG_NANOMITE_CHECK_RET() do { if (_asg_nanomite_returned) { int _asg_r = (int)_asg_nanomite_retval; _asg_nanomite_returned = 0; return _asg_r; } } while(0)\n\n";
   List.iter (fun s ->
     let then_body = strip_returns_from_body s.ns_then_src in
     Buffer.add_string buf

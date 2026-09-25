@@ -34,6 +34,7 @@
   test_anti_pushan
   test_anti_tamper_smc
   test_protection_config
+  test_riscv_lifter
   test_helpers
   run_tests)
  (libraries
@@ -51,6 +52,7 @@
   vm_ir
   x86_lifter
   arm64_lifter
+  riscv_lifter
   multi_vm
   gpu_synth
   rd_jit_vm
