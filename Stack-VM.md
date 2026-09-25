@@ -459,9 +459,46 @@ $$\begin{array}{l}
    ```
 
 4. **Исключающее ИЛИ $\mathrm{XOR}(x, y)$:**
-   $$x \oplus y \equiv (x \land \neg y) \lor (\neg x \land y)$$
-   Через базис Пирса:
-   $$x \oplus y = ((x \downarrow y) \downarrow (x \downarrow x)) \downarrow ((x \downarrow y) \downarrow (y \downarrow y))$$
+   Теоретико-множественное представление:
+   $$x \oplus y \equiv (x \lor y) \land \neg(x \land y)$$
+   
+   В базисе Пирса ($\downarrow$) канонически выражается через суперпозицию конъюнкции и анти-дизъюнкции:
+   $$x \oplus y = ((x \downarrow x) \downarrow (y \downarrow y)) \downarrow (x \downarrow y)$$
+   
+   *Доказательство корректности:*
+   - Первая часть: $(x \downarrow x) \downarrow (y \downarrow y) = (\neg x) \downarrow (\neg y) = \neg(\neg x \lor \neg y) = x \land y$.
+   - Вторая часть: $x \downarrow y = \neg(x \lor y)$.
+   - Их суперпозиция через $\mathrm{NOR}$:
+     $$\neg \Big( (x \land y) \lor \neg(x \lor y) \Big) = \neg (x \odot y) = x \oplus y$$
+
+   *Сетевая декомпозиция (5-гейтовая схема):*
+   $$\begin{aligned}
+   g_1 &= x \downarrow y \\
+   g_2 &= x \downarrow g_1 \\
+   g_3 &= y \downarrow g_1 \\
+   g_4 &= g_2 \downarrow g_3 \\
+   x \oplus y &= g_4 \downarrow g_4
+   \end{aligned}$$
+
+   *Стековый шаблон компилятора (`LowerToStack` из контекста):*
+   ```
+   ; 1. Вычисление (x AND y) на стеке
+   PUSH_REG src2       ; y
+   DUP
+   NOR                 ; NOT(y)
+   PUSH_REG src1       ; x
+   DUP
+   NOR                 ; NOT(x)
+   NOR                 ; (x AND y)
+
+   ; 2. Вычисление (x NOR y) на стеке
+   PUSH_REG src2       ; y
+   PUSH_REG src1       ; x
+   NOR                 ; (x NOR y)
+
+   ; 3. Финальная редукция
+   NOR                 ; (x AND y) NOR (x NOR y) == x XOR y
+   ```
 
 *Эффект защиты:* Автоматический декомпилятор больше не видит опкодов `and/or/xor`. Все операции выглядят одинаково: вызовы одного и того же хендлера `NOR` с разным порядком перестановки стека.
 
