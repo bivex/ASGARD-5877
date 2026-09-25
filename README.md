@@ -166,7 +166,7 @@ ASGARD-5877/
 ├── scripts/                      # Unified benchmark and multi-build runners
 │   ├── run_benchmark_arm64.sh    # End-to-end security benchmark runner
 │   └── build_corpus_arm64.sh     # Polymorphic corpus compilation script
-└── test/                         # Comprehensive Verification Suite (239 tests, 34 suites)
+└── test/                         # Comprehensive Verification Suite (245 tests, 34 suites)
 ```
 
 ---
@@ -193,7 +193,7 @@ opam install dune menhir cmdliner alcotest qcheck qcheck-alcotest yojson
 eval $(opam env)
 dune build
 
-# Run all 239 tests across 34 verification suites
+# Run all 245 tests across 34 verification suites
 dune runtest
 ```
 
@@ -338,7 +338,7 @@ The repository includes a standalone ARM64 CrackMe challenge running inside the 
 
 ## Comprehensive Verification Suite
 
-ASGARD-5877 includes **239 tests** across **34 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
+ASGARD-5877 includes **245 tests** across **34 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
 
 1. **Domain Invariants**: Verification of aggregate roots and instruction semantics.
 2. **ISA Grammar**: AST node validation, operand constraints, and type soundness.

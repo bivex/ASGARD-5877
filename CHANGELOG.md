@@ -14,15 +14,17 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Add floating-point binops, comparisons, conversions, atomics, and symbol resolution (`OP_RESOLVE_SYM`) in reference VM evaluator.
 - Add return flow preservation in C-macro Nanomite transformations with `ASG_NANOMITE_CHECK_RET`.
 - Add test coverage for C-macro string escape parsing, char literals, multiline defines, and C trampoline signature variations.
+- Add explicit test coverage for one-operand `mul` and `imul` with implicit `RDX:RAX` across 64-bit, 32-bit, 16-bit, and memory operands.
 
 ### Changed
 
-- Update test suite registry to 239 tests across 34 suites (including RISC-V lifter and extended C macro suites).
+- Update test suite registry to 245 tests across 34 suites (including RISC-V lifter, extended C macro suites, and one-operand mul/imul suites).
 - Ensure compiler pipeline always compiles C sources to assembly via toolchain even when macro obfuscation is disabled.
 - Automatically copy and configure `asgard_obf.h` header in output directory for C protection pipeline.
 
 ### Fixed
 
+- Fix signed correction in 64-bit `lift_x86_mul64` where multiplicand sign masks were cross-applied against `a` and `b`, ensuring exact mathematical high-half results in `RDX`.
 - Fix 128-bit `RDX:RAX` division lowering in x86_64 lifter and overflow flag (`OF`) computation in `H_FUSED_CMP_CMOV`.
 - Fix canonicalization of `Ir.Cmp`, `Ir.Test`, and `Ir.Cmov` instructions with memory operands into registers with SIB support.
 - Fix x86-64 parser to support both `scale*reg` (e.g. `8*rdx`) and `reg*scale` SIB forms.

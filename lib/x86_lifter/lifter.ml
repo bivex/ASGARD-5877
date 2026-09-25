@@ -392,12 +392,12 @@ let lift_x86_mul64 ~signed divisor =
       [ Ir.Mov { dst = Ir.Reg piece_low; src = Ir.Reg a };
         Ir.Alu { op = Ir.Shr; dst = piece_low; src1 = Ir.Reg piece_low; src2 = Ir.Imm 63L; set_flags = false };
         Ir.Unary { op = Ir.Neg; dst = piece_low; src = Ir.Reg piece_low; set_flags = false };
-        Ir.Alu { op = Ir.And; dst = piece_low; src1 = Ir.Reg piece_low; src2 = Ir.Reg a; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = piece_low; src1 = Ir.Reg piece_low; src2 = Ir.Reg b; set_flags = false };
         Ir.Alu { op = Ir.Sub; dst = product_high; src1 = Ir.Reg product_high; src2 = Ir.Reg piece_low; set_flags = false };
         Ir.Mov { dst = Ir.Reg piece_high; src = Ir.Reg b };
         Ir.Alu { op = Ir.Shr; dst = piece_high; src1 = Ir.Reg piece_high; src2 = Ir.Imm 63L; set_flags = false };
         Ir.Unary { op = Ir.Neg; dst = piece_high; src = Ir.Reg piece_high; set_flags = false };
-        Ir.Alu { op = Ir.And; dst = piece_high; src1 = Ir.Reg piece_high; src2 = Ir.Reg b; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = piece_high; src1 = Ir.Reg piece_high; src2 = Ir.Reg a; set_flags = false };
         Ir.Alu { op = Ir.Sub; dst = product_high; src1 = Ir.Reg product_high; src2 = Ir.Reg piece_high; set_flags = false } ]
     else []
   in

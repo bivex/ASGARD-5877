@@ -439,6 +439,163 @@ mul64:
           Alcotest.(check int64) "one operand B64 mul low" 0x236D88FE5618CF00L (get_reg state Register.rax);
           Alcotest.(check int64) "one operand B64 mul high" 0x121FA00AD77D7422L (get_reg state Register.rdx))
 
+let test_lift_one_operand_imul64 () =
+  let asm = {|
+imul64:
+    mov rax, 0x100000000
+    mov rcx, -2
+    imul rcx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "one operand B64 imul low (pos * neg)" 0xFFFFFFFE00000000L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B64 imul high (pos * neg)" (-1L) (get_reg state Register.rdx));
+  let asm_neg_neg = {|
+imul64_neg_neg:
+    mov rax, -2
+    mov rcx, -3
+    imul rcx
+    ret
+|} in
+  match Lifter.lift_function asm_neg_neg with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "one operand B64 imul low (neg * neg)" 6L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B64 imul high (neg * neg)" 0L (get_reg state Register.rdx))
+
+let test_lift_one_operand_mul32 () =
+  let asm = {|
+mul32:
+    mov rax, 0x1111111100000000
+    mov rdx, 0x2222222200000000
+    mov eax, 0x80000000
+    mov ecx, 3
+    mul ecx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* 0x80000000 * 3 = 0x180000000. EAX = 0x80000000, EDX = 1, upper 32 bits zeroed *)
+          Alcotest.(check int64) "one operand B32 mul low eax" 0x80000000L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B32 mul high edx" 1L (get_reg state Register.rdx))
+
+let test_lift_one_operand_imul32 () =
+  let asm = {|
+imul32:
+    mov rax, 0x1111111100000000
+    mov rdx, 0x2222222200000000
+    mov eax, 0x80000000
+    mov ecx, 3
+    imul ecx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* -2147483648 * 3 = -6442450944 = 0xFFFFFFFE80000000. EAX = 0x80000000, EDX = 0xFFFFFFFE *)
+          Alcotest.(check int64) "one operand B32 imul low eax" 0x80000000L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B32 imul high edx" 0xFFFFFFFEL (get_reg state Register.rdx))
+
+let test_lift_one_operand_mul16 () =
+  let asm = {|
+mul16:
+    mov rax, 0x1111222233330000
+    mov rdx, 0x5555666677770000
+    mov ax, 0x8000
+    mov cx, 3
+    mul cx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* 0x8000 * 3 = 0x18000. AX = 0x8000, DX = 1. Upper 48 bits preserved *)
+          Alcotest.(check int64) "one operand B16 mul low ax" 0x1111222233338000L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B16 mul high dx" 0x5555666677770001L (get_reg state Register.rdx))
+
+let test_lift_one_operand_imul16 () =
+  let asm = {|
+imul16:
+    mov rax, 0x1111222233330000
+    mov rdx, 0x5555666677770000
+    mov ax, 0x8000
+    mov cx, 3
+    imul cx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* -32768 * 3 = -98304 = 0xFFFE8000. AX = 0x8000, DX = 0xFFFE. Upper 48 bits preserved *)
+          Alcotest.(check int64) "one operand B16 imul low ax" 0x1111222233338000L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B16 imul high dx" 0x555566667777FFFEL (get_reg state Register.rdx))
+
+let test_lift_one_operand_mul_mem () =
+  let asm = {|
+mul_mem64:
+    mov rax, 0x100000000
+    mul qword ptr [rdi]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      let mem_addr = 0x3000L in
+      set_reg state Register.rdi mem_addr;
+      write_mem state mem_addr Register.B64 0x20L;
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* 0x100000000 * 0x20 = 0x2000000000 *)
+          Alcotest.(check int64) "one operand B64 mul mem low" 0x2000000000L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B64 mul mem high" 0L (get_reg state Register.rdx));
+  let asm_imul = {|
+imul_mem64:
+    mov rax, 0x100000000
+    imul qword ptr [rdi]
+    ret
+|} in
+  match Lifter.lift_function asm_imul with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      let mem_addr = 0x3000L in
+      set_reg state Register.rdi mem_addr;
+      write_mem state mem_addr Register.B64 (-2L);
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "one operand B64 imul mem low" 0xFFFFFFFE00000000L (get_reg state Register.rax);
+          Alcotest.(check int64) "one operand B64 imul mem high" (-1L) (get_reg state Register.rdx))
+
 let test_lift_narrow_division () =
   let asm = {|
 div8_unsigned:
@@ -581,6 +738,12 @@ let tests = [
     Alcotest.test_case "lift_one_operand_mul_b8" `Quick test_lift_one_operand_mul;
     Alcotest.test_case "lift_one_operand_mul_b8_signed" `Quick test_lift_one_operand_mul_signed;
     Alcotest.test_case "lift_one_operand_mul_b64" `Quick test_lift_one_operand_mul64;
+    Alcotest.test_case "lift_one_operand_imul_b64" `Quick test_lift_one_operand_imul64;
+    Alcotest.test_case "lift_one_operand_mul_b32" `Quick test_lift_one_operand_mul32;
+    Alcotest.test_case "lift_one_operand_imul_b32" `Quick test_lift_one_operand_imul32;
+    Alcotest.test_case "lift_one_operand_mul_b16" `Quick test_lift_one_operand_mul16;
+    Alcotest.test_case "lift_one_operand_imul_b16" `Quick test_lift_one_operand_imul16;
+    Alcotest.test_case "lift_one_operand_mul_mem" `Quick test_lift_one_operand_mul_mem;
     Alcotest.test_case "lift_narrow_division_b8" `Quick test_lift_narrow_division;
     Alcotest.test_case "lift_narrow_division_b8_signed" `Quick test_lift_narrow_division_signed;
   Alcotest.test_case "lift_narrow_division_b16" `Quick test_lift_narrow_division16;
