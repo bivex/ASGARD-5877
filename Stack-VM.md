@@ -1,6 +1,6 @@
 # Архитектурная спецификация: Stack-VM Execution Engine для ASGARD-5877
 
-Настоящий документ определяет математическую модель, формальную спецификацию в **Z-нотации (Z Notation)**, алгоритмы трансформации, спецификацию промежуточного представления (IR), механизм потокового шифрования и пошаговый план реализации **стековой виртуальной машины (Stack-VM)** в составе фреймворка ASGARD-5877.
+Настоящий документ определяет математическую модель, формальную спецификацию в **Z-нотации (ISO/IEC 13568:2002)**, алгоритмы трансформации, спецификацию промежуточного представления (IR), механизм потокового шифрования и пошаговый план реализации **стековой виртуальной машины (Stack-VM)** в составе фреймворка ASGARD-5877.
 
 ---
 
@@ -25,347 +25,325 @@
 ## 2. Формальная модель исполнения (Formal Machine State)
 
 Состояние виртуальной машины описывается кортежем:
-$$\mathcal{S}_{\text{SVM}} = \langle \text{VIP}, \text{VSP}, \text{VKEY}, \text{VDISP}, \mathcal{M}_{\text{stack}}, \mathcal{C}_{\text{ctx}}, \mathcal{F}_{\text{flags}} \rangle$$
+$$\mathcal{S}_{\mathrm{SVM}} = \langle \mathrm{VIP}, \mathrm{VSP}, \mathrm{VKEY}, \mathrm{VDISP}, \mathcal{M}_{\mathrm{stack}}, \mathcal{C}_{\mathrm{ctx}}, \mathcal{F}_{\mathrm{flags}} \rangle$$
 
 где:
-- **$\text{VIP}$ (Virtual Instruction Pointer):** Случайно назначенный физический регистр, указывающий на текущую позицию в шифрованном потоке байткода.
-- **$\text{VSP}$ (Virtual Stack Pointer):** Физический регистр, указывающий на вершину стека вычислений в памяти.
-- **$\text{VKEY}$ (Dynamic Decryption Key):** Регистр состояния криптора, модифицируемый на каждом шаге выборки инструкции.
-- **$\text{VDISP}$ (Handler Base / Dispatch Cursor):** Базовый указатель для косвенного перехода на следующий хендлер.
-- **$\mathcal{M}_{\text{stack}}$:** Память стека выполнения (локальный фрейм).
-- **$\mathcal{C}_{\text{ctx}}$:** Контекстный массив слотов (Context Frame), сохраняющий состояние нативных регистров целевой архитектуры (x86_64 / AArch64 / RV64).
-- **$\mathcal{F}_{\text{flags}}$:** Регистр флагов (или отложенное состояние флагов на вершине стека).
+- **$\mathrm{VIP}$ (Virtual Instruction Pointer):** Физический регистр, указывающий на текущую позицию в шифрованном потоке байткода.
+- **$\mathrm{VSP}$ (Virtual Stack Pointer):** Физический регистр, указывающий на вершину стека вычислений в памяти.
+- **$\mathrm{VKEY}$ (Dynamic Decryption Key):** Регистр состояния криптора, модифицируемый на каждом шаге выборки инструкции.
+- **$\mathrm{VDISP}$ (Handler Base / Dispatch Cursor):** Базовый указатель для косвенного перехода на следующий хендлер.
+- **$\mathcal{M}_{\mathrm{stack}}$:** Память стека выполнения (локальный фрейм).
+- **$\mathcal{C}_{\mathrm{ctx}}$:** Контекстный массив слотов (Context Frame), сохраняющий состояние нативных регистров целевой архитектуры (x86_64 / AArch64 / RV64).
+- **$\mathcal{F}_{\mathrm{flags}}$:** Регистр флагов (или отложенное состояние флагов на вершине стека).
 
 ### Инвариант баланса стека
-Для любого линейного участка (базового блока) $B$:
-$$\Delta \text{VSP}(B) = \sum_{i \in B} \text{push\_weight}(i) - \sum_{i \in B} \text{pop\_weight}(i)$$
-На границах базовых блоков глубина стека $\text{depth}(\text{VSP})$ должна быть детерминирована для обеспечения корректности слияния потоков управления (join points).
+Для любого базового блока $B$:
+$$\Delta \mathrm{VSP}(B) = \sum_{i \in B} \mathrm{push\_weight}(i) - \sum_{i \in B} \mathrm{pop\_weight}(i)$$
+На границах базовых блоков глубина стека $\mathrm{depth}(\mathrm{VSP})$ должна быть детерминирована для обеспечения корректности слияния потоков управления (join points).
 
 ---
 
 ## 3. Формальная спецификация в Z-нотации (Z Notation Specification)
 
-Для математически строгого доказательства корректности исполнения, отсутствия переполнения стека и детерминированности декриптора ниже приведена формальная модель Stack-VM на языке спецификаций **Z (ISO/IEC 13568:2002)**.
+Спецификация представлена в канонической нотации стандарта **ISO/IEC 13568:2002 Z** с использованием схемного исчисления (Schema Calculus).
 
-### 3.1 Базовые типы и множества (Given Sets & Basic Types)
+### 3.1 Базовые типы, множества и операторы
 
-$$[ADDR, WORD, BYTE, REG\_ID]$$
+```z
+[ADDR, WORD, BYTE, REG_ID]
 
-Определим производные числовые типы и константы:
-$$VAL == WORD$$
-$$FLAGS == WORD$$
-$$OFFSET == \mathbb{Z}$$
-$$\text{WORD\_SIZE} == 8$$
-$$\text{MAX\_STACK\_DEPTH} : \mathbb{N}$$
-$$\text{ACTIVE\_REGS} : \mathbb{P} ~ REG\_ID$$
+VAL == WORD
+FLAGS == WORD
+OFFSET == ℤ
 
-Вспомогательные аксиоматические функции булевой логики и потокового шифрования:
+WORD_SIZE == 8
+MAX_STACK_DEPTH : ℕ
+ACTIVE_REGS : ℙ REG_ID
 
-$$\begin{array}{l}
-nor : VAL \times VAL \to VAL \\
-nand : VAL \times VAL \to VAL \\
-add\_with\_flags : VAL \times VAL \to VAL \times FLAGS \\
-sub\_with\_flags : VAL \times VAL \to VAL \times FLAGS \\
-decrypt\_byte : BYTE \times WORD \to BYTE \\
-derive\_key : WORD \times BYTE \to WORD \\
-read\_word\_mem : (ADDR \pfun BYTE) \times ADDR \to VAL \\
-write\_word\_mem : (ADDR \pfun BYTE) \times ADDR \times VAL \to (ADDR \pfun BYTE)
-\end{array}$$
-
-### 3.2 Схема состояния машины: $StackVMState$
-
-Схема описывает полный инвариант архитектурного состояния Stack-VM:
-
-$$\begin{array}{|l}
-StackVMState \\
-\hline
-vip : ADDR \\
-vsp : ADDR \\
-vkey : WORD \\
-vdisp : ADDR \\
-vstack : \mathrm{seq} ~ VAL \\
-vctx : REG\_ID \pfun VAL \\
-vmem : ADDR \pfun BYTE \\
-flags : FLAGS \\
-\hline
-\#vstack \le \text{MAX\_STACK\_DEPTH} \\
-vsp \bmod \text{WORD\_SIZE} = 0 \\
-\dom vctx = \text{ACTIVE\_REGS} \\
-\end{array}$$
-
-*Предикаты инварианта:*
-1. Глубина виртуального стека $\#vstack$ строго ограничена сверху константой $\text{MAX\_STACK\_DEPTH}$.
-2. Указатель аппаратного стека $vsp$ выровнен по 8-байтовой границе.
-3. Домен отображения контекста $\dom vctx$ покрывает весь набор активных нативных регистров целевой платформы.
-
-### 3.3 Начальное состояние: $InitStackVMState$
-
-$$\begin{array}{|l}
-InitStackVMState \\
-\hline
-StackVMState' \\
-entry? : ADDR \\
-init\_sp? : ADDR \\
-seed\_key? : WORD \\
-base\_disp? : ADDR \\
-init\_ctx? : REG\_ID \fun VAL \\
-init\_mem? : ADDR \pfun BYTE \\
-\hline
-vip' = entry? \\
-vsp' = init\_sp? \\
-vkey' = seed\_key? \\
-vdisp' = base\_disp? \\
-vstack' = \langle \rangle \\
-vctx' = init\_ctx? \\
-vmem' = init\_mem? \\
-flags' = 0
-\end{array}$$
+nor : VAL × VAL → VAL
+nand : VAL × VAL → VAL
+add_with_flags : VAL × VAL → VAL × FLAGS
+sub_with_flags : VAL × VAL → VAL × FLAGS
+decrypt_byte : BYTE × WORD → BYTE
+derive_key : WORD × BYTE → WORD
+read_word_mem : (ADDR ⇸ BYTE) × ADDR → VAL
+write_word_mem : (ADDR ⇸ BYTE) × ADDR × VAL → (ADDR ⇸ BYTE)
+```
 
 ---
 
-### 3.4 Схема шага выборки и расшифровки: $FetchByte$
+### 3.2 Схема состояния виртуальной машины: $StackVMState$
 
-Операция выборки байта из памяти опкодов с параллельным обновлением ключа криптора:
+```z
+┌─ StackVMState ──────────────────────────────────────────
+│  vip : ADDR
+│  vsp : ADDR
+│  vkey : WORD
+│  vdisp : ADDR
+│  vstack : seq VAL
+│  vctx : REG_ID ⇸ VAL
+│  vmem : ADDR ⇸ BYTE
+│  flags : FLAGS
+├─────────────────────────────────────────────────────────
+│  #vstack ≤ MAX_STACK_DEPTH
+│  vsp mod WORD_SIZE = 0
+│  dom vctx = ACTIVE_REGS
+└─────────────────────────────────────────────────────────
+```
 
-$$\begin{array}{|l}
-FetchByte \\
-\hline
-\Delta StackVMState \\
-plain! : BYTE \\
-\hline
-vip \in \dom vmem \\
-plain! = decrypt\_byte(vmem(vip), vkey) \\
-vip' = vip + 1 \\
-vkey' = derive\_key(vkey, plain!) \\
-vsp' = vsp \\
-vdisp' = vdisp \\
-vstack' = vstack \\
-vctx' = vctx \\
-vmem' = vmem \\
-flags' = flags
-\end{array}$$
+**Предикаты инварианта:**
+1. $|\mathrm{vstack}| \le \mathrm{MAX\_STACK\_DEPTH}$ — виртуальный стек строго ограничен для предотвращения переполнения памяти.
+2. $\mathrm{vsp} \bmod \mathrm{WORD\_SIZE} = 0$ — аппаратный указатель стека строго выровнен по 8-байтовой границе.
+3. $\operatorname{dom} \mathrm{vctx} = \mathrm{ACTIVE\_REGS}$ — все активные регистры архитектуры замаплены во фрейме контекста.
+
+---
+
+### 3.3 Начальное состояние: $InitStackVMState$
+
+```z
+┌─ InitStackVMState ──────────────────────────────────────
+│  StackVMState'
+│  entry? : ADDR
+│  init_sp? : ADDR
+│  seed_key? : WORD
+│  base_disp? : ADDR
+│  init_ctx? : REG_ID → VAL
+│  init_mem? : ADDR ⇸ BYTE
+├─────────────────────────────────────────────────────────
+│  vip' = entry?
+│  vsp' = init_sp?
+│  vkey' = seed_key?
+│  vdisp' = base_disp?
+│  vstack' = ⟨⟩
+│  vctx' = init_ctx?
+│  vmem' = init_mem?
+│  flags' = 0
+└─────────────────────────────────────────────────────────
+```
+
+---
+
+### 3.4 Выборка инструкции и потоковая расшифровка: $FetchByte$
+
+```z
+┌─ FetchByte ─────────────────────────────────────────────
+│  ΔStackVMState
+│  plain! : BYTE
+├─────────────────────────────────────────────────────────
+│  vip ∈ dom vmem
+│  plain! = decrypt_byte(vmem(vip), vkey)
+│  vip' = vip + 1
+│  vkey' = derive_key(vkey, plain!)
+│  vsp' = vsp
+│  vdisp' = vdisp
+│  vstack' = vstack
+│  vctx' = vctx
+│  vmem' = vmem
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
 ---
 
 ### 3.5 Операционные схемы инструкций ($\Delta StackVMState$)
 
-#### Операция $PushImm$:
-Помещение непосредственного операнда на вершину стека:
+#### Операция $PushImm$ (Помещение константы):
+```z
+┌─ PushImm ───────────────────────────────────────────────
+│  ΔStackVMState
+│  imm? : VAL
+├─────────────────────────────────────────────────────────
+│  #vstack < MAX_STACK_DEPTH
+│  vstack' = ⟨imm?⟩ ⌢ vstack
+│  vsp' = vsp - WORD_SIZE
+│  vctx' = vctx
+│  vmem' = vmem
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
-$$\begin{array}{|l}
-PushImm \\
-\hline
-\Delta StackVMState \\
-imm? : VAL \\
-\hline
-\#vstack < \text{MAX\_STACK\_DEPTH} \\
-vstack' = \langle imm? \rangle \cat vstack \\
-vsp' = vsp - \text{WORD\_SIZE} \\
-vctx' = vctx \\
-vmem' = vmem \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp \\
-flags' = flags
-\end{array}$$
+#### Операция $PushReg$ (Чтение регистра контекста):
+```z
+┌─ PushReg ───────────────────────────────────────────────
+│  ΔStackVMState
+│  r? : REG_ID
+├─────────────────────────────────────────────────────────
+│  r? ∈ dom vctx
+│  #vstack < MAX_STACK_DEPTH
+│  vstack' = ⟨vctx(r?)⟩ ⌢ vstack
+│  vsp' = vsp - WORD_SIZE
+│  vctx' = vctx
+│  vmem' = vmem
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
-#### Операция $PushReg$:
-Чтение регистра из контекстного фрейма $\mathcal{C}$ и размещение на стеке:
+#### Операция $PopReg$ (Запись в контекстный слот):
+```z
+┌─ PopReg ────────────────────────────────────────────────
+│  ΔStackVMState
+│  r? : REG_ID
+├─────────────────────────────────────────────────────────
+│  r? ∈ dom vctx
+│  vstack ≠ ⟨⟩
+│  vctx' = vctx ⊕ { r? ↦ head(vstack) }
+│  vstack' = tail(vstack)
+│  vsp' = vsp + WORD_SIZE
+│  vmem' = vmem
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
-$$\begin{array}{|l}
-PushReg \\
-\hline
-\Delta StackVMState \\
-r? : REG\_ID \\
-\hline
-r? \in \dom vctx \\
-\#vstack < \text{MAX\_STACK\_DEPTH} \\
-vstack' = \langle vctx(r?) \rangle \cat vstack \\
-vsp' = vsp - \text{WORD\_SIZE} \\
-vctx' = vctx \\
-vmem' = vmem \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp \\
-flags' = flags
-\end{array}$$
+#### Операция $ExecNor$ (Логический элемент Пирса):
+```z
+┌─ ExecNor ───────────────────────────────────────────────
+│  ΔStackVMState
+├─────────────────────────────────────────────────────────
+│  #vstack ≥ 2
+│  let a == vstack(1) ∧ b == vstack(2) •
+│    vstack' = ⟨nor(a, b)⟩ ⌢ tail(tail(vstack))
+│  vsp' = vsp + WORD_SIZE
+│  vctx' = vctx
+│  vmem' = vmem
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
-#### Операция $PopReg$:
-Извлечение значения с вершины стека и сохранение в контекстный слот:
+#### Операция $ExecAdd$ (Сложение с генерацией флагов):
+```z
+┌─ ExecAdd ───────────────────────────────────────────────
+│  ΔStackVMState
+├─────────────────────────────────────────────────────────
+│  #vstack ≥ 2
+│  let a == vstack(1) ∧ b == vstack(2) •
+│    let (res, new_flags) == add_with_flags(a, b) •
+│      vstack' = ⟨res⟩ ⌢ tail(tail(vstack)) ∧
+│      flags' = new_flags
+│  vsp' = vsp + WORD_SIZE
+│  vctx' = vctx
+│  vmem' = vmem
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+└─────────────────────────────────────────────────────────
+```
 
-$$\begin{array}{|l}
-PopReg \\
-\hline
-\Delta StackVMState \\
-r? : REG\_ID \\
-\hline
-r? \in \dom vctx \\
-vstack \ne \langle \rangle \\
-vctx' = vctx \oplus \{ r? \mapsto \head(vstack) \} \\
-vstack' = \tail(vstack) \\
-vsp' = vsp + \text{WORD\_SIZE} \\
-vmem' = vmem \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp \\
-flags' = flags
-\end{array}$$
+#### Операция $ExecDup$ (Дублирование вершины):
+```z
+┌─ ExecDup ───────────────────────────────────────────────
+│  ΔStackVMState
+├─────────────────────────────────────────────────────────
+│  vstack ≠ ⟨⟩
+│  #vstack < MAX_STACK_DEPTH
+│  vstack' = ⟨head(vstack)⟩ ⌢ vstack
+│  vsp' = vsp - WORD_SIZE
+│  vctx' = vctx
+│  vmem' = vmem
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
-#### Операция $ExecNor$ (Стрелка Пирса):
-Извлечение двух операндов, вычисление $\neg(a \lor b)$ и запись результата:
+#### Операция $ExecSwap$ (Перестановка двух верхних элементов):
+```z
+┌─ ExecSwap ──────────────────────────────────────────────
+│  ΔStackVMState
+├─────────────────────────────────────────────────────────
+│  #vstack ≥ 2
+│  vstack' = ⟨vstack(2), vstack(1)⟩ ⌢ tail(tail(vstack))
+│  vsp' = vsp
+│  vctx' = vctx
+│  vmem' = vmem
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
-$$\begin{array}{|l}
-ExecNor \\
-\hline
-\Delta StackVMState \\
-\hline
-\#vstack \ge 2 \\
-\LET a == vstack(1) \semi b == vstack(2) \IN \\
-\quad vstack' = \langle nor(a, b) \rangle \cat \tail(\tail(vstack)) \\
-vsp' = vsp + \text{WORD\_SIZE} \\
-vctx' = vctx \\
-vmem' = vmem \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp \\
-flags' = flags
-\end{array}$$
+#### Операция $ExecReadMem$ (Косвенное чтение из памяти):
+```z
+┌─ ExecReadMem ───────────────────────────────────────────
+│  ΔStackVMState
+├─────────────────────────────────────────────────────────
+│  vstack ≠ ⟨⟩
+│  let addr == head(vstack) •
+│    vstack' = ⟨read_word_mem(vmem, addr)⟩ ⌢ tail(vstack)
+│  vsp' = vsp
+│  vctx' = vctx
+│  vmem' = vmem
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
-#### Операция $ExecAdd$:
-Сложение операндов с генерацией нативных флагов:
+#### Операция $ExecWriteMem$ (Запись слова в память):
+```z
+┌─ ExecWriteMem ──────────────────────────────────────────
+│  ΔStackVMState
+├─────────────────────────────────────────────────────────
+│  #vstack ≥ 2
+│  let addr == vstack(1) ∧ val == vstack(2) •
+│    vmem' = write_word_mem(vmem, addr, val)
+│  vstack' = tail(tail(vstack))
+│  vsp' = vsp + (2 * WORD_SIZE)
+│  vctx' = vctx
+│  vkey' = vkey
+│  vip' = vip
+│  vdisp' = vdisp
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
-$$\begin{array}{|l}
-ExecAdd \\
-\hline
-\Delta StackVMState \\
-\hline
-\#vstack \ge 2 \\
-\LET a == vstack(1) \semi b == vstack(2) \IN \\
-\quad (res, new\_flags) = add\_with\_flags(a, b) \\
-\quad vstack' = \langle res \rangle \cat \tail(\tail(vstack)) \\
-\quad flags' = new\_flags \\
-vsp' = vsp + \text{WORD\_SIZE} \\
-vctx' = vctx \\
-vmem' = vmem \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp
-\end{array}$$
-
-#### Операция $ExecDup$:
-Дублирование верхнего элемента стека:
-
-$$\begin{array}{|l}
-ExecDup \\
-\hline
-\Delta StackVMState \\
-\hline
-vstack \ne \langle \rangle \\
-\#vstack < \text{MAX\_STACK\_DEPTH} \\
-vstack' = \langle \head(vstack) \rangle \cat vstack \\
-vsp' = vsp - \text{WORD\_SIZE} \\
-vctx' = vctx \\
-vmem' = vmem \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp \\
-flags' = flags
-\end{array}$$
-
-#### Операция $ExecSwap$:
-Перестановка двух верхних элементов:
-
-$$\begin{array}{|l}
-ExecSwap \\
-\hline
-\Delta StackVMState \\
-\hline
-\#vstack \ge 2 \\
-vstack' = \langle vstack(2), vstack(1) \rangle \cat \tail(\tail(vstack)) \\
-vsp' = vsp \\
-vctx' = vctx \\
-vmem' = vmem \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp \\
-flags' = flags
-\end{array}$$
-
-#### Операция $ExecReadMem$:
-Косвенное чтение из физической памяти по адресу со стека:
-
-$$\begin{array}{|l}
-ExecReadMem \\
-\hline
-\Delta StackVMState \\
-\hline
-vstack \ne \langle \rangle \\
-\LET addr == \head(vstack) \IN \\
-\quad vstack' = \langle read\_word\_mem(vmem, addr) \rangle \cat \tail(vstack) \\
-vsp' = vsp \\
-vctx' = vctx \\
-vmem' = vmem \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp \\
-flags' = flags
-\end{array}$$
-
-#### Операция $ExecWriteMem$:
-Запись значения со стека в физическую память:
-
-$$\begin{array}{|l}
-ExecWriteMem \\
-\hline
-\Delta StackVMState \\
-\hline
-\#vstack \ge 2 \\
-\LET addr == vstack(1) \semi val == vstack(2) \IN \\
-\quad vmem' = write\_word\_mem(vmem, addr, val) \\
-\quad vstack' = \tail(\tail(vstack)) \\
-vsp' = vsp + (2 \cdot \text{WORD\_SIZE}) \\
-vctx' = vctx \\
-vkey' = vkey \\
-vip' = vip \\
-vdisp' = vdisp \\
-flags' = flags
-\end{array}$$
-
-#### Операция относительной диспетчеризации $ExecDispatchRel$:
-
-$$\begin{array}{|l}
-ExecDispatchRel \\
-\hline
-\Delta StackVMState \\
-\delta? : OFFSET \\
-\hline
-vdisp' = vdisp + \delta? \\
-vip' = vip \\
-vsp' = vsp \\
-vkey' = vkey \\
-vstack' = vstack \\
-vctx' = vctx \\
-vmem' = vmem \\
-flags' = flags
-\end{array}$$
+#### Операция $ExecDispatchRel$ (Относительное смещение диспетчера):
+```z
+┌─ ExecDispatchRel ───────────────────────────────────────
+│  ΔStackVMState
+│  δ? : OFFSET
+├─────────────────────────────────────────────────────────
+│  vdisp' = vdisp + δ?
+│  vip' = vip
+│  vsp' = vsp
+│  vkey' = vkey
+│  vstack' = vstack
+│  vctx' = vctx
+│  vmem' = vmem
+│  flags' = flags
+└─────────────────────────────────────────────────────────
+```
 
 ---
 
-### 3.6 Теорема о сохранении инварианта стека базового блока
+### 3.6 Теорема сохранения инварианта стека базового блока
 
-Пусть базовый блок $B$ задан композицией операций $\mathcal{T}_B = \mathcal{O}_1 \comp \mathcal{O}_2 \comp \dots \comp \mathcal{O}_n$.
+Пусть базовый блок $B$ задан последовательной композицией операций:
+$$\mathcal{T}_B = \mathcal{O}_1 \mathbin{\mathbf{;}} \mathcal{O}_2 \mathbin{\mathbf{;}} \dots \mathbin{\mathbf{;}} \mathcal{O}_n$$
 
 $$\mathbf{Theorem} ~ (\text{Stack Conservation}) \bullet \\
 \forall s : StackVMState \bullet \\
-\quad (\Delta \text{VSP}(B) = 0 \land s \in \dom \mathcal{T}_B) \implies \#(\mathcal{T}_B(s).vstack) = \#(s.vstack) \land \mathcal{T}_B(s).vsp = s.vsp$$
+\quad (\Delta \mathrm{VSP}(B) = 0 \land s \in \operatorname{dom} \mathcal{T}_B) \implies |\mathcal{T}_B(s).\mathrm{vstack}| = |s.\mathrm{vstack}| \land \mathcal{T}_B(s).\mathrm{vsp} = s.\mathrm{vsp}$$
 
-*Следствие:* При $\Delta \text{VSP}(B) = 0$ любой цикл или условное ветвление в графе потока управления не вызывает деградации или переполнения виртуального стека.
+*Следствие:* При нулевом балансе блока $\Delta \mathrm{VSP}(B) = 0$ переходы по ветвлениям и циклам гарантированно не приводят к утечке или деградации виртуального стека.
 
 ---
 
 ## 4. Набор инструкций Stack-ISA
-
-Базовый набор инструкций виртуальной машины состоит из минималистичных примитивов фиксированной семантики:
 
 | Опкод | Мнемоника | Действие над стеком | Описание |
 | :--- | :--- | :--- | :--- |
@@ -425,7 +403,7 @@ $$\mathbf{Theorem} ~ (\text{Stack Conservation}) \bullet \\
 
 Любая булева функция представляется исключительно через операции `NOR` ($\downarrow$):
 
-1. **Инверсия $\text{NOT}(x)$:**
+1. **Инверсия $\mathrm{NOT}(x)$:**
    $$\neg x \equiv x \downarrow x$$
    *Стековый шаблон:*
    ```
@@ -433,7 +411,7 @@ $$\mathbf{Theorem} ~ (\text{Stack Conservation}) \bullet \\
    NOR
    ```
 
-2. **Дизъюнкция $\text{OR}(x, y)$:**
+2. **Дизъюнкция $\mathrm{OR}(x, y)$:**
    $$x \lor y \equiv (x \downarrow y) \downarrow (x \downarrow y)$$
    *Стековый шаблон:*
    ```
@@ -442,7 +420,7 @@ $$\mathbf{Theorem} ~ (\text{Stack Conservation}) \bullet \\
    NOR
    ```
 
-3. **Конъюнкция $\text{AND}(x, y)$:**
+3. **Конъюнкция $\mathrm{AND}(x, y)$:**
    $$x \land y \equiv (\neg x) \downarrow (\neg y) \equiv (x \downarrow x) \downarrow (y \downarrow y)$$
    *Стековый шаблон:*
    ```
@@ -455,8 +433,8 @@ $$\mathbf{Theorem} ~ (\text{Stack Conservation}) \bullet \\
    NOR        ; NOT(x) NOR NOT(y) == x AND y
    ```
 
-4. **Исключающее ИЛИ $\text{XOR}(x, y)$:**
-   $$x \oplus y \equiv (x \land \neg y) \lor (\neg x \land y) \equiv \dots$$
+4. **Исключающее ИЛИ $\mathrm{XOR}(x, y)$:**
+   $$x \oplus y \equiv (x \land \neg y) \lor (\neg x \land y)$$
    Через базис Пирса:
    $$x \oplus y = ((x \downarrow y) \downarrow (x \downarrow x)) \downarrow ((x \downarrow y) \downarrow (y \downarrow y))$$
 
@@ -478,15 +456,15 @@ $$\mathbf{Theorem} ~ (\text{Stack Conservation}) \bullet \\
 ```
 
 #### Межблочная синхронизация ключей (Key Reconciliation)
-Если в точку слияния потока управления $B_{\text{join}}$ сходятся два ребра $B_1 \to B_{\text{join}}$ и $B_2 \to B_{\text{join}}$, финальные ключи $VKEY(B_1)$ и $VKEY(B_2)$ могут различаться.
-- **Решение:** На исходящем ребре $B_2 \to B_{\text{join}}$ вставляется компенсационный переходной хендлер (`KEY_ADJUST`), корректирующий ключ:
-  $$VKEY_{\text{target}} = VKEY_{\text{current}} \oplus \Delta_{\text{block}}$$
+Если в точку слияния потока управления $B_{\mathrm{join}}$ сходятся два ребра $B_1 \to B_{\mathrm{join}}$ и $B_2 \to B_{\mathrm{join}}$, финальные ключи $\mathrm{VKEY}(B_1)$ и $\mathrm{VKEY}(B_2)$ могут различаться.
+- **Решение:** На исходящем ребре $B_2 \to B_{\mathrm{join}}$ вставляется компенсационный переходной хендлер (`KEY_ADJUST`), корректирующий ключ:
+  $$\mathrm{VKEY}_{\mathrm{target}} = \mathrm{VKEY}_{\mathrm{current}} \oplus \Delta_{\mathrm{block}}$$
 
 ---
 
 ### Алгоритм 4. Относительная бестабличная диспетчеризация (Relative-Delta Dispatching)
 
-Вместо фиксированной таблицы хендлеров `handlers_table[opcode]` каждый хендлер завершается эпилогом, использующим относительные смещения:
+Вместо фиксированной таблицы хендлеров каждый хендлер завершается эпилогом, использующим относительные смещения:
 
 ```x86asm
 ; Хендлер N (эпилог)
@@ -511,9 +489,9 @@ jmp   VDISP                   ; прыжок на следующий полим�
 
 1. **Случайное распределение ролей регистров:**
    Для каждой архитектуры случайно выбираются непересекающиеся регистры:
-   - x86-64: `{VIP, VSP, VKEY, VDISP} \subset \{RAX, RBX, RCX, RDX, RSI, RDI, R8..R15\}`
-   - AArch64: `{VIP, VSP, VKEY, VDISP} \subset \{X19..X28\}`
-   - RV64: `{VIP, VSP, VKEY, VDISP} \subset \{s1..s11\}`
+   - x86-64: $\{\mathrm{VIP}, \mathrm{VSP}, \mathrm{VKEY}, \mathrm{VDISP}\} \subset \{\mathrm{RAX}, \mathrm{RBX}, \mathrm{RCX}, \mathrm{RDX}, \mathrm{RSI}, \mathrm{RDI}, \mathrm{R8}..\mathrm{R15}\}$
+   - AArch64: $\{\mathrm{VIP}, \mathrm{VSP}, \mathrm{VKEY}, \mathrm{VDISP}\} \subset \{\mathrm{X19}..\mathrm{X28}\}$
+   - RV64: $\{\mathrm{VIP}, \mathrm{VSP}, \mathrm{VKEY}, \mathrm{VDISP}\} \subset \{\mathrm{s1}..\mathrm{s11}\}$
 2. **Перемешивание порядка контекстного фрейма:**
    Смещение нативного регистра $R_k$ в массиве $\mathcal{C}[R_k]$ задается случайной перестановкой $\pi \in S_N$.
 3. **Генерация тела хендлеров:**
@@ -540,7 +518,7 @@ jmp   VDISP                   ; прыжок на следующий полим�
   - Подстановка эквивалентов NOR/NAND для всех логических операций.
   - Рандомизация выбора базиса: для одних блоков выбирать NOR-базис, для других — NAND-базис.
 - [ ] **2.2 Пасс выравнивания стека (Stack Balance Verification):**
-  - Проверка инварианта $\Delta \text{VSP} = 0$ на выходах блоков.
+  - Проверка инварианта $\Delta \mathrm{VSP} = 0$ на выходах блоков.
   - Автоматическая вставка `POP_DUMMY` / сброса мусора при несовпадении высоты стека.
 
 ### Фаза 3: Генерация байткода и криптор
