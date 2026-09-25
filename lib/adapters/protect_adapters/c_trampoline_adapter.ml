@@ -68,44 +68,106 @@ let embed_vm_trampoline ~c_src ~bytecode ~out_path =
       | Some open_brace_idx ->
           let sig_end = open_brace_idx in
           let rparen_opt = rfind_char c_src ')' sig_end in
-          let args_to_pass =
+          let args_to_pass, ret_type =
             match rparen_opt with
-            | None -> ""
+            | None -> ("", "")
             | Some rparen ->
                 (match rfind_char c_src '(' rparen with
-                | None -> ""
+                | None -> ("", "")
                 | Some lparen ->
+                    let is_space = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false in
+                    let p = ref (lparen - 1) in
+                    while !p >= 0 && is_space c_src.[!p] do
+                      decr p
+                    done;
+                    while !p >= 0 && (let c = c_src.[!p] in (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c = '_') do
+                      decr p
+                    done;
+                    while !p >= 0 && is_space c_src.[!p] do
+                      decr p
+                    done;
+                    let type_end = !p in
+                    while !p >= 0 && c_src.[!p] <> '\n' && c_src.[!p] <> ';' && c_src.[!p] <> '}' && c_src.[!p] <> '>' do
+                      decr p
+                    done;
+                    let prefix = if type_end >= !p + 1 then String.sub c_src (!p + 1) (type_end - !p) |> String.trim else "" in
+                    let norm = String.map (fun c -> if is_space c then ' ' else c) prefix in
+                    let tokens = String.split_on_char ' ' norm |> List.map String.trim |> List.filter (fun s -> s <> "") in
+                    let clean_type =
+                      List.filter (fun t -> t <> "static" && t <> "inline" && t <> "__inline__" && t <> "extern") tokens
+                      |> String.concat " "
+                    in
                     let param_str = String.sub c_src (lparen + 1) (rparen - lparen - 1) |> String.trim in
-                    if param_str = "" || param_str = "void" then ""
-                    else
-                      let raw_params = String.split_on_char ',' param_str |> List.map String.trim in
-                      let arg_names = List.filter_map
-                        (fun p ->
-                          let tokens = String.split_on_char ' ' p |> List.map String.trim |> List.filter (fun s -> s <> "" && s <> "*" && s <> "const" && s <> "volatile") in
-                          match List.rev tokens with
-                          | last :: _ ->
-                              let clean = String.trim (String.map (function '*' -> ' ' | c -> c) last) in
-                              if clean = "" then None else Some (Printf.sprintf "(uint64_t)%s" clean)
-                          | [] -> None)
-                        raw_params
-                      in
-                      String.concat ", " arg_names)
+                    let args =
+                      if param_str = "" || param_str = "void" then ""
+                      else
+                        let raw_params = String.split_on_char ',' param_str |> List.map String.trim in
+                        let arg_names = List.filter_map
+                          (fun p ->
+                            let p_no_default = match String.index_opt p '=' with Some i -> String.sub p 0 i | None -> p in
+                            let p_no_array = match String.index_opt p_no_default '[' with Some i -> String.sub p_no_default 0 i | None -> p_no_default in
+                            let normalized = String.map (fun c -> if is_space c then ' ' else c) p_no_array in
+                            let tokens = String.split_on_char ' ' normalized |> List.map String.trim |> List.filter (fun s -> s <> "" && s <> "*" && s <> "const" && s <> "volatile") in
+                            match List.rev tokens with
+                            | last :: _ ->
+                                let clean = String.trim (String.map (function '*' -> ' ' | c -> c) last) in
+                                if clean = "" then None else Some (Printf.sprintf "(uint64_t)%s" clean)
+                            | [] -> None)
+                          raw_params
+                        in
+                        String.concat ", " arg_names
+                    in
+                    (args, clean_type))
           in
           let len = String.length c_src in
-          let rec find_closing depth i =
+          let rec find_closing depth in_str in_char in_line_comm in_blk_comm i =
             if i >= len then len - 1
-            else if c_src.[i] = '{' then find_closing (depth + 1) (i + 1)
+            else if in_line_comm then
+              if c_src.[i] = '\n' then find_closing depth in_str in_char false in_blk_comm (i + 1)
+              else find_closing depth in_str in_char true in_blk_comm (i + 1)
+            else if in_blk_comm then
+              if i + 1 < len && c_src.[i] = '*' && c_src.[i + 1] = '/' then
+                find_closing depth in_str in_char false false (i + 2)
+              else find_closing depth in_str in_char false true (i + 1)
+            else if in_str then
+              if c_src.[i] = '\\' && i + 1 < len then find_closing depth true false false false (i + 2)
+              else if c_src.[i] = '"' then find_closing depth false false false false (i + 1)
+              else find_closing depth true false false false (i + 1)
+            else if in_char then
+              if c_src.[i] = '\\' && i + 1 < len then find_closing depth false true false false (i + 2)
+              else if c_src.[i] = '\'' then find_closing depth false false false false (i + 1)
+              else find_closing depth false true false false (i + 1)
+            else if i + 1 < len && c_src.[i] = '/' && c_src.[i + 1] = '/' then
+              find_closing depth false false true false (i + 2)
+            else if i + 1 < len && c_src.[i] = '/' && c_src.[i + 1] = '*' then
+              find_closing depth false false false true (i + 2)
+            else if c_src.[i] = '"' then
+              find_closing depth true false false false (i + 1)
+            else if c_src.[i] = '\'' then
+              find_closing depth false true false false (i + 1)
+            else if c_src.[i] = '{' then
+              find_closing (depth + 1) false false false false (i + 1)
             else if c_src.[i] = '}' then
               if depth = 1 then i
-              else find_closing (depth - 1) (i + 1)
-            else find_closing depth (i + 1)
+              else find_closing (depth - 1) false false false false (i + 1)
+            else find_closing depth false false false false (i + 1)
           in
-          let close_brace_idx = find_closing 1 (open_brace_idx + 1) in
+          let close_brace_idx = find_closing 1 false false false false (open_brace_idx + 1) in
           let before_body = String.sub c_src 0 (open_brace_idx + 1) in
           let after_body = String.sub c_src close_brace_idx (len - close_brace_idx) in
+          let is_void = ret_type = "void" in
+          let is_ptr = String.contains ret_type '*' in
           let comma_args = if args_to_pass = "" then "" else ", " ^ args_to_pass in
+          let call_str =
+            Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0])%s)" comma_args
+          in
           let trampoline_body =
-            Printf.sprintf "\n    return (int)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0])%s);\n" comma_args
+            if is_void then
+              Printf.sprintf "\n    %s;\n    return;\n" call_str
+            else if is_ptr then
+              Printf.sprintf "\n    return (%s)(uintptr_t)%s;\n" ret_type call_str
+            else
+              Printf.sprintf "\n    return %s;\n" call_str
           in
           let full_out = bc_header ^ before_body ^ trampoline_body ^ after_body in
           let oc = open_out out_path in

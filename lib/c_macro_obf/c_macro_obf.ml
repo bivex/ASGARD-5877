@@ -110,9 +110,42 @@ let obfuscate_source ?(config = default_config) src =
       end
     end
     else if c = '#' then begin
-      while !i < len && src.[!i] <> '\n' do
-        Buffer.add_char buf src.[!i];
-        incr i
+      let in_dir = ref true in
+      while !i < len && !in_dir do
+        let ch = src.[!i] in
+        Buffer.add_char buf ch;
+        incr i;
+        if ch = '\n' then begin
+          let p = ref (!i - 2) in
+          while !p >= 0 && (src.[!p] = ' ' || src.[!p] = '\t' || src.[!p] = '\r') do
+            decr p
+          done;
+          if !p < 0 || src.[!p] <> '\\' then
+            in_dir := false
+        end
+      done
+    end
+    else if c = '\'' then begin
+      Buffer.add_char buf c;
+      incr i;
+      let escaped = ref false in
+      let closed = ref false in
+      while !i < len && not !closed do
+        let sc = src.[!i] in
+        Buffer.add_char buf sc;
+        if !escaped then begin
+          escaped := false;
+          incr i
+        end
+        else if sc = '\\' then begin
+          escaped := true;
+          incr i
+        end
+        else if sc = '\'' then begin
+          closed := true;
+          incr i
+        end
+        else incr i
       done
     end
     else if c = '"' && config.obfuscate_strings then begin
@@ -156,33 +189,60 @@ let obfuscate_source ?(config = default_config) src =
       end else begin
         incr i;
         let str_buf = Buffer.create 32 in
-        let escaped = ref false in
         let closed = ref false in
         while !i < len && not !closed do
           let sc = src.[!i] in
-          if !escaped then begin
-            (match sc with
-            | 'n' -> Buffer.add_char str_buf '\n'
-            | 't' -> Buffer.add_char str_buf '\t'
-            | 'r' -> Buffer.add_char str_buf '\r'
-            | '\\' -> Buffer.add_char str_buf '\\'
-            | '"' -> Buffer.add_char str_buf '"'
-            | '0' -> Buffer.add_char str_buf '\000'
-            | other ->
-                Buffer.add_char str_buf '\\';
-                Buffer.add_char str_buf other);
-            escaped := false;
-            incr i
-          end
-          else if sc = '\\' then begin
-            escaped := true;
-            incr i
-          end
-          else if sc = '"' then begin
+          if sc = '"' then begin
             closed := true;
             incr i
-          end
-          else begin
+          end else if sc = '\\' then begin
+            incr i;
+            if !i < len then begin
+              let esc = src.[!i] in
+              match esc with
+              | 'n' -> Buffer.add_char str_buf '\n'; incr i
+              | 't' -> Buffer.add_char str_buf '\t'; incr i
+              | 'r' -> Buffer.add_char str_buf '\r'; incr i
+              | 'b' -> Buffer.add_char str_buf '\b'; incr i
+              | 'f' -> Buffer.add_char str_buf '\012'; incr i
+              | 'v' -> Buffer.add_char str_buf '\011'; incr i
+              | 'a' -> Buffer.add_char str_buf '\007'; incr i
+              | '\\' -> Buffer.add_char str_buf '\\'; incr i
+              | '"' -> Buffer.add_char str_buf '"'; incr i
+              | '\'' -> Buffer.add_char str_buf '\''; incr i
+              | '?' -> Buffer.add_char str_buf '?'; incr i
+              | '0' .. '7' ->
+                  let oct_str = Buffer.create 3 in
+                  Buffer.add_char oct_str esc;
+                  incr i;
+                  if !i < len && (let ch = src.[!i] in ch >= '0' && ch <= '7') then begin
+                    Buffer.add_char oct_str src.[!i];
+                    incr i;
+                    if !i < len && (let ch = src.[!i] in ch >= '0' && ch <= '7') then begin
+                      Buffer.add_char oct_str src.[!i];
+                      incr i
+                    end
+                  end;
+                  let oct_val = try int_of_string ("0o" ^ Buffer.contents oct_str) with _ -> 0 in
+                  Buffer.add_char str_buf (Char.chr (oct_val land 0xFF))
+              | 'x' when !i + 1 < len &&
+                         (let is_hex ch = (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') in
+                          is_hex src.[!i + 1]) ->
+                  incr i;
+                  let hex_str = Buffer.create 2 in
+                  Buffer.add_char hex_str src.[!i];
+                  incr i;
+                  if !i < len && (let ch = src.[!i] in (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')) then begin
+                    Buffer.add_char hex_str src.[!i];
+                    incr i
+                  end;
+                  let v = try int_of_string ("0x" ^ Buffer.contents hex_str) with _ -> 0 in
+                  Buffer.add_char str_buf (Char.chr (v land 0xFF))
+              | other ->
+                  Buffer.add_char str_buf other;
+                  incr i
+            end
+          end else begin
             Buffer.add_char str_buf sc;
             incr i
           end

@@ -478,6 +478,36 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       let scratch = Register.vtmp0 in
       [ Ir.Pop (Ir.Reg scratch) ] @ canonicalize_instr (Ir.Mov { dst = Ir.Mem m; src = Ir.Reg scratch })
 
+  | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Mem m } ->
+      let scratch = pick_scratch_reg d d in
+      let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
+      load_m @ [ Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg scratch } ]
+
+  | Ir.Cmp { src1 = Ir.Mem m; src2 = Ir.Reg s } ->
+      let scratch = pick_scratch_reg s s in
+      let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
+      load_m @ [ Ir.Cmp { src1 = Ir.Reg scratch; src2 = Ir.Reg s } ]
+
+  | Ir.Cmp { src1 = Ir.Mem m; src2 = Ir.Imm imm } ->
+      let scratch = Register.vtmp0 in
+      let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
+      load_m @ [ Ir.Cmp { src1 = Ir.Reg scratch; src2 = Ir.Imm imm } ]
+
+  | Ir.Test { src1 = Ir.Reg s1; src2 = Ir.Mem m } ->
+      let scratch = pick_scratch_reg s1 s1 in
+      let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
+      load_m @ canonicalize_instr (Ir.Test { src1 = Ir.Reg s1; src2 = Ir.Reg scratch })
+
+  | Ir.Test { src1 = Ir.Mem m; src2 } ->
+      let scratch = Register.vtmp0 in
+      let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
+      load_m @ canonicalize_instr (Ir.Test { src1 = Ir.Reg scratch; src2 })
+
+  | Ir.Cmov { cond; dst; src = Ir.Mem m } ->
+      let scratch = pick_scratch_reg dst dst in
+      let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
+      load_m @ [ Ir.Cmov { cond; dst; src = Ir.Reg scratch } ]
+
   | other -> [ other ]
 
 let canonicalize_3addr_alu (instrs : Ir.instr list) : Ir.instr list =

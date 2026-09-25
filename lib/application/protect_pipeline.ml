@@ -26,14 +26,31 @@ let run
 
     (* 1. Optional C/C++ macro pre-transformation and clang frontend *)
     let asm_source_file_res =
-      if is_c_src && is_c_macro_enabled config then
-        match (c_macro_obfuscator, toolchain) with
-        | Some (module C : C_macro_obfuscator), Some (module T : Toolchain) ->
-            let hdr_path = Filename.concat out_dir "asgard_obf.h" in
-            let obf_c_path = Filename.concat out_dir "app_obf.c" in
-            (match C.transform_source ~config ~in_file:input_file ~out_c_file:obf_c_path ~out_header_file:hdr_path ~rng with
-            | Ok () -> ()
-            | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
+      if is_c_src then
+        match toolchain with
+        | Some (module T : Toolchain) ->
+            let c_source_for_asm, include_dir =
+              let hdr_path = Filename.concat out_dir "asgard_obf.h" in
+              if is_c_macro_enabled config then
+                match c_macro_obfuscator with
+                | Some (module C : C_macro_obfuscator) ->
+                    let obf_c_path = Filename.concat out_dir "app_obf.c" in
+                    (match C.transform_source ~config ~in_file:input_file ~out_c_file:obf_c_path ~out_header_file:hdr_path ~rng with
+                    | Ok () -> ()
+                    | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
+                    (obf_c_path, out_dir)
+                | None -> (input_file, out_dir)
+              else begin
+                (match c_macro_obfuscator with
+                | Some (module C : C_macro_obfuscator) when not (Sys.file_exists hdr_path) ->
+                    let dummy_c = Filename.concat out_dir "dummy.c" in
+                    (match C.transform_source ~config ~in_file:input_file ~out_c_file:dummy_c ~out_header_file:hdr_path ~rng with
+                    | Ok () -> (try Sys.remove dummy_c with _ -> ())
+                    | Error _ -> ())
+                | _ -> ());
+                (input_file, out_dir)
+              end
+            in
             let asm_name =
               match L.target_arch with
               | X86_64 -> "app.s"
@@ -41,10 +58,10 @@ let run
               | Riscv64 -> "app_riscv64.s"
             in
             let asm_out = Filename.concat out_dir asm_name in
-            (match T.compile_to_asm ~arch:L.target_arch ~c_source:obf_c_path ~out_asm:asm_out ~include_dir:out_dir with
+            (match T.compile_to_asm ~arch:L.target_arch ~c_source:c_source_for_asm ~out_asm:asm_out ~include_dir with
             | Ok () -> Ok asm_out
             | Error err -> Error err)
-        | _ -> Ok input_file
+        | None -> Error "A C/C++ source was provided, but no toolchain was available to compile it to assembly"
       else Ok input_file
     in
 

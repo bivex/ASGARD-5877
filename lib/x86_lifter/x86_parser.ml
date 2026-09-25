@@ -118,7 +118,12 @@ let parse_mem_operand body default_width =
         else if String.contains tok '*' then (
           let parts = split_tokens tok '*' in
           match parts with
-          | [ r_str; scale_str ] -> (
+          | [ p1; p2 ] -> (
+              let r_str, scale_str =
+                match Register.of_string p1 with
+                | Ok _ -> (p1, p2)
+                | Error _ -> (p2, p1)
+              in
               match Register.of_string r_str with
               | Ok r -> (
                   try
@@ -305,14 +310,18 @@ let parse_lines text =
               String.of_seq (List.to_seq total_chars)
             else upper
           in
+          let acc' = match acc with
+            | LineInstr ("jmp", _) :: prev -> prev
+            | _ -> acc
+          in
           if contains_sub str "ASGARD_BEG_V" || contains_sub str "ASGARD_BEGIN_V" then
-            loop (line_no + 1) (LineMarkerBegin (ModeVirtualize "region") :: acc) [] rest
+            loop (line_no + 1) (LineMarkerBegin (ModeVirtualize "region") :: acc') [] rest
           else if contains_sub str "ASGARD_BEG_M" || contains_sub str "ASGARD_BEGIN_M" then
-            loop (line_no + 1) (LineMarkerBegin (ModeMutation "region") :: acc) [] rest
+            loop (line_no + 1) (LineMarkerBegin (ModeMutation "region") :: acc') [] rest
           else if contains_sub str "ASGARD_BEG" || contains_sub str "ASGARD_BEGIN" then
-            loop (line_no + 1) (LineMarkerBegin (ModeUltra "region") :: acc) [] rest
+            loop (line_no + 1) (LineMarkerBegin (ModeUltra "region") :: acc') [] rest
           else if contains_sub str "ASGARD_END" then
-            loop (line_no + 1) (LineMarkerEnd :: acc) [] rest
+            loop (line_no + 1) (LineMarkerEnd :: acc') [] rest
           else
             loop (line_no + 1) acc [] rest
         else

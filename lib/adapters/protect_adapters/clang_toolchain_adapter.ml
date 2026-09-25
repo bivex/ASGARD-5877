@@ -1,6 +1,13 @@
 open Random_visa_ports
 open Protect_ports
 
+let get_inc_flags include_dir source_file =
+  let src_dir = Filename.dirname source_file in
+  if src_dir <> "" && src_dir <> "." && src_dir <> include_dir then
+    Printf.sprintf "-I%s -I%s" include_dir src_dir
+  else
+    Printf.sprintf "-I%s" include_dir
+
 let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir : string) : (unit, error) result =
   let target_flag, extra_flags =
     match arch with
@@ -8,10 +15,11 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
     | Arm64 -> ("-target arm64-apple-darwin -fno-inline -fno-stack-check -mno-stack-arg-probe", "")
     | Riscv64 -> ("-target riscv64-unknown-elf -march=rv64gcv -mabi=lp64d -fno-inline", "")
   in
+  let inc_flags = get_inc_flags include_dir c_source in
   let cmd =
     Printf.sprintf
-      "clang -S %s -O1 -fno-stack-protector -Wno-format-security -I%s -fno-asynchronous-unwind-tables %s %s -o %s"
-      target_flag include_dir extra_flags c_source out_asm
+      "clang -S %s -O1 -fno-stack-protector -Wno-format-security %s -fno-asynchronous-unwind-tables %s %s -o %s"
+      target_flag inc_flags extra_flags c_source out_asm
   in
   let code = Sys.command cmd in
   if code = 0 then Ok ()
@@ -22,10 +30,11 @@ let compile_native_binary ~is_c ~(source_file : string) ~(out_binary : string) ~
     if is_c then "clang -O3 -Wno-format-security"
     else "clang++ -std=c++20 -O3 -Wno-format-security -fvisibility-inlines-hidden"
   in
+  let inc_flags = get_inc_flags include_dir source_file in
   let cmd =
     Printf.sprintf
-      "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x -I%s %s -o %s && strip -x %s"
-      compiler include_dir source_file out_binary out_binary
+      "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x %s %s -o %s && strip -x %s"
+      compiler inc_flags source_file out_binary out_binary
   in
   let code = Sys.command cmd in
   if code = 0 then Ok ()

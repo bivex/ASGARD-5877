@@ -720,6 +720,7 @@ let lift_lines ?(options = default_options) raw_lines =
   let block_id = ref 0 in
   let func_name = ref options.function_name in
   let current_label = ref options.function_name in
+  let label_is_new = ref true in
   let current_instrs = ref [] in
   let raw_blocks = ref [] in
 
@@ -728,7 +729,14 @@ let lift_lines ?(options = default_options) raw_lines =
       let b = Ir.make_block ~id:!block_id ~label:!current_label ~instrs:(List.rev !current_instrs) in
       raw_blocks := b :: !raw_blocks;
       incr block_id;
-      current_instrs := []
+      current_instrs := [];
+      label_is_new := false
+    end else if !label_is_new && !current_label <> "" && !current_label <> options.function_name then begin
+      let b = Ir.make_block ~id:!block_id ~label:!current_label ~instrs:[ Ir.Ret ] in
+      raw_blocks := b :: !raw_blocks;
+      incr block_id;
+      current_instrs := [];
+      label_is_new := false
     end
   in
 
@@ -743,6 +751,7 @@ let lift_lines ?(options = default_options) raw_lines =
         if is_func_label lbl then func_name := lbl;
         if !current_instrs <> [] then flush_block ();
         current_label := lbl;
+        label_is_new := true;
         process rest
 
     | X86_parser.LineInstr (mnem, ops) :: rest -> (

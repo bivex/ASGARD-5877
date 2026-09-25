@@ -348,6 +348,93 @@ let test_header_tree_shaking () =
   Alcotest.(check bool) "contains read_cpu_ticks when used" true (contains_sub hdr_timing "read_cpu_ticks");
   Alcotest.(check bool) "no check_ptrace_sysctl when unused" false (contains_sub hdr_timing "check_ptrace_sysctl")
 
+let test_escapes_and_special_chars () =
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let in_c = Filename.concat tmp_dir "escape_test.c" in
+    let out_c = Filename.concat tmp_dir "obf_escape.c" in
+    let hdr_file = Filename.concat tmp_dir "asgard_obf.h" in
+    let bin_file = Filename.concat tmp_dir "escape_bin" in
+
+    let sample_src = {|
+#include <stdio.h>
+#include <string.h>
+
+#define MULTI_LINE_MACRO(x) \
+    ((x) + 42)
+
+int main(void) {
+    char quote_char = '"';
+    char backslash_char = '\\';
+    const char* hex_and_octal = "\x48\x65\154\154\157\n";
+    printf("[%c] [%c] %s %d\n", quote_char, backslash_char, hex_and_octal, MULTI_LINE_MACRO(10));
+    return 0;
+}
+|} in
+    Test_helpers.write_file_string in_c sample_src;
+    let res = transform_file ~in_file:in_c ~out_file:out_c ~header_file:(Some hdr_file) () in
+    check (result unit string) "transformation succeeds" (Ok ()) res;
+
+    let comp_cmd = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir out_c bin_file in
+    let comp_status = Sys.command comp_cmd in
+    check int "clang compilation succeeds" 0 comp_status;
+
+    let out_log = Filename.concat tmp_dir "output.log" in
+    let run_cmd = Printf.sprintf "%s > %s" bin_file out_log in
+    let run_status = Sys.command run_cmd in
+    check int "execution succeeds" 0 run_status;
+
+    let output_str = Test_helpers.read_file_string out_log in
+    check bool "output contains unescaped Hello" true (contains_sub output_str "Hello");
+    check bool "output contains quotes and macro result" true (contains_sub output_str "[\"] [\\] Hello\n 52")
+  )
+
+let test_trampoline_signatures_and_braces () =
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let out_void = Filename.concat tmp_dir "void_virt.cpp" in
+    let c_void = {|
+#include <stdio.h>
+void my_procedure(int x, const char* name) {
+    ASGARD_BEGIN_VIRTUALIZE("proc");
+    printf("Hello %s: %d\n", name, x);
+}
+|} in
+    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+      ~c_src:c_void ~bytecode:[ 0x1122334455667788L ] ~out_path:out_void;
+    let res_void = Test_helpers.read_file_string out_void in
+    check bool "void function has no return expr" true (contains_sub res_void "asgard_vm_call(embedded_bytecode");
+    check bool "void function returns void" true (contains_sub res_void "return;");
+
+    let out_ptr = Filename.concat tmp_dir "ptr_virt.cpp" in
+    let c_ptr = {|
+char* get_buffer(size_t sz) {
+    ASGARD_BEGIN_VIRTUALIZE("buf");
+    // comment with braces { }
+    const char* str = "dummy { } string";
+    return NULL;
+}
+|} in
+    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+      ~c_src:c_ptr ~bytecode:[ 0x1122334455667788L ] ~out_path:out_ptr;
+    let res_ptr = Test_helpers.read_file_string out_ptr in
+    check bool "pointer function casts return type" true (contains_sub res_ptr "return (char*)(uintptr_t)vanguard_threaded_vm::asgard_vm_call");
+
+    let out_u64 = Filename.concat tmp_dir "u64_virt.cpp" in
+    let c_u64 = {|
+uint64_t calculate_hash(
+    uint64_t a,
+    uint64_t b = 0
+) {
+    ASGARD_BEGIN_VIRTUALIZE("hash");
+    return a ^ b;
+}
+|} in
+    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+      ~c_src:c_u64 ~bytecode:[ 0x1122334455667788L ] ~out_path:out_u64;
+    let res_u64 = Test_helpers.read_file_string out_u64 in
+    check bool "u64 function does not truncate to int" true (contains_sub res_u64 "return vanguard_threaded_vm::asgard_vm_call");
+    check bool "u64 function passes clean args" true (contains_sub res_u64 "(uint64_t)a, (uint64_t)b")
+  )
+
 let tests = [
   ("header_generation", `Quick, test_header_generation);
   ("header_tree_shaking", `Quick, test_header_tree_shaking);
@@ -358,6 +445,8 @@ let tests = [
   ("nanomites_dispatching_e2e", `Quick, test_nanomites_dispatching_e2e);
   ("nanomite_auto_lift_e2e", `Quick, test_nanomite_auto_lift_e2e);
   ("arithmetic_ast_rewriter_e2e", `Quick, test_arithmetic_rewriter);
+  ("escapes_and_special_chars", `Quick, test_escapes_and_special_chars);
+  ("trampoline_signatures_and_braces", `Quick, test_trampoline_signatures_and_braces);
 ]
 
 

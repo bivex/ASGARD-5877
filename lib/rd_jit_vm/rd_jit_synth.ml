@@ -537,5 +537,19 @@ namespace vanguard_threaded_vm {
         asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);
         asgard_rd_jit::execute_ephemeral_block(jit_buf, ctx, ctx.get_reg(0), ctx.get_reg(1));
     }
+    static inline uint64_t asgard_vm_call(const uint64_t* bc, size_t len, uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0, uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {
+        VMContext ctx;
+        ctx.init();
+        ctx.set_reg(0, a0);
+        ctx.set_reg(1, a1);
+        ctx.set_reg(2, a2);
+        ctx.set_reg(3, a3);
+        ctx.set_reg(4, a4);
+        ctx.set_reg(5, a5);
+        ctx.set_reg(6, a6);
+        ctx.set_reg(7, a7);
+        execute_threaded(ctx, bc, len);
+        return ctx.get_rax();
+    }
 }
 |}
