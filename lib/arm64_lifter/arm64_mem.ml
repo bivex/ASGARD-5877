@@ -49,29 +49,36 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         | _ -> Register.vtmp0
       in
       let (m, addr_prep) = lower_mem_operand ~scratch_reg:scratch m in
+      let (src_ir, src_prep) =
+        match src with
+        | OpImm imm ->
+            (Ir.Reg scratch, [ Ir.Mov { dst = Reg scratch; src = Imm imm } ])
+        | _ ->
+            (raw_to_ir_operand src, [])
+      in
       (match m.wb with
       | WbNone ->
-          Some (addr_prep @ [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand src } ])
+          Some (addr_prep @ src_prep @ [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = src_ir } ])
       | WbPre ->
           (match m.base with
           | Some base_reg ->
               let effective_mem = { m with disp = 0L; wb = WbNone } in
-              Some (addr_prep @ [
+              Some (addr_prep @ src_prep @ [
                 Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
-                Ir.Mov { dst = raw_to_ir_operand (OpMem effective_mem); src = raw_to_ir_operand src };
+                Ir.Mov { dst = raw_to_ir_operand (OpMem effective_mem); src = src_ir };
               ])
           | None ->
-              Some (addr_prep @ [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand src } ]))
+              Some (addr_prep @ src_prep @ [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = src_ir } ]))
       | WbPost post_imm ->
           (match m.base with
           | Some base_reg ->
               let effective_mem = { m with disp = 0L; wb = WbNone } in
-              Some (addr_prep @ [
-                Ir.Mov { dst = raw_to_ir_operand (OpMem effective_mem); src = raw_to_ir_operand src };
+              Some (addr_prep @ src_prep @ [
+                Ir.Mov { dst = raw_to_ir_operand (OpMem effective_mem); src = src_ir };
                 Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm post_imm; set_flags = false };
               ])
           | None ->
-              Some (addr_prep @ [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand src } ]))
+              Some (addr_prep @ src_prep @ [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = src_ir } ]))
       )
 
   (* Pair Store (stp) with Pre/Post-Indexed Writeback *)

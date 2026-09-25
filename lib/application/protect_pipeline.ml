@@ -105,8 +105,7 @@ let run
                   let c_src = really_input_string ic_c c_len in
                   close_in ic_c;
                   let virt_cpp_path = Filename.concat out_dir "app_virtualized.cpp" in
-                  TE.embed_vm_trampoline ~c_src ~bytecode:pkg.bytecode ~out_path:virt_cpp_path;
-                  TE.embed_vm_trampoline ~c_src ~bytecode:pkg.bytecode ~out_path:obf_c_path
+                  TE.embed_vm_trampoline ~c_src ~bytecode:pkg.bytecode ~out_path:virt_cpp_path
               | None -> ()
             end;
 

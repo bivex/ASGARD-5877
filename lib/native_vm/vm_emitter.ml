@@ -342,6 +342,20 @@ let compile_and_package
                   in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word (get_opcode op) base_idx (get_reg_idx s) m.disp
+              | Ir.Mov { dst = Ir.Mem m; src = Ir.Imm imm } ->
+                  if m.index <> None then
+                    failwith "vm_emitter: uncanonicalized SIB indexed memory store (must be canonicalized before emission)";
+                  let temp_reg = Register.vtmp0 in
+                  encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx temp_reg) 0 imm;
+                  let op =
+                    match m.width with
+                    | Register.B64 -> OP_STORE_64
+                    | Register.B32 -> OP_STORE_32
+                    | Register.B16 -> OP_STORE_16
+                    | _ -> OP_STORE_8
+                  in
+                  let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
+                  encode_raw_word (get_opcode op) base_idx (get_reg_idx temp_reg) m.disp
               | Ir.Alu { op = Ir.Add; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Add ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ADD_RR) (get_reg_idx d) (get_reg_idx s) 0L
