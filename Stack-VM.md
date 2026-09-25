@@ -1,6 +1,6 @@
 # Архитектурная спецификация: Stack-VM Execution Engine для ASGARD-5877
 
-Настоящий документ определяет математическую модель, алгоритмы трансформации, спецификацию промежуточного представления (IR), механизм потокового шифрования и пошаговый план реализации **стековой виртуальной машины (Stack-VM)** в составе фреймворка ASGARD-5877.
+Настоящий документ определяет математическую модель, формальную спецификацию в **Z-нотации (Z Notation)**, алгоритмы трансформации, спецификацию промежуточного представления (IR), механизм потокового шифрования и пошаговый план реализации **стековой виртуальной машины (Stack-VM)** в составе фреймворка ASGARD-5877.
 
 ---
 
@@ -43,7 +43,327 @@ $$\Delta \text{VSP}(B) = \sum_{i \in B} \text{push\_weight}(i) - \sum_{i \in B} 
 
 ---
 
-## 3. Набор инструкций Stack-ISA
+## 3. Формальная спецификация в Z-нотации (Z Notation Specification)
+
+Для математически строгого доказательства корректности исполнения, отсутствия переполнения стека и детерминированности декриптора ниже приведена формальная модель Stack-VM на языке спецификаций **Z (ISO/IEC 13568:2002)**.
+
+### 3.1 Базовые типы и множества (Given Sets & Basic Types)
+
+$$[ADDR, WORD, BYTE, REG\_ID]$$
+
+Определим производные числовые типы и константы:
+$$VAL == WORD$$
+$$FLAGS == WORD$$
+$$OFFSET == \mathbb{Z}$$
+$$\text{WORD\_SIZE} == 8$$
+$$\text{MAX\_STACK\_DEPTH} : \mathbb{N}$$
+$$\text{ACTIVE\_REGS} : \mathbb{P} ~ REG\_ID$$
+
+Вспомогательные аксиоматические функции булевой логики и потокового шифрования:
+
+$$\begin{array}{l}
+nor : VAL \times VAL \to VAL \\
+nand : VAL \times VAL \to VAL \\
+add\_with\_flags : VAL \times VAL \to VAL \times FLAGS \\
+sub\_with\_flags : VAL \times VAL \to VAL \times FLAGS \\
+decrypt\_byte : BYTE \times WORD \to BYTE \\
+derive\_key : WORD \times BYTE \to WORD \\
+read\_word\_mem : (ADDR \pfun BYTE) \times ADDR \to VAL \\
+write\_word\_mem : (ADDR \pfun BYTE) \times ADDR \times VAL \to (ADDR \pfun BYTE)
+\end{array}$$
+
+### 3.2 Схема состояния машины: $StackVMState$
+
+Схема описывает полный инвариант архитектурного состояния Stack-VM:
+
+$$\begin{array}{|l}
+StackVMState \\
+\hline
+vip : ADDR \\
+vsp : ADDR \\
+vkey : WORD \\
+vdisp : ADDR \\
+vstack : \mathrm{seq} ~ VAL \\
+vctx : REG\_ID \pfun VAL \\
+vmem : ADDR \pfun BYTE \\
+flags : FLAGS \\
+\hline
+\#vstack \le \text{MAX\_STACK\_DEPTH} \\
+vsp \bmod \text{WORD\_SIZE} = 0 \\
+\dom vctx = \text{ACTIVE\_REGS} \\
+\end{array}$$
+
+*Предикаты инварианта:*
+1. Глубина виртуального стека $\#vstack$ строго ограничена сверху константой $\text{MAX\_STACK\_DEPTH}$.
+2. Указатель аппаратного стека $vsp$ выровнен по 8-байтовой границе.
+3. Домен отображения контекста $\dom vctx$ покрывает весь набор активных нативных регистров целевой платформы.
+
+### 3.3 Начальное состояние: $InitStackVMState$
+
+$$\begin{array}{|l}
+InitStackVMState \\
+\hline
+StackVMState' \\
+entry? : ADDR \\
+init\_sp? : ADDR \\
+seed\_key? : WORD \\
+base\_disp? : ADDR \\
+init\_ctx? : REG\_ID \fun VAL \\
+init\_mem? : ADDR \pfun BYTE \\
+\hline
+vip' = entry? \\
+vsp' = init\_sp? \\
+vkey' = seed\_key? \\
+vdisp' = base\_disp? \\
+vstack' = \langle \rangle \\
+vctx' = init\_ctx? \\
+vmem' = init\_mem? \\
+flags' = 0
+\end{array}$$
+
+---
+
+### 3.4 Схема шага выборки и расшифровки: $FetchByte$
+
+Операция выборки байта из памяти опкодов с параллельным обновлением ключа криптора:
+
+$$\begin{array}{|l}
+FetchByte \\
+\hline
+\Delta StackVMState \\
+plain! : BYTE \\
+\hline
+vip \in \dom vmem \\
+plain! = decrypt\_byte(vmem(vip), vkey) \\
+vip' = vip + 1 \\
+vkey' = derive\_key(vkey, plain!) \\
+vsp' = vsp \\
+vdisp' = vdisp \\
+vstack' = vstack \\
+vctx' = vctx \\
+vmem' = vmem \\
+flags' = flags
+\end{array}$$
+
+---
+
+### 3.5 Операционные схемы инструкций ($\Delta StackVMState$)
+
+#### Операция $PushImm$:
+Помещение непосредственного операнда на вершину стека:
+
+$$\begin{array}{|l}
+PushImm \\
+\hline
+\Delta StackVMState \\
+imm? : VAL \\
+\hline
+\#vstack < \text{MAX\_STACK\_DEPTH} \\
+vstack' = \langle imm? \rangle \cat vstack \\
+vsp' = vsp - \text{WORD\_SIZE} \\
+vctx' = vctx \\
+vmem' = vmem \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp \\
+flags' = flags
+\end{array}$$
+
+#### Операция $PushReg$:
+Чтение регистра из контекстного фрейма $\mathcal{C}$ и размещение на стеке:
+
+$$\begin{array}{|l}
+PushReg \\
+\hline
+\Delta StackVMState \\
+r? : REG\_ID \\
+\hline
+r? \in \dom vctx \\
+\#vstack < \text{MAX\_STACK\_DEPTH} \\
+vstack' = \langle vctx(r?) \rangle \cat vstack \\
+vsp' = vsp - \text{WORD\_SIZE} \\
+vctx' = vctx \\
+vmem' = vmem \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp \\
+flags' = flags
+\end{array}$$
+
+#### Операция $PopReg$:
+Извлечение значения с вершины стека и сохранение в контекстный слот:
+
+$$\begin{array}{|l}
+PopReg \\
+\hline
+\Delta StackVMState \\
+r? : REG\_ID \\
+\hline
+r? \in \dom vctx \\
+vstack \ne \langle \rangle \\
+vctx' = vctx \oplus \{ r? \mapsto \head(vstack) \} \\
+vstack' = \tail(vstack) \\
+vsp' = vsp + \text{WORD\_SIZE} \\
+vmem' = vmem \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp \\
+flags' = flags
+\end{array}$$
+
+#### Операция $ExecNor$ (Стрелка Пирса):
+Извлечение двух операндов, вычисление $\neg(a \lor b)$ и запись результата:
+
+$$\begin{array}{|l}
+ExecNor \\
+\hline
+\Delta StackVMState \\
+\hline
+\#vstack \ge 2 \\
+\LET a == vstack(1) \semi b == vstack(2) \IN \\
+\quad vstack' = \langle nor(a, b) \rangle \cat \tail(\tail(vstack)) \\
+vsp' = vsp + \text{WORD\_SIZE} \\
+vctx' = vctx \\
+vmem' = vmem \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp \\
+flags' = flags
+\end{array}$$
+
+#### Операция $ExecAdd$:
+Сложение операндов с генерацией нативных флагов:
+
+$$\begin{array}{|l}
+ExecAdd \\
+\hline
+\Delta StackVMState \\
+\hline
+\#vstack \ge 2 \\
+\LET a == vstack(1) \semi b == vstack(2) \IN \\
+\quad (res, new\_flags) = add\_with\_flags(a, b) \\
+\quad vstack' = \langle res \rangle \cat \tail(\tail(vstack)) \\
+\quad flags' = new\_flags \\
+vsp' = vsp + \text{WORD\_SIZE} \\
+vctx' = vctx \\
+vmem' = vmem \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp
+\end{array}$$
+
+#### Операция $ExecDup$:
+Дублирование верхнего элемента стека:
+
+$$\begin{array}{|l}
+ExecDup \\
+\hline
+\Delta StackVMState \\
+\hline
+vstack \ne \langle \rangle \\
+\#vstack < \text{MAX\_STACK\_DEPTH} \\
+vstack' = \langle \head(vstack) \rangle \cat vstack \\
+vsp' = vsp - \text{WORD\_SIZE} \\
+vctx' = vctx \\
+vmem' = vmem \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp \\
+flags' = flags
+\end{array}$$
+
+#### Операция $ExecSwap$:
+Перестановка двух верхних элементов:
+
+$$\begin{array}{|l}
+ExecSwap \\
+\hline
+\Delta StackVMState \\
+\hline
+\#vstack \ge 2 \\
+vstack' = \langle vstack(2), vstack(1) \rangle \cat \tail(\tail(vstack)) \\
+vsp' = vsp \\
+vctx' = vctx \\
+vmem' = vmem \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp \\
+flags' = flags
+\end{array}$$
+
+#### Операция $ExecReadMem$:
+Косвенное чтение из физической памяти по адресу со стека:
+
+$$\begin{array}{|l}
+ExecReadMem \\
+\hline
+\Delta StackVMState \\
+\hline
+vstack \ne \langle \rangle \\
+\LET addr == \head(vstack) \IN \\
+\quad vstack' = \langle read\_word\_mem(vmem, addr) \rangle \cat \tail(vstack) \\
+vsp' = vsp \\
+vctx' = vctx \\
+vmem' = vmem \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp \\
+flags' = flags
+\end{array}$$
+
+#### Операция $ExecWriteMem$:
+Запись значения со стека в физическую память:
+
+$$\begin{array}{|l}
+ExecWriteMem \\
+\hline
+\Delta StackVMState \\
+\hline
+\#vstack \ge 2 \\
+\LET addr == vstack(1) \semi val == vstack(2) \IN \\
+\quad vmem' = write\_word\_mem(vmem, addr, val) \\
+\quad vstack' = \tail(\tail(vstack)) \\
+vsp' = vsp + (2 \cdot \text{WORD\_SIZE}) \\
+vctx' = vctx \\
+vkey' = vkey \\
+vip' = vip \\
+vdisp' = vdisp \\
+flags' = flags
+\end{array}$$
+
+#### Операция относительной диспетчеризации $ExecDispatchRel$:
+
+$$\begin{array}{|l}
+ExecDispatchRel \\
+\hline
+\Delta StackVMState \\
+\delta? : OFFSET \\
+\hline
+vdisp' = vdisp + \delta? \\
+vip' = vip \\
+vsp' = vsp \\
+vkey' = vkey \\
+vstack' = vstack \\
+vctx' = vctx \\
+vmem' = vmem \\
+flags' = flags
+\end{array}$$
+
+---
+
+### 3.6 Теорема о сохранении инварианта стека базового блока
+
+Пусть базовый блок $B$ задан композицией операций $\mathcal{T}_B = \mathcal{O}_1 \comp \mathcal{O}_2 \comp \dots \comp \mathcal{O}_n$.
+
+$$\mathbf{Theorem} ~ (\text{Stack Conservation}) \bullet \\
+\forall s : StackVMState \bullet \\
+\quad (\Delta \text{VSP}(B) = 0 \land s \in \dom \mathcal{T}_B) \implies \#(\mathcal{T}_B(s).vstack) = \#(s.vstack) \land \mathcal{T}_B(s).vsp = s.vsp$$
+
+*Следствие:* При $\Delta \text{VSP}(B) = 0$ любой цикл или условное ветвление в графе потока управления не вызывает деградации или переполнения виртуального стека.
+
+---
+
+## 4. Набор инструкций Stack-ISA
 
 Базовый набор инструкций виртуальной машины состоит из минималистичных примитивов фиксированной семантики:
 
@@ -69,7 +389,7 @@ $$\Delta \text{VSP}(B) = \sum_{i \in B} \text{push\_weight}(i) - \sum_{i \in B} 
 
 ---
 
-## 4. Алгоритмы компиляции и трансформации
+## 5. Алгоритмы компиляции и трансформации
 
 ### Алгоритм 1. Понижение (Lowering) 3-адресного IR в Stack-VM
 
@@ -185,7 +505,7 @@ jmp   VDISP                   ; прыжок на следующий полим�
 
 ---
 
-## 5. Генерация полиморфного рантайма (Runtime Synthesizer)
+## 6. Генерация полиморфного рантайма (Runtime Synthesizer)
 
 При каждой компиляции защищаемого модуля:
 
@@ -203,7 +523,7 @@ jmp   VDISP                   ; прыжок на следующий полим�
 
 ---
 
-## 6. Пошаговый план внедрения (TODO) в ASGARD-5877
+## 7. Пошаговый план внедрения (TODO) в ASGARD-5877
 
 ### Фаза 1: Промежуточное представление и парсер (Stack-IR)
 - [ ] **1.1 Определение типа Stack-IR в OCaml:**
