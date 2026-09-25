@@ -209,137 +209,149 @@
 > флагов, динамического вектора RVV и расширений битовых манипуляций.
 >
 > **Порядок реализации по приоритету**:
-> 1. **VM flags + memory semantics** (базовый фундамент корректности)
-> 2. **RVV (RISC-V Vector)** (параметризованная модель вместо плоских 128-бит)
-> 3. **x86 bit/BMI + SSE/AVX FP** (фиксация границы SSE / AVX-128 / AVX2 vs AVX-512)
+> 1. **VM flags + memory semantics** (базовый фундамент корректности: EFLAGS/NZCV, адресация, atomics/fence)
+> 2. **RVV (RISC-V Vector)** (параметризованная модель VL/VTYPE/VLMUL/SEW вместо плоских 128-бит)
+> 3. **x86 bit/BMI + SSE/AVX FP** (скалярный FP, AVX-256 zeroing, фиксация границы AVX-512)
 > 4. **AArch64 FP/NEON + bit manipulation + atomics**
 > 5. **Системные инструкции, CSR и границы сред (System / CSR / Fence)**
 
 ---
 
-### Архитектурное расширение ядра VM-IR (Примитивы вместо разрастания опкодов)
+### 1. Архитектурное состояние VM (VMContext Core State Model)
 
-Вместо добавления десятков разрозненных платформозависимых опкодов расширить `lib/vm_ir/ir.ml` ортогональными IR-примитивами:
+Для исполнения произвольного бинарного кода `VMContext` обязан явно выражать:
+* **GPR**: 64-битные регистры общего назначения хост/гостевой архитектуры.
+* **PC & SP**: счётчик команд и указатель стека с платформенным выравниванием (16 байт для ARM64/x86-64 ABI).
+* **Архитектурный Condition State**:
+  * *x86-64*: каноническая шестёрка `CF`, `OF`, `SF`, `ZF`, `AF`, `PF`.
+  * *AArch64*: биты условий `NZCV` (Negative, Zero, Carry, oVerflow).
+  * *RISC-V*: прямое сравнение регистров в ветвлениях, плюс флаги статуса FP (`NV`, `DZ`, `OF`, `UF`, `NX`).
+  * *Принцип*: отказ от принудительного сведения ARM64/RISC-V к x86 EFLAGS — поддержка нативного моделирования состояний.
+* **Память и Memory Ordering**:
+  * Барьеры памяти: `SeqCst`, `Acquire`, `Release`, `AcqRel`, `Relaxed`.
+  * Явное представление барьеров упорядочивания (`FENCE` / `DMB` / `MFENCE`) для всех трёх ISA, без которых SMP/атомики неполны.
+* **FP / Vector Registers & Control/Status**:
+  * 128/256-битные векторные банки и скалярные FP-аккумуляторы.
+  * Управляющие регистры FP-окружения: `MXCSR` (x86), `FPCR`/`FPSR` (ARM64), `fcsr` (RISC-V).
 
-| Категория | IR Примитивы | Семантика |
+---
+
+### 2. Ортогональное расширение примитивов VM-IR
+
+Вместо разрастания ad-hoc опкодов расширить ядро `lib/vm_ir/ir.ml` универсальными примитивами:
+
+| Группа IR | Примитивы | Семантика |
 | :--- | :--- | :--- |
-| **FLAGS** | `Get_flag`, `Set_flag`, `Materialize_flags`, `Lazy_flags` | Разделение eager и lazy флагов, извлечение отдельных бит (CF, ZF, SF, OF, PF, AF / NZCV), материализация флагового слова. |
-| **BIT** | `Clz`, `Ctz`, `Bswap`, `Bit_test`, `Bit_set`, `Bit_clear`, `Bit_toggle` | Подсчёт ведущих/замыкающих нулей, реверс байт, атомарное тестирование и модификация отдельных бит. |
-| **EXT** | `Sign_ext`, `Zero_ext`, `Trunc` | Явное представление расширения/усечения разрядностей B8/B16/B32/B64 без эвристических сдвигов. |
-| **SHIFT** | `Shld`, `Shrd`, `Rotate` | Двухоперандные сдвиги с затягиванием битов из соседнего регистра, циклические сдвиги произвольной ширины. |
-| **FP** | `Fadd`, `Fsub`, `Fmul`, `Fdiv`, `Fcmp`, `Fconv` | Скалярная арифметика IEEE-754 (single & double precision), сравнения с установкой флагов, конвертации `int <-> fp`. |
-| **VECTOR** | `Vadd`, `Vsub`, `Vmul`, `Vshift`, `Vcmp`, `Vperm`, `Vreduce` | Параметризованные векторные операции над элементами произвольного SEW с маскированием и редукциями. |
-| **CONTROL** | `Indirect_jmp`, `Indirect_call`, `Tailcall`, `Trap`, `Syscall` | Чёткие границы вызовов, косвенных переходов и изоляции внешних системных шлюзов. |
-| **ATOMIC** | `Atomic_lr`, `Atomic_sc`, `Atomic_cas`, `Atomic_rmw` | Load-Reserved / Store-Conditional, Compare-And-Swap, универсальные Fetch-And-Op (Add, Sub, And, Or, Xor, Min, Max). |
-| **SYSTEM** | `Fence`, `Csr_read`, `Csr_write` | Барьеры упорядочивания памяти/инструкций и доступ к регистрам управления/статуса. |
+| **FLAGS** | `Flags_get`, `Flags_set`, `Flags_merge`, `Flags_materialize`, `Lazy_flags` | Прямое извлечение/запись флагов, слияние частичных апдейтов, материализация в GPR, SSA-трекинг флагов. |
+| **MEMORY** | `Load`, `Store`, `Load_signed`, `Load_zero_ext`, `Atomic_rmw`, `Fence` | Типизированный доступ с размерами B8–B64, атомарные RMW (Add, Sub, And, Or, Xor, Min, Max), барьеры памяти. |
+| **ADDRESS** | `Lea`, `Address`, `Pc_rel` | Вычисление эффективного адреса (Base + Index*Scale + Disp), сегментные базы, PC-relative адресация. |
+| **CONTROL** | `Indirect_jmp`, `Indirect_call`, `Return`, `Switch`, `Tailcall`, `Trap`, `Syscall` | Косвенная диспетчеризация, jump tables (switch), границы системных вызовов и изоляция исключений. |
+| **EXT / BIT** | `Sign_ext`, `Zero_ext`, `Trunc`, `Bitcast`, `Clz`, `Ctz`, `Bswap`, `Bit_test`, `Bit_set`, `Bit_clear`, `Bit_toggle` | Манипуляции разрядностями без хаков со сдвигами, битовые тесты, подсчёт нулей, реверс байт/бит. |
+| **SHIFT** | `Shld`, `Shrd`, `Rotate`, `Rcl`, `Rcr` | Двухоперандные сдвиги, циклические сдвиги, сдвиги через флаг переноса (carry). |
+| **FP** | `Fadd`, `Fsub`, `Fmul`, `Fdiv`, `Fsqrt`, `Fcmp`, `Fconv` | Скалярная арифметика single (F32) и double (F64), квадратный корень, сравнения, конвертации `int <-> fp`. |
+| **VECTOR** | `Vec_splat`, `Vec_extract`, `Vec_insert`, `Vec_shift`, `Vec_compare`, `Vec_shuffle`, `Vadd`, `Vsub`, `Vmul`, `Vperm`, `Vreduce` | Параметризованные векторные примитивы: broadcasting, вставка/извлечение элементов, сдвиги, перестановки, редукции. |
+| **SYSTEM** | `Fence`, `Csr_read`, `Csr_write` | Синхронизация инструкций/памяти, доступ к системным/пользовательским CSR-регистрам. |
 
 ---
 
-### Этап 1: VM Flags + Memory Semantics & ABI (Приоритет 1)
+### 3. Спецификация покрытия x86_64
 
-1. **Полная работа с флагами**:
-   - Явные операции `Materialize_flags` и `Lazy_flags` для разгрузки контекста.
-   - x86-64: инструкции `lahf`, `sahf`, `pushf`, `popf` с сохранением и восстановлением флагового регистра.
-   - Арифметика с переносом/заёмом: `adc` и `sbb` с точным моделированием входящего и исходящего флага `CF`.
-2. **Семантика памяти и адресации**:
-   - AArch64: поддержка всех форм адресации для `ldp`/`stp` (offset, pre-indexed `[sp, #-16]!`, post-indexed `[sp], #16`, signed offset `[x29, #32]`).
-   - AArch64: некэшируемые/привилегированные доступы `ldtr`, `sttr`.
-   - AArch64 атомики (аналог A-extension): `ldxr`/`stxr`, `ldar`/`stlr` с acquire/release барьерами, а также атомарные RMW: `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor`.
-   - x86-64: поддержка инструкций изменения порядка байт `movbe` и `bswap`.
-   - Верификация полного декартова произведения `movsx`/`movzx`/`movsxd` для всех комбинаций размеров (B8->B16, B8->B32, B8->B64, B16->B32, B16->B64, B32->B64) как для регистров, так и для операндов в памяти.
-3. **Stack & Function ABI**:
-   - Корректная модель специальных архитектурных регистров:
-     * AArch64: `x30` / `LR` (Link Register), `sp` (Stack Pointer, выравнивание по 16 байт), `xzr`/`wzr` (константный нуль при чтении, sinkhole при записи).
-     * RISC-V: `x0` / `zero` (hardwired zero).
-
----
-
-### Этап 2: Параметризованная модель RISC-V Vector (RVV) (Приоритет 2)
-
-Текущая модель fixed-width 128-bit SIMD недостаточна для стандарта RV64GCV. Требуется полноценный движок динамической конфигурации вектора:
-
-1. **Модель состояния RVV**:
-   - Регистры конфигурации: `VLEN` (конфигурируемая длина вектора платформы, напр. 128, 256, 512 бит), `SEW` (Selected Element Width: 8, 16, 32, 64), `LMUL` (Register Group Multiplier: 1/8, 1/4, 1/2, 1, 2, 4, 8), `VL` (Vector Length), `vstart`, `vmask` (регистр маски `v0`).
-2. **Конфигурация вектора**:
-   - Инструкции `vsetvli`, `vsetivli`, `vsetvl` с вычислением активной длины вектора `vl` по запрошенному `avl` и типу `vtype`.
-3. **Векторная память**:
-   - `vle8.v`, `vle16.v`, `vle32.v`, `vle64.v` и парные `vse*.v`.
-   - Strided-доступы (`vlse*.v`, `vsse*.v`) и indexed-доступы (`vluxei*.v`, `vsuxei*.v`).
-   - Fault-only-first загрузки (`vle*ff.v`).
-4. **Векторная арифметика и логика**:
-   - Целочисленные операции: `vadd.vv/vx/vi`, `vsub`, `vmul`, `vdiv`, `vrem`.
-   - Битовые операции: `vand`, `vor`, `vxor`, `vnot`.
-   - Сдвиги: `vsll`, `vsrl`, `vsra` (логические и арифметические).
-   - Сравнения: `vmseq`, `vmsne`, `vmslt`, `vmsle` (знаковые и беззнаковые) с генерацией битовой маски в регистр.
-   - Редукции: `vredsum.vs`, `vredmax.vs`, `vredmin.vs` (схлопывание вектора в скаляр).
-   - Widening / Narrowing операции: `vwaddu`, `vwadd`, `vwmul`, `vnsrl`.
-   - Перестановки и сдвиги регистров: `vrgather`, `vslideup`, `vslidedown`, `vcompress`.
+1. **Память, сегментация и строковые операции**:
+   - Изменение порядка байт: `movbe`, `bswap`.
+   - Табличная трансляция: `xlat` / `xlatb`.
+   - Строковые инструкции: `stosb/stosw/stosd/stosq`, `lodsb/lodsw/lodsd/lodsq`, `scasb/scasw/scasd/scasq`, `cmpsb/cmpsw/cmpsd/cmpsq`.
+   - Префиксы повторения строк: `rep`, `repe`/`repz`, `repne`/`repnz` с автоматическим декрементом `RCX` и проверкой `ZF`.
+   - Адресация сегментов: префиксы переопределения `FS:` и `GS:` (TLS / thread-local storage).
+   - Прямая адресация смещением: `moffs`-формы `mov` (`mov al/ax/eax/rax, [moffs]`).
+   - push/pop сегментных регистров при виртуализации низкоуровневых контекстов.
+2. **Целочисленная арифметика и EFLAGS**:
+   - `adc` и `sbb`: для всех размеров (B8, B16, B32, B64) с точным расчётом всей шестёрки флагов (`CF`, `ZF`, `SF`, `OF`, `AF`, `PF`).
+   - `imul`: полная поддержка всех трёх форм (1-операндная с implicit RDX:RAX, 2-операндная `reg, r/m`, 3-операндная `reg, r/m, imm`).
+   - Битовые тесты: `bt`, `bts`, `btr`, `btc` (с установкой флага `CF`).
+   - Сканирование и подсчёт бит: `bsf`, `bsr`, `tzcnt`, `lzcnt`, `popcnt`.
+   - Инструкции BMI1 / BMI2: `bextr`, `bzhi`, `pdep`, `pext`, `andn`, `rorx`, `sarx`, `shlx`, `shrx`.
+   - Сдвиги: `shld`, `shrd` (двухоперандные сдвиги), `rcl`, `rcr` (циклические сдвиги через carry).
+3. **Управление флагами**:
+   - Инструкции: `lahf`, `sahf`, `pushf`/`pushfq`, `popf`/`popfq`, `clc`, `stc`, `cmc`, `cld`, `std`.
+   - Единая каноническая модель EFLAGS для предикатов `setcc`, `cmovcc`, `jcc`.
+4. **SSE / AVX / AVX2**:
+   - Граница поддержки:
+     * `SSE (128-bit)` $\to$ **Supported**
+     * `AVX-128 (VEX 128-bit)` $\to$ **Supported**
+     * `AVX2 (VEX 256-bit YMM ymm0..ymm15/31)` $\to$ **Supported** с обязательным занулением верхней 128-битной половины YMM при записи в XMM.
+     * `AVX-512 (EVEX 512-bit ZMM + Opmask k0..k7)` $\to$ **Explicit Unsupported / Trap Boundary**.
+   - Целочисленные SIMD: `vpsll*`, `vpsrl*`, `vpsra*`, `vpcmpeq*`, `vpcmpgt*`, `vpmov*`, `vpunpck*`, `vpack*`, `vpshuf*`, `vperm*`, `vblend*`, `vmin*`, `vmax*`, `vpabs*`, `vpmuludq`, `vpmadd*`, `vpsadbw`, `vzeroupper`.
+   - Скалярный FP: `addss/addsd`, `subss/subsd`, `mulss/mulsd`, `divss/divsd`, `comiss/ucomiss`, `comisd/ucomisd`, `sqrtss/sqrtsd`, конвертации `cvtsi2ss/cvtsi2sd`, `cvtss2si/cvtsd2si`, `cvtsd2ss`, `cvtss2sd`.
+5. **Атомики (SMP)**:
+   - Префикс `lock` для шинных блокировок.
+   - Инструкции: `xadd`, `cmpxchg`, `cmpxchg8b`, `cmpxchg16b`.
+   - `xchg` с операндом в памяти (неявная атомарность без префикса lock).
 
 ---
 
-### Этап 3: x86 Bit / BMI + SSE/AVX Floating Point и фиксация границ (Приоритет 3)
+### 4. Спецификация покрытия ARM64 (AArch64)
 
-1. **Архитектурная фиксация границ AVX**:
-   - `SSE (128-bit)` $\to$ **Supported**
-   - `AVX-128 (VEX 128-bit)` $\to$ **Supported**
-   - `AVX2 (VEX 256-bit YMM)` $\to$ **Supported / Partial**
-   - `AVX-512 (EVEX 512-bit ZMM + Opmask k0..k7)` $\to$ **Explicit Unsupported / Trap Boundary** (вызов аварийного выхода или native fallback вместо молчаливой ошибочной трансляции).
-   - *Устранить дублирование в документации списков `and/or/xor/not` и `shl/sal/shr/sar`*.
-2. **Битовые операции и расширения BMI1 / BMI2**:
-   - Тестирование и модификация бит: `bt`, `bts`, `btr`, `btc`.
-   - Сканирование бит: `bsf`, `bsr`.
-   - Подсчёт бит: `popcnt`, `lzcnt`, `tzcnt`.
-   - Сдвиги двойной точности: `shld`, `shrd` с регистровым и непосредственным сдвигом.
-   - Инструкции BMI1 / BMI2: `andn`, `bextr`, `bzhi`, `pdep`, `pext`, `rorx`, `sarx`, `shlx`, `shrx`.
-3. **SSE / AVX расширения**:
-   - Векторные сдвиги: `vpsllw/d/q`, `vpsrlw/d/q`, `vpsraw/d`.
-   - Векторные сравнения: `vpcmpeqb/w/d/q`, `vpcmpgtb/w/d/q`.
-   - Переупаковка и перестановки: `vpmov*`, `vpunpckh*`, `vpunpckl*`, `vpshufb`, `vpshufd`, `vpalignr`, `vblend*`.
-   - Векторный FP: `vaddps/pd`, `vsubps/pd`, `vmulps/pd`, `vdivps/pd`, `vminps/pd`, `vmaxps/pd`, `vcmpps/pd`.
-
----
-
-### Этап 4: AArch64 FP / NEON & Bit Manipulation (Приоритет 4)
-
-1. **Скалярная плавающая точка (VFP)**:
-   - Пересылка данных: `fmov` (между GPR и FPR, а также непосредственные float-константы).
-   - Арифметика и сравнения: `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `fcsel`.
-   - Преобразования: `fcvt` (half $\leftrightarrow$ single $\leftrightarrow$ double), `fcvtzs`, `fcvtzu`, `scvtf`, `ucvtf`.
-2. **Векторный NEON**:
-   - Векторная арифметика/логика: packed `add`, `sub`, `mul`, `and`, `orr`, `eor`.
-   - Векторные сдвиги: `shl`, `sshr`, `ushr`.
-   - Векторные сравнения: `cmeq`, `cmge`, `cmgt`, `cmtst`.
-3. **Условные инструкции и NZCV**:
-   - Условные сравнения: `ccmp`, `ccmn` (с установкой флагов по условию).
-   - Точное моделирование флагов NZCV для `cinc`, `cinv`, `cneg`.
-4. **Битовые манипуляции AArch64**:
-   - Битовые поля: `ubfx`, `sbfx`, `bfi`, `bfxil`.
-   - Обобщённые битовые маски: `ubfm`, `sbfm`, `bfm`.
-   - Реверс и подсчёт нулей: `rbit` (реверс бит в слове), `clz`, `cls`.
-   - Реверс байт: `rev` (64-бит), `rev32`, `rev16`.
-5. **Расширенные умножения AArch64**:
-   - `umaddl`, `umsubl`, `smaddl`, `smsubl` (умножение 32-битных в 64-битные с накоплением).
-   - `umulh`, `smulh` (получение старшей половины 64-битного умножения без RDX).
+1. **Память и эксклюзивные доступы**:
+   - Загрузки/сохранения: `ldrb/ldrh/ldrsb/ldrsh`, привилегированные `ldtr/sttr` (включая знако-расширяющие).
+   - Парные нетемпоральные доступы: `ldnp/stnp`.
+   - Векторные NEON load/store: `ld1/st1` (одно- и многоструктурные).
+   - One-way barriers (Acquire/Release): `ldar/ldarb/ldarh`, `stlr/stlrb/stlrh`.
+   - Эксклюзивные доступы: `ldxrb/ldxrh/ldxr`, `stxrb/stxrh/stxr`, `ldaxrb/ldaxrh/ldaxr`, `stlxrb/stlxrh/stlxr`.
+   - Атомарные RMW (LSE / Large System Extensions): `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor` (все с версиями `a`/`l`/`al`).
+2. **Условные инструкции**:
+   - `ccmp`, `ccmn` (Conditional Compare с дефолтными NZCV флагами).
+   - `cinc`, `cinv`, `cneg`, `csinc`, `csinv`, `csneg` (Conditional Select с инкрементом/инверсией/отрицанием).
+3. **Битовые манипуляции**:
+   - `clz`, `cls` (подсчёт ведущих нулей / знаковых бит).
+   - `rbit` (реверс битов).
+   - Реверс байт: `rev`, `rev16`, `rev32`.
+   - Битовые поля: `ubfx`, `sbfx`, `ubfm`, `sbfm`, `bfi`, `bfxil`.
+   - Извлечение битовых полей из двух регистров: `extr`.
+4. **Целочисленная арифметика**:
+   - Умножения: `smaddl`, `smsubl`, `umaddl`, `umsubl`, `smulh`, `umulh`.
+   - Знаковое/нулевое расширение: `sxtb/sxth/sxtw`, `uxtb/uxth/uxtw`.
+   - Арифметика с флагом переноса: `adc`, `adcs`, `sbc`, `sbcs`, `ngc`, `ngcs`.
+5. **NEON и Floating Point**:
+   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `fmin/fmax`, `fcmp`, `fcsel`, `fcvt` (half/single/double), `scvtf/ucvtf`, `fcvtzs/fcvtzu`.
+   - NEON векторная память: `ldr/str` SIMD.
+   - NEON арифметика/логика: векторные `add/sub/mul`, `and/orr/eor/bic`.
+   - Табличные подстановки и перестановки: `tbl`, `tbx`, `ext`, `dup`, `zip1/zip2`, `uzp1/uzp2`, `trn1/trn2`.
 
 ---
 
-### Этап 5: Системные инструкции, CSR и границы сред (Приоритет 5)
+### 5. Спецификация покрытия RISC-V (RV64GCV)
 
-1. **x86-64 System Boundaries**:
-   - `syscall`, `sysret`: явная изоляция через `External_Boundary` трамплины (сохранение контекста VM, вызов хост-ядра).
-   - Идентификация и таймеры: `cpuid`, `rdtsc`, `rdtscp` (эмуляция или безопасный passthrough).
-   - Управление расширенными состояниями: `xgetbv`.
-2. **AArch64 System Boundaries**:
-   - `eret` / прерывания: изоляция в границу исключений / unsupported trap.
-3. **RISC-V System & CSR & Scalar FP**:
-   - Системные boundary-инструкции: `ecall`, `ebreak`, `fence`, `fence.i`.
-   - Инструкции работы с регистрами CSR: `csrrw`, `csrrs`, `csrrc`, `csrrwi`, `csrrsi`, `csrrci` (эмуляция стандартных таймеров, счетчиков тактов `cycle`/`time` и флагов FP `fcsr`).
-   - Скалярный FP (F- и D-расширения RV64FD):
-     * Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fsqrt.s/d`, `fmin.s/d`, `fmax.s/d`, `fsgnj.s/d`, `fsgnjn.s/d`, `fsgnjx.s/d`.
-     * Сравнения: `feq.s/d`, `flt.s/d`, `fle.s/d`.
-     * Fused-multiply-add: `fmadd.s/d`, `fmsub.s/d`, `fnmsub.s/d`, `fnmadd.s/d`.
-     * Загрузки/сохранения: `flw`, `fld`, `fsw`, `fsd`.
-     * Преобразования: `fcvt.w.s/d`, `fcvt.l.s/d`, `fcvt.s.w/l`, `fcvt.d.w/l`, `fcvt.s.d`, `fcvt.d.s`.
+1. **Скалярная плавающая точка (F- и D-расширения RV64FD)**:
+   - Память: `flw`, `fld`, `fsw`, `fsd`.
+   - Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fsqrt.s/d`, `fmin.s/d`, `fmax.s/d`.
+   - Сравнения: `feq.s/d`, `flt.s/d`, `fle.s/d`.
+   - Копирование знака: `fsgnj.s/d`, `fsgnjn.s/d`, `fsgnjx.s/d`.
+   - Fused Multiply-Add: `fmadd.s/d`, `fmsub.s/d`, `fnmsub.s/d`, `fnmadd.s/d`.
+   - Преобразования: `fcvt.*` (между FP и целыми числами, а также float $\leftrightarrow$ double).
+2. **Векторное расширение V (RVV Dynamic Vector Engine)**:
+   - *Архитектурный инвариант*: динамическая параметризация `VL/VTYPE/VLMUL/SEW`, поддержка `vlen` $\ge 128$.
+   - Конфигурация: `vsetvli`, `vsetivli`, `vsetvl`.
+   - Память:
+     * Unit-stride: `vle8/16/32/64.v`, `vse8/16/32/64.v`.
+     * Strided: `vlse*.v`, `vsse*.v`.
+     * Indexed: `vluxei*`, `vloxei*`, `vsuxei*`, `vsoxei*`.
+   - Арифметика и логика:
+     * `vadd`, `vsub`, `vrsub`, `vmul`, `vdiv`, `vrem`.
+     * `vand`, `vor`, `vxor`, `vnot`.
+     * `vsll`, `vsrl`, `vsra`.
+     * `vmin`, `vmax`.
+   - Сравнения и маски:
+     * `vmseq`, `vmsne`, `vmslt`, `vmsle` (signed/unsigned).
+     * `vmerge`, `vmv`.
+     * Логика масок: `vmand`, `vmor`, `vmxor`.
+   - Редукции и перестановки:
+     * `vredsum`, `vredmax`, `vredmin`.
+     * `vslideup`, `vslidedown`.
+     * `vrgather`, `vcompress`.
+3. **Системные инструкции, барьеры и CSR**:
+   - `ecall`, `ebreak`.
+   - Память и упорядочивание: `fence`, `fence.i`, `fence.tso`.
+   - Регистры управления и статуса: `csrrw`, `csrrs`, `csrrc`, `csrrwi`, `csrrsi`, `csrrci`.
 
 ---
 
