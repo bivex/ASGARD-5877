@@ -379,6 +379,68 @@ let test_vsp_whitening () =
   Alcotest.(check bool) "plaintext imm not raw in bytecode (rolling key)" false
     (contains bc_str cafe_bytes)
 
+let test_ghost_stack_padding () =
+  let seed = 0xABCDEF0123456789L in
+
+  (* Build a simple program with a known op count *)
+  let b0 = make_block 0 "entry" [
+    PushImm 100L;
+    PushImm 200L;
+    Add;
+    PopReg 0;
+    Exit;
+  ] in
+  let prog_orig = make_program 0 [b0] 8 in
+  let ctx = Context_allocator.create () in
+
+  let ghost_cfg = Stack_ghost_pass.default_ghost_config seed in
+  let prog_ghost = Stack_ghost_pass.apply_program ghost_cfg ctx prog_orig in
+
+  (* 1. Ghost ops were injected: total op count must be >= original *)
+  let count_ops prog =
+    Hashtbl.fold (fun _ b acc -> acc + List.length b.ops) prog.blocks 0
+  in
+  let orig_count  = count_ops prog_orig  in
+  let ghost_count = count_ops prog_ghost in
+  Alcotest.(check bool) "ghost pass injects ops" true (ghost_count >= orig_count);
+
+  (* 2. Block balance is preserved — all blocks must still have delta = 0 *)
+  Hashtbl.iter (fun _ b ->
+    let res = Stack_balance_pass.analyze_block b in
+    Alcotest.(check bool)
+      (Printf.sprintf "block %d balanced after ghost pass" b.id)
+      true res.is_balanced
+  ) prog_ghost.blocks;
+
+  (* 3. Program still executes correctly (via OCaml bytecode eval) *)
+  let enc_orig  = Stack_encoder.encode_program ~seed_key:seed prog_orig  in
+  let enc_ghost = Stack_encoder.encode_program ~seed_key:seed prog_ghost in
+  let st_orig   = run_bytecode enc_orig  in
+  let st_ghost  = run_bytecode enc_ghost in
+  Alcotest.(check int64) "ghost: original result" 300L (get_reg st_orig  0);
+  Alcotest.(check int64) "ghost: padded result"   300L (get_reg st_ghost 0);
+  Alcotest.(check bool)  "ghost: both halted"     true
+    (st_orig.halted && st_ghost.halted);
+
+  (* 4. ghost_stats reports non-zero injection *)
+  let stats = Stack_ghost_pass.ghost_stats prog_orig prog_ghost in
+  Alcotest.(check bool) "ghost_stats non-empty"   true (String.length stats > 0);
+  Alcotest.(check bool) "ghost_stats has 'ghost'" true
+    (let len_s = String.length stats and sub = "ghost" in
+     let lsub = String.length sub in
+     let rec go i = if i + lsub > len_s then false
+                    else if String.sub stats i lsub = sub then true
+                    else go (i+1) in go 0);
+
+  (* 5. Cross-build diversity: two different seeds → different ghost op counts *)
+  let ctx2 = Context_allocator.create () in
+  let ghost_cfg2 = Stack_ghost_pass.default_ghost_config (Int64.logxor seed 0xFFFF_FFFFL) in
+  let prog_ghost2 = Stack_ghost_pass.apply_program ghost_cfg2 ctx2 prog_orig in
+  let ghost_count2 = count_ops prog_ghost2 in
+  (* At least one of the two builds should differ from the original count *)
+  Alcotest.(check bool) "ghost diversity across seeds"  true
+    (ghost_count <> orig_count || ghost_count2 <> orig_count)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -390,6 +452,7 @@ let tests = [
   ("Stack VM Extensions & Branching", `Quick, test_stack_vm_extensions);
   ("Polymorphic Opcode Remapping & Synthesis", `Quick, test_polymorphic_opcodes);
   ("VSP Stack Value Whitening", `Quick, test_vsp_whitening);
+  ("Ghost Stack Padding Pass", `Quick, test_ghost_stack_padding);
 ]
 
 

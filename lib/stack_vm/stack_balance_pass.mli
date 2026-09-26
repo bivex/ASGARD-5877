@@ -7,6 +7,8 @@ type balance_result = {
   is_balanced : bool;
 }
 
+val is_terminator : stack_op -> bool
+
 val analyze_block : block -> balance_result
 
 val verify_program : program -> (int * string) list

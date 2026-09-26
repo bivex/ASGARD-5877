@@ -109,7 +109,7 @@ let compute_shannon_entropy (b : bytes) : float =
     done;
     !entropy
 
-let make_stack_metrics (prog : Stack_vm.Stack_ir.program) (enc : Stack_vm.Stack_encoder.encrypted_bytecode) : Protect_ports.metrics_report =
+let make_stack_metrics ?(ghost_info = "Ghost padding: N/A") (prog : Stack_vm.Stack_ir.program) (enc : Stack_vm.Stack_encoder.encrypted_bytecode) : Protect_ports.metrics_report =
   let entropy = compute_shannon_entropy enc.bytes in
   let num_blocks = Hashtbl.length prog.blocks in
   let drs = min 99.0 (85.0 +. (entropy *. 1.5)) in
@@ -119,12 +119,14 @@ let make_stack_metrics (prog : Stack_vm.Stack_ir.program) (enc : Stack_vm.Stack_
        - Architecture: Stack-VM Execution Engine (Universal Logic + Rolling Key)\n\
        - Opcode Mapping: Dynamic Polymorphic ISA (Unique Build Permutation)\n\
        - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
+       - Ghost Stack Padding: %s\n\
        - Basic Blocks: %d\n\
        - Bytecode Size: %d bytes (%d words)\n\
        - Shannon Entropy: %.4f / 8.0 (%.1f%%)\n\
        - Devirtualization Resistance Score (DRS): %.2f / 100.0\n\
        - Rolling Key Seed: 0x%016LX\n\
        ==============================================="
+      ghost_info
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
       entropy (entropy /. 8.0 *. 100.0) drs enc.seed_key
   in
@@ -160,6 +162,17 @@ module Stack_vm_packager : Vm_packager = struct
     (* Apply stack balance pass to ensure well-formed basic blocks *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
 
+    (* Phase 3: Ghost Stack Padding — inject neutral junk ops per block *)
+    let ghost_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 17)
+    in
+    let ghost_cfg = Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed in
+    let prog_ghost = Stack_vm.Stack_ghost_pass.apply_program ghost_cfg ctx prog in
+    let ghost_info = Stack_vm.Stack_ghost_pass.ghost_stats prog prog_ghost in
+    let prog = prog_ghost in
+
     let seed_key =
       Int64.logxor
         (Int64.of_int (Random.State.bits rng))
@@ -178,7 +191,7 @@ module Stack_vm_packager : Vm_packager = struct
         prog
     in
     let runner_source = Stack_vm.Stack_runtime.emit_runner_cpp bc_words in
-    let metrics = make_stack_metrics prog enc in
+    let metrics = make_stack_metrics ~ghost_info prog enc in
     {
       cpp_runtime_source;
       runner_source;
