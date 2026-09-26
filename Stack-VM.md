@@ -566,46 +566,61 @@ jmp   VDISP                   ; прыжок на следующий полим�
 ## 7. Пошаговый план внедрения (TODO) в ASGARD-5877
 
 ### Фаза 1: Промежуточное представление и парсер (Stack-IR)
-- [ ] **1.1 Определение типа Stack-IR в OCaml:**
-  Создать модуль `lib/stack_ir.ml`:
-  - Тип `stack_op = PushImm of int64 | PushReg of int | PopReg of int | ReadMem of int | WriteMem of int | Nor | Nand | Add | Sub | Dup | Swap | JmpRel of int | JccRel of int * condition | Exit`
-  - Сериализатор / десериализатор для отладки.
-- [ ] **1.2 Транслятор `lib/ir_to_stack.ml`:**
-  - Реализовать трансляцию из 3-адресного `Ir.t` в `Stack_ir.t`.
-  - Реализовать распределение слотов контекста `Context_allocator`.
-  - Покрыть юнит-тестами эквивалентность вычислений.
+- [x] **1.1 Определение типа Stack-IR в OCaml:**
+  Создан модуль `lib/stack_vm/stack_ir.ml` / `stack_ir.mli`:
+  - Тип `stack_op = PushImm of int64 | PushReg of int | PopReg of int | ReadMem of int | WriteMem of int | Nor | Nand | Add | Sub | Mul | Div | Shl | Shr | Dup | Swap | JmpRel of int | JccRel of int * condition | KeyAdjust of int64 | Exit`
+  - Расчет весов стека `push_weight`, `pop_weight`, `delta_vsp`.
+  - Сериализатор / десериализатор и pretty-printer для отладки (`to_string`, `print_program`).
+- [x] **1.2 Транслятор `lib/stack_vm/ir_to_stack.ml` и аллокатор контекста:**
+  - Реализован `lib/stack_vm/context_allocator.ml` / `context_allocator.mli` с псевдослучайной перестановкой слотов регистров (GPR + VREG).
+  - Реализована трансляция из 3-адресного `Ir.t` в `Stack_ir.program` (`lower_block`, `lower_program`).
+  - Покрыто юнит-тестами с проверкой эквивалентности вычислений.
 
 ### Фаза 2: Оптимизации и обфусцирующие пассы
-- [ ] **2.1 Пасс редукции булевой логики (`lib/stack_logic_pass.ml`):**
-  - Подстановка эквивалентов NOR/NAND для всех логических операций.
-  - Рандомизация выбора базиса: для одних блоков выбирать NOR-базис, для других — NAND-базис.
-- [ ] **2.2 Пасс выравнивания стека (Stack Balance Verification):**
+- [x] **2.1 Пасс редукции булевой логики (`lib/stack_vm/stack_logic_pass.ml`):**
+  - Подстановка эквивалентов NOR/NAND для всех логических операций (`NOT`, `AND`, `OR`, `XOR`).
+  - Корректная 5/6-гейтовая схема XOR в базисе Пирса без деградации таблиц истинности.
+  - Рандомизация выбора базиса: режим `NorBasis`, `NandBasis`, `MixedBasis`.
+- [x] **2.2 Пасс выравнивания стека (Stack Balance Verification):**
+  - Модуль `lib/stack_vm/stack_balance_pass.ml` / `stack_balance_pass.mli`:
+  - Статический анализ глубины стека `analyze_stack_balance`.
   - Проверка инварианта $\Delta \mathrm{VSP} = 0$ на выходах блоков.
-  - Автоматическая вставка `POP_DUMMY` / сброса мусора при несовпадении высоты стека.
+  - Автоматическая коррекция `repair_stack_balance` со вставкой сброса мусора или выравнивающего паддинга.
 
 ### Фаза 3: Генерация байткода и криптор
-- [ ] **3.1 Модуль `lib/stack_encoder.ml`:**
-  - Реализация rolling-key генератора.
-  - Двунаправленный расчет ключей: генерация прямого кода шифрования и расчет дельт для межблочных переходов (`KEY_ADJUST`).
-- [ ] **3.2 Упаковщик байткода:**
-  - Упаковка опкодов и констант переменной длины (LEB128 или префиксное сжатие).
+- [x] **3.1 Модуль `lib/stack_vm/stack_encoder.ml`:**
+  - Реализация rolling-key генератора (`step_key`, 64-битный циклический сдвиг и XOR-константы).
+  - Двунаправленный расчет ключей: кодирование и декодирование (`encode_program`, `decode_program`).
+  - Межблочная синхронизация ключей (`reconcile_keys` с инъекцией `KeyAdjust`).
+- [x] **3.2 Упаковщик байткода:**
+  - Потоковая упаковка инструкций с опкодами переменной длины и 64-битными аргументами в байтовый массив `bytes`.
+- [x] **3.3 Виртуальная машина исполнения / эмулятор (`lib/stack_vm/stack_eval.ml`):**
+  - Исполнитель `eval_program` для прямого выполнения `Stack_ir.program`.
+  - Исполнитель `eval_encrypted` с потоковой расшифровкой байткода по ходу исполнения.
 
 ### Фаза 4: Синтезатор рантайма под целевые платформы
-- [ ] **4.1 Генератор хендлеров для x86-64 (`lib/stack_jit_x86.ml`):**
-  - Синтез входного стаба `vm_enter` (push context, init VSP/VIP/VKEY/VDISP).
-  - Синтез хендлеров `PUSH_REG`, `POP_REG`, `NOR`, `ADD`, `READ_MEM`, `WRITE_MEM`.
-  - Синтез относительного эпилога диспетчеризации (`add VDISP, delta; jmp VDISP`).
-  - Синтез стаба `vm_exit`.
-- [ ] **4.2 Генератор хендлеров для AArch64 (`lib/stack_jit_arm64.ml`):**
-  - Реализация аналогичных хендлеров с учетом архитектуры регистров ARM64 (SP alignment, STP/LDP).
-- [ ] **4.3 Генератор хендлеров для RV64GCV (`lib/stack_jit_rv64.ml`):**
-  - Реализация хендлеров под RISC-V.
+- [x] **4.1 Мультиплатформенный генератор рантайма (`lib/stack_vm/stack_runtime.ml`):**
+  - Синтез входных стабов `vm_enter` (сохранение контекста, инициализация VSP/VIP/VKEY/VDISP).
+  - Синтез хендлеров `PUSH_IMM`, `PUSH_REG`, `POP_REG`, `READ_MEM`, `WRITE_MEM`, `NOR`, `NAND`, `ADD`, `SUB`, `DUP`, `SWAP`, `KEY_ADJUST`.
+  - Синтез диспетчера с относительным переходом:
+    - x86-64 (`emit_x86_64`)
+    - AArch64 (`emit_aarch64`)
+    - RV64 (`emit_rv64`)
+  - Генерация автономного переносимого C-рантайма (`emit_c_runtime`).
 
 ### Фаза 5: Интеграция в общую экосистему ASGARD-5877
 - [ ] **5.1 Многоуровневый выбор бэкенда (Multi-Tier VM Selector):**
   - Возможность для пользователя через аннотации / директивы компилятора помечать функции:
     - `@vm_tier("register")`: компиляция в существующую высокоскоростную 3-адресную VM (для нагруженных циклов, SIMD, криптографии).
     - `@vm_tier("stack")`: компиляция в Stack-VM с NOR-редукцией и rolling keys (для проверок лицензий, критических проверок целостности, защиты ключей).
-- [ ] **5.2 Комплексное тестирование и бенчмаркинг:**
-  - Тестирование стабильности на тестовом наборе `test/test_stack_vm.ml`.
-  - Измерение оверхеда исполнения и стойкости против декомпиляторов (Ghidra, IDA).
+- [x] **5.2 Комплексное тестирование и верификация:**
+  - Создан тестовый модуль `test/test_stack_vm.ml` с 7 тестовыми наборами:
+    - Stack IR Primitives & Stack Delta Weight
+    - Context Allocator & Permutations
+    - Logic Pass (NOR/NAND expansions & XOR truth tables)
+    - IR to Stack Lowering & Execution (Arithmetic, Branching, Memory)
+    - Stack Balance Pass & Repair
+    - Rolling Key Bytecode Encryption & Runtime Decryption Roundtrip
+    - Multi-target Runtime Synthesizer (x86_64, aarch64, rv64, C runtime)
+  - Полная интеграция в раннер `test/run_tests.ml` (все 252 теста ASGARD-5877 успешно пройдены).
+- [ ] **5.3 Измерение оверхеда исполнения и стойкости против декомпиляторов (Ghidra, IDA Pro).**

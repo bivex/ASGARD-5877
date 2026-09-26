@@ -35,6 +35,7 @@
   test_anti_tamper_smc
   test_protection_config
   test_riscv_lifter
+  test_stack_vm
   test_helpers
   run_tests)
  (libraries
@@ -50,6 +51,7 @@
   random_visa_assembler
   vanguard_9292
   vm_ir
+  random_visa.stack_vm
   x86_lifter
   arm64_lifter
   riscv_lifter
