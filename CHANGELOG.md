@@ -8,6 +8,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 
+- Add Stack-VM execution engine with universal logic reduction (NOR/NAND), stateful rolling key encryption, and stack balancing (`lib/stack_vm/`).
+- Add `--engine=stack` option to protection pipelines (`cli_protect.ml`, `cli_protect_arm64.ml`).
+- Add `idasql.md` guide for auditing and verifying protected binaries via SQL queries on IDA Pro databases.
+- Add `ASGARD_DEBUG_SYMBOLS=1` toolchain mode to preserve DWARF symbols and types for white-box VM auditing in IDA.
 - Add full RISC-V 64-bit lifter (`RV64I`, `RV64M`, `RV64A`, `RV64F/D`, `RVV`) and pipeline adapter.
 - Add comprehensive test suite for RISC-V instruction lifting and CFG reconstruction (`test/test_riscv_lifter.ml`).
 - Add Register-Driven JIT (RD-JIT) support for `AND`, `OR`, `SHL`, `SHR`, `SAR`, `NOT`, `NEG`, and 64-bit `LOAD`/`STORE` across ARM64, x86_64, and interpreter backends.
@@ -18,7 +22,8 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Changed
 
-- Update test suite registry to 245 tests across 34 suites (including RISC-V lifter, extended C macro suites, and one-operand mul/imul suites).
+- Update test suite registry to 255 tests across 35 suites (including Stack-VM primitives, logic reduction, rolling keys, and branch extensions).
+- Harden Stack-VM C++ runtime with Fail-Closed stack underflow/overflow bounds checks (`4096`), context slot bounds checks, and sanitization against empty symbol `dlsym` calls.
 - Ensure compiler pipeline always compiles C sources to assembly via toolchain even when macro obfuscation is disabled.
 - Automatically copy and configure `asgard_obf.h` header in output directory for C protection pipeline.
 
