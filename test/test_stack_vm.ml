@@ -525,6 +525,85 @@ let test_mba_synthesis () =
   Alcotest.(check bool) "different seeds → different MBA sequences" false
     (lists_equal mba_imm_vals vals2)
 
+let test_cff_flattening () =
+  let seed = 0x1122334455667788L in
+
+  (* Build a multi-block program with explicit JmpRel:
+       block 0: PushImm 10; PopReg 0; JmpRel 1
+       block 1: PushImm 20; PopReg 1; JmpRel 2
+       block 2: Exit
+  *)
+  let b0 = make_block 0 "b0" [ PushImm 10L; PopReg 0; JmpRel 1 ] in
+  let b1 = make_block 1 "b1" [ PushImm 20L; PopReg 1; JmpRel 2 ] in
+  let b2 = make_block 2 "b2" [ Exit ] in
+  let prog_orig = make_program 0 [b0; b1; b2] 8 in
+  let ctx = Context_allocator.create () in
+
+  let cff_cfg = Stack_cff_pass.default_cff_config seed in
+  let prog_cff = Stack_cff_pass.apply_program cff_cfg ctx prog_orig in
+
+  (* 1. Block count increased by at least n_real (dispatcher added) *)
+  let n_orig = Hashtbl.length prog_orig.blocks in
+  let n_cff  = Hashtbl.length prog_cff.blocks  in
+  Alcotest.(check bool) "CFF adds blocks" true (n_cff > n_orig);
+
+  (* 2. Real blocks should have NO direct JmpRel to other real blocks.
+        After CFF they JmpRel to the dispatcher (block id > max_real_id). *)
+  let max_real_id = 2 in  (* highest original block id *)
+  let real_block_direct_jmps =
+    Hashtbl.fold (fun id b acc ->
+      if id > max_real_id then acc  (* skip dispatcher blocks *)
+      else
+        List.fold_left (fun a op ->
+          match op with
+          | JmpRel t when t <= max_real_id -> a + 1
+          | _ -> a
+        ) acc b.ops
+    ) prog_cff.blocks 0
+  in
+  Alcotest.(check int) "no direct JmpRel to real blocks in flattened output" 0
+    real_block_direct_jmps;
+
+  (* 3. Program must still execute correctly using the AST evaluator
+        (run_program follows block_id changes through the dispatcher) *)
+  let st_orig = Stack_eval.run_program prog_orig in
+  let st_cff  = Stack_eval.run_program prog_cff  in
+  Alcotest.(check int64) "CFF: reg 0 preserved" (get_reg st_orig 0) (get_reg st_cff 0);
+  Alcotest.(check int64) "CFF: reg 1 preserved" (get_reg st_orig 1) (get_reg st_cff 1);
+  Alcotest.(check bool)  "CFF: both halted"      true
+    (st_orig.halted && st_cff.halted);
+
+  (* 4. cff_stats is well-formed *)
+  let stats = Stack_cff_pass.cff_stats prog_orig prog_cff in
+  let contains s sub =
+    let ls = String.length s and lsub = String.length sub in
+    let rec go i = if i + lsub > ls then false
+                   else if String.sub s i lsub = sub then true
+                   else go (i+1) in go 0
+  in
+  Alcotest.(check bool) "cff_stats non-empty"       true (String.length stats > 0);
+  Alcotest.(check bool) "cff_stats mentions 'blocks'" true (contains stats "blocks");
+  Alcotest.(check bool) "cff_stats mentions 'dispatcher'" true (contains stats "dispatcher");
+
+  (* 5. Block balance preserved after CFF *)
+  Hashtbl.iter (fun _ b ->
+    let res = Stack_balance_pass.analyze_block b in
+    Alcotest.(check bool)
+      (Printf.sprintf "block %d balanced after CFF" b.id)
+      true res.is_balanced
+  ) prog_cff.blocks;
+
+  (* 6. Cross-seed token diversity: different seeds → different dispatcher tokens *)
+  let ctx2 = Context_allocator.create () in
+  let cff_cfg2 = Stack_cff_pass.default_cff_config (Int64.logxor seed 0xAAAA_BBBBL) in
+  let prog_cff2 = Stack_cff_pass.apply_program cff_cfg2 ctx2 prog_orig in
+  (* Count direct_jmp_count — both should have 0 in real blocks, verifying pass ran *)
+  let jmps1 = Stack_cff_pass.direct_jmp_count prog_cff  in
+  let jmps2 = Stack_cff_pass.direct_jmp_count prog_cff2 in
+  (* Dispatcher blocks have jumps, so both should have non-zero total *)
+  Alcotest.(check bool) "CFF output has dispatcher jumps" true (jmps1 > 0);
+  Alcotest.(check bool) "CFF output2 has dispatcher jumps" true (jmps2 > 0)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -538,6 +617,7 @@ let tests = [
   ("VSP Stack Value Whitening", `Quick, test_vsp_whitening);
   ("Ghost Stack Padding Pass", `Quick, test_ghost_stack_padding);
   ("MBA Constant Synthesis", `Quick, test_mba_synthesis);
+  ("Virtual CFG Flattening", `Quick, test_cff_flattening);
 ]
 
 

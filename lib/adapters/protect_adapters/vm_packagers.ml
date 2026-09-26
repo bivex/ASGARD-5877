@@ -109,7 +109,13 @@ let compute_shannon_entropy (b : bytes) : float =
     done;
     !entropy
 
-let make_stack_metrics ?(ghost_info = "Ghost padding: N/A") ?(mba_info = "MBA synthesis: N/A") (prog : Stack_vm.Stack_ir.program) (enc : Stack_vm.Stack_encoder.encrypted_bytecode) : Protect_ports.metrics_report =
+let make_stack_metrics
+    ?(ghost_info = "Ghost padding: N/A")
+    ?(mba_info   = "MBA synthesis: N/A")
+    ?(cff_info   = "CFG flattening: N/A")
+    (prog : Stack_vm.Stack_ir.program)
+    (enc  : Stack_vm.Stack_encoder.encrypted_bytecode)
+    : Protect_ports.metrics_report =
   let entropy = compute_shannon_entropy enc.bytes in
   let num_blocks = Hashtbl.length prog.blocks in
   let drs = min 99.0 (85.0 +. (entropy *. 1.5)) in
@@ -121,14 +127,14 @@ let make_stack_metrics ?(ghost_info = "Ghost padding: N/A") ?(mba_info = "MBA sy
        - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
        - Ghost Stack Padding: %s\n\
        - MBA Constant Synthesis: %s\n\
+       - Virtual CFG Flattening: %s\n\
        - Basic Blocks: %d\n\
        - Bytecode Size: %d bytes (%d words)\n\
        - Shannon Entropy: %.4f / 8.0 (%.1f%%)\n\
        - Devirtualization Resistance Score (DRS): %.2f / 100.0\n\
        - Rolling Key Seed: 0x%016LX\n\
        ==============================================="
-      ghost_info
-      mba_info
+      ghost_info mba_info cff_info
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
       entropy (entropy /. 8.0 *. 100.0) drs enc.seed_key
   in
@@ -186,6 +192,17 @@ module Stack_vm_packager : Vm_packager = struct
     let mba_info = Stack_vm.Stack_mba_pass.mba_stats prog prog_mba in
     let prog = prog_mba in
 
+    (* Phase 5: Virtual CFG Flattening — route jumps through VPC dispatcher *)
+    let cff_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 11)
+    in
+    let cff_cfg = Stack_vm.Stack_cff_pass.default_cff_config cff_seed in
+    let prog_cff = Stack_vm.Stack_cff_pass.apply_program cff_cfg ctx prog in
+    let cff_info = Stack_vm.Stack_cff_pass.cff_stats prog prog_cff in
+    let prog = prog_cff in
+
     let seed_key =
       Int64.logxor
         (Int64.of_int (Random.State.bits rng))
@@ -204,7 +221,7 @@ module Stack_vm_packager : Vm_packager = struct
         prog
     in
     let runner_source = Stack_vm.Stack_runtime.emit_runner_cpp bc_words in
-    let metrics = make_stack_metrics ~ghost_info ~mba_info prog enc in
+    let metrics = make_stack_metrics ~ghost_info ~mba_info ~cff_info prog enc in
     {
       cpp_runtime_source;
       runner_source;
