@@ -399,7 +399,7 @@ void my_procedure(int x, const char* name) {
 }
 |} in
     Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
-      ~c_src:c_void ~bytecode:[ 0x1122334455667788L ] ~out_path:out_void;
+      ~c_src:c_void ~bytecode:[ 0x1122334455667788L ] ~out_path:out_void ();
     let res_void = Test_helpers.read_file_string out_void in
     check bool "void function has no return expr" true (contains_sub res_void "asgard_vm_call(embedded_bytecode");
     check bool "void function returns void" true (contains_sub res_void "return;");
@@ -414,7 +414,7 @@ char* get_buffer(size_t sz) {
 }
 |} in
     Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
-      ~c_src:c_ptr ~bytecode:[ 0x1122334455667788L ] ~out_path:out_ptr;
+      ~c_src:c_ptr ~bytecode:[ 0x1122334455667788L ] ~out_path:out_ptr ();
     let res_ptr = Test_helpers.read_file_string out_ptr in
     check bool "pointer function casts return type" true (contains_sub res_ptr "return (char*)(uintptr_t)vanguard_threaded_vm::asgard_vm_call");
 
@@ -429,7 +429,7 @@ uint64_t calculate_hash(
 }
 |} in
     Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
-      ~c_src:c_u64 ~bytecode:[ 0x1122334455667788L ] ~out_path:out_u64;
+      ~c_src:c_u64 ~bytecode:[ 0x1122334455667788L ] ~out_path:out_u64 ();
     let res_u64 = Test_helpers.read_file_string out_u64 in
     check bool "u64 function does not truncate to int" true (contains_sub res_u64 "return vanguard_threaded_vm::asgard_vm_call");
     check bool "u64 function passes clean args" true (contains_sub res_u64 "(uint64_t)a, (uint64_t)b")

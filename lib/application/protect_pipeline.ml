@@ -86,13 +86,6 @@ let run
             output_string oc_h pkg.cpp_runtime_source;
             close_out oc_h;
 
-            if P.engine_kind <> Threaded then begin
-              let comp_hdr = Filename.concat out_dir "threaded_vm.hpp" in
-              let oc_ch = open_out comp_hdr in
-              output_string oc_ch pkg.cpp_runtime_source;
-              close_out oc_ch;
-            end;
-
             (* 5. Write runner.cpp *)
             let runner_path = Filename.concat out_dir "runner.cpp" in
             let oc_r = open_out runner_path in
@@ -122,7 +115,7 @@ let run
                   let c_src = really_input_string ic_c c_len in
                   close_in ic_c;
                   let virt_cpp_path = Filename.concat out_dir "app_virtualized.cpp" in
-                  TE.embed_vm_trampoline ~c_src ~bytecode:pkg.bytecode ~out_path:virt_cpp_path
+                  TE.embed_vm_trampoline ~header_name:pkg.header_name ~c_src ~bytecode:pkg.bytecode ~out_path:virt_cpp_path ()
               | None -> ()
             end;
 

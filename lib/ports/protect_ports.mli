@@ -90,9 +90,11 @@ end
 (** Trampoline Synthesizer Port: embeds bytecode and replaces marked function body with VM call. *)
 module type Trampoline_engine = sig
   val embed_vm_trampoline :
+    ?header_name:string ->
     c_src:string ->
     bytecode:int64 list ->
     out_path:string ->
+    unit ->
     unit
 end
 

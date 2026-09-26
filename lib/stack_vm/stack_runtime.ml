@@ -602,9 +602,9 @@ let generate_c_runtime
 
   Buffer.contents buf
 
-let emit_runner_cpp bytecode =
+let emit_runner_cpp ?(header_name = "stack_vm_runtime.hpp") bytecode =
   let b = Buffer.create 1024 in
-  Buffer.add_string b "#include \"threaded_vm.hpp\"\n#include <stdio.h>\n#include <stdlib.h>\n\n";
+  Buffer.add_string b (Printf.sprintf "#include \"%s\"\n#include <stdio.h>\n#include <stdlib.h>\n\n" header_name);
   Buffer.add_string b "static uint64_t embedded_bytecode[] = {\n";
   List.iter (fun w -> Buffer.add_string b (Printf.sprintf "    0x%016LXULL,\n" w)) bytecode;
   Buffer.add_string b "};\n\n";

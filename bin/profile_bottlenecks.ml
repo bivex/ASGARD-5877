@@ -254,7 +254,7 @@ let () =
       let c_src_content = really_input_string ic_c (in_channel_length ic_c) in
       close_in ic_c;
       let (ttr, _) = time_it (fun () ->
-        Protect_adapters.C_trampoline_adapter.embed_vm_trampoline ~c_src:c_src_content ~bytecode:pkg.bytecode ~out_path:virt_cpp_path
+        Protect_adapters.C_trampoline_adapter.embed_vm_trampoline ~c_src:c_src_content ~bytecode:pkg.bytecode ~out_path:virt_cpp_path ()
       ) in
       Landmark.exit lm_e2e_trampoline;
 
