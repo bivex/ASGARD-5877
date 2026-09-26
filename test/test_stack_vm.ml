@@ -441,6 +441,90 @@ let test_ghost_stack_padding () =
   Alcotest.(check bool) "ghost diversity across seeds"  true
     (ghost_count <> orig_count || ghost_count2 <> orig_count)
 
+let test_mba_synthesis () =
+  let seed = 0xFEDCBA9876543210L in
+
+  (* Build a program with multiple PushImm instructions *)
+  let b0 = make_block 0 "entry" [
+    PushImm 0xCAFEL;       (* constant 1 *)
+    PushImm 0xBABEL;       (* constant 2 *)
+    Add;
+    PushImm 42L;           (* constant 3 *)
+    Sub;
+    PopReg 0;
+    Exit;
+  ] in
+  let prog_orig = make_program 0 [b0] 8 in
+
+  (* Apply MBA at 100% rate to synthesize every PushImm *)
+  let mba_cfg = Stack_mba_pass.{ seed; mba_rate = 100 } in
+  let prog_mba = Stack_mba_pass.apply_program mba_cfg prog_orig in
+
+  (* 1. No PushImm instructions should contain the original constants literally *)
+  let push_imm_values prog =
+    Hashtbl.fold (fun _ b acc ->
+      List.fold_left (fun a op ->
+        match op with PushImm v -> v :: a | _ -> a
+      ) acc b.ops
+    ) prog.blocks []
+  in
+  let orig_consts = [0xCAFEL; 0xBABEL; 42L] in
+  let mba_imm_vals = push_imm_values prog_mba in
+  (* None of the synthesized PushImm values should equal the original constants *)
+  List.iter (fun c ->
+    Alcotest.(check bool)
+      (Printf.sprintf "constant 0x%Lx not literal in MBA output" c)
+      false
+      (List.mem c mba_imm_vals)
+  ) orig_consts;
+
+  (* 2. Block balance must be preserved after MBA *)
+  Hashtbl.iter (fun _ b ->
+    let res = Stack_balance_pass.analyze_block b in
+    Alcotest.(check bool)
+      (Printf.sprintf "block %d balanced after MBA" b.id)
+      true res.is_balanced
+  ) prog_mba.blocks;
+
+  (* 3. Program computes the correct result (OCaml bytecode eval) *)
+  let enc_orig = Stack_encoder.encode_program ~seed_key:seed prog_orig in
+  let enc_mba  = Stack_encoder.encode_program ~seed_key:seed prog_mba  in
+  let st_orig  = run_bytecode enc_orig in
+  let st_mba   = run_bytecode enc_mba  in
+  let expected = Int64.sub (Int64.add 0xCAFEL 0xBABEL) 42L in
+  Alcotest.(check int64) "MBA: original result correct" expected (get_reg st_orig 0);
+  Alcotest.(check int64) "MBA: synthesized result correct" expected (get_reg st_mba  0);
+  Alcotest.(check bool)  "MBA: both halted" true (st_orig.halted && st_mba.halted);
+
+  (* 4. Total op count is larger after MBA (synthesis expands PushImm → 3–5 ops) *)
+  let count_ops prog =
+    Hashtbl.fold (fun _ b acc -> acc + List.length b.ops) prog.blocks 0
+  in
+  Alcotest.(check bool) "MBA expands op count" true
+    (count_ops prog_mba > count_ops prog_orig);
+
+  (* 5. mba_stats string is well-formed *)
+  let stats = Stack_mba_pass.mba_stats prog_orig prog_mba in
+  let contains s sub =
+    let ls = String.length s and lsub = String.length sub in
+    let rec go i = if i + lsub > ls then false
+                   else if String.sub s i lsub = sub then true
+                   else go (i+1) in go 0
+  in
+  Alcotest.(check bool) "mba_stats mentions 'MBA'"    true (contains stats "MBA");
+  Alcotest.(check bool) "mba_stats mentions 'PushImm'" true (contains stats "PushImm");
+
+  (* 6. Different seeds produce different synthesized sequences *)
+  let mba_cfg2 = Stack_mba_pass.{ seed = Int64.logxor seed 0xDEAD_BEEFL; mba_rate = 100 } in
+  let prog_mba2 = Stack_mba_pass.apply_program mba_cfg2 prog_orig in
+  let vals2 = push_imm_values prog_mba2 in
+  (* The two MBA outputs should have at least one different PushImm value *)
+  let lists_equal a b =
+    List.sort compare a = List.sort compare b
+  in
+  Alcotest.(check bool) "different seeds → different MBA sequences" false
+    (lists_equal mba_imm_vals vals2)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -453,6 +537,7 @@ let tests = [
   ("Polymorphic Opcode Remapping & Synthesis", `Quick, test_polymorphic_opcodes);
   ("VSP Stack Value Whitening", `Quick, test_vsp_whitening);
   ("Ghost Stack Padding Pass", `Quick, test_ghost_stack_padding);
+  ("MBA Constant Synthesis", `Quick, test_mba_synthesis);
 ]
 
 
