@@ -279,6 +279,21 @@ ORDER BY line_num;
 - **Симптом:** Индекс `idx` в `PUSH_REG` / `POP_REG` / `CMOV` считывался из байткода как `int16_t` без проверки верхней границы.
 - **Решение:** Добавлен динамический лимит `idx >= 0 && idx < max_ctx`, где `max_ctx = sizeof(vm->ctx) / sizeof(vm->ctx[0])`.
 
+### Кейс 4: Верификация VSP Whitening в декомпиляторе (`pseudocode`)
+- **Проверка через idasql:**
+  ```sql
+  SELECT line_num, line FROM pseudocode 
+  WHERE func_addr = (SELECT address FROM funcs WHERE size > 2000 LIMIT 1)
+    AND (line LIKE '%9E3779B97F4A7C15%' OR line LIKE '%61C8864680B583EB%');
+  ```
+- **Результат из реальной базы IDA:**
+  ```c
+  v126[(unsigned int)v89] = (0x9E3779B97F4A7C15LL * v88 + v9) ^ v126[(unsigned int)v88] ^ v91;
+  v128[v125] = v126[(unsigned int)v98] ^ (v97 - 0x61C8864680B583EBLL * v98);
+  ```
+- **Интерпретация:** Декомпилятор Hex-Rays зафиксировал формулу шифрования VSP:
+  `vkey + slot * 0x9E3779B97F4A7C15ULL` (в дополнительном коде `vkey - slot * 0x61C8864680B583EBLL`). Стек операндов полностью зашифрован в памяти, сырые значения аргументов и результатов промежуточных операций недоступны для статического дампа памяти.
+
 ---
 
 ## 8. Скрипт автоматизированного регрессионного аудита
