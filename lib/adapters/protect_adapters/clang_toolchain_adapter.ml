@@ -26,15 +26,27 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
   else Error (Printf.sprintf "clang -S failed with exit code %d" code)
 
 let compile_native_binary ~is_c ~(source_file : string) ~(out_binary : string) ~(include_dir : string) : (unit, error) result =
-  let compiler =
-    if is_c then "clang -O3 -Wno-format-security"
-    else "clang++ -std=c++20 -O3 -Wno-format-security -fvisibility-inlines-hidden"
+  let is_debug =
+    match Sys.getenv_opt "ASGARD_DEBUG_SYMBOLS" with
+    | Some "1" | Some "true" | Some "yes" -> true
+    | _ -> false
   in
   let inc_flags = get_inc_flags include_dir source_file in
   let cmd =
-    Printf.sprintf
-      "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x %s %s -o %s && strip -x %s"
-      compiler inc_flags source_file out_binary out_binary
+    if is_debug then
+      let compiler =
+        if is_c then "clang -g -O1 -Wno-format-security"
+        else "clang++ -std=c++20 -g -O1 -Wno-format-security -fvisibility-inlines-hidden"
+      in
+      Printf.sprintf "%s %s %s -o %s" compiler inc_flags source_file out_binary
+    else
+      let compiler =
+        if is_c then "clang -O3 -Wno-format-security"
+        else "clang++ -std=c++20 -O3 -Wno-format-security -fvisibility-inlines-hidden"
+      in
+      Printf.sprintf
+        "%s -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x %s %s -o %s && strip -x %s"
+        compiler inc_flags source_file out_binary out_binary
   in
   let code = Sys.command cmd in
   if code = 0 then Ok ()
