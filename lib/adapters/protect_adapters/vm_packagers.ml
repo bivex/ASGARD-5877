@@ -117,6 +117,8 @@ let make_stack_metrics (prog : Stack_vm.Stack_ir.program) (enc : Stack_vm.Stack_
     Printf.sprintf
       "=== ASGARD-5877 Stack-VM Protection Report ===\n\
        - Architecture: Stack-VM Execution Engine (Universal Logic + Rolling Key)\n\
+       - Opcode Mapping: Dynamic Polymorphic ISA (Unique Build Permutation)\n\
+       - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
        - Basic Blocks: %d\n\
        - Bytecode Size: %d bytes (%d words)\n\
        - Shannon Entropy: %.4f / 8.0 (%.1f%%)\n\

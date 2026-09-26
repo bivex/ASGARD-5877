@@ -245,7 +245,7 @@ let run_bytecode ?(max_steps = 100000) ?initial_ctx enc =
   let steps = ref 0 in
   while not state.halted && !steps < max_steps && !pos < Bytes.length enc.bytes do
     let cur_bid = state.current_block_id in
-    match decode_op enc.bytes pos key with
+    match decode_op ~op_map:enc.op_map enc.bytes pos key with
     | None -> state.halted <- true
     | Some op ->
         step_op state op;
