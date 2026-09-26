@@ -22,6 +22,12 @@ type stack_op =
   | JccRel of int * condition
   | KeyAdjust of int64
   | Exit
+  | CallExtern of int
+  | ResolveSym of int
+  | Setcc of condition
+  | Cmov of condition * int
+  | Cmp
+  | Test
 
 type block = {
   id : int;
@@ -47,6 +53,12 @@ let push_weight = function
   | PushFlags -> 1
   | PopFlags -> 0
   | JmpRel _ | JccRel _ | KeyAdjust _ | Exit -> 0
+  | CallExtern _ -> 0
+  | ResolveSym _ -> 1
+  | Setcc _ -> 1
+  | Cmov _ -> 0
+  | Cmp -> 0
+  | Test -> 0
 
 let pop_weight = function
   | PushImm _ -> 0
@@ -60,6 +72,12 @@ let pop_weight = function
   | PushFlags -> 0
   | PopFlags -> 1
   | JmpRel _ | JccRel _ | KeyAdjust _ | Exit -> 0
+  | CallExtern _ -> 0
+  | ResolveSym _ -> 0
+  | Setcc _ -> 0
+  | Cmov _ -> 1
+  | Cmp -> 2
+  | Test -> 2
 
 let stack_delta op =
   push_weight op - pop_weight op
@@ -85,6 +103,12 @@ let op_to_string = function
   | JccRel (b, c) -> Printf.sprintf "JCC_REL block_%d (cond=%s)" b (Flags.condition_to_string c)
   | KeyAdjust delta -> Printf.sprintf "KEY_ADJUST 0x%Lx" delta
   | Exit -> "EXIT"
+  | CallExtern idx -> Printf.sprintf "CALL_EXTERN sym_%d" idx
+  | ResolveSym idx -> Printf.sprintf "RESOLVE_SYM sym_%d" idx
+  | Setcc c -> Printf.sprintf "SETCC %s" (Flags.condition_to_string c)
+  | Cmov (c, idx) -> Printf.sprintf "CMOV %s [ctx+%d]" (Flags.condition_to_string c) idx
+  | Cmp -> "CMP"
+  | Test -> "TEST"
 
 let block_to_string b =
   let ops_str = List.map (fun op -> "    " ^ op_to_string op) b.ops |> String.concat "\n" in

@@ -204,7 +204,58 @@ let test_runtime_synthesis () =
   let prog = make_program 0 [b] 16 in
   let c_code = Stack_runtime.generate_c_runtime cfg prog in
   Alcotest.(check bool) "c runtime contains stack_vm_run" true
-    (String.length c_code > 0 && String.sub c_code 0 18 = "#include <stdint.h")
+    (String.length c_code > 0 && String.sub c_code 0 18 = "#include <stdint.h");
+  let runner_cpp = Stack_runtime.emit_runner_cpp [0x1234567890ABCDEFL] in
+  Alcotest.(check bool) "runner cpp generated" true (String.length runner_cpp > 0)
+
+let test_stack_vm_extensions () =
+  (* Test Cmp, Setcc, Cmov, and Multi-Block branching with Rolling Key *)
+  let b0 = make_block 0 "entry" [
+    PushImm 100L;
+    PushImm 100L;
+    Cmp;
+    Setcc Flags.E;
+    PopReg 0;
+    PushImm 42L;
+    Cmov (Flags.E, 1);
+    PushImm 50L;
+    PushImm 100L;
+    Cmp;
+    JccRel (1, Flags.E);
+    JmpRel 2;
+  ] in
+  let b1 = make_block 1 "dead_branch" [
+    PushImm 999L;
+    PopReg 2;
+    Exit;
+  ] in
+  let b2 = make_block 2 "taken_branch" [
+    PushImm 777L;
+    PopReg 2;
+    ResolveSym 0;
+    PopReg 3;
+    CallExtern 0;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0; b1; b2] 16 in
+
+  (* Test AST execution *)
+  let state_ast = run_program prog in
+  Alcotest.(check int64) "AST reg0 (Setcc E) is 1" 1L (get_reg state_ast 0);
+  Alcotest.(check int64) "AST reg1 (Cmov E) is 42" 42L (get_reg state_ast 1);
+  Alcotest.(check int64) "AST reg2 (taken branch) is 777" 777L (get_reg state_ast 2);
+  Alcotest.(check bool) "AST halted" true state_ast.halted;
+
+  (* Test Bytecode encoding, roundtrip decoding and execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0xCAFEBABE12345678L prog in
+  let decoded = Stack_encoder.decode_all enc.bytes enc.seed_key in
+  Alcotest.(check bool) "decoded instructions present" true (List.length decoded > 0);
+
+  let state_bc = run_bytecode enc in
+  Alcotest.(check int64) "BC reg0 (Setcc E) is 1" 1L (get_reg state_bc 0);
+  Alcotest.(check int64) "BC reg1 (Cmov E) is 42" 42L (get_reg state_bc 1);
+  Alcotest.(check int64) "BC reg2 (taken branch) is 777" 777L (get_reg state_bc 2);
+  Alcotest.(check bool) "BC halted" true state_bc.halted
 
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
@@ -214,4 +265,6 @@ let tests = [
   ("Stack Balance Pass & Repair", `Quick, test_stack_balance_pass);
   ("Rolling Key Bytecode Encryption & Execution", `Quick, test_rolling_key_encoder_and_eval);
   ("Native Runtime & Dispatch Synthesis", `Quick, test_runtime_synthesis);
+  ("Stack VM Extensions & Branching", `Quick, test_stack_vm_extensions);
 ]
+

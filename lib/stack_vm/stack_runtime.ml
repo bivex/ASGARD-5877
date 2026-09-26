@@ -172,39 +172,257 @@ let emit_handler cfg op =
   in
   body @ emit_dispatch_epilogue cfg
 
-let generate_c_runtime _cfg prog =
-  let buf = Buffer.create 2048 in
-  Buffer.add_string buf "#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n\n";
+let generate_c_runtime
+    ?(external_symbols = [])
+    ?(constants = [])
+    ?enc
+    _cfg
+    prog =
+  let enc = match enc with
+    | Some e -> e
+    | None -> Stack_encoder.encode_program prog
+  in
+  let buf = Buffer.create 4096 in
+  Buffer.add_string buf "#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n#include <dlfcn.h>\n#include <stdio.h>\n\n";
+
+  (* 1. Constants *)
+  Buffer.add_string buf "struct AsgardConstantEntry {\n    const char* name;\n    const uint8_t* data;\n    size_t size;\n};\n\n";
+  if constants = [] then begin
+    Buffer.add_string buf "static const AsgardConstantEntry g_asgard_constants[] = { { \"\", nullptr, 0 } };\n\n";
+  end else begin
+    List.iteri (fun idx (_name, bytes) ->
+      Buffer.add_string buf (Printf.sprintf "static const uint8_t cdata_%d[] = { " idx);
+      for i = 0 to String.length bytes - 1 do
+        Buffer.add_string buf (Printf.sprintf "0x%02X, " (Char.code bytes.[i]))
+      done;
+      Buffer.add_string buf "0x00 };\n"
+    ) constants;
+    Buffer.add_string buf "static const AsgardConstantEntry g_asgard_constants[] = {\n";
+    List.iteri (fun idx (name, bytes) ->
+      Buffer.add_string buf (Printf.sprintf "    { \"%s\", cdata_%d, %d },\n" (String.escaped name) idx (String.length bytes))
+    ) constants;
+    Buffer.add_string buf "};\n\n";
+  end;
+
+  Buffer.add_string buf "static inline void* asgard_resolve_constant(const char* name) {\n";
+  Buffer.add_string buf "    if (!name || name[0] == '\\0') return nullptr;\n";
+  Buffer.add_string buf "    for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {\n";
+  Buffer.add_string buf "        if (g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name) == 0) return (void*)g_asgard_constants[i].data;\n";
+  Buffer.add_string buf "        if (name[0] == '_' && g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name + 1) == 0) return (void*)g_asgard_constants[i].data;\n";
+  Buffer.add_string buf "    }\n";
+  Buffer.add_string buf "    return nullptr;\n";
+  Buffer.add_string buf "}\n\n";
+
+  (* 2. External symbols *)
+  if external_symbols = [] then
+    Buffer.add_string buf "static const char* g_external_symbols[] = { \"\" };\n\n"
+  else begin
+    Buffer.add_string buf "static const char* g_external_symbols[] = {\n";
+    List.iter (fun sym ->
+      Buffer.add_string buf (Printf.sprintf "    \"%s\",\n" (String.escaped sym))
+    ) external_symbols;
+    Buffer.add_string buf "};\n\n";
+  end;
+
+  (* 3. Block offsets and keys *)
+  let max_bid = Hashtbl.fold (fun id _ acc -> max id acc) enc.block_offsets 0 in
+  Buffer.add_string buf (Printf.sprintf "static const uint32_t g_stack_block_offsets[%d] = {\n" (max_bid + 1));
+  for i = 0 to max_bid do
+    let off = match Hashtbl.find_opt enc.block_offsets i with Some o -> o | None -> 0 in
+    Buffer.add_string buf (Printf.sprintf "    %d,\n" off)
+  done;
+  Buffer.add_string buf "};\n\n";
+
+  Buffer.add_string buf (Printf.sprintf "static const uint64_t g_stack_block_keys[%d] = {\n" (max_bid + 1));
+  for i = 0 to max_bid do
+    let k = match Hashtbl.find_opt enc.block_keys i with Some k -> k | None -> enc.seed_key in
+    Buffer.add_string buf (Printf.sprintf "    0x%016LXULL,\n" k)
+  done;
+  Buffer.add_string buf "};\n\n";
+
+  (* 4. VM state struct *)
+  Buffer.add_string buf "namespace asgard_stack_vm {\n\n";
   Buffer.add_string buf "typedef struct {\n";
-  Buffer.add_string buf "    uint64_t vsp[1024];\n";
+  Buffer.add_string buf "    uint64_t vsp[4096];\n";
   Buffer.add_string buf "    int vsp_idx;\n";
-  Buffer.add_string buf (Printf.sprintf "    uint64_t ctx[%d];\n" (max 32 prog.context_slots));
+  Buffer.add_string buf (Printf.sprintf "    uint64_t ctx[%d];\n" (max 64 prog.context_slots));
   Buffer.add_string buf "    uint64_t vkey;\n";
+  Buffer.add_string buf "    uint8_t zf;\n";
+  Buffer.add_string buf "    uint8_t sf;\n";
+  Buffer.add_string buf "    uint8_t cf;\n";
+  Buffer.add_string buf "    uint8_t of;\n";
   Buffer.add_string buf "    int halted;\n";
   Buffer.add_string buf "} stack_vm_t;\n\n";
+
+  (* 5. Decryption helpers *)
   Buffer.add_string buf "static inline uint64_t rotl64(uint64_t v, int k) {\n";
   Buffer.add_string buf "    return (v << (k & 63)) | (v >> ((64 - k) & 63));\n";
   Buffer.add_string buf "}\n\n";
   Buffer.add_string buf "static inline void step_key(uint64_t *key, uint8_t p) {\n";
   Buffer.add_string buf "    *key = rotl64(*key, 3) + (p ^ 0x5A);\n";
   Buffer.add_string buf "}\n\n";
-  Buffer.add_string buf "void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t size) {\n";
+
+  Buffer.add_string buf "static inline uint8_t fetch_byte(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {\n";
+  Buffer.add_string buf "    uint8_t c = bc[(*vip)++];\n";
+  Buffer.add_string buf "    uint8_t op = c ^ (uint8_t)(vm->vkey & 0xFF);\n";
+  Buffer.add_string buf "    step_key(&vm->vkey, op);\n";
+  Buffer.add_string buf "    return op;\n";
+  Buffer.add_string buf "}\n\n";
+
+  Buffer.add_string buf "static inline int16_t fetch_i16(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {\n";
+  Buffer.add_string buf "    uint16_t b0 = fetch_byte(vm, bc, vip);\n";
+  Buffer.add_string buf "    uint16_t b1 = fetch_byte(vm, bc, vip);\n";
+  Buffer.add_string buf "    return (int16_t)(b0 | (b1 << 8));\n";
+  Buffer.add_string buf "}\n\n";
+
+  Buffer.add_string buf "static inline int32_t fetch_i32(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {\n";
+  Buffer.add_string buf "    uint32_t b0 = fetch_byte(vm, bc, vip);\n";
+  Buffer.add_string buf "    uint32_t b1 = fetch_byte(vm, bc, vip);\n";
+  Buffer.add_string buf "    uint32_t b2 = fetch_byte(vm, bc, vip);\n";
+  Buffer.add_string buf "    uint32_t b3 = fetch_byte(vm, bc, vip);\n";
+  Buffer.add_string buf "    return (int32_t)(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24));\n";
+  Buffer.add_string buf "}\n\n";
+
+  Buffer.add_string buf "static inline int64_t fetch_i64(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {\n";
+  Buffer.add_string buf "    uint64_t res = 0;\n";
+  Buffer.add_string buf "    for (int i = 0; i < 8; ++i) {\n";
+  Buffer.add_string buf "        uint64_t b = fetch_byte(vm, bc, vip);\n";
+  Buffer.add_string buf "        res |= (b << (i * 8));\n";
+  Buffer.add_string buf "    }\n";
+  Buffer.add_string buf "    return (int64_t)res;\n";
+  Buffer.add_string buf "}\n\n";
+
+  Buffer.add_string buf "static inline int eval_cond(const stack_vm_t *vm, uint8_t cond) {\n";
+  Buffer.add_string buf "    switch (cond) {\n";
+  Buffer.add_string buf "        case 0: return vm->zf;\n";
+  Buffer.add_string buf "        case 1: return !vm->zf;\n";
+  Buffer.add_string buf "        case 2: return vm->cf;\n";
+  Buffer.add_string buf "        case 3: return !vm->cf;\n";
+  Buffer.add_string buf "        case 4: return vm->cf || vm->zf;\n";
+  Buffer.add_string buf "        case 5: return !vm->cf && !vm->zf;\n";
+  Buffer.add_string buf "        case 6: return vm->sf;\n";
+  Buffer.add_string buf "        case 7: return !vm->sf;\n";
+  Buffer.add_string buf "        case 8: return vm->sf != vm->of;\n";
+  Buffer.add_string buf "        case 9: return vm->sf == vm->of;\n";
+  Buffer.add_string buf "        case 10: return vm->zf || (vm->sf != vm->of);\n";
+  Buffer.add_string buf "        case 11: return !vm->zf && (vm->sf == vm->of);\n";
+  Buffer.add_string buf "        case 12: return vm->of;\n";
+  Buffer.add_string buf "        case 13: return !vm->of;\n";
+  Buffer.add_string buf "        case 14: return 1;\n";
+  Buffer.add_string buf "        case 15: return 0;\n";
+  Buffer.add_string buf "        case 16: return 1;\n";
+  Buffer.add_string buf "        default: return 1;\n";
+  Buffer.add_string buf "    }\n";
+  Buffer.add_string buf "}\n\n";
+
+  (* 6. stack_vm_run *)
+  Buffer.add_string buf "static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t size) {\n";
   Buffer.add_string buf "    size_t vip = 0;\n";
   Buffer.add_string buf "    while (!vm->halted && vip < size) {\n";
-  Buffer.add_string buf "        uint8_t c = bytecode[vip++];\n";
-  Buffer.add_string buf "        uint8_t op = c ^ (uint8_t)(vm->vkey & 0xFF);\n";
-  Buffer.add_string buf "        step_key(&vm->vkey, op);\n";
+  Buffer.add_string buf "        uint8_t op = fetch_byte(vm, bytecode, &vip);\n";
   Buffer.add_string buf "        switch (op) {\n";
+  Buffer.add_string buf "            case 0x01: /* PUSH_IMM */ {\n";
+  Buffer.add_string buf "                uint64_t imm = (uint64_t)fetch_i64(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = imm;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x02: /* PUSH_REG */ {\n";
+  Buffer.add_string buf "                int16_t idx = fetch_i16(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = vm->ctx[idx];\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x03: /* POP_REG */ {\n";
+  Buffer.add_string buf "                int16_t idx = fetch_i16(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                vm->ctx[idx] = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x04: /* READ_MEM */ {\n";
+  Buffer.add_string buf "                uint8_t w = fetch_byte(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                uint64_t addr = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t val = 0;\n";
+  Buffer.add_string buf "                if (w == 1) val = *(const uint8_t*)addr;\n";
+  Buffer.add_string buf "                else if (w == 2) val = *(const uint16_t*)addr;\n";
+  Buffer.add_string buf "                else if (w == 4) val = *(const uint32_t*)addr;\n";
+  Buffer.add_string buf "                else val = *(const uint64_t*)addr;\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = val;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x05: /* WRITE_MEM */ {\n";
+  Buffer.add_string buf "                uint8_t w = fetch_byte(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                uint64_t val = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t addr = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                if (w == 1) *(uint8_t*)addr = (uint8_t)val;\n";
+  Buffer.add_string buf "                else if (w == 2) *(uint16_t*)addr = (uint16_t)val;\n";
+  Buffer.add_string buf "                else if (w == 4) *(uint32_t*)addr = (uint32_t)val;\n";
+  Buffer.add_string buf "                else *(uint64_t*)addr = val;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
   Buffer.add_string buf "            case 0x06: /* ADD */ {\n";
-  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
   Buffer.add_string buf "                uint64_t b = vm->vsp[--vm->vsp_idx];\n";
-  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = a + b;\n";
+  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t res = a + b;\n";
+  Buffer.add_string buf "                vm->zf = (res == 0);\n";
+  Buffer.add_string buf "                vm->sf = ((int64_t)res < 0);\n";
+  Buffer.add_string buf "                vm->cf = (res < a);\n";
+  Buffer.add_string buf "                vm->of = ((~(a ^ b) & (a ^ res)) >> 63) & 1;\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = res;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x07: /* SUB */ {\n";
+  Buffer.add_string buf "                uint64_t b = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t res = a - b;\n";
+  Buffer.add_string buf "                vm->zf = (res == 0);\n";
+  Buffer.add_string buf "                vm->sf = ((int64_t)res < 0);\n";
+  Buffer.add_string buf "                vm->cf = (a < b);\n";
+  Buffer.add_string buf "                vm->of = (((a ^ b) & (a ^ res)) >> 63) & 1;\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = res;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x08: /* MUL */ {\n";
+  Buffer.add_string buf "                uint64_t b = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = a * b;\n";
   Buffer.add_string buf "                break;\n";
   Buffer.add_string buf "            }\n";
   Buffer.add_string buf "            case 0x09: /* NOR */ {\n";
-  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
   Buffer.add_string buf "                uint64_t b = vm->vsp[--vm->vsp_idx];\n";
-  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = ~(a | b);\n";
+  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t res = ~(a | b);\n";
+  Buffer.add_string buf "                vm->zf = (res == 0);\n";
+  Buffer.add_string buf "                vm->sf = ((int64_t)res < 0);\n";
+  Buffer.add_string buf "                vm->cf = 0;\n";
+  Buffer.add_string buf "                vm->of = 0;\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = res;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x0A: /* NAND */ {\n";
+  Buffer.add_string buf "                uint64_t b = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t res = ~(a & b);\n";
+  Buffer.add_string buf "                vm->zf = (res == 0);\n";
+  Buffer.add_string buf "                vm->sf = ((int64_t)res < 0);\n";
+  Buffer.add_string buf "                vm->cf = 0;\n";
+  Buffer.add_string buf "                vm->of = 0;\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = res;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x0B: /* SHL */ {\n";
+  Buffer.add_string buf "                uint64_t count = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t val = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t res = val << (count & 63);\n";
+  Buffer.add_string buf "                vm->zf = (res == 0);\n";
+  Buffer.add_string buf "                vm->sf = ((int64_t)res < 0);\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = res;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x0C: /* SHR */ {\n";
+  Buffer.add_string buf "                uint64_t count = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t val = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t res = val >> (count & 63);\n";
+  Buffer.add_string buf "                vm->zf = (res == 0);\n";
+  Buffer.add_string buf "                vm->sf = ((int64_t)res < 0);\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = res;\n";
   Buffer.add_string buf "                break;\n";
   Buffer.add_string buf "            }\n";
   Buffer.add_string buf "            case 0x0D: /* DUP */ {\n";
@@ -212,11 +430,206 @@ let generate_c_runtime _cfg prog =
   Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = top;\n";
   Buffer.add_string buf "                break;\n";
   Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x0E: /* SWAP */ {\n";
+  Buffer.add_string buf "                uint64_t a = vm->vsp[vm->vsp_idx - 1];\n";
+  Buffer.add_string buf "                uint64_t b = vm->vsp[vm->vsp_idx - 2];\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx - 1] = b;\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx - 2] = a;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x0F: /* PUSH_FLAGS */ {\n";
+  Buffer.add_string buf "                uint64_t fl = (vm->zf ? 0x40ULL : 0ULL) |\n";
+  Buffer.add_string buf "                              (vm->sf ? 0x80ULL : 0ULL) |\n";
+  Buffer.add_string buf "                              (vm->cf ? 0x01ULL : 0ULL) |\n";
+  Buffer.add_string buf "                              (vm->of ? 0x800ULL : 0ULL) | 0x02ULL;\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = fl;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x10: /* POP_FLAGS */ {\n";
+  Buffer.add_string buf "                uint64_t fl = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                vm->cf = (fl & 0x01ULL) != 0;\n";
+  Buffer.add_string buf "                vm->zf = (fl & 0x40ULL) != 0;\n";
+  Buffer.add_string buf "                vm->sf = (fl & 0x80ULL) != 0;\n";
+  Buffer.add_string buf "                vm->of = (fl & 0x800ULL) != 0;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x11: /* JMP_REL */ {\n";
+  Buffer.add_string buf "                int32_t target_bid = fetch_i32(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {\n";
+  Buffer.add_string buf "                    vip = g_stack_block_offsets[target_bid];\n";
+  Buffer.add_string buf "                    vm->vkey = g_stack_block_keys[target_bid];\n";
+  Buffer.add_string buf "                }\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x12: /* JCC_REL */ {\n";
+  Buffer.add_string buf "                uint8_t cond = fetch_byte(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                int32_t target_bid = fetch_i32(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                if (eval_cond(vm, cond)) {\n";
+  Buffer.add_string buf "                    if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {\n";
+  Buffer.add_string buf "                        vip = g_stack_block_offsets[target_bid];\n";
+  Buffer.add_string buf "                        vm->vkey = g_stack_block_keys[target_bid];\n";
+  Buffer.add_string buf "                    }\n";
+  Buffer.add_string buf "                }\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x13: /* KEY_ADJUST */ {\n";
+  Buffer.add_string buf "                int64_t delta = fetch_i64(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                vm->vkey ^= (uint64_t)delta;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
   Buffer.add_string buf "            case 0x14: /* EXIT */\n";
   Buffer.add_string buf "                vm->halted = 1;\n";
   Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            case 0x15: /* CALL_EXTERN */ {\n";
+  Buffer.add_string buf "                int32_t sym_idx = fetch_i32(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                if (sym_idx >= 0 && (size_t)sym_idx < sizeof(g_external_symbols) / sizeof(g_external_symbols[0])) {\n";
+  Buffer.add_string buf "                    const char* sym_name = g_external_symbols[sym_idx];\n";
+  Buffer.add_string buf "                    void* sym_ptr = dlsym(RTLD_DEFAULT, sym_name);\n";
+  Buffer.add_string buf "                    if (!sym_ptr && sym_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, sym_name + 1);\n";
+  Buffer.add_string buf "                    if (!sym_ptr) {\n";
+  Buffer.add_string buf "                        char alt[256];\n";
+  Buffer.add_string buf "                        snprintf(alt, sizeof(alt), \"_%s\", sym_name);\n";
+  Buffer.add_string buf "                        sym_ptr = dlsym(RTLD_DEFAULT, alt);\n";
+  Buffer.add_string buf "                    }\n";
+  Buffer.add_string buf "                    if (sym_ptr) {\n";
+  Buffer.add_string buf "                        uint64_t a0 = vm->ctx[0];\n";
+  Buffer.add_string buf "                        uint64_t a1 = vm->ctx[1];\n";
+  Buffer.add_string buf "                        uint64_t a2 = vm->ctx[2];\n";
+  Buffer.add_string buf "                        uint64_t a3 = vm->ctx[3];\n";
+  Buffer.add_string buf "                        uint64_t a4 = vm->ctx[6];\n";
+  Buffer.add_string buf "                        uint64_t a5 = vm->ctx[7];\n";
+  Buffer.add_string buf "                        uint64_t a6 = vm->ctx[8];\n";
+  Buffer.add_string buf "                        uint64_t a7 = vm->ctx[9];\n";
+  Buffer.add_string buf "                        typedef uint64_t (*ext_fn_8)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);\n";
+  Buffer.add_string buf "                        uint64_t ret = ((ext_fn_8)sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);\n";
+  Buffer.add_string buf "                        vm->ctx[0] = ret;\n";
+  Buffer.add_string buf "                    }\n";
+  Buffer.add_string buf "                }\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x16: /* RESOLVE_SYM */ {\n";
+  Buffer.add_string buf "                int32_t sym_idx = fetch_i32(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                void* sym_ptr = nullptr;\n";
+  Buffer.add_string buf "                if (sym_idx >= 0 && (size_t)sym_idx < sizeof(g_external_symbols) / sizeof(g_external_symbols[0])) {\n";
+  Buffer.add_string buf "                    const char* sym_name = g_external_symbols[sym_idx];\n";
+  Buffer.add_string buf "                    sym_ptr = dlsym(RTLD_DEFAULT, sym_name);\n";
+  Buffer.add_string buf "                    if (!sym_ptr && sym_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, sym_name + 1);\n";
+  Buffer.add_string buf "                    if (!sym_ptr) {\n";
+  Buffer.add_string buf "                        char alt[256];\n";
+  Buffer.add_string buf "                        snprintf(alt, sizeof(alt), \"_%s\", sym_name);\n";
+  Buffer.add_string buf "                        sym_ptr = dlsym(RTLD_DEFAULT, alt);\n";
+  Buffer.add_string buf "                    }\n";
+  Buffer.add_string buf "                    if (!sym_ptr) {\n";
+  Buffer.add_string buf "                        sym_ptr = asgard_resolve_constant(sym_name);\n";
+  Buffer.add_string buf "                    }\n";
+  Buffer.add_string buf "                }\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = (uint64_t)sym_ptr;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x17: /* SETCC */ {\n";
+  Buffer.add_string buf "                uint8_t cond = fetch_byte(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                uint64_t res = eval_cond(vm, cond) ? 1ULL : 0ULL;\n";
+  Buffer.add_string buf "                vm->vsp[vm->vsp_idx++] = res;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x18: /* CMOV */ {\n";
+  Buffer.add_string buf "                uint8_t cond = fetch_byte(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                int16_t idx = fetch_i16(vm, bytecode, &vip);\n";
+  Buffer.add_string buf "                uint64_t v = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                if (eval_cond(vm, cond)) {\n";
+  Buffer.add_string buf "                    vm->ctx[idx] = v;\n";
+  Buffer.add_string buf "                }\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x19: /* CMP */ {\n";
+  Buffer.add_string buf "                uint64_t b = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t res = a - b;\n";
+  Buffer.add_string buf "                vm->zf = (res == 0);\n";
+  Buffer.add_string buf "                vm->sf = ((int64_t)res < 0);\n";
+  Buffer.add_string buf "                vm->cf = (a < b);\n";
+  Buffer.add_string buf "                vm->of = (((a ^ b) & (a ^ res)) >> 63) & 1;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
+  Buffer.add_string buf "            case 0x1A: /* TEST */ {\n";
+  Buffer.add_string buf "                uint64_t b = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t a = vm->vsp[--vm->vsp_idx];\n";
+  Buffer.add_string buf "                uint64_t res = a & b;\n";
+  Buffer.add_string buf "                vm->zf = (res == 0);\n";
+  Buffer.add_string buf "                vm->sf = ((int64_t)res < 0);\n";
+  Buffer.add_string buf "                vm->cf = 0;\n";
+  Buffer.add_string buf "                vm->of = 0;\n";
+  Buffer.add_string buf "                break;\n";
+  Buffer.add_string buf "            }\n";
   Buffer.add_string buf "            default: break;\n";
   Buffer.add_string buf "        }\n";
   Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n";
+  Buffer.add_string buf "}\n\n";
+
+  (* 7. stack_vm_call *)
+  Buffer.add_string buf "static inline uint64_t stack_vm_call(const uint64_t* bc_words, size_t len_words,\n";
+  Buffer.add_string buf "                                      uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0,\n";
+  Buffer.add_string buf "                                      uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {\n";
+  Buffer.add_string buf "    stack_vm_t vm;\n";
+  Buffer.add_string buf "    memset(&vm, 0, sizeof(vm));\n";
+  Buffer.add_string buf (Printf.sprintf "    vm.vkey = 0x%016LXULL;\n" enc.seed_key);
+  Buffer.add_string buf "    alignas(16) static thread_local uint8_t host_stack[1048576];\n";
+  Buffer.add_string buf "    uint64_t sp_val = (uint64_t)(host_stack + sizeof(host_stack) - 8192);\n";
+  Buffer.add_string buf "    vm.ctx[0] = a0;\n";
+  Buffer.add_string buf "    vm.ctx[1] = a1;\n";
+  Buffer.add_string buf "    vm.ctx[2] = a2;\n";
+  Buffer.add_string buf "    vm.ctx[3] = a3;\n";
+  Buffer.add_string buf "    vm.ctx[4] = sp_val;\n";
+  Buffer.add_string buf "    vm.ctx[5] = sp_val;\n";
+  Buffer.add_string buf "    vm.ctx[6] = a4;\n";
+  Buffer.add_string buf "    vm.ctx[7] = a5;\n";
+  Buffer.add_string buf "    vm.ctx[8] = a6;\n";
+  Buffer.add_string buf "    vm.ctx[9] = a7;\n";
+  Buffer.add_string buf "    const uint8_t* bc_bytes = (const uint8_t*)bc_words;\n";
+  Buffer.add_string buf "    stack_vm_run(&vm, bc_bytes, len_words * 8);\n";
+  Buffer.add_string buf "    return vm.ctx[0];\n";
+  Buffer.add_string buf "}\n\n";
+
+  Buffer.add_string buf "} // namespace asgard_stack_vm\n\n";
+
+  Buffer.add_string buf "namespace vanguard_threaded_vm {\n";
+  Buffer.add_string buf "    static inline uint64_t asgard_vm_call(const uint64_t* bc, size_t len,\n";
+  Buffer.add_string buf "                                          uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0,\n";
+  Buffer.add_string buf "                                          uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {\n";
+  Buffer.add_string buf "        return asgard_stack_vm::stack_vm_call(bc, len, a0, a1, a2, a3, a4, a5, a6, a7);\n";
+  Buffer.add_string buf "    }\n";
+  Buffer.add_string buf "} // namespace vanguard_threaded_vm\n";
+
   Buffer.contents buf
+
+let emit_runner_cpp bytecode =
+  let b = Buffer.create 1024 in
+  Buffer.add_string b "#include \"threaded_vm.hpp\"\n#include <stdio.h>\n#include <stdlib.h>\n\n";
+  Buffer.add_string b "static uint64_t embedded_bytecode[] = {\n";
+  List.iter (fun w -> Buffer.add_string b (Printf.sprintf "    0x%016LXULL,\n" w)) bytecode;
+  Buffer.add_string b "};\n\n";
+  Buffer.add_string b "int main(int argc, char** argv) {\n";
+  Buffer.add_string b "    uint64_t* bc_ptr = embedded_bytecode;\n";
+  Buffer.add_string b "    size_t bc_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);\n";
+  Buffer.add_string b "    if (argc >= 2) {\n";
+  Buffer.add_string b "        FILE* f = fopen(argv[1], \"rb\");\n";
+  Buffer.add_string b "        if (f) {\n";
+  Buffer.add_string b "            fseek(f, 0, SEEK_END);\n";
+  Buffer.add_string b "            long sz = ftell(f);\n";
+  Buffer.add_string b "            fseek(f, 0, SEEK_SET);\n";
+  Buffer.add_string b "            if (sz > 0 && (sz % 8) == 0) {\n";
+  Buffer.add_string b "                size_t count = (size_t)sz / 8;\n";
+  Buffer.add_string b "                uint64_t* heap_bc = (uint64_t*)malloc((size_t)sz);\n";
+  Buffer.add_string b "                if (heap_bc && fread(heap_bc, 8, count, f) == count) {\n";
+  Buffer.add_string b "                    bc_ptr = heap_bc;\n";
+  Buffer.add_string b "                    bc_len = count;\n";
+  Buffer.add_string b "                }\n";
+  Buffer.add_string b "            }\n";
+  Buffer.add_string b "            fclose(f);\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    uint64_t ret = vanguard_threaded_vm::asgard_vm_call(bc_ptr, bc_len);\n";
+  Buffer.add_string b "    printf(\"[Stack-VM] Execution SUCCESS! Result: %llu\\n\", (unsigned long long)ret);\n";
+  Buffer.add_string b "    return 0;\n";
+  Buffer.add_string b "}\n";
+  Buffer.contents b

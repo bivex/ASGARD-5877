@@ -39,15 +39,26 @@ let store_to_operand ctx opnd =
       let dummy = Context_allocator.alloc_scratch ctx in
       [PopReg dummy]
 
-let resolve_target = function
+let get_ext_sym_idx ext_syms sym =
+  match Hashtbl.find_opt ext_syms sym with
+  | Some idx -> idx
+  | None ->
+      let idx = Hashtbl.length ext_syms in
+      Hashtbl.replace ext_syms sym idx;
+      idx
+
+let resolve_target label_to_block = function
   | BlockId id -> id
   | TargetImm imm -> Int64.to_int imm
   | Label s ->
-      (match int_of_string_opt s with
+      (match Hashtbl.find_opt label_to_block s with
        | Some id -> id
-       | None -> Hashtbl.hash s land 0xFFFF)
+       | None ->
+           (match int_of_string_opt s with
+            | Some id -> id
+            | None -> Hashtbl.hash s land 0xFFFF))
 
-let lower_instr ctx = function
+let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create 0) ctx = function
   | Nop -> []
   | Vm_enter -> []
   | Vm_exit | Ret -> [Exit]
@@ -106,33 +117,23 @@ let lower_instr ctx = function
   | Cmp { src1; src2 } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
-      let dummy = Context_allocator.alloc_scratch ctx in
-      src1_ops @ src2_ops @ [Sub; PopReg dummy]
+      src1_ops @ src2_ops @ [Cmp]
   | Test { src1; src2 } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
-      let dummy = Context_allocator.alloc_scratch ctx in
-      src1_ops @ src2_ops @ Stack_logic_pass.expand_and_nor @ [PopReg dummy]
+      src1_ops @ src2_ops @ [Test]
   | Jmp target ->
-      [JmpRel (resolve_target target)]
+      [JmpRel (resolve_target label_to_block target)]
   | Jcc { cond; target_true; target_false } ->
-      let t_id = resolve_target target_true in
-      let f_id = resolve_target target_false in
+      let t_id = resolve_target label_to_block target_true in
+      let f_id = resolve_target label_to_block target_false in
       [JccRel (t_id, cond); JmpRel f_id]
   | Setcc { cond; dst } ->
-      (* Dummy setcc / conditional lowering *)
-      let s_slot = Context_allocator.alloc_scratch ctx in
-      let cont_id = 99999 in
-      [PushImm 0L; PopReg s_slot;
-       JccRel (cont_id, cond);
-       JmpRel (cont_id + 1)] @
-      store_to_operand ctx dst
+      [Setcc cond] @ store_to_operand ctx dst
   | Cmov { cond; dst; src } ->
       let src_ops = lower_operand ctx src in
-      let skip_id = 88888 in
-      [JccRel (skip_id, cond); JmpRel (skip_id + 1)] @
-      src_ops @
-      [PopReg (Context_allocator.slot_of_reg ctx dst)]
+      let d_slot = Context_allocator.slot_of_reg ctx dst in
+      src_ops @ [Cmov (cond, d_slot)]
   | Xchg (op1, op2) ->
       let s1 = Context_allocator.alloc_scratch ctx in
       let s2 = Context_allocator.alloc_scratch ctx in
@@ -141,25 +142,53 @@ let lower_instr ctx = function
       [PushReg s1] @ (store_to_operand ctx op2) @
       [PushReg s2] @ (store_to_operand ctx op1)
   | Call target ->
-      [JmpRel (resolve_target target)]
+      (match target with
+       | BlockId id -> [JmpRel id]
+       | Label sym ->
+           (match Hashtbl.find_opt label_to_block sym with
+            | Some id -> [JmpRel id]
+            | None ->
+                let sym_idx = get_ext_sym_idx ext_syms sym in
+                [CallExtern sym_idx])
+       | TargetImm imm ->
+           let sym_idx = get_ext_sym_idx ext_syms (Printf.sprintf "0x%Lx" imm) in
+           [CallExtern sym_idx])
   | Trap _ -> [Exit]
   | Bridge_to_flow _ | Bridge_to_math _ -> [Exit]
-  | Load_symbol { dst; addend; _ } ->
-      [PushImm addend; PopReg (Context_allocator.slot_of_reg ctx dst)]
+  | Load_symbol { dst; sym; addend } ->
+      let sym_idx = get_ext_sym_idx ext_syms sym in
+      let load_ops =
+        [ResolveSym sym_idx] @
+        (if addend = 0L then [] else [PushImm addend; Add]) @
+        [PopReg (Context_allocator.slot_of_reg ctx dst)]
+      in
+      load_ops
   | Fp_binop _ | Fp_cmp _ | Fp_conv _ -> []
   | Vec_mov _ | Vec_binop _ | Vec_load _ | Vec_store _ -> []
   | Atomic_mem { dst; src; _ } ->
       [PushReg (Context_allocator.slot_of_reg ctx src);
        PopReg (Context_allocator.slot_of_reg ctx dst)]
 
-let lower_basic_block ctx (b : Ir.basic_block) =
-  let ops = List.concat_map (lower_instr ctx) b.instrs in
+let lower_basic_block ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create 0) ctx (b : Ir.basic_block) =
+  let ops = List.concat_map (lower_instr ~label_to_block ~ext_syms ctx) b.instrs in
   make_block b.id b.label ops
 
-let lower_cfg ctx (cfg : Ir.cfg) =
-  let block_list = Hashtbl.fold (fun _ b acc -> (lower_basic_block ctx b) :: acc) cfg.blocks [] in
+let lower_cfg ?(ext_syms = Hashtbl.create 16) ctx (cfg : Ir.cfg) =
+  let label_to_block = Hashtbl.create (Hashtbl.length cfg.blocks) in
+  Hashtbl.iter (fun id b ->
+    Hashtbl.replace label_to_block b.Ir.label id
+  ) cfg.blocks;
+  let block_list = Hashtbl.fold (fun _ b acc ->
+    (lower_basic_block ~label_to_block ~ext_syms ctx b) :: acc
+  ) cfg.blocks [] in
   make_program cfg.entry_id block_list (Context_allocator.total_slots ctx)
 
-let lower_func ?(ctx = Context_allocator.create ()) (f : Ir.func) =
-  let prog = lower_cfg ctx f.cfg in
+let lower_func ?(ctx = Context_allocator.create ()) ?(ext_syms = Hashtbl.create 16) (f : Ir.func) =
+  let prog = lower_cfg ~ext_syms ctx f.cfg in
   (ctx, prog)
+
+let get_symbols_list ext_syms =
+  let arr = Array.make (Hashtbl.length ext_syms) "" in
+  Hashtbl.iter (fun sym idx -> if idx < Array.length arr then arr.(idx) <- sym) ext_syms;
+  Array.to_list arr
+

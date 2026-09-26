@@ -21,4 +21,13 @@ val emit_dispatch_epilogue : runtime_config -> string list
 
 val emit_handler : runtime_config -> stack_op -> string list
 
-val generate_c_runtime : runtime_config -> program -> string
+val generate_c_runtime :
+  ?external_symbols:string list ->
+  ?constants:(string * string) list ->
+  ?enc:Stack_encoder.encrypted_bytecode ->
+  runtime_config ->
+  program ->
+  string
+
+val emit_runner_cpp : int64 list -> string
+

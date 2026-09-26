@@ -11,4 +11,5 @@
   c_macro_obf
   rd_jit_vm
   multi_vm
+  stack_vm
   unix))

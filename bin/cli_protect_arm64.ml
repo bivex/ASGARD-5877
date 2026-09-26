@@ -7,6 +7,8 @@ open Random_visa_application
 let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile_and_run =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
+    else if engine = "stack" then "stack"
+    else if engine = "multi" || engine = "multi_vm" then "multi"
     else "threaded"
   in
   let effective_cfg =
@@ -38,10 +40,11 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
   let toolchain = (module Toolchain_adapter : Toolchain) in
 
   let vm_packager =
-    if resolved_engine = "jit" then
-      (module Vm_packager_adapters.Jit_vm_packager : Vm_packager)
-    else
-      (module Vm_packager_adapters.Threaded_vm_packager : Vm_packager)
+    match resolved_engine with
+    | "jit" -> (module Vm_packager_adapters.Jit_vm_packager : Vm_packager)
+    | "stack" -> (module Vm_packager_adapters.Stack_vm_packager : Vm_packager)
+    | "multi" -> (module Vm_packager_adapters.Multi_vm_packager : Vm_packager)
+    | _ -> (module Vm_packager_adapters.Threaded_vm_packager : Vm_packager)
   in
 
   match
@@ -114,7 +117,7 @@ let protect_arm64_cmd =
     Arg.(value & opt int 2 & info [ "mba-depth" ] ~docv:"DEPTH" ~doc)
   in
   let engine =
-    let doc = "Virtual machine execution engine: threaded or jit" in
+    let doc = "Virtual machine execution engine: threaded, jit, multi, or stack" in
     Arg.(value & opt string "threaded" & info [ "engine" ] ~docv:"ENGINE" ~doc)
   in
   let jit =

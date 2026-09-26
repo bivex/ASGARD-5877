@@ -3,6 +3,7 @@ open Stack_ir
 type encrypted_bytecode = {
   bytes : bytes;
   block_offsets : (int, int) Hashtbl.t;
+  block_keys : (int, int64) Hashtbl.t;
   seed_key : int64;
 }
 

@@ -22,6 +22,12 @@ type stack_op =
   | JccRel of int * condition
   | KeyAdjust of int64
   | Exit
+  | CallExtern of int
+  | ResolveSym of int
+  | Setcc of condition
+  | Cmov of condition * int
+  | Cmp
+  | Test
 
 type block = {
   id : int;

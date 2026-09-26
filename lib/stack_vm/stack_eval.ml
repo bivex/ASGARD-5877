@@ -87,7 +87,7 @@ let step_op state = function
        | [] -> ())
   | WriteMem w ->
       (match state.vstack with
-       | addr :: v :: rest ->
+       | v :: addr :: rest ->
            write_mem_word state addr v w;
            state.vstack <- rest;
            state.vsp <- Int64.add state.vsp 16L
@@ -184,6 +184,38 @@ let step_op state = function
       state.vkey <- Int64.logxor state.vkey delta
   | Exit ->
       state.halted <- true
+  | CallExtern _ -> ()
+  | ResolveSym _ ->
+      state.vstack <- 0x1000L :: state.vstack;
+      state.vsp <- Int64.sub state.vsp 8L
+  | Setcc c ->
+      let v = if Flags.evaluate_condition state.flags c then 1L else 0L in
+      state.vstack <- v :: state.vstack;
+      state.vsp <- Int64.sub state.vsp 8L
+  | Cmov (c, idx) ->
+      (match state.vstack with
+       | v :: rest ->
+           state.vstack <- rest;
+           state.vsp <- Int64.add state.vsp 8L;
+           if Flags.evaluate_condition state.flags c then
+             set_reg state idx v
+       | [] -> ())
+  | Cmp ->
+      (match state.vstack with
+       | op2 :: op1 :: rest ->
+           let res = Int64.sub op1 op2 in
+           state.flags <- CC_OP_SUB { src1 = op1; src2 = op2; dst = res; width = B64 };
+           state.vstack <- rest;
+           state.vsp <- Int64.add state.vsp 16L
+       | _ -> ())
+  | Test ->
+      (match state.vstack with
+       | op2 :: op1 :: rest ->
+           let res = Int64.logand op1 op2 in
+           state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
+           state.vstack <- rest;
+           state.vsp <- Int64.add state.vsp 16L
+       | _ -> ())
 
 let run_program ?(max_steps = 100000) ?initial_ctx prog =
   let state = create_state ?initial_ctx () in
@@ -212,10 +244,19 @@ let run_bytecode ?(max_steps = 100000) ?initial_ctx enc =
   let key = ref enc.seed_key in
   let steps = ref 0 in
   while not state.halted && !steps < max_steps && !pos < Bytes.length enc.bytes do
+    let cur_bid = state.current_block_id in
     match decode_op enc.bytes pos key with
     | None -> state.halted <- true
     | Some op ->
         step_op state op;
+        if state.current_block_id <> cur_bid then begin
+          match Hashtbl.find_opt enc.block_offsets state.current_block_id,
+                Hashtbl.find_opt enc.block_keys state.current_block_id with
+          | Some new_pos, Some new_key ->
+              pos := new_pos;
+              key := new_key
+          | _ -> state.halted <- true
+        end;
         incr steps
   done;
   state

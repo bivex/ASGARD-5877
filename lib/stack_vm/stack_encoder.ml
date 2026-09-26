@@ -5,6 +5,7 @@ open Flags
 type encrypted_bytecode = {
   bytes : bytes;
   block_offsets : (int, int) Hashtbl.t;
+  block_keys : (int, int64) Hashtbl.t;
   seed_key : int64;
 }
 
@@ -82,6 +83,21 @@ let encode_op_into buf = function
       Buffer.add_char buf (Char.chr 0x13);
       add_i64 buf delta
   | Exit -> Buffer.add_char buf (Char.chr 0x14)
+  | CallExtern idx ->
+      Buffer.add_char buf (Char.chr 0x15);
+      add_i32 buf idx
+  | ResolveSym idx ->
+      Buffer.add_char buf (Char.chr 0x16);
+      add_i32 buf idx
+  | Setcc c ->
+      Buffer.add_char buf (Char.chr 0x17);
+      Buffer.add_char buf (Char.chr (cond_to_code c))
+  | Cmov (c, idx) ->
+      Buffer.add_char buf (Char.chr 0x18);
+      Buffer.add_char buf (Char.chr (cond_to_code c));
+      add_i16 buf idx
+  | Cmp -> Buffer.add_char buf (Char.chr 0x19)
+  | Test -> Buffer.add_char buf (Char.chr 0x1A)
 
 let encode_op op =
   let buf = Buffer.create 16 in
@@ -91,6 +107,7 @@ let encode_op op =
 let encode_program ?(seed_key = 0x5877A564D00FL) prog =
   let plain_buf = Buffer.create 1024 in
   let block_offsets = Hashtbl.create (Hashtbl.length prog.blocks) in
+  let block_keys = Hashtbl.create (Hashtbl.length prog.blocks) in
   let sorted_blocks = Hashtbl.fold (fun _ b acc -> b :: acc) prog.blocks []
                       |> List.sort (fun a b -> compare a.id b.id) in
   List.iter (fun b ->
@@ -98,18 +115,24 @@ let encode_program ?(seed_key = 0x5877A564D00FL) prog =
     List.iter (encode_op_into plain_buf) b.ops
   ) sorted_blocks;
 
+  let offset_to_id = Hashtbl.create (Hashtbl.length prog.blocks) in
+  Hashtbl.iter (fun id off -> Hashtbl.replace offset_to_id off id) block_offsets;
+
   let plain = Buffer.to_bytes plain_buf in
   let len = Bytes.length plain in
   let cipher = Bytes.create len in
   let key = ref seed_key in
   for i = 0 to len - 1 do
+    (match Hashtbl.find_opt offset_to_id i with
+     | Some id -> Hashtbl.replace block_keys id !key
+     | None -> ());
     let p = Char.code (Bytes.get plain i) in
     let k_byte = Int64.to_int (Int64.logand !key 0xFFL) in
     let c = p lxor k_byte in
     Bytes.set cipher i (Char.chr c);
     key := step_key !key p
   done;
-  { bytes = cipher; block_offsets; seed_key }
+  { bytes = cipher; block_offsets; block_keys; seed_key }
 
 let read_byte cipher pos key =
   if !pos >= Bytes.length cipher then None
@@ -175,6 +198,15 @@ let decode_op cipher pos key =
        | _ -> None)
   | Some 0x13 -> (match read_i64 cipher pos key with Some delta -> Some (KeyAdjust delta) | None -> None)
   | Some 0x14 -> Some Exit
+  | Some 0x15 -> (match read_i32 cipher pos key with Some idx -> Some (CallExtern idx) | None -> None)
+  | Some 0x16 -> (match read_i32 cipher pos key with Some idx -> Some (ResolveSym idx) | None -> None)
+  | Some 0x17 -> (match read_byte cipher pos key with Some c_code -> Some (Setcc (code_to_cond c_code)) | None -> None)
+  | Some 0x18 ->
+      (match read_byte cipher pos key, read_i16 cipher pos key with
+       | Some c_code, Some idx -> Some (Cmov (code_to_cond c_code, idx))
+       | _ -> None)
+  | Some 0x19 -> Some Cmp
+  | Some 0x1A -> Some Test
   | Some _ -> None
 
 let decode_all cipher seed_key =

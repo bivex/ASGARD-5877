@@ -7,7 +7,8 @@ open Random_visa_application
 let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile_and_run =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
-    else if enable_multi_vm || engine = "multi_vm" || engine = "multi-vm" then "multi_vm"
+    else if engine = "stack" then "stack"
+    else if enable_multi_vm || engine = "multi_vm" || engine = "multi-vm" || engine = "multi" then "multi_vm"
     else "threaded"
   in
   let effective_cfg =
@@ -39,12 +40,11 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
   let toolchain = (module Toolchain_adapter : Toolchain) in
 
   let vm_packager =
-    if resolved_engine = "jit" then
-      (module Vm_packager_adapters.Jit_vm_packager : Vm_packager)
-    else if resolved_engine = "multi_vm" then
-      (module Vm_packager_adapters.Multi_vm_packager : Vm_packager)
-    else
-      (module Vm_packager_adapters.Threaded_vm_packager : Vm_packager)
+    match resolved_engine with
+    | "jit" -> (module Vm_packager_adapters.Jit_vm_packager : Vm_packager)
+    | "stack" -> (module Vm_packager_adapters.Stack_vm_packager : Vm_packager)
+    | "multi_vm" -> (module Vm_packager_adapters.Multi_vm_packager : Vm_packager)
+    | _ -> (module Vm_packager_adapters.Threaded_vm_packager : Vm_packager)
   in
 
   match
