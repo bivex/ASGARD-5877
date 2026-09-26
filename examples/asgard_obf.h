@@ -117,22 +117,22 @@ static ASG_INLINE char* ASG_decrypt_str(char* buf, const uint8_t* enc, size_t le
 #if defined(__GNUC__) || defined(__clang__)
   #if defined(__arm64__) || defined(__aarch64__)
     #define ASGARD_BEGIN_VIRTUALIZE(tag) \
-        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_V____\" \n\t .balign 4 \n 1:\n\t")
+        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_V____\" \n\t .balign 4 \n 1:\n\t" ::: "memory")
     #define ASGARD_BEGIN_MUTATION(tag) \
-        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_M____\" \n\t .balign 4 \n 1:\n\t")
+        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_M____\" \n\t .balign 4 \n 1:\n\t" ::: "memory")
     #define ASGARD_BEGIN_ULTRA(tag) \
-        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_U____\" \n\t .balign 4 \n 1:\n\t")
+        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_U____\" \n\t .balign 4 \n 1:\n\t" ::: "memory")
     #define ASGARD_END() \
-        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_END______\" \n\t .balign 4 \n 1:\n\t")
+        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_END______\" \n\t .balign 4 \n 1:\n\t" ::: "memory")
   #else
     #define ASGARD_BEGIN_VIRTUALIZE(tag) \
-        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_BEG_V__\" \n 1:\n\t")
+        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_BEG_V__\" \n 1:\n\t" ::: "memory")
     #define ASGARD_BEGIN_MUTATION(tag) \
-        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_BEG_M__\" \n 1:\n\t")
+        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_BEG_M__\" \n 1:\n\t" ::: "memory")
     #define ASGARD_BEGIN_ULTRA(tag) \
-        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_BEG_U__\" \n 1:\n\t")
+        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_BEG_U__\" \n 1:\n\t" ::: "memory")
     #define ASGARD_END() \
-        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_END____\" \n 1:\n\t")
+        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_END____\" \n 1:\n\t" ::: "memory")
   #endif
 #else
   #define ASGARD_BEGIN_VIRTUALIZE(tag)

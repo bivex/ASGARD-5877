@@ -169,12 +169,31 @@ let parse_line raw =
             [OpReg r1; OpReg r2; OpMem { m with wb = WbPost disp }]
         | other -> other
       in
+      let split_shift_spec a =
+        let s = String.trim a in
+        let s_low = String.lowercase_ascii s in
+        if String.starts_with ~prefix:"lsl" s_low ||
+           String.starts_with ~prefix:"lsr" s_low ||
+           String.starts_with ~prefix:"asr" s_low ||
+           String.starts_with ~prefix:"ror" s_low then
+          let sh = String.sub s_low 0 3 in
+          let rest = String.trim (String.sub s 3 (String.length s - 3)) in
+          let imm_str = if String.starts_with ~prefix:"#" rest then String.sub rest 1 (String.length rest - 1) else rest in
+          match Int64.of_string_opt (String.trim imm_str) with
+          | Some shift -> Some (sh, shift)
+          | None -> None
+        else None
+      in
       let rec parse_all acc = function
         | [] -> Ok (LineInstr (mnemonic, normalize_post_index (List.rev acc)))
         | a :: rest ->
-            match parse_operand a def_width with
-            | Ok op -> parse_all (op :: acc) rest
-            | Error err -> Error err
+            match split_shift_spec a with
+            | Some (sh, shift) ->
+                parse_all (OpImm shift :: OpLabel sh :: acc) rest
+            | None ->
+                match parse_operand a def_width with
+                | Ok op -> parse_all (op :: acc) rest
+                | Error err -> Error err
       in
       parse_all [] raw_args
 

@@ -255,6 +255,39 @@ let test_arm64_w18_b32_zero_extension () =
       | Ok snap -> check int64 "ARM64 w18 zero-extends to 0xffffffff" 0xFFFFFFFFL snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_movz_movk () =
+  let asm = {|
+    mov w0, #46593
+    movk w0, #30384, lsl #16
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_movk" } asm with
+  | Error err -> fail ("Failed to lift ARM64 movk: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ARM64 movk 30384<<16 | 46593 = 0x76B0B601" 0x76B0B601L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_shifted_alu () =
+  let asm = {|
+    mov x1, #10
+    mov x2, #3
+    add x0, x1, x2, lsl #2
+    sub x0, x0, x2, lsl #1
+    and x0, x0, x1, lsl #1
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_shifted_alu" } asm with
+  | Error err -> fail ("Failed to lift ARM64 shifted alu: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          (* 10 + (3 << 2) = 22
+             22 - (3 << 1) = 16
+             16 & (10 << 1) = 16 & 20 = 16 *)
+          check int64 "ARM64 shifted alu = 16" 16L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -268,6 +301,8 @@ let tests = [
   ("ARM64 Lift Pair stp/ldp Writeback", `Quick, test_arm64_lift_pair_stp_ldp);
   ("ARM64 Lift 3-Address ALU (madd/msub/sdiv/bic)", `Quick, test_arm64_lift_3addr_madd_msub_sdiv_bic);
   ("ARM64 Lift w18 B32 zero-extension", `Quick, test_arm64_w18_b32_zero_extension);
+  ("ARM64 Lift movz/movk with shift", `Quick, test_arm64_lift_movz_movk);
+  ("ARM64 Lift Shifted ALU (lsl/lsr)", `Quick, test_arm64_lift_shifted_alu);
 ]
 
 
