@@ -650,7 +650,7 @@ static uint64_t derive_addr_key(void) {
 }
 
 static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t size) {
-    size_t vip = 0;
+    size_t vip = g_stack_block_offsets[{{ entry_bid }}];
     while (!vm->halted && vip < size) {
         uint8_t op = fetch_byte(vm, bytecode, &vip);
         switch (op) {
@@ -669,10 +669,9 @@ static inline uint64_t stack_vm_call(const uint64_t* bc_words, size_t len_words,
     memset(&vm, 0, sizeof(vm));
 {%- if is_address_bound %}
     vm.addr_key = derive_addr_key();
-    vm.vkey = 0x{{ seed_key_hex }}ULL;
-    vm.vkey ^= vm.addr_key;
+    vm.vkey = g_stack_block_keys[{{ entry_bid }}] ^ vm.addr_key;
 {%- else %}
-    vm.vkey = 0x{{ seed_key_hex }}ULL;
+    vm.vkey = g_stack_block_keys[{{ entry_bid }}];
 {%- endif %}
     vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);
     alignas(16) static thread_local uint8_t host_stack[1048576];

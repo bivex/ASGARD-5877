@@ -11,8 +11,8 @@
                        (only when stack depth >= 1 at insertion point)
       • GhostArith:    PushImm <a>    ; PushImm <b>  ; Add  ; PopReg <scratch>
                        (always delta = 0: +2 then −2)
-      • GhostKeyAdj:   KeyAdjust 0L
-                       (XOR with 0 is identity; adds an opaque key mutation)
+      • GhostKeyAdj:   KeyAdjust d ; KeyAdjust d   (d ≠ 0, random)
+                       (d XOR d = 0 → key unchanged; but breaks linear key recovery)
 
     Insertion is seed-deterministic using SplitMix64, at configurable
     density (ghost_rate: probability 0.0–1.0 per real instruction gap).
@@ -79,7 +79,16 @@ let emit_ghost rng ctx stack_depth flags_live =
     let b = next_int64 rng in
     [ PushImm a; PushImm b; Add; PopReg (scratch ()) ]
   | GhostKeyAdj ->
-    [ KeyAdjust 0L ]
+    (* Use a non-zero random delta so the key stream is genuinely perturbed.
+       Two consecutive KeyAdjust with the same delta cancel:
+         key' = key XOR d XOR d = key  (XOR is self-inverse)
+       The runtime decoder sees the same effective key at the next real op,
+       but a static analyser tracing the key stream must symbolically evaluate
+       both mutations instead of recognising a trivial XOR-0 no-op. *)
+    let d = ref (next_int64 rng) in
+    (* Guarantee non-zero: loop is extremely unlikely to iterate more than once *)
+    while Int64.equal !d 0L do d := next_int64 rng done;
+    [ KeyAdjust !d; KeyAdjust !d ]
 
 (** [insert_ghosts_into_ops rng ctx ops ghost_rate] walks through [ops]
     and inserts ghost sequences at each non-terminator gap with probability

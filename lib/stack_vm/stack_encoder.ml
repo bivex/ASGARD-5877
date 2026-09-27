@@ -175,6 +175,52 @@ let rotl64 v k =
 let step_key key byte_val =
   Int64.add (rotl64 key 3) (Int64.of_int (byte_val lxor 0x5A))
 
+(* ── SipHash-1-2 (64-bit) for per-block key derivation ─────────────── *)
+(** SipHash-1-2: 1 compression round, 2 finalisation rounds.
+    Produces a 64-bit PRF output from a 128-bit key split into (k0, k1)
+    and a 64-bit message word m.  Used to derive independent per-block
+    entry keys so that compromising one block's key gives no information
+    about any other block's key (unlike a linear rolling key stream). *)
+let siphash_block ~k0 ~k1 m =
+  let open Int64 in
+  let ( lxor ) = logxor in
+  let rotl v s = logor (shift_left v s) (shift_right_logical v (64 - s)) in
+  let v0 = ref (k0 lxor 0x736F6D6570736575L) in
+  let v1 = ref (k1 lxor 0x646F72616E646F6DL) in
+  let v2 = ref (k0 lxor 0x6C7967656E657261L) in
+  let v3 = ref (k1 lxor 0x7465646279746573L) in
+  v3 := !v3 lxor m;
+  v0 := add !v0 !v1; v1 := rotl !v1 13; v1 := !v1 lxor !v0;
+  v0 := rotl !v0 32;
+  v2 := add !v2 !v3; v3 := rotl !v3 16; v3 := !v3 lxor !v2;
+  v0 := add !v0 !v3; v3 := rotl !v3 21; v3 := !v3 lxor !v0;
+  v2 := add !v2 !v1; v1 := rotl !v1 17; v1 := !v1 lxor !v2;
+  v2 := rotl !v2 32;
+  v0 := !v0 lxor m;
+  v2 := !v2 lxor 0xFFL;
+  let sip_round () =
+    v0 := add !v0 !v1; v1 := rotl !v1 13; v1 := !v1 lxor !v0;
+    v0 := rotl !v0 32;
+    v2 := add !v2 !v3; v3 := rotl !v3 16; v3 := !v3 lxor !v2;
+    v0 := add !v0 !v3; v3 := rotl !v3 21; v3 := !v3 lxor !v0;
+    v2 := add !v2 !v1; v1 := rotl !v1 17; v1 := !v1 lxor !v2;
+    v2 := rotl !v2 32
+  in
+  sip_round (); sip_round ();
+  !v0 lxor !v1 lxor !v2 lxor !v3
+
+(** [derive_block_key seed_key block_id block_offset] derives an independent
+    64-bit block entry key via SipHash-1-2.  Split seed into two halves for
+    the 128-bit SipHash key; message = block_id XOR block_offset.
+    Compromising one block's key yields zero information about other blocks. *)
+let derive_block_key seed_key block_id block_offset =
+  (* Split seed_key into two independent 64-bit halves via rotation *)
+  let k0 = Int64.logxor seed_key 0x5877_A564_D00F_0000L in
+  let k1 = Int64.logxor seed_key 0xD00F_5877_0000_A564L in
+  let m  = Int64.logxor (Int64.of_int block_id) (Int64.of_int block_offset) in
+  siphash_block ~k0 ~k1 m
+
+
 let cond_to_code = function
   | E -> 0 | NE -> 1 | B -> 2 | AE -> 3
   | BE -> 4 | A -> 5 | S -> 6 | NS -> 7
@@ -299,10 +345,17 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
   let plain = Buffer.to_bytes plain_buf in
   let len = Bytes.length plain in
   let cipher = Bytes.create len in
+  (* Per-block SipHash re-key: each block starts from a key derived as
+       K_B = SipHash-1-2(seed_key, block_id XOR block_offset)
+     Within a block the rolling stream continues normally, but entry keys
+     are independent — knowing block N's key reveals nothing about block M. *)
   let key = ref seed_key in
   for i = 0 to len - 1 do
     (match Hashtbl.find_opt offset_to_id i with
-     | Some id -> Hashtbl.replace block_keys id !key
+     | Some id ->
+         let sip_key = derive_block_key seed_key id i in
+         key := sip_key;
+         Hashtbl.replace block_keys id sip_key
      | None -> ());
     let p = Char.code (Bytes.get plain i) in
     let k_byte = Int64.to_int (Int64.logand !key 0xFFL) in
@@ -423,18 +476,54 @@ let decode_op ?(op_map = default_opcode_map) cipher pos key =
   | Some b when b = op_map.op_test -> Some Test
   | Some _ -> None
 
-let decode_all ?op_map cipher seed_key =
+let decode_all ?op_map ?block_keys ?block_offsets cipher seed_key =
   let resolved_op_map = match op_map with
     | Some m -> m
-    | None -> generate_opcode_map seed_key
+    | None   -> generate_opcode_map seed_key
   in
+  (* offset -> block_key lookup for per-block SipHash re-key *)
+  let offset_to_key : (int, int64) Hashtbl.t = Hashtbl.create 16 in
+  (match block_keys, block_offsets with
+   | Some bk, Some bo ->
+       Hashtbl.iter (fun id off ->
+         match Hashtbl.find_opt bk id with
+         | Some k -> Hashtbl.replace offset_to_key off k
+         | None   -> ()
+       ) bo
+   | _ -> ());
   let pos = ref 0 in
-  let key = ref seed_key in
+  let initial_key =
+    match Hashtbl.find_opt offset_to_key 0 with
+    | Some k -> k
+    | None   -> seed_key
+  in
+  let key = ref initial_key in
   let ops = ref [] in
   let finished = ref false in
   while not !finished && !pos < Bytes.length cipher do
+    if !pos > 0 then
+      (match Hashtbl.find_opt offset_to_key !pos with
+       | Some k -> key := k
+       | None   -> ());
     match decode_op ~op_map:resolved_op_map cipher pos key with
     | Some op -> ops := op :: !ops
-    | None -> finished := true
+    | None    -> finished := true
   done;
   List.rev !ops
+
+(** Block-aware convenience: decode all ops from [encrypted_bytecode],
+    correctly handling per-block SipHash re-key. *)
+let decode_enc enc =
+  (* Stored block_keys = sip_key XOR addr_mask.  Unmask to get effective
+     SipHash keys before passing to decode_all, mirroring run_bytecode's
+     key := logxor new_key enc.addr_mask treatment. *)
+  let eff_block_keys = Hashtbl.create (Hashtbl.length enc.block_keys) in
+  Hashtbl.iter (fun id k ->
+    Hashtbl.replace eff_block_keys id (Int64.logxor k enc.addr_mask)
+  ) enc.block_keys;
+  decode_all
+    ~op_map:enc.op_map
+    ~block_keys:eff_block_keys
+    ~block_offsets:enc.block_offsets
+    enc.bytes
+    (effective_seed_key enc)

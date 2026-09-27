@@ -182,7 +182,7 @@ let test_rolling_key_encoder_and_eval () =
   Alcotest.(check bool) "bytecode is non-empty" true (Bytes.length enc.bytes > 0);
 
   (* Test roundtrip decoding *)
-  let decoded_ops = Stack_encoder.decode_all enc.bytes enc.seed_key in
+  let decoded_ops = Stack_encoder.decode_enc enc in
   Alcotest.(check int) "decoded op count matches" (List.length b.ops) (List.length decoded_ops);
 
   (* Test execution of encrypted bytecode *)
@@ -250,7 +250,7 @@ let test_stack_vm_extensions () =
 
   (* Test Bytecode encoding, roundtrip decoding and execution *)
   let enc = Stack_encoder.encode_program ~seed_key:0xCAFEBABE12345678L prog in
-  let decoded = Stack_encoder.decode_all enc.bytes enc.seed_key in
+  let decoded = Stack_encoder.decode_enc enc in
   Alcotest.(check bool) "decoded instructions present" true (List.length decoded > 0);
 
   let state_bc = run_bytecode enc in
@@ -704,7 +704,7 @@ let test_keyadjust_midblock () =
   Alcotest.(check int64) "BC reg1 after KeyAdjust" 8L (get_reg st_bc 1);
   Alcotest.(check int64) "BC reg2 after KeyAdjust" 9L (get_reg st_bc 2);
   (* decode_all must also stay in sync across both adjustments *)
-  let decoded = Stack_encoder.decode_all enc.bytes enc.seed_key in
+  let decoded = Stack_encoder.decode_enc enc in
   Alcotest.(check int) "decode_all op count survives KeyAdjust" (List.length b0.ops) (List.length decoded)
 
 (* ── Full obfuscation pipeline: semantics must survive all four passes ── *)
@@ -1035,8 +1035,7 @@ let test_addr_mask_unit () =
   Alcotest.(check int)
     "decode_all with effective seed returns all stream ops"
     total_ops
-    (List.length (Stack_encoder.decode_all enc_masked.bytes
-                    (Stack_encoder.effective_seed_key enc_masked)));
+    (Stack_encoder.decode_enc enc_masked |> List.length);
 
   (* 4. apply_addr_mask composes: rebind then unbind restores literals *)
   let enc_rebound = Stack_encoder.apply_addr_mask enc_plain d_addr in
@@ -1231,9 +1230,14 @@ let test_address_bound_c_runtime_probe_and_run () =
   end
 
 let test_real_license_check_macro_stack_vm_e2e () =
-  let example_c = "license_check.c" in
-  if not (Sys.file_exists example_c) then
-    Alcotest.fail (Printf.sprintf "license_check.c not found (CWD=%s)" (Sys.getcwd ()));
+  let candidates = ["license_check.c"; "examples/license_check.c"; "../examples/license_check.c"] in
+  let example_c =
+    match List.find_opt Sys.file_exists candidates with
+    | Some p -> p
+    | None ->
+        Alcotest.fail (Printf.sprintf "license_check.c not found in %s (CWD=%s)"
+          (String.concat ", " candidates) (Sys.getcwd ()))
+  in
 
   Test_helpers.with_temp_dir (fun tmp_dir ->
     let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in

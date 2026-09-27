@@ -270,6 +270,10 @@ let generate_c_runtime
     ("is_address_bound", Jingoo.Jg_types.Tbool (enc.addr_mask <> 0L));
     ("is_aarch64", Jingoo.Jg_types.Tbool (cfg.arch = AArch64));
     ("seed_key_hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.seed_key));
+    (* entry_bid: which block_keys index to use at VM startup.
+       g_stack_block_keys[entry_bid] is the SipHash-derived key for the
+       entry block, replacing the old global seed_key initialisation. *)
+    ("entry_bid", Jingoo.Jg_types.Tint prog.entry_id);
   ] in
   Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models
 

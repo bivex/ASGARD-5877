@@ -84,6 +84,12 @@ val decode_op :
 
 val decode_all :
   ?op_map:opcode_map ->
+  ?block_keys:(int, int64) Hashtbl.t ->
+  ?block_offsets:(int, int) Hashtbl.t ->
   bytes ->
   int64 ->
   stack_op list
+
+(** Block-aware decode: use when [encrypted_bytecode] has per-block SipHash keys. *)
+val decode_enc : encrypted_bytecode -> stack_op list
+

@@ -266,11 +266,23 @@ let run_program ?(max_steps = 100000) ?initial_ctx prog =
 let run_bytecode ?(max_steps = 100000) ?initial_ctx enc =
   (* Address-bound bytecode: stored literals are masked; the C++ runtime
      folds the address key back in at entry and at every block anchor —
-     mirror that here with the mask so the OCaml reference matches. *)
+     mirror that here with the mask so the OCaml reference matches.
+     Per-block SipHash re-key: the entry block's key is stored in
+     enc.block_keys[entry_id], NOT the global effective_seed_key. *)
   let eff = Stack_encoder.(effective_seed_key enc) in
   let state = create_state ~seed_key:eff ?initial_ctx () in
-  let pos = ref 0 in
-  let key = ref eff in
+  let entry_id = state.current_block_id in  (* set to prog.entry_id above *)
+  (* Look up the entry block's SipHash-derived key and offset *)
+  let init_pos, init_key =
+    match Hashtbl.find_opt enc.block_offsets entry_id,
+          Hashtbl.find_opt enc.block_keys entry_id with
+    | Some p, Some k -> (p, Int64.logxor k enc.addr_mask)
+    | _ ->
+        (* Fallback: legacy path — no per-block keys (addr_mask=0, key=eff) *)
+        (0, eff)
+  in
+  let pos = ref init_pos in
+  let key = ref init_key in
   let steps = ref 0 in
   while not state.halted && !steps < max_steps && !pos < Bytes.length enc.bytes do
     let cur_bid = state.current_block_id in
@@ -289,3 +301,4 @@ let run_bytecode ?(max_steps = 100000) ?initial_ctx enc =
         incr steps
   done;
   state
+
