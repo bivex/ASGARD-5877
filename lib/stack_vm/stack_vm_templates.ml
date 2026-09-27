@@ -514,6 +514,16 @@ static void h_call_extern(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) 
                 sym_ptr = dlsym(RTLD_DEFAULT, alt);
             }
             if (sym_ptr) {
+{%- if is_aarch64 %}
+                uint64_t a0 = vm->ctx[0]; /* X0 (RAX) */
+                uint64_t a1 = vm->ctx[1]; /* X1 (RCX) */
+                uint64_t a2 = vm->ctx[2]; /* X2 (RDX) */
+                uint64_t a3 = vm->ctx[3]; /* X3 (RBX) */
+                uint64_t a4 = vm->ctx[6]; /* X4 (RSI) */
+                uint64_t a5 = vm->ctx[7]; /* X5 (RDI) */
+                uint64_t a6 = vm->ctx[8]; /* X6 (R8)  */
+                uint64_t a7 = vm->ctx[9]; /* X7 (R9)  */
+{%- else %}
                 uint64_t a0 = vm->ctx[7]; /* RDI */
                 uint64_t a1 = vm->ctx[6]; /* RSI */
                 uint64_t a2 = vm->ctx[2]; /* RDX */
@@ -522,6 +532,7 @@ static void h_call_extern(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) 
                 uint64_t a5 = vm->ctx[9]; /* R9  */
                 uint64_t a6 = vm->ctx[0]; /* RAX */
                 uint64_t a7 = vm->ctx[3]; /* RBX */
+{%- endif %}
                 typedef uint64_t (*ext_fn_8)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
                 uint64_t ret = ((ext_fn_8)sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
                 vm->ctx[0] = ret;
@@ -666,16 +677,27 @@ static inline uint64_t stack_vm_call(const uint64_t* bc_words, size_t len_words,
     vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);
     alignas(16) static thread_local uint8_t host_stack[1048576];
     uint64_t sp_val = (uint64_t)(host_stack + sizeof(host_stack) - 8192);
+    vm.ctx[4] = sp_val;
+    vm.ctx[5] = sp_val;
+{%- if is_aarch64 %}
+    vm.ctx[0] = a0; /* X0 (RAX) */
+    vm.ctx[1] = a1; /* X1 (RCX) */
+    vm.ctx[2] = a2; /* X2 (RDX) */
+    vm.ctx[3] = a3; /* X3 (RBX) */
+    vm.ctx[6] = a4; /* X4 (RSI) */
+    vm.ctx[7] = a5; /* X5 (RDI) */
+    vm.ctx[8] = a6; /* X6 (R8)  */
+    vm.ctx[9] = a7; /* X7 (R9)  */
+{%- else %}
     vm.ctx[7] = a0; /* RDI */
     vm.ctx[6] = a1; /* RSI */
     vm.ctx[2] = a2; /* RDX */
     vm.ctx[1] = a3; /* RCX */
-    vm.ctx[4] = sp_val;
-    vm.ctx[5] = sp_val;
     vm.ctx[8] = a4; /* R8  */
     vm.ctx[9] = a5; /* R9  */
     vm.ctx[0] = a6; /* RAX */
     vm.ctx[3] = a7; /* RBX */
+{%- endif %}
     const uint8_t* bc_bytes = (const uint8_t*)bc_words;
     stack_vm_run(&vm, bc_bytes, len_words * 8);
     return vm.ctx[0];

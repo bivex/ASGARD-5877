@@ -176,7 +176,7 @@ let generate_c_runtime
     ?(external_symbols = [])
     ?(constants = [])
     ?enc
-    _cfg
+    cfg
     prog =
   let enc = match enc with
     | Some e -> e
@@ -268,6 +268,7 @@ let generate_c_runtime
     ("context_slots", Jingoo.Jg_types.Tint (max 64 prog.context_slots));
     ("dispatch_cases", Jingoo.Jg_types.Tlist dispatch_cases);
     ("is_address_bound", Jingoo.Jg_types.Tbool (enc.addr_mask <> 0L));
+    ("is_aarch64", Jingoo.Jg_types.Tbool (cfg.arch = AArch64));
     ("seed_key_hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.seed_key));
   ] in
   Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models
