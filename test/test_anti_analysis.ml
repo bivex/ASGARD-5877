@@ -214,11 +214,59 @@ let prop_mba_equivalence_1000 =
       ok_add && ok_sub && ok_xor && ok_mul)
 
 
+let test_cff_ocamlgraph_cfg_metrics () =
+  (* Construct a CFG with 4 blocks:
+     0: entry -> jmp 1
+     1: loop_header -> jcc cond, true -> 2, false -> 3
+     2: body -> jmp 1 (loop back)
+     3: exit -> ret
+  *)
+  let b0 = Ir.make_block ~id:0 ~label:"entry" ~instrs:[ Ir.Jmp (Ir.BlockId 1) ] in
+  let b1 = Ir.make_block ~id:1 ~label:"loop_header" ~instrs:[
+    Ir.Cmp { src1 = Ir.Reg Register.rax; src2 = Ir.Imm 10L };
+    Ir.Jcc { cond = Flags.L; target_true = Ir.BlockId 2; target_false = Ir.BlockId 3 };
+  ] in
+  let b2 = Ir.make_block ~id:2 ~label:"body" ~instrs:[
+    Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 1L; set_flags = false };
+    Ir.Jmp (Ir.BlockId 1);
+  ] in
+  let b3 = Ir.make_block ~id:3 ~label:"exit" ~instrs:[ Ir.Ret ] in
+  let func = Ir.make_func ~name:"loop_test" ~entry_id:0 ~blocks:[ b0; b1; b2; b3 ] in
+
+  let cfg = Cff.build_cfg func in
+  let metrics = Cff.analyze_cfg ~entry_id:0 cfg in
+
+  Alcotest.(check int) "num_vertices = 4" 4 metrics.num_vertices;
+  Alcotest.(check int) "num_edges = 4" 4 metrics.num_edges;
+  (* cyclomatic complexity = E - V + 2 = 4 - 4 + 2 = 2 *)
+  Alcotest.(check int) "cyclomatic_complexity = 2" 2 metrics.cyclomatic_complexity;
+  Alcotest.(check bool) "has_cycles = true" true metrics.has_cycles;
+  Alcotest.(check int) "scc_count = 3 (entry, loop {1,2}, exit)" 3 metrics.scc_count;
+  Alcotest.(check (list int)) "loop_headers contains 1" [1] metrics.loop_headers
+
+let test_cff_ocamlgraph_dot_and_reachability () =
+  let b0 = Ir.make_block ~id:0 ~label:"entry" ~instrs:[ Ir.Jmp (Ir.BlockId 1) ] in
+  let b1 = Ir.make_block ~id:1 ~label:"exit" ~instrs:[ Ir.Ret ] in
+  let b2 = Ir.make_block ~id:2 ~label:"dead_block" ~instrs:[ Ir.Ret ] in
+  let func = Ir.make_func ~name:"reach_test" ~entry_id:0 ~blocks:[ b0; b1; b2 ] in
+
+  let cfg = Cff.build_cfg func in
+  let reachable = Cff.reachable_blocks ~entry_id:0 cfg in
+  Alcotest.(check bool) "entry reachable" true (List.mem 0 reachable);
+  Alcotest.(check bool) "exit reachable" true (List.mem 1 reachable);
+  Alcotest.(check bool) "dead_block not reachable" false (List.mem 2 reachable);
+
+  let dot = Cff.export_dot ~func cfg in
+  Alcotest.(check bool) "dot contains digraph" true (String.length dot > 0 && String.sub dot 0 7 = "digraph");
+  Alcotest.(check bool) "dot contains node_0" true (try ignore (String.index dot '0'); true with _ -> false)
+
 let tests = [
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
   Alcotest.test_case "mba_lowering_to_vm_ir" `Quick test_mba_lowering_to_vm_ir;
   Alcotest.test_case "cff_flatten_fibonacci" `Quick test_cff_flatten_fibonacci;
   Alcotest.test_case "cff_flatten_lifted_factorial" `Quick test_cff_flatten_lifted_factorial;
   Alcotest.test_case "cff_flatten_lifted_abs" `Quick test_cff_flatten_lifted_abs;
+  Alcotest.test_case "cff_ocamlgraph_cfg_metrics" `Quick test_cff_ocamlgraph_cfg_metrics;
+  Alcotest.test_case "cff_ocamlgraph_dot_and_reachability" `Quick test_cff_ocamlgraph_dot_and_reachability;
   QCheck_alcotest.to_alcotest prop_mba_equivalence_1000;
 ]

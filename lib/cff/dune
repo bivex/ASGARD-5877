@@ -1,4 +1,4 @@
 (library
  (name cff)
  (public_name random_visa.cff)
- (libraries vm_ir))
+ (libraries vm_ir ocamlgraph))
