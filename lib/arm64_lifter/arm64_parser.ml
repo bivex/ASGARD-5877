@@ -323,9 +323,14 @@ let extract_constants text =
               | Some (q1, q2) ->
                   let raw_str = String.sub trimmed (q1 + 1) (q2 - q1 - 1) in
                   let unescaped = unescape_asm_str raw_str in
-                  let data = if is_asciz then unescaped ^ "\000" else unescaped in
-                  constants := (lbl, data) :: !constants;
-                  cur_label := None
+                  if String.starts_with ~prefix:"ASGARD_BEG" unescaped ||
+                     String.starts_with ~prefix:"ASGARD_END" unescaped then (
+                    cur_label := None
+                  ) else (
+                    let data = if is_asciz then unescaped ^ "\000" else unescaped in
+                    constants := (lbl, data) :: !constants;
+                    cur_label := None
+                  )
               | None -> ()
             ) else if String.starts_with ~prefix:".byte" trimmed then (
               let rest = String.sub trimmed 5 (String.length trimmed - 5) in

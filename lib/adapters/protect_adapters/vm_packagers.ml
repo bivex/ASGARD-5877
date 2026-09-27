@@ -214,11 +214,34 @@ module Stack_vm_packager : Vm_packager = struct
     let enc = Stack_vm.Stack_encoder.encode_program ~seed_key prog in
     let bc_words = bytes_to_words enc.bytes in
 
+    let is_internal_sym name =
+      (match constants with
+       | Some cs -> List.exists (fun (cname, _) -> cname = name) cs
+       | None -> false)
+      || String.contains name '.'
+      || (String.length name >= 3 && String.sub name 0 3 = "LBB")
+      || (String.length name >= 2 && String.sub name 0 2 = ".L")
+    in
+    let sanitize_sym name =
+      if is_internal_sym name then
+        Printf.sprintf "asg_c_%08x" (Hashtbl.hash name land 0x7FFFFFFF)
+      else name
+    in
+    let sanitized_constants =
+      match constants with
+      | Some cs ->
+          Some (List.map (fun (name, data) -> (sanitize_sym name, data)) cs)
+      | None -> None
+    in
+    let sanitized_external_symbols =
+      List.map sanitize_sym external_symbols
+    in
+
     let runtime_cfg = Stack_vm.Stack_runtime.default_config Stack_vm.Stack_runtime.AArch64 in
     let cpp_runtime_source =
       Stack_vm.Stack_runtime.generate_c_runtime
-        ~external_symbols
-        ?constants
+        ~external_symbols:sanitized_external_symbols
+        ?constants:sanitized_constants
         ~enc
         runtime_cfg
         prog
@@ -230,8 +253,8 @@ module Stack_vm_packager : Vm_packager = struct
         let d = Stack_vm.Stack_encoder.parse_u64_hex d_hex in
         let enc_rebound = Stack_vm.Stack_encoder.apply_addr_mask enc d in
         Stack_vm.Stack_runtime.generate_c_runtime
-          ~external_symbols
-          ?constants
+          ~external_symbols:sanitized_external_symbols
+          ?constants:sanitized_constants
           ~enc:enc_rebound
           runtime_cfg
           prog)
