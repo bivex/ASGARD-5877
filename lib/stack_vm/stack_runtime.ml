@@ -182,795 +182,108 @@ let generate_c_runtime
     | Some e -> e
     | None -> Stack_encoder.encode_program prog
   in
-  let buf = Buffer.create 4096 in
-  Buffer.add_string buf "#include <stdint.h>\n#include <stdlib.h>\n#include <string.h>\n#include <dlfcn.h>\n#include <stdio.h>\n\n";
-
-  (* 1. Constants *)
-  Buffer.add_string buf "struct AsgardConstantEntry {\n    const char* name;\n    const uint8_t* data;\n    size_t size;\n};\n\n";
-  if constants = [] then begin
-    Buffer.add_string buf "static const AsgardConstantEntry g_asgard_constants[] = { { \"\", nullptr, 0 } };\n\n";
-  end else begin
-    List.iteri (fun idx (_name, bytes) ->
-      Buffer.add_string buf (Printf.sprintf "static const uint8_t cdata_%d[] = { " idx);
+  let has_constants = constants <> [] in
+  let constants_model =
+    List.mapi (fun idx (name, bytes) ->
+      let hex_b = Buffer.create (String.length bytes * 6) in
       for i = 0 to String.length bytes - 1 do
-        Buffer.add_string buf (Printf.sprintf "0x%02X, " (Char.code bytes.[i]))
+        Buffer.add_string hex_b (Printf.sprintf "0x%02X, " (Char.code bytes.[i]))
       done;
-      Buffer.add_string buf "0x00 };\n"
-    ) constants;
-    Buffer.add_string buf "static const AsgardConstantEntry g_asgard_constants[] = {\n";
-    List.iteri (fun idx (name, bytes) ->
-      Buffer.add_string buf (Printf.sprintf "    { \"%s\", cdata_%d, %d },\n" (String.escaped name) idx (String.length bytes))
-    ) constants;
-    Buffer.add_string buf "};\n\n";
-  end;
-
-  Buffer.add_string buf "static inline void* asgard_resolve_constant(const char* name) {\n";
-  Buffer.add_string buf "    if (!name || name[0] == '\\0') return nullptr;\n";
-  Buffer.add_string buf "    for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {\n";
-  Buffer.add_string buf "        if (g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name) == 0) return (void*)g_asgard_constants[i].data;\n";
-  Buffer.add_string buf "        if (name[0] == '_' && g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name + 1) == 0) return (void*)g_asgard_constants[i].data;\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "    return nullptr;\n";
-  Buffer.add_string buf "}\n\n";
-
-  (* 2. External symbols *)
-  if external_symbols = [] then
-    Buffer.add_string buf "static const char* g_external_symbols[] = { \"\" };\n\n"
-  else begin
-    Buffer.add_string buf "static const char* g_external_symbols[] = {\n";
-    List.iter (fun sym ->
-      Buffer.add_string buf (Printf.sprintf "    \"%s\",\n" (String.escaped sym))
-    ) external_symbols;
-    Buffer.add_string buf "};\n\n";
-  end;
-
-  (* 3. Block offsets and keys *)
+      Jingoo.Jg_types.Tobj [
+        ("index", Jingoo.Jg_types.Tint idx);
+        ("escaped_name", Jingoo.Jg_types.Tstr (String.escaped name));
+        ("hex_bytes", Jingoo.Jg_types.Tstr (Buffer.contents hex_b));
+        ("size", Jingoo.Jg_types.Tint (String.length bytes));
+      ]
+    ) constants
+  in
+  let has_symbols = external_symbols <> [] in
+  let symbols_model =
+    List.map (fun sym -> Jingoo.Jg_types.Tstr (String.escaped sym)) external_symbols
+  in
   let max_bid = Hashtbl.fold (fun id _ acc -> max id acc) enc.block_offsets 0 in
-  Buffer.add_string buf (Printf.sprintf "static const uint32_t g_stack_block_offsets[%d] = {\n" (max_bid + 1));
-  for i = 0 to max_bid do
-    let off = match Hashtbl.find_opt enc.block_offsets i with Some o -> o | None -> 0 in
-    Buffer.add_string buf (Printf.sprintf "    %d,\n" off)
-  done;
-  Buffer.add_string buf "};\n\n";
-
-  Buffer.add_string buf (Printf.sprintf "static const uint64_t g_stack_block_keys[%d] = {\n" (max_bid + 1));
-  for i = 0 to max_bid do
-    let k = match Hashtbl.find_opt enc.block_keys i with Some k -> k | None -> enc.seed_key in
-    Buffer.add_string buf (Printf.sprintf "    0x%016LXULL,\n" k)
-  done;
-  Buffer.add_string buf "};\n\n";
-
-  (* 4. VM state struct *)
-  Buffer.add_string buf "namespace asgard_stack_vm {\n\n";
-  Buffer.add_string buf "typedef struct {\n";
-  Buffer.add_string buf "    uint64_t vsp[4096];\n";
-  Buffer.add_string buf "    int vsp_idx;\n";
-  Buffer.add_string buf (Printf.sprintf "    uint64_t ctx[%d];\n" (max 64 prog.context_slots));
-  Buffer.add_string buf "    uint64_t vkey;\n";
-  Buffer.add_string buf "    uint64_t vsp_key;\n";
-  Buffer.add_string buf "    uint64_t addr_key;\n";
-  Buffer.add_string buf "    uint8_t zf;\n";
-  Buffer.add_string buf "    uint8_t sf;\n";
-  Buffer.add_string buf "    uint8_t cf;\n";
-  Buffer.add_string buf "    uint8_t pf;\n";
-  Buffer.add_string buf "    uint8_t of;\n";
-  Buffer.add_string buf "    int halted;\n";
-  Buffer.add_string buf "} stack_vm_t;\n\n";
-
-  (* 5. Decryption helpers *)
-  Buffer.add_string buf "static inline uint64_t rotl64(uint64_t v, int k) {\n";
-  Buffer.add_string buf "    return (v << (k & 63)) | (v >> ((64 - k) & 63));\n";
-  Buffer.add_string buf "}\n\n";
-  Buffer.add_string buf "static inline void step_key(uint64_t *key, uint8_t p) {\n";
-  Buffer.add_string buf "    *key = rotl64(*key, 3) + (p ^ 0x5A);\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static inline uint8_t fetch_byte(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {\n";
-  Buffer.add_string buf "    uint8_t c = bc[(*vip)++];\n";
-  Buffer.add_string buf "    uint8_t op = c ^ (uint8_t)(vm->vkey & 0xFF);\n";
-  Buffer.add_string buf "    step_key(&vm->vkey, op);\n";
-  Buffer.add_string buf "    return op;\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static inline int16_t fetch_i16(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {\n";
-  Buffer.add_string buf "    uint16_t b0 = fetch_byte(vm, bc, vip);\n";
-  Buffer.add_string buf "    uint16_t b1 = fetch_byte(vm, bc, vip);\n";
-  Buffer.add_string buf "    return (int16_t)(b0 | (b1 << 8));\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static inline int32_t fetch_i32(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {\n";
-  Buffer.add_string buf "    uint32_t b0 = fetch_byte(vm, bc, vip);\n";
-  Buffer.add_string buf "    uint32_t b1 = fetch_byte(vm, bc, vip);\n";
-  Buffer.add_string buf "    uint32_t b2 = fetch_byte(vm, bc, vip);\n";
-  Buffer.add_string buf "    uint32_t b3 = fetch_byte(vm, bc, vip);\n";
-  Buffer.add_string buf "    return (int32_t)(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24));\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static inline int64_t fetch_i64(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {\n";
-  Buffer.add_string buf "    uint64_t res = 0;\n";
-  Buffer.add_string buf "    for (int i = 0; i < 8; ++i) {\n";
-  Buffer.add_string buf "        uint64_t b = fetch_byte(vm, bc, vip);\n";
-  Buffer.add_string buf "        res |= (b << (i * 8));\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "    return (int64_t)res;\n";
-  Buffer.add_string buf "}\n\n";
-
-  (* Phase 2: VSP Whitening — per-slot XOR mask derived from a STATIC key.
-     The mask must NOT use the rolling [vkey]: block-entry key resets
-     (JMP/JCC) and KeyAdjust mutations change vkey mid-run, which would
-     desync the mask between the push of a value and its pop and silently
-     corrupt stack data. [vsp_key] is set once in stack_vm_call. *)
-  Buffer.add_string buf "/* Phase-2 VSP Whitening: slot mask = vsp_key + slot * 0x9E3779B97F4A7C15ULL\n";
-  Buffer.add_string buf "   (vsp_key is static for the whole run — the rolling vkey must NOT be used,\n";
-  Buffer.add_string buf "    or key resets at block boundaries desync the encode/decode masks) */\n";
-  Buffer.add_string buf "#define VSP_MASK(slot) (vm->vsp_key + (uint64_t)(slot) * UINT64_C(0x9E3779B97F4A7C15))\n";
-  Buffer.add_string buf "#define VSP_ENCODE(slot, v) ((v) ^ VSP_MASK(slot))\n\n";
-
-  Buffer.add_string buf "/* x86-style PF: parity of the low byte of v (1 = even number of set bits) */\n";
-  Buffer.add_string buf "static inline uint8_t parity8(uint64_t v) {\n";
-  Buffer.add_string buf "    uint8_t x = (uint8_t)(v & 0xFF);\n";
-  Buffer.add_string buf "    x ^= x >> 4; x ^= x >> 2; x ^= x >> 1;\n";
-  Buffer.add_string buf "    return (~x) & 1;\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static inline int eval_cond(const stack_vm_t *vm, uint8_t cond) {\n";
-  Buffer.add_string buf "    switch (cond) {\n";
-  Buffer.add_string buf "        case 0: return vm->zf;\n";
-  Buffer.add_string buf "        case 1: return !vm->zf;\n";
-  Buffer.add_string buf "        case 2: return vm->cf;\n";
-  Buffer.add_string buf "        case 3: return !vm->cf;\n";
-  Buffer.add_string buf "        case 4: return vm->cf || vm->zf;\n";
-  Buffer.add_string buf "        case 5: return !vm->cf && !vm->zf;\n";
-  Buffer.add_string buf "        case 6: return vm->sf;\n";
-  Buffer.add_string buf "        case 7: return !vm->sf;\n";
-  Buffer.add_string buf "        case 8: return vm->sf != vm->of;\n";
-  Buffer.add_string buf "        case 9: return vm->sf == vm->of;\n";
-  Buffer.add_string buf "        case 10: return vm->zf || (vm->sf != vm->of);\n";
-  Buffer.add_string buf "        case 11: return !vm->zf && (vm->sf == vm->of);\n";
-  Buffer.add_string buf "        case 12: return vm->of;\n";
-  Buffer.add_string buf "        case 13: return !vm->of;\n";
-  Buffer.add_string buf "        case 14: return vm->pf;\n";
-  Buffer.add_string buf "        case 15: return !vm->pf;\n";
-  Buffer.add_string buf "        case 16: return 1;\n";
-  Buffer.add_string buf "        default: return 1;\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  (* 5b. Opcode handlers (Phase 6: anti-VMPredator address binding).
-     Every opcode body is extracted from the former dispatch switch into
-     its own function so the addresses of the 29 handlers can be hashed
-     into the address key D (see 5c). Bodies are the former case bodies
-     verbatim, with vip demoted to a pointer: fetch calls take [vip]
-     directly and block-anchor writes go through [*vip]. Handlers that
-     decode no operands cast the stream parameters to void. *)
-  Buffer.add_string buf "static void h_push_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    uint64_t imm = (uint64_t)fetch_i64(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    if (vm->vsp_idx < 4096) {\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, imm);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: VSP overflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_push_reg(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));\n";
-  Buffer.add_string buf "    int16_t idx = fetch_i16(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    if (vm->vsp_idx < 4096 && idx >= 0 && idx < max_ctx) {\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, vm->ctx[idx]);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: overflow or bad ctx idx */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_pop_reg(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));\n";
-  Buffer.add_string buf "    int16_t idx = fetch_i16(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    if (vm->vsp_idx > 0 && idx >= 0 && idx < max_ctx) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        vm->ctx[idx] = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow or bad ctx idx */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_read_mem(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    uint8_t w = fetch_byte(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    uint64_t addr = 0;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx > 0) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        addr = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "    uint64_t val = 0;\n";
-  Buffer.add_string buf "    if (addr != 0) {\n";
-  Buffer.add_string buf "        if (w == 1) val = *(const uint8_t*)addr;\n";
-  Buffer.add_string buf "        else if (w == 2) val = *(const uint16_t*)addr;\n";
-  Buffer.add_string buf "        else if (w == 4) val = *(const uint32_t*)addr;\n";
-  Buffer.add_string buf "        else val = *(const uint64_t*)addr;\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "    if (vm->vsp_idx < 4096) {\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, val);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: VSP overflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_write_mem(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    uint8_t w = fetch_byte(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t val = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t addr = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        if (addr != 0) {\n";
-  Buffer.add_string buf "            if (w == 1) *(uint8_t*)addr = (uint8_t)val;\n";
-  Buffer.add_string buf "            else if (w == 2) *(uint16_t*)addr = (uint16_t)val;\n";
-  Buffer.add_string buf "            else if (w == 4) *(uint32_t*)addr = (uint32_t)val;\n";
-  Buffer.add_string buf "            else *(uint64_t*)addr = val;\n";
-  Buffer.add_string buf "        }\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_add(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = a + b;\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = (res < a);\n";
-  Buffer.add_string buf "        vm->of = ((~(a ^ b) & (a ^ res)) >> 63) & 1;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_sub(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = a - b;\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = (a < b);\n";
-  Buffer.add_string buf "        vm->of = (((a ^ b) & (a ^ res)) >> 63) & 1;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_mul(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, a * b);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_nor(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = ~(a | b);\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = 0;\n";
-  Buffer.add_string buf "        vm->of = 0;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_nand(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = ~(a & b);\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = 0;\n";
-  Buffer.add_string buf "        vm->of = 0;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_shl(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t count = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t val = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = val << (count & 63);\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = 0;\n";
-  Buffer.add_string buf "        vm->of = 0;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_shr(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t count = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t val = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = val >> (count & 63);\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = 0;\n";
-  Buffer.add_string buf "        vm->of = 0;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_sar(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t count = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t val = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = (uint64_t)((int64_t)val >> (count & 63));\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = 0;\n";
-  Buffer.add_string buf "        vm->of = 0;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_div(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = (b != 0) ? (a / b) : 0;\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_idiv(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        int64_t sa = (int64_t)a, sb = (int64_t)b;\n";
-  Buffer.add_string buf "        uint64_t res = (sb == 0 || (sa == INT64_MIN && sb == -1)) ? 0 : (uint64_t)(sa / sb);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_dup(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    /* Dup: decode value from src slot, re-encode at new slot */\n";
-  Buffer.add_string buf "    if (vm->vsp_idx > 0 && vm->vsp_idx < 4096) {\n";
-  Buffer.add_string buf "        int src = vm->vsp_idx - 1;\n";
-  Buffer.add_string buf "        uint64_t decoded = VSP_ENCODE(src, vm->vsp[src]);\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, decoded);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow or overflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_swap(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    /* Swap: decode both positions, re-encode at swapped positions */\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        int ia = vm->vsp_idx - 1, ib = vm->vsp_idx - 2;\n";
-  Buffer.add_string buf "        uint64_t da = VSP_ENCODE(ia, vm->vsp[ia]);\n";
-  Buffer.add_string buf "        uint64_t db = VSP_ENCODE(ib, vm->vsp[ib]);\n";
-  Buffer.add_string buf "        vm->vsp[ia] = VSP_ENCODE(ia, db);\n";
-  Buffer.add_string buf "        vm->vsp[ib] = VSP_ENCODE(ib, da);\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_push_flags(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx < 4096) {\n";
-  Buffer.add_string buf "        uint64_t fl = (vm->zf ? 0x40ULL : 0ULL) |\n";
-  Buffer.add_string buf "                      (vm->sf ? 0x80ULL : 0ULL) |\n";
-  Buffer.add_string buf "                      (vm->cf ? 0x01ULL : 0ULL) |\n";
-  Buffer.add_string buf "                      (vm->pf ? 0x04ULL : 0ULL) |\n";
-  Buffer.add_string buf "                      (vm->of ? 0x800ULL : 0ULL) | 0x02ULL;\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, fl);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: VSP overflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_pop_flags(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx > 0) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t fl = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        vm->cf = (fl & 0x01ULL) != 0;\n";
-  Buffer.add_string buf "        vm->pf = (fl & 0x04ULL) != 0;\n";
-  Buffer.add_string buf "        vm->zf = (fl & 0x40ULL) != 0;\n";
-  Buffer.add_string buf "        vm->sf = (fl & 0x80ULL) != 0;\n";
-  Buffer.add_string buf "        vm->of = (fl & 0x800ULL) != 0;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_jmp_rel(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    int32_t target_bid = fetch_i32(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {\n";
-  Buffer.add_string buf "        *vip = g_stack_block_offsets[target_bid];\n";
-  Buffer.add_string buf "        vm->vkey = g_stack_block_keys[target_bid] ^ vm->addr_key;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: unknown block id */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_jcc_rel(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    uint8_t cond = fetch_byte(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    int32_t target_bid = fetch_i32(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    if (eval_cond(vm, cond)) {\n";
-  Buffer.add_string buf "        if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {\n";
-  Buffer.add_string buf "            *vip = g_stack_block_offsets[target_bid];\n";
-  Buffer.add_string buf "            vm->vkey = g_stack_block_keys[target_bid] ^ vm->addr_key;\n";
-  Buffer.add_string buf "        } else {\n";
-  Buffer.add_string buf "            vm->halted = 1; /* fail-closed: unknown block id */\n";
-  Buffer.add_string buf "        }\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_key_adjust(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    int64_t delta = fetch_i64(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    vm->vkey ^= (uint64_t)delta;\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_exit(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    vm->halted = 1;\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_call_extern(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    int32_t sym_idx = fetch_i32(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    if (sym_idx >= 0 && (size_t)sym_idx < sizeof(g_external_symbols) / sizeof(g_external_symbols[0])) {\n";
-  Buffer.add_string buf "        const char* sym_name = g_external_symbols[sym_idx];\n";
-  Buffer.add_string buf "        if (sym_name && sym_name[0] != '\\0') {\n";
-  Buffer.add_string buf "            void* sym_ptr = dlsym(RTLD_DEFAULT, sym_name);\n";
-  Buffer.add_string buf "            if (!sym_ptr && sym_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, sym_name + 1);\n";
-  Buffer.add_string buf "            if (!sym_ptr) {\n";
-  Buffer.add_string buf "                char alt[256];\n";
-  Buffer.add_string buf "                snprintf(alt, sizeof(alt), \"_%s\", sym_name);\n";
-  Buffer.add_string buf "                sym_ptr = dlsym(RTLD_DEFAULT, alt);\n";
-  Buffer.add_string buf "            }\n";
-  Buffer.add_string buf "            if (sym_ptr) {\n";
-  Buffer.add_string buf "                uint64_t a0 = vm->ctx[7]; /* RDI */\n";
-  Buffer.add_string buf "                uint64_t a1 = vm->ctx[6]; /* RSI */\n";
-  Buffer.add_string buf "                uint64_t a2 = vm->ctx[2]; /* RDX */\n";
-  Buffer.add_string buf "                uint64_t a3 = vm->ctx[1]; /* RCX */\n";
-  Buffer.add_string buf "                uint64_t a4 = vm->ctx[8]; /* R8  */\n";
-  Buffer.add_string buf "                uint64_t a5 = vm->ctx[9]; /* R9  */\n";
-  Buffer.add_string buf "                uint64_t a6 = vm->ctx[0]; /* RAX */\n";
-  Buffer.add_string buf "                uint64_t a7 = vm->ctx[3]; /* RBX */\n";
-  Buffer.add_string buf "                typedef uint64_t (*ext_fn_8)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);\n";
-  Buffer.add_string buf "                uint64_t ret = ((ext_fn_8)sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);\n";
-  Buffer.add_string buf "                vm->ctx[0] = ret;\n";
-  Buffer.add_string buf "            } else {\n";
-  Buffer.add_string buf "                vm->halted = 1; /* fail-closed: extern symbol unresolved */\n";
-  Buffer.add_string buf "            }\n";
-  Buffer.add_string buf "        }\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_resolve_sym(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    int32_t sym_idx = fetch_i32(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    void* sym_ptr = nullptr;\n";
-  Buffer.add_string buf "    if (sym_idx >= 0 && (size_t)sym_idx < sizeof(g_external_symbols) / sizeof(g_external_symbols[0])) {\n";
-  Buffer.add_string buf "        const char* sym_name = g_external_symbols[sym_idx];\n";
-  Buffer.add_string buf "        if (sym_name && sym_name[0] != '\\0') {\n";
-  Buffer.add_string buf "            sym_ptr = dlsym(RTLD_DEFAULT, sym_name);\n";
-  Buffer.add_string buf "            if (!sym_ptr && sym_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, sym_name + 1);\n";
-  Buffer.add_string buf "            if (!sym_ptr) {\n";
-  Buffer.add_string buf "                char alt[256];\n";
-  Buffer.add_string buf "                snprintf(alt, sizeof(alt), \"_%s\", sym_name);\n";
-  Buffer.add_string buf "                sym_ptr = dlsym(RTLD_DEFAULT, alt);\n";
-  Buffer.add_string buf "            }\n";
-  Buffer.add_string buf "            if (!sym_ptr) {\n";
-  Buffer.add_string buf "                sym_ptr = asgard_resolve_constant(sym_name);\n";
-  Buffer.add_string buf "            }\n";
-  Buffer.add_string buf "        }\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "    if (vm->vsp_idx < 4096) {\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, (uint64_t)sym_ptr);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: VSP overflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_setcc(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    uint8_t cond = fetch_byte(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    uint64_t res = eval_cond(vm, cond) ? 1ULL : 0ULL;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx < 4096) {\n";
-  Buffer.add_string buf "        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);\n";
-  Buffer.add_string buf "        ++vm->vsp_idx;\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: VSP overflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_cmov(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));\n";
-  Buffer.add_string buf "    uint8_t cond = fetch_byte(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    int16_t idx = fetch_i16(vm, bytecode, vip);\n";
-  Buffer.add_string buf "    if (vm->vsp_idx > 0) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t v = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        if (eval_cond(vm, cond) && idx >= 0 && idx < max_ctx) {\n";
-  Buffer.add_string buf "            vm->ctx[idx] = v;\n";
-  Buffer.add_string buf "        }\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_cmp(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = a - b;\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = (a < b);\n";
-  Buffer.add_string buf "        vm->of = (((a ^ b) & (a ^ res)) >> 63) & 1;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "static void h_test(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {\n";
-  Buffer.add_string buf "    (void)bytecode; (void)vip;\n";
-  Buffer.add_string buf "    if (vm->vsp_idx >= 2) {\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        --vm->vsp_idx;\n";
-  Buffer.add_string buf "        uint64_t a = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);\n";
-  Buffer.add_string buf "        uint64_t res = a & b;\n";
-  Buffer.add_string buf "        vm->zf = (res == 0);\n";
-  Buffer.add_string buf "        vm->sf = ((int64_t)res < 0);\n";
-  Buffer.add_string buf "        vm->cf = 0;\n";
-  Buffer.add_string buf "        vm->of = 0;\n";
-  Buffer.add_string buf "        vm->pf = parity8(res);\n";
-  Buffer.add_string buf "    } else {\n";
-  Buffer.add_string buf "        vm->halted = 1; /* fail-closed: underflow */\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  (* 5c. Anti-VMPredator address binding: hash the inter-handler DELTAS
-     (not absolute addresses — invariant under ASLR/PIE) into an address
-     key D. Emitted unconditionally: the packaging pipeline compiles a
-     probe TU against a mask-0 header to learn D, then re-binds the
-     stored key literals with it (Stack_encoder.apply_addr_mask). The
-     handler table doubles as the anchor set: functions whose addresses
-     are taken are never elided by the optimizer, and since every table
-     entry precedes stack_vm_run/stack_vm_call in this translation unit,
-     later per-build differences (masked literals, probe main()) cannot
-     move the handlers — D is stable across the probe and final builds. *)
-  Buffer.add_string buf "static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {\n";
-  Buffer.add_string buf "    &h_push_imm, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,\n";
-  Buffer.add_string buf "    &h_add, &h_sub, &h_mul, &h_nor, &h_nand,\n";
-  Buffer.add_string buf "    &h_shl, &h_shr, &h_sar, &h_div, &h_idiv,\n";
-  Buffer.add_string buf "    &h_dup, &h_swap, &h_push_flags, &h_pop_flags, &h_jmp_rel,\n";
-  Buffer.add_string buf "    &h_jcc_rel, &h_key_adjust, &h_exit, &h_call_extern, &h_resolve_sym,\n";
-  Buffer.add_string buf "    &h_setcc, &h_cmov, &h_cmp, &h_test\n";
-  Buffer.add_string buf "};\n";
-  Buffer.add_string buf "static uint64_t derive_addr_key(void) {\n";
-  Buffer.add_string buf "    const size_t n = sizeof(g_stack_handler_table) / sizeof(g_stack_handler_table[0]);\n";
-  Buffer.add_string buf "    uint64_t acc = UINT64_C(0x9E3779B97F4A7C15);\n";
-  Buffer.add_string buf "    for (size_t i = 0; i + 1 < n; ++i) {\n";
-  Buffer.add_string buf "        uint64_t d = (uint64_t)((uintptr_t)g_stack_handler_table[i + 1] - (uintptr_t)g_stack_handler_table[i]);\n";
-  Buffer.add_string buf "        acc ^= d + UINT64_C(0x165667B19E3779F9) + (acc << 6) + (acc >> 2);\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "    return rotl64(acc, 31) ^ UINT64_C(0xA5A5A5A5A5A5A5A5);\n";
-  Buffer.add_string buf "}\n\n";
-
-  (* 6. stack_vm_run — dispatch. The switch survives (tests pin the
-     "case 0x%02X: /* NAME */" labels) but each body is now a call into
-     the extracted handler above. *)
-  Buffer.add_string buf "static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t size) {\n";
-  Buffer.add_string buf "    size_t vip = 0;\n";
-  Buffer.add_string buf "    while (!vm->halted && vip < size) {\n";
-  Buffer.add_string buf "        uint8_t op = fetch_byte(vm, bytecode, &vip);\n";
-  Buffer.add_string buf "        switch (op) {\n";
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* PUSH_IMM */ { h_push_imm(vm, bytecode, &vip); break; }\n" enc.op_map.op_push_imm);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* PUSH_REG */ { h_push_reg(vm, bytecode, &vip); break; }\n" enc.op_map.op_push_reg);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* POP_REG */ { h_pop_reg(vm, bytecode, &vip); break; }\n" enc.op_map.op_pop_reg);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* READ_MEM */ { h_read_mem(vm, bytecode, &vip); break; }\n" enc.op_map.op_read_mem);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* WRITE_MEM */ { h_write_mem(vm, bytecode, &vip); break; }\n" enc.op_map.op_write_mem);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* ADD */ { h_add(vm, bytecode, &vip); break; }\n" enc.op_map.op_add);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* SUB */ { h_sub(vm, bytecode, &vip); break; }\n" enc.op_map.op_sub);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* MUL */ { h_mul(vm, bytecode, &vip); break; }\n" enc.op_map.op_mul);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* NOR */ { h_nor(vm, bytecode, &vip); break; }\n" enc.op_map.op_nor);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* NAND */ { h_nand(vm, bytecode, &vip); break; }\n" enc.op_map.op_nand);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* SHL */ { h_shl(vm, bytecode, &vip); break; }\n" enc.op_map.op_shl);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* SHR */ { h_shr(vm, bytecode, &vip); break; }\n" enc.op_map.op_shr);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* SAR */ { h_sar(vm, bytecode, &vip); break; }\n" enc.op_map.op_sar);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* DIV */ { h_div(vm, bytecode, &vip); break; }\n" enc.op_map.op_div);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* IDIV */ { h_idiv(vm, bytecode, &vip); break; }\n" enc.op_map.op_idiv);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* DUP */ { h_dup(vm, bytecode, &vip); break; }\n" enc.op_map.op_dup);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* SWAP */ { h_swap(vm, bytecode, &vip); break; }\n" enc.op_map.op_swap);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* PUSH_FLAGS */ { h_push_flags(vm, bytecode, &vip); break; }\n" enc.op_map.op_push_flags);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* POP_FLAGS */ { h_pop_flags(vm, bytecode, &vip); break; }\n" enc.op_map.op_pop_flags);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* JMP_REL */ { h_jmp_rel(vm, bytecode, &vip); break; }\n" enc.op_map.op_jmp_rel);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* JCC_REL */ { h_jcc_rel(vm, bytecode, &vip); break; }\n" enc.op_map.op_jcc_rel);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* KEY_ADJUST */ { h_key_adjust(vm, bytecode, &vip); break; }\n" enc.op_map.op_key_adjust);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* EXIT */ { h_exit(vm, bytecode, &vip); break; }\n" enc.op_map.op_exit);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* CALL_EXTERN */ { h_call_extern(vm, bytecode, &vip); break; }\n" enc.op_map.op_call_extern);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* RESOLVE_SYM */ { h_resolve_sym(vm, bytecode, &vip); break; }\n" enc.op_map.op_resolve_sym);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* SETCC */ { h_setcc(vm, bytecode, &vip); break; }\n" enc.op_map.op_setcc);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* CMOV */ { h_cmov(vm, bytecode, &vip); break; }\n" enc.op_map.op_cmov);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* CMP */ { h_cmp(vm, bytecode, &vip); break; }\n" enc.op_map.op_cmp);
-  Buffer.add_string buf (Printf.sprintf "            case 0x%02X: /* TEST */ { h_test(vm, bytecode, &vip); break; }\n" enc.op_map.op_test);
-  Buffer.add_string buf "            default: vm->halted = 1; break;\n";
-  Buffer.add_string buf "        }\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "}\n\n";
-
-  (* 7. stack_vm_call *)
-  Buffer.add_string buf "static inline uint64_t stack_vm_call(const uint64_t* bc_words, size_t len_words,\n";
-  Buffer.add_string buf "                                      uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0,\n";
-  Buffer.add_string buf "                                      uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {\n";
-  Buffer.add_string buf "    stack_vm_t vm;\n";
-  Buffer.add_string buf "    memset(&vm, 0, sizeof(vm));\n";
-  if enc.addr_mask <> 0L then begin
-    (* Address-bound build: stored literals were pre-masked with D at
-       encode time; fold the derived key back in so the rolling key
-       starts from the effective seed. D also re-anchors every block
-       entry inside h_jmp_rel / h_jcc_rel. *)
-    Buffer.add_string buf "    vm.addr_key = derive_addr_key();\n";
-    Buffer.add_string buf (Printf.sprintf "    vm.vkey = 0x%016LXULL;\n" enc.seed_key);
-    Buffer.add_string buf "    vm.vkey ^= vm.addr_key;\n"
-  end else begin
-    (* Legacy (unbound) build: addr_key stays 0 from the memset, so the
-       anchor XORs in the handlers are the identity — byte-exact legacy
-       semantics. *)
-    Buffer.add_string buf (Printf.sprintf "    vm.vkey = 0x%016LXULL;\n" enc.seed_key)
-  end;
-  Buffer.add_string buf "    vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);\n";
-  Buffer.add_string buf "    alignas(16) static thread_local uint8_t host_stack[1048576];\n";
-  Buffer.add_string buf "    uint64_t sp_val = (uint64_t)(host_stack + sizeof(host_stack) - 8192);\n";
-  (* SysV AMD64 ABI: integer args arrive in RDI,RSI,RDX,RCX,R8,R9, which
-     live in context slots 7,6,2,1,8,9 (RAX=0..RDI=7, R8=8, R9=9); the
-     return value is RAX = slot 0. Remaining args park in RAX/RBX slots
-     where they are harmless. RSP/RBP slots carry the host stack pointer. *)
-  Buffer.add_string buf "    vm.ctx[7] = a0; /* RDI */\n";
-  Buffer.add_string buf "    vm.ctx[6] = a1; /* RSI */\n";
-  Buffer.add_string buf "    vm.ctx[2] = a2; /* RDX */\n";
-  Buffer.add_string buf "    vm.ctx[1] = a3; /* RCX */\n";
-  Buffer.add_string buf "    vm.ctx[4] = sp_val;\n";
-  Buffer.add_string buf "    vm.ctx[5] = sp_val;\n";
-  Buffer.add_string buf "    vm.ctx[8] = a4; /* R8  */\n";
-  Buffer.add_string buf "    vm.ctx[9] = a5; /* R9  */\n";
-  Buffer.add_string buf "    vm.ctx[0] = a6; /* RAX */\n";
-  Buffer.add_string buf "    vm.ctx[3] = a7; /* RBX */\n";
-  Buffer.add_string buf "    const uint8_t* bc_bytes = (const uint8_t*)bc_words;\n";
-  Buffer.add_string buf "    stack_vm_run(&vm, bc_bytes, len_words * 8);\n";
-  Buffer.add_string buf "    return vm.ctx[0];\n";
-  Buffer.add_string buf "}\n\n";
-
-  Buffer.add_string buf "} // namespace asgard_stack_vm\n\n";
-
-  Buffer.add_string buf "namespace vanguard_threaded_vm {\n";
-  Buffer.add_string buf "    static inline uint64_t asgard_vm_call(const uint64_t* bc, size_t len,\n";
-  Buffer.add_string buf "                                          uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0,\n";
-  Buffer.add_string buf "                                          uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {\n";
-  Buffer.add_string buf "        return asgard_stack_vm::stack_vm_call(bc, len, a0, a1, a2, a3, a4, a5, a6, a7);\n";
-  Buffer.add_string buf "    }\n";
-  Buffer.add_string buf "} // namespace vanguard_threaded_vm\n";
-
-  Buffer.contents buf
+  let block_offsets_model =
+    let l = ref [] in
+    for i = 0 to max_bid do
+      let off = match Hashtbl.find_opt enc.block_offsets i with Some o -> o | None -> 0 in
+      l := Jingoo.Jg_types.Tint off :: !l
+    done;
+    List.rev !l
+  in
+  let block_keys_model =
+    let l = ref [] in
+    for i = 0 to max_bid do
+      let k = match Hashtbl.find_opt enc.block_keys i with Some k -> k | None -> enc.seed_key in
+      l := Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" k) :: !l
+    done;
+    List.rev !l
+  in
+  let mk_case op_val name fn =
+    Jingoo.Jg_types.Tobj [
+      ("hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%02X" op_val));
+      ("name", Jingoo.Jg_types.Tstr name);
+      ("fn", Jingoo.Jg_types.Tstr fn);
+    ]
+  in
+  let dispatch_cases = [
+    mk_case enc.op_map.op_push_imm "PUSH_IMM" "h_push_imm";
+    mk_case enc.op_map.op_push_reg "PUSH_REG" "h_push_reg";
+    mk_case enc.op_map.op_pop_reg "POP_REG" "h_pop_reg";
+    mk_case enc.op_map.op_read_mem "READ_MEM" "h_read_mem";
+    mk_case enc.op_map.op_write_mem "WRITE_MEM" "h_write_mem";
+    mk_case enc.op_map.op_add "ADD" "h_add";
+    mk_case enc.op_map.op_sub "SUB" "h_sub";
+    mk_case enc.op_map.op_mul "MUL" "h_mul";
+    mk_case enc.op_map.op_nor "NOR" "h_nor";
+    mk_case enc.op_map.op_nand "NAND" "h_nand";
+    mk_case enc.op_map.op_shl "SHL" "h_shl";
+    mk_case enc.op_map.op_shr "SHR" "h_shr";
+    mk_case enc.op_map.op_sar "SAR" "h_sar";
+    mk_case enc.op_map.op_div "DIV" "h_div";
+    mk_case enc.op_map.op_idiv "IDIV" "h_idiv";
+    mk_case enc.op_map.op_dup "DUP" "h_dup";
+    mk_case enc.op_map.op_swap "SWAP" "h_swap";
+    mk_case enc.op_map.op_push_flags "PUSH_FLAGS" "h_push_flags";
+    mk_case enc.op_map.op_pop_flags "POP_FLAGS" "h_pop_flags";
+    mk_case enc.op_map.op_jmp_rel "JMP_REL" "h_jmp_rel";
+    mk_case enc.op_map.op_jcc_rel "JCC_REL" "h_jcc_rel";
+    mk_case enc.op_map.op_key_adjust "KEY_ADJUST" "h_key_adjust";
+    mk_case enc.op_map.op_exit "EXIT" "h_exit";
+    mk_case enc.op_map.op_call_extern "CALL_EXTERN" "h_call_extern";
+    mk_case enc.op_map.op_resolve_sym "RESOLVE_SYM" "h_resolve_sym";
+    mk_case enc.op_map.op_setcc "SETCC" "h_setcc";
+    mk_case enc.op_map.op_cmov "CMOV" "h_cmov";
+    mk_case enc.op_map.op_cmp "CMP" "h_cmp";
+    mk_case enc.op_map.op_test "TEST" "h_test";
+  ] in
+  let models = [
+    ("has_constants", Jingoo.Jg_types.Tbool has_constants);
+    ("constants", Jingoo.Jg_types.Tlist constants_model);
+    ("has_symbols", Jingoo.Jg_types.Tbool has_symbols);
+    ("external_symbols", Jingoo.Jg_types.Tlist symbols_model);
+    ("block_offsets_count", Jingoo.Jg_types.Tint (max_bid + 1));
+    ("block_offsets", Jingoo.Jg_types.Tlist block_offsets_model);
+    ("block_keys_count", Jingoo.Jg_types.Tint (max_bid + 1));
+    ("block_keys", Jingoo.Jg_types.Tlist block_keys_model);
+    ("context_slots", Jingoo.Jg_types.Tint (max 64 prog.context_slots));
+    ("dispatch_cases", Jingoo.Jg_types.Tlist dispatch_cases);
+    ("is_address_bound", Jingoo.Jg_types.Tbool (enc.addr_mask <> 0L));
+    ("seed_key_hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.seed_key));
+  ] in
+  Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models
 
 let emit_runner_cpp ?(header_name = "stack_vm_runtime.hpp") bytecode =
-  let b = Buffer.create 1024 in
-  Buffer.add_string b (Printf.sprintf "#include \"%s\"\n#include <stdio.h>\n#include <stdlib.h>\n\n" header_name);
-  Buffer.add_string b "static uint64_t embedded_bytecode[] = {\n";
-  List.iter (fun w -> Buffer.add_string b (Printf.sprintf "    0x%016LXULL,\n" w)) bytecode;
-  Buffer.add_string b "};\n\n";
-  Buffer.add_string b "int main(int argc, char** argv) {\n";
-  Buffer.add_string b "    uint64_t* bc_ptr = embedded_bytecode;\n";
-  Buffer.add_string b "    size_t bc_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);\n";
-  Buffer.add_string b "    if (argc >= 2) {\n";
-  Buffer.add_string b "        FILE* f = fopen(argv[1], \"rb\");\n";
-  Buffer.add_string b "        if (f) {\n";
-  Buffer.add_string b "            fseek(f, 0, SEEK_END);\n";
-  Buffer.add_string b "            long sz = ftell(f);\n";
-  Buffer.add_string b "            fseek(f, 0, SEEK_SET);\n";
-  Buffer.add_string b "            if (sz > 0 && (sz % 8) == 0) {\n";
-  Buffer.add_string b "                size_t count = (size_t)sz / 8;\n";
-  Buffer.add_string b "                uint64_t* heap_bc = (uint64_t*)malloc((size_t)sz);\n";
-  Buffer.add_string b "                if (heap_bc && fread(heap_bc, 8, count, f) == count) {\n";
-  Buffer.add_string b "                    bc_ptr = heap_bc;\n";
-  Buffer.add_string b "                    bc_len = count;\n";
-  Buffer.add_string b "                }\n";
-  Buffer.add_string b "            }\n";
-  Buffer.add_string b "            fclose(f);\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    uint64_t ret = vanguard_threaded_vm::asgard_vm_call(bc_ptr, bc_len);\n";
-  Buffer.add_string b "    printf(\"[Stack-VM] Execution SUCCESS! Result: %llu\\n\", (unsigned long long)ret);\n";
-  Buffer.add_string b "    return 0;\n";
-  Buffer.add_string b "}\n";
-  Buffer.contents b
+  let words =
+    List.map (fun w -> Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" w)) bytecode
+  in
+  let models = [
+    ("header_name", Jingoo.Jg_types.Tstr header_name);
+    ("words", Jingoo.Jg_types.Tlist words);
+  ] in
+  Stack_vm_templates.render Stack_vm_templates.runner_cpp_template models
 
 let emit_probe_cpp ?(header_name = "stack_vm_runtime.hpp") () =
-  let b = Buffer.create 256 in
-  Buffer.add_string b (Printf.sprintf "#include \"%s\"\n#include <stdio.h>\n\nint main(void) {\n" header_name);
-  Buffer.add_string b "    printf(\"ADDR_KEY: %016llX\\n\", (unsigned long long)asgard_stack_vm::derive_addr_key());\n";
-  Buffer.add_string b "    return 0;\n}\n";
-  Buffer.contents b
-
+  let models = [
+    ("header_name", Jingoo.Jg_types.Tstr header_name);
+  ] in
+  Stack_vm_templates.render Stack_vm_templates.probe_cpp_template models
