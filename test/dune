@@ -66,4 +66,9 @@
   qcheck
   qcheck-alcotest
   bos
-  fpath))
+  fpath
+  unix)
+ (deps license_check.c))
+
+; Make examples/license_check.c available in _build/default/test/
+(copy_files ../examples/license_check.c)

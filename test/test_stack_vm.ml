@@ -4,6 +4,8 @@ open Ir
 open Stack_vm
 open Stack_ir
 open Stack_eval
+open Random_visa_ports
+open Protect_ports
 
 let test_stack_ir_primitives () =
   let op_push = PushImm 42L in
@@ -1228,6 +1230,71 @@ let test_address_bound_c_runtime_probe_and_run () =
     end
   end
 
+let test_real_license_check_macro_stack_vm_e2e () =
+  let example_c = "license_check.c" in
+  if not (Sys.file_exists example_c) then
+    Alcotest.fail (Printf.sprintf "license_check.c not found (CWD=%s)" (Sys.getcwd ()));
+
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
+    let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
+    let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
+    let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
+    let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+
+    let lifter = (module Arm64_adapter : Lifter) in
+    let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
+    let trampoline_engine = (module Trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
+    let toolchain = (module Toolchain_adapter : Toolchain) in
+    let vm_packager = (module Vm_packager_adapters.Stack_vm_packager : Vm_packager) in
+
+    let cfg = Protect_adapters.Config_adapter.default in
+    let rng = Random.State.make [| 0x5877 |] in
+
+    match
+      Random_visa_application.Protect_pipeline.run
+        ~lifter
+        ~c_macro_obfuscator
+        ~vm_packager
+        ~trampoline_engine
+        ~toolchain
+        ~rng
+        ~config:cfg
+        ~input_file:example_c
+        ~out_dir:tmp_dir
+        ~compile_and_run:false
+        ()
+    with
+    | Error err -> Alcotest.fail (Printf.sprintf "Pipeline failed: %s" err)
+    | Ok res ->
+        let virt_cpp = Filename.concat tmp_dir "app_virtualized.cpp" in
+        let bin_path = Filename.concat tmp_dir "protected_license_app" in
+        Alcotest.(check bool) "app_virtualized.cpp exists" true (Sys.file_exists virt_cpp);
+        Alcotest.(check bool) "bytecode generated" true (res.bytecode_length_bytes > 0);
+
+        let comp_cmd =
+          Printf.sprintf "clang++ -std=c++20 -O2 -I%s -Wno-format-security %s -o %s"
+            tmp_dir virt_cpp bin_path
+        in
+        let comp_st = Sys.command comp_cmd in
+        Alcotest.(check int) "clang++ build succeeds" 0 comp_st;
+
+        (* Test 1: Wrong Key -> ACCESS DENIED, exit code 1 *)
+        let run_wrong_cmd = Printf.sprintf "printf 'WRONG_KEY\\n' | %s" bin_path in
+        let status_wrong, out_wrong = Test_helpers.run_command_capture run_wrong_cmd in
+        Alcotest.(check bool) "wrong key exits 1" true (status_wrong = Unix.WEXITED 1);
+        Alcotest.(check bool) "output contains ACCESS DENIED" true
+          (String.contains out_wrong 'D' && String.contains out_wrong 'E' && String.contains out_wrong 'N');
+
+        (* Test 2: Valid Key -> ACCESS GRANTED, exit code 0 *)
+        let run_valid_cmd = Printf.sprintf "printf 'ASGARD-5877-GOLD\\n' | %s" bin_path in
+        let status_valid, out_valid = Test_helpers.run_command_capture run_valid_cmd in
+        Alcotest.(check bool) "valid key exits 0" true (status_valid = Unix.WEXITED 0);
+        Alcotest.(check bool) "output contains ACCESS GRANTED" true
+          (String.contains out_valid 'G' && String.contains out_valid 'R' && String.contains out_valid 'A');
+        Alcotest.(check bool) "output contains FLAG" true
+          (String.contains out_valid 'F' && String.contains out_valid 'L' && String.contains out_valid 'A' && String.contains out_valid 'G'))
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -1251,6 +1318,7 @@ let tests = [
   ("C++ Runtime Compile & Run", `Slow, test_c_runtime_compile_and_run);
   ("Full Pipeline + C++ Runtime + Args", `Slow, test_full_pipeline_c_runtime_with_args);
   ("Address-Bound C++ Runtime Probe & Run", `Slow, test_address_bound_c_runtime_probe_and_run);
+  ("Real License Check Macro + Stack-VM E2E", `Slow, test_real_license_check_macro_stack_vm_e2e);
 ]
 
 
