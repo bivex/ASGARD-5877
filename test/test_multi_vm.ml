@@ -128,6 +128,27 @@ let test_multi_vm_branch_transitions_e2e () =
       check int "Run status == 0" 0 run_st;
       Test_helpers.delete_dir temp_dir
 
+let test_ocamlgraph_mincut_partitioning_and_dot () =
+  let asm = {|
+    mov x0, #0
+    mov x1, #10
+.Lloop:
+    add x0, x0, x1
+    sub x1, x1, #1
+    cbnz x1, .Lloop
+    ret
+  |} in
+  match Arm64_lifter.lift_function asm with
+  | Error err -> fail ("Failed to lift: " ^ err)
+  | Ok func ->
+      let cfg = Partitioner.build_cfg func in
+      check bool "CFG has vertices" true (Partitioner.CFG.nb_vertex cfg >= 2);
+      let dot = Partitioner.export_dot ~func cfg in
+      check bool "DOT contains digraph" true (String.length dot > 0 && String.sub dot 0 7 = "digraph");
+      let rep = Partitioner.partition_function func in
+      check bool "Partition completed" true (rep.total_blocks = Hashtbl.length func.cfg.blocks);
+      check bool "Loop retained in Math-VM without inter-VM ping-pong" true (rep.math_blocks > 0)
+
 let tests = [
   ("Modular Inverse Modulo 2^64", `Quick, test_modular_inverse_64);
   ("Affine Bridge Roundtrip (1000 vectors)", `Quick, test_affine_bridge_roundtrip_1000);
@@ -135,4 +156,6 @@ let tests = [
   ("AST Functional Partitioning", `Quick, test_ast_functional_partitioning);
   ("Multi-VM C++ E2E Compilation & Exec", `Quick, test_multi_vm_compilation_e2e);
   ("Multi-VM Branch Morphing E2E", `Quick, test_multi_vm_branch_transitions_e2e);
+  ("OCamlGraph Min-Cut Partitioning & DOT", `Quick, test_ocamlgraph_mincut_partitioning_and_dot);
 ]
+

@@ -21,5 +21,16 @@ type partition_report = {
   blocks : partitioned_block list;
 }
 
+module Node : sig
+  type t = int
+  val compare : t -> t -> int
+  val hash : t -> int
+  val equal : t -> t -> bool
+end
+
+module CFG : Graph.Sig.I with type V.t = Node.t
+
+val build_cfg : Ir.func -> CFG.t
+val export_dot : ?func:Ir.func -> CFG.t -> string
 val classify_block : Ir.basic_block -> engine_affinity
 val partition_function : Ir.func -> partition_report
