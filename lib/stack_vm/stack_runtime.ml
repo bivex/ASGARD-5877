@@ -185,14 +185,14 @@ let generate_c_runtime
   let has_constants = constants <> [] in
   let constants_model =
     List.mapi (fun idx (name, bytes) ->
-      let hex_b = Buffer.create (String.length bytes * 6) in
-      for i = 0 to String.length bytes - 1 do
-        Buffer.add_string hex_b (Printf.sprintf "0x%02X, " (Char.code bytes.[i]))
-      done;
+      let hex_bytes =
+        String.concat "" (List.init (String.length bytes) (fun i ->
+          Printf.sprintf "0x%02X, " (Char.code bytes.[i])))
+      in
       Jingoo.Jg_types.Tobj [
         ("index", Jingoo.Jg_types.Tint idx);
         ("escaped_name", Jingoo.Jg_types.Tstr (String.escaped name));
-        ("hex_bytes", Jingoo.Jg_types.Tstr (Buffer.contents hex_b));
+        ("hex_bytes", Jingoo.Jg_types.Tstr hex_bytes);
         ("size", Jingoo.Jg_types.Tint (String.length bytes));
       ]
     ) constants
