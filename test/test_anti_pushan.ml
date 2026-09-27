@@ -14,38 +14,20 @@ let gold_advance_k0123_op3_dst31_negimm = 0x71825847E6590789L
     stateless. ASGARD couples every instruction dispatch to a dynamic running key
     mutated by prior execution history. *)
 
-let compile_and_run ~tmp_prefix pkg =
-  let tmp_dir = Filename.temp_file tmp_prefix "_dir" in
-  (try Sys.remove tmp_dir with _ -> ());
-  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+let compile_and_run ~tmp_prefix:_ pkg =
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
+    Test_helpers.write_file_string hdr_path pkg.Vm_emitter.cpp_runtime_source;
 
-  let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
-  let oc_h = open_out hdr_path in
-  output_string oc_h pkg.Vm_emitter.cpp_runtime_source;
-  close_out oc_h;
+    let runner_path = Filename.concat tmp_dir "runner.cpp" in
+    Test_helpers.write_file_string runner_path pkg.Vm_emitter.runner_source;
 
-  let runner_path = Filename.concat tmp_dir "runner.cpp" in
-  let oc_r = open_out runner_path in
-  output_string oc_r pkg.Vm_emitter.runner_source;
-  close_out oc_r;
+    let bin_path = Filename.concat tmp_dir "runner" in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+    let comp_status = Sys.command comp_cmd in
+    if comp_status <> 0 then Alcotest.fail "clang++ compilation failed";
 
-  let bin_path = Filename.concat tmp_dir "runner" in
-  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
-  let comp_status = Sys.command comp_cmd in
-  if comp_status <> 0 then Alcotest.fail "clang++ compilation failed";
-
-  let run_cmd = bin_path in
-  let ic = Unix.open_process_in run_cmd in
-  let out_buf = Buffer.create 256 in
-  (try
-     while true do
-       Buffer.add_string out_buf (input_line ic);
-       Buffer.add_char out_buf '\n'
-     done
-   with End_of_file -> ());
-  let status = Unix.close_process_in ic in
-  Test_helpers.delete_dir tmp_dir;
-  (status, Buffer.contents out_buf)
+    Test_helpers.run_command_capture bin_path)
 
 let test_running_key_advances_on_execution () =
   let rng = Random.State.make [| 0x1337 |] in

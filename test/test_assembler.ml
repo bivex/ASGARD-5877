@@ -143,77 +143,59 @@ start:
 
 let test_vbc_file_serialization_and_validation () =
   let sample_words = [ 0x021101D7l; 0x0262C257l; 0x009403D7l ] in
-  let tmp_vbc = Filename.temp_file "test_" ".vbc" in
-  (match Assembler_adapter.write_vbc_file ~vlen:256 ~elen:64 sample_words tmp_vbc with
-  | Error err -> Alcotest.fail (Errors.to_string err)
-  | Ok _ -> ());
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let tmp_vbc = Filename.concat tmp_dir "test.vbc" in
+    (match Assembler_adapter.write_vbc_file ~vlen:256 ~elen:64 sample_words tmp_vbc with
+    | Error err -> Alcotest.fail (Errors.to_string err)
+    | Ok _ -> ());
 
-  (match Assembler_adapter.read_vbc_file tmp_vbc with
-  | Error err ->
-      (try Sys.remove tmp_vbc with _ -> ());
-      Alcotest.fail (Errors.to_string err)
-  | Ok (vlen, elen, read_words) ->
-      (try Sys.remove tmp_vbc with _ -> ());
-      Alcotest.(check int) "vlen 256" 256 vlen;
-      Alcotest.(check int) "elen 64" 64 elen;
-      Alcotest.(check (list int32)) "words match" sample_words read_words);
+    (match Assembler_adapter.read_vbc_file tmp_vbc with
+    | Error err -> Alcotest.fail (Errors.to_string err)
+    | Ok (vlen, elen, read_words) ->
+        Alcotest.(check int) "vlen 256" 256 vlen;
+        Alcotest.(check int) "elen 64" 64 elen;
+        Alcotest.(check (list int32)) "words match" sample_words read_words);
 
-  (* Test corrupted magic header check *)
-  let tmp_bad = Filename.temp_file "bad_" ".vbc" in
-  let oc = open_out_bin tmp_bad in
-  output_string oc "BADMAGIC12345678";
-  close_out oc;
-  let bad_res = Assembler_adapter.read_vbc_file tmp_bad in
-  (try Sys.remove tmp_bad with _ -> ());
-  Alcotest.(check bool) "bad magic fails" true (Result.is_error bad_res)
+    (* Test corrupted magic header check *)
+    let tmp_bad = Filename.concat tmp_dir "bad.vbc" in
+    let oc = open_out_bin tmp_bad in
+    output_string oc "BADMAGIC12345678";
+    close_out oc;
+    let bad_res = Assembler_adapter.read_vbc_file tmp_bad in
+    Alcotest.(check bool) "bad magic fails" true (Result.is_error bad_res))
 
 let test_bytecode_execution_on_cpp_emulator () =
   let rng = Random.State.make [| 55 |] in
   match Isa_grammar.generate_isa ~rng ~name:"Bytecode_ISA" ~num_instructions:4 () with
   | Error err -> Alcotest.fail (Errors.to_string err)
   | Ok spec ->
-      let tmp_dir = Filename.temp_file "emu_vbc_" "_dir" in
-      (try Sys.remove tmp_dir with _ -> ());
-      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+      Test_helpers.with_temp_dir (fun tmp_dir ->
+        (* Emit and compile emulator *)
+        (match Cpp_emitter_adapter.emit_emulator_project spec ~output_dir:tmp_dir with
+        | Error err -> Alcotest.fail (Errors.to_string err)
+        | Ok _ -> ());
+        (match Compiler_adapter.compile ~project_dir:tmp_dir with
+        | Error err -> Alcotest.fail (Errors.to_string err)
+        | Ok () -> ());
 
-      (* Emit and compile emulator *)
-      (match Cpp_emitter_adapter.emit_emulator_project spec ~output_dir:tmp_dir with
-      | Error err -> Alcotest.fail (Errors.to_string err)
-      | Ok _ -> ());
-      (match Compiler_adapter.compile ~project_dir:tmp_dir with
-      | Error err -> Alcotest.fail (Errors.to_string err)
-      | Ok () -> ());
+        (* Create bytecode from all instructions *)
+        let words =
+          List.map
+            (fun (inst : Vector_instruction.t) ->
+              Vector_instruction.encode ~vd:3 ~vs2:2 ~vs1_or_rs1_or_imm:1 ~vm:1 inst)
+            spec.instructions
+        in
+        let bin_path = Filename.concat tmp_dir "test_program.bin" in
+        (match Assembler_adapter.write_binary_bytecode words bin_path with
+        | Error err -> Alcotest.fail (Errors.to_string err)
+        | Ok _ -> ());
 
-      (* Create bytecode from all instructions *)
-      let words =
-        List.map
-          (fun (inst : Vector_instruction.t) ->
-            Vector_instruction.encode ~vd:3 ~vs2:2 ~vs1_or_rs1_or_imm:1 ~vm:1 inst)
-          spec.instructions
-      in
-      let bin_path = Filename.concat tmp_dir "test_program.bin" in
-      (match Assembler_adapter.write_binary_bytecode words bin_path with
-      | Error err -> Alcotest.fail (Errors.to_string err)
-      | Ok _ -> ());
-
-      (* Execute runner with --bin *)
-      let run_cmd = Printf.sprintf "%s/visa_test_runner --bin %s" tmp_dir bin_path in
-      let ic = Unix.open_process_in run_cmd in
-      let buf = Buffer.create 512 in
-      (try
-         while true do
-           Buffer.add_string buf (input_line ic);
-           Buffer.add_char buf '\n'
-         done
-       with End_of_file -> ());
-      let status = Unix.close_process_in ic in
-      Alcotest.(check bool) "clean exit" true (status = Unix.WEXITED 0);
-      let out = Buffer.contents buf in
-      Alcotest.(check bool) "executed all bytecode words" true
-        (String.contains out 'E' && String.contains out '4');
-
-      Test_helpers.delete_dir tmp_dir;
-      ()
+        (* Execute runner with --bin *)
+        let run_cmd = Printf.sprintf "%s/visa_test_runner --bin %s" tmp_dir bin_path in
+        let status, out = Test_helpers.run_command_capture run_cmd in
+        Alcotest.(check bool) "clean exit" true (status = Unix.WEXITED 0);
+        Alcotest.(check bool) "executed all bytecode words" true
+          (String.contains out 'E' && String.contains out '4'))
 
 let tests = [
   Alcotest.test_case "parse_register_operands" `Quick test_parse_register_operands;

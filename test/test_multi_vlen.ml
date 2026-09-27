@@ -10,26 +10,20 @@ let test_cpp_multi_vlen vlen =
       match Isa_grammar.generate_isa ~rng ~name:(Printf.sprintf "VLEN_%d_ISA" vlen) ~config ~num_instructions:4 () with
       | Error err -> Alcotest.fail (Errors.to_string err)
       | Ok spec ->
-          let tmp_dir = Filename.temp_file (Printf.sprintf "vlen_%d_" vlen) "_dir" in
-          (try Sys.remove tmp_dir with _ -> ());
-          (try Sys.mkdir tmp_dir 0o755 with _ -> ());
+          Test_helpers.with_temp_dir (fun tmp_dir ->
+            (match Cpp_emitter_adapter.emit_emulator_project spec ~output_dir:tmp_dir with
+            | Error err -> Alcotest.fail (Errors.to_string err)
+            | Ok _ -> ());
 
-          (match Cpp_emitter_adapter.emit_emulator_project spec ~output_dir:tmp_dir with
-          | Error err -> Alcotest.fail (Errors.to_string err)
-          | Ok _ -> ());
+            (match Compiler_adapter.compile ~project_dir:tmp_dir with
+            | Error err -> Alcotest.fail (Errors.to_string err)
+            | Ok () -> ());
 
-          (match Compiler_adapter.compile ~project_dir:tmp_dir with
-          | Error err -> Alcotest.fail (Errors.to_string err)
-          | Ok () -> ());
-
-          (match Compiler_adapter.run_tests ~project_dir:tmp_dir with
-          | Error err -> Alcotest.fail (Errors.to_string err)
-          | Ok out ->
-              Alcotest.(check bool) "tests passed" true
-                (String.contains out 'A' && String.contains out 'L' && String.contains out 'L'));
-
-          Test_helpers.delete_dir tmp_dir;
-          ()
+            (match Compiler_adapter.run_tests ~project_dir:tmp_dir with
+            | Error err -> Alcotest.fail (Errors.to_string err)
+            | Ok out ->
+                Alcotest.(check bool) "tests passed" true
+                  (String.contains out 'A' && String.contains out 'L' && String.contains out 'L')))
 
 let tests = [
   Alcotest.test_case "vlen_64" `Slow (fun () -> test_cpp_multi_vlen 64);

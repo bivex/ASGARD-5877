@@ -186,40 +186,37 @@ let test_egraph_cpp_handler_expansion () =
 
   (* Compile a C++ program that evaluates each expression with fixed inputs
      and checks correctness: a=100, b=37 *)
-  let tmp_dir = Filename.temp_file "egraph_cpp_" "_dir" in
-  (try Sys.remove tmp_dir with _ -> ());
-  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
-
-  let cpp_file = Filename.concat tmp_dir "test_egraph_handlers.cpp" in
-  let oc = open_out cpp_file in
-  (* Replace ctx.get_reg(dst) → a, ctx.get_reg(src) → b for standalone test *)
-  let subst_all needle replacement s =
-    let nlen = String.length needle and slen = String.length s in
-    let buf = Buffer.create (slen * 2) in
-    let i = ref 0 in
-    while !i <= slen - nlen do
-      if String.sub s !i nlen = needle then begin
-        Buffer.add_string buf replacement;
-        i := !i + nlen
-      end else begin
-        Buffer.add_char buf s.[!i];
-        incr i
-      end
-    done;
-    if !i < slen then Buffer.add_substring buf s !i (slen - !i);
-    Buffer.contents buf
-  in
-  let subst s =
-    let s = subst_all "ctx.get_reg(dst)" "a" s in
-    let s = subst_all "ctx.get_reg(src)" "b" s in
-    s
-  in
-  let add_c = subst add_expr in
-  let sub_c = subst sub_expr in
-  let xor_c = subst xor_expr in
-  let and_c = subst and_expr in
-  let or_c  = subst or_expr  in
-  output_string oc (Printf.sprintf {|
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let cpp_file = Filename.concat tmp_dir "test_egraph_handlers.cpp" in
+    let oc = open_out cpp_file in
+    (* Replace ctx.get_reg(dst) → a, ctx.get_reg(src) → b for standalone test *)
+    let subst_all needle replacement s =
+      let nlen = String.length needle and slen = String.length s in
+      let buf = Buffer.create (slen * 2) in
+      let i = ref 0 in
+      while !i <= slen - nlen do
+        if String.sub s !i nlen = needle then begin
+          Buffer.add_string buf replacement;
+          i := !i + nlen
+        end else begin
+          Buffer.add_char buf s.[!i];
+          incr i
+        end
+      done;
+      if !i < slen then Buffer.add_substring buf s !i (slen - !i);
+      Buffer.contents buf
+    in
+    let subst s =
+      let s = subst_all "ctx.get_reg(dst)" "a" s in
+      let s = subst_all "ctx.get_reg(src)" "b" s in
+      s
+    in
+    let add_c = subst add_expr in
+    let sub_c = subst sub_expr in
+    let xor_c = subst xor_expr in
+    let and_c = subst and_expr in
+    let or_c  = subst or_expr  in
+    output_string oc (Printf.sprintf {|
 #include <stdint.h>
 #include <stdio.h>
 int main() {
@@ -240,30 +237,22 @@ int main() {
     return 0;
 }
 |} add_c sub_c xor_c and_c or_c);
-  close_out oc;
+    close_out oc;
 
-  let bin_path = Filename.concat tmp_dir "test_egraph_handlers" in
-  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s 2>&1" cpp_file bin_path in
-  let comp_status = Sys.command comp_cmd in
-  Alcotest.(check int) "egraph handler C++ compiles under clang++" 0 comp_status;
+    let bin_path = Filename.concat tmp_dir "test_egraph_handlers" in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s 2>&1" cpp_file bin_path in
+    let comp_status = Sys.command comp_cmd in
+    Alcotest.(check int) "egraph handler C++ compiles under clang++" 0 comp_status;
 
-  let ic = Unix.open_process_in bin_path in
-  let out_buf = Buffer.create 128 in
-  (try while true do
-       Buffer.add_string out_buf (input_line ic);
-       Buffer.add_char out_buf '\n'
-     done with End_of_file -> ());
-  let status = Unix.close_process_in ic in
-  Test_helpers.delete_dir tmp_dir;
-  Alcotest.(check bool) "egraph handler binary exits 0" true (status = Unix.WEXITED 0);
-  let out = Buffer.contents out_buf in
-  let needle = "EGRAPH_HANDLER_OK" in
-  let n = String.length needle and h = String.length out in
-  let found = ref false in
-  for i = 0 to h - n do
-    if String.sub out i n = needle then found := true
-  done;
-  Alcotest.(check bool) "output contains EGRAPH_HANDLER_OK" true !found
+    let status, out = Test_helpers.run_command_capture bin_path in
+    Alcotest.(check bool) "egraph handler binary exits 0" true (status = Unix.WEXITED 0);
+    let needle = "EGRAPH_HANDLER_OK" in
+    let n = String.length needle and h = String.length out in
+    let found = ref false in
+    for i = 0 to h - n do
+      if String.sub out i n = needle then found := true
+    done;
+    Alcotest.(check bool) "output contains EGRAPH_HANDLER_OK" true !found)
 
 let tests = [
   Alcotest.test_case "rule_verification_24_identities" `Quick test_rule_verification;

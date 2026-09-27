@@ -3,6 +3,7 @@
 val create_dir : string -> unit
 val delete_dir : string -> unit
 val with_temp_dir : (string -> 'a) -> 'a
+val with_temp_file : ?suffix:string -> (string -> 'a) -> 'a
 val read_file_string : string -> string
 val write_file_string : string -> string -> unit
 val write_bytecode_bin : string -> int64 list -> unit

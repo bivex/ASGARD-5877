@@ -17,6 +17,11 @@ let with_temp_dir f =
       let tmp_dir = Fpath.to_string tmp_path in
       Fun.protect ~finally:(fun () -> delete_dir tmp_dir) (fun () -> f tmp_dir)
 
+let with_temp_file ?(suffix = "") f =
+  with_temp_dir (fun tmp_dir ->
+    let file = Filename.concat tmp_dir ("test_file" ^ suffix) in
+    f file)
+
 let read_file_string path =
   let ic = open_in path in
   let len = in_channel_length ic in

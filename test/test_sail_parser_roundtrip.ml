@@ -69,34 +69,31 @@ let test_sail_generation_and_parsing_roundtrip () =
           Alcotest.(check int) "orig 16 insts" 16 (List.length spec.instructions);
           Alcotest.(check int) "orig vlen 256" 256 spec.config.vlen;
 
-          let tmp_file = Filename.temp_file "roundtrip_" ".sail" in
-          (match Sail_export_adapter.write_spec spec ~target_file_path:tmp_file with
-          | Error err -> Alcotest.fail (Errors.to_string err)
-          | Ok _ -> ());
+          Test_helpers.with_temp_file ~suffix:".sail" (fun tmp_file ->
+            (match Sail_export_adapter.write_spec spec ~target_file_path:tmp_file with
+            | Error err -> Alcotest.fail (Errors.to_string err)
+            | Ok _ -> ());
 
-          (match Sail_parser_adapter.parse_file ~spec_name:"RoundTrip_ISA" tmp_file with
-          | Error err ->
-              (try Sys.remove tmp_file with _ -> ());
-              Alcotest.fail (Errors.to_string err)
-          | Ok parsed_spec ->
-              (try Sys.remove tmp_file with _ -> ());
-              Alcotest.(check string) "name matches" spec.name parsed_spec.name;
-              Alcotest.(check int) "vlen matches" spec.config.vlen parsed_spec.config.vlen;
-              Alcotest.(check int) "count matches" (List.length spec.instructions) (List.length parsed_spec.instructions);
+            (match Sail_parser_adapter.parse_file ~spec_name:"RoundTrip_ISA" tmp_file with
+            | Error err -> Alcotest.fail (Errors.to_string err)
+            | Ok parsed_spec ->
+                Alcotest.(check string) "name matches" spec.name parsed_spec.name;
+                Alcotest.(check int) "vlen matches" spec.config.vlen parsed_spec.config.vlen;
+                Alcotest.(check int) "count matches" (List.length spec.instructions) (List.length parsed_spec.instructions);
 
-              List.iter2
-                (fun (orig : Vector_instruction.t) (parsed : Vector_instruction.t) ->
-                  Alcotest.(check string) "mnemonic match" orig.mnemonic parsed.mnemonic;
-                  Alcotest.(check bool) "format match" true (orig.format = parsed.format);
-                  Alcotest.(check int) "funct6 match" orig.funct6 parsed.funct6;
-                  Alcotest.(check int) "funct3 match" orig.funct3 parsed.funct3;
-                  Alcotest.(check bool) "widening match" orig.is_widening parsed.is_widening;
-                  if Option.is_some orig.binary_op then
-                    Alcotest.(check bool) "binary op match" true (orig.binary_op = parsed.binary_op);
-                  if Option.is_some orig.unary_op then
-                    Alcotest.(check bool) "unary op match" true (orig.unary_op = parsed.unary_op))
-                spec.instructions
-                parsed_spec.instructions)
+                List.iter2
+                  (fun (orig : Vector_instruction.t) (parsed : Vector_instruction.t) ->
+                    Alcotest.(check string) "mnemonic match" orig.mnemonic parsed.mnemonic;
+                    Alcotest.(check bool) "format match" true (orig.format = parsed.format);
+                    Alcotest.(check int) "funct6 match" orig.funct6 parsed.funct6;
+                    Alcotest.(check int) "funct3 match" orig.funct3 parsed.funct3;
+                    Alcotest.(check bool) "widening match" orig.is_widening parsed.is_widening;
+                    if Option.is_some orig.binary_op then
+                      Alcotest.(check bool) "binary op match" true (orig.binary_op = parsed.binary_op);
+                    if Option.is_some orig.unary_op then
+                      Alcotest.(check bool) "unary op match" true (orig.unary_op = parsed.unary_op))
+                  spec.instructions
+                  parsed_spec.instructions))
 
 let test_new_classes_roundtrip_through_sail () =
   let rng = Random.State.make [| 13 |] in

@@ -34,25 +34,17 @@ let test_rd_jit_cpp_compilation_e2e () =
   | Error err -> fail ("Failed to lift ARM64: " ^ err)
   | Ok func ->
       let pkg = Rd_jit_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
-      let temp_dir = "/tmp/asgard_rd_jit_test" in
-      Test_helpers.create_dir temp_dir;
-      let hdr_file = Filename.concat temp_dir "rd_jit_runtime.hpp" in
-      let oc_h = open_out hdr_file in
-      output_string oc_h pkg.cpp_runtime_source;
-      close_out oc_h;
-
-      let runner_file = Filename.concat temp_dir "runner.cpp" in
-      let oc_r = open_out runner_file in
-      output_string oc_r pkg.runner_source;
-      close_out oc_r;
-
-      let bin_file = Filename.concat temp_dir "rd_jit_app" in
-      let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
-      let status = Sys.command cmd in
-      check int "RD JIT Compilation status == 0" 0 status;
-      let run_st = Sys.command (Printf.sprintf "%s 42 58 > /dev/null 2>&1" bin_file) in
-      check int "RD JIT Run status == 0" 0 run_st;
-      Test_helpers.delete_dir temp_dir
+      Test_helpers.with_temp_dir (fun temp_dir ->
+        let hdr_file = Filename.concat temp_dir "rd_jit_runtime.hpp" in
+        Test_helpers.write_file_string hdr_file pkg.cpp_runtime_source;
+        let runner_file = Filename.concat temp_dir "runner.cpp" in
+        Test_helpers.write_file_string runner_file pkg.runner_source;
+        let bin_file = Filename.concat temp_dir "rd_jit_app" in
+        let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
+        let status = Sys.command cmd in
+        check int "RD JIT Compilation status == 0" 0 status;
+        let run_st, _ = Test_helpers.run_command_capture (Printf.sprintf "%s 42 58" bin_file) in
+        check bool "RD JIT Run status == 0" true (run_st = Unix.WEXITED 0))
 
 let test_rd_jit_multi_op_arithmetic_e2e () =
   let rng = Random.State.make [| 1337 |] in
@@ -67,31 +59,19 @@ let test_rd_jit_multi_op_arithmetic_e2e () =
   | Error err -> fail ("Failed to lift ARM64: " ^ err)
   | Ok func ->
       let pkg = Rd_jit_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
-      let temp_dir = "/tmp/asgard_rd_jit_multi_test" in
-      Test_helpers.create_dir temp_dir;
-      let hdr_file = Filename.concat temp_dir "jit_vm_runtime.hpp" in
-      let oc_h = open_out hdr_file in
-      output_string oc_h pkg.cpp_runtime_source;
-      close_out oc_h;
-
-      let runner_file = Filename.concat temp_dir "runner.cpp" in
-      let oc_r = open_out runner_file in
-      output_string oc_r pkg.runner_source;
-      close_out oc_r;
-
-      let bin_file = Filename.concat temp_dir "rd_jit_multi_app" in
-      let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
-      let status = Sys.command cmd in
-      check int "RD JIT Multi-Op Compilation status == 0" 0 status;
-      let run_cmd = Printf.sprintf "%s > %s/out.txt 2>&1" bin_file temp_dir in
-      let run_st = Sys.command run_cmd in
-      check int "RD JIT Multi-Op Run status == 0" 0 run_st;
-      let ic = open_in (Filename.concat temp_dir "out.txt") in
-      let out_str = really_input_string ic (in_channel_length ic) in
-      close_in ic;
-      Test_helpers.delete_dir temp_dir;
-      (* 50 + 30 = 80, 80 - 15 = 65 *)
-      check bool "Contains Result 65" true (String.length out_str > 0 && (try ignore (String.index out_str ':'); true with _ -> false))
+      Test_helpers.with_temp_dir (fun temp_dir ->
+        let hdr_file = Filename.concat temp_dir "jit_vm_runtime.hpp" in
+        Test_helpers.write_file_string hdr_file pkg.cpp_runtime_source;
+        let runner_file = Filename.concat temp_dir "runner.cpp" in
+        Test_helpers.write_file_string runner_file pkg.runner_source;
+        let bin_file = Filename.concat temp_dir "rd_jit_multi_app" in
+        let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
+        let status = Sys.command cmd in
+        check int "RD JIT Multi-Op Compilation status == 0" 0 status;
+        let run_st, out_str = Test_helpers.run_command_capture bin_file in
+        check bool "RD JIT Multi-Op Run status == 0" true (run_st = Unix.WEXITED 0);
+        (* 50 + 30 = 80, 80 - 15 = 65 *)
+        check bool "Contains Result 65" true (String.length out_str > 0 && (try ignore (String.index out_str ':'); true with _ -> false)))
 
 let test_rd_jit_call_extern_e2e () =
   let block = {

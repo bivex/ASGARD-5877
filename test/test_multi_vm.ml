@@ -62,34 +62,32 @@ let test_multi_vm_compilation_e2e () =
   | Error err -> fail ("Failed to lift: " ^ err)
   | Ok func ->
       let pkg = Multi_vm_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
-      let temp_dir = "/tmp/asgard_multi_vm_test" in
-      Test_helpers.create_dir temp_dir;
-      let hdr_file = Filename.concat temp_dir "multi_vm_runtime.hpp" in
-      let oc_h = open_out hdr_file in
-      output_string oc_h pkg.cpp_runtime_source;
-      close_out oc_h;
+      Test_helpers.with_temp_dir (fun temp_dir ->
+        let hdr_file = Filename.concat temp_dir "multi_vm_runtime.hpp" in
+        let oc_h = open_out hdr_file in
+        output_string oc_h pkg.cpp_runtime_source;
+        close_out oc_h;
 
-      let runner_file = Filename.concat temp_dir "runner.cpp" in
-      let oc_r = open_out runner_file in
-      output_string oc_r pkg.runner_source;
-      close_out oc_r;
+        let runner_file = Filename.concat temp_dir "runner.cpp" in
+        let oc_r = open_out runner_file in
+        output_string oc_r pkg.runner_source;
+        close_out oc_r;
 
-      let bc_file = Filename.concat temp_dir "bc.cpp" in
-      let oc_b = open_out bc_file in
-      output_string oc_b "#include <stdint.h>\n#include <stddef.h>\n";
-      output_string oc_b "extern \"C\" const uint64_t embedded_bytecode[] = {\n";
-      List.iter (fun w -> output_string oc_b (Printf.sprintf "    0x%016LXULL,\n" w)) pkg.bytecode;
-      output_string oc_b "};\n";
-      output_string oc_b (Printf.sprintf "extern \"C\" const size_t embedded_bytecode_len = %d;\n" (List.length pkg.bytecode));
-      close_out oc_b;
+        let bc_file = Filename.concat temp_dir "bc.cpp" in
+        let oc_b = open_out bc_file in
+        output_string oc_b "#include <stdint.h>\n#include <stddef.h>\n";
+        output_string oc_b "extern \"C\" const uint64_t embedded_bytecode[] = {\n";
+        List.iter (fun w -> output_string oc_b (Printf.sprintf "    0x%016LXULL,\n" w)) pkg.bytecode;
+        output_string oc_b "};\n";
+        output_string oc_b (Printf.sprintf "extern \"C\" const size_t embedded_bytecode_len = %d;\n" (List.length pkg.bytecode));
+        close_out oc_b;
 
-      let bin_file = Filename.concat temp_dir "multi_vm_app" in
-      let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s %s -o %s" temp_dir runner_file bc_file bin_file in
-      let status = Sys.command cmd in
-      check int "Compilation status == 0" 0 status;
-      let run_st = Sys.command (Printf.sprintf "%s > /dev/null 2>&1" bin_file) in
-      check int "Run status == 0" 0 run_st;
-      Test_helpers.delete_dir temp_dir
+        let bin_file = Filename.concat temp_dir "multi_vm_app" in
+        let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s %s -o %s" temp_dir runner_file bc_file bin_file in
+        let status = Sys.command cmd in
+        check int "Compilation status == 0" 0 status;
+        let run_st, _ = Test_helpers.run_command_capture bin_file in
+        check bool "Run status == 0" true (run_st = Unix.WEXITED 0))
 
 let test_multi_vm_branch_transitions_e2e () =
   let rng = Random.State.make [| 9292 |] in
@@ -108,25 +106,23 @@ let test_multi_vm_branch_transitions_e2e () =
   | Ok func ->
       let pkg = Multi_vm_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
       check bool "Has active zero-bridge transitions" true (pkg.partition.inter_vm_transitions >= 1);
-      let temp_dir = "/tmp/asgard_multi_vm_branch_test" in
-      Test_helpers.create_dir temp_dir;
-      let hdr_file = Filename.concat temp_dir "multi_vm_runtime.hpp" in
-      let oc_h = open_out hdr_file in
-      output_string oc_h pkg.cpp_runtime_source;
-      close_out oc_h;
+      Test_helpers.with_temp_dir (fun temp_dir ->
+        let hdr_file = Filename.concat temp_dir "multi_vm_runtime.hpp" in
+        let oc_h = open_out hdr_file in
+        output_string oc_h pkg.cpp_runtime_source;
+        close_out oc_h;
 
-      let runner_file = Filename.concat temp_dir "runner.cpp" in
-      let oc_r = open_out runner_file in
-      output_string oc_r pkg.runner_source;
-      close_out oc_r;
+        let runner_file = Filename.concat temp_dir "runner.cpp" in
+        let oc_r = open_out runner_file in
+        output_string oc_r pkg.runner_source;
+        close_out oc_r;
 
-      let bin_file = Filename.concat temp_dir "multi_vm_branch_app" in
-      let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
-      let status = Sys.command cmd in
-      check int "Compilation status == 0" 0 status;
-      let run_st = Sys.command (Printf.sprintf "%s > /dev/null 2>&1" bin_file) in
-      check int "Run status == 0" 0 run_st;
-      Test_helpers.delete_dir temp_dir
+        let bin_file = Filename.concat temp_dir "multi_vm_branch_app" in
+        let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
+        let status = Sys.command cmd in
+        check int "Compilation status == 0" 0 status;
+        let run_st, _ = Test_helpers.run_command_capture bin_file in
+        check bool "Run status == 0" true (run_st = Unix.WEXITED 0))
 
 let test_ocamlgraph_mincut_partitioning_and_dot () =
   let asm = {|

@@ -9,21 +9,18 @@ open Native_vm
     4. End-to-End VM execution under all Layer 3 Anti-Tamper guards. *)
 
 let test_smc_probe_c_compilation_and_execution () =
-  let tmp_dir = Filename.temp_file "anti_tamper_smc_" "_dir" in
-  (try Sys.remove tmp_dir with _ -> ());
-  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
-
-  let main_cpp = Filename.concat tmp_dir "test_smc.cpp" in
-  let oc = open_out main_cpp in
-  output_string oc (Hardened_runtime.emit_anti_emulation_probes ());
-  output_string oc "\n";
-  output_string oc (Hardened_runtime.emit_dual_mapping_header ());
-  output_string oc "\n";
-  output_string oc (Hardened_runtime.emit_introspective_smc_header ());
-  output_string oc "\n";
-  output_string oc (Hardened_runtime.emit_memory_integrity_scanner_header ());
-  output_string oc "\n";
-  output_string oc {|
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let main_cpp = Filename.concat tmp_dir "test_smc.cpp" in
+    let oc = open_out main_cpp in
+    output_string oc (Hardened_runtime.emit_anti_emulation_probes ());
+    output_string oc "\n";
+    output_string oc (Hardened_runtime.emit_dual_mapping_header ());
+    output_string oc "\n";
+    output_string oc (Hardened_runtime.emit_introspective_smc_header ());
+    output_string oc "\n";
+    output_string oc (Hardened_runtime.emit_memory_integrity_scanner_header ());
+    output_string oc "\n";
+    output_string oc {|
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -53,27 +50,16 @@ int main() {
     return 0;
 }
 |};
-  close_out oc;
+    close_out oc;
 
-  let bin_path = Filename.concat tmp_dir "test_smc" in
-  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
-  let comp_status = Sys.command comp_cmd in
-  Alcotest.(check int) "clang++ compilation of Layer 3 probes succeeds" 0 comp_status;
+    let bin_path = Filename.concat tmp_dir "test_smc" in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+    let comp_status = Sys.command comp_cmd in
+    Alcotest.(check int) "clang++ compilation of Layer 3 probes succeeds" 0 comp_status;
 
-  let run_cmd = bin_path in
-  let ic = Unix.open_process_in run_cmd in
-  let out_buf = Buffer.create 256 in
-  (try
-     while true do
-       Buffer.add_string out_buf (input_line ic);
-       Buffer.add_char out_buf '\n'
-     done
-   with End_of_file -> ());
-  let status = Unix.close_process_in ic in
-  Test_helpers.delete_dir tmp_dir;
-  Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
-  let out_str = Buffer.contents out_buf in
-  Alcotest.(check bool) "output contains SUCCESS" true (String.contains out_str 'S' && String.contains out_str 'U' && String.contains out_str 'C')
+    let status, out_str = Test_helpers.run_command_capture bin_path in
+    Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+    Alcotest.(check bool) "output contains SUCCESS" true (String.contains out_str 'S' && String.contains out_str 'U' && String.contains out_str 'C'))
 
 let test_full_threaded_vm_with_layer3_protection () =
   let rng = Random.State.make [| 0x3333 |] in
@@ -89,41 +75,12 @@ func_layer3_vm:
   | Error e -> Alcotest.fail e
   | Ok func ->
       let pkg = Vm_emitter.compile_and_package ~rng ~enable_cff:true ~enable_junk:true func in
-
-      let tmp_dir = Filename.temp_file "vm_layer3_" "_dir" in
-      (try Sys.remove tmp_dir with _ -> ());
-      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
-
-      let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
-      let oc_h = open_out hdr_path in
-      output_string oc_h pkg.cpp_runtime_source;
-      close_out oc_h;
-
-      let runner_path = Filename.concat tmp_dir "runner.cpp" in
-      let oc_r = open_out runner_path in
-      output_string oc_r pkg.runner_source;
-      close_out oc_r;
-
-      let bin_path = Filename.concat tmp_dir "runner" in
-      let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
-      let comp_status = Sys.command comp_cmd in
-      Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
-
-      let run_cmd = bin_path in
-      let ic = Unix.open_process_in run_cmd in
-      let out_buf = Buffer.create 256 in
-      (try
-         while true do
-           Buffer.add_string out_buf (input_line ic);
-           Buffer.add_char out_buf '\n'
-         done
-       with End_of_file -> ());
-      let status = Unix.close_process_in ic in
-      Test_helpers.delete_dir tmp_dir;
-      Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
-      let out_str = Buffer.contents out_buf in
-      (* (500 + 20) * 3 = 1560 *)
-      Alcotest.(check bool) "rax is 1560" true (String.contains out_str '1' && String.contains out_str '5' && String.contains out_str '6')
+      Test_helpers.with_temp_dir (fun tmp_dir ->
+        let bin_path = Test_helpers.compile_and_prepare_vm tmp_dir pkg in
+        let status, out_str = Test_helpers.run_command_capture bin_path in
+        Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+        (* (500 + 20) * 3 = 1560 *)
+        Alcotest.(check bool) "rax is 1560" true (String.contains out_str '1' && String.contains out_str '5' && String.contains out_str '6'))
 
 let test_nanomite_signal_dispatch () =
   let rng = Random.State.make [| 0x7777 |] in
@@ -152,59 +109,29 @@ func_nanomite_branch:
       } in
       let pkg = Vm_emitter.compile_and_package ~rng ~config func in
 
-      let tmp_dir = Filename.temp_file "vm_nanomite_" "_dir" in
-      (try Sys.remove tmp_dir with _ -> ());
-      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
-
-      let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in
-      let oc_h = open_out hdr_path in
-      output_string oc_h pkg.cpp_runtime_source;
-      close_out oc_h;
-
       let runner_source_with_check =
         pkg.runner_source ^ "\n__attribute__((destructor)) static void _check_nanomite_traps() {\n"
         ^ "    printf(\"[NANOMITES_ACTIVE] Traps Handled: %llu\\n\",\n"
         ^ "           (unsigned long long)asgard_nanomites::g_nanomite_dispatcher.traps_handled);\n"
         ^ "}\n"
       in
-      let runner_path = Filename.concat tmp_dir "runner.cpp" in
-      let oc_r = open_out runner_path in
-      output_string oc_r runner_source_with_check;
-      close_out oc_r;
-
-      let bin_path = Filename.concat tmp_dir "runner" in
-      let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
-      let comp_status = Sys.command comp_cmd in
-      Alcotest.(check int) "clang++ compilation succeeds with nanomites" 0 comp_status;
-
-      let run_cmd = bin_path in
-      let ic = Unix.open_process_in run_cmd in
-      let out_buf = Buffer.create 256 in
-      (try
-         while true do
-           Buffer.add_string out_buf (input_line ic);
-           Buffer.add_char out_buf '\n'
-         done
-       with End_of_file -> ());
-      let status = Unix.close_process_in ic in
-      Test_helpers.delete_dir tmp_dir;
-      Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
-      let out_str = Buffer.contents out_buf in
-      (* 42 < 50, so .Lless branch taken: 42 + 2000 = 2042 *)
-      Alcotest.(check bool) "output contains SUCCESS" true (String.contains out_str 'S' && String.contains out_str 'U' && String.contains out_str 'C');
-      Alcotest.(check bool) "rax is 2042" true (String.contains out_str '2' && String.contains out_str '0' && String.contains out_str '4');
-      Alcotest.(check bool) "nanomite hardware traps active" true (String.contains out_str 'N' && String.contains out_str 'A' && String.contains out_str 'C')
+      let pkg = { pkg with runner_source = runner_source_with_check } in
+      Test_helpers.with_temp_dir (fun tmp_dir ->
+        let bin_path = Test_helpers.compile_and_prepare_vm tmp_dir pkg in
+        let status, out_str = Test_helpers.run_command_capture bin_path in
+        Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+        (* 42 < 50, so .Lless branch taken: 42 + 2000 = 2042 *)
+        Alcotest.(check bool) "output contains SUCCESS" true (String.contains out_str 'S' && String.contains out_str 'U' && String.contains out_str 'C');
+        Alcotest.(check bool) "rax is 2042" true (String.contains out_str '2' && String.contains out_str '0' && String.contains out_str '4');
+        Alcotest.(check bool) "nanomite hardware traps active" true (String.contains out_str 'N' && String.contains out_str 'A' && String.contains out_str 'C'))
 
 let test_direct_syscalls_e2e () =
-  let tmp_dir = Filename.temp_file "direct_syscalls_" "_dir" in
-  (try Sys.remove tmp_dir with _ -> ());
-  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
-
-  let main_cpp = Filename.concat tmp_dir "test_syscalls.cpp" in
-  let oc = open_out main_cpp in
-  output_string oc (Hardened_runtime.emit_direct_syscalls_header ());
-  output_string oc "\n";
-  output_string oc {|
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let main_cpp = Filename.concat tmp_dir "test_syscalls.cpp" in
+    let oc = open_out main_cpp in
+    output_string oc (Hardened_runtime.emit_direct_syscalls_header ());
+    output_string oc "\n";
+    output_string oc {|
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -227,38 +154,24 @@ int main() {
     return 0;
 }
 |};
-  close_out oc;
+    close_out oc;
 
-  let bin_path = Filename.concat tmp_dir "test_sys" in
-  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
-  let comp_status = Sys.command comp_cmd in
-  Alcotest.(check int) "clang++ compilation of direct syscalls succeeds" 0 comp_status;
+    let bin_path = Filename.concat tmp_dir "test_sys" in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+    let comp_status = Sys.command comp_cmd in
+    Alcotest.(check int) "clang++ compilation of direct syscalls succeeds" 0 comp_status;
 
-  let run_cmd = bin_path in
-  let ic = Unix.open_process_in run_cmd in
-  let out_buf = Buffer.create 256 in
-  (try
-     while true do
-       Buffer.add_string out_buf (input_line ic);
-       Buffer.add_char out_buf '\n'
-     done
-   with End_of_file -> ());
-  let status = Unix.close_process_in ic in
-  Test_helpers.delete_dir tmp_dir;
-  Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
-  let out_str = Buffer.contents out_buf in
-  Alcotest.(check bool) "output contains DIRECT_SYSCALL_OK" true (String.contains out_str 'D' && String.contains out_str 'I' && String.contains out_str 'R');
-  Alcotest.(check bool) "output contains DIRECT_WRITE_OK" true (String.contains out_str 'W' && String.contains out_str 'R' && String.contains out_str 'I')
+    let status, out_str = Test_helpers.run_command_capture bin_path in
+    Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+    Alcotest.(check bool) "output contains DIRECT_SYSCALL_OK" true (String.contains out_str 'D' && String.contains out_str 'I' && String.contains out_str 'R');
+    Alcotest.(check bool) "output contains DIRECT_WRITE_OK" true (String.contains out_str 'W' && String.contains out_str 'R' && String.contains out_str 'I'))
 
 let test_vector_isa_e2e () =
-  let tmp_dir = Filename.temp_file "vector_isa_" "_dir" in
-  (try Sys.remove tmp_dir with _ -> ());
-  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
-
-  let main_cpp = Filename.concat tmp_dir "test_vector_isa.cpp" in
-  let oc = open_out main_cpp in
-  (* Emit the SIMD intrinsic includes and a minimal VMContext with vregs *)
-  output_string oc {|
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let main_cpp = Filename.concat tmp_dir "test_vector_isa.cpp" in
+    let oc = open_out main_cpp in
+    (* Emit the SIMD intrinsic includes and a minimal VMContext with vregs *)
+    output_string oc {|
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -342,43 +255,32 @@ int main() {
     return 0;
 }
 |};
-  close_out oc;
+    close_out oc;
 
-  let bin_path = Filename.concat tmp_dir "test_visa" in
-  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s 2>&1" main_cpp bin_path in
-  let comp_status = Sys.command comp_cmd in
-  Alcotest.(check int) "vector ISA clang++ compilation succeeds" 0 comp_status;
+    let bin_path = Filename.concat tmp_dir "test_visa" in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s 2>&1" main_cpp bin_path in
+    let comp_status = Sys.command comp_cmd in
+    Alcotest.(check int) "vector ISA clang++ compilation succeeds" 0 comp_status;
 
-  let ic = Unix.open_process_in bin_path in
-  let out_buf = Buffer.create 128 in
-  (try while true do
-       Buffer.add_string out_buf (input_line ic);
-       Buffer.add_char out_buf '\n'
-     done with End_of_file -> ());
-  let status = Unix.close_process_in ic in
-  Test_helpers.delete_dir tmp_dir;
-  Alcotest.(check bool) "vector ISA binary exits 0" true (status = Unix.WEXITED 0);
-  let out = Buffer.contents out_buf in
-  Alcotest.(check bool) "output contains VECTOR_ISA_OK" true
-    (let needle = "VECTOR_ISA_OK" in
-     let n = String.length needle and h = String.length out in
-     let found = ref false in
-     for i = 0 to h - n do
-       if String.sub out i n = needle then found := true
-     done; !found)
+    let status, out = Test_helpers.run_command_capture bin_path in
+    Alcotest.(check bool) "vector ISA binary exits 0" true (status = Unix.WEXITED 0);
+    let needle = "VECTOR_ISA_OK" in
+    let n = String.length needle and h = String.length out in
+    let found = ref false in
+    for i = 0 to h - n do
+      if String.sub out i n = needle then found := true
+    done;
+    Alcotest.(check bool) "output contains VECTOR_ISA_OK" true !found)
 
 let test_smc_diagnostics_and_modes () =
-  let tmp_dir = Filename.temp_file "smc_diag_" "_dir" in
-  (try Sys.remove tmp_dir with _ -> ());
-  (try Sys.mkdir tmp_dir 0o755 with _ -> ());
-
-  let main_cpp = Filename.concat tmp_dir "test_diag.cpp" in
-  let oc = open_out main_cpp in
-  output_string oc (Hardened_runtime.emit_dual_mapping_header ());
-  output_string oc "\n";
-  output_string oc (Hardened_runtime.emit_introspective_smc_header ());
-  output_string oc "\n";
-  output_string oc {|
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let main_cpp = Filename.concat tmp_dir "test_diag.cpp" in
+    let oc = open_out main_cpp in
+    output_string oc (Hardened_runtime.emit_dual_mapping_header ());
+    output_string oc "\n";
+    output_string oc (Hardened_runtime.emit_introspective_smc_header ());
+    output_string oc "\n";
+    output_string oc {|
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -419,30 +321,22 @@ int main() {
     return 0;
 }
 |};
-  close_out oc;
+    close_out oc;
 
-  let bin_path = Filename.concat tmp_dir "test_diag" in
-  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
-  let comp_status = Sys.command comp_cmd in
-  Alcotest.(check int) "clang++ compilation of SMC diagnostics succeeds" 0 comp_status;
+    let bin_path = Filename.concat tmp_dir "test_diag" in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+    let comp_status = Sys.command comp_cmd in
+    Alcotest.(check int) "clang++ compilation of SMC diagnostics succeeds" 0 comp_status;
 
-  let ic = Unix.open_process_in bin_path in
-  let out_buf = Buffer.create 256 in
-  (try while true do
-       Buffer.add_string out_buf (input_line ic);
-       Buffer.add_char out_buf '\n'
-     done with End_of_file -> ());
-  let status = Unix.close_process_in ic in
-  Test_helpers.delete_dir tmp_dir;
-  Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
-  let out_str = Buffer.contents out_buf in
-  Alcotest.(check bool) "output contains SMC_DIAG_OK" true
-    (let needle = "SMC_DIAG_OK" in
-     let n = String.length needle and h = String.length out_str in
-     let found = ref false in
-     for i = 0 to h - n do
-       if String.sub out_str i n = needle then found := true
-     done; !found)
+    let status, out_str = Test_helpers.run_command_capture bin_path in
+    Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+    let needle = "SMC_DIAG_OK" in
+    let n = String.length needle and h = String.length out_str in
+    let found = ref false in
+    for i = 0 to h - n do
+      if String.sub out_str i n = needle then found := true
+    done;
+    Alcotest.(check bool) "output contains SMC_DIAG_OK" true !found)
 
 let test_smc_strict_mode_and_max_security () =
   (* Check that max_security has smc_strict = true *)
@@ -471,18 +365,15 @@ func_strict_test:
          done; !found);
 
       (* Also test compilation & execution with ASGARD_SMC_STRICT *)
-      let tmp_dir = Filename.temp_file "smc_strict_" "_dir" in
-      (try Sys.remove tmp_dir with _ -> ());
-      (try Sys.mkdir tmp_dir 0o755 with _ -> ());
-
-      let main_cpp = Filename.concat tmp_dir "test_strict.cpp" in
-      let oc = open_out main_cpp in
-      output_string oc "#define ASGARD_SMC_STRICT 1\n";
-      output_string oc (Hardened_runtime.emit_dual_mapping_header ());
-      output_string oc "\n";
-      output_string oc (Hardened_runtime.emit_introspective_smc_header ());
-      output_string oc "\n";
-      output_string oc {|
+      Test_helpers.with_temp_dir (fun tmp_dir ->
+        let main_cpp = Filename.concat tmp_dir "test_strict.cpp" in
+        let oc = open_out main_cpp in
+        output_string oc "#define ASGARD_SMC_STRICT 1\n";
+        output_string oc (Hardened_runtime.emit_dual_mapping_header ());
+        output_string oc "\n";
+        output_string oc (Hardened_runtime.emit_introspective_smc_header ());
+        output_string oc "\n";
+        output_string oc {|
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -500,30 +391,22 @@ int main() {
     return 0;
 }
 |};
-      close_out oc;
+        close_out oc;
 
-      let bin_path = Filename.concat tmp_dir "test_strict" in
-      let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
-      let comp_status = Sys.command comp_cmd in
-      Alcotest.(check int) "clang++ compilation with ASGARD_SMC_STRICT succeeds" 0 comp_status;
+        let bin_path = Filename.concat tmp_dir "test_strict" in
+        let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+        let comp_status = Sys.command comp_cmd in
+        Alcotest.(check int) "clang++ compilation with ASGARD_SMC_STRICT succeeds" 0 comp_status;
 
-      let ic = Unix.open_process_in bin_path in
-      let out_buf = Buffer.create 256 in
-      (try while true do
-           Buffer.add_string out_buf (input_line ic);
-           Buffer.add_char out_buf '\n'
-         done with End_of_file -> ());
-      let status = Unix.close_process_in ic in
-      Test_helpers.delete_dir tmp_dir;
-      Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
-      let out_str = Buffer.contents out_buf in
-      Alcotest.(check bool) "output contains STRICT_SMC_OK" true
-        (let needle = "STRICT_SMC_OK" in
-         let n = String.length needle and h = String.length out_str in
-         let found = ref false in
-         for i = 0 to h - n do
-           if String.sub out_str i n = needle then found := true
-         done; !found)
+        let status, out_str = Test_helpers.run_command_capture bin_path in
+        Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+        let needle = "STRICT_SMC_OK" in
+        let n = String.length needle and h = String.length out_str in
+        let found = ref false in
+        for i = 0 to h - n do
+          if String.sub out_str i n = needle then found := true
+        done;
+        Alcotest.(check bool) "output contains STRICT_SMC_OK" true !found)
 
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
