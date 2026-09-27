@@ -70,7 +70,7 @@ int main() {
      done
    with End_of_file -> ());
   let status = Unix.close_process_in ic in
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
   let out_str = Buffer.contents out_buf in
   Alcotest.(check bool) "output contains SUCCESS" true (String.contains out_str 'S' && String.contains out_str 'U' && String.contains out_str 'C')
@@ -119,7 +119,7 @@ func_layer3_vm:
          done
        with End_of_file -> ());
       let status = Unix.close_process_in ic in
-      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      Test_helpers.delete_dir tmp_dir;
       Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
       let out_str = Buffer.contents out_buf in
       (* (500 + 20) * 3 = 1560 *)
@@ -187,7 +187,7 @@ func_nanomite_branch:
          done
        with End_of_file -> ());
       let status = Unix.close_process_in ic in
-      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      Test_helpers.delete_dir tmp_dir;
       Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
       let out_str = Buffer.contents out_buf in
       (* 42 < 50, so .Lless branch taken: 42 + 2000 = 2042 *)
@@ -244,7 +244,7 @@ int main() {
      done
    with End_of_file -> ());
   let status = Unix.close_process_in ic in
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
   let out_str = Buffer.contents out_buf in
   Alcotest.(check bool) "output contains DIRECT_SYSCALL_OK" true (String.contains out_str 'D' && String.contains out_str 'I' && String.contains out_str 'R');
@@ -356,7 +356,7 @@ int main() {
        Buffer.add_char out_buf '\n'
      done with End_of_file -> ());
   let status = Unix.close_process_in ic in
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   Alcotest.(check bool) "vector ISA binary exits 0" true (status = Unix.WEXITED 0);
   let out = Buffer.contents out_buf in
   Alcotest.(check bool) "output contains VECTOR_ISA_OK" true
@@ -433,7 +433,7 @@ int main() {
        Buffer.add_char out_buf '\n'
      done with End_of_file -> ());
   let status = Unix.close_process_in ic in
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
   let out_str = Buffer.contents out_buf in
   Alcotest.(check bool) "output contains SMC_DIAG_OK" true
@@ -514,7 +514,7 @@ int main() {
            Buffer.add_char out_buf '\n'
          done with End_of_file -> ());
       let status = Unix.close_process_in ic in
-      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      Test_helpers.delete_dir tmp_dir;
       Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
       let out_str = Buffer.contents out_buf in
       Alcotest.(check bool) "output contains STRICT_SMC_OK" true

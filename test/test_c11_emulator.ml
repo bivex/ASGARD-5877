@@ -83,7 +83,7 @@ let test_c11_compilation_and_execution () =
              in
              find_sub 0);
 
-          let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+          Test_helpers.delete_dir tmp_dir;
           ()
 
 let tests = [

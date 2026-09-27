@@ -63,7 +63,7 @@ let test_multi_vm_compilation_e2e () =
   | Ok func ->
       let pkg = Multi_vm_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
       let temp_dir = "/tmp/asgard_multi_vm_test" in
-      let _ = Sys.command (Printf.sprintf "mkdir -p %s" temp_dir) in
+      Test_helpers.create_dir temp_dir;
       let hdr_file = Filename.concat temp_dir "multi_vm_runtime.hpp" in
       let oc_h = open_out hdr_file in
       output_string oc_h pkg.cpp_runtime_source;
@@ -88,7 +88,8 @@ let test_multi_vm_compilation_e2e () =
       let status = Sys.command cmd in
       check int "Compilation status == 0" 0 status;
       let run_st = Sys.command (Printf.sprintf "%s > /dev/null 2>&1" bin_file) in
-      check int "Run status == 0" 0 run_st
+      check int "Run status == 0" 0 run_st;
+      Test_helpers.delete_dir temp_dir
 
 let test_multi_vm_branch_transitions_e2e () =
   let rng = Random.State.make [| 9292 |] in
@@ -108,7 +109,7 @@ let test_multi_vm_branch_transitions_e2e () =
       let pkg = Multi_vm_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
       check bool "Has active zero-bridge transitions" true (pkg.partition.inter_vm_transitions >= 1);
       let temp_dir = "/tmp/asgard_multi_vm_branch_test" in
-      let _ = Sys.command (Printf.sprintf "mkdir -p %s" temp_dir) in
+      Test_helpers.create_dir temp_dir;
       let hdr_file = Filename.concat temp_dir "multi_vm_runtime.hpp" in
       let oc_h = open_out hdr_file in
       output_string oc_h pkg.cpp_runtime_source;
@@ -124,7 +125,8 @@ let test_multi_vm_branch_transitions_e2e () =
       let status = Sys.command cmd in
       check int "Compilation status == 0" 0 status;
       let run_st = Sys.command (Printf.sprintf "%s > /dev/null 2>&1" bin_file) in
-      check int "Run status == 0" 0 run_st
+      check int "Run status == 0" 0 run_st;
+      Test_helpers.delete_dir temp_dir
 
 let tests = [
   ("Modular Inverse Modulo 2^64", `Quick, test_modular_inverse_64);

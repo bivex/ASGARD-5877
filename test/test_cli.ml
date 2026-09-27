@@ -39,7 +39,7 @@ let test_cli_generate_and_execution () =
        else find_sub (i + 1)
      in
      find_sub 0);
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   ()
 
 let test_cli_parse_and_cost () =
@@ -61,7 +61,7 @@ let test_cli_parse_and_cost () =
   Alcotest.(check bool) "cost exit code 0" true (status_c = Unix.WEXITED 0);
   Alcotest.(check bool) "cost output has verdict" true (String.contains out_c 'V' && String.contains out_c 'e');
 
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   ()
 
 let test_cli_assemble_and_disassemble () =
@@ -89,7 +89,7 @@ let test_cli_assemble_and_disassemble () =
   Alcotest.(check bool) "disassemble exit code 0" true (status_d = Unix.WEXITED 0);
   Alcotest.(check bool) "contains vmul_vv" true (String.contains out_d 'v' && String.contains out_d 'm');
 
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   ()
 
 let tests = [

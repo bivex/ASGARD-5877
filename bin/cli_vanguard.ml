@@ -14,7 +14,7 @@ let run_vanguard out_dir seed num_insts =
   match Isa_grammar.generate_isa ~rng ~name:"Vanguard_ISA" ~num_instructions:num_insts () with
   | Error err -> `Error (false, Errors.to_string err)
   | Ok spec ->
-      let _ = Sys.command (Printf.sprintf "mkdir -p %s" out_dir) in
+      let _ = Bos.OS.Dir.create ~path:true (Fpath.v out_dir) in
       (match Cpp_emitter_adapter.emit_emulator_project spec ~output_dir:out_dir with
       | Error err -> `Error (false, Errors.to_string err)
       | Ok _ -> (

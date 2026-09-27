@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
               let bad_status = Sys.command bad_cmd in
               Alcotest.(check bool) "trap causes exit code 2" true (bad_status <> 0);
 
-              let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+              Test_helpers.delete_dir tmp_dir;
               ()))
 
 let tests = [

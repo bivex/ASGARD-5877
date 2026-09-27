@@ -28,7 +28,7 @@ let test_cpp_multi_vlen vlen =
               Alcotest.(check bool) "tests passed" true
                 (String.contains out 'A' && String.contains out 'L' && String.contains out 'L'));
 
-          let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+          Test_helpers.delete_dir tmp_dir;
           ()
 
 let tests = [

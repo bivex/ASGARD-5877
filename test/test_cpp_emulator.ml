@@ -37,7 +37,7 @@ let test_cpp_emulator_compilation_and_execution () =
              find_sub 0));
 
       (* Clean up temporary files *)
-      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      Test_helpers.delete_dir tmp_dir;
       ()
 
 let tests = [

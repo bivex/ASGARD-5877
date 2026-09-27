@@ -16,6 +16,7 @@
   qcheck
   qcheck-alcotest
   bos
+  fpath
   yojson
   ppx_deriving_yojson
   ocamlgraph))

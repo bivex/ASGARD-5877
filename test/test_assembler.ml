@@ -212,7 +212,7 @@ let test_bytecode_execution_on_cpp_emulator () =
       Alcotest.(check bool) "executed all bytecode words" true
         (String.contains out 'E' && String.contains out '4');
 
-      let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+      Test_helpers.delete_dir tmp_dir;
       ()
 
 let tests = [

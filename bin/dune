@@ -24,7 +24,9 @@
   cff
   native_vm
   c_macro_obf
-  protect_adapters))
+  protect_adapters
+  bos
+  fpath))
 
 (executable
  (name profile_bottlenecks)
@@ -39,7 +41,9 @@
   cff
   native_vm
   c_macro_obf
-  protect_adapters))
+  protect_adapters
+  bos
+  fpath))
 
 (executable
  (name gen_crackme_vm)

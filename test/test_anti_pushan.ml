@@ -44,7 +44,7 @@ let compile_and_run ~tmp_prefix pkg =
      done
    with End_of_file -> ());
   let status = Unix.close_process_in ic in
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   (status, Buffer.contents out_buf)
 
 let test_running_key_advances_on_execution () =

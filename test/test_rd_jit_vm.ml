@@ -35,7 +35,7 @@ let test_rd_jit_cpp_compilation_e2e () =
   | Ok func ->
       let pkg = Rd_jit_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
       let temp_dir = "/tmp/asgard_rd_jit_test" in
-      let _ = Sys.command (Printf.sprintf "mkdir -p %s" temp_dir) in
+      Test_helpers.create_dir temp_dir;
       let hdr_file = Filename.concat temp_dir "rd_jit_runtime.hpp" in
       let oc_h = open_out hdr_file in
       output_string oc_h pkg.cpp_runtime_source;
@@ -51,7 +51,8 @@ let test_rd_jit_cpp_compilation_e2e () =
       let status = Sys.command cmd in
       check int "RD JIT Compilation status == 0" 0 status;
       let run_st = Sys.command (Printf.sprintf "%s 42 58 > /dev/null 2>&1" bin_file) in
-      check int "RD JIT Run status == 0" 0 run_st
+      check int "RD JIT Run status == 0" 0 run_st;
+      Test_helpers.delete_dir temp_dir
 
 let test_rd_jit_multi_op_arithmetic_e2e () =
   let rng = Random.State.make [| 1337 |] in
@@ -67,7 +68,7 @@ let test_rd_jit_multi_op_arithmetic_e2e () =
   | Ok func ->
       let pkg = Rd_jit_emitter.compile_and_package ~rng ~enable_cff:false ~enable_mba:false func in
       let temp_dir = "/tmp/asgard_rd_jit_multi_test" in
-      let _ = Sys.command (Printf.sprintf "mkdir -p %s" temp_dir) in
+      Test_helpers.create_dir temp_dir;
       let hdr_file = Filename.concat temp_dir "jit_vm_runtime.hpp" in
       let oc_h = open_out hdr_file in
       output_string oc_h pkg.cpp_runtime_source;
@@ -88,6 +89,7 @@ let test_rd_jit_multi_op_arithmetic_e2e () =
       let ic = open_in (Filename.concat temp_dir "out.txt") in
       let out_str = really_input_string ic (in_channel_length ic) in
       close_in ic;
+      Test_helpers.delete_dir temp_dir;
       (* 50 + 30 = 80, 80 - 15 = 65 *)
       check bool "Contains Result 65" true (String.length out_str > 0 && (try ignore (String.index out_str ':'); true with _ -> false))
 

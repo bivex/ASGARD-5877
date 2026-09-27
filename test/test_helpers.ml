@@ -1,17 +1,28 @@
 (** Test_helpers — Shared test utilities for ASGARD-5877 verification suite. *)
 
+let create_dir dir =
+  match Bos.OS.Dir.create ~path:true (Fpath.v dir) with
+  | Ok _ -> ()
+  | Error (`Msg e) -> failwith ("Failed to create directory " ^ dir ^ ": " ^ e)
+
+let delete_dir dir =
+  match Bos.OS.Dir.delete ~recurse:true (Fpath.v dir) with
+  | Ok _ -> ()
+  | Error (`Msg _) -> ()
+
 let with_temp_dir f =
-  let tmp_dir = Filename.temp_file "asgard_test_" "" in
-  (try Sys.remove tmp_dir with Sys_error _ -> ());
-  Sys.mkdir tmp_dir 0o755;
-  let res =
-    try f tmp_dir
-    with exn ->
-      (try ignore (Sys.command (Printf.sprintf "rm -rf %s" tmp_dir)) with Sys_error _ -> ());
-      raise exn
-  in
-  (try ignore (Sys.command (Printf.sprintf "rm -rf %s" tmp_dir)) with Sys_error _ -> ());
-  res
+  match Bos.OS.Dir.tmp "asgard_test_%s" with
+  | Error (`Msg e) -> failwith ("Failed to create temp dir: " ^ e)
+  | Ok tmp_path ->
+      let tmp_dir = Fpath.to_string tmp_path in
+      let res =
+        try f tmp_dir
+        with exn ->
+          delete_dir tmp_dir;
+          raise exn
+      in
+      delete_dir tmp_dir;
+      res
 
 let read_file_string path =
   let ic = open_in path in

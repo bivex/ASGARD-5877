@@ -254,7 +254,7 @@ int main() {
        Buffer.add_char out_buf '\n'
      done with End_of_file -> ());
   let status = Unix.close_process_in ic in
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_dir) in
+  Test_helpers.delete_dir tmp_dir;
   Alcotest.(check bool) "egraph handler binary exits 0" true (status = Unix.WEXITED 0);
   let out = Buffer.contents out_buf in
   let needle = "EGRAPH_HANDLER_OK" in

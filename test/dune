@@ -64,4 +64,6 @@
   c_macro_obf
   alcotest
   qcheck
-  qcheck-alcotest))
+  qcheck-alcotest
+  bos
+  fpath))

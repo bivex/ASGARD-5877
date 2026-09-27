@@ -396,5 +396,5 @@ let () =
   Printf.printf "[Landmarks] Saved profiling callgraph to '%s'\n\n" json_file;
 
   (* Cleanup temporary directory *)
-  let _ = Sys.command (Printf.sprintf "rm -rf %s" tmp_prof_dir) in
+  let _ = Bos.OS.Dir.delete ~recurse:true (Fpath.v tmp_prof_dir) in
   ()
