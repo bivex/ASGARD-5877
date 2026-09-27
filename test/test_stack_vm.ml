@@ -847,6 +847,143 @@ let test_c_runtime_compile_and_run () =
     end
   end
 
+(* ── Full pipeline through the generated C++ runtime WITH arguments ────── *)
+(* [test_c_runtime_compile_and_run] covers the raw program only, and
+   [test_full_pipeline_semantics] covers the pass chain only via the OCaml
+   evaluator. Production builds use BOTH: ghost + MBA + CFF bytecode running
+   on the generated C++ runtime with real SysV arguments scattered into ctx
+   (a0→slot 7 / RDI, a1→slot 6 / RSI, result from slot 0 / RAX). A scatter or
+   pass-chain regression then only shows up here. *)
+let test_full_pipeline_c_runtime_with_args () =
+  if Sys.command "command -v c++ >/dev/null 2>&1" <> 0 then
+    Printf.printf "SKIP test_full_pipeline_c_runtime_with_args: no C++ compiler on PATH\n%!"
+  else begin
+    (* rax := a0 + a1*3 + 0x1337 — every constant AND both arguments matter *)
+    let b0 = make_block 0 "entry" [
+      PushReg 7;            (* a0 (RDI scatter slot) *)
+      PushReg 6;            (* a1 (RSI scatter slot) *)
+      PushImm 3L; Mul;
+      Add;
+      PushImm 0x1337L;
+      Add;
+      PopReg 0;             (* rax *)
+      Exit;
+    ] in
+    let prog = make_program 0 [b0] 16 in
+
+    (* Production pass order: balance → ghost → MBA → CFF *)
+    let seed = 0x0BADF00D0BADF00DL in
+    let ctx = Context_allocator.create () in
+    let prog_r = Stack_balance_pass.repair_program ctx prog in
+    let prog_g = Stack_ghost_pass.apply_program (Stack_ghost_pass.default_ghost_config seed) ctx prog_r in
+    let prog_m = Stack_mba_pass.apply_program Stack_mba_pass.{ seed = Int64.logxor seed 0x1111L; mba_rate = 100 } prog_g in
+    let prog_c = Stack_cff_pass.apply_program (Stack_cff_pass.default_cff_config (Int64.logxor seed 0x2222L)) ctx prog_m in
+    Alcotest.(check int) "args test: no balance errors" 0
+      (List.length (Stack_balance_pass.verify_program prog_c));
+
+    let enc = Stack_encoder.encode_program ~seed_key:seed prog_c in
+
+    (* 1. OCaml reference with the same scatter stack_vm_call performs.
+          Keep the expected value < Int64.max so the decimal result string
+          round-trips through Int64.of_string. *)
+    let a0 = 0x5A5A5A5A12121212L and a1 = 0x2B3C4D5E6F70L in
+    let expected =
+      Int64.add
+        (Int64.add a0 (Int64.mul a1 3L))
+        0x1337L
+    in
+    let st_ref = run_bytecode ~initial_ctx:[(7, a0); (6, a1)] enc in
+    Alcotest.(check int64) "OCaml ref (scatter slots 7/6)" expected (get_reg st_ref 0);
+    Alcotest.(check bool) "OCaml ref halted" true st_ref.halted;
+
+    (* 2. Generate the same runtime the packager emits *)
+    let cfg = Stack_runtime.default_config Stack_runtime.X86_64 in
+    let hpp = Stack_runtime.generate_c_runtime ~enc cfg prog_c in
+    let bytes_to_words b =
+      let n = Bytes.length b in
+      let padded = (n + 7) land (lnot 7) in
+      let words = Array.init (padded / 8) (fun i ->
+        let w = ref 0L in
+        for j = 7 downto 0 do
+          let idx = i * 8 + j in
+          let byte = if idx < n then Char.code (Bytes.get b idx) else 0 in
+          w := Int64.logor (Int64.shift_left !w 8) (Int64.of_int byte)
+        done;
+        !w
+      ) in
+      Array.to_list words
+    in
+    let word_list = bytes_to_words enc.bytes in
+    let buf = Buffer.create (1024 * 16) in
+    Buffer.add_string buf
+      "/* generated regression driver: full pipeline + args */\n\
+       #include \"stack_vm_runtime.hpp\"\n#include <stdio.h>\n\
+       static const uint64_t words[] = {\n";
+    List.iteri (fun i w ->
+      let hex = Printf.sprintf "%LX" w in
+      let padded = String.make (max 0 (16 - String.length hex)) '0' ^ hex in
+      Buffer.add_string buf (Printf.sprintf "    0x%sULL%s\n" padded
+        (if i = List.length word_list - 1 then "" else ",")))
+      word_list;
+    let hex64 v =
+      let h = Printf.sprintf "%LX" v in
+      String.make (max 0 (16 - String.length h)) '0' ^ h
+    in
+    Buffer.add_string buf (Printf.sprintf
+      "};\nint main() {\n\
+       size_t len = sizeof(words) / sizeof(words[0]);\n\
+       uint64_t r = asgard_stack_vm::stack_vm_call(words, len, 0x%sULL, 0x%sULL);\n\
+       printf(\"Result: %%llu\\n\", (unsigned long long)r);\n\
+       return 0;\n}\n" (hex64 a0) (hex64 a1));
+    let driver = Buffer.contents buf in
+
+    let dir = Filename.get_temp_dir_name () in
+    let hpp_path = Filename.concat dir "stack_vm_runtime.hpp" in
+    let cpp_path = Filename.concat dir "asgard_stack_vm_args_driver.cpp" in
+    let bin_path = Filename.concat dir "asgard_stack_vm_args_driver" in
+    let oc = open_out hpp_path in output_string oc hpp; close_out oc;
+    let oc = open_out cpp_path in output_string oc driver; close_out oc;
+
+    let compile cmd =
+      Sys.command (Printf.sprintf "c++ -O1 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
+    in
+    let rc =
+      let rc1 = compile (Filename.quote cpp_path) in
+      if rc1 = 0 then 0
+      else compile (Filename.quote cpp_path ^ " -ldl")
+    in
+    Alcotest.(check bool) "args test: C++ runtime compiles" true (rc = 0);
+
+    if rc = 0 then begin
+      let out_path = bin_path ^ ".out" in
+      ignore (Sys.command
+        (Printf.sprintf "%s > %s 2>&1" (Filename.quote bin_path) (Filename.quote out_path)));
+      let ic = open_in out_path in
+      let len = in_channel_length ic in
+      let out = really_input_string ic len in
+      close_in ic;
+      let extract_result s =
+        let n = String.length s in
+        let rec go i =
+          if i + 8 > n then None
+          else if String.sub s i 8 = "Result: " then begin
+            let j = ref (i + 8) in
+            while !j < n && s.[!j] >= '0' && s.[!j] <= '9' do incr j done;
+            Some (String.sub s (i + 8) (!j - i - 8))
+          end
+          else go (i + 1)
+        in
+        go 0
+      in
+      match extract_result out with
+      | Some digits ->
+        Alcotest.(check int64) "full pipeline + C++ runtime + args matches OCaml"
+          expected (Int64.of_string digits)
+      | None ->
+        Alcotest.fail (Printf.sprintf "no Result line in driver output:\n%s" out)
+    end
+  end
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -866,6 +1003,7 @@ let tests = [
   ("Mid-Block KeyAdjust Round-Trip", `Quick, test_keyadjust_midblock);
   ("Full Obfuscation Pipeline Semantics", `Quick, test_full_pipeline_semantics);
   ("C++ Runtime Compile & Run", `Slow, test_c_runtime_compile_and_run);
+  ("Full Pipeline + C++ Runtime + Args", `Slow, test_full_pipeline_c_runtime_with_args);
 ]
 
 
