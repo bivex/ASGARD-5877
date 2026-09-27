@@ -1,14 +1,8 @@
-(** Phase 4: MBA Constant Synthesis Pass
-    ─────────────────────────────────────
+(** Phase 4: MBA Constant Synthesis Pass  (+ E-graph expansion)
+    ─────────────────────────────────────────────────────────────
     Replaces PushImm instructions with semantically equivalent sequences
-    of NOR, NAND, and ADD operations, eliminating literal constants from
-    the bytecode stream.
-
-    Attack vector defeated:
-      Devirtualization tools that recover constants from immediate operands
-      (e.g., IDA VTIL lifter, Hex-Rays decompiler, NoVmp constant tracking)
-      will see computed values instead of literals. The synthesized sequence
-      must be symbolically evaluated to recover the original constant.
+    of NOR, NAND, ADD, SUB, MUL operations, eliminating literal constants
+    from the bytecode stream.
 
     Synthesis strategies (all have stack delta = +1, same as PushImm):
 
@@ -18,29 +12,30 @@
         Add                → a + (c−a) = c
 
       L2 — NOR double complement:
-        PushImm (~c)       (bitwise NOT of constant)
-        PushImm 0          (zero)
-        Nor                → NOR(~c, 0) = ~(~c | 0) = ~~c = c
+        PushImm (~c) ; PushImm 0 ; Nor  → NOR(~c, 0) = c
 
       L3 — NAND self:
-        PushImm (~c)       (bitwise NOT of constant)
-        PushImm (~c)       (same)
-        Nand               → NAND(~c, ~c) = ~(~c & ~c) = ~~c = c
+        PushImm (~c) ; PushImm (~c) ; Nand  → NAND(~c,~c) = c
 
       L4 — ADD + NOR (depth 3):
-        PushImm a          (random)
-        PushImm (~(c − a)) (complement of addend)
-        PushImm 0          (zero)
-        Nor                → ~(~(c−a) | 0) = c−a
-        Add                → a + (c−a) = c
-        [5 ops vs 1 for the original PushImm — maximum obfuscation]
+        PushImm a ; PushImm (~(c−a)) ; PushImm 0 ; Nor ; Add  → c
 
-    Selection is seed-deterministic via SplitMix64. MBA rate controls
-    what fraction of PushImm instructions are synthesized.
+      L5 — E-graph MBA expansion (new):
+        Builds Mba.Const c, runs Egraph.expand (tight budget), and lowers
+        the resulting Mba.expr to stack ops using a post-order compiler.
+        The extractor maximises (alternation, AST size), producing an
+        expression mixing AND/OR/XOR/NOT/NEG with ADD/SUB/MUL.
+        Chosen 30% of the time.
 
-    Flag safety: all strategies write flags (Add/Nor/Nand), so synthesis
-    is suppressed wherever produced flags are still live (see
-    [Stack_flag_liveness]).
+    Flag safety: all strategies write flags (Add/Sub/Nor/Nand), so synthesis
+    is suppressed wherever produced flags are still live.
+
+    Stack-ISA Boolean lowering (no direct And/Or/Xor ops, only Nor/Nand):
+      AND(a,b) = NOR(NOR(a,a), NOR(b,b))     [De Morgan via double NOR-NOT]
+      OR(a,b)  = NAND(NAND(a,a), NAND(b,b))  [De Morgan via double NAND-NOT]
+      XOR(a,b) = OR(a,b) − AND(a,b)           [set-theoretic identity; uses Sub]
+      NOT(x)   = NOR(x, x)
+      NEG(x)   = PushImm 0 ; x ; Sub         [0 − x]
 *)
 
 open Stack_ir
@@ -71,56 +66,127 @@ let next_int rng n =
 
 let maybe rng prob = next_int rng 100 < prob
 
+(* ── Mba.expr → stack ops lowerer ───────────────────────────────────── *)
+(** Post-order recursive compiler from a closed [Mba.expr] (no Var nodes)
+    to stack operations.  Stack delta = +1.
+
+    Boolean operators are lowered via NOR/NAND identities:
+      AND(a,b) = NOR( NOR(a,a),  NOR(b,b) )
+      OR(a,b)  = NAND( NAND(a,a), NAND(b,b) )
+      XOR(a,b) = OR(a,b) − AND(a,b)          ← uses Sub, correct for Z_2^64
+      NOT(x)   = NOR(x, x)
+      NEG(x)   = 0 − x
+
+    Sub semantics: pops b_top then a_next, pushes a_next − b_top.
+    For XOR: emit or_ops (→ or_val on stack), then and_ops on top
+    (→ and_val = top, or_val = next), Sub → or_val − and_val = XOR. ✓ *)
+let rec lower_mba_to_stack (e : Mba_engine.Mba.expr) : stack_op list =
+  match e with
+  | Mba_engine.Mba.Const c    -> [ PushImm c ]
+  | Mba_engine.Mba.Var _      -> [ PushImm 0L ]  (* closed term — shouldn't happen *)
+  | Mba_engine.Mba.Add (a, b) -> lower_mba_to_stack a @ lower_mba_to_stack b @ [ Add ]
+  | Mba_engine.Mba.Sub (a, b) -> lower_mba_to_stack a @ lower_mba_to_stack b @ [ Sub ]
+  | Mba_engine.Mba.Mul (a, b) -> lower_mba_to_stack a @ lower_mba_to_stack b @ [ Mul ]
+  | Mba_engine.Mba.And (a, b) -> lower_and a b
+  | Mba_engine.Mba.Or  (a, b) -> lower_or  a b
+  | Mba_engine.Mba.Xor (a, b) -> lower_xor a b
+  | Mba_engine.Mba.Not a ->
+      lower_mba_to_stack a @ lower_mba_to_stack a @ [ Nor ]
+  | Mba_engine.Mba.Neg a ->
+      [ PushImm 0L ] @ lower_mba_to_stack a @ [ Sub ]
+
+(* AND(a,b) = NOR(NOT(a), NOT(b)) = NOR(NOR(a,a), NOR(b,b))
+   Stack: la;la;Nor → [not_a] ; lb;lb;Nor → [not_a,not_b] ; Nor → [AND] ✓ *)
+and lower_and a b =
+  let la = lower_mba_to_stack a and lb = lower_mba_to_stack b in
+  la @ la @ [ Nor ] @
+  lb @ lb @ [ Nor ] @
+  [ Nor ]
+
+(* OR(a,b) = NAND(NOT(a), NOT(b)) = NAND(NAND(a,a), NAND(b,b))
+   Stack: la;la;Nand → [not_a] ; lb;lb;Nand → [not_a,not_b] ; Nand → [OR] ✓ *)
+and lower_or a b =
+  let la = lower_mba_to_stack a and lb = lower_mba_to_stack b in
+  la @ la @ [ Nand ] @
+  lb @ lb @ [ Nand ] @
+  [ Nand ]
+
+(* XOR(a,b) = OR(a,b) − AND(a,b)
+   After lower_or: stack = [..., or_val]
+   After lower_and: stack = [..., or_val, and_val]  (and_val is top)
+   Sub: or_val − and_val = XOR(a,b) ✓ *)
+and lower_xor a b =
+  lower_or a b @
+  lower_and a b @
+  [ Sub ]
+
+(* ── E-graph budget for per-constant expansion ───────────────────────── *)
+(** Tight budget: constants are ground terms; we just want enough saturation
+    to produce 1–3 alternation switches without blowing the time budget. *)
+let egraph_const_config : Mba_engine.Egraph.config = {
+  node_limit    = 120;
+  time_budget_s = 0.08;
+  iter_limit    = 5;
+}
+
+(* ── Synthesize constant via E-graph expansion ───────────────────────── *)
+(** [synthesize_egraph rng c] expands [Mba.Const c] through the e-graph,
+    extracts the maximally complex equivalent expression, and lowers it to
+    stack ops.  Falls back to L2 on any error. *)
+let synthesize_egraph rng c =
+  (* Derive a Random.State seed from the SplitMix state, advance rng *)
+  let seed_word = Int64.to_int (Int64.logxor rng.state 0xECA8_6420_1357_9BDFL) in
+  let _ = next_int64 rng in  (* advance so next call gets a different seed *)
+  let eg_rng = Random.State.make [| seed_word |] in
+  let expr = Mba_engine.Egraph.expand
+    ~rng:eg_rng ~config:egraph_const_config
+    (Mba_engine.Mba.Const c) in
+  lower_mba_to_stack expr
+
 (* ── MBA strategy type ───────────────────────────────────────────────── *)
-type mba_strategy = L1_AddSplit | L2_NorNot | L3_NandSelf | L4_AddNor
+type mba_strategy = L1_AddSplit | L2_NorNot | L3_NandSelf | L4_AddNor | L5_Egraph
 
 (* ── Synthesize constant c using a chosen strategy ───────────────────── *)
-(** [synthesize_const rng c] returns a list of stack_ops that leaves c
-    on top of the stack. Stack delta = +1 (same as [PushImm c]).
-    The list never contains a literal PushImm of c itself. *)
+(** Returns a stack_op list with stack delta = +1 (equivalent to PushImm c). *)
 let synthesize_const rng c =
-  let mask = next_int64 rng in  (* random 64-bit mask *)
-  (* Choose strategy, weighted toward higher complexity *)
+  let mask = next_int64 rng in
   let strategy =
-    match next_int rng 10 with
-    | 0 | 1 | 2 -> L1_AddSplit   (* 30% — fast *)
-    | 3 | 4 | 5 -> L2_NorNot     (* 30% — NOR double NOT *)
-    | 6 | 7     -> L3_NandSelf   (* 20% — NAND self *)
-    | _         -> L4_AddNor     (* 20% — deep 5-op form *)
+    match next_int rng 20 with
+    | 0 | 1 | 2 | 3 -> L1_AddSplit   (* 20% *)
+    | 4 | 5 | 6 | 7 -> L2_NorNot     (* 20% *)
+    | 8 | 9 | 10    -> L3_NandSelf   (* 15% *)
+    | 11 | 12 | 13  -> L4_AddNor     (* 15% *)
+    | _             -> L5_Egraph     (* 30% — e-graph MBA expansion *)
   in
   match strategy with
   | L1_AddSplit ->
-    (* c = mask + (c - mask)  [mod 2^64] *)
     let addend = Int64.sub c mask in
     [ PushImm mask; PushImm addend; Add ]
 
   | L2_NorNot ->
-    (* NOR(~c, 0) = ~(~c | 0) = c *)
     let not_c = Int64.lognot c in
     [ PushImm not_c; PushImm 0L; Nor ]
 
   | L3_NandSelf ->
-    (* NAND(~c, ~c) = ~(~c & ~c) = c *)
     let not_c = Int64.lognot c in
     [ PushImm not_c; PushImm not_c; Nand ]
 
   | L4_AddNor ->
-    (* a + NOR(~(c−a), 0) = a + (c−a) = c
-       NOR(~(c−a), 0) = ~(~(c−a) | 0) = c−a *)
     let a = mask in
-    let diff = Int64.sub c a in          (* c - a *)
-    let not_diff = Int64.lognot diff in  (* ~(c - a) *)
+    let diff = Int64.sub c a in
+    let not_diff = Int64.lognot diff in
     [ PushImm a; PushImm not_diff; PushImm 0L; Nor; Add ]
 
-(* ── Per-instruction rewriter ────────────────────────────────────────── *)
-(** [rewrite_block rng mba_rate block] rewrites PushImm instructions in a
-    block with probability [mba_rate] (integer 0–100).
+  | L5_Egraph ->
+    (try synthesize_egraph rng c
+     with _ ->
+       let not_c = Int64.lognot c in
+       [ PushImm not_c; PushImm 0L; Nor ])
 
-    Flag-liveness aware: every synthesis strategy ends in Add/Nor/Nand,
-    all of which overwrite the architectural flags, so a PushImm is only
-    synthesized when the flags are dead at that position. Without this
-    guard, [Cmp; PushImm 1; Jcc] would branch on the synthesized junk
-    flags instead of the comparison result. *)
+(* ── Per-block rewriter ──────────────────────────────────────────────── *)
+(** Rewrites PushImm instructions with probability [mba_rate].
+    Flag-liveness aware: synthesis is skipped when flags are live after
+    the PushImm (every strategy ends with an instruction that sets flags). *)
 let rewrite_block rng mba_rate block =
   let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
   let new_ops =
@@ -145,13 +211,10 @@ let default_mba_config seed = {
   mba_rate = 75;    (* 75% of PushImm instructions get synthesized *)
 }
 
-(** [apply_block cfg block] applies MBA synthesis to a single block. *)
 let apply_block cfg block =
-  (* Per-block seed: XOR global seed with block id for diversity *)
   let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * 0xB7E1_5163))) in
   rewrite_block rng cfg.mba_rate block
 
-(** [apply_program cfg prog] applies MBA synthesis to every block. *)
 let apply_program cfg prog =
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
   Hashtbl.iter (fun id b ->
@@ -159,7 +222,6 @@ let apply_program cfg prog =
   ) prog.blocks;
   { prog with blocks = new_blocks }
 
-(** [mba_stats prog_before prog_after] returns a summary string. *)
 let mba_stats prog_before prog_after =
   let count_push_imm prog =
     Hashtbl.fold (fun _ b acc ->
@@ -176,7 +238,7 @@ let mba_stats prog_before prog_after =
   let ops_before  = count_ops prog_before in
   let ops_after   = count_ops prog_after  in
   Printf.sprintf
-    "MBA synthesis: %d PushImm → %d (%.0f%% eliminated); ops %d → %d"
+    "MBA+Egraph: %d PushImm → %d (%.0f%% eliminated); ops %d → %d"
     push_before push_after
     (if push_before = 0 then 0.0
      else float_of_int (push_before - push_after)
