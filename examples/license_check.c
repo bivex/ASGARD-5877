@@ -66,5 +66,11 @@ int main(void) {
     buf[strcspn(buf, "\r\n")] = '\0';
 
     int ok = verify_license(buf);
-    return ok ? 0 : 1;
+    /*
+     * Key-Dependent Invariant:
+     * When valid (ok == 1): (ok ^ 1) == 0.
+     * When invalid (ok == 0): (ok ^ 1) == 1.
+     * Replaces conditional branch (cbnz) with a branchless arithmetic transform.
+     */
+    return ok ^ 1;
 }

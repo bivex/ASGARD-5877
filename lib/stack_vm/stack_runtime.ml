@@ -198,8 +198,41 @@ let generate_c_runtime
     ) constants
   in
   let has_symbols = external_symbols <> [] in
+  let fnv1a s =
+    let h = ref 0x811c9dc5L in
+    for i = 0 to String.length s - 1 do
+      let c = Int64.of_int (Char.code s.[i]) in
+      h := Int64.logand (Int64.mul (Int64.logxor !h c) 0x01000193L) 0xFFFFFFFFL
+    done;
+    Int64.to_int32 !h
+  in
   let symbols_model =
-    List.map (fun sym -> Jingoo.Jg_types.Tstr (String.escaped sym)) external_symbols
+    List.map (fun sym ->
+      let h = fnv1a sym in
+      let alt_sym =
+        if String.length sym > 0 && sym.[0] = '_' then
+          String.sub sym 1 (String.length sym - 1)
+        else "_" ^ sym
+      in
+      let alt_h = fnv1a alt_sym in
+      let len = String.length sym in
+      let enc_bytes =
+        List.init len (fun i ->
+          let k = (0x5A lxor ((i * 17 + 0x33) land 0xFF)) in
+          Printf.sprintf "0x%02X" (Char.code sym.[i] lxor k)
+        )
+      in
+      let enc_bytes_str =
+        if enc_bytes = [] then "0x00"
+        else String.concat ", " enc_bytes
+      in
+      Jingoo.Jg_types.Tobj [
+        ("hash", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08lX" h));
+        ("alt_hash", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08lX" alt_h));
+        ("len", Jingoo.Jg_types.Tint len);
+        ("enc_bytes", Jingoo.Jg_types.Tstr enc_bytes_str);
+      ]
+    ) external_symbols
   in
   let max_bid = Hashtbl.fold (fun id _ acc -> max id acc) enc.block_offsets 0 in
   let mask32 i =
