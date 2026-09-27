@@ -12,4 +12,5 @@
   rd_jit_vm
   multi_vm
   stack_vm
+  bos
   unix))

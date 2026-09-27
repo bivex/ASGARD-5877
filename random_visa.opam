@@ -12,6 +12,7 @@ depends: [
   "alcotest"
   "qcheck"
   "qcheck-alcotest"
+  "bos"
   "yojson"
   "odoc" {with-doc}
 ]

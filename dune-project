@@ -15,6 +15,7 @@
   alcotest
   qcheck
   qcheck-alcotest
+  bos
   yojson))
 
 (package
