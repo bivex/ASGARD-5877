@@ -44,6 +44,7 @@ graph TD
   subgraph group_multi_vm["multi_vm"]
     Multi_vm_Bridge["Bridge 📄"]
     Multi_vm_Multi_vm_emitter["Multi_vm_emitter 📄"]
+    Multi_vm_Multi_vm_templates["Multi_vm_templates 📄"]
     Multi_vm_Partitioner["Partitioner 📄"]
   end
   subgraph group_native_vm["native_vm"]
@@ -52,6 +53,7 @@ graph TD
     Native_vm_Hardened_runtime["Hardened_runtime 📄"]
     Native_vm_Mba_par["Mba_par"]
     Native_vm_Metrics["Metrics 📄"]
+    Native_vm_Native_vm_templates["Native_vm_templates 📄"]
     Native_vm_Protection_config["Protection_config 📄"]
     Native_vm_Protection_json["Protection_json"]
     Native_vm_Protection_presets["Protection_presets"]
@@ -67,7 +69,7 @@ graph TD
     Native_vm_Vm_emitter["Vm_emitter 📄"]
     Native_vm_Vm_handlers_emitter["Vm_handlers_emitter 📄"]
     Native_vm_Vm_mem_handlers["Vm_mem_handlers 📄"]
-    Native_vm_Vm_runtime_emitter["Vm_runtime_emitter"]
+    Native_vm_Vm_runtime_emitter["Vm_runtime_emitter 📄"]
     Native_vm_Vm_transform["Vm_transform 📄"]
   end
   subgraph group_protect_adapters["protect_adapters"]
@@ -461,6 +463,7 @@ graph TD
   Multi_vm_Multi_vm_emitter -->|"ref · cross-lib"| Native_vm_Metrics
   Multi_vm_Multi_vm_emitter ==>|"ref · cross-lib"| Vm_ir_Ir
   Multi_vm_Multi_vm_emitter -->|"ref · cross-lib"| Native_vm_Vm_emitter
+  Multi_vm_Multi_vm_emitter -->|"ref"| Multi_vm_Multi_vm_templates
   Multi_vm_Multi_vm_emitter -->|"ref · cross-lib"| Native_vm_Protection_config
   Multi_vm_Partitioner ==>|"ref · cross-lib"| Vm_ir_Ir
   Native_vm_Defuse_scrambler ==>|"ref · cross-lib"| Vm_ir_Ir
@@ -498,12 +501,13 @@ graph TD
   Native_vm_Vm_handlers_emitter -->|"ref"| Native_vm_Vm_control_handlers
   Native_vm_Vm_handlers_emitter -->|"ref"| Native_vm_Vm_mem_handlers
   Native_vm_Vm_runtime_emitter -->|"ref · cross-lib"| Random_visa_domain_Vm_runtime_profile
-  Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Protection_config
+  Native_vm_Vm_runtime_emitter ==>|"ref"| Native_vm_Protection_config
   Native_vm_Vm_runtime_emitter -->|"ref · cross-lib"| Vm_ir_Rns
   Native_vm_Vm_runtime_emitter ==>|"ref"| Native_vm_Hardened_runtime
   Native_vm_Vm_runtime_emitter -->|"ref · cross-lib"| Gpu_synth_Gpu_matrix
   Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Vm_context_emitter
   Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Vm_handlers_emitter
+  Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Native_vm_templates
   Native_vm_Vm_transform ==>|"ref · cross-lib"| Vm_ir_Register
   Native_vm_Vm_transform ==>|"ref · cross-lib"| Vm_ir_Flags
   Native_vm_Vm_transform ==>|"ref · cross-lib"| Vm_ir_Ir

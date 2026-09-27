@@ -59,6 +59,7 @@ digraph architecture {
     style="rounded,filled"; color="#dfe5ec"; fillcolor="#f6f8fa";
     "Multi_vm.Bridge" [label="Bridge", fillcolor="#ffffff", color="#9aa5b1"];
     "Multi_vm.Multi_vm_emitter" [label="Multi_vm_emitter", fillcolor="#ffffff", color="#9aa5b1"];
+    "Multi_vm.Multi_vm_templates" [label="Multi_vm_templates", fillcolor="#ffffff", color="#9aa5b1"];
     "Multi_vm.Partitioner" [label="Partitioner", fillcolor="#ffffff", color="#9aa5b1"];
   }
   subgraph cluster_6 {
@@ -69,6 +70,7 @@ digraph architecture {
     "Native_vm.Hardened_runtime" [label="Hardened_runtime", fillcolor="#ffffff", color="#9aa5b1"];
     "Native_vm.Mba_par" [label="Mba_par", fillcolor="#ffffff", color="#9aa5b1"];
     "Native_vm.Metrics" [label="Metrics", fillcolor="#ffffff", color="#9aa5b1"];
+    "Native_vm.Native_vm_templates" [label="Native_vm_templates", fillcolor="#ffffff", color="#9aa5b1"];
     "Native_vm.Protection_config" [label="Protection_config", fillcolor="#ffffff", color="#9aa5b1"];
     "Native_vm.Protection_json" [label="Protection_json", fillcolor="#ffffff", color="#9aa5b1"];
     "Native_vm.Protection_presets" [label="Protection_presets", fillcolor="#ffffff", color="#9aa5b1"];
@@ -549,8 +551,9 @@ digraph architecture {
   "Multi_vm.Multi_vm_emitter" -> "Native_vm.Metrics" [label="ref", weight=2, color="#b0650f", style=dashed];
   "Multi_vm.Multi_vm_emitter" -> "Vm_ir.Ir" [label="ref", weight=21, color="#b0650f", style=dashed];
   "Multi_vm.Multi_vm_emitter" -> "Native_vm.Vm_emitter" [label="ref", weight=1, color="#b0650f", style=dashed];
+  "Multi_vm.Multi_vm_emitter" -> "Multi_vm.Multi_vm_templates" [label="ref", weight=4];
   "Multi_vm.Multi_vm_emitter" -> "Native_vm.Protection_config" [label="ref", weight=1, color="#b0650f", style=dashed];
-  "Multi_vm.Partitioner" -> "Vm_ir.Ir" [label="ref", weight=22, color="#b0650f", style=dashed];
+  "Multi_vm.Partitioner" -> "Vm_ir.Ir" [label="ref", weight=41, color="#b0650f", style=dashed];
   "Native_vm.Defuse_scrambler" -> "Vm_ir.Ir" [label="ref", weight=32, color="#b0650f", style=dashed];
   "Native_vm.Defuse_scrambler" -> "Vm_ir.Register" [label="ref", weight=5, color="#b0650f", style=dashed];
   "Native_vm.Egraph_cpp_emitter" -> "Mba_engine.Mba" [label="open", weight=2, color="#b0650f", style=dashed];
@@ -585,13 +588,14 @@ digraph architecture {
   "Native_vm.Vm_handlers_emitter" -> "Native_vm.Vm_alu_handlers" [label="ref", weight=2];
   "Native_vm.Vm_handlers_emitter" -> "Native_vm.Vm_control_handlers" [label="ref", weight=2];
   "Native_vm.Vm_handlers_emitter" -> "Native_vm.Vm_mem_handlers" [label="ref", weight=3];
-  "Native_vm.Vm_runtime_emitter" -> "Random_visa_domain.Vm_runtime_profile" [label="ref", weight=2, color="#b0650f", style=dashed];
-  "Native_vm.Vm_runtime_emitter" -> "Native_vm.Protection_config" [label="ref", weight=4];
+  "Native_vm.Vm_runtime_emitter" -> "Random_visa_domain.Vm_runtime_profile" [label="ref", weight=3, color="#b0650f", style=dashed];
+  "Native_vm.Vm_runtime_emitter" -> "Native_vm.Protection_config" [label="ref", weight=5];
   "Native_vm.Vm_runtime_emitter" -> "Vm_ir.Rns" [label="ref", weight=1, color="#b0650f", style=dashed];
   "Native_vm.Vm_runtime_emitter" -> "Native_vm.Hardened_runtime" [label="ref", weight=7];
-  "Native_vm.Vm_runtime_emitter" -> "Gpu_synth.Gpu_matrix" [label="ref", weight=1, color="#b0650f", style=dashed];
+  "Native_vm.Vm_runtime_emitter" -> "Gpu_synth.Gpu_matrix" [label="ref", weight=2, color="#b0650f", style=dashed];
   "Native_vm.Vm_runtime_emitter" -> "Native_vm.Vm_context_emitter" [label="ref", weight=1];
   "Native_vm.Vm_runtime_emitter" -> "Native_vm.Vm_handlers_emitter" [label="ref", weight=1];
+  "Native_vm.Vm_runtime_emitter" -> "Native_vm.Native_vm_templates" [label="ref", weight=4];
   "Native_vm.Vm_transform" -> "Vm_ir.Register" [label="ref", weight=98, color="#b0650f", style=dashed];
   "Native_vm.Vm_transform" -> "Vm_ir.Flags" [label="ref", weight=20, color="#b0650f", style=dashed];
   "Native_vm.Vm_transform" -> "Vm_ir.Ir" [label="ref", weight=437, color="#b0650f", style=dashed];
@@ -869,8 +873,8 @@ digraph architecture {
   "Test_multi_vlen" -> "Random_visa_compiler_adapter.Compiler_adapter" [label="ref", weight=2];
   "Test_multi_vlen" -> "Test_helpers" [label="ref", weight=1];
   "Test_multi_vm" -> "Multi_vm.Bridge" [label="ref", weight=7];
-  "Test_multi_vm" -> "Arm64_lifter.Arm64_lifter" [label="ref", weight=3];
-  "Test_multi_vm" -> "Multi_vm.Partitioner" [label="ref", weight=1];
+  "Test_multi_vm" -> "Arm64_lifter.Arm64_lifter" [label="ref", weight=4];
+  "Test_multi_vm" -> "Multi_vm.Partitioner" [label="ref", weight=5];
   "Test_multi_vm" -> "Multi_vm.Multi_vm_emitter" [label="ref", weight=2];
   "Test_multi_vm" -> "Test_helpers" [label="ref", weight=4];
   "Test_native_semantics" -> "Test_helpers" [label="open", weight=1];

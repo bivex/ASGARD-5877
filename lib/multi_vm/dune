@@ -1,5 +1,6 @@
 (library
  (name multi_vm)
  (public_name random_visa.multi_vm)
- (libraries vm_ir native_vm ocamlgraph))
+ (libraries vm_ir native_vm ocamlgraph jingoo))
+
 

@@ -1,14 +1,14 @@
 open Random_visa_ports
 
 let embed_vm_trampoline ?(header_name = "threaded_vm.hpp") ~c_src ~bytecode ~out_path () =
-  let bc_buf = Buffer.create (List.length bytecode * 25 + 200) in
-  Buffer.add_string bc_buf (Printf.sprintf "\n#include \"%s\"\n\n" header_name);
-  Buffer.add_string bc_buf "static uint64_t embedded_bytecode[] = {\n";
-  List.iter
-    (fun w -> Buffer.add_string bc_buf (Printf.sprintf "    0x%016LXULL,\n" w))
-    bytecode;
-  Buffer.add_string bc_buf "};\n\n";
-  let bc_header = Buffer.contents bc_buf in
+  let bc_lines =
+    List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) bytecode
+    |> String.concat "\n"
+  in
+  let bc_header =
+    Printf.sprintf "\n#include \"%s\"\n\nstatic uint64_t embedded_bytecode[] = {\n%s\n};\n\n"
+      header_name bc_lines
+  in
 
   let find_marker str =
     let len = String.length str in
