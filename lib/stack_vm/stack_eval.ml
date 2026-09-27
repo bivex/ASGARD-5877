@@ -78,20 +78,20 @@ let step_op state = function
            state.vstack <- rest;
            state.vsp <- Int64.add state.vsp 8L;
            set_reg state idx v
-       | [] -> ())
+       | [] -> state.halted <- true)
   | ReadMem w ->
       (match state.vstack with
        | addr :: rest ->
            let v = read_mem_word state addr w in
            state.vstack <- v :: rest
-       | [] -> ())
+       | [] -> state.halted <- true)
   | WriteMem w ->
       (match state.vstack with
        | v :: addr :: rest ->
            write_mem_word state addr v w;
            state.vstack <- rest;
            state.vsp <- Int64.add state.vsp 16L
-       | _ -> ())
+       | _ -> state.halted <- true)
   | Add ->
       (match state.vstack with
        | op2 :: op1 :: rest ->
@@ -99,7 +99,7 @@ let step_op state = function
            state.flags <- CC_OP_ADD { src1 = op1; src2 = op2; dst = res; width = B64 };
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
-       | _ -> ())
+       | _ -> state.halted <- true)
   | Sub ->
       (match state.vstack with
        | op2 :: op1 :: rest ->
@@ -107,14 +107,14 @@ let step_op state = function
            state.flags <- CC_OP_SUB { src1 = op1; src2 = op2; dst = res; width = B64 };
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
-       | _ -> ())
+       | _ -> state.halted <- true)
   | Mul ->
       (match state.vstack with
        | op2 :: op1 :: rest ->
            let res = Int64.mul op1 op2 in
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
-       | _ -> ())
+       | _ -> state.halted <- true)
   | Nor ->
       (match state.vstack with
        | op2 :: op1 :: rest ->
@@ -122,7 +122,7 @@ let step_op state = function
            state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
-       | _ -> ())
+       | _ -> state.halted <- true)
   | Nand ->
       (match state.vstack with
        | op2 :: op1 :: rest ->
@@ -130,7 +130,7 @@ let step_op state = function
            state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
-       | _ -> ())
+       | _ -> state.halted <- true)
   | Shl ->
       (match state.vstack with
        | count :: val_op :: rest ->
@@ -139,7 +139,7 @@ let step_op state = function
            state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
-       | _ -> ())
+       | _ -> state.halted <- true)
   | Shr ->
       (match state.vstack with
        | count :: val_op :: rest ->
@@ -148,24 +148,49 @@ let step_op state = function
            state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
-       | _ -> ())
+       | _ -> state.halted <- true)
+  | Sar ->
+      (match state.vstack with
+       | count :: val_op :: rest ->
+           let shift = Int64.to_int (Int64.logand count 0x3FL) in
+           let res = Int64.shift_right val_op shift in
+           state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
+           state.vstack <- res :: rest;
+           state.vsp <- Int64.add state.vsp 8L
+       | _ -> state.halted <- true)
+  | Div ->
+      (match state.vstack with
+       | op2 :: op1 :: rest ->
+           let res = if op2 = 0L then 0L else Int64.unsigned_div op1 op2 in
+           state.vstack <- res :: rest;
+           state.vsp <- Int64.add state.vsp 8L
+       | _ -> state.halted <- true)
+  | Idiv ->
+      (match state.vstack with
+       | op2 :: op1 :: rest ->
+           (* Guard both #DE cases: zero divisor and INT64_MIN / -1 *)
+           let res =
+             if op2 = 0L || (op1 = Int64.min_int && op2 = -1L) then 0L
+             else Int64.div op1 op2
+           in
+           state.vstack <- res :: rest;
+           state.vsp <- Int64.add state.vsp 8L
+       | _ -> state.halted <- true)
   | Dup ->
       (match state.vstack with
        | top :: _ ->
            state.vstack <- top :: state.vstack;
            state.vsp <- Int64.sub state.vsp 8L
-       | [] -> ())
+       | [] -> state.halted <- true)
   | Swap ->
       (match state.vstack with
        | a :: b :: rest ->
            state.vstack <- b :: a :: rest
-       | _ -> ())
+       | _ -> state.halted <- true)
   | PushFlags ->
-      (* Push simulated raw EFLAGS integer *)
-      let fl = match state.flags with
-        | CC_OP_RAW raw -> raw
-        | _ -> 0x02L
-      in
+      (* Push materialized raw RFLAGS (CF|PF|AF|ZF|SF|OF + reserved 2),
+         not a constant — computed flag state must round-trip faithfully. *)
+      let fl = Flags.materialize_rflags state.flags in
       state.vstack <- fl :: state.vstack;
       state.vsp <- Int64.sub state.vsp 8L
   | PopFlags ->
@@ -174,7 +199,7 @@ let step_op state = function
            state.flags <- CC_OP_RAW fl;
            state.vstack <- rest;
            state.vsp <- Int64.add state.vsp 8L
-       | [] -> ())
+       | [] -> state.halted <- true)
   | JmpRel target ->
       state.current_block_id <- target
   | JccRel (target, cond) ->
@@ -199,7 +224,7 @@ let step_op state = function
            state.vsp <- Int64.add state.vsp 8L;
            if Flags.evaluate_condition state.flags c then
              set_reg state idx v
-       | [] -> ())
+       | [] -> state.halted <- true)
   | Cmp ->
       (match state.vstack with
        | op2 :: op1 :: rest ->
@@ -207,7 +232,7 @@ let step_op state = function
            state.flags <- CC_OP_SUB { src1 = op1; src2 = op2; dst = res; width = B64 };
            state.vstack <- rest;
            state.vsp <- Int64.add state.vsp 16L
-       | _ -> ())
+       | _ -> state.halted <- true)
   | Test ->
       (match state.vstack with
        | op2 :: op1 :: rest ->
@@ -215,7 +240,7 @@ let step_op state = function
            state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
            state.vstack <- rest;
            state.vsp <- Int64.add state.vsp 16L
-       | _ -> ())
+       | _ -> state.halted <- true)
 
 let run_program ?(max_steps = 100000) ?initial_ctx prog =
   let state = create_state ?initial_ctx () in

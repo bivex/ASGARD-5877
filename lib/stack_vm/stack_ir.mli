@@ -14,6 +14,9 @@ type stack_op =
   | Nand
   | Shl
   | Shr
+  | Sar
+  | Div
+  | Idiv
   | Dup
   | Swap
   | PushFlags

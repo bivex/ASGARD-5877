@@ -29,6 +29,9 @@ type opcode_map = {
   op_cmov : int;
   op_cmp : int;
   op_test : int;
+  op_sar : int;
+  op_div : int;
+  op_idiv : int;
 }
 
 let default_opcode_map = {
@@ -58,6 +61,9 @@ let default_opcode_map = {
   op_cmov = 0x18;
   op_cmp = 0x19;
   op_test = 0x1A;
+  op_sar = 0x1B;
+  op_div = 0x1C;
+  op_idiv = 0x1D;
 }
 
 let splitmix64 state =
@@ -73,7 +79,7 @@ let splitmix64 state =
 let generate_opcode_map seed =
   let state = ref (if seed = 0L then 0x5877A564D00FL else seed) in
   let pool = Array.init 254 (fun i -> i + 1) in
-  for i = 0 to 25 do
+  for i = 0 to 28 do
     let r = splitmix64 state in
     let range = 254 - i in
     let offset = Int64.to_int (Int64.rem (Int64.logand r 0x7FFFFFFFFFFFFFFFL) (Int64.of_int range)) in
@@ -109,6 +115,9 @@ let generate_opcode_map seed =
     op_cmov        = pool.(23);
     op_cmp         = pool.(24);
     op_test        = pool.(25);
+    op_sar         = pool.(26);
+    op_div         = pool.(27);
+    op_idiv        = pool.(28);
   }
 
 type encrypted_bytecode = {
@@ -178,6 +187,9 @@ let encode_op_into op_map buf = function
   | Nand -> Buffer.add_char buf (Char.chr op_map.op_nand)
   | Shl -> Buffer.add_char buf (Char.chr op_map.op_shl)
   | Shr -> Buffer.add_char buf (Char.chr op_map.op_shr)
+  | Sar -> Buffer.add_char buf (Char.chr op_map.op_sar)
+  | Div -> Buffer.add_char buf (Char.chr op_map.op_div)
+  | Idiv -> Buffer.add_char buf (Char.chr op_map.op_idiv)
   | Dup -> Buffer.add_char buf (Char.chr op_map.op_dup)
   | Swap -> Buffer.add_char buf (Char.chr op_map.op_swap)
   | PushFlags -> Buffer.add_char buf (Char.chr op_map.op_push_flags)
@@ -222,11 +234,22 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true) p
   let plain_buf = Buffer.create 1024 in
   let block_offsets = Hashtbl.create (Hashtbl.length prog.blocks) in
   let block_keys = Hashtbl.create (Hashtbl.length prog.blocks) in
+  (* KeyAdjust key-stream symmetry: the runtime XORs the rolling key with
+     delta right after consuming the 8 operand bytes of a KeyAdjust. The
+     encryptor must therefore apply the same mutation at the same byte
+     boundary — after encrypting the last operand byte (offset op_pos+8). *)
+  let key_adjust_ends : (int, int64) Hashtbl.t = Hashtbl.create 16 in
   let sorted_blocks = Hashtbl.fold (fun _ b acc -> b :: acc) prog.blocks []
                       |> List.sort (fun a b -> compare a.id b.id) in
   List.iter (fun b ->
     Hashtbl.replace block_offsets b.id (Buffer.length plain_buf);
-    List.iter (encode_op_into resolved_op_map plain_buf) b.ops
+    List.iter (fun op ->
+      let op_pos = Buffer.length plain_buf in
+      encode_op_into resolved_op_map plain_buf op;
+      match op with
+      | KeyAdjust delta -> Hashtbl.replace key_adjust_ends (op_pos + 8) delta
+      | _ -> ()
+    ) b.ops
   ) sorted_blocks;
 
   let offset_to_id = Hashtbl.create (Hashtbl.length prog.blocks) in
@@ -244,7 +267,10 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true) p
     let k_byte = Int64.to_int (Int64.logand !key 0xFFL) in
     let c = p lxor k_byte in
     Bytes.set cipher i (Char.chr c);
-    key := step_key !key p
+    key := step_key !key p;
+    (match Hashtbl.find_opt key_adjust_ends i with
+     | Some delta -> key := Int64.logxor !key delta
+     | None -> ())
   done;
   { bytes = cipher; block_offsets; block_keys; seed_key; op_map = resolved_op_map }
 
@@ -306,6 +332,9 @@ let decode_op ?(op_map = default_opcode_map) cipher pos key =
   | Some b when b = op_map.op_nand -> Some Nand
   | Some b when b = op_map.op_shl -> Some Shl
   | Some b when b = op_map.op_shr -> Some Shr
+  | Some b when b = op_map.op_sar -> Some Sar
+  | Some b when b = op_map.op_div -> Some Div
+  | Some b when b = op_map.op_idiv -> Some Idiv
   | Some b when b = op_map.op_dup -> Some Dup
   | Some b when b = op_map.op_swap -> Some Swap
   | Some b when b = op_map.op_push_flags -> Some PushFlags
@@ -317,7 +346,14 @@ let decode_op ?(op_map = default_opcode_map) cipher pos key =
        | Some c_code, Some b -> Some (JccRel (b, code_to_cond c_code))
        | _ -> None)
   | Some b when b = op_map.op_key_adjust ->
-      (match read_i64 cipher pos key with Some delta -> Some (KeyAdjust delta) | None -> None)
+      (* Mirror the runtime: the rolling key is XORed with delta right
+         after the operand bytes are consumed, so decoding stays in sync
+         with the encryptor's mutated key stream. *)
+      (match read_i64 cipher pos key with
+       | Some delta ->
+           key := Int64.logxor !key delta;
+           Some (KeyAdjust delta)
+       | None -> None)
   | Some b when b = op_map.op_exit -> Some Exit
   | Some b when b = op_map.op_call_extern ->
       (match read_i32 cipher pos key with Some idx -> Some (CallExtern idx) | None -> None)

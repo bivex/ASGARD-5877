@@ -27,6 +27,9 @@ type opcode_map = {
   op_cmov : int;
   op_cmp : int;
   op_test : int;
+  op_sar : int;
+  op_div : int;
+  op_idiv : int;
 }
 
 val default_opcode_map : opcode_map

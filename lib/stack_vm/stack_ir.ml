@@ -14,6 +14,9 @@ type stack_op =
   | Nand
   | Shl
   | Shr
+  | Sar
+  | Div
+  | Idiv
   | Dup
   | Swap
   | PushFlags
@@ -47,7 +50,7 @@ let push_weight = function
   | PopReg _ -> 0
   | ReadMem _ -> 1
   | WriteMem _ -> 0
-  | Add | Sub | Mul | Nor | Nand | Shl | Shr -> 1
+  | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv -> 1
   | Dup -> 2
   | Swap -> 2
   | PushFlags -> 1
@@ -66,7 +69,7 @@ let pop_weight = function
   | PopReg _ -> 1
   | ReadMem _ -> 1
   | WriteMem _ -> 2
-  | Add | Sub | Mul | Nor | Nand | Shl | Shr -> 2
+  | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv -> 2
   | Dup -> 1
   | Swap -> 2
   | PushFlags -> 0
@@ -95,6 +98,9 @@ let op_to_string = function
   | Nand -> "NAND"
   | Shl -> "SHL"
   | Shr -> "SHR"
+  | Sar -> "SAR"
+  | Div -> "DIV"
+  | Idiv -> "IDIV"
   | Dup -> "DUP"
   | Swap -> "SWAP"
   | PushFlags -> "PUSH_FLAGS"

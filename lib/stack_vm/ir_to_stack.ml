@@ -90,19 +90,50 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
       let alu_ops = match op with
-        | Add | Adc -> [Add]
-        | Sub | Sbb -> [Sub]
+        | Add -> [Add]
+        | Adc ->
+            (* dst = src1 + src2 + CF. Extract CF (bit 0 of RFLAGS) with a
+               AND-expansion, park it in a scratch slot, add it as a third
+               operand. Stack at entry: [src1; src2] (src2 on top). *)
+            let s_cf = Context_allocator.alloc_scratch ctx in
+            [ PushFlags; PushImm 1L ] @ Stack_logic_pass.expand_and_nor
+            @ [ PopReg s_cf; Add; PushReg s_cf; Add ]
+        | Sub -> [Sub]
+        | Sbb ->
+            (* dst = src1 - src2 - CF *)
+            let s_cf = Context_allocator.alloc_scratch ctx in
+            [ PushFlags; PushImm 1L ] @ Stack_logic_pass.expand_and_nor
+            @ [ PopReg s_cf; Sub; PushReg s_cf; Sub ]
         | Mul | Imul -> [Mul]
         | Shl -> [Shl]
-        | Shr | Sar -> [Shr]
+        | Shr -> [Shr]
+        | Sar -> [Sar]
         | And -> Stack_logic_pass.expand_and_nor
         | Or -> Stack_logic_pass.expand_or_nor
         | Xor ->
             let s1 = Context_allocator.alloc_scratch ctx in
             let s2 = Context_allocator.alloc_scratch ctx in
             Stack_logic_pass.expand_xor_nor s1 s2
-        | Rol | Ror -> [Shl] (* Fallback or simplified *)
-        | Div | Idiv -> [Sub] (* Stack division abstraction *)
+        | Rol ->
+            (* (x << n) | (x >> ((64 - n) mod 64)); Shl/Shr mask the count
+               with 63, and (0 - n) mod 64 = (64 - n) mod 64, so n = 0
+               degenerates to x | x = x — matching x86 ROL. *)
+            let sn = Context_allocator.alloc_scratch ctx in
+            let sx = Context_allocator.alloc_scratch ctx in
+            [ PopReg sn; PopReg sx;
+              PushReg sx; PushReg sn; Shl;
+              PushReg sx; PushImm 0L; PushReg sn; Sub; Shr ]
+            @ Stack_logic_pass.expand_or_nor
+        | Ror ->
+            (* (x >> n) | (x << ((64 - n) mod 64)) *)
+            let sn = Context_allocator.alloc_scratch ctx in
+            let sx = Context_allocator.alloc_scratch ctx in
+            [ PopReg sn; PopReg sx;
+              PushReg sx; PushImm 0L; PushReg sn; Sub; Shr;
+              PushReg sx; PushReg sn; Shl ]
+            @ Stack_logic_pass.expand_or_nor
+        | Div -> [Div] (* unsigned; Dividend = top-two stack values *)
+        | Idiv -> [Idiv] (* signed; guarded against #DE *)
       in
       src1_ops @ src2_ops @ alu_ops @ [PopReg (Context_allocator.slot_of_reg ctx dst)]
   | Unary { op; dst; src; _ } ->

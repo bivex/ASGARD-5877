@@ -43,8 +43,14 @@ let repair_block ctx block =
     let dummies = List.init res.final_delta (fun _ ->
       PopReg (Context_allocator.alloc_scratch ctx)
     ) in
-    (* Split ops into non-terminators and terminators *)
-    let non_terms, terms = List.partition (fun op -> not (is_terminator op)) block.ops in
+    (* Split at the FIRST terminator so original op order is preserved:
+       [List.partition] used to reorder ops around any later terminator. *)
+    let rec split acc = function
+      | [] -> (List.rev acc, [])
+      | op :: rest when is_terminator op -> (List.rev acc, op :: rest)
+      | op :: rest -> split (op :: acc) rest
+    in
+    let non_terms, terms = split [] block.ops in
     { block with ops = non_terms @ dummies @ terms }
   else
     (* Stack underflow: insert PushImm 0L at the beginning of the block *)
@@ -57,4 +63,7 @@ let repair_program ctx prog =
   Hashtbl.iter (fun id b ->
     Hashtbl.replace new_blocks id (repair_block ctx b)
   ) prog.blocks;
-  { prog with blocks = new_blocks }
+  (* Dummy PopReg slots may be freshly allocated — grow the context *)
+  { prog with
+    blocks = new_blocks;
+    context_slots = max prog.context_slots (Context_allocator.total_slots ctx) }

@@ -88,13 +88,16 @@ let transform_block vpc_slot dispatcher_0_id tokens block =
       block.ops
 
     | Jmp_term target ->
-      let token = Hashtbl.find tokens target in
-      body @ set_vpc token @ go_disp
+      (* Unknown target (e.g. block removed by an earlier pass): leave the
+        whole block untouched rather than raising Not_found mid-pipeline. *)
+      (match Hashtbl.find_opt tokens target with
+       | Some token -> body @ set_vpc token @ go_disp
+       | None -> block.ops)
 
     | Jcc_term (true_bid, cond, false_bid) ->
-      let t_true  = Hashtbl.find tokens true_bid  in
-      let t_false = Hashtbl.find tokens false_bid in
-      (* Sequence (stack delta = 0 total for the new suffix):
+      (match Hashtbl.find_opt tokens true_bid, Hashtbl.find_opt tokens false_bid with
+       | Some t_true, Some t_false ->
+       (* Sequence (stack delta = 0 total for the new suffix):
            PushImm t_false   (+1)
            PopReg vpc_slot   (-1)  → vpc = T[false] by default
            PushImm t_true    (+1)
@@ -106,6 +109,7 @@ let transform_block vpc_slot dispatcher_0_id tokens block =
       @ set_vpc t_false
       @ [ PushImm t_true; Cmov (cond, vpc_slot) ]
       @ go_disp
+       | _ -> block.ops)
   in
   { block with ops = new_ops }
 

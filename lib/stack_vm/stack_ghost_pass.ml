@@ -53,15 +53,19 @@ let maybe rng prob =
 type ghost_kind = GhostPushPop | GhostDupDrop | GhostArith | GhostKeyAdj
 
 (* ── Emitting a ghost sequence ────────────────────────────────────────── *)
-(** [emit_ghost rng ctx stack_depth] returns a list of ops forming a
-    stack-neutral ghost sequence. Choices depend on current stack depth. *)
-let emit_ghost rng ctx stack_depth =
+(** [emit_ghost rng ctx stack_depth flags_live] returns a list of ops forming
+    a stack-neutral ghost sequence. Choices depend on current stack depth and
+    on whether architectural flags are live: GhostArith contains [Add], which
+    overwrites the flags, so it is banned while a produced flag value is
+    still needed by a later Jcc/Setcc/Cmov/PushFlags. *)
+let emit_ghost rng ctx stack_depth flags_live =
   let scratch () = Context_allocator.alloc_scratch ctx in
-  (* Choose ghost kind; GhostDupDrop needs depth >= 1 *)
   let kinds =
-    if stack_depth >= 1
-    then [| GhostPushPop; GhostDupDrop; GhostArith; GhostKeyAdj |]
-    else [| GhostPushPop; GhostArith; GhostKeyAdj |]
+    match (stack_depth >= 1, flags_live) with
+    | true,  false -> [| GhostPushPop; GhostDupDrop; GhostArith; GhostKeyAdj |]
+    | false, false -> [| GhostPushPop; GhostArith; GhostKeyAdj |]
+    | true,  true  -> [| GhostPushPop; GhostDupDrop; GhostKeyAdj |]
+    | false, true  -> [| GhostPushPop; GhostKeyAdj |]
   in
   let kind = kinds.(next_int rng (Array.length kinds)) in
   match kind with
@@ -79,33 +83,38 @@ let emit_ghost rng ctx stack_depth =
 
 (** [insert_ghosts_into_ops rng ctx ops ghost_rate] walks through [ops]
     and inserts ghost sequences at each non-terminator gap with probability
-    [ghost_rate] (0–100 integer percent). Terminators are never padded. *)
+    [ghost_rate] (0–100 integer percent). Terminators are never padded.
+    Flag-liveness aware: no flag-writing ghost (GhostArith) is inserted at
+    a gap where produced flags are still live. *)
 let insert_ghosts_into_ops rng ctx ops ghost_rate =
   let depth = ref 0 in
-  let out = Buffer.create 32 in
   (* We operate on a list-accumulator for efficiency *)
   let result = ref [] in
   let emit op = result := op :: !result in
-  let emit_ghost_here () =
-    let ghost_ops = emit_ghost rng ctx !depth in
+  (* live.(i): flags entering instruction i are still needed *)
+  let live = Stack_flag_liveness.analyze_list ops in
+  let idx = ref 0 in
+  let emit_ghost_here flags_live =
+    let ghost_ops = emit_ghost rng ctx !depth flags_live in
     List.iter (fun gop ->
       emit gop;
       depth := !depth + stack_delta gop
     ) ghost_ops
   in
-  (* Suppress unused Buffer.create warning - use result list directly *)
-  ignore out;
   List.iter (fun op ->
+    let i = !idx in
+    incr idx;
     if Stack_balance_pass.is_terminator op then begin
-      (* Before the terminator, optionally insert a ghost *)
-      if maybe rng ghost_rate then emit_ghost_here ();
+      (* Before the terminator, optionally insert a ghost. The terminator
+         itself may consume the flags (Jcc), so use its entry liveness. *)
+      if maybe rng ghost_rate then emit_ghost_here live.(i);
       emit op
       (* depth after terminator doesn't matter *)
     end else begin
       emit op;
       depth := !depth + stack_delta op;
       (* After the real op, maybe insert a ghost *)
-      if maybe rng ghost_rate then emit_ghost_here ()
+      if maybe rng ghost_rate then emit_ghost_here live.(i + 1)
     end
   ) ops;
   List.rev !result
@@ -155,7 +164,10 @@ let apply_program cfg ctx prog =
   Hashtbl.iter (fun id b ->
     Hashtbl.replace new_blocks id (apply_block cfg ctx b)
   ) prog.blocks;
-  { prog with blocks = new_blocks }
+  (* Ghost PopReg slots may be freshly allocated — grow the context *)
+  { prog with
+    blocks = new_blocks;
+    context_slots = max prog.context_slots (Context_allocator.total_slots ctx) }
 
 (** [ghost_stats prog_before prog_after] returns a human-readable summary
     of how many ghost ops were injected. *)

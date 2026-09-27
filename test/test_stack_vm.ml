@@ -269,19 +269,20 @@ let test_polymorphic_opcodes () =
   Alcotest.(check int) "deterministic ADD" map1.op_add map1_dup.op_add;
   Alcotest.(check int) "deterministic EXIT" map1.op_exit map1_dup.op_exit;
 
-  (* 2. Verify all 26 opcodes in map1 are unique and non-zero *)
+  (* 2. Verify all 29 opcodes in map1 are unique and non-zero *)
   let ops_list1 = [
     map1.op_push_imm; map1.op_push_reg; map1.op_pop_reg; map1.op_read_mem; map1.op_write_mem;
     map1.op_add; map1.op_sub; map1.op_mul; map1.op_nor; map1.op_nand;
     map1.op_shl; map1.op_shr; map1.op_dup; map1.op_swap; map1.op_push_flags;
     map1.op_pop_flags; map1.op_jmp_rel; map1.op_jcc_rel; map1.op_key_adjust; map1.op_exit;
     map1.op_call_extern; map1.op_resolve_sym; map1.op_setcc; map1.op_cmov; map1.op_cmp; map1.op_test;
+    map1.op_sar; map1.op_div; map1.op_idiv;
   ] in
   List.iter (fun op ->
     Alcotest.(check bool) "opcode is in range 1..254" true (op >= 1 && op <= 254)
   ) ops_list1;
   let unique1 = List.sort_uniq compare ops_list1 in
-  Alcotest.(check int) "all 26 opcodes are strictly unique" 26 (List.length unique1);
+  Alcotest.(check int) "all 29 opcodes are strictly unique" 29 (List.length unique1);
 
   (* 3. Verify diversity between different seeds *)
   let ops_list2 = [
@@ -290,6 +291,7 @@ let test_polymorphic_opcodes () =
     map2.op_shl; map2.op_shr; map2.op_dup; map2.op_swap; map2.op_push_flags;
     map2.op_pop_flags; map2.op_jmp_rel; map2.op_jcc_rel; map2.op_key_adjust; map2.op_exit;
     map2.op_call_extern; map2.op_resolve_sym; map2.op_setcc; map2.op_cmov; map2.op_cmp; map2.op_test;
+    map2.op_sar; map2.op_div; map2.op_idiv;
   ] in
   let diff_count = List.fold_left2 (fun acc a b -> if a <> b then acc + 1 else acc) 0 ops_list1 ops_list2 in
   Alcotest.(check bool) "most opcodes differ between seed1 and seed2" true (diff_count >= 20);
@@ -357,20 +359,22 @@ let test_vsp_whitening () =
                    else go (i + 1) in
     go 0
   in
-  Alcotest.(check bool) "VSP_ENCODE macro present" true
-    (contains c_code "#define VSP_ENCODE(vk, slot, v)");
-  Alcotest.(check bool) "VSP_MASK macro present" true
-    (contains c_code "#define VSP_MASK(vk, slot)");
+  Alcotest.(check bool) "VSP_ENCODE macro present (static 2-arg form)" true
+    (contains c_code "#define VSP_ENCODE(slot, v) ((v) ^ VSP_MASK(slot))");
+  Alcotest.(check bool) "VSP_MASK macro present (static key form)" true
+    (contains c_code "#define VSP_MASK(slot) (vm->vsp_key + (uint64_t)(slot) * UINT64_C(0x9E3779B97F4A7C15))");
+  Alcotest.(check bool) "vsp_key is static (derived once, not from rolling vkey)" true
+    (contains c_code "vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);");
   Alcotest.(check bool) "PUSH_IMM uses VSP_ENCODE" true
-    (contains c_code "vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vkey, vm->vsp_idx, imm)");
+    (contains c_code "vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, imm)");
   Alcotest.(check bool) "ADD uses VSP_ENCODE decode" true
-    (contains c_code "uint64_t b = VSP_ENCODE(vm->vkey, vm->vsp_idx, vm->vsp[vm->vsp_idx])");
+    (contains c_code "uint64_t b = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx])");
   Alcotest.(check bool) "POP_REG uses VSP_ENCODE decode" true
-    (contains c_code "vm->ctx[idx] = VSP_ENCODE(vm->vkey, vm->vsp_idx, vm->vsp[vm->vsp_idx])");
+    (contains c_code "vm->ctx[idx] = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx])");
   Alcotest.(check bool) "DUP uses slot-aware re-encode" true
-    (contains c_code "uint64_t decoded = VSP_ENCODE(vm->vkey, src, vm->vsp[src])");
+    (contains c_code "uint64_t decoded = VSP_ENCODE(src, vm->vsp[src])");
   Alcotest.(check bool) "SWAP uses slot-aware re-encode" true
-    (contains c_code "uint64_t da = VSP_ENCODE(vm->vkey, ia, vm->vsp[ia])");
+    (contains c_code "uint64_t da = VSP_ENCODE(ia, vm->vsp[ia])");
 
   (* 3. The raw bytecode bytes should NOT contain the plaintext immediate 0xCAFEBABE
      since bytecode is rolling-key encrypted (this is the rolling-key property, not VSP) *)
@@ -604,6 +608,245 @@ let test_cff_flattening () =
   Alcotest.(check bool) "CFF output has dispatcher jumps" true (jmps1 > 0);
   Alcotest.(check bool) "CFF output2 has dispatcher jumps" true (jmps2 > 0)
 
+(* ── SAR / DIV / IDIV / shift-count masking semantics ─────────────────── *)
+(* Both execution paths (AST evaluator and encrypted bytecode) must agree
+   on every edge case: arithmetic vs logical shifts, count masking (& 63),
+   unsigned vs signed division, zero-divisor and #DE overflow guards. *)
+let test_sar_div_idiv_semantics () =
+  let cases = [
+    (Sar, -16L, 2L, -4L);                        (* arithmetic shift keeps sign *)
+    (Sar, -1L, 63L, -1L);
+    (Sar, 0x8000000000000000L, 63L, -1L);        (* all sign bits *)
+    (Sar, 12345L, 0L, 12345L);                   (* count 0 → unchanged *)
+    (Shr, 0x8000000000000000L, 63L, 1L);         (* logical shift fills 0 *)
+    (Shr, 0xFFL, 68L, 0x0FL);                    (* count masked: 68 & 63 = 4 *)
+    (Shl, 1L, 4L, 16L);
+    (Shl, 0x0F0F0F0F0F0F0F0FL, 68L, 0xF0F0F0F0F0F0F0F0L);
+    (Div, 100L, 7L, 14L);                        (* unsigned *)
+    (Div, 5L, 0L, 0L);                           (* zero divisor → 0 *)
+    (Div, -1L, 2L, 0x7FFFFFFFFFFFFFFFL);         (* 0xFFFF... / 2 unsigned *)
+    (Idiv, -100L, 7L, -14L);                     (* signed, truncating *)
+    (Idiv, 7L, -2L, -3L);
+    (Idiv, 0x8000000000000000L, -1L, 0L);        (* #DE guard → 0 *)
+    (Idiv, 0x8000000000000000L, 1L, 0x8000000000000000L);
+  ] in
+  List.iter (fun (op, a, b, expected) ->
+    let name = op_to_string op in
+    let blk = make_block 0 "case" [ PushImm a; PushImm b; op; PopReg 0; Exit ] in
+    let prog = make_program 0 [blk] 8 in
+    (* AST *)
+    let st_ast = run_program prog in
+    Alcotest.(check int64) (Printf.sprintf "%s %Ld %Ld (AST)" name a b) expected (get_reg st_ast 0);
+    (* encrypted bytecode *)
+    let enc = Stack_encoder.encode_program ~seed_key:0x5EED5EED5EED5EEDL prog in
+    let st_bc = run_bytecode enc in
+    Alcotest.(check int64) (Printf.sprintf "%s %Ld %Ld (BC)" name a b) expected (get_reg st_bc 0)
+  ) cases
+
+(* ── PushFlags/PopFlags round-trip through flag-clobbering ALU ops ────── *)
+let test_flags_roundtrip_and_parity () =
+  (* b0: compare (CF=1), save flags, clobber them twice, restore, branch *)
+  let b0 = make_block 0 "entry" [
+    PushImm 10L; PushImm 20L; Cmp;          (* 10 - 20 → CF=1 *)
+    PushFlags;
+    PushImm 5L; PushImm 5L; Add; PopReg 1;  (* clobbers flags (ZF=1) *)
+    PushImm 7L; PushImm 3L; Sub; PopReg 2;  (* clobbers flags again (CF=0) *)
+    PopFlags;                               (* must restore CF=1 *)
+    JccRel (1, Flags.B);                    (* B = CF → taken *)
+    JmpRel 2;
+  ] in
+  let b1 = make_block 1 "taken" [
+    (* JccRel/Setcc don't clobber flags, so the restored CF is still live
+       here — Cmov must observe it BEFORE the parity Cmps overwrite flags. *)
+    PushImm 555L; Cmov (Flags.B, 6);                            (* restored CF → 555 *)
+    PushImm 0x30L; PushImm 0L; Cmp; Setcc Flags.P; PopReg 3;   (* 0x30: even parity → 1 *)
+    PushImm 0x33L; PushImm 0L; Cmp; Setcc Flags.NP; PopReg 4;  (* 0x33: even parity → 0 *)
+    PushImm 123L; PopReg 0; Exit;
+  ] in
+  let b2 = make_block 2 "dead" [ PushImm 321L; PopReg 0; Exit ] in
+  let prog = make_program 0 [b0; b1; b2] 8 in
+
+  let check_state label st =
+    Alcotest.(check int64) (label ^ ": branch honored restored CF (reg0)") 123L (get_reg st 0);
+    Alcotest.(check int64) (label ^ ": Add result") 10L (get_reg st 1);
+    Alcotest.(check int64) (label ^ ": Sub result") 4L (get_reg st 2);
+    Alcotest.(check int64) (label ^ ": Setcc P on even parity") 1L (get_reg st 3);
+    Alcotest.(check int64) (label ^ ": Setcc NP on even parity") 0L (get_reg st 4);
+    Alcotest.(check int64) (label ^ ": Cmov on restored flags") 555L (get_reg st 6)
+  in
+  check_state "AST" (run_program prog);
+  let enc = Stack_encoder.encode_program ~seed_key:0xBEEF00BEEF00BEEFL prog in
+  check_state "BC" (run_bytecode enc)
+
+(* ── KeyAdjust mid-block must stay symmetric in encryptor and decoder ─── *)
+let test_keyadjust_midblock () =
+  let b0 = make_block 0 "entry" [
+    PushImm 7L; PopReg 0;
+    KeyAdjust 0x1234567890ABCDEFL;
+    PushImm 8L; PopReg 1;
+    KeyAdjust (-0xDEADBEEFL);
+    PushImm 9L; PopReg 2;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 8 in
+  let st = run_program prog in
+  Alcotest.(check int64) "AST reg0 after KeyAdjust" 7L (get_reg st 0);
+  Alcotest.(check int64) "AST reg1 after KeyAdjust" 8L (get_reg st 1);
+  Alcotest.(check int64) "AST reg2 after KeyAdjust" 9L (get_reg st 2);
+  (* The rolling key changed twice mid-block; the bytecode evaluator must
+     mirror those mutations exactly or every subsequent opcode decodes to
+     garbage and the run halts with wrong state. *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x0F1E2D3C4B5A6978L prog in
+  let st_bc = run_bytecode enc in
+  Alcotest.(check int64) "BC reg0 after KeyAdjust" 7L (get_reg st_bc 0);
+  Alcotest.(check int64) "BC reg1 after KeyAdjust" 8L (get_reg st_bc 1);
+  Alcotest.(check int64) "BC reg2 after KeyAdjust" 9L (get_reg st_bc 2);
+  (* decode_all must also stay in sync across both adjustments *)
+  let decoded = Stack_encoder.decode_all enc.bytes enc.seed_key in
+  Alcotest.(check int) "decode_all op count survives KeyAdjust" (List.length b0.ops) (List.length decoded)
+
+(* ── Full obfuscation pipeline: semantics must survive all four passes ── *)
+let test_full_pipeline_semantics () =
+  let seed = 0x0123456789ABCDEFL in
+  let b0 = make_block 0 "entry" [
+    PushImm (-16L); PushImm 2L; Sar; PopReg 0;        (* -4 *)
+    PushImm 100L; PushImm 7L; Div; PopReg 1;          (* 14 *)
+    PushImm 10L; PushImm 20L; Cmp;                    (* CF=1 *)
+    PushFlags;
+    PushImm 5L; PushImm 6L; Add; PopReg 2;            (* 11, clobbers flags *)
+    PopFlags;
+    JccRel (1, Flags.B); JmpRel 2;
+  ] in
+  let b1 = make_block 1 "taken" [ PushImm 777L; PopReg 3; Exit ] in
+  let b2 = make_block 2 "dead" [ PushImm 111L; PopReg 3; Exit ] in
+  let prog = make_program 0 [b0; b1; b2] 8 in
+
+  let check_state label st =
+    Alcotest.(check int64) (label ^ ": Sar result") (-4L) (get_reg st 0);
+    Alcotest.(check int64) (label ^ ": Div result") 14L (get_reg st 1);
+    Alcotest.(check int64) (label ^ ": Add result") 11L (get_reg st 2);
+    Alcotest.(check int64) (label ^ ": branch taken on restored CF") 777L (get_reg st 3)
+  in
+  check_state "baseline" (run_program prog);
+
+  (* Same order as the production packager: balance → ghost → MBA → CFF *)
+  let ctx = Context_allocator.create () in
+  let prog_r = Stack_balance_pass.repair_program ctx prog in
+  let prog_g = Stack_ghost_pass.apply_program (Stack_ghost_pass.default_ghost_config seed) ctx prog_r in
+  let prog_m = Stack_mba_pass.apply_program Stack_mba_pass.{ seed = Int64.logxor seed 0x1111L; mba_rate = 100 } prog_g in
+  let prog_c = Stack_cff_pass.apply_program (Stack_cff_pass.default_cff_config (Int64.logxor seed 0x2222L)) ctx prog_m in
+
+  (* balance invariant holds for every block of the final program *)
+  let errors = Stack_balance_pass.verify_program prog_c in
+  Alcotest.(check int) "pipeline: no balance errors" 0 (List.length errors);
+
+  let enc = Stack_encoder.encode_program ~seed_key:seed prog_c in
+  check_state "pipeline" (run_bytecode enc)
+
+(* ── Generated C++ runtime: compile it and cross-check against OCaml ──── *)
+let test_c_runtime_compile_and_run () =
+  if Sys.command "command -v c++ >/dev/null 2>&1" <> 0 then
+    Printf.printf "SKIP test_c_runtime_compile_and_run: no C++ compiler on PATH\n%!"
+  else begin
+    let b0 = make_block 0 "entry" [
+      PushImm (-16L); PushImm 2L; Sar; PopReg 0;                      (* -4 *)
+      PushImm 100L; PushImm 7L; Div; PopReg 1;                        (* 14 *)
+      PushImm (-100L); PushImm 7L; Idiv; PopReg 2;                    (* -14 *)
+      PushImm 0x8000000000000000L; PushImm (-1L); Idiv; PopReg 3;     (* 0 (#DE guard) *)
+      PushImm 5L; PushImm 0L; Div; PopReg 4;                          (* 0 (zero divisor) *)
+      PushImm 3L; PushImm 9L; Cmp; JccRel (1, Flags.S); JmpRel 2;     (* 3-9=-6 → SF=1 *)
+    ] in
+    let b1 = make_block 1 "taken" [
+      PushImm 0x30L; PushImm 0L; Cmp; Setcc Flags.P; PopReg 5;        (* even parity → 1 *)
+      PushImm 0x33L; PushImm 0L; Cmp; Setcc Flags.NP; PopReg 6;       (* even parity → 0 *)
+      PushImm 10L; PushImm 20L; Cmp; PushFlags;
+      PushImm 5L; PushImm 6L; Add; PopReg 7; PopFlags;                (* flags restored *)
+      PushImm 888L; Cmov (Flags.B, 8);                                (* restored CF=1 → 888 *)
+      PushImm 4242L; PopReg 0; Exit;                                  (* final result in slot 0 *)
+    ] in
+    let b2 = make_block 2 "dead" [ PushImm 1111L; PopReg 0; Exit ] in
+    let prog = make_program 0 [b0; b1; b2] 16 in
+
+    let enc = Stack_encoder.encode_program ~seed_key:0xC0FFEE1234567890L prog in
+
+    (* 1. OCaml reference results for every register *)
+    let st_ref = run_bytecode enc in
+    let expected = [|
+      4242L; 14L; (-14L); 0L; 0L; 1L; 0L; 11L; 888L |] in
+    Array.iteri (fun slot v ->
+      Alcotest.(check int64) (Printf.sprintf "OCaml ref reg%d" slot) v (get_reg st_ref slot)
+    ) expected;
+
+    (* 2. Generate the C++ runtime + runner (same as the production packager) *)
+    let cfg = Stack_runtime.default_config Stack_runtime.X86_64 in
+    let hpp = Stack_runtime.generate_c_runtime ~enc cfg prog in
+    (* bytes_to_words: pad to multiple of 8, pack big-endian (vm_packagers) *)
+    let bytes_to_words b =
+      let n = Bytes.length b in
+      let padded = (n + 7) land (lnot 7) in
+      let words = Array.init (padded / 8) (fun i ->
+        let w = ref 0L in
+        for j = 7 downto 0 do
+          let idx = i * 8 + j in
+          let byte = if idx < n then Char.code (Bytes.get b idx) else 0 in
+          w := Int64.logor (Int64.shift_left !w 8) (Int64.of_int byte)
+        done;
+        !w
+      ) in
+      Array.to_list words
+    in
+    let runner = Stack_runtime.emit_runner_cpp (bytes_to_words enc.bytes) in
+
+    let dir = Filename.get_temp_dir_name () in
+    (* hpp name must match the runner's default #include "stack_vm_runtime.hpp" *)
+    let hpp_path = Filename.concat dir "stack_vm_runtime.hpp" in
+    let cpp_path = Filename.concat dir "asgard_stack_vm_runner.cpp" in
+    let bin_path = Filename.concat dir "asgard_stack_vm_runner" in
+    let oc = open_out hpp_path in output_string oc hpp; close_out oc;
+    let oc = open_out cpp_path in output_string oc runner; close_out oc;
+
+    (* 3. Compile (both files live in the same dir → quoted #include resolves) *)
+    let compile cmd =
+      Sys.command (Printf.sprintf "c++ -O1 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
+    in
+    let rc =
+      let rc1 = compile (Filename.quote cpp_path) in
+      if rc1 = 0 then 0
+      else compile (Filename.quote cpp_path ^ " -ldl")
+    in
+    Alcotest.(check bool) "C++ runtime compiles" true (rc = 0);
+
+    if rc = 0 then begin
+      (* 4. Run and parse "Result: NNN" *)
+      let out_path = bin_path ^ ".out" in
+      ignore (Sys.command
+        (Printf.sprintf "%s > %s 2>&1" (Filename.quote bin_path) (Filename.quote out_path)));
+      let ic = open_in out_path in
+      let len = in_channel_length ic in
+      let out = really_input_string ic len in
+      close_in ic;
+      let extract_result s =
+        let n = String.length s in
+        let rec go i =
+          if i + 8 > n then None
+          else if String.sub s i 8 = "Result: " then begin
+            let j = ref (i + 8) in
+            while !j < n && s.[!j] >= '0' && s.[!j] <= '9' do incr j done;
+            Some (String.sub s (i + 8) (!j - i - 8))
+          end
+          else go (i + 1)
+        in
+        go 0
+      in
+      match extract_result out with
+      | Some digits ->
+        Alcotest.(check int64) "C++ result matches OCaml reference" 4242L
+          (Int64.of_string digits)
+      | None ->
+        Alcotest.fail (Printf.sprintf "no Result line in runner output:\n%s" out)
+    end
+  end
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -618,6 +861,11 @@ let tests = [
   ("Ghost Stack Padding Pass", `Quick, test_ghost_stack_padding);
   ("MBA Constant Synthesis", `Quick, test_mba_synthesis);
   ("Virtual CFG Flattening", `Quick, test_cff_flattening);
+  ("SAR/DIV/IDIV & Shift-Count Semantics", `Quick, test_sar_div_idiv_semantics);
+  ("Flags Round-Trip & Parity", `Quick, test_flags_roundtrip_and_parity);
+  ("Mid-Block KeyAdjust Round-Trip", `Quick, test_keyadjust_midblock);
+  ("Full Obfuscation Pipeline Semantics", `Quick, test_full_pipeline_semantics);
+  ("C++ Runtime Compile & Run", `Slow, test_c_runtime_compile_and_run);
 ]
 
 

@@ -37,6 +37,10 @@
 
     Selection is seed-deterministic via SplitMix64. MBA rate controls
     what fraction of PushImm instructions are synthesized.
+
+    Flag safety: all strategies write flags (Add/Nor/Nand), so synthesis
+    is suppressed wherever produced flags are still live (see
+    [Stack_flag_liveness]).
 *)
 
 open Stack_ir
@@ -109,19 +113,23 @@ let synthesize_const rng c =
     [ PushImm a; PushImm not_diff; PushImm 0L; Nor; Add ]
 
 (* ── Per-instruction rewriter ────────────────────────────────────────── *)
-(** [rewrite_op rng mba_rate op] either synthesizes a PushImm or returns
-    [op] unchanged. Non-PushImm ops are always returned as-is. *)
-let rewrite_op rng mba_rate op =
-  match op with
-  | PushImm c when maybe rng mba_rate ->
-    synthesize_const rng c
-  | _ -> [ op ]
+(** [rewrite_block rng mba_rate block] rewrites PushImm instructions in a
+    block with probability [mba_rate] (integer 0–100).
 
-(** [rewrite_block rng mba_rate block] rewrites every PushImm in a block
-    with probability [mba_rate] (integer 0–100). *)
+    Flag-liveness aware: every synthesis strategy ends in Add/Nor/Nand,
+    all of which overwrite the architectural flags, so a PushImm is only
+    synthesized when the flags are dead at that position. Without this
+    guard, [Cmp; PushImm 1; Jcc] would branch on the synthesized junk
+    flags instead of the comparison result. *)
 let rewrite_block rng mba_rate block =
+  let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
   let new_ops =
-    List.concat_map (fun op -> rewrite_op rng mba_rate op) block.ops
+    List.concat_map (fun (i, op) ->
+      match op with
+      | PushImm c when (not live.(i + 1)) && maybe rng mba_rate ->
+          synthesize_const rng c
+      | _ -> [ op ]
+    ) (List.mapi (fun i op -> (i, op)) block.ops)
   in
   { block with ops = new_ops }
 

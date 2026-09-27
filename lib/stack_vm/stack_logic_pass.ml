@@ -86,16 +86,21 @@ let transform_block ?(basis = Basis_NOR) ?(seed = 0x42) _ctx block =
     | Basis_NAND -> Basis_NAND
     | Basis_Random -> if Random.State.bool rng then Basis_NOR else Basis_NAND
   in
-  let new_ops = List.fold_left (fun acc op ->
-    match op with
-    | Nor when current_basis = Basis_NAND ->
-        (* NOR via NAND: NOT (x OR y) *)
-        expand_or_nand @ expand_not_nand @ acc
-    | Nand when current_basis = Basis_NOR ->
-        (* NAND via NOR: NOT (x AND y) *)
-        expand_and_nor @ expand_not_nor @ acc
-    | other -> other :: acc
-  ) [] block.ops |> List.rev in
+  (* Expand in place, preserving instruction order: each replacement is
+     emitted exactly where the original op stood. (The previous fold-based
+     version reversed the expansion internals and hoisted the trailing
+     NOT ahead of the OR/AND body, computing NOT before it existed.) *)
+  let new_ops =
+    List.concat_map (fun op ->
+      match op with
+      | Nor when current_basis = Basis_NAND ->
+          (* NOR via NAND: NOT (x OR y) *)
+          expand_or_nand @ expand_not_nand
+      | Nand when current_basis = Basis_NOR ->
+          (* NAND via NOR: NOT (x AND y) *)
+          expand_and_nor @ expand_not_nor
+      | other -> [ other ]
+    ) block.ops in
   { block with ops = new_ops }
 
 let transform_program ?(basis = Basis_NOR) ?(seed = 0x42) ctx prog =
