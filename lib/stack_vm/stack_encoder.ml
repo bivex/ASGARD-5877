@@ -132,6 +132,12 @@ type encrypted_bytecode = {
      bytes themselves are untouched — only the stored literals move. 0L means
      "not address-bound" and reproduces the legacy encoding exactly. *)
   addr_mask : int64;
+  (* Integrity tag over the cipher image, plus the two MAC key halves it is
+     keyed with (ids 0 and 1 in [tag_keys]). Both the tag key halves and the
+     block keys follow the same address-masking scheme, so the runtime folds
+     derive_addr_key() back in exactly once. See [derive_payload_tag]. *)
+  payload_tag : int64;
+  tag_keys : (int, int64) Hashtbl.t;
 }
 
 (* Effective (unmasked) rolling seed: what the runtime reconstructs at entry
@@ -148,10 +154,14 @@ let apply_addr_mask enc mask =
   let remasked_keys = Hashtbl.create (Hashtbl.length enc.block_keys) in
   Hashtbl.iter (fun id v ->
     Hashtbl.replace remasked_keys id (Int64.logxor v delta)) enc.block_keys;
+  let remasked_tag_keys = Hashtbl.create (Hashtbl.length enc.tag_keys) in
+  Hashtbl.iter (fun id v ->
+    Hashtbl.replace remasked_tag_keys id (Int64.logxor v delta)) enc.tag_keys;
   { enc with
     addr_mask = mask;
     seed_key = Int64.logxor enc.seed_key delta;
-    block_keys = remasked_keys }
+    block_keys = remasked_keys;
+    tag_keys = remasked_tag_keys }
 
 (* Parse exactly 16 uppercase/lowercase hex digits into the unsigned 64-bit
    pattern they denote. Int64.of_string "0x…" rejects values above
@@ -219,6 +229,53 @@ let derive_block_key seed_key block_id block_offset =
   let k1 = Int64.logxor seed_key 0xD00F_5877_0000_A564L in
   let m  = Int64.logxor (Int64.of_int block_id) (Int64.of_int block_offset) in
   siphash_block ~k0 ~k1 m
+
+(* ── Payload integrity tag ────────────────────────────────────────────── *)
+(* The rolling key stream is a cipher, not an authenticator: it is
+   reproducible by anyone holding the seed, so a patched image decrypts just
+   as happily as the original one. [derive_payload_tag] adds the missing
+   property — the image must carry a tag the runtime can re-derive, and the
+   runtime refuses to decode a single byte before the tag matches. *)
+let payload_tag_domain = 0x5041_594C_4F41_4421L (* "PAYLOAD!" *)
+
+(* The two MAC key halves, domain-separated from the per-block key halves so
+   that a leaked block key says nothing about the tag and vice versa. Both
+   derive from the *effective* seed, which makes the tag invariant under
+   [apply_addr_mask]. *)
+let payload_tag_keys seed_key =
+  ( Int64.logxor seed_key 0x7061_795F_6D61_6331L (* "pay_mac1" *)
+  , Int64.logxor seed_key 0x7061_795F_6D61_6332L ) (* "pay_mac2" *)
+
+(* CBC-MAC over the cipher image with SipHash-1-2 as the block PRF. The
+   preimage binds the 8-byte-padded image length and then every little-endian
+   64-bit word of it, so neither a flipped byte nor a truncated/extended
+   image keeps the tag valid. The image is zero-padded to a word boundary
+   because that — not [Bytes.length cipher] — is the length the runtime is
+   handed at the call site. *)
+let payload_tag_of_keys ~k0 ~k1 (cipher : bytes) : int64 =
+  let len = Bytes.length cipher in
+  let nwords = (len + 7) / 8 in
+  let bound = nwords * 8 in
+  let acc =
+    ref (siphash_block ~k0 ~k1
+           (Int64.logxor payload_tag_domain (Int64.of_int bound)))
+  in
+  for i = 0 to nwords - 1 do
+    let w = ref 0L in
+    for j = 7 downto 0 do
+      let idx = (i * 8) + j in
+      let b =
+        if idx < len then Int64.of_int (Char.code (Bytes.get cipher idx)) else 0L
+      in
+      w := Int64.logor (Int64.shift_left !w 8) b
+    done;
+    acc := siphash_block ~k0 ~k1 (Int64.logxor !acc !w)
+  done;
+  !acc
+
+let derive_payload_tag (cipher : bytes) (seed_key : int64) : int64 =
+  let k0, k1 = payload_tag_keys seed_key in
+  payload_tag_of_keys ~k0 ~k1 cipher
 
 
 let cond_to_code = function
@@ -374,12 +431,21 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
   let stored_keys = Hashtbl.create (Hashtbl.length block_keys) in
   Hashtbl.iter (fun id v ->
     Hashtbl.replace stored_keys id (Int64.logxor v addr_mask)) block_keys;
+  (* Integrity tag: keyed from the *effective* seed (the parameter, before
+     masking) so it survives apply_addr_mask, and covering the padded image
+     the runtime actually receives. *)
+  let tag_k0, tag_k1 = payload_tag_keys seed_key in
+  let tag_keys = Hashtbl.create 2 in
+  Hashtbl.replace tag_keys 0 (Int64.logxor tag_k0 addr_mask);
+  Hashtbl.replace tag_keys 1 (Int64.logxor tag_k1 addr_mask);
   { bytes = cipher;
     block_offsets;
     block_keys = stored_keys;
     seed_key = Int64.logxor seed_key addr_mask;
     op_map = resolved_op_map;
-    addr_mask }
+    addr_mask;
+    payload_tag = payload_tag_of_keys ~k0:tag_k0 ~k1:tag_k1 cipher;
+    tag_keys }
 
 let read_byte cipher pos key =
   if !pos >= Bytes.length cipher then None

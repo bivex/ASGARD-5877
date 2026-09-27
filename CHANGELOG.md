@@ -9,6 +9,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ### Added
 
 - Add Stack-VM execution engine with universal logic reduction (NOR/NAND), stateful rolling key encryption, and stack balancing (`lib/stack_vm/`).
+- Add keyed payload integrity tag for Stack-VM (`Stack_encoder.payload_tag`, `tag_keys`, `derive_payload_tag`, `payload_tag_of_keys`): SipHash-1-2 in CBC mode over the word-padded cipher image, binding both the image length and every 64-bit word, domain-separated from the per-block key halves and invariant under `apply_addr_mask`. The C++ runtime verifies it in `asg_payload_auth_ok` before the first fetch, with a constant-time compare, and refuses to decode an unauthenticated image.
 - Add Anti-VMPredator address-bound bytecode keys for Stack-VM: pre-XOR stored seed and block key literals with ASLR/PIE-invariant handler address delta hash $D$ while preserving ciphertext bytes, and fold mask back at runtime entry.
 - Add two-stage probe compilation stage in protection pipeline (`addr_probe.cpp`, `rebind_address`) to evaluate $D$ at build time and rebind generated C++ runtime header.
 - Add comprehensive unit, divergence, and E2E C++ probe-and-execution tests for address-bound bytecode (`test_addr_mask_unit`, `test_addr_mask_wrong_key`, `test_address_bound_c_runtime_probe_and_run`).
@@ -27,6 +28,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 - Update test suite registry to 255 tests across 35 suites (including Stack-VM primitives, logic reduction, rolling keys, and branch extensions).
 - Harden Stack-VM C++ runtime with Fail-Closed stack underflow/overflow bounds checks (`4096`), context slot bounds checks, and sanitization against empty symbol `dlsym` calls.
+- Harden Stack-VM operand fetch: `stack_vm_t` gains `bc_size`, set from the size handed to `stack_vm_run`, and every `fetch_byte` refuses to read past it, so a truncated instruction can no longer decode adjacent `.rodata` as instructions or feed it into the key stream.
+- Harden Stack-VM guest memory access: `READ_MEM` / `WRITE_MEM` now admit an address only through `asg_mem_access_ok` (encodable width, non-zero, naturally aligned, canonical, no wrap at the top of the address space) and halt otherwise, closing the raw-pointer dereference of arbitrary VSP values. Mirrored in the reference interpreter as `Stack_eval.mem_access_ok`.
+- Add tests for payload authentication and the guest memory policy (`test_payload_tag_unit`, `test_guest_mem_policy`, `test_payload_auth_c_runtime`).
 - Ensure compiler pipeline always compiles C sources to assembly via toolchain even when macro obfuscation is disabled.
 - Automatically copy and configure `asgard_obf.h` header in output directory for C protection pipeline.
 

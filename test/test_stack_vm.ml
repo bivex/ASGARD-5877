@@ -1299,6 +1299,272 @@ let test_real_license_check_macro_stack_vm_e2e () =
         Alcotest.(check bool) "output contains FLAG" true
           (String.contains out_valid 'F' && String.contains out_valid 'L' && String.contains out_valid 'A' && String.contains out_valid 'G'))
 
+(* ── Payload integrity tag: the property the rolling key does not have ── *)
+let test_payload_tag_unit () =
+  let seed = 0x5EED1234ABCD0001L in
+  let b0 = make_block 0 "entry" [ PushImm 1337L; PopReg 0; Exit ] in
+  let prog = make_program 0 [b0] 8 in
+  let enc = Stack_encoder.encode_program ~seed_key:seed prog in
+
+  (* the tag is a pure function of (image, effective seed) *)
+  let eff = Stack_encoder.effective_seed_key enc in
+  Alcotest.(check int64) "tag recomputes from the image"
+    enc.payload_tag (Stack_encoder.derive_payload_tag enc.bytes eff);
+  Alcotest.(check int64) "tag is deterministic"
+    enc.payload_tag (Stack_encoder.derive_payload_tag enc.bytes eff);
+
+  (* every single-bit flip in the image must change the tag *)
+  let flips = ref 0 in
+  for i = 0 to Bytes.length enc.bytes - 1 do
+    for bit = 0 to 7 do
+      let tampered = Bytes.copy enc.bytes in
+      let b = Char.code (Bytes.get tampered i) in
+      Bytes.set tampered i (Char.chr (b lxor (1 lsl bit)));
+      if Stack_encoder.derive_payload_tag tampered eff = enc.payload_tag then
+        incr flips
+    done
+  done;
+  Alcotest.(check int) "no single-bit flip preserves the tag" 0 !flips;
+
+  (* length is bound: truncating or extending the image re-tags. The tag
+     covers the image as the runtime receives it, i.e. zero-padded to a whole
+     number of 8-byte words, so a sub-word tail is padding and not a change —
+     a word-aligned change is one. *)
+  let one_short = Bytes.sub enc.bytes 0 (Bytes.length enc.bytes - 1) in
+  Alcotest.(check bool) "truncation re-tags" true
+    (Stack_encoder.derive_payload_tag one_short eff <> enc.payload_tag);
+  let one_more = Bytes.make (Bytes.length enc.bytes + 8) '\000' in
+  Bytes.blit enc.bytes 0 one_more 0 (Bytes.length enc.bytes);
+  Alcotest.(check bool) "a whole extra word re-tags" true
+    (Stack_encoder.derive_payload_tag one_more eff <> enc.payload_tag);
+  Alcotest.(check int64) "tag covers the word-padded image" enc.payload_tag
+    (Stack_encoder.derive_payload_tag enc.bytes eff);
+  let padded = Bytes.make (((Bytes.length enc.bytes + 7) / 8) * 8) '\000' in
+  Bytes.blit enc.bytes 0 padded 0 (Bytes.length enc.bytes);
+  Alcotest.(check bool) "zero padding to a word boundary does not change the tag" true
+    (Stack_encoder.derive_payload_tag padded eff = enc.payload_tag);
+
+  (* the tag key is domain-separated from the per-block key halves *)
+  let k0, k1 = Stack_encoder.payload_tag_keys eff in
+  let bk0 = Int64.logxor eff 0x5877_A564_D00F_0000L in
+  let bk1 = Int64.logxor eff 0xD00F_5877_0000_A564L in
+  Alcotest.(check bool) "tag key halves differ from block key halves" true
+    (k0 <> bk0 && k1 <> bk1 && k0 <> k1);
+  Alcotest.(check int64) "explicit key halves match the convenience wrapper"
+    (Stack_encoder.derive_payload_tag enc.bytes eff)
+    (Stack_encoder.payload_tag_of_keys ~k0 ~k1 enc.bytes);
+
+  (* address binding must move the stored tag keys exactly as it moves the
+     stored block keys, and must leave the expected tag itself alone *)
+  let d_addr = Stack_encoder.parse_u64_hex "0F0E1D2C3B4A5968" in
+  let enc_masked = Stack_encoder.encode_program ~seed_key:seed ~addr_mask:d_addr prog in
+  Alcotest.(check int64) "tag survives address masking" enc.payload_tag enc_masked.payload_tag;
+  Alcotest.(check int64) "stored tag key 0 = effective ^ mask"
+    (Int64.logxor k0 d_addr) (Hashtbl.find enc_masked.tag_keys 0);
+  Alcotest.(check int64) "stored tag key 1 = effective ^ mask"
+    (Int64.logxor k1 d_addr) (Hashtbl.find enc_masked.tag_keys 1);
+  let enc_rebound = Stack_encoder.apply_addr_mask enc d_addr in
+  Alcotest.(check int64) "rebound tag key matches direct masked encode"
+    (Hashtbl.find enc_masked.tag_keys 0) (Hashtbl.find enc_rebound.tag_keys 0);
+  let enc_unbound = Stack_encoder.apply_addr_mask enc_rebound 0L in
+  Alcotest.(check int64) "unbind restores plaintext tag key 0" k0 (Hashtbl.find enc_unbound.tag_keys 0)
+
+(* ── Guest memory-access policy (mirrored in the C runtime) ────────────── *)
+let test_guest_mem_policy () =
+  let ok (addr : int64) (w : int) = Alcotest.(check bool) (Printf.sprintf "allow %Lx/%d" addr w) true
+      (mem_access_ok addr w) in
+  let bad (addr : int64) (w : int) = Alcotest.(check bool) (Printf.sprintf "deny %Lx/%d" addr w) true
+      (not (mem_access_ok addr w)) in
+  (* width must be one of the four encodable widths *)
+  ok 0x1000L 1; ok 0x1000L 2; ok 0x1000L 4; ok 0x1008L 8;
+  bad 0x1000L 0; bad 0x1000L 3; bad 0x1000L 5; bad 0x1000L 16;
+  (* zero is never a valid address *)
+  bad 0L 1; bad 0L 8;
+  (* natural alignment for the width *)
+  bad 0x1001L 2; bad 0x1004L 8; ok 0x1008L 8;
+  (* canonical half of the address space only — bits 63:48 must sign-extend
+     bit 47, so a computed integer cannot wrap through the middle of the
+     space and come out looking like a pointer *)
+  bad 0x0000_8000_0000_0000L 1;
+  bad 0xFFFF_7FFF_FFFF_FFFFL 1;
+  ok 0x0000_7FFF_FFFF_FFFFL 1;
+  ok 0xFFFF_8000_0000_0000L 8;
+  (* no wrap at the top of the space *)
+  bad 0xFFFF_FFFF_FFFF_FFFFL 8;
+  ok 0xFFFF_FFFF_FFFF_FFF8L 8;
+
+  (* the reference interpreter halts instead of performing a rejected access *)
+  let st = create_state () in
+  write_mem_word st 0x2000L 0x4142L 8;
+  step_op st (PushImm 0x2000L);
+  step_op st (ReadMem 8);
+  Alcotest.(check int64) "reference reads an admissible address" 0x4142L
+    (List.hd st.vstack);
+  Alcotest.(check bool) "reference still running" false st.halted;
+  step_op st (PopReg 0);
+  step_op st (PushImm 0x1001L);
+  step_op st (ReadMem 8);
+  Alcotest.(check bool) "reference halts on a misaligned address" true st.halted
+
+(* ── The C runtime authenticates before it decodes ──────────────────────── *)
+let test_payload_auth_c_runtime () =
+  if Sys.command "command -v c++ >/dev/null 2>&1" <> 0 then
+    Printf.printf "SKIP test_payload_auth_c_runtime: no C++ compiler on PATH\n%!"
+  else begin
+    let seed = 0x0C0FFEE0C0FFEE01L in
+    let b0 = make_block 0 "entry" [ PushImm 0x1337L; PopReg 0; Exit ] in
+    let prog = make_program 0 [b0] 8 in
+    let enc = Stack_encoder.encode_program ~seed_key:seed prog in
+    let eff = Stack_encoder.effective_seed_key enc in
+    let cfg = Stack_runtime.default_config Stack_runtime.X86_64 in
+    let hpp = Stack_runtime.generate_c_runtime ~enc cfg prog in
+
+    let bytes_to_words b =
+      let n = Bytes.length b in
+      let padded = (n + 7) land (lnot 7) in
+      Array.init (padded / 8) (fun i ->
+        let w = ref 0L in
+        for j = 7 downto 0 do
+          let idx = (i * 8) + j in
+          let byte = if idx < n then Char.code (Bytes.get b idx) else 0 in
+          w := Int64.logor (Int64.shift_left !w 8) (Int64.of_int byte)
+        done;
+        !w)
+    in
+    let words = bytes_to_words enc.bytes in
+    let nwords = Array.length words in
+    Alcotest.(check bool) "image is a whole number of words" true (nwords > 1);
+
+    (* a one-word truncation: authentic image, but it ends in the middle of
+       the first PushImm's operand, and a sentinel word sits right behind it *)
+    let short_words = Array.sub words 0 (nwords - 1) in
+    let short_bytes = Bytes.create ((nwords - 1) * 8) in
+    for i = 0 to nwords - 2 do
+      for j = 0 to 7 do
+        let w = words.(i) in
+        let byte = Int64.to_int (Int64.logand (Int64.shift_right_logical w (j * 8)) 0xFFL) in
+        Bytes.set short_bytes ((i * 8) + j) (Char.chr byte)
+      done
+    done;
+    (* the truncation gets its own valid tag: what is under test is the fetch
+       bound, not authentication *)
+    let short_tag = Stack_encoder.derive_payload_tag short_bytes eff in
+    Alcotest.(check bool) "truncated image has a different tag" true (short_tag <> enc.payload_tag);
+    let enc_short = { enc with bytes = short_bytes; payload_tag = short_tag } in
+    let hpp_short = Stack_runtime.generate_c_runtime ~enc:enc_short cfg prog in
+
+    let hex64 v =
+      let h = Printf.sprintf "%LX" v in
+      String.make (max 0 (16 - String.length h)) '0' ^ h
+    in
+    let emit_words buf name ws =
+      Buffer.add_string buf (Printf.sprintf "static const uint64_t %s[] = {\n" name);
+      Array.iteri (fun i w ->
+        Buffer.add_string buf
+          (Printf.sprintf "    0x%sULL%s\n" (hex64 w) (if i = Array.length ws - 1 then "" else ",")))
+        ws;
+      Buffer.add_string buf "};\n"
+    in
+    let dir = Filename.get_temp_dir_name () in
+    let hpp_path = Filename.concat dir "stack_vm_runtime.hpp" in
+    let write path s = let oc = open_out path in output_string oc s; close_out oc in
+
+    (* Driver A runs against the authentic header: the untampered image, the
+       same image with one bit flipped, and the same bytes presented as more
+       words than they are. *)
+    let tampered = Array.copy words in
+    tampered.(0) <- Int64.logxor tampered.(0) 0x01L;
+    let tampered_bytes = Bytes.copy enc.bytes in
+    Bytes.set tampered_bytes 0
+      (Char.chr (Char.code (Bytes.get tampered_bytes 0) lxor 0x01));
+    Alcotest.(check bool) "flipped bit changes the tag" true
+      (Stack_encoder.derive_payload_tag tampered_bytes eff <> enc.payload_tag);
+
+    let driver_a = Filename.concat dir "asgard_payload_auth_a.cpp" in
+    let buf_a = Buffer.create 4096 in
+    Buffer.add_string buf_a "#include \"stack_vm_runtime.hpp\"\n#include <stdio.h>\n";
+    emit_words buf_a "words" words;
+    emit_words buf_a "tampered" tampered;
+    Buffer.add_string buf_a (Printf.sprintf
+      "int main() {\n\
+      \  uint64_t clean = asgard_stack_vm::stack_vm_call(words, %d);\n\
+      \  uint64_t overlong = asgard_stack_vm::stack_vm_call(words, %d);\n\
+      \  uint64_t patched = asgard_stack_vm::stack_vm_call(tampered, %d);\n\
+      \  printf(\"clean=%%llu overlong=%%llu tampered=%%llu\\n\",\n\
+      \    (unsigned long long)clean, (unsigned long long)overlong,\n\
+      \    (unsigned long long)patched);\n\
+      \  return 0;\n}\n" nwords (nwords + 1) nwords);
+    write driver_a (Buffer.contents buf_a);
+
+    (* Driver B runs against the header carrying the truncated image's own
+       valid tag, with a sentinel word laid out right behind it: an image
+       that ends mid-operand must halt, not decode the sentinel. *)
+    let driver_b = Filename.concat dir "asgard_payload_auth_b.cpp" in
+    let buf_b = Buffer.create 4096 in
+    Buffer.add_string buf_b "#include \"stack_vm_runtime.hpp\"\n#include <stdio.h>\n";
+    emit_words buf_b "short_words" short_words;
+    emit_words buf_b "sentinel" [| 0xDEADBEEFDEADBEEFL |];
+    Buffer.add_string buf_b (Printf.sprintf
+      "int main() {\n\
+      \  uint64_t short_run = asgard_stack_vm::stack_vm_call(short_words, %d);\n\
+      \  uint64_t sentinel_run = asgard_stack_vm::stack_vm_call(sentinel, 1);\n\
+      \  printf(\"short=%%llu sentinel=%%llu\\n\",\n\
+      \    (unsigned long long)short_run, (unsigned long long)sentinel_run);\n\
+      \  return 0;\n}\n" (Array.length short_words));
+    write driver_b (Buffer.contents buf_b);
+
+    let compile target driver =
+      let cmd = Printf.sprintf "c++ -O1 -std=c++17 %s -o %s"
+          (Filename.quote driver) (Filename.quote target) in
+      let rc = Sys.command cmd in
+      if rc = 0 then 0 else Sys.command (Printf.sprintf "%s -ldl" cmd)
+    in
+    let run target =
+      ignore (Sys.command (Printf.sprintf "%s > %s.out 2>&1"
+          (Filename.quote target) (Filename.quote target)));
+      let ic = open_in (target ^ ".out") in
+      let out = really_input_string ic (in_channel_length ic) in
+      close_in ic; out
+    in
+    let field out key =
+      let n = String.length out in
+      let klen = String.length key in
+      let rec go i =
+        if i + klen + 1 > n then failwith (Printf.sprintf "no %s in output:\n%s" key out)
+        else if String.sub out i klen = key && out.[i + klen] = '=' then begin
+          let j = ref (i + klen + 1) in
+          while !j < n && out.[!j] >= '0' && out.[!j] <= '9' do incr j done;
+          if !j = i + klen + 1 then failwith (Printf.sprintf "empty %s in output:\n%s" key out)
+          else int_of_string (String.sub out (i + klen + 1) (!j - i - klen - 1))
+        end
+        else go (i + 1)
+      in
+      go 0
+    in
+    let bin_a = Filename.concat dir "asgard_payload_auth_a" in
+    let bin_b = Filename.concat dir "asgard_payload_auth_b" in
+    write hpp_path hpp;
+    if compile bin_a driver_a <> 0 then Alcotest.fail "payload auth driver A failed to compile"
+    else begin
+      let out = run bin_a in
+      Alcotest.(check int) "untampered image authenticates and runs" 0x1337 (field out "clean");
+      Alcotest.(check int) "a flipped image bit refuses to execute" 0 (field out "tampered");
+      Alcotest.(check int) "an over-long length refuses to execute" 0 (field out "overlong")
+    end;
+    write hpp_path hpp_short;
+    if compile bin_b driver_b <> 0 then Alcotest.fail "payload auth driver B failed to compile"
+    else begin
+      let out = run bin_b in
+      (* A consistent but mid-operand truncation halts instead of decoding the
+         sentinel word laid out behind it, so reg0 is never written. *)
+      Alcotest.(check int) "mid-operand truncation halts before the sentinel" 0
+        (field out "short");
+      (* And the sentinel word on its own is simply not a valid image. *)
+      Alcotest.(check int) "a foreign image is not authenticated" 0
+        (field out "sentinel")
+    end
+  end
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -1318,6 +1584,9 @@ let tests = [
   ("Mid-Block KeyAdjust Round-Trip", `Quick, test_keyadjust_midblock);
   ("Address-Masked Key Literals", `Quick, test_addr_mask_unit);
   ("Address-Masked Wrong Key Diverges", `Quick, test_addr_mask_wrong_key);
+  ("Payload Integrity Tag", `Quick, test_payload_tag_unit);
+  ("Guest Memory Access Policy", `Quick, test_guest_mem_policy);
+  ("C++ Runtime Authenticates Before Decoding", `Slow, test_payload_auth_c_runtime);
   ("Full Obfuscation Pipeline Semantics", `Quick, test_full_pipeline_semantics);
   ("C++ Runtime Compile & Run", `Slow, test_c_runtime_compile_and_run);
   ("Full Pipeline + C++ Runtime + Args", `Slow, test_full_pipeline_c_runtime_with_args);

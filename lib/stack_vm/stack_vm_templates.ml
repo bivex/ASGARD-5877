@@ -212,6 +212,17 @@ static const uint64_t g_stack_block_keys[{{ block_keys_count }}] = {
 {%- endfor %}
 };
 
+/* Payload-tag key halves, masked with the same address-binding scheme as the
+   block keys above (indices 0 and 1 of the mask64 ladder). The runtime folds
+   derive_addr_key() back out, exactly once, in asg_payload_auth_ok. */
+static const uint64_t g_stack_tag_keys[2] = {
+    0x{{ tag_key0 }}ULL,
+    0x{{ tag_key1 }}ULL,
+};
+
+#define ASG_UNMASK_TAG_K0() (g_stack_tag_keys[0] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(0) * UINT64_C(0x9E3779B97F4A7C15)))
+#define ASG_UNMASK_TAG_K1() (g_stack_tag_keys[1] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(1) * UINT64_C(0x9E3779B97F4A7C15)))
+
 namespace asgard_stack_vm {
 
 typedef struct {
@@ -221,6 +232,7 @@ typedef struct {
     uint64_t vkey;
     uint64_t vsp_key;
     uint64_t addr_key;
+    size_t bc_size;      /* authenticated image length; every fetch is bound to it */
     uint8_t zf;
     uint8_t sf;
     uint8_t cf;
@@ -237,7 +249,16 @@ static inline void step_key(uint64_t *key, uint8_t p) {
     *key = rotl64(*key, 3) + (p ^ 0x5A);
 }
 
+/* Every operand fetch goes through here, so this is the single place that
+   decides how far into the image the program may reach. Without the bound a
+   truncated instruction read up to 8 bytes past the end and kept decoding —
+   whatever .rodata followed — as instructions, feeding attacker-chosen bytes
+   into the key stream as it went. Reading past the end now halts instead. */
 static inline uint8_t fetch_byte(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {
+    if (*vip >= vm->bc_size) {
+        vm->halted = 1; /* fail-closed: operand fetch past the image end */
+        return 0;
+    }
     uint8_t c = bc[(*vip)++];
     uint8_t op = c ^ (uint8_t)(vm->vkey & 0xFF);
     step_key(&vm->vkey, op);
@@ -335,18 +356,53 @@ static void h_pop_reg(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     }
 }
 
+/* ── Guest memory access policy ────────────────────────────────────────
+   READ_MEM/WRITE_MEM pop a VSP value and dereference it. That value is
+   ordinary VM data, so without a policy every value that reached the stack
+   was a candidate pointer: the image could turn a computed integer into a
+   read or write anywhere in the process. An access is admitted only when the
+   width is one of the four encodable widths, the address is non-zero,
+   naturally aligned for that width, canonical (bits 63:48 are the sign
+   extension of bit 47, so an integer cannot wrap through the middle of the
+   address space and come out looking like a pointer), and does not run off
+   the end of the space. Everything else halts the machine.
+
+   Strictly canonical is an x86-64 notion; AArch64 top-byte-ignore would
+   tolerate a non-zero byte 63. Keeping the rule uniform is the point — the
+   reference interpreter in stack_eval.ml applies the same predicate.
+
+   The compiler never emits these two opcodes, so tightening the policy
+   cannot change the behaviour of an image built from this tree. */
+static inline int asg_addr_canonical(uint64_t addr) {
+    uint64_t top = addr >> 48;
+    return top == ((addr & (UINT64_C(1) << 47)) ? UINT64_C(0xFFFF) : UINT64_C(0));
+}
+
+static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
+    if (w != 1 && w != 2 && w != 4 && w != 8) return 0;
+    if (addr == 0) return 0;
+    if ((addr & (uint64_t)(w - 1)) != 0) return 0;   /* natural alignment */
+    if (!asg_addr_canonical(addr)) return 0;        /* no wrap through the middle */
+    if (addr > UINT64_MAX - (uint64_t)(w - 1)) return 0;
+    return 1;
+}
+
 static void h_read_mem(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     uint8_t w = fetch_byte(vm, bytecode, vip);
     uint64_t addr = 0;
+    int have_addr = 0;
     if (vm->vsp_idx > 0) {
         --vm->vsp_idx;
         addr = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);
+        have_addr = 1;
     } else {
         vm->halted = 1; /* fail-closed: underflow */
     }
     uint64_t val = 0;
-    if (addr != 0) {
-        if (w == 1) val = *(const uint8_t*)addr;
+    if (have_addr) {
+        if (!asg_mem_access_ok(addr, w)) {
+            vm->halted = 1; /* fail-closed: address rejected by policy */
+        } else if (w == 1) val = *(const uint8_t*)addr;
         else if (w == 2) val = *(const uint16_t*)addr;
         else if (w == 4) val = *(const uint32_t*)addr;
         else val = *(const uint64_t*)addr;
@@ -366,12 +422,12 @@ static void h_write_mem(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
         uint64_t val = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);
         --vm->vsp_idx;
         uint64_t addr = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);
-        if (addr != 0) {
-            if (w == 1) *(uint8_t*)addr = (uint8_t)val;
-            else if (w == 2) *(uint16_t*)addr = (uint16_t)val;
-            else if (w == 4) *(uint32_t*)addr = (uint32_t)val;
-            else *(uint64_t*)addr = val;
-        }
+        if (!asg_mem_access_ok(addr, w)) {
+            vm->halted = 1; /* fail-closed: address rejected by policy */
+        } else if (w == 1) *(uint8_t*)addr = (uint8_t)val;
+        else if (w == 2) *(uint16_t*)addr = (uint16_t)val;
+        else if (w == 4) *(uint32_t*)addr = (uint32_t)val;
+        else *(uint64_t*)addr = val;
     } else {
         vm->halted = 1; /* fail-closed: underflow */
     }
@@ -780,7 +836,66 @@ static uint64_t derive_addr_key(void) {
     return rotl64(acc, 31) ^ UINT64_C(0xA5A5A5A5A5A5A5A5);
 }
 
+/* ── Payload authentication ────────────────────────────────────────────
+   Mirrors Stack_encoder.payload_tag_of_keys. The rolling key stream is a
+   cipher: it keeps the image unreadable but authenticates nothing, so a
+   patched image decrypts exactly as well as the original. The tag below is
+   what makes the image unforgeable-by-editing, and it is checked here —
+   before the first fetch — so a mismatched image never executes a single
+   instruction. */
+#define ASG_PAYLOAD_TAG UINT64_C(0x{{ payload_tag }})
+
+static inline uint64_t asg_siphash12(uint64_t k0, uint64_t k1, uint64_t m) {
+    uint64_t v0 = k0 ^ UINT64_C(0x736F6D6570736575);
+    uint64_t v1 = k1 ^ UINT64_C(0x646F72616E646F6D);
+    uint64_t v2 = k0 ^ UINT64_C(0x6C7967656E657261);
+    uint64_t v3 = k1 ^ UINT64_C(0x7465646279746573);
+    v3 ^= m;
+    v0 += v1; v1 = rotl64(v1, 13); v1 ^= v0;
+    v0 = rotl64(v0, 32);
+    v2 += v3; v3 = rotl64(v3, 16); v3 ^= v2;
+    v0 += v3; v3 = rotl64(v3, 21); v3 ^= v0;
+    v2 += v1; v1 = rotl64(v1, 17); v1 ^= v2;
+    v2 = rotl64(v2, 32);
+    v0 ^= m;
+    v2 ^= UINT64_C(0xFF);
+    for (int r = 0; r < 2; ++r) {
+        v0 += v1; v1 = rotl64(v1, 13); v1 ^= v0;
+        v0 = rotl64(v0, 32);
+        v2 += v3; v3 = rotl64(v3, 16); v3 ^= v2;
+        v0 += v3; v3 = rotl64(v3, 21); v3 ^= v0;
+        v2 += v1; v1 = rotl64(v1, 17); v1 ^= v2;
+        v2 = rotl64(v2, 32);
+    }
+    return v0 ^ v1 ^ v2 ^ v3;
+}
+
+static uint64_t asg_payload_tag(uint64_t k0, uint64_t k1, const uint8_t *bc, size_t size) {
+    uint64_t acc = asg_siphash12(k0, k1, UINT64_C(0x5041594C4F414421) ^ (uint64_t)size);
+    for (size_t i = 0; i < size; i += 8) {
+        uint64_t w = 0;
+        for (int j = 7; j >= 0; --j) w = (w << 8) | (uint64_t)bc[i + (size_t)j];
+        acc = asg_siphash12(k0, k1, acc ^ w);
+    }
+    return acc;
+}
+
+static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t addr_key) {
+    if (size == 0 || (size & 7) != 0) return 0;
+    uint64_t k0 = ASG_UNMASK_TAG_K0() ^ addr_key;
+    uint64_t k1 = ASG_UNMASK_TAG_K1() ^ addr_key;
+    /* Constant-time compare: a byte-at-a-time early exit would leak how much
+       of a forged tag was right. */
+    uint64_t diff = asg_payload_tag(k0, k1, bc, size) ^ ASG_PAYLOAD_TAG;
+    return ((diff | (0 - diff)) >> 63) == 0;
+}
+
 static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t size) {
+    vm->bc_size = size;
+    if (!asg_payload_auth_ok(bytecode, size, vm->addr_key)) {
+        vm->halted = 1; /* fail-closed: image failed authentication, nothing decoded */
+        return;
+    }
     size_t vip = ASG_UNMASK_OFFSET({{ entry_bid }});
 #if defined(__GNUC__) || defined(__clang__)
     #pragma clang diagnostic push

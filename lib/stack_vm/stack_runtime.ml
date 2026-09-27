@@ -263,6 +263,19 @@ let generate_c_runtime
     done;
     List.rev !l
   in
+  (* Payload-tag key halves ride the same mask64 ladder at indices 0 and 1;
+     the runtime unmasks them with the identical expressions in
+     ASG_UNMASK_TAG_K0/K1. *)
+  let tag_key_model i =
+    match Hashtbl.find_opt enc.tag_keys i with
+    | Some k -> Printf.sprintf "%016LX" (Int64.logxor k (mask64 i))
+    | None ->
+        failwith
+          (Printf.sprintf
+             "stack_runtime: encrypted_bytecode is missing tag key %d — \
+              rebuild it with Stack_encoder.encode_program" i)
+  in
+  let tag_key0 = tag_key_model 0 and tag_key1 = tag_key_model 1 in
   let mk_case op_val name fn =
     Jingoo.Jg_types.Tobj [
       ("hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%02X" op_val));
@@ -315,6 +328,9 @@ let generate_c_runtime
     ("is_address_bound", Jingoo.Jg_types.Tbool (enc.addr_mask <> 0L));
     ("is_aarch64", Jingoo.Jg_types.Tbool (cfg.arch = AArch64));
     ("seed_key_hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.seed_key));
+    ("tag_key0", Jingoo.Jg_types.Tstr tag_key0);
+    ("tag_key1", Jingoo.Jg_types.Tstr tag_key1);
+    ("payload_tag", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.payload_tag));
     (* entry_bid: which block_keys index to use at VM startup.
        g_stack_block_keys[entry_bid] is the SipHash-derived key for the
        entry block, replacing the old global seed_key initialisation. *)

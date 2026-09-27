@@ -64,6 +64,30 @@ let write_mem_word state addr value width =
     write_mem_byte state (Int64.add addr (Int64.of_int i)) b
   done
 
+(* Mirror of asg_mem_access_ok in the generated C runtime: an address is
+   admissible only for one of the four encodable widths, when it is non-zero,
+   naturally aligned, canonical (bits 63:48 are the sign extension of bit 47,
+   so an integer cannot wrap through the middle of the address space and come
+   out looking like a pointer) and the access does not run off the end of the
+   space. The two implementations must agree or the reference stops
+   predicting the runtime. *)
+let mem_access_ok addr width =
+  if width <> 1 && width <> 2 && width <> 4 && width <> 8 then false
+  else if addr = 0L then false
+  else if Int64.logand addr (Int64.of_int (width - 1)) <> 0L then false
+  else
+    let bit47 = Int64.logand addr 0x8000_0000_0000L <> 0L in
+    let top = Int64.shift_right_logical addr 48 in
+    let expected = if bit47 then 0xFFFFL else 0L in
+    if top <> expected then false
+    else
+      (* Int64.minus_one is 0xFFFFFFFFFFFFFFFF unsigned — the C side compares
+         against UINT64_MAX, and Int64.max_int would wrongly reject the whole
+         upper half of the address space. *)
+      Int64.unsigned_compare addr
+        (Int64.sub Int64.minus_one (Int64.of_int (width - 1)))
+      <= 0
+
 let step_op state = function
   | PushImm v ->
       state.vstack <- v :: state.vstack;
@@ -82,15 +106,20 @@ let step_op state = function
   | ReadMem w ->
       (match state.vstack with
        | addr :: rest ->
-           let v = read_mem_word state addr w in
-           state.vstack <- v :: rest
+           if not (mem_access_ok addr w) then state.halted <- true
+           else
+             let v = read_mem_word state addr w in
+             state.vstack <- v :: rest
        | [] -> state.halted <- true)
   | WriteMem w ->
       (match state.vstack with
        | v :: addr :: rest ->
-           write_mem_word state addr v w;
-           state.vstack <- rest;
-           state.vsp <- Int64.add state.vsp 16L
+           if not (mem_access_ok addr w) then state.halted <- true
+           else begin
+             write_mem_word state addr v w;
+             state.vstack <- rest;
+             state.vsp <- Int64.add state.vsp 16L
+           end
        | _ -> state.halted <- true)
   | Add ->
       (match state.vstack with

@@ -30,3 +30,8 @@ val set_reg : state -> int -> int64 -> unit
 val read_mem_word : state -> int64 -> int -> int64
 
 val write_mem_word : state -> int64 -> int64 -> int -> unit
+
+(** The guest memory-access policy, mirroring [asg_mem_access_ok] in the
+    generated C runtime. [ReadMem]/[WriteMem] halt instead of performing an
+    access this rejects. *)
+val mem_access_ok : int64 -> int -> bool

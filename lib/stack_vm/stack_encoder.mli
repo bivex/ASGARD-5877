@@ -47,7 +47,33 @@ type encrypted_bytecode = {
       out with the key derived from its handler addresses. Cipher bytes are
       unaffected. [0L] reproduces the legacy encoding byte-identically. *)
   addr_mask : int64;
+  (** Keyed integrity tag over the padded cipher image, verified by the
+      runtime before it decodes the first byte. Invariant under
+      [apply_addr_mask]. *)
+  payload_tag : int64;
+  (** The two MAC key halves [payload_tag] is keyed with, under ids 0 and 1,
+      masked with [addr_mask] exactly like the block keys. *)
+  tag_keys : (int, int64) Hashtbl.t;
 }
+
+(** SipHash-1-2 PRF, 128-bit key split into [(k0, k1)], 64-bit message
+    word. Shared by the block-key derivation, the payload tag and their
+    C++ mirrors so the two sides cannot drift. *)
+val siphash_block : k0:int64 -> k1:int64 -> int64 -> int64
+
+(** The two payload-tag key halves for [seed_key], domain-separated from the
+    per-block key halves. *)
+val payload_tag_keys : int64 -> int64 * int64
+
+(** Keyed integrity tag over [cipher]: SipHash-1-2 in CBC mode over the
+    8-byte-padded image, binding its padded length and then every
+    little-endian 64-bit word. A flipped byte, a truncation or an extension
+    all change the result. *)
+val derive_payload_tag : bytes -> int64 -> int64
+
+(** [payload_tag_of_keys] with explicit key halves, so a caller holding a
+    key that is not [seed_key]-derived can still produce a matching tag. *)
+val payload_tag_of_keys : k0:int64 -> k1:int64 -> bytes -> int64
 
 (** Effective (unmasked) rolling seed: [seed_key xor addr_mask]. The value
     decoders and evaluators must start from. *)
