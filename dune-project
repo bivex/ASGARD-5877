@@ -16,7 +16,9 @@
   qcheck
   qcheck-alcotest
   bos
-  yojson))
+  yojson
+  ppx_deriving_yojson
+  ocamlgraph))
 
 (package
  (name vanguard-9292)

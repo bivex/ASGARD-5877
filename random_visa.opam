@@ -14,6 +14,8 @@ depends: [
   "qcheck-alcotest"
   "bos"
   "yojson"
+  "ppx_deriving_yojson"
+  "ocamlgraph"
   "odoc" {with-doc}
 ]
 build: [

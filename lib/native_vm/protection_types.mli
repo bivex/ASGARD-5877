@@ -82,6 +82,9 @@ type t = {
   c_macro : c_macro_config;
 }
 
+val to_yojson : t -> Yojson.Safe.t
+val of_yojson : Yojson.Safe.t -> (t, string) result
+
 val rolling_key_enabled : t option -> bool
 (** Anti-Pushan block-chained rolling key gate: [true] unless a config explicitly
     disables it.  Shared by the encoder and the C++ runtime emitter so both sides
