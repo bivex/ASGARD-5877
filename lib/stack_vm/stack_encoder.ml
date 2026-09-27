@@ -237,14 +237,23 @@ let derive_block_key seed_key block_id block_offset =
    property — the image must carry a tag the runtime can re-derive, and the
    runtime refuses to decode a single byte before the tag matches. *)
 let payload_tag_domain = 0x5041_594C_4F41_4421L (* "PAYLOAD!" *)
+let tag_key_domain0 = 0x4D41_4348_4559_3030L (* "MACKEY00" *)
+let tag_key_domain1 = 0x4D41_4348_4559_3031L (* "MACKEY01" *)
+let tag_key_msg0 = 0x0123_4567_89AB_CDEFL
+let tag_key_msg1 = 0xFEDC_BA98_7654_3210L
 
-(* The two MAC key halves, domain-separated from the per-block key halves so
-   that a leaked block key says nothing about the tag and vice versa. Both
-   derive from the *effective* seed, which makes the tag invariant under
-   [apply_addr_mask]. *)
+(* The two MAC key halves. They are domain-separated from the per-block key
+   halves, and — deliberately — also from *each other*: both are pushed
+   through the PRF under different domains instead of being the seed XORed
+   with two nearby constants. XORing the seed with "pay_mac1"/"pay_mac2"
+   left the two halves a fixed XOR-distance of 3 apart, so recovering one
+   half yielded the other exactly and the pair carried no more than 64 bits
+   of independent key material while looking like 128. Through the PRF the
+   halves are computationally independent. Both derive from the *effective*
+   seed, which keeps the tag invariant under [apply_addr_mask]. *)
 let payload_tag_keys seed_key =
-  ( Int64.logxor seed_key 0x7061_795F_6D61_6331L (* "pay_mac1" *)
-  , Int64.logxor seed_key 0x7061_795F_6D61_6332L ) (* "pay_mac2" *)
+  ( siphash_block ~k0:seed_key ~k1:tag_key_domain0 tag_key_msg0
+  , siphash_block ~k0:seed_key ~k1:tag_key_domain1 tag_key_msg1 )
 
 (* CBC-MAC over the cipher image with SipHash-1-2 as the block PRF. The
    preimage binds the 8-byte-padded image length and then every little-endian

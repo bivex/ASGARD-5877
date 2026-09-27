@@ -1297,7 +1297,59 @@ let test_real_license_check_macro_stack_vm_e2e () =
         Alcotest.(check bool) "output contains ACCESS GRANTED" true
           (String.contains out_valid 'G' && String.contains out_valid 'R' && String.contains out_valid 'A');
         Alcotest.(check bool) "output contains FLAG" true
-          (String.contains out_valid 'F' && String.contains out_valid 'L' && String.contains out_valid 'A' && String.contains out_valid 'G'))
+          (String.contains out_valid 'F' && String.contains out_valid 'L' && String.contains out_valid 'A' && String.contains out_valid 'G');
+
+        (* Test 3: a tampered image must fail closed, and must look exactly
+           like a wrong key — same exit status, no flag, and no address-derived
+           status. Before the runtime zeroed its context on an authentication
+           failure it returned ctx[0], which on AArch64 holds a0, so the caller
+           computed `ok ^ 1` on a truncated pointer and exited with a number
+           derived from an address: 49 instead of 1. *)
+        let rec find_sub s sub i =
+          let n = String.length s and m = String.length sub in
+          if i + m > n then None
+          else if String.sub s i m = sub then Some i
+          else find_sub s sub (i + 1)
+        in
+        let flip_first_word src =
+          let marker = "embedded_bytecode" in
+          let m =
+            match find_sub src marker 0 with
+            | Some i -> i
+            | None -> failwith "no embedded_bytecode in the virtualized source"
+          in
+          let rec find_hex i =
+            if i + 1 >= String.length src then failwith "no literal after embedded_bytecode"
+            else if src.[i] = '0' && src.[i + 1] = 'x' then i
+            else find_hex (i + 1)
+          in
+          let hx = find_hex (m + String.length marker) in
+          let last = hx + 2 + 15 in
+          let repl = if src.[last] = '0' then '1' else '0' in
+          String.sub src 0 last ^ String.make 1 repl
+          ^ String.sub src (last + 1) (String.length src - last - 1)
+        in
+        let src = In_channel.with_open_bin virt_cpp In_channel.input_all in
+        Alcotest.(check bool) "tampered copy differs from the original" true
+          (flip_first_word src <> src);
+        let tampered_cpp = Filename.concat tmp_dir "app_virtualized_tampered.cpp" in
+        let tampered_bin = Filename.concat tmp_dir "protected_app_tampered" in
+        let oc = open_out_bin tampered_cpp in
+        output_string oc (flip_first_word src);
+        close_out oc;
+        let tampered_st =
+          Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s -Wno-format-security %s -o %s"
+              tmp_dir tampered_cpp tampered_bin)
+        in
+        Alcotest.(check int) "tampered build succeeds" 0 tampered_st;
+        let run_tampered_cmd =
+          Printf.sprintf "printf 'ASGARD-5877-GOLD\\n' | %s" tampered_bin in
+        let status_t, out_t = Test_helpers.run_command_capture run_tampered_cmd in
+        Alcotest.(check bool) "tampered image exits exactly like a wrong key" true
+          (status_t = Unix.WEXITED 1);
+        Alcotest.(check bool) "tampered image grants nothing" true
+          (not (String.contains out_t 'F' && String.contains out_t 'L'
+                && String.contains out_t 'A' && String.contains out_t 'G')))
 
 (* ── Payload integrity tag: the property the rolling key does not have ── *)
 let test_payload_tag_unit () =
@@ -1350,6 +1402,13 @@ let test_payload_tag_unit () =
   let bk1 = Int64.logxor eff 0xD00F_5877_0000_A564L in
   Alcotest.(check bool) "tag key halves differ from block key halves" true
     (k0 <> bk0 && k1 <> bk1 && k0 <> k1);
+  (* Regression: the halves used to be the seed XORed with two constants one
+     byte apart, so k0 ^ k1 was a fixed 3 for every seed and recovering one
+     half yielded the other exactly. Push the halves through the PRF instead
+     and that constant separation is gone. *)
+  let k0b, k1b = Stack_encoder.payload_tag_keys (Int64.logxor eff 0x5A5AL) in
+  Alcotest.(check bool) "half separation is not seed-independent" true
+    (Int64.logxor k0 k1 <> Int64.logxor k0b k1b);
   Alcotest.(check int64) "explicit key halves match the convenience wrapper"
     (Stack_encoder.derive_payload_tag enc.bytes eff)
     (Stack_encoder.payload_tag_of_keys ~k0 ~k1 enc.bytes);
@@ -1485,15 +1544,20 @@ let test_payload_auth_c_runtime () =
     Buffer.add_string buf_a "#include \"stack_vm_runtime.hpp\"\n#include <stdio.h>\n";
     emit_words buf_a "words" words;
     emit_words buf_a "tampered" tampered;
+    (* a0 is seeded into ctx[0]; a failed authentication must not hand it back *)
     Buffer.add_string buf_a (Printf.sprintf
-      "int main() {\n\
+      "#define A0 0xDEADBEEFCAFEULL\n\
+      int main() {\n\
+      \  uint64_t clean_a0 = asgard_stack_vm::stack_vm_call(words, %d, A0);\n\
       \  uint64_t clean = asgard_stack_vm::stack_vm_call(words, %d);\n\
       \  uint64_t overlong = asgard_stack_vm::stack_vm_call(words, %d);\n\
       \  uint64_t patched = asgard_stack_vm::stack_vm_call(tampered, %d);\n\
-      \  printf(\"clean=%%llu overlong=%%llu tampered=%%llu\\n\",\n\
-      \    (unsigned long long)clean, (unsigned long long)overlong,\n\
-      \    (unsigned long long)patched);\n\
-      \  return 0;\n}\n" nwords (nwords + 1) nwords);
+      \  uint64_t patched_a0 = asgard_stack_vm::stack_vm_call(tampered, %d, A0);\n\
+      \  printf(\"clean=%%llu clean_a0=%%llu overlong=%%llu tampered=%%llu tampered_a0=%%llu\\n\",\n\
+      \    (unsigned long long)clean, (unsigned long long)clean_a0,\n\
+      \    (unsigned long long)overlong, (unsigned long long)patched,\n\
+      \    (unsigned long long)patched_a0);\n\
+      \  return 0;\n}\n" nwords nwords (nwords + 1) nwords nwords);
     write driver_a (Buffer.contents buf_a);
 
     (* Driver B runs against the header carrying the truncated image's own
@@ -1549,7 +1613,13 @@ let test_payload_auth_c_runtime () =
       let out = run bin_a in
       Alcotest.(check int) "untampered image authenticates and runs" 0x1337 (field out "clean");
       Alcotest.(check int) "a flipped image bit refuses to execute" 0 (field out "tampered");
-      Alcotest.(check int) "an over-long length refuses to execute" 0 (field out "overlong")
+      Alcotest.(check int) "an over-long length refuses to execute" 0 (field out "overlong");
+      (* a failed authentication must be indistinguishable from an ordinary
+         denial: same result, and no trace of the caller's arguments *)
+      Alcotest.(check int) "a0 does not change the untampered result" 0x1337
+        (field out "clean_a0");
+      Alcotest.(check int) "a failed authentication does not echo a0 back" 0
+        (field out "tampered_a0")
     end;
     write hpp_path hpp_short;
     if compile bin_b driver_b <> 0 then Alcotest.fail "payload auth driver B failed to compile"

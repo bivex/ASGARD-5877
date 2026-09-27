@@ -239,6 +239,7 @@ typedef struct {
     uint8_t pf;
     uint8_t of;
     int halted;
+    int auth_failed;    /* set when the image did not authenticate; see stack_vm_run */
 } stack_vm_t;
 
 static inline uint64_t rotl64(uint64_t v, int k) {
@@ -893,7 +894,20 @@ static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t a
 static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t size) {
     vm->bc_size = size;
     if (!asg_payload_auth_ok(bytecode, size, vm->addr_key)) {
-        vm->halted = 1; /* fail-closed: image failed authentication, nothing decoded */
+        /* Fail-closed, and indistinguishable from an ordinary denial: the
+           context is zeroed rather than left holding the caller's arguments,
+           so the caller sees the same "not granted" answer, the same exit
+           status and the same output as a rejected key. Leaving ctx alone
+           would hand back whatever the entry sequence put there — on AArch64
+           that is a0, the first argument, so the caller would compute on a
+           truncated pointer and exit with a number derived from an address.
+           A caller that wants to tell the two cases apart can read
+           vm->auth_failed; that is deliberately not something the untrusted
+           image can observe or influence. */
+        vm->auth_failed = 1;
+        vm->halted = 1;
+        memset(vm->ctx, 0, sizeof(vm->ctx));
+        vm->vsp_idx = 0;
         return;
     }
     size_t vip = ASG_UNMASK_OFFSET({{ entry_bid }});
