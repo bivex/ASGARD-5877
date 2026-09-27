@@ -121,7 +121,7 @@ let protect_cmd =
     Arg.(value & flag & info [ "multi-vm" ] ~doc)
   in
   let engine =
-    let doc = "Virtual machine execution engine: threaded, multi_vm, or jit" in
+    let doc = "Virtual machine execution engine: threaded, stack, multi_vm, or jit" in
     Arg.(value & opt string "threaded" & info [ "engine" ] ~docv:"ENGINE" ~doc)
   in
   let jit =

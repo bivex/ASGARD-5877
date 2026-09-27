@@ -50,6 +50,7 @@ type package_result = {
   bytecode : int64 list;
   metrics : metrics_report;
   header_name : string;
+  rebind_address : (string -> string) option;
 }
 
 type protect_result = {

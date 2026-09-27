@@ -126,7 +126,47 @@ type encrypted_bytecode = {
   block_keys : (int, int64) Hashtbl.t;
   seed_key : int64;
   op_map : opcode_map;
+  (* Anti-VMPredator address binding: stored seed_key/block_keys literals are
+     pre-XORed with this mask, and the C++ runtime XORs it back out with the
+     key derived from its own handler addresses (derive_addr_key). The cipher
+     bytes themselves are untouched — only the stored literals move. 0L means
+     "not address-bound" and reproduces the legacy encoding exactly. *)
+  addr_mask : int64;
 }
+
+(* Effective (unmasked) rolling seed: what the runtime reconstructs at entry
+   after folding in the address key. This is the value decode_all and the
+   OCaml evaluator must start from. *)
+let effective_seed_key enc = Int64.logxor enc.seed_key enc.addr_mask
+
+(* Re-bind (or un-bind) the stored literals to a new address mask. Delta-based
+   so the operation composes: applying m2 over an enc masked with m1 only
+   flips the literals by (m1 xor m2); mask 0L restores plaintext literals.
+     stored' = effective xor mask' = (stored xor mask) xor mask' *)
+let apply_addr_mask enc mask =
+  let delta = Int64.logxor mask enc.addr_mask in
+  let remasked_keys = Hashtbl.create (Hashtbl.length enc.block_keys) in
+  Hashtbl.iter (fun id v ->
+    Hashtbl.replace remasked_keys id (Int64.logxor v delta)) enc.block_keys;
+  { enc with
+    addr_mask = mask;
+    seed_key = Int64.logxor enc.seed_key delta;
+    block_keys = remasked_keys }
+
+(* Parse exactly 16 uppercase/lowercase hex digits into the unsigned 64-bit
+   pattern they denote. Int64.of_string "0x…" rejects values above
+   Int64.max_int, but address keys are full-range, so fold manually. *)
+let parse_u64_hex s =
+  let digit c =
+    match c with
+    | '0' .. '9' -> Char.code c - Char.code '0'
+    | 'a' .. 'f' -> Char.code c - Char.code 'a' + 10
+    | 'A' .. 'F' -> Char.code c - Char.code 'A' + 10
+    | _ -> failwith "parse_u64_hex: non-hex digit"
+  in
+  if String.length s <> 16 then failwith "parse_u64_hex: expected 16 hex digits";
+  String.fold_left (fun acc c ->
+    Int64.logor (Int64.shift_left acc 4) (Int64.of_int (digit c))) 0L s
 
 let rotl64 v k =
   let k = k mod 64 in
@@ -226,7 +266,8 @@ let encode_op ?(op_map = default_opcode_map) op =
   encode_op_into op_map buf op;
   Buffer.to_bytes buf
 
-let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true) prog =
+let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
+    ?(addr_mask = 0L) prog =
   let resolved_op_map = match op_map with
     | Some m -> m
     | None -> if polymorphic then generate_opcode_map seed_key else default_opcode_map
@@ -272,7 +313,20 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true) p
      | Some delta -> key := Int64.logxor !key delta
      | None -> ())
   done;
-  { bytes = cipher; block_offsets; block_keys; seed_key; op_map = resolved_op_map }
+  (* Address binding: the encryption loop above ran on effective keys; only
+     the returned literals are masked so the binary stores
+     (effective xor addr_mask) and the runtime folds the address key back
+     in. With mask 0 the stored literals equal the effective ones (legacy
+     behavior, byte-identical). *)
+  let stored_keys = Hashtbl.create (Hashtbl.length block_keys) in
+  Hashtbl.iter (fun id v ->
+    Hashtbl.replace stored_keys id (Int64.logxor v addr_mask)) block_keys;
+  { bytes = cipher;
+    block_offsets;
+    block_keys = stored_keys;
+    seed_key = Int64.logxor seed_key addr_mask;
+    op_map = resolved_op_map;
+    addr_mask }
 
 let read_byte cipher pos key =
   if !pos >= Bytes.length cipher then None

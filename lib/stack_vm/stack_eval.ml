@@ -264,9 +264,13 @@ let run_program ?(max_steps = 100000) ?initial_ctx prog =
   state
 
 let run_bytecode ?(max_steps = 100000) ?initial_ctx enc =
-  let state = create_state ~seed_key:enc.seed_key ?initial_ctx () in
+  (* Address-bound bytecode: stored literals are masked; the C++ runtime
+     folds the address key back in at entry and at every block anchor —
+     mirror that here with the mask so the OCaml reference matches. *)
+  let eff = Stack_encoder.(effective_seed_key enc) in
+  let state = create_state ~seed_key:eff ?initial_ctx () in
   let pos = ref 0 in
-  let key = ref enc.seed_key in
+  let key = ref eff in
   let steps = ref 0 in
   while not state.halted && !steps < max_steps && !pos < Bytes.length enc.bytes do
     let cur_bid = state.current_block_id in
@@ -279,7 +283,7 @@ let run_bytecode ?(max_steps = 100000) ?initial_ctx enc =
                 Hashtbl.find_opt enc.block_keys state.current_block_id with
           | Some new_pos, Some new_key ->
               pos := new_pos;
-              key := new_key
+              key := Int64.logxor new_key enc.addr_mask
           | _ -> state.halted <- true
         end;
         incr steps

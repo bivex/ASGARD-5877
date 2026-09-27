@@ -9,6 +9,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ### Added
 
 - Add Stack-VM execution engine with universal logic reduction (NOR/NAND), stateful rolling key encryption, and stack balancing (`lib/stack_vm/`).
+- Add Anti-VMPredator address-bound bytecode keys for Stack-VM: pre-XOR stored seed and block key literals with ASLR/PIE-invariant handler address delta hash $D$ while preserving ciphertext bytes, and fold mask back at runtime entry.
+- Add two-stage probe compilation stage in protection pipeline (`addr_probe.cpp`, `rebind_address`) to evaluate $D$ at build time and rebind generated C++ runtime header.
+- Add comprehensive unit, divergence, and E2E C++ probe-and-execution tests for address-bound bytecode (`test_addr_mask_unit`, `test_addr_mask_wrong_key`, `test_address_bound_c_runtime_probe_and_run`).
 - Add `--engine=stack` option to protection pipelines (`cli_protect.ml`, `cli_protect_arm64.ml`).
 - Add `idasql.md` guide for auditing and verifying protected binaries via SQL queries on IDA Pro databases.
 - Add `ASGARD_DEBUG_SYMBOLS=1` toolchain mode to preserve DWARF symbols and types for white-box VM auditing in IDA.

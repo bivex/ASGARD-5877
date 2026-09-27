@@ -31,3 +31,5 @@ val generate_c_runtime :
 
 val emit_runner_cpp : ?header_name:string -> int64 list -> string
 
+val emit_probe_cpp : ?header_name:string -> unit -> string
+

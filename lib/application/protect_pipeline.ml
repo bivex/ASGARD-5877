@@ -86,6 +86,60 @@ let run
             output_string oc_h pkg.cpp_runtime_source;
             close_out oc_h;
 
+            (* 4b. Optional address binding probe (Anti-VMPredator Phase 6) *)
+            (match pkg.rebind_address with
+            | Some f when compile_and_run ->
+                (match toolchain with
+                | Some (module T : Toolchain) ->
+                    let probe_src = Stack_vm.Stack_runtime.emit_probe_cpp ~header_name:pkg.header_name () in
+                    let probe_cpp = Filename.concat out_dir "addr_probe.cpp" in
+                    let oc_p = open_out probe_cpp in
+                    output_string oc_p probe_src;
+                    close_out oc_p;
+                    let probe_bin = Filename.concat out_dir "addr_probe" in
+                    (match T.compile_native_binary ~is_c:false ~source_file:probe_cpp ~out_binary:probe_bin ~include_dir:out_dir with
+                    | Ok () ->
+                        (match T.execute_binary ~binary_path:probe_bin with
+                        | Ok (_code, stdout) ->
+                            let rec parse_addr_key i =
+                              let prefix = "ADDR_KEY:" in
+                              let plen = String.length prefix in
+                              let slen = String.length stdout in
+                              if i + plen + 16 <= slen then
+                                if String.sub stdout i plen = prefix then
+                                  let j = ref (i + plen) in
+                                  while !j < slen && (stdout.[!j] = ' ' || stdout.[!j] = '\t') do
+                                    incr j
+                                  done;
+                                  if !j + 16 <= slen then
+                                    Some (String.sub stdout !j 16)
+                                  else None
+                                else parse_addr_key (i + 1)
+                              else None
+                            in
+                            (match parse_addr_key 0 with
+                            | Some hex ->
+                                (try
+                                   let _d = Stack_vm.Stack_encoder.parse_u64_hex hex in
+                                   let hpp2 = f hex in
+                                   let oc_h2 = open_out hdr_path in
+                                   output_string oc_h2 hpp2;
+                                   close_out oc_h2;
+                                   print_endline (Printf.sprintf "address binding active, D=0x%s" hex)
+                                 with Failure err ->
+                                   prerr_endline (Printf.sprintf "address binding probe parse warning: %s (fallback to mask 0)" err))
+                            | None ->
+                                prerr_endline "address binding probe warning: ADDR_KEY not found in output (fallback to mask 0)")
+                        | Error err ->
+                            prerr_endline (Printf.sprintf "address binding probe execution warning: %s (fallback to mask 0)" err))
+                    | Error err ->
+                        prerr_endline (Printf.sprintf "address binding probe compilation warning: %s (fallback to mask 0)" err))
+                | None ->
+                    prerr_endline "address binding warning: toolchain not available (fallback to mask 0)")
+            | Some _ ->
+                prerr_endline "address binding warning: compilation disabled (fallback to mask 0)"
+            | None -> ());
+
             (* 5. Write runner.cpp *)
             let runner_path = Filename.concat out_dir "runner.cpp" in
             let oc_r = open_out runner_path in

@@ -24,6 +24,7 @@ module Threaded_vm_packager : Vm_packager = struct
       bytecode = pkg.bytecode;
       metrics = convert_metrics pkg.metrics;
       header_name = "threaded_vm.hpp";
+      rebind_address = None;
     }
 end
 
@@ -48,6 +49,7 @@ module Jit_vm_packager : Vm_packager = struct
       bytecode = jit_pkg.bytecode;
       metrics = convert_metrics jit_pkg.metrics;
       header_name = "jit_vm_runtime.hpp";
+      rebind_address = None;
     }
 end
 
@@ -72,6 +74,7 @@ module Multi_vm_packager : Vm_packager = struct
       bytecode = mv_pkg.bytecode;
       metrics = convert_metrics mv_pkg.metrics;
       header_name = "multi_vm_runtime.hpp";
+      rebind_address = None;
     }
 end
 
@@ -136,7 +139,7 @@ let make_stack_metrics
        ==============================================="
       ghost_info mba_info cff_info
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
-      entropy (entropy /. 8.0 *. 100.0) drs enc.seed_key
+      entropy (entropy /. 8.0 *. 100.0) drs (Stack_vm.Stack_encoder.effective_seed_key enc)
   in
   {
     cyclomatic_complexity = num_blocks;
@@ -222,12 +225,24 @@ module Stack_vm_packager : Vm_packager = struct
     in
     let runner_source = Stack_vm.Stack_runtime.emit_runner_cpp bc_words in
     let metrics = make_stack_metrics ~ghost_info ~mba_info ~cff_info prog enc in
+    let rebind_address =
+      Some (fun d_hex ->
+        let d = Stack_vm.Stack_encoder.parse_u64_hex d_hex in
+        let enc_rebound = Stack_vm.Stack_encoder.apply_addr_mask enc d in
+        Stack_vm.Stack_runtime.generate_c_runtime
+          ~external_symbols
+          ?constants
+          ~enc:enc_rebound
+          runtime_cfg
+          prog)
+    in
     {
       cpp_runtime_source;
       runner_source;
       bytecode = bc_words;
       metrics;
       header_name = "stack_vm_runtime.hpp";
+      rebind_address;
     }
 end
 

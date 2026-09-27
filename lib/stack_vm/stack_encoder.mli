@@ -42,7 +42,24 @@ type encrypted_bytecode = {
   block_keys : (int, int64) Hashtbl.t;
   seed_key : int64;
   op_map : opcode_map;
+  (** Anti-VMPredator address binding: stored [seed_key]/[block_keys]
+      literals are pre-XORed with this mask; the C++ runtime XORs it back
+      out with the key derived from its handler addresses. Cipher bytes are
+      unaffected. [0L] reproduces the legacy encoding byte-identically. *)
+  addr_mask : int64;
 }
+
+(** Effective (unmasked) rolling seed: [seed_key xor addr_mask]. The value
+    decoders and evaluators must start from. *)
+val effective_seed_key : encrypted_bytecode -> int64
+
+(** Re-bind stored literals to a new address mask (delta-based, composes;
+    mask [0L] un-marks). Cipher bytes are never touched. *)
+val apply_addr_mask : encrypted_bytecode -> int64 -> encrypted_bytecode
+
+(** Parse exactly 16 hex digits into a full-range unsigned 64-bit pattern
+    (Int64.of_string rejects values above Int64.max_int). *)
+val parse_u64_hex : string -> int64
 
 val rotl64 : int64 -> int -> int64
 
@@ -54,6 +71,7 @@ val encode_program :
   ?seed_key:int64 ->
   ?op_map:opcode_map ->
   ?polymorphic:bool ->
+  ?addr_mask:int64 ->
   program ->
   encrypted_bytecode
 

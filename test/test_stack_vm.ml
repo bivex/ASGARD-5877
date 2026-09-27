@@ -984,6 +984,250 @@ let test_full_pipeline_c_runtime_with_args () =
     end
   end
 
+(* ── Anti-VMPredator: address-masked key literals ─────────────────────── *)
+let test_addr_mask_unit () =
+  let seed = 0xA5A5B6B6C7C7D8D8L in
+  let d_addr = Stack_encoder.parse_u64_hex "0F0E1D2C3B4A5968" in
+  let b0 = make_block 0 "entry" [
+    PushImm 100L; PushImm 25L; Sub; PopReg 0;          (* 75 *)
+    PushImm 10L; PushImm 10L; Cmp;                      (* ZF=1 *)
+    JccRel (1, Flags.E); JmpRel 2;
+  ] in
+  let b1 = make_block 1 "taken" [ PushImm 111L; PopReg 1; Exit ] in
+  let b2 = make_block 2 "dead"  [ PushImm 222L; PopReg 1; Exit ] in
+  let prog = make_program 0 [b0; b1; b2] 8 in
+
+  (* 1. Legacy golden: no ~addr_mask ⇒ mask 0, output identical to explicit 0L *)
+  let enc_plain = Stack_encoder.encode_program ~seed_key:seed prog in
+  let enc_zero  = Stack_encoder.encode_program ~seed_key:seed ~addr_mask:0L prog in
+  Alcotest.(check bool) "default addr_mask is 0" true (enc_plain.addr_mask = 0L);
+  Alcotest.(check bool) "mask 0 output byte-identical" true
+    (Bytes.equal enc_plain.bytes enc_zero.bytes);
+  Alcotest.(check int64) "mask 0 keeps plaintext seed" seed enc_zero.seed_key;
+
+  (* 2. Masked encoding: cipher bytes untouched, stored literals shifted *)
+  let enc_masked = Stack_encoder.encode_program ~seed_key:seed ~addr_mask:d_addr prog in
+  Alcotest.(check bool) "masking never touches ciphertext" true
+    (Bytes.equal enc_plain.bytes enc_masked.bytes);
+  Alcotest.(check int64) "stored seed = effective ^ mask"
+    (Int64.logxor seed d_addr) enc_masked.seed_key;
+  Hashtbl.iter (fun id k ->
+    let k_plain = Hashtbl.find enc_plain.block_keys id in
+    Alcotest.(check int64)
+      (Printf.sprintf "stored block key %d = effective ^ mask" id)
+      (Int64.logxor k_plain d_addr) k
+  ) enc_masked.block_keys;
+
+  (* 3. Evaluator folds the mask: masked and plain runs agree *)
+  let check_state label st =
+    Alcotest.(check int64) (label ^ ": reg0 = 75") 75L (get_reg st 0);
+    Alcotest.(check int64) (label ^ ": reg1 = 111 (branch taken)") 111L (get_reg st 1);
+    Alcotest.(check bool) (label ^ ": halted") true st.halted
+  in
+  check_state "plain"  (run_bytecode enc_plain);
+  check_state "masked" (run_bytecode enc_masked);
+  (* decode_all needs the effective (unmasked) seed; it walks the whole
+     stream linearly, so the op count covers every block *)
+  let total_ops =
+    List.fold_left (fun a b -> a + List.length b.ops) 0 [b0; b1; b2] in
+  Alcotest.(check int)
+    "decode_all with effective seed returns all stream ops"
+    total_ops
+    (List.length (Stack_encoder.decode_all enc_masked.bytes
+                    (Stack_encoder.effective_seed_key enc_masked)));
+
+  (* 4. apply_addr_mask composes: rebind then unbind restores literals *)
+  let enc_rebound = Stack_encoder.apply_addr_mask enc_plain d_addr in
+  Alcotest.(check int64) "rebind stored seed matches direct masked encode"
+    enc_masked.seed_key enc_rebound.seed_key;
+  let enc_unbound = Stack_encoder.apply_addr_mask enc_rebound 0L in
+  Alcotest.(check int64) "unbind restores plaintext seed" seed enc_unbound.seed_key;
+  Alcotest.(check bool) "rebinding never touches ciphertext" true
+    (Bytes.equal enc_plain.bytes enc_unbound.bytes);
+
+  (* 5. parse_u64_hex: full-range patterns Int64.of_string would reject *)
+  Alcotest.(check int64) "parse_u64_hex full range" (-1L)
+    (Stack_encoder.parse_u64_hex "FFFFFFFFFFFFFFFF");
+  Alcotest.(check bool) "parse_u64_hex rejects short input" true
+    (try ignore (Stack_encoder.parse_u64_hex "123"); false with Failure _ -> true);
+  Alcotest.(check bool) "parse_u64_hex roundtrips mask" true
+    (d_addr = Stack_encoder.parse_u64_hex (Printf.sprintf "%016LX" d_addr))
+
+(* ── Anti-VMPredator: wrong address key must desynchronize decoding ───── *)
+let test_addr_mask_wrong_key () =
+  let seed = 0x1122334455667788L in
+  let right = Stack_encoder.parse_u64_hex "00F0E1D2C3B4A596" in
+  let wrong = Int64.lognot right in
+  let b0 = make_block 0 "entry" [
+    PushImm 100L; PushImm 25L; Sub; PopReg 0;
+    PushImm 1L; PushImm 1L; Cmp; JccRel (1, Flags.E); JmpRel 2;
+  ] in
+  let b1 = make_block 1 "taken" [ PushImm 111L; PopReg 1; Exit ] in
+  let b2 = make_block 2 "dead"  [ PushImm 222L; PopReg 1; Exit ] in
+  let prog = make_program 0 [b0; b1; b2] 8 in
+  let enc_masked = Stack_encoder.encode_program ~seed_key:seed ~addr_mask:right prog in
+  let st_right = run_bytecode enc_masked in
+  Alcotest.(check int64) "right address key decodes" 75L (get_reg st_right 0);
+  Alcotest.(check int64) "right address key takes branch" 111L (get_reg st_right 1);
+  (* Simulated dump/relocation. The attacker keeps the cipher bytes and the
+     STORED literals but folds out a different address key D' — exactly what
+     a foreign decoder or relocated copy does. apply_addr_mask is always
+     self-consistent (it moves literals AND mask together), so the attack is
+     modeled by re-pointing the mask field at the wrong key while keeping
+     the literals: the evaluator then starts from stored ^ D' instead of
+     stored ^ D. *)
+  let check_attack label enc_attack =
+    Alcotest.(check bool)
+      (label ^ ": foreign address key corrupts execution") true
+      (get_reg (run_bytecode enc_attack) 0 <> 75L)
+  in
+  check_attack "different key D'" { enc_masked with addr_mask = wrong };
+  (* and a legacy decoder that assumes no binding at all (mask 0) *)
+  check_attack "unbound legacy decoder" { enc_masked with addr_mask = 0L }
+
+(* ── Anti-VMPredator: two-stage address probe and re-bound C++ execution ── *)
+let test_address_bound_c_runtime_probe_and_run () =
+  if Sys.command "command -v c++ >/dev/null 2>&1" <> 0 then
+    Printf.printf "SKIP test_address_bound_c_runtime_probe_and_run: no C++ compiler on PATH\n%!"
+  else begin
+    let b0 = make_block 0 "entry" [
+      PushImm (-16L); PushImm 2L; Sar; PopReg 0;                      (* -4 *)
+      PushImm 100L; PushImm 7L; Div; PopReg 1;                        (* 14 *)
+      PushImm (-100L); PushImm 7L; Idiv; PopReg 2;                    (* -14 *)
+      PushImm 0x8000000000000000L; PushImm (-1L); Idiv; PopReg 3;     (* 0 (#DE guard) *)
+      PushImm 5L; PushImm 0L; Div; PopReg 4;                          (* 0 (zero divisor) *)
+      PushImm 3L; PushImm 9L; Cmp; JccRel (1, Flags.S); JmpRel 2;     (* 3-9=-6 → SF=1 *)
+    ] in
+    let b1 = make_block 1 "taken" [
+      PushImm 0x30L; PushImm 0L; Cmp; Setcc Flags.P; PopReg 5;        (* even parity → 1 *)
+      PushImm 0x33L; PushImm 0L; Cmp; Setcc Flags.NP; PopReg 6;       (* even parity → 0 *)
+      PushImm 10L; PushImm 20L; Cmp; PushFlags;
+      PushImm 5L; PushImm 6L; Add; PopReg 7; PopFlags;                (* flags restored *)
+      PushImm 888L; Cmov (Flags.B, 8);                                (* restored CF=1 → 888 *)
+      PushImm 4242L; PopReg 0; Exit;                                  (* final result in slot 0 *)
+    ] in
+    let b2 = make_block 2 "dead" [ PushImm 1111L; PopReg 0; Exit ] in
+    let prog = make_program 0 [b0; b1; b2] 16 in
+    let seed = 0xC0FFEE1234567890L in
+
+    (* 1. Encode with mask 0 (initial unmasked encode) *)
+    let enc = Stack_encoder.encode_program ~seed_key:seed prog in
+
+    (* 2. Generate hpp v1 (mask 0) *)
+    let cfg = Stack_runtime.default_config Stack_runtime.X86_64 in
+    let hpp_v1 = Stack_runtime.generate_c_runtime ~enc cfg prog in
+
+    let dir = Filename.get_temp_dir_name () in
+    let hpp_path = Filename.concat dir "stack_vm_runtime.hpp" in
+    let oc = open_out hpp_path in output_string oc hpp_v1; close_out oc;
+
+    (* 3. Emit probe cpp, compile and execute to learn D *)
+    let probe_src = Stack_runtime.emit_probe_cpp ~header_name:"stack_vm_runtime.hpp" () in
+    let probe_cpp_path = Filename.concat dir "asgard_stack_vm_probe.cpp" in
+    let probe_bin_path = Filename.concat dir "asgard_stack_vm_probe" in
+    let oc = open_out probe_cpp_path in output_string oc probe_src; close_out oc;
+
+    let compile_bin src_path bin_target =
+      let cmd1 = Printf.sprintf "c++ -O1 -std=c++17 %s -o %s" (Filename.quote src_path) (Filename.quote bin_target) in
+      let rc1 = Sys.command cmd1 in
+      if rc1 = 0 then 0
+      else Sys.command (Printf.sprintf "c++ -O1 -std=c++17 %s -ldl -o %s" (Filename.quote src_path) (Filename.quote bin_target))
+    in
+    let rc_probe = compile_bin probe_cpp_path probe_bin_path in
+    Alcotest.(check bool) "probe C++ compiles" true (rc_probe = 0);
+
+    if rc_probe = 0 then begin
+      let probe_out_path = probe_bin_path ^ ".out" in
+      ignore (Sys.command
+        (Printf.sprintf "%s > %s 2>&1" (Filename.quote probe_bin_path) (Filename.quote probe_out_path)));
+      let ic = open_in probe_out_path in
+      let len = in_channel_length ic in
+      let probe_out = really_input_string ic len in
+      close_in ic;
+
+      let extract_addr_key s =
+        let prefix = "ADDR_KEY: " in
+        let plen = String.length prefix in
+        let n = String.length s in
+        let rec go i =
+          if i + plen + 16 > n then None
+          else if String.sub s i plen = prefix then
+            Some (String.sub s (i + plen) 16)
+          else go (i + 1)
+        in
+        go 0
+      in
+      let d_hex = match extract_addr_key probe_out with
+        | Some hex -> hex
+        | None -> Alcotest.fail (Printf.sprintf "no ADDR_KEY line in probe output:\n%s" probe_out)
+      in
+      let d = Stack_encoder.parse_u64_hex d_hex in
+      Alcotest.(check bool) "derived address key D is non-zero" true (d <> 0L);
+
+      (* 4. Rebind: apply_addr_mask enc d -> hpp v2; ciphertext bytes must remain untouched *)
+      let enc2 = Stack_encoder.apply_addr_mask enc d in
+      Alcotest.(check bool) "rebinding never touches ciphertext bytes" true
+        (Bytes.equal enc.bytes enc2.bytes);
+      let hpp_v2 = Stack_runtime.generate_c_runtime ~enc:enc2 cfg prog in
+      let oc = open_out hpp_path in output_string oc hpp_v2; close_out oc;
+
+      (* 5. Generate driver with hpp v2 + bytecode words *)
+      let bytes_to_words b =
+        let n = Bytes.length b in
+        let padded = (n + 7) land (lnot 7) in
+        let words = Array.init (padded / 8) (fun i ->
+          let w = ref 0L in
+          for j = 7 downto 0 do
+            let idx = i * 8 + j in
+            let byte = if idx < n then Char.code (Bytes.get b idx) else 0 in
+            w := Int64.logor (Int64.shift_left !w 8) (Int64.of_int byte)
+          done;
+          !w
+        ) in
+        Array.to_list words
+      in
+      let runner_src = Stack_runtime.emit_runner_cpp (bytes_to_words enc2.bytes) in
+      let runner_cpp_path = Filename.concat dir "asgard_stack_vm_bound_runner.cpp" in
+      let runner_bin_path = Filename.concat dir "asgard_stack_vm_bound_runner" in
+      let oc = open_out runner_cpp_path in output_string oc runner_src; close_out oc;
+
+      let rc_runner = compile_bin runner_cpp_path runner_bin_path in
+      Alcotest.(check bool) "bound C++ runner compiles" true (rc_runner = 0);
+
+      if rc_runner = 0 then begin
+        let runner_out_path = runner_bin_path ^ ".out" in
+        ignore (Sys.command
+          (Printf.sprintf "%s > %s 2>&1" (Filename.quote runner_bin_path) (Filename.quote runner_out_path)));
+        let ic = open_in runner_out_path in
+        let len = in_channel_length ic in
+        let runner_out = really_input_string ic len in
+        close_in ic;
+
+        let extract_result s =
+          let n = String.length s in
+          let rec go i =
+            if i + 8 > n then None
+            else if String.sub s i 8 = "Result: " then begin
+              let j = ref (i + 8) in
+              while !j < n && s.[!j] >= '0' && s.[!j] <= '9' do incr j done;
+              Some (String.sub s (i + 8) (!j - i - 8))
+            end
+            else go (i + 1)
+          in
+          go 0
+        in
+        let st_ref = run_bytecode enc2 in
+        let expected = get_reg st_ref 0 in
+        match extract_result runner_out with
+        | Some digits ->
+            Alcotest.(check int64) "bound C++ result matches OCaml reference"
+              expected (Int64.of_string digits)
+        | None ->
+            Alcotest.fail (Printf.sprintf "no Result line in runner output:\n%s" runner_out)
+      end
+    end
+  end
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -1001,9 +1245,13 @@ let tests = [
   ("SAR/DIV/IDIV & Shift-Count Semantics", `Quick, test_sar_div_idiv_semantics);
   ("Flags Round-Trip & Parity", `Quick, test_flags_roundtrip_and_parity);
   ("Mid-Block KeyAdjust Round-Trip", `Quick, test_keyadjust_midblock);
+  ("Address-Masked Key Literals", `Quick, test_addr_mask_unit);
+  ("Address-Masked Wrong Key Diverges", `Quick, test_addr_mask_wrong_key);
   ("Full Obfuscation Pipeline Semantics", `Quick, test_full_pipeline_semantics);
   ("C++ Runtime Compile & Run", `Slow, test_c_runtime_compile_and_run);
   ("Full Pipeline + C++ Runtime + Args", `Slow, test_full_pipeline_c_runtime_with_args);
+  ("Address-Bound C++ Runtime Probe & Run", `Slow, test_address_bound_c_runtime_probe_and_run);
 ]
+
 
 
