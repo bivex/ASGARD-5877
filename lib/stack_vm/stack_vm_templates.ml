@@ -49,6 +49,9 @@ static const char* g_external_symbols[] = {
 };
 {%- endif %}
 
+#define ASG_UNMASK_OFFSET(bid) ((uint32_t)(g_stack_block_offsets[(bid)] ^ (uint32_t)(0x5877A564UL + (uint32_t)(bid) * 0x19E3779BUL)))
+#define ASG_UNMASK_KEY(bid) (g_stack_block_keys[(bid)] ^ (UINT64_C(0xD00F5877A5640000) + (uint64_t)(bid) * UINT64_C(0x9E3779B97F4A7C15)))
+
 static const uint32_t g_stack_block_offsets[{{ block_offsets_count }}] = {
 {%- for off in block_offsets %}
     {{ off }},
@@ -471,8 +474,8 @@ static void h_pop_flags(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
 static void h_jmp_rel(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     int32_t target_bid = fetch_i32(vm, bytecode, vip);
     if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {
-        *vip = g_stack_block_offsets[target_bid];
-        vm->vkey = g_stack_block_keys[target_bid] ^ vm->addr_key;
+        *vip = ASG_UNMASK_OFFSET(target_bid);
+        vm->vkey = ASG_UNMASK_KEY(target_bid) ^ vm->addr_key;
     } else {
         vm->halted = 1; /* fail-closed: unknown block id */
     }
@@ -483,8 +486,8 @@ static void h_jcc_rel(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     int32_t target_bid = fetch_i32(vm, bytecode, vip);
     if (eval_cond(vm, cond)) {
         if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {
-            *vip = g_stack_block_offsets[target_bid];
-            vm->vkey = g_stack_block_keys[target_bid] ^ vm->addr_key;
+            *vip = ASG_UNMASK_OFFSET(target_bid);
+            vm->vkey = ASG_UNMASK_KEY(target_bid) ^ vm->addr_key;
         } else {
             vm->halted = 1; /* fail-closed: unknown block id */
         }
@@ -639,9 +642,15 @@ static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size
     &h_jcc_rel, &h_key_adjust, &h_exit, &h_call_extern, &h_resolve_sym,
     &h_setcc, &h_cmov, &h_cmp, &h_test
 };
+__attribute__((noinline))
 static uint64_t derive_addr_key(void) {
     const size_t n = sizeof(g_stack_handler_table) / sizeof(g_stack_handler_table[0]);
     uint64_t acc = UINT64_C(0x9E3779B97F4A7C15);
+#if defined(__clang__)
+    #pragma clang loop unroll(disable)
+#elif defined(__GNUC__)
+    #pragma GCC unroll 0
+#endif
     for (size_t i = 0; i + 1 < n; ++i) {
         uint64_t d = (uint64_t)((uintptr_t)g_stack_handler_table[i + 1] - (uintptr_t)g_stack_handler_table[i]);
         acc ^= d + UINT64_C(0x165667B19E3779F9) + (acc << 6) + (acc >> 2);
@@ -650,7 +659,40 @@ static uint64_t derive_addr_key(void) {
 }
 
 static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t size) {
-    size_t vip = g_stack_block_offsets[{{ entry_bid }}];
+    size_t vip = ASG_UNMASK_OFFSET({{ entry_bid }});
+#if defined(__GNUC__) || defined(__clang__)
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Winitializer-overrides"
+    static const void* const dispatch_table[256] = {
+        [0 ... 255] = &&lbl_default,
+{%- for d in dispatch_cases %}
+        [0x{{ d.hex }}] = &&lbl_{{ d.hex }},
+{%- endfor %}
+    };
+    #pragma clang diagnostic pop
+
+    #define ASG_DISPATCH_STEP() do { \
+        if (vm->halted || vip >= size) goto lbl_exit; \
+        uint8_t op = fetch_byte(vm, bytecode, &vip); \
+        goto *dispatch_table[op]; \
+    } while (0)
+
+    ASG_DISPATCH_STEP();
+
+{%- for d in dispatch_cases %}
+lbl_{{ d.hex }}:
+    {{ d.fn }}(vm, bytecode, &vip);
+    ASG_DISPATCH_STEP();
+{%- endfor %}
+
+lbl_default:
+    vm->halted = 1;
+    goto lbl_exit;
+
+lbl_exit:
+    return;
+    #undef ASG_DISPATCH_STEP
+#else
     while (!vm->halted && vip < size) {
         uint8_t op = fetch_byte(vm, bytecode, &vip);
         switch (op) {
@@ -660,6 +702,7 @@ static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t 
             default: vm->halted = 1; break;
         }
     }
+#endif
 }
 
 static inline uint64_t stack_vm_call(const uint64_t* bc_words, size_t len_words,
@@ -669,9 +712,9 @@ static inline uint64_t stack_vm_call(const uint64_t* bc_words, size_t len_words,
     memset(&vm, 0, sizeof(vm));
 {%- if is_address_bound %}
     vm.addr_key = derive_addr_key();
-    vm.vkey = g_stack_block_keys[{{ entry_bid }}] ^ vm.addr_key;
+    vm.vkey = ASG_UNMASK_KEY({{ entry_bid }}) ^ vm.addr_key;
 {%- else %}
-    vm.vkey = g_stack_block_keys[{{ entry_bid }}];
+    vm.vkey = ASG_UNMASK_KEY({{ entry_bid }});
 {%- endif %}
     vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);
     alignas(16) static thread_local uint8_t host_stack[1048576];

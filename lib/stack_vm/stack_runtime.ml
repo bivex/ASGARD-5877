@@ -202,11 +202,22 @@ let generate_c_runtime
     List.map (fun sym -> Jingoo.Jg_types.Tstr (String.escaped sym)) external_symbols
   in
   let max_bid = Hashtbl.fold (fun id _ acc -> max id acc) enc.block_offsets 0 in
+  let mask32 i =
+    let base = 0x5877A564L in
+    let stride = Int64.mul (Int64.of_int i) 0x19E3779BL in
+    Int64.logand (Int64.add base stride) 0xFFFFFFFFL
+  in
+  let mask64 i =
+    let base = 0xD00F5877A5640000L in
+    let stride = Int64.mul (Int64.of_int i) 0x9E3779B97F4A7C15L in
+    Int64.add base stride
+  in
   let block_offsets_model =
     let l = ref [] in
     for i = 0 to max_bid do
       let off = match Hashtbl.find_opt enc.block_offsets i with Some o -> o | None -> 0 in
-      l := Jingoo.Jg_types.Tint off :: !l
+      let masked_off = Int64.logxor (Int64.of_int off) (mask32 i) in
+      l := Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08LX" masked_off) :: !l
     done;
     List.rev !l
   in
@@ -214,7 +225,8 @@ let generate_c_runtime
     let l = ref [] in
     for i = 0 to max_bid do
       let k = match Hashtbl.find_opt enc.block_keys i with Some k -> k | None -> enc.seed_key in
-      l := Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" k) :: !l
+      let masked_k = Int64.logxor k (mask64 i) in
+      l := Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" masked_k) :: !l
     done;
     List.rev !l
   in
