@@ -28,6 +28,9 @@ graph TD
     Cff_Pop_coupler["Pop_coupler 📄"]
   end
   subgraph group_gpu_synth["gpu_synth"]
+    Gpu_synth_Gpu_backend["Gpu_backend 📄"]
+    Gpu_synth_Gpu_matrix["Gpu_matrix 📄"]
+    Gpu_synth_Gpu_mba["Gpu_mba 📄"]
     Gpu_synth_Gpu_synth["Gpu_synth 📄"]
   end
   subgraph group_mba_engine["mba_engine"]
@@ -47,12 +50,14 @@ graph TD
     Native_vm_Defuse_scrambler["Defuse_scrambler 📄"]
     Native_vm_Egraph_cpp_emitter["Egraph_cpp_emitter"]
     Native_vm_Hardened_runtime["Hardened_runtime 📄"]
+    Native_vm_Mba_par["Mba_par"]
     Native_vm_Metrics["Metrics 📄"]
     Native_vm_Protection_config["Protection_config 📄"]
     Native_vm_Protection_json["Protection_json"]
     Native_vm_Protection_presets["Protection_presets"]
     Native_vm_Protection_types["Protection_types 📄"]
     Native_vm_Runtime_dual_map["Runtime_dual_map 📄"]
+    Native_vm_Runtime_ephemeral_jit["Runtime_ephemeral_jit"]
     Native_vm_Runtime_probes["Runtime_probes 📄"]
     Native_vm_Runtime_smc["Runtime_smc 📄"]
     Native_vm_Runtime_syscalls["Runtime_syscalls 📄"]
@@ -71,6 +76,7 @@ graph TD
     Protect_adapters_C_trampoline_adapter["C_trampoline_adapter 📄"]
     Protect_adapters_Clang_toolchain_adapter["Clang_toolchain_adapter 📄"]
     Protect_adapters_Config_adapter["Config_adapter 📄"]
+    Protect_adapters_Riscv_lifter_adapter["Riscv_lifter_adapter 📄"]
     Protect_adapters_Vm_packagers["Vm_packagers 📄"]
     Protect_adapters_X86_lifter_adapter["X86_lifter_adapter 📄"]
   end
@@ -129,6 +135,27 @@ graph TD
     Rd_jit_vm_Rd_jit_synth["Rd_jit_synth 📄"]
     Rd_jit_vm_Rd_jit_types["Rd_jit_types 📄"]
   end
+  subgraph group_riscv_lifter["riscv_lifter"]
+    Riscv_lifter_Riscv_lifter["Riscv_lifter 📄"]
+    Riscv_lifter_Riscv_parser["Riscv_parser 📄"]
+    Riscv_lifter_Riscv_regs["Riscv_regs 📄"]
+    Riscv_lifter_Riscv_types["Riscv_types 📄"]
+  end
+  subgraph group_stack_vm["stack_vm"]
+    Stack_vm_Context_allocator["Context_allocator 📄"]
+    Stack_vm_Ir_to_stack["Ir_to_stack 📄"]
+    Stack_vm_Stack_balance_pass["Stack_balance_pass 📄"]
+    Stack_vm_Stack_cff_pass["Stack_cff_pass 📄"]
+    Stack_vm_Stack_encoder["Stack_encoder 📄"]
+    Stack_vm_Stack_eval["Stack_eval 📄"]
+    Stack_vm_Stack_flag_liveness["Stack_flag_liveness"]
+    Stack_vm_Stack_ghost_pass["Stack_ghost_pass 📄"]
+    Stack_vm_Stack_ir["Stack_ir 📄"]
+    Stack_vm_Stack_logic_pass["Stack_logic_pass 📄"]
+    Stack_vm_Stack_mba_pass["Stack_mba_pass 📄"]
+    Stack_vm_Stack_runtime["Stack_runtime 📄"]
+    Stack_vm_Stack_vm_templates["Stack_vm_templates 📄"]
+  end
   subgraph group_vanguard_9292["vanguard_9292"]
     Vanguard_9292_Vanguard_9292["Vanguard_9292 📄"]
     Vanguard_9292_Vanguard_asm["Vanguard_asm"]
@@ -160,6 +187,7 @@ graph TD
     X86_lifter_X86_parser["X86_parser 📄"]
   end
   subgraph group__no_library_["(no library)"]
+    Bench_mba_par["Bench_mba_par 🚪"]
     Cli_isa["Cli_isa"]
     Cli_project["Cli_project"]
     Cli_protect["Cli_protect"]
@@ -172,6 +200,13 @@ graph TD
     Mba_Verified["Mba_Verified"]
     Profile_bottlenecks["Profile_bottlenecks 🚪"]
   end
+  Bench_mba_par -->|"ref"| X86_lifter_Lifter
+  Bench_mba_par ==>|"ref"| Vm_ir_Ir
+  Bench_mba_par -->|"ref"| Native_vm_Vm_emitter
+  Bench_mba_par -->|"ref"| Native_vm_Protection_config
+  Bench_mba_par -->|"ref"| Vm_ir_Register
+  Bench_mba_par -->|"ref"| Mba_engine_Egraph
+  Bench_mba_par -->|"ref"| Gpu_synth_Gpu_mba
   Cli_isa -. "ref" .-> Random_visa_domain_Hw_cost
   Cli_isa -. "ref" .-> Random_visa_ports_Ports
   Cli_isa -. "ref" .-> Random_visa_application_Pipeline
@@ -266,6 +301,9 @@ graph TD
   Protect_adapters_Clang_toolchain_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
   Protect_adapters_Config_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
   Protect_adapters_Config_adapter ==>|"ref · cross-lib"| Native_vm_Protection_config
+  Protect_adapters_Riscv_lifter_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
+  Protect_adapters_Riscv_lifter_adapter -->|"ref · cross-lib"| Riscv_lifter_Riscv_parser
+  Protect_adapters_Riscv_lifter_adapter -->|"ref · cross-lib"| Riscv_lifter_Riscv_lifter
   Protect_adapters_Vm_packagers -->|"open · cross-lib"| Random_visa_ports_Protect_ports
   Protect_adapters_Vm_packagers ==>|"ref · cross-lib"| Native_vm_Metrics
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Vm_ir_Ir
@@ -273,6 +311,15 @@ graph TD
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Native_vm_Vm_emitter
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Rd_jit_vm_Rd_jit_emitter
   Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Multi_vm_Multi_vm_emitter
+  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Stack_vm_Stack_ir
+  Protect_adapters_Vm_packagers ==>|"ref · cross-lib"| Stack_vm_Stack_encoder
+  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Cff_Cff
+  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Stack_vm_Ir_to_stack
+  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Stack_vm_Stack_balance_pass
+  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Stack_vm_Stack_ghost_pass
+  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Stack_vm_Stack_mba_pass
+  Protect_adapters_Vm_packagers -->|"ref · cross-lib"| Stack_vm_Stack_cff_pass
+  Protect_adapters_Vm_packagers ==>|"ref · cross-lib"| Stack_vm_Stack_runtime
   Protect_adapters_X86_lifter_adapter -->|"open · cross-lib"| Random_visa_ports_Protect_ports
   Protect_adapters_X86_lifter_adapter -->|"ref · cross-lib"| X86_lifter_X86_parser
   Protect_adapters_X86_lifter_adapter -->|"ref · cross-lib"| X86_lifter_Lifter
@@ -307,6 +354,8 @@ graph TD
   Random_visa_application_Pipeline -->|"ref"| Random_visa_application_Compile_and_verify
   Random_visa_application_Pipeline -->|"ref · cross-lib"| Random_visa_domain_Errors
   Random_visa_application_Protect_pipeline -->|"open · cross-lib"| Random_visa_ports_Protect_ports
+  Random_visa_application_Protect_pipeline -->|"ref · cross-lib"| Stack_vm_Stack_runtime
+  Random_visa_application_Protect_pipeline -->|"ref · cross-lib"| Stack_vm_Stack_encoder
   Random_visa_application_Synthesize_isa -->|"ref · cross-lib"| Random_visa_domain_Vector_config
   Random_visa_application_Synthesize_isa -->|"ref · cross-lib"| Random_visa_domain_Generation_profile
   Random_visa_application_Synthesize_isa -->|"ref · cross-lib"| Random_visa_domain_Isa_grammar
@@ -386,6 +435,14 @@ graph TD
   Random_visa_domain_Vector_isa_spec -->|"ref"| Random_visa_domain_Sail_ast
   Random_visa_domain_Vm_runtime_profile -->|"ref"| Random_visa_domain_Dispatch_strategy
   Random_visa_domain_Vm_runtime_profile -->|"ref"| Random_visa_domain_Mutation_profile
+  Gpu_synth_Gpu_matrix -->|"ref"| Gpu_synth_Gpu_backend
+  Gpu_synth_Gpu_mba -->|"open · cross-lib"| Mba_engine_Mba
+  Gpu_synth_Gpu_mba -->|"ref"| Gpu_synth_Gpu_backend
+  Gpu_synth_Gpu_mba ==>|"ref · cross-lib"| Vm_ir_Ir
+  Gpu_synth_Gpu_mba -->|"ref · cross-lib"| Vm_ir_Register
+  Gpu_synth_Gpu_synth -->|"include"| Gpu_synth_Gpu_backend
+  Gpu_synth_Gpu_synth -->|"ref · cross-lib"| Vm_ir_Register
+  Gpu_synth_Gpu_synth -->|"ref · cross-lib"| Vm_ir_Ir
   Mba_engine_Egraph ==>|"open"| Mba_engine_Mba
   Mba_engine_Egraph -->|"include"| Mba_engine_Egraph_types
   Mba_engine_Egraph -->|"include"| Mba_engine_Egraph_rules
@@ -415,23 +472,27 @@ graph TD
   Native_vm_Hardened_runtime -->|"ref"| Native_vm_Runtime_dual_map
   Native_vm_Hardened_runtime -->|"ref"| Native_vm_Runtime_probes
   Native_vm_Hardened_runtime -->|"ref"| Native_vm_Runtime_smc
+  Native_vm_Hardened_runtime -->|"ref"| Native_vm_Runtime_ephemeral_jit
   Native_vm_Metrics ==>|"ref · cross-lib"| Vm_ir_Ir
   Native_vm_Protection_config -->|"include"| Native_vm_Protection_types
   Native_vm_Protection_config -->|"include"| Native_vm_Protection_presets
   Native_vm_Protection_config -->|"ref"| Native_vm_Protection_json
-  Native_vm_Protection_json -->|"open"| Native_vm_Protection_types
-  Native_vm_Protection_json -->|"open"| Native_vm_Protection_presets
+  Native_vm_Protection_json ==>|"open"| Native_vm_Protection_types
   Native_vm_Protection_presets -->|"open"| Native_vm_Protection_types
+  Native_vm_Protection_presets -->|"ref · cross-lib"| Gpu_synth_Gpu_synth
   Native_vm_Vm_alu_handlers ==>|"ref"| Native_vm_Egraph_cpp_emitter
   Native_vm_Vm_emitter -->|"open"| Native_vm_Vm_transform
   Native_vm_Vm_emitter -->|"ref"| Native_vm_Metrics
   Native_vm_Vm_emitter ==>|"ref · cross-lib"| Vm_ir_Ir
-  Native_vm_Vm_emitter -->|"ref"| Native_vm_Protection_config
+  Native_vm_Vm_emitter ==>|"ref"| Native_vm_Protection_config
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Cff_Cff
+  Native_vm_Vm_emitter -->|"ref · cross-lib"| Gpu_synth_Gpu_mba
+  Native_vm_Vm_emitter -->|"ref · cross-lib"| Gpu_synth_Gpu_matrix
+  Native_vm_Vm_emitter -->|"ref"| Native_vm_Mba_par
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Mba_engine_Egraph
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Mba_engine_Mba
-  Native_vm_Vm_emitter -->|"ref · cross-lib"| Vm_ir_Rolling_key
   Native_vm_Vm_emitter ==>|"ref · cross-lib"| Vm_ir_Register
+  Native_vm_Vm_emitter -->|"ref · cross-lib"| Vm_ir_Rolling_key
   Native_vm_Vm_emitter -->|"ref"| Native_vm_Vm_runtime_emitter
   Native_vm_Vm_emitter -->|"ref · cross-lib"| Random_visa_domain_Vm_runtime_profile
   Native_vm_Vm_handlers_emitter -->|"ref"| Native_vm_Vm_alu_handlers
@@ -441,6 +502,7 @@ graph TD
   Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Protection_config
   Native_vm_Vm_runtime_emitter -->|"ref · cross-lib"| Vm_ir_Rns
   Native_vm_Vm_runtime_emitter ==>|"ref"| Native_vm_Hardened_runtime
+  Native_vm_Vm_runtime_emitter -->|"ref · cross-lib"| Gpu_synth_Gpu_matrix
   Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Vm_context_emitter
   Native_vm_Vm_runtime_emitter -->|"ref"| Native_vm_Vm_handlers_emitter
   Native_vm_Vm_transform ==>|"ref · cross-lib"| Vm_ir_Register
@@ -455,10 +517,50 @@ graph TD
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Native_vm_Protection_config
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Cff_Cff
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Native_vm_Vm_emitter
+  Rd_jit_vm_Rd_jit_emitter ==>|"ref · cross-lib"| Vm_ir_Register
   Rd_jit_vm_Rd_jit_emitter ==>|"ref · cross-lib"| Native_vm_Vm_transform
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Vm_ir_Rns
   Rd_jit_vm_Rd_jit_emitter -->|"ref · cross-lib"| Native_vm_Metrics
   Rd_jit_vm_Rd_jit_types -->|"ref · cross-lib"| Native_vm_Metrics
+  Riscv_lifter_Riscv_lifter -->|"open"| Riscv_lifter_Riscv_types
+  Riscv_lifter_Riscv_lifter -->|"open · cross-lib"| Vm_ir_Flags
+  Riscv_lifter_Riscv_lifter ==>|"ref · cross-lib"| Vm_ir_Ir
+  Riscv_lifter_Riscv_lifter ==>|"ref · cross-lib"| Vm_ir_Register
+  Riscv_lifter_Riscv_lifter -->|"ref · cross-lib"| Vm_ir_Subreg_write
+  Riscv_lifter_Riscv_parser -->|"open"| Riscv_lifter_Riscv_regs
+  Riscv_lifter_Riscv_parser -->|"include"| Riscv_lifter_Riscv_types
+  Riscv_lifter_Riscv_regs ==>|"ref · cross-lib"| Vm_ir_Register
+  Riscv_lifter_Riscv_types ==>|"ref · cross-lib"| Vm_ir_Register
+  Stack_vm_Context_allocator ==>|"ref · cross-lib"| Vm_ir_Register
+  Stack_vm_Ir_to_stack -->|"open · cross-lib"| Vm_ir_Register
+  Stack_vm_Ir_to_stack ==>|"open · cross-lib"| Vm_ir_Ir
+  Stack_vm_Ir_to_stack -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Ir_to_stack ==>|"ref"| Stack_vm_Context_allocator
+  Stack_vm_Ir_to_stack ==>|"ref"| Stack_vm_Stack_logic_pass
+  Stack_vm_Stack_balance_pass -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_balance_pass -->|"ref"| Stack_vm_Context_allocator
+  Stack_vm_Stack_cff_pass -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_cff_pass -->|"open · cross-lib"| Vm_ir_Flags
+  Stack_vm_Stack_cff_pass -->|"ref"| Stack_vm_Context_allocator
+  Stack_vm_Stack_encoder -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_encoder -->|"open · cross-lib"| Vm_ir_Flags
+  Stack_vm_Stack_eval -->|"open · cross-lib"| Vm_ir_Register
+  Stack_vm_Stack_eval ==>|"open · cross-lib"| Vm_ir_Flags
+  Stack_vm_Stack_eval -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_eval -->|"open"| Stack_vm_Stack_encoder
+  Stack_vm_Stack_flag_liveness -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_ghost_pass -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_ghost_pass -->|"ref"| Stack_vm_Context_allocator
+  Stack_vm_Stack_ghost_pass -->|"ref"| Stack_vm_Stack_flag_liveness
+  Stack_vm_Stack_ghost_pass -->|"ref"| Stack_vm_Stack_balance_pass
+  Stack_vm_Stack_ir ==>|"open · cross-lib"| Vm_ir_Flags
+  Stack_vm_Stack_logic_pass -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_logic_pass -->|"ref"| Stack_vm_Context_allocator
+  Stack_vm_Stack_mba_pass -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_mba_pass -->|"ref"| Stack_vm_Stack_flag_liveness
+  Stack_vm_Stack_runtime -->|"open"| Stack_vm_Stack_ir
+  Stack_vm_Stack_runtime -->|"ref"| Stack_vm_Stack_encoder
+  Stack_vm_Stack_runtime ==>|"ref"| Stack_vm_Stack_vm_templates
   Vanguard_9292_Vanguard_9292 -->|"include"| Vanguard_9292_Vanguard_types
   Vanguard_9292_Vanguard_9292 -->|"ref · cross-lib"| Random_visa_domain_Vector_isa_spec
   Vanguard_9292_Vanguard_9292 -->|"ref · cross-lib"| Random_visa_domain_Vector_instruction
@@ -515,6 +617,6 @@ graph TD
   X86_lifter_Lifter ==>|"open"| X86_lifter_X86_parser
   X86_lifter_Lifter ==>|"ref · cross-lib"| Vm_ir_Ir
   X86_lifter_Lifter ==>|"ref · cross-lib"| Vm_ir_Register
-  X86_lifter_Lifter -->|"ref · cross-lib"| Vm_ir_Flags
+  X86_lifter_Lifter ==>|"ref · cross-lib"| Vm_ir_Flags
   X86_lifter_Lifter -->|"ref · cross-lib"| Vm_ir_Subreg_write
   X86_lifter_X86_parser ==>|"ref · cross-lib"| Vm_ir_Register

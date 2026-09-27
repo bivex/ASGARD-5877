@@ -1,4 +1,4 @@
 (library
  (name stack_vm)
  (public_name random_visa.stack_vm)
- (libraries vm_ir random_visa_domain jingoo))
+ (libraries vm_ir jingoo))

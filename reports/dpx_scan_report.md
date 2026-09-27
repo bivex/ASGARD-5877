@@ -1,20 +1,21 @@
 # 🐫 DPX-OCaml: Module Architecture & Functional Pattern Report
 
 - **Target Path:** `/Volumes/External/Code/ASGARD-5877`
-- **Files Scanned:** `255`
-- **Total Patterns & Findings:** `168`
-- **Analysis Elapsed Time:** `0.209s`
+- **Files Scanned:** `305`
+- **Total Patterns & Findings:** `202`
+- **Analysis Elapsed Time:** `0.284s`
 
 ## 📊 Breakdown by Category
 
 | Category | Count |
 |---|:---:|
-| **MODULE_SYSTEM** | 15 |
-| **FUNCTIONAL_IDIOM** | 38 |
-| **BEHAVIORAL** | 4 |
-| **TYPE_SAFETY** | 8 |
-| **RESILIENCE** | 15 |
-| **PRINCIPLE** | 88 |
+| **MODULE_SYSTEM** | 16 |
+| **FUNCTIONAL_IDIOM** | 41 |
+| **BEHAVIORAL** | 6 |
+| **EFFECT_CONCURRENCY** | 1 |
+| **TYPE_SAFETY** | 11 |
+| **RESILIENCE** | 19 |
+| **PRINCIPLE** | 108 |
 
 ## 📋 Detailed Pattern Findings
 
@@ -117,7 +118,16 @@
 #### Evidence Trail:
 - `+85%` **[FIRST_CLASS_MODULE_DISPATCH]** Module 'Protect_pipeline' utilizes First-Class Modules for dynamic runtime dispatch and pluggable strategy injection -> `/Volumes/External/Code/ASGARD-5877/lib/application/protect_pipeline.ml:1:1`
 
-### #12 MODULE_INCLUSION_EXTENDER on `Compiler_adapter`
+### #12 MODULE_INCLUSION_EXTENDER on `Gpu_synth`
+- **Category:** `module_system`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/gpu_synth/gpu_synth.ml:1:1`
+- **Summary:** Module 'Gpu_synth' extends and composes functionality from 1 included module(s) (Gpu_backend)
+
+#### Evidence Trail:
+- `+80%` **[MODULE_INCLUSION_EXTENSION]** Module 'Gpu_synth' extends and composes functionality from 1 included module(s) (Gpu_backend) -> `/Volumes/External/Code/ASGARD-5877/lib/gpu_synth/gpu_synth.ml:1:1`
+
+### #13 MODULE_INCLUSION_EXTENDER on `Compiler_adapter`
 - **Category:** `module_system`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/compiler_adapter/compiler_adapter.mli:1:1`
@@ -126,7 +136,7 @@
 #### Evidence Trail:
 - `+80%` **[MODULE_INCLUSION_EXTENSION]** Module 'Compiler_adapter' extends and composes functionality from 1 included module(s) (Ports.Compiler) -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/compiler_adapter/compiler_adapter.mli:1:1`
 
-### #13 MODULE_INCLUSION_EXTENDER on `Sail_export_adapter`
+### #14 MODULE_INCLUSION_EXTENDER on `Sail_export_adapter`
 - **Category:** `module_system`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_export/sail_export_adapter.mli:1:1`
@@ -135,7 +145,7 @@
 #### Evidence Trail:
 - `+80%` **[MODULE_INCLUSION_EXTENSION]** Module 'Sail_export_adapter' extends and composes functionality from 1 included module(s) (Ports.Sail_spec_writer) -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_export/sail_export_adapter.mli:1:1`
 
-### #14 MODULE_INCLUSION_EXTENDER on `Cpp_emitter_adapter`
+### #15 MODULE_INCLUSION_EXTENDER on `Cpp_emitter_adapter`
 - **Category:** `module_system`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/cpp_emitter/cpp_emitter_adapter.mli:1:1`
@@ -144,7 +154,7 @@
 #### Evidence Trail:
 - `+80%` **[MODULE_INCLUSION_EXTENSION]** Module 'Cpp_emitter_adapter' extends and composes functionality from 1 included module(s) (Ports.Cpp_code_emitter) -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/cpp_emitter/cpp_emitter_adapter.mli:1:1`
 
-### #15 MODULE_INCLUSION_EXTENDER on `Rd_jit_emitter`
+### #16 MODULE_INCLUSION_EXTENDER on `Rd_jit_emitter`
 - **Category:** `module_system`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/rd_jit_emitter.ml:1:1`
@@ -153,7 +163,7 @@
 #### Evidence Trail:
 - `+80%` **[MODULE_INCLUSION_EXTENSION]** Module 'Rd_jit_emitter' extends and composes functionality from 1 included module(s) (Rd_jit_types) -> `/Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/rd_jit_emitter.ml:1:1`
 
-### #16 POLYMORPHIC_VARIANTS on `Test_domain_invariants`
+### #17 POLYMORPHIC_VARIANTS on `Test_domain_invariants`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:1:1`
@@ -162,7 +172,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_domain_invariants' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:1:1`
 
-### #17 POLYMORPHIC_VARIANTS on `Test_vm_ir`
+### #18 POLYMORPHIC_VARIANTS on `Test_vm_ir`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vm_ir.ml:1:1`
@@ -171,7 +181,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_vm_ir' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_vm_ir.ml:1:1`
 
-### #18 POLYMORPHIC_VARIANTS on `Test_protection_config`
+### #19 POLYMORPHIC_VARIANTS on `Test_protection_config`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_protection_config.ml:1:1`
@@ -180,7 +190,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_protection_config' adopts Polymorphic Variants (``Ncfg, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_protection_config.ml:1:1`
 
-### #19 POLYMORPHIC_VARIANTS on `Test_vanguard_9292`
+### #20 POLYMORPHIC_VARIANTS on `Test_vanguard_9292`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:1:1`
@@ -189,7 +199,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_vanguard_9292' adopts Polymorphic Variants (``Junk_opcode, ``Unknown_opcode) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:1:1`
 
-### #20 POLYMORPHIC_VARIANTS on `Test_hw_cost`
+### #21 POLYMORPHIC_VARIANTS on `Test_hw_cost`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_hw_cost.ml:1:1`
@@ -198,7 +208,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_hw_cost' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_hw_cost.ml:1:1`
 
-### #21 POLYMORPHIC_VARIANTS on `Test_gpu_synth`
+### #22 POLYMORPHIC_VARIANTS on `Test_gpu_synth`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_gpu_synth.ml:1:1`
@@ -207,7 +217,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_gpu_synth' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_gpu_synth.ml:1:1`
 
-### #22 POLYMORPHIC_VARIANTS on `Test_families_generation`
+### #23 POLYMORPHIC_VARIANTS on `Test_families_generation`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:1:1`
@@ -216,7 +226,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_families_generation' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:1:1`
 
-### #23 POLYMORPHIC_VARIANTS on `Test_egraph_expansion`
+### #24 POLYMORPHIC_VARIANTS on `Test_egraph_expansion`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:1:1`
@@ -225,7 +235,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_egraph_expansion' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:1:1`
 
-### #24 POLYMORPHIC_VARIANTS on `Test_isa_grammar`
+### #25 POLYMORPHIC_VARIANTS on `Test_isa_grammar`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_isa_grammar.ml:1:1`
@@ -234,7 +244,16 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_isa_grammar' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_isa_grammar.ml:1:1`
 
-### #25 POLYMORPHIC_VARIANTS on `Test_cli`
+### #26 POLYMORPHIC_VARIANTS on `Test_native_semantics`
+- **Category:** `functional_idiom`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_native_semantics.ml:1:1`
+- **Summary:** Module 'Test_native_semantics' adopts Polymorphic Variants (``Slow, ``Slow) providing open tag subtyping without nominal declarations
+
+#### Evidence Trail:
+- `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_native_semantics' adopts Polymorphic Variants (``Slow, ``Slow) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_native_semantics.ml:1:1`
+
+### #27 POLYMORPHIC_VARIANTS on `Test_cli`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_cli.ml:1:1`
@@ -243,7 +262,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_cli' adopts Polymorphic Variants (``Slow, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_cli.ml:1:1`
 
-### #26 POLYMORPHIC_VARIANTS on `Test_x86_lifter`
+### #28 POLYMORPHIC_VARIANTS on `Test_x86_lifter`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_x86_lifter.ml:1:1`
@@ -252,7 +271,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_x86_lifter' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_x86_lifter.ml:1:1`
 
-### #27 POLYMORPHIC_VARIANTS on `Test_multi_vlen`
+### #29 POLYMORPHIC_VARIANTS on `Test_multi_vlen`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vlen.ml:1:1`
@@ -261,7 +280,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_multi_vlen' adopts Polymorphic Variants (``Slow, ``Slow) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vlen.ml:1:1`
 
-### #28 POLYMORPHIC_VARIANTS on `Test_native_vm`
+### #30 POLYMORPHIC_VARIANTS on `Test_native_vm`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_native_vm.ml:1:1`
@@ -270,7 +289,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_native_vm' adopts Polymorphic Variants (``Slow, ``Slow) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_native_vm.ml:1:1`
 
-### #29 POLYMORPHIC_VARIANTS on `Test_anti_pushan`
+### #31 POLYMORPHIC_VARIANTS on `Test_anti_pushan`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:1:1`
@@ -279,7 +298,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_anti_pushan' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:1:1`
 
-### #30 POLYMORPHIC_VARIANTS on `Test_arxiv_innovations`
+### #32 POLYMORPHIC_VARIANTS on `Test_arxiv_innovations`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:1:1`
@@ -288,7 +307,16 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_arxiv_innovations' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:1:1`
 
-### #31 POLYMORPHIC_VARIANTS on `Test_assembler`
+### #33 POLYMORPHIC_VARIANTS on `Test_helpers`
+- **Category:** `functional_idiom`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:1:1`
+- **Summary:** Module 'Test_helpers' adopts Polymorphic Variants (``Msg, ``Msg) providing open tag subtyping without nominal declarations
+
+#### Evidence Trail:
+- `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_helpers' adopts Polymorphic Variants (``Msg, ``Msg) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:1:1`
+
+### #34 POLYMORPHIC_VARIANTS on `Test_assembler`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:1:1`
@@ -297,7 +325,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_assembler' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:1:1`
 
-### #32 POLYMORPHIC_VARIANTS on `Test_anti_analysis`
+### #35 POLYMORPHIC_VARIANTS on `Test_anti_analysis`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:1:1`
@@ -306,7 +334,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_anti_analysis' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:1:1`
 
-### #33 POLYMORPHIC_VARIANTS on `Test_runtime_profile`
+### #36 POLYMORPHIC_VARIANTS on `Test_runtime_profile`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_runtime_profile.ml:1:1`
@@ -315,7 +343,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_runtime_profile' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_runtime_profile.ml:1:1`
 
-### #34 POLYMORPHIC_VARIANTS on `Test_metrics`
+### #37 POLYMORPHIC_VARIANTS on `Test_metrics`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_metrics.ml:1:1`
@@ -324,7 +352,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_metrics' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_metrics.ml:1:1`
 
-### #35 POLYMORPHIC_VARIANTS on `Test_compiler_pipeline`
+### #38 POLYMORPHIC_VARIANTS on `Test_compiler_pipeline`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_compiler_pipeline.ml:1:1`
@@ -333,7 +361,16 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_compiler_pipeline' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_compiler_pipeline.ml:1:1`
 
-### #36 POLYMORPHIC_VARIANTS on `Test_anti_tamper_smc`
+### #39 POLYMORPHIC_VARIANTS on `Test_stack_vm`
+- **Category:** `functional_idiom`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_stack_vm.ml:1:1`
+- **Summary:** Module 'Test_stack_vm' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations
+
+#### Evidence Trail:
+- `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_stack_vm' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_stack_vm.ml:1:1`
+
+### #40 POLYMORPHIC_VARIANTS on `Test_anti_tamper_smc`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
@@ -342,7 +379,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_anti_tamper_smc' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
 
-### #37 POLYMORPHIC_VARIANTS on `Test_arm64_lifter`
+### #41 POLYMORPHIC_VARIANTS on `Test_arm64_lifter`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_arm64_lifter.ml:1:1`
@@ -351,7 +388,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_arm64_lifter' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_arm64_lifter.ml:1:1`
 
-### #38 POLYMORPHIC_VARIANTS on `Test_sail_parser_roundtrip`
+### #42 POLYMORPHIC_VARIANTS on `Test_sail_parser_roundtrip`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_sail_parser_roundtrip.ml:1:1`
@@ -360,7 +397,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_sail_parser_roundtrip' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_sail_parser_roundtrip.ml:1:1`
 
-### #39 POLYMORPHIC_VARIANTS on `Test_assembler_deep`
+### #43 POLYMORPHIC_VARIANTS on `Test_assembler_deep`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_assembler_deep.ml:1:1`
@@ -369,7 +406,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_assembler_deep' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_assembler_deep.ml:1:1`
 
-### #40 POLYMORPHIC_VARIANTS on `Test_multi_vm`
+### #44 POLYMORPHIC_VARIANTS on `Test_multi_vm`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:1:1`
@@ -378,7 +415,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_multi_vm' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:1:1`
 
-### #41 POLYMORPHIC_VARIANTS on `Test_c_macro_obf`
+### #45 POLYMORPHIC_VARIANTS on `Test_c_macro_obf`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
@@ -387,7 +424,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_c_macro_obf' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
 
-### #42 POLYMORPHIC_VARIANTS on `Test_rd_jit_vm`
+### #46 POLYMORPHIC_VARIANTS on `Test_rd_jit_vm`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_rd_jit_vm.ml:1:1`
@@ -396,7 +433,16 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_rd_jit_vm' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_rd_jit_vm.ml:1:1`
 
-### #43 POLYMORPHIC_VARIANTS on `Cli_vanguard`
+### #47 POLYMORPHIC_VARIANTS on `Test_riscv_lifter`
+- **Category:** `functional_idiom`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_riscv_lifter.ml:1:1`
+- **Summary:** Module 'Test_riscv_lifter' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations
+
+#### Evidence Trail:
+- `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Test_riscv_lifter' adopts Polymorphic Variants (``Quick, ``Quick) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/test/test_riscv_lifter.ml:1:1`
+
+### #48 POLYMORPHIC_VARIANTS on `Cli_vanguard`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_vanguard.ml:1:1`
@@ -405,7 +451,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Cli_vanguard' adopts Polymorphic Variants (``Error, ``Error) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/bin/cli_vanguard.ml:1:1`
 
-### #44 POLYMORPHIC_VARIANTS on `Cli_isa`
+### #49 POLYMORPHIC_VARIANTS on `Cli_isa`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:1:1`
@@ -414,7 +460,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Cli_isa' adopts Polymorphic Variants (``Error, ``Ok) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:1:1`
 
-### #45 POLYMORPHIC_VARIANTS on `Cli_protect`
+### #50 POLYMORPHIC_VARIANTS on `Cli_protect`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:1:1`
@@ -423,7 +469,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Cli_protect' adopts Polymorphic Variants (``Error, ``Ok) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:1:1`
 
-### #46 POLYMORPHIC_VARIANTS on `Cli_project`
+### #51 POLYMORPHIC_VARIANTS on `Cli_project`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
@@ -432,7 +478,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Cli_project' adopts Polymorphic Variants (``Error, ``Error) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
 
-### #47 POLYMORPHIC_VARIANTS on `Vanguard_types`
+### #52 POLYMORPHIC_VARIANTS on `Vanguard_types`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:1:1`
@@ -441,7 +487,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Vanguard_types' adopts Polymorphic Variants (``Corrupted_field, ``Junk_opcode) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:1:1`
 
-### #48 POLYMORPHIC_VARIANTS on `Vanguard_9292`
+### #53 POLYMORPHIC_VARIANTS on `Vanguard_9292`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_9292.mli:1:1`
@@ -450,16 +496,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Vanguard_9292' adopts Polymorphic Variants (``Dst, ``Src1) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_9292.mli:1:1`
 
-### #49 POLYMORPHIC_VARIANTS on `Protection_json`
-- **Category:** `functional_idiom`
-- **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_json.ml:1:1`
-- **Summary:** Module 'Protection_json' adopts Polymorphic Variants (``Assoc, ``Assoc) providing open tag subtyping without nominal declarations
-
-#### Evidence Trail:
-- `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Protection_json' adopts Polymorphic Variants (``Assoc, ``Assoc) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_json.ml:1:1`
-
-### #50 POLYMORPHIC_VARIANTS on `Protection_types`
+### #54 POLYMORPHIC_VARIANTS on `Protection_types`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_types.mli:1:1`
@@ -468,7 +505,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Protection_types' adopts Polymorphic Variants (``Egraph, ``Poly) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_types.mli:1:1`
 
-### #51 POLYMORPHIC_VARIANTS on `Runtime_syscalls`
+### #55 POLYMORPHIC_VARIANTS on `Runtime_syscalls`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/runtime_syscalls.ml:1:1`
@@ -477,7 +514,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Runtime_syscalls' adopts Polymorphic Variants (``Darwin, ``Linux) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/runtime_syscalls.ml:1:1`
 
-### #52 POLYMORPHIC_VARIANTS on `Protection_presets`
+### #56 POLYMORPHIC_VARIANTS on `Protection_presets`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_presets.ml:1:1`
@@ -486,7 +523,7 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Protection_presets' adopts Polymorphic Variants (``Balanced, ``Egraph) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_presets.ml:1:1`
 
-### #53 POLYMORPHIC_VARIANTS on `Protection_config`
+### #57 POLYMORPHIC_VARIANTS on `Protection_config`
 - **Category:** `functional_idiom`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_config.mli:1:1`
@@ -495,7 +532,16 @@
 #### Evidence Trail:
 - `+80%` **[POLYMORPHIC_OPEN_VARIANTS]** Module 'Protection_config' adopts Polymorphic Variants (``Egraph, ``Poly) providing open tag subtyping without nominal declarations -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_config.mli:1:1`
 
-### #54 CLOSURE_CURRYING_STRATEGY on `Profile_bottlenecks.time_it`
+### #58 CLOSURE_CURRYING_STRATEGY on `Bench_mba_par.time_it`
+- **Category:** `behavioral`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bench/bench_mba_par.ml:65:1`
+- **Summary:** Function 'time_it' accepts higher-order strategy parameter 'f' for dynamic algorithm injection
+
+#### Evidence Trail:
+- `+75%` **[CURRIED_STRATEGY_INJECTION]** Function 'time_it' accepts higher-order strategy parameter 'f' for dynamic algorithm injection -> `/Volumes/External/Code/ASGARD-5877/bench/bench_mba_par.ml:65:1`
+
+### #59 CLOSURE_CURRYING_STRATEGY on `Profile_bottlenecks.time_it`
 - **Category:** `behavioral`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:29:1`
@@ -504,7 +550,7 @@
 #### Evidence Trail:
 - `+75%` **[CURRIED_STRATEGY_INJECTION]** Function 'time_it' accepts higher-order strategy parameter 'f' for dynamic algorithm injection -> `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:29:1`
 
-### #55 CLOSURE_CURRYING_STRATEGY on `Partitioner.partition_function`
+### #60 CLOSURE_CURRYING_STRATEGY on `Partitioner.partition_function`
 - **Category:** `behavioral`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/partitioner.ml:44:1`
@@ -513,7 +559,7 @@
 #### Evidence Trail:
 - `+75%` **[CURRIED_STRATEGY_INJECTION]** Function 'partition_function' accepts higher-order strategy parameter 'f' for dynamic algorithm injection -> `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/partitioner.ml:44:1`
 
-### #56 CLOSURE_CURRYING_STRATEGY on `Semantic_transform.transform_func`
+### #61 CLOSURE_CURRYING_STRATEGY on `Semantic_transform.transform_func`
 - **Category:** `behavioral`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/semantic_transform.ml:137:1`
@@ -522,7 +568,7 @@
 #### Evidence Trail:
 - `+75%` **[CURRIED_STRATEGY_INJECTION]** Function 'transform_func' accepts higher-order strategy parameter 'f' for dynamic algorithm injection -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/semantic_transform.ml:137:1`
 
-### #57 CLOSURE_CURRYING_STRATEGY on `Cfg_transform.transform`
+### #62 CLOSURE_CURRYING_STRATEGY on `Cfg_transform.transform`
 - **Category:** `behavioral`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/cfg_transform.ml:49:1`
@@ -531,7 +577,25 @@
 #### Evidence Trail:
 - `+75%` **[CURRIED_STRATEGY_INJECTION]** Function 'transform' accepts higher-order strategy parameter 'f' for dynamic algorithm injection -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/cfg_transform.ml:49:1`
 
-### #58 UNCHECKED_EXCEPTION_RAISE on `Test_arxiv_innovations.exp`
+### #63 CLOSURE_CURRYING_STRATEGY on `Subreg_write.expand_func`
+- **Category:** `behavioral`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/subreg_write.ml:119:1`
+- **Summary:** Function 'expand_func' accepts higher-order strategy parameter 'f' for dynamic algorithm injection
+
+#### Evidence Trail:
+- `+75%` **[CURRIED_STRATEGY_INJECTION]** Function 'expand_func' accepts higher-order strategy parameter 'f' for dynamic algorithm injection -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/subreg_write.ml:119:1`
+
+### #64 DOMAINS_PARALLELISM on `Mba_par`
+- **Category:** `effect_concurrency`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/mba_par.ml:1:1`
+- **Summary:** Module 'Mba_par' leverages OCaml 5 Multicore Domains parallelism for shared-memory parallel thread execution
+
+#### Evidence Trail:
+- `+85%` **[DOMAINS_MULTICORE_PARALLELISM]** Module 'Mba_par' leverages OCaml 5 Multicore Domains parallelism for shared-memory parallel thread execution -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/mba_par.ml:1:1`
+
+### #65 UNCHECKED_EXCEPTION_RAISE on `Test_arxiv_innovations.exp`
 - **Category:** `type_safety`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:121:1`
@@ -540,16 +604,34 @@
 #### Evidence Trail:
 - `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'exp' in 'Test_arxiv_innovations' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:121:1`
 
-### #59 UNCHECKED_EXCEPTION_RAISE on `Test_helpers.res`
+### #66 UNCHECKED_EXCEPTION_RAISE on `Test_helpers.create_dir`
 - **Category:** `type_safety`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:7:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:3:1`
+- **Summary:** Type Safety Audit: Function 'create_dir' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead
+
+#### Evidence Trail:
+- `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'create_dir' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:3:1`
+
+### #67 UNCHECKED_EXCEPTION_RAISE on `Test_helpers.with_temp_dir`
+- **Category:** `type_safety`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:13:1`
+- **Summary:** Type Safety Audit: Function 'with_temp_dir' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead
+
+#### Evidence Trail:
+- `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'with_temp_dir' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:13:1`
+
+### #68 UNCHECKED_EXCEPTION_RAISE on `Test_helpers.res`
+- **Category:** `type_safety`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:18:1`
 - **Summary:** Type Safety Audit: Function 'res' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead
 
 #### Evidence Trail:
-- `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'res' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:7:1`
+- `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'res' in 'Test_helpers' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml:18:1`
 
-### #60 UNCHECKED_EXCEPTION_RAISE on `Profile_bottlenecks.sample_func`
+### #69 UNCHECKED_EXCEPTION_RAISE on `Profile_bottlenecks.sample_func`
 - **Category:** `type_safety`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:104:1`
@@ -558,7 +640,7 @@
 #### Evidence Trail:
 - `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'sample_func' in 'Profile_bottlenecks' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:104:1`
 
-### #61 UNCHECKED_EXCEPTION_RAISE on `Profile_bottlenecks.regs`
+### #70 UNCHECKED_EXCEPTION_RAISE on `Profile_bottlenecks.regs`
 - **Category:** `type_safety`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:220:1`
@@ -567,7 +649,7 @@
 #### Evidence Trail:
 - `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'regs' in 'Profile_bottlenecks' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:220:1`
 
-### #62 UNCHECKED_EXCEPTION_RAISE on `Gen_crackme_vm.rng`
+### #71 UNCHECKED_EXCEPTION_RAISE on `Gen_crackme_vm.rng`
 - **Category:** `type_safety`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:53:1`
@@ -576,7 +658,7 @@
 #### Evidence Trail:
 - `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'rng' in 'Gen_crackme_vm' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:53:1`
 
-### #63 UNCHECKED_EXCEPTION_RAISE on `Gen_crypto_crackme.base_config`
+### #72 UNCHECKED_EXCEPTION_RAISE on `Gen_crypto_crackme.base_config`
 - **Category:** `type_safety`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:75:1`
@@ -585,7 +667,7 @@
 #### Evidence Trail:
 - `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'base_config' in 'Gen_crypto_crackme' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:75:1`
 
-### #64 UNCHECKED_EXCEPTION_RAISE on `Gen_crypto_crackme.asm`
+### #73 UNCHECKED_EXCEPTION_RAISE on `Gen_crypto_crackme.asm`
 - **Category:** `type_safety`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:91:1`
@@ -594,7 +676,7 @@
 #### Evidence Trail:
 - `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'asm' in 'Gen_crypto_crackme' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:91:1`
 
-### #65 UNCHECKED_EXCEPTION_RAISE on `Gen_crypto_crackme.st`
+### #74 UNCHECKED_EXCEPTION_RAISE on `Gen_crypto_crackme.st`
 - **Category:** `type_safety`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:95:1`
@@ -603,7 +685,16 @@
 #### Evidence Trail:
 - `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'st' in 'Gen_crypto_crackme' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:95:1`
 
-### #66 DEFENSIVE_CATCH_ALL_EXN on `Test_cpp_emulator.tmp_dir`
+### #75 UNCHECKED_EXCEPTION_RAISE on `Rd_jit_emitter.assert_src1_eq_dst`
+- **Category:** `type_safety`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/rd_jit_emitter.ml:67:1`
+- **Summary:** Type Safety Audit: Function 'assert_src1_eq_dst' in 'Rd_jit_emitter' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead
+
+#### Evidence Trail:
+- `+80%` **[UNCHECKED_EXCEPTION_THROW]** Type Safety Audit: Function 'assert_src1_eq_dst' in 'Rd_jit_emitter' throws unhandled runtime exception (`failwith`/`raise`); return typed `Result.t` or `Option.t` instead -> `/Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/rd_jit_emitter.ml:67:1`
+
+### #76 DEFENSIVE_CATCH_ALL_EXN on `Test_cpp_emulator.tmp_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_cpp_emulator.ml:10:1`
@@ -612,7 +703,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_cpp_emulator' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_cpp_emulator.ml:10:1`
 
-### #67 DEFENSIVE_CATCH_ALL_EXN on `Test_egraph_expansion.tmp_dir`
+### #77 DEFENSIVE_CATCH_ALL_EXN on `Test_egraph_expansion.tmp_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:189:1`
@@ -621,7 +712,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_egraph_expansion' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:189:1`
 
-### #68 DEFENSIVE_CATCH_ALL_EXN on `Test_cli.tmp_dir`
+### #78 DEFENSIVE_CATCH_ALL_EXN on `Test_cli.tmp_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_cli.ml:69:1`
@@ -630,7 +721,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_cli' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_cli.ml:69:1`
 
-### #69 DEFENSIVE_CATCH_ALL_EXN on `Test_multi_vlen.tmp_dir`
+### #79 DEFENSIVE_CATCH_ALL_EXN on `Test_multi_vlen.tmp_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vlen.ml:13:1`
@@ -639,7 +730,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_multi_vlen' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vlen.ml:13:1`
 
-### #70 DEFENSIVE_CATCH_ALL_EXN on `Test_anti_pushan.tmp_dir`
+### #80 DEFENSIVE_CATCH_ALL_EXN on `Test_anti_pushan.tmp_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:18:1`
@@ -648,7 +739,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_anti_pushan' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:18:1`
 
-### #71 DEFENSIVE_CATCH_ALL_EXN on `Test_assembler.tmp_vbc`
+### #81 DEFENSIVE_CATCH_ALL_EXN on `Test_assembler.tmp_vbc`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:146:1`
@@ -657,7 +748,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_vbc' in 'Test_assembler' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:146:1`
 
-### #72 DEFENSIVE_CATCH_ALL_EXN on `Test_assembler.bad_res`
+### #82 DEFENSIVE_CATCH_ALL_EXN on `Test_assembler.bad_res`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:166:1`
@@ -666,7 +757,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'bad_res' in 'Test_assembler' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:166:1`
 
-### #73 DEFENSIVE_CATCH_ALL_EXN on `Test_assembler.tmp_dir`
+### #83 DEFENSIVE_CATCH_ALL_EXN on `Test_assembler.tmp_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:175:1`
@@ -675,16 +766,34 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_assembler' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:175:1`
 
-### #74 DEFENSIVE_CATCH_ALL_EXN on `Test_anti_tamper_smc.tmp_dir`
+### #84 DEFENSIVE_CATCH_ALL_EXN on `Test_anti_analysis.dot`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:254:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:259:1`
+- **Summary:** Resilience Smell (Defensive Catch-All): Function 'dot' in 'Test_anti_analysis' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only
+
+#### Evidence Trail:
+- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'dot' in 'Test_anti_analysis' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:259:1`
+
+### #85 DEFENSIVE_CATCH_ALL_EXN on `Test_stack_vm.enc_unbound`
+- **Category:** `resilience`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_stack_vm.ml:1037:1`
+- **Summary:** Resilience Smell (Defensive Catch-All): Function 'enc_unbound' in 'Test_stack_vm' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only
+
+#### Evidence Trail:
+- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'enc_unbound' in 'Test_stack_vm' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_stack_vm.ml:1037:1`
+
+### #86 DEFENSIVE_CATCH_ALL_EXN on `Test_anti_tamper_smc.tmp_dir`
+- **Category:** `resilience`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:474:1`
 - **Summary:** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_anti_tamper_smc' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only
 
 #### Evidence Trail:
-- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_anti_tamper_smc' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:254:1`
+- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_anti_tamper_smc' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:474:1`
 
-### #75 DEFENSIVE_CATCH_ALL_EXN on `Test_sail_parser_roundtrip.tmp_file`
+### #87 DEFENSIVE_CATCH_ALL_EXN on `Test_sail_parser_roundtrip.tmp_file`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_sail_parser_roundtrip.ml:72:1`
@@ -693,7 +802,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_file' in 'Test_sail_parser_roundtrip' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_sail_parser_roundtrip.ml:72:1`
 
-### #76 DEFENSIVE_CATCH_ALL_EXN on `Test_c11_emulator.tmp_dir`
+### #88 DEFENSIVE_CATCH_ALL_EXN on `Test_c11_emulator.tmp_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_c11_emulator.ml:46:1`
@@ -702,7 +811,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_c11_emulator' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_c11_emulator.ml:46:1`
 
-### #77 DEFENSIVE_CATCH_ALL_EXN on `Test_vanguard_emulator_e2e.tmp_dir`
+### #89 DEFENSIVE_CATCH_ALL_EXN on `Test_vanguard_emulator_e2e.tmp_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:9:1`
@@ -711,16 +820,16 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_dir' in 'Test_vanguard_emulator_e2e' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:9:1`
 
-### #78 DEFENSIVE_CATCH_ALL_EXN on `Test_rd_jit_vm.out_str`
+### #90 DEFENSIVE_CATCH_ALL_EXN on `Test_rd_jit_vm.out_str`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_rd_jit_vm.ml:89:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_rd_jit_vm.ml:90:1`
 - **Summary:** Resilience Smell (Defensive Catch-All): Function 'out_str' in 'Test_rd_jit_vm' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only
 
 #### Evidence Trail:
-- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'out_str' in 'Test_rd_jit_vm' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_rd_jit_vm.ml:89:1`
+- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'out_str' in 'Test_rd_jit_vm' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/test/test_rd_jit_vm.ml:90:1`
 
-### #79 DEFENSIVE_CATCH_ALL_EXN on `Profile_bottlenecks.tmp_prof_dir`
+### #91 DEFENSIVE_CATCH_ALL_EXN on `Profile_bottlenecks.tmp_prof_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:171:1`
@@ -729,7 +838,7 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'tmp_prof_dir' in 'Profile_bottlenecks' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:171:1`
 
-### #80 DEFENSIVE_CATCH_ALL_EXN on `Cli_project.build_dir`
+### #92 DEFENSIVE_CATCH_ALL_EXN on `Cli_project.build_dir`
 - **Category:** `resilience`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:34:1`
@@ -738,7 +847,43 @@
 #### Evidence Trail:
 - `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'build_dir' in 'Cli_project' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:34:1`
 
-### #81 MUTABLE_REF_OVERUSE on `Test_c_macro_obf`
+### #93 DEFENSIVE_CATCH_ALL_EXN on `Riscv_regs.s`
+- **Category:** `resilience`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/riscv_lifter/riscv_regs.ml:125:1`
+- **Summary:** Resilience Smell (Defensive Catch-All): Function 's' in 'Riscv_regs' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only
+
+#### Evidence Trail:
+- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 's' in 'Riscv_regs' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/lib/riscv_lifter/riscv_regs.ml:125:1`
+
+### #94 DEFENSIVE_CATCH_ALL_EXN on `Protect_pipeline.dummy_c`
+- **Category:** `resilience`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/application/protect_pipeline.ml:46:1`
+- **Summary:** Resilience Smell (Defensive Catch-All): Function 'dummy_c' in 'Protect_pipeline' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only
+
+#### Evidence Trail:
+- `+85%` **[DEFENSIVE_CATCH_ALL_SWALLOW]** Resilience Smell (Defensive Catch-All): Function 'dummy_c' in 'Protect_pipeline' swallows all exceptions (`with _ -> ...`); catch specific expected exceptions only -> `/Volumes/External/Code/ASGARD-5877/lib/application/protect_pipeline.ml:46:1`
+
+### #95 MUTABLE_REF_OVERUSE on `Test_stack_vm`
+- **Category:** `principle`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_stack_vm.ml:1:1`
+- **Summary:** Functional Purity Audit: Module 'Test_stack_vm' defines 15 mutable references / fields, breaking immutability; favor pure recursive accumulators
+
+#### Evidence Trail:
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Test_stack_vm' defines 15 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/test/test_stack_vm.ml:1:1`
+
+### #96 MUTABLE_REF_OVERUSE on `Test_anti_tamper_smc`
+- **Category:** `principle`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
+- **Summary:** Functional Purity Audit: Module 'Test_anti_tamper_smc' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators
+
+#### Evidence Trail:
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Test_anti_tamper_smc' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
+
+### #97 MUTABLE_REF_OVERUSE on `Test_c_macro_obf`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
@@ -747,7 +892,16 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Test_c_macro_obf' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
 
-### #82 MUTABLE_REF_OVERUSE on `Cli_project`
+### #98 MUTABLE_REF_OVERUSE on `Test_riscv_lifter`
+- **Category:** `principle`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_riscv_lifter.ml:1:1`
+- **Summary:** Functional Purity Audit: Module 'Test_riscv_lifter' defines 7 mutable references / fields, breaking immutability; favor pure recursive accumulators
+
+#### Evidence Trail:
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Test_riscv_lifter' defines 7 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/test/test_riscv_lifter.ml:1:1`
+
+### #99 MUTABLE_REF_OVERUSE on `Cli_project`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
@@ -756,7 +910,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Cli_project' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
 
-### #83 MUTABLE_REF_OVERUSE on `Gen_crypto_crackme`
+### #100 MUTABLE_REF_OVERUSE on `Gen_crypto_crackme`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:1:1`
@@ -765,7 +919,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Gen_crypto_crackme' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:1:1`
 
-### #84 MUTABLE_REF_OVERUSE on `Coverage_audit`
+### #101 MUTABLE_REF_OVERUSE on `Coverage_audit`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/scripts/coverage_audit.ml:1:1`
@@ -774,7 +928,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Coverage_audit' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/scripts/coverage_audit.ml:1:1`
 
-### #85 MUTABLE_REF_OVERUSE on `Vanguard_asm`
+### #102 MUTABLE_REF_OVERUSE on `Vanguard_asm`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:1:1`
@@ -783,7 +937,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Vanguard_asm' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:1:1`
 
-### #86 MUTABLE_REF_OVERUSE on `Arm64_lifter`
+### #103 MUTABLE_REF_OVERUSE on `Arm64_lifter`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
@@ -792,7 +946,25 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Arm64_lifter' defines 10 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
 
-### #87 MUTABLE_REF_OVERUSE on `Partitioner`
+### #104 MUTABLE_REF_OVERUSE on `Mba_par`
+- **Category:** `principle`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/mba_par.ml:1:1`
+- **Summary:** Functional Purity Audit: Module 'Mba_par' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators
+
+#### Evidence Trail:
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Mba_par' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/mba_par.ml:1:1`
+
+### #105 MUTABLE_REF_OVERUSE on `Vm_transform`
+- **Category:** `principle`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml:1:1`
+- **Summary:** Functional Purity Audit: Module 'Vm_transform' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators
+
+#### Evidence Trail:
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Vm_transform' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml:1:1`
+
+### #106 MUTABLE_REF_OVERUSE on `Partitioner`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/partitioner.ml:1:1`
@@ -801,7 +973,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Partitioner' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/partitioner.ml:1:1`
 
-### #88 MUTABLE_REF_OVERUSE on `C_expr_parser`
+### #107 MUTABLE_REF_OVERUSE on `C_expr_parser`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_expr_parser.ml:1:1`
@@ -810,25 +982,25 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_expr_parser' defines 19 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_expr_parser.ml:1:1`
 
-### #89 MUTABLE_REF_OVERUSE on `C_macro_obf`
+### #108 MUTABLE_REF_OVERUSE on `C_macro_obf`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
-- **Summary:** Functional Purity Audit: Module 'C_macro_obf' defines 7 mutable references / fields, breaking immutability; favor pure recursive accumulators
+- **Summary:** Functional Purity Audit: Module 'C_macro_obf' defines 10 mutable references / fields, breaking immutability; favor pure recursive accumulators
 
 #### Evidence Trail:
-- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_macro_obf' defines 7 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_macro_obf' defines 10 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
 
-### #90 MUTABLE_REF_OVERUSE on `C_nanomites`
+### #109 MUTABLE_REF_OVERUSE on `C_nanomites`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
-- **Summary:** Functional Purity Audit: Module 'C_nanomites' defines 29 mutable references / fields, breaking immutability; favor pure recursive accumulators
+- **Summary:** Functional Purity Audit: Module 'C_nanomites' defines 31 mutable references / fields, breaking immutability; favor pure recursive accumulators
 
 #### Evidence Trail:
-- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_nanomites' defines 29 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_nanomites' defines 31 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
 
-### #91 MUTABLE_REF_OVERUSE on `C_expr_lexer`
+### #110 MUTABLE_REF_OVERUSE on `C_expr_lexer`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_expr_lexer.ml:1:1`
@@ -837,7 +1009,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_expr_lexer' defines 4 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_expr_lexer.ml:1:1`
 
-### #92 MUTABLE_REF_OVERUSE on `Assembler_adapter`
+### #111 MUTABLE_REF_OVERUSE on `Assembler_adapter`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:1:1`
@@ -846,7 +1018,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Assembler_adapter' defines 8 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:1:1`
 
-### #93 MUTABLE_REF_OVERUSE on `Sail_parser_adapter`
+### #112 MUTABLE_REF_OVERUSE on `Sail_parser_adapter`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml:1:1`
@@ -855,16 +1027,25 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Sail_parser_adapter' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml:1:1`
 
-### #94 MUTABLE_REF_OVERUSE on `C_trampoline_adapter`
+### #113 MUTABLE_REF_OVERUSE on `C_trampoline_adapter`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:1:1`
-- **Summary:** Functional Purity Audit: Module 'C_trampoline_adapter' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators
+- **Summary:** Functional Purity Audit: Module 'C_trampoline_adapter' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators
 
 #### Evidence Trail:
-- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_trampoline_adapter' defines 5 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:1:1`
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'C_trampoline_adapter' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:1:1`
 
-### #95 MUTABLE_REF_OVERUSE on `Ir_egraph`
+### #114 MUTABLE_REF_OVERUSE on `Stack_eval`
+- **Category:** `principle`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_eval.ml:1:1`
+- **Summary:** Functional Purity Audit: Module 'Stack_eval' defines 13 mutable references / fields, breaking immutability; favor pure recursive accumulators
+
+#### Evidence Trail:
+- `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Stack_eval' defines 13 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_eval.ml:1:1`
+
+### #115 MUTABLE_REF_OVERUSE on `Ir_egraph`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir_egraph.ml:1:1`
@@ -873,7 +1054,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Ir_egraph' defines 7 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir_egraph.ml:1:1`
 
-### #96 MUTABLE_REF_OVERUSE on `Vm_eval`
+### #116 MUTABLE_REF_OVERUSE on `Vm_eval`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/vm_eval.mli:1:1`
@@ -882,7 +1063,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Vm_eval' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/vm_eval.mli:1:1`
 
-### #97 MUTABLE_REF_OVERUSE on `Egraph_types`
+### #117 MUTABLE_REF_OVERUSE on `Egraph_types`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/mba_engine/egraph_types.ml:1:1`
@@ -891,7 +1072,7 @@
 #### Evidence Trail:
 - `+75%` **[MUTABLE_STATE_OVERUSE]** Functional Purity Audit: Module 'Egraph_types' defines 6 mutable references / fields, breaking immutability; favor pure recursive accumulators -> `/Volumes/External/Code/ASGARD-5877/lib/mba_engine/egraph_types.ml:1:1`
 
-### #98 GOD_MODULE_SRP on `Test_vm_ir`
+### #118 GOD_MODULE_SRP on `Test_vm_ir`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vm_ir.ml:1:1`
@@ -900,7 +1081,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_vm_ir' defines 44 functions across 220 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_vm_ir.ml:1:1`
 
-### #99 GOD_MODULE_SRP on `Test_vanguard_9292`
+### #119 GOD_MODULE_SRP on `Test_vanguard_9292`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:1:1`
@@ -909,7 +1090,16 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_vanguard_9292' defines 39 functions across 150 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:1:1`
 
-### #100 GOD_MODULE_SRP on `Test_families_generation`
+### #120 GOD_MODULE_SRP on `Test_gpu_synth`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_gpu_synth.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Test_gpu_synth' defines 33 functions across 108 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_gpu_synth' defines 33 functions across 108 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_gpu_synth.ml:1:1`
+
+### #121 GOD_MODULE_SRP on `Test_families_generation`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:1:1`
@@ -918,25 +1108,43 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_families_generation' defines 37 functions across 233 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:1:1`
 
-### #101 GOD_MODULE_SRP on `Test_egraph_expansion`
+### #122 GOD_MODULE_SRP on `Test_egraph_expansion`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Test_egraph_expansion' defines 62 functions across 279 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Test_egraph_expansion' defines 61 functions across 279 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_egraph_expansion' defines 62 functions across 279 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_egraph_expansion' defines 61 functions across 279 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:1:1`
 
-### #102 GOD_MODULE_SRP on `Test_anti_pushan`
+### #123 GOD_MODULE_SRP on `Test_native_semantics`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_native_semantics.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Test_native_semantics' defines 49 functions across 581 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_native_semantics' defines 49 functions across 581 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_native_semantics.ml:1:1`
+
+### #124 GOD_MODULE_SRP on `Test_x86_lifter`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_x86_lifter.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Test_x86_lifter' defines 52 functions across 755 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_x86_lifter' defines 52 functions across 755 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_x86_lifter.ml:1:1`
+
+### #125 GOD_MODULE_SRP on `Test_anti_pushan`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Test_anti_pushan' defines 53 functions across 282 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Test_anti_pushan' defines 64 functions across 375 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_pushan' defines 53 functions across 282 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_pushan' defines 64 functions across 375 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:1:1`
 
-### #103 GOD_MODULE_SRP on `Test_arxiv_innovations`
+### #126 GOD_MODULE_SRP on `Test_arxiv_innovations`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:1:1`
@@ -945,16 +1153,16 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_arxiv_innovations' defines 38 functions across 161 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:1:1`
 
-### #104 GOD_MODULE_SRP on `Test_anti_analysis`
+### #127 GOD_MODULE_SRP on `Test_anti_analysis`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Test_anti_analysis' defines 56 functions across 225 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Test_anti_analysis' defines 62 functions across 273 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_analysis' defines 56 functions across 225 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_analysis' defines 62 functions across 273 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_analysis.ml:1:1`
 
-### #105 GOD_MODULE_SRP on `Test_compiler_pipeline`
+### #128 GOD_MODULE_SRP on `Test_compiler_pipeline`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_compiler_pipeline.ml:1:1`
@@ -963,34 +1171,43 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_compiler_pipeline' defines 37 functions across 114 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_compiler_pipeline.ml:1:1`
 
-### #106 GOD_MODULE_SRP on `Test_anti_tamper_smc`
+### #129 GOD_MODULE_SRP on `Test_stack_vm`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_stack_vm.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Test_stack_vm' defines 207 functions across 1258 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_stack_vm' defines 207 functions across 1258 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_stack_vm.ml:1:1`
+
+### #130 GOD_MODULE_SRP on `Test_anti_tamper_smc`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Test_anti_tamper_smc' defines 31 functions across 377 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Test_anti_tamper_smc' defines 32 functions across 537 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_tamper_smc' defines 31 functions across 377 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_anti_tamper_smc' defines 32 functions across 537 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_tamper_smc.ml:1:1`
 
-### #107 GOD_MODULE_SRP on `Test_multi_vm`
+### #131 GOD_MODULE_SRP on `Test_multi_vm`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Test_multi_vm' defines 35 functions across 137 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Test_multi_vm' defines 34 functions across 139 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_multi_vm' defines 35 functions across 137 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_multi_vm' defines 34 functions across 139 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:1:1`
 
-### #108 GOD_MODULE_SRP on `Test_c_macro_obf`
+### #132 GOD_MODULE_SRP on `Test_c_macro_obf`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Test_c_macro_obf' defines 50 functions across 364 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Test_c_macro_obf' defines 62 functions across 453 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_c_macro_obf' defines 50 functions across 364 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Test_c_macro_obf' defines 62 functions across 453 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:1:1`
 
-### #109 GOD_MODULE_SRP on `Cli_isa`
+### #133 GOD_MODULE_SRP on `Cli_isa`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:1:1`
@@ -999,7 +1216,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Cli_isa' defines 35 functions across 227 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:1:1`
 
-### #110 GOD_MODULE_SRP on `Profile_bottlenecks`
+### #134 GOD_MODULE_SRP on `Profile_bottlenecks`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:1:1`
@@ -1008,7 +1225,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Profile_bottlenecks' defines 78 functions across 401 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/profile_bottlenecks.ml:1:1`
 
-### #111 GOD_MODULE_SRP on `Cli_protect`
+### #135 GOD_MODULE_SRP on `Cli_protect`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:1:1`
@@ -1017,7 +1234,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Cli_protect' defines 33 functions across 211 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect.ml:1:1`
 
-### #112 GOD_MODULE_SRP on `Cli_project`
+### #136 GOD_MODULE_SRP on `Cli_project`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
@@ -1026,7 +1243,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Cli_project' defines 57 functions across 244 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/cli_project.ml:1:1`
 
-### #113 GOD_MODULE_SRP on `Gen_crypto_crackme`
+### #137 GOD_MODULE_SRP on `Gen_crypto_crackme`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:1:1`
@@ -1035,7 +1252,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Gen_crypto_crackme' defines 36 functions across 165 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crypto_crackme.ml:1:1`
 
-### #114 GOD_MODULE_SRP on `Vanguard_types`
+### #138 GOD_MODULE_SRP on `Vanguard_types`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:1:1`
@@ -1044,7 +1261,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Vanguard_types' defines 48 functions across 205 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:1:1`
 
-### #115 GOD_MODULE_SRP on `Vanguard_asm`
+### #139 GOD_MODULE_SRP on `Vanguard_asm`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:1:1`
@@ -1053,43 +1270,52 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Vanguard_asm' defines 34 functions across 152 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:1:1`
 
-### #116 GOD_MODULE_SRP on `Arm64_lifter`
+### #140 GOD_MODULE_SRP on `Arm64_lifter`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Arm64_lifter' defines 30 functions across 200 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Arm64_lifter' defines 31 functions across 204 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Arm64_lifter' defines 30 functions across 200 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Arm64_lifter' defines 31 functions across 204 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_lifter.ml:1:1`
 
-### #117 GOD_MODULE_SRP on `Protection_json`
+### #141 GOD_MODULE_SRP on `Vm_transform`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_json.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Protection_json' defines 34 functions across 295 lines of code, indicating multiple mixed domain responsibilities
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Vm_transform' defines 34 functions across 552 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Protection_json' defines 34 functions across 295 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/protection_json.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Vm_transform' defines 34 functions across 552 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_transform.ml:1:1`
 
-### #118 GOD_MODULE_SRP on `C_macro_obf`
+### #142 GOD_MODULE_SRP on `C_macro_obf`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'C_macro_obf' defines 30 functions across 233 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'C_macro_obf' defines 32 functions across 293 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C_macro_obf' defines 30 functions across 233 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C_macro_obf' defines 32 functions across 293 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_obf.ml:1:1`
 
-### #119 GOD_MODULE_SRP on `C_nanomites`
+### #143 GOD_MODULE_SRP on `C_nanomites`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'C_nanomites' defines 50 functions across 345 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'C_nanomites' defines 57 functions across 375 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C_nanomites' defines 50 functions across 345 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C_nanomites' defines 57 functions across 375 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml:1:1`
 
-### #120 GOD_MODULE_SRP on `C11_emitter_adapter`
+### #144 GOD_MODULE_SRP on `Gpu_mba`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/gpu_synth/gpu_mba.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Gpu_mba' defines 31 functions across 177 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Gpu_mba' defines 31 functions across 177 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/gpu_synth/gpu_mba.ml:1:1`
+
+### #145 GOD_MODULE_SRP on `C11_emitter_adapter`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:1:1`
@@ -1098,7 +1324,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C11_emitter_adapter' defines 30 functions across 306 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:1:1`
 
-### #121 GOD_MODULE_SRP on `Assembler_adapter`
+### #146 GOD_MODULE_SRP on `Assembler_adapter`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:1:1`
@@ -1107,7 +1333,34 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Assembler_adapter' defines 57 functions across 363 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:1:1`
 
-### #122 GOD_MODULE_SRP on `Ir_egraph`
+### #147 GOD_MODULE_SRP on `C_trampoline_adapter`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'C_trampoline_adapter' defines 40 functions across 180 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'C_trampoline_adapter' defines 40 functions across 180 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:1:1`
+
+### #148 GOD_MODULE_SRP on `Ir_to_stack`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/stack_vm/ir_to_stack.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Ir_to_stack' defines 38 functions across 226 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Ir_to_stack' defines 38 functions across 226 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/stack_vm/ir_to_stack.ml:1:1`
+
+### #149 GOD_MODULE_SRP on `Stack_mba_pass`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_mba_pass.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Stack_mba_pass' defines 31 functions across 185 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Stack_mba_pass' defines 31 functions across 185 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_mba_pass.ml:1:1`
+
+### #150 GOD_MODULE_SRP on `Ir_egraph`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir_egraph.ml:1:1`
@@ -1116,16 +1369,25 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Ir_egraph' defines 36 functions across 199 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/ir_egraph.ml:1:1`
 
-### #123 GOD_MODULE_SRP on `Register`
+### #151 GOD_MODULE_SRP on `Register`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/register.ml:1:1`
-- **Summary:** SRP Violation (God Module): Module 'Register' defines 45 functions across 206 lines of code, indicating multiple mixed domain responsibilities
+- **Summary:** SRP Violation (God Module): Module 'Register' defines 48 functions across 220 lines of code, indicating multiple mixed domain responsibilities
 
 #### Evidence Trail:
-- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Register' defines 45 functions across 206 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/register.ml:1:1`
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Register' defines 48 functions across 220 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/register.ml:1:1`
 
-### #124 GOD_MODULE_SRP on `Flags`
+### #152 GOD_MODULE_SRP on `Subreg_write`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/subreg_write.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Subreg_write' defines 34 functions across 120 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Subreg_write' defines 34 functions across 120 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/subreg_write.ml:1:1`
+
+### #153 GOD_MODULE_SRP on `Flags`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/flags.ml:1:1`
@@ -1134,7 +1396,7 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Flags' defines 38 functions across 250 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/vm_ir/flags.ml:1:1`
 
-### #125 GOD_MODULE_SRP on `Egraph_rules`
+### #154 GOD_MODULE_SRP on `Egraph_rules`
 - **Category:** `principle`
 - **Confidence:** **85%** [VERY_HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/mba_engine/egraph_rules.ml:1:1`
@@ -1143,7 +1405,16 @@
 #### Evidence Trail:
 - `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Egraph_rules' defines 37 functions across 172 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/mba_engine/egraph_rules.ml:1:1`
 
-### #126 CYCLOMATIC_COMPLEXITY_KISS on `Vanguard_asm.parse_ops`
+### #155 GOD_MODULE_SRP on `Protect_pipeline`
+- **Category:** `principle`
+- **Confidence:** **85%** [VERY_HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/application/protect_pipeline.ml:1:1`
+- **Summary:** SRP Violation (God Module): Module 'Protect_pipeline' defines 39 functions across 213 lines of code, indicating multiple mixed domain responsibilities
+
+#### Evidence Trail:
+- `+85%` **[SRP_GOD_MODULE]** SRP Violation (God Module): Module 'Protect_pipeline' defines 39 functions across 213 lines of code, indicating multiple mixed domain responsibilities -> `/Volumes/External/Code/ASGARD-5877/lib/application/protect_pipeline.ml:1:1`
+
+### #156 CYCLOMATIC_COMPLEXITY_KISS on `Vanguard_asm.parse_ops`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:73:1`
@@ -1152,7 +1423,7 @@
 #### Evidence Trail:
 - `+75%` **[KISS_HIGH_MATCH_COMPLEXITY]** KISS Violation (High Complexity): Function 'parse_ops' in 'Vanguard_asm' has cyclomatic complexity of 12; decompose nested pattern matches into helper functions -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:73:1`
 
-### #127 CYCLOMATIC_COMPLEXITY_KISS on `Assembler_adapter.res`
+### #157 CYCLOMATIC_COMPLEXITY_KISS on `Assembler_adapter.res`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:87:1`
@@ -1161,7 +1432,7 @@
 #### Evidence Trail:
 - `+75%` **[KISS_HIGH_MATCH_COMPLEXITY]** KISS Violation (High Complexity): Function 'res' in 'Assembler_adapter' has cyclomatic complexity of 20; decompose nested pattern matches into helper functions -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/assembler/assembler_adapter.ml:87:1`
 
-### #128 CYCLOMATIC_COMPLEXITY_KISS on `Sail_parser_adapter.b`
+### #158 CYCLOMATIC_COMPLEXITY_KISS on `Sail_parser_adapter.b`
 - **Category:** `principle`
 - **Confidence:** **75%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml:110:1`
@@ -1170,7 +1441,16 @@
 #### Evidence Trail:
 - `+75%` **[KISS_HIGH_MATCH_COMPLEXITY]** KISS Violation (High Complexity): Function 'b' in 'Sail_parser_adapter' has cyclomatic complexity of 16; decompose nested pattern matches into helper functions -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/sail_parser/sail_parser_adapter.ml:110:1`
 
-### #129 DUPLICATE_CODE_DRY on `Test_domain_invariants.vd`
+### #159 CYCLOMATIC_COMPLEXITY_KISS on `C_trampoline_adapter.find_closing`
+- **Category:** `principle`
+- **Confidence:** **75%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:123:1`
+- **Summary:** KISS Violation (High Complexity): Function 'find_closing' in 'C_trampoline_adapter' has cyclomatic complexity of 13; decompose nested pattern matches into helper functions
+
+#### Evidence Trail:
+- `+75%` **[KISS_HIGH_MATCH_COMPLEXITY]** KISS Violation (High Complexity): Function 'find_closing' in 'C_trampoline_adapter' has cyclomatic complexity of 13; decompose nested pattern matches into helper functions -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml:123:1`
+
+### #160 DUPLICATE_CODE_DRY on `Test_domain_invariants.vd`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:77:1`
@@ -1179,7 +1459,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vd, Assembler_adapter.vd -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:77:1`
 
-### #130 DUPLICATE_CODE_DRY on `Test_domain_invariants.funct3`
+### #161 DUPLICATE_CODE_DRY on `Test_domain_invariants.funct3`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:78:1`
@@ -1188,7 +1468,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.funct3, Vector_isa_spec.funct3 -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:78:1`
 
-### #131 DUPLICATE_CODE_DRY on `Test_domain_invariants.vs1`
+### #162 DUPLICATE_CODE_DRY on `Test_domain_invariants.vs1`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:79:1`
@@ -1197,7 +1477,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vs1, Assembler_adapter.vs1 -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:79:1`
 
-### #132 DUPLICATE_CODE_DRY on `Test_domain_invariants.vs2`
+### #163 DUPLICATE_CODE_DRY on `Test_domain_invariants.vs2`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:80:1`
@@ -1206,7 +1486,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vs2, Assembler_adapter.vs2 -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:80:1`
 
-### #133 DUPLICATE_CODE_DRY on `Test_domain_invariants.vm`
+### #164 DUPLICATE_CODE_DRY on `Test_domain_invariants.vm`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:81:1`
@@ -1215,16 +1495,16 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_domain_invariants.vm, Assembler_adapter.vm -> `/Volumes/External/Code/ASGARD-5877/test/test_domain_invariants.ml:81:1`
 
-### #134 DUPLICATE_CODE_DRY on `Test_protection_config.asm`
+### #165 DUPLICATE_CODE_DRY on `Test_protection_config.asm`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_protection_config.ml:57:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_protection_config.ml:59:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 5 location(s): Test_protection_config.asm, Test_x86_lifter.asm, Test_native_vm.asm
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 5 location(s): Test_protection_config.asm, Test_x86_lifter.asm, Test_native_vm.asm -> `/Volumes/External/Code/ASGARD-5877/test/test_protection_config.ml:57:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 5 location(s): Test_protection_config.asm, Test_x86_lifter.asm, Test_native_vm.asm -> `/Volumes/External/Code/ASGARD-5877/test/test_protection_config.ml:59:1`
 
-### #135 DUPLICATE_CODE_DRY on `Test_vanguard_9292.prop_vanguard_roundtrip`
+### #166 DUPLICATE_CODE_DRY on `Test_vanguard_9292.prop_vanguard_roundtrip`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:114:1`
@@ -1233,7 +1513,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 4 location(s): Test_vanguard_9292.prop_vanguard_roundtrip, Test_properties.prop_no_encoding_collisions, Test_properties.prop_sail_roundtrip_identity -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_9292.ml:114:1`
 
-### #136 DUPLICATE_CODE_DRY on `Test_hw_cost.inst1`
+### #167 DUPLICATE_CODE_DRY on `Test_hw_cost.inst1`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_hw_cost.ml:44:1`
@@ -1242,7 +1522,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Test_hw_cost.inst1, Test_assembler.inst_vv, Test_assembler_deep.inst1 -> `/Volumes/External/Code/ASGARD-5877/test/test_hw_cost.ml:44:1`
 
-### #137 DUPLICATE_CODE_DRY on `Test_families_generation.by_base`
+### #168 DUPLICATE_CODE_DRY on `Test_families_generation.by_base`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:27:1`
@@ -1251,7 +1531,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 5 location(s): Test_families_generation.by_base, Test_families_generation.weights, Test_properties.by_f6 -> `/Volumes/External/Code/ASGARD-5877/test/test_families_generation.ml:27:1`
 
-### #138 DUPLICATE_CODE_DRY on `Test_egraph_expansion.block`
+### #169 DUPLICATE_CODE_DRY on `Test_egraph_expansion.block`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:126:1`
@@ -1260,7 +1540,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.block, Test_anti_analysis.block -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:126:1`
 
-### #139 DUPLICATE_CODE_DRY on `Test_egraph_expansion.tmp_dir`
+### #170 DUPLICATE_CODE_DRY on `Test_egraph_expansion.tmp_dir`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:189:1`
@@ -1269,7 +1549,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.tmp_dir, Test_anti_tamper_smc.tmp_dir -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:189:1`
 
-### #140 DUPLICATE_CODE_DRY on `Test_egraph_expansion.comp_status`
+### #171 DUPLICATE_CODE_DRY on `Test_egraph_expansion.comp_status`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:247:1`
@@ -1278,25 +1558,16 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.comp_status, Test_anti_tamper_smc.comp_status -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:247:1`
 
-### #141 DUPLICATE_CODE_DRY on `Test_egraph_expansion.out_buf`
+### #172 DUPLICATE_CODE_DRY on `Test_egraph_expansion.status`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:251:1`
-- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.out_buf, Test_anti_tamper_smc.out_buf
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:256:1`
+- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.status, Test_anti_tamper_smc.status
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.out_buf, Test_anti_tamper_smc.out_buf -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:251:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion.status, Test_anti_tamper_smc.status -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:256:1`
 
-### #142 DUPLICATE_CODE_DRY on `Test_egraph_expansion._`
-- **Category:** `principle`
-- **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:257:1`
-- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion._, Test_anti_tamper_smc._
-
-#### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_egraph_expansion._, Test_anti_tamper_smc._ -> `/Volumes/External/Code/ASGARD-5877/test/test_egraph_expansion.ml:257:1`
-
-### #143 DUPLICATE_CODE_DRY on `Test_cli.buf`
+### #173 DUPLICATE_CODE_DRY on `Test_cli.buf`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_cli.ml:3:1`
@@ -1305,16 +1576,16 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Test_cli.buf, Test_assembler.buf, Test_c11_emulator.buf -> `/Volumes/External/Code/ASGARD-5877/test/test_cli.ml:3:1`
 
-### #144 DUPLICATE_CODE_DRY on `Test_anti_pushan.out_buf`
+### #174 DUPLICATE_CODE_DRY on `Test_anti_pushan.out_buf`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:39:1`
-- **Summary:** DRY Violation: Identical function logic duplicated across 3 location(s): Test_anti_pushan.out_buf, Test_helpers.out_buf, Test_vanguard_emulator_e2e.out_buf
+- **Summary:** DRY Violation: Identical function logic duplicated across 4 location(s): Test_anti_pushan.out_buf, Test_helpers.out_buf, Test_anti_tamper_smc.out_buf
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Test_anti_pushan.out_buf, Test_helpers.out_buf, Test_vanguard_emulator_e2e.out_buf -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:39:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 4 location(s): Test_anti_pushan.out_buf, Test_helpers.out_buf, Test_anti_tamper_smc.out_buf -> `/Volumes/External/Code/ASGARD-5877/test/test_anti_pushan.ml:39:1`
 
-### #145 DUPLICATE_CODE_DRY on `Test_arxiv_innovations.f_scrambled`
+### #175 DUPLICATE_CODE_DRY on `Test_arxiv_innovations.f_scrambled`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:55:1`
@@ -1323,7 +1594,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_arxiv_innovations.f_scrambled, Test_arxiv_innovations.f_s -> `/Volumes/External/Code/ASGARD-5877/test/test_arxiv_innovations.ml:55:1`
 
-### #146 DUPLICATE_CODE_DRY on `Test_assembler.status`
+### #176 DUPLICATE_CODE_DRY on `Test_assembler.status`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:209:1`
@@ -1332,34 +1603,34 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Test_assembler.status, Test_c11_emulator.status, Test_vanguard_emulator_e2e.status -> `/Volumes/External/Code/ASGARD-5877/test/test_assembler.ml:209:1`
 
-### #147 DUPLICATE_CODE_DRY on `Test_multi_vm.asm`
+### #177 DUPLICATE_CODE_DRY on `Test_multi_vm.asm`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:95:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:96:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.asm, Test_rd_jit_vm.asm
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.asm, Test_rd_jit_vm.asm -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:95:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.asm, Test_rd_jit_vm.asm -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:96:1`
 
-### #148 DUPLICATE_CODE_DRY on `Test_multi_vm.oc_h`
+### #178 DUPLICATE_CODE_DRY on `Test_multi_vm.oc_h`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:113:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:114:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.oc_h, Test_rd_jit_vm.oc_h
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.oc_h, Test_rd_jit_vm.oc_h -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:113:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.oc_h, Test_rd_jit_vm.oc_h -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:114:1`
 
-### #149 DUPLICATE_CODE_DRY on `Test_multi_vm.oc_r`
+### #179 DUPLICATE_CODE_DRY on `Test_multi_vm.oc_r`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:118:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:119:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.oc_r, Test_rd_jit_vm.oc_r
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.oc_r, Test_rd_jit_vm.oc_r -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:118:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_multi_vm.oc_r, Test_rd_jit_vm.oc_r -> `/Volumes/External/Code/ASGARD-5877/test/test_multi_vm.ml:119:1`
 
-### #150 DUPLICATE_CODE_DRY on `Test_vanguard_emulator_e2e.oc`
+### #180 DUPLICATE_CODE_DRY on `Test_vanguard_emulator_e2e.oc`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:26:1`
@@ -1368,7 +1639,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_vanguard_emulator_e2e.oc, Cli_vanguard.oc -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:26:1`
 
-### #151 DUPLICATE_CODE_DRY on `Test_vanguard_emulator_e2e.oc_r`
+### #181 DUPLICATE_CODE_DRY on `Test_vanguard_emulator_e2e.oc_r`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:59:1`
@@ -1377,7 +1648,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_vanguard_emulator_e2e.oc_r, Cli_vanguard.oc_r -> `/Volumes/External/Code/ASGARD-5877/test/test_vanguard_emulator_e2e.ml:59:1`
 
-### #152 DUPLICATE_CODE_DRY on `Test_c_macro_obf.found`
+### #182 DUPLICATE_CODE_DRY on `Test_c_macro_obf.found`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:9:1`
@@ -1386,7 +1657,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Test_c_macro_obf.found, C_macro_header.found -> `/Volumes/External/Code/ASGARD-5877/test/test_c_macro_obf.ml:9:1`
 
-### #153 DUPLICATE_CODE_DRY on `Cli_vanguard.rng`
+### #183 DUPLICATE_CODE_DRY on `Cli_vanguard.rng`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_vanguard.ml:7:1`
@@ -1395,7 +1666,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Cli_vanguard.rng, Cli_isa.rng, Cli_project.rng -> `/Volumes/External/Code/ASGARD-5877/bin/cli_vanguard.ml:7:1`
 
-### #154 DUPLICATE_CODE_DRY on `Cli_isa.s`
+### #184 DUPLICATE_CODE_DRY on `Cli_isa.s`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:34:1`
@@ -1404,34 +1675,43 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 4 location(s): Cli_isa.s, Cli_protect_arm64.s, Cli_protect.s -> `/Volumes/External/Code/ASGARD-5877/bin/cli_isa.ml:34:1`
 
-### #155 DUPLICATE_CODE_DRY on `Cli_protect_arm64.effective_cfg`
+### #185 DUPLICATE_CODE_DRY on `Cli_protect_arm64.effective_cfg`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:12:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:14:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.effective_cfg, Cli_protect.effective_cfg
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.effective_cfg, Cli_protect.effective_cfg -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:12:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.effective_cfg, Cli_protect.effective_cfg -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:14:1`
 
-### #156 DUPLICATE_CODE_DRY on `Cli_protect_arm64.rng`
+### #186 DUPLICATE_CODE_DRY on `Cli_protect_arm64.rng`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:21:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:23:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.rng, Cli_protect.rng
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.rng, Cli_protect.rng -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:21:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.rng, Cli_protect.rng -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:23:1`
 
-### #157 DUPLICATE_CODE_DRY on `Cli_protect_arm64.trampoline_engine`
+### #187 DUPLICATE_CODE_DRY on `Cli_protect_arm64.trampoline_engine`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
-- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:37:1`
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:39:1`
 - **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.trampoline_engine, Cli_protect.trampoline_engine
 
 #### Evidence Trail:
-- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.trampoline_engine, Cli_protect.trampoline_engine -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:37:1`
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.trampoline_engine, Cli_protect.trampoline_engine -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:39:1`
 
-### #158 DUPLICATE_CODE_DRY on `Gen_crackme_vm.out_dir`
+### #188 DUPLICATE_CODE_DRY on `Cli_protect_arm64.vm_packager`
+- **Category:** `principle`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:42:1`
+- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.vm_packager, Cli_protect.vm_packager
+
+#### Evidence Trail:
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Cli_protect_arm64.vm_packager, Cli_protect.vm_packager -> `/Volumes/External/Code/ASGARD-5877/bin/cli_protect_arm64.ml:42:1`
+
+### #189 DUPLICATE_CODE_DRY on `Gen_crackme_vm.out_dir`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:58:1`
@@ -1440,7 +1720,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 3 location(s): Gen_crackme_vm.out_dir, Gen_crypto_crackme.default_out_dir, Gen_crypto_crackme.sample_cpp_path -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:58:1`
 
-### #159 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_h`
+### #190 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_h`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:62:1`
@@ -1449,7 +1729,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Gen_crackme_vm.oc_h, Gen_crypto_crackme.oc_h -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:62:1`
 
-### #160 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_r`
+### #191 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_r`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:65:1`
@@ -1458,7 +1738,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Gen_crackme_vm.oc_r, Gen_crypto_crackme.oc_r -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:65:1`
 
-### #161 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_b`
+### #192 DUPLICATE_CODE_DRY on `Gen_crackme_vm.oc_b`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:68:1`
@@ -1467,7 +1747,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Gen_crackme_vm.oc_b, Gen_crypto_crackme.oc_b -> `/Volumes/External/Code/ASGARD-5877/bin/gen_crackme_vm.ml:68:1`
 
-### #162 DUPLICATE_CODE_DRY on `Vanguard_types.n`
+### #193 DUPLICATE_CODE_DRY on `Vanguard_types.n`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:77:1`
@@ -1476,7 +1756,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_types.n, Opcode_map.n -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:77:1`
 
-### #163 DUPLICATE_CODE_DRY on `Vanguard_types.next_state`
+### #194 DUPLICATE_CODE_DRY on `Vanguard_types.next_state`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:118:1`
@@ -1485,7 +1765,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_types.next_state, Rolling_key.next_state -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:118:1`
 
-### #164 DUPLICATE_CODE_DRY on `Vanguard_types.w2`
+### #195 DUPLICATE_CODE_DRY on `Vanguard_types.w2`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:124:1`
@@ -1494,7 +1774,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_types.w2, Rolling_key.w2 -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_types.ml:124:1`
 
-### #165 DUPLICATE_CODE_DRY on `Vanguard_asm.push`
+### #196 DUPLICATE_CODE_DRY on `Vanguard_asm.push`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:7:1`
@@ -1503,7 +1783,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_asm.push, Assembler_adapter.push -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:7:1`
 
-### #166 DUPLICATE_CODE_DRY on `Vanguard_asm.c`
+### #197 DUPLICATE_CODE_DRY on `Vanguard_asm.c`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:14:1`
@@ -1512,7 +1792,34 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Vanguard_asm.c, Assembler_adapter.c -> `/Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_asm.ml:14:1`
 
-### #167 DUPLICATE_CODE_DRY on `C11_emitter_adapter.cur`
+### #198 DUPLICATE_CODE_DRY on `Bridge.next_x`
+- **Category:** `principle`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/bridge.ml:30:1`
+- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Bridge.next_x, Gpu_matrix.next_x
+
+#### Evidence Trail:
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Bridge.next_x, Gpu_matrix.next_x -> `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/bridge.ml:30:1`
+
+### #199 DUPLICATE_CODE_DRY on `Bridge.sum`
+- **Category:** `principle`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/bridge.ml:53:1`
+- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Bridge.sum, Gpu_matrix.sum
+
+#### Evidence Trail:
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Bridge.sum, Gpu_matrix.sum -> `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/bridge.ml:53:1`
+
+### #200 DUPLICATE_CODE_DRY on `Bridge.odd_d`
+- **Category:** `principle`
+- **Confidence:** **80%** [HIGH]
+- **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/bridge.ml:65:1`
+- **Summary:** DRY Violation: Identical function logic duplicated across 2 location(s): Bridge.odd_d, Gpu_matrix.odd_d
+
+#### Evidence Trail:
+- `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): Bridge.odd_d, Gpu_matrix.odd_d -> `/Volumes/External/Code/ASGARD-5877/lib/multi_vm/bridge.ml:65:1`
+
+### #201 DUPLICATE_CODE_DRY on `C11_emitter_adapter.cur`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:23:1`
@@ -1521,7 +1828,7 @@
 #### Evidence Trail:
 - `+80%` **[DRY_CODE_DUPLICATION]** DRY Violation: Identical function logic duplicated across 2 location(s): C11_emitter_adapter.cur, Cpp_header_emitters.cur -> `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:23:1`
 
-### #168 DUPLICATE_CODE_DRY on `C11_emitter_adapter.sorted`
+### #202 DUPLICATE_CODE_DRY on `C11_emitter_adapter.sorted`
 - **Category:** `principle`
 - **Confidence:** **80%** [HIGH]
 - **Primary Location:** `/Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml:29:1`
