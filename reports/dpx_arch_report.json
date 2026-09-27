@@ -1,10 +1,10 @@
 {
   "project_path": "/Volumes/External/Code/ASGARD-5877",
   "has_dune_manifest": true,
-  "files_scanned": 305,
-  "modules_count": 188,
-  "edges_count": 660,
-  "elapsed_seconds": 0.311,
+  "files_scanned": 306,
+  "modules_count": 187,
+  "edges_count": 662,
+  "elapsed_seconds": 0.31,
   "graph": {
     "project_path": "/Volumes/External/Code/ASGARD-5877",
     "nodes": {
@@ -226,28 +226,6 @@
           "instability": 1.0,
           "abstractness": 0.0,
           "main_sequence_distance": 0.0
-        }
-      },
-      "Mba_Verified": {
-        "id": "Mba_Verified",
-        "name": "Mba_Verified",
-        "file_path": "/Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml",
-        "loc": 76,
-        "dune_library": "",
-        "layer": "unknown",
-        "has_interface": false,
-        "is_entry": false,
-        "is_abstract": false,
-        "exported_types": 3,
-        "abstract_types": 0,
-        "submodules": [],
-        "cycle_id": null,
-        "metrics": {
-          "ca": 0,
-          "ce": 0,
-          "instability": 0.0,
-          "abstractness": 0.0,
-          "main_sequence_distance": 1.0
         }
       },
       "Random_visa_assembler.Assembler_adapter": {
@@ -487,11 +465,11 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 0,
+          "ca": 1,
           "ce": 3,
-          "instability": 1.0,
+          "instability": 0.75,
           "abstractness": 1.0,
-          "main_sequence_distance": 1.0
+          "main_sequence_distance": 0.75
         }
       },
       "Protect_adapters.Vm_packagers": {
@@ -899,7 +877,7 @@
         "id": "Arm64_lifter.Arm64_regs",
         "name": "Arm64_regs",
         "file_path": "/Volumes/External/Code/ASGARD-5877/lib/arm64_lifter/arm64_regs.ml",
-        "loc": 88,
+        "loc": 84,
         "dune_library": "arm64_lifter",
         "layer": "unknown",
         "has_interface": true,
@@ -2280,7 +2258,7 @@
         "loc": 511,
         "dune_library": "native_vm",
         "layer": "unknown",
-        "has_interface": false,
+        "has_interface": true,
         "is_entry": false,
         "is_abstract": false,
         "exported_types": 2,
@@ -2332,7 +2310,7 @@
         "submodules": [],
         "cycle_id": null,
         "metrics": {
-          "ca": 12,
+          "ca": 13,
           "ce": 0,
           "instability": 0.0,
           "abstractness": 0.25,
@@ -3757,10 +3735,10 @@
         "id": "Test_helpers",
         "name": "Test_helpers",
         "file_path": "/Volumes/External/Code/ASGARD-5877/test/test_helpers.ml",
-        "loc": 99,
+        "loc": 92,
         "dune_library": "",
         "layer": "unknown",
-        "has_interface": false,
+        "has_interface": true,
         "is_entry": false,
         "is_abstract": false,
         "exported_types": 0,
@@ -3771,8 +3749,8 @@
           "ca": 14,
           "ce": 1,
           "instability": 0.067,
-          "abstractness": 0.0,
-          "main_sequence_distance": 0.933
+          "abstractness": 1.0,
+          "main_sequence_distance": 0.067
         }
       },
       "Test_hw_cost": {
@@ -3999,7 +3977,7 @@
         "id": "Test_riscv_lifter",
         "name": "Test_riscv_lifter",
         "file_path": "/Volumes/External/Code/ASGARD-5877/test/test_riscv_lifter.ml",
-        "loc": 213,
+        "loc": 232,
         "dune_library": "",
         "layer": "unknown",
         "has_interface": false,
@@ -4011,10 +3989,10 @@
         "cycle_id": null,
         "metrics": {
           "ca": 1,
-          "ce": 3,
-          "instability": 0.75,
+          "ce": 5,
+          "instability": 0.833,
           "abstractness": 0.0,
-          "main_sequence_distance": 0.25
+          "main_sequence_distance": 0.167
         }
       },
       "Test_runtime_profile": {
@@ -6617,7 +6595,7 @@
         "source": "Native_vm.Vm_transform",
         "target": "Vm_ir.Register",
         "kind": "qualified_reference",
-        "weight": 79,
+        "weight": 98,
         "cross_library": true,
         "cross_layer": false
       },
@@ -6625,7 +6603,7 @@
         "source": "Native_vm.Vm_transform",
         "target": "Vm_ir.Flags",
         "kind": "qualified_reference",
-        "weight": 18,
+        "weight": 20,
         "cross_library": true,
         "cross_layer": false
       },
@@ -6633,7 +6611,7 @@
         "source": "Native_vm.Vm_transform",
         "target": "Vm_ir.Ir",
         "kind": "qualified_reference",
-        "weight": 426,
+        "weight": 437,
         "cross_library": true,
         "cross_layer": false
       },
@@ -8649,7 +8627,7 @@
         "source": "Test_helpers",
         "target": "Native_vm.Vm_emitter",
         "kind": "qualified_reference",
-        "weight": 2,
+        "weight": 4,
         "cross_library": false,
         "cross_layer": false
       },
@@ -9113,7 +9091,7 @@
         "source": "Test_riscv_lifter",
         "target": "Vm_ir.Reference_vm",
         "kind": "qualified_reference",
-        "weight": 8,
+        "weight": 9,
         "cross_library": false,
         "cross_layer": false
       },
@@ -9124,6 +9102,22 @@
         "weight": 10,
         "cross_library": false,
         "cross_layer": false
+      },
+      {
+        "source": "Test_riscv_lifter",
+        "target": "Protect_adapters.Riscv_lifter_adapter",
+        "kind": "qualified_reference",
+        "weight": 3,
+        "cross_library": false,
+        "cross_layer": true
+      },
+      {
+        "source": "Test_riscv_lifter",
+        "target": "Random_visa_ports.Protect_ports",
+        "kind": "qualified_reference",
+        "weight": 2,
+        "cross_library": false,
+        "cross_layer": true
       },
       {
         "source": "Test_runtime_profile",
@@ -9650,13 +9644,6 @@
       "related": []
     },
     {
-      "severity": "warning",
-      "kind": "zone_of_pain",
-      "subject": "Test_helpers",
-      "message": "zone of pain: Test_helpers is rigidly concrete (A=0.00) yet heavily depended on by 14 modules (I=0.07, D=0.93)",
-      "related": []
-    },
-    {
       "severity": "info",
       "kind": "hub_module",
       "subject": "Protect_adapters.Vm_packagers",
@@ -9668,20 +9655,6 @@
       "kind": "hub_module",
       "subject": "Run_tests",
       "message": "hub/spaghetti module: Run_tests depends on 35 other modules",
-      "related": []
-    },
-    {
-      "severity": "info",
-      "kind": "interface_bypass",
-      "subject": "Native_vm.Vm_transform",
-      "message": "interface bypass: Vm_transform is used by 3 modules but has no .mli contract",
-      "related": []
-    },
-    {
-      "severity": "info",
-      "kind": "interface_bypass",
-      "subject": "Test_helpers",
-      "message": "interface bypass: Test_helpers is used by 14 modules but has no .mli contract",
       "related": []
     },
     {
@@ -9724,6 +9697,13 @@
       "kind": "leaky_interface",
       "subject": "Native_vm.Protection_types",
       "message": "leaky interface: Protection_types.mli exports 11 types, but none are abstract. Implementation details are fully exposed to 3 clients.",
+      "related": []
+    },
+    {
+      "severity": "info",
+      "kind": "leaky_interface",
+      "subject": "Native_vm.Vm_transform",
+      "message": "leaky interface: Vm_transform.mli exports 2 types, but none are abstract. Implementation details are fully exposed to 3 clients.",
       "related": []
     },
     {
@@ -9794,20 +9774,6 @@
       "kind": "leaky_interface",
       "subject": "X86_lifter.X86_parser",
       "message": "leaky interface: X86_parser.mli exports 4 types, but none are abstract. Implementation details are fully exposed to 4 clients.",
-      "related": []
-    },
-    {
-      "severity": "info",
-      "kind": "orphan_module",
-      "subject": "Mba_Verified",
-      "message": "orphan module: nothing depends on Mba_Verified and it is not an entry point",
-      "related": []
-    },
-    {
-      "severity": "info",
-      "kind": "orphan_module",
-      "subject": "Protect_adapters.Riscv_lifter_adapter",
-      "message": "orphan module: nothing depends on Riscv_lifter_adapter and it is not an entry point",
       "related": []
     },
     {

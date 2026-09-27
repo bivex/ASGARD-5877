@@ -248,7 +248,6 @@ digraph architecture {
     "Gen_crackme_vm" [label="Gen_crackme_vm", fillcolor="#f7d0d0", color="#9aa5b1", penwidth=2];
     "Gen_crypto_crackme" [label="Gen_crypto_crackme", fillcolor="#f7d0d0", color="#9aa5b1", penwidth=2];
     "Main" [label="Main", fillcolor="#f7d0d0", color="#9aa5b1", penwidth=2];
-    "Mba_Verified" [label="Mba_Verified", fillcolor="#ffffff", color="#9aa5b1"];
     "Profile_bottlenecks" [label="Profile_bottlenecks", fillcolor="#f7d0d0", color="#9aa5b1", penwidth=2];
     "Run_tests" [label="Run_tests", fillcolor="#ffffff", color="#9aa5b1", penwidth=2];
     "Test_anti_analysis" [label="Test_anti_analysis", fillcolor="#ffffff", color="#9aa5b1"];
@@ -593,9 +592,9 @@ digraph architecture {
   "Native_vm.Vm_runtime_emitter" -> "Gpu_synth.Gpu_matrix" [label="ref", weight=1, color="#b0650f", style=dashed];
   "Native_vm.Vm_runtime_emitter" -> "Native_vm.Vm_context_emitter" [label="ref", weight=1];
   "Native_vm.Vm_runtime_emitter" -> "Native_vm.Vm_handlers_emitter" [label="ref", weight=1];
-  "Native_vm.Vm_transform" -> "Vm_ir.Register" [label="ref", weight=79, color="#b0650f", style=dashed];
-  "Native_vm.Vm_transform" -> "Vm_ir.Flags" [label="ref", weight=18, color="#b0650f", style=dashed];
-  "Native_vm.Vm_transform" -> "Vm_ir.Ir" [label="ref", weight=426, color="#b0650f", style=dashed];
+  "Native_vm.Vm_transform" -> "Vm_ir.Register" [label="ref", weight=98, color="#b0650f", style=dashed];
+  "Native_vm.Vm_transform" -> "Vm_ir.Flags" [label="ref", weight=20, color="#b0650f", style=dashed];
+  "Native_vm.Vm_transform" -> "Vm_ir.Ir" [label="ref", weight=437, color="#b0650f", style=dashed];
   "Random_visa_ports.Ports" -> "Random_visa_domain.Vector_isa_spec" [label="ref", weight=14, color="#b0650f", style=dashed];
   "Random_visa_ports.Ports" -> "Random_visa_domain.Errors" [label="ref", weight=22, color="#b0650f", style=dashed];
   "Rd_jit_vm.Rd_jit_emitter" -> "Rd_jit_vm.Rd_jit_types" [label="include", weight=1];
@@ -847,7 +846,7 @@ digraph architecture {
   "Test_gpu_synth" -> "X86_lifter.Lifter" [label="ref", weight=1];
   "Test_gpu_synth" -> "Native_vm.Protection_config" [label="ref", weight=1];
   "Test_gpu_synth" -> "Native_vm.Vm_emitter" [label="ref", weight=1];
-  "Test_helpers" -> "Native_vm.Vm_emitter" [label="ref", weight=2];
+  "Test_helpers" -> "Native_vm.Vm_emitter" [label="ref", weight=4];
   "Test_hw_cost" -> "Random_visa_domain.Types" [label="ref", weight=18];
   "Test_hw_cost" -> "Random_visa_domain.Vector_config" [label="ref", weight=1];
   "Test_hw_cost" -> "Random_visa_domain.Errors" [label="ref", weight=2];
@@ -905,8 +904,10 @@ digraph architecture {
   "Test_rd_jit_vm" -> "Vm_ir.Ir" [label="ref", weight=9];
   "Test_rd_jit_vm" -> "Vm_ir.Register" [label="ref", weight=1];
   "Test_riscv_lifter" -> "Riscv_lifter.Riscv_lifter" [label="open", weight=1];
-  "Test_riscv_lifter" -> "Vm_ir.Reference_vm" [label="ref", weight=8];
+  "Test_riscv_lifter" -> "Vm_ir.Reference_vm" [label="ref", weight=9];
   "Test_riscv_lifter" -> "Vm_ir.Ir" [label="ref", weight=10];
+  "Test_riscv_lifter" -> "Protect_adapters.Riscv_lifter_adapter" [label="ref", weight=3];
+  "Test_riscv_lifter" -> "Random_visa_ports.Protect_ports" [label="ref", weight=2];
   "Test_runtime_profile" -> "Random_visa_domain.Dispatch_strategy" [label="ref", weight=3];
   "Test_runtime_profile" -> "Random_visa_domain.Mutation_profile" [label="ref", weight=6];
   "Test_runtime_profile" -> "Random_visa_domain.Vm_runtime_profile" [label="ref", weight=2];

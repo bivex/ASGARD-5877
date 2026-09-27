@@ -82,10 +82,6 @@ let parse_imm str =
      String.starts_with ~prefix:"L" s || String.starts_with ~prefix:"." s then
     Error (Printf.sprintf "Not an immediate: %s" s)
   else
-    try
-      if String.starts_with ~prefix:"0x" (String.lowercase_ascii s) ||
-         String.starts_with ~prefix:"-0x" (String.lowercase_ascii s) then
-        Ok (Int64.of_string s)
-      else
-        Ok (Int64.of_string s)
-    with _ -> Error (Printf.sprintf "Invalid immediate '%s'" str)
+    match Int64.of_string_opt s with
+    | Some v -> Ok v
+    | None -> Error (Printf.sprintf "Invalid immediate '%s'" str)

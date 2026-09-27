@@ -1,7 +1,7 @@
 let int64_of_yojson = function
   | `Int i -> Ok (Int64.of_int i)
-  | `Intlit s -> (try Ok (Int64.of_string s) with _ -> Error "invalid int64 literal")
-  | `String s -> (try Ok (Int64.of_string s) with _ -> Error "invalid int64 string")
+  | `Intlit s -> (match Int64.of_string_opt s with Some v -> Ok v | None -> Error "invalid int64 literal")
+  | `String s -> (match Int64.of_string_opt s with Some v -> Ok v | None -> Error "invalid int64 string")
   | _ -> Error "Expected int or string for int64"
 
 let int64_to_yojson i = `String (Int64.to_string i)
@@ -9,8 +9,8 @@ let int64_to_yojson i = `String (Int64.to_string i)
 let float_of_yojson = function
   | `Float f -> Ok f
   | `Int i -> Ok (float_of_int i)
-  | `Intlit s -> (try Ok (float_of_string s) with _ -> Error "invalid float literal")
-  | `String s -> (try Ok (float_of_string s) with _ -> Error "invalid float string")
+  | `Intlit s -> (match float_of_string_opt s with Some v -> Ok v | None -> Error "invalid float literal")
+  | `String s -> (match float_of_string_opt s with Some v -> Ok v | None -> Error "invalid float string")
   | _ -> Error "Expected float"
 
 let float_to_yojson f = `Float f

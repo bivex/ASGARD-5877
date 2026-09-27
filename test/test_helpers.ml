@@ -3,7 +3,7 @@
 let create_dir dir =
   match Bos.OS.Dir.create ~path:true (Fpath.v dir) with
   | Ok _ -> ()
-  | Error (`Msg e) -> failwith ("Failed to create directory " ^ dir ^ ": " ^ e)
+  | Error (`Msg e) -> Alcotest.fail ("Failed to create directory " ^ dir ^ ": " ^ e)
 
 let delete_dir dir =
   match Bos.OS.Dir.delete ~recurse:true (Fpath.v dir) with
@@ -12,17 +12,10 @@ let delete_dir dir =
 
 let with_temp_dir f =
   match Bos.OS.Dir.tmp "asgard_test_%s" with
-  | Error (`Msg e) -> failwith ("Failed to create temp dir: " ^ e)
+  | Error (`Msg e) -> Alcotest.fail ("Failed to create temp dir: " ^ e)
   | Ok tmp_path ->
       let tmp_dir = Fpath.to_string tmp_path in
-      let res =
-        try f tmp_dir
-        with exn ->
-          delete_dir tmp_dir;
-          raise exn
-      in
-      delete_dir tmp_dir;
-      res
+      Fun.protect ~finally:(fun () -> delete_dir tmp_dir) (fun () -> f tmp_dir)
 
 let read_file_string path =
   let ic = open_in path in

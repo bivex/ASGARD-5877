@@ -210,6 +210,25 @@ let test_riscv_pseudo_branches () =
       | Ok snap -> check int64 "RISC-V bltz branches correctly" 1L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_riscv_lifter_adapter () =
+  let asm = {|
+.globl test_adapter
+test_adapter:
+    addi a0, zero, 42
+    ret
+|} in
+  match Protect_adapters.Riscv_lifter_adapter.lift_source asm with
+  | Error err -> fail ("Riscv_lifter_adapter failed: " ^ err)
+  | Ok (f, _consts) ->
+      check string "adapter arch_name" "riscv64" Protect_adapters.Riscv_lifter_adapter.arch_name;
+      (match Protect_adapters.Riscv_lifter_adapter.target_arch with
+       | Random_visa_ports.Protect_ports.Riscv64 -> ()
+       | _ -> fail "Wrong target arch");
+      let raw_f = Random_visa_ports.Protect_ports.unwrap_ir f in
+      (match Reference_vm.evaluate raw_f with
+       | Ok snap -> check int64 "adapter returns 42" 42L snap.final_rax
+       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("RISC-V Lift Arithmetic (add)", `Quick, test_riscv_lift_arithmetic);
   ("RISC-V Lift Sub & Mul", `Quick, test_riscv_lift_sub_mul);
@@ -222,4 +241,5 @@ let tests = [
   ("RISC-V Lift Floating-Point (fadd/fsub/fmul/fdiv/feq)", `Quick, test_riscv_lift_fp);
   ("RISC-V Lift RVV Vector Operations (vadd/vsub/vle8/vse8/vmv)", `Quick, test_riscv_lift_rvv);
   ("RISC-V Lift Pseudo Branches (bltz)", `Quick, test_riscv_pseudo_branches);
+  ("RISC-V Lifter Adapter", `Quick, test_riscv_lifter_adapter);
 ]

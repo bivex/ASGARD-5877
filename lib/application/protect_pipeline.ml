@@ -19,7 +19,7 @@ let run
   if not (Sys.file_exists input_file) then
     Error (Printf.sprintf "Input file not found: %s" input_file)
   else
-    let () = try Sys.mkdir out_dir 0o755 with _ -> () in
+    let () = if not (Sys.file_exists out_dir) then Sys.mkdir out_dir 0o755 in
     let is_c_src =
       String.ends_with ~suffix:".c" input_file || String.ends_with ~suffix:".cpp" input_file
     in
@@ -45,7 +45,7 @@ let run
                 | Some (module C : C_macro_obfuscator) when not (Sys.file_exists hdr_path) ->
                     let dummy_c = Filename.concat out_dir "dummy.c" in
                     (match C.transform_source ~config ~in_file:input_file ~out_c_file:dummy_c ~out_header_file:hdr_path ~rng with
-                    | Ok () -> (try Sys.remove dummy_c with _ -> ())
+                    | Ok () -> if Sys.file_exists dummy_c then Sys.remove dummy_c
                     | Error _ -> ())
                 | _ -> ());
                 (input_file, out_dir)

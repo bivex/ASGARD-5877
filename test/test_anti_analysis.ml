@@ -258,7 +258,7 @@ let test_cff_ocamlgraph_dot_and_reachability () =
 
   let dot = Cff.export_dot ~func cfg in
   Alcotest.(check bool) "dot contains digraph" true (String.length dot > 0 && String.sub dot 0 7 = "digraph");
-  Alcotest.(check bool) "dot contains node_0" true (try ignore (String.index dot '0'); true with _ -> false)
+  Alcotest.(check bool) "dot contains node_0" true (String.contains dot '0')
 
 let tests = [
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
