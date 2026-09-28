@@ -172,9 +172,130 @@ let emit_handler cfg op =
   in
   body @ emit_dispatch_epilogue cfg
 
+let identifier_scramble_map seed =
+  let tbl = Hashtbl.create 64 in
+  let add_id name prefix =
+    let h = Hashtbl.hash (name ^ Int64.to_string seed) land 0x7FFFFFFF in
+    let new_name = Printf.sprintf "_asg_%s_%08x" prefix h in
+    Hashtbl.replace tbl name new_name
+  in
+  let handlers = [
+    "h_push_imm"; "h_push_imm32"; "h_push_reg"; "h_pop_reg"; "h_read_mem"; "h_write_mem";
+    "h_add"; "h_sub"; "h_mul"; "h_nor"; "h_nand";
+    "h_shl"; "h_shr"; "h_sar"; "h_div"; "h_idiv";
+    "h_dup"; "h_swap"; "h_push_flags"; "h_pop_flags";
+    "h_jmp_rel"; "h_jcc_rel"; "h_key_adjust"; "h_exit";
+    "h_call_extern"; "h_resolve_sym"; "h_setcc"; "h_cmov";
+    "h_cmp"; "h_test"; "h_add_imm"; "h_sub_imm";
+    "h_add_ii"; "h_sub_ii"; "h_set_reg_imm"; "h_add_reg_imm";
+    "h_key_feedback";
+  ] in
+  List.iter (fun h -> add_id h "h") handlers;
+  let helpers = [
+    "fetch_byte"; "fetch_i16"; "fetch_i32"; "fetch_i64";
+    "read_byte"; "step_key"; "feedback_hash"; "eval_cond"; "parity8";
+    "asg_siphash12"; "asg_payload_tag"; "asg_payload_auth_ok";
+    "asg_mem_access_ok"; "asg_mem_check_range";
+  ] in
+  List.iter (fun h -> add_id h "fn") helpers;
+  let globals = [
+    "g_stack_handler_table"; "g_stack_block_offsets";
+    "g_stack_block_keys"; "g_stack_tag_keys";
+  ] in
+  List.iter (fun g -> add_id g "tbl") globals;
+  add_id "stack_vm_t" "stk";
+  add_id "VSP_ENCODE" "VE";
+  add_id "VSP_MASK" "VM";
+  add_id "ASG_UNMASK_OFFSET" "UMO";
+  add_id "ASG_UNMASK_KEY" "UMK";
+  add_id "ASG_UNMASK_TAG_K0" "UT0";
+  add_id "ASG_UNMASK_TAG_K1" "UT1";
+  add_id "ASG_PAYLOAD_TAG" "PT";
+  add_id "ASG_DISPATCH_STEP" "DS";
+  tbl
+
+let is_ident_start = function
+  | 'a'..'z' | 'A'..'Z' | '_' -> true
+  | _ -> false
+
+let is_ident_char = function
+  | 'a'..'z' | 'A'..'Z' | '0'..'9' | '_' -> true
+  | _ -> false
+
+let scramble_c_runtime ?(seed = 0x5877A564D00FL) ?(strip_comments = true) src =
+  let rename_map = identifier_scramble_map seed in
+  let len = String.length src in
+  let buf = Buffer.create len in
+  let i = ref 0 in
+  while !i < len do
+    let c = String.get src !i in
+    if strip_comments && c = '/' && !i + 1 < len && String.get src (!i + 1) = '*' then begin
+      Buffer.add_char buf ' ';
+      i := !i + 2;
+      while !i + 1 < len && not (String.get src !i = '*' && String.get src (!i + 1) = '/') do
+        incr i
+      done;
+      if !i + 1 < len then i := !i + 2
+      else i := len
+    end else if strip_comments && c = '/' && !i + 1 < len && String.get src (!i + 1) = '/' then begin
+      i := !i + 2;
+      while !i < len && String.get src !i <> '\n' do
+        incr i
+      done
+    end else if c = '"' then begin
+      Buffer.add_char buf c;
+      incr i;
+      while !i < len && String.get src !i <> '"' do
+        if String.get src !i = '\\' && !i + 1 < len then begin
+          Buffer.add_char buf '\\';
+          Buffer.add_char buf (String.get src (!i + 1));
+          i := !i + 2
+        end else begin
+          Buffer.add_char buf (String.get src !i);
+          incr i
+        end
+      done;
+      if !i < len then begin
+        Buffer.add_char buf '"';
+        incr i
+      end
+    end else if c = '\'' then begin
+      Buffer.add_char buf c;
+      incr i;
+      while !i < len && String.get src !i <> '\'' do
+        if String.get src !i = '\\' && !i + 1 < len then begin
+          Buffer.add_char buf '\\';
+          Buffer.add_char buf (String.get src (!i + 1));
+          i := !i + 2
+        end else begin
+          Buffer.add_char buf (String.get src !i);
+          incr i
+        end
+      done;
+      if !i < len then begin
+        Buffer.add_char buf '\'';
+        incr i
+      end
+    end else if is_ident_start c then begin
+      let start_pos = !i in
+      while !i < len && is_ident_char (String.get src !i) do
+        incr i
+      done;
+      let ident = String.sub src start_pos (!i - start_pos) in
+      match Hashtbl.find_opt rename_map ident with
+      | Some repl -> Buffer.add_string buf repl
+      | None -> Buffer.add_string buf ident
+    end else begin
+      Buffer.add_char buf c;
+      incr i
+    end
+  done;
+  Buffer.contents buf
+
 let generate_c_runtime
     ?(external_symbols = [])
     ?(constants = [])
+    ?(obfuscate_runtime = false)
     ?enc
     cfg
     prog =
@@ -348,7 +469,11 @@ let generate_c_runtime
        entry block, replacing the old global seed_key initialisation. *)
     ("entry_bid", Jingoo.Jg_types.Tint prog.entry_id);
   ] in
-  Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models
+  let raw = Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models in
+  if obfuscate_runtime then
+    scramble_c_runtime ~seed:enc.seed_key ~strip_comments:true raw
+  else
+    raw
 
 let emit_runner_cpp ?(header_name = "stack_vm_runtime.hpp") bytecode =
   let words =

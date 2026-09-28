@@ -115,6 +115,15 @@ type c_macro_config = {
   timing_threshold_ticks : (int64 [@of_yojson int64_of_yojson] [@to_yojson int64_to_yojson]) [@default 50000000L];
 } [@@deriving yojson]
 
+type stack_vm_config = {
+  enabled : bool [@default true];
+  superoperators : bool [@default true];
+  state_feedback : bool [@default true];
+  layout_randomization : bool [@default true];
+  runtime_hardening : bool [@default true];
+  compact_imm : bool [@default true];
+} [@@deriving yojson]
+
 let default_crypto = { rounds = 16; key_bits = 128 }
 let default_bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5 }
 let default_cff = { enabled = true; obfuscate_states = true; inject_opaque_predicates = false }
@@ -138,6 +147,14 @@ let default_c_macro = {
   signal_dispatch = false; nanomites = false; timing_guard = true;
   timing_threshold_ticks = 50000000L;
 }
+let default_stack_vm = {
+  enabled = true;
+  superoperators = true;
+  state_feedback = true;
+  layout_randomization = true;
+  runtime_hardening = true;
+  compact_imm = true;
+}
 
 type t = {
   seed : int option [@default None];
@@ -149,6 +166,7 @@ type t = {
   anti_tamper : anti_tamper_config [@default default_anti_tamper];
   vm_runtime : vm_runtime_config [@default default_vm_runtime];
   c_macro : c_macro_config [@default default_c_macro];
+  stack_vm : stack_vm_config [@default default_stack_vm];
 } [@@deriving yojson]
 
 (* Single source of truth for the Anti-Pushan rolling-key gate: the encoder

@@ -53,6 +53,7 @@ let default : t = {
     timing_guard = true;
     timing_threshold_ticks = 50000000L;
   };
+  stack_vm = default_stack_vm;
 }
 
 let max_security : t = {
@@ -107,6 +108,14 @@ let max_security : t = {
     nanomites = true;
     timing_guard = true;
     timing_threshold_ticks = 25000000L;
+  };
+  stack_vm = {
+    enabled = true;
+    superoperators = true;
+    state_feedback = true;
+    layout_randomization = true;
+    runtime_hardening = true;
+    compact_imm = true;
   };
 }
 
@@ -163,6 +172,14 @@ let lightweight : t = {
     timing_guard = false;
     timing_threshold_ticks = 100000000L;
   };
+  stack_vm = {
+    enabled = true;
+    superoperators = true;
+    state_feedback = false;
+    layout_randomization = false;
+    runtime_hardening = false;
+    compact_imm = true;
+  };
 }
 
 let stealth : t = {
@@ -217,6 +234,14 @@ let stealth : t = {
     nanomites = false;
     timing_guard = true;
     timing_threshold_ticks = 50000000L;
+  };
+  stack_vm = {
+    enabled = true;
+    superoperators = true;
+    state_feedback = true;
+    layout_randomization = true;
+    runtime_hardening = true;
+    compact_imm = true;
   };
 }
 
@@ -273,6 +298,14 @@ let minimal : t = {
     timing_guard = false;
     timing_threshold_ticks = 500000000L;
   };
+  stack_vm = {
+    enabled = false;
+    superoperators = false;
+    state_feedback = false;
+    layout_randomization = false;
+    runtime_hardening = false;
+    compact_imm = false;
+  };
 }
 
 let high : t = {
@@ -327,6 +360,14 @@ let high : t = {
     nanomites = true;
     timing_guard = true;
     timing_threshold_ticks = 50000000L;
+  };
+  stack_vm = {
+    enabled = true;
+    superoperators = true;
+    state_feedback = true;
+    layout_randomization = true;
+    runtime_hardening = true;
+    compact_imm = true;
   };
 }
 

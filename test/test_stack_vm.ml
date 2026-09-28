@@ -1967,6 +1967,116 @@ let test_field_layout_randomization () =
       Alcotest.(check bool) "decoding with wrong layout produces incorrect imm" true (wrong_imm <> 0x1234567890ABCDEFL)
   | _ -> ()
 
+let test_runtime_hardening () =
+  let b0 = make_block 0 "entry" [
+    PushImm 1234L;
+    PushImm 5678L;
+    Add;
+    PopReg 0;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let cfg = Stack_runtime.default_config Stack_runtime.X86_64 in
+  let enc = Stack_encoder.encode_program prog in
+
+  (* 1. Plain runtime: contains identifiable handlers and comments *)
+  let plain = Stack_runtime.generate_c_runtime ~obfuscate_runtime:false ~enc cfg prog in
+  Alcotest.(check bool) "plain runtime contains h_push_imm" true
+    (contains plain "h_push_imm");
+  Alcotest.(check bool) "plain runtime contains g_stack_handler_table" true
+    (contains plain "g_stack_handler_table");
+  Alcotest.(check bool) "plain runtime contains stack_vm_t" true
+    (contains plain "stack_vm_t");
+
+  (* 2. Hardened runtime: identifiers scrambled and comments stripped *)
+  let hardened = Stack_runtime.generate_c_runtime ~obfuscate_runtime:true ~enc cfg prog in
+  Alcotest.(check bool) "hardened runtime stripped h_push_imm" false
+    (contains hardened "h_push_imm");
+  Alcotest.(check bool) "hardened runtime stripped g_stack_handler_table" false
+    (contains hardened "g_stack_handler_table");
+  Alcotest.(check bool) "hardened runtime stripped stack_vm_t" false
+    (contains hardened "stack_vm_t");
+  Alcotest.(check bool) "hardened runtime contains scrambled identifiers" true
+    (contains hardened "_asg_h_");
+  Alcotest.(check bool) "hardened runtime contains scrambled table" true
+    (contains hardened "_asg_tbl_");
+  Alcotest.(check bool) "hardened runtime preserves public entrypoint" true
+    (contains hardened "stack_vm_call");
+  Alcotest.(check bool) "hardened runtime preserves derive_addr_key" true
+    (contains hardened "derive_addr_key");
+
+  (* 3. Scramble function direct test: comment stripping *)
+  let sample_c = "/* comment 1 */\nint foo() { // line comment\nreturn 42;\n} /* end */" in
+  let scrambled_sample = Stack_runtime.scramble_c_runtime ~strip_comments:true sample_c in
+  Alcotest.(check bool) "scramble_c_runtime strips block comments" false
+    (contains scrambled_sample "comment 1");
+  Alcotest.(check bool) "scramble_c_runtime strips line comments" false
+    (contains scrambled_sample "line comment");
+  Alcotest.(check bool) "scramble_c_runtime preserves code" true
+    (contains scrambled_sample "return 42;");
+
+  (* 4. Compile and execute hardened runtime with clang++ if available *)
+  if Sys.command "command -v c++ >/dev/null 2>&1" = 0 then begin
+    let bytes_to_words b =
+      let n = Bytes.length b in
+      let padded = (n + 7) land (lnot 7) in
+      let words = Array.init (padded / 8) (fun i ->
+        let w = ref 0L in
+        for j = 7 downto 0 do
+          let idx = i * 8 + j in
+          let byte = if idx < n then Char.code (Bytes.get b idx) else 0 in
+          w := Int64.logor (Int64.shift_left !w 8) (Int64.of_int byte)
+        done;
+        !w
+      ) in
+      Array.to_list words
+    in
+    let runner = Stack_runtime.emit_runner_cpp (bytes_to_words enc.bytes) in
+    let dir = Filename.get_temp_dir_name () in
+    let hpp_path = Filename.concat dir "stack_vm_runtime.hpp" in
+    let cpp_path = Filename.concat dir "asgard_hardened_runner.cpp" in
+    let bin_path = Filename.concat dir "asgard_hardened_runner" in
+    let oc = open_out hpp_path in output_string oc hardened; close_out oc;
+    let oc = open_out cpp_path in output_string oc runner; close_out oc;
+
+    let compile cmd =
+      Sys.command (Printf.sprintf "c++ -O1 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
+    in
+    let rc =
+      let rc1 = compile (Filename.quote cpp_path) in
+      if rc1 = 0 then 0
+      else compile (Filename.quote cpp_path ^ " -ldl")
+    in
+    Alcotest.(check bool) "hardened runtime compiles cleanly" true (rc = 0);
+    if rc = 0 then begin
+      let out_path = bin_path ^ ".out" in
+      ignore (Sys.command (Printf.sprintf "%s > %s 2>&1" (Filename.quote bin_path) (Filename.quote out_path)));
+      let ic = open_in out_path in
+      let len = in_channel_length ic in
+      let out = really_input_string ic len in
+      close_in ic;
+      let extract_result s =
+        let n = String.length s in
+        let rec go i =
+          if i + 8 > n then None
+          else if String.sub s i 8 = "Result: " then begin
+            let j = ref (i + 8) in
+            while !j < n && s.[!j] >= '0' && s.[!j] <= '9' do incr j done;
+            Some (String.sub s (i + 8) (!j - i - 8))
+          end
+          else go (i + 1)
+        in
+        go 0
+      in
+      match extract_result out with
+      | Some digits ->
+        Alcotest.(check int64) "hardened runtime computes correct 1234 + 5678 = 6912" 6912L
+          (Int64.of_string digits)
+      | None ->
+        Alcotest.fail (Printf.sprintf "no Result line in hardened runner output:\n%s" out)
+    end
+  end
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -1994,6 +2104,7 @@ let tests = [
   ("Payload Integrity Tag", `Quick, test_payload_tag_unit);
   ("Guest Memory Access Policy", `Quick, test_guest_mem_policy);
   ("C++ Runtime Authenticates Before Decoding", `Slow, test_payload_auth_c_runtime);
+  ("C++ Runtime Hardening & Identifier Scrambling", `Quick, test_runtime_hardening);
   ("Full Obfuscation Pipeline Semantics", `Quick, test_full_pipeline_semantics);
   ("C++ Runtime Compile & Run", `Slow, test_c_runtime_compile_and_run);
   ("Full Pipeline + C++ Runtime + Args", `Slow, test_full_pipeline_c_runtime_with_args);

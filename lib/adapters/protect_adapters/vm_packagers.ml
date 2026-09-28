@@ -122,6 +122,7 @@ let make_stack_metrics
     ?(real_ops       = 0)
     ?(real_blocks    = 0)
     ?(compact_imm    = true)
+    ?(runtime_hardening = true)
     (prog : Stack_vm.Stack_ir.program)
     (enc  : Stack_vm.Stack_encoder.encrypted_bytecode)
     : Protect_ports.metrics_report =
@@ -149,6 +150,7 @@ let make_stack_metrics
        - Ghost Stack Padding: %s\n\
        - State-Feedback Rolling Key: %s\n\
        - Multi-Operand Field Layout: %s\n\
+       - C++ Runtime Hardening: %s\n\
        - MBA Constant Synthesis: %s\n\
        - Virtual CFG Flattening: %s\n\
        - VPC Dispatch Overhead: %.1f avg ops/transition (%.3f transitions/real-op)\n\
@@ -162,6 +164,7 @@ let make_stack_metrics
       superop_info
       spaghetti_info ghost_info feedback_info
       (Stack_vm.Stack_encoder.format_field_layout enc.layout)
+      (if runtime_hardening then "Enabled (Identifier Scrambling & Strip Comments)" else "Disabled")
       mba_info cff_info
       avg_disp_ops vpc_transitions_per_op
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
@@ -197,21 +200,26 @@ module Stack_vm_packager : Vm_packager = struct
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
 
     (* Phase 2a: Superoperator Fusion — fuse recurring patterns into fused ops *)
-    let superop_seed =
-      Int64.logxor
-        (Int64.of_int (Random.State.bits rng))
-        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
+    let prog, superop_info =
+      if native_cfg.stack_vm.superoperators then
+        let superop_seed =
+          Int64.logxor
+            (Int64.of_int (Random.State.bits rng))
+            (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
+        in
+        let superop_cfg = Stack_vm.Stack_superop_pass.default_superop_config superop_seed in
+        let prog_superop = Stack_vm.Stack_superop_pass.apply_program superop_cfg prog in
+        let superop_stats = Stack_vm.Stack_superop_pass.superop_stats prog prog_superop in
+        let info =
+          Printf.sprintf "%d ops fused (AddImm:%d SubImm:%d AddII:%d SubII:%d SetRegImm:%d AddRegImm:%d)"
+            superop_stats.fused_ops superop_stats.add_imm_count superop_stats.sub_imm_count
+            superop_stats.add_ii_count superop_stats.sub_ii_count superop_stats.set_reg_imm_count
+            superop_stats.add_reg_imm_count
+        in
+        (prog_superop, info)
+      else
+        (prog, "Disabled (Plain ISA)")
     in
-    let superop_cfg = Stack_vm.Stack_superop_pass.default_superop_config superop_seed in
-    let prog_superop = Stack_vm.Stack_superop_pass.apply_program superop_cfg prog in
-    let superop_stats = Stack_vm.Stack_superop_pass.superop_stats prog prog_superop in
-    let superop_info =
-      Printf.sprintf "%d ops fused (AddImm:%d SubImm:%d AddII:%d SubII:%d SetRegImm:%d AddRegImm:%d)"
-        superop_stats.fused_ops superop_stats.add_imm_count superop_stats.sub_imm_count
-        superop_stats.add_ii_count superop_stats.sub_ii_count superop_stats.set_reg_imm_count
-        superop_stats.add_reg_imm_count
-    in
-    let prog = prog_superop in
 
     (* Phase 2b: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
     let mba_seed =
@@ -261,19 +269,24 @@ module Stack_vm_packager : Vm_packager = struct
     let prog = prog_ghost in
 
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
-    let feedback_seed =
-      Int64.logxor
-        (Int64.of_int (Random.State.bits rng))
-        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
+    let prog, feedback_info =
+      if native_cfg.stack_vm.state_feedback then
+        let feedback_seed =
+          Int64.logxor
+            (Int64.of_int (Random.State.bits rng))
+            (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
+        in
+        let feedback_cfg = Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed in
+        let prog_feedback = Stack_vm.Stack_feedback_pass.apply_program feedback_cfg prog in
+        let feedback_stat = Stack_vm.Stack_feedback_pass.feedback_stats prog prog_feedback in
+        let info =
+          Printf.sprintf "%d dynamic checkpoints injected (register-coupled cipher stream)"
+            feedback_stat.feedback_injected
+        in
+        (prog_feedback, info)
+      else
+        (prog, "Disabled (Static Cipher Stream)")
     in
-    let feedback_cfg = Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed in
-    let prog_feedback = Stack_vm.Stack_feedback_pass.apply_program feedback_cfg prog in
-    let feedback_stat = Stack_vm.Stack_feedback_pass.feedback_stats prog prog_feedback in
-    let feedback_info =
-      Printf.sprintf "%d dynamic checkpoints injected (register-coupled cipher stream)"
-        feedback_stat.feedback_injected
-    in
-    let prog = prog_feedback in
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
@@ -283,8 +296,12 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 32)
     in
-    let compact_imm = Random.State.int rng 100 < 80 in
-    let enc = Stack_vm.Stack_encoder.encode_program ~seed_key ~compact_imm prog in
+    let compact_imm = native_cfg.stack_vm.compact_imm in
+    let layout =
+      if native_cfg.stack_vm.layout_randomization then None
+      else Some Stack_vm.Stack_encoder.default_field_layout
+    in
+    let enc = Stack_vm.Stack_encoder.encode_program ~seed_key ?layout ~compact_imm prog in
     let bc_words = bytes_to_words enc.bytes in
 
     let is_internal_sym name =
@@ -311,10 +328,12 @@ module Stack_vm_packager : Vm_packager = struct
     in
 
     let runtime_cfg = Stack_vm.Stack_runtime.default_config Stack_vm.Stack_runtime.AArch64 in
+    let obfuscate_runtime = native_cfg.stack_vm.runtime_hardening in
     let cpp_runtime_source =
       Stack_vm.Stack_runtime.generate_c_runtime
         ~external_symbols:sanitized_external_symbols
         ?constants:sanitized_constants
+        ~obfuscate_runtime
         ~enc
         runtime_cfg
         prog
@@ -323,6 +342,7 @@ module Stack_vm_packager : Vm_packager = struct
     let metrics =
       make_stack_metrics
         ~compact_imm
+        ~runtime_hardening:obfuscate_runtime
         ~superop_info
         ~spaghetti_info ~ghost_info ~feedback_info ~mba_info ~cff_info
         ~real_ops ~real_blocks prog enc
@@ -334,6 +354,7 @@ module Stack_vm_packager : Vm_packager = struct
         Stack_vm.Stack_runtime.generate_c_runtime
           ~external_symbols:sanitized_external_symbols
           ?constants:sanitized_constants
+          ~obfuscate_runtime
           ~enc:enc_rebound
           runtime_cfg
           prog)

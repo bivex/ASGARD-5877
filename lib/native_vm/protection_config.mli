@@ -72,6 +72,15 @@ type c_macro_config = {
   timing_threshold_ticks : int64;
 }
 
+type stack_vm_config = {
+  enabled : bool;
+  superoperators : bool;
+  state_feedback : bool;
+  layout_randomization : bool;
+  runtime_hardening : bool;
+  compact_imm : bool;
+}
+
 type t = {
   seed : int option;
   crypto : crypto_config;
@@ -82,6 +91,7 @@ type t = {
   anti_tamper : anti_tamper_config;
   vm_runtime : vm_runtime_config;
   c_macro : c_macro_config;
+  stack_vm : stack_vm_config;
 }
 
 val minimal : t
@@ -120,5 +130,14 @@ type builder
 val create_builder : ?base:t -> unit -> builder
 val with_cff : bool -> builder -> builder
 val with_mba : ?depth:int -> bool -> builder -> builder
+val with_stack_vm :
+  ?superoperators:bool ->
+  ?state_feedback:bool ->
+  ?layout_randomization:bool ->
+  ?runtime_hardening:bool ->
+  ?compact_imm:bool ->
+  bool ->
+  builder ->
+  builder
 val with_seed : int option -> builder -> builder
 val build : builder -> t

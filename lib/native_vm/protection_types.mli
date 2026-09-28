@@ -70,6 +70,15 @@ type c_macro_config = {
   timing_threshold_ticks : int64;
 }
 
+type stack_vm_config = {
+  enabled : bool;
+  superoperators : bool;
+  state_feedback : bool;
+  layout_randomization : bool;
+  runtime_hardening : bool;
+  compact_imm : bool;
+}
+
 type t = {
   seed : int option;
   crypto : crypto_config;
@@ -80,7 +89,10 @@ type t = {
   anti_tamper : anti_tamper_config;
   vm_runtime : vm_runtime_config;
   c_macro : c_macro_config;
+  stack_vm : stack_vm_config;
 }
+
+val default_stack_vm : stack_vm_config
 
 val to_yojson : t -> Yojson.Safe.t
 val of_yojson : Yojson.Safe.t -> (t, string) result

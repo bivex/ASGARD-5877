@@ -29,7 +29,13 @@ let test_json_roundtrip () =
       Alcotest.(check bool) "anti_pushan.address_bound matches" original.anti_pushan.address_bound parsed.anti_pushan.address_bound;
       Alcotest.(check int) "vm_runtime.num_dispatch_domains matches" original.vm_runtime.num_dispatch_domains parsed.vm_runtime.num_dispatch_domains;
       Alcotest.(check bool) "vm_runtime.vector_isa matches" original.vm_runtime.vector_isa parsed.vm_runtime.vector_isa;
-      Alcotest.(check bool) "vm_runtime.egraph_expansion matches" original.vm_runtime.egraph_expansion parsed.vm_runtime.egraph_expansion
+      Alcotest.(check bool) "vm_runtime.egraph_expansion matches" original.vm_runtime.egraph_expansion parsed.vm_runtime.egraph_expansion;
+      Alcotest.(check bool) "stack_vm.enabled matches" original.stack_vm.enabled parsed.stack_vm.enabled;
+      Alcotest.(check bool) "stack_vm.superoperators matches" original.stack_vm.superoperators parsed.stack_vm.superoperators;
+      Alcotest.(check bool) "stack_vm.state_feedback matches" original.stack_vm.state_feedback parsed.stack_vm.state_feedback;
+      Alcotest.(check bool) "stack_vm.layout_randomization matches" original.stack_vm.layout_randomization parsed.stack_vm.layout_randomization;
+      Alcotest.(check bool) "stack_vm.runtime_hardening matches" original.stack_vm.runtime_hardening parsed.stack_vm.runtime_hardening;
+      Alcotest.(check bool) "stack_vm.compact_imm matches" original.stack_vm.compact_imm parsed.stack_vm.compact_imm
 
 let test_partial_json_parsing () =
   let partial_json = {|
@@ -52,7 +58,28 @@ let test_partial_json_parsing () =
       Alcotest.(check int) "mba.depth is 3" 3 cfg.mba.depth;
       Alcotest.(check bool) "mba.enabled defaults to true" true cfg.mba.enabled;
       Alcotest.(check bool) "anti_pushan defaults to true" true cfg.anti_pushan.enabled;
-      Alcotest.(check bool) "anti_tamper defaults to true" true cfg.anti_tamper.enabled
+      Alcotest.(check bool) "anti_tamper defaults to true" true cfg.anti_tamper.enabled;
+      Alcotest.(check bool) "stack_vm defaults to enabled" true cfg.stack_vm.enabled;
+      Alcotest.(check bool) "stack_vm superoperators defaults to true" true cfg.stack_vm.superoperators
+
+let test_stack_vm_presets () =
+  let def = Protection_config.default in
+  Alcotest.(check bool) "default stack_vm enabled" true def.stack_vm.enabled;
+  Alcotest.(check bool) "default runtime_hardening enabled" true def.stack_vm.runtime_hardening;
+  let light = Protection_config.lightweight in
+  Alcotest.(check bool) "lightweight stack_vm superoperators enabled" true light.stack_vm.superoperators;
+  Alcotest.(check bool) "lightweight stack_vm state_feedback disabled" false light.stack_vm.state_feedback;
+  Alcotest.(check bool) "lightweight stack_vm layout_randomization disabled" false light.stack_vm.layout_randomization;
+  Alcotest.(check bool) "lightweight stack_vm runtime_hardening disabled" false light.stack_vm.runtime_hardening;
+  let max_s = Protection_config.max_security in
+  Alcotest.(check bool) "max_security stack_vm runtime_hardening enabled" true max_s.stack_vm.runtime_hardening;
+  let custom =
+    Protection_config.create_builder ~base:def ()
+    |> Protection_config.with_stack_vm ~superoperators:false ~runtime_hardening:false true
+    |> Protection_config.build
+  in
+  Alcotest.(check bool) "custom stack_vm superoperators disabled" false custom.stack_vm.superoperators;
+  Alcotest.(check bool) "custom stack_vm runtime_hardening disabled" false custom.stack_vm.runtime_hardening
 
 let test_protection_with_config () =
   let rng = Random.State.make [| 42 |] in
@@ -79,5 +106,6 @@ let tests = [
   Alcotest.test_case "presets" `Quick test_presets;
   Alcotest.test_case "json_roundtrip" `Quick test_json_roundtrip;
   Alcotest.test_case "partial_json_parsing" `Quick test_partial_json_parsing;
+  Alcotest.test_case "stack_vm_presets" `Quick test_stack_vm_presets;
   Alcotest.test_case "protection_with_config" `Quick test_protection_with_config;
 ]
