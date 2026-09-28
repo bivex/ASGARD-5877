@@ -116,6 +116,7 @@ let make_stack_metrics
     ?(superop_info   = "Superoperator fusion: N/A")
     ?(spaghetti_info = "Spaghetti splitting: N/A")
     ?(ghost_info     = "Ghost padding: N/A")
+    ?(feedback_info  = "State-feedback rolling key: N/A")
     ?(mba_info       = "MBA synthesis: N/A")
     ?(cff_info       = "CFG flattening: N/A")
     ?(real_ops       = 0)
@@ -146,6 +147,7 @@ let make_stack_metrics
        - Superoperator Fusion: %s\n\
        - Spaghetti CFG Splitting: %s\n\
        - Ghost Stack Padding: %s\n\
+       - State-Feedback Rolling Key: %s\n\
        - MBA Constant Synthesis: %s\n\
        - Virtual CFG Flattening: %s\n\
        - VPC Dispatch Overhead: %.1f avg ops/transition (%.3f transitions/real-op)\n\
@@ -157,7 +159,7 @@ let make_stack_metrics
        ==============================================="
       imm_width_info
       superop_info
-      spaghetti_info ghost_info mba_info cff_info
+      spaghetti_info ghost_info feedback_info mba_info cff_info
       avg_disp_ops vpc_transitions_per_op
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
       entropy (entropy /. 8.0 *. 100.0) drs (Stack_vm.Stack_encoder.effective_seed_key enc)
@@ -255,7 +257,22 @@ module Stack_vm_packager : Vm_packager = struct
     let ghost_info = Stack_vm.Stack_ghost_pass.ghost_stats prog prog_ghost in
     let prog = prog_ghost in
 
-    (* Phase 6: Stack Balance Pass — enforce block balance delta = 0 *)
+    (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
+    let feedback_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
+    in
+    let feedback_cfg = Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed in
+    let prog_feedback = Stack_vm.Stack_feedback_pass.apply_program feedback_cfg prog in
+    let feedback_stat = Stack_vm.Stack_feedback_pass.feedback_stats prog prog_feedback in
+    let feedback_info =
+      Printf.sprintf "%d dynamic checkpoints injected (register-coupled cipher stream)"
+        feedback_stat.feedback_injected
+    in
+    let prog = prog_feedback in
+
+    (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
 
     let seed_key =
@@ -304,7 +321,7 @@ module Stack_vm_packager : Vm_packager = struct
       make_stack_metrics
         ~compact_imm
         ~superop_info
-        ~spaghetti_info ~ghost_info ~mba_info ~cff_info
+        ~spaghetti_info ~ghost_info ~feedback_info ~mba_info ~cff_info
         ~real_ops ~real_blocks prog enc
     in
     let rebind_address =

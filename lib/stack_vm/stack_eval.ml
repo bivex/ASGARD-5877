@@ -306,6 +306,10 @@ let step_op state = function
       state.flags <- CC_OP_ADD { src1 = op1; src2 = c; dst = res; width = B64 };
       state.vstack <- res :: state.vstack;
       state.vsp <- Int64.sub state.vsp 8L
+  | KeyFeedback (slot, _expected) ->
+      let v = get_reg state slot in
+      let h = Stack_encoder.feedback_hash v in
+      state.vkey <- Int64.logxor state.vkey h
 
 let run_program ?(max_steps = 100000) ?initial_ctx prog =
   let state = create_state ?initial_ctx () in
@@ -349,9 +353,10 @@ let run_bytecode ?(max_steps = 100000) ?initial_ctx enc =
   let pos = ref init_pos in
   let key = ref init_key in
   let steps = ref 0 in
+  let ctx_fn s = get_reg state s in
   while not state.halted && !steps < max_steps && !pos < Bytes.length enc.bytes do
     let cur_bid = state.current_block_id in
-    match decode_op ~op_map:enc.op_map enc.bytes pos key with
+    match decode_op ~op_map:enc.op_map ~ctx:ctx_fn enc.bytes pos key with
     | None -> state.halted <- true
     | Some op ->
         step_op state op;

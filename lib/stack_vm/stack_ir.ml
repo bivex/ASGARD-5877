@@ -37,6 +37,7 @@ type stack_op =
   | SubImmImm of int64 * int64
   | SetRegImm of int * int64
   | AddRegImm of int * int64
+  | KeyFeedback of int * int64
 
 type block = {
   id : int;
@@ -70,7 +71,7 @@ let push_weight = function
   | Test -> 0
   | AddImm _ | SubImm _ -> 1
   | AddImmImm _ | SubImmImm _ | AddRegImm _ -> 1
-  | SetRegImm _ -> 0
+  | SetRegImm _ | KeyFeedback _ -> 0
 
 let pop_weight = function
   | PushImm _ -> 0
@@ -92,7 +93,7 @@ let pop_weight = function
   | Test -> 2
   | AddImm _ | SubImm _ -> 1
   | AddImmImm _ | SubImmImm _ | AddRegImm _ -> 0
-  | SetRegImm _ -> 0
+  | SetRegImm _ | KeyFeedback _ -> 0
 
 let stack_delta op =
   push_weight op - pop_weight op
@@ -133,6 +134,7 @@ let op_to_string = function
   | SubImmImm (a, b) -> Printf.sprintf "SUB_II 0x%Lx, 0x%Lx" a b
   | SetRegImm (idx, v) -> Printf.sprintf "SET_REG_IMM [ctx+%d], 0x%Lx" idx v
   | AddRegImm (idx, c) -> Printf.sprintf "ADD_REG_IMM [ctx+%d], 0x%Lx" idx c
+  | KeyFeedback (idx, v) -> Printf.sprintf "KEY_FEEDBACK [ctx+%d] (exp=0x%Lx)" idx v
 
 let block_to_string b =
   let ops_str = List.map (fun op -> "    " ^ op_to_string op) b.ops |> String.concat "\n" in

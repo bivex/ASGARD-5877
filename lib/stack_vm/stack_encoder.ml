@@ -39,6 +39,7 @@ type opcode_map = {
   op_sub_ii : int;
   op_set_reg_imm : int;
   op_add_reg_imm : int;
+  op_key_feedback : int;
 }
 
 let default_opcode_map = {
@@ -78,6 +79,7 @@ let default_opcode_map = {
   op_sub_ii = 0x22;
   op_set_reg_imm = 0x23;
   op_add_reg_imm = 0x24;
+  op_key_feedback = 0x25;
 }
 
 let splitmix64 state =
@@ -93,7 +95,7 @@ let splitmix64 state =
 let generate_opcode_map seed =
   let state = ref (if seed = 0L then 0x5877A564D00FL else seed) in
   let pool = Array.init 254 (fun i -> i + 1) in
-  for i = 0 to 35 do
+  for i = 0 to 36 do
     let r = splitmix64 state in
     let range = 254 - i in
     let offset = Int64.to_int (Int64.rem (Int64.logand r 0x7FFFFFFFFFFFFFFFL) (Int64.of_int range)) in
@@ -103,43 +105,54 @@ let generate_opcode_map seed =
     pool.(j) <- tmp
   done;
   {
-    op_push_imm    = pool.(0);
-    op_push_reg    = pool.(1);
-    op_pop_reg     = pool.(2);
-    op_read_mem    = pool.(3);
-    op_write_mem   = pool.(4);
-    op_add         = pool.(5);
-    op_sub         = pool.(6);
-    op_mul         = pool.(7);
-    op_nor         = pool.(8);
-    op_nand        = pool.(9);
-    op_shl         = pool.(10);
-    op_shr         = pool.(11);
-    op_dup         = pool.(12);
-    op_swap        = pool.(13);
-    op_push_flags  = pool.(14);
-    op_pop_flags   = pool.(15);
-    op_jmp_rel     = pool.(16);
-    op_jcc_rel     = pool.(17);
-    op_key_adjust  = pool.(18);
-    op_exit        = pool.(19);
-    op_call_extern = pool.(20);
-    op_resolve_sym = pool.(21);
-    op_setcc       = pool.(22);
-    op_cmov        = pool.(23);
-    op_cmp         = pool.(24);
-    op_test        = pool.(25);
-    op_sar         = pool.(26);
-    op_div         = pool.(27);
-    op_idiv        = pool.(28);
-    op_push_imm32  = pool.(29);
-    op_add_imm     = pool.(30);
-    op_sub_imm     = pool.(31);
-    op_add_ii      = pool.(32);
-    op_sub_ii      = pool.(33);
-    op_set_reg_imm = pool.(34);
-    op_add_reg_imm = pool.(35);
+    op_push_imm     = pool.(0);
+    op_push_reg     = pool.(1);
+    op_pop_reg      = pool.(2);
+    op_read_mem     = pool.(3);
+    op_write_mem    = pool.(4);
+    op_add          = pool.(5);
+    op_sub          = pool.(6);
+    op_mul          = pool.(7);
+    op_nor          = pool.(8);
+    op_nand         = pool.(9);
+    op_shl          = pool.(10);
+    op_shr          = pool.(11);
+    op_dup          = pool.(12);
+    op_swap         = pool.(13);
+    op_push_flags   = pool.(14);
+    op_pop_flags    = pool.(15);
+    op_jmp_rel      = pool.(16);
+    op_jcc_rel      = pool.(17);
+    op_key_adjust   = pool.(18);
+    op_exit         = pool.(19);
+    op_call_extern  = pool.(20);
+    op_resolve_sym  = pool.(21);
+    op_setcc        = pool.(22);
+    op_cmov         = pool.(23);
+    op_cmp          = pool.(24);
+    op_test         = pool.(25);
+    op_sar          = pool.(26);
+    op_div          = pool.(27);
+    op_idiv         = pool.(28);
+    op_push_imm32   = pool.(29);
+    op_add_imm      = pool.(30);
+    op_sub_imm      = pool.(31);
+    op_add_ii       = pool.(32);
+    op_sub_ii       = pool.(33);
+    op_set_reg_imm  = pool.(34);
+    op_add_reg_imm  = pool.(35);
+    op_key_feedback = pool.(36);
   }
+
+let feedback_hash v =
+  let open Int64 in
+  let ( lxor ) = logxor and ( lsr ) = shift_right_logical and ( * ) = mul in
+  let v = v lxor (v lsr 33) in
+  let v = v * 0xFF51AFD7ED558CCDL in
+  let v = v lxor (v lsr 33) in
+  let v = v * 0xC4CEB9FE1A85EC53L in
+  let v = v lxor (v lsr 33) in
+  v
 
 type encrypted_bytecode = {
   bytes : bytes;
@@ -423,6 +436,9 @@ let encode_op_into ?(compact_imm = false) op_map buf = function
       Buffer.add_char buf (Char.chr op_map.op_add_reg_imm);
       add_i16 buf idx;
       add_i64 buf v
+  | KeyFeedback (slot, _) ->
+      Buffer.add_char buf (Char.chr op_map.op_key_feedback);
+      add_i16 buf slot
 
 let encode_op ?(op_map = default_opcode_map) ?(compact_imm = false) op =
   let buf = Buffer.create 16 in
@@ -443,6 +459,9 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
      encryptor must therefore apply the same mutation at the same byte
      boundary — after encrypting the last operand byte (offset op_pos+8). *)
   let key_adjust_ends : (int, int64) Hashtbl.t = Hashtbl.create 16 in
+  (* KeyFeedback: mutates rolling key with feedback_hash(expected_val)
+     after consuming the 2 slot operand bytes (offset op_pos+2). *)
+  let key_feedback_ends : (int, int64) Hashtbl.t = Hashtbl.create 16 in
   let sorted_blocks = Hashtbl.fold (fun _ b acc -> b :: acc) prog.blocks []
                       |> List.sort (fun a b -> compare a.id b.id) in
   List.iter (fun b ->
@@ -452,6 +471,7 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
       encode_op_into ~compact_imm resolved_op_map plain_buf op;
       match op with
       | KeyAdjust delta -> Hashtbl.replace key_adjust_ends (op_pos + 8) delta
+      | KeyFeedback (_, exp) -> Hashtbl.replace key_feedback_ends (op_pos + 2) (feedback_hash exp)
       | _ -> ()
     ) b.ops
   ) sorted_blocks;
@@ -481,6 +501,9 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
     key := step_key !key p;
     (match Hashtbl.find_opt key_adjust_ends i with
      | Some delta -> key := Int64.logxor !key delta
+     | None -> ());
+    (match Hashtbl.find_opt key_feedback_ends i with
+     | Some h -> key := Int64.logxor !key h
      | None -> ())
   done;
   (* Address binding: the encryption loop above ran on effective keys; only
@@ -559,7 +582,7 @@ let read_i64 cipher pos key =
   done;
   if !ok then Some !res else None
 
-let decode_op ?(op_map = default_opcode_map) cipher pos key =
+let decode_op ?(op_map = default_opcode_map) ?ctx cipher pos key =
   match read_byte cipher pos key with
   | None -> None
   | Some b when b = op_map.op_push_imm ->
@@ -648,6 +671,13 @@ let decode_op ?(op_map = default_opcode_map) cipher pos key =
             | Some v -> Some (AddRegImm (idx, v))
             | None -> None)
        | None -> None)
+  | Some b when b = op_map.op_key_feedback ->
+      (match read_i16 cipher pos key with
+       | Some slot ->
+           let v = match ctx with Some f -> f slot | None -> 0L in
+           key := Int64.logxor !key (feedback_hash v);
+           Some (KeyFeedback (slot, v))
+       | None -> None)
   | Some _ -> None
 
 let decode_all ?op_map ?block_keys ?block_offsets cipher seed_key =
@@ -655,6 +685,8 @@ let decode_all ?op_map ?block_keys ?block_offsets cipher seed_key =
     | Some m -> m
     | None   -> generate_opcode_map seed_key
   in
+  let ctx_model = Array.make 256 0L in
+  let ctx_fn s = if s >= 0 && s < 256 then ctx_model.(s) else 0L in
   (* offset -> block_key lookup for per-block SipHash re-key *)
   let offset_to_key : (int, int64) Hashtbl.t = Hashtbl.create 16 in
   (match block_keys, block_offsets with
@@ -679,8 +711,12 @@ let decode_all ?op_map ?block_keys ?block_offsets cipher seed_key =
       (match Hashtbl.find_opt offset_to_key !pos with
        | Some k -> key := k
        | None   -> ());
-    match decode_op ~op_map:resolved_op_map cipher pos key with
-    | Some op -> ops := op :: !ops
+    match decode_op ~op_map:resolved_op_map ~ctx:ctx_fn cipher pos key with
+    | Some op ->
+        (match op with
+         | SetRegImm (slot, v) -> if slot >= 0 && slot < 256 then ctx_model.(slot) <- v
+         | _ -> ());
+        ops := op :: !ops
     | None    -> finished := true
   done;
   List.rev !ops

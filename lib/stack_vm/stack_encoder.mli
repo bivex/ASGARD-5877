@@ -37,6 +37,7 @@ type opcode_map = {
   op_sub_ii : int;
   op_set_reg_imm : int;
   op_add_reg_imm : int;
+  op_key_feedback : int;
 }
 
 val default_opcode_map : opcode_map
@@ -98,6 +99,8 @@ val rotl64 : int64 -> int -> int64
 
 val step_key : int64 -> int -> int64
 
+val feedback_hash : int64 -> int64
+
 val encode_op : ?op_map:opcode_map -> ?compact_imm:bool -> stack_op -> bytes
 
 val encode_program :
@@ -111,6 +114,7 @@ val encode_program :
 
 val decode_op :
   ?op_map:opcode_map ->
+  ?ctx:(int -> int64) ->
   bytes ->
   int ref ->
   int64 ref ->

@@ -37,6 +37,7 @@ type stack_op =
   | SubImmImm of int64 * int64
   | SetRegImm of int * int64
   | AddRegImm of int * int64
+  | KeyFeedback of int * int64
 
 type block = {
   id : int;

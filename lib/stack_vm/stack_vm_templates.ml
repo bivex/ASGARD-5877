@@ -250,6 +250,15 @@ static inline void step_key(uint64_t *key, uint8_t p) {
     *key = rotl64(*key, 3) + (p ^ 0x5A);
 }
 
+static inline uint64_t feedback_hash(uint64_t v) {
+    v ^= v >> 33;
+    v *= UINT64_C(0xFF51AFD7ED558CCD);
+    v ^= v >> 33;
+    v *= UINT64_C(0xC4CEB9FE1A85EC53);
+    v ^= v >> 33;
+    return v;
+}
+
 /* Every operand fetch goes through here, so this is the single place that
    decides how far into the image the program may reach. Without the bound a
    truncated instruction read up to 8 bytes past the end and kept decoding —
@@ -924,6 +933,17 @@ static void h_add_reg_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) 
     }
 }
 
+static void h_key_feedback(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    int16_t slot = fetch_i16(vm, bytecode, vip);
+    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
+    if (slot >= 0 && slot < max_ctx) {
+        uint64_t val = vm->ctx[slot];
+        vm->vkey ^= feedback_hash(val);
+    } else {
+        vm->halted = 1;
+    }
+}
+
 static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {
     &h_push_imm, &h_push_imm32, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
     &h_add, &h_sub, &h_mul, &h_nor, &h_nand,
@@ -931,7 +951,8 @@ static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size
     &h_dup, &h_swap, &h_push_flags, &h_pop_flags, &h_jmp_rel,
     &h_jcc_rel, &h_key_adjust, &h_exit, &h_call_extern, &h_resolve_sym,
     &h_setcc, &h_cmov, &h_cmp, &h_test,
-    &h_add_imm, &h_sub_imm, &h_add_ii, &h_sub_ii, &h_set_reg_imm, &h_add_reg_imm
+    &h_add_imm, &h_sub_imm, &h_add_ii, &h_sub_ii, &h_set_reg_imm, &h_add_reg_imm,
+    &h_key_feedback
 };
 __attribute__((noinline))
 static uint64_t derive_addr_key(void) {

@@ -281,7 +281,7 @@ let test_polymorphic_opcodes () =
   Alcotest.(check int) "deterministic ADD" map1.op_add map1_dup.op_add;
   Alcotest.(check int) "deterministic EXIT" map1.op_exit map1_dup.op_exit;
 
-  (* 2. Verify all 36 opcodes in map1 are unique and non-zero *)
+  (* 2. Verify all 37 opcodes in map1 are unique and non-zero *)
   let ops_list1 = [
     map1.op_push_imm; map1.op_push_reg; map1.op_pop_reg; map1.op_read_mem; map1.op_write_mem;
     map1.op_add; map1.op_sub; map1.op_mul; map1.op_nor; map1.op_nand;
@@ -290,13 +290,13 @@ let test_polymorphic_opcodes () =
     map1.op_call_extern; map1.op_resolve_sym; map1.op_setcc; map1.op_cmov; map1.op_cmp; map1.op_test;
     map1.op_sar; map1.op_div; map1.op_idiv; map1.op_push_imm32;
     map1.op_add_imm; map1.op_sub_imm; map1.op_add_ii; map1.op_sub_ii;
-    map1.op_set_reg_imm; map1.op_add_reg_imm;
+    map1.op_set_reg_imm; map1.op_add_reg_imm; map1.op_key_feedback;
   ] in
   List.iter (fun op ->
     Alcotest.(check bool) "opcode is in range 1..254" true (op >= 1 && op <= 254)
   ) ops_list1;
   let unique1 = List.sort_uniq compare ops_list1 in
-  Alcotest.(check int) "all 36 opcodes are strictly unique" 36 (List.length unique1);
+  Alcotest.(check int) "all 37 opcodes are strictly unique" 37 (List.length unique1);
 
   (* 3. Verify diversity between different seeds *)
   let ops_list2 = [
@@ -307,7 +307,7 @@ let test_polymorphic_opcodes () =
     map2.op_call_extern; map2.op_resolve_sym; map2.op_setcc; map2.op_cmov; map2.op_cmp; map2.op_test;
     map2.op_sar; map2.op_div; map2.op_idiv; map2.op_push_imm32;
     map2.op_add_imm; map2.op_sub_imm; map2.op_add_ii; map2.op_sub_ii;
-    map2.op_set_reg_imm; map2.op_add_reg_imm;
+    map2.op_set_reg_imm; map2.op_add_reg_imm; map2.op_key_feedback;
   ] in
   let diff_count = List.fold_left2 (fun acc a b -> if a <> b then acc + 1 else acc) 0 ops_list1 ops_list2 in
   Alcotest.(check bool) "most opcodes differ between seed1 and seed2" true (diff_count >= 20);
@@ -1814,6 +1814,76 @@ let test_payload_auth_c_runtime () =
     end
   end
 
+let test_state_feedback_rolling_key () =
+  (* 1. Direct program with SetRegImm and KeyFeedback *)
+  let b = make_block 0 "feedback_entry" [
+    SetRegImm (1, 0x1122334455667788L);
+    KeyFeedback (1, 0x1122334455667788L);
+    PushImm 100L;
+    PushReg 1;
+    Add;
+    PopReg 2;
+    Exit;
+  ] in
+  let prog = make_program 0 [b] 8 in
+  let seed_key = 0xCAFEBABE_DEADBEEFL in
+  let enc = Stack_encoder.encode_program ~seed_key prog in
+
+  (* 2. Test round-trip execution *)
+  let state = run_bytecode enc in
+  let expected_sum = Int64.add 100L 0x1122334455667788L in
+  Alcotest.(check int64) "state-feedback bytecode computes correct sum"
+    expected_sum (get_reg state 2);
+  Alcotest.(check bool) "state-feedback bytecode halts" true state.halted;
+
+  (* 3. Anti-tamper verification: corrupting register state diverges key *)
+  let b_tamper = make_block 0 "tamper_entry" [
+    KeyFeedback (1, 0x1122334455667788L);
+    PushImm 42L;
+    PopReg 0;
+    Exit;
+  ] in
+  let prog_tamper = make_program 0 [b_tamper] 8 in
+  let enc_tamper = Stack_encoder.encode_program ~seed_key prog_tamper in
+
+  (* When slot 1 matches expected, executes cleanly and sets reg 0 to 42 *)
+  let state_valid = run_bytecode ~initial_ctx:[1, 0x1122334455667788L] enc_tamper in
+  Alcotest.(check int64) "valid key feedback sets reg 0 to 42" 42L (get_reg state_valid 0);
+
+  (* When slot 1 is tampered (attacker modified reg 1), rolling key diverges! *)
+  let state_tampered = run_bytecode ~initial_ctx:[1, 0xDEADBEEF00000000L] enc_tamper in
+  Alcotest.(check bool) "tampered state fails to execute cleanly (reg 0 <> 42)"
+    true (get_reg state_tampered 0 <> 42L);
+
+  (* 4. Test Stack_feedback_pass transformation *)
+  let b_pass = make_block 0 "pass_entry" [
+    SetRegImm (0, 1000L);
+    SetRegImm (1, 2000L);
+    PushReg 0;
+    PushReg 1;
+    Add;
+    PopReg 2;
+    Exit;
+  ] in
+  let prog_pass = make_program 0 [b_pass] 8 in
+  let cfg = Stack_feedback_pass.default_feedback_config 0x12345L in
+  let transformed = Stack_feedback_pass.apply_program cfg prog_pass in
+  let stats = Stack_feedback_pass.feedback_stats prog_pass transformed in
+  Alcotest.(check bool) "feedback pass injected KeyFeedback ops" true (stats.feedback_injected > 0);
+  let enc_pass = Stack_encoder.encode_program ~seed_key:0x9876543210L transformed in
+  let state_pass = run_bytecode enc_pass in
+  Alcotest.(check int64) "pass transformed bytecode computes 1000 + 2000 = 3000"
+    3000L (get_reg state_pass 2);
+
+  (* 5. Verify C++ runtime emission includes KEY_FEEDBACK *)
+  let runtime_cfg = Stack_runtime.default_config Stack_runtime.X86_64 in
+  let c_code = Stack_runtime.generate_c_runtime ~enc:enc_pass runtime_cfg transformed in
+  Alcotest.(check bool) "runtime contains h_key_feedback declaration"
+    true (contains c_code "h_key_feedback");
+  let expected_case = Printf.sprintf "case 0x%02X: /* KEY_FEEDBACK */" enc_pass.op_map.op_key_feedback in
+  Alcotest.(check bool) "runtime contains KEY_FEEDBACK dispatch case"
+    true (contains c_code expected_case)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -1821,6 +1891,7 @@ let tests = [
   ("IR to Stack-VM Lowering & Execution", `Quick, test_ir_to_stack_and_eval);
   ("Stack Balance Pass & Repair", `Quick, test_stack_balance_pass);
   ("Rolling Key Bytecode Encryption & Execution", `Quick, test_rolling_key_encoder_and_eval);
+  ("State-Feedback Rolling Key & Anti-Tamper", `Quick, test_state_feedback_rolling_key);
   ("Native Runtime & Dispatch Synthesis", `Quick, test_runtime_synthesis);
   ("Stack VM Extensions & Branching", `Quick, test_stack_vm_extensions);
   ("Polymorphic Opcode Remapping & Synthesis", `Quick, test_polymorphic_opcodes);
