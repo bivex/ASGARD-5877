@@ -314,6 +314,12 @@ let generate_c_runtime
     mk_case enc.op_map.op_cmov "CMOV" "h_cmov";
     mk_case enc.op_map.op_cmp "CMP" "h_cmp";
     mk_case enc.op_map.op_test "TEST" "h_test";
+    mk_case enc.op_map.op_add_imm "ADD_IMM" "h_add_imm";
+    mk_case enc.op_map.op_sub_imm "SUB_IMM" "h_sub_imm";
+    mk_case enc.op_map.op_add_ii "ADD_II" "h_add_ii";
+    mk_case enc.op_map.op_sub_ii "SUB_II" "h_sub_ii";
+    mk_case enc.op_map.op_set_reg_imm "SET_REG_IMM" "h_set_reg_imm";
+    mk_case enc.op_map.op_add_reg_imm "ADD_REG_IMM" "h_add_reg_imm";
   ] in
   let models = [
     ("has_constants", Jingoo.Jg_types.Tbool has_constants);

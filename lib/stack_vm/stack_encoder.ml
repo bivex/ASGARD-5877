@@ -33,6 +33,12 @@ type opcode_map = {
   op_div : int;
   op_idiv : int;
   op_push_imm32 : int;
+  op_add_imm : int;
+  op_sub_imm : int;
+  op_add_ii : int;
+  op_sub_ii : int;
+  op_set_reg_imm : int;
+  op_add_reg_imm : int;
 }
 
 let default_opcode_map = {
@@ -66,6 +72,12 @@ let default_opcode_map = {
   op_div = 0x1C;
   op_idiv = 0x1D;
   op_push_imm32 = 0x1E;
+  op_add_imm = 0x1F;
+  op_sub_imm = 0x20;
+  op_add_ii = 0x21;
+  op_sub_ii = 0x22;
+  op_set_reg_imm = 0x23;
+  op_add_reg_imm = 0x24;
 }
 
 let splitmix64 state =
@@ -81,7 +93,7 @@ let splitmix64 state =
 let generate_opcode_map seed =
   let state = ref (if seed = 0L then 0x5877A564D00FL else seed) in
   let pool = Array.init 254 (fun i -> i + 1) in
-  for i = 0 to 29 do
+  for i = 0 to 35 do
     let r = splitmix64 state in
     let range = 254 - i in
     let offset = Int64.to_int (Int64.rem (Int64.logand r 0x7FFFFFFFFFFFFFFFL) (Int64.of_int range)) in
@@ -121,6 +133,12 @@ let generate_opcode_map seed =
     op_div         = pool.(27);
     op_idiv        = pool.(28);
     op_push_imm32  = pool.(29);
+    op_add_imm     = pool.(30);
+    op_sub_imm     = pool.(31);
+    op_add_ii      = pool.(32);
+    op_sub_ii      = pool.(33);
+    op_set_reg_imm = pool.(34);
+    op_add_reg_imm = pool.(35);
   }
 
 type encrypted_bytecode = {
@@ -383,6 +401,28 @@ let encode_op_into ?(compact_imm = false) op_map buf = function
       add_i16 buf idx
   | Cmp -> Buffer.add_char buf (Char.chr op_map.op_cmp)
   | Test -> Buffer.add_char buf (Char.chr op_map.op_test)
+  | AddImm v ->
+      Buffer.add_char buf (Char.chr op_map.op_add_imm);
+      add_i64 buf v
+  | SubImm v ->
+      Buffer.add_char buf (Char.chr op_map.op_sub_imm);
+      add_i64 buf v
+  | AddImmImm (a, b) ->
+      Buffer.add_char buf (Char.chr op_map.op_add_ii);
+      add_i64 buf a;
+      add_i64 buf b
+  | SubImmImm (a, b) ->
+      Buffer.add_char buf (Char.chr op_map.op_sub_ii);
+      add_i64 buf a;
+      add_i64 buf b
+  | SetRegImm (idx, v) ->
+      Buffer.add_char buf (Char.chr op_map.op_set_reg_imm);
+      add_i16 buf idx;
+      add_i64 buf v
+  | AddRegImm (idx, v) ->
+      Buffer.add_char buf (Char.chr op_map.op_add_reg_imm);
+      add_i16 buf idx;
+      add_i64 buf v
 
 let encode_op ?(op_map = default_opcode_map) ?(compact_imm = false) op =
   let buf = Buffer.create 16 in
@@ -576,6 +616,38 @@ let decode_op ?(op_map = default_opcode_map) cipher pos key =
        | _ -> None)
   | Some b when b = op_map.op_cmp -> Some Cmp
   | Some b when b = op_map.op_test -> Some Test
+  | Some b when b = op_map.op_add_imm ->
+      (match read_i64 cipher pos key with Some v -> Some (AddImm v) | None -> None)
+  | Some b when b = op_map.op_sub_imm ->
+      (match read_i64 cipher pos key with Some v -> Some (SubImm v) | None -> None)
+  | Some b when b = op_map.op_add_ii ->
+      (match read_i64 cipher pos key with
+       | Some a ->
+           (match read_i64 cipher pos key with
+            | Some b -> Some (AddImmImm (a, b))
+            | None -> None)
+       | None -> None)
+  | Some b when b = op_map.op_sub_ii ->
+      (match read_i64 cipher pos key with
+       | Some a ->
+           (match read_i64 cipher pos key with
+            | Some b -> Some (SubImmImm (a, b))
+            | None -> None)
+       | None -> None)
+  | Some b when b = op_map.op_set_reg_imm ->
+      (match read_i16 cipher pos key with
+       | Some idx ->
+           (match read_i64 cipher pos key with
+            | Some v -> Some (SetRegImm (idx, v))
+            | None -> None)
+       | None -> None)
+  | Some b when b = op_map.op_add_reg_imm ->
+      (match read_i16 cipher pos key with
+       | Some idx ->
+           (match read_i64 cipher pos key with
+            | Some v -> Some (AddRegImm (idx, v))
+            | None -> None)
+       | None -> None)
   | Some _ -> None
 
 let decode_all ?op_map ?block_keys ?block_offsets cipher seed_key =

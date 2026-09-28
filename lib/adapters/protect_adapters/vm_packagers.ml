@@ -113,6 +113,7 @@ let compute_shannon_entropy (b : bytes) : float =
     !entropy
 
 let make_stack_metrics
+    ?(superop_info   = "Superoperator fusion: N/A")
     ?(spaghetti_info = "Spaghetti splitting: N/A")
     ?(ghost_info     = "Ghost padding: N/A")
     ?(mba_info       = "MBA synthesis: N/A")
@@ -142,6 +143,7 @@ let make_stack_metrics
        - Opcode Mapping: Dynamic Polymorphic ISA (Unique Build Permutation)\n\
        - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
        - PushImm Operand Width: %s\n\
+       - Superoperator Fusion: %s\n\
        - Spaghetti CFG Splitting: %s\n\
        - Ghost Stack Padding: %s\n\
        - MBA Constant Synthesis: %s\n\
@@ -154,6 +156,7 @@ let make_stack_metrics
        - Rolling Key Seed: 0x%016LX\n\
        ==============================================="
       imm_width_info
+      superop_info
       spaghetti_info ghost_info mba_info cff_info
       avg_disp_ops vpc_transitions_per_op
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
@@ -188,32 +191,24 @@ module Stack_vm_packager : Vm_packager = struct
     let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
 
-    (* Apply stack balance pass to ensure well-formed basic blocks *)
-    let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
-
-    (* Phase 2b: Spaghetti Control-Flow Splitting — split blocks before CFF *)
-    let spaghetti_seed =
+    (* Phase 2a: Superoperator Fusion — fuse recurring patterns into fused ops *)
+    let superop_seed =
       Int64.logxor
         (Int64.of_int (Random.State.bits rng))
-        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
     in
-    let spaghetti_cfg = Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed in
-    let prog_spaghetti = Stack_vm.Stack_spaghetti_pass.apply_program spaghetti_cfg prog in
-    let spaghetti_info = Stack_vm.Stack_spaghetti_pass.spaghetti_stats prog prog_spaghetti in
-    let prog = prog_spaghetti in
-
-    (* Phase 3: Ghost Stack Padding — inject neutral junk ops per block *)
-    let ghost_seed =
-      Int64.logxor
-        (Int64.of_int (Random.State.bits rng))
-        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 17)
+    let superop_cfg = Stack_vm.Stack_superop_pass.default_superop_config superop_seed in
+    let prog_superop = Stack_vm.Stack_superop_pass.apply_program superop_cfg prog in
+    let superop_stats = Stack_vm.Stack_superop_pass.superop_stats prog prog_superop in
+    let superop_info =
+      Printf.sprintf "%d ops fused (AddImm:%d SubImm:%d AddII:%d SubII:%d SetRegImm:%d AddRegImm:%d)"
+        superop_stats.fused_ops superop_stats.add_imm_count superop_stats.sub_imm_count
+        superop_stats.add_ii_count superop_stats.sub_ii_count superop_stats.set_reg_imm_count
+        superop_stats.add_reg_imm_count
     in
-    let ghost_cfg = Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed in
-    let prog_ghost = Stack_vm.Stack_ghost_pass.apply_program ghost_cfg ctx prog in
-    let ghost_info = Stack_vm.Stack_ghost_pass.ghost_stats prog prog_ghost in
-    let prog = prog_ghost in
+    let prog = prog_superop in
 
-    (* Phase 4: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
+    (* Phase 2b: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
     let mba_seed =
       Int64.logxor
         (Int64.of_int (Random.State.bits rng))
@@ -227,7 +222,7 @@ module Stack_vm_packager : Vm_packager = struct
     let real_blocks = Hashtbl.length prog.blocks in
     let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
 
-    (* Phase 5: Virtual CFG Flattening — route jumps through VPC dispatcher *)
+    (* Phase 3: Virtual CFG Flattening — route jumps through VPC dispatcher *)
     let cff_seed =
       Int64.logxor
         (Int64.of_int (Random.State.bits rng))
@@ -237,6 +232,31 @@ module Stack_vm_packager : Vm_packager = struct
     let prog_cff = Stack_vm.Stack_cff_pass.apply_program cff_cfg ctx prog in
     let cff_info = Stack_vm.Stack_cff_pass.cff_stats prog prog_cff in
     let prog = prog_cff in
+
+    (* Phase 4: Spaghetti Control-Flow Splitting — split blocks after CFF *)
+    let spaghetti_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
+    in
+    let spaghetti_cfg = Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed in
+    let prog_spaghetti = Stack_vm.Stack_spaghetti_pass.apply_program spaghetti_cfg prog in
+    let spaghetti_info = Stack_vm.Stack_spaghetti_pass.spaghetti_stats prog prog_spaghetti in
+    let prog = prog_spaghetti in
+
+    (* Phase 5: Ghost Stack Padding — inject neutral junk ops per block *)
+    let ghost_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 17)
+    in
+    let ghost_cfg = Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed in
+    let prog_ghost = Stack_vm.Stack_ghost_pass.apply_program ghost_cfg ctx prog in
+    let ghost_info = Stack_vm.Stack_ghost_pass.ghost_stats prog prog_ghost in
+    let prog = prog_ghost in
+
+    (* Phase 6: Stack Balance Pass — enforce block balance delta = 0 *)
+    let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
 
     let seed_key =
       Int64.logxor
@@ -283,6 +303,7 @@ module Stack_vm_packager : Vm_packager = struct
     let metrics =
       make_stack_metrics
         ~compact_imm
+        ~superop_info
         ~spaghetti_info ~ghost_info ~mba_info ~cff_info
         ~real_ops ~real_blocks prog enc
     in

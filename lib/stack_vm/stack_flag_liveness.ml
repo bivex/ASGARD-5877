@@ -17,7 +17,8 @@ open Stack_ir
     Mul/Div/Idiv are flag-neutral (they do not touch flags);
     PopFlags kills liveness by overwriting the whole register. *)
 let produces_flags = function
-  | Add | Sub | Nor | Nand | Shl | Shr | Sar | Cmp | Test | PopFlags -> true
+  | Add | Sub | AddImm _ | SubImm _ | AddImmImm _ | SubImmImm _ | AddRegImm _
+  | Nor | Nand | Shl | Shr | Sar | Cmp | Test | PopFlags -> true
   | _ -> false
 
 (** Ops that read the current flag state. *)

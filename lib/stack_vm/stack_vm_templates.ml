@@ -825,13 +825,113 @@ static void h_test(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     }
 }
 
+static void h_add_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    uint64_t imm = fetch_i64(vm, bytecode, vip);
+    if (vm->vsp_idx >= 1) {
+        uint64_t a = VSP_ENCODE(vm->vsp_idx - 1, vm->vsp[vm->vsp_idx - 1]);
+        uint64_t b = imm;
+        uint64_t res = a + b;
+        vm->zf = (res == 0);
+        vm->sf = ((int64_t)res < 0);
+        vm->cf = (res < a);
+        vm->of = ((~(a ^ b) & (a ^ res)) >> 63) & 1;
+        vm->pf = parity8(res);
+        vm->vsp[vm->vsp_idx - 1] = VSP_ENCODE(vm->vsp_idx - 1, res);
+    } else {
+        vm->halted = 1; /* fail-closed: underflow */
+    }
+}
+
+static void h_sub_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    uint64_t imm = fetch_i64(vm, bytecode, vip);
+    if (vm->vsp_idx >= 1) {
+        uint64_t a = VSP_ENCODE(vm->vsp_idx - 1, vm->vsp[vm->vsp_idx - 1]);
+        uint64_t b = imm;
+        uint64_t res = a - b;
+        vm->zf = (res == 0);
+        vm->sf = ((int64_t)res < 0);
+        vm->cf = (a < b);
+        vm->of = (((a ^ b) & (a ^ res)) >> 63) & 1;
+        vm->pf = parity8(res);
+        vm->vsp[vm->vsp_idx - 1] = VSP_ENCODE(vm->vsp_idx - 1, res);
+    } else {
+        vm->halted = 1; /* fail-closed: underflow */
+    }
+}
+
+static void h_add_ii(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    uint64_t a = fetch_i64(vm, bytecode, vip);
+    uint64_t b = fetch_i64(vm, bytecode, vip);
+    uint64_t res = a + b;
+    vm->zf = (res == 0);
+    vm->sf = ((int64_t)res < 0);
+    vm->cf = (res < a);
+    vm->of = ((~(a ^ b) & (a ^ res)) >> 63) & 1;
+    vm->pf = parity8(res);
+    if (vm->vsp_idx < 4096) {
+        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);
+        ++vm->vsp_idx;
+    } else {
+        vm->halted = 1; /* fail-closed: overflow */
+    }
+}
+
+static void h_sub_ii(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    uint64_t a = fetch_i64(vm, bytecode, vip);
+    uint64_t b = fetch_i64(vm, bytecode, vip);
+    uint64_t res = a - b;
+    vm->zf = (res == 0);
+    vm->sf = ((int64_t)res < 0);
+    vm->cf = (a < b);
+    vm->of = (((a ^ b) & (a ^ res)) >> 63) & 1;
+    vm->pf = parity8(res);
+    if (vm->vsp_idx < 4096) {
+        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);
+        ++vm->vsp_idx;
+    } else {
+        vm->halted = 1; /* fail-closed: overflow */
+    }
+}
+
+static void h_set_reg_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    int16_t idx = fetch_i16(vm, bytecode, vip);
+    uint64_t imm = fetch_i64(vm, bytecode, vip);
+    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
+    if (idx >= 0 && idx < max_ctx) {
+        vm->ctx[idx] = imm;
+    } else {
+        vm->halted = 1;
+    }
+}
+
+static void h_add_reg_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    int16_t idx = fetch_i16(vm, bytecode, vip);
+    uint64_t imm = fetch_i64(vm, bytecode, vip);
+    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
+    if (idx >= 0 && idx < max_ctx && vm->vsp_idx < 4096) {
+        uint64_t a = vm->ctx[idx];
+        uint64_t b = imm;
+        uint64_t res = a + b;
+        vm->zf = (res == 0);
+        vm->sf = ((int64_t)res < 0);
+        vm->cf = (res < a);
+        vm->of = ((~(a ^ b) & (a ^ res)) >> 63) & 1;
+        vm->pf = parity8(res);
+        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);
+        ++vm->vsp_idx;
+    } else {
+        vm->halted = 1;
+    }
+}
+
 static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {
     &h_push_imm, &h_push_imm32, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
     &h_add, &h_sub, &h_mul, &h_nor, &h_nand,
     &h_shl, &h_shr, &h_sar, &h_div, &h_idiv,
     &h_dup, &h_swap, &h_push_flags, &h_pop_flags, &h_jmp_rel,
     &h_jcc_rel, &h_key_adjust, &h_exit, &h_call_extern, &h_resolve_sym,
-    &h_setcc, &h_cmov, &h_cmp, &h_test
+    &h_setcc, &h_cmov, &h_cmp, &h_test,
+    &h_add_imm, &h_sub_imm, &h_add_ii, &h_sub_ii, &h_set_reg_imm, &h_add_reg_imm
 };
 __attribute__((noinline))
 static uint64_t derive_addr_key(void) {

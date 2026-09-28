@@ -259,6 +259,16 @@ let test_stack_vm_extensions () =
   Alcotest.(check int64) "BC reg2 (taken branch) is 777" 777L (get_reg state_bc 2);
   Alcotest.(check bool) "BC halted" true state_bc.halted
 
+let contains s substr =
+  let len_s = String.length s in
+  let len_sub = String.length substr in
+  let rec check i =
+    if i + len_sub > len_s then false
+    else if String.sub s i len_sub = substr then true
+    else check (i + 1)
+  in
+  check 0
+
 let test_polymorphic_opcodes () =
   let seed1 = 0x1122334455667788L in
   let seed2 = 0x99AABBCCDDEEFF00L in
@@ -271,7 +281,7 @@ let test_polymorphic_opcodes () =
   Alcotest.(check int) "deterministic ADD" map1.op_add map1_dup.op_add;
   Alcotest.(check int) "deterministic EXIT" map1.op_exit map1_dup.op_exit;
 
-  (* 2. Verify all 30 opcodes in map1 are unique and non-zero *)
+  (* 2. Verify all 36 opcodes in map1 are unique and non-zero *)
   let ops_list1 = [
     map1.op_push_imm; map1.op_push_reg; map1.op_pop_reg; map1.op_read_mem; map1.op_write_mem;
     map1.op_add; map1.op_sub; map1.op_mul; map1.op_nor; map1.op_nand;
@@ -279,12 +289,14 @@ let test_polymorphic_opcodes () =
     map1.op_pop_flags; map1.op_jmp_rel; map1.op_jcc_rel; map1.op_key_adjust; map1.op_exit;
     map1.op_call_extern; map1.op_resolve_sym; map1.op_setcc; map1.op_cmov; map1.op_cmp; map1.op_test;
     map1.op_sar; map1.op_div; map1.op_idiv; map1.op_push_imm32;
+    map1.op_add_imm; map1.op_sub_imm; map1.op_add_ii; map1.op_sub_ii;
+    map1.op_set_reg_imm; map1.op_add_reg_imm;
   ] in
   List.iter (fun op ->
     Alcotest.(check bool) "opcode is in range 1..254" true (op >= 1 && op <= 254)
   ) ops_list1;
   let unique1 = List.sort_uniq compare ops_list1 in
-  Alcotest.(check int) "all 30 opcodes are strictly unique" 30 (List.length unique1);
+  Alcotest.(check int) "all 36 opcodes are strictly unique" 36 (List.length unique1);
 
   (* 3. Verify diversity between different seeds *)
   let ops_list2 = [
@@ -294,6 +306,8 @@ let test_polymorphic_opcodes () =
     map2.op_pop_flags; map2.op_jmp_rel; map2.op_jcc_rel; map2.op_key_adjust; map2.op_exit;
     map2.op_call_extern; map2.op_resolve_sym; map2.op_setcc; map2.op_cmov; map2.op_cmp; map2.op_test;
     map2.op_sar; map2.op_div; map2.op_idiv; map2.op_push_imm32;
+    map2.op_add_imm; map2.op_sub_imm; map2.op_add_ii; map2.op_sub_ii;
+    map2.op_set_reg_imm; map2.op_add_reg_imm;
   ] in
   let diff_count = List.fold_left2 (fun acc a b -> if a <> b then acc + 1 else acc) 0 ops_list1 ops_list2 in
   Alcotest.(check bool) "most opcodes differ between seed1 and seed2" true (diff_count >= 20);
@@ -318,16 +332,6 @@ let test_polymorphic_opcodes () =
   let expected_push_case = Printf.sprintf "case 0x%02X: /* PUSH_IMM */" enc.op_map.op_push_imm in
   let expected_add_case = Printf.sprintf "case 0x%02X: /* ADD */" enc.op_map.op_add in
   let expected_exit_case = Printf.sprintf "case 0x%02X: /* EXIT */" enc.op_map.op_exit in
-  let contains s substr =
-    let len_s = String.length s in
-    let len_sub = String.length substr in
-    let rec check i =
-      if i + len_sub > len_s then false
-      else if String.sub s i len_sub = substr then true
-      else check (i + 1)
-    in
-    check 0
-  in
   Alcotest.(check bool) "c runtime contains polymorphic push_imm" true (contains c_code expected_push_case);
   Alcotest.(check bool) "c runtime contains polymorphic add" true (contains c_code expected_add_case);
   Alcotest.(check bool) "c runtime contains polymorphic exit" true (contains c_code expected_exit_case)
@@ -365,6 +369,69 @@ let test_compact_push_imm () =
   Alcotest.(check int64) "compact result matches expected" expected (get_reg st_compact 0);
   Alcotest.(check int64) "fixed result matches expected" expected (get_reg st_fixed 0);
   Alcotest.(check int64) "compact and fixed agree" (get_reg st_fixed 0) (get_reg st_compact 0)
+
+let test_superoperator_fusion () =
+  let seed = 0x5877_BEEF_C0DEL in
+  let b0 = make_block 0 "entry" [
+    PushImm 100L; PushImm 25L; Add; PopReg 0;         (* 125 *)
+    PushImm 100L; PushImm 25L; Sub; PopReg 1;         (* 75 *)
+    PushImm 999L; PopReg 2;                           (* 999 *)
+    PushReg 2; PushImm 1L; Add; PopReg 3;             (* 1000 *)
+    PushReg 2; PushImm 99L; Sub; PopReg 4;            (* 900 *)
+    PushImm 10L; PopReg 5;
+    PushReg 5; PushImm 40L; Add; PopReg 5;            (* 50 *)
+    Exit;
+  ] in
+  let prog_orig = make_program 0 [b0] 16 in
+
+  (* 1. Verify baseline execution *)
+  let st_orig = run_program prog_orig in
+  Alcotest.(check int64) "orig reg0" 125L (get_reg st_orig 0);
+  Alcotest.(check int64) "orig reg1" 75L  (get_reg st_orig 1);
+  Alcotest.(check int64) "orig reg2" 999L (get_reg st_orig 2);
+  Alcotest.(check int64) "orig reg3" 1000L (get_reg st_orig 3);
+  Alcotest.(check int64) "orig reg4" 900L (get_reg st_orig 4);
+  Alcotest.(check int64) "orig reg5" 50L  (get_reg st_orig 5);
+
+  (* 2. Apply Superoperator fusion pass at 100% rate *)
+  let cfg = { (Stack_superop_pass.default_superop_config seed) with fusion_rate = 100 } in
+  let prog_fused = Stack_superop_pass.apply_program cfg prog_orig in
+  let stats = Stack_superop_pass.superop_stats prog_orig prog_fused in
+
+  Alcotest.(check bool) "ops were fused" true (stats.fused_ops > 0);
+  Alcotest.(check bool) "AddImmImm fused" true (stats.add_ii_count >= 1);
+  Alcotest.(check bool) "SubImmImm fused" true (stats.sub_ii_count >= 1);
+  Alcotest.(check bool) "SetRegImm fused" true (stats.set_reg_imm_count >= 1);
+  Alcotest.(check bool) "AddRegImm fused" true (stats.add_reg_imm_count >= 1);
+  Alcotest.(check bool) "SubImm fused" true (stats.sub_imm_count >= 1);
+
+  (* 3. Verify VM execution of fused program *)
+  let st_fused = run_program prog_fused in
+  Alcotest.(check int64) "fused reg0" 125L (get_reg st_fused 0);
+  Alcotest.(check int64) "fused reg1" 75L  (get_reg st_fused 1);
+  Alcotest.(check int64) "fused reg2" 999L (get_reg st_fused 2);
+  Alcotest.(check int64) "fused reg3" 1000L (get_reg st_fused 3);
+  Alcotest.(check int64) "fused reg4" 900L (get_reg st_fused 4);
+  Alcotest.(check int64) "fused reg5" 50L  (get_reg st_fused 5);
+
+  (* 4. Verify bytecode encode & decode round-trip *)
+  let enc = Stack_encoder.encode_program ~seed_key:seed prog_fused in
+  let st_bc = run_bytecode enc in
+  Alcotest.(check int64) "bc reg0" 125L (get_reg st_bc 0);
+  Alcotest.(check int64) "bc reg1" 75L  (get_reg st_bc 1);
+  Alcotest.(check int64) "bc reg2" 999L (get_reg st_bc 2);
+  Alcotest.(check int64) "bc reg3" 1000L (get_reg st_bc 3);
+  Alcotest.(check int64) "bc reg4" 900L (get_reg st_bc 4);
+  Alcotest.(check int64) "bc reg5" 50L  (get_reg st_bc 5);
+
+  (* 5. Verify C++ runtime emission with superoperators *)
+  let runtime_cfg = Stack_runtime.default_config Stack_runtime.X86_64 in
+  let hpp = Stack_runtime.generate_c_runtime ~enc runtime_cfg prog_fused in
+  Alcotest.(check bool) "hpp contains h_add_ii" true (contains hpp "h_add_ii");
+  Alcotest.(check bool) "hpp contains h_sub_ii" true (contains hpp "h_sub_ii");
+  Alcotest.(check bool) "hpp contains h_set_reg_imm" true (contains hpp "h_set_reg_imm");
+  Alcotest.(check bool) "hpp contains h_add_reg_imm" true (contains hpp "h_add_reg_imm");
+  Alcotest.(check bool) "hpp contains h_sub_imm" true (contains hpp "h_sub_imm")
 
 let test_vsp_whitening () =
   (* Verify the C++ runtime contains VSP_ENCODE macro and uses it *)
@@ -1758,6 +1825,7 @@ let tests = [
   ("Stack VM Extensions & Branching", `Quick, test_stack_vm_extensions);
   ("Polymorphic Opcode Remapping & Synthesis", `Quick, test_polymorphic_opcodes);
   ("PushImm 32/64-bit Compact Width", `Quick, test_compact_push_imm);
+  ("Superoperator Fusion Pass & Runtime", `Quick, test_superoperator_fusion);
   ("VSP Stack Value Whitening", `Quick, test_vsp_whitening);
   ("Ghost Stack Padding Pass", `Quick, test_ghost_stack_padding);
   ("Spaghetti CFG Splitting", `Quick, test_spaghetti_splitting);

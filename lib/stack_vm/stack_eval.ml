@@ -274,6 +274,38 @@ let step_op state = function
            state.vstack <- rest;
            state.vsp <- Int64.add state.vsp 16L
        | _ -> state.halted <- true)
+  | AddImm c ->
+      (match state.vstack with
+       | op1 :: rest ->
+           let res = Int64.add op1 c in
+           state.flags <- CC_OP_ADD { src1 = op1; src2 = c; dst = res; width = B64 };
+           state.vstack <- res :: rest
+       | [] -> state.halted <- true)
+  | SubImm c ->
+      (match state.vstack with
+       | op1 :: rest ->
+           let res = Int64.sub op1 c in
+           state.flags <- CC_OP_SUB { src1 = op1; src2 = c; dst = res; width = B64 };
+           state.vstack <- res :: rest
+       | [] -> state.halted <- true)
+  | AddImmImm (a, b) ->
+      let res = Int64.add a b in
+      state.flags <- CC_OP_ADD { src1 = a; src2 = b; dst = res; width = B64 };
+      state.vstack <- res :: state.vstack;
+      state.vsp <- Int64.sub state.vsp 8L
+  | SubImmImm (a, b) ->
+      let res = Int64.sub a b in
+      state.flags <- CC_OP_SUB { src1 = a; src2 = b; dst = res; width = B64 };
+      state.vstack <- res :: state.vstack;
+      state.vsp <- Int64.sub state.vsp 8L
+  | SetRegImm (idx, v) ->
+      set_reg state idx v
+  | AddRegImm (idx, c) ->
+      let op1 = get_reg state idx in
+      let res = Int64.add op1 c in
+      state.flags <- CC_OP_ADD { src1 = op1; src2 = c; dst = res; width = B64 };
+      state.vstack <- res :: state.vstack;
+      state.vsp <- Int64.sub state.vsp 8L
 
 let run_program ?(max_steps = 100000) ?initial_ctx prog =
   let state = create_state ?initial_ctx () in

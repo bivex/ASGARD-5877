@@ -31,6 +31,12 @@ type stack_op =
   | Cmov of condition * int
   | Cmp
   | Test
+  | AddImm of int64
+  | SubImm of int64
+  | AddImmImm of int64 * int64
+  | SubImmImm of int64 * int64
+  | SetRegImm of int * int64
+  | AddRegImm of int * int64
 
 type block = {
   id : int;

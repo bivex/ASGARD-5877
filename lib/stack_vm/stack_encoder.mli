@@ -31,6 +31,12 @@ type opcode_map = {
   op_div : int;
   op_idiv : int;
   op_push_imm32 : int;
+  op_add_imm : int;
+  op_sub_imm : int;
+  op_add_ii : int;
+  op_sub_ii : int;
+  op_set_reg_imm : int;
+  op_add_reg_imm : int;
 }
 
 val default_opcode_map : opcode_map
