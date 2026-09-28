@@ -119,6 +119,7 @@ let make_stack_metrics
     ?(cff_info       = "CFG flattening: N/A")
     ?(real_ops       = 0)
     ?(real_blocks    = 0)
+    ?(compact_imm    = true)
     (prog : Stack_vm.Stack_ir.program)
     (enc  : Stack_vm.Stack_encoder.encrypted_bytecode)
     : Protect_ports.metrics_report =
@@ -130,12 +131,17 @@ let make_stack_metrics
     else 0.0
   in
   let avg_disp_ops = float_of_int (real_blocks + 1) *. 2.5 in
+  let imm_width_info =
+    if compact_imm then "Hybrid {i32, i64} (Compact Polymorphic)"
+    else "Fixed i64 (Uniform 8-byte)"
+  in
   let summary =
     Printf.sprintf
       "=== ASGARD-5877 Stack-VM Protection Report ===\n\
        - Architecture: Stack-VM Execution Engine (Universal Logic + Rolling Key)\n\
        - Opcode Mapping: Dynamic Polymorphic ISA (Unique Build Permutation)\n\
        - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
+       - PushImm Operand Width: %s\n\
        - Spaghetti CFG Splitting: %s\n\
        - Ghost Stack Padding: %s\n\
        - MBA Constant Synthesis: %s\n\
@@ -147,6 +153,7 @@ let make_stack_metrics
        - Devirtualization Resistance Score (DRS): %.2f / 100.0\n\
        - Rolling Key Seed: 0x%016LX\n\
        ==============================================="
+      imm_width_info
       spaghetti_info ghost_info mba_info cff_info
       avg_disp_ops vpc_transitions_per_op
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
@@ -236,7 +243,8 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 32)
     in
-    let enc = Stack_vm.Stack_encoder.encode_program ~seed_key prog in
+    let compact_imm = Random.State.int rng 100 < 80 in
+    let enc = Stack_vm.Stack_encoder.encode_program ~seed_key ~compact_imm prog in
     let bc_words = bytes_to_words enc.bytes in
 
     let is_internal_sym name =
@@ -274,6 +282,7 @@ module Stack_vm_packager : Vm_packager = struct
     let runner_source = Stack_vm.Stack_runtime.emit_runner_cpp bc_words in
     let metrics =
       make_stack_metrics
+        ~compact_imm
         ~spaghetti_info ~ghost_info ~mba_info ~cff_info
         ~real_ops ~real_blocks prog enc
     in

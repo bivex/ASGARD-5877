@@ -30,6 +30,7 @@ type opcode_map = {
   op_sar : int;
   op_div : int;
   op_idiv : int;
+  op_push_imm32 : int;
 }
 
 val default_opcode_map : opcode_map
@@ -91,13 +92,14 @@ val rotl64 : int64 -> int -> int64
 
 val step_key : int64 -> int -> int64
 
-val encode_op : ?op_map:opcode_map -> stack_op -> bytes
+val encode_op : ?op_map:opcode_map -> ?compact_imm:bool -> stack_op -> bytes
 
 val encode_program :
   ?seed_key:int64 ->
   ?op_map:opcode_map ->
   ?polymorphic:bool ->
   ?addr_mask:int64 ->
+  ?compact_imm:bool ->
   program ->
   encrypted_bytecode
 

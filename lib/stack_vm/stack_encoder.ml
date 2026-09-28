@@ -32,6 +32,7 @@ type opcode_map = {
   op_sar : int;
   op_div : int;
   op_idiv : int;
+  op_push_imm32 : int;
 }
 
 let default_opcode_map = {
@@ -64,6 +65,7 @@ let default_opcode_map = {
   op_sar = 0x1B;
   op_div = 0x1C;
   op_idiv = 0x1D;
+  op_push_imm32 = 0x1E;
 }
 
 let splitmix64 state =
@@ -79,7 +81,7 @@ let splitmix64 state =
 let generate_opcode_map seed =
   let state = ref (if seed = 0L then 0x5877A564D00FL else seed) in
   let pool = Array.init 254 (fun i -> i + 1) in
-  for i = 0 to 28 do
+  for i = 0 to 29 do
     let r = splitmix64 state in
     let range = 254 - i in
     let offset = Int64.to_int (Int64.rem (Int64.logand r 0x7FFFFFFFFFFFFFFFL) (Int64.of_int range)) in
@@ -118,6 +120,7 @@ let generate_opcode_map seed =
     op_sar         = pool.(26);
     op_div         = pool.(27);
     op_idiv        = pool.(28);
+    op_push_imm32  = pool.(29);
   }
 
 type encrypted_bytecode = {
@@ -316,10 +319,18 @@ let add_i64 buf v =
     Buffer.add_char buf (Char.chr b)
   done
 
-let encode_op_into op_map buf = function
+let fits_i32 v =
+  Int64.equal (Int64.shift_right (Int64.shift_left v 32) 32) v
+
+let encode_op_into ?(compact_imm = false) op_map buf = function
   | PushImm v ->
-      Buffer.add_char buf (Char.chr op_map.op_push_imm);
-      add_i64 buf v
+      if compact_imm && fits_i32 v then begin
+        Buffer.add_char buf (Char.chr op_map.op_push_imm32);
+        add_i32 buf (Int64.to_int v)
+      end else begin
+        Buffer.add_char buf (Char.chr op_map.op_push_imm);
+        add_i64 buf v
+      end
   | PushReg idx ->
       Buffer.add_char buf (Char.chr op_map.op_push_reg);
       add_i16 buf idx
@@ -373,13 +384,13 @@ let encode_op_into op_map buf = function
   | Cmp -> Buffer.add_char buf (Char.chr op_map.op_cmp)
   | Test -> Buffer.add_char buf (Char.chr op_map.op_test)
 
-let encode_op ?(op_map = default_opcode_map) op =
+let encode_op ?(op_map = default_opcode_map) ?(compact_imm = false) op =
   let buf = Buffer.create 16 in
-  encode_op_into op_map buf op;
+  encode_op_into ~compact_imm op_map buf op;
   Buffer.to_bytes buf
 
 let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
-    ?(addr_mask = 0L) prog =
+    ?(addr_mask = 0L) ?(compact_imm = false) prog =
   let resolved_op_map = match op_map with
     | Some m -> m
     | None -> if polymorphic then generate_opcode_map seed_key else default_opcode_map
@@ -398,7 +409,7 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
     Hashtbl.replace block_offsets b.id (Buffer.length plain_buf);
     List.iter (fun op ->
       let op_pos = Buffer.length plain_buf in
-      encode_op_into resolved_op_map plain_buf op;
+      encode_op_into ~compact_imm resolved_op_map plain_buf op;
       match op with
       | KeyAdjust delta -> Hashtbl.replace key_adjust_ends (op_pos + 8) delta
       | _ -> ()
@@ -482,6 +493,20 @@ let read_i32 cipher pos key =
   done;
   if !ok then Some !res else None
 
+let read_signed_i32 cipher pos key =
+  let res = ref 0L in
+  let ok = ref true in
+  for i = 0 to 3 do
+    match read_byte cipher pos key with
+    | Some b ->
+        let b_i64 = Int64.shift_left (Int64.of_int b) (i * 8) in
+        res := Int64.logor !res b_i64
+    | None -> ok := false
+  done;
+  if !ok then
+    Some (Int64.shift_right (Int64.shift_left !res 32) 32)
+  else None
+
 let read_i64 cipher pos key =
   let res = ref 0L in
   let ok = ref true in
@@ -499,6 +524,8 @@ let decode_op ?(op_map = default_opcode_map) cipher pos key =
   | None -> None
   | Some b when b = op_map.op_push_imm ->
       (match read_i64 cipher pos key with Some v -> Some (PushImm v) | None -> None)
+  | Some b when b = op_map.op_push_imm32 ->
+      (match read_signed_i32 cipher pos key with Some v -> Some (PushImm v) | None -> None)
   | Some b when b = op_map.op_push_reg ->
       (match read_i16 cipher pos key with Some idx -> Some (PushReg idx) | None -> None)
   | Some b when b = op_map.op_pop_reg ->

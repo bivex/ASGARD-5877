@@ -285,6 +285,7 @@ let generate_c_runtime
   in
   let dispatch_cases = [
     mk_case enc.op_map.op_push_imm "PUSH_IMM" "h_push_imm";
+    mk_case enc.op_map.op_push_imm32 "PUSH_IMM32" "h_push_imm32";
     mk_case enc.op_map.op_push_reg "PUSH_REG" "h_push_reg";
     mk_case enc.op_map.op_pop_reg "POP_REG" "h_pop_reg";
     mk_case enc.op_map.op_read_mem "READ_MEM" "h_read_mem";

@@ -271,20 +271,20 @@ let test_polymorphic_opcodes () =
   Alcotest.(check int) "deterministic ADD" map1.op_add map1_dup.op_add;
   Alcotest.(check int) "deterministic EXIT" map1.op_exit map1_dup.op_exit;
 
-  (* 2. Verify all 29 opcodes in map1 are unique and non-zero *)
+  (* 2. Verify all 30 opcodes in map1 are unique and non-zero *)
   let ops_list1 = [
     map1.op_push_imm; map1.op_push_reg; map1.op_pop_reg; map1.op_read_mem; map1.op_write_mem;
     map1.op_add; map1.op_sub; map1.op_mul; map1.op_nor; map1.op_nand;
     map1.op_shl; map1.op_shr; map1.op_dup; map1.op_swap; map1.op_push_flags;
     map1.op_pop_flags; map1.op_jmp_rel; map1.op_jcc_rel; map1.op_key_adjust; map1.op_exit;
     map1.op_call_extern; map1.op_resolve_sym; map1.op_setcc; map1.op_cmov; map1.op_cmp; map1.op_test;
-    map1.op_sar; map1.op_div; map1.op_idiv;
+    map1.op_sar; map1.op_div; map1.op_idiv; map1.op_push_imm32;
   ] in
   List.iter (fun op ->
     Alcotest.(check bool) "opcode is in range 1..254" true (op >= 1 && op <= 254)
   ) ops_list1;
   let unique1 = List.sort_uniq compare ops_list1 in
-  Alcotest.(check int) "all 29 opcodes are strictly unique" 29 (List.length unique1);
+  Alcotest.(check int) "all 30 opcodes are strictly unique" 30 (List.length unique1);
 
   (* 3. Verify diversity between different seeds *)
   let ops_list2 = [
@@ -293,7 +293,7 @@ let test_polymorphic_opcodes () =
     map2.op_shl; map2.op_shr; map2.op_dup; map2.op_swap; map2.op_push_flags;
     map2.op_pop_flags; map2.op_jmp_rel; map2.op_jcc_rel; map2.op_key_adjust; map2.op_exit;
     map2.op_call_extern; map2.op_resolve_sym; map2.op_setcc; map2.op_cmov; map2.op_cmp; map2.op_test;
-    map2.op_sar; map2.op_div; map2.op_idiv;
+    map2.op_sar; map2.op_div; map2.op_idiv; map2.op_push_imm32;
   ] in
   let diff_count = List.fold_left2 (fun acc a b -> if a <> b then acc + 1 else acc) 0 ops_list1 ops_list2 in
   Alcotest.(check bool) "most opcodes differ between seed1 and seed2" true (diff_count >= 20);
@@ -331,6 +331,40 @@ let test_polymorphic_opcodes () =
   Alcotest.(check bool) "c runtime contains polymorphic push_imm" true (contains c_code expected_push_case);
   Alcotest.(check bool) "c runtime contains polymorphic add" true (contains c_code expected_add_case);
   Alcotest.(check bool) "c runtime contains polymorphic exit" true (contains c_code expected_exit_case)
+
+let test_compact_push_imm () =
+  let seed = 0x5877_A564_D00FL in
+  let b0 = make_block 0 "entry" [
+    PushImm 42L;                          (* fits i32 *)
+    PushImm (-100L);                      (* negative, fits i32 *)
+    Add;                                  (* 42 + (-100) = -58 *)
+    PushImm 0x1000_0000_2000L;            (* does not fit i32: requires i64 *)
+    Add;
+    PopReg 0;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 8 in
+
+  (* Encode with compact_imm = true *)
+  let enc_compact = Stack_encoder.encode_program ~seed_key:seed ~compact_imm:true prog in
+  (* Encode with compact_imm = false *)
+  let enc_fixed = Stack_encoder.encode_program ~seed_key:seed ~compact_imm:false prog in
+
+  (* Compact bytecode must be smaller than fixed 64-bit bytecode *)
+  Alcotest.(check bool) "compact bytecode is smaller" true
+    (Bytes.length enc_compact.bytes < Bytes.length enc_fixed.bytes);
+
+  (* Two 32-bit constants save 4 bytes each = 8 bytes saved *)
+  Alcotest.(check int) "saves exactly 8 bytes" 8
+    (Bytes.length enc_fixed.bytes - Bytes.length enc_compact.bytes);
+
+  (* Both execute identically in VM *)
+  let st_compact = run_bytecode enc_compact in
+  let st_fixed = run_bytecode enc_fixed in
+  let expected = Int64.add (-58L) 0x1000_0000_2000L in
+  Alcotest.(check int64) "compact result matches expected" expected (get_reg st_compact 0);
+  Alcotest.(check int64) "fixed result matches expected" expected (get_reg st_fixed 0);
+  Alcotest.(check int64) "compact and fixed agree" (get_reg st_fixed 0) (get_reg st_compact 0)
 
 let test_vsp_whitening () =
   (* Verify the C++ runtime contains VSP_ENCODE macro and uses it *)
@@ -1723,6 +1757,7 @@ let tests = [
   ("Native Runtime & Dispatch Synthesis", `Quick, test_runtime_synthesis);
   ("Stack VM Extensions & Branching", `Quick, test_stack_vm_extensions);
   ("Polymorphic Opcode Remapping & Synthesis", `Quick, test_polymorphic_opcodes);
+  ("PushImm 32/64-bit Compact Width", `Quick, test_compact_push_imm);
   ("VSP Stack Value Whitening", `Quick, test_vsp_whitening);
   ("Ghost Stack Padding Pass", `Quick, test_ghost_stack_padding);
   ("Spaghetti CFG Splitting", `Quick, test_spaghetti_splitting);

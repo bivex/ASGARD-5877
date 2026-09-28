@@ -335,6 +335,17 @@ static void h_push_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     }
 }
 
+static void h_push_imm32(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    int32_t imm32 = fetch_i32(vm, bytecode, vip);
+    uint64_t imm = (uint64_t)(int64_t)imm32;
+    if (vm->vsp_idx < 4096) {
+        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, imm);
+        ++vm->vsp_idx;
+    } else {
+        vm->halted = 1; /* fail-closed: VSP overflow */
+    }
+}
+
 static void h_push_reg(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
     int16_t idx = fetch_i16(vm, bytecode, vip);
@@ -815,7 +826,7 @@ static void h_test(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
 }
 
 static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {
-    &h_push_imm, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
+    &h_push_imm, &h_push_imm32, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
     &h_add, &h_sub, &h_mul, &h_nor, &h_nand,
     &h_shl, &h_shr, &h_sar, &h_div, &h_idiv,
     &h_dup, &h_swap, &h_push_flags, &h_pop_flags, &h_jmp_rel,
