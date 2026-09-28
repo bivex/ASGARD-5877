@@ -13,12 +13,17 @@
                        (always delta = 0: +2 then −2)
       • GhostKeyAdj:   KeyAdjust d ; KeyAdjust d   (d ≠ 0, random)
                        (d XOR d = 0 → key unchanged; but breaks linear key recovery)
+      • GhostFlags:    PushFlags   ; PopFlags
+                       (saves & restores RFLAGS; neutral even when flags are live)
+      • GhostMemRead:  PushReg <sp>; ReadMem 8   ; PopReg <scratch>
+                       (canonical host-stack read; neutral to flags and stack depth)
 
     Insertion is seed-deterministic using SplitMix64, at configurable
     density (ghost_rate: probability 0.0–1.0 per real instruction gap).
 *)
 
 open Stack_ir
+open Vm_ir
 
 (* ── SplitMix64 PRNG (same as stack_encoder.ml) ──────────────────────── *)
 let splitmix64 s =
@@ -50,7 +55,13 @@ let maybe rng prob =
   next_int rng 100 < prob
 
 (* ── Ghost operation types ────────────────────────────────────────────── *)
-type ghost_kind = GhostPushPop | GhostDupDrop | GhostArith | GhostKeyAdj
+type ghost_kind =
+  | GhostPushPop
+  | GhostDupDrop
+  | GhostArith
+  | GhostKeyAdj
+  | GhostFlags
+  | GhostMemRead
 
 (* ── Emitting a ghost sequence ────────────────────────────────────────── *)
 (** [emit_ghost rng ctx stack_depth flags_live] returns a list of ops forming
@@ -62,10 +73,10 @@ let emit_ghost rng ctx stack_depth flags_live =
   let scratch () = Context_allocator.alloc_scratch ctx in
   let kinds =
     match (stack_depth >= 1, flags_live) with
-    | true,  false -> [| GhostPushPop; GhostDupDrop; GhostArith; GhostKeyAdj |]
-    | false, false -> [| GhostPushPop; GhostArith; GhostKeyAdj |]
-    | true,  true  -> [| GhostPushPop; GhostDupDrop; GhostKeyAdj |]
-    | false, true  -> [| GhostPushPop; GhostKeyAdj |]
+    | true,  false -> [| GhostPushPop; GhostDupDrop; GhostArith; GhostKeyAdj; GhostFlags; GhostMemRead |]
+    | false, false -> [| GhostPushPop; GhostArith; GhostKeyAdj; GhostFlags; GhostMemRead |]
+    | true,  true  -> [| GhostPushPop; GhostDupDrop; GhostKeyAdj; GhostFlags; GhostMemRead |]
+    | false, true  -> [| GhostPushPop; GhostKeyAdj; GhostFlags; GhostMemRead |]
   in
   let kind = kinds.(next_int rng (Array.length kinds)) in
   match kind with
@@ -89,6 +100,11 @@ let emit_ghost rng ctx stack_depth flags_live =
     (* Guarantee non-zero: loop is extremely unlikely to iterate more than once *)
     while Int64.equal !d 0L do d := next_int64 rng done;
     [ KeyAdjust !d; KeyAdjust !d ]
+  | GhostFlags ->
+    [ PushFlags; PopFlags ]
+  | GhostMemRead ->
+    let sp_slot = Context_allocator.slot_of_reg ctx Register.rsp in
+    [ PushReg sp_slot; ReadMem 8; PopReg (scratch ()) ]
 
 (** [insert_ghosts_into_ops rng ctx ops ghost_rate] walks through [ops]
     and inserts ghost sequences at each non-terminator gap with probability

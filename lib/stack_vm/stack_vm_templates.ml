@@ -372,8 +372,9 @@ static void h_pop_reg(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
    tolerate a non-zero byte 63. Keeping the rule uniform is the point — the
    reference interpreter in stack_eval.ml applies the same predicate.
 
-   The compiler never emits these two opcodes, so tightening the policy
-   cannot change the behaviour of an image built from this tree. */
+   The compiler emits these opcodes for guest Push/Pop/Mem operands (lowered
+   in ir_to_stack.ml) and ghost passes may emit safe reads against the host
+   stack frame. All accesses must strictly satisfy this policy. */
 static inline int asg_addr_canonical(uint64_t addr) {
     uint64_t top = addr >> 48;
     return top == ((addr & (UINT64_C(1) << 47)) ? UINT64_C(0xFFFF) : UINT64_C(0));

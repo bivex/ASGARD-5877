@@ -113,31 +113,42 @@ let compute_shannon_entropy (b : bytes) : float =
     !entropy
 
 let make_stack_metrics
-    ?(ghost_info = "Ghost padding: N/A")
-    ?(mba_info   = "MBA synthesis: N/A")
-    ?(cff_info   = "CFG flattening: N/A")
+    ?(spaghetti_info = "Spaghetti splitting: N/A")
+    ?(ghost_info     = "Ghost padding: N/A")
+    ?(mba_info       = "MBA synthesis: N/A")
+    ?(cff_info       = "CFG flattening: N/A")
+    ?(real_ops       = 0)
+    ?(real_blocks    = 0)
     (prog : Stack_vm.Stack_ir.program)
     (enc  : Stack_vm.Stack_encoder.encrypted_bytecode)
     : Protect_ports.metrics_report =
   let entropy = compute_shannon_entropy enc.bytes in
   let num_blocks = Hashtbl.length prog.blocks in
   let drs = min 99.0 (85.0 +. (entropy *. 1.5)) in
+  let vpc_transitions_per_op =
+    if real_ops > 0 then float_of_int real_blocks /. float_of_int real_ops
+    else 0.0
+  in
+  let avg_disp_ops = float_of_int (real_blocks + 1) *. 2.5 in
   let summary =
     Printf.sprintf
       "=== ASGARD-5877 Stack-VM Protection Report ===\n\
        - Architecture: Stack-VM Execution Engine (Universal Logic + Rolling Key)\n\
        - Opcode Mapping: Dynamic Polymorphic ISA (Unique Build Permutation)\n\
        - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
+       - Spaghetti CFG Splitting: %s\n\
        - Ghost Stack Padding: %s\n\
        - MBA Constant Synthesis: %s\n\
        - Virtual CFG Flattening: %s\n\
+       - VPC Dispatch Overhead: %.1f avg ops/transition (%.3f transitions/real-op)\n\
        - Basic Blocks: %d\n\
        - Bytecode Size: %d bytes (%d words)\n\
        - Shannon Entropy: %.4f / 8.0 (%.1f%%)\n\
        - Devirtualization Resistance Score (DRS): %.2f / 100.0\n\
        - Rolling Key Seed: 0x%016LX\n\
        ==============================================="
-      ghost_info mba_info cff_info
+      spaghetti_info ghost_info mba_info cff_info
+      avg_disp_ops vpc_transitions_per_op
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
       entropy (entropy /. 8.0 *. 100.0) drs (Stack_vm.Stack_encoder.effective_seed_key enc)
   in
@@ -173,6 +184,17 @@ module Stack_vm_packager : Vm_packager = struct
     (* Apply stack balance pass to ensure well-formed basic blocks *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
 
+    (* Phase 2b: Spaghetti Control-Flow Splitting — split blocks before CFF *)
+    let spaghetti_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
+    in
+    let spaghetti_cfg = Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed in
+    let prog_spaghetti = Stack_vm.Stack_spaghetti_pass.apply_program spaghetti_cfg prog in
+    let spaghetti_info = Stack_vm.Stack_spaghetti_pass.spaghetti_stats prog prog_spaghetti in
+    let prog = prog_spaghetti in
+
     (* Phase 3: Ghost Stack Padding — inject neutral junk ops per block *)
     let ghost_seed =
       Int64.logxor
@@ -194,6 +216,9 @@ module Stack_vm_packager : Vm_packager = struct
     let prog_mba = Stack_vm.Stack_mba_pass.apply_program mba_cfg prog in
     let mba_info = Stack_vm.Stack_mba_pass.mba_stats prog prog_mba in
     let prog = prog_mba in
+
+    let real_blocks = Hashtbl.length prog.blocks in
+    let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
 
     (* Phase 5: Virtual CFG Flattening — route jumps through VPC dispatcher *)
     let cff_seed =
@@ -247,7 +272,11 @@ module Stack_vm_packager : Vm_packager = struct
         prog
     in
     let runner_source = Stack_vm.Stack_runtime.emit_runner_cpp bc_words in
-    let metrics = make_stack_metrics ~ghost_info ~mba_info ~cff_info prog enc in
+    let metrics =
+      make_stack_metrics
+        ~spaghetti_info ~ghost_info ~mba_info ~cff_info
+        ~real_ops ~real_blocks prog enc
+    in
     let rebind_address =
       Some (fun d_hex ->
         let d = Stack_vm.Stack_encoder.parse_u64_hex d_hex in

@@ -447,6 +447,84 @@ let test_ghost_stack_padding () =
   Alcotest.(check bool) "ghost diversity across seeds"  true
     (ghost_count <> orig_count || ghost_count2 <> orig_count)
 
+let test_spaghetti_splitting () =
+  let seed = 0x1234_5678_9ABCL in
+  (* Block with clear cut points:
+     - ops 0..1: PushImm 10; PopReg 0 (depth goes 0->1->0, flags dead)
+     - ops 2..3: PushImm 20; PopReg 1 (depth goes 0->1->0, flags dead)
+     - ops 4..6: PushReg 0; PushReg 1; Add (depth 0->1->2->1)
+     - op 7: PopReg 2 (depth 1->0)
+     - op 8: Exit *)
+  let b0 = make_block 0 "entry" [
+    PushImm 10L;
+    PopReg 0;
+    PushImm 20L;
+    PopReg 1;
+    PushReg 0;
+    PushReg 1;
+    Add;
+    PopReg 2;
+    Exit;
+  ] in
+  let prog_orig = make_program 0 [b0] 8 in
+  let cfg = Stack_spaghetti_pass.{
+    seed;
+    split_rate = 100;
+    max_blocks = 10;
+    min_chunk = 2;
+  } in
+  let prog_split = Stack_spaghetti_pass.apply_program cfg prog_orig in
+
+  (* 1. Block count increased *)
+  Alcotest.(check bool) "spaghetti splits block" true
+    (Hashtbl.length prog_split.blocks > Hashtbl.length prog_orig.blocks);
+
+  (* 2. Verify all blocks are balanced *)
+  let errs = Stack_balance_pass.verify_program prog_split in
+  Alcotest.(check int) "all split blocks balanced" 0 (List.length errs);
+
+  (* 3. Execution equivalence via bytecode runner *)
+  let enc_orig = Stack_encoder.encode_program ~seed_key:seed prog_orig in
+  let enc_split = Stack_encoder.encode_program ~seed_key:seed prog_split in
+  let st_orig = run_bytecode enc_orig in
+  let st_split = run_bytecode enc_split in
+  Alcotest.(check int64) "reg 0 preserved" 10L (get_reg st_split 0);
+  Alcotest.(check int64) "reg 1 preserved" 20L (get_reg st_split 1);
+  Alcotest.(check int64) "reg 2 result" 30L (get_reg st_split 2);
+  Alcotest.(check int64) "matches orig" (get_reg st_orig 2) (get_reg st_split 2);
+
+  (* 4. Max blocks ceiling is respected *)
+  let cfg_capped = Stack_spaghetti_pass.{
+    seed;
+    split_rate = 100;
+    max_blocks = 1;
+    min_chunk = 2;
+  } in
+  let prog_capped = Stack_spaghetti_pass.apply_program cfg_capped prog_orig in
+  Alcotest.(check int) "max_blocks cap respected" 1 (Hashtbl.length prog_capped.blocks);
+
+  (* 5. Conditional branch flags preserved across cut *)
+  let b_branch = make_block 0 "entry" [
+    PushImm 42L;
+    PopReg 0;
+    PushReg 0;
+    PushImm 42L;
+    Cmp;
+    JccRel (1, E);
+    JmpRel 2;
+  ] in
+  let b1 = make_block 1 "true_target" [ PushImm 100L; PopReg 3; Exit ] in
+  let b2 = make_block 2 "false_target" [ PushImm 200L; PopReg 3; Exit ] in
+  let prog_branch = make_program 0 [b_branch; b1; b2] 8 in
+  let prog_branch_split = Stack_spaghetti_pass.apply_program cfg prog_branch in
+  let enc_branch = Stack_encoder.encode_program ~seed_key:seed prog_branch_split in
+  let st_branch = run_bytecode enc_branch in
+  Alcotest.(check int64) "branch condition preserved" 100L (get_reg st_branch 3);
+
+  (* 6. Stats string *)
+  let stats = Stack_spaghetti_pass.spaghetti_stats prog_orig prog_split in
+  Alcotest.(check bool) "stats non-empty" true (String.length stats > 0)
+
 let test_mba_synthesis () =
   let seed = 0xFEDCBA9876543210L in
 
@@ -1647,6 +1725,7 @@ let tests = [
   ("Polymorphic Opcode Remapping & Synthesis", `Quick, test_polymorphic_opcodes);
   ("VSP Stack Value Whitening", `Quick, test_vsp_whitening);
   ("Ghost Stack Padding Pass", `Quick, test_ghost_stack_padding);
+  ("Spaghetti CFG Splitting", `Quick, test_spaghetti_splitting);
   ("MBA Constant Synthesis", `Quick, test_mba_synthesis);
   ("Virtual CFG Flattening", `Quick, test_cff_flattening);
   ("SAR/DIV/IDIV & Shift-Count Semantics", `Quick, test_sar_div_idiv_semantics);

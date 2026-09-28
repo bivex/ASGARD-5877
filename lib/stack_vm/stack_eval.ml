@@ -19,6 +19,10 @@ type state = {
 
 let create_state ?(stack_base = 0x7FFFFFFF0000L) ?(seed_key = 0x5877A564D00FL) ?(initial_ctx = []) () =
   let ctx = Hashtbl.create 64 in
+  (* Default SP (slot 4, RSP) and BP (slot 5, RBP) to stack_base,
+     mirroring the C++ runtime's host_stack frame initialization. *)
+  Hashtbl.replace ctx 4 stack_base;
+  Hashtbl.replace ctx 5 stack_base;
   List.iter (fun (slot, v) -> Hashtbl.replace ctx slot v) initial_ctx;
   {
     vip = 0x80000000L;
