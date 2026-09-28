@@ -144,6 +144,37 @@ let generate_opcode_map seed =
     op_key_feedback = pool.(36);
   }
 
+type field_layout = {
+  jcc_target_first  : bool;  (** true: [target: i32] [cond: u8]; false: [cond: u8] [target: i32] *)
+  cmov_slot_first   : bool;  (** true: [slot: i16] [cond: u8];   false: [cond: u8] [slot: i16] *)
+  set_reg_imm_first : bool;  (** true: [imm: i64] [slot: i16];   false: [slot: i16] [imm: i64] *)
+  add_reg_imm_first : bool;  (** true: [imm: i64] [slot: i16];   false: [slot: i16] [imm: i64] *)
+}
+
+let default_field_layout = {
+  jcc_target_first  = false;
+  cmov_slot_first   = false;
+  set_reg_imm_first = false;
+  add_reg_imm_first = false;
+}
+
+let generate_field_layout seed =
+  let state = ref (Int64.logxor (if seed = 0L then 0x5877A564D00FL else seed) 0xA5A5_5A5A_0FF0_F00FL) in
+  let r = splitmix64 state in
+  {
+    jcc_target_first  = Int64.logand r 1L <> 0L;
+    cmov_slot_first   = Int64.logand r 2L <> 0L;
+    set_reg_imm_first = Int64.logand r 4L <> 0L;
+    add_reg_imm_first = Int64.logand r 8L <> 0L;
+  }
+
+let format_field_layout layout =
+  Printf.sprintf "JccRel={%s}, Cmov={%s}, SetRegImm={%s}, AddRegImm={%s}"
+    (if layout.jcc_target_first then "TargetFirst" else "CondFirst")
+    (if layout.cmov_slot_first then "SlotFirst" else "CondFirst")
+    (if layout.set_reg_imm_first then "ImmFirst" else "SlotFirst")
+    (if layout.add_reg_imm_first then "ImmFirst" else "SlotFirst")
+
 let feedback_hash v =
   let open Int64 in
   let ( lxor ) = logxor and ( lsr ) = shift_right_logical and ( * ) = mul in
@@ -160,6 +191,7 @@ type encrypted_bytecode = {
   block_keys : (int, int64) Hashtbl.t;
   seed_key : int64;
   op_map : opcode_map;
+  layout : field_layout;
   (* Anti-VMPredator address binding: stored seed_key/block_keys literals are
      pre-XORed with this mask, and the C++ runtime XORs it back out with the
      key derived from its own handler addresses (derive_addr_key). The cipher
@@ -353,7 +385,7 @@ let add_i64 buf v =
 let fits_i32 v =
   Int64.equal (Int64.shift_right (Int64.shift_left v 32) 32) v
 
-let encode_op_into ?(compact_imm = false) op_map buf = function
+let encode_op_into ?(compact_imm = false) ?(layout = default_field_layout) op_map buf = function
   | PushImm v ->
       if compact_imm && fits_i32 v then begin
         Buffer.add_char buf (Char.chr op_map.op_push_imm32);
@@ -393,8 +425,13 @@ let encode_op_into ?(compact_imm = false) op_map buf = function
       add_i32 buf b
   | JccRel (b, c) ->
       Buffer.add_char buf (Char.chr op_map.op_jcc_rel);
-      Buffer.add_char buf (Char.chr (cond_to_code c));
-      add_i32 buf b
+      if layout.jcc_target_first then begin
+        add_i32 buf b;
+        Buffer.add_char buf (Char.chr (cond_to_code c))
+      end else begin
+        Buffer.add_char buf (Char.chr (cond_to_code c));
+        add_i32 buf b
+      end
   | KeyAdjust delta ->
       Buffer.add_char buf (Char.chr op_map.op_key_adjust);
       add_i64 buf delta
@@ -410,8 +447,13 @@ let encode_op_into ?(compact_imm = false) op_map buf = function
       Buffer.add_char buf (Char.chr (cond_to_code c))
   | Cmov (c, idx) ->
       Buffer.add_char buf (Char.chr op_map.op_cmov);
-      Buffer.add_char buf (Char.chr (cond_to_code c));
-      add_i16 buf idx
+      if layout.cmov_slot_first then begin
+        add_i16 buf idx;
+        Buffer.add_char buf (Char.chr (cond_to_code c))
+      end else begin
+        Buffer.add_char buf (Char.chr (cond_to_code c));
+        add_i16 buf idx
+      end
   | Cmp -> Buffer.add_char buf (Char.chr op_map.op_cmp)
   | Test -> Buffer.add_char buf (Char.chr op_map.op_test)
   | AddImm v ->
@@ -430,26 +472,40 @@ let encode_op_into ?(compact_imm = false) op_map buf = function
       add_i64 buf b
   | SetRegImm (idx, v) ->
       Buffer.add_char buf (Char.chr op_map.op_set_reg_imm);
-      add_i16 buf idx;
-      add_i64 buf v
+      if layout.set_reg_imm_first then begin
+        add_i64 buf v;
+        add_i16 buf idx
+      end else begin
+        add_i16 buf idx;
+        add_i64 buf v
+      end
   | AddRegImm (idx, v) ->
       Buffer.add_char buf (Char.chr op_map.op_add_reg_imm);
-      add_i16 buf idx;
-      add_i64 buf v
+      if layout.add_reg_imm_first then begin
+        add_i64 buf v;
+        add_i16 buf idx
+      end else begin
+        add_i16 buf idx;
+        add_i64 buf v
+      end
   | KeyFeedback (slot, _) ->
       Buffer.add_char buf (Char.chr op_map.op_key_feedback);
       add_i16 buf slot
 
-let encode_op ?(op_map = default_opcode_map) ?(compact_imm = false) op =
+let encode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?(compact_imm = false) op =
   let buf = Buffer.create 16 in
-  encode_op_into ~compact_imm op_map buf op;
+  encode_op_into ~compact_imm ~layout op_map buf op;
   Buffer.to_bytes buf
 
-let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
+let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?layout ?(polymorphic = true)
     ?(addr_mask = 0L) ?(compact_imm = false) prog =
   let resolved_op_map = match op_map with
     | Some m -> m
     | None -> if polymorphic then generate_opcode_map seed_key else default_opcode_map
+  in
+  let resolved_layout = match layout with
+    | Some l -> l
+    | None -> if polymorphic then generate_field_layout seed_key else default_field_layout
   in
   let plain_buf = Buffer.create 1024 in
   let block_offsets = Hashtbl.create (Hashtbl.length prog.blocks) in
@@ -468,7 +524,7 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
     Hashtbl.replace block_offsets b.id (Buffer.length plain_buf);
     List.iter (fun op ->
       let op_pos = Buffer.length plain_buf in
-      encode_op_into ~compact_imm resolved_op_map plain_buf op;
+      encode_op_into ~compact_imm ~layout:resolved_layout resolved_op_map plain_buf op;
       match op with
       | KeyAdjust delta -> Hashtbl.replace key_adjust_ends (op_pos + 8) delta
       | KeyFeedback (_, exp) -> Hashtbl.replace key_feedback_ends (op_pos + 2) (feedback_hash exp)
@@ -526,6 +582,7 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?(polymorphic = true)
     block_keys = stored_keys;
     seed_key = Int64.logxor seed_key addr_mask;
     op_map = resolved_op_map;
+    layout = resolved_layout;
     addr_mask;
     payload_tag = payload_tag_of_keys ~k0:tag_k0 ~k1:tag_k1 cipher;
     tag_keys }
@@ -582,7 +639,7 @@ let read_i64 cipher pos key =
   done;
   if !ok then Some !res else None
 
-let decode_op ?(op_map = default_opcode_map) ?ctx cipher pos key =
+let decode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?ctx cipher pos key =
   match read_byte cipher pos key with
   | None -> None
   | Some b when b = op_map.op_push_imm ->
@@ -614,9 +671,14 @@ let decode_op ?(op_map = default_opcode_map) ?ctx cipher pos key =
   | Some b when b = op_map.op_jmp_rel ->
       (match read_i32 cipher pos key with Some b -> Some (JmpRel b) | None -> None)
   | Some b when b = op_map.op_jcc_rel ->
-      (match read_byte cipher pos key, read_i32 cipher pos key with
-       | Some c_code, Some b -> Some (JccRel (b, code_to_cond c_code))
-       | _ -> None)
+      if layout.jcc_target_first then
+        (match read_i32 cipher pos key, read_byte cipher pos key with
+         | Some b, Some c_code -> Some (JccRel (b, code_to_cond c_code))
+         | _ -> None)
+      else
+        (match read_byte cipher pos key, read_i32 cipher pos key with
+         | Some c_code, Some b -> Some (JccRel (b, code_to_cond c_code))
+         | _ -> None)
   | Some b when b = op_map.op_key_adjust ->
       (* Mirror the runtime: the rolling key is XORed with delta right
          after the operand bytes are consumed, so decoding stays in sync
@@ -634,9 +696,14 @@ let decode_op ?(op_map = default_opcode_map) ?ctx cipher pos key =
   | Some b when b = op_map.op_setcc ->
       (match read_byte cipher pos key with Some c_code -> Some (Setcc (code_to_cond c_code)) | None -> None)
   | Some b when b = op_map.op_cmov ->
-      (match read_byte cipher pos key, read_i16 cipher pos key with
-       | Some c_code, Some idx -> Some (Cmov (code_to_cond c_code, idx))
-       | _ -> None)
+      if layout.cmov_slot_first then
+        (match read_i16 cipher pos key, read_byte cipher pos key with
+         | Some idx, Some c_code -> Some (Cmov (code_to_cond c_code, idx))
+         | _ -> None)
+      else
+        (match read_byte cipher pos key, read_i16 cipher pos key with
+         | Some c_code, Some idx -> Some (Cmov (code_to_cond c_code, idx))
+         | _ -> None)
   | Some b when b = op_map.op_cmp -> Some Cmp
   | Some b when b = op_map.op_test -> Some Test
   | Some b when b = op_map.op_add_imm ->
@@ -658,19 +725,23 @@ let decode_op ?(op_map = default_opcode_map) ?ctx cipher pos key =
             | None -> None)
        | None -> None)
   | Some b when b = op_map.op_set_reg_imm ->
-      (match read_i16 cipher pos key with
-       | Some idx ->
-           (match read_i64 cipher pos key with
-            | Some v -> Some (SetRegImm (idx, v))
-            | None -> None)
-       | None -> None)
+      if layout.set_reg_imm_first then
+        (match read_i64 cipher pos key, read_i16 cipher pos key with
+         | Some v, Some idx -> Some (SetRegImm (idx, v))
+         | _ -> None)
+      else
+        (match read_i16 cipher pos key, read_i64 cipher pos key with
+         | Some idx, Some v -> Some (SetRegImm (idx, v))
+         | _ -> None)
   | Some b when b = op_map.op_add_reg_imm ->
-      (match read_i16 cipher pos key with
-       | Some idx ->
-           (match read_i64 cipher pos key with
-            | Some v -> Some (AddRegImm (idx, v))
-            | None -> None)
-       | None -> None)
+      if layout.add_reg_imm_first then
+        (match read_i64 cipher pos key, read_i16 cipher pos key with
+         | Some v, Some idx -> Some (AddRegImm (idx, v))
+         | _ -> None)
+      else
+        (match read_i16 cipher pos key, read_i64 cipher pos key with
+         | Some idx, Some v -> Some (AddRegImm (idx, v))
+         | _ -> None)
   | Some b when b = op_map.op_key_feedback ->
       (match read_i16 cipher pos key with
        | Some slot ->
@@ -680,7 +751,7 @@ let decode_op ?(op_map = default_opcode_map) ?ctx cipher pos key =
        | None -> None)
   | Some _ -> None
 
-let decode_all ?op_map ?block_keys ?block_offsets cipher seed_key =
+let decode_all ?op_map ?(layout = default_field_layout) ?block_keys ?block_offsets cipher seed_key =
   let resolved_op_map = match op_map with
     | Some m -> m
     | None   -> generate_opcode_map seed_key
@@ -711,7 +782,7 @@ let decode_all ?op_map ?block_keys ?block_offsets cipher seed_key =
       (match Hashtbl.find_opt offset_to_key !pos with
        | Some k -> key := k
        | None   -> ());
-    match decode_op ~op_map:resolved_op_map ~ctx:ctx_fn cipher pos key with
+    match decode_op ~op_map:resolved_op_map ~layout ~ctx:ctx_fn cipher pos key with
     | Some op ->
         (match op with
          | SetRegImm (slot, v) -> if slot >= 0 && slot < 256 then ctx_model.(slot) <- v
@@ -733,6 +804,7 @@ let decode_enc enc =
   ) enc.block_keys;
   decode_all
     ~op_map:enc.op_map
+    ~layout:enc.layout
     ~block_keys:eff_block_keys
     ~block_offsets:enc.block_offsets
     enc.bytes

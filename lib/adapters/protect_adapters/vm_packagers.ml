@@ -148,6 +148,7 @@ let make_stack_metrics
        - Spaghetti CFG Splitting: %s\n\
        - Ghost Stack Padding: %s\n\
        - State-Feedback Rolling Key: %s\n\
+       - Multi-Operand Field Layout: %s\n\
        - MBA Constant Synthesis: %s\n\
        - Virtual CFG Flattening: %s\n\
        - VPC Dispatch Overhead: %.1f avg ops/transition (%.3f transitions/real-op)\n\
@@ -159,7 +160,9 @@ let make_stack_metrics
        ==============================================="
       imm_width_info
       superop_info
-      spaghetti_info ghost_info feedback_info mba_info cff_info
+      spaghetti_info ghost_info feedback_info
+      (Stack_vm.Stack_encoder.format_field_layout enc.layout)
+      mba_info cff_info
       avg_disp_ops vpc_transitions_per_op
       num_blocks (Bytes.length enc.bytes) ((Bytes.length enc.bytes + 7) / 8)
       entropy (entropy /. 8.0 *. 100.0) drs (Stack_vm.Stack_encoder.effective_seed_key enc)

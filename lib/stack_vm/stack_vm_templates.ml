@@ -708,8 +708,13 @@ static void h_jmp_rel(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
 }
 
 static void h_jcc_rel(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+{%- if layout_jcc_target_first %}
+    int32_t target_bid = fetch_i32(vm, bytecode, vip);
+    uint8_t cond = fetch_byte(vm, bytecode, vip);
+{%- else %}
     uint8_t cond = fetch_byte(vm, bytecode, vip);
     int32_t target_bid = fetch_i32(vm, bytecode, vip);
+{%- endif %}
     if (eval_cond(vm, cond)) {
         if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {
             *vip = ASG_UNMASK_OFFSET(target_bid);
@@ -785,8 +790,13 @@ static void h_setcc(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
 
 static void h_cmov(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
+{%- if layout_cmov_slot_first %}
+    int16_t idx = fetch_i16(vm, bytecode, vip);
+    uint8_t cond = fetch_byte(vm, bytecode, vip);
+{%- else %}
     uint8_t cond = fetch_byte(vm, bytecode, vip);
     int16_t idx = fetch_i16(vm, bytecode, vip);
+{%- endif %}
     if (vm->vsp_idx > 0) {
         --vm->vsp_idx;
         uint64_t v = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);
@@ -903,8 +913,13 @@ static void h_sub_ii(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
 }
 
 static void h_set_reg_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+{%- if layout_set_reg_imm_first %}
+    uint64_t imm = fetch_i64(vm, bytecode, vip);
+    int16_t idx = fetch_i16(vm, bytecode, vip);
+{%- else %}
     int16_t idx = fetch_i16(vm, bytecode, vip);
     uint64_t imm = fetch_i64(vm, bytecode, vip);
+{%- endif %}
     const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
     if (idx >= 0 && idx < max_ctx) {
         vm->ctx[idx] = imm;
@@ -914,8 +929,13 @@ static void h_set_reg_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) 
 }
 
 static void h_add_reg_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+{%- if layout_add_reg_imm_first %}
+    uint64_t imm = fetch_i64(vm, bytecode, vip);
+    int16_t idx = fetch_i16(vm, bytecode, vip);
+{%- else %}
     int16_t idx = fetch_i16(vm, bytecode, vip);
     uint64_t imm = fetch_i64(vm, bytecode, vip);
+{%- endif %}
     const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
     if (idx >= 0 && idx < max_ctx && vm->vsp_idx < 4096) {
         uint64_t a = vm->ctx[idx];

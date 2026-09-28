@@ -44,12 +44,26 @@ val default_opcode_map : opcode_map
 
 val generate_opcode_map : int64 -> opcode_map
 
+type field_layout = {
+  jcc_target_first  : bool;  (** true: [target: i32] [cond: u8]; false: [cond: u8] [target: i32] *)
+  cmov_slot_first   : bool;  (** true: [slot: i16] [cond: u8];   false: [cond: u8] [slot: i16] *)
+  set_reg_imm_first : bool;  (** true: [imm: i64] [slot: i16];   false: [slot: i16] [imm: i64] *)
+  add_reg_imm_first : bool;  (** true: [imm: i64] [slot: i16];   false: [slot: i16] [imm: i64] *)
+}
+
+val default_field_layout : field_layout
+
+val generate_field_layout : int64 -> field_layout
+
+val format_field_layout : field_layout -> string
+
 type encrypted_bytecode = {
   bytes : bytes;
   block_offsets : (int, int) Hashtbl.t;
   block_keys : (int, int64) Hashtbl.t;
   seed_key : int64;
   op_map : opcode_map;
+  layout : field_layout;
   (** Anti-VMPredator address binding: stored [seed_key]/[block_keys]
       literals are pre-XORed with this mask; the C++ runtime XORs it back
       out with the key derived from its handler addresses. Cipher bytes are
@@ -101,11 +115,25 @@ val step_key : int64 -> int -> int64
 
 val feedback_hash : int64 -> int64
 
-val encode_op : ?op_map:opcode_map -> ?compact_imm:bool -> stack_op -> bytes
+val encode_op :
+  ?op_map:opcode_map ->
+  ?layout:field_layout ->
+  ?compact_imm:bool ->
+  stack_op ->
+  bytes
+
+val encode_op_into :
+  ?compact_imm:bool ->
+  ?layout:field_layout ->
+  opcode_map ->
+  Buffer.t ->
+  stack_op ->
+  unit
 
 val encode_program :
   ?seed_key:int64 ->
   ?op_map:opcode_map ->
+  ?layout:field_layout ->
   ?polymorphic:bool ->
   ?addr_mask:int64 ->
   ?compact_imm:bool ->
@@ -114,6 +142,7 @@ val encode_program :
 
 val decode_op :
   ?op_map:opcode_map ->
+  ?layout:field_layout ->
   ?ctx:(int -> int64) ->
   bytes ->
   int ref ->
@@ -122,6 +151,7 @@ val decode_op :
 
 val decode_all :
   ?op_map:opcode_map ->
+  ?layout:field_layout ->
   ?block_keys:(int, int64) Hashtbl.t ->
   ?block_offsets:(int, int) Hashtbl.t ->
   bytes ->

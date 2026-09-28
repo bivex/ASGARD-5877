@@ -1884,6 +1884,89 @@ let test_state_feedback_rolling_key () =
   Alcotest.(check bool) "runtime contains KEY_FEEDBACK dispatch case"
     true (contains c_code expected_case)
 
+let test_field_layout_randomization () =
+  (* 1. Verify layout generation and determinism *)
+  let l1 = Stack_encoder.generate_field_layout 0x1122334455667788L in
+  let l1_dup = Stack_encoder.generate_field_layout 0x1122334455667788L in
+  Alcotest.(check bool) "deterministic jcc_target_first" l1.jcc_target_first l1_dup.jcc_target_first;
+  Alcotest.(check bool) "deterministic cmov_slot_first" l1.cmov_slot_first l1_dup.cmov_slot_first;
+  Alcotest.(check bool) "deterministic set_reg_imm_first" l1.set_reg_imm_first l1_dup.set_reg_imm_first;
+  Alcotest.(check bool) "deterministic add_reg_imm_first" l1.add_reg_imm_first l1_dup.add_reg_imm_first;
+
+  Alcotest.(check bool) "layout format string is non-empty" true
+    (String.length (Stack_encoder.format_field_layout l1) > 0);
+
+  (* 2. Direct encoding checks: compare default vs permuted operand ordering *)
+  let default_layout = Stack_encoder.default_field_layout in
+  let permuted_layout = {
+    Stack_encoder.jcc_target_first = true;
+    cmov_slot_first = true;
+    set_reg_imm_first = true;
+    add_reg_imm_first = true;
+  } in
+
+  (* SetRegImm: slot 0x0102, imm 0x1122334455667788L *)
+  let op_set = SetRegImm (0x0102, 0x1122334455667788L) in
+  let enc_set_def = Stack_encoder.encode_op ~layout:default_layout op_set in
+  let enc_set_perm = Stack_encoder.encode_op ~layout:permuted_layout op_set in
+  (* Default layout: opcode (byte 0), slot (bytes 1..2), imm (bytes 3..10) *)
+  let slot_def = (Char.code (Bytes.get enc_set_def 1)) lor ((Char.code (Bytes.get enc_set_def 2)) lsl 8) in
+  Alcotest.(check int) "default layout has slot first" 0x0102 slot_def;
+  (* Permuted layout: opcode (byte 0), imm (bytes 1..8), slot (bytes 9..10) *)
+  let slot_perm = (Char.code (Bytes.get enc_set_perm 9)) lor ((Char.code (Bytes.get enc_set_perm 10)) lsl 8) in
+  Alcotest.(check int) "permuted layout has imm first, slot last" 0x0102 slot_perm;
+
+  (* JccRel: target 42, condition E (0) *)
+  let op_jcc = JccRel (42, Flags.E) in
+  let enc_jcc_def = Stack_encoder.encode_op ~layout:default_layout op_jcc in
+  let enc_jcc_perm = Stack_encoder.encode_op ~layout:permuted_layout op_jcc in
+  (* Default: byte 1 is cond (0), bytes 2..5 is target (42) *)
+  Alcotest.(check int) "default Jcc has cond at byte 1" 0 (Char.code (Bytes.get enc_jcc_def 1));
+  (* Permuted: bytes 1..4 is target (42), byte 5 is cond (0) *)
+  Alcotest.(check int) "permuted Jcc has cond at byte 5" 0 (Char.code (Bytes.get enc_jcc_perm 5));
+
+  (* 3. End-to-end execution of program with fully permuted layout *)
+  let b0 = make_block 0 "entry" [
+    SetRegImm (1, 100L);
+    AddRegImm (1, 50L);
+    PopReg 2;
+    PushImm 1L;
+    PushImm 1L;
+    Cmp;
+    PushImm 777L;
+    Cmov (Flags.E, 3);
+    JccRel (1, Flags.E);
+    Exit;
+  ] in
+  let b1 = make_block 1 "target" [
+    PushReg 2;
+    PushReg 3;
+    Add;
+    PopReg 0;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0; b1] 8 in
+  let enc = Stack_encoder.encode_program ~layout:permuted_layout ~seed_key:0xFEDCBA9876543210L prog in
+  let state = run_bytecode enc in
+  (* Reg 2 = 100 + 50 = 150. Reg 3 = 777. Reg 0 = 150 + 777 = 927. *)
+  Alcotest.(check int64) "permuted layout computes 150 + 777 = 927" 927L (get_reg state 0);
+  Alcotest.(check bool) "permuted layout halts normally" true state.halted;
+
+  (* 4. Disassembler desynchronization test: decoding with wrong layout produces incorrect fields *)
+  let b_simple = make_block 0 "simple" [
+    SetRegImm (0, 0x1234567890ABCDEFL);
+    Exit;
+  ] in
+  let prog_simple = make_program 0 [b_simple] 8 in
+  let enc_simple_perm = Stack_encoder.encode_program ~layout:permuted_layout ~seed_key:0x1234L prog_simple in
+  let decoded_wrong = Stack_encoder.decode_all ~op_map:enc_simple_perm.op_map ~layout:default_layout
+                        enc_simple_perm.bytes (Stack_encoder.effective_seed_key enc_simple_perm) in
+  match decoded_wrong with
+  | SetRegImm (wrong_slot, wrong_imm) :: _ ->
+      Alcotest.(check bool) "decoding with wrong layout produces incorrect slot" true (wrong_slot <> 0);
+      Alcotest.(check bool) "decoding with wrong layout produces incorrect imm" true (wrong_imm <> 0x1234567890ABCDEFL)
+  | _ -> ()
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -1892,6 +1975,7 @@ let tests = [
   ("Stack Balance Pass & Repair", `Quick, test_stack_balance_pass);
   ("Rolling Key Bytecode Encryption & Execution", `Quick, test_rolling_key_encoder_and_eval);
   ("State-Feedback Rolling Key & Anti-Tamper", `Quick, test_state_feedback_rolling_key);
+  ("Field Layout Randomization & Desync", `Quick, test_field_layout_randomization);
   ("Native Runtime & Dispatch Synthesis", `Quick, test_runtime_synthesis);
   ("Stack VM Extensions & Branching", `Quick, test_stack_vm_extensions);
   ("Polymorphic Opcode Remapping & Synthesis", `Quick, test_polymorphic_opcodes);

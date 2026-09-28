@@ -339,6 +339,10 @@ let generate_c_runtime
     ("tag_key0", Jingoo.Jg_types.Tstr tag_key0);
     ("tag_key1", Jingoo.Jg_types.Tstr tag_key1);
     ("payload_tag", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.payload_tag));
+    ("layout_jcc_target_first", Jingoo.Jg_types.Tbool enc.layout.jcc_target_first);
+    ("layout_cmov_slot_first", Jingoo.Jg_types.Tbool enc.layout.cmov_slot_first);
+    ("layout_set_reg_imm_first", Jingoo.Jg_types.Tbool enc.layout.set_reg_imm_first);
+    ("layout_add_reg_imm_first", Jingoo.Jg_types.Tbool enc.layout.add_reg_imm_first);
     (* entry_bid: which block_keys index to use at VM startup.
        g_stack_block_keys[entry_bid] is the SipHash-derived key for the
        entry block, replacing the old global seed_key initialisation. *)
