@@ -104,6 +104,10 @@ type raw_op_kind =
   | OP_CCMN_RI
   | OP_GET_FLAGS_R
   | OP_SET_FLAGS_R
+  | OP_VEC_IMM
+  | OP_VEC_CLEAR_UPPER
+  | OP_VEC_ZERO_UPPER
+  | OP_PMOVMSKB
 
 val all_op_kinds : raw_op_kind list
 val op_kind_to_handler_name : raw_op_kind -> string

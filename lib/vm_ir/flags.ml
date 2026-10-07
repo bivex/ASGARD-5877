@@ -43,13 +43,13 @@ let get_mask = function
   | B8  -> 0xFFL
   | B16 -> 0xFFFFL
   | B32 -> 0xFFFFFFFFL
-  | B64 -> -1L
+  | B64 | B128 | B256 | B512 -> -1L
 
 let get_sign_bit = function
   | B8  -> 0x80L
   | B16 -> 0x8000L
   | B32 -> 0x80000000L
-  | B64 -> Int64.min_int (* 0x8000000000000000L *)
+  | B64 | B128 | B256 | B512 -> Int64.min_int (* 0x8000000000000000L *)
 
 let popcount8 b =
   let v = ref (b land 0xFF) in

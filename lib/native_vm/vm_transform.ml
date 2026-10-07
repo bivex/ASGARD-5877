@@ -127,6 +127,10 @@ type raw_op_kind =
   | OP_CCMN_RI
   | OP_GET_FLAGS_R
   | OP_SET_FLAGS_R
+  | OP_VEC_IMM
+  | OP_VEC_CLEAR_UPPER
+  | OP_VEC_ZERO_UPPER
+  | OP_PMOVMSKB
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
@@ -154,6 +158,7 @@ let all_op_kinds = [
   OP_ADC_RR; OP_ADC_RI; OP_SBB_RR; OP_SBB_RI;
   OP_CCMP_RR; OP_CCMP_RI; OP_CCMN_RR; OP_CCMN_RI;
   OP_GET_FLAGS_R; OP_SET_FLAGS_R;
+  OP_VEC_IMM; OP_VEC_CLEAR_UPPER; OP_VEC_ZERO_UPPER; OP_PMOVMSKB;
 ]
 
 let op_kind_to_handler_name = function
@@ -255,6 +260,10 @@ let op_kind_to_handler_name = function
   | OP_CCMN_RI -> "H_CCMN_RI"
   | OP_GET_FLAGS_R -> "H_GET_FLAGS_R"
   | OP_SET_FLAGS_R -> "H_SET_FLAGS_R"
+  | OP_VEC_IMM -> "H_VEC_IMM"
+  | OP_VEC_CLEAR_UPPER -> "H_VEC_CLEAR_UPPER"
+  | OP_VEC_ZERO_UPPER -> "H_VEC_ZERO_UPPER"
+  | OP_PMOVMSKB -> "H_PMOVMSKB"
 
 type fused_op =
   | Raw of Ir.instr

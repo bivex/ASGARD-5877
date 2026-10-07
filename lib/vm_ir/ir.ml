@@ -52,7 +52,30 @@ type target =
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
 type fp_conv = Fcvtzs | Scvtf
-type vec_op = Vadd | Vsub | Vmul | Vand | Vor | Vxor
+type vec_op =
+  | Vadd
+  | Vsub
+  | Vmul
+  | Vand
+  | Vor
+  | Vxor
+  | Vsll
+  | Vsrl
+  | Vsra
+  | Vcmpeq
+  | Vcmpgt
+  | Vmin
+  | Vmax
+  | Vminu
+  | Vmaxu
+  | Vabs
+  | Vandn
+  | Vunpckl
+  | Vunpckh
+  | Vpackss
+  | Vpackus
+  | Vshuf
+  | Vblend
 type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
@@ -86,8 +109,12 @@ type instr =
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
+  | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
   | Vec_load of { dst : int; addr : mem_ref; bits : int }
   | Vec_store of { src : int; addr : mem_ref; bits : int }
+  | Vec_clear_upper of int
+  | Vec_zero_upper
+  | Pmovmskb of { dst : Register.t; src : int; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
   | Get_flags of Register.t
   | Set_flags of operand
@@ -131,6 +158,9 @@ let mem_ref_to_string m =
     | B16 -> if m.is_signed then "sword ptr " else "word ptr "
     | B32 -> if m.is_signed then "sdword ptr " else "dword ptr "
     | B64 -> "qword ptr "
+    | B128 -> "xmmword ptr "
+    | B256 -> "ymmword ptr "
+    | B512 -> "zmmword ptr "
   in
   let parts = ref [] in
   (match m.base with
@@ -211,10 +241,34 @@ let instr_to_string = function
       Printf.sprintf "%s %s, %s" op_s (Register.to_string dst) (Register.to_string src)
   | Vec_mov { dst; src; bits } -> Printf.sprintf "vec_mov.%d v%d, v%d" bits dst src
   | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
-      let op_s = match op with Vadd -> "vec_add" | Vsub -> "vec_sub" | Vmul -> "vec_mul" | Vand -> "vec_and" | Vor -> "vec_or" | Vxor -> "vec_xor" in
+      let op_s = match op with
+        | Vadd -> "vec_add" | Vsub -> "vec_sub" | Vmul -> "vec_mul" | Vand -> "vec_and" | Vor -> "vec_or" | Vxor -> "vec_xor"
+        | Vsll -> "vec_sll" | Vsrl -> "vec_srl" | Vsra -> "vec_sra"
+        | Vcmpeq -> "vec_cmpeq" | Vcmpgt -> "vec_cmpgt"
+        | Vmin -> "vec_min" | Vmax -> "vec_max" | Vminu -> "vec_minu" | Vmaxu -> "vec_maxu"
+        | Vabs -> "vec_abs" | Vandn -> "vec_andn"
+        | Vunpckl -> "vec_unpckl" | Vunpckh -> "vec_unpckh"
+        | Vpackss -> "vec_packss" | Vpackus -> "vec_packus"
+        | Vshuf -> "vec_shuf" | Vblend -> "vec_blend"
+      in
       Printf.sprintf "%s.%d.%d.%s v%d, v%d, v%d" op_s bits lane_bits (vec_elem_to_string elem) dst src1 src2
+  | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
+      let op_s = match op with
+        | Vadd -> "vec_add" | Vsub -> "vec_sub" | Vmul -> "vec_mul" | Vand -> "vec_and" | Vor -> "vec_or" | Vxor -> "vec_xor"
+        | Vsll -> "vec_sll" | Vsrl -> "vec_srl" | Vsra -> "vec_sra"
+        | Vcmpeq -> "vec_cmpeq" | Vcmpgt -> "vec_cmpgt"
+        | Vmin -> "vec_min" | Vmax -> "vec_max" | Vminu -> "vec_minu" | Vmaxu -> "vec_maxu"
+        | Vabs -> "vec_abs" | Vandn -> "vec_andn"
+        | Vunpckl -> "vec_unpckl" | Vunpckh -> "vec_unpckh"
+        | Vpackss -> "vec_packss" | Vpackus -> "vec_packus"
+        | Vshuf -> "vec_shuf" | Vblend -> "vec_blend"
+      in
+      Printf.sprintf "%s_imm.%d.%d.%s v%d, v%d, 0x%LX" op_s bits lane_bits (vec_elem_to_string elem) dst src imm
   | Vec_load { dst; addr; bits } -> Printf.sprintf "vec_load.%d v%d, %s" bits dst (mem_ref_to_string addr)
   | Vec_store { src; addr; bits } -> Printf.sprintf "vec_store.%d v%d, %s" bits src (mem_ref_to_string addr)
+  | Vec_clear_upper reg -> Printf.sprintf "vec_clear_upper v%d" reg
+  | Vec_zero_upper -> "vzeroupper"
+  | Pmovmskb { dst; src; bits } -> Printf.sprintf "pmovmskb.%d %s, v%d" bits (Register.to_string dst) src
   | Atomic_mem { op; dst; addr; src; imm } ->
       let op_s = match op with AtLoad -> "at_load" | AtStore -> "at_store" | AtCas -> "at_cas" | AtAdd -> "at_add" | AtSwp -> "at_swp" in
       Printf.sprintf "%s %s, [%s + 0x%LX], %s" op_s (Register.to_string dst) (Register.to_string addr) imm (Register.to_string src)

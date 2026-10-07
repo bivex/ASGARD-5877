@@ -5,6 +5,9 @@ type width =
   | B16
   | B32
   | B64
+  | B128
+  | B256
+  | B512
 
 val width_to_bytes : width -> int
 val width_to_bits : width -> int

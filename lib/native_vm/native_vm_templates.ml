@@ -13,6 +13,8 @@ let threaded_header_template = {|#pragma once
 #include <atomic>
 #include <bit>
 #include <cstring>
+#include <algorithm>
+#include <cmath>
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <dlfcn.h>
 #endif

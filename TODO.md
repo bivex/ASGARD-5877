@@ -269,10 +269,11 @@
   - [x] x86: префикс `lock`, `xadd`, `cmpxchg`, `cmpxchg8b/16b`, `xchg` памяти.
   - [x] ARM64: `ldxr`/`stxr`, `ldar`/`stlr`, LSE-атомики `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor`.
   - [x] RISC-V: `lr`/`sc`, `amoswap`, `amoadd`, `amomin`/`max`, `amoxor`/`and`/`or`.
-- [ ] **3.5. AVX-256 YMM регистры**:
-  - [ ] Расширение векторного банка со 128 до 256 бит для `ymm0..ymm15`.
-  - [ ] Аппаратное зануление верхней половины YMM при записи в XMM.
-  - [ ] Векторные целочисленные операции: `vpsll*`, `vpsrl*`, `vpsra*`, `vpcmpeq*`, `vpcmpgt*`, `vpmov*`, `vpunpck*`, `vpack*`, `vpshuf*`, `vperm*`, `vblend*`.
+- [x] **3.5. AVX-256 YMM регистры** (ВЫПОЛНЕНО 2026-10-07):
+  - [x] Расширение векторного банка со 128 до 256 бит для `ymm0..ymm15` (B128, B256, B512 в Register.width, 512-битные банки в VMContext C++ и Vm_eval).
+  - [x] Аппаратное зануление верхней половины YMM при записи в XMM через VEX-128 (`Vec_clear_upper`), плюс поддержка `vzeroupper`/`vzeroall` (`Vec_zero_upper`).
+  - [x] Векторные целочисленные операции: `vpsll*`, `vpsrl*`, `vpsra*`, `vpcmpeq*`, `vpcmpgt*`, `vpmov*` (`pmovmskb`/`vpmovmskb`), `vpunpck*`, `vpack*`, `vpshuf*`, `vblend*`, `vpmin*`, `vpmax*`, `vpabs*`.
+  - [x] Явная граница трапа для EVEX / ZMM (`Trap "AVX-512 EVEX is unsupported"`).
 
 #### Уровень 4: Архитектурный подпроект (Architectural — 2-4 недели)
 - [ ] **4.1. Параметризованный векторный движок RISC-V (RVV 1.0)**:

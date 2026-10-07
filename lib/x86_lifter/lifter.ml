@@ -71,7 +71,7 @@ let width_mask = function
   | Register.B8 -> 0xFFL
   | Register.B16 -> 0xFFFFL
   | Register.B32 -> 0xFFFFFFFFL
-  | Register.B64 -> -1L
+  | _ -> -1L
 
 let width_bits = Register.width_to_bits
 
@@ -164,7 +164,7 @@ let lift_x86_div_narrow ~signed width divisor =
         let edx = Register.with_width Register.rdx Register.B32 in
         [ Ir.Mov { dst = Ir.Reg eax; src = Ir.Reg quotient_reg };
           Ir.Mov { dst = Ir.Reg edx; src = Ir.Reg remainder_reg } ]
-    | Register.B64 -> []
+    | _ -> []
   in
   Ok (pre @ build_dividend @ divide @ write_outputs)
 
@@ -284,8 +284,8 @@ let lift_x86_div ~signed divisor =
     | _ -> Register.B64
   in
   match width_of divisor with
-  | Register.B64 -> lift_x86_div64 ~signed divisor
   | (Register.B8 | Register.B16 | Register.B32) as width -> lift_x86_div_narrow ~signed width divisor
+  | _ -> lift_x86_div64 ~signed divisor
 
 let lift_x86_mul_narrow ~signed width divisor =
   let* ir_div = to_ir_operand divisor in
@@ -322,7 +322,7 @@ let lift_x86_mul_narrow ~signed width divisor =
           Ir.Mov { dst = Ir.Reg high; src = Ir.Reg product };
           Ir.Alu { op = Ir.Shr; dst = high; src1 = Ir.Reg high; src2 = Ir.Imm 32L; set_flags = false };
           Ir.Mov { dst = Ir.Reg edx; src = Ir.Reg high } ]
-    | Register.B64 -> []
+    | _ -> []
   in
   Ok (pre @ product_instrs @ outputs)
 
@@ -414,8 +414,8 @@ let lift_x86_mul_one ~signed divisor =
     | _ -> Register.B64
   in
   match width_of divisor with
-  | Register.B64 -> lift_x86_mul64 ~signed divisor
   | (Register.B8 | Register.B16 | Register.B32) as width -> lift_x86_mul_narrow ~signed width divisor
+  | _ -> lift_x86_mul64 ~signed divisor
 
 let ir_mem_of_raw (m : X86_parser.raw_mem) : Ir.mem_ref =
   { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false }
@@ -424,7 +424,21 @@ let vector_reg_index = function
   | X86_parser.OpReg (Register.Fpr (i, _)) -> Some (i mod 32)
   | _ -> None
 
-let vector_bits mnem = if String.length mnem > 0 && mnem.[0] = 'v' then 256 else 128
+let is_zmm_operand = function
+  | X86_parser.OpReg (Register.Fpr (_, Register.B512)) -> true
+  | _ -> false
+
+let is_ymm_operand = function
+  | X86_parser.OpReg (Register.Fpr (_, Register.B256)) -> true
+  | X86_parser.OpMem m -> m.width = Register.B256
+  | _ -> false
+
+let determine_vec_bits mnem ops =
+  if List.exists is_ymm_operand ops then 256
+  else if List.exists (function X86_parser.OpReg (Register.Fpr (_, Register.B128)) | X86_parser.OpMem { width = Register.B128; _ } -> true | _ -> false) ops then 128
+  else if String.length mnem > 0 && mnem.[0] = 'v' then
+    if List.exists (function X86_parser.OpReg (Register.Fpr (_, Register.B256)) -> true | _ -> false) ops then 256 else 128
+  else 128
 
 let vector_move_mnemonic = function
   | "movaps" | "movups" | "movdqa" | "movdqu"
@@ -440,7 +454,10 @@ let vector_op_of_mnemonic = function
   | "psubw" | "vpsubw" -> Some (Ir.Vsub, Ir.VInt, 16)
   | "psubd" | "vpsubd" -> Some (Ir.Vsub, Ir.VInt, 32)
   | "psubq" | "vpsubq" -> Some (Ir.Vsub, Ir.VInt, 64)
+  | "pmullw" | "vpmullw" -> Some (Ir.Vmul, Ir.VInt, 16)
+  | "pmulld" | "vpmulld" -> Some (Ir.Vmul, Ir.VInt, 32)
   | "pand" | "vpand" -> Some (Ir.Vand, Ir.VInt, 64)
+  | "pandn" | "vpandn" -> Some (Ir.Vandn, Ir.VInt, 64)
   | "por" | "vpor" -> Some (Ir.Vor, Ir.VInt, 64)
   | "pxor" | "vpxor" -> Some (Ir.Vxor, Ir.VInt, 64)
   | "addps" | "vaddps" -> Some (Ir.Vadd, Ir.VF32, 32)
@@ -450,46 +467,159 @@ let vector_op_of_mnemonic = function
   | "mulps" | "vmulps" -> Some (Ir.Vmul, Ir.VF32, 32)
   | "mulpd" | "vmulpd" -> Some (Ir.Vmul, Ir.VF64, 64)
   | "andps" | "vandps" | "andpd" | "vandpd" -> Some (Ir.Vand, Ir.VInt, 64)
+  | "andnps" | "vandnps" | "andnpd" | "vandnpd" -> Some (Ir.Vandn, Ir.VInt, 64)
   | "orps" | "vorps" | "orpd" | "vorpd" -> Some (Ir.Vor, Ir.VInt, 64)
   | "xorps" | "vxorps" | "xorpd" | "vxorpd" -> Some (Ir.Vxor, Ir.VInt, 64)
+  | "psllw" | "vpsllw" -> Some (Ir.Vsll, Ir.VInt, 16)
+  | "pslld" | "vpslld" -> Some (Ir.Vsll, Ir.VInt, 32)
+  | "psllq" | "vpsllq" -> Some (Ir.Vsll, Ir.VInt, 64)
+  | "psrlw" | "vpsrlw" -> Some (Ir.Vsrl, Ir.VInt, 16)
+  | "psrld" | "vpsrld" -> Some (Ir.Vsrl, Ir.VInt, 32)
+  | "psrlq" | "vpsrlq" -> Some (Ir.Vsrl, Ir.VInt, 64)
+  | "psraw" | "vpsraw" -> Some (Ir.Vsra, Ir.VInt, 16)
+  | "psrad" | "vpsrad" -> Some (Ir.Vsra, Ir.VInt, 32)
+  | "pcmpeqb" | "vpcmpeqb" -> Some (Ir.Vcmpeq, Ir.VInt, 8)
+  | "pcmpeqw" | "vpcmpeqw" -> Some (Ir.Vcmpeq, Ir.VInt, 16)
+  | "pcmpeqd" | "vpcmpeqd" -> Some (Ir.Vcmpeq, Ir.VInt, 32)
+  | "pcmpeqq" | "vpcmpeqq" -> Some (Ir.Vcmpeq, Ir.VInt, 64)
+  | "pcmpgtb" | "vpcmpgtb" -> Some (Ir.Vcmpgt, Ir.VInt, 8)
+  | "pcmpgtw" | "vpcmpgtw" -> Some (Ir.Vcmpgt, Ir.VInt, 16)
+  | "pcmpgtd" | "vpcmpgtd" -> Some (Ir.Vcmpgt, Ir.VInt, 32)
+  | "pcmpgtq" | "vpcmpgtq" -> Some (Ir.Vcmpgt, Ir.VInt, 64)
+  | "pminsb" | "vpminsb" -> Some (Ir.Vmin, Ir.VInt, 8)
+  | "pminsw" | "vpminsw" -> Some (Ir.Vmin, Ir.VInt, 16)
+  | "pminsd" | "vpminsd" -> Some (Ir.Vmin, Ir.VInt, 32)
+  | "pminub" | "vpminub" -> Some (Ir.Vminu, Ir.VInt, 8)
+  | "pminuw" | "vpminuw" -> Some (Ir.Vminu, Ir.VInt, 16)
+  | "pminud" | "vpminud" -> Some (Ir.Vminu, Ir.VInt, 32)
+  | "pmaxsb" | "vpmaxsb" -> Some (Ir.Vmax, Ir.VInt, 8)
+  | "pmaxsw" | "vpmaxsw" -> Some (Ir.Vmax, Ir.VInt, 16)
+  | "pmaxsd" | "vpmaxsd" -> Some (Ir.Vmax, Ir.VInt, 32)
+  | "pmaxub" | "vpmaxub" -> Some (Ir.Vmaxu, Ir.VInt, 8)
+  | "pmaxuw" | "vpmaxuw" -> Some (Ir.Vmaxu, Ir.VInt, 16)
+  | "pmaxud" | "vpmaxud" -> Some (Ir.Vmaxu, Ir.VInt, 32)
+  | "minps" | "vminps" -> Some (Ir.Vmin, Ir.VF32, 32)
+  | "minpd" | "vminpd" -> Some (Ir.Vmin, Ir.VF64, 64)
+  | "maxps" | "vmaxps" -> Some (Ir.Vmax, Ir.VF32, 32)
+  | "maxpd" | "vmaxpd" -> Some (Ir.Vmax, Ir.VF64, 64)
+  | "pabsb" | "vpabsb" -> Some (Ir.Vabs, Ir.VInt, 8)
+  | "pabsw" | "vpabsw" -> Some (Ir.Vabs, Ir.VInt, 16)
+  | "pabsd" | "vpabsd" -> Some (Ir.Vabs, Ir.VInt, 32)
+  | "punpcklbw" | "vpunpcklbw" -> Some (Ir.Vunpckl, Ir.VInt, 8)
+  | "punpcklwd" | "vpunpcklwd" -> Some (Ir.Vunpckl, Ir.VInt, 16)
+  | "punpckldq" | "vpunpckldq" -> Some (Ir.Vunpckl, Ir.VInt, 32)
+  | "punpcklqdq" | "vpunpcklqdq" -> Some (Ir.Vunpckl, Ir.VInt, 64)
+  | "punpckhbw" | "vpunpckhbw" -> Some (Ir.Vunpckh, Ir.VInt, 8)
+  | "punpckhwd" | "vpunpckhwd" -> Some (Ir.Vunpckh, Ir.VInt, 16)
+  | "punpckhdq" | "vpunpckhdq" -> Some (Ir.Vunpckh, Ir.VInt, 32)
+  | "punpckhqdq" | "vpunpckhqdq" -> Some (Ir.Vunpckh, Ir.VInt, 64)
+  | "pshufd" | "vpshufd" -> Some (Ir.Vshuf, Ir.VInt, 32)
+  | "pshufb" | "vpshufb" -> Some (Ir.Vshuf, Ir.VInt, 8)
+  | "blendps" | "vblendps" -> Some (Ir.Vblend, Ir.VF32, 32)
+  | "blendpd" | "vblendpd" -> Some (Ir.Vblend, Ir.VF64, 64)
+  | "vpblendd" -> Some (Ir.Vblend, Ir.VInt, 32)
+  | "vpblendw" -> Some (Ir.Vblend, Ir.VInt, 16)
   | _ -> None
 
 let lift_vector_move mnem dst src =
-  let bits = vector_bits mnem in
-  match dst, src with
-  | X86_parser.OpReg _, X86_parser.OpReg _ -> (
-      match vector_reg_index dst, vector_reg_index src with
-      | Some di, Some si -> Ok [ Ir.Vec_mov { dst = di; src = si; bits } ]
-      | _ -> Error "vector move requires vector registers")
-  | X86_parser.OpReg _, X86_parser.OpMem m -> (
-      match vector_reg_index dst with
-      | Some di -> Ok [ Ir.Vec_load { dst = di; addr = ir_mem_of_raw m; bits } ]
-      | None -> Error "vector load destination must be a vector register")
-  | X86_parser.OpMem m, X86_parser.OpReg _ -> (
-      match vector_reg_index src with
-      | Some si -> Ok [ Ir.Vec_store { src = si; addr = ir_mem_of_raw m; bits } ]
-      | None -> Error "vector store source must be a vector register")
-  | _ -> Error "invalid vector move operands"
+  let ops = [dst; src] in
+  if List.exists is_zmm_operand ops then
+    Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+  else
+    let bits = determine_vec_bits mnem ops in
+    let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+    let clear_upper = is_vex && bits = 128 in
+    match dst, src with
+    | X86_parser.OpReg _, X86_parser.OpReg _ -> (
+        match vector_reg_index dst, vector_reg_index src with
+        | Some di, Some si ->
+            let instrs = [ Ir.Vec_mov { dst = di; src = si; bits } ] in
+            let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+            Ok (instrs @ extra)
+        | _ -> Error "vector move requires vector registers")
+    | X86_parser.OpReg _, X86_parser.OpMem m -> (
+        match vector_reg_index dst with
+        | Some di ->
+            let instrs = [ Ir.Vec_load { dst = di; addr = ir_mem_of_raw m; bits } ] in
+            let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+            Ok (instrs @ extra)
+        | None -> Error "vector load destination must be a vector register")
+    | X86_parser.OpMem m, X86_parser.OpReg _ -> (
+        match vector_reg_index src with
+        | Some si -> Ok [ Ir.Vec_store { src = si; addr = ir_mem_of_raw m; bits } ]
+        | None -> Error "vector store source must be a vector register")
+    | _ -> Error "invalid vector move operands"
 
 let lift_vector_binop mnem ops =
-  match vector_op_of_mnemonic mnem with
-  | None -> Error "unsupported vector operation"
-  | Some (op, elem, lane_bits) ->
-      let bits = vector_bits mnem in
-      let get_index = function
-        | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
-        | _ -> None
-      in
-      (match ops with
-      | [dst; src] -> (
-          match get_index dst, get_index src with
-          | Some di, Some si -> Ok [ Ir.Vec_binop { op; elem; dst = di; src1 = di; src2 = si; bits; lane_bits } ]
-          | _ -> Error "vector binary operation requires vector registers")
-      | [dst; src1; src2] -> (
-          match get_index dst, get_index src1, get_index src2 with
-          | Some di, Some s1, Some s2 -> Ok [ Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = s2; bits; lane_bits } ]
-          | _ -> Error "vector binary operation requires vector registers")
-      | _ -> Error "invalid vector binary operation operands")
+  if List.exists is_zmm_operand ops then
+    Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+  else
+    match vector_op_of_mnemonic mnem with
+    | None -> Error "unsupported vector operation"
+    | Some (op, elem, lane_bits) ->
+        let bits = determine_vec_bits mnem ops in
+        let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+        let clear_upper = is_vex && bits = 128 in
+        let get_index = function
+          | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+          | _ -> None
+        in
+        match ops with
+        | [dst; X86_parser.OpImm imm] -> (
+            match get_index dst with
+            | Some di ->
+                let instrs = [ Ir.Vec_imm { op; elem; dst = di; src = di; imm; bits; lane_bits } ] in
+                let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                Ok (instrs @ extra)
+            | _ -> Error "vector immediate operation requires vector register destination")
+        | [dst; src] -> (
+            match get_index dst, get_index src with
+            | Some di, Some si ->
+                let s1 = if op = Ir.Vabs then si else di in
+                let instrs = [ Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = si; bits; lane_bits } ] in
+                let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                Ok (instrs @ extra)
+            | Some di, None -> (
+                match src with
+                | X86_parser.OpMem m ->
+                    let load = Ir.Vec_load { dst = 31; addr = ir_mem_of_raw m; bits } in
+                    let s1 = if op = Ir.Vabs then 31 else di in
+                    let binop = Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = 31; bits; lane_bits } in
+                    let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                    Ok ([ load; binop ] @ extra)
+                | _ -> Error "vector binary operation requires vector register or memory operand")
+            | _ -> Error "vector binary operation requires vector registers")
+        | [dst; src; X86_parser.OpImm imm] -> (
+            match get_index dst, get_index src with
+            | Some di, Some si ->
+                let instrs = [ Ir.Vec_imm { op; elem; dst = di; src = si; imm; bits; lane_bits } ] in
+                let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                Ok (instrs @ extra)
+            | _ -> Error "vector immediate operation requires vector registers")
+        | [dst; src1; src2] -> (
+            match get_index dst, get_index src1, get_index src2 with
+            | Some di, Some s1, Some s2 ->
+                let instrs = [ Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = s2; bits; lane_bits } ] in
+                let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                Ok (instrs @ extra)
+            | Some di, Some s1, None -> (
+                match src2 with
+                | X86_parser.OpMem m ->
+                    let load = Ir.Vec_load { dst = 31; addr = ir_mem_of_raw m; bits } in
+                    let binop = Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = 31; bits; lane_bits } in
+                    let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                    Ok ([ load; binop ] @ extra)
+                | _ -> Error "vector binary operation requires vector registers or memory operand")
+            | _ -> Error "vector binary operation requires vector registers")
+        | [dst; src1; src2; X86_parser.OpImm imm] -> (
+            match get_index dst, get_index src1, get_index src2 with
+            | Some di, Some s1, Some s2 ->
+                let mov = Ir.Vec_mov { dst = di; src = s1; bits } in
+                let binop = Ir.Vec_imm { op; elem; dst = di; src = s2; imm; bits; lane_bits } in
+                let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                Ok ([ mov; binop ] @ extra)
+            | _ -> Error "vector blend/shuffle requires vector registers")
+        | _ -> Error "invalid vector binary operation operands"
 
 let one_step_rcl reg w =
   let flags_tmp = Register.vtmp1 in
@@ -577,10 +707,19 @@ let lift_instr mnem ops =
   | "ret", [] -> Ok [ Ir.Ret ]
   | "vm_enter", [] -> Ok [ Ir.Vm_enter ]
   | "vm_exit", [] -> Ok [ Ir.Vm_exit ]
-  | ("vzeroupper" | "vzeroall"), [] -> Ok [ Ir.Nop ]
+  | ("vzeroupper" | "vzeroall"), [] -> Ok [ Ir.Vec_zero_upper ]
+  | ("pmovmskb" | "vpmovmskb"), [ dst; src ] -> (
+      if is_zmm_operand src then
+        Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+      else
+        match dst, vector_reg_index src with
+        | X86_parser.OpReg gpr, Some si ->
+            let bits = determine_vec_bits mnem [ dst; src ] in
+            Ok [ Ir.Pmovmskb { dst = gpr; src = si; bits } ]
+        | _ -> Error "pmovmskb requires GPR destination and vector source")
   | mnem, [ dst; src ] when vector_move_mnemonic mnem -> lift_vector_move mnem dst src
   | mnem, ops
-    when (List.length ops = 2 || List.length ops = 3)
+    when (List.length ops >= 2 && List.length ops <= 4)
          && (match vector_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
       lift_vector_binop mnem ops
 
@@ -626,7 +765,7 @@ let lift_instr mnem ops =
             | Register.B8 -> 56L
             | Register.B16 -> 48L
             | Register.B32 -> 32L
-            | Register.B64 -> 0L
+            | _ -> 0L
           in
           let d64 = Register.with_width d Register.B64 in
           if shift = 0L then

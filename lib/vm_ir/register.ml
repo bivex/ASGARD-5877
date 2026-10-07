@@ -3,18 +3,27 @@ type width =
   | B16
   | B32
   | B64
+  | B128
+  | B256
+  | B512
 
 let width_to_bytes = function
   | B8 -> 1
   | B16 -> 2
   | B32 -> 4
   | B64 -> 8
+  | B128 -> 16
+  | B256 -> 32
+  | B512 -> 64
 
 let width_to_bits = function
   | B8 -> 8
   | B16 -> 16
   | B32 -> 32
   | B64 -> 64
+  | B128 -> 128
+  | B256 -> 256
+  | B512 -> 512
 
 type gpr =
   | RAX
@@ -93,7 +102,7 @@ let vx24  = Vreg (VX24,  B64)
 let vx25  = Vreg (VX25,  B64)
 let vx26  = Vreg (VX26,  B64)
 
-let gpr_to_string g w =
+let rec gpr_to_string g w =
   match g, w with
   | RAX, B64 -> "rax" | RAX, B32 -> "eax"  | RAX, B16 -> "ax"   | RAX, B8 -> "al"
   | RCX, B64 -> "rcx" | RCX, B32 -> "ecx"  | RCX, B16 -> "cx"   | RCX, B8 -> "cl"
@@ -111,6 +120,7 @@ let gpr_to_string g w =
   | R13, B64 -> "r13" | R13, B32 -> "r13d" | R13, B16 -> "r13w" | R13, B8 -> "r13b"
   | R14, B64 -> "r14" | R14, B32 -> "r14d" | R14, B16 -> "r14w" | R14, B8 -> "r14b"
   | R15, B64 -> "r15" | R15, B32 -> "r15d" | R15, B16 -> "r15w" | R15, B8 -> "r15b"
+  | g, _ -> gpr_to_string g B64
 
 let vreg_to_string v w =
   let prefix = match v with
@@ -137,29 +147,34 @@ let vreg_to_string v w =
   | B32 -> prefix ^ "d"
   | B16 -> prefix ^ "w"
   | B8  -> prefix ^ "b"
+  | _   -> prefix
 
 let to_string = function
   | Gpr (g, w) -> gpr_to_string g w
   | Vreg (v, w) -> vreg_to_string v w
   | Fpr (i, B32) -> Printf.sprintf "s%d" i
-  | Fpr (i, _)   -> Printf.sprintf "d%d" i
+  | Fpr (i, B64) -> Printf.sprintf "d%d" i
+  | Fpr (i, B128) -> Printf.sprintf "xmm%d" i
+  | Fpr (i, B256) -> Printf.sprintf "ymm%d" i
+  | Fpr (i, B512) -> Printf.sprintf "zmm%d" i
+  | Fpr (i, _)   -> Printf.sprintf "v%d" i
 
 let of_string str =
   let s = String.lowercase_ascii (String.trim str) in
-  let vector_index =
+  let vector_info =
     let rec find = function
       | [] -> None
-      | prefix :: rest ->
+      | (prefix, w) :: rest ->
           if String.length s > String.length prefix && String.starts_with ~prefix s then
             match int_of_string_opt (String.sub s (String.length prefix) (String.length s - String.length prefix)) with
-            | Some i when i >= 0 && i < 32 -> Some i
+            | Some i when i >= 0 && i < 32 -> Some (i, w)
             | _ -> None
           else find rest
     in
-    find [ "xmm"; "ymm"; "zmm" ]
+    find [ ("xmm", B128); ("ymm", B256); ("zmm", B512) ]
   in
-  (match vector_index with
-  | Some i -> Ok (Fpr (i, B64))
+  (match vector_info with
+  | Some (i, w) -> Ok (Fpr (i, w))
   | None ->
   if String.length s >= 2 && s.[0] = 'd' &&
      (match int_of_string_opt (String.sub s 1 (String.length s - 1)) with Some i -> i >= 0 && i < 32 | None -> false) then

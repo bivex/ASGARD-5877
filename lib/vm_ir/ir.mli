@@ -52,7 +52,30 @@ type target =
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
 type fp_conv = Fcvtzs | Scvtf
-type vec_op = Vadd | Vsub | Vmul | Vand | Vor | Vxor
+type vec_op =
+  | Vadd
+  | Vsub
+  | Vmul
+  | Vand
+  | Vor
+  | Vxor
+  | Vsll
+  | Vsrl
+  | Vsra
+  | Vcmpeq
+  | Vcmpgt
+  | Vmin
+  | Vmax
+  | Vminu
+  | Vmaxu
+  | Vabs
+  | Vandn
+  | Vunpckl
+  | Vunpckh
+  | Vpackss
+  | Vpackus
+  | Vshuf
+  | Vblend
 type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
@@ -86,8 +109,12 @@ type instr =
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
+  | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
   | Vec_load of { dst : int; addr : mem_ref; bits : int }
   | Vec_store of { src : int; addr : mem_ref; bits : int }
+  | Vec_clear_upper of int
+  | Vec_zero_upper
+  | Pmovmskb of { dst : Register.t; src : int; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
   | Get_flags of Register.t
   | Set_flags of operand

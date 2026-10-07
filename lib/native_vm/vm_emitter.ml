@@ -272,6 +272,13 @@ let compile_and_package_multi
   let vector_index i = i mod 32 in
   let vector_op_code = function
     | Ir.Vadd -> 0 | Ir.Vsub -> 1 | Ir.Vmul -> 2 | Ir.Vand -> 3 | Ir.Vor -> 4 | Ir.Vxor -> 5
+    | Ir.Vsll -> 6 | Ir.Vsrl -> 7 | Ir.Vsra -> 8
+    | Ir.Vcmpeq -> 9 | Ir.Vcmpgt -> 10
+    | Ir.Vmin -> 11 | Ir.Vmax -> 12 | Ir.Vminu -> 13 | Ir.Vmaxu -> 14
+    | Ir.Vabs -> 15 | Ir.Vandn -> 16
+    | Ir.Vunpckl -> 17 | Ir.Vunpckh -> 18
+    | Ir.Vpackss -> 19 | Ir.Vpackus -> 20
+    | Ir.Vshuf -> 21 | Ir.Vblend -> 22
   in
   let vector_elem_code = function
     | Ir.VInt -> 0 | Ir.VF32 -> 1 | Ir.VF64 -> 2
@@ -281,7 +288,14 @@ let compile_and_package_multi
     let w = Int64.logor w (Int64.shift_left (Int64.of_int bits) 5) in
     let w = Int64.logor w (Int64.shift_left (Int64.of_int lane_bits) 15) in
     let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 23) in
-    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 26)
+    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 28)
+  in
+  let vector_imm_val ~imm_val ~bits ~lane_bits ~elem op =
+    let w = Int64.logand imm_val 0xFFL in
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int bits) 8) in
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int lane_bits) 18) in
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 26) in
+    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 31)
   in
 
   (* Encode instructions (both Fused Super-Operators and Standard Raw Ops) *)
@@ -349,7 +363,7 @@ let compile_and_package_multi
                       | Register.B32 -> OP_LOAD_S32
                       | Register.B16 -> OP_LOAD_S16
                       | Register.B8  -> OP_LOAD_S8
-                      | Register.B64 -> OP_LOAD_64
+                      | _ -> OP_LOAD_64
                     else
                       match m.width with
                       | Register.B64 -> OP_LOAD_64
@@ -567,12 +581,21 @@ let compile_and_package_multi
               | Ir.Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
                   encode_raw_word (get_opcode OP_VEC_BINOP) (vector_index dst) (vector_index src1)
                     (vector_imm ~src2:(vector_index src2) ~bits ~lane_bits ~elem op)
+              | Ir.Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
+                  encode_raw_word (get_opcode OP_VEC_IMM) (vector_index dst) (vector_index src)
+                    (vector_imm_val ~imm_val:imm ~bits ~lane_bits ~elem op)
               | Ir.Vec_load { dst; addr; bits } ->
                   let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_VEC_LOAD) (vector_index dst) base_idx addr.disp
               | Ir.Vec_store { src; addr; bits } ->
                   let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_VEC_STORE) base_idx (vector_index src) addr.disp
+              | Ir.Vec_clear_upper reg ->
+                  encode_raw_word (get_opcode OP_VEC_CLEAR_UPPER) (vector_index reg) 0 0L
+              | Ir.Vec_zero_upper ->
+                  encode_raw_word (get_opcode OP_VEC_ZERO_UPPER) 0 0 0L
+              | Ir.Pmovmskb { dst; src; bits } ->
+                  encode_raw_word (get_opcode OP_PMOVMSKB) (get_reg_idx dst) (vector_index src) (Int64.of_int bits)
               | Ir.Atomic_mem { op; dst; addr; src; imm } -> (
                   match op with
                   | AtLoad ->

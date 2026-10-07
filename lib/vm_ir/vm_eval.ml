@@ -41,7 +41,7 @@ let get_mask = function
   | B8  -> 0xFFL
   | B16 -> 0xFFFFL
   | B32 -> 0xFFFFFFFFL
-  | B64 -> -1L
+  | B64 | B128 | B256 | B512 -> -1L
 
 let truncate_val w v =
   Int64.logand v (get_mask w)
@@ -52,7 +52,7 @@ let sign_extend w v =
   | B8 -> if Int64.logand v_masked 0x80L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFL) else v_masked
   | B16 -> if Int64.logand v_masked 0x8000L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFFFL) else v_masked
   | B32 -> if Int64.logand v_masked 0x80000000L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFFFFFFFL) else v_masked
-  | B64 -> v
+  | B64 | B128 | B256 | B512 -> v
 
 let get_vector_lane state idx lane =
   match Hashtbl.find_opt state.vectors (idx mod 32) with
@@ -101,6 +101,7 @@ let set_reg state reg value =
         | B8 ->
             let high = Int64.logand cur (Int64.lognot 0xFFL) in
             Int64.logor high (truncate_val B8 value)
+        | _ -> value
       in
       Hashtbl.replace state.vregs r64 new_val;
       if is_sp_reg reg then sync_sp state new_val
@@ -130,7 +131,7 @@ let read_mem ?(signed = false) state addr width =
     | B32 ->
         let v = Int64.logand !res 0xFFFFFFFFL in
         if Int64.logand v 0x80000000L <> 0L then Int64.logor v (Int64.lognot 0xFFFFFFFFL) else v
-    | B64 -> !res
+    | B64 | B128 | B256 | B512 -> !res
   else
     !res
 
@@ -180,7 +181,17 @@ let float32_bits value =
 
 let float64_bits value = Int64.bits_of_float value
 
-let vector_binary_value ~elem ~op ~a ~b =
+let sign_extend_lane lane_bits v =
+  let mask = vector_lane_mask lane_bits in
+  let v_masked = Int64.logand v mask in
+  match lane_bits with
+  | 8 -> if Int64.logand v_masked 0x80L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFL) else v_masked
+  | 16 -> if Int64.logand v_masked 0x8000L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFFFL) else v_masked
+  | 32 -> if Int64.logand v_masked 0x80000000L <> 0L then Int64.logor v_masked (Int64.lognot 0xFFFFFFFFL) else v_masked
+  | _ -> v
+
+let vector_binary_value ~lane_bits ~elem ~op ~a ~b =
+  let mask = vector_lane_mask lane_bits in
   match op, elem with
   | Vadd, VF32 ->
       let fa = Int32.float_of_bits (Int64.to_int32 a) in
@@ -194,21 +205,71 @@ let vector_binary_value ~elem ~op ~a ~b =
       let fa = Int32.float_of_bits (Int64.to_int32 a) in
       let fb = Int32.float_of_bits (Int64.to_int32 b) in
       float32_bits (fa *. fb)
+  | Vmin, VF32 ->
+      let fa = Int32.float_of_bits (Int64.to_int32 a) in
+      let fb = Int32.float_of_bits (Int64.to_int32 b) in
+      float32_bits (Float.min fa fb)
+  | Vmax, VF32 ->
+      let fa = Int32.float_of_bits (Int64.to_int32 a) in
+      let fb = Int32.float_of_bits (Int64.to_int32 b) in
+      float32_bits (Float.max fa fb)
   | Vadd, VF64 -> float64_bits (Int64.float_of_bits a +. Int64.float_of_bits b)
   | Vsub, VF64 -> float64_bits (Int64.float_of_bits a -. Int64.float_of_bits b)
   | Vmul, VF64 -> float64_bits (Int64.float_of_bits a *. Int64.float_of_bits b)
+  | Vmin, VF64 -> float64_bits (Float.min (Int64.float_of_bits a) (Int64.float_of_bits b))
+  | Vmax, VF64 -> float64_bits (Float.max (Int64.float_of_bits a) (Int64.float_of_bits b))
   | (Vadd | Vsub | Vmul), VInt -> (
       match op with
       | Vadd -> Int64.add a b
       | Vsub -> Int64.sub a b
       | Vmul -> Int64.mul a b
-      | Vand | Vor | Vxor -> 0L)
+      | _ -> 0L)
   | (Vand | Vor | Vxor), (VInt | VF32 | VF64) -> (
       match op with
       | Vand -> Int64.logand a b
       | Vor -> Int64.logor a b
       | Vxor -> Int64.logxor a b
-      | Vadd | Vsub | Vmul -> 0L)
+      | _ -> 0L)
+  | Vandn, _ ->
+      Int64.logand (Int64.lognot a) b
+  | Vsll, _ ->
+      let cnt = Int64.to_int (Int64.logand b 0xFFL) in
+      if cnt >= lane_bits then 0L else Int64.shift_left a cnt
+  | Vsrl, _ ->
+      let cnt = Int64.to_int (Int64.logand b 0xFFL) in
+      if cnt >= lane_bits then 0L else Int64.shift_right_logical (Int64.logand a mask) cnt
+  | Vsra, _ ->
+      let cnt = Int64.to_int (Int64.logand b 0xFFL) in
+      let sa = sign_extend_lane lane_bits a in
+      if cnt >= lane_bits then (if sa < 0L then mask else 0L)
+      else Int64.shift_right sa cnt
+  | Vcmpeq, _ ->
+      if a = b then mask else 0L
+  | Vcmpgt, _ ->
+      let sa = sign_extend_lane lane_bits a in
+      let sb = sign_extend_lane lane_bits b in
+      if sa > sb then mask else 0L
+  | Vmin, VInt ->
+      let sa = sign_extend_lane lane_bits a in
+      let sb = sign_extend_lane lane_bits b in
+      if sa < sb then a else b
+  | Vmax, VInt ->
+      let sa = sign_extend_lane lane_bits a in
+      let sb = sign_extend_lane lane_bits b in
+      if sa > sb then a else b
+  | Vminu, _ ->
+      let ua = Int64.logand a mask in
+      let ub = Int64.logand b mask in
+      if Int64.unsigned_compare ua ub < 0 then a else b
+  | Vmaxu, _ ->
+      let ua = Int64.logand a mask in
+      let ub = Int64.logand b mask in
+      if Int64.unsigned_compare ua ub > 0 then a else b
+  | Vabs, _ ->
+      let sa = sign_extend_lane lane_bits a in
+      let res = if sa < 0L then Int64.neg sa else sa in
+      Int64.logand res mask
+  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend), _ -> 0L
 
 let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
   let mask = vector_lane_mask lane_bits in
@@ -222,7 +283,69 @@ let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
     let b_packed = get_vector_lane state src2 chunk in
     let a = Int64.logand (Int64.shift_right_logical a_packed shift) mask in
     let b = Int64.logand (Int64.shift_right_logical b_packed shift) mask in
-    let value = vector_binary_value ~elem ~op ~a ~b in
+    let value =
+      match op with
+      | Vunpckl ->
+          let num_lanes = 128 / lane_bits in
+          let block_lane = lane mod num_lanes in
+          let half_idx = block_lane / 2 in
+          let src_reg = if block_lane mod 2 = 0 then src1 else src2 in
+          let src_bit = ((pos / 128) * 128) + (half_idx * lane_bits) in
+          let s_val = get_vector_lane state src_reg (src_bit / 64) in
+          Int64.logand (Int64.shift_right_logical s_val (src_bit mod 64)) mask
+      | Vunpckh ->
+          let num_lanes = 128 / lane_bits in
+          let block_lane = lane mod num_lanes in
+          let half_idx = (num_lanes / 2) + (block_lane / 2) in
+          let src_reg = if block_lane mod 2 = 0 then src1 else src2 in
+          let src_bit = ((pos / 128) * 128) + (half_idx * lane_bits) in
+          let s_val = get_vector_lane state src_reg (src_bit / 64) in
+          Int64.logand (Int64.shift_right_logical s_val (src_bit mod 64)) mask
+      | Vshuf when lane_bits = 8 ->
+          let ctrl = Int64.to_int (Int64.logand b 0xFFL) in
+          if ctrl land 0x80 <> 0 then 0L
+          else
+            let sel = ctrl land 0xF in
+            let src_bit = ((pos / 128) * 128) + (sel * 8) in
+            let s_val = get_vector_lane state src1 (src_bit / 64) in
+            Int64.logand (Int64.shift_right_logical s_val (src_bit mod 64)) 0xFFL
+      | _ ->
+          vector_binary_value ~lane_bits ~elem ~op ~a ~b
+    in
+    let dst_packed = get_vector_lane state dst chunk in
+    let cleared = Int64.logand dst_packed (Int64.lognot packed_mask) in
+    let updated = Int64.logor cleared (Int64.shift_left (Int64.logand value mask) shift) in
+    set_vector_lane state dst chunk updated
+  done
+
+let apply_vector_imm state ~dst_bits ~lane_bits ~elem ~src ~imm ~dst op =
+  let mask = vector_lane_mask lane_bits in
+  let last = (dst_bits - lane_bits) / lane_bits in
+  let imm_val = Int64.logand imm 0xFFL in
+  for lane = 0 to last do
+    let pos = lane * lane_bits in
+    let chunk = pos / 64 in
+    let shift = pos mod 64 in
+    let packed_mask = Int64.shift_left mask shift in
+    let a_packed = get_vector_lane state src chunk in
+    let a = Int64.logand (Int64.shift_right_logical a_packed shift) mask in
+    let value =
+      match op with
+      | Vshuf when lane_bits = 32 ->
+          let lane_in_128 = (pos / 32) mod 4 in
+          let sel = Int64.to_int (Int64.logand (Int64.shift_right_logical imm_val (lane_in_128 * 2)) 3L) in
+          let src_bit = ((pos / 128) * 128) + (sel * 32) in
+          let s_val = get_vector_lane state src (src_bit / 64) in
+          Int64.logand (Int64.shift_right_logical s_val (src_bit mod 64)) 0xFFFFFFFFL
+      | Vblend ->
+          let sel = Int64.logand (Int64.shift_right_logical imm_val (lane mod 8)) 1L in
+          if sel = 0L then a
+          else
+            let cur_dst = get_vector_lane state dst chunk in
+            Int64.logand (Int64.shift_right_logical cur_dst shift) mask
+      | _ ->
+          vector_binary_value ~lane_bits ~elem ~op ~a ~b:imm_val
+    in
     let dst_packed = get_vector_lane state dst chunk in
     let cleared = Int64.logand dst_packed (Int64.lognot packed_mask) in
     let updated = Int64.logor cleared (Int64.shift_left (Int64.logand value mask) shift) in
@@ -367,7 +490,7 @@ let step state = function
             if set_flags then state.flags <- CC_OP_LOGIC { dst = res; width = w };
             res
         | Rol ->
-            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let bits = Register.width_to_bits w in
             let shift = (Int64.to_int v2) mod bits in
             let res =
               if shift = 0 then truncate_val w v1
@@ -378,7 +501,7 @@ let step state = function
             in
             res
         | Ror ->
-            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let bits = Register.width_to_bits w in
             let shift = (Int64.to_int v2) mod bits in
             let res =
               if shift = 0 then truncate_val w v1
@@ -430,7 +553,7 @@ let step state = function
             if set_flags then state.flags <- CC_OP_DEC { old_dst = v; new_dst = r; prev_cf = compute_cf state.flags; width = w };
             r
         | Bswap ->
-            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let bits = Register.width_to_bits w in
             if bits = 16 then
               let b0 = Int64.logand (Int64.shift_right_logical v 8) 0xFFL in
               let b1 = Int64.logand (Int64.shift_left v 8) 0xFF00L in
@@ -452,7 +575,7 @@ let step state = function
               swap 0L 0
             else v
         | Clz ->
-            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let bits = Register.width_to_bits w in
             let tv = truncate_val w v in
             let rec count i =
               if i = bits then Int64.of_int bits
@@ -461,7 +584,7 @@ let step state = function
             in
             count 0
         | Ctz ->
-            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let bits = Register.width_to_bits w in
             let tv = truncate_val w v in
             if tv = 0L then Int64.of_int bits
             else
@@ -472,7 +595,7 @@ let step state = function
               in
               count 0
         | Popcnt ->
-            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let bits = Register.width_to_bits w in
             let tv = truncate_val w v in
             let rec count i acc =
               if i = bits then Int64.of_int acc
@@ -482,7 +605,7 @@ let step state = function
             in
             count 0 0
         | Rbit ->
-            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let bits = Register.width_to_bits w in
             let tv = truncate_val w v in
             let rec rev i acc =
               if i = bits then acc
@@ -591,11 +714,36 @@ let step state = function
   | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
       apply_vector_lanes state ~dst_bits:bits ~lane_bits ~elem ~src1 ~src2 ~dst op;
       Ok None
+  | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
+      apply_vector_imm state ~dst_bits:bits ~lane_bits ~elem ~src ~imm ~dst op;
+      Ok None
   | Vec_load { dst; addr; bits } ->
       load_vector state ~dst_bits:bits ~dst ~addr;
       Ok None
   | Vec_store { src; addr; bits } ->
       store_vector state ~src_bits:bits ~src ~addr;
+      Ok None
+  | Vec_clear_upper reg ->
+      set_vector_lane state reg 2 0L;
+      set_vector_lane state reg 3 0L;
+      Ok None
+  | Vec_zero_upper ->
+      for i = 0 to 15 do
+        set_vector_lane state i 2 0L;
+        set_vector_lane state i 3 0L;
+      done;
+      Ok None
+  | Pmovmskb { dst; src; bits } ->
+      let num_bytes = bits / 8 in
+      let mask = ref 0L in
+      for b = 0 to num_bytes - 1 do
+        let chunk = b / 8 in
+        let byte_pos = (b mod 8) * 8 in
+        let byte_val = Int64.logand (Int64.shift_right_logical (get_vector_lane state src chunk) byte_pos) 0xFFL in
+        if Int64.logand byte_val 0x80L <> 0L then
+          mask := Int64.logor !mask (Int64.shift_left 1L b)
+      done;
+      set_reg state dst !mask;
       Ok None
   | Fp_binop { op; dst; src1; src2 } ->
       let a_bits = get_vector_lane state src1 0 in

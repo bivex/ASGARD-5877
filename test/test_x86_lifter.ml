@@ -1198,6 +1198,185 @@ func_cmpxchg16b:
           Alcotest.(check int64) "cmpxchg16b low word becomes rbx" 0xAAAAL (get_reg state (Register.Gpr (Register.R8, Register.B64)));
           Alcotest.(check int64) "cmpxchg16b high word becomes rcx" 0xBBBBL (get_reg state (Register.Gpr (Register.R9, Register.B64)))
 
+let contains_sub s sub =
+  let len_s = String.length s in
+  let len_sub = String.length sub in
+  if len_sub > len_s then false
+  else
+    let rec check i =
+      if i + len_sub > len_s then false
+      else if String.sub s i len_sub = sub then true
+      else check (i + 1)
+    in
+    check 0
+
+let test_x86_avx256_arithmetic () =
+  let asm = {|
+func_avx256:
+    vpaddd ymm0, ymm1, ymm2
+    vpxor ymm3, ymm1, ymm2
+    vpsubd ymm4, ymm1, ymm2
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      let ymm1 = [|
+        Int64.logor 1L (Int64.shift_left 2L 32);
+        Int64.logor 3L (Int64.shift_left 4L 32);
+        Int64.logor 5L (Int64.shift_left 6L 32);
+        Int64.logor 7L (Int64.shift_left 8L 32);
+        0L; 0L; 0L; 0L
+      |] in
+      let ymm2 = [|
+        Int64.logor 10L (Int64.shift_left 20L 32);
+        Int64.logor 30L (Int64.shift_left 40L 32);
+        Int64.logor 50L (Int64.shift_left 60L 32);
+        Int64.logor 70L (Int64.shift_left 80L 32);
+        0L; 0L; 0L; 0L
+      |] in
+      Hashtbl.replace state.vectors 1 ymm1;
+      Hashtbl.replace state.vectors 2 ymm2;
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let ymm0 = Hashtbl.find state.vectors 0 in
+          let ymm3 = Hashtbl.find state.vectors 3 in
+          let ymm4 = Hashtbl.find state.vectors 4 in
+          Alcotest.(check int64) "vpaddd chunk 0" (Int64.logor 11L (Int64.shift_left 22L 32)) ymm0.(0);
+          Alcotest.(check int64) "vpaddd chunk 1" (Int64.logor 33L (Int64.shift_left 44L 32)) ymm0.(1);
+          Alcotest.(check int64) "vpaddd chunk 2" (Int64.logor 55L (Int64.shift_left 66L 32)) ymm0.(2);
+          Alcotest.(check int64) "vpaddd chunk 3" (Int64.logor 77L (Int64.shift_left 88L 32)) ymm0.(3);
+          Alcotest.(check int64) "vpxor chunk 0" (Int64.logxor ymm1.(0) ymm2.(0)) ymm3.(0);
+          Alcotest.(check int64) "vpxor chunk 2" (Int64.logxor ymm1.(2) ymm2.(2)) ymm3.(2);
+          let sub_dw a b = Int64.logand (Int64.sub a b) 0xFFFFFFFFL in
+          let exp_sub_c0 = Int64.logor (sub_dw 1L 10L) (Int64.shift_left (sub_dw 2L 20L) 32) in
+          Alcotest.(check int64) "vpsubd chunk 0" exp_sub_c0 ymm4.(0))
+
+let test_x86_avx_shifts_minmax_abs () =
+  let asm = {|
+func_avx_ops:
+    vpslld ymm0, ymm1, 2
+    vpminud ymm2, ymm1, ymm3
+    vpabsd ymm4, ymm5
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      let ymm1 = [|
+        Int64.logor 10L (Int64.shift_left 20L 32);
+        Int64.logor 30L (Int64.shift_left 40L 32);
+        Int64.logor 50L (Int64.shift_left 60L 32);
+        Int64.logor 70L (Int64.shift_left 80L 32);
+        0L; 0L; 0L; 0L
+      |] in
+      let ymm3 = [|
+        Int64.logor 5L (Int64.shift_left 25L 32);
+        Int64.logor 35L (Int64.shift_left 15L 32);
+        Int64.logor 55L (Int64.shift_left 45L 32);
+        Int64.logor 75L (Int64.shift_left 65L 32);
+        0L; 0L; 0L; 0L
+      |] in
+      let ymm5 = [|
+        Int64.logor 0xFFFFFFD6L (Int64.shift_left 100L 32);
+        0L; 0L; 0L; 0L; 0L; 0L; 0L
+      |] in
+      Hashtbl.replace state.vectors 1 ymm1;
+      Hashtbl.replace state.vectors 3 ymm3;
+      Hashtbl.replace state.vectors 5 ymm5;
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let ymm0 = Hashtbl.find state.vectors 0 in
+          let ymm2 = Hashtbl.find state.vectors 2 in
+          let ymm4 = Hashtbl.find state.vectors 4 in
+          Alcotest.(check int64) "vpslld chunk 0" (Int64.logor 40L (Int64.shift_left 80L 32)) ymm0.(0);
+          Alcotest.(check int64) "vpminud chunk 0" (Int64.logor 5L (Int64.shift_left 20L 32)) ymm2.(0);
+          Alcotest.(check int64) "vpabsd chunk 0" (Int64.logor 42L (Int64.shift_left 100L 32)) ymm4.(0))
+
+let test_x86_avx_upper_zeroing () =
+  let asm = {|
+func_upper_zero:
+    vpaddd xmm0, xmm1, xmm2
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      Hashtbl.replace state.vectors 0 [| 999L; 999L; 0xDEADBEEFL; 0xCAFEBABEL; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1 [| 10L; 20L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2 [| 5L; 15L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let ymm0 = Hashtbl.find state.vectors 0 in
+          Alcotest.(check int64) "vpaddd 128 low lane 0" 15L (Int64.logand ymm0.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "upper chunk 2 zeroed" 0L ymm0.(2);
+          Alcotest.(check int64) "upper chunk 3 zeroed" 0L ymm0.(3))
+
+let test_x86_vzeroupper () =
+  let asm = {|
+func_vzero:
+    vzeroupper
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      Hashtbl.replace state.vectors 0 [| 1L; 2L; 3L; 4L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| 10L; 20L; 30L; 40L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let ymm0 = Hashtbl.find state.vectors 0 in
+          let ymm7 = Hashtbl.find state.vectors 7 in
+          Alcotest.(check int64) "ymm0 chunk 0 intact" 1L ymm0.(0);
+          Alcotest.(check int64) "ymm0 chunk 1 intact" 2L ymm0.(1);
+          Alcotest.(check int64) "ymm0 chunk 2 zeroed" 0L ymm0.(2);
+          Alcotest.(check int64) "ymm0 chunk 3 zeroed" 0L ymm0.(3);
+          Alcotest.(check int64) "ymm7 chunk 2 zeroed" 0L ymm7.(2);
+          Alcotest.(check int64) "ymm7 chunk 3 zeroed" 0L ymm7.(3))
+
+let test_x86_pmovmskb () =
+  let asm = {|
+func_pmov:
+    pmovmskb eax, xmm1
+    vpmovmskb ebx, ymm2
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      Hashtbl.replace state.vectors 1 [| 0x8000000000000080L; 0x8000000000000000L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2 [| 0x80L; 0L; 0L; 0x8000000000000000L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "pmovmskb eax" 0x8081L (get_reg state (Register.Gpr (Register.RAX, Register.B32)));
+          Alcotest.(check int64) "vpmovmskb ebx" 0x80000001L (get_reg state (Register.Gpr (Register.RBX, Register.B32))))
+
+let test_x86_evex_zmm_trap () =
+  let asm = {|
+func_evex:
+    vpaddd zmm0, zmm1, zmm2
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error msg ->
+          Alcotest.(check bool) "trapped with evex message" true (contains_sub msg "AVX-512 EVEX is unsupported")
+      | Ok () ->
+          Alcotest.fail "Expected AVX-512 EVEX trap but execution succeeded"
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -1252,5 +1431,11 @@ let tests = [
   Alcotest.test_case "lift_x86_repe_cmpsb" `Quick test_x86_repe_cmpsb;
   Alcotest.test_case "lift_x86_cmpxchg8b" `Quick test_x86_cmpxchg8b;
   Alcotest.test_case "lift_x86_cmpxchg16b" `Quick test_x86_cmpxchg16b;
+  Alcotest.test_case "lift_x86_avx256_arithmetic" `Quick test_x86_avx256_arithmetic;
+  Alcotest.test_case "lift_x86_avx_shifts_minmax_abs" `Quick test_x86_avx_shifts_minmax_abs;
+  Alcotest.test_case "lift_x86_avx_upper_zeroing" `Quick test_x86_avx_upper_zeroing;
+  Alcotest.test_case "lift_x86_vzeroupper" `Quick test_x86_vzeroupper;
+  Alcotest.test_case "lift_x86_pmovmskb" `Quick test_x86_pmovmskb;
+  Alcotest.test_case "lift_x86_evex_zmm_trap" `Quick test_x86_evex_zmm_trap;
 ]
 
