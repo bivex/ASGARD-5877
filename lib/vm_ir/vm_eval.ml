@@ -646,7 +646,8 @@ let step state = function
            set_reg state dst v
        | AtStore ->
            let v = get_reg state src in
-           write_mem state a B64 v
+           write_mem state a B64 v;
+           set_reg state dst 0L
        | AtCas ->
            let cur = read_mem state a B64 in
            let exp = get_reg state src in

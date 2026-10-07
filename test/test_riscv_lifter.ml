@@ -374,6 +374,33 @@ let test_riscv_lift_zba_shadd () =
           check int64 "RISC-V sh2add (10<<2 + 5) = 45" 45L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_riscv_extended_atomics () =
+  let asm = {|
+    li a0, 0x1000
+    li a1, 50
+    sd a1, 0(a0)
+    li t0, 30
+    amomin.d a2, t0, 0(a0)
+    li t1, 80
+    amomax.d a3, t1, 0(a0)
+    li t2, 15
+    amoxor.d a4, t2, 0(a0)
+    li t3, 15
+    amoand.d a5, t3, 0(a0)
+    li t4, 240
+    amoor.d a6, t4, 0(a0)
+    fence.tso
+    ld a0, 0(a0)
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_riscv_ext_atomics" } asm with
+  | Error err -> fail ("Failed to lift RISC-V ext atomics: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RISC-V extended atomics final memory = 255" 255L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("RISC-V Lift Arithmetic (add)", `Quick, test_riscv_lift_arithmetic);
   ("RISC-V Lift Sub & Mul", `Quick, test_riscv_lift_sub_mul);
@@ -395,4 +422,5 @@ let tests = [
   ("RISC-V Lift Min/Max (min)", `Quick, test_riscv_lift_min_max);
   ("RISC-V Lift Zbb Logic (andn)", `Quick, test_riscv_lift_zbb_logic_rot);
   ("RISC-V Lift Zba Address (sh2add)", `Quick, test_riscv_lift_zba_shadd);
+  ("RISC-V Lift Extended Atomics (amomin/max/xor/and/or)", `Quick, test_riscv_extended_atomics);
 ]

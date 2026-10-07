@@ -421,6 +421,61 @@ let test_arm64_lift_ccmp_ccmn () =
           check int64 "ARM64 ccmp condition select = 1" 1L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_atomics () =
+  let asm = {|
+    mov x1, #0x2000
+    mov x2, #42
+    stlr x2, [x1]
+    ldar x0, [x1]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_ldar_stlr" } asm with
+  | Error err -> fail ("Failed to lift ARM64 ldar/stlr: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ldar reads 42" 42L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_lse_atomics () =
+  let asm = {|
+    mov x1, #0x3000
+    mov x2, #160
+    str x2, [x1]
+    mov x4, #2
+    ldset x4, x3, [x1]
+    mov x6, #32
+    ldclr x6, x5, [x1]
+    mov x8, #1
+    ldeor x8, x7, [x1]
+    ldr x0, [x1]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_lse" } asm with
+  | Error err -> fail ("Failed to lift ARM64 LSE: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "LSE final mem = 131" 131L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_exclusive () =
+  let asm = {|
+    mov x1, #0x4000
+    mov x2, #99
+    str x2, [x1]
+    ldxr x3, [x1]
+    mov x4, #123
+    stxr w5, x4, [x1]
+    ldr x0, [x1]
+    add x0, x0, x5
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_excl" } asm with
+  | Error err -> fail ("Failed to lift ARM64 exclusive: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "stxr status 0 + 123 = 123" 123L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -443,6 +498,9 @@ let tests = [
   ("ARM64 Lift Conditionals (csinc/csinv/csneg)", `Quick, test_arm64_lift_conditionals);
   ("ARM64 Lift Adc/Sbc", `Quick, test_arm64_lift_adc_sbc);
   ("ARM64 Lift Ccmp/Ccmn", `Quick, test_arm64_lift_ccmp_ccmn);
+  ("ARM64 Lift Atomics (ldar/stlr)", `Quick, test_arm64_lift_atomics);
+  ("ARM64 Lift LSE (ldset/ldclr/ldeor)", `Quick, test_arm64_lift_lse_atomics);
+  ("ARM64 Lift Exclusive (ldxr/stxr)", `Quick, test_arm64_lift_exclusive);
 ]
 
 

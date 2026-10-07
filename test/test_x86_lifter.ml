@@ -856,6 +856,92 @@ func_lahf_sahf:
       | Ok () ->
           Alcotest.(check int64) "lahf and sahf preserve ZF=1" 1L (get_reg state Register.rax)
 
+let test_x86_lift_cmpxchg () =
+  let asm = {|
+test_cmpxchg:
+    mov rax, 42
+    mov rbx, 42
+    mov rcx, 100
+    cmpxchg rbx, rcx
+    mov r8, rbx
+    mov r9, 0
+    setz r9b
+
+    mov rax, 10
+    mov rbx, 20
+    mov rcx, 30
+    cmpxchg rbx, rcx
+    mov r10, rax
+    mov r11, rbx
+    mov r12, 0
+    setnz r12b
+
+    mov qword ptr [rsp - 16], 55
+    mov rax, 55
+    mov rdx, 77
+    cmpxchg qword ptr [rsp - 16], rdx
+    mov r13, qword ptr [rsp - 16]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "cmpxchg equal dst updated" 100L (get_reg state Register.r8);
+          Alcotest.(check int64) "cmpxchg equal ZF=1" 1L (get_reg state Register.r9);
+          Alcotest.(check int64) "cmpxchg not-equal rax updated" 20L (get_reg state Register.r10);
+          Alcotest.(check int64) "cmpxchg not-equal dst unchanged" 20L (get_reg state Register.r11);
+          Alcotest.(check int64) "cmpxchg not-equal ZF=0" 1L (get_reg state Register.r12);
+          Alcotest.(check int64) "cmpxchg mem updated" 77L (get_reg state Register.r13)
+
+let test_x86_lift_xadd () =
+  let asm = {|
+test_xadd:
+    mov rax, 15
+    mov rbx, 25
+    xadd rax, rbx
+
+    mov qword ptr [rsp - 16], 50
+    mov rcx, 30
+    xadd qword ptr [rsp - 16], rcx
+    mov rdx, qword ptr [rsp - 16]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "xadd reg sum in dst" 40L (get_reg state Register.rax);
+          Alcotest.(check int64) "xadd reg old in src" 15L (get_reg state Register.rbx);
+          Alcotest.(check int64) "xadd mem old in src" 50L (get_reg state Register.rcx);
+          Alcotest.(check int64) "xadd mem sum in mem" 80L (get_reg state Register.rdx)
+
+let test_x86_lift_xlat () =
+  let asm = {|
+test_xlat:
+    mov byte ptr [rsp - 32], 10
+    mov byte ptr [rsp - 31], 20
+    mov byte ptr [rsp - 30], 30
+    lea rbx, [rsp - 32]
+    mov rax, 0x1122334455667702
+    xlatb
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "xlatb loads table entry into AL" 0x112233445566771eL (get_reg state Register.rax)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -896,5 +982,8 @@ let tests = [
   Alcotest.test_case "lift_x86_movbe" `Quick test_x86_lift_movbe;
   Alcotest.test_case "lift_x86_adc_sbb" `Quick test_x86_lift_adc_sbb;
   Alcotest.test_case "lift_x86_lahf_sahf" `Quick test_x86_lift_lahf_sahf;
+  Alcotest.test_case "lift_x86_cmpxchg" `Quick test_x86_lift_cmpxchg;
+  Alcotest.test_case "lift_x86_xadd" `Quick test_x86_lift_xadd;
+  Alcotest.test_case "lift_x86_xlat" `Quick test_x86_lift_xlat;
 ]
 

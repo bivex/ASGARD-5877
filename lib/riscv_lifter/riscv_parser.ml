@@ -132,8 +132,15 @@ let parse_line raw =
         scan 0 0 false false []
       in
 
+      let base_mnem =
+        let s = mnemonic in
+        if String.ends_with ~suffix:".aqrl" s then String.sub s 0 (String.length s - 5)
+        else if String.ends_with ~suffix:".aq" s then String.sub s 0 (String.length s - 3)
+        else if String.ends_with ~suffix:".rl" s then String.sub s 0 (String.length s - 3)
+        else s
+      in
       let def_width, is_signed =
-        match mnemonic with
+        match base_mnem with
         | "lb" -> Register.B8, true
         | "lbu" | "sb" -> Register.B8, false
         | "lh" -> Register.B16, true

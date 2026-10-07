@@ -324,7 +324,7 @@
 
 1. **Память, сегментация и строковые операции**:
    - Изменение порядка байт: `movbe`, `bswap` — **ВЫПОЛНЕНО (2026-10)**.
-   - Табличная трансляция: `xlat` / `xlatb`.
+   - Табличная трансляция: `xlat` / `xlatb` — **ВЫПОЛНЕНО (2026-10)**.
    - Строковые инструкции: `stosb/stosw/stosd/stosq`, `lodsb/lodsw/lodsd/lodsq`, `scasb/scasw/scasd/scasq`, `cmpsb/cmpsw/cmpsd/cmpsq`.
    - Префиксы повторения строк: `rep`, `repe`/`repz`, `repne`/`repnz` с автоматическим декрементом `RCX` и проверкой `ZF`.
    - Адресация сегментов: префиксы переопределения `FS:` и `GS:` (TLS / thread-local storage).
@@ -350,8 +350,8 @@
    - Скалярный FP: `addss/addsd`, `subss/subsd`, `mulss/mulsd`, `divss/divsd`, `comiss/ucomiss`, `comisd/ucomisd`, `sqrtss/sqrtsd`, конвертации `cvtsi2ss/cvtsi2sd`, `cvtss2si/cvtsd2si`, `cvtsd2ss`, `cvtss2sd`.
 5. **Атомики (SMP)**:
    - Префикс `lock` для шинных блокировок.
-   - Инструкции: `xadd`, `cmpxchg`, `cmpxchg8b`, `cmpxchg16b`.
-   - `xchg` с операндом в памяти (неявная атомарность без префикса lock).
+   - Инструкции: `xadd`, `cmpxchg` — **ВЫПОЛНЕНО (2026-10)** (остаток: `cmpxchg8b`, `cmpxchg16b`).
+   - `xchg` с операндом в памяти (неявная атомарность без префикса lock) — **ВЫПОЛНЕНО (2026-10)**.
 
 ---
 
@@ -361,9 +361,9 @@
    - Загрузки/сохранения: `ldrb/ldrh/ldrsb/ldrsh`, привилегированные `ldtr/sttr` (включая знако-расширяющие).
    - Парные нетемпоральные доступы: `ldnp/stnp`.
    - Векторные NEON load/store: `ld1/st1` (одно- и многоструктурные).
-   - One-way barriers (Acquire/Release): `ldar/ldarb/ldarh`, `stlr/stlrb/stlrh`.
-   - Эксклюзивные доступы: `ldxrb/ldxrh/ldxr`, `stxrb/stxrh/stxr`, `ldaxrb/ldaxrh/ldaxr`, `stlxrb/stlxrh/stlxr`.
-   - Атомарные RMW (LSE / Large System Extensions): `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor` (все с версиями `a`/`l`/`al`).
+   - One-way barriers (Acquire/Release): `ldar/ldarb/ldarh`, `stlr/stlrb/stlrh` — **ВЫПОЛНЕНО (2026-10)**.
+   - Эксклюзивные доступы: `ldxrb/ldxrh/ldxr`, `stxrb/stxrh/stxr`, `ldaxrb/ldaxrh/ldaxr`, `stlxrb/stlxrh/stlxr` — **ВЫПОЛНЕНО (2026-10)**.
+   - Атомарные RMW (LSE / Large System Extensions): `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor` (все с версиями `a`/`l`/`al`/`b`/`h`), store-варианты `stadd`, `stclr`, `stset`, `steor` — **ВЫПОЛНЕНО (2026-10)**.
 2. **Условные инструкции**:
    - `ccmp`, `ccmn` (Conditional Compare с дефолтными NZCV флагами) — **ВЫПОЛНЕНО (2026-10)**.
    - `cinc`, `cinv`, `cneg`, `csinc`, `csinv`, `csneg` (Conditional Select с инкрементом/инверсией/отрицанием) — **ВЫПОЛНЕНО (2026-10)**.
@@ -418,9 +418,10 @@
      * `vredsum`, `vredmax`, `vredmin`.
      * `vslideup`, `vslidedown`.
      * `vrgather`, `vcompress`.
-3. **Системные инструкции, барьеры и CSR**:
+3. **Системные инструкции, барьеры, атомики и CSR**:
    - `ecall`, `ebreak`.
-   - Память и упорядочивание: `fence`, `fence.i`, `fence.tso`.
+   - Память и упорядочивание: `fence`, `fence.i`, `fence.tso` — **ВЫПОЛНЕНО (2026-10)**.
+   - Атомики стандартного A-расширения (`lr.w/d`, `sc.w/d`, `amoswap.w/d`, `amoadd.w/d`, `amomin.w/d`, `amomax.w/d`, `amominu.w/d`, `amomaxu.w/d`, `amoxor.w/d`, `amoand.w/d`, `amoor.w/d` со всеми ordering-модификаторами `.aq`, `.rl`, `.aqrl`) — **ВЫПОЛНЕНО (2026-10)**.
    - Регистры управления и статуса: `csrrw`, `csrrs`, `csrrc`, `csrrwi`, `csrrsi`, `csrrci`.
 
 ---

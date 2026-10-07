@@ -5,7 +5,8 @@ open Arm64_common
 let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   match (mnemonic, ops) with
   (* Memory Load with Pre/Post-Indexed Writeback *)
-  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw"), [ OpReg dst; OpMem m ]) ->
+  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw"
+     | "ldar" | "ldarb" | "ldarh" | "ldapr" | "ldaprb" | "ldaprh"), [ OpReg dst; OpMem m ]) ->
       let is_signed =
         match mnemonic with
         | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw" -> true
@@ -42,7 +43,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       )
 
   (* Memory Store with Pre/Post-Indexed Writeback *)
-  | (("str" | "strb" | "strh" | "stur" | "sturb"), [ (OpReg _ | OpImm _) as src; OpMem m ]) ->
+  | (("str" | "strb" | "strh" | "stur" | "sturb" | "stlr" | "stlrb" | "stlrh"), [ (OpReg _ | OpImm _) as src; OpMem m ]) ->
       let scratch =
         match src with
         | OpReg r when Register.to_string r = Register.to_string Register.vtmp0 -> Register.vtmp1
@@ -180,21 +181,116 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Pop (Reg r2); Ir.Pop (Reg r1) ]
 
   (* ARMv8.1-A Atomics & Memory Ordering *)
-  | (("ldxr" | "ldaxr"), [ OpReg dst; OpMem m ]) ->
+  | (("ldxr" | "ldaxr" | "ldxrb" | "ldaxrb" | "ldxrh" | "ldaxrh"), [ OpReg dst; OpMem m ]) ->
       let base = match m.base with Some b -> b | None -> Register.rsp in
       Some [ Ir.Atomic_mem { op = AtLoad; dst; addr = base; src = dst; imm = m.disp } ]
-  | (("stxr" | "stlxr"), [ OpReg res; OpReg src; OpMem m ]) ->
+  | (("stxr" | "stlxr" | "stxrb" | "stlxrb" | "stxrh" | "stlxrh"), [ OpReg res; OpReg src; OpMem m ]) ->
       let base = match m.base with Some b -> b | None -> Register.rsp in
-      Some [ Ir.Atomic_mem { op = AtStore; dst = res; addr = base; src; imm = m.disp } ]
-  | (("cas" | "casa" | "casl" | "casal"), [ OpReg expected; OpReg desired; OpMem m ]) ->
+      Some [
+        Ir.Atomic_mem { op = AtStore; dst = res; addr = base; src; imm = m.disp };
+        Ir.Mov { dst = Reg res; src = Imm 0L };
+      ]
+  | (("cas" | "casa" | "casl" | "casal"
+     | "casb" | "casab" | "caslb" | "casalb"
+     | "cash" | "casah" | "caslh" | "casalh"), [ OpReg expected; OpReg desired; OpMem m ]) ->
       let base = match m.base with Some b -> b | None -> Register.rsp in
       Some [ Ir.Atomic_mem { op = AtCas; dst = desired; addr = base; src = expected; imm = m.disp } ]
-  | (("ldadd" | "ldadda" | "ldaddl" | "ldaddal"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
+  | (("ldadd" | "ldadda" | "ldaddl" | "ldaddal"
+     | "ldaddb" | "ldaddab" | "ldaddlb" | "ldaddalb"
+     | "ldaddh" | "ldaddah" | "ldaddlh" | "ldaddalh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
       let base = match m.base with Some b -> b | None -> Register.rsp in
       Some [ Ir.Atomic_mem { op = AtAdd; dst = res_reg; addr = base; src = val_reg; imm = m.disp } ]
-  | (("swp" | "swpa" | "swpl" | "swpal"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
+  | (("swp" | "swpa" | "swpl" | "swpal"
+     | "swpb" | "swpab" | "swplb" | "swpalb"
+     | "swph" | "swpah" | "swplh" | "swpalh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
       let base = match m.base with Some b -> b | None -> Register.rsp in
       Some [ Ir.Atomic_mem { op = AtSwp; dst = res_reg; addr = base; src = val_reg; imm = m.disp } ]
+
+  | (("ldclr" | "ldclra" | "ldclrl" | "ldclral"
+     | "ldclrb" | "ldclrab" | "ldclrlb" | "ldclralb"
+     | "ldclrh" | "ldclrah" | "ldclrlh" | "ldclralh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let scratch = Register.with_width Register.vtmp0 m.width in
+      let inv_s = Register.with_width Register.vtmp1 m.width in
+      Some [
+        Ir.Mov { dst = Reg res_reg; src = Mem mem_ref };
+        Ir.Unary { op = Not; dst = inv_s; src = Reg val_reg; set_flags = false };
+        Ir.Mov { dst = Reg scratch; src = Reg res_reg };
+        Ir.Alu { op = And; dst = scratch; src1 = Reg scratch; src2 = Reg inv_s; set_flags = false };
+        Ir.Mov { dst = Mem mem_ref; src = Reg scratch };
+      ]
+
+  | (("ldset" | "ldseta" | "ldsetl" | "ldsetal"
+     | "ldsetb" | "ldsetab" | "ldsetlb" | "ldsetalb"
+     | "ldseth" | "ldsetah" | "ldsetlh" | "ldsetalh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let scratch = Register.with_width Register.vtmp0 m.width in
+      Some [
+        Ir.Mov { dst = Reg res_reg; src = Mem mem_ref };
+        Ir.Mov { dst = Reg scratch; src = Reg res_reg };
+        Ir.Alu { op = Or; dst = scratch; src1 = Reg scratch; src2 = Reg val_reg; set_flags = false };
+        Ir.Mov { dst = Mem mem_ref; src = Reg scratch };
+      ]
+
+  | (("ldeor" | "ldeora" | "ldeorl" | "ldeoral"
+     | "ldeorb" | "ldeorab" | "ldeorlb" | "ldeoralb"
+     | "ldeorh" | "ldeorah" | "ldeorlh" | "ldeoralh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let scratch = Register.with_width Register.vtmp0 m.width in
+      Some [
+        Ir.Mov { dst = Reg res_reg; src = Mem mem_ref };
+        Ir.Mov { dst = Reg scratch; src = Reg res_reg };
+        Ir.Alu { op = Xor; dst = scratch; src1 = Reg scratch; src2 = Reg val_reg; set_flags = false };
+        Ir.Mov { dst = Mem mem_ref; src = Reg scratch };
+      ]
+
+  (* Store-only LSE variants *)
+  | (("stadd" | "stadda" | "staddl" | "staddal"
+     | "staddb" | "staddab" | "staddlb" | "staddalb"
+     | "staddh" | "staddah" | "staddlh" | "staddalh"), [ OpReg val_reg; OpMem m ]) ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let scratch = Register.with_width Register.vtmp0 m.width in
+      Some [
+        Ir.Mov { dst = Reg scratch; src = Mem mem_ref };
+        Ir.Alu { op = Add; dst = scratch; src1 = Reg scratch; src2 = Reg val_reg; set_flags = false };
+        Ir.Mov { dst = Mem mem_ref; src = Reg scratch };
+      ]
+
+  | (("stclr" | "stclra" | "stclrl" | "stclral"
+     | "stclrb" | "stclrab" | "stclrlb" | "stclralb"
+     | "stclrh" | "stclrah" | "stclrlh" | "stclralh"), [ OpReg val_reg; OpMem m ]) ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let scratch = Register.with_width Register.vtmp0 m.width in
+      let inv_s = Register.with_width Register.vtmp1 m.width in
+      Some [
+        Ir.Mov { dst = Reg scratch; src = Mem mem_ref };
+        Ir.Unary { op = Not; dst = inv_s; src = Reg val_reg; set_flags = false };
+        Ir.Alu { op = And; dst = scratch; src1 = Reg scratch; src2 = Reg inv_s; set_flags = false };
+        Ir.Mov { dst = Mem mem_ref; src = Reg scratch };
+      ]
+
+  | (("stset" | "stseta" | "stsetl" | "stsetal"
+     | "stsetb" | "stsetab" | "stsetlb" | "stsetalb"
+     | "stseth" | "stsetah" | "stsetlh" | "stsetalh"), [ OpReg val_reg; OpMem m ]) ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let scratch = Register.with_width Register.vtmp0 m.width in
+      Some [
+        Ir.Mov { dst = Reg scratch; src = Mem mem_ref };
+        Ir.Alu { op = Or; dst = scratch; src1 = Reg scratch; src2 = Reg val_reg; set_flags = false };
+        Ir.Mov { dst = Mem mem_ref; src = Reg scratch };
+      ]
+
+  | (("steor" | "steora" | "steorl" | "steoral"
+     | "steorb" | "steorab" | "steorlb" | "steoralb"
+     | "steorh" | "steorah" | "steorlh" | "steoralh"), [ OpReg val_reg; OpMem m ]) ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let scratch = Register.with_width Register.vtmp0 m.width in
+      Some [
+        Ir.Mov { dst = Reg scratch; src = Mem mem_ref };
+        Ir.Alu { op = Xor; dst = scratch; src1 = Reg scratch; src2 = Reg val_reg; set_flags = false };
+        Ir.Mov { dst = Mem mem_ref; src = Reg scratch };
+      ]
+
   | (("dmb" | "dsb" | "isb"), _) ->
       Some [ Ir.Nop ]
 

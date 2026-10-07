@@ -583,6 +583,78 @@ let lift_instr mnem ops =
       let* ir_a = to_ir_operand a in
       let* ir_b = to_ir_operand b in
       Ok [ Ir.Xchg (ir_a, ir_b) ]
+  | "cmpxchg", [ dst; OpReg s ] ->
+      let* ir_s = to_ir_operand (OpReg s) in
+      (match dst with
+      | OpReg d ->
+          let w = Register.get_width d in
+          let acc = Register.with_width Register.rax w in
+          let tmp = Register.with_width Register.vtmp0 w in
+          Ok [
+            Ir.Mov { dst = Ir.Reg tmp; src = Ir.Reg d };
+            Ir.Cmp { src1 = Ir.Reg acc; src2 = Ir.Reg d };
+            Ir.Cmov { cond = Flags.E; dst = d; src = ir_s };
+            Ir.Cmov { cond = Flags.NE; dst = acc; src = Ir.Reg tmp };
+          ]
+      | OpMem m ->
+          let w = m.width in
+          let acc = Register.with_width Register.rax w in
+          let tmp = Register.with_width Register.vtmp0 w in
+          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = w; is_signed = false } in
+          Ok [
+            Ir.Mov { dst = Ir.Reg tmp; src = Ir.Mem mem_ref };
+            Ir.Cmp { src1 = Ir.Reg acc; src2 = Ir.Reg tmp };
+            Ir.Cmov { cond = Flags.NE; dst = acc; src = Ir.Reg tmp };
+            Ir.Cmov { cond = Flags.E; dst = tmp; src = ir_s };
+            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp };
+          ]
+      | _ -> Error "cmpxchg destination must be register or memory")
+  | "xadd", [ dst; OpReg s ] ->
+      (match dst with
+      | OpReg d ->
+          let w = Register.get_width d in
+          if d = s then
+            let tmp_d = Register.with_width Register.vtmp0 w in
+            Ok [
+              Ir.Mov { dst = Ir.Reg tmp_d; src = Ir.Reg d };
+              Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg d; src2 = Ir.Reg tmp_d; set_flags = true };
+            ]
+          else
+            let tmp_d = Register.with_width Register.vtmp0 w in
+            Ok [
+              Ir.Mov { dst = Ir.Reg tmp_d; src = Ir.Reg d };
+              Ir.Alu { op = Ir.Add; dst = d; src1 = Ir.Reg d; src2 = Ir.Reg s; set_flags = true };
+              Ir.Mov { dst = Ir.Reg s; src = Ir.Reg tmp_d };
+            ]
+      | OpMem m ->
+          let w = m.width in
+          let tmp_m = Register.with_width Register.vtmp0 w in
+          let tmp_sum = Register.with_width Register.vtmp1 w in
+          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = w; is_signed = false } in
+          Ok [
+            Ir.Mov { dst = Ir.Reg tmp_m; src = Ir.Mem mem_ref };
+            Ir.Mov { dst = Ir.Reg tmp_sum; src = Ir.Reg tmp_m };
+            Ir.Alu { op = Ir.Add; dst = tmp_sum; src1 = Ir.Reg tmp_sum; src2 = Ir.Reg s; set_flags = true };
+            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp_sum };
+            Ir.Mov { dst = Ir.Reg s; src = Ir.Reg tmp_m };
+          ]
+      | _ -> Error "xadd destination must be register or memory")
+  | ("xlat" | "xlatb"), _ ->
+      let rax = Register.Gpr (Register.RAX, Register.B64) in
+      let rbx = Register.Gpr (Register.RBX, Register.B64) in
+      let al_tmp = Register.vtmp0 in
+      let addr_tmp = Register.vtmp1 in
+      let byte_tmp = Register.vtmp2 in
+      let mem_ref = { Ir.base = Some addr_tmp; index = None; disp = 0L; width = Register.B8; is_signed = false } in
+      Ok [
+        Ir.Mov { dst = Ir.Reg al_tmp; src = Ir.Reg rax };
+        Ir.Alu { op = Ir.And; dst = al_tmp; src1 = Ir.Reg al_tmp; src2 = Ir.Imm 0xFFL; set_flags = false };
+        Ir.Mov { dst = Ir.Reg addr_tmp; src = Ir.Reg rbx };
+        Ir.Alu { op = Ir.Add; dst = addr_tmp; src1 = Ir.Reg addr_tmp; src2 = Ir.Reg al_tmp; set_flags = false };
+        Ir.Mov { dst = Ir.Reg byte_tmp; src = Ir.Mem mem_ref };
+        Ir.Alu { op = Ir.And; dst = rax; src1 = Ir.Reg rax; src2 = Ir.Imm (Int64.lognot 0xFFL); set_flags = false };
+        Ir.Alu { op = Ir.Or; dst = rax; src1 = Ir.Reg rax; src2 = Ir.Reg byte_tmp; set_flags = false };
+      ]
   | "imul", [ dst; src; imm ] ->
       let* ir_src = to_ir_operand src in
       let* ir_imm = to_ir_operand imm in

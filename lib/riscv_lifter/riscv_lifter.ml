@@ -29,8 +29,16 @@ let is_terminator = function
   | Ir.Jmp _ | Ir.Jcc _ | Ir.Ret | Ir.Trap _ -> true
   | _ -> false
 
+let normalize_mnemonic s =
+  let s = String.lowercase_ascii s in
+  if String.ends_with ~suffix:".aqrl" s then String.sub s 0 (String.length s - 5)
+  else if String.ends_with ~suffix:".aq" s then String.sub s 0 (String.length s - 3)
+  else if String.ends_with ~suffix:".rl" s then String.sub s 0 (String.length s - 3)
+  else s
+
 let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string) result =
-  match (mnemonic, ops) with
+  let norm_mnem = normalize_mnemonic mnemonic in
+  match (norm_mnem, ops) with
   (* NOP & directives *)
   | ("nop", _) | (".align" | ".p2align" | ".globl" | ".text" | ".data" | ".rodata"), _ ->
       Ok [ Ir.Nop ]
@@ -275,14 +283,51 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Atomic_mem { op = AtLoad; dst; addr = base; src = dst; imm = m.disp } ]
   | (("sc.w" | "sc.d"), [ OpReg dst; OpReg src; OpMem m ]) ->
       let base = match m.base with Some b -> b | None -> Register.rsp in
-      Ok [ Ir.Atomic_mem { op = AtStore; dst; addr = base; src; imm = m.disp } ]
+      Ok [
+        Ir.Atomic_mem { op = AtStore; dst; addr = base; src; imm = m.disp };
+        Ir.Mov { dst = Reg dst; src = Imm 0L };
+      ]
   | (("amoswap.w" | "amoswap.d"), [ OpReg dst; OpReg src; OpMem m ]) ->
       let base = match m.base with Some b -> b | None -> Register.rsp in
       Ok [ Ir.Atomic_mem { op = AtSwp; dst; addr = base; src; imm = m.disp } ]
   | (("amoadd.w" | "amoadd.d"), [ OpReg dst; OpReg src; OpMem m ]) ->
       let base = match m.base with Some b -> b | None -> Register.rsp in
       Ok [ Ir.Atomic_mem { op = AtAdd; dst; addr = base; src; imm = m.disp } ]
-  | (("fence" | "fence.i"), _) ->
+  | (("amoxor.w" | "amoxor.d" | "amoand.w" | "amoand.d" | "amoor.w" | "amoor.d"),
+     [ OpReg dst; OpReg src; OpMem m ]) ->
+      let alu_op =
+        if String.starts_with ~prefix:"amoxor" norm_mnem then Ir.Xor
+        else if String.starts_with ~prefix:"amoand" norm_mnem then Ir.And
+        else Ir.Or
+      in
+      let tmp_old = Register.with_width Register.vtmp0 m.width in
+      let tmp_res = Register.with_width Register.vtmp1 m.width in
+      Ok [
+        Ir.Mov { dst = Reg tmp_old; src = raw_to_ir_operand (OpMem m) };
+        Ir.Mov { dst = Reg tmp_res; src = Reg tmp_old };
+        Ir.Alu { op = alu_op; dst = tmp_res; src1 = Reg tmp_res; src2 = Reg src; set_flags = false };
+        Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = Reg tmp_res };
+        Ir.Mov { dst = Reg dst; src = Reg tmp_old };
+      ]
+  | (("amomin.w" | "amomin.d" | "amomax.w" | "amomax.d" | "amominu.w" | "amominu.d" | "amomaxu.w" | "amomaxu.d"),
+     [ OpReg dst; OpReg src; OpMem m ]) ->
+      let cond =
+        if String.starts_with ~prefix:"amomin." norm_mnem then Flags.L
+        else if String.starts_with ~prefix:"amomax." norm_mnem then Flags.G
+        else if String.starts_with ~prefix:"amominu." norm_mnem then Flags.B
+        else Flags.A
+      in
+      let tmp_old = Register.with_width Register.vtmp0 m.width in
+      let tmp_res = Register.with_width Register.vtmp1 m.width in
+      Ok [
+        Ir.Mov { dst = Reg tmp_old; src = raw_to_ir_operand (OpMem m) };
+        Ir.Cmp { src1 = Reg tmp_old; src2 = Reg src };
+        Ir.Mov { dst = Reg tmp_res; src = Reg src };
+        Ir.Cmov { cond; dst = tmp_res; src = Reg tmp_old };
+        Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = Reg tmp_res };
+        Ir.Mov { dst = Reg dst; src = Reg tmp_old };
+      ]
+  | (("fence" | "fence.i" | "fence.tso"), _) ->
       Ok [ Ir.Nop ]
   | ("ecall", _) ->
       Ok [ Ir.Trap "ecall" ]
