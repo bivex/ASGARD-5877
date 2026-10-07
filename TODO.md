@@ -333,8 +333,9 @@
 2. **Целочисленная арифметика и EFLAGS**:
    - `adc` и `sbb`: для всех размеров (B8, B16, B32, B64) с точным расчётом всей шестёрки флагов (`CF`, `ZF`, `SF`, `OF`, `AF`, `PF`) — **ВЫПОЛНЕНО (2026-10)**.
    - `imul`: полная поддержка всех трёх форм (1-операндная с implicit RDX:RAX, 2-операндная `reg, r/m`, 3-операндная `reg, r/m, imm`).
-   - Битовые тесты: `bt`, `bts`, `btr`, `btc` (с установкой флага `CF`).
+   - Битовые тесты: `bt`, `bts`, `btr`, `btc` (с установкой флага `CF`) — **ВЫПОЛНЕНО (2026-10)**.
    - Сканирование и подсчёт бит: `bsf`, `bsr`, `tzcnt`, `lzcnt`, `popcnt` — **ВЫПОЛНЕНО (2026-10)**.
+   - Строковые операции: `stosb/w/d/q`, `lodsb/w/d/q`, `movsb/w/d/q`, `scasb/w/d/q`, `cmpsb/w/d/q` — **ВЫПОЛНЕНО (2026-10)**.
    - Инструкции BMI1 / BMI2: `bextr`, `bzhi`, `andn`, `rorx`, `sarx`, `shlx`, `shrx` — **ВЫПОЛНЕНО (2026-10)** (остаток: `pdep`, `pext`).
    - Сдвиги: `shld`, `shrd` (двухоперандные сдвиги) — **ВЫПОЛНЕНО (2026-10)**, `rcl`, `rcr` (циклические сдвиги через carry).
 3. **Управление флагами**:
@@ -358,8 +359,8 @@
 ### 4. Спецификация покрытия ARM64 (AArch64)
 
 1. **Память и эксклюзивные доступы**:
-   - Загрузки/сохранения: `ldrb/ldrh/ldrsb/ldrsh`, привилегированные `ldtr/sttr` (включая знако-расширяющие).
-   - Парные нетемпоральные доступы: `ldnp/stnp`.
+   - Загрузки/сохранения: `ldrb/ldrh/ldrsb/ldrsh`, непривилегированные `ldtr/sttr` (`ldtr`, `ldtrb`, `ldtrh`, `ldtrsw`, `sttr`, `sttrb`, `sttrh`) — **ВЫПОЛНЕНО (2026-10)**.
+   - Парные нетемпоральные доступы: `ldnp/stnp` — **ВЫПОЛНЕНО (2026-10)**.
    - Векторные NEON load/store: `ld1/st1` (одно- и многоструктурные).
    - One-way barriers (Acquire/Release): `ldar/ldarb/ldarh`, `stlr/stlrb/stlrh` — **ВЫПОЛНЕНО (2026-10)**.
    - Эксклюзивные доступы: `ldxrb/ldxrh/ldxr`, `stxrb/stxrh/stxr`, `ldaxrb/ldaxrh/ldaxr`, `stlxrb/stlxrh/stlxr` — **ВЫПОЛНЕНО (2026-10)**.
@@ -371,14 +372,14 @@
    - `clz`, `cls` (подсчёт ведущих нулей / знаковых бит) — **ВЫПОЛНЕНО (2026-10)**.
    - `rbit` (реверс битов) — **ВЫПОЛНЕНО (2026-10)**.
    - Реверс байт: `rev`, `rev16`, `rev32` — **ВЫПОЛНЕНО (2026-10)**.
-   - Битовые поля: `ubfx`, `sbfx`, `bfi`, `bfxil` — **ВЫПОЛНЕНО (2026-10)** (остаток: `ubfm`, `sbfm`).
+   - Битовые поля: `ubfx`, `sbfx`, `bfi`, `bfxil`, `ubfm`, `sbfm` — **ВЫПОЛНЕНО (2026-10)**.
    - Извлечение битовых полей из двух регистров: `extr` — **ВЫПОЛНЕНО (2026-10)**.
 4. **Целочисленная арифметика**:
    - Умножения: `smaddl`, `smsubl`, `umaddl`, `umsubl`, `smulh`, `umulh`, `smull`, `umull` — **ВЫПОЛНЕНО (2026-10)**.
    - Знаковое/нулевое расширение: `sxtb/sxth/sxtw`, `uxtb/uxth/uxtw` — **ВЫПОЛНЕНО (2026-10)**.
    - Арифметика с флагом переноса: `adc`, `adcs`, `sbc`, `sbcs`, `ngc`, `ngcs` — **ВЫПОЛНЕНО (2026-10)**.
 5. **NEON и Floating Point**:
-   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `scvtf/ucvtf`, `fcvtzs/fcvtzu` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fmin/fmax`, `fcmp`, `fcsel`, `fcvt` half).
+   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `scvtf/ucvtf`, `fcvtzs/fcvtzu`, `fmadd`, `fmsub`, `fnmadd`, `fnmsub`, `fneg`, `fabs` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fmin/fmax`, `fcmp`, `fcsel`, `fcvt` half).
    - NEON векторная память: `ldr/str` SIMD.
    - NEON арифметика/логика: векторные `add/sub/mul`, `and/orr/eor/bic`.
    - Табличные подстановки и перестановки: `tbl`, `tbx`, `ext`, `dup`, `zip1/zip2`, `uzp1/uzp2`, `trn1/trn2`.
@@ -395,8 +396,8 @@
    - Память: `flw`, `fld`, `fsw`, `fsd` — **ВЫПОЛНЕНО (2026-10)**.
    - Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fsqrt.s/d`, `fmin.s/d`, `fmax.s/d`).
    - Сравнения: `feq.s/d`, `flt.s/d`, `fle.s/d` — **ВЫПОЛНЕНО (2026-10)**.
-   - Копирование знака: `fsgnj.s/d`, `fsgnjn.s/d`, `fsgnjx.s/d`.
-   - Fused Multiply-Add: `fmadd.s/d`, `fmsub.s/d`, `fnmsub.s/d`, `fnmadd.s/d`.
+   - Копирование знака: `fsgnj.s/d`, `fsgnjn.s/d`, `fsgnjx.s/d`, `fneg.s/d`, `fabs.s/d` — **ВЫПОЛНЕНО (2026-10)**.
+   - Fused Multiply-Add: `fmadd.s/d`, `fmsub.s/d`, `fnmsub.s/d`, `fnmadd.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Преобразования: `fcvt.*` (между FP и целыми числами: `fcvt.w.*`, `fcvt.l.*`, `fcvt.*.w`, `fcvt.*.l`) — **ВЫПОЛНЕНО (2026-10)**.
 3. **Векторное расширение V (RVV Dynamic Vector Engine)**:
    - *Архитектурный инвариант*: динамическая параметризация `VL/VTYPE/VLMUL/SEW`, поддержка `vlen` $\ge 128$.

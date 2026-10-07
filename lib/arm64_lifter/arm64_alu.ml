@@ -287,6 +287,49 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Alu { op = Shl; dst; src1 = Reg dst; src2 = Imm (Int64.of_int shift_left_amt); set_flags = false };
         Ir.Alu { op = Sar; dst; src1 = Reg dst; src2 = Imm (Int64.of_int shift_right_amt); set_flags = false };
       ]
+  | ("ubfm", (OpReg dst :: OpReg src :: OpImm immr :: OpImm imms :: _)) ->
+      let reg_bits = match Register.get_width dst with Register.B32 -> 32 | _ -> 64 in
+      let immr_i = Int64.to_int immr in
+      let imms_i = Int64.to_int imms in
+      if imms_i >= immr_i then
+        let w = min reg_bits (imms_i - immr_i + 1) in
+        let mask = if w >= 64 then -1L else Int64.sub (Int64.shift_left 1L w) 1L in
+        Some [
+          Ir.Mov { dst = Reg dst; src = Reg src };
+          Ir.Alu { op = Shr; dst; src1 = Reg dst; src2 = Imm immr; set_flags = false };
+          Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm mask; set_flags = false };
+        ]
+      else
+        let w = min reg_bits (imms_i + 1) in
+        let lshift = Int64.of_int (reg_bits - immr_i) in
+        let mask = if w >= 64 then -1L else Int64.sub (Int64.shift_left 1L w) 1L in
+        Some [
+          Ir.Mov { dst = Reg dst; src = Reg src };
+          Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm mask; set_flags = false };
+          Ir.Alu { op = Shl; dst; src1 = Reg dst; src2 = Imm lshift; set_flags = false };
+        ]
+  | ("sbfm", (OpReg dst :: OpReg src :: OpImm immr :: OpImm imms :: _)) ->
+      let reg_bits = match Register.get_width dst with Register.B32 -> 32 | _ -> 64 in
+      let immr_i = Int64.to_int immr in
+      let imms_i = Int64.to_int imms in
+      if imms_i >= immr_i then
+        let w = min reg_bits (imms_i - immr_i + 1) in
+        let shift_left_amt = max 0 (64 - (immr_i + w)) in
+        let shift_right_amt = 64 - w in
+        Some [
+          Ir.Mov { dst = Reg dst; src = Reg src };
+          Ir.Alu { op = Shl; dst; src1 = Reg dst; src2 = Imm (Int64.of_int shift_left_amt); set_flags = false };
+          Ir.Alu { op = Sar; dst; src1 = Reg dst; src2 = Imm (Int64.of_int shift_right_amt); set_flags = false };
+        ]
+      else
+        let w = min reg_bits (imms_i + 1) in
+        let lshift = Int64.of_int (reg_bits - immr_i) in
+        let mask = if w >= 64 then -1L else Int64.sub (Int64.shift_left 1L w) 1L in
+        Some [
+          Ir.Mov { dst = Reg dst; src = Reg src };
+          Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm mask; set_flags = false };
+          Ir.Alu { op = Shl; dst; src1 = Reg dst; src2 = Imm lshift; set_flags = false };
+        ]
   | ("bfi", (OpReg dst :: OpReg src :: OpImm lsb :: OpImm width :: _)) ->
       let w = min 64 (max 1 (Int64.to_int width)) in
       let lsb_i = Int64.to_int lsb in

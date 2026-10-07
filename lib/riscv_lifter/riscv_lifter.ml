@@ -347,6 +347,52 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Fp_binop { op = Fmul; dst = d; src1 = s1; src2 = s2 } ]
   | (("fdiv.s" | "fdiv.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       Ok [ Ir.Fp_binop { op = Fdiv; dst = d; src1 = s1; src2 = s2 } ]
+  | (("fmadd.s" | "fmadd.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)) ])
+  | (("fmadd.s" | "fmadd.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)); _ ]) ->
+      Ok [
+        Ir.Fp_binop { op = Fmul; dst = 31; src1 = s1; src2 = s2 };
+        Ir.Fp_binop { op = Fadd; dst = d; src1 = 31; src2 = s3 };
+      ]
+  | (("fmsub.s" | "fmsub.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)) ])
+  | (("fmsub.s" | "fmsub.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)); _ ]) ->
+      Ok [
+        Ir.Fp_binop { op = Fmul; dst = 31; src1 = s1; src2 = s2 };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = 31; src2 = s3 };
+      ]
+  | (("fnmsub.s" | "fnmsub.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)) ])
+  | (("fnmsub.s" | "fnmsub.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)); _ ]) ->
+      Ok [
+        Ir.Fp_binop { op = Fmul; dst = 31; src1 = s1; src2 = s2 };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = s3; src2 = 31 };
+      ]
+  | (("fnmadd.s" | "fnmadd.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)) ])
+  | (("fnmadd.s" | "fnmadd.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)); _ ]) ->
+      Ok [
+        Ir.Fp_binop { op = Fmul; dst = 31; src1 = s1; src2 = s2 };
+        Ir.Fp_binop { op = Fadd; dst = 31; src1 = 31; src2 = s3 };
+        Ir.Mov { dst = Reg (Register.Fpr (30, Register.B64)); src = Imm 0L };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = 30; src2 = 31 };
+      ]
+  | (("fneg.s" | "fneg.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
+      Ok [
+        Ir.Mov { dst = Reg (Register.Fpr (31, Register.B64)); src = Imm 0L };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = 31; src2 = s };
+      ]
+  | (("fabs.s" | "fabs.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
+      Ok [
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.Fpr (s, Register.B64)) };
+        Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 0x7fffffffffffffffL; set_flags = false };
+        Ir.Mov { dst = Reg (Register.Fpr (d, Register.B64)); src = Reg Register.vtmp0 };
+      ]
+  | (("fsgnj.s" | "fsgnj.d"), [ OpReg dst; OpReg src; _ ]) ->
+      Ok [ Ir.Mov { dst = Reg dst; src = Reg src } ]
+  | (("fsgnjn.s" | "fsgnjn.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)); _ ]) ->
+      Ok [
+        Ir.Mov { dst = Reg (Register.Fpr (31, Register.B64)); src = Imm 0L };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = 31; src2 = s };
+      ]
+  | (("fsgnjx.s" | "fsgnjx.d"), [ OpReg dst; OpReg src; _ ]) ->
+      Ok [ Ir.Mov { dst = Reg dst; src = Reg src } ]
   | (("feq.s" | "feq.d" | "flt.s" | "flt.d" | "fle.s" | "fle.d"), [ OpReg dst; OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       let cond = match mnemonic with
         | "feq.s" | "feq.d" -> E

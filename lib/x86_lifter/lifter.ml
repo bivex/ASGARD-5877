@@ -655,6 +655,103 @@ let lift_instr mnem ops =
         Ir.Alu { op = Ir.And; dst = rax; src1 = Ir.Reg rax; src2 = Ir.Imm (Int64.lognot 0xFFL); set_flags = false };
         Ir.Alu { op = Ir.Or; dst = rax; src1 = Ir.Reg rax; src2 = Ir.Reg byte_tmp; set_flags = false };
       ]
+  (* x86 String Instructions (stos, lods, movs, scas, cmps) *)
+  | ("stosb" | "stosw" | "stosd" | "stosq"), _ ->
+      let rax = Register.Gpr (Register.RAX, Register.B64) in
+      let rdi = Register.Gpr (Register.RDI, Register.B64) in
+      let (width, size) = match mnem with
+        | "stosb" -> (Register.B8, 1L)
+        | "stosw" -> (Register.B16, 2L)
+        | "stosd" -> (Register.B32, 4L)
+        | _ -> (Register.B64, 8L)
+      in
+      let mem_ref = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false } in
+      let acc = Register.with_width rax width in
+      Ok [
+        Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg acc };
+        Ir.Alu { op = Ir.Add; dst = rdi; src1 = Ir.Reg rdi; src2 = Ir.Imm size; set_flags = false };
+      ]
+  | ("lodsb" | "lodsw" | "lodsd" | "lodsq"), _ ->
+      let rax = Register.Gpr (Register.RAX, Register.B64) in
+      let rsi = Register.Gpr (Register.RSI, Register.B64) in
+      let (width, size) = match mnem with
+        | "lodsb" -> (Register.B8, 1L)
+        | "lodsw" -> (Register.B16, 2L)
+        | "lodsd" -> (Register.B32, 4L)
+        | _ -> (Register.B64, 8L)
+      in
+      let mem_ref = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false } in
+      let tmp = Register.with_width Register.vtmp0 width in
+      if width = Register.B64 || width = Register.B32 then
+        let acc = Register.with_width rax width in
+        Ok [
+          Ir.Mov { dst = Ir.Reg acc; src = Ir.Mem mem_ref };
+          Ir.Alu { op = Ir.Add; dst = rsi; src1 = Ir.Reg rsi; src2 = Ir.Imm size; set_flags = false };
+        ]
+      else
+        let mask = if width = Register.B8 then Int64.lognot 0xFFL else Int64.lognot 0xFFFFL in
+        Ok [
+          Ir.Mov { dst = Ir.Reg tmp; src = Ir.Mem mem_ref };
+          Ir.Alu { op = Ir.And; dst = rax; src1 = Ir.Reg rax; src2 = Ir.Imm mask; set_flags = false };
+          Ir.Alu { op = Ir.Or; dst = rax; src1 = Ir.Reg rax; src2 = Ir.Reg tmp; set_flags = false };
+          Ir.Alu { op = Ir.Add; dst = rsi; src1 = Ir.Reg rsi; src2 = Ir.Imm size; set_flags = false };
+        ]
+  | ("movsb" | "movsw" | "movsd" | "movsq"), ops
+    when ops = [] || (match ops with [OpReg (Register.Fpr _); _] | [_; OpReg (Register.Fpr _)] -> false | _ -> true) ->
+      let rsi = Register.Gpr (Register.RSI, Register.B64) in
+      let rdi = Register.Gpr (Register.RDI, Register.B64) in
+      let (width, size) = match mnem with
+        | "movsb" -> (Register.B8, 1L)
+        | "movsw" -> (Register.B16, 2L)
+        | "movsd" -> (Register.B32, 4L)
+        | _ -> (Register.B64, 8L)
+      in
+      let mem_rsi = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false } in
+      let mem_rdi = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false } in
+      let tmp = Register.with_width Register.vtmp0 width in
+      Ok [
+        Ir.Mov { dst = Ir.Reg tmp; src = Ir.Mem mem_rsi };
+        Ir.Mov { dst = Ir.Mem mem_rdi; src = Ir.Reg tmp };
+        Ir.Alu { op = Ir.Add; dst = rsi; src1 = Ir.Reg rsi; src2 = Ir.Imm size; set_flags = false };
+        Ir.Alu { op = Ir.Add; dst = rdi; src1 = Ir.Reg rdi; src2 = Ir.Imm size; set_flags = false };
+      ]
+  | ("scasb" | "scasw" | "scasd" | "scasq"), _ ->
+      let rax = Register.Gpr (Register.RAX, Register.B64) in
+      let rdi = Register.Gpr (Register.RDI, Register.B64) in
+      let (width, size) = match mnem with
+        | "scasb" -> (Register.B8, 1L)
+        | "scasw" -> (Register.B16, 2L)
+        | "scasd" -> (Register.B32, 4L)
+        | _ -> (Register.B64, 8L)
+      in
+      let mem_ref = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false } in
+      let acc = Register.with_width rax width in
+      let tmp = Register.with_width Register.vtmp0 width in
+      Ok [
+        Ir.Mov { dst = Ir.Reg tmp; src = Ir.Mem mem_ref };
+        Ir.Cmp { src1 = Ir.Reg acc; src2 = Ir.Reg tmp };
+        Ir.Alu { op = Ir.Add; dst = rdi; src1 = Ir.Reg rdi; src2 = Ir.Imm size; set_flags = false };
+      ]
+  | ("cmpsb" | "cmpsw" | "cmpsd" | "cmpsq"), _ ->
+      let rsi = Register.Gpr (Register.RSI, Register.B64) in
+      let rdi = Register.Gpr (Register.RDI, Register.B64) in
+      let (width, size) = match mnem with
+        | "cmpsb" -> (Register.B8, 1L)
+        | "cmpsw" -> (Register.B16, 2L)
+        | "cmpsd" -> (Register.B32, 4L)
+        | _ -> (Register.B64, 8L)
+      in
+      let mem_rsi = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false } in
+      let mem_rdi = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false } in
+      let tmp_s = Register.with_width Register.vtmp0 width in
+      let tmp_d = Register.with_width Register.vtmp1 width in
+      Ok [
+        Ir.Mov { dst = Ir.Reg tmp_s; src = Ir.Mem mem_rsi };
+        Ir.Mov { dst = Ir.Reg tmp_d; src = Ir.Mem mem_rdi };
+        Ir.Cmp { src1 = Ir.Reg tmp_s; src2 = Ir.Reg tmp_d };
+        Ir.Alu { op = Ir.Add; dst = rsi; src1 = Ir.Reg rsi; src2 = Ir.Imm size; set_flags = false };
+        Ir.Alu { op = Ir.Add; dst = rdi; src1 = Ir.Reg rdi; src2 = Ir.Imm size; set_flags = false };
+      ]
   | "imul", [ dst; src; imm ] ->
       let* ir_src = to_ir_operand src in
       let* ir_imm = to_ir_operand imm in

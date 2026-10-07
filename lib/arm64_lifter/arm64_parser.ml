@@ -156,7 +156,7 @@ let parse_line raw =
       let def_width =
         if String.ends_with ~suffix:"b" mnemonic || mnemonic = "ldrsb" || mnemonic = "ldursb" then Register.B8
         else if String.ends_with ~suffix:"h" mnemonic || mnemonic = "ldrsh" || mnemonic = "ldursh" then Register.B16
-        else if mnemonic = "ldrsw" || mnemonic = "ldursw" then Register.B32
+        else if mnemonic = "ldrsw" || mnemonic = "ldursw" || mnemonic = "ldtrsw" then Register.B32
         else if String.starts_with ~prefix:"w" args_str then Register.B32
         else Register.B64
       in

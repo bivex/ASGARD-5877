@@ -476,6 +476,70 @@ let test_arm64_lift_exclusive () =
       | Ok snap -> check int64 "stxr status 0 + 123 = 123" 123L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_ldnp_stnp () =
+  let asm = {|
+    mov x1, #0x2000
+    mov x2, #100
+    mov x3, #200
+    stnp x2, x3, [x1]
+    ldnp x4, x5, [x1]
+    add x0, x4, x5
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_np" } asm with
+  | Error err -> fail ("Failed to lift ARM64 ldnp/stnp: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ldnp/stnp 100 + 200 = 300" 300L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_unprivileged_ldtr_sttr () =
+  let asm = {|
+    mov x1, #0x3000
+    mov x2, #77
+    sttr x2, [x1]
+    ldtr x0, [x1]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_tr" } asm with
+  | Error err -> fail ("Failed to lift ARM64 ldtr/sttr: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ldtr/sttr = 77" 77L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_ubfm_sbfm () =
+  let asm = {|
+    mov x1, #0xABCD
+    ubfm x0, x1, #4, #11
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_bfm" } asm with
+  | Error err -> fail ("Failed to lift ARM64 ubfm: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ubfm 0xABCD[4..11] = 0xBC (188)" 188L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_fp_fma_fneg_fabs () =
+  let asm = {|
+    mov x1, #3
+    scvtf d1, x1
+    mov x2, #4
+    scvtf d2, x2
+    mov x3, #5
+    scvtf d3, x3
+    fmadd d0, d1, d2, d3
+    fcvtzs x0, d0
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_fma" } asm with
+  | Error err -> fail ("Failed to lift ARM64 fmadd: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "fmadd 3*4 + 5 = 17" 17L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -501,6 +565,10 @@ let tests = [
   ("ARM64 Lift Atomics (ldar/stlr)", `Quick, test_arm64_lift_atomics);
   ("ARM64 Lift LSE (ldset/ldclr/ldeor)", `Quick, test_arm64_lift_lse_atomics);
   ("ARM64 Lift Exclusive (ldxr/stxr)", `Quick, test_arm64_lift_exclusive);
+  ("ARM64 Lift Non-Temporal Pair (ldnp/stnp)", `Quick, test_arm64_lift_ldnp_stnp);
+  ("ARM64 Lift Unprivileged Mem (ldtr/sttr)", `Quick, test_arm64_lift_unprivileged_ldtr_sttr);
+  ("ARM64 Lift Bitfield Move (ubfm/sbfm)", `Quick, test_arm64_lift_ubfm_sbfm);
+  ("ARM64 Lift FP FMA (fmadd)", `Quick, test_arm64_lift_fp_fma_fneg_fabs);
 ]
 
 

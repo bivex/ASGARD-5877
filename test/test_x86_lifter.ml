@@ -942,6 +942,52 @@ test_xlat:
       | Ok () ->
           Alcotest.(check int64) "xlatb loads table entry into AL" 0x112233445566771eL (get_reg state Register.rax)
 
+let test_x86_lift_string_ops () =
+  let asm = {|
+string_test:
+    sub rsp, 32
+    lea rdi, [rsp]
+    mov rax, 0x1122334455667788
+    stosq
+    lea rsi, [rsp]
+    xor rax, rax
+    lodsq
+    lea rdi, [rsp + 16]
+    lea rsi, [rsp]
+    movsq
+    mov r8, [rsp + 16]
+    add rsp, 32
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "lodsq & movsq roundtrip" 0x1122334455667788L (get_reg state Register.rax);
+          Alcotest.(check int64) "movsq copied value" 0x1122334455667788L (get_reg state Register.r8)
+
+let test_x86_lift_bit_tests () =
+  let asm = {|
+bit_test:
+    xor rax, rax
+    bts rax, 3
+    bts rax, 5
+    btc rax, 3
+    btr rax, 5
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "bts/btc/btr bit test ops" 0L (get_reg state Register.rax)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -985,5 +1031,7 @@ let tests = [
   Alcotest.test_case "lift_x86_cmpxchg" `Quick test_x86_lift_cmpxchg;
   Alcotest.test_case "lift_x86_xadd" `Quick test_x86_lift_xadd;
   Alcotest.test_case "lift_x86_xlat" `Quick test_x86_lift_xlat;
+  Alcotest.test_case "lift_x86_string_ops" `Quick test_x86_lift_string_ops;
+  Alcotest.test_case "lift_x86_bit_tests" `Quick test_x86_lift_bit_tests;
 ]
 

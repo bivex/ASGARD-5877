@@ -6,10 +6,11 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   match (mnemonic, ops) with
   (* Memory Load with Pre/Post-Indexed Writeback *)
   | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw"
-     | "ldar" | "ldarb" | "ldarh" | "ldapr" | "ldaprb" | "ldaprh"), [ OpReg dst; OpMem m ]) ->
+     | "ldar" | "ldarb" | "ldarh" | "ldapr" | "ldaprb" | "ldaprh"
+     | "ldtr" | "ldtrb" | "ldtrh" | "ldtrsw"), [ OpReg dst; OpMem m ]) ->
       let is_signed =
         match mnemonic with
-        | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw" -> true
+        | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw" | "ldtrsw" -> true
         | _ -> false
       in
       let scratch =
@@ -43,7 +44,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       )
 
   (* Memory Store with Pre/Post-Indexed Writeback *)
-  | (("str" | "strb" | "strh" | "stur" | "sturb" | "stlr" | "stlrb" | "stlrh"), [ (OpReg _ | OpImm _) as src; OpMem m ]) ->
+  | (("str" | "strb" | "strh" | "stur" | "sturb" | "stlr" | "stlrb" | "stlrh"
+     | "sttr" | "sttrb" | "sttrh"), [ (OpReg _ | OpImm _) as src; OpMem m ]) ->
       let scratch =
         match src with
         | OpReg r when Register.to_string r = Register.to_string Register.vtmp0 -> Register.vtmp1
@@ -82,8 +84,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
               Some (addr_prep @ src_prep @ [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = src_ir } ]))
       )
 
-  (* Pair Store (stp) with Pre/Post-Indexed Writeback *)
-  | ("stp", [ OpReg r1; OpReg r2; OpMem m ]) ->
+  (* Pair Store (stp, stnp) with Pre/Post-Indexed Writeback *)
+  | (("stp" | "stnp"), [ OpReg r1; OpReg r2; OpMem m ]) ->
       let stride = Int64.of_int (Register.width_to_bytes (Register.get_width r1)) in
       let w = Register.get_width r1 in
       (match m.wb with
@@ -128,11 +130,11 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
             Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = Reg r1 };
             Ir.Mov { dst = raw_to_ir_operand (OpMem m2); src = Reg r2 };
           ])
-  | ("stp", (OpReg r1 :: OpReg r2 :: _)) ->
+  | (("stp" | "stnp"), (OpReg r1 :: OpReg r2 :: _)) ->
       Some [ Ir.Push (Reg r1); Ir.Push (Reg r2) ]
 
-  (* Pair Load (ldp) with Pre/Post-Indexed Writeback *)
-  | ("ldp", [ OpReg r1; OpReg r2; OpMem m ]) ->
+  (* Pair Load (ldp, ldnp) with Pre/Post-Indexed Writeback *)
+  | (("ldp" | "ldnp"), [ OpReg r1; OpReg r2; OpMem m ]) ->
       let stride = Int64.of_int (Register.width_to_bytes (Register.get_width r1)) in
       let w = Register.get_width r1 in
       (match m.wb with
@@ -177,7 +179,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
             Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
             Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
           ])
-  | ("ldp", (OpReg r1 :: OpReg r2 :: _)) ->
+  | (("ldp" | "ldnp"), (OpReg r1 :: OpReg r2 :: _)) ->
       Some [ Ir.Pop (Reg r2); Ir.Pop (Reg r1) ]
 
   (* ARMv8.1-A Atomics & Memory Ordering *)

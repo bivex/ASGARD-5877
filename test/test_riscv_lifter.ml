@@ -401,6 +401,26 @@ let test_riscv_extended_atomics () =
           check int64 "RISC-V extended atomics final memory = 255" 255L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_riscv_lift_fp_fma () =
+  let asm = {|
+    li a1, 3
+    fcvt.d.l f1, a1
+    li a2, 4
+    fcvt.d.l f2, a2
+    li a3, 5
+    fcvt.d.l f3, a3
+    fmadd.d f0, f1, f2, f3
+    fcvt.l.d a0, f0
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_riscv_fma" } asm with
+  | Error err -> fail ("Failed to lift RISC-V fmadd: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RISC-V fmadd.d (3 * 4 + 5) = 17" 17L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("RISC-V Lift Arithmetic (add)", `Quick, test_riscv_lift_arithmetic);
   ("RISC-V Lift Sub & Mul", `Quick, test_riscv_lift_sub_mul);
@@ -423,4 +443,5 @@ let tests = [
   ("RISC-V Lift Zbb Logic (andn)", `Quick, test_riscv_lift_zbb_logic_rot);
   ("RISC-V Lift Zba Address (sh2add)", `Quick, test_riscv_lift_zba_shadd);
   ("RISC-V Lift Extended Atomics (amomin/max/xor/and/or)", `Quick, test_riscv_extended_atomics);
+  ("RISC-V Lift FP FMA (fmadd.d)", `Quick, test_riscv_lift_fp_fma);
 ]

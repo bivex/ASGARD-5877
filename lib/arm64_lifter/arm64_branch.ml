@@ -66,6 +66,39 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Fp_binop { op = Fmul; dst = d; src1 = s1; src2 = s2 } ]
   | ("fdiv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       Some [ Ir.Fp_binop { op = Fdiv; dst = d; src1 = s1; src2 = s2 } ]
+  | ("fmadd", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (n, _)); OpReg (Register.Fpr (m, _)); OpReg (Register.Fpr (a, _)) ]) ->
+      Some [
+        Ir.Fp_binop { op = Fmul; dst = 31; src1 = n; src2 = m };
+        Ir.Fp_binop { op = Fadd; dst = d; src1 = a; src2 = 31 };
+      ]
+  | ("fmsub", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (n, _)); OpReg (Register.Fpr (m, _)); OpReg (Register.Fpr (a, _)) ]) ->
+      Some [
+        Ir.Fp_binop { op = Fmul; dst = 31; src1 = n; src2 = m };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = a; src2 = 31 };
+      ]
+  | ("fnmadd", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (n, _)); OpReg (Register.Fpr (m, _)); OpReg (Register.Fpr (a, _)) ]) ->
+      Some [
+        Ir.Fp_binop { op = Fmul; dst = 31; src1 = n; src2 = m };
+        Ir.Fp_binop { op = Fadd; dst = 31; src1 = a; src2 = 31 };
+        Ir.Mov { dst = Reg (Register.Fpr (30, Register.B64)); src = Imm 0L };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = 30; src2 = 31 };
+      ]
+  | ("fnmsub", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (n, _)); OpReg (Register.Fpr (m, _)); OpReg (Register.Fpr (a, _)) ]) ->
+      Some [
+        Ir.Fp_binop { op = Fmul; dst = 31; src1 = n; src2 = m };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = 31; src2 = a };
+      ]
+  | ("fneg", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
+      Some [
+        Ir.Mov { dst = Reg (Register.Fpr (31, Register.B64)); src = Imm 0L };
+        Ir.Fp_binop { op = Fsub; dst = d; src1 = 31; src2 = s };
+      ]
+  | ("fabs", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
+      Some [
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.Fpr (s, Register.B64)) };
+        Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 0x7fffffffffffffffL; set_flags = false };
+        Ir.Mov { dst = Reg (Register.Fpr (d, Register.B64)); src = Reg Register.vtmp0 };
+      ]
   | ("fcmp", [ OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       Some [ Ir.Fp_cmp { src1 = s1; src2 = s2 } ]
   | ("fmov", [ OpReg dst; OpReg src ]) ->
