@@ -227,6 +227,15 @@ let is_asgard_marker s =
     in
     check 0
 
+let is_string_instruction s =
+  match s with
+  | "stosb" | "stosw" | "stosd" | "stosq"
+  | "lodsb" | "lodsw" | "lodsd" | "lodsq"
+  | "movsb" | "movsw" | "movsd" | "movsq"
+  | "scasb" | "scasw" | "scasd" | "scasq"
+  | "cmpsb" | "cmpsw" | "cmpsd" | "cmpsq" -> true
+  | _ -> false
+
 let parse_line line =
   let clean = strip_comments line in
   if clean = "" then Ok LineEmpty
@@ -267,7 +276,13 @@ let parse_line line =
         let word = String.lowercase_ascii (String.trim (String.sub s 0 first_space)) in
         let rest = String.trim (String.sub s first_space (String.length s - first_space)) in
         match word with
-        | "rep" | "repe" | "repz" | "repne" | "repnz" | "lock" | "data16" ->
+        | "rep" | "repe" | "repz" | "repne" | "repnz" ->
+            let (next_word, next_rest) = strip_prefixes rest in
+            if is_string_instruction next_word then
+              (word ^ " " ^ next_word, next_rest)
+            else
+              (next_word, next_rest)
+        | "lock" | "data16" ->
             strip_prefixes rest
         | _ -> (word, rest)
     in

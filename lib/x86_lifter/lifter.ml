@@ -1365,6 +1365,20 @@ let is_func_label lbl =
        || String.starts_with ~prefix:"." s)
 
 
+let split_rep_mnemonic mnem =
+  if String.starts_with ~prefix:"rep " mnem then
+    Some ("rep", String.sub mnem 4 (String.length mnem - 4))
+  else if String.starts_with ~prefix:"repe " mnem then
+    Some ("repe", String.sub mnem 5 (String.length mnem - 5))
+  else if String.starts_with ~prefix:"repz " mnem then
+    Some ("repz", String.sub mnem 5 (String.length mnem - 5))
+  else if String.starts_with ~prefix:"repne " mnem then
+    Some ("repne", String.sub mnem 6 (String.length mnem - 6))
+  else if String.starts_with ~prefix:"repnz " mnem then
+    Some ("repnz", String.sub mnem 6 (String.length mnem - 6))
+  else
+    None
+
 let lift_lines ?(options = default_options) raw_lines =
   let block_id = ref 0 in
   let func_name = ref options.function_name in
@@ -1404,13 +1418,55 @@ let lift_lines ?(options = default_options) raw_lines =
         process rest
 
     | X86_parser.LineInstr (mnem, ops) :: rest -> (
-        match lift_instr mnem ops with
-        | Error e -> Error e
-        | Ok lifted ->
-            List.iter (fun i -> current_instrs := i :: !current_instrs) lifted;
-            let last_lifted = List.hd (List.rev lifted) in
-            if is_terminator last_lifted then flush_block ();
-            process rest)
+        match split_rep_mnemonic mnem with
+        | Some (prefix, base_mnem) ->
+            flush_block ();
+            let chk_id = !block_id in
+            let chk_lbl = Printf.sprintf ".L_rep_chk_%d" chk_id in
+            let body_lbl = Printf.sprintf ".L_rep_body_%d" chk_id in
+            let done_lbl = Printf.sprintf ".L_rep_done_%d" chk_id in
+            let rcx = Register.Gpr (Register.RCX, Register.B64) in
+            let chk_block = Ir.make_block ~id:chk_id ~label:chk_lbl ~instrs:[
+              Ir.Cmp { src1 = Ir.Reg rcx; src2 = Ir.Imm 0L };
+              Ir.Jcc { cond = Flags.E; target_true = Ir.Label done_lbl; target_false = Ir.Label body_lbl };
+            ] in
+            raw_blocks := chk_block :: !raw_blocks;
+            incr block_id;
+
+            (match lift_instr base_mnem ops with
+            | Error e -> Error e
+            | Ok step_instrs ->
+                let dec_rcx = Ir.Alu { op = Ir.Sub; dst = rcx; src1 = Ir.Reg rcx; src2 = Ir.Imm 1L; set_flags = false } in
+                let term_instrs = match prefix with
+                  | "repe" | "repz" ->
+                      [ Ir.Jcc { cond = Flags.NE; target_true = Ir.Label done_lbl; target_false = Ir.Label chk_lbl } ]
+                  | "repne" | "repnz" ->
+                      [ Ir.Jcc { cond = Flags.E; target_true = Ir.Label done_lbl; target_false = Ir.Label chk_lbl } ]
+                  | _ ->
+                      [ Ir.Jmp (Ir.Label chk_lbl) ]
+                in
+                let body_id = !block_id in
+                let body_block = Ir.make_block ~id:body_id ~label:body_lbl ~instrs:(step_instrs @ [ dec_rcx ] @ term_instrs) in
+                raw_blocks := body_block :: !raw_blocks;
+                incr block_id;
+
+                let done_id = !block_id in
+                let done_block = Ir.make_block ~id:done_id ~label:done_lbl ~instrs:[] in
+                raw_blocks := done_block :: !raw_blocks;
+                incr block_id;
+
+                current_label := Printf.sprintf ".L_rep_cont_%d" done_id;
+                label_is_new := false;
+                current_instrs := [];
+                process rest)
+        | None -> (
+            match lift_instr mnem ops with
+            | Error e -> Error e
+            | Ok lifted ->
+                List.iter (fun i -> current_instrs := i :: !current_instrs) lifted;
+                let last_lifted = List.hd (List.rev lifted) in
+                if is_terminator last_lifted then flush_block ();
+                process rest))
   in
 
   let* blocks = process raw_lines in

@@ -1047,6 +1047,105 @@ func_rcl_rcr:
       | Ok () ->
           Alcotest.(check int64) "rcl followed by rcr restores rax" 1L (get_reg state Register.rax)
 
+let test_x86_rep_stosb () =
+  let asm = {|
+func_rep_stosb:
+    sub rsp, 32
+    lea rdi, [rsp]
+    mov al, 0x5a
+    mov rcx, 8
+    rep stosb
+    mov rax, qword ptr [rsp]
+    add rsp, 32
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "rep stosb fills 8 bytes" 0x5a5a5a5a5a5a5a5aL (get_reg state Register.rax);
+          Alcotest.(check int64) "rcx is 0 after rep" 0L (get_reg state Register.rcx);
+          Alcotest.(check int64) "rdi advanced by 8" 0x0fe8L (get_reg state Register.rdi)
+
+let test_x86_rep_movsb () =
+  let asm = {|
+func_rep_movsb:
+    sub rsp, 64
+    mov qword ptr [rsp], 0x1122334455667788
+    lea rsi, [rsp]
+    lea rdi, [rsp + 32]
+    mov rcx, 8
+    rep movsb
+    mov rax, qword ptr [rsp + 32]
+    add rsp, 64
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "rep movsb copies 8 bytes" 0x1122334455667788L (get_reg state Register.rax);
+          Alcotest.(check int64) "rcx is 0 after rep" 0L (get_reg state Register.rcx)
+
+let test_x86_repne_scasb () =
+  let asm = {|
+func_repne_scasb:
+    sub rsp, 32
+    mov byte ptr [rsp], 0x41
+    mov byte ptr [rsp + 1], 0x42
+    mov byte ptr [rsp + 2], 0x43
+    mov byte ptr [rsp + 3], 0x00
+    lea rdi, [rsp]
+    xor al, al
+    mov rcx, 10
+    repne scasb
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "rcx decremented by 4" 6L (get_reg state Register.rcx);
+          Alcotest.(check int64) "rdi stopped after null byte" 0x0fe4L (get_reg state Register.rdi)
+
+let test_x86_repe_cmpsb () =
+  let asm = {|
+func_repe_cmpsb:
+    sub rsp, 32
+    mov byte ptr [rsp], 0x10
+    mov byte ptr [rsp + 1], 0x20
+    mov byte ptr [rsp + 2], 0x99
+    mov byte ptr [rsp + 16], 0x10
+    mov byte ptr [rsp + 17], 0x20
+    mov byte ptr [rsp + 18], 0x88
+    lea rsi, [rsp]
+    lea rdi, [rsp + 16]
+    mov rcx, 5
+    repe cmpsb
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "repe stops on mismatch at rcx=2" 2L (get_reg state Register.rcx)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -1095,5 +1194,9 @@ let tests = [
   Alcotest.test_case "lift_x86_pext_pdep" `Quick test_x86_lift_pext_pdep;
   Alcotest.test_case "lift_x86_fp_sqrt_and_cvt" `Quick test_x86_fp_sqrt_and_cvt;
   Alcotest.test_case "lift_x86_rcl_rcr_cmc" `Quick test_x86_rcl_rcr_cmc;
+  Alcotest.test_case "lift_x86_rep_stosb" `Quick test_x86_rep_stosb;
+  Alcotest.test_case "lift_x86_rep_movsb" `Quick test_x86_rep_movsb;
+  Alcotest.test_case "lift_x86_repne_scasb" `Quick test_x86_repne_scasb;
+  Alcotest.test_case "lift_x86_repe_cmpsb" `Quick test_x86_repe_cmpsb;
 ]
 
