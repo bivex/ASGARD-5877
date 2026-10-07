@@ -114,6 +114,8 @@ type raw_op_kind =
   | OP_MOV_VR
   | OP_MOV_RV
   | OP_FCSEL_VV
+  | OP_MULH_RR
+  | OP_IMULH_RR
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
@@ -137,6 +139,7 @@ let all_op_kinds = [
   OP_ATOMIC_LOAD; OP_ATOMIC_STORE; OP_ATOMIC_CAS; OP_ATOMIC_ADD; OP_ATOMIC_SWP;
   OP_BSWAP_RR; OP_CLZ_RR; OP_CTZ_RR; OP_POPCNT_RR; OP_RBIT_RR;
   OP_MOV_VR; OP_MOV_RV; OP_FCSEL_VV;
+  OP_MULH_RR; OP_IMULH_RR;
 ]
 
 let op_kind_to_handler_name = function
@@ -225,6 +228,8 @@ let op_kind_to_handler_name = function
   | OP_MOV_VR -> "H_MOV_VR"
   | OP_MOV_RV -> "H_MOV_RV"
   | OP_FCSEL_VV -> "H_FCSEL_VV"
+  | OP_MULH_RR -> "H_MULH_RR"
+  | OP_IMULH_RR -> "H_IMULH_RR"
 
 type fused_op =
   | Raw of Ir.instr
@@ -305,7 +310,7 @@ let inject_junk_instructions ~rng instrs =
   aux instrs
 
 let is_commutative_alu_op = function
-  | Ir.Add | Ir.Imul | Ir.Mul | Ir.Xor | Ir.And | Ir.Or -> true
+  | Ir.Add | Ir.Imul | Ir.Mul | Ir.Mulh | Ir.Imulh | Ir.Xor | Ir.And | Ir.Or -> true
   | _ -> false
 
 let pick_scratch_reg (d : Register.t) (s : Register.t) : Register.t =
@@ -482,6 +487,18 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg a };
         Ir.Mov { dst = Ir.Reg a; src = Ir.Reg b };
         Ir.Mov { dst = Ir.Reg b; src = Ir.Reg scratch } ]
+
+  | Ir.Xchg (Ir.Reg a, Ir.Mem m) ->
+      let scratch = pick_scratch_reg a a in
+      [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m };
+        Ir.Mov { dst = Ir.Mem m; src = Ir.Reg a };
+        Ir.Mov { dst = Ir.Reg a; src = Ir.Reg scratch } ]
+
+  | Ir.Xchg (Ir.Mem m, Ir.Reg a) ->
+      let scratch = pick_scratch_reg a a in
+      [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m };
+        Ir.Mov { dst = Ir.Mem m; src = Ir.Reg a };
+        Ir.Mov { dst = Ir.Reg a; src = Ir.Reg scratch } ]
 
   | Ir.Push (Ir.Imm imm) ->
       let scratch = Register.vtmp0 in

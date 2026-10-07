@@ -756,6 +756,58 @@ func_fpscalar:
       | Ok () ->
           Alcotest.(check int64) "fp 10 + 4 = 14" 14L (get_reg state Register.rax)
 
+let test_x86_lift_bmi () =
+  let asm = {|
+func_bmi:
+    mov rdi, 0xFF00FF00
+    mov rsi, 0x0F0F0F0F
+    andn rax, rdi, rsi
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "andn result" 0x000F000FL (get_reg state Register.rax)
+
+let test_x86_lift_shld_shrd () =
+  let asm = {|
+func_shld:
+    mov rax, 0x1234567890ABCDEF
+    mov rdx, 0xFEDCBA0987654321
+    shld rax, rdx, 16
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "shld 16 bits" 0x567890ABCDEFFEDCL (get_reg state Register.rax)
+
+let test_x86_lift_movbe () =
+  let asm = {|
+func_movbe:
+    mov [rsp - 8], rdi
+    movbe rax, [rsp - 8]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 0x123456789ABCDEF0L;
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "movbe byteswapped" (-1090226688147180526L) (get_reg state Register.rax)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -791,5 +843,8 @@ let tests = [
   Alcotest.test_case "lift_sse_avx" `Quick test_lift_sse_avx;
   Alcotest.test_case "lift_x86_bitmanip" `Quick test_x86_bitmanip;
   Alcotest.test_case "lift_x86_fp_scalar" `Quick test_x86_fp_scalar;
+  Alcotest.test_case "lift_x86_bmi" `Quick test_x86_lift_bmi;
+  Alcotest.test_case "lift_x86_shld_shrd" `Quick test_x86_lift_shld_shrd;
+  Alcotest.test_case "lift_x86_movbe" `Quick test_x86_lift_movbe;
 ]
 

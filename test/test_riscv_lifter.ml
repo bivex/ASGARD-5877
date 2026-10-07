@@ -314,6 +314,66 @@ let test_riscv_fp_scalar_eval () =
           check int64 "RISC-V fp add (10 + 4) = 14" 14L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_riscv_lift_mulh () =
+  let asm = {|
+    li a1, 0x100000000
+    li a2, 0x200000000
+    mulhu a0, a1, a2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_riscv_mulhu" } asm with
+  | Error err -> fail ("Failed to lift RISC-V mulhu: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RISC-V mulhu (2^32 * 2^33) high 64 = 2" 2L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_lift_min_max () =
+  let asm = {|
+    li a1, 42
+    li a2, 100
+    min a0, a1, a2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_riscv_min" } asm with
+  | Error err -> fail ("Failed to lift RISC-V min: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RISC-V min(42, 100) = 42" 42L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_lift_zbb_logic_rot () =
+  let asm = {|
+    li a1, 0xFF00FF00
+    li a2, 0x0F0F0F0F
+    andn a0, a2, a1
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_riscv_andn" } asm with
+  | Error err -> fail ("Failed to lift RISC-V andn: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RISC-V andn result" 0x000F000FL snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_lift_zba_shadd () =
+  let asm = {|
+    li a1, 10
+    li a2, 5
+    sh2add a0, a1, a2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_riscv_sh2add" } asm with
+  | Error err -> fail ("Failed to lift RISC-V sh2add: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RISC-V sh2add (10<<2 + 5) = 45" 45L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("RISC-V Lift Arithmetic (add)", `Quick, test_riscv_lift_arithmetic);
   ("RISC-V Lift Sub & Mul", `Quick, test_riscv_lift_sub_mul);
@@ -331,4 +391,8 @@ let tests = [
   ("RISC-V VM Pipeline Compilation", `Quick, test_riscv_vm_pipeline);
   ("RISC-V Lift Zbb Bit Manipulation (rev8/clz/cpop)", `Quick, test_riscv_zbb_bitmanip);
   ("RISC-V Lift Scalar FP Eval (fcvt/fadd)", `Quick, test_riscv_fp_scalar_eval);
+  ("RISC-V Lift High Multiply (mulhu)", `Quick, test_riscv_lift_mulh);
+  ("RISC-V Lift Min/Max (min)", `Quick, test_riscv_lift_min_max);
+  ("RISC-V Lift Zbb Logic (andn)", `Quick, test_riscv_lift_zbb_logic_rot);
+  ("RISC-V Lift Zba Address (sh2add)", `Quick, test_riscv_lift_zba_shadd);
 ]

@@ -324,6 +324,53 @@ let test_arm64_lift_fp_scalar () =
           check int64 "ARM64 fp add (10 + 4) = 14" 14L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_bitfields () =
+  let asm = {|
+    mov x1, #0x1234
+    mov x0, #0
+    bfi x0, x1, #8, #16
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_bfi" } asm with
+  | Error err -> fail ("Failed to lift ARM64 bfi: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 bfi 0x1234 at 8 = 0x123400" 0x123400L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_mult_accum () =
+  let asm = {|
+    mov x1, #100
+    mov x2, #20
+    mov x3, #5
+    smaddl x0, w1, w2, x3
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_smaddl" } asm with
+  | Error err -> fail ("Failed to lift ARM64 smaddl: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 smaddl (5 + 100*20) = 2005" 2005L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_conditionals () =
+  let asm = {|
+    mov x1, #10
+    mov x2, #20
+    cmp x1, #10
+    csinc x0, x1, x2, eq
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_csinc" } asm with
+  | Error err -> fail ("Failed to lift ARM64 csinc: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 csinc eq = 10" 10L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -341,6 +388,9 @@ let tests = [
   ("ARM64 Lift Shifted ALU (lsl/lsr)", `Quick, test_arm64_lift_shifted_alu);
   ("ARM64 Lift Bit Manipulation (rev/clz/rbit)", `Quick, test_arm64_lift_bitmanip);
   ("ARM64 Lift Scalar FP (scvtf/fadd/fcvtzs)", `Quick, test_arm64_lift_fp_scalar);
+  ("ARM64 Lift Bitfields (bfi/bfxil/extr)", `Quick, test_arm64_lift_bitfields);
+  ("ARM64 Lift Multiply-Accumulate (smaddl/smulh)", `Quick, test_arm64_lift_mult_accum);
+  ("ARM64 Lift Conditionals (csinc/csinv/csneg)", `Quick, test_arm64_lift_conditionals);
 ]
 
 

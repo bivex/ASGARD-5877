@@ -134,6 +134,7 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
             @ Stack_logic_pass.expand_or_nor
         | Div -> [Div] (* unsigned; Dividend = top-two stack values *)
         | Idiv -> [Idiv] (* signed; guarded against #DE *)
+        | Mulh | Imulh -> failwith "ir_to_stack: Mulh/Imulh not supported in stack VM"
       in
       src1_ops @ src2_ops @ alu_ops @ [PopReg (Context_allocator.slot_of_reg ctx dst)]
   | Unary { op; dst; src; _ } ->

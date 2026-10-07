@@ -403,6 +403,12 @@ let compile_and_package_multi
               | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Imul ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_IMUL_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Mulh; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Mulh ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_MULH_RR) (get_reg_idx d) (get_reg_idx s) 0L
+              | Ir.Alu { op = Ir.Imulh; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Imulh ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_IMULH_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Div; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Div ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_DIV_RR) (get_reg_idx d) (get_reg_idx s) 0L

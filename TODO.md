@@ -322,7 +322,7 @@
 ### 3. Спецификация покрытия x86_64
 
 1. **Память, сегментация и строковые операции**:
-   - Изменение порядка байт: `movbe`, `bswap`.
+   - Изменение порядка байт: `movbe`, `bswap` — **ВЫПОЛНЕНО (2026-10)**.
    - Табличная трансляция: `xlat` / `xlatb`.
    - Строковые инструкции: `stosb/stosw/stosd/stosq`, `lodsb/lodsw/lodsd/lodsq`, `scasb/scasw/scasd/scasq`, `cmpsb/cmpsw/cmpsd/cmpsq`.
    - Префиксы повторения строк: `rep`, `repe`/`repz`, `repne`/`repnz` с автоматическим декрементом `RCX` и проверкой `ZF`.
@@ -333,9 +333,9 @@
    - `adc` и `sbb`: для всех размеров (B8, B16, B32, B64) с точным расчётом всей шестёрки флагов (`CF`, `ZF`, `SF`, `OF`, `AF`, `PF`).
    - `imul`: полная поддержка всех трёх форм (1-операндная с implicit RDX:RAX, 2-операндная `reg, r/m`, 3-операндная `reg, r/m, imm`).
    - Битовые тесты: `bt`, `bts`, `btr`, `btc` (с установкой флага `CF`).
-   - Сканирование и подсчёт бит: `bsf`, `bsr`, `tzcnt`, `lzcnt`, `popcnt`.
-   - Инструкции BMI1 / BMI2: `bextr`, `bzhi`, `pdep`, `pext`, `andn`, `rorx`, `sarx`, `shlx`, `shrx`.
-   - Сдвиги: `shld`, `shrd` (двухоперандные сдвиги), `rcl`, `rcr` (циклические сдвиги через carry).
+   - Сканирование и подсчёт бит: `bsf`, `bsr`, `tzcnt`, `lzcnt`, `popcnt` — **ВЫПОЛНЕНО (2026-10)**.
+   - Инструкции BMI1 / BMI2: `bextr`, `bzhi`, `andn`, `rorx`, `sarx`, `shlx`, `shrx` — **ВЫПОЛНЕНО (2026-10)** (остаток: `pdep`, `pext`).
+   - Сдвиги: `shld`, `shrd` (двухоперандные сдвиги) — **ВЫПОЛНЕНО (2026-10)**, `rcl`, `rcr` (циклические сдвиги через carry).
 3. **Управление флагами**:
    - Инструкции: `lahf`, `sahf`, `pushf`/`pushfq`, `popf`/`popfq`, `clc`, `stc`, `cmc`, `cld`, `std`.
    - Единая каноническая модель EFLAGS для предикатов `setcc`, `cmovcc`, `jcc`.
@@ -365,19 +365,19 @@
    - Атомарные RMW (LSE / Large System Extensions): `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor` (все с версиями `a`/`l`/`al`).
 2. **Условные инструкции**:
    - `ccmp`, `ccmn` (Conditional Compare с дефолтными NZCV флагами).
-   - `cinc`, `cinv`, `cneg`, `csinc`, `csinv`, `csneg` (Conditional Select с инкрементом/инверсией/отрицанием).
+   - `cinc`, `cinv`, `cneg`, `csinc`, `csinv`, `csneg` (Conditional Select с инкрементом/инверсией/отрицанием) — **ВЫПОЛНЕНО (2026-10)**.
 3. **Битовые манипуляции**:
-   - `clz`, `cls` (подсчёт ведущих нулей / знаковых бит).
-   - `rbit` (реверс битов).
-   - Реверс байт: `rev`, `rev16`, `rev32`.
-   - Битовые поля: `ubfx`, `sbfx`, `ubfm`, `sbfm`, `bfi`, `bfxil`.
-   - Извлечение битовых полей из двух регистров: `extr`.
+   - `clz`, `cls` (подсчёт ведущих нулей / знаковых бит) — **ВЫПОЛНЕНО (2026-10)**.
+   - `rbit` (реверс битов) — **ВЫПОЛНЕНО (2026-10)**.
+   - Реверс байт: `rev`, `rev16`, `rev32` — **ВЫПОЛНЕНО (2026-10)**.
+   - Битовые поля: `ubfx`, `sbfx`, `bfi`, `bfxil` — **ВЫПОЛНЕНО (2026-10)** (остаток: `ubfm`, `sbfm`).
+   - Извлечение битовых полей из двух регистров: `extr` — **ВЫПОЛНЕНО (2026-10)**.
 4. **Целочисленная арифметика**:
-   - Умножения: `smaddl`, `smsubl`, `umaddl`, `umsubl`, `smulh`, `umulh`.
-   - Знаковое/нулевое расширение: `sxtb/sxth/sxtw`, `uxtb/uxth/uxtw`.
+   - Умножения: `smaddl`, `smsubl`, `umaddl`, `umsubl`, `smulh`, `umulh`, `smull`, `umull` — **ВЫПОЛНЕНО (2026-10)**.
+   - Знаковое/нулевое расширение: `sxtb/sxth/sxtw`, `uxtb/uxth/uxtw` — **ВЫПОЛНЕНО (2026-10)**.
    - Арифметика с флагом переноса: `adc`, `adcs`, `sbc`, `sbcs`, `ngc`, `ngcs`.
 5. **NEON и Floating Point**:
-   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `fmin/fmax`, `fcmp`, `fcsel`, `fcvt` (half/single/double), `scvtf/ucvtf`, `fcvtzs/fcvtzu`.
+   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `scvtf/ucvtf`, `fcvtzs/fcvtzu` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fmin/fmax`, `fcmp`, `fcsel`, `fcvt` half).
    - NEON векторная память: `ldr/str` SIMD.
    - NEON арифметика/логика: векторные `add/sub/mul`, `and/orr/eor/bic`.
    - Табличные подстановки и перестановки: `tbl`, `tbx`, `ext`, `dup`, `zip1/zip2`, `uzp1/uzp2`, `trn1/trn2`.
@@ -386,14 +386,18 @@
 
 ### 5. Спецификация покрытия RISC-V (RV64GCV)
 
-1. **Скалярная плавающая точка (F- и D-расширения RV64FD)**:
-   - Память: `flw`, `fld`, `fsw`, `fsd`.
-   - Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fsqrt.s/d`, `fmin.s/d`, `fmax.s/d`.
-   - Сравнения: `feq.s/d`, `flt.s/d`, `fle.s/d`.
+1. **Базовое целочисленное расширение M, Zba и Zbb**:
+   - Умножение и деление: `mul/mulw`, `div/divw`, `divu/divuw`, `rem/remw`, `remu/remuw`, `mulh`, `mulhu`, `mulhsu` — **ВЫПОЛНЕНО (2026-10)**.
+   - Битовые манипуляции (Zbb): `clz/clzw`, `ctz/ctzw`, `cpop/cpopw`, `rev8`, `orc.b`, `sext.b/h`, `zext.h`, `min/max`, `minu/maxu`, `andn`, `orn`, `xnor`, `rol/rolw`, `ror/rori/rorw/roriw` — **ВЫПОЛНЕНО (2026-10)**.
+   - Адресная арифметика (Zba): `sh1add/sh1adduw`, `sh2add/sh2adduw`, `sh3add/sh3adduw` — **ВЫПОЛНЕНО (2026-10)**.
+2. **Скалярная плавающая точка (F- и D-расширения RV64FD)**:
+   - Память: `flw`, `fld`, `fsw`, `fsd` — **ВЫПОЛНЕНО (2026-10)**.
+   - Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fsqrt.s/d`, `fmin.s/d`, `fmax.s/d`).
+   - Сравнения: `feq.s/d`, `flt.s/d`, `fle.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Копирование знака: `fsgnj.s/d`, `fsgnjn.s/d`, `fsgnjx.s/d`.
    - Fused Multiply-Add: `fmadd.s/d`, `fmsub.s/d`, `fnmsub.s/d`, `fnmadd.s/d`.
-   - Преобразования: `fcvt.*` (между FP и целыми числами, а также float $\leftrightarrow$ double).
-2. **Векторное расширение V (RVV Dynamic Vector Engine)**:
+   - Преобразования: `fcvt.*` (между FP и целыми числами: `fcvt.w.*`, `fcvt.l.*`, `fcvt.*.w`, `fcvt.*.l`) — **ВЫПОЛНЕНО (2026-10)**.
+3. **Векторное расширение V (RVV Dynamic Vector Engine)**:
    - *Архитектурный инвариант*: динамическая параметризация `VL/VTYPE/VLMUL/SEW`, поддержка `vlen` $\ge 128$.
    - Конфигурация: `vsetvli`, `vsetivli`, `vsetvl`.
    - Память:

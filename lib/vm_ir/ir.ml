@@ -18,6 +18,8 @@ type alu_op =
   | Imul
   | Div
   | Idiv
+  | Mulh
+  | Imulh
 
 type unary_op =
   | Not
@@ -108,6 +110,7 @@ let alu_op_to_string = function
   | Shl -> "shl" | Shr -> "shr" | Sar -> "sar"
   | Rol -> "rol" | Ror -> "ror"
   | Mul -> "mul" | Imul -> "imul" | Div -> "div" | Idiv -> "idiv"
+  | Mulh -> "mulh" | Imulh -> "imulh"
 
 let unary_op_to_string = function
   | Not -> "not" | Neg -> "neg" | Inc -> "inc" | Dec -> "dec"

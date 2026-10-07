@@ -262,6 +262,27 @@ let determine_width op1 op2 =
       | Some w -> w
       | None -> B64)
 
+let mulh_u64 a b =
+  let a_lo = Int64.logand a 0xFFFFFFFFL in
+  let a_hi = Int64.shift_right_logical a 32 in
+  let b_lo = Int64.logand b 0xFFFFFFFFL in
+  let b_hi = Int64.shift_right_logical b 32 in
+  let p0 = Int64.mul a_lo b_lo in
+  let p1 = Int64.mul a_lo b_hi in
+  let p2 = Int64.mul a_hi b_lo in
+  let p3 = Int64.mul a_hi b_hi in
+  let cy = Int64.shift_right_logical
+    (Int64.add (Int64.shift_right_logical p0 32)
+       (Int64.add (Int64.logand p1 0xFFFFFFFFL) (Int64.logand p2 0xFFFFFFFFL))) 32 in
+  Int64.add p3 (Int64.add (Int64.shift_right_logical p1 32)
+                  (Int64.add (Int64.shift_right_logical p2 32) cy))
+
+let imulh_i64 a b =
+  let ures = mulh_u64 a b in
+  let adj_a = if a < 0L then b else 0L in
+  let adj_b = if b < 0L then a else 0L in
+  Int64.sub (Int64.sub ures adj_a) adj_b
+
 let step state = function
   | Nop -> Ok None
   | Mov { dst; src } ->
@@ -370,6 +391,10 @@ let step state = function
         | Mul | Imul ->
             let res = Int64.mul v1 v2 in
             res
+        | Mulh ->
+            mulh_u64 v1 v2
+        | Imulh ->
+            imulh_i64 v1 v2
         | Div ->
             if v2 = 0L then 0L
             else Int64.unsigned_div v1 v2

@@ -77,6 +77,22 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   (* M-extension: Mul / Div / Rem *)
   | (("mul" | "mulw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Mul ~dst ~src1 ~src2 ~set_flags:false)
+  | (("mulh" | "mulhw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Ok (emit_3addr_alu ~op:Imulh ~dst ~src1 ~src2 ~set_flags:false)
+  | (("mulhu" | "mulhuw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Ok (emit_3addr_alu ~op:Mulh ~dst ~src1 ~src2 ~set_flags:false)
+  | ("mulhsu", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      let ir_s2 = raw_to_ir_operand src2 in
+      Ok [
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
+        Ir.Alu { op = Mulh; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = ir_s2; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src1 };
+        Ir.Alu { op = Sar; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 63L; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp2; src = ir_s2 };
+        Ir.Alu { op = And; dst = Register.vtmp2; src1 = Reg Register.vtmp2; src2 = Reg Register.vtmp1; set_flags = false };
+        Ir.Mov { dst = Reg dst; src = Reg Register.vtmp0 };
+        Ir.Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg Register.vtmp2; set_flags = false };
+      ]
   | (("div" | "divw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Idiv ~dst ~src1 ~src2 ~set_flags:false)
   | (("divu" | "divuw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
@@ -106,14 +122,38 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok (emit_3addr_alu ~op:Or ~dst ~src1 ~src2 ~set_flags:false)
   | (("xor" | "xori"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Xor ~dst ~src1 ~src2 ~set_flags:false)
+  | ("andn", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Ok [
+        Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand src2 };
+        Ir.Unary { op = Not; dst = Register.vtmp0; src = Reg Register.vtmp0; set_flags = false };
+        Ir.Mov { dst = Reg dst; src = Reg src1 };
+        Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+      ]
+  | ("orn", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Ok [
+        Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand src2 };
+        Ir.Unary { op = Not; dst = Register.vtmp0; src = Reg Register.vtmp0; set_flags = false };
+        Ir.Mov { dst = Reg dst; src = Reg src1 };
+        Ir.Alu { op = Or; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+      ]
+  | ("xnor", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Reg src1 };
+        Ir.Alu { op = Xor; dst; src1 = Reg dst; src2 = raw_to_ir_operand src2; set_flags = false };
+        Ir.Unary { op = Not; dst; src = Reg dst; set_flags = false };
+      ]
 
-  (* Shifts *)
+  (* Shifts & Rotates *)
   | (("sll" | "slli" | "sllw" | "slliw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Shl ~dst ~src1 ~src2 ~set_flags:false)
   | (("srl" | "srli" | "srlw" | "srliw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Shr ~dst ~src1 ~src2 ~set_flags:false)
   | (("sra" | "srai" | "sraw" | "sraiw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Sar ~dst ~src1 ~src2 ~set_flags:false)
+  | (("rol" | "rolw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Ok (emit_3addr_alu ~op:Rol ~dst ~src1 ~src2 ~set_flags:false)
+  | (("ror" | "rori" | "rorw" | "roriw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Ok (emit_3addr_alu ~op:Ror ~dst ~src1 ~src2 ~set_flags:false)
 
   (* Set Less Than *)
   | (("slt" | "slti"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
@@ -314,6 +354,41 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [
         Ir.Mov { dst = Reg dst; src = Reg src };
         Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm 0xFFFFL; set_flags = false };
+      ]
+  | (("min" | "max" | "minu" | "maxu"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      let cond = match mnemonic with
+        | "min"  -> Flags.L
+        | "max"  -> Flags.G
+        | "minu" -> Flags.B
+        | "maxu" -> Flags.A
+        | _ -> assert false
+      in
+      let ir_s2 = raw_to_ir_operand src2 in
+      Ok [
+        Ir.Cmp { src1 = Reg src1; src2 = ir_s2 };
+        Ir.Mov { dst = Reg dst; src = ir_s2 };
+        Ir.Cmov { cond; dst; src = Reg src1 };
+      ]
+  | (("sh1add" | "sh1adduw"), [ OpReg dst; OpReg src1; OpReg src2 ]) ->
+      Ok [
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
+        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 1L; set_flags = false };
+        Ir.Mov { dst = Reg dst; src = Reg src2 };
+        Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+      ]
+  | (("sh2add" | "sh2adduw"), [ OpReg dst; OpReg src1; OpReg src2 ]) ->
+      Ok [
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
+        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 2L; set_flags = false };
+        Ir.Mov { dst = Reg dst; src = Reg src2 };
+        Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+      ]
+  | (("sh3add" | "sh3adduw"), [ OpReg dst; OpReg src1; OpReg src2 ]) ->
+      Ok [
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
+        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 3L; set_flags = false };
+        Ir.Mov { dst = Reg dst; src = Reg src2 };
+        Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
       ]
 
   (* V-extension: RVV Vector Operations *)

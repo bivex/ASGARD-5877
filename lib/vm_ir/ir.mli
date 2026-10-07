@@ -18,6 +18,8 @@ type alu_op =
   | Imul
   | Div
   | Idiv
+  | Mulh
+  | Imulh
 
 type unary_op =
   | Not

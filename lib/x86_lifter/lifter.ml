@@ -493,7 +493,7 @@ let lift_vector_binop mnem ops =
 
 let lift_instr mnem ops =
   match mnem, ops with
-  | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align"), _ -> Ok [ Ir.Nop ]
+  | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align" | "mfence" | "lfence" | "sfence" | "pause" | "prefetcht0" | "prefetcht1" | "prefetcht2" | "prefetchnta" | "prefetch" | "clflush" | "clflushopt"), _ -> Ok [ Ir.Nop ]
   | "ret", [] -> Ok [ Ir.Ret ]
   | "vm_enter", [] -> Ok [ Ir.Vm_enter ]
   | "vm_exit", [] -> Ok [ Ir.Vm_exit ]
@@ -559,6 +559,20 @@ let lift_instr mnem ops =
               Ir.Mov { dst = Ir.Reg d; src = Ir.Reg d64 };
             ]
       | _ -> Error "Invalid operands for movsx/movsxd")
+  | "movbe", [ OpReg dst; OpMem m ] ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      Ok [
+        Ir.Mov { dst = Ir.Reg dst; src = Ir.Mem mem_ref };
+        Ir.Unary { op = Ir.Bswap; dst; src = Ir.Reg dst; set_flags = false };
+      ]
+  | "movbe", [ OpMem m; OpReg src ] ->
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let scratch = Register.with_width Register.vtmp0 (Register.get_width src) in
+      Ok [
+        Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg src };
+        Ir.Unary { op = Ir.Bswap; dst = scratch; src = Ir.Reg scratch; set_flags = false };
+        Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg scratch };
+      ]
 
   | "lea", [ dst; OpMem addr ] -> (
       match dst with
@@ -697,6 +711,101 @@ let lift_instr mnem ops =
         | _ -> []
       in
       Ok (test_instrs @ modify_instrs)
+  | "andn", [ OpReg dst; src1; src2 ] ->
+      let* ir_s1 = to_ir_operand src1 in
+      let* ir_s2 = to_ir_operand src2 in
+      Ok [
+        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = ir_s1 };
+        Ir.Unary { op = Ir.Not; dst = Register.vtmp1; src = Ir.Reg Register.vtmp1; set_flags = false };
+        Ir.Alu { op = Ir.And; dst; src1 = Ir.Reg Register.vtmp1; src2 = ir_s2; set_flags = true };
+      ]
+  | ("shlx" | "shrx" | "sarx"), [ OpReg dst; src; count ] ->
+      let alu_op = match mnem with "shlx" -> Ir.Shl | "shrx" -> Ir.Shr | "sarx" -> Ir.Sar | _ -> assert false in
+      let* ir_src = to_ir_operand src in
+      let* ir_cnt = to_ir_operand count in
+      Ok [
+        Ir.Mov { dst = Ir.Reg dst; src = ir_src };
+        Ir.Alu { op = alu_op; dst; src1 = Ir.Reg dst; src2 = ir_cnt; set_flags = false };
+      ]
+  | "rorx", [ OpReg dst; src; imm ] ->
+      let* ir_src = to_ir_operand src in
+      let* ir_imm = to_ir_operand imm in
+      Ok [
+        Ir.Mov { dst = Ir.Reg dst; src = ir_src };
+        Ir.Alu { op = Ir.Ror; dst; src1 = Ir.Reg dst; src2 = ir_imm; set_flags = false };
+      ]
+  | "bzhi", [ OpReg dst; src; index ] ->
+      let* ir_src = to_ir_operand src in
+      let* ir_idx = to_ir_operand index in
+      Ok [
+        Ir.Mov { dst = Ir.Reg Register.vtmp2; src = ir_idx };
+        Ir.Alu { op = Ir.And; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 0xFFL; set_flags = false };
+        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm 1L };
+        Ir.Alu { op = Ir.Shl; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+        Ir.Alu { op = Ir.Sub; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Imm 1L; set_flags = false };
+        Ir.Mov { dst = Ir.Reg dst; src = ir_src };
+        Ir.Alu { op = Ir.And; dst; src1 = Ir.Reg dst; src2 = Ir.Reg Register.vtmp1; set_flags = true };
+      ]
+  | "bextr", [ OpReg dst; src; control ] ->
+      let* ir_src = to_ir_operand src in
+      let* ir_ctrl = to_ir_operand control in
+      Ok [
+        Ir.Mov { dst = Ir.Reg Register.vtmp2; src = ir_ctrl };
+        Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vtmp2 };
+        Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0xFFL; set_flags = false };
+        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Reg Register.vtmp2 };
+        Ir.Alu { op = Ir.Shr; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Imm 8L; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Imm 0xFFL; set_flags = false };
+        Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Imm 1L };
+        Ir.Alu { op = Ir.Shl; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+        Ir.Alu { op = Ir.Sub; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 1L; set_flags = false };
+        Ir.Mov { dst = Ir.Reg dst; src = ir_src };
+        Ir.Alu { op = Ir.Shr; dst; src1 = Ir.Reg dst; src2 = Ir.Reg Register.vtmp0; set_flags = false };
+        Ir.Alu { op = Ir.And; dst; src1 = Ir.Reg dst; src2 = Ir.Reg Register.vtmp2; set_flags = true };
+      ]
+  | ("shld" | "shrd"), [ dst; src; count ] ->
+      let* _ = to_ir_operand dst in
+      let* ir_src = to_ir_operand src in
+      let* ir_cnt = to_ir_operand count in
+      let w_bits = match dst with
+        | OpReg r -> Register.width_to_bits (Register.get_width r)
+        | OpMem m -> Register.width_to_bits m.width
+        | _ -> 64
+      in
+      let d_reg = match dst with OpReg r -> r | _ -> Register.vtmp0 in
+      let load_dst = match dst with
+        | OpReg _ -> []
+        | OpMem m -> [ Ir.Mov { dst = Ir.Reg d_reg; src = Ir.Mem { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } } ]
+        | _ -> []
+      in
+      let store_dst = match dst with
+        | OpReg _ -> []
+        | OpMem m -> [ Ir.Mov { dst = Ir.Mem { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false }; src = Ir.Reg d_reg } ]
+        | _ -> []
+      in
+      let mask_cnt = Int64.of_int (w_bits - 1) in
+      let prep_cnt = [
+        Ir.Mov { dst = Ir.Reg Register.vtmp2; src = ir_cnt };
+        Ir.Alu { op = Ir.And; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm mask_cnt; set_flags = false };
+      ] in
+      let prep_inv_cnt = [
+        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm (Int64.of_int w_bits) };
+        Ir.Alu { op = Ir.Sub; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+      ] in
+      let shift_ops =
+        if mnem = "shld" then [
+          Ir.Alu { op = Ir.Shl; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = ir_src };
+          Ir.Alu { op = Ir.Shr; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Alu { op = Ir.Or; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp0; set_flags = true };
+        ] else [
+          Ir.Alu { op = Ir.Shr; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = ir_src };
+          Ir.Alu { op = Ir.Shl; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Alu { op = Ir.Or; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp0; set_flags = true };
+        ]
+      in
+      Ok (load_dst @ prep_cnt @ prep_inv_cnt @ shift_ops @ store_dst)
   | "clc", _ ->
       Ok [ Ir.Cmp { src1 = Ir.Imm 1L; src2 = Ir.Imm 0L } ]
   | "stc", _ ->

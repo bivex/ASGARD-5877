@@ -91,6 +91,8 @@ type raw_op_kind =
   | OP_MOV_VR
   | OP_MOV_RV
   | OP_FCSEL_VV
+  | OP_MULH_RR
+  | OP_IMULH_RR
 
 val all_op_kinds : raw_op_kind list
 val op_kind_to_handler_name : raw_op_kind -> string
