@@ -739,7 +739,16 @@ static void h_call_extern(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) 
     int32_t sym_idx = fetch_i32(vm, bytecode, vip);
     void* sym_ptr = asgard_resolve_sym_idx(sym_idx);
     if (sym_ptr) {
-{%- if is_aarch64 %}
+{%- if is_riscv %}
+        uint64_t a0 = vm->ctx[0];  /* a0 (RAX) */
+        uint64_t a1 = vm->ctx[2];  /* a1 (RDX) */
+        uint64_t a2 = vm->ctx[1];  /* a2 (RCX) */
+        uint64_t a3 = vm->ctx[6];  /* a3 (RSI) */
+        uint64_t a4 = vm->ctx[7];  /* a4 (RDI) */
+        uint64_t a5 = vm->ctx[8];  /* a5 (R8)  */
+        uint64_t a6 = vm->ctx[9];  /* a6 (R9)  */
+        uint64_t a7 = vm->ctx[12]; /* a7 (R12) */
+{%- elif is_aarch64 %}
         uint64_t a0 = vm->ctx[0]; /* X0 (RAX) */
         uint64_t a1 = vm->ctx[1]; /* X1 (RCX) */
         uint64_t a2 = vm->ctx[2]; /* X2 (RDX) */
@@ -1125,7 +1134,16 @@ static inline uint64_t stack_vm_call(const uint64_t* bc_words, size_t len_words,
     uint64_t sp_val = (uint64_t)(host_stack + sizeof(host_stack) - 8192);
     vm.ctx[4] = sp_val;
     vm.ctx[5] = sp_val;
-{%- if is_aarch64 %}
+{%- if is_riscv %}
+    vm.ctx[0] = a0;  /* a0 (RAX) */
+    vm.ctx[2] = a1;  /* a1 (RDX) */
+    vm.ctx[1] = a2;  /* a2 (RCX) */
+    vm.ctx[6] = a3;  /* a3 (RSI) */
+    vm.ctx[7] = a4;  /* a4 (RDI) */
+    vm.ctx[8] = a5;  /* a5 (R8)  */
+    vm.ctx[9] = a6;  /* a6 (R9)  */
+    vm.ctx[12] = a7; /* a7 (R12) */
+{%- elif is_aarch64 %}
     vm.ctx[0] = a0; /* X0 (RAX) */
     vm.ctx[1] = a1; /* X1 (RCX) */
     vm.ctx[2] = a2; /* X2 (RDX) */

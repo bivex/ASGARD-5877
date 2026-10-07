@@ -10,23 +10,38 @@ let get_inc_args include_dir source_file =
   else
     base
 
+let get_compiler_for_arch arch is_c =
+  match arch with
+  | Riscv64 ->
+      (match Sys.getenv_opt "RISCV_CLANG" with
+      | Some c -> c
+      | None ->
+          if Sys.file_exists "/opt/homebrew/opt/llvm@21/bin/clang" then
+            if is_c then "/opt/homebrew/opt/llvm@21/bin/clang" else "/opt/homebrew/opt/llvm@21/bin/clang++"
+          else if Sys.file_exists "/opt/homebrew/opt/llvm/bin/clang" then
+            if is_c then "/opt/homebrew/opt/llvm/bin/clang" else "/opt/homebrew/opt/llvm/bin/clang++"
+          else if is_c then "clang" else "clang++")
+  | _ ->
+      if is_c then "clang" else "clang++"
+
 let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir : string) : (unit, error) result =
   let target_args =
     match arch with
     | X86_64 -> Cmd.(v "-target" % "x86_64-apple-darwin" % "-masm=intel")
     | Arm64 -> Cmd.(v "-target" % "arm64-apple-darwin" % "-fno-inline" % "-fno-stack-check" % "-mno-stack-arg-probe")
-    | Riscv64 -> Cmd.(v "-target" % "riscv64-unknown-elf" % "-march=rv64gcv" % "-mabi=lp64d" % "-fno-inline")
+    | Riscv64 -> Cmd.(v "-target" % "riscv64-linux-gnu" % "-march=rv64gc" % "-mabi=lp64d" % "-fno-inline")
   in
   let inc_args = get_inc_args include_dir c_source in
+  let compiler = get_compiler_for_arch arch true in
   let cmd =
-    Cmd.(v "clang" % "-S" %% target_args % "-O1" % "-fno-stack-protector" % "-Wno-format-security"
+    Cmd.(v compiler % "-S" %% target_args % "-O1" % "-fno-stack-protector" % "-Wno-format-security"
          %% inc_args % "-fno-asynchronous-unwind-tables" % c_source % "-o" % out_asm)
   in
   match OS.Cmd.run_status cmd with
   | Ok (`Exited 0) -> Ok ()
-  | Ok (`Exited c) -> Error (Printf.sprintf "clang -S failed with exit code %d" c)
-  | Ok (`Signaled s) -> Error (Printf.sprintf "clang -S terminated by signal %d" s)
-  | Error (`Msg msg) -> Error (Printf.sprintf "clang -S execution error: %s" msg)
+  | Ok (`Exited c) -> Error (Printf.sprintf "%s -S failed with exit code %d" compiler c)
+  | Ok (`Signaled s) -> Error (Printf.sprintf "%s -S terminated by signal %d" compiler s)
+  | Error (`Msg msg) -> Error (Printf.sprintf "%s -S execution error: %s" compiler msg)
 
 let compile_native_binary ~is_c ~(source_file : string) ~(out_binary : string) ~(include_dir : string) : (unit, error) result =
   let is_debug =

@@ -368,6 +368,16 @@ static ASG_CALL_NOINLINE uint64_t asgard_vm_call(const uint64_t* bc, size_t len,
     ctx.set_reg(vanguard_threaded_vm::REG_R8,  a4);
     ctx.set_reg(vanguard_threaded_vm::REG_R9,  a5);
     ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
+#elif defined(__riscv) || defined(__riscv__)
+    // RISC-V LP64 ABI argument mapping (a0->RAX, a1->RDX, a2->RCX, a3->RSI, a4->RDI, a5->R8, a6->R9, a7->R12)
+    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a1);
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a2);
+    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a3);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a4);
+    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a5);
+    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a6);
+    ctx.set_reg(vanguard_threaded_vm::REG_R12, a7);
 #else
     // ARM64 calling convention mapping (x0->RAX, x1->RCX, x2->RDX, x3->RBX, x4->RSI, x5->RDI, x6->R8, x7->R9)
     ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);

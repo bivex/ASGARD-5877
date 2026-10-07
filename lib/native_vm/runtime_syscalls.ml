@@ -155,6 +155,55 @@ static inline __attribute__((always_inline)) int64_t direct_syscall_6(int64_t sy
     __asm__ volatile("svc #0" : "+r"(x0) : "r"(x8), "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5) : "memory", "cc");
     return x0;
 }
+#elif defined(__linux__) && (defined(__riscv) || defined(__riscv__))
+// Linux RISC-V Direct Syscalls (ECALL with a7 syscall number, return in a0)
+static inline __attribute__((always_inline)) int64_t direct_syscall_0(int64_t sys_num) noexcept {
+    register int64_t a7_reg __asm__("a7") = sys_num;
+    register int64_t a0_reg __asm__("a0");
+    __asm__ volatile("ecall" : "=r"(a0_reg) : "r"(a7_reg) : "memory");
+    return a0_reg;
+}
+static inline __attribute__((always_inline)) int64_t direct_syscall_1(int64_t sys_num, int64_t a1) noexcept {
+    register int64_t a7_reg __asm__("a7") = sys_num;
+    register int64_t a0_reg __asm__("a0") = a1;
+    __asm__ volatile("ecall" : "+r"(a0_reg) : "r"(a7_reg) : "memory");
+    return a0_reg;
+}
+static inline __attribute__((always_inline)) int64_t direct_syscall_2(int64_t sys_num, int64_t a1, int64_t a2) noexcept {
+    register int64_t a7_reg __asm__("a7") = sys_num;
+    register int64_t a0_reg __asm__("a0") = a1;
+    register int64_t a1_reg __asm__("a1") = a2;
+    __asm__ volatile("ecall" : "+r"(a0_reg) : "r"(a7_reg), "r"(a1_reg) : "memory");
+    return a0_reg;
+}
+static inline __attribute__((always_inline)) int64_t direct_syscall_3(int64_t sys_num, int64_t a1, int64_t a2, int64_t a3) noexcept {
+    register int64_t a7_reg __asm__("a7") = sys_num;
+    register int64_t a0_reg __asm__("a0") = a1;
+    register int64_t a1_reg __asm__("a1") = a2;
+    register int64_t a2_reg __asm__("a2") = a3;
+    __asm__ volatile("ecall" : "+r"(a0_reg) : "r"(a7_reg), "r"(a1_reg), "r"(a2_reg) : "memory");
+    return a0_reg;
+}
+static inline __attribute__((always_inline)) int64_t direct_syscall_4(int64_t sys_num, int64_t a1, int64_t a2, int64_t a3, int64_t a4) noexcept {
+    register int64_t a7_reg __asm__("a7") = sys_num;
+    register int64_t a0_reg __asm__("a0") = a1;
+    register int64_t a1_reg __asm__("a1") = a2;
+    register int64_t a2_reg __asm__("a2") = a3;
+    register int64_t a3_reg __asm__("a3") = a4;
+    __asm__ volatile("ecall" : "+r"(a0_reg) : "r"(a7_reg), "r"(a1_reg), "r"(a2_reg), "r"(a3_reg) : "memory");
+    return a0_reg;
+}
+static inline __attribute__((always_inline)) int64_t direct_syscall_6(int64_t sys_num, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5, int64_t a6) noexcept {
+    register int64_t a7_reg __asm__("a7") = sys_num;
+    register int64_t a0_reg __asm__("a0") = a1;
+    register int64_t a1_reg __asm__("a1") = a2;
+    register int64_t a2_reg __asm__("a2") = a3;
+    register int64_t a3_reg __asm__("a3") = a4;
+    register int64_t a4_reg __asm__("a4") = a5;
+    register int64_t a5_reg __asm__("a5") = a6;
+    __asm__ volatile("ecall" : "+r"(a0_reg) : "r"(a7_reg), "r"(a1_reg), "r"(a2_reg), "r"(a3_reg), "r"(a4_reg), "r"(a5_reg) : "memory");
+    return a0_reg;
+}
 #else
 static inline int64_t direct_syscall_0(int64_t s) noexcept { (void)s; return 0; }
 static inline int64_t direct_syscall_1(int64_t s, int64_t a) noexcept { (void)s; (void)a; return 0; }
@@ -169,7 +218,7 @@ static inline pid_t sys_getpid() noexcept {
     return (pid_t)direct_syscall_0(20); // SYS_getpid
 #elif defined(__linux__) && defined(__x86_64__)
     return (pid_t)direct_syscall_0(39); // SYS_getpid
-#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__))
+#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
     return (pid_t)direct_syscall_0(172); // SYS_getpid
 #else
     return 0;
@@ -181,7 +230,7 @@ static inline int64_t sys_write(int fd, const void* buf, size_t count) noexcept 
     return direct_syscall_3(4, (int64_t)fd, (int64_t)buf, (int64_t)count); // SYS_write
 #elif defined(__linux__) && defined(__x86_64__)
     return direct_syscall_3(1, (int64_t)fd, (int64_t)buf, (int64_t)count); // SYS_write
-#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__))
+#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
     return direct_syscall_3(64, (int64_t)fd, (int64_t)buf, (int64_t)count); // SYS_write
 #else
     return 0;
@@ -193,7 +242,7 @@ static inline void sys_exit(int status) noexcept {
     direct_syscall_1(1, (int64_t)status); // SYS_exit
 #elif defined(__linux__) && defined(__x86_64__)
     direct_syscall_1(60, (int64_t)status); // SYS_exit
-#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__))
+#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
     direct_syscall_1(93, (int64_t)status); // SYS_exit
 #else
     _exit(status);
@@ -214,8 +263,8 @@ static inline bool sys_check_debugger_present() noexcept {
     int fd = -1;
 #if defined(__x86_64__)
     fd = (int)direct_syscall_2(2, (int64_t)"/proc/self/status", 0);
-#elif defined(__arm64__) || defined(__aarch64__)
-    fd = (int)direct_syscall_4(257, -100, (int64_t)"/proc/self/status", 0, 0);
+#elif defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__)
+    fd = (int)direct_syscall_4(56, -100, (int64_t)"/proc/self/status", 0, 0);
 #endif
     if (fd < 0) return false;
     char buf[512];

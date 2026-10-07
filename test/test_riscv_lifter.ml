@@ -229,6 +229,57 @@ test_adapter:
        | Ok snap -> check int64 "adapter returns 42" 42L snap.final_rax
        | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_riscv_multi_region_lifting () =
+  let asm = {|
+.globl fn_one
+fn_one:
+    // ASGARD_MARKER_BEGIN: fn_one
+    addi a0, a0, 10
+    ret
+    // ASGARD_MARKER_END
+
+.globl fn_two
+fn_two:
+    // ASGARD_MARKER_BEGIN: fn_two
+    slli a0, a0, 2
+    ret
+    // ASGARD_MARKER_END
+|} in
+  match Protect_adapters.Riscv_lifter_adapter.lift_source asm with
+  | Error err -> fail ("Multi-region lift failed: " ^ err)
+  | Ok (f, _) ->
+      let raw_funcs = Random_visa_ports.Protect_ports.unwrap_multi_ir f in
+      check int "lifted 2 functions" 2 (List.length raw_funcs);
+      let (name1, f1) = List.nth raw_funcs 0 in
+      let (name2, f2) = List.nth raw_funcs 1 in
+      check string "name 1" "fn_one" name1;
+      check string "name 2" "fn_two" name2;
+      (match Reference_vm.evaluate f1 with
+       | Ok snap -> check int64 "fn_one: 0 + 10 = 10" 10L snap.final_rax
+       | Error msg -> fail msg);
+      (match Reference_vm.evaluate f2 with
+       | Ok snap -> check int64 "fn_two: 0 << 2 = 0" 0L snap.final_rax
+       | Error msg -> fail msg)
+
+let test_riscv_vm_pipeline () =
+  let asm = {|
+.globl compute_token
+compute_token:
+    li a0, 1337
+    addi a0, a0, 42
+    ret
+|} in
+  match lift_function ~options:{ function_name = "compute_token" } asm with
+  | Error err -> fail ("Lift failed: " ^ err)
+  | Ok func ->
+      let rng = Random.State.make [| 2026 |] in
+      let pkg = Native_vm.Vm_emitter.compile_and_package ~rng func in
+      check bool "bytecode generated" true (List.length pkg.bytecode > 0);
+      check bool "cpp runtime contains asgard_vm_call" true
+        (String.contains pkg.cpp_runtime_source 'a' && String.contains pkg.cpp_runtime_source 's');
+      check bool "DRS score > 20" true
+        (Native_vm.Metrics.devirtualization_resistance_score pkg.metrics > 20.0)
+
 let tests = [
   ("RISC-V Lift Arithmetic (add)", `Quick, test_riscv_lift_arithmetic);
   ("RISC-V Lift Sub & Mul", `Quick, test_riscv_lift_sub_mul);
@@ -242,4 +293,6 @@ let tests = [
   ("RISC-V Lift RVV Vector Operations (vadd/vsub/vle8/vse8/vmv)", `Quick, test_riscv_lift_rvv);
   ("RISC-V Lift Pseudo Branches (bltz)", `Quick, test_riscv_pseudo_branches);
   ("RISC-V Lifter Adapter", `Quick, test_riscv_lifter_adapter);
+  ("RISC-V Multi-Region Lifting", `Quick, test_riscv_multi_region_lifting);
+  ("RISC-V VM Pipeline Compilation", `Quick, test_riscv_vm_pipeline);
 ]

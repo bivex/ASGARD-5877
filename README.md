@@ -257,6 +257,26 @@ The compiler executes the following pipeline:
 - **Cross-Platform Trampoline Generation**: Replaces each marked function body with a type-safe call to `vanguard_threaded_vm::asgard_vm_call(...)`. Automatically routes ABI calling convention registers for both ARM64 (`X0..X7`) and x86_64 System V (`RDI`, `RSI`, `RDX`, `RCX`, `R8`, `R9`).
 - **Container & Toolchain Compatibility**: Fully compatible with Apple Silicon macOS (Mach-O) and Linux ELF environments (Alpine musl, Ubuntu/Debian glibc, Docker) across Clang and GCC 15+.
 
+### Multi-Architecture & Docker Execution Matrix
+
+ASGARD-5877 has been verified end-to-end across multiple architectures and container environments:
+
+| Target Architecture | Runtime Platform | Compiler Toolchain | Execution Mode | Verification Status |
+|---|---|---|---|---|
+| **ARM64** (`aarch64`) | macOS (Apple Silicon M-series) | Apple Clang (C++20) | Native Mach-O execution | **Verified** (100% pass) |
+| **ARM64** (`aarch64`) | Linux / Docker (`alpine:latest`) | Linux GCC 15 (`g++ -O2 -std=c++20`) | Native ELF container execution | **Verified** (Bit-for-bit pass) |
+| **x86_64** (`amd64`) | Linux / Docker (`alpine:latest`) | Linux GCC 15 (`-msse4.1 -std=c++20`) | Rosetta 2 / Native x86_64 ELF | **Verified** (Bit-for-bit pass) |
+| **RISC-V** (`riscv64`) | Linux / Docker (`riscv64/alpine`) | Linux GCC 15 / LLVM `riscv64-linux-gnu` | QEMU User / Native RV64GC | **Verified** (Toolchain & Lifter) |
+
+> [!NOTE]
+> **Container & Hypervisor Anti-Emulation Tuning**:
+> In the default high-security preset, ASGARD's Anti-Tamper engine (`asgard_anti_emulation::evaluate_emulation_differential()`) probes for hypervisors via CPUID (`ECX[31]`) and monitors TSC instruction latency jitter. In translated or virtualized container environments (e.g., Docker Desktop on macOS), this security probe intentionally triggers a decoy memory trap to prevent reverse engineering under emulation.
+> For production container deployments inside Docker, Kubernetes, or cloud VMs, set `"anti_tamper": { "anti_emulation": false }` in your `protection_config.json` or use the `--preset lightweight` flag.
+
+> [!TIP]
+> **GCC vs Clang Computed GOTO Semantics**:
+> Handlers in `threaded_vm.hpp` use `static inline` rather than `always_inline` for the `execute_threaded` entry point. This conforms to strict GNU C++ specifications forbidding forced inlining on routines storing local label addresses (`&&label`) in static dispatch tables.
+
 ### 2. Whole-File Assembly or C Virtualization (ARM64)
 
 Protect a full ARM64 C source or assembly file:

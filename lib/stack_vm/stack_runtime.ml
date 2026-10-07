@@ -456,6 +456,7 @@ let generate_c_runtime
     ("dispatch_cases", Jingoo.Jg_types.Tlist dispatch_cases);
     ("is_address_bound", Jingoo.Jg_types.Tbool (enc.addr_mask <> 0L));
     ("is_aarch64", Jingoo.Jg_types.Tbool (cfg.arch = AArch64));
+    ("is_riscv", Jingoo.Jg_types.Tbool (cfg.arch = RV64));
     ("seed_key_hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.seed_key));
     ("tag_key0", Jingoo.Jg_types.Tstr tag_key0);
     ("tag_key1", Jingoo.Jg_types.Tstr tag_key1);

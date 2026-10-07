@@ -13,6 +13,7 @@ let main_cmd =
     Cli_vanguard.vanguard_cmd;
     Cli_protect.protect_cmd;
     Cli_protect_arm64.protect_arm64_cmd;
+    Cli_protect_riscv.protect_riscv_cmd;
     Cli_protect.c_obf_cmd;
     Cli_project.project_cmd;
     Cli_protect.init_config_cmd;

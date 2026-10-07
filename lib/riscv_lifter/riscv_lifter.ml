@@ -424,7 +424,15 @@ let extract_marked_regions ?(require_markers = false) (raw_lines : Riscv_parser.
             seen_begin := true
 
         | Riscv_parser.LineMarkerEnd ->
-            seen_end := true
+            seen_end := true;
+            (match !current_mode with
+            | Some m when !seen_begin ->
+                regions := (m, Riscv_parser.LineLabel !last_label :: List.rev !fn_lines) :: !regions;
+                current_mode := None;
+                seen_begin := false;
+                seen_end := false;
+                fn_lines := []
+            | _ -> ())
 
         | other ->
             if !seen_begin && not !seen_end then

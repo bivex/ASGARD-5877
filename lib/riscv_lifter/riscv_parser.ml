@@ -174,40 +174,42 @@ let parse_lines text =
   let rec loop acc = function
     | [] -> Ok (List.rev acc)
     | l :: rest ->
-        let clean = strip_comments l in
-        if clean = "" then loop (LineEmpty :: acc) rest
-        else if contains_sub clean "ASGARD_" || contains_sub clean "asgard_" then
-          let upper = String.uppercase_ascii clean in
-          if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" then
+        if contains_sub l "ASGARD_" || contains_sub l "asgard_" then
+          let upper = String.uppercase_ascii l in
+          if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" || contains_sub upper "ASGARD_MARKER_BEGIN_V" then
             let acc' = match acc with
               | LineInstr ("j", _) :: prev | LineInstr ("jal", _) :: prev -> prev
               | _ -> acc
             in
             loop (LineMarkerBegin (ModeVirtualize "region") :: acc') rest
-          else if contains_sub upper "ASGARD_BEG_M" || contains_sub upper "ASGARD_BEGIN_M" then
+          else if contains_sub upper "ASGARD_BEG_M" || contains_sub upper "ASGARD_BEGIN_M" || contains_sub upper "ASGARD_MARKER_BEGIN_M" then
             let acc' = match acc with
               | LineInstr ("j", _) :: prev | LineInstr ("jal", _) :: prev -> prev
               | _ -> acc
             in
             loop (LineMarkerBegin (ModeMutation "region") :: acc') rest
-          else if contains_sub upper "ASGARD_BEG" || contains_sub upper "ASGARD_BEGIN" then
+          else if contains_sub upper "ASGARD_BEG" || contains_sub upper "ASGARD_BEGIN" || contains_sub upper "ASGARD_MARKER_BEGIN" then
             let acc' = match acc with
               | LineInstr ("j", _) :: prev | LineInstr ("jal", _) :: prev -> prev
               | _ -> acc
             in
             loop (LineMarkerBegin (ModeUltra "region") :: acc') rest
-          else if contains_sub upper "ASGARD_END" then
+          else if contains_sub upper "ASGARD_END" || contains_sub upper "ASGARD_MARKER_END" then
             let acc' = match acc with
               | LineInstr ("j", _) :: prev | LineInstr ("jal", _) :: prev -> prev
               | _ -> acc
             in
             loop (LineMarkerEnd :: acc') rest
           else
-            match parse_line l with
+            let clean = strip_comments l in
+            if clean = "" then loop (LineEmpty :: acc) rest
+            else match parse_line l with
             | Ok res -> loop (res :: acc) rest
             | Error err -> Error err
         else
-          match parse_line l with
+          let clean = strip_comments l in
+          if clean = "" then loop (LineEmpty :: acc) rest
+          else match parse_line l with
           | Ok res -> loop (res :: acc) rest
           | Error err -> Error err
   in
