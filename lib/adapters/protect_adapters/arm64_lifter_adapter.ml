@@ -4,6 +4,13 @@ open Protect_ports
 let arch_name = "arm64"
 let target_arch = Arm64
 
+let extract_fn_name rlines =
+  match rlines with
+  | Arm64_lifter.Arm64_parser.LineLabel lbl :: _ ->
+      if String.starts_with ~prefix:"_" lbl then String.sub lbl 1 (String.length lbl - 1)
+      else lbl
+  | _ -> "target_func"
+
 let lift_source (text : string) : (ir_func * (string * string) list, error) result =
   let constants = Arm64_lifter.Arm64_parser.extract_constants text in
   let raw_lines =
@@ -17,11 +24,29 @@ let lift_source (text : string) : (ir_func * (string * string) list, error) resu
   in
   let lift_res =
     if regions <> [] then
-      let (_mode, rlines) = List.hd regions in
-      Arm64_lifter.lift_lines rlines
+      let lifted_regions =
+        List.filter_map
+          (fun (_mode, rlines) ->
+            let fn_name = extract_fn_name rlines in
+            match Arm64_lifter.lift_lines ~options:{ Arm64_lifter.function_name = fn_name } rlines with
+            | Ok f -> Some (fn_name, f)
+            | Error _ -> None)
+          regions
+      in
+      match lifted_regions with
+      | [] ->
+          (match Arm64_lifter.lift_function text with
+          | Ok f -> Ok (wrap_ir f)
+          | Error err -> Error err)
+      | [ (_name, f) ] ->
+          Ok (wrap_ir f)
+      | multi ->
+          Ok (wrap_multi_ir multi)
     else
-      Arm64_lifter.lift_function text
+      match Arm64_lifter.lift_function text with
+      | Ok f -> Ok (wrap_ir f)
+      | Error err -> Error err
   in
   match lift_res with
-  | Ok f -> Ok (wrap_ir f, constants)
+  | Ok ir -> Ok (ir, constants)
   | Error err -> Error err

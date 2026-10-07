@@ -435,6 +435,38 @@ uint64_t calculate_hash(
     check bool "u64 function passes clean args" true (contains_sub res_u64 "(uint64_t)a, (uint64_t)b")
   )
 
+let test_trampoline_multi_functions () =
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let out_multi = Filename.concat tmp_dir "multi_virt.cpp" in
+    let c_multi = {|
+#include <stdio.h>
+#include <stdint.h>
+
+int compute_add(int a, int b) {
+    ASGARD_BEGIN_VIRTUALIZE("add");
+    return a + b;
+}
+
+uint64_t compute_xor(uint64_t x, uint64_t y) {
+    ASGARD_BEGIN_VIRTUALIZE("xor");
+    return x ^ y;
+}
+|} in
+    let bc_add = [ 0x1111L; 0x2222L ] in
+    let bc_xor = [ 0x3333L; 0x4444L ] in
+    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+      ~c_src:c_multi
+      ~bytecodes:[ ("compute_add", bc_add); ("compute_xor", bc_xor) ]
+      ~bytecode:bc_add
+      ~out_path:out_multi ();
+    let res = Test_helpers.read_file_string out_multi in
+    check bool "contains embedded_bytecode_compute_add" true (contains_sub res "embedded_bytecode_compute_add");
+    check bool "contains embedded_bytecode_compute_xor" true (contains_sub res "embedded_bytecode_compute_xor");
+    check bool "contains trampoline call for compute_add" true (contains_sub res "asgard_vm_call(embedded_bytecode_compute_add");
+    check bool "contains trampoline call for compute_xor" true (contains_sub res "asgard_vm_call(embedded_bytecode_compute_xor");
+    check bool "contains original fallback embedded_bytecode" true (contains_sub res "embedded_bytecode[")
+  )
+
 let tests = [
   ("header_generation", `Quick, test_header_generation);
   ("header_tree_shaking", `Quick, test_header_tree_shaking);
@@ -447,6 +479,7 @@ let tests = [
   ("arithmetic_ast_rewriter_e2e", `Quick, test_arithmetic_rewriter);
   ("escapes_and_special_chars", `Quick, test_escapes_and_special_chars);
   ("trampoline_signatures_and_braces", `Quick, test_trampoline_signatures_and_braces);
+  ("trampoline_multi_functions", `Quick, test_trampoline_multi_functions);
 ]
 
 

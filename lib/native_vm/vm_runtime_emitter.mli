@@ -5,6 +5,7 @@ val emit_cpp_threaded_header :
   key_seed:int32 ->
   reg_perm:int array ->
   expected_hash:int64 ->
+  ?expected_hashes:int64 list ->
   ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t ->
   ?config:Protection_config.t ->
   ?external_symbols:string list ->

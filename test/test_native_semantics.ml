@@ -198,6 +198,96 @@ int main(void) {
               Alcotest.(check bool) "app printed the expected halfword 0xF6AA" true (String.contains out 'F' && String.contains out '6')
           | None -> Alcotest.fail "uint16 pipeline produced no execution output"))
 
+let contains_sub s sub =
+  let len_s = String.length s in
+  let len_sub = String.length sub in
+  if len_sub > len_s then false
+  else
+    let found = ref false in
+    for i = 0 to len_s - len_sub do
+      if not !found && String.sub s i len_sub = sub then found := true
+    done;
+    !found
+
+let test_e2e_multi_function_pipeline () =
+  let c_src = {|
+#include <stdio.h>
+#include <stdint.h>
+#include "asgard_obf.h"
+
+static uint64_t func_one(uint64_t a, uint64_t b) {
+    ASGARD_BEGIN_VIRTUALIZE("func_one");
+    volatile uint64_t res = a + b;
+    ASGARD_END();
+    return res;
+}
+
+static uint64_t func_two(uint64_t a, uint64_t b) {
+    ASGARD_BEGIN_VIRTUALIZE("func_two");
+    volatile uint64_t res = (a ^ b) + 0x1337ULL;
+    ASGARD_END();
+    return res;
+}
+
+int main(void) {
+    uint64_t v1 = func_one(100, 200);
+    uint64_t v2 = func_two(0x5555, 0x1111);
+    printf("func_one = %llu, func_two = %llu\n", (unsigned long long)v1, (unsigned long long)v2);
+    uint64_t expected_v2 = (0x5555ULL ^ 0x1111ULL) + 0x1337ULL;
+    return (v1 == 300ULL && v2 == expected_v2) ? 0 : 1;
+}
+|} in
+  with_temp_dir (fun tmp_dir ->
+      let c_path = Filename.concat tmp_dir "multi_app.c" in
+      write_file_string c_path c_src;
+      let out_dir = Filename.concat tmp_dir "out" in
+      let cfg =
+        Config_adapter.resolve
+          ~config_file:None
+          ~preset:None
+          ~enable_cff:false
+          ~enable_mba:false
+          ~mba_depth:2
+          ~seed:(Some 20261001)
+      in
+      let rng = Random.State.make [| 20261001 |] in
+      let lifter = (module Arm64_lifter_adapter : Random_visa_ports.Protect_ports.Lifter) in
+      let vm_packager = (module Vm_packagers.Threaded_vm_packager : Random_visa_ports.Protect_ports.Vm_packager) in
+      let trampoline = (module C_trampoline_adapter.C_trampoline_engine : Random_visa_ports.Protect_ports.Trampoline_engine) in
+      let toolchain = (module Clang_toolchain_adapter : Random_visa_ports.Protect_ports.Toolchain) in
+      let c_macro = (module C_macro_obf_adapter : Random_visa_ports.Protect_ports.C_macro_obfuscator) in
+      match
+        Random_visa_application.Protect_pipeline.run
+          ~lifter
+          ~c_macro_obfuscator:c_macro
+          ~vm_packager
+          ~trampoline_engine:trampoline
+          ~toolchain
+          ~rng
+          ~config:cfg
+          ~input_file:c_path
+          ~out_dir
+          ~compile_and_run:true
+          ()
+      with
+      | Error err -> Alcotest.fail ("multi-function pipeline failed: " ^ err)
+      | Ok res ->
+          let virt_cpp = Filename.concat out_dir "app_virtualized.cpp" in
+          let virt_src = read_file_string virt_cpp in
+          Alcotest.(check bool) "virt_cpp has embedded_bytecode_func_one" true
+            (contains_sub virt_src "embedded_bytecode_func_one");
+          Alcotest.(check bool) "virt_cpp has embedded_bytecode_func_two" true
+            (contains_sub virt_src "embedded_bytecode_func_two");
+          let hpp_path = Filename.concat out_dir "threaded_vm.hpp" in
+          let hpp_src = read_file_string hpp_path in
+          Alcotest.(check bool) "threaded_vm.hpp has valid_hashes" true
+            (contains_sub hpp_src "valid_hashes");
+          (match res.execution_output with
+          | Some (code, out) ->
+              Alcotest.(check bool) "multi-function protected app exit code 0" true (code = 0);
+              Alcotest.(check bool) "app printed expected output" true (contains_sub out "func_one = 300")
+          | None -> Alcotest.fail "multi-function pipeline produced no execution output"))
+
 (* TODO item 1 acceptance, part 2: the same uint16_t region compiled by clang
    at -O2 and -O3 (both emit identical codegen here), lifted from the marker
    region and executed natively through asgard_vm_call with the real argument.
@@ -570,6 +660,7 @@ let tests = [
   Alcotest.test_case "native_b16_word_memory" `Slow test_native_b16_word_memory;
   Alcotest.test_case "native_signed_loads" `Slow test_native_signed_loads;
   Alcotest.test_case "e2e_uint16_pipeline" `Slow test_e2e_uint16_pipeline;
+  Alcotest.test_case "e2e_multi_function_pipeline" `Slow test_e2e_multi_function_pipeline;
   Alcotest.test_case "e2e_uint16_clang_o2_o3" `Slow test_e2e_uint16_clang_o2_o3;
   Alcotest.test_case "e2e_signed_loads_clang_o2_o3" `Slow test_e2e_signed_loads_clang_o2_o3;
   Alcotest.test_case "canonicalize_3addr_alu_unit" `Quick test_canonicalize_3addr_alu_unit;

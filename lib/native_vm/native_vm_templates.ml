@@ -150,12 +150,30 @@ __attribute__((always_inline, visibility("hidden"))) static inline bool execute_
     for (size_t i = 0; i < count; ++i) {
         full_hash = ((full_hash ^ bytecode[i]) * 0x100000001B3ULL) + (uint64_t)i;
     }
+{%- if has_multi_hashes %}
+    static const uint64_t valid_hashes[] = {
+{%- for h in expected_hashes %}
+        {{ h }},
+{%- endfor %}
+    };
+    bool hash_ok = false;
+    for (size_t hi = 0; hi < sizeof(valid_hashes)/sizeof(valid_hashes[0]); ++hi) {
+        if (full_hash == valid_hashes[hi]) { hash_ok = true; break; }
+    }
+    if (!hash_ok) {
+        /* Anti-Patching Tripwire: Silent Context Poisoning */
+        ctx.reg_mask ^= 0xDEADBEEF5A5A5A5AULL;
+        ctx.trapped = true;
+        return false;
+    }
+{%- else %}
     if (full_hash != {{ expected_hash_hex }}) {
         /* Anti-Patching Tripwire: Silent Context Poisoning */
         ctx.reg_mask ^= 0xDEADBEEF5A5A5A5AULL;
         ctx.trapped = true;
         return false;
     }
+{%- endif %}
 
 {%- if enable_direct_syscalls %}
     /* Active Anti-Debugging Probe (Bypassing libc via Direct Kernel Syscalls) */

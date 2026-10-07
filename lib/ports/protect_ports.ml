@@ -4,10 +4,21 @@ type target_arch = X86_64 | Arm64 | Riscv64
 
 type vm_engine_kind = Threaded | Jit | MultiVm | Stack
 
-type ir_func = Ir_repr of Obj.t
+type ir_func =
+  | Ir_single of Obj.t
+  | Ir_multi of (string * Obj.t) list
 
-let wrap_ir x = Ir_repr (Obj.repr x)
-let unwrap_ir (Ir_repr x) = Obj.obj x
+let wrap_ir x = Ir_single (Obj.repr x)
+let wrap_multi_ir xs = Ir_multi (List.map (fun (name, x) -> (name, Obj.repr x)) xs)
+
+let unwrap_ir = function
+  | Ir_single x -> Obj.obj x
+  | Ir_multi ((_, x) :: _) -> Obj.obj x
+  | Ir_multi [] -> failwith "unwrap_ir: empty multi IR"
+
+let unwrap_multi_ir = function
+  | Ir_single x -> [ ("target_func", Obj.obj x) ]
+  | Ir_multi xs -> List.map (fun (name, x) -> (name, Obj.obj x)) xs
 
 type protection_config = {
   c_macro_enabled : bool;
@@ -48,6 +59,7 @@ type package_result = {
   cpp_runtime_source : string;
   runner_source : string;
   bytecode : int64 list;
+  bytecodes : (string * int64 list) list;
   metrics : metrics_report;
   header_name : string;
   rebind_address : (string -> string) option;
@@ -93,6 +105,7 @@ module type Trampoline_engine = sig
   val embed_vm_trampoline :
     ?header_name:string ->
     c_src:string ->
+    ?bytecodes:(string * int64 list) list ->
     bytecode:int64 list ->
     out_path:string ->
     unit ->

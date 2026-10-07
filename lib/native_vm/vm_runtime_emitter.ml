@@ -5,6 +5,7 @@ let emit_cpp_threaded_header
     ~key_seed
     ~reg_perm
     ~expected_hash
+    ?expected_hashes
     ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option)
     ?(config : Protection_config.t option)
     ?(external_symbols = [])
@@ -132,6 +133,8 @@ let emit_cpp_threaded_header
     ("context_source", Jg_types.Tstr context_source);
     ("key_seed_hex", Jg_types.Tstr (Printf.sprintf "0x%08lXU" key_seed));
     ("expected_hash_hex", Jg_types.Tstr (Printf.sprintf "0x%016LXULL" expected_hash));
+    ("has_multi_hashes", Jg_types.Tbool (match expected_hashes with Some hl when List.length hl > 1 -> true | _ -> false));
+    ("expected_hashes", Jg_types.Tlist (match expected_hashes with Some hl when List.length hl > 1 -> List.map (fun h -> Jg_types.Tstr (Printf.sprintf "0x%016LXULL" h)) hl | _ -> []));
     ("enable_mem_sanitize", Jg_types.Tbool enable_mem_sanitize);
     ("dispatch_domains", Jg_types.Tlist dispatch_domain_models);
     ("num_domains", Jg_types.Tint num_domains);

@@ -10,7 +10,9 @@ type ir_func
 (** Abstract intermediate representation of a function to be virtualized. *)
 
 val wrap_ir : 'a -> ir_func
+val wrap_multi_ir : (string * 'a) list -> ir_func
 val unwrap_ir : ir_func -> 'a
+val unwrap_multi_ir : ir_func -> (string * 'a) list
 
 type protection_config
 (** Abstract configuration for obfuscation and virtual machine hardening. *)
@@ -44,6 +46,7 @@ type package_result = {
   cpp_runtime_source : string;
   runner_source : string;
   bytecode : int64 list;
+  bytecodes : (string * int64 list) list;
   metrics : metrics_report;
   header_name : string;
   rebind_address : (string -> string) option;
@@ -93,6 +96,7 @@ module type Trampoline_engine = sig
   val embed_vm_trampoline :
     ?header_name:string ->
     c_src:string ->
+    ?bytecodes:(string * int64 list) list ->
     bytecode:int64 list ->
     out_path:string ->
     unit ->

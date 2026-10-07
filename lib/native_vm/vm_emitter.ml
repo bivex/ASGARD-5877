@@ -3,6 +3,7 @@ open Vm_transform
 
 type vm_package = {
   bytecode : int64 list;
+  bytecodes : (string * int64 list) list;
   cpp_runtime_source : string;
   runner_source : string;
   metrics : Metrics.metrics_report;
@@ -17,7 +18,7 @@ let shuffle_array rng arr =
     arr.(j) <- tmp
   done
 
-let compile_and_package
+let compile_and_package_multi
     ~rng
     ?runtime_profile
     ?config
@@ -26,7 +27,7 @@ let compile_and_package
     ?(enable_junk = true)
     ?(mba_depth = 2)
     ?(constants = [])
-    (func : Ir.func) =
+    (funcs : (string * Ir.func) list) =
 
   let (enable_cff, enable_mba, enable_junk, mba_depth, mba_engine) =
     match config with
@@ -34,23 +35,6 @@ let compile_and_package
         (c.cff.enabled, c.mba.enabled, c.vm_runtime.enable_junk_instructions, c.mba.depth, c.mba.engine)
     | None ->
         (enable_cff, enable_mba, enable_junk, mba_depth, `Egraph)
-  in
-
-  let target_func =
-    if enable_cff then
-      let cff_opts =
-        match config with
-        | Some c ->
-            {
-              Cff.inject_opaque_predicates = c.cff.inject_opaque_predicates;
-              obfuscate_states = c.cff.obfuscate_states;
-            }
-        | None -> Cff.default_cff_options
-      in
-      match Cff.flatten_func ~options:cff_opts ~rng func with
-      | Ok f -> f
-      | Error _ -> func
-    else func
   in
 
   (* Generate randomized bijective register permutation π ∈ S_32 *)
@@ -81,37 +65,12 @@ let compile_and_package
     Hashtbl.find kind_to_code kind
   in
 
-  (* Linearize blocks and calculate block start offsets in bytecode with Super-Operator fusion and Junk insertion *)
-  let entry_block = Hashtbl.find target_func.cfg.blocks target_func.cfg.entry_id in
-  let other_blocks =
-    Hashtbl.fold
-      (fun id b acc -> if id <> target_func.cfg.entry_id then b :: acc else acc)
-      target_func.cfg.blocks []
-  in
-  let sorted_other = List.sort (fun (a : Ir.basic_block) (b : Ir.basic_block) -> Int.compare a.id b.id) other_blocks in
-  let sorted_blocks = entry_block :: sorted_other in
-
   let enable_super_ops =
     match config with
     | Some (c : Protection_config.t) -> c.vm_runtime.enable_super_operators
     | None -> true
   in
 
-  (* -----------------------------------------------------------------------
-     Parallel MBA via domainslib Task pool.
-     Each basic block is independent — no shared state between blocks.
-     A fork-per-block RNG ensures deterministic output regardless of
-     scheduling order.
-     ----------------------------------------------------------------------- *)
-  let blocks_arr = Array.of_list sorted_blocks in
-  let n_blocks   = Array.length blocks_arr in
-
-  (* Pre-generate per-block RNGs deterministically from master state *)
-  let block_rngs = Array.init n_blocks (fun _ ->
-    Random.State.make [| Random.State.bits rng |]
-  ) in
-
-  (* Initialize GPU-accelerated MBA synthesis pool on Apple Silicon GPU if enabled *)
   let gpu_mba_pool =
     if enable_mba then
       let mba_seed = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
@@ -119,18 +78,86 @@ let compile_and_package
     else None
   in
 
-  (* Generate unique GPU-verified MBA substitution matrix with SAC diffusion *)
   let gpu_sub_matrix =
     if enable_mba then
       Some (Gpu_synth.Gpu_matrix.generate ~rng ())
     else None
   in
 
-  (* Result array — index i written only by worker i, no contention *)
-  let results = Array.make n_blocks (0, ([] : fused_op list)) in
+  let key_seed = Random.State.int32 rng Int32.max_int in
+  let enable_rolling = Protection_config.rolling_key_enabled config in
+  let enable_address_bound = Protection_config.address_bound_enabled config in
 
-  (* Use global pool — avoids spawn/teardown overhead per call *)
-  let pool = Mba_par.global_pool () in
+  let external_symbols = ref [] in
+  let external_sym_tbl = Hashtbl.create 16 in
+  let get_ext_sym_idx sym =
+    match Hashtbl.find_opt external_sym_tbl sym with
+    | Some idx -> idx
+    | None ->
+        let idx = List.length !external_symbols in
+        external_symbols := !external_symbols @ [ sym ];
+        Hashtbl.replace external_sym_tbl sym idx;
+        idx
+  in
+
+  let compute_bytecode_hash seed bc =
+    let h = ref (Int64.logxor 0x811C9DC5C9DC5119L (Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL)) in
+    List.iteri
+      (fun i w ->
+        let mixed = Int64.logxor !h w in
+        let mul = Int64.mul mixed 0x100000001B3L in
+        h := Int64.add mul (Int64.of_int i))
+      bc;
+    !h
+  in
+
+  let compile_one_func (func : Ir.func) =
+    let target_func =
+      if enable_cff then
+        let cff_opts =
+          match config with
+          | Some c ->
+              {
+                Cff.inject_opaque_predicates = c.cff.inject_opaque_predicates;
+                obfuscate_states = c.cff.obfuscate_states;
+              }
+          | None -> Cff.default_cff_options
+        in
+        match Cff.flatten_func ~options:cff_opts ~rng func with
+        | Ok f -> f
+        | Error _ -> func
+      else func
+    in
+
+    (* Linearize blocks and calculate block start offsets in bytecode with Super-Operator fusion and Junk insertion *)
+    let entry_block = Hashtbl.find target_func.cfg.blocks target_func.cfg.entry_id in
+    let other_blocks =
+      Hashtbl.fold
+        (fun id b acc -> if id <> target_func.cfg.entry_id then b :: acc else acc)
+        target_func.cfg.blocks []
+    in
+    let sorted_other = List.sort (fun (a : Ir.basic_block) (b : Ir.basic_block) -> Int.compare a.id b.id) other_blocks in
+    let sorted_blocks = entry_block :: sorted_other in
+
+    (* -----------------------------------------------------------------------
+       Parallel MBA via domainslib Task pool.
+       Each basic block is independent — no shared state between blocks.
+       A fork-per-block RNG ensures deterministic output regardless of
+       scheduling order.
+       ----------------------------------------------------------------------- *)
+    let blocks_arr = Array.of_list sorted_blocks in
+    let n_blocks   = Array.length blocks_arr in
+
+    (* Pre-generate per-block RNGs deterministically from master state *)
+    let block_rngs = Array.init n_blocks (fun _ ->
+      Random.State.make [| Random.State.bits rng |]
+    ) in
+
+    (* Result array — index i written only by worker i, no contention *)
+    let results = Array.make n_blocks (0, ([] : fused_op list)) in
+
+    (* Use global pool — avoids spawn/teardown overhead per call *)
+    let pool = Mba_par.global_pool () in
   Domainslib.Task.run pool (fun () ->
     Domainslib.Task.parallel_for pool ~start:0 ~finish:(n_blocks - 1)
       ~body:(fun i ->
@@ -205,15 +232,8 @@ let compile_and_package
               failwith (Printf.sprintf "vm_emitter: unresolved target label '%s'" sym)))
   in
 
-  let key_seed = Random.State.int32 rng Int32.max_int in
-
   let cur_idx = ref 0 in
   let bytecode = ref [] in
-  (* Anti-Pushan block-chained rolling key: OCaml mirror of the C++ keystream.
-     [cur_key] tracks ctx.running_key word by word; it stays 0L when the feature
-     is disabled, making the mask byte-identical to the legacy positional PRF. *)
-  let enable_rolling = Protection_config.rolling_key_enabled config in
-  let enable_address_bound = Protection_config.address_bound_enabled config in
   let cur_key = ref 0L in
   let assert_src1_eq_dst ~op ~dst ~src1 =
     match src1 with
@@ -248,17 +268,6 @@ let compile_and_package
     bytecode := masked_w :: !bytecode
   in
 
-  let external_symbols = ref [] in
-  let external_sym_tbl = Hashtbl.create 16 in
-  let get_ext_sym_idx sym =
-    match Hashtbl.find_opt external_sym_tbl sym with
-    | Some idx -> idx
-    | None ->
-        let idx = List.length !external_symbols in
-        external_symbols := !external_symbols @ [ sym ];
-        Hashtbl.replace external_sym_tbl sym idx;
-        idx
-  in
 
   let vector_index i = i mod 32 in
   let vector_op_code = function
@@ -503,43 +512,84 @@ let compile_and_package
         ops)
     sorted_blocks;
 
-  let final_bytecode = List.rev !bytecode in
-  let compute_bytecode_hash seed bc =
-    let h = ref (Int64.logxor 0x811C9DC5C9DC5119L (Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL)) in
-    List.iteri
-      (fun i w ->
-        let mixed = Int64.logxor !h w in
-        let mul = Int64.mul mixed 0x100000001B3L in
-        h := Int64.add mul (Int64.of_int i))
-      bc;
-    !h
+    let final_bytecode = List.rev !bytecode in
+    let block_spans =
+      List.map
+        (fun (b : Ir.basic_block) ->
+          let off = get_block_offset b.id in
+          let fused = Hashtbl.find block_fused_ops b.id in
+          let len = List.fold_left (fun acc op -> acc + words_of_fused op) 0 fused in
+          (off, len))
+        sorted_blocks
+    in
+    (final_bytecode, block_spans, target_func)
   in
-  let expected_hash = compute_bytecode_hash key_seed final_bytecode in
-  let block_spans =
-    List.map
-      (fun (b : Ir.basic_block) ->
-        let off = get_block_offset b.id in
-        let fused = Hashtbl.find block_fused_ops b.id in
-        let len = List.fold_left (fun acc op -> acc + words_of_fused op) 0 fused in
-        (off, len))
-      sorted_blocks
+
+  let compiled = List.map (fun (name, f) ->
+    let (bc, spans, tf) = compile_one_func f in
+    let h = compute_bytecode_hash key_seed bc in
+    (name, bc, h, spans, tf)
+  ) funcs in
+
+  let all_bytecodes = List.map (fun (name, bc, _, _, _) -> (name, bc)) compiled in
+  let all_hashes = List.map (fun (_, _, h, _, _) -> h) compiled in
+  let all_spans = List.concat (List.map (fun (_, _, _, spans, _) -> spans) compiled) in
+
+  let primary_bc = match all_bytecodes with (_, bc) :: _ -> bc | [] -> [] in
+  let primary_hash = match all_hashes with h :: _ -> h | [] -> 0L in
+  let primary_func = match compiled with (_, _, _, _, tf) :: _ -> tf | [] -> failwith "compile_and_package_multi: empty funcs" in
+
+  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header
+    ~rng
+    ~key_seed
+    ~reg_perm
+    ~expected_hash:primary_hash
+    ?expected_hashes:(if List.length all_hashes > 1 then Some all_hashes else None)
+    ?runtime_profile
+    ?config
+    ~external_symbols:!external_symbols
+    ~constants
+    ~block_spans:all_spans
+    ?gpu_matrix:gpu_sub_matrix
+    opcode_to_handler
   in
-  let cpp_src = Vm_runtime_emitter.emit_cpp_threaded_header ~rng ~key_seed ~reg_perm ~expected_hash ?runtime_profile ?config ~external_symbols:!external_symbols ~constants ~block_spans ?gpu_matrix:gpu_sub_matrix opcode_to_handler in
-  let runner_src = Vm_runtime_emitter.emit_runner_cpp ~key_seed:(Int64.of_int32 key_seed) ~reg_perm final_bytecode in
+  let runner_src = Vm_runtime_emitter.emit_runner_cpp ~key_seed:(Int64.of_int32 key_seed) ~reg_perm primary_bc in
 
   let decoy_count = 256 - List.length all_op_kinds in
   let mba_nodes = if enable_mba then mba_depth * 15 else 0 in
   let metrics = Metrics.calculate_metrics
-    ~bytecode:final_bytecode
-    ~func:target_func
+    ~bytecode:primary_bc
+    ~func:primary_func
     ~decoy_count
     ~total_handlers:256
     ~mba_nodes
   in
 
   {
-    bytecode = final_bytecode;
+    bytecode = primary_bc;
+    bytecodes = all_bytecodes;
     cpp_runtime_source = cpp_src;
     runner_source = runner_src;
     metrics;
   }
+
+let compile_and_package
+    ~rng
+    ?runtime_profile
+    ?config
+    ?(enable_cff = false)
+    ?(enable_mba = false)
+    ?(enable_junk = true)
+    ?(mba_depth = 2)
+    ?(constants = [])
+    (func : Ir.func) =
+  compile_and_package_multi
+    ~rng
+    ?runtime_profile
+    ?config
+    ~enable_cff
+    ~enable_mba
+    ~enable_junk
+    ~mba_depth
+    ~constants
+    [ (func.name, func) ]

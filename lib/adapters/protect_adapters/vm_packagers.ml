@@ -15,17 +15,31 @@ module Threaded_vm_packager : Vm_packager = struct
   let engine_kind = Threaded
 
   let package ~rng ~config ?constants (func : ir_func) : package_result =
-    let ir : Vm_ir.Ir.func = unwrap_ir func in
     let native_cfg : Protection_config.t = unwrap_config config in
-    let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
-    {
-      cpp_runtime_source = pkg.cpp_runtime_source;
-      runner_source = pkg.runner_source;
-      bytecode = pkg.bytecode;
-      metrics = convert_metrics pkg.metrics;
-      header_name = "threaded_vm.hpp";
-      rebind_address = None;
-    }
+    let ir_funcs = unwrap_multi_ir func in
+    if List.length ir_funcs > 1 then
+      let pkg = Native_vm.Vm_emitter.compile_and_package_multi ~rng ~config:native_cfg ?constants ir_funcs in
+      {
+        cpp_runtime_source = pkg.cpp_runtime_source;
+        runner_source = pkg.runner_source;
+        bytecode = pkg.bytecode;
+        bytecodes = pkg.bytecodes;
+        metrics = convert_metrics pkg.metrics;
+        header_name = "threaded_vm.hpp";
+        rebind_address = None;
+      }
+    else
+      let ir : Vm_ir.Ir.func = unwrap_ir func in
+      let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
+      {
+        cpp_runtime_source = pkg.cpp_runtime_source;
+        runner_source = pkg.runner_source;
+        bytecode = pkg.bytecode;
+        bytecodes = pkg.bytecodes;
+        metrics = convert_metrics pkg.metrics;
+        header_name = "threaded_vm.hpp";
+        rebind_address = None;
+      }
 end
 
 module Jit_vm_packager : Vm_packager = struct
@@ -47,6 +61,7 @@ module Jit_vm_packager : Vm_packager = struct
       cpp_runtime_source = jit_pkg.cpp_runtime_source;
       runner_source = jit_pkg.runner_source;
       bytecode = jit_pkg.bytecode;
+      bytecodes = [ (ir.name, jit_pkg.bytecode) ];
       metrics = convert_metrics jit_pkg.metrics;
       header_name = "jit_vm_runtime.hpp";
       rebind_address = None;
@@ -72,6 +87,7 @@ module Multi_vm_packager : Vm_packager = struct
       cpp_runtime_source = mv_pkg.cpp_runtime_source;
       runner_source = mv_pkg.runner_source;
       bytecode = mv_pkg.bytecode;
+      bytecodes = [ (ir.name, mv_pkg.bytecode) ];
       metrics = convert_metrics mv_pkg.metrics;
       header_name = "multi_vm_runtime.hpp";
       rebind_address = None;
@@ -363,6 +379,7 @@ module Stack_vm_packager : Vm_packager = struct
       cpp_runtime_source;
       runner_source;
       bytecode = bc_words;
+      bytecodes = [ ("target_func", bc_words) ];
       metrics;
       header_name = "stack_vm_runtime.hpp";
       rebind_address;
