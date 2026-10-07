@@ -689,6 +689,70 @@ let lift_instr mnem ops =
             Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp };
           ]
       | _ -> Error "cmpxchg destination must be register or memory")
+  | "cmpxchg8b", [ OpMem m ] ->
+      let rax = Register.Gpr (Register.RAX, Register.B64) in
+      let rdx = Register.Gpr (Register.RDX, Register.B64) in
+      let rbx = Register.Gpr (Register.RBX, Register.B64) in
+      let rcx = Register.Gpr (Register.RCX, Register.B64) in
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = Register.B64; is_signed = false } in
+      let mem_val = Register.vtmp0 in
+      let expected = Register.vtmp1 in
+      let repl = Register.vtmp2 in
+      let scratch = Register.vtmp3 in
+      let mask32 = 0xFFFFFFFFL in
+      Ok [
+        Ir.Mov { dst = Ir.Reg mem_val; src = Ir.Mem mem_ref };
+        Ir.Mov { dst = Ir.Reg expected; src = Ir.Reg rdx };
+        Ir.Alu { op = Ir.Shl; dst = expected; src1 = Ir.Reg expected; src2 = Ir.Imm 32L; set_flags = false };
+        Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg rax };
+        Ir.Alu { op = Ir.And; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm mask32; set_flags = false };
+        Ir.Alu { op = Ir.Or; dst = expected; src1 = Ir.Reg expected; src2 = Ir.Reg scratch; set_flags = false };
+        Ir.Cmp { src1 = Ir.Reg mem_val; src2 = Ir.Reg expected };
+        Ir.Mov { dst = Ir.Reg repl; src = Ir.Reg rcx };
+        Ir.Alu { op = Ir.Shl; dst = repl; src1 = Ir.Reg repl; src2 = Ir.Imm 32L; set_flags = false };
+        Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg rbx };
+        Ir.Alu { op = Ir.And; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm mask32; set_flags = false };
+        Ir.Alu { op = Ir.Or; dst = repl; src1 = Ir.Reg repl; src2 = Ir.Reg scratch; set_flags = false };
+        Ir.Cmov { cond = Flags.E; dst = mem_val; src = Ir.Reg repl };
+        Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg mem_val };
+        Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg mem_val };
+        Ir.Alu { op = Ir.And; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm mask32; set_flags = false };
+        Ir.Cmov { cond = Flags.NE; dst = rax; src = Ir.Reg scratch };
+        Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg mem_val };
+        Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 32L; set_flags = false };
+        Ir.Cmov { cond = Flags.NE; dst = rdx; src = Ir.Reg scratch };
+      ]
+  | "cmpxchg16b", [ OpMem m ] ->
+      let rax = Register.Gpr (Register.RAX, Register.B64) in
+      let rdx = Register.Gpr (Register.RDX, Register.B64) in
+      let rbx = Register.Gpr (Register.RBX, Register.B64) in
+      let rcx = Register.Gpr (Register.RCX, Register.B64) in
+      let mem_ref_lo = { Ir.base = m.base; index = m.index; disp = m.disp; width = Register.B64; is_signed = false } in
+      let mem_ref_hi = { Ir.base = m.base; index = m.index; disp = Int64.add m.disp 8L; width = Register.B64; is_signed = false } in
+      let mem_lo = Register.vtmp0 in
+      let mem_hi = Register.vtmp1 in
+      let diff = Register.vtmp2 in
+      let scratch = Register.vtmp3 in
+      let repl_lo = Register.vx18 in
+      let repl_hi = Register.vx19 in
+      Ok [
+        Ir.Mov { dst = Ir.Reg mem_lo; src = Ir.Mem mem_ref_lo };
+        Ir.Mov { dst = Ir.Reg mem_hi; src = Ir.Mem mem_ref_hi };
+        Ir.Mov { dst = Ir.Reg diff; src = Ir.Reg mem_lo };
+        Ir.Alu { op = Ir.Xor; dst = diff; src1 = Ir.Reg diff; src2 = Ir.Reg rax; set_flags = false };
+        Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg mem_hi };
+        Ir.Alu { op = Ir.Xor; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Reg rdx; set_flags = false };
+        Ir.Alu { op = Ir.Or; dst = diff; src1 = Ir.Reg diff; src2 = Ir.Reg scratch; set_flags = false };
+        Ir.Cmp { src1 = Ir.Reg diff; src2 = Ir.Imm 0L };
+        Ir.Mov { dst = Ir.Reg repl_lo; src = Ir.Reg mem_lo };
+        Ir.Cmov { cond = Flags.E; dst = repl_lo; src = Ir.Reg rbx };
+        Ir.Mov { dst = Ir.Mem mem_ref_lo; src = Ir.Reg repl_lo };
+        Ir.Mov { dst = Ir.Reg repl_hi; src = Ir.Reg mem_hi };
+        Ir.Cmov { cond = Flags.E; dst = repl_hi; src = Ir.Reg rcx };
+        Ir.Mov { dst = Ir.Mem mem_ref_hi; src = Ir.Reg repl_hi };
+        Ir.Cmov { cond = Flags.NE; dst = rax; src = Ir.Reg mem_lo };
+        Ir.Cmov { cond = Flags.NE; dst = rdx; src = Ir.Reg mem_hi };
+      ]
   | "xadd", [ dst; OpReg s ] ->
       (match dst with
       | OpReg d ->

@@ -1146,6 +1146,58 @@ func_repe_cmpsb:
       | Ok () ->
           Alcotest.(check int64) "repe stops on mismatch at rcx=2" 2L (get_reg state Register.rcx)
 
+let test_x86_cmpxchg8b () =
+  let asm = {|
+func_cmpxchg8b:
+    sub rsp, 32
+    mov dword ptr [rsp], 0x11111111
+    mov dword ptr [rsp + 4], 0x22222222
+    mov eax, 0x11111111
+    mov edx, 0x22222222
+    mov ebx, 0x33333333
+    mov ecx, 0x44444444
+    cmpxchg8b qword ptr [rsp]
+    mov r8, qword ptr [rsp]
+    add rsp, 32
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "cmpxchg8b match stores ecx:ebx" 0x4444444433333333L (get_reg state (Register.Gpr (Register.R8, Register.B64)))
+
+let test_x86_cmpxchg16b () =
+  let asm = {|
+func_cmpxchg16b:
+    sub rsp, 64
+    mov qword ptr [rsp], 0x1234
+    mov qword ptr [rsp + 8], 0x5678
+    mov rax, 0x1234
+    mov rdx, 0x5678
+    mov rbx, 0xAAAA
+    mov rcx, 0xBBBB
+    cmpxchg16b [rsp]
+    mov r8, qword ptr [rsp]
+    mov r9, qword ptr [rsp + 8]
+    add rsp, 64
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "cmpxchg16b low word becomes rbx" 0xAAAAL (get_reg state (Register.Gpr (Register.R8, Register.B64)));
+          Alcotest.(check int64) "cmpxchg16b high word becomes rcx" 0xBBBBL (get_reg state (Register.Gpr (Register.R9, Register.B64)))
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -1198,5 +1250,7 @@ let tests = [
   Alcotest.test_case "lift_x86_rep_movsb" `Quick test_x86_rep_movsb;
   Alcotest.test_case "lift_x86_repne_scasb" `Quick test_x86_repne_scasb;
   Alcotest.test_case "lift_x86_repe_cmpsb" `Quick test_x86_repe_cmpsb;
+  Alcotest.test_case "lift_x86_cmpxchg8b" `Quick test_x86_cmpxchg8b;
+  Alcotest.test_case "lift_x86_cmpxchg16b" `Quick test_x86_cmpxchg16b;
 ]
 

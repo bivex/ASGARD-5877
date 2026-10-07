@@ -264,10 +264,11 @@
 - [x] **3.3. Строковые инструкции x86 с префиксами повторения** — ВЫПОЛНЕНО (2026-10-07):
   - [x] `stosb/w/d/q`, `lodsb/w/d/q`, `scas*`, `cmps*`.
   - [x] Префиксы `rep`, `repe`/`repz`, `repne`/`repnz` с генерацией внутреннего цикла базовых блоков.
-- [ ] **3.4. Атомики и барьеры упорядочивания памяти (SMP)**:
-  - [ ] Явная модель memory barriers: `fence` (RISC-V), `dmb` (ARM64), `mfence` (x86).
-  - [ ] x86: префикс `lock`, `xadd`, `cmpxchg`, `cmpxchg8b/16b`, `xchg` памяти.
-  - [ ] ARM64: `ldxr`/`stxr`, `ldar`/`stlr`, LSE-атомики `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor`.
+- [x] **3.4. Атомики и барьеры упорядочивания памяти (SMP)** — ВЫПОЛНЕНО (2026-10-07):
+  - [x] Явная модель memory barriers: `fence` (RISC-V), `dmb` (ARM64), `mfence` (x86).
+  - [x] x86: префикс `lock`, `xadd`, `cmpxchg`, `cmpxchg8b/16b`, `xchg` памяти.
+  - [x] ARM64: `ldxr`/`stxr`, `ldar`/`stlr`, LSE-атомики `swp`, `ldadd`, `ldclr`, `ldset`, `ldeor`.
+  - [x] RISC-V: `lr`/`sc`, `amoswap`, `amoadd`, `amomin`/`max`, `amoxor`/`and`/`or`.
 - [ ] **3.5. AVX-256 YMM регистры**:
   - [ ] Расширение векторного банка со 128 до 256 бит для `ymm0..ymm15`.
   - [ ] Аппаратное зануление верхней половины YMM при записи в XMM.
