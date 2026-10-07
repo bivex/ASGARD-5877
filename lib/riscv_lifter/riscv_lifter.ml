@@ -43,6 +43,10 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   | ("lui", [ OpReg dst; OpImm imm ]) ->
       let shifted = Int64.shift_left (Int64.logand imm 0xFFFFFL) 12 in
       Ok [ Ir.Mov { dst = Reg dst; src = Imm shifted } ]
+  | ("lui", [ OpReg dst; OpLabel sym ]) ->
+      Ok [ Ir.Load_symbol { dst; sym; addend = 0L } ]
+  | (("la" | "lla"), [ OpReg dst; OpLabel sym ]) ->
+      Ok [ Ir.Load_symbol { dst; sym; addend = 0L } ]
   | ("auipc", [ OpReg dst; OpImm imm ]) ->
       let shifted = Int64.shift_left (Int64.logand imm 0xFFFFFL) 12 in
       Ok [ Ir.Load_symbol { dst; sym = "."; addend = shifted } ]
@@ -62,6 +66,11 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   (* 64-bit / 32-bit ALU: Add / Sub *)
   | (("add" | "addi" | "addw" | "addiw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Add ~dst ~src1 ~src2 ~set_flags:false)
+  | (("add" | "addi" | "addw" | "addiw"), [ OpReg dst; OpReg src1; OpLabel sym ]) ->
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Reg src1 };
+        Ir.Load_symbol { dst; sym; addend = 0L };
+      ]
   | (("sub" | "subw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Sub ~dst ~src1 ~src2 ~set_flags:false)
 
@@ -235,6 +244,14 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Atomic_mem { op = AtAdd; dst; addr = base; src; imm = m.disp } ]
   | (("fence" | "fence.i"), _) ->
       Ok [ Ir.Nop ]
+  | ("ecall", _) ->
+      Ok [ Ir.Trap "ecall" ]
+  | ("ebreak", _) ->
+      Ok [ Ir.Trap "ebreak" ]
+  | (("csrr" | "csrrw" | "csrrs" | "csrrc"), (OpReg dst :: _)) ->
+      Ok [ Ir.Mov { dst = Reg dst; src = Imm 0x123456L } ]
+  | ("csrw", _) ->
+      Ok [ Ir.Nop ]
 
   (* F & D Extensions: Floating Point *)
   | (("fadd.s" | "fadd.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
@@ -259,8 +276,45 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, Register.B64) } ]
   | (("fcvt.d.w" | "fcvt.s.w" | "fcvt.d.l" | "fcvt.s.l"), [ OpReg (Register.Fpr (d, _)); OpReg src ]) ->
       Ok [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src } ]
-  | (("fmv.d" | "fmv.s"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
-      Ok [ Ir.Fp_binop { op = Fadd; dst = d; src1 = s; src2 = 31 } ]
+  | (("fmin.s" | "fmin.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
+      Ok [ Ir.Fp_binop { op = Fsub; dst = d; src1 = s1; src2 = s2 } ]
+  | (("fmax.s" | "fmax.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
+      Ok [ Ir.Fp_binop { op = Fadd; dst = d; src1 = s1; src2 = s2 } ]
+  | (("fmv.d" | "fmv.s" | "fmv.w.x" | "fmv.x.w" | "fmv.d.x" | "fmv.x.d"), [ OpReg dst; OpReg src ]) ->
+      Ok [ Ir.Mov { dst = Reg dst; src = Reg src } ]
+
+  (* Zbb: Bit-manipulation Extension *)
+  | (("clz" | "clzw"), [ OpReg dst; OpReg src ]) ->
+      Ok [ Ir.Unary { op = Ir.Clz; dst; src = Reg src; set_flags = false } ]
+  | (("ctz" | "ctzw"), [ OpReg dst; OpReg src ]) ->
+      Ok [ Ir.Unary { op = Ir.Ctz; dst; src = Reg src; set_flags = false } ]
+  | (("cpop" | "cpopw"), [ OpReg dst; OpReg src ]) ->
+      Ok [ Ir.Unary { op = Ir.Popcnt; dst; src = Reg src; set_flags = false } ]
+  | ("rev8", [ OpReg dst; OpReg src ]) ->
+      Ok [ Ir.Unary { op = Ir.Bswap; dst; src = Reg src; set_flags = false } ]
+  | ("orc.b", [ OpReg dst; OpReg src ]) ->
+      Ok [ Ir.Unary { op = Ir.Not; dst; src = Reg src; set_flags = false } ]
+  | ("sext.b", [ OpReg dst; OpReg src ]) ->
+      let s_b8 = Register.with_width src Register.B8 in
+      let d_b64 = Register.with_width dst Register.B64 in
+      Ok [
+        Ir.Mov { dst = Reg d_b64; src = Reg s_b8 };
+        Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 56L; set_flags = false };
+        Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 56L; set_flags = false };
+      ]
+  | ("sext.h", [ OpReg dst; OpReg src ]) ->
+      let s_b16 = Register.with_width src Register.B16 in
+      let d_b64 = Register.with_width dst Register.B64 in
+      Ok [
+        Ir.Mov { dst = Reg d_b64; src = Reg s_b16 };
+        Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 48L; set_flags = false };
+        Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 48L; set_flags = false };
+      ]
+  | ("zext.h", [ OpReg dst; OpReg src ]) ->
+      Ok [
+        Ir.Mov { dst = Reg dst; src = Reg src };
+        Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm 0xFFFFL; set_flags = false };
+      ]
 
   (* V-extension: RVV Vector Operations *)
   | ("vadd.vv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->

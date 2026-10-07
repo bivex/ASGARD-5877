@@ -312,6 +312,26 @@ let compile_and_package_multi
           | Raw instr -> (
               match instr with
               | Ir.Nop -> encode_raw_word (get_opcode OP_NOP) 0 0 0L
+              | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, _)); src = Ir.Reg (Register.Fpr (s, _)) } ->
+                  encode_raw_word (get_opcode OP_VEC_MOV) (d mod 32) (s mod 32) 64L
+              | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, _)); src = Ir.Reg s } ->
+                  encode_raw_word (get_opcode OP_MOV_VR) (d mod 32) (get_reg_idx s) 0L
+              | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg (Register.Fpr (s, _)) } ->
+                  encode_raw_word (get_opcode OP_MOV_RV) (get_reg_idx d) (s mod 32) 0L
+              | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, _)); src = Ir.Imm imm } ->
+                  let temp_reg = Register.vtmp0 in
+                  let low = Int64.logand imm 0xFFFFFFFFL in
+                  let high = Int64.shift_right_logical imm 32 in
+                  encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx temp_reg) 0 low;
+                  if high <> 0L then
+                    encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx temp_reg) 0 high;
+                  encode_raw_word (get_opcode OP_MOV_VR) (d mod 32) (get_reg_idx temp_reg) 0L
+              | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, _)); src = Ir.Mem m } ->
+                  let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
+                  encode_raw_word ~extra_bits:64L (get_opcode OP_VEC_LOAD) (d mod 32) base_idx m.disp
+              | Ir.Mov { dst = Ir.Mem m; src = Ir.Reg (Register.Fpr (s, _)) } ->
+                  let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
+                  encode_raw_word ~extra_bits:64L (get_opcode OP_VEC_STORE) base_idx (s mod 32) m.disp
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Imm imm } ->
@@ -430,6 +450,26 @@ let compile_and_package_multi
                    encode_raw_word (get_opcode OP_NEG_RR) (get_reg_idx dst) 0 0L
                | Ir.Unary { op = Ir.Not; dst; _ } ->
                    encode_raw_word (get_opcode OP_NOT_RR) (get_reg_idx dst) 0 0L
+               | Ir.Unary { op = Ir.Bswap; dst; src; _ } ->
+                   let bits = Register.width_to_bits (Register.get_width dst) in
+                   let s_idx = match src with Ir.Reg s -> get_reg_idx s | _ -> get_reg_idx dst in
+                   encode_raw_word (get_opcode OP_BSWAP_RR) (get_reg_idx dst) s_idx (Int64.of_int bits)
+               | Ir.Unary { op = Ir.Clz; dst; src; _ } ->
+                   let bits = Register.width_to_bits (Register.get_width dst) in
+                   let s_idx = match src with Ir.Reg s -> get_reg_idx s | _ -> get_reg_idx dst in
+                   encode_raw_word (get_opcode OP_CLZ_RR) (get_reg_idx dst) s_idx (Int64.of_int bits)
+               | Ir.Unary { op = Ir.Ctz; dst; src; _ } ->
+                   let bits = Register.width_to_bits (Register.get_width dst) in
+                   let s_idx = match src with Ir.Reg s -> get_reg_idx s | _ -> get_reg_idx dst in
+                   encode_raw_word (get_opcode OP_CTZ_RR) (get_reg_idx dst) s_idx (Int64.of_int bits)
+               | Ir.Unary { op = Ir.Popcnt; dst; src; _ } ->
+                   let bits = Register.width_to_bits (Register.get_width dst) in
+                   let s_idx = match src with Ir.Reg s -> get_reg_idx s | _ -> get_reg_idx dst in
+                   encode_raw_word (get_opcode OP_POPCNT_RR) (get_reg_idx dst) s_idx (Int64.of_int bits)
+               | Ir.Unary { op = Ir.Rbit; dst; src; _ } ->
+                   let bits = Register.width_to_bits (Register.get_width dst) in
+                   let s_idx = match src with Ir.Reg s -> get_reg_idx s | _ -> get_reg_idx dst in
+                   encode_raw_word (get_opcode OP_RBIT_RR) (get_reg_idx dst) s_idx (Int64.of_int bits)
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
@@ -447,6 +487,8 @@ let compile_and_package_multi
                   let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.logand t_off 0x1FFFFFL) 4) in
                   let imm = Int64.logor imm (Int64.shift_left (Int64.logand f_off 0x1FFFFFL) 25) in
                   encode_raw_word (get_opcode OP_JCC) 0 0 imm
+              | Ir.Cmov { cond; dst = Register.Fpr (d, _); src = Ir.Reg (Register.Fpr (s, _)) } ->
+                  encode_raw_word (get_opcode OP_FCSEL_VV) (d mod 32) (s mod 32) (Int64.of_int (cond_to_code cond))
               | Ir.Cmov { cond; dst; src = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_CMOV) (get_reg_idx dst) (get_reg_idx s) (Int64.of_int (cond_to_code cond))
               | Ir.Setcc { cond; dst = Ir.Reg d } ->

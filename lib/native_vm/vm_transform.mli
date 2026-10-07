@@ -83,6 +83,14 @@ type raw_op_kind =
   | OP_ATOMIC_CAS
   | OP_ATOMIC_ADD
   | OP_ATOMIC_SWP
+  | OP_BSWAP_RR
+  | OP_CLZ_RR
+  | OP_CTZ_RR
+  | OP_POPCNT_RR
+  | OP_RBIT_RR
+  | OP_MOV_VR
+  | OP_MOV_RV
+  | OP_FCSEL_VV
 
 val all_op_kinds : raw_op_kind list
 val op_kind_to_handler_name : raw_op_kind -> string

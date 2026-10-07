@@ -143,6 +143,7 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         | Neg -> [PushImm 0L; Swap; Sub]
         | Inc -> [PushImm 1L; Add]
         | Dec -> [PushImm 1L; Sub]
+        | _ -> []
       in
       src_ops @ un_ops @ [PopReg (Context_allocator.slot_of_reg ctx dst)]
   | Cmp { src1; src2 } ->

@@ -252,19 +252,29 @@ let parse_line line =
     Ok (LineLabel lbl)
   else
     (* Instruction line *)
-    let first_space =
-      let rec find i =
-        if i >= String.length clean then -1
-        else if clean.[i] = ' ' || clean.[i] = '\t' then i
-        else find (i + 1)
+    let rec strip_prefixes s =
+      let s = String.trim s in
+      let first_space =
+        let rec find i =
+          if i >= String.length s then -1
+          else if s.[i] = ' ' || s.[i] = '\t' then i
+          else find (i + 1)
+        in
+        find 0
       in
-      find 0
+      if first_space = -1 then (String.lowercase_ascii s, "")
+      else
+        let word = String.lowercase_ascii (String.trim (String.sub s 0 first_space)) in
+        let rest = String.trim (String.sub s first_space (String.length s - first_space)) in
+        match word with
+        | "rep" | "repe" | "repz" | "repne" | "repnz" | "lock" | "data16" ->
+            strip_prefixes rest
+        | _ -> (word, rest)
     in
-    if first_space = -1 then
-      Ok (LineInstr (String.lowercase_ascii clean, []))
+    let (mnem, ops_part) = strip_prefixes clean in
+    if ops_part = "" then
+      Ok (LineInstr (mnem, []))
     else
-      let mnem = String.lowercase_ascii (String.trim (String.sub clean 0 first_space)) in
-      let ops_part = String.trim (String.sub clean first_space (String.length clean - first_space)) in
       let op_strings = split_tokens ops_part ',' in
       let rec parse_ops acc = function
         | [] -> Ok (LineInstr (mnem, List.rev acc))

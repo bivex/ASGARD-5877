@@ -280,6 +280,40 @@ compute_token:
       check bool "DRS score > 20" true
         (Native_vm.Metrics.devirtualization_resistance_score pkg.metrics > 20.0)
 
+let test_riscv_zbb_bitmanip () =
+  let asm = {|
+    li a1, 0x123456789abcdef0
+    rev8 a0, a1
+    clz a2, a1
+    cpop a3, a1
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_riscv_zbb" } asm with
+  | Error err -> fail ("Failed to lift RISC-V Zbb: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RISC-V rev8 = 0xf0debc9a78563412" (-1090226688147180526L) snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_fp_scalar_eval () =
+  let asm = {|
+    li a1, 10
+    fcvt.d.l f0, a1
+    li a2, 4
+    fcvt.d.l f1, a2
+    fadd.d f2, f0, f1
+    fcvt.l.d a0, f2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_riscv_fp_eval" } asm with
+  | Error err -> fail ("Failed to lift RISC-V fp scalar: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RISC-V fp add (10 + 4) = 14" 14L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("RISC-V Lift Arithmetic (add)", `Quick, test_riscv_lift_arithmetic);
   ("RISC-V Lift Sub & Mul", `Quick, test_riscv_lift_sub_mul);
@@ -295,4 +329,6 @@ let tests = [
   ("RISC-V Lifter Adapter", `Quick, test_riscv_lifter_adapter);
   ("RISC-V Multi-Region Lifting", `Quick, test_riscv_multi_region_lifting);
   ("RISC-V VM Pipeline Compilation", `Quick, test_riscv_vm_pipeline);
+  ("RISC-V Lift Zbb Bit Manipulation (rev8/clz/cpop)", `Quick, test_riscv_zbb_bitmanip);
+  ("RISC-V Lift Scalar FP Eval (fcvt/fadd)", `Quick, test_riscv_fp_scalar_eval);
 ]

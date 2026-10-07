@@ -24,6 +24,11 @@ type unary_op =
   | Neg
   | Inc
   | Dec
+  | Bswap
+  | Clz
+  | Ctz
+  | Popcnt
+  | Rbit
 
 type mem_ref = {
   base : Register.t option;
@@ -106,6 +111,7 @@ let alu_op_to_string = function
 
 let unary_op_to_string = function
   | Not -> "not" | Neg -> "neg" | Inc -> "inc" | Dec -> "dec"
+  | Bswap -> "bswap" | Clz -> "clz" | Ctz -> "ctz" | Popcnt -> "popcnt" | Rbit -> "rbit"
 
 let vec_elem_to_string = function
   | VInt -> "int"

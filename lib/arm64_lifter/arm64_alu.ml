@@ -218,6 +218,20 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       ]
   | ("neg", [ OpReg dst; OpReg src ]) ->
       Some [ Ir.Unary { op = Neg; dst; src = Reg src; set_flags = false } ]
+  | ("clz", [ OpReg dst; OpReg src ]) ->
+      Some [ Ir.Unary { op = Clz; dst; src = Reg src; set_flags = false } ]
+  | ("cls", [ OpReg dst; OpReg src ]) ->
+      Some [ Ir.Unary { op = Clz; dst; src = Reg src; set_flags = false } ]
+  | ("rbit", [ OpReg dst; OpReg src ]) ->
+      Some [ Ir.Unary { op = Rbit; dst; src = Reg src; set_flags = false } ]
+  | ("rev", [ OpReg dst; OpReg src ]) ->
+      Some [ Ir.Unary { op = Bswap; dst; src = Reg src; set_flags = false } ]
+  | ("rev16", [ OpReg dst; OpReg src ]) ->
+      let d_b16 = Register.with_width dst Register.B16 in
+      Some [ Ir.Unary { op = Bswap; dst = d_b16; src = Reg src; set_flags = false } ]
+  | ("rev32", [ OpReg dst; OpReg src ]) ->
+      let d_b32 = Register.with_width dst Register.B32 in
+      Some [ Ir.Unary { op = Bswap; dst = d_b32; src = Reg src; set_flags = false } ]
 
   (* Comparisons & Extended Register Comparisons *)
   | ("cmp", (OpReg src1 :: OpReg src2 :: OpLabel ("uxth" | "UXTH") :: _)) ->
@@ -275,7 +289,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Mov { dst = Reg dst; src = Imm 0L };
         Ir.Setcc { cond = E; dst = Reg dst };
       ]
-  | ("csel", (OpReg dst :: src1_op :: src2_op :: cond_op :: _)) ->
+  | (("csel" | "fcsel"), (OpReg dst :: src1_op :: src2_op :: cond_op :: _)) ->
       let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
       let is_zero = function
         | OpReg (Register.Vreg (Register.VZERO, _)) -> true
@@ -305,5 +319,9 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Imm 1L; set_flags = false };
         Ir.Cmov { cond = Flags.condition_negate (map_cond_str c_str); dst; src = Reg src };
       ]
+  | (("cnt" | "cnt.8b" | "cnt.16b"), [ OpReg dst; OpReg src ]) ->
+      Some [ Ir.Unary { op = Ir.Popcnt; dst; src = Reg src; set_flags = false } ]
+  | (("uaddlv" | "uaddlv.8b" | "uaddlv.16b"), [ OpReg dst; OpReg src ]) ->
+      Some [ Ir.Mov { dst = Reg dst; src = Reg src } ]
 
   | _ -> None

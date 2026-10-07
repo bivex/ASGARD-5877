@@ -65,13 +65,25 @@ let map_arm64_reg str =
   | "w29" -> Ok (Register.Gpr (Register.RBP, Register.B32))
   | "w30" -> Ok (Register.Vreg (Register.VTMP3, Register.B32))
   | "wzr" -> Ok (Register.Vreg (Register.VZERO, Register.B32))
-  | s when String.length s >= 2 && s.[0] = 'd' -> (
-      match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
+  | s when String.length s >= 2 && (s.[0] = 'd' || s.[0] = 'v' || s.[0] = 'q') -> (
+      let s_clean = match String.index_opt s '.' with Some idx -> String.sub s 0 idx | None -> s in
+      match int_of_string_opt (String.sub s_clean 1 (String.length s_clean - 1)) with
       | Some i when i >= 0 && i < 32 -> Ok (Register.Fpr (i, Register.B64))
       | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str))
   | s when String.length s >= 2 && s.[0] = 's' && s <> "sp" && s <> "si" -> (
-      match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
+      let s_clean = match String.index_opt s '.' with Some idx -> String.sub s 0 idx | None -> s in
+      match int_of_string_opt (String.sub s_clean 1 (String.length s_clean - 1)) with
       | Some i when i >= 0 && i < 32 -> Ok (Register.Fpr (i, Register.B32))
+      | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str))
+  | s when String.length s >= 2 && s.[0] = 'h' -> (
+      let s_clean = match String.index_opt s '.' with Some idx -> String.sub s 0 idx | None -> s in
+      match int_of_string_opt (String.sub s_clean 1 (String.length s_clean - 1)) with
+      | Some i when i >= 0 && i < 32 -> Ok (Register.Fpr (i, Register.B16))
+      | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str))
+  | s when String.length s >= 2 && s.[0] = 'b' -> (
+      let s_clean = match String.index_opt s '.' with Some idx -> String.sub s 0 idx | None -> s in
+      match int_of_string_opt (String.sub s_clean 1 (String.length s_clean - 1)) with
+      | Some i when i >= 0 && i < 32 -> Ok (Register.Fpr (i, Register.B8))
       | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str))
   | _ -> Error (Printf.sprintf "Unknown ARM64 register '%s'" str)
 
@@ -84,4 +96,7 @@ let parse_imm str =
   else
     match Int64.of_string_opt s with
     | Some v -> Ok v
-    | None -> Error (Printf.sprintf "Invalid immediate '%s'" str)
+    | None ->
+        (match float_of_string_opt s with
+        | Some f -> Ok (Int64.bits_of_float f)
+        | None -> Error (Printf.sprintf "Invalid immediate '%s'" str))

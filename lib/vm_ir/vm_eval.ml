@@ -404,6 +404,69 @@ let step state = function
             let r = Int64.sub v 1L in
             if set_flags then state.flags <- CC_OP_DEC { old_dst = v; new_dst = r; prev_cf = compute_cf state.flags; width = w };
             r
+        | Bswap ->
+            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            if bits = 16 then
+              let b0 = Int64.logand (Int64.shift_right_logical v 8) 0xFFL in
+              let b1 = Int64.logand (Int64.shift_left v 8) 0xFF00L in
+              Int64.logor b0 b1
+            else if bits = 32 then
+              let b0 = Int64.logand (Int64.shift_right_logical v 24) 0xFFL in
+              let b1 = Int64.logand (Int64.shift_right_logical v 8) 0xFF00L in
+              let b2 = Int64.logand (Int64.shift_left v 8) 0xFF0000L in
+              let b3 = Int64.logand (Int64.shift_left v 24) 0xFF000000L in
+              Int64.logor (Int64.logor b0 b1) (Int64.logor b2 b3)
+            else if bits = 64 then
+              let rec swap acc i =
+                if i = 8 then acc
+                else
+                  let byte = Int64.logand (Int64.shift_right_logical v (i * 8)) 0xFFL in
+                  let shifted = Int64.shift_left byte ((7 - i) * 8) in
+                  swap (Int64.logor acc shifted) (i + 1)
+              in
+              swap 0L 0
+            else v
+        | Clz ->
+            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let tv = truncate_val w v in
+            let rec count i =
+              if i = bits then Int64.of_int bits
+              else if Int64.logand (Int64.shift_right_logical tv (bits - 1 - i)) 1L <> 0L then Int64.of_int i
+              else count (i + 1)
+            in
+            count 0
+        | Ctz ->
+            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let tv = truncate_val w v in
+            if tv = 0L then Int64.of_int bits
+            else
+              let rec count i =
+                if i = bits then Int64.of_int bits
+                else if Int64.logand (Int64.shift_right_logical tv i) 1L <> 0L then Int64.of_int i
+                else count (i + 1)
+              in
+              count 0
+        | Popcnt ->
+            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let tv = truncate_val w v in
+            let rec count i acc =
+              if i = bits then Int64.of_int acc
+              else
+                let bit = if Int64.logand (Int64.shift_right_logical tv i) 1L <> 0L then 1 else 0 in
+                count (i + 1) (acc + bit)
+            in
+            count 0 0
+        | Rbit ->
+            let bits = match w with B8 -> 8 | B16 -> 16 | B32 -> 32 | B64 -> 64 in
+            let tv = truncate_val w v in
+            let rec rev i acc =
+              if i = bits then acc
+              else
+                let bit = Int64.logand (Int64.shift_right_logical tv i) 1L in
+                let acc' = Int64.logor acc (Int64.shift_left bit (bits - 1 - i)) in
+                rev (i + 1) acc'
+            in
+            rev 0 0L
       in
       set_reg state dst res;
       Ok None

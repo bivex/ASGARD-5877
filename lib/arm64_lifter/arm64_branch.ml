@@ -54,6 +54,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Call (TargetImm 0L) ]
   | ("br", _) ->
       Some [ Ir.Jmp (TargetImm 0L) ]
+  | ("eret", _) ->
+      Some [ Ir.Trap "eret" ]
 
   (* Floating-Point & Scalar FP (SIMD) Instructions *)
   | ("fadd", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
@@ -66,10 +68,10 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Fp_binop { op = Fdiv; dst = d; src1 = s1; src2 = s2 } ]
   | ("fcmp", [ OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       Some [ Ir.Fp_cmp { src1 = s1; src2 = s2 } ]
-  | ("fmov", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
-      Some [ Ir.Fp_binop { op = Fadd; dst = d; src1 = s; src2 = 31 } ]
-  | ("fmov", [ OpReg (Register.Fpr (d, _)); OpImm imm ]) ->
-      Some [ Ir.Mov { dst = Reg (Register.Fpr (d, Register.B64)); src = Imm imm } ]
+  | ("fmov", [ OpReg dst; OpReg src ]) ->
+      Some [ Ir.Mov { dst = Reg dst; src = Reg src } ]
+  | ("fmov", [ OpReg dst; OpImm imm ]) ->
+      Some [ Ir.Mov { dst = Reg dst; src = Imm imm } ]
   | ("fcvtzs", [ OpReg dst; OpReg (Register.Fpr (s, _)) ]) ->
       Some [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, Register.B64) } ]
   | ("scvtf", [ OpReg (Register.Fpr (d, _)); OpReg src ]) ->

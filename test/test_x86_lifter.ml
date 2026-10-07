@@ -717,6 +717,45 @@ vector_ops:
           Alcotest.(check int64) "AVX vaddps lane2" (fbits 33.0) (Int64.logand ymm3.(1) 0xFFFFFFFFL);
           Alcotest.(check int64) "AVX vaddps lane3" (fbits 44.0) (Int64.logand (Int64.shift_right_logical ymm3.(1) 32) 0xFFFFFFFFL))
 
+let test_x86_bitmanip () =
+  let asm = {|
+func_bitmanip:
+    mov rdi, 0x123456789abcdef0
+    bswap rdi
+    mov rax, rdi
+    popcnt rdx, rax
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "bswap64" (-1090226688147180526L) (get_reg state Register.rax);
+          Alcotest.(check int64) "popcount64" 32L (get_reg state Register.rdx)
+
+let test_x86_fp_scalar () =
+  let asm = {|
+func_fpscalar:
+    mov rdi, 10
+    cvtsi2sd xmm0, rdi
+    mov rsi, 4
+    cvtsi2sd xmm1, rsi
+    addsd xmm0, xmm1
+    cvttsd2si rax, xmm0
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "fp 10 + 4 = 14" 14L (get_reg state Register.rax)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -734,21 +773,23 @@ let tests = [
   Alcotest.test_case "lift_and_eval_b32_write_zero_extends" `Quick test_lift_and_eval_b32_write_zero_extends;
   Alcotest.test_case "lift_and_eval_movsx_mem" `Quick test_lift_and_eval_movsx_mem;
   Alcotest.test_case "lift_and_eval_movsx_reg" `Quick test_lift_and_eval_movsx_reg;
-    Alcotest.test_case "lift_and_eval_movzx_reg" `Quick test_lift_and_eval_movzx_reg;
-    Alcotest.test_case "lift_one_operand_mul_b8" `Quick test_lift_one_operand_mul;
-    Alcotest.test_case "lift_one_operand_mul_b8_signed" `Quick test_lift_one_operand_mul_signed;
-    Alcotest.test_case "lift_one_operand_mul_b64" `Quick test_lift_one_operand_mul64;
-    Alcotest.test_case "lift_one_operand_imul_b64" `Quick test_lift_one_operand_imul64;
-    Alcotest.test_case "lift_one_operand_mul_b32" `Quick test_lift_one_operand_mul32;
-    Alcotest.test_case "lift_one_operand_imul_b32" `Quick test_lift_one_operand_imul32;
-    Alcotest.test_case "lift_one_operand_mul_b16" `Quick test_lift_one_operand_mul16;
-    Alcotest.test_case "lift_one_operand_imul_b16" `Quick test_lift_one_operand_imul16;
-    Alcotest.test_case "lift_one_operand_mul_mem" `Quick test_lift_one_operand_mul_mem;
-    Alcotest.test_case "lift_narrow_division_b8" `Quick test_lift_narrow_division;
-    Alcotest.test_case "lift_narrow_division_b8_signed" `Quick test_lift_narrow_division_signed;
+  Alcotest.test_case "lift_and_eval_movzx_reg" `Quick test_lift_and_eval_movzx_reg;
+  Alcotest.test_case "lift_one_operand_mul_b8" `Quick test_lift_one_operand_mul;
+  Alcotest.test_case "lift_one_operand_mul_b8_signed" `Quick test_lift_one_operand_mul_signed;
+  Alcotest.test_case "lift_one_operand_mul_b64" `Quick test_lift_one_operand_mul64;
+  Alcotest.test_case "lift_one_operand_imul_b64" `Quick test_lift_one_operand_imul64;
+  Alcotest.test_case "lift_one_operand_mul_b32" `Quick test_lift_one_operand_mul32;
+  Alcotest.test_case "lift_one_operand_imul_b32" `Quick test_lift_one_operand_imul32;
+  Alcotest.test_case "lift_one_operand_mul_b16" `Quick test_lift_one_operand_mul16;
+  Alcotest.test_case "lift_one_operand_imul_b16" `Quick test_lift_one_operand_imul16;
+  Alcotest.test_case "lift_one_operand_mul_mem" `Quick test_lift_one_operand_mul_mem;
+  Alcotest.test_case "lift_narrow_division_b8" `Quick test_lift_narrow_division;
+  Alcotest.test_case "lift_narrow_division_b8_signed" `Quick test_lift_narrow_division_signed;
   Alcotest.test_case "lift_narrow_division_b16" `Quick test_lift_narrow_division16;
   Alcotest.test_case "division_by_zero_fault" `Quick test_division_by_zero_fault;
   Alcotest.test_case "b8_b16_merge_semantics" `Quick test_b8_b16_merge_semantics;
-    Alcotest.test_case "lift_sse_avx" `Quick test_lift_sse_avx;
- ]
+  Alcotest.test_case "lift_sse_avx" `Quick test_lift_sse_avx;
+  Alcotest.test_case "lift_x86_bitmanip" `Quick test_x86_bitmanip;
+  Alcotest.test_case "lift_x86_fp_scalar" `Quick test_x86_fp_scalar;
+]
 

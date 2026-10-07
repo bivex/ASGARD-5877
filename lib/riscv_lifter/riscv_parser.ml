@@ -64,8 +64,9 @@ let parse_mem str width is_signed =
     Error (Printf.sprintf "Invalid memory operand '%s'" str)
 
 let is_mem_operand s =
-  (String.ends_with ~suffix:")" s && String.contains s '(') ||
-  (String.starts_with ~prefix:"[" s && String.ends_with ~suffix:"]" s)
+  not (String.starts_with ~prefix:"%" s) &&
+  ((String.ends_with ~suffix:")" s && String.contains s '(') ||
+   (String.starts_with ~prefix:"[" s && String.ends_with ~suffix:"]" s))
 
 let parse_operand str default_width is_signed =
   let s = String.trim str in

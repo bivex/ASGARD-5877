@@ -166,7 +166,7 @@ ASGARD-5877/
 ├── scripts/                      # Unified benchmark and multi-build runners
 │   ├── run_benchmark_arm64.sh    # End-to-end security benchmark runner
 │   └── build_corpus_arm64.sh     # Polymorphic corpus compilation script
-└── test/                         # Comprehensive Verification Suite (245 tests, 34 suites)
+└── test/                         # Comprehensive Verification Suite (294 tests, 35 suites)
 ```
 
 ---
@@ -193,7 +193,7 @@ opam install dune menhir cmdliner alcotest qcheck qcheck-alcotest yojson
 eval $(opam env)
 dune build
 
-# Run all 286 tests across 35 verification suites
+# Run all 294 tests across 35 verification suites
 dune test
 ```
 
@@ -363,7 +363,7 @@ The repository includes a standalone ARM64 CrackMe challenge running inside the 
 
 ## Comprehensive Verification Suite
 
-ASGARD-5877 includes **286 tests** across **35 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
+ASGARD-5877 includes **294 tests** across **35 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
 
 1. **Domain Invariants**: Verification of aggregate roots and instruction semantics.
 2. **ISA Grammar**: AST node validation, operand constraints, and type soundness.
@@ -381,7 +381,7 @@ ASGARD-5877 includes **286 tests** across **35 suites** verified on every build 
 14. **Vanguard-9292 Obfuscation**: 1,000-seed bitfield layout validation, rolling keys, and junk opcode traps.
 15. **Vanguard Emulator E2E**: Full execution of encrypted Vanguard instruction streams.
 16. **VM-IR and Lazy Flags**: Zero-extension register algebra and lazy flags arithmetic.
-17. **x86_64 Lifter and CFG**: Disassembly and basic block lifting of x86_64 machine code.
+17. **x86_64 Lifter and CFG**: Disassembly, basic block lifting, bit manipulation (`bswap`, `popcnt`, `lzcnt`/`bsr`, `tzcnt`/`bsf`, `bt`/`bts`/`btr`/`btc`), and scalar FP (`movss`/`movsd`, `addss`/`sd`, `subss`/`sd`, `mulss`/`sd`, `divss`/`sd`, `ucomiss`/`sd`).
 18. **Anti-Analysis (MBA and CFF)**: Algebraic equivalence of 4th-order polynomial expansions.
 19. **Native Threaded VM**: Direct Threading, super-operators, ephemeral scrubbing, and dynamic canaries.
 20. **Native VM Sub-width Semantics**: Word-granular B16 memory, signed loads (movsx/movsxd/ldrsb/ldrsh/ldrsw), div/idiv remainder, B32 sub-register zero-extension, and multi-function marker pipeline.
@@ -389,7 +389,7 @@ ASGARD-5877 includes **286 tests** across **35 suites** verified on every build 
 22. **C Macro Obfuscation**: Polymorphic macro expansions, stack string encryption, and multi-function C trampolines.
 23. **VM Runtime Profile**: Micro-architectural latency measurements.
 24. **Compiler Pipeline and Equivalence**: End-to-end preservation of semantics across lifting, lowering, and virtualization.
-25. **ARM64 Lifter and CFG**: Extended conditions (`b.hi`..`b.vc`), `cset`, `csel`, `madd`/`msub`, `ubfx`/`sbfx`, and indexed memory operands.
+25. **ARM64 Lifter and CFG**: Extended conditions (`b.hi`..`b.vc`), `cset`, `csel`/`fcsel`, `madd`/`msub`, `ubfx`/`sbfx`, bitwise ops (`rev`, `clz`, `rbit`, `cnt.8b`, `uaddlv.8b`), and scalar FP (`fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `fmov`, `fcvtzs`, `scvtf`).
 26. **Multi-VM and Direct Zero-Bridge**: Invertible affine bridge transformations $\pmod{2^{64}}$.
 27. **GPU Metal Acceleration and Synthesis**: Metal GPU parallel MBA synthesis (65k threads) and SAC diffusion verification.
 28. **Register-Driven JIT VM and RNS**: RNS-4 modular arithmetic and Garner CRT reconstruction.
@@ -398,7 +398,7 @@ ASGARD-5877 includes **286 tests** across **35 suites** verified on every build 
 31. **Anti-Pushan Rolling Key**: Context-dependent key evolution across loop iterations and branches.
 32. **Dynamic Anti-Tamper and SMC (Layer 3)**: Self-modifying bytecode runtime attestation.
 33. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, and preset generators.
-34. **RISC-V Lifter & CFG**: Disassembly, basic block lifting, and semantic equivalence for RV64I, RV64M, RV64A, RV64F/D, and RVV.
+34. **RISC-V Lifter & CFG**: RV64I, RV64M, RV64A, Zbb (`clz`, `ctz`, `cpop`, `rev8`, `orc.b`), scalar FP (`fadd`, `fsub`, `fmul`, `fdiv`, `feq`, `flt`, `fle`, `fmin`, `fmax`, `fmv`, `fcvt`), memory (`flw`/`fld`, `fsw`/`fsd`), and RVV.
 35. **Stack-VM Execution Engine**: 32 verification tests covering address-bound bytecode keys (Anti-VMPredator Phase 6), independent payload/tag key halves, field layout randomization, polymorphic opcodes, and identifier scrambling.
 
 ---

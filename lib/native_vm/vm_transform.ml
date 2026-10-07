@@ -106,6 +106,14 @@ type raw_op_kind =
   | OP_ATOMIC_CAS
   | OP_ATOMIC_ADD
   | OP_ATOMIC_SWP
+  | OP_BSWAP_RR
+  | OP_CLZ_RR
+  | OP_CTZ_RR
+  | OP_POPCNT_RR
+  | OP_RBIT_RR
+  | OP_MOV_VR
+  | OP_MOV_RV
+  | OP_FCSEL_VV
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
@@ -127,6 +135,8 @@ let all_op_kinds = [
   OP_FADD_DD; OP_FSUB_DD; OP_FMUL_DD; OP_FDIV_DD; OP_FCMP_DD;
   OP_FCVTZS; OP_SCVTF;
   OP_ATOMIC_LOAD; OP_ATOMIC_STORE; OP_ATOMIC_CAS; OP_ATOMIC_ADD; OP_ATOMIC_SWP;
+  OP_BSWAP_RR; OP_CLZ_RR; OP_CTZ_RR; OP_POPCNT_RR; OP_RBIT_RR;
+  OP_MOV_VR; OP_MOV_RV; OP_FCSEL_VV;
 ]
 
 let op_kind_to_handler_name = function
@@ -207,6 +217,14 @@ let op_kind_to_handler_name = function
   | OP_ATOMIC_CAS -> "H_ATOMIC_CAS"
   | OP_ATOMIC_ADD -> "H_ATOMIC_ADD"
   | OP_ATOMIC_SWP -> "H_ATOMIC_SWP"
+  | OP_BSWAP_RR -> "H_BSWAP_RR"
+  | OP_CLZ_RR -> "H_CLZ_RR"
+  | OP_CTZ_RR -> "H_CTZ_RR"
+  | OP_POPCNT_RR -> "H_POPCNT_RR"
+  | OP_RBIT_RR -> "H_RBIT_RR"
+  | OP_MOV_VR -> "H_MOV_VR"
+  | OP_MOV_RV -> "H_MOV_RV"
+  | OP_FCSEL_VV -> "H_FCSEL_VV"
 
 type fused_op =
   | Raw of Ir.instr

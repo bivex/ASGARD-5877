@@ -24,6 +24,11 @@ type unary_op =
   | Neg
   | Inc
   | Dec
+  | Bswap
+  | Clz
+  | Ctz
+  | Popcnt
+  | Rbit
 
 type mem_ref = {
   base : Register.t option;

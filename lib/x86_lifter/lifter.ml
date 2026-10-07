@@ -601,6 +601,193 @@ let lift_instr mnem ops =
           ]
       | OpImm _ | OpLabel _ -> Error "Destination cannot be immediate or label")
 
+  | ("shl" | "shr" | "sar" | "rol" | "ror"), [ dst ] ->
+      let alu_op = match mnem with
+        | "shl" -> Ir.Shl | "shr" -> Ir.Shr | "sar" -> Ir.Sar
+        | "rol" -> Ir.Rol | "ror" -> Ir.Ror
+        | _ -> assert false
+      in
+      (match dst with
+      | OpReg r ->
+          Ok [ Ir.Alu { op = alu_op; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm 1L; set_flags = true } ]
+      | OpMem m ->
+          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          Ok [
+            Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
+            Ir.Alu { op = alu_op; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = true };
+            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg Register.vtmp0 };
+          ]
+      | _ -> Error "Destination cannot be immediate or label")
+
+  | "bswap", [ OpReg r ] ->
+      Ok [ Ir.Unary { op = Ir.Bswap; dst = r; src = Ir.Reg r; set_flags = false } ]
+  | "popcnt", [ OpReg dst; src ] ->
+      let* ir_src = to_ir_operand src in
+      Ok [ Ir.Unary { op = Ir.Popcnt; dst; src = ir_src; set_flags = true } ]
+  | ("lzcnt" | "bsr"), [ OpReg dst; src ] ->
+      let* ir_src = to_ir_operand src in
+      Ok [ Ir.Unary { op = Ir.Clz; dst; src = ir_src; set_flags = true } ]
+  | ("tzcnt" | "bsf"), [ OpReg dst; src ] ->
+      let* ir_src = to_ir_operand src in
+      Ok [ Ir.Unary { op = Ir.Ctz; dst; src = ir_src; set_flags = true } ]
+  | "bt", [ base; offset ] ->
+      let* ir_base = to_ir_operand base in
+      let* ir_off = to_ir_operand offset in
+      let w = match base with OpReg r -> Register.get_width r | _ -> Register.B64 in
+      let base_reg = Register.vtmp0 in
+      let shift_reg = Register.vtmp2 in
+      let bits_mask = match w with Register.B16 -> 15L | Register.B32 -> 31L | _ -> 63L in
+      Ok [
+        Ir.Mov { dst = Ir.Reg base_reg; src = ir_base };
+        Ir.Mov { dst = Ir.Reg shift_reg; src = ir_off };
+        Ir.Alu { op = Ir.And; dst = shift_reg; src1 = Ir.Reg shift_reg; src2 = Ir.Imm bits_mask; set_flags = false };
+        Ir.Alu { op = Ir.Shr; dst = base_reg; src1 = Ir.Reg base_reg; src2 = Ir.Reg shift_reg; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = base_reg; src1 = Ir.Reg base_reg; src2 = Ir.Imm 1L; set_flags = false };
+        Ir.Cmp { src1 = Ir.Imm 0L; src2 = Ir.Reg base_reg };
+      ]
+  | ("bts" | "btr" | "btc"), [ base; offset ] ->
+      let* ir_base = to_ir_operand base in
+      let* ir_off = to_ir_operand offset in
+      let w = match base with OpReg r -> Register.get_width r | _ -> Register.B64 in
+      let base_reg = Register.vtmp0 in
+      let shift_reg = Register.vtmp2 in
+      let mask_reg = Register.vtmp1 in
+      let bits_mask = match w with Register.B16 -> 15L | Register.B32 -> 31L | _ -> 63L in
+      let test_instrs = [
+        Ir.Mov { dst = Ir.Reg base_reg; src = ir_base };
+        Ir.Mov { dst = Ir.Reg shift_reg; src = ir_off };
+        Ir.Alu { op = Ir.And; dst = shift_reg; src1 = Ir.Reg shift_reg; src2 = Ir.Imm bits_mask; set_flags = false };
+        Ir.Alu { op = Ir.Shr; dst = base_reg; src1 = Ir.Reg base_reg; src2 = Ir.Reg shift_reg; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = base_reg; src1 = Ir.Reg base_reg; src2 = Ir.Imm 1L; set_flags = false };
+        Ir.Cmp { src1 = Ir.Imm 0L; src2 = Ir.Reg base_reg };
+      ] in
+      let modify_op = match mnem with
+        | "bts" -> Ir.Or
+        | "btc" -> Ir.Xor
+        | _ -> Ir.And
+      in
+      let modify_instrs = match base with
+        | OpReg r ->
+            if mnem = "btr" then [
+              Ir.Mov { dst = Ir.Reg mask_reg; src = Ir.Imm 1L };
+              Ir.Alu { op = Ir.Shl; dst = mask_reg; src1 = Ir.Reg mask_reg; src2 = Ir.Reg shift_reg; set_flags = false };
+              Ir.Unary { op = Ir.Not; dst = mask_reg; src = Ir.Reg mask_reg; set_flags = false };
+              Ir.Alu { op = Ir.And; dst = r; src1 = Ir.Reg r; src2 = Ir.Reg mask_reg; set_flags = false };
+            ] else [
+              Ir.Mov { dst = Ir.Reg mask_reg; src = Ir.Imm 1L };
+              Ir.Alu { op = Ir.Shl; dst = mask_reg; src1 = Ir.Reg mask_reg; src2 = Ir.Reg shift_reg; set_flags = false };
+              Ir.Alu { op = modify_op; dst = r; src1 = Ir.Reg r; src2 = Ir.Reg mask_reg; set_flags = false };
+            ]
+        | OpMem m ->
+            let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+            if mnem = "btr" then [
+              Ir.Mov { dst = Ir.Reg mask_reg; src = Ir.Imm 1L };
+              Ir.Alu { op = Ir.Shl; dst = mask_reg; src1 = Ir.Reg mask_reg; src2 = Ir.Reg shift_reg; set_flags = false };
+              Ir.Unary { op = Ir.Not; dst = mask_reg; src = Ir.Reg mask_reg; set_flags = false };
+              Ir.Mov { dst = Ir.Reg base_reg; src = Ir.Mem mem_ref };
+              Ir.Alu { op = Ir.And; dst = base_reg; src1 = Ir.Reg base_reg; src2 = Ir.Reg mask_reg; set_flags = false };
+              Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg base_reg };
+            ] else [
+              Ir.Mov { dst = Ir.Reg mask_reg; src = Ir.Imm 1L };
+              Ir.Alu { op = Ir.Shl; dst = mask_reg; src1 = Ir.Reg mask_reg; src2 = Ir.Reg shift_reg; set_flags = false };
+              Ir.Mov { dst = Ir.Reg base_reg; src = Ir.Mem mem_ref };
+              Ir.Alu { op = modify_op; dst = base_reg; src1 = Ir.Reg base_reg; src2 = Ir.Reg mask_reg; set_flags = false };
+              Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg base_reg };
+            ]
+        | _ -> []
+      in
+      Ok (test_instrs @ modify_instrs)
+  | "clc", _ ->
+      Ok [ Ir.Cmp { src1 = Ir.Imm 1L; src2 = Ir.Imm 0L } ]
+  | "stc", _ ->
+      Ok [ Ir.Cmp { src1 = Ir.Imm 0L; src2 = Ir.Imm 1L } ]
+  | ("cmc" | "cld" | "std"), _ ->
+      Ok [ Ir.Nop ]
+  | ("syscall" | "sysret"), _ ->
+      Ok [ Ir.Trap "syscall" ]
+  | "cpuid", _ ->
+      Ok [
+        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RAX, Register.B64)); src = Ir.Imm 0x1L };
+        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RBX, Register.B64)); src = Ir.Imm 0x756e6547L };
+        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RDX, Register.B64)); src = Ir.Imm 0x49656e69L };
+        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RCX, Register.B64)); src = Ir.Imm 0x6c65746eL };
+      ]
+  | ("rdtsc" | "rdtscp"), _ ->
+      Ok [
+        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RAX, Register.B64)); src = Ir.Imm 0x12345678L };
+        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RDX, Register.B64)); src = Ir.Imm 0x0L };
+      ]
+  | "xgetbv", _ ->
+      Ok [
+        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RAX, Register.B64)); src = Ir.Imm 7L };
+        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RDX, Register.B64)); src = Ir.Imm 0L };
+      ]
+
+  | ("movss" | "movsd" | "movaps" | "movapd" | "movups" | "movupd"), [ dst; src ] ->
+      let* ir_src = to_ir_operand src in
+      let* ir_dst = to_ir_operand dst in
+      Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
+  | ("addss" | "addsd" | "subss" | "subsd" | "mulss" | "mulsd" | "divss" | "divsd"), [ OpReg dst; src ] ->
+      let fp_op = match mnem with
+        | "addss" | "addsd" -> Ir.Fadd
+        | "subss" | "subsd" -> Ir.Fsub
+        | "mulss" | "mulsd" -> Ir.Fmul
+        | "divss" | "divsd" -> Ir.Fdiv
+        | _ -> assert false
+      in
+      (match dst with
+      | Register.Fpr (d_idx, _) ->
+          (match src with
+          | OpReg (Register.Fpr (s_idx, _)) ->
+              Ok [ Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = d_idx; src2 = s_idx } ]
+          | OpMem m ->
+              let tmp_fpr = 31 in
+              let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+              Ok [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
+                Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = d_idx; src2 = tmp_fpr };
+              ]
+          | _ -> Error "Invalid source operand for scalar FP arithmetic")
+      | _ -> Error "Invalid destination register for scalar FP arithmetic")
+  | ("ucomiss" | "ucomisd" | "comiss" | "comisd"), [ OpReg dst; src ] ->
+      (match dst with
+      | Register.Fpr (d_idx, _) ->
+          (match src with
+          | OpReg (Register.Fpr (s_idx, _)) ->
+              Ok [ Ir.Fp_cmp { src1 = d_idx; src2 = s_idx } ]
+          | OpMem m ->
+              let tmp_fpr = 31 in
+              let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+              Ok [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
+                Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr };
+              ]
+          | _ -> Error "Invalid source operand for scalar FP compare")
+      | _ -> Error "Invalid destination register for scalar FP compare")
+  | ("cvtsi2ss" | "cvtsi2sd"), [ OpReg (Register.Fpr (d, _)); src ] ->
+      (match src with
+      | OpReg s -> Ok [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = s } ]
+      | OpMem m ->
+          let tmp_gpr = Register.vtmp0 in
+          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          Ok [
+            Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Mem mem_ref };
+            Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = tmp_gpr };
+          ]
+      | _ -> Error "Invalid operands for cvtsi2ss/sd")
+  | ("cvttss2si" | "cvttsd2si" | "cvtss2si" | "cvtsd2si"), [ OpReg dst; src ] ->
+      (match src with
+      | OpReg (Register.Fpr (s, _)) ->
+          Ok [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, Register.B64) } ]
+      | OpMem m ->
+          let tmp_fpr = 31 in
+          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          Ok [
+            Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
+            Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, Register.B64) };
+          ]
+      | _ -> Error "Invalid operands for cvttss/sd2si")
+
   | ("inc" | "dec" | "not" | "neg"), [ dst ] ->
       let un_op = match mnem with
         | "inc" -> Ir.Inc | "dec" -> Ir.Dec | "not" -> Ir.Not | "neg" -> Ir.Neg

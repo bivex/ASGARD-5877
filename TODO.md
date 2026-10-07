@@ -219,21 +219,21 @@
 
 ### Чеклист реализации: что конкретно доделать (по уровням сложности)
 
-#### Уровень 1: Простые задачи (Quick Wins — 1-2 дня)
-- [ ] **1.1. Скалярный Floating-Point в ARM64 и RISC-V лифтерах**:
-  - [ ] ARM64: добавить маппинг `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `fmov` в `arm64_lifter` (опкоды `FADD_DD`, `FSUB_DD`, `FMUL_DD`, `FDIV_DD`, `FCMP_DD` в VM runtime уже существуют).
-  - [ ] RISC-V: добавить маппинг `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fmin.s/d`, `fmax.s/d`, `feq.s/d`, `flt.s/d`, `fle.s/d`, `flw/fld`, `fsw/fsd` в `riscv_lifter`.
-- [ ] **1.2. Базовые битовые инструкции хоста**:
-  - [ ] x86 & ARM64: `clz`, `ctz` / `bsf`, `bsr`, `popcnt`, `lzcnt`, `tzcnt` (через интринсики хоста `__builtin_clzll`, `__builtin_popcountll`).
-  - [ ] Реверс байт/бит: `bswap` (x86), `rev`, `rev16`, `rev32`, `rbit` (ARM64).
-  - [ ] Битовые тесты: `bt`, `bts`, `btr`, `btc` (разложение через And/Or/Xor + сдвиг битовой маски).
-- [ ] **1.3. Флаговые переключатели x86**:
-  - [ ] `clc`, `stc`, `cmc` (CF = 0 / 1 / ~CF).
-  - [ ] `cld`, `std` (DF = 0 / 1).
-- [ ] **1.4. Системные границы и явные Traps**:
-  - [ ] x86: `syscall`, `sysret`, `cpuid`, `rdtsc`, `rdtscp`, `xgetbv` -> маппинг в `Ir.Trap` / `Ir.Call_Extern`.
-  - [ ] ARM64: `eret` -> `Ir.Trap`.
-  - [ ] RISC-V: `ecall`, `ebreak` -> `Ir.Trap`; базовые CSR `csrrw/csrrs/csrrc` (таймеры `cycle`, `time`).
+#### Уровень 1: Простые задачи (Quick Wins — 1-2 дня) — ВЫПОЛНЕНО 2026-10-07
+- [x] **1.1. Скалярный Floating-Point в ARM64 и RISC-V лифтерах**:
+  - [x] ARM64: добавлен маппинг `fadd`, `fsub`, `fmul`, `fdiv`, `fcmp`, `fmov`, `fcsel`, `fcvtzs`, `scvtf` в `arm64_lifter`.
+  - [x] RISC-V: добавлен маппинг `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fmin.s/d`, `fmax.s/d`, `feq.s/d`, `flt.s/d`, `fle.s/d`, `flw/fld`, `fsw/fsd`, `fmv.*` в `riscv_lifter`.
+- [x] **1.2. Базовые битовые инструкции хоста**:
+  - [x] x86 & ARM64: `clz`, `ctz` / `bsf`, `bsr`, `popcnt`, `lzcnt`, `tzcnt` (через интринсики хоста `__builtin_clzll`, `__builtin_popcountll`).
+  - [x] Реверс байт/бит: `bswap` (x86), `rev`, `rev16`, `rev32`, `rbit` (ARM64), `rev8` (RISC-V).
+  - [x] Битовые тесты: `bt`, `bts`, `btr`, `btc` (разложение через And/Or/Xor + сдвиг битовой маски).
+- [x] **1.3. Флаговые переключатели x86**:
+  - [x] `clc`, `stc`, `cmc` (CF = 0 / 1 / ~CF).
+  - [x] `cld`, `std` (DF = 0 / 1).
+- [x] **1.4. Системные границы и явные Traps**:
+  - [x] x86: `syscall`, `sysret`, `cpuid`, `rdtsc`, `rdtscp`, `xgetbv` -> маппинг в `Ir.Trap` / `Ir.Call_Extern`.
+  - [x] ARM64: `eret` -> `Ir.Trap`.
+  - [x] RISC-V: `ecall`, `ebreak` -> `Ir.Trap`; базовые CSR `csrrw/csrrs/csrrc` (таймеры `cycle`, `time`).
 
 #### Уровень 2: Средняя сложность (Medium — 3-5 дней)
 - [ ] **2.1. Битовые поля и маски**:
