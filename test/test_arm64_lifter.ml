@@ -565,6 +565,22 @@ let test_arm64_lift_fcsel_fmin_fmax () =
           check int64 "ARM64 fcsel + fmin + fmax = 40" 40L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_fsqrt () =
+  let asm = {|
+    mov x1, #81
+    scvtf d0, x1
+    fsqrt d1, d0
+    fcvtzs x0, d1
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_fsqrt" } asm with
+  | Error err -> fail ("Failed to lift ARM64 fsqrt: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 fsqrt(81) = 9" 9L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -595,6 +611,7 @@ let tests = [
   ("ARM64 Lift Bitfield Move (ubfm/sbfm)", `Quick, test_arm64_lift_ubfm_sbfm);
   ("ARM64 Lift FP FMA (fmadd)", `Quick, test_arm64_lift_fp_fma_fneg_fabs);
   ("ARM64 Lift FP Cond/Min/Max (fcsel/fmin/fmax)", `Quick, test_arm64_lift_fcsel_fmin_fmax);
+  ("ARM64 Lift FP Square Root (fsqrt)", `Quick, test_arm64_lift_fsqrt);
 ]
 
 

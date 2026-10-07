@@ -491,6 +491,86 @@ let lift_vector_binop mnem ops =
           | _ -> Error "vector binary operation requires vector registers")
       | _ -> Error "invalid vector binary operation operands")
 
+let one_step_rcl reg w =
+  let flags_tmp = Register.vtmp1 in
+  let old_cf = Register.vtmp2 in
+  let new_cf = Register.vtmp3 in
+  let mask = match w with 8 -> 0xFFL | 16 -> 0xFFFFL | 32 -> 0xFFFFFFFFL | _ -> -1L in
+  let msb_shift = Int64.of_int (w - 1) in
+  [
+    Ir.Get_flags flags_tmp;
+    Ir.Mov { dst = Ir.Reg old_cf; src = Ir.Reg flags_tmp };
+    Ir.Alu { op = Ir.And; dst = old_cf; src1 = Ir.Reg old_cf; src2 = Ir.Imm 1L; set_flags = false };
+    Ir.Mov { dst = Ir.Reg new_cf; src = Ir.Reg reg };
+    Ir.Alu { op = Ir.Shr; dst = new_cf; src1 = Ir.Reg new_cf; src2 = Ir.Imm msb_shift; set_flags = false };
+    Ir.Alu { op = Ir.And; dst = new_cf; src1 = Ir.Reg new_cf; src2 = Ir.Imm 1L; set_flags = false };
+    Ir.Alu { op = Ir.Shl; dst = reg; src1 = Ir.Reg reg; src2 = Ir.Imm 1L; set_flags = false };
+  ]
+  @ (if w < 64 then
+       [ Ir.Alu { op = Ir.And; dst = reg; src1 = Ir.Reg reg; src2 = Ir.Imm mask; set_flags = false } ]
+     else [])
+  @ [
+    Ir.Alu { op = Ir.Or; dst = reg; src1 = Ir.Reg reg; src2 = Ir.Reg old_cf; set_flags = false };
+    Ir.Alu { op = Ir.And; dst = flags_tmp; src1 = Ir.Reg flags_tmp; src2 = Ir.Imm (Int64.lognot 1L); set_flags = false };
+    Ir.Alu { op = Ir.Or; dst = flags_tmp; src1 = Ir.Reg flags_tmp; src2 = Ir.Reg new_cf; set_flags = false };
+    Ir.Set_flags (Ir.Reg flags_tmp);
+  ]
+
+let one_step_rcr reg w =
+  let flags_tmp = Register.vtmp1 in
+  let old_cf = Register.vtmp2 in
+  let new_cf = Register.vtmp3 in
+  let mask = match w with 8 -> 0xFFL | 16 -> 0xFFFFL | 32 -> 0xFFFFFFFFL | _ -> -1L in
+  let msb_shift = Int64.of_int (w - 1) in
+  [
+    Ir.Get_flags flags_tmp;
+    Ir.Mov { dst = Ir.Reg old_cf; src = Ir.Reg flags_tmp };
+    Ir.Alu { op = Ir.And; dst = old_cf; src1 = Ir.Reg old_cf; src2 = Ir.Imm 1L; set_flags = false };
+    Ir.Mov { dst = Ir.Reg new_cf; src = Ir.Reg reg };
+    Ir.Alu { op = Ir.And; dst = new_cf; src1 = Ir.Reg new_cf; src2 = Ir.Imm 1L; set_flags = false };
+  ]
+  @ (if w < 64 then
+       [ Ir.Alu { op = Ir.And; dst = reg; src1 = Ir.Reg reg; src2 = Ir.Imm mask; set_flags = false } ]
+     else [])
+  @ [
+    Ir.Alu { op = Ir.Shr; dst = reg; src1 = Ir.Reg reg; src2 = Ir.Imm 1L; set_flags = false };
+    Ir.Alu { op = Ir.Shl; dst = old_cf; src1 = Ir.Reg old_cf; src2 = Ir.Imm msb_shift; set_flags = false };
+    Ir.Alu { op = Ir.Or; dst = reg; src1 = Ir.Reg reg; src2 = Ir.Reg old_cf; set_flags = false };
+    Ir.Alu { op = Ir.And; dst = flags_tmp; src1 = Ir.Reg flags_tmp; src2 = Ir.Imm (Int64.lognot 1L); set_flags = false };
+    Ir.Alu { op = Ir.Or; dst = flags_tmp; src1 = Ir.Reg flags_tmp; src2 = Ir.Reg new_cf; set_flags = false };
+    Ir.Set_flags (Ir.Reg flags_tmp);
+  ]
+
+let lift_rc_op mnem dst count_opt =
+  let step_fn = if mnem = "rcl" then one_step_rcl else one_step_rcr in
+  let w_bits = match dst with
+    | X86_parser.OpReg r -> Register.width_to_bits (Register.get_width r)
+    | X86_parser.OpMem m -> Register.width_to_bits m.width
+    | _ -> 64
+  in
+  let count = match count_opt with
+    | None -> 1
+    | Some (X86_parser.OpImm c) ->
+        let l = w_bits + 1 in
+        let c_masked = Int64.to_int (Int64.logand c 0x3FL) in
+        c_masked mod l
+    | Some _ -> 1
+  in
+  if count = 0 then Ok []
+  else
+    match dst with
+    | X86_parser.OpReg r ->
+        let steps = List.init count (fun _ -> step_fn r w_bits) |> List.flatten in
+        Ok steps
+    | X86_parser.OpMem m ->
+        let tmp_reg = Register.vtmp0 in
+        let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+        let load = [ Ir.Mov { dst = Ir.Reg tmp_reg; src = Ir.Mem mem_ref } ] in
+        let steps = List.init count (fun _ -> step_fn tmp_reg w_bits) |> List.flatten in
+        let store = [ Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp_reg } ] in
+        Ok (load @ steps @ store)
+    | _ -> Error "rcl/rcr destination must be register or memory"
+
 let lift_instr mnem ops =
   match mnem, ops with
   | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align" | "mfence" | "lfence" | "sfence" | "pause" | "prefetcht0" | "prefetcht1" | "prefetcht2" | "prefetchnta" | "prefetch" | "clflush" | "clflushopt"), _ -> Ok [ Ir.Nop ]
@@ -1031,11 +1111,22 @@ let lift_instr mnem ops =
         ]
       in
       Ok (load_dst @ prep_cnt @ prep_inv_cnt @ shift_ops @ store_dst)
+  | ("rcl" | "rcr"), [ dst ] ->
+      lift_rc_op mnem dst None
+  | ("rcl" | "rcr"), [ dst; cnt ] ->
+      lift_rc_op mnem dst (Some cnt)
   | "clc", _ ->
       Ok [ Ir.Cmp { src1 = Ir.Imm 1L; src2 = Ir.Imm 0L } ]
   | "stc", _ ->
       Ok [ Ir.Cmp { src1 = Ir.Imm 0L; src2 = Ir.Imm 1L } ]
-  | ("cmc" | "cld" | "std"), _ ->
+  | "cmc", _ ->
+      let tmp = Register.vtmp0 in
+      Ok [
+        Ir.Get_flags tmp;
+        Ir.Alu { op = Ir.Xor; dst = tmp; src1 = Ir.Reg tmp; src2 = Ir.Imm 1L; set_flags = false };
+        Ir.Set_flags (Ir.Reg tmp);
+      ]
+  | ("cld" | "std"), _ ->
       Ok [ Ir.Nop ]
   | "lahf", _ ->
       let rax = Register.Gpr (Register.RAX, Register.B64) in
@@ -1092,25 +1183,28 @@ let lift_instr mnem ops =
       let* ir_src = to_ir_operand src in
       let* ir_dst = to_ir_operand dst in
       Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
-  | ("addss" | "addsd" | "subss" | "subsd" | "mulss" | "mulsd" | "divss" | "divsd"), [ OpReg dst; src ] ->
+  | ("addss" | "addsd" | "subss" | "subsd" | "mulss" | "mulsd" | "divss" | "divsd" | "sqrtss" | "sqrtsd"), [ OpReg dst; src ] ->
       let fp_op = match mnem with
         | "addss" | "addsd" -> Ir.Fadd
         | "subss" | "subsd" -> Ir.Fsub
         | "mulss" | "mulsd" -> Ir.Fmul
         | "divss" | "divsd" -> Ir.Fdiv
+        | "sqrtss" | "sqrtsd" -> Ir.Fsqrt
         | _ -> assert false
       in
       (match dst with
       | Register.Fpr (d_idx, _) ->
           (match src with
           | OpReg (Register.Fpr (s_idx, _)) ->
-              Ok [ Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = d_idx; src2 = s_idx } ]
+              let s1 = if fp_op = Ir.Fsqrt then s_idx else d_idx in
+              Ok [ Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = s1; src2 = s_idx } ]
           | OpMem m ->
               let tmp_fpr = 31 in
               let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+              let s1 = if fp_op = Ir.Fsqrt then tmp_fpr else d_idx in
               Ok [
                 Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
-                Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = d_idx; src2 = tmp_fpr };
+                Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = s1; src2 = tmp_fpr };
               ]
           | _ -> Error "Invalid source operand for scalar FP arithmetic")
       | _ -> Error "Invalid destination register for scalar FP arithmetic")
@@ -1152,6 +1246,9 @@ let lift_instr mnem ops =
             Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, Register.B64) };
           ]
       | _ -> Error "Invalid operands for cvttss/sd2si")
+  | ("cvtsd2ss" | "cvtss2sd"), [ OpReg (Register.Fpr (d, _)); src ] ->
+      let* ir_src = to_ir_operand src in
+      Ok [ Ir.Mov { dst = Ir.Reg (Register.Fpr (d, Register.B64)); src = ir_src } ]
 
   | ("inc" | "dec" | "not" | "neg"), [ dst ] ->
       let un_op = match mnem with

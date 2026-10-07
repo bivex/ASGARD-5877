@@ -608,6 +608,7 @@ let step state = function
         | Fsub -> a -. b
         | Fmul -> a *. b
         | Fdiv -> if b = 0.0 then 0.0 else a /. b
+        | Fsqrt -> if a < 0.0 then 0.0 else Float.sqrt a
       in
       set_vector_lane state dst 0 (Int64.bits_of_float res);
       Ok None

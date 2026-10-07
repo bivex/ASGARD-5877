@@ -1008,6 +1008,45 @@ bmi2_pext_pdep:
           Alcotest.(check int64) "pext 0xB2 with mask 0xF0 = 11" 11L (get_reg state Register.rax);
           Alcotest.(check int64) "pdep 11 with mask 0xF0 = 0xB0 (176)" 176L (get_reg state Register.rcx)
 
+let test_x86_fp_sqrt_and_cvt () =
+  let asm = {|
+func_fpsqrt:
+    mov rdi, 64
+    cvtsi2sd xmm0, rdi
+    sqrtsd xmm1, xmm0
+    cvtsd2ss xmm2, xmm1
+    cvtss2sd xmm3, xmm2
+    cvttsd2si rax, xmm3
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "sqrt(64) = 8" 8L (get_reg state Register.rax)
+
+let test_x86_rcl_rcr_cmc () =
+  let asm = {|
+func_rcl_rcr:
+    clc
+    mov rax, 1
+    cmc
+    rcl rax, 1
+    rcr rax, 1
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "rcl followed by rcr restores rax" 1L (get_reg state Register.rax)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -1054,5 +1093,7 @@ let tests = [
   Alcotest.test_case "lift_x86_string_ops" `Quick test_x86_lift_string_ops;
   Alcotest.test_case "lift_x86_bit_tests" `Quick test_x86_lift_bit_tests;
   Alcotest.test_case "lift_x86_pext_pdep" `Quick test_x86_lift_pext_pdep;
+  Alcotest.test_case "lift_x86_fp_sqrt_and_cvt" `Quick test_x86_fp_sqrt_and_cvt;
+  Alcotest.test_case "lift_x86_rcl_rcr_cmc" `Quick test_x86_rcl_rcr_cmc;
 ]
 

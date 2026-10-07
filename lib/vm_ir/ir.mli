@@ -50,7 +50,7 @@ type target =
   | BlockId of int
   | TargetImm of int64
 
-type fp_binop = Fadd | Fsub | Fmul | Fdiv
+type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
 type fp_conv = Fcvtzs | Scvtf
 type vec_op = Vadd | Vsub | Vmul | Vand | Vor | Vxor
 type vec_elem = VInt | VF32 | VF64

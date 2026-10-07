@@ -552,7 +552,7 @@ let compile_and_package_multi
                   if addend <> 0L then
                     encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx dst) 0 addend
               | Ir.Fp_binop { op; dst; src1; src2 } ->
-                  let op_kind = match op with Fadd -> OP_FADD_DD | Fsub -> OP_FSUB_DD | Fmul -> OP_FMUL_DD | Fdiv -> OP_FDIV_DD in
+                  let op_kind = match op with Fadd -> OP_FADD_DD | Fsub -> OP_FSUB_DD | Fmul -> OP_FMUL_DD | Fdiv -> OP_FDIV_DD | Fsqrt -> OP_FSQRT_D in
                   encode_raw_word (get_opcode op_kind) (dst mod 32) (src1 mod 32) (Int64.of_int (src2 mod 32))
               | Ir.Fp_cmp { src1; src2 } ->
                   encode_raw_word (get_opcode OP_FCMP_DD) 0 (src1 mod 32) (Int64.of_int (src2 mod 32))

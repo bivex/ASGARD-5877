@@ -278,6 +278,13 @@ let emit_mem_and_ffi_handlers b =
   Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FSQRT_D: {\n";
+  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
+  Buffer.add_string b "        double r = (a >= 0.0) ? std::sqrt(a) : 0.0;\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FCMP_DD: {\n";
   Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
   Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";

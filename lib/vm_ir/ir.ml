@@ -50,7 +50,7 @@ type target =
   | BlockId of int
   | TargetImm of int64
 
-type fp_binop = Fadd | Fsub | Fmul | Fdiv
+type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
 type fp_conv = Fcvtzs | Scvtf
 type vec_op = Vadd | Vsub | Vmul | Vand | Vor | Vxor
 type vec_elem = VInt | VF32 | VF64
@@ -202,7 +202,7 @@ let instr_to_string = function
   | Load_symbol { dst; sym; addend } ->
       Printf.sprintf "load_sym %s, %s + 0x%LX" (Register.to_string dst) sym addend
   | Fp_binop { op; dst; src1; src2 } ->
-      let op_s = match op with Fadd -> "fadd" | Fsub -> "fsub" | Fmul -> "fmul" | Fdiv -> "fdiv" in
+      let op_s = match op with Fadd -> "fadd" | Fsub -> "fsub" | Fmul -> "fmul" | Fdiv -> "fdiv" | Fsqrt -> "fsqrt" in
       Printf.sprintf "%s d%d, d%d, d%d" op_s dst src1 src2
   | Fp_cmp { src1; src2 } ->
       Printf.sprintf "fcmp d%d, d%d" src1 src2

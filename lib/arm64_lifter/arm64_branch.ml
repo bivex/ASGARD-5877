@@ -66,6 +66,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Fp_binop { op = Fmul; dst = d; src1 = s1; src2 = s2 } ]
   | ("fdiv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       Some [ Ir.Fp_binop { op = Fdiv; dst = d; src1 = s1; src2 = s2 } ]
+  | ("fsqrt", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
+      Some [ Ir.Fp_binop { op = Fsqrt; dst = d; src1 = s; src2 = s } ]
   | ("fmadd", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (n, _)); OpReg (Register.Fpr (m, _)); OpReg (Register.Fpr (a, _)) ]) ->
       Some [
         Ir.Fp_binop { op = Fmul; dst = 31; src1 = n; src2 = m };

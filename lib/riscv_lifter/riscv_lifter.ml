@@ -357,6 +357,9 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Fp_binop { op = Fmul; dst = d; src1 = s1; src2 = s2 } ]
   | (("fdiv.s" | "fdiv.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       Ok [ Ir.Fp_binop { op = Fdiv; dst = d; src1 = s1; src2 = s2 } ]
+  | (("fsqrt.s" | "fsqrt.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ])
+  | (("fsqrt.s" | "fsqrt.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)); _ ]) ->
+      Ok [ Ir.Fp_binop { op = Fsqrt; dst = d; src1 = s; src2 = s } ]
   | (("fmadd.s" | "fmadd.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)) ])
   | (("fmadd.s" | "fmadd.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)); OpReg (Register.Fpr (s3, _)); _ ]) ->
       Ok [

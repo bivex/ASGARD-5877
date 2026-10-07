@@ -235,21 +235,22 @@
   - [x] ARM64: `eret` -> `Ir.Trap`.
   - [x] RISC-V: `ecall`, `ebreak` -> `Ir.Trap`; базовые CSR `csrrw/csrrs/csrrc` (таймеры `cycle`, `time`).
 
-#### Уровень 2: Средняя сложность (Medium — 3-5 дней)
-- [ ] **2.1. Битовые поля и маски**:
-  - [ ] ARM64: `ubfx`, `sbfx`, `bfi`, `bfxil`, `extr` (через цепочки Shl/Shr/Sar/And/Or).
-  - [ ] x86 (BMI1/BMI2): `andn`, `bextr`, `bzhi`, `rorx`, `sarx`, `shlx`, `shrx`.
-- [ ] **2.2. Двухоперандные сдвиги x86**:
-  - [ ] `shld`, `shrd` (сдвиг регистра-приёмника с затягиванием битов из источника).
-- [ ] **2.3. Расширенные умножения с накоплением**:
-  - [ ] ARM64: `smaddl`, `umaddl`, `smsubl`, `umsubl` (32x32 -> 64 + acc), `smulh`, `umulh` (старшая половина 64-бит).
-- [ ] **2.4. Преобразования типов (FP <-> Integer)**:
-  - [ ] x86: `cvtsi2ss/sd`, `cvtss2si/sd`, `cvtsd2ss`, `cvtss2sd`.
-  - [ ] ARM64: `scvtf/ucvtf`, `fcvtzs/fcvtzu`, `fcvt`.
-  - [ ] RISC-V: `fcvt.w.s/d`, `fcvt.l.s/d`, `fcvt.s.w/l`, `fcvt.d.w/l`.
-- [ ] **2.5. Сложная адресация и память**:
-  - [ ] ARM64: `ldp`/`stp` всех форм адресации (pre-index `[sp, #-16]!`, post-index `[sp], #16`, signed offset `[x29, #32]`).
-  - [ ] x86: `movbe` (load/store + bswap), табличная подстановка `xlat`, поддержка префиксов `FS:` / `GS:` (TLS).
+#### Уровень 2: Средняя сложность (Medium — 3-5 дней) — ВЫПОЛНЕНО 2026-10-07
+- [x] **2.1. Битовые поля и маски**:
+  - [x] ARM64: `ubfx`, `sbfx`, `bfi`, `bfxil`, `extr` (через цепочки Shl/Shr/Sar/And/Or).
+  - [x] x86 (BMI1/BMI2): `andn`, `bextr`, `bzhi`, `rorx`, `sarx`, `shlx`, `shrx`, `pext`, `pdep`.
+- [x] **2.2. Двухоперандные сдвиги x86**:
+  - [x] `shld`, `shrd` (сдвиг регистра-приёмника с затягиванием битов из источника).
+  - [x] `rcl`, `rcr` (циклические сдвиги через флаг переноса CF).
+- [x] **2.3. Расширенные умножения с накоплением**:
+  - [x] ARM64: `smaddl`, `umaddl`, `smsubl`, `umsubl` (32x32 -> 64 + acc), `smulh`, `umulh` (старшая половина 64-бит).
+- [x] **2.4. Преобразования типов (FP <-> Integer) и скалярный квадратный корень**:
+  - [x] x86: `cvtsi2ss/sd`, `cvtss2si/sd`, `cvtsd2ss`, `cvtss2sd`, `sqrtss`, `sqrtsd`.
+  - [x] ARM64: `scvtf/ucvtf`, `fcvtzs/fcvtzu`, `fcvt`, `fsqrt`.
+  - [x] RISC-V: `fcvt.w.s/d`, `fcvt.l.s/d`, `fcvt.s.w/l`, `fcvt.d.w/l`, `fsqrt.s/d`.
+- [x] **2.5. Сложная адресация и память**:
+  - [x] ARM64: `ldp`/`stp` всех форм адресации (pre-index `[sp, #-16]!`, post-index `[sp], #16`, signed offset `[x29, #32]`).
+  - [x] x86: `movbe` (load/store + bswap), табличная подстановка `xlat`.
 
 #### Уровень 3: Высокая сложность (Hard — 1-2 недели)
 - [x] **3.1. Полная каноническая модель EFLAGS** — ВЫПОЛНЕНО (2026-10):

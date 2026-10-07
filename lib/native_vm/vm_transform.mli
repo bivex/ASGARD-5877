@@ -75,6 +75,7 @@ type raw_op_kind =
   | OP_FSUB_DD
   | OP_FMUL_DD
   | OP_FDIV_DD
+  | OP_FSQRT_D
   | OP_FCMP_DD
   | OP_FCVTZS
   | OP_SCVTF
