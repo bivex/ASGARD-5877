@@ -345,12 +345,31 @@ __attribute__((always_inline, visibility("hidden"))) static inline bool execute_
     return execute_threaded(ctx, bytecode, count, {{ key_seed_hex }}, scrub_source);
 }
 
-static inline uint64_t asgard_vm_call(const uint64_t* bc, size_t len, uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0, uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {
+#if defined(__GNUC__) || defined(__clang__)
+#define ASG_CALL_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define ASG_CALL_NOINLINE __declspec(noinline)
+#else
+#define ASG_CALL_NOINLINE
+#endif
+
+static ASG_CALL_NOINLINE uint64_t asgard_vm_call(const uint64_t* bc, size_t len, uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0, uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {
     vanguard_threaded_vm::VMContext ctx = {};
     ctx.init({{ key_seed_hex }});
     alignas(16) static thread_local uint8_t host_stack[1048576];
     ctx.set_reg(vanguard_threaded_vm::REG_RSP, (uint64_t)(host_stack + sizeof(host_stack) - 8192));
     ctx.set_reg(vanguard_threaded_vm::REG_RBP, (uint64_t)(host_stack + sizeof(host_stack) - 8192));
+#if defined(__x86_64__) || defined(_M_X64)
+    // System V / Windows x64 ABI argument registers
+    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a0);
+    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a1);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a2);
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a3);
+    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a4);
+    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a5);
+    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
+#else
+    // ARM64 calling convention mapping (x0->RAX, x1->RCX, x2->RDX, x3->RBX, x4->RSI, x5->RDI, x6->R8, x7->R9)
     ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
     ctx.set_reg(vanguard_threaded_vm::REG_RCX, a1);
     ctx.set_reg(vanguard_threaded_vm::REG_RDX, a2);
@@ -359,6 +378,7 @@ static inline uint64_t asgard_vm_call(const uint64_t* bc, size_t len, uint64_t a
     ctx.set_reg(vanguard_threaded_vm::REG_RDI, a5);
     ctx.set_reg(vanguard_threaded_vm::REG_R8,  a6);
     ctx.set_reg(vanguard_threaded_vm::REG_R9,  a7);
+#endif
     vanguard_threaded_vm::execute_threaded(ctx, bc, len, false);
     return ctx.get_rax();
 }

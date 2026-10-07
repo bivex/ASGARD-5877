@@ -432,7 +432,19 @@ uint64_t calculate_hash(
       ~c_src:c_u64 ~bytecode:[ 0x1122334455667788L ] ~out_path:out_u64 ();
     let res_u64 = Test_helpers.read_file_string out_u64 in
     check bool "u64 function does not truncate to int" true (contains_sub res_u64 "return vanguard_threaded_vm::asgard_vm_call");
-    check bool "u64 function passes clean args" true (contains_sub res_u64 "(uint64_t)a, (uint64_t)b")
+    check bool "u64 function passes clean args" true (contains_sub res_u64 "(uint64_t)a, (uint64_t)b");
+
+    let out_attr = Filename.concat tmp_dir "attr_virt.cpp" in
+    let c_attr = {|
+__attribute__((noinline)) char* custom_alloc(size_t sz) {
+    ASGARD_BEGIN_VIRTUALIZE("alloc");
+    return (char*)0;
+}
+|} in
+    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+      ~c_src:c_attr ~bytecode:[ 0x1122334455667788L ] ~out_path:out_attr ();
+    let res_attr = Test_helpers.read_file_string out_attr in
+    check bool "clean type stripped attribute in cast" true (contains_sub res_attr "return (char*)(uintptr_t)vanguard_threaded_vm::asgard_vm_call")
   )
 
 let test_trampoline_multi_functions () =

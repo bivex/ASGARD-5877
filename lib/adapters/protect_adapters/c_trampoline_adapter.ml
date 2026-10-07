@@ -12,6 +12,53 @@ let sanitize_ident name =
   let s = String.map (function 'a'..'z' | 'A'..'Z' | '0'..'9' | '_' as c -> c | _ -> '_') name in
   if s = "" then "fn" else s
 
+let contains_sub s sub =
+  let len_s = String.length s in
+  let len_sub = String.length sub in
+  if len_sub > len_s || len_sub = 0 then false
+  else
+    let found = ref false in
+    for i = 0 to len_s - len_sub do
+      if not !found && String.sub s i len_sub = sub then found := true
+    done;
+    !found
+
+let strip_attributes s =
+  let len = String.length s in
+  let buf = Buffer.create len in
+  let i = ref 0 in
+  while !i < len do
+    if !i + 13 <= len && String.sub s !i 13 = "__attribute__" then (
+      i := !i + 13;
+      while !i < len && (s.[!i] = ' ' || s.[!i] = '\t') do incr i done;
+      if !i < len && s.[!i] = '(' then (
+        incr i;
+        let depth = ref 1 in
+        while !i < len && !depth > 0 do
+          if s.[!i] = '(' then incr depth
+          else if s.[!i] = ')' then decr depth;
+          incr i
+        done
+      )
+    ) else if !i + 10 <= len && String.sub s !i 10 = "__declspec" then (
+      i := !i + 10;
+      while !i < len && (s.[!i] = ' ' || s.[!i] = '\t') do incr i done;
+      if !i < len && s.[!i] = '(' then (
+        incr i;
+        let depth = ref 1 in
+        while !i < len && !depth > 0 do
+          if s.[!i] = '(' then incr depth
+          else if s.[!i] = ')' then decr depth;
+          incr i
+        done
+      )
+    ) else (
+      Buffer.add_char buf s.[!i];
+      incr i
+    )
+  done;
+  Buffer.contents buf
+
 let embed_vm_trampoline
     ?(header_name = "threaded_vm.hpp")
     ~c_src
@@ -142,11 +189,12 @@ let embed_vm_trampoline
                       while !p >= 0 && c_src.[!p] <> '\n' && c_src.[!p] <> ';' && c_src.[!p] <> '}' && c_src.[!p] <> '>' do
                         decr p
                       done;
-                      let prefix = if type_end >= !p + 1 then String.sub c_src (!p + 1) (type_end - !p) |> String.trim else "" in
+                      let raw_prefix = if type_end >= !p + 1 then String.sub c_src (!p + 1) (type_end - !p) |> String.trim else "" in
+                      let prefix = strip_attributes raw_prefix in
                       let norm = String.map (fun c -> if is_space c then ' ' else c) prefix in
                       let tokens = String.split_on_char ' ' norm |> List.map String.trim |> List.filter (fun s -> s <> "") in
                       let clean_type =
-                        List.filter (fun t -> t <> "static" && t <> "inline" && t <> "__inline__" && t <> "extern") tokens
+                        List.filter (fun t -> t <> "static" && t <> "inline" && t <> "__inline__" && t <> "extern" && not (String.starts_with ~prefix:"__" t)) tokens
                         |> String.concat " "
                       in
                       let param_str = String.sub c_src (lparen + 1) (rparen - lparen - 1) |> String.trim in
@@ -237,7 +285,11 @@ let embed_vm_trampoline
       let bcs_list = match bytecodes with Some bcs -> bcs | None -> [] in
       let find_bc_for_fn idx fn_name =
         let strip_lead s = if String.starts_with ~prefix:"_" s then String.sub s 1 (String.length s - 1) else s in
-        match List.find_opt (fun (n, _) -> n = fn_name || strip_lead n = strip_lead fn_name) bcs_list with
+        let s_name = strip_lead fn_name in
+        match List.find_opt (fun (n, _) ->
+          let sn = strip_lead n in
+          n = fn_name || sn = s_name || contains_sub sn s_name || contains_sub s_name sn
+        ) bcs_list with
         | Some (_, bc) -> bc
         | None ->
             (match List.nth_opt bcs_list idx with
