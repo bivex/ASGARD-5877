@@ -99,6 +99,46 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 0x7fffffffffffffffL; set_flags = false };
         Ir.Mov { dst = Reg (Register.Fpr (d, Register.B64)); src = Reg Register.vtmp0 };
       ]
+  | ("fmin", [ OpReg (Register.Fpr (d, dw)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
+      let instrs =
+        if d = s2 then
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+          ]
+        else if d = s1 then
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s2, dw)) };
+          ]
+        else
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Mov { dst = Reg (Register.Fpr (d, dw)); src = Reg (Register.Fpr (s2, dw)) };
+            Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+          ]
+      in
+      Some instrs
+  | ("fmax", [ OpReg (Register.Fpr (d, dw)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
+      let instrs =
+        if d = s2 then
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+          ]
+        else if d = s1 then
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s2, dw)) };
+          ]
+        else
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Mov { dst = Reg (Register.Fpr (d, dw)); src = Reg (Register.Fpr (s2, dw)) };
+            Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+          ]
+      in
+      Some instrs
   | ("fcmp", [ OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       Some [ Ir.Fp_cmp { src1 = s1; src2 = s2 } ]
   | ("fmov", [ OpReg dst; OpReg src ]) ->

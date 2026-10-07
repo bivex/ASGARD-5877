@@ -462,7 +462,26 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Mov { dst = Reg dst; src = Imm 0L };
         Ir.Setcc { cond = E; dst = Reg dst };
       ]
-  | (("csel" | "fcsel"), (OpReg dst :: src1_op :: src2_op :: cond_op :: _)) ->
+  | ("fcsel", (OpReg (Register.Fpr (d, dw)) :: src1_op :: src2_op :: cond_op :: _)) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
+      let cond = map_cond_str c_str in
+      (match src1_op, src2_op with
+      | OpReg (Register.Fpr (s1, _)), OpReg (Register.Fpr (s2, _)) ->
+          if d = s2 then
+            Some [
+              Ir.Cmov { cond; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+            ]
+          else if d = s1 then
+            Some [
+              Ir.Cmov { cond = Flags.condition_negate cond; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s2, dw)) };
+            ]
+          else
+            Some [
+              Ir.Mov { dst = Reg (Register.Fpr (d, dw)); src = Reg (Register.Fpr (s2, dw)) };
+              Ir.Cmov { cond; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+            ]
+      | _ -> None)
+  | ("csel", (OpReg dst :: src1_op :: src2_op :: cond_op :: _)) ->
       let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
       let is_zero = function
         | OpReg (Register.Vreg (Register.VZERO, _)) -> true

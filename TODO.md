@@ -336,7 +336,7 @@
    - Битовые тесты: `bt`, `bts`, `btr`, `btc` (с установкой флага `CF`) — **ВЫПОЛНЕНО (2026-10)**.
    - Сканирование и подсчёт бит: `bsf`, `bsr`, `tzcnt`, `lzcnt`, `popcnt` — **ВЫПОЛНЕНО (2026-10)**.
    - Строковые операции: `stosb/w/d/q`, `lodsb/w/d/q`, `movsb/w/d/q`, `scasb/w/d/q`, `cmpsb/w/d/q` — **ВЫПОЛНЕНО (2026-10)**.
-   - Инструкции BMI1 / BMI2: `bextr`, `bzhi`, `andn`, `rorx`, `sarx`, `shlx`, `shrx` — **ВЫПОЛНЕНО (2026-10)** (остаток: `pdep`, `pext`).
+   - Инструкции BMI1 / BMI2: `bextr`, `bzhi`, `andn`, `rorx`, `sarx`, `shlx`, `shrx`, `pdep`, `pext` — **ВЫПОЛНЕНО (2026-10)**.
    - Сдвиги: `shld`, `shrd` (двухоперандные сдвиги) — **ВЫПОЛНЕНО (2026-10)**, `rcl`, `rcr` (циклические сдвиги через carry).
 3. **Управление флагами**:
    - Инструкции: `lahf`, `sahf`, `pushf`/`pushfq`, `popf`/`popfq`, `clc`, `stc`, `cmc`, `cld`, `std` — **ВЫПОЛНЕНО (2026-10)**.
@@ -379,7 +379,7 @@
    - Знаковое/нулевое расширение: `sxtb/sxth/sxtw`, `uxtb/uxth/uxtw` — **ВЫПОЛНЕНО (2026-10)**.
    - Арифметика с флагом переноса: `adc`, `adcs`, `sbc`, `sbcs`, `ngc`, `ngcs` — **ВЫПОЛНЕНО (2026-10)**.
 5. **NEON и Floating Point**:
-   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `scvtf/ucvtf`, `fcvtzs/fcvtzu`, `fmadd`, `fmsub`, `fnmadd`, `fnmsub`, `fneg`, `fabs` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fmin/fmax`, `fcmp`, `fcsel`, `fcvt` half).
+   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `scvtf/ucvtf`, `fcvtzs/fcvtzu`, `fmadd`, `fmsub`, `fnmadd`, `fnmsub`, `fneg`, `fabs`, `fcsel`, `fmin`, `fmax` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fcmp`, `fcvt` half).
    - NEON векторная память: `ldr/str` SIMD.
    - NEON арифметика/логика: векторные `add/sub/mul`, `and/orr/eor/bic`.
    - Табличные подстановки и перестановки: `tbl`, `tbx`, `ext`, `dup`, `zip1/zip2`, `uzp1/uzp2`, `trn1/trn2`.
@@ -394,7 +394,7 @@
    - Адресная арифметика (Zba): `sh1add/sh1adduw`, `sh2add/sh2adduw`, `sh3add/sh3adduw` — **ВЫПОЛНЕНО (2026-10)**.
 2. **Скалярная плавающая точка (F- и D-расширения RV64FD)**:
    - Память: `flw`, `fld`, `fsw`, `fsd` — **ВЫПОЛНЕНО (2026-10)**.
-   - Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fsqrt.s/d`, `fmin.s/d`, `fmax.s/d`).
+   - Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fmin.s/d`, `fmax.s/d` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fsqrt.s/d`).
    - Сравнения: `feq.s/d`, `flt.s/d`, `fle.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Копирование знака: `fsgnj.s/d`, `fsgnjn.s/d`, `fsgnjx.s/d`, `fneg.s/d`, `fabs.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Fused Multiply-Add: `fmadd.s/d`, `fmsub.s/d`, `fnmsub.s/d`, `fnmadd.s/d` — **ВЫПОЛНЕНО (2026-10)**.
@@ -423,7 +423,7 @@
    - `ecall`, `ebreak`.
    - Память и упорядочивание: `fence`, `fence.i`, `fence.tso` — **ВЫПОЛНЕНО (2026-10)**.
    - Атомики стандартного A-расширения (`lr.w/d`, `sc.w/d`, `amoswap.w/d`, `amoadd.w/d`, `amomin.w/d`, `amomax.w/d`, `amominu.w/d`, `amomaxu.w/d`, `amoxor.w/d`, `amoand.w/d`, `amoor.w/d` со всеми ordering-модификаторами `.aq`, `.rl`, `.aqrl`) — **ВЫПОЛНЕНО (2026-10)**.
-   - Регистры управления и статуса: `csrrw`, `csrrs`, `csrrc`, `csrrwi`, `csrrsi`, `csrrci`.
+   - Регистры управления и статуса: `csrrw`, `csrrs`, `csrrc`, `csrrwi`, `csrrsi`, `csrrci` — **ВЫПОЛНЕНО (2026-10)**.
 
 ---
 

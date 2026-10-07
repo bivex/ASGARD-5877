@@ -540,6 +540,31 @@ let test_arm64_lift_fp_fma_fneg_fabs () =
       | Ok snap -> check int64 "fmadd 3*4 + 5 = 17" 17L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_fcsel_fmin_fmax () =
+  let asm = {|
+    mov x1, #10
+    scvtf d1, x1
+    mov x2, #20
+    scvtf d2, x2
+    fcmp d1, d2
+    fcsel d0, d1, d2, lt
+    fmin d3, d1, d2
+    fmax d4, d1, d2
+    fcvtzs x0, d0
+    fcvtzs x3, d3
+    fcvtzs x4, d4
+    add x0, x0, x3
+    add x0, x0, x4
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_fcsel" } asm with
+  | Error err -> fail ("Failed to lift ARM64 fcsel/fmin/fmax: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 fcsel + fmin + fmax = 40" 40L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -569,6 +594,7 @@ let tests = [
   ("ARM64 Lift Unprivileged Mem (ldtr/sttr)", `Quick, test_arm64_lift_unprivileged_ldtr_sttr);
   ("ARM64 Lift Bitfield Move (ubfm/sbfm)", `Quick, test_arm64_lift_ubfm_sbfm);
   ("ARM64 Lift FP FMA (fmadd)", `Quick, test_arm64_lift_fp_fma_fneg_fabs);
+  ("ARM64 Lift FP Cond/Min/Max (fcsel/fmin/fmax)", `Quick, test_arm64_lift_fcsel_fmin_fmax);
 ]
 
 

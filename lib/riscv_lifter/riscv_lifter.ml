@@ -334,9 +334,19 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   | ("ebreak", _) ->
       Ok [ Ir.Trap "ebreak" ]
   | (("csrr" | "csrrw" | "csrrs" | "csrrc"), (OpReg dst :: _)) ->
-      Ok [ Ir.Mov { dst = Reg dst; src = Imm 0x123456L } ]
-  | ("csrw", _) ->
+      let is_zero = match dst with Register.Vreg (Register.VZERO, _) -> true | _ -> false in
+      if is_zero then Ok [ Ir.Nop ]
+      else Ok [ Ir.Mov { dst = Reg dst; src = Imm 0L } ]
+  | (("csrrwi" | "csrrsi" | "csrrci"), (OpReg dst :: _)) ->
+      let is_zero = match dst with Register.Vreg (Register.VZERO, _) -> true | _ -> false in
+      if is_zero then Ok [ Ir.Nop ]
+      else Ok [ Ir.Mov { dst = Reg dst; src = Imm 0L } ]
+  | (("csrw" | "csrs" | "csrc" | "csrwi" | "csrsi" | "csrci"), _) ->
       Ok [ Ir.Nop ]
+  | (("rdcycle" | "rdtime" | "rdinstret" | "rdcycleh" | "rdtimeh" | "rdinstreth"), (OpReg dst :: _)) ->
+      let is_zero = match dst with Register.Vreg (Register.VZERO, _) -> true | _ -> false in
+      if is_zero then Ok [ Ir.Nop ]
+      else Ok [ Ir.Mov { dst = Reg dst; src = Imm 0L } ]
 
   (* F & D Extensions: Floating Point *)
   | (("fadd.s" | "fadd.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
@@ -407,10 +417,46 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, Register.B64) } ]
   | (("fcvt.d.w" | "fcvt.s.w" | "fcvt.d.l" | "fcvt.s.l"), [ OpReg (Register.Fpr (d, _)); OpReg src ]) ->
       Ok [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src } ]
-  | (("fmin.s" | "fmin.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Ok [ Ir.Fp_binop { op = Fsub; dst = d; src1 = s1; src2 = s2 } ]
-  | (("fmax.s" | "fmax.d"), [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Ok [ Ir.Fp_binop { op = Fadd; dst = d; src1 = s1; src2 = s2 } ]
+  | (("fmin.s" | "fmin.d"), [ OpReg (Register.Fpr (d, dw)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
+      let instrs =
+        if d = s2 then
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+          ]
+        else if d = s1 then
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s2, dw)) };
+          ]
+        else
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Mov { dst = Reg (Register.Fpr (d, dw)); src = Reg (Register.Fpr (s2, dw)) };
+            Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+          ]
+      in
+      Ok instrs
+  | (("fmax.s" | "fmax.d"), [ OpReg (Register.Fpr (d, dw)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
+      let instrs =
+        if d = s2 then
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+          ]
+        else if d = s1 then
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s2, dw)) };
+          ]
+        else
+          [
+            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Mov { dst = Reg (Register.Fpr (d, dw)); src = Reg (Register.Fpr (s2, dw)) };
+            Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
+          ]
+      in
+      Ok instrs
   | (("fmv.d" | "fmv.s" | "fmv.w.x" | "fmv.x.w" | "fmv.d.x" | "fmv.x.d"), [ OpReg dst; OpReg src ]) ->
       Ok [ Ir.Mov { dst = Reg dst; src = Reg src } ]
 

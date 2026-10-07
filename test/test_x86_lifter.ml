@@ -988,6 +988,26 @@ bit_test:
       | Ok () ->
           Alcotest.(check int64) "bts/btc/btr bit test ops" 0L (get_reg state Register.rax)
 
+let test_x86_lift_pext_pdep () =
+  let asm = {|
+bmi2_pext_pdep:
+    mov rdi, 0xB2
+    mov rsi, 0xF0
+    pext rax, rdi, rsi
+    mov rdx, 11
+    pdep rcx, rdx, rsi
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "pext 0xB2 with mask 0xF0 = 11" 11L (get_reg state Register.rax);
+          Alcotest.(check int64) "pdep 11 with mask 0xF0 = 0xB0 (176)" 176L (get_reg state Register.rcx)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -1033,5 +1053,6 @@ let tests = [
   Alcotest.test_case "lift_x86_xlat" `Quick test_x86_lift_xlat;
   Alcotest.test_case "lift_x86_string_ops" `Quick test_x86_lift_string_ops;
   Alcotest.test_case "lift_x86_bit_tests" `Quick test_x86_lift_bit_tests;
+  Alcotest.test_case "lift_x86_pext_pdep" `Quick test_x86_lift_pext_pdep;
 ]
 
