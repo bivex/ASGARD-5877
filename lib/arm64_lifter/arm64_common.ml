@@ -8,6 +8,7 @@ let is_terminator = function
 let raw_to_ir_operand ?(is_signed = false) = function
   | OpReg (Register.Vreg (Register.VZERO, _)) -> Ir.Imm 0L
   | OpReg r -> Ir.Reg r
+  | OpVec { reg; _ } -> Ir.Reg (Register.Fpr (reg, Register.B128))
   | OpImm i -> Ir.Imm i
   | OpMem m ->
       Ir.Mem {
@@ -16,6 +17,7 @@ let raw_to_ir_operand ?(is_signed = false) = function
         disp = m.disp;
         width = m.width;
         is_signed;
+        segment = None;
       }
   | OpLabel _ -> Ir.Imm 0L
 

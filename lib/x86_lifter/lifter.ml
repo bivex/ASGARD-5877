@@ -11,11 +11,13 @@ let default_options = {
 
 let ( let* ) = Result.bind
 
+let ir_mem_of_raw ?(is_signed = false) (m : X86_parser.raw_mem) : Ir.mem_ref =
+  { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed; segment = m.segment }
+
 let to_ir_operand = function
   | X86_parser.OpReg r -> Ok (Ir.Reg r)
   | X86_parser.OpImm i -> Ok (Ir.Imm i)
-  | X86_parser.OpMem m ->
-      Ok (Ir.Mem { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false })
+  | X86_parser.OpMem m -> Ok (Ir.Mem (ir_mem_of_raw m))
   | X86_parser.OpLabel l ->
       Error (Printf.sprintf "Label '%s' cannot be used directly as a value operand" l)
 
@@ -417,9 +419,6 @@ let lift_x86_mul_one ~signed divisor =
   | (Register.B8 | Register.B16 | Register.B32) as width -> lift_x86_mul_narrow ~signed width divisor
   | _ -> lift_x86_mul64 ~signed divisor
 
-let ir_mem_of_raw (m : X86_parser.raw_mem) : Ir.mem_ref =
-  { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false }
-
 let vector_reg_index = function
   | X86_parser.OpReg (Register.Fpr (i, _)) -> Some (i mod 32)
   | _ -> None
@@ -694,7 +693,7 @@ let lift_rc_op mnem dst count_opt =
         Ok steps
     | X86_parser.OpMem m ->
         let tmp_reg = Register.vtmp0 in
-        let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+        let mem_ref = ir_mem_of_raw m in
         let load = [ Ir.Mov { dst = Ir.Reg tmp_reg; src = Ir.Mem mem_ref } ] in
         let steps = List.init count (fun _ -> step_fn tmp_reg w_bits) |> List.flatten in
         let store = [ Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp_reg } ] in
@@ -737,7 +736,7 @@ let lift_instr mnem ops =
       let* ir_dst = to_ir_operand dst in
       match (dst, src) with
       | (X86_parser.OpReg _, X86_parser.OpMem m) ->
-          let ir_mem = Ir.Mem { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          let ir_mem = Ir.Mem (ir_mem_of_raw m) in
           Ok [ Ir.Mov { dst = ir_dst; src = ir_mem } ]
       | (X86_parser.OpReg d, X86_parser.OpReg s) ->
           let mask =
@@ -757,7 +756,7 @@ let lift_instr mnem ops =
       let* ir_dst = to_ir_operand dst in
       match (dst, src) with
       | (X86_parser.OpReg _, X86_parser.OpMem m) ->
-          let ir_mem = Ir.Mem { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = true } in
+          let ir_mem = Ir.Mem (ir_mem_of_raw ~is_signed:true m) in
           Ok [ Ir.Mov { dst = ir_dst; src = ir_mem } ]
       | (X86_parser.OpReg d, X86_parser.OpReg s) ->
           let shift =
@@ -779,13 +778,13 @@ let lift_instr mnem ops =
             ]
       | _ -> Error "Invalid operands for movsx/movsxd")
   | "movbe", [ OpReg dst; OpMem m ] ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = ir_mem_of_raw m in
       Ok [
         Ir.Mov { dst = Ir.Reg dst; src = Ir.Mem mem_ref };
         Ir.Unary { op = Ir.Bswap; dst; src = Ir.Reg dst; set_flags = false };
       ]
   | "movbe", [ OpMem m; OpReg src ] ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = ir_mem_of_raw m in
       let scratch = Register.with_width Register.vtmp0 (Register.get_width src) in
       Ok [
         Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg src };
@@ -796,7 +795,7 @@ let lift_instr mnem ops =
   | "lea", [ dst; OpMem addr ] -> (
       match dst with
       | OpReg r ->
-          Ok [ Ir.Lea { dst = r; addr = { base = addr.base; index = addr.index; disp = addr.disp; width = addr.width; is_signed = false } } ]
+          Ok [ Ir.Lea { dst = r; addr = ir_mem_of_raw addr } ]
       | _ -> Error "LEA destination must be a register")
   | "xchg", [ a; b ] ->
       let* ir_a = to_ir_operand a in
@@ -819,7 +818,7 @@ let lift_instr mnem ops =
           let w = m.width in
           let acc = Register.with_width Register.rax w in
           let tmp = Register.with_width Register.vtmp0 w in
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = w; is_signed = false } in
+          let mem_ref = { (ir_mem_of_raw m) with width = w } in
           Ok [
             Ir.Mov { dst = Ir.Reg tmp; src = Ir.Mem mem_ref };
             Ir.Cmp { src1 = Ir.Reg acc; src2 = Ir.Reg tmp };
@@ -833,7 +832,7 @@ let lift_instr mnem ops =
       let rdx = Register.Gpr (Register.RDX, Register.B64) in
       let rbx = Register.Gpr (Register.RBX, Register.B64) in
       let rcx = Register.Gpr (Register.RCX, Register.B64) in
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = Register.B64; is_signed = false } in
+      let mem_ref = { (ir_mem_of_raw m) with width = Register.B64 } in
       let mem_val = Register.vtmp0 in
       let expected = Register.vtmp1 in
       let repl = Register.vtmp2 in
@@ -866,8 +865,8 @@ let lift_instr mnem ops =
       let rdx = Register.Gpr (Register.RDX, Register.B64) in
       let rbx = Register.Gpr (Register.RBX, Register.B64) in
       let rcx = Register.Gpr (Register.RCX, Register.B64) in
-      let mem_ref_lo = { Ir.base = m.base; index = m.index; disp = m.disp; width = Register.B64; is_signed = false } in
-      let mem_ref_hi = { Ir.base = m.base; index = m.index; disp = Int64.add m.disp 8L; width = Register.B64; is_signed = false } in
+      let mem_ref_lo = { (ir_mem_of_raw m) with width = Register.B64 } in
+      let mem_ref_hi = { (ir_mem_of_raw m) with disp = Int64.add m.disp 8L; width = Register.B64 } in
       let mem_lo = Register.vtmp0 in
       let mem_hi = Register.vtmp1 in
       let diff = Register.vtmp2 in
@@ -913,7 +912,7 @@ let lift_instr mnem ops =
           let w = m.width in
           let tmp_m = Register.with_width Register.vtmp0 w in
           let tmp_sum = Register.with_width Register.vtmp1 w in
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = w; is_signed = false } in
+          let mem_ref = { (ir_mem_of_raw m) with width = w } in
           Ok [
             Ir.Mov { dst = Ir.Reg tmp_m; src = Ir.Mem mem_ref };
             Ir.Mov { dst = Ir.Reg tmp_sum; src = Ir.Reg tmp_m };
@@ -928,7 +927,7 @@ let lift_instr mnem ops =
       let al_tmp = Register.vtmp0 in
       let addr_tmp = Register.vtmp1 in
       let byte_tmp = Register.vtmp2 in
-      let mem_ref = { Ir.base = Some addr_tmp; index = None; disp = 0L; width = Register.B8; is_signed = false } in
+      let mem_ref = { Ir.base = Some addr_tmp; index = None; disp = 0L; width = Register.B8; is_signed = false; segment = None } in
       Ok [
         Ir.Mov { dst = Ir.Reg al_tmp; src = Ir.Reg rax };
         Ir.Alu { op = Ir.And; dst = al_tmp; src1 = Ir.Reg al_tmp; src2 = Ir.Imm 0xFFL; set_flags = false };
@@ -948,7 +947,7 @@ let lift_instr mnem ops =
         | "stosd" -> (Register.B32, 4L)
         | _ -> (Register.B64, 8L)
       in
-      let mem_ref = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false } in
+      let mem_ref = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false; segment = None } in
       let acc = Register.with_width rax width in
       Ok [
         Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg acc };
@@ -963,7 +962,7 @@ let lift_instr mnem ops =
         | "lodsd" -> (Register.B32, 4L)
         | _ -> (Register.B64, 8L)
       in
-      let mem_ref = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false } in
+      let mem_ref = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false; segment = None } in
       let tmp = Register.with_width Register.vtmp0 width in
       if width = Register.B64 || width = Register.B32 then
         let acc = Register.with_width rax width in
@@ -989,8 +988,8 @@ let lift_instr mnem ops =
         | "movsd" -> (Register.B32, 4L)
         | _ -> (Register.B64, 8L)
       in
-      let mem_rsi = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false } in
-      let mem_rdi = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false } in
+      let mem_rsi = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false; segment = None } in
+      let mem_rdi = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false; segment = None } in
       let tmp = Register.with_width Register.vtmp0 width in
       Ok [
         Ir.Mov { dst = Ir.Reg tmp; src = Ir.Mem mem_rsi };
@@ -1007,7 +1006,7 @@ let lift_instr mnem ops =
         | "scasd" -> (Register.B32, 4L)
         | _ -> (Register.B64, 8L)
       in
-      let mem_ref = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false } in
+      let mem_ref = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false; segment = None } in
       let acc = Register.with_width rax width in
       let tmp = Register.with_width Register.vtmp0 width in
       Ok [
@@ -1024,8 +1023,8 @@ let lift_instr mnem ops =
         | "cmpsd" -> (Register.B32, 4L)
         | _ -> (Register.B64, 8L)
       in
-      let mem_rsi = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false } in
-      let mem_rdi = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false } in
+      let mem_rsi = { Ir.base = Some rsi; index = None; disp = 0L; width; is_signed = false; segment = None } in
+      let mem_rdi = { Ir.base = Some rdi; index = None; disp = 0L; width; is_signed = false; segment = None } in
       let tmp_s = Register.with_width Register.vtmp0 width in
       let tmp_d = Register.with_width Register.vtmp1 width in
       Ok [
@@ -1059,7 +1058,7 @@ let lift_instr mnem ops =
       | OpReg r ->
           Ok [ Ir.Alu { op = alu_op; dst = r; src1 = Ir.Reg r; src2 = ir_src; set_flags = true } ]
       | OpMem m ->
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          let mem_ref = ir_mem_of_raw m in
           Ok [
             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
             Ir.Alu { op = alu_op; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = ir_src; set_flags = true };
@@ -1077,7 +1076,7 @@ let lift_instr mnem ops =
       | OpReg r ->
           Ok [ Ir.Alu { op = alu_op; dst = r; src1 = Ir.Reg r; src2 = Ir.Imm 1L; set_flags = true } ]
       | OpMem m ->
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          let mem_ref = ir_mem_of_raw m in
           Ok [
             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
             Ir.Alu { op = alu_op; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = true };
@@ -1145,7 +1144,7 @@ let lift_instr mnem ops =
               Ir.Alu { op = modify_op; dst = r; src1 = Ir.Reg r; src2 = Ir.Reg mask_reg; set_flags = false };
             ]
         | OpMem m ->
-            let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+            let mem_ref = ir_mem_of_raw m in
             if mnem = "btr" then [
               Ir.Mov { dst = Ir.Reg mask_reg; src = Ir.Imm 1L };
               Ir.Alu { op = Ir.Shl; dst = mask_reg; src1 = Ir.Reg mask_reg; src2 = Ir.Reg shift_reg; set_flags = false };
@@ -1283,12 +1282,12 @@ let lift_instr mnem ops =
       let d_reg = match dst with OpReg r -> r | _ -> Register.vtmp0 in
       let load_dst = match dst with
         | OpReg _ -> []
-        | OpMem m -> [ Ir.Mov { dst = Ir.Reg d_reg; src = Ir.Mem { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } } ]
+        | OpMem m -> [ Ir.Mov { dst = Ir.Reg d_reg; src = Ir.Mem (ir_mem_of_raw m) } ]
         | _ -> []
       in
       let store_dst = match dst with
         | OpReg _ -> []
-        | OpMem m -> [ Ir.Mov { dst = Ir.Mem { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false }; src = Ir.Reg d_reg } ]
+        | OpMem m -> [ Ir.Mov { dst = Ir.Mem (ir_mem_of_raw m); src = Ir.Reg d_reg } ]
         | _ -> []
       in
       let mask_cnt = Int64.of_int (w_bits - 1) in
@@ -1403,7 +1402,7 @@ let lift_instr mnem ops =
               Ok [ Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = s1; src2 = s_idx } ]
           | OpMem m ->
               let tmp_fpr = 31 in
-              let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+              let mem_ref = ir_mem_of_raw m in
               let s1 = if fp_op = Ir.Fsqrt then tmp_fpr else d_idx in
               Ok [
                 Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
@@ -1419,7 +1418,7 @@ let lift_instr mnem ops =
               Ok [ Ir.Fp_cmp { src1 = d_idx; src2 = s_idx } ]
           | OpMem m ->
               let tmp_fpr = 31 in
-              let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+              let mem_ref = ir_mem_of_raw m in
               Ok [
                 Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
                 Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr };
@@ -1431,7 +1430,7 @@ let lift_instr mnem ops =
       | OpReg s -> Ok [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = s } ]
       | OpMem m ->
           let tmp_gpr = Register.vtmp0 in
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          let mem_ref = ir_mem_of_raw m in
           Ok [
             Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Mem mem_ref };
             Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = tmp_gpr };
@@ -1443,7 +1442,7 @@ let lift_instr mnem ops =
           Ok [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, Register.B64) } ]
       | OpMem m ->
           let tmp_fpr = 31 in
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          let mem_ref = ir_mem_of_raw m in
           Ok [
             Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
             Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, Register.B64) };
@@ -1462,7 +1461,7 @@ let lift_instr mnem ops =
       | OpReg r ->
           Ok [ Ir.Unary { op = un_op; dst = r; src = Ir.Reg r; set_flags = true } ]
       | OpMem m ->
-          let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+          let mem_ref = ir_mem_of_raw m in
           Ok [
             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
             Ir.Unary { op = un_op; dst = Register.vtmp0; src = Ir.Reg Register.vtmp0; set_flags = true };

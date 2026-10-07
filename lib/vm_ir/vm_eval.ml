@@ -9,6 +9,8 @@ type state = {
   mutable flags : cc_op;
   mutable vsp : int64;
   mutable vip : int64;
+  mutable fs_base : int64;
+  mutable gs_base : int64;
   mutable halted : bool;
   mutable trapped : string option;
 }
@@ -22,7 +24,7 @@ let sync_sp state value =
   Hashtbl.replace state.vregs (Register.with_width Register.rsp Register.B64) value;
   Hashtbl.replace state.vregs (Register.with_width Register.vsp Register.B64) value
 
-let make_state ?(stack_base = 0x7FFFFFFF0000L) () =
+let make_state ?(stack_base = 0x7FFFFFFF0000L) ?(fs_base = 0x60000000L) ?(gs_base = 0x70000000L) () =
   let s = {
     vregs = Hashtbl.create 32;
     vectors = Hashtbl.create 32;
@@ -30,11 +32,21 @@ let make_state ?(stack_base = 0x7FFFFFFF0000L) () =
     flags = empty_flags;
     vsp = stack_base;
     vip = 0x80000000L;
+    fs_base;
+    gs_base;
     halted = false;
     trapped = None;
   } in
   Hashtbl.replace s.vregs (Register.with_width Register.rsp Register.B64) stack_base;
   Hashtbl.replace s.vregs (Register.with_width Register.vsp Register.B64) stack_base;
+  Hashtbl.replace s.vregs (Register.with_width Register.vfs_base Register.B64) fs_base;
+  Hashtbl.replace s.vregs (Register.with_width Register.vgs_base Register.B64) gs_base;
+  let canary = 0xCAFEBABE13375877L in
+  let canary_addr = Int64.add fs_base 0x28L in
+  for i = 0 to 7 do
+    let b = Int64.to_int (Int64.logand (Int64.shift_right_logical canary (i * 8)) 0xFFL) in
+    Hashtbl.replace s.memory (Int64.add canary_addr (Int64.of_int i)) (b land 0xFF)
+  done;
   s
 
 let get_mask = function
@@ -143,6 +155,12 @@ let write_mem state addr width value =
   done
 
 let eval_mem_addr state (m : mem_ref) =
+  let seg_base =
+    match m.segment with
+    | Some Ir.FS -> state.fs_base
+    | Some Ir.GS -> state.gs_base
+    | None -> 0L
+  in
   let base_val =
     match m.base with
     | Some b -> get_reg state b
@@ -153,7 +171,7 @@ let eval_mem_addr state (m : mem_ref) =
     | Some (idx, scale) -> Int64.mul (get_reg state idx) (Int64.of_int scale)
     | None -> 0L
   in
-  Int64.add (Int64.add base_val idx_val) m.disp
+  Int64.add (Int64.add (Int64.add seg_base base_val) idx_val) m.disp
 
 let eval_operand state = function
   | Reg r -> get_reg state r
@@ -356,6 +374,22 @@ let copy_vector state ~dst_bits ~dst ~src =
   let chunks = (dst_bits + 63) / 64 in
   for chunk = 0 to chunks - 1 do
     set_vector_lane state dst chunk (get_vector_lane state src chunk)
+  done
+
+let apply_vector_splat state ~dst_bits ~lane_bits ~src ~dst =
+  let raw_val = get_reg state src in
+  let mask = vector_lane_mask lane_bits in
+  let val_masked = Int64.logand raw_val mask in
+  let last = (dst_bits - lane_bits) / lane_bits in
+  for lane = 0 to last do
+    let pos = lane * lane_bits in
+    let chunk = pos / 64 in
+    let shift = pos mod 64 in
+    let packed_mask = if lane_bits >= 64 then -1L else Int64.shift_left mask shift in
+    let dst_packed = get_vector_lane state dst chunk in
+    let cleared = Int64.logand dst_packed (Int64.lognot packed_mask) in
+    let updated = if lane_bits >= 64 then val_masked else Int64.logor cleared (Int64.shift_left val_masked shift) in
+    set_vector_lane state dst chunk updated
   done
 
 let load_vector state ~dst_bits ~dst ~addr =
@@ -711,6 +745,9 @@ let step state = function
   | Vec_mov { dst; src; bits } ->
       copy_vector state ~dst_bits:bits ~dst ~src;
       Ok None
+  | Vec_splat { dst; src; bits; lane_bits } ->
+      apply_vector_splat state ~dst_bits:bits ~lane_bits ~src ~dst;
+      Ok None
   | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
       apply_vector_lanes state ~dst_bits:bits ~lane_bits ~elem ~src1 ~src2 ~dst op;
       Ok None
@@ -779,6 +816,12 @@ let step state = function
       let v = Int64.of_float a in
       set_reg state dst v;
       Ok None
+  | Fp_conv { op = Fcvtzu; dst; src } ->
+      let a_bits = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
+      let a = Int64.float_of_bits a_bits in
+      let v = if a < 0.0 then 0L else (try Int64.of_float a with _ -> -1L) in
+      set_reg state dst v;
+      Ok None
   | Fp_conv { op = Scvtf; dst; src } ->
       let v = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
       let f = Int64.to_float v in
@@ -786,6 +829,32 @@ let step state = function
       (match dst with
        | Fpr (i, _) -> set_vector_lane state i 0 f_bits
        | _ -> set_reg state dst f_bits);
+      Ok None
+  | Fp_conv { op = Ucvtf; dst; src } ->
+      let v = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
+      let f = if v >= 0L then Int64.to_float v else (Int64.to_float (Int64.shift_right_logical v 1) *. 2.0 +. (if Int64.logand v 1L <> 0L then 1.0 else 0.0)) in
+      let f_bits = Int64.bits_of_float f in
+      (match dst with
+       | Fpr (i, _) -> set_vector_lane state i 0 f_bits
+       | _ -> set_reg state dst f_bits);
+      Ok None
+  | Fp_conv { op = Fcvt; dst; src } ->
+      let src_w = Register.get_width src in
+      let dst_w = Register.get_width dst in
+      let raw = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
+      let out_val =
+        match src_w, dst_w with
+        | B32, B64 ->
+            let f32 = Int32.float_of_bits (Int64.to_int32 raw) in
+            Int64.bits_of_float (float_of_string (string_of_float f32))
+        | B64, B32 ->
+            let f64 = Int64.float_of_bits raw in
+            Int64.of_int32 (Int32.bits_of_float f64)
+        | _ -> raw
+      in
+      (match dst with
+       | Fpr (i, _) -> set_vector_lane state i 0 out_val
+       | _ -> set_reg state dst out_val);
       Ok None
   | Atomic_mem { op; dst; addr; src; imm } ->
       let a = Int64.add (get_reg state addr) imm in

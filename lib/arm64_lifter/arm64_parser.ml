@@ -81,10 +81,72 @@ let parse_mem str width =
         | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width; wb })
     | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width; wb }
 
+let parse_vec_operand str =
+  let s = String.trim str in
+  let s =
+    if String.starts_with ~prefix:"{" s && String.ends_with ~suffix:"}" s then
+      String.trim (String.sub s 1 (String.length s - 2))
+    else s
+  in
+  let s_low = String.lowercase_ascii s in
+  if String.length s_low >= 2 && s_low.[0] = 'v' then
+    let (reg_part, suffix_part) =
+      match String.index_opt s_low '.' with
+      | Some dot ->
+          let r = String.sub s_low 0 dot in
+          let suf = String.sub s_low (dot + 1) (String.length s_low - dot - 1) in
+          (r, Some suf)
+      | None -> (s_low, None)
+    in
+    match int_of_string_opt (String.sub reg_part 1 (String.length reg_part - 1)) with
+    | Some reg when reg >= 0 && reg < 32 -> (
+        match suffix_part with
+        | None -> Some (OpVec { reg; bits = 128; lane_bits = 64; lane_idx = None })
+        | Some suf ->
+            let (arr, lane_idx) =
+              match String.index_opt suf '[' with
+              | Some b_open ->
+                  let arr = String.sub suf 0 b_open in
+                  let rest = String.sub suf (b_open + 1) (String.length suf - b_open - 1) in
+                  let idx = match String.index_opt rest ']' with
+                    | Some b_close -> int_of_string_opt (String.trim (String.sub rest 0 b_close))
+                    | None -> None
+                  in
+                  (arr, idx)
+              | None -> (suf, None)
+            in
+            let (bits, lane_bits) =
+              match arr with
+              | "16b" -> (128, 8)
+              | "8b"  -> (64, 8)
+              | "8h"  -> (128, 16)
+              | "4h"  -> (64, 16)
+              | "4s"  -> (128, 32)
+              | "2s"  -> (64, 32)
+              | "2d"  -> (128, 64)
+              | "1d" | "d" -> (64, 64)
+              | "s"   -> (32, 32)
+              | "h"   -> (16, 16)
+              | "b"   -> (8, 8)
+              | "q"   -> (128, 128)
+              | _ -> (128, 64)
+            in
+            Some (OpVec { reg; bits; lane_bits; lane_idx }))
+    | _ -> None
+  else if String.length s_low >= 2 && s_low.[0] = 'q' then
+    match int_of_string_opt (String.sub s_low 1 (String.length s_low - 1)) with
+    | Some reg when reg >= 0 && reg < 32 ->
+        Some (OpVec { reg; bits = 128; lane_bits = 64; lane_idx = None })
+    | _ -> None
+  else None
+
 let parse_operand str default_width =
   let s = String.trim str in
-  let s_low = String.lowercase_ascii s in
-  if s_low = "xzr" || s_low = "wzr" then Ok (OpImm 0L)
+  match parse_vec_operand s with
+  | Some op -> Ok op
+  | None ->
+      let s_low = String.lowercase_ascii s in
+      if s_low = "xzr" || s_low = "wzr" then Ok (OpImm 0L)
   else if String.starts_with ~prefix:"[" s then
     match parse_mem s default_width with
     | Ok m -> Ok (OpMem m)
@@ -163,8 +225,8 @@ let parse_line raw =
 
       let normalize_post_index ops =
         match ops with
-        | [OpReg r; OpMem m; OpImm disp] ->
-            [OpReg r; OpMem { m with wb = WbPost disp }]
+        | [(OpReg _ | OpVec _) as r; OpMem m; OpImm disp] ->
+            [r; OpMem { m with wb = WbPost disp }]
         | [OpReg r1; OpReg r2; OpMem m; OpImm disp] ->
             [OpReg r1; OpReg r2; OpMem { m with wb = WbPost disp }]
         | other -> other

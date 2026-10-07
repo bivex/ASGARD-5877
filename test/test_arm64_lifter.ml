@@ -581,6 +581,142 @@ let test_arm64_lift_fsqrt () =
           check int64 "ARM64 fsqrt(81) = 9" 9L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_fcmp_zero () =
+  let asm = {|
+    mov x1, #10
+    scvtf d0, x1
+    fcmp d0, #0.0
+    b.gt .Lpositive
+    mov x0, #1
+    b .Lend
+.Lpositive:
+    mov x0, #2
+.Lend:
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_fcmp_zero" } asm with
+  | Error err -> fail ("Failed to lift ARM64 fcmp zero: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 fcmp d0, #0.0 > 0 -> 2" 2L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_fp_conversions () =
+  let asm = {|
+    mov x1, #42
+    ucvtf d0, x1
+    fcvt s1, d0
+    fcvt d2, s1
+    fcvtzu x0, d2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_fp_conversions" } asm with
+  | Error err -> fail ("Failed to lift ARM64 fp conversions: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 ucvtf -> fcvt -> fcvtzu = 42" 42L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_neon_arithmetic () =
+  let asm = {|
+    mov x1, #10
+    mov x2, #20
+    dup v1.2d, x1
+    dup v2.2d, x2
+    add v0.2d, v1.2d, v2.2d
+    sub v3.2d, v2.2d, v1.2d
+    mul v4.2d, v1.2d, v2.2d
+    mov x0, v0.d[0]
+    mov x1, v3.d[0]
+    mov x2, v4.d[0]
+    add x0, x0, x1
+    add x0, x0, x2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_neon_arithmetic" } asm with
+  | Error err -> fail ("Failed to lift ARM64 neon arithmetic: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 neon add + sub + mul = 240" 240L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_neon_bitwise () =
+  let asm = {|
+    mov x1, #0xF0
+    mov x2, #0x0F
+    dup v1.2d, x1
+    dup v2.2d, x2
+    orr v3.2d, v1.2d, v2.2d
+    and v4.2d, v3.2d, v1.2d
+    eor v5.2d, v3.2d, v2.2d
+    bic v6.2d, v1.2d, v2.2d
+    mov x1, v3.d[0]
+    mov x2, v4.d[0]
+    mov x3, v5.d[0]
+    mov x4, v6.d[0]
+    add x0, x1, x2
+    add x0, x0, x3
+    add x0, x0, x4
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_neon_bitwise" } asm with
+  | Error err -> fail ("Failed to lift ARM64 neon bitwise: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 neon orr/and/eor/bic sum = 975" 975L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_neon_shifts_min_max () =
+  let asm = {|
+    mov x1, #16
+    mov x2, #32
+    dup v1.2d, x1
+    dup v2.2d, x2
+    shl v3.2d, v1.2d, #2
+    ushr v4.2d, v2.2d, #1
+    smin v5.2d, v1.2d, v2.2d
+    smax v6.2d, v1.2d, v2.2d
+    mov x1, v3.d[0]
+    mov x2, v4.d[0]
+    mov x3, v5.d[0]
+    mov x4, v6.d[0]
+    add x0, x1, x2
+    add x0, x0, x3
+    add x0, x0, x4
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_neon_shifts_min_max" } asm with
+  | Error err -> fail ("Failed to lift ARM64 neon shifts and min/max: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 neon shl/ushr/smin/smax sum = 128" 128L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_neon_mem_ld_st () =
+  let asm = {|
+    mov x1, #12345
+    dup v1.2d, x1
+    mov v2.16b, v1.16b
+    str q2, [sp, #-16]!
+    ldr q3, [sp], #16
+    st1 {v3.16b}, [sp, #-16]!
+    ld1 {v0.16b}, [sp], #16
+    mov x0, v0.d[0]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_neon_mem_ld_st" } asm with
+  | Error err -> fail ("Failed to lift ARM64 neon ld1/st1/ldr/str: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 neon ld1/st1/ldr/str roundtrip = 12345" 12345L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -612,6 +748,12 @@ let tests = [
   ("ARM64 Lift FP FMA (fmadd)", `Quick, test_arm64_lift_fp_fma_fneg_fabs);
   ("ARM64 Lift FP Cond/Min/Max (fcsel/fmin/fmax)", `Quick, test_arm64_lift_fcsel_fmin_fmax);
   ("ARM64 Lift FP Square Root (fsqrt)", `Quick, test_arm64_lift_fsqrt);
+  ("ARM64 Lift FP Compare Zero (fcmp #0.0)", `Quick, test_arm64_lift_fcmp_zero);
+  ("ARM64 Lift FP Conversions (ucvtf/fcvt/fcvtzu)", `Quick, test_arm64_lift_fp_conversions);
+  ("ARM64 Lift NEON Arithmetic (add/sub/mul)", `Quick, test_arm64_lift_neon_arithmetic);
+  ("ARM64 Lift NEON Bitwise (orr/and/eor/bic)", `Quick, test_arm64_lift_neon_bitwise);
+  ("ARM64 Lift NEON Shifts/Min/Max (shl/ushr/smin/smax)", `Quick, test_arm64_lift_neon_shifts_min_max);
+  ("ARM64 Lift NEON Mem (ld1/st1/ldr/str)", `Quick, test_arm64_lift_neon_mem_ld_st);
 ]
 
 

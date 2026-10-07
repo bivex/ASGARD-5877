@@ -32,12 +32,15 @@ type unary_op =
   | Popcnt
   | Rbit
 
+type segment = FS | GS
+
 type mem_ref = {
   base : Register.t option;
   index : (Register.t * int) option;
   disp : int64;
   width : width;
   is_signed : bool;
+  segment : segment option;
 }
 
 type operand =
@@ -51,7 +54,7 @@ type target =
   | TargetImm of int64
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
-type fp_conv = Fcvtzs | Scvtf
+type fp_conv = Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
 type vec_op =
   | Vadd
   | Vsub
@@ -114,6 +117,7 @@ type instr =
   | Vec_store of { src : int; addr : mem_ref; bits : int }
   | Vec_clear_upper of int
   | Vec_zero_upper
+  | Vec_splat of { dst : int; src : Register.t; bits : int; lane_bits : int }
   | Pmovmskb of { dst : Register.t; src : int; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
   | Get_flags of Register.t
@@ -182,8 +186,13 @@ let mem_ref_to_string m =
     in
     parts := disp_str :: !parts
   end;
+  let seg_prefix = match m.segment with
+    | Some FS -> "fs:"
+    | Some GS -> "gs:"
+    | None -> ""
+  in
   let body = String.concat " + " (List.rev !parts) in
-  Printf.sprintf "%s[%s]" size_prefix body
+  Printf.sprintf "%s%s[%s]" size_prefix seg_prefix body
 
 let operand_to_string = function
   | Reg r -> Register.to_string r
@@ -237,7 +246,7 @@ let instr_to_string = function
   | Fp_cmp { src1; src2 } ->
       Printf.sprintf "fcmp d%d, d%d" src1 src2
   | Fp_conv { op; dst; src } ->
-      let op_s = match op with Fcvtzs -> "fcvtzs" | Scvtf -> "scvtf" in
+      let op_s = match op with Fcvtzs -> "fcvtzs" | Scvtf -> "scvtf" | Fcvtzu -> "fcvtzu" | Ucvtf -> "ucvtf" | Fcvt -> "fcvt" in
       Printf.sprintf "%s %s, %s" op_s (Register.to_string dst) (Register.to_string src)
   | Vec_mov { dst; src; bits } -> Printf.sprintf "vec_mov.%d v%d, v%d" bits dst src
   | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
@@ -268,6 +277,8 @@ let instr_to_string = function
   | Vec_store { src; addr; bits } -> Printf.sprintf "vec_store.%d v%d, %s" bits src (mem_ref_to_string addr)
   | Vec_clear_upper reg -> Printf.sprintf "vec_clear_upper v%d" reg
   | Vec_zero_upper -> "vzeroupper"
+  | Vec_splat { dst; src; bits; lane_bits } ->
+      Printf.sprintf "vsplat.%d.%d v%d, %s" bits lane_bits dst (Register.to_string src)
   | Pmovmskb { dst; src; bits } -> Printf.sprintf "pmovmskb.%d %s, v%d" bits (Register.to_string dst) src
   | Atomic_mem { op; dst; addr; src; imm } ->
       let op_s = match op with AtLoad -> "at_load" | AtStore -> "at_store" | AtCas -> "at_cas" | AtAdd -> "at_add" | AtSwp -> "at_swp" in

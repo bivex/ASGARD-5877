@@ -205,7 +205,7 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
       in
       load_ops
   | Fp_binop _ | Fp_cmp _ | Fp_conv _ -> []
-  | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _ | Vec_clear_upper _ | Vec_zero_upper | Pmovmskb _ -> []
+  | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _ | Vec_clear_upper _ | Vec_zero_upper | Vec_splat _ | Pmovmskb _ -> []
   | Atomic_mem { dst; src; _ } ->
       [PushReg (Context_allocator.slot_of_reg ctx src);
        PopReg (Context_allocator.slot_of_reg ctx dst)]

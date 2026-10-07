@@ -81,6 +81,7 @@ let remap_instr (map : (int, int) Hashtbl.t) (instr : instr) : instr =
   | Cmov { cond; dst; src } -> Cmov { cond; dst = remap_register map dst; src = remap_operand map src }
   | Get_flags dst -> Get_flags (remap_register map dst)
   | Set_flags src -> Set_flags (remap_operand map src)
+  | Vec_splat { dst; src; bits; lane_bits } -> Vec_splat { dst; src = remap_register map src; bits; lane_bits }
   | Pmovmskb { dst; src; bits } -> Pmovmskb { dst = remap_register map dst; src; bits }
   | Jmp _ | Jcc _ | Call _ | Ret | Vm_enter | Vm_exit | Trap _ | Nop | Bridge_to_flow _ | Bridge_to_math _
    | Load_symbol _ | Fp_binop _ | Fp_cmp _ | Fp_conv _ | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _

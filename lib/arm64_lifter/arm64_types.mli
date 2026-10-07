@@ -18,6 +18,7 @@ type raw_op =
   | OpImm of int64
   | OpMem of raw_mem
   | OpLabel of string
+  | OpVec of { reg : int; bits : int; lane_bits : int; lane_idx : int option }
 
 type marker_mode =
   | ModeVirtualize of string

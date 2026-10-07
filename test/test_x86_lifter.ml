@@ -1377,6 +1377,42 @@ func_evex:
       | Ok () ->
           Alcotest.fail "Expected AVX-512 EVEX trap but execution succeeded"
 
+let test_x86_tls_fs_gs_segment_prefixes () =
+  let asm = {|
+tls_test:
+    mov rax, qword ptr fs:[0x28]
+    mov rbx, qword ptr gs:[0x30]
+    xor rdx, rdx
+    cmp rax, 0xCAFEBABE13375877
+    jne mismatch
+    mov rdx, 1
+mismatch:
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      write_mem state 0x70000030L Register.B64 0x123456789ABCDEF0L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "fs:[0x28] canary matches default" 0xCAFEBABE13375877L (get_reg state Register.rax);
+          Alcotest.(check int64) "gs:[0x30] loaded correctly" 0x123456789ABCDEF0L (get_reg state Register.rbx);
+          Alcotest.(check int64) "canary check passed" 1L (get_reg state Register.rdx)
+
+let test_x86_tls_native_vm_canonicalize () =
+  let m = { Ir.base = None; index = None; disp = 0x28L; width = Register.B64; is_signed = false; segment = Some Ir.FS } in
+  let instr = Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Mem m } in
+  let canon = Native_vm.Vm_transform.canonicalize_instr instr in
+  match canon with
+  | [ Ir.Mov { dst = Ir.Reg d; src = Ir.Mem m_canon } ] ->
+      Alcotest.(check string) "dst is rax" (Register.to_string Register.rax) (Register.to_string d);
+      Alcotest.(check bool) "base is vfs_base" true (m_canon.base = Some Register.vfs_base);
+      Alcotest.(check bool) "segment cleared" true (m_canon.segment = None);
+      Alcotest.(check int64) "disp preserved" 0x28L m_canon.disp
+  | _ -> Alcotest.fail "Unexpected canonicalization for fs:[0x28] load"
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -1437,5 +1473,7 @@ let tests = [
   Alcotest.test_case "lift_x86_vzeroupper" `Quick test_x86_vzeroupper;
   Alcotest.test_case "lift_x86_pmovmskb" `Quick test_x86_pmovmskb;
   Alcotest.test_case "lift_x86_evex_zmm_trap" `Quick test_x86_evex_zmm_trap;
+  Alcotest.test_case "lift_x86_tls_fs_gs_segment_prefixes" `Quick test_x86_tls_fs_gs_segment_prefixes;
+  Alcotest.test_case "lift_x86_tls_native_vm_canonicalize" `Quick test_x86_tls_native_vm_canonicalize;
 ]
 

@@ -233,6 +233,24 @@ let emit_simd_handlers b =
   Buffer.add_string b "        uint64_t address = ctx.get_reg(dst) + (uint64_t)imm;\n";
   Buffer.add_string b "        for (size_t i = 0; i < (bits + 63) / 64; ++i) std::memcpy(reinterpret_cast<void*>(address + i * 8), &ctx.vregs[src & 31][i & 7], sizeof(uint64_t));\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_VEC_SPLAT: {\n";
+  Buffer.add_string b "        uint32_t bits = (uint32_t)(imm & 0xffff);\n";
+  Buffer.add_string b "        uint32_t lane_bits = (uint32_t)((imm >> 16) & 0xffff);\n";
+  Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
+  Buffer.add_string b "        uint64_t mask = (lane_bits >= 64) ? ~0ULL : ((1ULL << lane_bits) - 1ULL);\n";
+  Buffer.add_string b "        uint64_t val_masked = val & mask;\n";
+  Buffer.add_string b "        uint32_t num_lanes = (lane_bits > 0) ? (bits / lane_bits) : 0;\n";
+  Buffer.add_string b "        for (uint32_t l = 0; l < num_lanes; ++l) {\n";
+  Buffer.add_string b "            uint32_t pos = l * lane_bits;\n";
+  Buffer.add_string b "            uint32_t chunk = pos / 64;\n";
+  Buffer.add_string b "            uint32_t shift = pos % 64;\n";
+  Buffer.add_string b "            uint64_t packed_mask = (lane_bits >= 64) ? ~0ULL : (mask << shift);\n";
+  Buffer.add_string b "            uint64_t cur = ctx.get_vreg_lane(dst, chunk);\n";
+  Buffer.add_string b "            cur = (cur & ~packed_mask) | (val_masked << shift);\n";
+  Buffer.add_string b "            ctx.set_vreg_lane(dst, chunk, cur);\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n\n"
 
 let emit_mem_and_ffi_handlers b =
@@ -426,6 +444,23 @@ let emit_mem_and_ffi_handlers b =
   Buffer.add_string b "    H_SCVTF: {\n";
   Buffer.add_string b "        int64_t v = (int64_t)ctx.get_reg(src);\n";
   Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)v), 0);\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FCVTZU: {\n";
+  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
+  Buffer.add_string b "        ctx.set_reg(dst, (a < 0.0) ? 0ULL : (uint64_t)a);\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_UCVTF: {\n";
+  Buffer.add_string b "        uint64_t v = ctx.get_reg(src);\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)v), 0);\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FCVT: {\n";
+  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+  Buffer.add_string b "        float f32 = std::bit_cast<float>((uint32_t)a_raw);\n";
+  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ATOMIC_LOAD: {\n";

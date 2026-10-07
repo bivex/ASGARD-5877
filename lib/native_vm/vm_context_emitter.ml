@@ -67,6 +67,8 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "            for (size_t v = 1; v < 8; ++v) vregs[i][v] = 0ULL;\n";
   Buffer.add_string b "        }\n";
   Buffer.add_string b "        gprs[REG_VKEY] = running_key ^ reg_mask;\n";
+  Buffer.add_string b "        gprs[REG_VX25] = 0x60000000ULL ^ reg_mask;\n";
+  Buffer.add_string b "        gprs[REG_VX26] = 0x70000000ULL ^ reg_mask;\n";
   Buffer.add_string b "        sp = 0;\n";
   Buffer.add_string b "        cf = zf = sf = of = false;\n";
   Buffer.add_string b "        trapped = false;\n";
@@ -122,7 +124,11 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    inline uint64_t get_rdi() const noexcept { return get_reg(REG_RDI); }\n";
   Buffer.add_string b "    inline void set_rdi(uint64_t v) noexcept { set_reg(REG_RDI, v); }\n";
   Buffer.add_string b "    inline uint64_t get_rsi() const noexcept { return get_reg(REG_RSI); }\n";
-  Buffer.add_string b "    inline void set_rsi(uint64_t v) noexcept { set_reg(REG_RSI, v); }\n\n";
+  Buffer.add_string b "    inline void set_rsi(uint64_t v) noexcept { set_reg(REG_RSI, v); }\n";
+  Buffer.add_string b "    inline uint64_t get_fs_base() const noexcept { return get_reg(REG_VX25); }\n";
+  Buffer.add_string b "    inline void set_fs_base(uint64_t v) noexcept { set_reg(REG_VX25, v); }\n";
+  Buffer.add_string b "    inline uint64_t get_gs_base() const noexcept { return get_reg(REG_VX26); }\n";
+  Buffer.add_string b "    inline void set_gs_base(uint64_t v) noexcept { set_reg(REG_VX26, v); }\n\n";
   Buffer.add_string b "    // RNS-4 Residue Arithmetic Engine (Garner CRT)\n";
   Buffer.add_string b "    inline uint64_t rns_add(uint64_t a, uint64_t b) const noexcept {\n";
   Buffer.add_string b "        return asgard_rns::decode(asgard_rns::add(asgard_rns::encode(a), asgard_rns::encode(b)));\n";

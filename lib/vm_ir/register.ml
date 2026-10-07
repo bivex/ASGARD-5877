@@ -101,6 +101,8 @@ let vx23  = Vreg (VX23,  B64)
 let vx24  = Vreg (VX24,  B64)
 let vx25  = Vreg (VX25,  B64)
 let vx26  = Vreg (VX26,  B64)
+let vfs_base = Vreg (VX25, B64)
+let vgs_base = Vreg (VX26, B64)
 
 let rec gpr_to_string g w =
   match g, w with

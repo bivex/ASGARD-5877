@@ -211,7 +211,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | (("ldclr" | "ldclra" | "ldclrl" | "ldclral"
      | "ldclrb" | "ldclrab" | "ldclrlb" | "ldclralb"
      | "ldclrh" | "ldclrah" | "ldclrlh" | "ldclralh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false; segment = None } in
       let scratch = Register.with_width Register.vtmp0 m.width in
       let inv_s = Register.with_width Register.vtmp1 m.width in
       Some [
@@ -225,7 +225,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | (("ldset" | "ldseta" | "ldsetl" | "ldsetal"
      | "ldsetb" | "ldsetab" | "ldsetlb" | "ldsetalb"
      | "ldseth" | "ldsetah" | "ldsetlh" | "ldsetalh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false; segment = None } in
       let scratch = Register.with_width Register.vtmp0 m.width in
       Some [
         Ir.Mov { dst = Reg res_reg; src = Mem mem_ref };
@@ -237,7 +237,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | (("ldeor" | "ldeora" | "ldeorl" | "ldeoral"
      | "ldeorb" | "ldeorab" | "ldeorlb" | "ldeoralb"
      | "ldeorh" | "ldeorah" | "ldeorlh" | "ldeoralh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false; segment = None } in
       let scratch = Register.with_width Register.vtmp0 m.width in
       Some [
         Ir.Mov { dst = Reg res_reg; src = Mem mem_ref };
@@ -250,7 +250,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | (("stadd" | "stadda" | "staddl" | "staddal"
      | "staddb" | "staddab" | "staddlb" | "staddalb"
      | "staddh" | "staddah" | "staddlh" | "staddalh"), [ OpReg val_reg; OpMem m ]) ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false; segment = None } in
       let scratch = Register.with_width Register.vtmp0 m.width in
       Some [
         Ir.Mov { dst = Reg scratch; src = Mem mem_ref };
@@ -261,7 +261,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | (("stclr" | "stclra" | "stclrl" | "stclral"
      | "stclrb" | "stclrab" | "stclrlb" | "stclralb"
      | "stclrh" | "stclrah" | "stclrlh" | "stclralh"), [ OpReg val_reg; OpMem m ]) ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false; segment = None } in
       let scratch = Register.with_width Register.vtmp0 m.width in
       let inv_s = Register.with_width Register.vtmp1 m.width in
       Some [
@@ -274,7 +274,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | (("stset" | "stseta" | "stsetl" | "stsetal"
      | "stsetb" | "stsetab" | "stsetlb" | "stsetalb"
      | "stseth" | "stsetah" | "stsetlh" | "stsetalh"), [ OpReg val_reg; OpMem m ]) ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false; segment = None } in
       let scratch = Register.with_width Register.vtmp0 m.width in
       Some [
         Ir.Mov { dst = Reg scratch; src = Mem mem_ref };
@@ -285,7 +285,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | (("steor" | "steora" | "steorl" | "steoral"
      | "steorb" | "steorab" | "steorlb" | "steoralb"
      | "steorh" | "steorah" | "steorlh" | "steoralh"), [ OpReg val_reg; OpMem m ]) ->
-      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false } in
+      let mem_ref = { Ir.base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed = false; segment = None } in
       let scratch = Register.with_width Register.vtmp0 m.width in
       Some [
         Ir.Mov { dst = Reg scratch; src = Mem mem_ref };

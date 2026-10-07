@@ -32,12 +32,15 @@ type unary_op =
   | Popcnt
   | Rbit
 
+type segment = FS | GS
+
 type mem_ref = {
   base : Register.t option;
   index : (Register.t * int) option; (** (index_reg, scale 1|2|4|8) *)
   disp : int64;
   width : width;
   is_signed : bool;
+  segment : segment option;
 }
 
 type operand =
@@ -51,7 +54,7 @@ type target =
   | TargetImm of int64
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
-type fp_conv = Fcvtzs | Scvtf
+type fp_conv = Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
 type vec_op =
   | Vadd
   | Vsub
@@ -114,6 +117,7 @@ type instr =
   | Vec_store of { src : int; addr : mem_ref; bits : int }
   | Vec_clear_upper of int
   | Vec_zero_upper
+  | Vec_splat of { dst : int; src : Register.t; bits : int; lane_bits : int }
   | Pmovmskb of { dst : Register.t; src : int; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
   | Get_flags of Register.t

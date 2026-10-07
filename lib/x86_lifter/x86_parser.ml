@@ -5,6 +5,7 @@ type raw_mem = {
   index : (Register.t * int) option;
   disp : int64;
   width : Register.width;
+  segment : Ir.segment option;
 }
 
 type raw_op =
@@ -82,7 +83,15 @@ let parse_width_prefix str =
   else (Register.B64, s)
 
 let parse_mem_operand body default_width =
-  let s = String.trim body in
+  let s_raw = String.trim body in
+  let (segment, s) =
+    let s_low = String.lowercase_ascii s_raw in
+    if String.starts_with ~prefix:"fs:" s_low then
+      (Some Ir.FS, String.trim (String.sub s_raw 3 (String.length s_raw - 3)))
+    else if String.starts_with ~prefix:"gs:" s_low then
+      (Some Ir.GS, String.trim (String.sub s_raw 3 (String.length s_raw - 3)))
+    else (None, s_raw)
+  in
   let len = String.length s in
   if not (String.starts_with ~prefix:"[" s && String.ends_with ~suffix:"]" s) then
     Error (Printf.sprintf "Invalid memory syntax '%s'" body)
@@ -150,8 +159,6 @@ let parse_mem_operand body default_width =
                 total_disp := Int64.add !total_disp 0L))
       (List.rev !tokens);
 
-
-
     match !err with
     | Some e -> Error e
     | None ->
@@ -161,12 +168,19 @@ let parse_mem_operand body default_width =
             index = !index_reg;
             disp = !total_disp;
             width = default_width;
+            segment;
           }
 
 let parse_operand str default_width =
   let width, stripped = parse_width_prefix str in
   let w = if width <> Register.B64 then width else default_width in
-  if String.starts_with ~prefix:"[" stripped && String.ends_with ~suffix:"]" stripped then
+  let s_low = String.lowercase_ascii stripped in
+  let is_mem =
+    (String.starts_with ~prefix:"[" stripped && String.ends_with ~suffix:"]" stripped)
+    || ((String.starts_with ~prefix:"fs:[" s_low || String.starts_with ~prefix:"gs:[" s_low)
+        && String.ends_with ~suffix:"]" stripped)
+  in
+  if is_mem then
     match parse_mem_operand stripped w with
     | Ok m -> Ok (OpMem m)
     | Error e -> Error e

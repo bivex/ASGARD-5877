@@ -108,6 +108,10 @@ type raw_op_kind =
   | OP_VEC_CLEAR_UPPER
   | OP_VEC_ZERO_UPPER
   | OP_PMOVMSKB
+  | OP_VEC_SPLAT
+  | OP_FCVTZU
+  | OP_UCVTF
+  | OP_FCVT
 
 val all_op_kinds : raw_op_kind list
 val op_kind_to_handler_name : raw_op_kind -> string

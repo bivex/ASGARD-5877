@@ -87,6 +87,8 @@ val vx23 : t
 val vx24 : t
 val vx25 : t
 val vx26 : t
+val vfs_base : t
+val vgs_base : t
 
 val to_string : t -> string
 val of_string : string -> (t, string) result

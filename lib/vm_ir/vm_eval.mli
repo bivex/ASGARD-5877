@@ -9,11 +9,13 @@ type state = {
   mutable flags : cc_op;
   mutable vsp : int64;
   mutable vip : int64;
+  mutable fs_base : int64;
+  mutable gs_base : int64;
   mutable halted : bool;
   mutable trapped : string option;
 }
 
-val make_state : ?stack_base:int64 -> unit -> state
+val make_state : ?stack_base:int64 -> ?fs_base:int64 -> ?gs_base:int64 -> unit -> state
 
 val get_reg : state -> Register.t -> int64
 val set_reg : state -> Register.t -> int64 -> unit

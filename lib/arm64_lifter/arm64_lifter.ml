@@ -11,8 +11,11 @@ let default_options = {
 }
 
 let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string) result =
-  match Arm64_alu.lift mnemonic ops with
+  match Arm64_neon.lift mnemonic ops with
   | Some instrs -> Ok instrs
+  | None ->
+      match Arm64_alu.lift mnemonic ops with
+      | Some instrs -> Ok instrs
   | None ->
       match Arm64_mem.lift mnemonic ops with
       | Some instrs -> Ok instrs

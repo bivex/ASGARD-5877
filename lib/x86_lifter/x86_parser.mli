@@ -5,6 +5,7 @@ type raw_mem = {
   index : (Register.t * int) option;
   disp : int64;
   width : Register.width;
+  segment : Ir.segment option;
 }
 
 type raw_op =

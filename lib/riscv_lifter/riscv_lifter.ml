@@ -13,7 +13,7 @@ let default_options = {
 let raw_to_ir_operand = function
   | OpReg r -> Ir.Reg r
   | OpImm i -> Ir.Imm i
-  | OpMem m -> Ir.Mem { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = m.is_signed }
+  | OpMem m -> Ir.Mem { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = m.is_signed; segment = None }
   | OpLabel _ -> Ir.Imm 0L
 
 let emit_3addr_alu ~op ~dst ~src1 ~src2 ~set_flags =
@@ -545,9 +545,9 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   | ("vxor.vv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
       Ok [ Ir.Vec_binop { op = Vxor; elem = VInt; dst = d; src1 = s1; src2 = s2; bits = 128; lane_bits = 64 } ]
   | (("vle8.v" | "vle16.v" | "vle32.v" | "vle64.v"), [ OpReg (Register.Fpr (d, _)); OpMem m ]) ->
-      Ok [ Ir.Vec_load { dst = d; addr = { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = false }; bits = 128 } ]
+      Ok [ Ir.Vec_load { dst = d; addr = { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = false; segment = None }; bits = 128 } ]
   | (("vse8.v" | "vse16.v" | "vse32.v" | "vse64.v"), [ OpReg (Register.Fpr (s, _)); OpMem m ]) ->
-      Ok [ Ir.Vec_store { src = s; addr = { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = false }; bits = 128 } ]
+      Ok [ Ir.Vec_store { src = s; addr = { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = false; segment = None }; bits = 128 } ]
   | ("vmv.v.v", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
       Ok [ Ir.Vec_mov { dst = d; src = s; bits = 128 } ]
   | (("vsetvli" | "vsetivli" | "vsetvl"), OpReg dst :: _) ->

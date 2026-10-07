@@ -573,11 +573,24 @@ let compile_and_package_multi
               | Ir.Fp_conv { op = Fcvtzs; dst; src } ->
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
                   encode_raw_word (get_opcode OP_FCVTZS) (get_reg_idx dst) s_idx 0L
+              | Ir.Fp_conv { op = Fcvtzu; dst; src } ->
+                  let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
+                  encode_raw_word (get_opcode OP_FCVTZU) (get_reg_idx dst) s_idx 0L
               | Ir.Fp_conv { op = Scvtf; dst; src } ->
                   let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
                   encode_raw_word (get_opcode OP_SCVTF) d_idx (get_reg_idx src) 0L
+              | Ir.Fp_conv { op = Ucvtf; dst; src } ->
+                  let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
+                  encode_raw_word (get_opcode OP_UCVTF) d_idx (get_reg_idx src) 0L
+              | Ir.Fp_conv { op = Fcvt; dst; src } ->
+                  let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
+                  let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
+                  encode_raw_word (get_opcode OP_FCVT) d_idx s_idx 0L
               | Ir.Vec_mov { dst; src; bits } ->
                   encode_raw_word (get_opcode OP_VEC_MOV) (vector_index dst) (vector_index src) (Int64.of_int bits)
+              | Ir.Vec_splat { dst; src; bits; lane_bits } ->
+                  let imm = Int64.logor (Int64.of_int bits) (Int64.shift_left (Int64.of_int lane_bits) 16) in
+                  encode_raw_word (get_opcode OP_VEC_SPLAT) (vector_index dst) (get_reg_idx src) imm
               | Ir.Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
                   encode_raw_word (get_opcode OP_VEC_BINOP) (vector_index dst) (vector_index src1)
                     (vector_imm ~src2:(vector_index src2) ~bits ~lane_bits ~elem op)
