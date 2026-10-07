@@ -1,7 +1,7 @@
 # ASGARD-5877: High-Assurance Virtualization-Based Obfuscation (VBO) and ISA Compiler Toolchain in OCaml
 
 [![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4+-orange.svg)](https://ocaml.org)
-[![Build and Tests](https://img.shields.io/badge/Tests-190%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
+[![Build and Tests](https://img.shields.io/badge/Tests-286%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%2F%20DDD%20(DPX%20Certified)-blue.svg)]()
 [![Targets](https://img.shields.io/badge/ISA-ARM64%20%7C%20x86__64%20%7C%20RISC--V%20Vector%201.0-red.svg)](https://github.com/riscv/riscv-v-spec)
 [![GPU Accelerated](https://img.shields.io/badge/GPU-Apple%20Metal%203.0%20(65k%20Threads)-purple.svg)]()
@@ -193,50 +193,56 @@ opam install dune menhir cmdliner alcotest qcheck qcheck-alcotest yojson
 eval $(opam env)
 dune build
 
-# Run all 245 tests across 34 verification suites
-dune runtest
+# Run all 286 tests across 35 verification suites
+dune test
 ```
 
 ---
 
 ## Protecting Applications with ASGARD-5877
 
-### 1. In-Place Function Virtualization via Boundary Markers (ARM64)
+### 1. In-Place Function Virtualization via Boundary Markers (ARM64 & x86_64)
 
-For standard C and C++ codebases, specific sensitive routines can be marked for virtualization without modifying signatures, caller logic, or project build structures.
+For standard C and C++ codebases, specific sensitive routines can be marked for virtualization without modifying function signatures, caller logic, or external build configurations.
 
 #### Marking the Source Code
 
-Include `asgard_markers.h` (or declare the boundary macros) and encapsulate the sensitive function body:
+Include `asgard_obf.h` and encapsulate one or more sensitive function bodies using the boundary macros:
 
 ```c
-#include "asgard_markers.h"
+#include "asgard_obf.h"
 
+// Function 1: Virtualized license key validator
 int verify_license(const char* key) {
     ASGARD_BEGIN_VIRTUALIZE("verify_license");
 
-    // Verification logic executed exclusively inside the virtual machine
     unsigned long long hash = 0xCBF29CE484222325ULL;
     for (int i = 0; key[i] != '\0'; i++) {
         hash = (hash ^ (unsigned char)key[i]) * 0x100000001B3ULL;
     }
-    if (hash == 0x7A3F9B1C4D8E2E6AULL) {
-        return 1;
-    }
-    return 0;
-
     ASGARD_END();
+    return (hash == 0x7A3F9B1C4D8E2E6AULL);
+}
+
+// Function 2: Virtualized cryptographic token derivation in the same file
+uint64_t derive_token(uint64_t seed, uint64_t user_id) {
+    ASGARD_BEGIN_VIRTUALIZE("derive_token");
+
+    volatile uint64_t token = (seed ^ 0x58775877ULL) + user_id;
+    token = (token << 13) | (token >> 51);
+    ASGARD_END();
+    return token + 0xDEADBEEFULL;
 }
 ```
 
 #### Running the Virtualizer
 
-Execute the `protect-arm64` command:
+Execute the `protect-arm64` (or `protect` for x86_64) command:
 
 ```bash
 dune exec random_visa -- protect-arm64 \
   -i examples/license_check.c \
-  -o ./protected_license_arm64 \
+  -o ./protected_out \
   --cff \
   --mba \
   --mba-depth 4 \
@@ -245,12 +251,11 @@ dune exec random_visa -- protect-arm64 \
 ```
 
 The compiler executes the following pipeline:
-- Disassembles and isolates the marked function body.
-- Lifts ARM64 instructions to VM-IR (`arm64_lifter`) with support for indexed memory addressing (`[base, index, lsl #shift]`), pre/post-indexed writebacks, and constant pool embedding.
-- Applies Control-Flow Flattening (CFF) and 4th-order non-linear MBA rewriting.
-- Generates a hardened Direct-Threaded C++ VM runtime (`threaded_vm.hpp`) with encrypted bytecode.
-- Emits an in-place C++ trampoline substituting the marked function body with `run_virtual_machine(...)` while preserving calling conventions and return values.
-- Compiles the final hardened binary with dead-code elimination and symbol hiding (`-fvisibility=hidden -Wl,-dead_strip`).
+- **Marker Extraction & Semantic Lifting**: Disassembles and isolates all marked regions across the translation unit via `arm64_lifter` / `x86_lifter`, lifting machine instructions to VM-IR (`Ir_multi`).
+- **Unified VM Synthesis**: All virtualized functions in the module share a unified bijective opcode permutation and register bijection within a single C++ runtime header (`threaded_vm.hpp`), eliminating runtime bloat.
+- **Continuous Integrity Protection**: Each function receives an independent encrypted bytecode array (`embedded_bytecode_<fn>[]`), attested at runtime through continuous rolling hashing against `valid_hashes[]`.
+- **Cross-Platform Trampoline Generation**: Replaces each marked function body with a type-safe call to `vanguard_threaded_vm::asgard_vm_call(...)`. Automatically routes ABI calling convention registers for both ARM64 (`X0..X7`) and x86_64 System V (`RDI`, `RSI`, `RDX`, `RCX`, `R8`, `R9`).
+- **Container & Toolchain Compatibility**: Fully compatible with Apple Silicon macOS (Mach-O) and Linux ELF environments (Alpine musl, Ubuntu/Debian glibc, Docker) across Clang and GCC 15+.
 
 ### 2. Whole-File Assembly or C Virtualization (ARM64)
 
@@ -338,7 +343,7 @@ The repository includes a standalone ARM64 CrackMe challenge running inside the 
 
 ## Comprehensive Verification Suite
 
-ASGARD-5877 includes **245 tests** across **34 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
+ASGARD-5877 includes **286 tests** across **35 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
 
 1. **Domain Invariants**: Verification of aggregate roots and instruction semantics.
 2. **ISA Grammar**: AST node validation, operand constraints, and type soundness.
@@ -359,9 +364,9 @@ ASGARD-5877 includes **245 tests** across **34 suites** verified on every build 
 17. **x86_64 Lifter and CFG**: Disassembly and basic block lifting of x86_64 machine code.
 18. **Anti-Analysis (MBA and CFF)**: Algebraic equivalence of 4th-order polynomial expansions.
 19. **Native Threaded VM**: Direct Threading, super-operators, ephemeral scrubbing, and dynamic canaries.
-20. **Native VM Sub-width Semantics**: Word-granular B16 memory, signed loads (movsx/movsxd/ldrsb/ldrsh/ldrsw), div/idiv remainder, and B32 sub-register zero-extension.
+20. **Native VM Sub-width Semantics**: Word-granular B16 memory, signed loads (movsx/movsxd/ldrsb/ldrsh/ldrsw), div/idiv remainder, B32 sub-register zero-extension, and multi-function marker pipeline.
 21. **Devirtualization Metrics**: DRS (Devirtualization Resistance Score) computation.
-22. **C Macro Obfuscation**: Polymorphic macro expansions and stack string encryption.
+22. **C Macro Obfuscation**: Polymorphic macro expansions, stack string encryption, and multi-function C trampolines.
 23. **VM Runtime Profile**: Micro-architectural latency measurements.
 24. **Compiler Pipeline and Equivalence**: End-to-end preservation of semantics across lifting, lowering, and virtualization.
 25. **ARM64 Lifter and CFG**: Extended conditions (`b.hi`..`b.vc`), `cset`, `csel`, `madd`/`msub`, `ubfx`/`sbfx`, and indexed memory operands.
@@ -374,6 +379,7 @@ ASGARD-5877 includes **245 tests** across **34 suites** verified on every build 
 32. **Dynamic Anti-Tamper and SMC (Layer 3)**: Self-modifying bytecode runtime attestation.
 33. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, and preset generators.
 34. **RISC-V Lifter & CFG**: Disassembly, basic block lifting, and semantic equivalence for RV64I, RV64M, RV64A, RV64F/D, and RVV.
+35. **Stack-VM Execution Engine**: 32 verification tests covering address-bound bytecode keys (Anti-VMPredator Phase 6), independent payload/tag key halves, field layout randomization, polymorphic opcodes, and identifier scrambling.
 
 ---
 
