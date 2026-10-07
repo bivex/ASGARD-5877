@@ -139,7 +139,7 @@ static inline void* asgard_resolve_constant(const char* name) {
     *(reinterpret_cast<volatile uint64_t*>(ptr)) = (val); \
 } while(0)
 
-__attribute__((always_inline, visibility("hidden"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = {{ key_seed_hex }}, bool scrub_source = false) {
+static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = {{ key_seed_hex }}, bool scrub_source = false) {
     if (ctx.reg_mask == 0) ctx.init(seed);
 {%- if enable_nanomites %}
     /* Nanomite Hardware Signal Dispatcher (Hardware TRAP/Branch Interceptor) */
@@ -341,7 +341,7 @@ __attribute__((always_inline, visibility("hidden"))) static inline bool execute_
     return !ctx.trapped;
 }
 
-__attribute__((always_inline, visibility("hidden"))) static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, bool scrub_source) {
+static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, bool scrub_source) {
     return execute_threaded(ctx, bytecode, count, {{ key_seed_hex }}, scrub_source);
 }
 
