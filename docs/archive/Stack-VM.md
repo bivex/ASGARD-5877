@@ -624,7 +624,7 @@ jmp   VDISP                   ; прыжок на следующий полим�
     - Stack VM Extensions & Branching (CallExtern, ResolveSym, Setcc, Cmov, Cmp, Test)
   - Полная интеграция в раннер `test/run_tests.ml` (все 255 тестов ASGARD-5877 успешно пройдены).
 - [x] **5.3 Верификация стойкости против декомпиляторов (IDA Pro, Hex-Rays через `idasql`):**
-  - Реализован конвейер аудита через SQL-интерфейс `idasql` к базе данных IDA Pro (см. [`idasql.md`](file:///Volumes/External/Code/ASGARD-5877/idasql.md)).
+  - Реализован конвейер аудита через SQL-интерфейс `idasql` к базе данных IDA Pro (см. [`idasql.md`](idasql.md)).
   - Подтверждена 100% невидимость строк (`strings`), уничтожение символов защищенных функций (`funcs`, `names`) и сокрытие потока данных от декомпилятора Hex-Rays (`pseudocode`).
   - В рантайм внедрены Fail-Closed гарды защиты от stack underflow/overflow и context out-of-bounds, а также санитизация внешних вызовов.
 

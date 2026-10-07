@@ -369,6 +369,6 @@ echo "[+] All idasql security assertions verified successfully."
 
 ## 10. Связанные документы
 
-- [`Stack-VM.md`](file:///Volumes/External/Code/ASGARD-5877/Stack-VM.md) — Спецификация виртуальной машины исполнения ASGARD-5877.
-- [`docs/VM_PROTECTOR.md`](file:///Volumes/External/Code/ASGARD-5877/docs/VM_PROTECTOR.md) — Описание архитектуры виртуализации и рандомизации опкодов.
-- [`docs/C_MACRO_OBF.md`](file:///Volumes/External/Code/ASGARD-5877/docs/C_MACRO_OBF.md) — Документация по макро-обфускации строк и констант.
+- [`Stack-VM.md`](Stack-VM.md) — Спецификация виртуальной машины исполнения ASGARD-5877.
+- [`../VM_PROTECTOR.md`](../VM_PROTECTOR.md) — Описание архитектуры виртуализации и рандомизации опкодов.
+- [`../C_MACRO_OBF.md`](../C_MACRO_OBF.md) — Документация по макро-обфускации строк и констант.

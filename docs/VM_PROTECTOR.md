@@ -184,7 +184,7 @@ $$K_{j+1} = \big(\text{ROR}_{23}(K_j \oplus (\text{op}_j \cdot 0x9E3779B97F4A7C1
 * **History coupling**: a static tool cannot decode word $j$ of a block in isolation (random access); it must replay the `anchor + advance` chain from the block entry, mixing every prior decoded `(op, dst, imm)` — exactly what symbolic block-emulators like Pushan refuse to model. The mask is additionally coupled to the blinded architectural `REG_VKEY` register.
 * **Integrity**: patching a single byte in memory or single-stepping desynchronizes the chain, triggering an illegal opcode jump into `&&H_DECOY`.
 * **Canonical mirror**: [`lib/vm_ir/rolling_key.ml`](../lib/vm_ir/rolling_key.ml) re-derives the entire keystream in OCaml bit-for-bit (including the 46→32-bit sign-extended immediate truncation that `FETCH_NEXT` applies); `test/test_anti_pushan.ml` pins the correspondence with golden vectors and a ciphertext replay check.
-* **Honest boundary**: a full *sequential* static walk still recovers the stream — the limit of deterministic static bytecode. True cross-block history dependence (anchoring on real handler addresses) is the planned anti-VMPredator address-bound bytecode extension (see `CPP_TODO.md`).
+* **Honest boundary**: a full *sequential* static walk still recovers the stream — the limit of deterministic static bytecode. True cross-block history dependence (anchoring on real handler addresses) is the planned anti-VMPredator address-bound bytecode extension (see [`archive/CPP_TODO.md`](archive/CPP_TODO.md)).
 * Toggled by `anti_pushan.running_key`; when disabled the encoder keeps `cur_key = 0` and the output is byte-identical to the legacy positional-only mask.
 
 ### 5.3 Decoy Trap Density (>91.8%)
