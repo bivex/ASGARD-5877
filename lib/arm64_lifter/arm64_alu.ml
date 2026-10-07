@@ -105,6 +105,20 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some (emit_3addr_alu ~op:Sub ~dst ~src1 ~src2 ~set_flags:false)
   | ("subs", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Some (emit_3addr_alu ~op:Sub ~dst ~src1 ~src2 ~set_flags:true)
+  | ("adc", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Some (emit_3addr_alu ~op:Adc ~dst ~src1 ~src2 ~set_flags:false)
+  | ("adcs", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Some (emit_3addr_alu ~op:Adc ~dst ~src1 ~src2 ~set_flags:true)
+  | ("sbc", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Some (emit_3addr_alu ~op:Sbb ~dst ~src1 ~src2 ~set_flags:false)
+  | ("sbcs", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      Some (emit_3addr_alu ~op:Sbb ~dst ~src1 ~src2 ~set_flags:true)
+  | ("ngc", [ OpReg dst; ((OpReg _ | OpImm _) as src) ]) ->
+      let w = Register.get_width dst in
+      Some (emit_3addr_alu ~op:Sbb ~dst ~src1:(Register.Vreg (Register.VZERO, w)) ~src2:src ~set_flags:false)
+  | ("ngcs", [ OpReg dst; ((OpReg _ | OpImm _) as src) ]) ->
+      let w = Register.get_width dst in
+      Some (emit_3addr_alu ~op:Sbb ~dst ~src1:(Register.Vreg (Register.VZERO, w)) ~src2:src ~set_flags:true)
 
   | ("mul", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Some (emit_3addr_alu ~op:Mul ~dst ~src1 ~src2 ~set_flags:false)
@@ -380,6 +394,18 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Alu { op = Add; dst = Register.vtmp0; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags = true } ]
   | ("tst", (OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Some [ Ir.Test { src1 = Reg src1; src2 = raw_to_ir_operand src2 } ]
+  | ("ccmp", (OpReg src1 :: OpReg src2 :: OpImm nzcv :: cond_op :: _)) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "al" in
+      Some [ Ir.Ccmp { cond = map_cond_str c_str; src1 = Reg src1; src2 = Reg src2; nzcv = Int64.to_int nzcv } ]
+  | ("ccmp", (OpReg src1 :: OpImm imm :: OpImm nzcv :: cond_op :: _)) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "al" in
+      Some [ Ir.Ccmp { cond = map_cond_str c_str; src1 = Reg src1; src2 = Imm imm; nzcv = Int64.to_int nzcv } ]
+  | ("ccmn", (OpReg src1 :: OpReg src2 :: OpImm nzcv :: cond_op :: _)) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "al" in
+      Some [ Ir.Ccmn { cond = map_cond_str c_str; src1 = Reg src1; src2 = Reg src2; nzcv = Int64.to_int nzcv } ]
+  | ("ccmn", (OpReg src1 :: OpImm imm :: OpImm nzcv :: cond_op :: _)) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "al" in
+      Some [ Ir.Ccmn { cond = map_cond_str c_str; src1 = Reg src1; src2 = Imm imm; nzcv = Int64.to_int nzcv } ]
 
   (* Conditional Set / Select *)
   | ("cset", [ OpReg dst; cond_op ]) ->

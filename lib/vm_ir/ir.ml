@@ -66,6 +66,8 @@ type instr =
   | Alu of { op : alu_op; dst : Register.t; src1 : operand; src2 : operand; set_flags : bool }
   | Unary of { op : unary_op; dst : Register.t; src : operand; set_flags : bool }
   | Cmp of { src1 : operand; src2 : operand }
+  | Ccmp of { cond : condition; src1 : operand; src2 : operand; nzcv : int }
+  | Ccmn of { cond : condition; src1 : operand; src2 : operand; nzcv : int }
   | Test of { src1 : operand; src2 : operand }
   | Jmp of target
   | Jcc of { cond : condition; target_true : target; target_false : target }
@@ -87,6 +89,8 @@ type instr =
   | Vec_load of { dst : int; addr : mem_ref; bits : int }
   | Vec_store of { src : int; addr : mem_ref; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
+  | Get_flags of Register.t
+  | Set_flags of operand
 
 type basic_block = {
   id : int;
@@ -177,6 +181,10 @@ let instr_to_string = function
       Printf.sprintf "%s %s, %s%s" (unary_op_to_string op) (Register.to_string dst)
         (operand_to_string src) s_flags
   | Cmp { src1; src2 } -> Printf.sprintf "cmp %s, %s" (operand_to_string src1) (operand_to_string src2)
+  | Ccmp { cond; src1; src2; nzcv } ->
+      Printf.sprintf "ccmp.%s %s, %s, #%d" (condition_to_string cond) (operand_to_string src1) (operand_to_string src2) nzcv
+  | Ccmn { cond; src1; src2; nzcv } ->
+      Printf.sprintf "ccmn.%s %s, %s, #%d" (condition_to_string cond) (operand_to_string src1) (operand_to_string src2) nzcv
   | Test { src1; src2 } -> Printf.sprintf "test %s, %s" (operand_to_string src1) (operand_to_string src2)
   | Jmp t -> Printf.sprintf "jmp %s" (target_to_string t)
   | Jcc { cond; target_true; target_false } ->
@@ -210,6 +218,8 @@ let instr_to_string = function
   | Atomic_mem { op; dst; addr; src; imm } ->
       let op_s = match op with AtLoad -> "at_load" | AtStore -> "at_store" | AtCas -> "at_cas" | AtAdd -> "at_add" | AtSwp -> "at_swp" in
       Printf.sprintf "%s %s, [%s + 0x%LX], %s" op_s (Register.to_string dst) (Register.to_string addr) imm (Register.to_string src)
+  | Get_flags d -> Printf.sprintf "get_flags %s" (Register.to_string d)
+  | Set_flags s -> Printf.sprintf "set_flags %s" (operand_to_string s)
 
 let block_to_string b =
   let b_lines = List.map (fun i -> "    " ^ instr_to_string i) b.instrs in

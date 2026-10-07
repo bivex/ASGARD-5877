@@ -116,6 +116,16 @@ type raw_op_kind =
   | OP_FCSEL_VV
   | OP_MULH_RR
   | OP_IMULH_RR
+  | OP_ADC_RR
+  | OP_ADC_RI
+  | OP_SBB_RR
+  | OP_SBB_RI
+  | OP_CCMP_RR
+  | OP_CCMP_RI
+  | OP_CCMN_RR
+  | OP_CCMN_RI
+  | OP_GET_FLAGS_R
+  | OP_SET_FLAGS_R
 
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
@@ -140,6 +150,9 @@ let all_op_kinds = [
   OP_BSWAP_RR; OP_CLZ_RR; OP_CTZ_RR; OP_POPCNT_RR; OP_RBIT_RR;
   OP_MOV_VR; OP_MOV_RV; OP_FCSEL_VV;
   OP_MULH_RR; OP_IMULH_RR;
+  OP_ADC_RR; OP_ADC_RI; OP_SBB_RR; OP_SBB_RI;
+  OP_CCMP_RR; OP_CCMP_RI; OP_CCMN_RR; OP_CCMN_RI;
+  OP_GET_FLAGS_R; OP_SET_FLAGS_R;
 ]
 
 let op_kind_to_handler_name = function
@@ -230,6 +243,16 @@ let op_kind_to_handler_name = function
   | OP_FCSEL_VV -> "H_FCSEL_VV"
   | OP_MULH_RR -> "H_MULH_RR"
   | OP_IMULH_RR -> "H_IMULH_RR"
+  | OP_ADC_RR -> "H_ADC_RR"
+  | OP_ADC_RI -> "H_ADC_RI"
+  | OP_SBB_RR -> "H_SBB_RR"
+  | OP_SBB_RI -> "H_SBB_RI"
+  | OP_CCMP_RR -> "H_CCMP_RR"
+  | OP_CCMP_RI -> "H_CCMP_RI"
+  | OP_CCMN_RR -> "H_CCMN_RR"
+  | OP_CCMN_RI -> "H_CCMN_RI"
+  | OP_GET_FLAGS_R -> "H_GET_FLAGS_R"
+  | OP_SET_FLAGS_R -> "H_SET_FLAGS_R"
 
 type fused_op =
   | Raw of Ir.instr
@@ -310,7 +333,7 @@ let inject_junk_instructions ~rng instrs =
   aux instrs
 
 let is_commutative_alu_op = function
-  | Ir.Add | Ir.Imul | Ir.Mul | Ir.Mulh | Ir.Imulh | Ir.Xor | Ir.And | Ir.Or -> true
+  | Ir.Add | Ir.Adc | Ir.Imul | Ir.Mul | Ir.Mulh | Ir.Imulh | Ir.Xor | Ir.And | Ir.Or -> true
   | _ -> false
 
 let pick_scratch_reg (d : Register.t) (s : Register.t) : Register.t =

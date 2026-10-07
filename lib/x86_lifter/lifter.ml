@@ -812,6 +812,37 @@ let lift_instr mnem ops =
       Ok [ Ir.Cmp { src1 = Ir.Imm 0L; src2 = Ir.Imm 1L } ]
   | ("cmc" | "cld" | "std"), _ ->
       Ok [ Ir.Nop ]
+  | "lahf", _ ->
+      let rax = Register.Gpr (Register.RAX, Register.B64) in
+      let flags_tmp = Register.vtmp0 in
+      Ok [
+        Ir.Get_flags flags_tmp;
+        Ir.Alu { op = Ir.And; dst = flags_tmp; src1 = Ir.Reg flags_tmp; src2 = Ir.Imm 0xFFL; set_flags = false };
+        Ir.Alu { op = Ir.Shl; dst = flags_tmp; src1 = Ir.Reg flags_tmp; src2 = Ir.Imm 8L; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = rax; src1 = Ir.Reg rax; src2 = Ir.Imm (Int64.lognot 0xFF00L); set_flags = false };
+        Ir.Alu { op = Ir.Or; dst = rax; src1 = Ir.Reg rax; src2 = Ir.Reg flags_tmp; set_flags = false };
+      ]
+  | "sahf", _ ->
+      let rax = Register.Gpr (Register.RAX, Register.B64) in
+      let ah = Register.vtmp0 in
+      Ok [
+        Ir.Mov { dst = Ir.Reg ah; src = Ir.Reg rax };
+        Ir.Alu { op = Ir.Shr; dst = ah; src1 = Ir.Reg ah; src2 = Ir.Imm 8L; set_flags = false };
+        Ir.Alu { op = Ir.And; dst = ah; src1 = Ir.Reg ah; src2 = Ir.Imm 0xFFL; set_flags = false };
+        Ir.Set_flags (Ir.Reg ah);
+      ]
+  | ("pushf" | "pushfq"), _ ->
+      let flags_tmp = Register.vtmp0 in
+      Ok [
+        Ir.Get_flags flags_tmp;
+        Ir.Push (Ir.Reg flags_tmp);
+      ]
+  | ("popf" | "popfq"), _ ->
+      let flags_tmp = Register.vtmp0 in
+      Ok [
+        Ir.Pop (Ir.Reg flags_tmp);
+        Ir.Set_flags (Ir.Reg flags_tmp);
+      ]
   | ("syscall" | "sysret"), _ ->
       Ok [ Ir.Trap "syscall" ]
   | "cpuid", _ ->

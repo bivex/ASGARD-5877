@@ -502,6 +502,36 @@ let step state = function
       let res = truncate_val w (Int64.sub v1 v2) in
       state.flags <- CC_OP_SUB { src1 = v1; src2 = v2; dst = res; width = w };
       Ok None
+  | Ccmp { cond; src1; src2; nzcv } ->
+      if evaluate_condition state.flags cond then begin
+        let w = determine_width src1 src2 in
+        let v1 = truncate_val w (eval_operand state src1) in
+        let v2 = truncate_val w (eval_operand state src2) in
+        let res = truncate_val w (Int64.sub v1 v2) in
+        state.flags <- CC_OP_SUB { src1 = v1; src2 = v2; dst = res; width = w };
+      end else begin
+        let sf = if (nzcv land 8) <> 0 then 128L else 0L in
+        let zf = if (nzcv land 4) <> 0 then 64L else 0L in
+        let cf = if (nzcv land 2) <> 0 then 1L else 0L in
+        let of_ = if (nzcv land 1) <> 0 then 2048L else 0L in
+        state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf (Int64.logor zf (Int64.logor sf of_))));
+      end;
+      Ok None
+  | Ccmn { cond; src1; src2; nzcv } ->
+      if evaluate_condition state.flags cond then begin
+        let w = determine_width src1 src2 in
+        let v1 = truncate_val w (eval_operand state src1) in
+        let v2 = truncate_val w (eval_operand state src2) in
+        let res = truncate_val w (Int64.add v1 v2) in
+        state.flags <- CC_OP_ADD { src1 = v1; src2 = v2; dst = res; width = w };
+      end else begin
+        let sf = if (nzcv land 8) <> 0 then 128L else 0L in
+        let zf = if (nzcv land 4) <> 0 then 64L else 0L in
+        let cf = if (nzcv land 2) <> 0 then 1L else 0L in
+        let of_ = if (nzcv land 1) <> 0 then 2048L else 0L in
+        state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf (Int64.logor zf (Int64.logor sf of_))));
+      end;
+      Ok None
   | Test { src1; src2 } ->
       let w = determine_width src1 src2 in
       let v1 = truncate_val w (eval_operand state src1) in
@@ -633,6 +663,14 @@ let step state = function
            let v = get_reg state src in
            write_mem state a B64 v;
            set_reg state src old);
+      Ok None
+  | Get_flags dst ->
+      let raw = Flags.materialize_rflags state.flags in
+      set_reg state dst raw;
+      Ok None
+  | Set_flags src ->
+      let raw = eval_operand state src in
+      state.flags <- Flags.of_rflags raw;
       Ok None
 
 let run_block state (b : basic_block) =

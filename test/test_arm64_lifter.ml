@@ -371,6 +371,56 @@ let test_arm64_lift_conditionals () =
           check int64 "ARM64 csinc eq = 10" 10L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_adc_sbc () =
+  let asm = {|
+    mov x1, #-1
+    adds x2, x1, #1
+    mov x3, #10
+    mov x4, #20
+    adc x0, x3, x4
+    subs x5, x3, #15
+    sbc x6, x4, x3
+    add x0, x0, x6
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_adc_sbc" } asm with
+  | Error err -> fail ("Failed to lift ARM64 adc/sbc: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          (* x1 = -1
+             adds x2, x1, #1 -> x2 = 0, carry = 1
+             adc x0, 10, 20 -> 10 + 20 + 1 = 31
+             subs x5, 10, 15 -> 10 - 15 = -5, borrow = 1
+             sbc x6, 20, 10 -> 20 - 10 - 1 = 9
+             add x0, x0, x6 -> 31 + 9 = 40 *)
+          check int64 "ARM64 adc/sbc sum = 40" 40L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_ccmp_ccmn () =
+  let asm = {|
+    mov x1, #10
+    mov x2, #20
+    cmp x1, #10
+    ccmp x2, #20, #0, eq
+    cset x0, eq
+    cmp x1, #99
+    ccmp x2, #20, #0, eq
+    cset x3, eq
+    add x0, x0, x3
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_ccmp" } asm with
+  | Error err -> fail ("Failed to lift ARM64 ccmp: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          (* 1st: x1 == 10 is true -> cmp x2, #20 runs -> x2 == 20 is true -> eq is true -> x0 = 1
+             2nd: x1 == 99 is false -> flags set to nzcv=#0 -> eq is false -> x3 = 0
+             x0 + x3 = 1 *)
+          check int64 "ARM64 ccmp condition select = 1" 1L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -391,6 +441,8 @@ let tests = [
   ("ARM64 Lift Bitfields (bfi/bfxil/extr)", `Quick, test_arm64_lift_bitfields);
   ("ARM64 Lift Multiply-Accumulate (smaddl/smulh)", `Quick, test_arm64_lift_mult_accum);
   ("ARM64 Lift Conditionals (csinc/csinv/csneg)", `Quick, test_arm64_lift_conditionals);
+  ("ARM64 Lift Adc/Sbc", `Quick, test_arm64_lift_adc_sbc);
+  ("ARM64 Lift Ccmp/Ccmn", `Quick, test_arm64_lift_ccmp_ccmn);
 ]
 
 

@@ -151,6 +151,14 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
       src1_ops @ src2_ops @ [Cmp]
+  | Ccmp { src1; src2; _ } ->
+      let src1_ops = lower_operand ctx src1 in
+      let src2_ops = lower_operand ctx src2 in
+      src1_ops @ src2_ops @ [Cmp]
+  | Ccmn { src1; src2; _ } ->
+      let src1_ops = lower_operand ctx src1 in
+      let src2_ops = lower_operand ctx src2 in
+      src1_ops @ src2_ops @ [Add]
   | Test { src1; src2 } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
@@ -201,6 +209,10 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
   | Atomic_mem { dst; src; _ } ->
       [PushReg (Context_allocator.slot_of_reg ctx src);
        PopReg (Context_allocator.slot_of_reg ctx dst)]
+  | Get_flags dst ->
+      [PushFlags; PopReg (Context_allocator.slot_of_reg ctx dst)]
+  | Set_flags src ->
+      (lower_operand ctx src) @ [PopFlags]
 
 let lower_basic_block ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create 0) ctx (b : Ir.basic_block) =
   let ops = List.concat_map (lower_instr ~label_to_block ~ext_syms ctx) b.instrs in

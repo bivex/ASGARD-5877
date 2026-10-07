@@ -93,6 +93,16 @@ type raw_op_kind =
   | OP_FCSEL_VV
   | OP_MULH_RR
   | OP_IMULH_RR
+  | OP_ADC_RR
+  | OP_ADC_RI
+  | OP_SBB_RR
+  | OP_SBB_RI
+  | OP_CCMP_RR
+  | OP_CCMP_RI
+  | OP_CCMN_RR
+  | OP_CCMN_RI
+  | OP_GET_FLAGS_R
+  | OP_SET_FLAGS_R
 
 val all_op_kinds : raw_op_kind list
 val op_kind_to_handler_name : raw_op_kind -> string

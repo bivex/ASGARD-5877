@@ -808,6 +808,54 @@ func_movbe:
       | Ok () ->
           Alcotest.(check int64) "movbe byteswapped" (-1090226688147180526L) (get_reg state Register.rax)
 
+let test_x86_lift_adc_sbb () =
+  let asm = {|
+func_adc_sbb:
+    mov rax, -1
+    add rax, 1
+    mov rbx, 10
+    adc rbx, 20
+    mov rcx, 10
+    sub rcx, 15
+    mov rdx, 20
+    sbb rdx, 10
+    mov rax, rbx
+    add rax, rdx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "adc and sbb with carry = 40" 40L (get_reg state Register.rax)
+
+let test_x86_lift_lahf_sahf () =
+  let asm = {|
+func_lahf_sahf:
+    xor rax, rax
+    cmp rax, 0
+    lahf
+    mov rbx, rax
+    mov rax, 1
+    cmp rax, 0
+    mov rax, rbx
+    sahf
+    sete al
+    movzx rax, al
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "lahf and sahf preserve ZF=1" 1L (get_reg state Register.rax)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -846,5 +894,7 @@ let tests = [
   Alcotest.test_case "lift_x86_bmi" `Quick test_x86_lift_bmi;
   Alcotest.test_case "lift_x86_shld_shrd" `Quick test_x86_lift_shld_shrd;
   Alcotest.test_case "lift_x86_movbe" `Quick test_x86_lift_movbe;
+  Alcotest.test_case "lift_x86_adc_sbb" `Quick test_x86_lift_adc_sbb;
+  Alcotest.test_case "lift_x86_lahf_sahf" `Quick test_x86_lift_lahf_sahf;
 ]
 

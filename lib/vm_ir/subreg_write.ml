@@ -16,6 +16,7 @@ let written_gprs : instr -> Register.t list = function
   | Setcc { dst = Reg d; _ } -> [ d ]
   | Setcc _ -> []
   | Load_symbol { dst; _ } -> [ dst ]
+  | Get_flags d -> [ d ]
   | _ -> []
 
 let same_reg a b = Register.to_string a = Register.to_string b
@@ -61,10 +62,13 @@ let instr_regs i =
   | Xchg (a, b) -> operand_regs a @ operand_regs b
   | Alu { dst; src1; src2; _ } -> [ dst ] @ operand_regs src1 @ operand_regs src2
   | Unary { dst; src; _ } -> [ dst ] @ operand_regs src
-  | Cmp { src1; src2 } | Test { src1; src2 } -> operand_regs src1 @ operand_regs src2
+  | Cmp { src1; src2 } | Test { src1; src2 }
+  | Ccmp { src1; src2; _ } | Ccmn { src1; src2; _ } -> operand_regs src1 @ operand_regs src2
   | Setcc { dst; _ } -> operand_dst dst
   | Cmov { dst; src; _ } -> dst :: operand_regs src
   | Load_symbol { dst; _ } -> [ dst ]
+  | Get_flags d -> [ d ]
+  | Set_flags src -> operand_regs src
   | _ -> []
 
 let pick_scratch used =

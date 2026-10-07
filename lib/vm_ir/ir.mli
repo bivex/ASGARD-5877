@@ -66,6 +66,8 @@ type instr =
   | Alu of { op : alu_op; dst : Register.t; src1 : operand; src2 : operand; set_flags : bool }
   | Unary of { op : unary_op; dst : Register.t; src : operand; set_flags : bool }
   | Cmp of { src1 : operand; src2 : operand }
+  | Ccmp of { cond : condition; src1 : operand; src2 : operand; nzcv : int }
+  | Ccmn of { cond : condition; src1 : operand; src2 : operand; nzcv : int }
   | Test of { src1 : operand; src2 : operand }
   | Jmp of target
   | Jcc of { cond : condition; target_true : target; target_false : target }
@@ -87,6 +89,8 @@ type instr =
   | Vec_load of { dst : int; addr : mem_ref; bits : int }
   | Vec_store of { src : int; addr : mem_ref; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
+  | Get_flags of Register.t
+  | Set_flags of operand
 
 type basic_block = {
   id : int;

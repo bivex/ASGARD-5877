@@ -89,16 +89,16 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
                 ("asgard_rd_jit::JIT_OP_MOV_RR", Native_vm.Vm_transform.reg_to_index d mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
             | Ir.Mov { dst = Ir.Reg d; src = Ir.Imm imm } ->
                 ("asgard_rd_jit::JIT_OP_MOV_RI", Native_vm.Vm_transform.reg_to_index d mod 16, 0, imm)
-            | Ir.Alu { op = Ir.Add; dst; src1; src2 = Ir.Reg s; _ } ->
+            | Ir.Alu { op = (Ir.Add | Ir.Adc); dst; src1; src2 = Ir.Reg s; _ } ->
                 assert_src1_eq_dst ~op:Ir.Add ~dst ~src1;
                 ("asgard_rd_jit::JIT_OP_ADD_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-            | Ir.Alu { op = Ir.Add; dst; src1; src2 = Ir.Imm imm; _ } ->
+            | Ir.Alu { op = (Ir.Add | Ir.Adc); dst; src1; src2 = Ir.Imm imm; _ } ->
                 assert_src1_eq_dst ~op:Ir.Add ~dst ~src1;
                 ("asgard_rd_jit::JIT_OP_ADD_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-            | Ir.Alu { op = Ir.Sub; dst; src1; src2 = Ir.Reg s; _ } ->
+            | Ir.Alu { op = (Ir.Sub | Ir.Sbb); dst; src1; src2 = Ir.Reg s; _ } ->
                 assert_src1_eq_dst ~op:Ir.Sub ~dst ~src1;
                 ("asgard_rd_jit::JIT_OP_SUB_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-            | Ir.Alu { op = Ir.Sub; dst; src1; src2 = Ir.Imm imm; _ } ->
+            | Ir.Alu { op = (Ir.Sub | Ir.Sbb); dst; src1; src2 = Ir.Imm imm; _ } ->
                 assert_src1_eq_dst ~op:Ir.Sub ~dst ~src1;
                 ("asgard_rd_jit::JIT_OP_SUB_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
             | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst; src1; src2 = Ir.Reg s; _ } ->

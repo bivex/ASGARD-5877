@@ -74,9 +74,13 @@ let remap_instr (map : (int, int) Hashtbl.t) (instr : instr) : instr =
   | Unary { op; dst; src; set_flags } ->
       Unary { op; dst = remap_register map dst; src = remap_operand map src; set_flags }
   | Cmp { src1; src2 } -> Cmp { src1 = remap_operand map src1; src2 = remap_operand map src2 }
+  | Ccmp { cond; src1; src2; nzcv } -> Ccmp { cond; src1 = remap_operand map src1; src2 = remap_operand map src2; nzcv }
+  | Ccmn { cond; src1; src2; nzcv } -> Ccmn { cond; src1 = remap_operand map src1; src2 = remap_operand map src2; nzcv }
   | Test { src1; src2 } -> Test { src1 = remap_operand map src1; src2 = remap_operand map src2 }
   | Setcc { cond; dst } -> Setcc { cond; dst = remap_operand map dst }
   | Cmov { cond; dst; src } -> Cmov { cond; dst = remap_register map dst; src = remap_operand map src }
+  | Get_flags dst -> Get_flags (remap_register map dst)
+  | Set_flags src -> Set_flags (remap_operand map src)
   | Jmp _ | Jcc _ | Call _ | Ret | Vm_enter | Vm_exit | Trap _ | Nop | Bridge_to_flow _ | Bridge_to_math _
    | Load_symbol _ | Fp_binop _ | Fp_cmp _ | Fp_conv _ | Vec_mov _ | Vec_binop _ | Vec_load _ | Vec_store _ | Atomic_mem _ -> instr
 

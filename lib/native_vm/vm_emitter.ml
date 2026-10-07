@@ -391,12 +391,24 @@ let compile_and_package_multi
               | Ir.Alu { op = Ir.Add; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Add ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Adc; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Adc ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_ADC_RR) (get_reg_idx d) (get_reg_idx s) 0L
+              | Ir.Alu { op = Ir.Adc; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Adc ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_ADC_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = Ir.Sub; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sub ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SUB_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Sub; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sub ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SUB_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Sbb; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Sbb ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_SBB_RR) (get_reg_idx d) (get_reg_idx s) 0L
+              | Ir.Alu { op = Ir.Sbb; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Sbb ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_SBB_RI) (get_reg_idx d) 0 imm
               | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Imul ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_IMUL_RR) (get_reg_idx d) (get_reg_idx s) 0L
@@ -480,6 +492,24 @@ let compile_and_package_multi
                   encode_raw_word (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
                   encode_raw_word (get_opcode OP_CMP_RI) (get_reg_idx d) 0 imm
+              | Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Reg s; nzcv } ->
+                  let c = cond_to_code cond in
+                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4) in
+                  encode_raw_word (get_opcode OP_CCMP_RR) (get_reg_idx d) (get_reg_idx s) imm
+              | Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Imm imm_val; nzcv } ->
+                  let c = cond_to_code cond in
+                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4) in
+                  let imm = Int64.logor imm (Int64.shift_left (Int64.logand imm_val 0x1FL) 8) in
+                  encode_raw_word (get_opcode OP_CCMP_RI) (get_reg_idx d) 0 imm
+              | Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Reg s; nzcv } ->
+                  let c = cond_to_code cond in
+                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4) in
+                  encode_raw_word (get_opcode OP_CCMN_RR) (get_reg_idx d) (get_reg_idx s) imm
+              | Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Imm imm_val; nzcv } ->
+                  let c = cond_to_code cond in
+                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4) in
+                  let imm = Int64.logor imm (Int64.shift_left (Int64.logand imm_val 0x1FL) 8) in
+                  encode_raw_word (get_opcode OP_CCMN_RI) (get_reg_idx d) 0 imm
               | Ir.Push (Ir.Reg d) ->
                   encode_raw_word (get_opcode OP_PUSH_R) (get_reg_idx d) 0 0L
               | Ir.Pop (Ir.Reg d) ->
@@ -555,6 +585,19 @@ let compile_and_package_multi
                       encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx src) imm
                   | AtSwp ->
                       encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx src) imm)
+              | Ir.Get_flags d ->
+                  encode_raw_word (get_opcode OP_GET_FLAGS_R) (get_reg_idx d) 0 0L
+              | Ir.Set_flags (Ir.Reg s) ->
+                  encode_raw_word (get_opcode OP_SET_FLAGS_R) 0 (get_reg_idx s) 0L
+              | Ir.Set_flags (Ir.Imm imm) ->
+                  let tmp = Register.vtmp0 in
+                  encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx tmp) 0 imm;
+                  encode_raw_word (get_opcode OP_SET_FLAGS_R) 0 (get_reg_idx tmp) 0L
+              | Ir.Set_flags (Ir.Mem m) ->
+                  let tmp = Register.vtmp0 in
+                  let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
+                  encode_raw_word (get_opcode OP_LOAD_64) (get_reg_idx tmp) base_idx m.disp;
+                  encode_raw_word (get_opcode OP_SET_FLAGS_R) 0 (get_reg_idx tmp) 0L
               | other ->
                   failwith (Printf.sprintf "vm_emitter: unsupported instruction: %s" (Ir.instr_to_string other))))
         ops)
