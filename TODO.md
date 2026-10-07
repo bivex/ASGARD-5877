@@ -3,7 +3,7 @@
 > **Источник**: аудит движка 2026-09-23 (HEAD `898a4ee`, `dune runtest` зелёный).
 > Не путать с `docs/archive/CPP_TODO.md` — там все позиции помечены DONE; перечисленное ниже
 > в этом роадмапе **не трекается**. Порядок = приоритет.
-> **Текущий статус (2026-09-25)**: базовые P0–P4 ограничения устранены; реестр содержит 245 тестов в 34 suites. Ниже зафиксирован расширенный роадмап P5 по доведению lifters и VM-IR до промышленного покрытия.
+> **Текущий статус (2026-10)**: базовые P0–P4 ограничения устранены; реестр содержит 349 тестов в 34 suites (100% pass rate). Ниже зафиксирован расширенный роадмап P5 по доведению lifters и VM-IR до промышленного покрытия.
 
 ---
 
@@ -330,7 +330,7 @@
    - Табличная трансляция: `xlat` / `xlatb` — **ВЫПОЛНЕНО (2026-10)**.
    - Строковые инструкции: `stosb/stosw/stosd/stosq`, `lodsb/lodsw/lodsd/lodsq`, `scasb/scasw/scasd/scasq`, `cmpsb/cmpsw/cmpsd/cmpsq`.
    - Префиксы повторения строк: `rep`, `repe`/`repz`, `repne`/`repnz` с автоматическим декрементом `RCX` и проверкой `ZF`.
-   - Адресация сегментов: префиксы переопределения `FS:` и `GS:` (TLS / thread-local storage).
+   - Адресация сегментов: префиксы переопределения `FS:` и `GS:` (TLS / thread-local storage) — **ВЫПОЛНЕНО (2026-10)**.
    - Прямая адресация смещением: `moffs`-формы `mov` (`mov al/ax/eax/rax, [moffs]`).
    - push/pop сегментных регистров при виртуализации низкоуровневых контекстов.
 2. **Целочисленная арифметика и EFLAGS**:
@@ -382,10 +382,10 @@
    - Знаковое/нулевое расширение: `sxtb/sxth/sxtw`, `uxtb/uxth/uxtw` — **ВЫПОЛНЕНО (2026-10)**.
    - Арифметика с флагом переноса: `adc`, `adcs`, `sbc`, `sbcs`, `ngc`, `ngcs` — **ВЫПОЛНЕНО (2026-10)**.
 5. **NEON и Floating Point**:
-   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `scvtf/ucvtf`, `fcvtzs/fcvtzu`, `fmadd`, `fmsub`, `fnmadd`, `fnmsub`, `fneg`, `fabs`, `fcsel`, `fmin`, `fmax` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fcmp`, `fcvt` half).
-   - NEON векторная память: `ldr/str` SIMD.
-   - NEON арифметика/логика: векторные `add/sub/mul`, `and/orr/eor/bic`.
-   - Табличные подстановки и перестановки: `tbl`, `tbx`, `ext`, `dup`, `zip1/zip2`, `uzp1/uzp2`, `trn1/trn2`.
+   - Скалярный FP: `fadd/fsub/fmul/fdiv`, `scvtf/ucvtf`, `fcvtzs/fcvtzu`, `fmadd`, `fmsub`, `fnmadd`, `fnmsub`, `fneg`, `fabs`, `fcsel`, `fmin`, `fmax`, `fcmp`, `fcvt` — **ВЫПОЛНЕНО (2026-10)**.
+   - NEON векторная память: `ldr/str` SIMD, `ld1/st1` — **ВЫПОЛНЕНО (2026-10)**.
+   - NEON арифметика/логика/сдвиги: векторные `add/sub/mul`, `and/orr/eor/bic`, `shl/sshr/ushr`, `smin/smax/umin/umax`, `abs`, `dup`, `mov` — **ВЫПОЛНЕНО (2026-10)**.
+   - Табличные подстановки и перестановки: `tbl`, `tbx`, `ext`, `zip1/zip2`, `uzp1/uzp2`, `trn1/trn2`.
 
 ---
 
