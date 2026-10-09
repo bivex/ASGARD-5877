@@ -1,7 +1,7 @@
 # ASGARD-5877: High-Assurance Virtualization-Based Obfuscation (VBO) and ISA Compiler Toolchain in OCaml
 
 [![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4+-orange.svg)](https://ocaml.org)
-[![Build and Tests](https://img.shields.io/badge/Tests-286%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
+[![Build and Tests](https://img.shields.io/badge/Tests-363%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%2F%20DDD%20(DPX%20Certified)-blue.svg)]()
 [![Targets](https://img.shields.io/badge/ISA-ARM64%20%7C%20x86__64%20%7C%20RISC--V%20Vector%201.0-red.svg)](https://github.com/riscv/riscv-v-spec)
 [![GPU Accelerated](https://img.shields.io/badge/GPU-Apple%20Metal%203.0%20(65k%20Threads)-purple.svg)]()
@@ -363,7 +363,7 @@ The repository includes a standalone ARM64 CrackMe challenge running inside the 
 
 ## Comprehensive Verification Suite
 
-ASGARD-5877 includes **294 tests** across **35 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
+ASGARD-5877 includes **363 tests** across **35 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
 
 1. **Domain Invariants**: Verification of aggregate roots and instruction semantics.
 2. **ISA Grammar**: AST node validation, operand constraints, and type soundness.
