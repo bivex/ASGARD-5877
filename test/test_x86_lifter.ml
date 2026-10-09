@@ -1413,6 +1413,96 @@ let test_x86_tls_native_vm_canonicalize () =
       Alcotest.(check int64) "disp preserved" 0x28L m_canon.disp
   | _ -> Alcotest.fail "Unexpected canonicalization for fs:[0x28] load"
 
+let test_x86_moffs_memory () =
+  let asm = {|
+moffs_test:
+    mov al, byte ptr [0x1000]
+    mov [0x1008], al
+    mov ecx, dword ptr [0x1000]
+    mov [0x1010], ecx
+    mov rdx, [0x1000]
+    mov [0x1018], rdx
+    mov r8b, ds:[0x1000]
+    mov r9b, ds:0x1001
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      write_mem state 0x1000L Register.B64 0x0102030405060708L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "al loaded 0x08" 0x08L (get_reg state (Register.Gpr (Register.RAX, Register.B8)));
+          Alcotest.(check int64) "mem 0x1008 has 0x08" 0x08L (read_mem state 0x1008L Register.B8);
+          Alcotest.(check int64) "ecx loaded 0x05060708" 0x05060708L (get_reg state (Register.Gpr (Register.RCX, Register.B32)));
+          Alcotest.(check int64) "mem 0x1010 has 0x05060708" 0x05060708L (read_mem state 0x1010L Register.B32);
+          Alcotest.(check int64) "rdx loaded full 64-bit" 0x0102030405060708L (get_reg state Register.rdx);
+          Alcotest.(check int64) "mem 0x1018 has full 64-bit" 0x0102030405060708L (read_mem state 0x1018L Register.B64);
+          Alcotest.(check int64) "r8b ds:[0x1000] loaded" 0x08L (get_reg state (Register.Gpr (Register.R8, Register.B8)));
+          Alcotest.(check int64) "r9b ds:0x1001 loaded" 0x07L (get_reg state (Register.Gpr (Register.R9, Register.B8)))
+
+let test_x86_segment_registers_push_pop_mov () =
+  let asm = {|
+seg_test:
+    mov ax, 0x1234
+    mov ds, ax
+    mov es, ax
+    push ds
+    push es
+    push fs
+    push gs
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    mov bx, ds
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "bx loaded from ds" 0x1234L (get_reg state (Register.Gpr (Register.RBX, Register.B16)));
+          let invalid_asm = {|
+bad_cs:
+    pop cs
+    ret
+|} in
+          match Lifter.lift_function invalid_asm with
+          | Error msg ->
+              Alcotest.(check bool) "pop cs rejected" true (contains_sub msg "pop cs is an invalid")
+          | Ok _ -> Alcotest.fail "Expected pop cs to be rejected"
+
+let test_x86_fsbase_gsbase_rdfsbase_wrfsbase () =
+  let asm = {|
+base_test:
+    rdfsbase rax
+    rdgsbase rbx
+    mov rdi, 0x1122334455667788
+    wrfsbase rdi
+    mov rsi, 0x8877665544332211
+    wrgsbase rsi
+    rdfsbase r8
+    rdgsbase r9
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "initial fs_base" 0x60000000L (get_reg state Register.rax);
+          Alcotest.(check int64) "initial gs_base" 0x70000000L (get_reg state Register.rbx);
+          Alcotest.(check int64) "updated fs_base" 0x1122334455667788L (get_reg state Register.r8);
+          Alcotest.(check int64) "updated gs_base" 0x8877665544332211L (get_reg state Register.r9)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -1475,5 +1565,8 @@ let tests = [
   Alcotest.test_case "lift_x86_evex_zmm_trap" `Quick test_x86_evex_zmm_trap;
   Alcotest.test_case "lift_x86_tls_fs_gs_segment_prefixes" `Quick test_x86_tls_fs_gs_segment_prefixes;
   Alcotest.test_case "lift_x86_tls_native_vm_canonicalize" `Quick test_x86_tls_native_vm_canonicalize;
+  Alcotest.test_case "lift_x86_moffs_memory" `Quick test_x86_moffs_memory;
+  Alcotest.test_case "lift_x86_segment_registers_push_pop_mov" `Quick test_x86_segment_registers_push_pop_mov;
+  Alcotest.test_case "lift_x86_fsbase_gsbase_rdfsbase_wrfsbase" `Quick test_x86_fsbase_gsbase_rdfsbase_wrfsbase;
 ]
 

@@ -103,6 +103,12 @@ let vx25  = Vreg (VX25,  B64)
 let vx26  = Vreg (VX26,  B64)
 let vfs_base = Vreg (VX25, B64)
 let vgs_base = Vreg (VX26, B64)
+let vcs = Vreg (VX20, B16)
+let vds = Vreg (VX21, B16)
+let ves = Vreg (VX22, B16)
+let vss = Vreg (VX23, B16)
+let vfs = Vreg (VX24, B16)
+let vgs = Vreg (VX18, B16)
 
 let rec gpr_to_string g w =
   match g, w with
@@ -152,6 +158,12 @@ let vreg_to_string v w =
   | _   -> prefix
 
 let to_string = function
+  | Vreg (VX20, B16) -> "cs"
+  | Vreg (VX21, B16) -> "ds"
+  | Vreg (VX22, B16) -> "es"
+  | Vreg (VX23, B16) -> "ss"
+  | Vreg (VX24, B16) -> "fs"
+  | Vreg (VX18, B16) -> "gs"
   | Gpr (g, w) -> gpr_to_string g w
   | Vreg (v, w) -> vreg_to_string v w
   | Fpr (i, B32) -> Printf.sprintf "s%d" i
@@ -188,6 +200,7 @@ let of_string str =
     Ok (Fpr (i, B32))
   else
   match s with
+  | "cs" -> Ok vcs | "ds" -> Ok vds | "es" -> Ok ves | "ss" -> Ok vss | "fs" -> Ok vfs | "gs" -> Ok vgs
   | "rax" -> Ok rax | "eax" -> Ok (Gpr (RAX, B32)) | "ax" -> Ok (Gpr (RAX, B16)) | "al" -> Ok (Gpr (RAX, B8))
   | "rcx" -> Ok rcx | "ecx" -> Ok (Gpr (RCX, B32)) | "cx" -> Ok (Gpr (RCX, B16)) | "cl" -> Ok (Gpr (RCX, B8))
   | "rdx" -> Ok rdx | "edx" -> Ok (Gpr (RDX, B32)) | "dx" -> Ok (Gpr (RDX, B16)) | "dl" -> Ok (Gpr (RDX, B8))
@@ -209,7 +222,7 @@ let of_string str =
   | "vzero" | "xzr" | "wzr" -> Ok vzero
   | "vx18" -> Ok vx18 | "vx19" -> Ok vx19 | "vx20" -> Ok vx20 | "vx21" -> Ok vx21
   | "vx22" -> Ok vx22 | "vx23" -> Ok vx23 | "vx24" -> Ok vx24 | "vx25" -> Ok vx25 | "vx26" -> Ok vx26
-   | other -> Error (Printf.sprintf "Unknown register '%s'" other))
+  | other -> Error (Printf.sprintf "Unknown register '%s'" other))
 
 let gpr_index = function
   | RAX -> 0 | RCX -> 1 | RDX -> 2 | RBX -> 3

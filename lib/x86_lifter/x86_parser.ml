@@ -84,19 +84,27 @@ let parse_width_prefix str =
 
 let parse_mem_operand body default_width =
   let s_raw = String.trim body in
-  let (segment, s) =
-    let s_low = String.lowercase_ascii s_raw in
-    if String.starts_with ~prefix:"fs:" s_low then
-      (Some Ir.FS, String.trim (String.sub s_raw 3 (String.length s_raw - 3)))
-    else if String.starts_with ~prefix:"gs:" s_low then
-      (Some Ir.GS, String.trim (String.sub s_raw 3 (String.length s_raw - 3)))
-    else (None, s_raw)
+  let s_low_raw = String.lowercase_ascii s_raw in
+  let (segment, s, has_seg_prefix) =
+    if String.starts_with ~prefix:"fs:" s_low_raw then
+      (Some Ir.FS, String.trim (String.sub s_raw 3 (String.length s_raw - 3)), true)
+    else if String.starts_with ~prefix:"gs:" s_low_raw then
+      (Some Ir.GS, String.trim (String.sub s_raw 3 (String.length s_raw - 3)), true)
+    else if String.starts_with ~prefix:"ds:" s_low_raw
+         || String.starts_with ~prefix:"es:" s_low_raw
+         || String.starts_with ~prefix:"cs:" s_low_raw
+         || String.starts_with ~prefix:"ss:" s_low_raw then
+      (None, String.trim (String.sub s_raw 3 (String.length s_raw - 3)), true)
+    else (None, s_raw, false)
   in
-  let len = String.length s in
-  if not (String.starts_with ~prefix:"[" s && String.ends_with ~suffix:"]" s) then
+  let inner, is_bracketed =
+    if String.starts_with ~prefix:"[" s && String.ends_with ~suffix:"]" s then
+      (String.trim (String.sub s 1 (String.length s - 2)), true)
+    else (s, false)
+  in
+  if not is_bracketed && not has_seg_prefix then
     Error (Printf.sprintf "Invalid memory syntax '%s'" body)
   else
-    let inner = String.trim (String.sub s 1 (len - 2)) in
     let tokens = ref [] in
     let buf = Buffer.create 16 in
     let sign = ref 1L in
@@ -177,8 +185,9 @@ let parse_operand str default_width =
   let s_low = String.lowercase_ascii stripped in
   let is_mem =
     (String.starts_with ~prefix:"[" stripped && String.ends_with ~suffix:"]" stripped)
-    || ((String.starts_with ~prefix:"fs:[" s_low || String.starts_with ~prefix:"gs:[" s_low)
-        && String.ends_with ~suffix:"]" stripped)
+    || (String.starts_with ~prefix:"fs:" s_low || String.starts_with ~prefix:"gs:" s_low
+        || String.starts_with ~prefix:"ds:" s_low || String.starts_with ~prefix:"es:" s_low
+        || String.starts_with ~prefix:"cs:" s_low || String.starts_with ~prefix:"ss:" s_low)
   in
   if is_mem then
     match parse_mem_operand stripped w with

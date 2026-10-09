@@ -725,13 +725,35 @@ let lift_instr mnem ops =
   | "push", [ op ] ->
       let* ir_op = to_ir_operand op in
       Ok [ Ir.Push ir_op ]
-  | "pop", [ op ] ->
-      let* ir_op = to_ir_operand op in
-      Ok [ Ir.Pop ir_op ]
-  | ("mov" | "movabs"), [ dst; src ] ->
+  | "pop", [ op ] -> (
+      match op with
+      | X86_parser.OpReg r when r = Register.vcs ->
+          Error "pop cs is an invalid instruction in x86"
+      | _ ->
+          let* ir_op = to_ir_operand op in
+          Ok [ Ir.Pop ir_op ])
+  | ("rdfsbase" | "rdgsbase"), [ dst ] ->
+      let base_reg = if mnem = "rdfsbase" then Register.vfs_base else Register.vgs_base in
       let* ir_dst = to_ir_operand dst in
+      Ok [ Ir.Mov { dst = ir_dst; src = Ir.Reg base_reg } ]
+  | ("wrfsbase" | "wrgsbase"), [ src ] ->
+      let base_reg = if mnem = "wrfsbase" then Register.vfs_base else Register.vgs_base in
       let* ir_src = to_ir_operand src in
-      Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
+      Ok [ Ir.Mov { dst = Ir.Reg base_reg; src = ir_src } ]
+  | ("mov" | "movabs"), [ dst; src ] -> (
+      match (dst, src) with
+      | (X86_parser.OpReg r, X86_parser.OpMem m) ->
+          let ir_dst = Ir.Reg r in
+          let ir_mem = Ir.Mem (ir_mem_of_raw { m with width = Register.get_width r }) in
+          Ok [ Ir.Mov { dst = ir_dst; src = ir_mem } ]
+      | (X86_parser.OpMem m, X86_parser.OpReg r) ->
+          let ir_dst = Ir.Mem (ir_mem_of_raw { m with width = Register.get_width r }) in
+          let ir_src = Ir.Reg r in
+          Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
+      | _ ->
+          let* ir_dst = to_ir_operand dst in
+          let* ir_src = to_ir_operand src in
+          Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ])
   | ("movzx" | "movzxb" | "movzxw" | "movzbq" | "movzwq"), [ dst; src ] -> (
       let* ir_dst = to_ir_operand dst in
       match (dst, src) with

@@ -3,7 +3,7 @@
 > **Источник**: аудит движка 2026-09-23 (HEAD `898a4ee`, `dune runtest` зелёный).
 > Не путать с `docs/archive/CPP_TODO.md` — там все позиции помечены DONE; перечисленное ниже
 > в этом роадмапе **не трекается**. Порядок = приоритет.
-> **Текущий статус (2026-10)**: базовые P0–P4 ограничения устранены; реестр содержит 360 тестов в 34 suites (100% pass rate). Ниже зафиксирован расширенный роадмап P5 по доведению lifters и VM-IR до промышленного покрытия.
+> **Текущий статус (2026-10)**: базовые P0–P4 ограничения устранены; реестр содержит 363 теста в 34 suites (100% pass rate). Ниже зафиксирован расширенный роадмап P5 по доведению lifters и VM-IR до промышленного покрытия.
 
 ---
 
@@ -328,32 +328,32 @@
 1. **Память, сегментация и строковые операции**:
    - Изменение порядка байт: `movbe`, `bswap` — **ВЫПОЛНЕНО (2026-10)**.
    - Табличная трансляция: `xlat` / `xlatb` — **ВЫПОЛНЕНО (2026-10)**.
-   - Строковые инструкции: `stosb/stosw/stosd/stosq`, `lodsb/lodsw/lodsd/lodsq`, `scasb/scasw/scasd/scasq`, `cmpsb/cmpsw/cmpsd/cmpsq`.
-   - Префиксы повторения строк: `rep`, `repe`/`repz`, `repne`/`repnz` с автоматическим декрементом `RCX` и проверкой `ZF`.
+   - Строковые инструкции: `stosb/stosw/stosd/stosq`, `lodsb/lodsw/lodsd/lodsq`, `scasb/scasw/scasd/scasq`, `cmpsb/cmpsw/cmpsd/cmpsq` — **ВЫПОЛНЕНО (2026-10)**.
+   - Префиксы повторения строк: `rep`, `repe`/`repz`, `repne`/`repnz` с автоматическим декрементом `RCX` и проверкой `ZF` — **ВЫПОЛНЕНО (2026-10)**.
    - Адресация сегментов: префиксы переопределения `FS:` и `GS:` (TLS / thread-local storage) — **ВЫПОЛНЕНО (2026-10)**.
-   - Прямая адресация смещением: `moffs`-формы `mov` (`mov al/ax/eax/rax, [moffs]`).
-   - push/pop сегментных регистров при виртуализации низкоуровневых контекстов.
+   - Прямая адресация смещением: `moffs`-формы `mov` (`mov al/ax/eax/rax, [moffs]`) — **ВЫПОЛНЕНО (2026-10)**.
+   - push/pop сегментных регистров при виртуализации низкоуровневых контекстов (`push/pop ds/es/fs/gs/ss`, `mov`, `rdfsbase/wrfsbase/rdgsbase/wrgsbase`) — **ВЫПОЛНЕНО (2026-10)**.
 2. **Целочисленная арифметика и EFLAGS**:
    - `adc` и `sbb`: для всех размеров (B8, B16, B32, B64) с точным расчётом всей шестёрки флагов (`CF`, `ZF`, `SF`, `OF`, `AF`, `PF`) — **ВЫПОЛНЕНО (2026-10)**.
-   - `imul`: полная поддержка всех трёх форм (1-операндная с implicit RDX:RAX, 2-операндная `reg, r/m`, 3-операндная `reg, r/m, imm`).
+   - `imul`: полная поддержка всех трёх форм (1-операндная с implicit RDX:RAX, 2-операндная `reg, r/m`, 3-операндная `reg, r/m, imm`) — **ВЫПОЛНЕНО (2026-10)**.
    - Битовые тесты: `bt`, `bts`, `btr`, `btc` (с установкой флага `CF`) — **ВЫПОЛНЕНО (2026-10)**.
    - Сканирование и подсчёт бит: `bsf`, `bsr`, `tzcnt`, `lzcnt`, `popcnt` — **ВЫПОЛНЕНО (2026-10)**.
    - Строковые операции: `stosb/w/d/q`, `lodsb/w/d/q`, `movsb/w/d/q`, `scasb/w/d/q`, `cmpsb/w/d/q` — **ВЫПОЛНЕНО (2026-10)**.
    - Инструкции BMI1 / BMI2: `bextr`, `bzhi`, `andn`, `rorx`, `sarx`, `shlx`, `shrx`, `pdep`, `pext` — **ВЫПОЛНЕНО (2026-10)**.
-   - Сдвиги: `shld`, `shrd` (двухоперандные сдвиги) — **ВЫПОЛНЕНО (2026-10)**, `rcl`, `rcr` (циклические сдвиги через carry).
+   - Сдвиги: `shld`, `shrd` (двухоперандные сдвиги) — **ВЫПОЛНЕНО (2026-10)**, `rcl`, `rcr` (циклические сдвиги через carry) — **ВЫПОЛНЕНО (2026-10)**.
 3. **Управление флагами**:
    - Инструкции: `lahf`, `sahf`, `pushf`/`pushfq`, `popf`/`popfq`, `clc`, `stc`, `cmc`, `cld`, `std` — **ВЫПОЛНЕНО (2026-10)**.
-   - Единая каноническая модель EFLAGS для предикатов `setcc`, `cmovcc`, `jcc`.
+   - Единая каноническая модель EFLAGS для предикатов `setcc`, `cmovcc`, `jcc` — **ВЫПОЛНЕНО (2026-10)**.
 4. **SSE / AVX / AVX2**:
    - Граница поддержки:
      * `SSE (128-bit)` $\to$ **Supported**
      * `AVX-128 (VEX 128-bit)` $\to$ **Supported**
      * `AVX2 (VEX 256-bit YMM ymm0..ymm15/31)` $\to$ **Supported** с обязательным занулением верхней 128-битной половины YMM при записи в XMM.
      * `AVX-512 (EVEX 512-bit ZMM + Opmask k0..k7)` $\to$ **Explicit Unsupported / Trap Boundary**.
-   - Целочисленные SIMD: `vpsll*`, `vpsrl*`, `vpsra*`, `vpcmpeq*`, `vpcmpgt*`, `vpmov*`, `vpunpck*`, `vpack*`, `vpshuf*`, `vperm*`, `vblend*`, `vmin*`, `vmax*`, `vpabs*`, `vpmuludq`, `vpmadd*`, `vpsadbw`, `vzeroupper`.
-   - Скалярный FP: `addss/addsd`, `subss/subsd`, `mulss/mulsd`, `divss/divsd`, `comiss/ucomiss`, `comisd/ucomisd`, `sqrtss/sqrtsd`, конвертации `cvtsi2ss/cvtsi2sd`, `cvtss2si/cvtsd2si`, `cvtsd2ss`, `cvtss2sd`.
+   - Целочисленные SIMD: `vpsll*`, `vpsrl*`, `vpsra*`, `vpcmpeq*`, `vpcmpgt*`, `vpmov*`, `vpunpck*`, `vpack*`, `vpshuf*`, `vperm*`, `vblend*`, `vmin*`, `vmax*`, `vpabs*`, `vpmuludq`, `vpmadd*`, `vpsadbw`, `vzeroupper` — **ВЫПОЛНЕНО (2026-10)**.
+   - Скалярный FP: `addss/addsd`, `subss/subsd`, `mulss/mulsd`, `divss/divsd`, `comiss/ucomiss`, `comisd/ucomisd`, `sqrtss/sqrtsd`, конвертации `cvtsi2ss/cvtsi2sd`, `cvtss2si/cvtsd2si`, `cvtsd2ss`, `cvtss2sd` — **ВЫПОЛНЕНО (2026-10)**.
 5. **Атомики (SMP)**:
-   - Префикс `lock` для шинных блокировок.
+   - Префикс `lock` для шинных блокировок — **ВЫПОЛНЕНО (2026-10)**.
    - Инструкции: `xadd`, `cmpxchg`, `cmpxchg8b`, `cmpxchg16b` — **ВЫПОЛНЕНО (2026-10)**.
    - `xchg` с операндом в памяти (неявная атомарность без префикса lock) — **ВЫПОЛНЕНО (2026-10)**.
 
@@ -397,7 +397,7 @@
    - Адресная арифметика (Zba): `sh1add/sh1adduw`, `sh2add/sh2adduw`, `sh3add/sh3adduw` — **ВЫПОЛНЕНО (2026-10)**.
 2. **Скалярная плавающая точка (F- и D-расширения RV64FD)**:
    - Память: `flw`, `fld`, `fsw`, `fsd` — **ВЫПОЛНЕНО (2026-10)**.
-   - Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fmin.s/d`, `fmax.s/d` — **ВЫПОЛНЕНО (2026-10)** (остаток: `fsqrt.s/d`).
+   - Арифметика: `fadd.s/d`, `fsub.s/d`, `fmul.s/d`, `fdiv.s/d`, `fmin.s/d`, `fmax.s/d`, `fsqrt.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Сравнения: `feq.s/d`, `flt.s/d`, `fle.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Копирование знака: `fsgnj.s/d`, `fsgnjn.s/d`, `fsgnjx.s/d`, `fneg.s/d`, `fabs.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Fused Multiply-Add: `fmadd.s/d`, `fmsub.s/d`, `fnmsub.s/d`, `fnmadd.s/d` — **ВЫПОЛНЕНО (2026-10)**.
@@ -423,7 +423,7 @@
      * `vslideup`, `vslidedown`.
      * `vrgather`, `vcompress`.
 3. **Системные инструкции, барьеры, атомики и CSR**:
-   - `ecall`, `ebreak`.
+   - `ecall`, `ebreak` — **ВЫПОЛНЕНО (2026-10)**.
    - Память и упорядочивание: `fence`, `fence.i`, `fence.tso` — **ВЫПОЛНЕНО (2026-10)**.
    - Атомики стандартного A-расширения (`lr.w/d`, `sc.w/d`, `amoswap.w/d`, `amoadd.w/d`, `amomin.w/d`, `amomax.w/d`, `amominu.w/d`, `amomaxu.w/d`, `amoxor.w/d`, `amoand.w/d`, `amoor.w/d` со всеми ordering-модификаторами `.aq`, `.rl`, `.aqrl`) — **ВЫПОЛНЕНО (2026-10)**.
    - Регистры управления и статуса: `csrrw`, `csrrs`, `csrrc`, `csrrwi`, `csrrsi`, `csrrci` — **ВЫПОЛНЕНО (2026-10)**.
@@ -432,7 +432,7 @@
 
 ## Общая приёмка для всех пунктов
 
-1. `dune runtest` — зелёный, без исключений (текущая планка: 360 тестов в 34 сьютах).
+1. `dune runtest` — зелёный, без исключений (текущая планка: 363 теста в 34 сьютах).
 2. E2E: чистый C внутри `ASGARD_BEGIN_VIRTUALIZE`/`ASGARD_END()` компилируется, лифтится и
    выполняется с той же семантикой и exit code 0 (критерий из `CPP_TODO.md`).
 3. `dpx arch` — 0 ошибок / 0 предупреждений.
