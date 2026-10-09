@@ -466,15 +466,66 @@ let test_section_integrity_hashing () =
     (contains mem_header "initial_sect_hash")
 
 let test_handler_metamorphism_diversity () =
-  let b1 = Buffer.create 4096 in
-  let b2 = Buffer.create 4096 in
-  let rng1 = Random.State.make [| 42; 100; 200 |] in
-  let rng2 = Random.State.make [| 999; 888; 777 |] in
-  Vm_handlers_emitter.emit_handlers_hpp b1 ~rng:rng1 ~enable_running_key:true ~enable_address_bound:false ~enable_timing_probes:false ~enable_nanomites:false ~enable_egraph_expansion:false ();
-  Vm_handlers_emitter.emit_handlers_hpp b2 ~rng:rng2 ~enable_running_key:true ~enable_address_bound:false ~enable_timing_probes:false ~enable_nanomites:false ~enable_egraph_expansion:false ();
-  let s1 = Buffer.contents b1 in
-  let s2 = Buffer.contents b2 in
-  Alcotest.(check bool) "Metamorphic emissions with different seeds differ" false (String.equal s1 s2)
+  let emit_with_seed seed_val =
+    let b = Buffer.create 4096 in
+    let rng = Random.State.make [| seed_val |] in
+    Vm_handlers_emitter.emit_handlers_hpp b ~rng ~enable_running_key:true ~enable_address_bound:false ~enable_timing_probes:false ~enable_nanomites:false ~enable_egraph_expansion:false ();
+    Buffer.contents b
+  in
+  let s1 = emit_with_seed 42 in
+  let s2 = emit_with_seed 999 in
+  Alcotest.(check bool) "Metamorphic emissions with different seeds differ" false (String.equal s1 s2);
+
+  let seeds = [ 1; 2; 3; 4; 5; 10; 42; 100; 777; 999; 1234; 5678 ] in
+  let emissions = List.map emit_with_seed seeds in
+  let extract_handler_block s handler_name =
+    let prefix = "    " ^ handler_name ^ ":" in
+    let lines = String.split_on_char '\n' s in
+    let rec find_start = function
+      | [] -> Alcotest.fail ("Handler not found: " ^ handler_name)
+      | l :: rest when String.starts_with ~prefix l ->
+          if String.ends_with ~suffix:"}" l && not (String.ends_with ~suffix:"{" l) then [l]
+          else collect_block [l] rest
+      | _ :: rest -> find_start rest
+    and collect_block acc = function
+      | [] -> List.rev acc
+      | l :: rest ->
+          let acc' = l :: acc in
+          if String.starts_with ~prefix:"    }" l || String.starts_with ~prefix:"    H_" l then
+            List.rev acc'
+          else collect_block acc' rest
+    in
+    String.concat "\n" (find_start lines)
+  in
+  let count_variants h =
+    let blocks = List.map (fun s -> extract_handler_block s h) emissions in
+    List.length (List.sort_uniq String.compare blocks)
+  in
+  (* 1. Super-operators *)
+  Alcotest.(check bool) "H_FUSED_MOV_ADD_RRI diversity > 1" true (count_variants "H_FUSED_MOV_ADD_RRI" > 1);
+  Alcotest.(check bool) "H_FUSED_ADD_XOR_RRI diversity > 1" true (count_variants "H_FUSED_ADD_XOR_RRI" > 1);
+  Alcotest.(check bool) "H_FUSED_CMP_CMOV diversity > 1" true (count_variants "H_FUSED_CMP_CMOV" > 1);
+  (* 2. Decoys *)
+  Alcotest.(check bool) "H_DECOY_0 diversity > 1" true (count_variants "H_DECOY_0" > 1);
+  Alcotest.(check bool) "H_DECOY_7 diversity > 1" true (count_variants "H_DECOY_7" > 1);
+  Alcotest.(check bool) "H_DECOY_15 diversity > 1" true (count_variants "H_DECOY_15" > 1);
+  (* 3. Control-transfer skeleton *)
+  Alcotest.(check bool) "H_CALL diversity > 1" true (count_variants "H_CALL" > 1);
+  Alcotest.(check bool) "H_RET diversity > 1" true (count_variants "H_RET" > 1);
+  Alcotest.(check bool) "H_EXIT diversity > 1" true (count_variants "H_EXIT" > 1);
+  (* 4. Shifts and rotates *)
+  Alcotest.(check bool) "H_SHL_RI diversity > 1" true (count_variants "H_SHL_RI" > 1);
+  Alcotest.(check bool) "H_ROR_RR diversity > 1" true (count_variants "H_ROR_RR" > 1);
+  Alcotest.(check bool) "H_SAR_RI diversity > 1" true (count_variants "H_SAR_RI" > 1);
+  (* 5. Flags and condition manipulation *)
+  Alcotest.(check bool) "H_ADC_RR diversity > 1" true (count_variants "H_ADC_RR" > 1);
+  Alcotest.(check bool) "H_SBB_RI diversity > 1" true (count_variants "H_SBB_RI" > 1);
+  Alcotest.(check bool) "H_CCMP_RR diversity > 1" true (count_variants "H_CCMP_RR" > 1);
+  Alcotest.(check bool) "H_GET_FLAGS_R diversity > 1" true (count_variants "H_GET_FLAGS_R" > 1);
+  (* 6. Signed memory loads *)
+  Alcotest.(check bool) "H_LOAD_S32 diversity > 1" true (count_variants "H_LOAD_S32" > 1);
+  Alcotest.(check bool) "H_LOAD_S16 diversity > 1" true (count_variants "H_LOAD_S16" > 1);
+  Alcotest.(check bool) "H_LOAD_S8 diversity > 1" true (count_variants "H_LOAD_S8" > 1)
 
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;

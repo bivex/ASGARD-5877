@@ -496,18 +496,48 @@ let emit_mem_and_ffi_handlers ?rng b =
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_LOAD_S32: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int32_t*>(addr)));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int32_t*>(addr)));\n"
+   | 1 ->
+       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int32_t*>(_base + imm)));\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        int32_t _s32 = 0;\n";
+       Buffer.add_string b "        std::memcpy(&_s32, reinterpret_cast<const void*>(_ptr), sizeof(int32_t));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)_s32);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_LOAD_S16: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int16_t*>(addr)));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int16_t*>(addr)));\n"
+   | 1 ->
+       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int16_t*>(_base + imm)));\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        int16_t _s16 = 0;\n";
+       Buffer.add_string b "        std::memcpy(&_s16, reinterpret_cast<const void*>(_ptr), sizeof(int16_t));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)_s16);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_LOAD_S8: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int8_t*>(addr)));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int8_t*>(addr)));\n"
+   | 1 ->
+       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int8_t*>(_base + imm)));\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        int8_t _s8 = 0;\n";
+       Buffer.add_string b "        std::memcpy(&_s8, reinterpret_cast<const void*>(_ptr), sizeof(int8_t));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)_s8);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_STORE_64: {\n";
@@ -703,23 +733,93 @@ let emit_mem_and_ffi_handlers ?rng b =
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n\n"
 
-let emit_decoy_handlers b =
-  Buffer.add_string b "    H_DECOY_0: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_1: { ctx.set_reg(dst, ctx.get_reg(dst) + (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_2: { ctx.set_reg(dst, ctx.get_reg(dst) * 0x9E37ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_3: { ctx.set_reg(dst, (ctx.get_reg(dst) << 3) | (ctx.get_reg(dst) >> 61)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_4: { ctx.set_reg(dst, ctx.get_reg(src) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_5: { ctx.set_reg(dst, ctx.get_reg(dst) & ~ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_6: { ctx.set_reg(dst, ctx.get_reg(dst) | 0xCAFEBABEULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_7: { ctx.set_reg(dst, (ctx.get_reg(dst) >> 5) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_8: { ctx.set_reg(dst, ctx.get_reg(dst) - 0x1337ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_9: { ctx.set_reg(dst, ctx.get_reg(dst) ^ (ctx.get_reg(src) + 1)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_10: { ctx.set_reg(dst, (ctx.get_reg(dst) * 6364136223846793005ULL) + 1); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_11: { ctx.set_reg(dst, (ctx.get_reg(dst) << 7) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_12: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0xDEADBEEFULL); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_13: { ctx.set_reg(dst, ctx.get_reg(dst) + ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_14: { ctx.set_reg(dst, ctx.get_reg(dst) ^ (uint64_t)(imm * 3)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-  Buffer.add_string b "    H_DECOY_15: { ctx.set_reg(dst, ~ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+let emit_decoy_handlers ?rng b =
+  let pick_variant n =
+    match rng with
+    | Some r -> Random.State.int r n
+    | None -> 0
+  in
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_0: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_0: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, (_d ^ 0x5877ULL) + 0ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_0: { ctx.set_reg(dst, (~ctx.get_reg(dst)) ^ ~0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_1: { ctx.set_reg(dst, ctx.get_reg(dst) + (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_1: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d + static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_1: { ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_2: { ctx.set_reg(dst, ctx.get_reg(dst) * 0x9E37ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_2: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, (_d * 0x9E37ULL) ^ 0ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_2: { ctx.set_reg(dst, ctx.get_reg(dst) * static_cast<uint64_t>(0x9E37ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_3: { ctx.set_reg(dst, (ctx.get_reg(dst) << 3) | (ctx.get_reg(dst) >> 61)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_3: { uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, (_v << 3) ^ (_v >> 61)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_3: { uint64_t _l = ctx.get_reg(dst) << 3, _r = ctx.get_reg(dst) >> 61; ctx.set_reg(dst, _l | _r); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_4: { ctx.set_reg(dst, ctx.get_reg(src) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_4: { uint64_t _s = ctx.get_reg(src); ctx.set_reg(dst, _s ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_4: { ctx.set_reg(dst, (ctx.get_reg(src) | (uint64_t)imm) - (ctx.get_reg(src) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_5: { ctx.set_reg(dst, ctx.get_reg(dst) & ~ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_5: { uint64_t _d = ctx.get_reg(dst), _s = ctx.get_reg(src); ctx.set_reg(dst, _d & (~_s)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_5: { ctx.set_reg(dst, ~(~ctx.get_reg(dst) | ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_6: { ctx.set_reg(dst, ctx.get_reg(dst) | 0xCAFEBABEULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_6: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d | static_cast<uint64_t>(0xCAFEBABEULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_6: { ctx.set_reg(dst, (ctx.get_reg(dst) ^ 0xCAFEBABEULL) + (ctx.get_reg(dst) & 0xCAFEBABEULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_7: { ctx.set_reg(dst, (ctx.get_reg(dst) >> 5) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_7: { uint64_t _sh = ctx.get_reg(dst) >> 5; ctx.set_reg(dst, _sh ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_7: { ctx.set_reg(dst, ((ctx.get_reg(dst) >> 5) | (uint64_t)imm) - ((ctx.get_reg(dst) >> 5) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_8: { ctx.set_reg(dst, ctx.get_reg(dst) - 0x1337ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_8: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d - static_cast<uint64_t>(0x1337ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_8: { ctx.set_reg(dst, ctx.get_reg(dst) + (~0x1337ULL + 1ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_9: { ctx.set_reg(dst, ctx.get_reg(dst) ^ (ctx.get_reg(src) + 1)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_9: { uint64_t _rhs = ctx.get_reg(src) + 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ _rhs); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_9: { ctx.set_reg(dst, (ctx.get_reg(dst) | (ctx.get_reg(src) + 1)) - (ctx.get_reg(dst) & (ctx.get_reg(src) + 1))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_10: { ctx.set_reg(dst, (ctx.get_reg(dst) * 6364136223846793005ULL) + 1); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_10: { uint64_t _m = ctx.get_reg(dst) * 6364136223846793005ULL; ctx.set_reg(dst, _m + 1ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_10: { ctx.set_reg(dst, (ctx.get_reg(dst) * 6364136223846793005ULL) + static_cast<uint64_t>(1)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_11: { ctx.set_reg(dst, (ctx.get_reg(dst) << 7) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_11: { uint64_t _sh = ctx.get_reg(dst) << 7; ctx.set_reg(dst, _sh ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_11: { ctx.set_reg(dst, ((ctx.get_reg(dst) << 7) | (uint64_t)imm) - ((ctx.get_reg(dst) << 7) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_12: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0xDEADBEEFULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_12: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d ^ static_cast<uint64_t>(0xDEADBEEFULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_12: { ctx.set_reg(dst, (~ctx.get_reg(dst)) ^ ~0xDEADBEEFULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_13: { ctx.set_reg(dst, ctx.get_reg(dst) + ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_13: { uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src); ctx.set_reg(dst, _a + _b); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_13: { ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + 2 * (ctx.get_reg(dst) & ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_14: { ctx.set_reg(dst, ctx.get_reg(dst) ^ (uint64_t)(imm * 3)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_14: { uint64_t _adj = static_cast<uint64_t>(imm * 3); ctx.set_reg(dst, ctx.get_reg(dst) ^ _adj); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_14: { ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)(imm * 3)) - (ctx.get_reg(dst) & (uint64_t)(imm * 3))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY_15: { ctx.set_reg(dst, ~ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_15: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, ~_d); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_15: { ctx.set_reg(dst, ctx.get_reg(dst) ^ ~0ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+
   Buffer.add_string b "    H_DECOY:\n";
   Buffer.add_string b "        ctx.trapped = true;\n";
   Buffer.add_string b "        goto EXIT_VM;\n\n"

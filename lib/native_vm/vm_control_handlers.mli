@@ -7,4 +7,4 @@ val emit_control_handlers :
   unit ->
   unit
 
-val emit_super_operators : Buffer.t -> unit
+val emit_super_operators : ?rng:Random.State.t -> Buffer.t -> unit

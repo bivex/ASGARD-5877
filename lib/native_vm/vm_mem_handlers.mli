@@ -1,3 +1,3 @@
 val emit_simd_handlers : Buffer.t -> unit
 val emit_mem_and_ffi_handlers : ?rng:Random.State.t -> Buffer.t -> unit
-val emit_decoy_handlers : Buffer.t -> unit
+val emit_decoy_handlers : ?rng:Random.State.t -> Buffer.t -> unit
