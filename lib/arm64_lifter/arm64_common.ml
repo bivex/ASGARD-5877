@@ -37,7 +37,14 @@ let map_cond_str s =
   | "pl" -> Flags.NS
   | "vs" -> Flags.O
   | "vc" -> Flags.NO
+  | "al" | "always" | "nv" -> Flags.ALWAYS
   | _ -> Flags.E
+
+let target_of_op = function
+  | OpLabel s -> Ir.Label s
+  | OpImm i -> Ir.TargetImm i
+  | OpReg r -> Ir.TargetReg r
+  | _ -> Ir.TargetImm 0L
 
 let strip_page_suffix s =
   if String.ends_with ~suffix:"@PAGE" s then String.sub s 0 (String.length s - 5)

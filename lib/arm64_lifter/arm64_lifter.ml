@@ -85,14 +85,22 @@ let lift_lines ?(options = default_options) (lines : raw_line list) : (Ir.func, 
       let bb_list = List.map Subreg_write.expand_block bb_list in
 
       (* Fix terminator and patch label targets to BlockId *)
+      let max_id = List.fold_left (fun acc (b : Ir.basic_block) -> max acc b.id) 0 bb_list in
+      let exit_id = max_id + 1 in
+      let need_exit_block = ref false in
       let patched_blocks = List.mapi (fun idx (b : Ir.basic_block) ->
-        let fallthrough_id = if idx + 1 < List.length bb_list then (List.nth bb_list (idx + 1)).id else 0 in
+        let fallthrough_id =
+          if idx + 1 < List.length bb_list then (List.nth bb_list (idx + 1)).id
+          else exit_id
+        in
         let patch_target = function
           | Ir.Label l ->
               (match Hashtbl.find_opt label_map l with
               | Some bid -> Ir.BlockId bid
               | None -> Ir.Label l)
-          | Ir.TargetImm _ -> Ir.BlockId fallthrough_id
+          | Ir.TargetImm _ ->
+              if fallthrough_id = exit_id then need_exit_block := true;
+              Ir.BlockId fallthrough_id
           | t -> t
         in
         let patched_instrs = List.map (function
@@ -116,8 +124,14 @@ let lift_lines ?(options = default_options) (lines : raw_line list) : (Ir.func, 
         { b with instrs = final_instrs }
       ) bb_list in
 
-      let cfg_tbl = Hashtbl.create (List.length patched_blocks) in
-      List.iter (fun (b : Ir.basic_block) -> Hashtbl.replace cfg_tbl b.id b) patched_blocks;
+      let all_blocks =
+        if !need_exit_block then
+          patched_blocks @ [ { Ir.id = exit_id; label = "exit_fallthrough"; instrs = [ Ir.Ret ] } ]
+        else
+          patched_blocks
+      in
+      let cfg_tbl = Hashtbl.create (List.length all_blocks) in
+      List.iter (fun (b : Ir.basic_block) -> Hashtbl.replace cfg_tbl b.id b) all_blocks;
       let cfg = { Ir.entry_id = 0; blocks = cfg_tbl } in
       Ok { Ir.name = options.function_name; cfg }
 

@@ -16,7 +16,7 @@ let mod_inv64 (k : int64) : int64 =
 (** Generates a nilpotent zero polynomial term N(z)^32 == 0 mod 2^64
     to inject phantom data dependencies into the expression tree. *)
 let make_nilpotent_zero (rng : Random.State.t) (scratch : Register.t) : instr list =
-  let rand_imm = Int64.of_int (Random.State.bits rng) in
+  let rand_imm = Int64.shift_left (Int64.of_int (Random.State.bits rng)) 1 in
   [
     Mov { dst = Reg scratch; src = Imm rand_imm };
     Alu { op = Mul; dst = scratch; src1 = Reg scratch; src2 = Imm 0x8000000000000000L; set_flags = false };

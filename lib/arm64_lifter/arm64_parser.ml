@@ -145,9 +145,7 @@ let parse_operand str default_width =
   match parse_vec_operand s with
   | Some op -> Ok op
   | None ->
-      let s_low = String.lowercase_ascii s in
-      if s_low = "xzr" || s_low = "wzr" then Ok (OpImm 0L)
-  else if String.starts_with ~prefix:"[" s then
+      if String.starts_with ~prefix:"[" s then
     match parse_mem s default_width with
     | Ok m -> Ok (OpMem m)
     | Error err -> Error err

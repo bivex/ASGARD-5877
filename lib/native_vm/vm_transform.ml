@@ -550,6 +550,13 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
               [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm m.disp };
                 Ir.Mov { dst = Ir.Mem { m with base = Some scratch; disp = 0L }; src = Ir.Reg s } ])
 
+  | Ir.Mov { dst = Ir.Mem m; src = Ir.Imm imm } when m.index <> None || m.base = None || m.segment <> None ->
+      let base_reg = Option.value ~default:Register.vtmp0 m.base in
+      let idx_reg = match m.index with Some (r, _) -> r | None -> base_reg in
+      let scratch = pick_scratch_reg base_reg idx_reg in
+      [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm imm } ]
+      @ canonicalize_instr (Ir.Mov { dst = Ir.Mem m; src = Ir.Reg scratch })
+
   | Ir.Test { src1 = Ir.Reg s1; src2 = Ir.Reg s2 } ->
       let scratch = pick_scratch_reg s1 s2 in
       [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg s1 };

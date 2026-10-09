@@ -777,6 +777,128 @@ let test_arm64_lift_neon_ext () =
           check int64 "ARM64 neon ext #8 = 0x1111111122222222" 0x1111111122222222L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_tbz_tbnz () =
+  let asm = {|
+    mov x1, #4
+    tbz x1, #2, .Lbit2_is_zero
+    mov x0, #100
+    b .Lcheck_tbnz
+  .Lbit2_is_zero:
+    mov x0, #1
+  .Lcheck_tbnz:
+    tbnz x1, #2, .Lbit2_is_set
+    mov x2, #999
+    b .Ldone
+  .Lbit2_is_set:
+    mov x2, #200
+  .Ldone:
+    add x0, x0, x2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_tbz_tbnz" } asm with
+  | Error err -> fail ("Failed to lift ARM64 tbz/tbnz: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 tbz/tbnz result = 300" 300L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_b_al_nv () =
+  let asm = {|
+    mov x0, #10
+    b.nv .Lshould_not_jump
+    b.al .Ljumped
+    mov x0, #999
+  .Lshould_not_jump:
+    mov x0, #888
+  .Ljumped:
+    add x0, x0, #5
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_b_al_nv" } asm with
+  | Error err -> fail ("Failed to lift ARM64 b.al/nv: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 b.al/b.nv result = 15" 15L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_subs_adds_flags_and_xzr () =
+  let asm = {|
+    mov x1, #42
+    mov x2, #42
+    subs xzr, x1, x2
+    b.eq .Lsub_is_zero
+    mov x0, #100
+    b .Lnext
+  .Lsub_is_zero:
+    mov x0, #50
+  .Lnext:
+    mov x3, #15
+    adds x4, x3, #-15
+    b.eq .Ladd_is_zero
+    mov x5, #999
+    b .Lstore_pair
+  .Ladd_is_zero:
+    mov x5, #25
+  .Lstore_pair:
+    stp xzr, xzr, [sp, #-16]!
+    ldp x6, x7, [sp], #16
+    add x0, x0, x4
+    add x0, x0, x5
+    add x0, x0, x6
+    add x0, x0, x7
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_subs_xzr" } asm with
+  | Error err -> fail ("Failed to lift ARM64 subs/xzr: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 subs/adds flags and xzr result = 75" 75L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_extensions_sxt_uxt () =
+  let asm = {|
+    mov x1, #0xFF
+    sxtb x2, x1
+    uxtb x3, x1
+    mov x4, #0xFFFF
+    sxth x5, x4
+    uxth x6, x4
+    mov x7, #-1
+    uxtw x8, x7
+    sxtw x9, x8
+    add x0, x2, #2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_extensions" } asm with
+  | Error err -> fail ("Failed to lift ARM64 extensions: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 sxtb/uxtb result = 1" 1L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_register_shifts () =
+  let asm = {|
+    mov x1, #1
+    mov x2, #4
+    lsl x0, x1, x2
+    mov x3, #32
+    mov x4, #2
+    lsrv x5, x3, x4
+    add x0, x0, x5
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_reg_shifts" } asm with
+  | Error err -> fail ("Failed to lift ARM64 reg shifts: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 reg shifts result = 24" 24L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -817,6 +939,11 @@ let tests = [
   ("ARM64 Lift NEON Permutations (zip/uzp/trn)", `Quick, test_arm64_lift_neon_zip_uzp_trn);
   ("ARM64 Lift NEON Tbl", `Quick, test_arm64_lift_neon_tbl);
   ("ARM64 Lift NEON Ext", `Quick, test_arm64_lift_neon_ext);
+  ("ARM64 Lift tbz/tbnz bit branch", `Quick, test_arm64_lift_tbz_tbnz);
+  ("ARM64 Lift b.al / b.nv", `Quick, test_arm64_lift_b_al_nv);
+  ("ARM64 Lift subs/adds with flags and xzr", `Quick, test_arm64_lift_subs_adds_flags_and_xzr);
+  ("ARM64 Lift extensions (sxt/uxt)", `Quick, test_arm64_lift_extensions_sxt_uxt);
+  ("ARM64 Lift register shifts (lsl/lsr/asr)", `Quick, test_arm64_lift_register_shifts);
 ]
 
 

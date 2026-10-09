@@ -12,6 +12,7 @@ val emit_3addr_alu :
   src2:raw_op ->
   set_flags:bool ->
   Ir.instr list
+val target_of_op : raw_op -> Ir.target
 val lower_mem_operand :
   scratch_reg:Register.t ->
   raw_mem ->

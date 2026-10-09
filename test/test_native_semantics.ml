@@ -720,6 +720,71 @@ int32_t dispatch_fn(binop_fn fn, int32_t a, int32_t b) {
 |})
         [ ("-O2", "ibr_o2"); ("-O3", "ibr_o3") ])
 
+let test_e2e_bit_test_and_branch_clang_o2_o3 () =
+  let c_src = {|
+#include <stdint.h>
+
+uint64_t bit_test_func(uint64_t val, uint64_t mask) {
+    uint64_t acc = 0;
+    if (val & 0x04) {
+        acc += 100;
+    } else {
+        acc += 20;
+    }
+    if ((val & 0x08) == 0) {
+        acc += 200;
+    } else {
+        acc += 40;
+    }
+    if (val == mask) {
+        acc += 500;
+    }
+    if (val < mask) {
+        acc += 1000;
+    }
+    return acc;
+}
+|} in
+  let cfg =
+    Config_adapter.resolve
+      ~config_file:None
+      ~preset:None
+      ~enable_cff:false
+      ~enable_mba:false
+      ~mba_depth:2
+      ~seed:(Some 20261016)
+  in
+  with_temp_dir (fun tmp_dir ->
+      let c_path = Filename.concat tmp_dir "bit_test.c" in
+      write_file_string c_path c_src;
+      List.iter
+        (fun (opt, name) ->
+          let asm_path = Filename.concat tmp_dir (name ^ ".s") in
+          let comp_status =
+            Sys.command
+              (Printf.sprintf
+                 "clang -S %s -fno-inline -fno-stack-protector -fno-asynchronous-unwind-tables -o %s %s"
+                 opt asm_path c_path)
+          in
+          Alcotest.(check int) (name ^ ": clang -S compiles") 0 comp_status;
+          let asm_text = read_file_string asm_path in
+          let lifted = Arm64_lifter.lift_function asm_text in
+          let func =
+            match lifted with
+            | Error err -> Alcotest.fail (Printf.sprintf "%s: lift failed: %s" name err)
+            | Ok f -> f
+          in
+          let rng = Random.State.make [| 20261016 |] in
+          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
+          run_custom_vm ~name tmp_dir pkg {|
+    uint64_t r1 = vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 0x04ULL, 0x04ULL);
+    uint64_t r2 = vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 0x08ULL, 0x10ULL);
+    printf("bit_test results: r1=%llu r2=%llu\n", (unsigned long long)r1, (unsigned long long)r2);
+    if (r1 != 800ULL || r2 != 1060ULL) return 1;
+|})
+        [ ("-O2", "bt_o2"); ("-O3", "bt_o3") ])
+
 (* Item 9: 3-address ALU canonicalization unit test *)
 let test_canonicalize_3addr_alu_unit () =
   (* 1. Distinct registers: add rax, rbx, rcx *)
@@ -905,6 +970,7 @@ let tests = [
   Alcotest.test_case "e2e_stack_frame_sync_clang_o2_o3" `Slow test_e2e_stack_frame_sync_clang_o2_o3;
   Alcotest.test_case "e2e_switch_jump_table_clang_o2_o3" `Slow test_e2e_switch_jump_table_clang_o2_o3;
   Alcotest.test_case "e2e_indirect_branch_clang_o2_o3" `Slow test_e2e_indirect_branch_clang_o2_o3;
+  Alcotest.test_case "e2e_bit_test_and_branch_clang_o2_o3" `Slow test_e2e_bit_test_and_branch_clang_o2_o3;
   Alcotest.test_case "canonicalize_3addr_alu_unit" `Quick test_canonicalize_3addr_alu_unit;
   Alcotest.test_case "native_3addr_alu" `Slow test_native_3addr_alu;
   Alcotest.test_case "native_arm64_3addr_madd_msub_sdiv_bic" `Slow test_native_arm64_3addr_madd_msub_sdiv_bic;

@@ -1,6 +1,7 @@
 open Vm_ir
 open Arm64_types
 open Flags
+open Arm64_common
 
 let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   match (mnemonic, ops) with
@@ -8,48 +9,64 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | ("ret", _) -> Some [ Ir.Ret ]
 
   (* Branches & Calls *)
-  | ("b", [ OpLabel target ]) ->
-      Some [ Ir.Jmp (Label target) ]
-  | ("b.eq", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = E; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.ne", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = NE; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.lt", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = L; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.le", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = LE; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.gt", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = G; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.ge", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = GE; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.hi", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = A; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.ls", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = BE; target_true = Label target; target_false = TargetImm 0L } ]
-  | (("b.hs" | "b.cs"), [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = AE; target_true = Label target; target_false = TargetImm 0L } ]
-  | (("b.lo" | "b.cc"), [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = B; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.mi", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = S; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.pl", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = NS; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.vs", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = O; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("b.vc", [ OpLabel target ]) ->
-      Some [ Ir.Jcc { cond = NO; target_true = Label target; target_false = TargetImm 0L } ]
-  | ("cbz", [ OpReg r; OpLabel target ]) ->
+  | ("b", [ target ]) ->
+      Some [ Ir.Jmp (target_of_op target) ]
+  | ("b.al", [ target ]) ->
+      Some [ Ir.Jmp (target_of_op target) ]
+  | ("b.nv", _) ->
+      Some [ Ir.Nop ]
+  | ("b.eq", [ target ]) ->
+      Some [ Ir.Jcc { cond = E; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.ne", [ target ]) ->
+      Some [ Ir.Jcc { cond = NE; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.lt", [ target ]) ->
+      Some [ Ir.Jcc { cond = L; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.le", [ target ]) ->
+      Some [ Ir.Jcc { cond = LE; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.gt", [ target ]) ->
+      Some [ Ir.Jcc { cond = G; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.ge", [ target ]) ->
+      Some [ Ir.Jcc { cond = GE; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.hi", [ target ]) ->
+      Some [ Ir.Jcc { cond = A; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.ls", [ target ]) ->
+      Some [ Ir.Jcc { cond = BE; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | (("b.hs" | "b.cs"), [ target ]) ->
+      Some [ Ir.Jcc { cond = AE; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | (("b.lo" | "b.cc"), [ target ]) ->
+      Some [ Ir.Jcc { cond = B; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.mi", [ target ]) ->
+      Some [ Ir.Jcc { cond = S; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.pl", [ target ]) ->
+      Some [ Ir.Jcc { cond = NS; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.vs", [ target ]) ->
+      Some [ Ir.Jcc { cond = O; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("b.vc", [ target ]) ->
+      Some [ Ir.Jcc { cond = NO; target_true = target_of_op target; target_false = TargetImm 0L } ]
+  | ("cbz", [ OpReg r; target ]) ->
       Some [
         Ir.Cmp { src1 = Reg r; src2 = Imm 0L };
-        Ir.Jcc { cond = E; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Jcc { cond = E; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("cbnz", [ OpReg r; OpLabel target ]) ->
+  | ("cbnz", [ OpReg r; target ]) ->
       Some [
         Ir.Cmp { src1 = Reg r; src2 = Imm 0L };
-        Ir.Jcc { cond = NE; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Jcc { cond = NE; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bl", [ OpLabel target ]) ->
-      Some [ Ir.Call (Label target) ]
+  | ("tbz", [ OpReg r; OpImm bit; target ]) ->
+      let mask = Int64.shift_left 1L (Int64.to_int (Int64.logand bit 63L)) in
+      Some [
+        Ir.Test { src1 = Reg r; src2 = Imm mask };
+        Ir.Jcc { cond = E; target_true = target_of_op target; target_false = TargetImm 0L };
+      ]
+  | ("tbnz", [ OpReg r; OpImm bit; target ]) ->
+      let mask = Int64.shift_left 1L (Int64.to_int (Int64.logand bit 63L)) in
+      Some [
+        Ir.Test { src1 = Reg r; src2 = Imm mask };
+        Ir.Jcc { cond = NE; target_true = target_of_op target; target_false = TargetImm 0L };
+      ]
+  | ("bl", [ target ]) ->
+      Some [ Ir.Call (target_of_op target) ]
   | ("blr", [ OpReg r ]) ->
       Some [ Ir.Call (TargetReg r) ]
   | ("blr", _) ->
