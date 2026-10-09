@@ -409,7 +409,7 @@ ASGARD-5877 includes **363 tests** across **35 suites** verified on every build 
 - [`docs/VM_PROTECTOR.md`](docs/VM_PROTECTOR.md): In-depth guide to VM architecture, handlers, CFF, and trampoline generation.
 - [`docs/ENTROPY_MODEL.md`](docs/ENTROPY_MODEL.md): Information-theoretic entropy verification and Shannon metric models.
 - [`docs/FORMAL_VERIFICATION.md`](docs/FORMAL_VERIFICATION.md): Formal Sail ISA verification and property testing proofs.
-- [`docs/archive/`](docs/archive/): Archived specifications and completed roadmaps ([`CPP_TODO.md`](docs/archive/CPP_TODO.md), [`Stack-VM.md`](docs/archive/Stack-VM.md), [`idasql.md`](docs/archive/idasql.md), [`ARCHITECTURE.md`](docs/archive/ARCHITECTURE.md)).
+- [`docs/archive/`](docs/archive/): Archived specifications and completed roadmaps ([`AUDIT_TODO.md`](docs/archive/AUDIT_TODO.md), [`CPP_TODO.md`](docs/archive/CPP_TODO.md), [`Stack-VM.md`](docs/archive/Stack-VM.md), [`idasql.md`](docs/archive/idasql.md), [`ARCHITECTURE.md`](docs/archive/ARCHITECTURE.md)).
 
 ---
 
