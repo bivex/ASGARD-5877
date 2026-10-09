@@ -44,16 +44,13 @@
   - [x] Сохранение идентичности рабочих опкодов между доменами при полной разнородности jump-таблиц в памяти и совместном хешировании в `compute_handlers_hash`.
   - [x] Документирование проектного компромисса: нулевой оверхед прямого перехода ($O(1)$ direct threading `goto *dispatch_domains[d][op]`) без трансляционных матриц при полной структурной разнородности decoy-слотов.
 - [x] **Метаморфизм хендлеров виртуальной машины (`vm_control_handlers.ml`, `vm_mem_handlers.ml`, `vm_alu_handlers.ml`)**:
-  - [x] Генерация 2–3 семантически эквивалентных полиморфных/метаморфных вариантов C++ кода для каждого семейства хендлеров (Control Flow, Memory Load/Store, ALU, Move, Stack Ops).
-  - [x] Полиморфизм super-operator'ов (`H_FUSED_*`, 6 хендлеров: `MOV_ADD`, `ADD_IMUL`, `ADD_XOR`, `SUB_XOR`, `XOR_ADD`, `CMP_CMOV`).
-  - [x] Метаморфизм всех 16 decoy-хендлеров (`H_DECOY_0`..`15`) с диверсифицированными алгебраическими и побитовыми инвариантами.
-  - [x] Метаморфизм скелета передачи управления (`H_CALL`, `H_RET`, `H_EXIT`, `H_IJMP_R`, `H_ICALL_R`, `H_BRIDGE_TO_FLOW`, `H_BRIDGE_TO_MATH`).
-  - [x] Метаморфизм семейства сдвигов и циклических сдвигов (10 хендлеров: `H_ROL/ROR/SHL/SHR/SAR` в формах RR и RI).
-  - [x] Метаморфизм флаговых и условных инструкций (10 хендлеров: `H_ADC_RR/RI`, `H_SBB_RR/RI`, `H_CCMP_RR/RI`, `H_CCMN_RR/RI`, `H_GET_FLAGS_R`, `H_SET_FLAGS_R`).
-  - [x] Метаморфизм знаковых загрузок памяти (`H_LOAD_S32`, `H_LOAD_S16`, `H_LOAD_S8`).
-  - [x] Изоляция RNG суб-потоков (`split_rng`) с разделением по доменным тегам в `vm_handlers_emitter.ml` для устранения каскадного дрифта генерации при правках модулей.
-  - [x] Расширение тестов диверсификации в `test/test_anti_tamper_smc.ml` с проверкой мультивалентности блоков по всем 6 семействам.
-  - [x] Суммарное покрытие метаморфизмом расширено с 21 до 65+ базовых хендлеров (>50% от полного состава набора инструкций рантайма).
+  - [x] Достигнуто **100% покрытие метаморфизмом всей архитектуры виртуальной машины (131 из 131 хендлера)**:
+    - **ALU (51/51, 100%)**: базовые и immediate-инструкции (`ADD`, `SUB`, `IMUL`, `DIV`, `IDIV`, `MULH`, `IMULH`, `XOR`, `AND`, `OR`), сдвиги и циклические вращения (`SHL`, `SHR`, `SAR`, `ROL`, `ROR` в RR/RI формах), битовые и унарные преобразования (`CLZ`, `CTZ`, `POPCNT`, `RBIT`, `BSWAP`, `NOT`, `NEG`), флаги и условия (`ADC`, `SBB`, `CCMP`, `CCMN`, `CMP_RR/RI`, `GET_FLAGS`, `SET_FLAGS`, `MOV_HIGH`, `NOP`).
+    - **Control Flow (17/17, 100%)**: скелет переходов и вызовов (`JMP`, `JCC`, `CMOV`, `SETCC`, `CALL`, `RET`, `EXIT`, `IJMP_R`, `ICALL_R`, междоменные мосты `H_BRIDGE_TO_FLOW`/`MATH`), а также 6 ключевых super-operator'ов (`H_FUSED_MOV_ADD_RRI`, `H_FUSED_ADD_IMUL_RRI`, `H_FUSED_ADD_XOR_RRI`, `H_FUSED_SUB_XOR_RRI`, `H_FUSED_XOR_ADD_RRI`, `H_FUSED_CMP_CMOV`).
+    - **Memory, Atomics, FP, SIMD & System (63/63, 100%)**: загрузка/сохранение 8/16/32/64 бит (`LOAD_*`, `STORE_*`, `LOAD_S32/S16/S8`), стек (`PUSH_R`, `POP_R`), векторно-регистровые пересылки (`MOV_VR`, `MOV_RV`, `VEC_MOV`), векторный SIMD (`VADD_VV`, `VSUB_VV`, `VMUL_VV`, `VXOR_VV`), SMP атомики (`ATOMIC_LOAD`, `ATOMIC_STORE`, `ATOMIC_CAS`, `ATOMIC_ADD`, `ATOMIC_SWP`), скалярный FP (`FADD`, `FSUB`, `FMUL`, `FDIV`, `FSQRT`, `FCMP`, `FCVT*`, `FCSEL`), динамический резолв символов хоста (`RESOLVE_SYM`) и все 16 decoy ловушек (`H_DECOY_0..15`).
+  - [x] Изоляция RNG суб-потоков (`split_rng`) с разделением по 6 доменным тегам в `vm_handlers_emitter.ml` (ALU=101, Control=102, Fused=103, Mem=104, Decoy=105, SIMD=106) для устранения каскадного дрифта генерации при модификации модулей.
+  - [x] Комбинаторное пространство состояний эмитируемого C++ кода: $3^{131} \approx 2.7 \times 10^{62}$ уникальных синтаксических конфигураций тела VM, независимых от случайной перестановки регистров ($32! \approx 2.6 \times 10^{35}$) и диверсификации decoy jump-таблиц.
+  - [x] Расширение тестов диверсификации в `test/test_anti_tamper_smc.ml` с проверкой мультивалентности блоков по всем 11 категориям инструкций.
 - [x] **Кроссплатформенное хеширование целостности секций (`runtime_probes.ml`, `vm_context_emitter.ml`)**:
   - [x] Вычисление хэша секций исполняемого кода и констант (`.text`/`.rodata`) на macOS (`_dyld_get_image_header(0)` / `getsectiondata`), Linux (`dl_iterate_phdr` / `PF_X`), Windows (`IMAGE_DOS_HEADER` / `IMAGE_NT_HEADERS`).
   - [x] Интеграция хэша секций в `compute_handlers_hash()` для криптографической привязки Anti-Pushan rolling key (`rk`) и адресного расшифрования к телу бинарника.

@@ -1,70 +1,136 @@
-let emit_simd_handlers b =
+let emit_simd_handlers ?rng b =
+  let pick_variant n =
+    match rng with
+    | Some r -> Random.State.int r n
+    | None -> 0
+  in
+
   Buffer.add_string b "    H_VADD_VV: {\n";
   Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
   Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
-  Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-  Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
-  Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
-  Buffer.add_string b "        uint64x2_t vr = vaddq_u64(vd, vs);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-  Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-  Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
-  Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
-  Buffer.add_string b "        __m128i vr = _mm_add_epi64(vd, vs);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, d0 + s0, d1 + s1);\n";
-  Buffer.add_string b "#endif\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
+       Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
+       Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
+       Buffer.add_string b "        uint64x2_t vr = vaddq_u64(vd, vs);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
+       Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
+       Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
+       Buffer.add_string b "        __m128i vr = _mm_add_epi64(vd, vs);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
+       Buffer.add_string b "#else\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, d0 + s0, d1 + s1);\n";
+       Buffer.add_string b "#endif\n"
+   | 1 ->
+       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
+       Buffer.add_string b "        uint64x2_t vr = vaddq_u64(vcombine_u64(vcreate_u64(d0), vcreate_u64(d1)), vcombine_u64(vcreate_u64(s0), vcreate_u64(s1)));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
+       Buffer.add_string b "        __m128i vr = _mm_add_epi64(_mm_set_epi64x((int64_t)d1, (int64_t)d0), _mm_set_epi64x((int64_t)s1, (int64_t)s0));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, static_cast<uint64_t>(_mm_extract_epi64(vr, 0)), static_cast<uint64_t>(_mm_extract_epi64(vr, 1)));\n";
+       Buffer.add_string b "#else\n";
+       Buffer.add_string b "        uint64_t _r0 = d0 + s0, _r1 = d1 + s1; ctx.set_vreg(dst, _r0, _r1);\n";
+       Buffer.add_string b "#endif\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _res0 = d0 + s0; uint64_t _res1 = d1 + s1;\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, _res0, _res1);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
 
   Buffer.add_string b "    H_VSUB_VV: {\n";
   Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
   Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
-  Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-  Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
-  Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
-  Buffer.add_string b "        uint64x2_t vr = vsubq_u64(vd, vs);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-  Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-  Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
-  Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
-  Buffer.add_string b "        __m128i vr = _mm_sub_epi64(vd, vs);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, d0 - s0, d1 - s1);\n";
-  Buffer.add_string b "#endif\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
+       Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
+       Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
+       Buffer.add_string b "        uint64x2_t vr = vsubq_u64(vd, vs);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
+       Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
+       Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
+       Buffer.add_string b "        __m128i vr = _mm_sub_epi64(vd, vs);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
+       Buffer.add_string b "#else\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, d0 - s0, d1 - s1);\n";
+       Buffer.add_string b "#endif\n"
+   | 1 ->
+       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
+       Buffer.add_string b "        uint64x2_t vr = vsubq_u64(vcombine_u64(vcreate_u64(d0), vcreate_u64(d1)), vcombine_u64(vcreate_u64(s0), vcreate_u64(s1)));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
+       Buffer.add_string b "        __m128i vr = _mm_sub_epi64(_mm_set_epi64x((int64_t)d1, (int64_t)d0), _mm_set_epi64x((int64_t)s1, (int64_t)s0));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, static_cast<uint64_t>(_mm_extract_epi64(vr, 0)), static_cast<uint64_t>(_mm_extract_epi64(vr, 1)));\n";
+       Buffer.add_string b "#else\n";
+       Buffer.add_string b "        uint64_t _r0 = d0 - s0, _r1 = d1 - s1; ctx.set_vreg(dst, _r0, _r1);\n";
+       Buffer.add_string b "#endif\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _res0 = d0 - s0; uint64_t _res1 = d1 - s1;\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, _res0, _res1);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
 
   Buffer.add_string b "    H_VMUL_VV: {\n";
   Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
   Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, d0 * s0, d1 * s1);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        ctx.set_vreg(dst, d0 * s0, d1 * s1);\n"
+   | 1 ->
+       Buffer.add_string b "        uint64_t _m0 = d0 * s0, _m1 = d1 * s1; ctx.set_vreg(dst, _m0, _m1);\n"
+   | _ ->
+       Buffer.add_string b "        ctx.set_vreg(dst, static_cast<uint64_t>(d0 * s0), static_cast<uint64_t>(d1 * s1));\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
 
   Buffer.add_string b "    H_VXOR_VV: {\n";
   Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
   Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
-  Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-  Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
-  Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
-  Buffer.add_string b "        uint64x2_t vr = veorq_u64(vd, vs);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-  Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-  Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
-  Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
-  Buffer.add_string b "        __m128i vr = _mm_xor_si128(vd, vs);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, d0 ^ s0, d1 ^ s1);\n";
-  Buffer.add_string b "#endif\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
+       Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
+       Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
+       Buffer.add_string b "        uint64x2_t vr = veorq_u64(vd, vs);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
+       Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
+       Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
+       Buffer.add_string b "        __m128i vr = _mm_xor_si128(vd, vs);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
+       Buffer.add_string b "#else\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, d0 ^ s0, d1 ^ s1);\n";
+       Buffer.add_string b "#endif\n"
+   | 1 ->
+       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
+       Buffer.add_string b "        uint64x2_t vr = veorq_u64(vcombine_u64(vcreate_u64(d0), vcreate_u64(d1)), vcombine_u64(vcreate_u64(s0), vcreate_u64(s1)));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
+       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
+       Buffer.add_string b "        __m128i vr = _mm_xor_si128(_mm_set_epi64x((int64_t)d1, (int64_t)d0), _mm_set_epi64x((int64_t)s1, (int64_t)s0));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, static_cast<uint64_t>(_mm_extract_epi64(vr, 0)), static_cast<uint64_t>(_mm_extract_epi64(vr, 1)));\n";
+       Buffer.add_string b "#else\n";
+       Buffer.add_string b "        uint64_t _r0 = d0 ^ s0, _r1 = d1 ^ s1; ctx.set_vreg(dst, _r0, _r1);\n";
+       Buffer.add_string b "#endif\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _res0 = d0 ^ s0; uint64_t _res1 = d1 ^ s1;\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, _res0, _res1);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n\n";
+
   Buffer.add_string b "    H_VEC_MOV: {\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)(imm & 0x3ff);\n";
-  Buffer.add_string b "        for (size_t i = 0; i < (bits + 63) / 64; ++i) ctx.set_vreg_lane(dst, i, ctx.get_vreg_lane(src, i));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint32_t bits = (uint32_t)(imm & 0x3ff);\n";
+       Buffer.add_string b "        for (size_t i = 0; i < (bits + 63) / 64; ++i) ctx.set_vreg_lane(dst, i, ctx.get_vreg_lane(src, i));\n"
+   | 1 ->
+       Buffer.add_string b "        size_t _words = ((static_cast<uint32_t>(imm & 0x3ff)) + 63) / 64;\n";
+       Buffer.add_string b "        for (size_t i = 0; i < _words; ++i) { uint64_t _v = ctx.get_vreg_lane(src, i); ctx.set_vreg_lane(dst, i, _v); }\n"
+   | _ ->
+       Buffer.add_string b "        uint32_t bits = (uint32_t)(imm & 0x3ff); size_t i = 0;\n";
+       Buffer.add_string b "        while (i < (bits + 63) / 64) { ctx.set_vreg_lane(dst, i, ctx.get_vreg_lane(src, i)); ++i; }\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_VEC_BINOP: {\n";
@@ -597,142 +663,351 @@ let emit_mem_and_ffi_handlers ?rng b =
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_RESOLVE_SYM: {\n";
-  Buffer.add_string b "        size_t sym_idx = (size_t)imm;\n";
-  Buffer.add_string b "        void* sym_ptr = nullptr;\n";
-  Buffer.add_string b "        if (sym_idx < sizeof(g_external_symbols) / sizeof(g_external_symbols[0]) && g_external_symbols[sym_idx][0] != '\\0') {\n";
-  Buffer.add_string b "            const char* sym_name = g_external_symbols[sym_idx];\n";
-  Buffer.add_string b "            sym_ptr = dlsym(RTLD_DEFAULT, sym_name);\n";
-  Buffer.add_string b "            if (!sym_ptr && sym_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, sym_name + 1);\n";
-  Buffer.add_string b "            if (!sym_ptr) {\n";
-  Buffer.add_string b "                char alt_name[256];\n";
-  Buffer.add_string b "                snprintf(alt_name, sizeof(alt_name), \"_%s\", sym_name);\n";
-  Buffer.add_string b "                sym_ptr = dlsym(RTLD_DEFAULT, alt_name);\n";
-  Buffer.add_string b "            }\n";
-  Buffer.add_string b "            if (!sym_ptr) {\n";
-  Buffer.add_string b "                sym_ptr = asgard_resolve_constant(sym_name);\n";
-  Buffer.add_string b "            }\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)sym_ptr);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        size_t sym_idx = (size_t)imm;\n";
+       Buffer.add_string b "        void* sym_ptr = nullptr;\n";
+       Buffer.add_string b "        if (sym_idx < sizeof(g_external_symbols) / sizeof(g_external_symbols[0]) && g_external_symbols[sym_idx][0] != '\\0') {\n";
+       Buffer.add_string b "            const char* sym_name = g_external_symbols[sym_idx];\n";
+       Buffer.add_string b "            sym_ptr = dlsym(RTLD_DEFAULT, sym_name);\n";
+       Buffer.add_string b "            if (!sym_ptr && sym_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, sym_name + 1);\n";
+       Buffer.add_string b "            if (!sym_ptr) {\n";
+       Buffer.add_string b "                char alt_name[256];\n";
+       Buffer.add_string b "                snprintf(alt_name, sizeof(alt_name), \"_%s\", sym_name);\n";
+       Buffer.add_string b "                sym_ptr = dlsym(RTLD_DEFAULT, alt_name);\n";
+       Buffer.add_string b "            }\n";
+       Buffer.add_string b "            if (!sym_ptr) {\n";
+       Buffer.add_string b "                sym_ptr = asgard_resolve_constant(sym_name);\n";
+       Buffer.add_string b "            }\n";
+       Buffer.add_string b "        }\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)sym_ptr);\n"
+   | 1 ->
+       Buffer.add_string b "        size_t _idx = static_cast<size_t>(imm);\n";
+       Buffer.add_string b "        void* _p = nullptr;\n";
+       Buffer.add_string b "        if (_idx < sizeof(g_external_symbols) / sizeof(g_external_symbols[0]) && g_external_symbols[_idx][0] != '\\0') {\n";
+       Buffer.add_string b "            const char* _name = g_external_symbols[_idx];\n";
+       Buffer.add_string b "            _p = dlsym(RTLD_DEFAULT, _name);\n";
+       Buffer.add_string b "            if (!_p && _name[0] == '_') _p = dlsym(RTLD_DEFAULT, _name + 1);\n";
+       Buffer.add_string b "            if (!_p) {\n";
+       Buffer.add_string b "                char _alt[256];\n";
+       Buffer.add_string b "                snprintf(_alt, sizeof(_alt), \"_%s\", _name);\n";
+       Buffer.add_string b "                _p = dlsym(RTLD_DEFAULT, _alt);\n";
+       Buffer.add_string b "            }\n";
+       Buffer.add_string b "            if (!_p) _p = asgard_resolve_constant(_name);\n";
+       Buffer.add_string b "        }\n";
+       Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(_p)));\n"
+   | _ ->
+       Buffer.add_string b "        size_t sym_idx = (size_t)imm;\n";
+       Buffer.add_string b "        void* sym_ptr = nullptr;\n";
+       Buffer.add_string b "        size_t _max_syms = sizeof(g_external_symbols) / sizeof(g_external_symbols[0]);\n";
+       Buffer.add_string b "        if (sym_idx < _max_syms && g_external_symbols[sym_idx][0] != '\\0') {\n";
+       Buffer.add_string b "            const char* sym_name = g_external_symbols[sym_idx];\n";
+       Buffer.add_string b "            sym_ptr = dlsym(RTLD_DEFAULT, sym_name);\n";
+       Buffer.add_string b "            if (!sym_ptr && sym_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, sym_name + 1);\n";
+       Buffer.add_string b "            if (!sym_ptr) {\n";
+       Buffer.add_string b "                char alt_name[256];\n";
+       Buffer.add_string b "                snprintf(alt_name, sizeof(alt_name), \"_%s\", sym_name);\n";
+       Buffer.add_string b "                sym_ptr = dlsym(RTLD_DEFAULT, alt_name);\n";
+       Buffer.add_string b "            }\n";
+       Buffer.add_string b "            if (!sym_ptr) sym_ptr = asgard_resolve_constant(sym_name);\n";
+       Buffer.add_string b "        }\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)sym_ptr);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FADD_DD: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a + b), 0);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a + b), 0);\n"
+   | 1 ->
+       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_a + _b), 0);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(std::bit_cast<double>(_s) + std::bit_cast<double>(_i)), 0);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FSUB_DD: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a - b), 0);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a - b), 0);\n"
+   | 1 ->
+       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_a - _b), 0);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(std::bit_cast<double>(_s) - std::bit_cast<double>(_i)), 0);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FMUL_DD: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a * b), 0);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a * b), 0);\n"
+   | 1 ->
+       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_a * _b), 0);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(std::bit_cast<double>(_s) * std::bit_cast<double>(_i)), 0);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FDIV_DD: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-  Buffer.add_string b "        double r = (b != 0.0) ? (a / b) : 0.0;\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
+       Buffer.add_string b "        double r = (b != 0.0) ? (a / b) : 0.0;\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n"
+   | 1 ->
+       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
+       Buffer.add_string b "        double _q = (_b == 0.0) ? 0.0 : (_a / _b);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_q), 0);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(_s), b = std::bit_cast<double>(_i);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((b != 0.0) ? (a / b) : 0.0), 0);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FSQRT_D: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
-  Buffer.add_string b "        double r = (a >= 0.0) ? std::sqrt(a) : 0.0;\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
+       Buffer.add_string b "        double r = (a >= 0.0) ? std::sqrt(a) : 0.0;\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n"
+   | 1 ->
+       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        double _root = (_a < 0.0) ? 0.0 : std::sqrt(_a);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_root), 0);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(_s);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((a >= 0.0) ? std::sqrt(a) : 0.0), 0);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FCMP_DD: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-  Buffer.add_string b "        ctx.zf = (a == b);\n";
-  Buffer.add_string b "        ctx.cf = (a >= b);\n";
-  Buffer.add_string b "        ctx.sf = (a < b);\n";
-  Buffer.add_string b "        ctx.of = false;\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
+       Buffer.add_string b "        ctx.zf = (a == b);\n";
+       Buffer.add_string b "        ctx.cf = (a >= b);\n";
+       Buffer.add_string b "        ctx.sf = (a < b);\n";
+       Buffer.add_string b "        ctx.of = false;\n"
+   | 1 ->
+       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
+       Buffer.add_string b "        ctx.of = false;\n";
+       Buffer.add_string b "        ctx.sf = (_a < _b);\n";
+       Buffer.add_string b "        ctx.cf = (_a >= _b);\n";
+       Buffer.add_string b "        ctx.zf = (_a == _b);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(_s), b = std::bit_cast<double>(_i);\n";
+       Buffer.add_string b "        bool _eq = (a == b), _ge = (a >= b), _lt = (a < b);\n";
+       Buffer.add_string b "        ctx.zf = _eq; ctx.cf = _ge; ctx.sf = _lt; ctx.of = false;\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FCVTZS: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)((int64_t)a));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)((int64_t)a));\n"
+   | 1 ->
+       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        int64_t _s64 = static_cast<int64_t>(_a);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(_s64));\n"
+   | _ ->
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)std::bit_cast<double>(ctx.get_vreg_lane(src, 0)));\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_SCVTF: {\n";
-  Buffer.add_string b "        int64_t v = (int64_t)ctx.get_reg(src);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)v), 0);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        int64_t v = (int64_t)ctx.get_reg(src);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)v), 0);\n"
+   | 1 ->
+       Buffer.add_string b "        int64_t _s = static_cast<int64_t>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        double _d = static_cast<double>(_s);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_d), 0);\n"
+   | _ ->
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)(int64_t)ctx.get_reg(src)), 0);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FCVTZU: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-  Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (a < 0.0) ? 0ULL : (uint64_t)a);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (a < 0.0) ? 0ULL : (uint64_t)a);\n"
+   | 1 ->
+       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        uint64_t _u64 = (_a < 0.0) ? 0ULL : static_cast<uint64_t>(_a);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, _u64);\n"
+   | _ ->
+       Buffer.add_string b "        double a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        if (a < 0.0) ctx.set_reg(dst, 0ULL); else ctx.set_reg(dst, (uint64_t)a);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_UCVTF: {\n";
-  Buffer.add_string b "        uint64_t v = ctx.get_reg(src);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)v), 0);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t v = ctx.get_reg(src);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)v), 0);\n"
+   | 1 ->
+       Buffer.add_string b "        double _d = static_cast<double>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_d), 0);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _v = ctx.get_reg(src);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)_v), 0);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FCVT: {\n";
-  Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-  Buffer.add_string b "        float f32 = std::bit_cast<float>((uint32_t)a_raw);\n";
-  Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "        float f32 = std::bit_cast<float>((uint32_t)a_raw);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n"
+   | 1 ->
+       Buffer.add_string b "        uint32_t _raw32 = static_cast<uint32_t>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        float _f = std::bit_cast<float>(_raw32);\n";
+       Buffer.add_string b "        double _d = static_cast<double>(_f);\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_d), 0);\n"
+   | _ ->
+       Buffer.add_string b "        float f32 = std::bit_cast<float>((uint32_t)ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ATOMIC_LOAD: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-  Buffer.add_string b "        ctx.set_reg(dst, ptr->load(std::memory_order_seq_cst));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, ptr->load(std::memory_order_seq_cst));\n"
+   | 1 ->
+       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, _p->load(std::memory_order_seq_cst));\n"
+   | _ ->
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(src) + (uint64_t)imm);\n";
+       Buffer.add_string b "        uint64_t _loaded = ptr->load(std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, _loaded);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ATOMIC_STORE: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-  Buffer.add_string b "        ptr->store(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
+       Buffer.add_string b "        ptr->store(ctx.get_reg(src), std::memory_order_seq_cst);\n"
+   | 1 ->
+       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
+       Buffer.add_string b "        _p->store(ctx.get_reg(src), std::memory_order_seq_cst);\n"
+   | _ ->
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
+       Buffer.add_string b "        uint64_t _val = ctx.get_reg(src);\n";
+       Buffer.add_string b "        ptr->store(_val, std::memory_order_seq_cst);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ATOMIC_CAS: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-  Buffer.add_string b "        uint64_t expected = ctx.get_reg(src);\n";
-  Buffer.add_string b "        uint64_t desired = ctx.get_reg(REG_RAX);\n";
-  Buffer.add_string b "        ptr->compare_exchange_strong(expected, desired, std::memory_order_seq_cst);\n";
-  Buffer.add_string b "        ctx.set_reg(src, expected);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
+       Buffer.add_string b "        uint64_t expected = ctx.get_reg(src);\n";
+       Buffer.add_string b "        uint64_t desired = ctx.get_reg(REG_RAX);\n";
+       Buffer.add_string b "        ptr->compare_exchange_strong(expected, desired, std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, expected);\n"
+   | 1 ->
+       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
+       Buffer.add_string b "        uint64_t _exp = ctx.get_reg(src), _des = ctx.get_reg(REG_RAX);\n";
+       Buffer.add_string b "        _p->compare_exchange_strong(_exp, _des, std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, _exp);\n"
+   | _ ->
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
+       Buffer.add_string b "        uint64_t expected = ctx.get_reg(src);\n";
+       Buffer.add_string b "        ptr->compare_exchange_strong(expected, ctx.get_reg(REG_RAX), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, expected);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ATOMIC_ADD: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-  Buffer.add_string b "        uint64_t old = ptr->fetch_add(ctx.get_reg(src), std::memory_order_seq_cst);\n";
-  Buffer.add_string b "        ctx.set_reg(src, old);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
+       Buffer.add_string b "        uint64_t old = ptr->fetch_add(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, old);\n"
+   | 1 ->
+       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
+       Buffer.add_string b "        uint64_t _old = _p->fetch_add(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, _old);\n"
+   | _ ->
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
+       Buffer.add_string b "        uint64_t old = ptr->fetch_add(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, old);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ATOMIC_SWP: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-  Buffer.add_string b "        uint64_t old = ptr->exchange(ctx.get_reg(src), std::memory_order_seq_cst);\n";
-  Buffer.add_string b "        ctx.set_reg(src, old);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
+       Buffer.add_string b "        uint64_t old = ptr->exchange(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, old);\n"
+   | 1 ->
+       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
+       Buffer.add_string b "        uint64_t _old = _p->exchange(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, _old);\n"
+   | _ ->
+       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
+       Buffer.add_string b "        uint64_t old = ptr->exchange(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        ctx.set_reg(src, old);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_MOV_VR: {\n";
-  Buffer.add_string b "        ctx.set_vreg_lane(dst, 0, ctx.get_reg(src));\n";
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "        ctx.set_vreg_lane(dst, 0, ctx.get_reg(src));\n"
+   | 1 -> Buffer.add_string b "        uint64_t _val = ctx.get_reg(src); ctx.set_vreg_lane(dst, 0, _val);\n"
+   | _ -> Buffer.add_string b "        ctx.set_vreg_lane(dst, 0, static_cast<uint64_t>(ctx.get_reg(src)));\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_MOV_RV: {\n";
-  Buffer.add_string b "        ctx.set_reg(dst, ctx.get_vreg_lane(src, 0));\n";
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "        ctx.set_reg(dst, ctx.get_vreg_lane(src, 0));\n"
+   | 1 -> Buffer.add_string b "        uint64_t _val = ctx.get_vreg_lane(src, 0); ctx.set_reg(dst, _val);\n"
+   | _ -> Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(ctx.get_vreg_lane(src, 0)));\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FCSEL_VV: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_vreg_lane(dst, 0, ctx.get_vreg_lane(src, 0));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
+       Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_vreg_lane(dst, 0, ctx.get_vreg_lane(src, 0));\n"
+   | 1 ->
+       Buffer.add_string b "        if (eval_condition(ctx, static_cast<uint8_t>((word >> 18) & 0x0F))) {\n";
+       Buffer.add_string b "            uint64_t _v = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "            ctx.set_vreg_lane(dst, 0, _v);\n";
+       Buffer.add_string b "        }\n"
+   | _ ->
+       Buffer.add_string b "        uint8_t _c = (uint8_t)((word >> 18) & 0x0F);\n";
+       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "        if (eval_condition(ctx, _c)) ctx.set_vreg_lane(dst, 0, _s);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n\n"
-
 let emit_decoy_handlers ?rng b =
   let pick_variant n =
     match rng with
@@ -820,6 +1095,7 @@ let emit_decoy_handlers ?rng b =
    | 1 -> Buffer.add_string b "    H_DECOY_15: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, ~_d); ctx.executed_instructions++; FETCH_NEXT(); }\n"
    | _ -> Buffer.add_string b "    H_DECOY_15: { ctx.set_reg(dst, ctx.get_reg(dst) ^ ~0ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
-  Buffer.add_string b "    H_DECOY:\n";
-  Buffer.add_string b "        ctx.trapped = true;\n";
-  Buffer.add_string b "        goto EXIT_VM;\n\n"
+  (match pick_variant 3 with
+   | 0 -> Buffer.add_string b "    H_DECOY: { ctx.trapped = true; goto EXIT_VM; }\n\n"
+   | 1 -> Buffer.add_string b "    H_DECOY: { ctx.trapped = true; ctx.executed_instructions++; goto EXIT_VM; }\n\n"
+   | _ -> Buffer.add_string b "    H_DECOY: { bool _trap = true; ctx.trapped = _trap; goto EXIT_VM; }\n\n")

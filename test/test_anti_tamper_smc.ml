@@ -525,7 +525,34 @@ let test_handler_metamorphism_diversity () =
   (* 6. Signed memory loads *)
   Alcotest.(check bool) "H_LOAD_S32 diversity > 1" true (count_variants "H_LOAD_S32" > 1);
   Alcotest.(check bool) "H_LOAD_S16 diversity > 1" true (count_variants "H_LOAD_S16" > 1);
-  Alcotest.(check bool) "H_LOAD_S8 diversity > 1" true (count_variants "H_LOAD_S8" > 1)
+  Alcotest.(check bool) "H_LOAD_S8 diversity > 1" true (count_variants "H_LOAD_S8" > 1);
+  (* 7. Floating Point operations *)
+  Alcotest.(check bool) "H_FADD_DD diversity > 1" true (count_variants "H_FADD_DD" > 1);
+  Alcotest.(check bool) "H_FSUB_DD diversity > 1" true (count_variants "H_FSUB_DD" > 1);
+  Alcotest.(check bool) "H_FDIV_DD diversity > 1" true (count_variants "H_FDIV_DD" > 1);
+  Alcotest.(check bool) "H_FCMP_DD diversity > 1" true (count_variants "H_FCMP_DD" > 1);
+  (* 8. Atomic memory operations *)
+  Alcotest.(check bool) "H_ATOMIC_LOAD diversity > 1" true (count_variants "H_ATOMIC_LOAD" > 1);
+  Alcotest.(check bool) "H_ATOMIC_STORE diversity > 1" true (count_variants "H_ATOMIC_STORE" > 1);
+  Alcotest.(check bool) "H_ATOMIC_CAS diversity > 1" true (count_variants "H_ATOMIC_CAS" > 1);
+  Alcotest.(check bool) "H_ATOMIC_ADD diversity > 1" true (count_variants "H_ATOMIC_ADD" > 1);
+  (* 9. SIMD vector operations *)
+  Alcotest.(check bool) "H_VADD_VV diversity > 1" true (count_variants "H_VADD_VV" > 1);
+  Alcotest.(check bool) "H_VSUB_VV diversity > 1" true (count_variants "H_VSUB_VV" > 1);
+  Alcotest.(check bool) "H_VXOR_VV diversity > 1" true (count_variants "H_VXOR_VV" > 1);
+  Alcotest.(check bool) "H_VEC_MOV diversity > 1" true (count_variants "H_VEC_MOV" > 1);
+  (* 10. Extended ALU & division *)
+  Alcotest.(check bool) "H_NEG_RR diversity > 1" true (count_variants "H_NEG_RR" > 1);
+  Alcotest.(check bool) "H_NOT_RR diversity > 1" true (count_variants "H_NOT_RR" > 1);
+  Alcotest.(check bool) "H_BSWAP_RR diversity > 1" true (count_variants "H_BSWAP_RR" > 1);
+  Alcotest.(check bool) "H_DIV_RR diversity > 1" true (count_variants "H_DIV_RR" > 1);
+  Alcotest.(check bool) "H_IDIV_RR diversity > 1" true (count_variants "H_IDIV_RR" > 1);
+  Alcotest.(check bool) "H_CMP_RI diversity > 1" true (count_variants "H_CMP_RI" > 1);
+  Alcotest.(check bool) "H_CMP_RR diversity > 1" true (count_variants "H_CMP_RR" > 1);
+  (* 11. Cross-register moves & symbols *)
+  Alcotest.(check bool) "H_MOV_VR diversity > 1" true (count_variants "H_MOV_VR" > 1);
+  Alcotest.(check bool) "H_MOV_RV diversity > 1" true (count_variants "H_MOV_RV" > 1);
+  Alcotest.(check bool) "H_RESOLVE_SYM diversity > 1" true (count_variants "H_RESOLVE_SYM" > 1)
 
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
