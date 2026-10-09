@@ -85,7 +85,7 @@ let remap_instr (map : (int, int) Hashtbl.t) (instr : instr) : instr =
   | Pmovmskb { dst; src; bits } -> Pmovmskb { dst = remap_register map dst; src; bits }
   | Jmp _ | Jcc _ | Call _ | Ret | Vm_enter | Vm_exit | Trap _ | Nop | Bridge_to_flow _ | Bridge_to_math _
    | Load_symbol _ | Fp_binop _ | Fp_cmp _ | Fp_conv _ | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _
-   | Vec_clear_upper _ | Vec_zero_upper | Atomic_mem _ -> instr
+   | Vec_clear_upper _ | Vec_zero_upper | Vec_ext _ | Atomic_mem _ -> instr
 
 let allocate ~(strategy : strategy) ~(seed : Seed.t) (f : func) : func =
   let reg_map = build_register_map strategy seed in

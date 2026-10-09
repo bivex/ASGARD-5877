@@ -279,6 +279,9 @@ let compile_and_package_multi
     | Ir.Vunpckl -> 17 | Ir.Vunpckh -> 18
     | Ir.Vpackss -> 19 | Ir.Vpackus -> 20
     | Ir.Vshuf -> 21 | Ir.Vblend -> 22
+    | Ir.Vuzp1 -> 23 | Ir.Vuzp2 -> 24
+    | Ir.Vtrn1 -> 25 | Ir.Vtrn2 -> 26
+    | Ir.Vtbl -> 28 | Ir.Vtbx -> 29
   in
   let vector_elem_code = function
     | Ir.VInt -> 0 | Ir.VF32 -> 1 | Ir.VF64 -> 2
@@ -607,6 +610,13 @@ let compile_and_package_multi
                   encode_raw_word (get_opcode OP_VEC_CLEAR_UPPER) (vector_index reg) 0 0L
               | Ir.Vec_zero_upper ->
                   encode_raw_word (get_opcode OP_VEC_ZERO_UPPER) 0 0 0L
+              | Ir.Vec_ext { dst; src1; src2; imm; bits } ->
+                  let imm_payload =
+                    Int64.logor (Int64.of_int (src2 land 31))
+                      (Int64.logor (Int64.shift_left (Int64.of_int (imm land 15)) 5)
+                         (Int64.shift_left (Int64.of_int bits) 9))
+                  in
+                  encode_raw_word (get_opcode OP_VEC_EXT) (vector_index dst) (vector_index src1) imm_payload
               | Ir.Pmovmskb { dst; src; bits } ->
                   encode_raw_word (get_opcode OP_PMOVMSKB) (get_reg_idx dst) (vector_index src) (Int64.of_int bits)
               | Ir.Atomic_mem { op; dst; addr; src; imm } -> (

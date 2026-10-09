@@ -717,6 +717,66 @@ let test_arm64_lift_neon_mem_ld_st () =
           check int64 "ARM64 neon ld1/st1/ldr/str roundtrip = 12345" 12345L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_neon_zip_uzp_trn () =
+  let asm = {|
+    mov x1, #10
+    mov x2, #20
+    dup v1.2d, x1
+    dup v2.2d, x2
+    zip1 v0.2d, v1.2d, v2.2d
+    uzp1 v3.2d, v1.2d, v2.2d
+    trn1 v4.2d, v1.2d, v2.2d
+    mov x0, v0.d[0]
+    mov x1, v3.d[0]
+    mov x2, v4.d[0]
+    add x0, x0, x1
+    add x0, x0, x2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_neon_zip_uzp_trn" } asm with
+  | Error err -> fail ("Failed to lift ARM64 neon zip/uzp/trn: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 neon zip1 + uzp1 + trn1 = 30" 30L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_neon_tbl () =
+  let asm = {|
+    mov x1, #0x03020100
+    dup v1.2d, x1
+    mov x2, #0x00010203
+    dup v2.2d, x2
+    tbl v0.16b, {v1.16b}, v2.16b
+    mov x0, v0.d[0]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_neon_tbl" } asm with
+  | Error err -> fail ("Failed to lift ARM64 neon tbl: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 neon tbl byte permutation = 0x00010203" 0x00010203L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_neon_ext () =
+  let asm = {|
+    mov x1, #0x1111111122222222
+    dup v1.2d, x1
+    mov x2, #0x3333333344444444
+    dup v2.2d, x2
+    ext v0.16b, v1.16b, v2.16b, #8
+    mov x0, v0.d[0]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_neon_ext" } asm with
+  | Error err -> fail ("Failed to lift ARM64 neon ext: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 neon ext #8 = 0x1111111122222222" 0x1111111122222222L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -754,6 +814,9 @@ let tests = [
   ("ARM64 Lift NEON Bitwise (orr/and/eor/bic)", `Quick, test_arm64_lift_neon_bitwise);
   ("ARM64 Lift NEON Shifts/Min/Max (shl/ushr/smin/smax)", `Quick, test_arm64_lift_neon_shifts_min_max);
   ("ARM64 Lift NEON Mem (ld1/st1/ldr/str)", `Quick, test_arm64_lift_neon_mem_ld_st);
+  ("ARM64 Lift NEON Permutations (zip/uzp/trn)", `Quick, test_arm64_lift_neon_zip_uzp_trn);
+  ("ARM64 Lift NEON Tbl", `Quick, test_arm64_lift_neon_tbl);
+  ("ARM64 Lift NEON Ext", `Quick, test_arm64_lift_neon_ext);
 ]
 
 

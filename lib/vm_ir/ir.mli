@@ -79,6 +79,12 @@ type vec_op =
   | Vpackus
   | Vshuf
   | Vblend
+  | Vuzp1
+  | Vuzp2
+  | Vtrn1
+  | Vtrn2
+  | Vtbl
+  | Vtbx
 type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
@@ -118,6 +124,7 @@ type instr =
   | Vec_clear_upper of int
   | Vec_zero_upper
   | Vec_splat of { dst : int; src : Register.t; bits : int; lane_bits : int }
+  | Vec_ext of { dst : int; src1 : int; src2 : int; imm : int; bits : int }
   | Pmovmskb of { dst : Register.t; src : int; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
   | Get_flags of Register.t

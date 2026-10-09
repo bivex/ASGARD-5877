@@ -79,6 +79,12 @@ type vec_op =
   | Vpackus
   | Vshuf
   | Vblend
+  | Vuzp1
+  | Vuzp2
+  | Vtrn1
+  | Vtrn2
+  | Vtbl
+  | Vtbx
 type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
@@ -118,6 +124,7 @@ type instr =
   | Vec_clear_upper of int
   | Vec_zero_upper
   | Vec_splat of { dst : int; src : Register.t; bits : int; lane_bits : int }
+  | Vec_ext of { dst : int; src1 : int; src2 : int; imm : int; bits : int }
   | Pmovmskb of { dst : Register.t; src : int; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
   | Get_flags of Register.t
@@ -259,6 +266,9 @@ let instr_to_string = function
         | Vunpckl -> "vec_unpckl" | Vunpckh -> "vec_unpckh"
         | Vpackss -> "vec_packss" | Vpackus -> "vec_packus"
         | Vshuf -> "vec_shuf" | Vblend -> "vec_blend"
+        | Vuzp1 -> "vec_uzp1" | Vuzp2 -> "vec_uzp2"
+        | Vtrn1 -> "vec_trn1" | Vtrn2 -> "vec_trn2"
+        | Vtbl -> "vec_tbl" | Vtbx -> "vec_tbx"
       in
       Printf.sprintf "%s.%d.%d.%s v%d, v%d, v%d" op_s bits lane_bits (vec_elem_to_string elem) dst src1 src2
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
@@ -271,6 +281,9 @@ let instr_to_string = function
         | Vunpckl -> "vec_unpckl" | Vunpckh -> "vec_unpckh"
         | Vpackss -> "vec_packss" | Vpackus -> "vec_packus"
         | Vshuf -> "vec_shuf" | Vblend -> "vec_blend"
+        | Vuzp1 -> "vec_uzp1" | Vuzp2 -> "vec_uzp2"
+        | Vtrn1 -> "vec_trn1" | Vtrn2 -> "vec_trn2"
+        | Vtbl -> "vec_tbl" | Vtbx -> "vec_tbx"
       in
       Printf.sprintf "%s_imm.%d.%d.%s v%d, v%d, 0x%LX" op_s bits lane_bits (vec_elem_to_string elem) dst src imm
   | Vec_load { dst; addr; bits } -> Printf.sprintf "vec_load.%d v%d, %s" bits dst (mem_ref_to_string addr)
@@ -279,6 +292,8 @@ let instr_to_string = function
   | Vec_zero_upper -> "vzeroupper"
   | Vec_splat { dst; src; bits; lane_bits } ->
       Printf.sprintf "vsplat.%d.%d v%d, %s" bits lane_bits dst (Register.to_string src)
+  | Vec_ext { dst; src1; src2; imm; bits } ->
+      Printf.sprintf "vext.%d v%d, v%d, v%d, #%d" bits dst src1 src2 imm
   | Pmovmskb { dst; src; bits } -> Printf.sprintf "pmovmskb.%d %s, v%d" bits (Register.to_string dst) src
   | Atomic_mem { op; dst; addr; src; imm } ->
       let op_s = match op with AtLoad -> "at_load" | AtStore -> "at_store" | AtCas -> "at_cas" | AtAdd -> "at_add" | AtSwp -> "at_swp" in

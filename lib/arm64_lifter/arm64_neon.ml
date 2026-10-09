@@ -117,6 +117,43 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
           Some [ Ir.Vec_splat { dst; src = Register.Fpr (src, Register.B64); bits; lane_bits } ]
       | _ -> None)
 
+  (* NEON Permutations and Interleaving: zip1, zip2, uzp1, uzp2, trn1, trn2 *)
+  | (("zip1" | "zip2"), [ op_dst; op_s1; op_s2 ]) -> (
+      match get_vec_info op_dst, get_vec_info op_s1, get_vec_info op_s2 with
+      | Some (dst, bits, lane_bits, _), Some (s1, _, _, _), Some (s2, _, _, _) ->
+          let op = if mnem = "zip1" then Ir.Vunpckl else Ir.Vunpckh in
+          Some [ Ir.Vec_binop { op; elem = Ir.VInt; dst; src1 = s1; src2 = s2; bits; lane_bits } ]
+      | _ -> None)
+
+  | (("uzp1" | "uzp2"), [ op_dst; op_s1; op_s2 ]) -> (
+      match get_vec_info op_dst, get_vec_info op_s1, get_vec_info op_s2 with
+      | Some (dst, bits, lane_bits, _), Some (s1, _, _, _), Some (s2, _, _, _) ->
+          let op = if mnem = "uzp1" then Ir.Vuzp1 else Ir.Vuzp2 in
+          Some [ Ir.Vec_binop { op; elem = Ir.VInt; dst; src1 = s1; src2 = s2; bits; lane_bits } ]
+      | _ -> None)
+
+  | (("trn1" | "trn2"), [ op_dst; op_s1; op_s2 ]) -> (
+      match get_vec_info op_dst, get_vec_info op_s1, get_vec_info op_s2 with
+      | Some (dst, bits, lane_bits, _), Some (s1, _, _, _), Some (s2, _, _, _) ->
+          let op = if mnem = "trn1" then Ir.Vtrn1 else Ir.Vtrn2 in
+          Some [ Ir.Vec_binop { op; elem = Ir.VInt; dst; src1 = s1; src2 = s2; bits; lane_bits } ]
+      | _ -> None)
+
+  (* Table lookup: tbl, tbx *)
+  | (("tbl" | "tbx"), [ op_dst; op_table; op_idx ]) -> (
+      match get_vec_info op_dst, get_vec_info op_table, get_vec_info op_idx with
+      | Some (dst, bits, _, _), Some (s_tbl, _, _, _), Some (s_idx, _, _, _) ->
+          let op = if mnem = "tbl" then Ir.Vtbl else Ir.Vtbx in
+          Some [ Ir.Vec_binop { op; elem = Ir.VInt; dst; src1 = s_tbl; src2 = s_idx; bits; lane_bits = 8 } ]
+      | _ -> None)
+
+  (* Vector extract: ext *)
+  | ("ext", [ op_dst; op_s1; op_s2; OpImm imm ]) -> (
+      match get_vec_info op_dst, get_vec_info op_s1, get_vec_info op_s2 with
+      | Some (dst, bits, _, _), Some (s1, _, _, _), Some (s2, _, _, _) ->
+          Some [ Ir.Vec_ext { dst; src1 = s1; src2 = s2; imm = Int64.to_int imm; bits } ]
+      | _ -> None)
+
   (* Vector loads: ld1, ldr (when vector target) *)
   | (("ld1" | "ldr"), [ op_dst; OpMem m ]) -> (
       match get_vec_info op_dst with
