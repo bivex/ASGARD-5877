@@ -89,7 +89,18 @@ let emit_cpp_threaded_header
     List.init num_domains (fun d ->
       let handlers =
         List.init 256 (fun i ->
-          Jg_types.Tstr opcode_to_handler.(i))
+          let h = opcode_to_handler.(i) in
+          let h =
+            if String.starts_with ~prefix:"H_DECOY_" h then
+              let base_idx =
+                try int_of_string (String.sub h 8 (String.length h - 8))
+                with _ -> 0
+              in
+              let diversified = (base_idx + (d * 7) + (i * 3)) mod 16 in
+              Printf.sprintf "H_DECOY_%d" diversified
+            else h
+          in
+          Jg_types.Tstr h)
       in
       Jg_types.Tobj [
         ("index", Jg_types.Tint d);

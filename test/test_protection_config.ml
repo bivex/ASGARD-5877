@@ -102,10 +102,55 @@ func_cfg_test:
       Alcotest.(check bool) "max_security DRS > lightweight DRS" true
         (Native_vm.Metrics.devirtualization_resistance_score pkg_max.metrics >= Native_vm.Metrics.devirtualization_resistance_score pkg.metrics)
 
+let test_junk_density_scaling () =
+  let rng = Random.State.make [| 1337 |] in
+  let instrs = [
+    Vm_ir.Ir.Mov { dst = Vm_ir.Ir.Reg Vm_ir.Register.rax; src = Vm_ir.Ir.Imm 10L };
+    Vm_ir.Ir.Alu { op = Vm_ir.Ir.Add; dst = Vm_ir.Register.rax; src1 = Vm_ir.Ir.Reg Vm_ir.Register.rax; src2 = Vm_ir.Ir.Imm 20L; set_flags = false };
+    Vm_ir.Ir.Alu { op = Vm_ir.Ir.Sub; dst = Vm_ir.Register.rax; src1 = Vm_ir.Ir.Reg Vm_ir.Register.rax; src2 = Vm_ir.Ir.Imm 5L; set_flags = false };
+    Vm_ir.Ir.Ret;
+  ] in
+  let zero_junk = Vm_transform.inject_junk_instructions ~density:0.0 ~rng instrs in
+  Alcotest.(check int) "zero density produces no junk" (List.length instrs) (List.length zero_junk);
+  let med_junk = Vm_transform.inject_junk_instructions ~density:0.5 ~rng instrs in
+  let heavy_junk = Vm_transform.inject_junk_instructions ~density:2.0 ~rng instrs in
+  Alcotest.(check bool) "heavy density produces more instructions than zero" true (List.length heavy_junk > List.length zero_junk);
+  Alcotest.(check bool) "heavy density produces >= medium density" true (List.length heavy_junk >= List.length med_junk)
+
+let test_presets_opaque_predicates () =
+  Alcotest.(check bool) "max_security has opaque predicates" true Protection_config.max_security.cff.inject_opaque_predicates;
+  Alcotest.(check bool) "high has opaque predicates" true Protection_config.high.cff.inject_opaque_predicates;
+  Alcotest.(check bool) "stealth has opaque predicates" true Protection_config.stealth.cff.inject_opaque_predicates;
+  Alcotest.(check bool) "default has opaque predicates disabled" false Protection_config.default.cff.inject_opaque_predicates;
+  Alcotest.(check bool) "lightweight has opaque predicates disabled" false Protection_config.lightweight.cff.inject_opaque_predicates;
+  Alcotest.(check bool) "minimal has opaque predicates disabled" false Protection_config.minimal.cff.inject_opaque_predicates
+
+let test_dispatch_domain_diversification () =
+  let rng = Random.State.make [| 2026 |] in
+  let asm = {|
+func_dom_test:
+    mov rax, 42
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let config = Protection_config.max_security in
+      let pkg = Vm_emitter.compile_and_package ~rng ~config func in
+      Alcotest.(check bool) "cpp_source contains dispatch domains" true
+        (Test_helpers.string_contains pkg.cpp_runtime_source "all_dispatch_domains");
+      Alcotest.(check bool) "cpp_source contains decoy handlers" true
+        (Test_helpers.string_contains pkg.cpp_runtime_source "H_DECOY_");
+      Alcotest.(check bool) "cpp_source contains compute_handlers_hash" true
+        (Test_helpers.string_contains pkg.cpp_runtime_source "compute_handlers_hash")
+
 let tests = [
   Alcotest.test_case "presets" `Quick test_presets;
   Alcotest.test_case "json_roundtrip" `Quick test_json_roundtrip;
   Alcotest.test_case "partial_json_parsing" `Quick test_partial_json_parsing;
   Alcotest.test_case "stack_vm_presets" `Quick test_stack_vm_presets;
   Alcotest.test_case "protection_with_config" `Quick test_protection_with_config;
+  Alcotest.test_case "junk_density_scaling" `Quick test_junk_density_scaling;
+  Alcotest.test_case "presets_opaque_predicates" `Quick test_presets_opaque_predicates;
+  Alcotest.test_case "dispatch_domain_diversification" `Quick test_dispatch_domain_diversification;
 ]

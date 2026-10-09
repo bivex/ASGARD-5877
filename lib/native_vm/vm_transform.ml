@@ -347,26 +347,40 @@ let generate_junk_instrs rng ~real_regs =
   | _ ->
       [ Ir.Alu { op = Ir.Or; dst = vdst; src1 = Ir.Reg vdst; src2 = Ir.Imm imm; set_flags = false } ]
 
-let inject_junk_instructions ~rng instrs =
-  let real_regs = extract_real_regs instrs in
-  let rec aux = function
-    | [] -> []
-    | [Ir.Ret] -> [Ir.Ret]
-    | [Ir.Vm_exit] -> [Ir.Vm_exit]
-    | (Ir.Cmp _ as cmp) :: (Ir.Cmov _ as cmov) :: rest ->
-        let junk = if Random.State.int rng 100 < 35 then generate_junk_instrs rng ~real_regs else [] in
-        cmp :: cmov :: (junk @ aux rest)
-    | (Ir.Cmp _ as cmp) :: (Ir.Jcc _ as jcc) :: rest ->
-        cmp :: jcc :: aux rest
-    | (Ir.Jmp _ as j) :: rest ->
-        j :: aux rest
-    | (Ir.Jcc _ as j) :: rest ->
-        j :: aux rest
-    | hd :: rest ->
-        let junk = if Random.State.int rng 100 < 35 then generate_junk_instrs rng ~real_regs else [] in
-        hd :: (junk @ aux rest)
-  in
-  aux instrs
+let inject_junk_instructions ?(density = 0.5) ~rng instrs =
+  if density <= 0.0 then instrs
+  else
+    let real_regs = extract_real_regs instrs in
+    let p_threshold = min 100 (int_of_float (density *. 70.0)) in
+    let extra_junk_count = max 0 (int_of_float (density -. 1.0)) in
+    let gen_junk () =
+      if Random.State.int rng 100 < p_threshold then
+        let base = generate_junk_instrs rng ~real_regs in
+        let extra =
+          List.init extra_junk_count (fun _ -> generate_junk_instrs rng ~real_regs)
+          |> List.concat
+        in
+        base @ extra
+      else []
+    in
+    let rec aux = function
+      | [] -> []
+      | [Ir.Ret] -> [Ir.Ret]
+      | [Ir.Vm_exit] -> [Ir.Vm_exit]
+      | (Ir.Cmp _ as cmp) :: (Ir.Cmov _ as cmov) :: rest ->
+          let junk = gen_junk () in
+          cmp :: cmov :: (junk @ aux rest)
+      | (Ir.Cmp _ as cmp) :: (Ir.Jcc _ as jcc) :: rest ->
+          cmp :: jcc :: aux rest
+      | (Ir.Jmp _ as j) :: rest ->
+          j :: aux rest
+      | (Ir.Jcc _ as j) :: rest ->
+          j :: aux rest
+      | hd :: rest ->
+          let junk = gen_junk () in
+          hd :: (junk @ aux rest)
+    in
+    aux instrs
 
 let is_commutative_alu_op = function
   | Ir.Add | Ir.Adc | Ir.Imul | Ir.Mul | Ir.Mulh | Ir.Imulh | Ir.Xor | Ir.And | Ir.Or -> true

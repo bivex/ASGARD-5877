@@ -61,6 +61,40 @@ func_cff_test:
         Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
         Alcotest.(check bool) "rax is 215" true (String.contains out_str '2' && String.contains out_str '1'))
 
+let test_threaded_vm_with_cff_and_opaque_predicates () =
+  let rng = Random.State.make [| 8888 |] in
+  let asm = {|
+func_cff_opaque:
+    mov rax, 15
+    cmp rax, 10
+    jge .Lge
+    add rax, 100
+    ret
+.Lge:
+    add rax, 200
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let config = {
+        Protection_config.default with
+        cff = {
+          enabled = true;
+          obfuscate_states = true;
+          inject_opaque_predicates = true;
+        };
+      } in
+      let pkg = Vm_emitter.compile_and_package ~rng ~config func in
+      Alcotest.(check bool) "flattening depth >= 3" true (Metrics.flattening_depth pkg.metrics >= 3);
+      with_temp_dir (fun tmp_dir ->
+        let bin_path = compile_and_prepare_vm tmp_dir pkg in
+        let bc_path = Filename.concat tmp_dir "code.vanguard" in
+        write_bytecode_bin bc_path pkg.bytecode;
+        let status, out_str = run_command_capture (Printf.sprintf "%s %s" bin_path bc_path) in
+        Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+        Alcotest.(check bool) "rax is 215" true (String.contains out_str '2' && String.contains out_str '1'))
+
 let test_super_operators_execution () =
   let rng = Random.State.make [| 9999 |] in
   let asm = {|
@@ -359,6 +393,7 @@ let test_indirect_jump_target_reg () =
 let tests = [
   Alcotest.test_case "threaded_vm_compilation_and_execution" `Slow test_threaded_vm_compilation_and_execution;
   Alcotest.test_case "threaded_vm_with_cff" `Slow test_threaded_vm_with_cff;
+  Alcotest.test_case "threaded_vm_with_cff_and_opaque_predicates" `Slow test_threaded_vm_with_cff_and_opaque_predicates;
   Alcotest.test_case "super_operators_execution" `Slow test_super_operators_execution;
   Alcotest.test_case "ephemeral_self_consuming_scrubbing" `Slow test_ephemeral_self_consuming_scrubbing;
   Alcotest.test_case "ephemeral_scrubbing_loop_and_stack" `Slow test_ephemeral_scrubbing_loop_and_stack;

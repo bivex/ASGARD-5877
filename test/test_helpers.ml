@@ -57,6 +57,19 @@ let run_command_capture cmd =
   let status = Unix.close_process_in ic in
   (status, Buffer.contents out_buf)
 
+let string_contains s sub =
+  let len_s = String.length s in
+  let len_sub = String.length sub in
+  if len_sub = 0 then true
+  else if len_s < len_sub then false
+  else
+    let found = ref false in
+    for i = 0 to len_s - len_sub do
+      if not !found && String.sub s i len_sub = sub then
+        found := true
+    done;
+    !found
+
 (* Compile a threaded-VM package's generated runtime + runner into an executable. *)
 let compile_and_prepare_vm tmp_dir (pkg : Native_vm.Vm_emitter.vm_package) =
   let hdr_path = Filename.concat tmp_dir "threaded_vm.hpp" in

@@ -47,6 +47,7 @@ val flatten_func :
 
 (** Injects an opaque predicate into a basic block, creating an invariant conditional branch. *)
 val inject_opaque_predicate :
+  ?next_block_id:int ->
   rng:Random.State.t ->
   trap_block_id:int ->
   Ir.basic_block ->

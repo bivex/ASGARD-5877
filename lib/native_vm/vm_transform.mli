@@ -141,7 +141,7 @@ type fused_op =
 
 val extract_real_regs : Ir.instr list -> Register.t list
 val generate_junk_instrs : Random.State.t -> real_regs:Register.t list -> Ir.instr list
-val inject_junk_instructions : rng:Random.State.t -> Ir.instr list -> Ir.instr list
+val inject_junk_instructions : ?density:float -> rng:Random.State.t -> Ir.instr list -> Ir.instr list
 val is_commutative_alu_op : Ir.alu_op -> bool
 val pick_scratch_reg : Register.t -> Register.t -> Register.t
 val canonicalize_instr : Ir.instr -> Ir.instr list

@@ -63,7 +63,7 @@ let max_security : t = {
   cff = {
     enabled = true;
     obfuscate_states = true;
-    inject_opaque_predicates = false;
+    inject_opaque_predicates = true;
   };
   mba = {
     enabled = true;
@@ -189,7 +189,7 @@ let stealth : t = {
   cff = {
     enabled = true;
     obfuscate_states = true;
-    inject_opaque_predicates = false;
+    inject_opaque_predicates = true;
   };
   mba = {
     enabled = true;
@@ -315,7 +315,7 @@ let high : t = {
   cff = {
     enabled = true;
     obfuscate_states = true;
-    inject_opaque_predicates = false;
+    inject_opaque_predicates = true;
   };
   mba = {
     enabled = true;

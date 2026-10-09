@@ -71,6 +71,18 @@ let compile_and_package_multi
     | None -> true
   in
 
+  let junk_density =
+    match config with
+    | Some (c : Protection_config.t) -> (
+        let d = c.bloat.junk_density in
+        match c.bloat.target_size_budget_kb with
+        | Some budget_kb when budget_kb < 200 -> min d 0.1
+        | Some budget_kb when budget_kb < 500 -> min d 0.5
+        | _ -> d
+      )
+    | None -> 0.5
+  in
+
   let gpu_mba_pool =
     if enable_mba then
       let mba_seed = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
@@ -186,7 +198,7 @@ let compile_and_package_multi
           else b.instrs
         in
         let instrs = canonicalize_3addr_alu instrs in
-        let instrs = if enable_junk then inject_junk_instructions ~rng:brng instrs else instrs in
+        let instrs = if enable_junk then inject_junk_instructions ~density:junk_density ~rng:brng instrs else instrs in
         let fused  = if enable_super_ops then fuse_block_instructions instrs
                      else List.map (fun i -> Raw i) instrs in
         results.(i) <- (b.id, fused))

@@ -10,9 +10,14 @@ let default_cff_options = {
   obfuscate_states = true;
 }
 
-let inject_opaque_predicate ~rng ~trap_block_id (b : Ir.basic_block) =
+let inject_opaque_predicate ?next_block_id ~rng ~trap_block_id (b : Ir.basic_block) =
   let _ = rng in
-  (* Invariant: x & 1 and (x + 1) & 1: one is always 0, so x * (x + 1) is always even *)
+  let target_next =
+    match next_block_id with
+    | Some id -> Ir.BlockId id
+    | None -> (if b.label <> "" then Ir.Label b.label else Ir.BlockId b.id)
+  in
+  (* Invariant: (x & (x + 1)) & 1 is always 0 because x and x+1 have opposite parities *)
   let opaque_check = [
     Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
     Ir.Alu { op = Ir.Add; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = false };
@@ -20,7 +25,7 @@ let inject_opaque_predicate ~rng ~trap_block_id (b : Ir.basic_block) =
     Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = true };
     Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
     (* If not equal to 0 (which is mathematically impossible), jump to trap *)
-    Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = Ir.Label b.label };
+    Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
   ] in
   { b with instrs = opaque_check @ b.instrs }
 
@@ -252,8 +257,9 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     done;
 
     (* Transform each original block: redirect control flow back to disp_base_id *)
+    let next_fresh_id = ref (disp_base_id + n) in
     let transformed_blocks =
-      List.map
+      List.concat_map
         (fun (b : Ir.basic_block) ->
           let rev_instrs = List.rev b.instrs in
           let new_instrs =
@@ -295,10 +301,17 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                 | other ->
                     body @ [ other; Ir.Jmp (Ir.BlockId disp_base_id) ])
           in
-          let res_block = { b with instrs = new_instrs } in
           if options.inject_opaque_predicates && b.id <> func.cfg.entry_id then
-            inject_opaque_predicate ~rng ~trap_block_id res_block
-          else res_block)
+            let body_id = !next_fresh_id in
+            incr next_fresh_id;
+            let pred_block =
+              inject_opaque_predicate ~next_block_id:body_id ~rng ~trap_block_id
+                { b with instrs = [] }
+            in
+            let body_block = Ir.make_block ~id:body_id ~label:(b.label ^ "_body") ~instrs:new_instrs in
+            [ pred_block; body_block ]
+          else
+            [ { b with instrs = new_instrs } ])
         sorted_orig
     in
 
