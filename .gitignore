@@ -30,3 +30,4 @@ __pycache__/
 *.profdata
 protected_*/
 profile_results.json
+*.zip
