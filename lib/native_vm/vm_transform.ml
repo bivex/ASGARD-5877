@@ -48,10 +48,15 @@ type raw_op_kind =
   | OP_OR_RR
   | OP_OR_RI
   | OP_ROL_RI
+  | OP_ROL_RR
   | OP_ROR_RI
+  | OP_ROR_RR
   | OP_SHL_RI
+  | OP_SHL_RR
   | OP_SHR_RI
+  | OP_SHR_RR
   | OP_SAR_RI
+  | OP_SAR_RR
   | OP_DIV_RR
   | OP_IDIV_RR
   | OP_CMP_RR
@@ -142,8 +147,8 @@ type raw_op_kind =
 let all_op_kinds = [
   OP_NOP; OP_MOV_RR; OP_MOV_RI; OP_MOV_HIGH; OP_ADD_RR; OP_ADD_RI;
   OP_SUB_RR; OP_SUB_RI; OP_IMUL_RR; OP_IMUL_RI; OP_XOR_RR; OP_XOR_RI;
-  OP_AND_RR; OP_AND_RI; OP_OR_RR; OP_OR_RI; OP_ROL_RI; OP_ROR_RI; OP_SHL_RI; OP_SHR_RI;
-  OP_SAR_RI; OP_DIV_RR; OP_IDIV_RR;
+  OP_AND_RR; OP_AND_RI; OP_OR_RR; OP_OR_RI; OP_ROL_RI; OP_ROL_RR; OP_ROR_RI; OP_ROR_RR; OP_SHL_RI; OP_SHL_RR; OP_SHR_RI; OP_SHR_RR;
+  OP_SAR_RI; OP_SAR_RR; OP_DIV_RR; OP_IDIV_RR;
   OP_NEG_RR; OP_NOT_RR;
   OP_CMP_RR; OP_CMP_RI; OP_PUSH_R;
   OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_SETCC; OP_CALL; OP_IJMP_R; OP_ICALL_R; OP_RET; OP_EXIT;
@@ -189,10 +194,15 @@ let op_kind_to_handler_name = function
   | OP_OR_RR -> "H_OR_RR"
   | OP_OR_RI -> "H_OR_RI"
   | OP_ROL_RI -> "H_ROL_RI"
+  | OP_ROL_RR -> "H_ROL_RR"
   | OP_ROR_RI -> "H_ROR_RI"
+  | OP_ROR_RR -> "H_ROR_RR"
   | OP_SHL_RI -> "H_SHL_RI"
+  | OP_SHL_RR -> "H_SHL_RR"
   | OP_SHR_RI -> "H_SHR_RI"
+  | OP_SHR_RR -> "H_SHR_RR"
   | OP_SAR_RI -> "H_SAR_RI"
+  | OP_SAR_RR -> "H_SAR_RR"
   | OP_DIV_RR -> "H_DIV_RR"
   | OP_IDIV_RR -> "H_IDIV_RR"
   | OP_CMP_RR -> "H_CMP_RR"

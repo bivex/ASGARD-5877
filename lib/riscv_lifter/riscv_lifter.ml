@@ -10,18 +10,29 @@ let default_options = {
   function_name = "riscv_lifted_func";
 }
 
+let is_vzero = function
+  | Register.Vreg (Register.VZERO, _) -> true
+  | _ -> false
+
 let raw_to_ir_operand = function
+  | OpReg r when is_vzero r -> Ir.Imm 0L
   | OpReg r -> Ir.Reg r
   | OpImm i -> Ir.Imm i
   | OpMem m -> Ir.Mem { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = m.is_signed; segment = None }
   | OpLabel _ -> Ir.Imm 0L
 
+let target_of_op = function
+  | OpLabel lbl -> Ir.Label lbl
+  | OpImm imm -> Ir.TargetImm imm
+  | _ -> Ir.TargetImm 0L
+
 let emit_3addr_alu ~op ~dst ~src1 ~src2 ~set_flags =
-  if Register.to_string dst = Register.to_string src1 then
-    [ Ir.Alu { op; dst; src1 = Reg src1; src2 = raw_to_ir_operand src2; set_flags } ]
+  if is_vzero dst then [ Ir.Nop ]
+  else if Register.to_string dst = Register.to_string src1 then
+    [ Ir.Alu { op; dst; src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2; set_flags } ]
   else
     [
-      Ir.Mov { dst = Reg dst; src = Reg src1 };
+      Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src1) };
       Ir.Alu { op; dst; src1 = Reg dst; src2 = raw_to_ir_operand src2; set_flags };
     ]
 
@@ -45,83 +56,136 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
 
   (* Moves, Immediates, Load Address *)
   | ("mv", [ OpReg dst; OpReg src ]) ->
-      Ok [ Ir.Mov { dst = Reg dst; src = Reg src } ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src) } ]
   | ("li", [ OpReg dst; OpImm imm ]) ->
-      Ok [ Ir.Mov { dst = Reg dst; src = Imm imm } ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else Ok [ Ir.Mov { dst = Reg dst; src = Imm imm } ]
   | ("lui", [ OpReg dst; OpImm imm ]) ->
-      let shifted = Int64.shift_left (Int64.logand imm 0xFFFFFL) 12 in
-      Ok [ Ir.Mov { dst = Reg dst; src = Imm shifted } ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let shifted = Int64.shift_left (Int64.logand imm 0xFFFFFL) 12 in
+        Ok [ Ir.Mov { dst = Reg dst; src = Imm shifted } ]
   | ("lui", [ OpReg dst; OpLabel sym ]) ->
-      Ok [ Ir.Load_symbol { dst; sym; addend = 0L } ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else Ok [ Ir.Load_symbol { dst; sym; addend = 0L } ]
   | (("la" | "lla"), [ OpReg dst; OpLabel sym ]) ->
-      Ok [ Ir.Load_symbol { dst; sym; addend = 0L } ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else Ok [ Ir.Load_symbol { dst; sym; addend = 0L } ]
   | ("auipc", [ OpReg dst; OpImm imm ]) ->
-      let shifted = Int64.shift_left (Int64.logand imm 0xFFFFFL) 12 in
-      Ok [ Ir.Load_symbol { dst; sym = "."; addend = shifted } ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let shifted = Int64.shift_left (Int64.logand imm 0xFFFFFL) 12 in
+        Ok [ Ir.Load_symbol { dst; sym = "."; addend = shifted } ]
   | ("auipc", [ OpReg dst; OpLabel sym ]) ->
-      Ok [ Ir.Load_symbol { dst; sym; addend = 0L } ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else Ok [ Ir.Load_symbol { dst; sym; addend = 0L } ]
   | ("neg", [ OpReg dst; OpReg src ]) ->
-      Ok [
-        Ir.Mov { dst = Reg dst; src = Reg src };
-        Ir.Unary { op = Neg; dst; src = Reg dst; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src) };
+          Ir.Unary { op = Neg; dst; src = Reg dst; set_flags = false };
+        ]
   | ("not", [ OpReg dst; OpReg src ]) ->
-      Ok [
-        Ir.Mov { dst = Reg dst; src = Reg src };
-        Ir.Unary { op = Not; dst; src = Reg dst; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src) };
+          Ir.Unary { op = Not; dst; src = Reg dst; set_flags = false };
+        ]
 
-  (* 64-bit / 32-bit ALU: Add / Sub *)
-  | (("add" | "addi" | "addw" | "addiw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  (* 64-bit ALU: Add / Sub *)
+  | (("add" | "addi"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Add ~dst ~src1 ~src2 ~set_flags:false)
-  | (("add" | "addi" | "addw" | "addiw"), [ OpReg dst; OpReg src1; OpLabel sym ]) ->
-      Ok [
-        Ir.Mov { dst = Reg dst; src = Reg src1 };
-        Ir.Load_symbol { dst; sym; addend = 0L };
-      ]
-  | (("sub" | "subw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | (("add" | "addi"), [ OpReg dst; OpReg src1; OpLabel sym ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Load_symbol { dst; sym; addend = 0L };
+        ]
+  | ("sub", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Sub ~dst ~src1 ~src2 ~set_flags:false)
 
+  (* 32-bit ALU (RV64): Addw, Addiw, Subw, Mulw *)
+  | (("addw" | "addiw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let d_b64 = Register.with_width dst Register.B64 in
+        let instrs = emit_3addr_alu ~op:Add ~dst:d_b64 ~src1 ~src2 ~set_flags:false in
+        Ok (instrs @ [
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+        ])
+  | ("subw", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let d_b64 = Register.with_width dst Register.B64 in
+        let instrs = emit_3addr_alu ~op:Sub ~dst:d_b64 ~src1 ~src2 ~set_flags:false in
+        Ok (instrs @ [
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+        ])
+
   (* M-extension: Mul / Div / Rem *)
-  | (("mul" | "mulw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | ("mul", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Mul ~dst ~src1 ~src2 ~set_flags:false)
+  | ("mulw", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let d_b64 = Register.with_width dst Register.B64 in
+        let instrs = emit_3addr_alu ~op:Mul ~dst:d_b64 ~src1 ~src2 ~set_flags:false in
+        Ok (instrs @ [
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+        ])
   | (("mulh" | "mulhw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Imulh ~dst ~src1 ~src2 ~set_flags:false)
   | (("mulhu" | "mulhuw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Mulh ~dst ~src1 ~src2 ~set_flags:false)
   | ("mulhsu", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      let ir_s2 = raw_to_ir_operand src2 in
-      Ok [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = Mulh; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = ir_s2; set_flags = false };
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src1 };
-        Ir.Alu { op = Sar; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 63L; set_flags = false };
-        Ir.Mov { dst = Reg Register.vtmp2; src = ir_s2 };
-        Ir.Alu { op = And; dst = Register.vtmp2; src1 = Reg Register.vtmp2; src2 = Reg Register.vtmp1; set_flags = false };
-        Ir.Mov { dst = Reg dst; src = Reg Register.vtmp0 };
-        Ir.Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg Register.vtmp2; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let ir_s2 = raw_to_ir_operand src2 in
+        Ok [
+          Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = Mulh; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = ir_s2; set_flags = false };
+          Ir.Mov { dst = Reg Register.vtmp1; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = Sar; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 63L; set_flags = false };
+          Ir.Mov { dst = Reg Register.vtmp2; src = ir_s2 };
+          Ir.Alu { op = And; dst = Register.vtmp2; src1 = Reg Register.vtmp2; src2 = Reg Register.vtmp1; set_flags = false };
+          Ir.Mov { dst = Reg dst; src = Reg Register.vtmp0 };
+          Ir.Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg Register.vtmp2; set_flags = false };
+        ]
   | (("div" | "divw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Idiv ~dst ~src1 ~src2 ~set_flags:false)
   | (("divu" | "divuw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Div ~dst ~src1 ~src2 ~set_flags:false)
   | (("rem" | "remw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      (* rem = dividend - quotient * divisor *)
-      Ok [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = Idiv; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = raw_to_ir_operand src2; set_flags = false };
-        Ir.Alu { op = Mul; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = raw_to_ir_operand src2; set_flags = false };
-        Ir.Mov { dst = Reg dst; src = Reg src1 };
-        Ir.Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let ir_s1 = raw_to_ir_operand (OpReg src1) in
+        let ir_s2 = raw_to_ir_operand src2 in
+        Ok [
+          Ir.Mov { dst = Reg Register.vtmp0; src = ir_s1 };
+          Ir.Alu { op = Idiv; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = ir_s2; set_flags = false };
+          Ir.Alu { op = Mul; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = ir_s2; set_flags = false };
+          Ir.Mov { dst = Reg dst; src = ir_s1 };
+          Ir.Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+        ]
   | (("remu" | "remuw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      Ok [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = Div; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = raw_to_ir_operand src2; set_flags = false };
-        Ir.Alu { op = Mul; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = raw_to_ir_operand src2; set_flags = false };
-        Ir.Mov { dst = Reg dst; src = Reg src1 };
-        Ir.Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let ir_s1 = raw_to_ir_operand (OpReg src1) in
+        let ir_s2 = raw_to_ir_operand src2 in
+        Ok [
+          Ir.Mov { dst = Reg Register.vtmp0; src = ir_s1 };
+          Ir.Alu { op = Div; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = ir_s2; set_flags = false };
+          Ir.Alu { op = Mul; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = ir_s2; set_flags = false };
+          Ir.Mov { dst = Reg dst; src = ir_s1 };
+          Ir.Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+        ]
 
   (* Logic *)
   | (("and" | "andi"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
@@ -131,135 +195,246 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   | (("xor" | "xori"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Xor ~dst ~src1 ~src2 ~set_flags:false)
   | ("andn", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      Ok [
-        Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand src2 };
-        Ir.Unary { op = Not; dst = Register.vtmp0; src = Reg Register.vtmp0; set_flags = false };
-        Ir.Mov { dst = Reg dst; src = Reg src1 };
-        Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand src2 };
+          Ir.Unary { op = Not; dst = Register.vtmp0; src = Reg Register.vtmp0; set_flags = false };
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+        ]
   | ("orn", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      Ok [
-        Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand src2 };
-        Ir.Unary { op = Not; dst = Register.vtmp0; src = Reg Register.vtmp0; set_flags = false };
-        Ir.Mov { dst = Reg dst; src = Reg src1 };
-        Ir.Alu { op = Or; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand src2 };
+          Ir.Unary { op = Not; dst = Register.vtmp0; src = Reg Register.vtmp0; set_flags = false };
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = Or; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+        ]
   | ("xnor", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      Ok [
-        Ir.Mov { dst = Reg dst; src = Reg src1 };
-        Ir.Alu { op = Xor; dst; src1 = Reg dst; src2 = raw_to_ir_operand src2; set_flags = false };
-        Ir.Unary { op = Not; dst; src = Reg dst; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = Xor; dst; src1 = Reg dst; src2 = raw_to_ir_operand src2; set_flags = false };
+          Ir.Unary { op = Not; dst; src = Reg dst; set_flags = false };
+        ]
 
   (* Shifts & Rotates *)
-  | (("sll" | "slli" | "sllw" | "slliw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | (("sll" | "slli"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Shl ~dst ~src1 ~src2 ~set_flags:false)
-  | (("srl" | "srli" | "srlw" | "srliw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | (("srl" | "srli"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Shr ~dst ~src1 ~src2 ~set_flags:false)
-  | (("sra" | "srai" | "sraw" | "sraiw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+  | (("sra" | "srai"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Sar ~dst ~src1 ~src2 ~set_flags:false)
   | (("rol" | "rolw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Rol ~dst ~src1 ~src2 ~set_flags:false)
   | (("ror" | "rori" | "rorw" | "roriw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       Ok (emit_3addr_alu ~op:Ror ~dst ~src1 ~src2 ~set_flags:false)
 
-  (* Set Less Than *)
+  (* 32-bit Shifts (RV64) *)
+  | (("sllw" | "slliw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let d_b64 = Register.with_width dst Register.B64 in
+        let instrs = emit_3addr_alu ~op:Shl ~dst:d_b64 ~src1 ~src2 ~set_flags:false in
+        Ok (instrs @ [
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+        ])
+  | (("srlw" | "srliw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let d_b64 = Register.with_width dst Register.B64 in
+        let tmp = Register.vtmp0 in
+        let s2_ir = raw_to_ir_operand src2 in
+        Ok [
+          Ir.Mov { dst = Reg tmp; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          Ir.Alu { op = Shr; dst = tmp; src1 = Reg tmp; src2 = s2_ir; set_flags = false };
+          Ir.Mov { dst = Reg d_b64; src = Reg tmp };
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+        ]
+  | (("sraw" | "sraiw"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let d_b64 = Register.with_width dst Register.B64 in
+        let s2_ir = raw_to_ir_operand src2 in
+        Ok [
+          Ir.Mov { dst = Reg d_b64; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = s2_ir; set_flags = false };
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+        ]
+
+  (* Set Less Than & Set Conditions *)
   | (("slt" | "slti"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 };
-        Ir.Setcc { cond = L; dst = Reg dst };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+          Ir.Setcc { cond = L; dst = Reg dst };
+        ]
   | (("sltu" | "sltui"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 };
-        Ir.Setcc { cond = B; dst = Reg dst };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+          Ir.Setcc { cond = B; dst = Reg dst };
+        ]
+  | (("sgt" | "sgti"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+          Ir.Setcc { cond = G; dst = Reg dst };
+        ]
+  | (("sgtu" | "sgtui"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+          Ir.Setcc { cond = A; dst = Reg dst };
+        ]
+  | ("seqz", [ OpReg dst; OpReg src ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+          Ir.Setcc { cond = E; dst = Reg dst };
+        ]
+  | ("snez", [ OpReg dst; OpReg src ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+          Ir.Setcc { cond = NE; dst = Reg dst };
+        ]
+  | ("sltz", [ OpReg dst; OpReg src ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+          Ir.Setcc { cond = L; dst = Reg dst };
+        ]
+  | ("sgtz", [ OpReg dst; OpReg src ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+          Ir.Setcc { cond = G; dst = Reg dst };
+        ]
 
   (* Memory: Loads *)
   | (("ld" | "lw" | "lwu" | "lh" | "lhu" | "lb" | "lbu"), [ OpReg dst; OpMem m ]) ->
-      Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]
   | (("fld" | "flw"), [ OpReg dst; OpMem m ]) ->
       Ok [ Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpMem m) } ]
 
   (* Memory: Stores *)
   | (("sd" | "sw" | "sh" | "sb"), [ OpReg src; OpMem m ]) ->
-      Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = Reg src } ]
+      Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = raw_to_ir_operand (OpReg src) } ]
   | (("fsd" | "fsw"), [ OpReg src; OpMem m ]) ->
       Ok [ Ir.Mov { dst = raw_to_ir_operand (OpMem m); src = Reg src } ]
 
   (* Branches *)
-  | ("beq", [ OpReg src1; ((OpReg _ | OpImm _) as src2); OpLabel target ]) ->
+  | ("beq", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 };
-        Ir.Jcc { cond = E; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = E; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bne", [ OpReg src1; ((OpReg _ | OpImm _) as src2); OpLabel target ]) ->
+  | ("bne", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 };
-        Ir.Jcc { cond = NE; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = NE; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("blt", [ OpReg src1; ((OpReg _ | OpImm _) as src2); OpLabel target ]) ->
+  | ("blt", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 };
-        Ir.Jcc { cond = L; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = L; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bge", [ OpReg src1; ((OpReg _ | OpImm _) as src2); OpLabel target ]) ->
+  | ("bge", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 };
-        Ir.Jcc { cond = GE; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = GE; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bltu", [ OpReg src1; ((OpReg _ | OpImm _) as src2); OpLabel target ]) ->
+  | ("bltu", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 };
-        Ir.Jcc { cond = B; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = B; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bgeu", [ OpReg src1; ((OpReg _ | OpImm _) as src2); OpLabel target ]) ->
+  | ("bgeu", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 };
-        Ir.Jcc { cond = AE; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = AE; target_true = target_of_op target; target_false = TargetImm 0L };
+      ]
+  | ("bgt", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = G; target_true = target_of_op target; target_false = TargetImm 0L };
+      ]
+  | ("ble", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = LE; target_true = target_of_op target; target_false = TargetImm 0L };
+      ]
+  | ("bgtu", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = A; target_true = target_of_op target; target_false = TargetImm 0L };
+      ]
+  | ("bleu", [ OpReg src1; ((OpReg _ | OpImm _) as src2); ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = raw_to_ir_operand src2 };
+        Ir.Jcc { cond = BE; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
 
   (* Pseudo branches *)
-  | ("beqz", [ OpReg src; OpLabel target ]) ->
+  | ("beqz", [ OpReg src; ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src; src2 = Imm 0L };
-        Ir.Jcc { cond = E; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+        Ir.Jcc { cond = E; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bnez", [ OpReg src; OpLabel target ]) ->
+  | ("bnez", [ OpReg src; ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src; src2 = Imm 0L };
-        Ir.Jcc { cond = NE; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+        Ir.Jcc { cond = NE; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("blez", [ OpReg src; OpLabel target ]) ->
+  | ("blez", [ OpReg src; ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src; src2 = Imm 0L };
-        Ir.Jcc { cond = LE; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+        Ir.Jcc { cond = LE; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bgez", [ OpReg src; OpLabel target ]) ->
+  | ("bgez", [ OpReg src; ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src; src2 = Imm 0L };
-        Ir.Jcc { cond = GE; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+        Ir.Jcc { cond = GE; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bltz", [ OpReg src; OpLabel target ]) ->
+  | ("bltz", [ OpReg src; ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src; src2 = Imm 0L };
-        Ir.Jcc { cond = L; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+        Ir.Jcc { cond = L; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
-  | ("bgtz", [ OpReg src; OpLabel target ]) ->
+  | ("bgtz", [ OpReg src; ((OpLabel _ | OpImm _) as target) ]) ->
       Ok [
-        Ir.Cmp { src1 = Reg src; src2 = Imm 0L };
-        Ir.Jcc { cond = G; target_true = Label target; target_false = TargetImm 0L };
+        Ir.Cmp { src1 = raw_to_ir_operand (OpReg src); src2 = Imm 0L };
+        Ir.Jcc { cond = G; target_true = target_of_op target; target_false = TargetImm 0L };
       ]
 
   (* Jumps & Calls & Returns *)
-  | ("j", [ OpLabel target ]) ->
-      Ok [ Ir.Jmp (Label target) ]
-  | ("jal", [ OpLabel target ]) ->
-      Ok [ Ir.Call (Label target) ]
-  | ("jal", [ OpReg (Register.Vreg (Register.VZERO, _)); OpLabel target ]) ->
-      Ok [ Ir.Jmp (Label target) ]
-  | ("jal", [ OpReg _; OpLabel target ]) ->
-      Ok [ Ir.Call (Label target) ]
+  | (("j" | "b"), [ ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [ Ir.Jmp (target_of_op target) ]
+  | ("jal", [ ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [ Ir.Call (target_of_op target) ]
+  | ("jal", [ OpReg r; ((OpLabel _ | OpImm _) as target) ]) when is_vzero r ->
+      Ok [ Ir.Jmp (target_of_op target) ]
+  | ("jal", [ OpReg _; ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [ Ir.Call (target_of_op target) ]
   | ("ret", []) ->
       Ok [ Ir.Ret ]
   | ("jr", [ OpReg (Register.Vreg (Register.VTMP3, _)) ]) ->
@@ -271,16 +446,26 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       | Some (Register.Vreg (Register.VTMP3, _)) -> Ok [ Ir.Ret ]
       | Some base_reg -> Ok [ Ir.Jmp (TargetReg base_reg) ]
       | _ -> Ok [ Ir.Jmp (TargetImm 0L) ])
+  | ("jalr", [ OpReg (Register.Vreg (Register.VZERO, _)); OpMem m ]) -> (
+      match m.base with
+      | Some base_reg when m.disp = 0L -> Ok [ Ir.Jmp (TargetReg base_reg) ]
+      | Some base_reg ->
+          Ok [
+            Ir.Mov { dst = Reg Register.vtmp0; src = Reg base_reg };
+            Ir.Alu { op = Add; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm m.disp; set_flags = false };
+            Ir.Jmp (TargetReg Register.vtmp0);
+          ]
+      | None -> Ok [ Ir.Jmp (TargetImm m.disp) ])
   | ("jalr", [ OpReg _; OpMem m ]) -> (
       match m.base with
       | Some base_reg -> Ok [ Ir.Call (TargetReg base_reg) ]
       | None -> Ok [ Ir.Call (TargetImm 0L) ])
   | ("jalr", [ OpReg r ]) ->
       Ok [ Ir.Call (TargetReg r) ]
-  | ("call", [ OpLabel target ]) ->
-      Ok [ Ir.Call (Label target) ]
-  | ("tail", [ OpLabel target ]) ->
-      Ok [ Ir.Jmp (Label target) ]
+  | ("call", [ ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [ Ir.Call (target_of_op target) ]
+  | ("tail", [ ((OpLabel _ | OpImm _) as target) ]) ->
+      Ok [ Ir.Jmp (target_of_op target) ]
 
   (* A-extension: Atomics *)
   | (("lr.w" | "lr.d"), [ OpReg dst; OpMem m ]) ->
@@ -434,7 +619,7 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   | (("fsgnjx.s" | "fsgnjx.d"), [ OpReg dst; OpReg src; _ ]) ->
       Ok [ Ir.Mov { dst = Reg dst; src = Reg src } ]
   | (("feq.s" | "feq.d" | "flt.s" | "flt.d" | "fle.s" | "fle.d"), [ OpReg dst; OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      let cond = match mnemonic with
+      let cond = match norm_mnem with
         | "feq.s" | "feq.d" -> E
         | "flt.s" | "flt.d" -> B
         | _ -> BE
@@ -502,61 +687,99 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
   | ("orc.b", [ OpReg dst; OpReg src ]) ->
       Ok [ Ir.Unary { op = Ir.Not; dst; src = Reg src; set_flags = false } ]
   | ("sext.b", [ OpReg dst; OpReg src ]) ->
-      let s_b8 = Register.with_width src Register.B8 in
-      let d_b64 = Register.with_width dst Register.B64 in
-      Ok [
-        Ir.Mov { dst = Reg d_b64; src = Reg s_b8 };
-        Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 56L; set_flags = false };
-        Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 56L; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let s_b8 = Register.with_width src Register.B8 in
+        let d_b64 = Register.with_width dst Register.B64 in
+        Ok [
+          Ir.Mov { dst = Reg d_b64; src = raw_to_ir_operand (OpReg s_b8) };
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 56L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 56L; set_flags = false };
+        ]
   | ("sext.h", [ OpReg dst; OpReg src ]) ->
-      let s_b16 = Register.with_width src Register.B16 in
-      let d_b64 = Register.with_width dst Register.B64 in
-      Ok [
-        Ir.Mov { dst = Reg d_b64; src = Reg s_b16 };
-        Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 48L; set_flags = false };
-        Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 48L; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let s_b16 = Register.with_width src Register.B16 in
+        let d_b64 = Register.with_width dst Register.B64 in
+        Ok [
+          Ir.Mov { dst = Reg d_b64; src = raw_to_ir_operand (OpReg s_b16) };
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 48L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 48L; set_flags = false };
+        ]
+  | ("sext.w", [ OpReg dst; OpReg src ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let d_b64 = Register.with_width dst Register.B64 in
+        Ok [
+          Ir.Mov { dst = Reg d_b64; src = raw_to_ir_operand (OpReg src) };
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+        ]
+  | ("zext.b", [ OpReg dst; OpReg src ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src) };
+          Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm 0xFFL; set_flags = false };
+        ]
   | ("zext.h", [ OpReg dst; OpReg src ]) ->
-      Ok [
-        Ir.Mov { dst = Reg dst; src = Reg src };
-        Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm 0xFFFFL; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src) };
+          Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm 0xFFFFL; set_flags = false };
+        ]
+  | ("zext.w", [ OpReg dst; OpReg src ]) ->
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let d_b64 = Register.with_width dst Register.B64 in
+        Ok [
+          Ir.Mov { dst = Reg d_b64; src = raw_to_ir_operand (OpReg src) };
+          Ir.Alu { op = And; dst = d_b64; src1 = Reg d_b64; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+        ]
   | (("min" | "max" | "minu" | "maxu"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
-      let cond = match mnemonic with
-        | "min"  -> Flags.L
-        | "max"  -> Flags.G
-        | "minu" -> Flags.B
-        | "maxu" -> Flags.A
-        | _ -> assert false
-      in
-      let ir_s2 = raw_to_ir_operand src2 in
-      Ok [
-        Ir.Cmp { src1 = Reg src1; src2 = ir_s2 };
-        Ir.Mov { dst = Reg dst; src = ir_s2 };
-        Ir.Cmov { cond; dst; src = Reg src1 };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        let cond = match norm_mnem with
+          | "min"  -> Flags.L
+          | "max"  -> Flags.G
+          | "minu" -> Flags.B
+          | "maxu" -> Flags.A
+          | _ -> assert false
+        in
+        let ir_s2 = raw_to_ir_operand src2 in
+        Ok [
+          Ir.Cmp { src1 = raw_to_ir_operand (OpReg src1); src2 = ir_s2 };
+          Ir.Mov { dst = Reg dst; src = ir_s2 };
+          Ir.Cmov { cond; dst; src = raw_to_ir_operand (OpReg src1) };
+        ]
   | (("sh1add" | "sh1adduw"), [ OpReg dst; OpReg src1; OpReg src2 ]) ->
-      Ok [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 1L; set_flags = false };
-        Ir.Mov { dst = Reg dst; src = Reg src2 };
-        Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 1L; set_flags = false };
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src2) };
+          Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+        ]
   | (("sh2add" | "sh2adduw"), [ OpReg dst; OpReg src1; OpReg src2 ]) ->
-      Ok [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 2L; set_flags = false };
-        Ir.Mov { dst = Reg dst; src = Reg src2 };
-        Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 2L; set_flags = false };
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src2) };
+          Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+        ]
   | (("sh3add" | "sh3adduw"), [ OpReg dst; OpReg src1; OpReg src2 ]) ->
-      Ok [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 3L; set_flags = false };
-        Ir.Mov { dst = Reg dst; src = Reg src2 };
-        Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
-      ]
+      if is_vzero dst then Ok [ Ir.Nop ]
+      else
+        Ok [
+          Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand (OpReg src1) };
+          Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 3L; set_flags = false };
+          Ir.Mov { dst = Reg dst; src = raw_to_ir_operand (OpReg src2) };
+          Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
+        ]
 
   (* V-extension: RVV Vector Operations via Riscv_vector module *)
   | _ when (match Riscv_vector.lift_vector mnemonic ops with Some _ -> true | None -> false) -> (
@@ -625,9 +848,19 @@ let lift_lines ?(options = default_options) (lines : raw_line list) : (Ir.func, 
       List.iter (fun (b : Ir.basic_block) -> Hashtbl.replace label_map b.label b.id) bb_list;
 
       let bb_list = List.map Subreg_write.expand_block bb_list in
+      let max_id = List.fold_left (fun acc (b : Ir.basic_block) -> max acc b.id) 0 bb_list in
+      let exit_id = max_id + 1 in
+      let has_fallthrough_to_exit = ref false in
 
       let patched_blocks = List.mapi (fun idx (b : Ir.basic_block) ->
-        let fallthrough_id = if idx + 1 < List.length bb_list then (List.nth bb_list (idx + 1)).id else 0 in
+        let fallthrough_id =
+          if idx + 1 < List.length bb_list then
+            (List.nth bb_list (idx + 1)).id
+          else (
+            has_fallthrough_to_exit := true;
+            exit_id
+          )
+        in
         let patch_target = function
           | Ir.Label l ->
               (match Hashtbl.find_opt label_map l with
@@ -654,9 +887,21 @@ let lift_lines ?(options = default_options) (lines : raw_line list) : (Ir.func, 
         { b with instrs = final_instrs }
       ) bb_list in
 
-      let cfg_blocks = Hashtbl.create (List.length patched_blocks) in
-      List.iter (fun (b : Ir.basic_block) -> Hashtbl.replace cfg_blocks b.id b) patched_blocks;
-      let entry_id = match patched_blocks with hd :: _ -> hd.id | [] -> 0 in
+      let all_blocks =
+        if !has_fallthrough_to_exit then
+          let exit_bb : Ir.basic_block = {
+            id = exit_id;
+            label = "l_exit";
+            instrs = [ Ir.Ret ];
+          } in
+          patched_blocks @ [ exit_bb ]
+        else
+          patched_blocks
+      in
+
+      let cfg_blocks = Hashtbl.create (List.length all_blocks) in
+      List.iter (fun (b : Ir.basic_block) -> Hashtbl.replace cfg_blocks b.id b) all_blocks;
+      let entry_id = match all_blocks with hd :: _ -> hd.id | [] -> 0 in
       Ok {
         Ir.name = options.function_name;
         cfg = { entry_id; blocks = cfg_blocks };

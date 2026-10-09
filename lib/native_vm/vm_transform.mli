@@ -25,10 +25,15 @@ type raw_op_kind =
   | OP_OR_RR
   | OP_OR_RI
   | OP_ROL_RI
+  | OP_ROL_RR
   | OP_ROR_RI
+  | OP_ROR_RR
   | OP_SHL_RI
+  | OP_SHL_RR
   | OP_SHR_RI
+  | OP_SHR_RR
   | OP_SAR_RI
+  | OP_SAR_RR
   | OP_DIV_RR
   | OP_IDIV_RR
   | OP_CMP_RR

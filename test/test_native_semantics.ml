@@ -957,6 +957,59 @@ func_native_vector_fp:
     if (std::bit_cast<float>(lane3) != 44.0f) return 5;
 |})
 
+let test_native_x86_shld_shrd_mem_and_cdq () =
+  let pkg =
+    mk_pkg ~seed:20260940 {|
+func_native_shld_shrd:
+    # 1. shld / shrd on memory
+    mov [rsp - 16], rdi
+    shld [rsp - 16], rsi, 16
+    mov rax, [rsp - 16]
+    mov [rsp - 24], rdi
+    shrd [rsp - 24], rsi, 16
+    mov r8, [rsp - 24]
+
+    # 2. count 0 preserving dest on memory
+    mov [rsp - 32], rdi
+    shld [rsp - 32], rsi, 0
+    mov r9, [rsp - 32]
+
+    # 3. cdq with dirty upper 32-bit rax
+    mov rax, 0x1234567800000005
+    cdq
+    mov r10, rdx
+    mov rax, 0x1234567880000000
+    cdq
+    mov r11, rdx
+    mov rax, [rsp - 16]
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_shld_shrd_mem_cdq" tmp_dir pkg {|
+    static uint64_t scratch[16] = {0};
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    ctx.set_reg(vanguard_threaded_vm::REG_RSP, (uint64_t)(scratch + 8));
+    ctx.set_rdi(0x1234567890ABCDEFULL);
+    ctx.set_rsi(0xFEDCBA0987654321ULL);
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) {
+        printf("execute_threaded failed! trapped=%d\n", ctx.trapped);
+        return 1;
+    }
+    printf("results: rax=0x%llx r8=0x%llx r9=0x%llx r10=0x%llx r11=0x%llx\n",
+           (unsigned long long)ctx.get_rax(),
+           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_R8),
+           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_R9),
+           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_R10),
+           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_R11));
+    if (ctx.get_rax() != 0x567890ABCDEFFEDCULL) return 2;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R8) != 0x43211234567890ABULL) return 3;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R9) != 0x1234567890ABCDEFULL) return 4;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R10) != 0ULL) return 5;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R11) != 0xFFFFFFFFFFFFFFFFULL) return 6;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -976,4 +1029,5 @@ let tests = [
   Alcotest.test_case "native_arm64_3addr_madd_msub_sdiv_bic" `Slow test_native_arm64_3addr_madd_msub_sdiv_bic;
   Alcotest.test_case "native_b8_b16_merge" `Slow test_native_b8_b16_merge;
   Alcotest.test_case "native_vector_fp" `Slow test_native_vector_fp;
+  Alcotest.test_case "native_x86_shld_shrd_mem_and_cdq" `Slow test_native_x86_shld_shrd_mem_and_cdq;
 ]

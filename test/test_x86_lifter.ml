@@ -775,10 +775,68 @@ func_bmi:
 
 let test_x86_lift_shld_shrd () =
   let asm = {|
-func_shld:
+func_shld_shrd:
     mov rax, 0x1234567890ABCDEF
     mov rdx, 0xFEDCBA0987654321
     shld rax, rdx, 16
+    mov [rsp - 8], rax
+    mov r8, rax
+
+    mov rax, 0x1234567890ABCDEF
+    shrd rax, rdx, 16
+    mov r9, rax
+
+    # test count 0 preserving dest
+    mov rax, 0x1234567890ABCDEF
+    shld rax, rdx, 0
+    mov r10, rax
+    shrd rax, rdx, 0
+    mov r11, rax
+
+    # test mem dest
+    mov rax, 0x1234567890ABCDEF
+    mov [rsp - 16], rax
+    shld [rsp - 16], rdx, 16
+    mov r12, [rsp - 16]
+
+    mov rax, 0x1234567890ABCDEF
+    mov [rsp - 24], rax
+    shrd [rsp - 24], rdx, 16
+    mov r13, [rsp - 24]
+
+    # test mem dest with count 0
+    mov rax, 0x1234567890ABCDEF
+    mov [rsp - 32], rax
+    shld [rsp - 32], rdx, 0
+    mov r14, [rsp - 32]
+
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x2000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "shld 16 bits reg" 0x567890ABCDEFFEDCL (get_reg state Register.r8);
+          Alcotest.(check int64) "shrd 16 bits reg" 0x43211234567890ABL (get_reg state Register.r9);
+          Alcotest.(check int64) "shld 0 bits reg unchanged" 0x1234567890ABCDEFL (get_reg state Register.r10);
+          Alcotest.(check int64) "shrd 0 bits reg unchanged" 0x1234567890ABCDEFL (get_reg state Register.r11);
+          Alcotest.(check int64) "shld 16 bits mem" 0x567890ABCDEFFEDCL (get_reg state Register.r12);
+          Alcotest.(check int64) "shrd 16 bits mem" 0x43211234567890ABL (get_reg state Register.r13);
+          Alcotest.(check int64) "shld 0 bits mem unchanged" 0x1234567890ABCDEFL (get_reg state Register.r14)
+
+let test_x86_lift_cdq_dirty_upper_rax () =
+  let asm = {|
+func_cdq_dirty:
+    mov rax, 0x1234567800000005
+    cdq
+    mov r8, rdx
+    mov rax, 0x1234567880000000
+    cdq
+    mov r9, rdx
     ret
 |} in
   match Lifter.lift_function asm with
@@ -788,7 +846,8 @@ func_shld:
       match run_func state func with
       | Error e -> Alcotest.fail e
       | Ok () ->
-          Alcotest.(check int64) "shld 16 bits" 0x567890ABCDEFFEDCL (get_reg state Register.rax)
+          Alcotest.(check int64) "cdq positive bit 31 clears rdx" 0L (get_reg state Register.r8);
+          Alcotest.(check int64) "cdq negative bit 31 sign-extends rdx to -1" (-1L) (get_reg state Register.r9)
 
 let test_x86_lift_movbe () =
   let asm = {|
@@ -1540,6 +1599,7 @@ let tests = [
   Alcotest.test_case "lift_x86_fp_scalar" `Quick test_x86_fp_scalar;
   Alcotest.test_case "lift_x86_bmi" `Quick test_x86_lift_bmi;
   Alcotest.test_case "lift_x86_shld_shrd" `Quick test_x86_lift_shld_shrd;
+  Alcotest.test_case "lift_x86_cdq_dirty_upper_rax" `Quick test_x86_lift_cdq_dirty_upper_rax;
   Alcotest.test_case "lift_x86_movbe" `Quick test_x86_lift_movbe;
   Alcotest.test_case "lift_x86_adc_sbb" `Quick test_x86_lift_adc_sbb;
   Alcotest.test_case "lift_x86_lahf_sahf" `Quick test_x86_lift_lahf_sahf;

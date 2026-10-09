@@ -471,18 +471,33 @@ let compile_and_package_multi
               | Ir.Alu { op = Ir.Rol; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Rol ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ROL_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Rol; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Rol ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_ROL_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Ror; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Ror ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ROR_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Ror; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Ror ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_ROR_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Shl; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Shl ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SHL_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Shl; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Shl ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_SHL_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Shr; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Shr ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SHR_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Shr; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Shr ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_SHR_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Sar; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sar ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SAR_RI) (get_reg_idx d) 0 imm
+              | Ir.Alu { op = Ir.Sar; dst = d; src1; src2 = Ir.Reg s; _ } ->
+                  assert_src1_eq_dst ~op:Ir.Sar ~dst:d ~src1;
+                  encode_raw_word (get_opcode OP_SAR_RR) (get_reg_idx d) (get_reg_idx s) 0L
                | Ir.Unary { op = Ir.Inc; dst; _ } ->
                    encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx dst) 0 1L
                | Ir.Unary { op = Ir.Dec; dst; _ } ->

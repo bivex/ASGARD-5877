@@ -898,6 +898,22 @@ let test_arm64_lift_register_shifts () =
       | Ok snap ->
           check int64 "ARM64 reg shifts result = 24" 24L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+let test_arm64_lift_conditional_zero_reg () =
+  let asm = {|
+    mov x1, #10
+    cmp x1, #10
+    cset wzr, eq
+    csel wzr, w1, wzr, eq
+    cinc wzr, w1, eq
+    cset x0, eq
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_cond_xzr" } asm with
+  | Error err -> fail ("Failed to lift: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "cset x0, eq = 1" 1L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
@@ -944,6 +960,7 @@ let tests = [
   ("ARM64 Lift subs/adds with flags and xzr", `Quick, test_arm64_lift_subs_adds_flags_and_xzr);
   ("ARM64 Lift extensions (sxt/uxt)", `Quick, test_arm64_lift_extensions_sxt_uxt);
   ("ARM64 Lift register shifts (lsl/lsr/asr)", `Quick, test_arm64_lift_register_shifts);
+  ("ARM64 Lift conditional zero reg (wzr/xzr)", `Quick, test_arm64_lift_conditional_zero_reg);
 ]
 
 

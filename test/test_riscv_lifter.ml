@@ -611,6 +611,54 @@ let test_riscv_rvv_strided_and_gather () =
           check int64 "RVV vrgather.vi = 42" 42L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_riscv_lift_zero_reg_and_rv64w () =
+  let asm = {|
+    addi a0, zero, 42
+    add zero, a0, a0
+    li a1, 0x7FFFFFFF
+    li a2, 1
+    addw a0, a1, a2
+    sext.w a0, a0
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rv64_zero_w" } asm with
+  | Error err -> fail ("Failed to lift: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          (* 0x7FFFFFFF + 1 = 0x80000000, sign-extended to 64-bit is -2147483648L (0xFFFFFFFF80000000L) *)
+          check int64 "addw 0x7FFFFFFF + 1 sign extends to -2147483648" (-2147483648L) snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_lift_pseudo_branches_and_sets () =
+  let asm = {|
+    li a1, 10
+    li a2, 20
+    bgt a2, a1, .Lgreater
+    li a0, 0
+    ret
+.Lgreater:
+    ble a1, a2, .Lless_eq
+    li a0, 1
+    ret
+.Lless_eq:
+    seqz a3, zero
+    snez a4, a1
+    add a0, a3, a4
+    b .Ldone
+    li a0, 99
+.Ldone:
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_pseudo_b_s" } asm with
+  | Error err -> fail ("Failed to lift: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          (* seqz zero is 1, snez 10 is 1, a0 = 1 + 1 = 2 *)
+          check int64 "seqz + snez = 2" 2L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("RISC-V Lift Arithmetic (add)", `Quick, test_riscv_lift_arithmetic);
   ("RISC-V Lift Sub & Mul", `Quick, test_riscv_lift_sub_mul);
@@ -644,4 +692,6 @@ let tests = [
   ("RISC-V RVV Comparisons & Mask Merge", `Quick, test_riscv_rvv_comparisons_and_masks);
   ("RISC-V RVV Vector Div/Rem & Shifts", `Quick, test_riscv_rvv_vdiv_vrem_shifts);
   ("RISC-V RVV Gather & Permutations", `Quick, test_riscv_rvv_strided_and_gather);
+  ("RISC-V Lift Zero Reg & RV64 Addw/Sextw", `Quick, test_riscv_lift_zero_reg_and_rv64w);
+  ("RISC-V Lift Pseudo Branches & Sets", `Quick, test_riscv_lift_pseudo_branches_and_sets);
 ]

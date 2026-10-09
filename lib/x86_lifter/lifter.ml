@@ -1139,6 +1139,7 @@ let lift_instr mnem ops =
       let base_reg = Register.vtmp0 in
       let shift_reg = Register.vtmp2 in
       let mask_reg = Register.vtmp1 in
+      let bit_reg = Register.vtmp3 in
       let bits_mask = match w with Register.B16 -> 15L | Register.B32 -> 31L | _ -> 63L in
       let test_instrs = [
         Ir.Mov { dst = Ir.Reg base_reg; src = ir_base };
@@ -1146,7 +1147,7 @@ let lift_instr mnem ops =
         Ir.Alu { op = Ir.And; dst = shift_reg; src1 = Ir.Reg shift_reg; src2 = Ir.Imm bits_mask; set_flags = false };
         Ir.Alu { op = Ir.Shr; dst = base_reg; src1 = Ir.Reg base_reg; src2 = Ir.Reg shift_reg; set_flags = false };
         Ir.Alu { op = Ir.And; dst = base_reg; src1 = Ir.Reg base_reg; src2 = Ir.Imm 1L; set_flags = false };
-        Ir.Cmp { src1 = Ir.Imm 0L; src2 = Ir.Reg base_reg };
+        Ir.Mov { dst = Ir.Reg bit_reg; src = Ir.Reg base_reg };
       ] in
       let modify_op = match mnem with
         | "bts" -> Ir.Or
@@ -1183,7 +1184,7 @@ let lift_instr mnem ops =
             ]
         | _ -> []
       in
-      Ok (test_instrs @ modify_instrs)
+      Ok (test_instrs @ modify_instrs @ [ Ir.Cmp { src1 = Ir.Imm 0L; src2 = Ir.Reg bit_reg } ])
   | "andn", [ OpReg dst; src1; src2 ] ->
       let* ir_s1 = to_ir_operand src1 in
       let* ir_s2 = to_ir_operand src2 in
@@ -1324,14 +1325,20 @@ let lift_instr mnem ops =
       let shift_ops =
         if mnem = "shld" then [
           Ir.Alu { op = Ir.Shl; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = ir_src };
-          Ir.Alu { op = Ir.Shr; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-          Ir.Alu { op = Ir.Or; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp0; set_flags = true };
+          Ir.Mov { dst = Ir.Reg Register.vtmp3; src = ir_src };
+          Ir.Alu { op = Ir.Shr; dst = Register.vtmp3; src1 = Ir.Reg Register.vtmp3; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Cmp { src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 0L };
+          Ir.Mov { dst = Ir.Reg Register.vx18; src = Ir.Imm 0L };
+          Ir.Cmov { cond = Flags.E; dst = Register.vtmp3; src = Ir.Reg Register.vx18 };
+          Ir.Alu { op = Ir.Or; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp3; set_flags = true };
         ] else [
           Ir.Alu { op = Ir.Shr; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = ir_src };
-          Ir.Alu { op = Ir.Shl; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-          Ir.Alu { op = Ir.Or; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp0; set_flags = true };
+          Ir.Mov { dst = Ir.Reg Register.vtmp3; src = ir_src };
+          Ir.Alu { op = Ir.Shl; dst = Register.vtmp3; src1 = Ir.Reg Register.vtmp3; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Cmp { src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 0L };
+          Ir.Mov { dst = Ir.Reg Register.vx18; src = Ir.Imm 0L };
+          Ir.Cmov { cond = Flags.E; dst = Register.vtmp3; src = Ir.Reg Register.vx18 };
+          Ir.Alu { op = Ir.Or; dst = d_reg; src1 = Ir.Reg d_reg; src2 = Ir.Reg Register.vtmp3; set_flags = true };
         ]
       in
       Ok (load_dst @ prep_cnt @ prep_inv_cnt @ shift_ops @ store_dst)
@@ -1533,19 +1540,17 @@ let lift_instr mnem ops =
   | ("cdq" | "cltd"), [] ->
       Ok
         [ Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
-          Ir.Alu { op = Ir.Shr; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 31L; set_flags = false };
-          Ir.Unary { op = Ir.Neg; dst = Register.rdx; src = Ir.Reg Register.rdx; set_flags = false } ]
+          Ir.Alu { op = Ir.Shl; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 32L; set_flags = false };
+          Ir.Alu { op = Ir.Sar; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 63L; set_flags = false } ]
   | ("cqo" | "cqto"), [] ->
       Ok
         [ Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
-          Ir.Alu { op = Ir.Shr; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 63L; set_flags = false };
-          Ir.Unary { op = Ir.Neg; dst = Register.rdx; src = Ir.Reg Register.rdx; set_flags = false } ]
+          Ir.Alu { op = Ir.Sar; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 63L; set_flags = false } ]
   | "cwd", [] ->
       Ok
         [ Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
-          Ir.Alu { op = Ir.And; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 0xFFFFL; set_flags = false };
-          Ir.Alu { op = Ir.Shr; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 15L; set_flags = false };
-          Ir.Unary { op = Ir.Neg; dst = Register.rdx; src = Ir.Reg Register.rdx; set_flags = false } ]
+          Ir.Alu { op = Ir.Shl; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 48L; set_flags = false };
+          Ir.Alu { op = Ir.Sar; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 63L; set_flags = false } ]
   | (* cdqe/cltq sign-extend eax into rax: exact at B64 even with a stale
        upper half, because both shifts displace the stale bits. *)
     ("cdqe" | "cltq"), [] ->
