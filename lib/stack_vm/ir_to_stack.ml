@@ -50,6 +50,7 @@ let get_ext_sym_idx ext_syms sym =
 let resolve_target label_to_block = function
   | BlockId id -> id
   | TargetImm imm -> Int64.to_int imm
+  | TargetReg r -> Hashtbl.hash (Register.to_string r) land 0xFFFF
   | Label s ->
       (match Hashtbl.find_opt label_to_block s with
        | Some id -> id
@@ -193,6 +194,9 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
                 [CallExtern sym_idx])
        | TargetImm imm ->
            let sym_idx = get_ext_sym_idx ext_syms (Printf.sprintf "0x%Lx" imm) in
+           [CallExtern sym_idx]
+       | TargetReg r ->
+           let sym_idx = get_ext_sym_idx ext_syms (Register.to_string r) in
            [CallExtern sym_idx])
   | Trap _ -> [Exit]
   | Bridge_to_flow _ | Bridge_to_math _ -> [Exit]

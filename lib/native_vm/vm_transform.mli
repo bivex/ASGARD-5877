@@ -40,6 +40,8 @@ type raw_op_kind =
   | OP_CMOV
   | OP_SETCC
   | OP_CALL
+  | OP_IJMP_R
+  | OP_ICALL_R
   | OP_RET
   | OP_EXIT
   | OP_FUSED_MOV_ADD_RRI

@@ -63,6 +63,8 @@ type raw_op_kind =
   | OP_CMOV
   | OP_SETCC
   | OP_CALL
+  | OP_IJMP_R
+  | OP_ICALL_R
   | OP_RET
   | OP_EXIT
   | OP_FUSED_MOV_ADD_RRI
@@ -144,7 +146,7 @@ let all_op_kinds = [
   OP_SAR_RI; OP_DIV_RR; OP_IDIV_RR;
   OP_NEG_RR; OP_NOT_RR;
   OP_CMP_RR; OP_CMP_RI; OP_PUSH_R;
-  OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_SETCC; OP_CALL; OP_RET; OP_EXIT;
+  OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_SETCC; OP_CALL; OP_IJMP_R; OP_ICALL_R; OP_RET; OP_EXIT;
   OP_FUSED_MOV_ADD_RRI; OP_FUSED_ADD_IMUL_RRI; OP_FUSED_ADD_XOR_RRI;
   OP_FUSED_SUB_XOR_RRI; OP_FUSED_XOR_ADD_RRI; OP_FUSED_CMP_CMOV;
   OP_BRIDGE_TO_FLOW; OP_BRIDGE_TO_MATH;
@@ -202,6 +204,8 @@ let op_kind_to_handler_name = function
   | OP_CMOV -> "H_CMOV"
   | OP_SETCC -> "H_SETCC"
   | OP_CALL -> "H_CALL"
+  | OP_IJMP_R -> "H_IJMP_R"
+  | OP_ICALL_R -> "H_ICALL_R"
   | OP_RET -> "H_RET"
   | OP_EXIT -> "H_EXIT"
   | OP_FUSED_MOV_ADD_RRI -> "H_FUSED_MOV_ADD_RRI"
@@ -590,27 +594,37 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       [ Ir.Pop (Ir.Reg scratch) ] @ canonicalize_instr (Ir.Mov { dst = Ir.Mem m; src = Ir.Reg scratch })
 
   | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Mem m } ->
-      let scratch = pick_scratch_reg d d in
+      let scratch = Register.with_width (pick_scratch_reg d d) m.width in
       let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
       load_m @ [ Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg scratch } ]
 
   | Ir.Cmp { src1 = Ir.Mem m; src2 = Ir.Reg s } ->
-      let scratch = pick_scratch_reg s s in
+      let scratch = Register.with_width (pick_scratch_reg s s) m.width in
       let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
       load_m @ [ Ir.Cmp { src1 = Ir.Reg scratch; src2 = Ir.Reg s } ]
 
   | Ir.Cmp { src1 = Ir.Mem m; src2 = Ir.Imm imm } ->
-      let scratch = Register.vtmp0 in
+      let scratch = Register.with_width Register.vtmp0 m.width in
       let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
       load_m @ [ Ir.Cmp { src1 = Ir.Reg scratch; src2 = Ir.Imm imm } ]
 
+  | Ir.Cmp { src1 = Ir.Imm imm; src2 = Ir.Reg s } ->
+      let scratch = Register.with_width Register.vtmp0 (Register.get_width s) in
+      [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm imm };
+        Ir.Cmp { src1 = Ir.Reg scratch; src2 = Ir.Reg s } ]
+
+  | Ir.Cmp { src1 = Ir.Imm i1; src2 = Ir.Imm i2 } ->
+      let scratch = Register.vtmp0 in
+      [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm i1 };
+        Ir.Cmp { src1 = Ir.Reg scratch; src2 = Ir.Imm i2 } ]
+
   | Ir.Test { src1 = Ir.Reg s1; src2 = Ir.Mem m } ->
-      let scratch = pick_scratch_reg s1 s1 in
+      let scratch = Register.with_width (pick_scratch_reg s1 s1) m.width in
       let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
       load_m @ canonicalize_instr (Ir.Test { src1 = Ir.Reg s1; src2 = Ir.Reg scratch })
 
   | Ir.Test { src1 = Ir.Mem m; src2 } ->
-      let scratch = Register.vtmp0 in
+      let scratch = Register.with_width Register.vtmp0 m.width in
       let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
       load_m @ canonicalize_instr (Ir.Test { src1 = Ir.Reg scratch; src2 })
 

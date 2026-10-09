@@ -223,6 +223,7 @@ let compile_and_package_multi
   let resolve_target = function
     | Ir.BlockId bid -> Int64.of_int (get_block_offset bid)
     | Ir.TargetImm imm -> imm
+    | Ir.TargetReg r -> Int64.of_int (get_reg_idx r)
     | Ir.Label sym -> (
         match Hashtbl.find_opt label_to_block sym with
         | Some bid -> Int64.of_int (get_block_offset bid)
@@ -325,8 +326,11 @@ let compile_and_package_multi
               encode_raw_word (get_opcode OP_FUSED_SUB_XOR_RRI) (get_reg_idx dst) (get_reg_idx src) imm
           | Fused_Xor_Add { dst; src; imm } ->
               encode_raw_word (get_opcode OP_FUSED_XOR_ADD_RRI) (get_reg_idx dst) (get_reg_idx src) imm
-          | Fused_Cmp_Cmov { cmp_dst = _; cmp_imm; cond; cmov_dst; cmov_src } ->
-              encode_raw_word ~extra_bits:(Int64.of_int (cond_to_code cond))
+          | Fused_Cmp_Cmov { cmp_dst; cmp_imm; cond; cmov_dst; cmov_src } ->
+              let bits = Register.width_to_bits (Register.get_width cmp_dst) in
+              let c = cond_to_code cond in
+              let extra = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int bits) 4) in
+              encode_raw_word ~extra_bits:extra
                 (get_opcode OP_FUSED_CMP_CMOV) (get_reg_idx cmov_dst) (get_reg_idx cmov_src) cmp_imm
           | Raw instr -> (
               match instr with
@@ -508,31 +512,39 @@ let compile_and_package_multi
                    let s_idx = match src with Ir.Reg s -> get_reg_idx s | _ -> get_reg_idx dst in
                    encode_raw_word (get_opcode OP_RBIT_RR) (get_reg_idx dst) s_idx (Int64.of_int bits)
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg s } ->
-                  encode_raw_word (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx s) 0L
+                  let bits = Register.width_to_bits (Register.get_width d) in
+                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
-                  encode_raw_word (get_opcode OP_CMP_RI) (get_reg_idx d) 0 imm
+                  let bits = Register.width_to_bits (Register.get_width d) in
+                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CMP_RI) (get_reg_idx d) 0 imm
               | Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Reg s; nzcv } ->
+                  let bits = Register.width_to_bits (Register.get_width d) in
                   let c = cond_to_code cond in
                   let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4) in
-                  encode_raw_word (get_opcode OP_CCMP_RR) (get_reg_idx d) (get_reg_idx s) imm
+                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CCMP_RR) (get_reg_idx d) (get_reg_idx s) imm
               | Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Imm imm_val; nzcv } ->
+                  let bits = Register.width_to_bits (Register.get_width d) in
                   let c = cond_to_code cond in
                   let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4) in
                   let imm = Int64.logor imm (Int64.shift_left (Int64.logand imm_val 0x1FL) 8) in
-                  encode_raw_word (get_opcode OP_CCMP_RI) (get_reg_idx d) 0 imm
+                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CCMP_RI) (get_reg_idx d) 0 imm
               | Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Reg s; nzcv } ->
+                  let bits = Register.width_to_bits (Register.get_width d) in
                   let c = cond_to_code cond in
                   let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4) in
-                  encode_raw_word (get_opcode OP_CCMN_RR) (get_reg_idx d) (get_reg_idx s) imm
+                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CCMN_RR) (get_reg_idx d) (get_reg_idx s) imm
               | Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Imm imm_val; nzcv } ->
+                  let bits = Register.width_to_bits (Register.get_width d) in
                   let c = cond_to_code cond in
                   let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4) in
                   let imm = Int64.logor imm (Int64.shift_left (Int64.logand imm_val 0x1FL) 8) in
-                  encode_raw_word (get_opcode OP_CCMN_RI) (get_reg_idx d) 0 imm
+                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CCMN_RI) (get_reg_idx d) 0 imm
               | Ir.Push (Ir.Reg d) ->
                   encode_raw_word (get_opcode OP_PUSH_R) (get_reg_idx d) 0 0L
               | Ir.Pop (Ir.Reg d) ->
                   encode_raw_word (get_opcode OP_POP_R) (get_reg_idx d) 0 0L
+              | Ir.Jmp (Ir.TargetReg r) ->
+                  encode_raw_word (get_opcode OP_IJMP_R) (get_reg_idx r) 0 0L
               | Ir.Jmp target ->
                   encode_raw_word (get_opcode OP_JMP) 0 0 (resolve_target target)
               | Ir.Jcc { cond; target_true; target_false } ->
@@ -548,6 +560,8 @@ let compile_and_package_multi
                   encode_raw_word (get_opcode OP_CMOV) (get_reg_idx dst) (get_reg_idx s) (Int64.of_int (cond_to_code cond))
               | Ir.Setcc { cond; dst = Ir.Reg d } ->
                   encode_raw_word (get_opcode OP_SETCC) (get_reg_idx d) 0 (Int64.of_int (cond_to_code cond))
+              | Ir.Call (Ir.TargetReg r) ->
+                  encode_raw_word (get_opcode OP_ICALL_R) (get_reg_idx r) 0 0L
               | Ir.Call (Ir.BlockId bid) ->
                   encode_raw_word (get_opcode OP_CALL) 0 0 (Int64.of_int (get_block_offset bid))
               | Ir.Call (Ir.TargetImm imm) ->

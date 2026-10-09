@@ -1049,7 +1049,7 @@ let run_func ?(max_steps = 100000) state (f : func) =
                   current_id := id;
                   loop ()
               | None -> Error (Printf.sprintf "Label '%s' not found" lbl))
-          | Ok (Some (TargetImm _)) ->
+          | Ok (Some (TargetImm _)) | Ok (Some (TargetReg _)) ->
               Ok ())
   in
   loop ()

@@ -58,7 +58,7 @@ let build_cfg (func : Ir.func) : CFG.t =
   let resolve_target = function
     | Ir.BlockId id -> Some id
     | Ir.Label lbl -> Hashtbl.find_opt label_to_id lbl
-    | Ir.TargetImm _ -> None
+    | Ir.TargetImm _ | Ir.TargetReg _ -> None
   in
 
   Hashtbl.iter (fun _ (b : Ir.basic_block) ->

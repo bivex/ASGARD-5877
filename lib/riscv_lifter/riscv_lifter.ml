@@ -264,14 +264,19 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Ret ]
   | ("jr", [ OpReg (Register.Vreg (Register.VTMP3, _)) ]) ->
       Ok [ Ir.Ret ]
-  | ("jr", [ OpReg _ ]) ->
-      Ok [ Ir.Jmp (TargetImm 0L) ]
+  | ("jr", [ OpReg r ]) ->
+      Ok [ Ir.Jmp (TargetReg r) ]
   | ("jalr", [ OpReg (Register.Vreg (Register.VZERO, _)); OpMem m ]) when m.disp = 0L ->
       (match m.base with
       | Some (Register.Vreg (Register.VTMP3, _)) -> Ok [ Ir.Ret ]
+      | Some base_reg -> Ok [ Ir.Jmp (TargetReg base_reg) ]
       | _ -> Ok [ Ir.Jmp (TargetImm 0L) ])
-  | ("jalr", [ OpReg _; OpMem _ ]) | ("jalr", [ OpReg _ ]) ->
-      Ok [ Ir.Call (TargetImm 0L) ]
+  | ("jalr", [ OpReg _; OpMem m ]) -> (
+      match m.base with
+      | Some base_reg -> Ok [ Ir.Call (TargetReg base_reg) ]
+      | None -> Ok [ Ir.Call (TargetImm 0L) ])
+  | ("jalr", [ OpReg r ]) ->
+      Ok [ Ir.Call (TargetReg r) ]
   | ("call", [ OpLabel target ]) ->
       Ok [ Ir.Call (Label target) ]
   | ("tail", [ OpLabel target ]) ->

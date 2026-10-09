@@ -32,7 +32,7 @@ let verify_block (cfg : cfg) (b : basic_block) : (unit, verify_error) result =
             let exists = Hashtbl.fold (fun _ (blk : basic_block) acc -> acc || blk.label = lbl) cfg.blocks false in
             if exists then Ok ()
             else Error (InvalidJumpTarget (b.id, Printf.sprintf "Label(%s)" lbl))
-        | TargetImm _ -> Ok ()
+        | TargetImm _ | TargetReg _ -> Ok ()
       in
       let targets = successors b in
       let rec loop_targets = function

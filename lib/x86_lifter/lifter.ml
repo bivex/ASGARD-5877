@@ -24,7 +24,7 @@ let to_ir_operand = function
 let to_target = function
   | X86_parser.OpLabel l -> Ir.Label l
   | X86_parser.OpImm i -> Ir.TargetImm i
-  | X86_parser.OpReg r -> Ir.Label (Register.to_string r)
+  | X86_parser.OpReg r -> Ir.TargetReg r
   | X86_parser.OpMem _ -> Ir.Label "indirect_mem"
 
 let parse_jcc_mnemonic mnem =
@@ -1498,10 +1498,24 @@ let lift_instr mnem ops =
       let* ir_s1 = to_ir_operand s1 in
       let* ir_s2 = to_ir_operand s2 in
       Ok [ Ir.Test { src1 = ir_s1; src2 = ir_s2 } ]
-  | "jmp", [ target ] ->
-      Ok [ Ir.Jmp (to_target target) ]
-  | "call", [ target ] ->
-      Ok [ Ir.Call (to_target target) ]
+  | "jmp", [ target ] -> (
+      match target with
+      | X86_parser.OpMem m ->
+          let mem_ref = ir_mem_of_raw m in
+          Ok [
+            Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
+            Ir.Jmp (Ir.TargetReg Register.vtmp0);
+          ]
+      | _ -> Ok [ Ir.Jmp (to_target target) ])
+  | "call", [ target ] -> (
+      match target with
+      | X86_parser.OpMem m ->
+          let mem_ref = ir_mem_of_raw m in
+          Ok [
+            Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
+            Ir.Call (Ir.TargetReg Register.vtmp0);
+          ]
+      | _ -> Ok [ Ir.Call (to_target target) ])
   | other, [ target ] when parse_jcc_mnemonic other <> None ->
       let cond = Option.get (parse_jcc_mnemonic other) in
       Ok [ Ir.Jcc { cond; target_true = to_target target; target_false = Ir.Label "__fallthrough__" } ]

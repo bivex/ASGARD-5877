@@ -50,8 +50,12 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       ]
   | ("bl", [ OpLabel target ]) ->
       Some [ Ir.Call (Label target) ]
+  | ("blr", [ OpReg r ]) ->
+      Some [ Ir.Call (TargetReg r) ]
   | ("blr", _) ->
       Some [ Ir.Call (TargetImm 0L) ]
+  | ("br", [ OpReg r ]) ->
+      Some [ Ir.Jmp (TargetReg r) ]
   | ("br", _) ->
       Some [ Ir.Jmp (TargetImm 0L) ]
   | ("eret", _) ->

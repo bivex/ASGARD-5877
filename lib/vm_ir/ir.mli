@@ -52,6 +52,7 @@ type target =
   | Label of string
   | BlockId of int
   | TargetImm of int64
+  | TargetReg of Register.t
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
 type fp_conv = Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt

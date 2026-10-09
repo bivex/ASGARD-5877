@@ -291,6 +291,71 @@ let test_external_libc_call_trampoline () =
     Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
     Alcotest.(check bool) "returned abs(-42) = 42" true (String.contains out_str '4' && String.contains out_str '2'))
 
+let test_sub_64bit_comparison_and_flags () =
+  let rng = Random.State.make [| 20261009 |] in
+  let asm = {|
+func_sub_cmp:
+    mov rax, 0xFFFFFFFF
+    cmp eax, 10
+    jl .Lless
+    mov rax, 999
+    ret
+.Lless:
+    mov rax, 777
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let pkg = Vm_emitter.compile_and_package ~rng func in
+      with_temp_dir (fun tmp_dir ->
+        let bin_path = compile_and_prepare_vm tmp_dir pkg in
+        let status, out_str = run_command_capture bin_path in
+        Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+        Alcotest.(check bool) "rax is 777 (signed 32-bit comparison held)" true (String.contains out_str '7'))
+
+let test_indirect_jump_target_reg () =
+  let rng = Random.State.make [| 20261011 |] in
+  let entry_block = {
+    Ir.id = 0;
+    label = "entry";
+    instrs = [
+      Ir.Mov { dst = Ir.Reg Register.rbx; src = Ir.Imm 4242L };
+      Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm 5L };
+      Ir.Jmp (Ir.TargetReg Register.rax);
+    ];
+  } in
+  let dead_block = {
+    Ir.id = 1;
+    label = "dead";
+    instrs = [
+      Ir.Mov { dst = Ir.Reg Register.rbx; src = Ir.Imm 9999L };
+      Ir.Ret;
+    ];
+  } in
+  let target_block = {
+    Ir.id = 2;
+    label = "target";
+    instrs = [
+      Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Reg Register.rbx };
+      Ir.Ret;
+    ];
+  } in
+  let blocks = Hashtbl.create 3 in
+  Hashtbl.replace blocks 0 entry_block;
+  Hashtbl.replace blocks 1 dead_block;
+  Hashtbl.replace blocks 2 target_block;
+  let func = {
+    Ir.name = "test_target_reg";
+    cfg = { Ir.entry_id = 0; blocks };
+  } in
+  let pkg = Vm_emitter.compile_and_package ~rng ~enable_junk:false ~enable_cff:false func in
+  with_temp_dir (fun tmp_dir ->
+    let bin_path = compile_and_prepare_vm tmp_dir pkg in
+    let status, out_str = run_command_capture bin_path in
+    Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+    Alcotest.(check bool) "rax is 4242" true (String.contains out_str '4' && String.contains out_str '2'))
+
 let tests = [
   Alcotest.test_case "threaded_vm_compilation_and_execution" `Slow test_threaded_vm_compilation_and_execution;
   Alcotest.test_case "threaded_vm_with_cff" `Slow test_threaded_vm_with_cff;
@@ -300,4 +365,6 @@ let tests = [
   Alcotest.test_case "dynamic_junk_bytecode" `Slow test_dynamic_junk_bytecode;
   Alcotest.test_case "integrity_checksumming_and_stack_scrambling" `Slow test_integrity_checksumming_and_stack_scrambling;
   Alcotest.test_case "external_libc_call_trampoline" `Slow test_external_libc_call_trampoline;
+  Alcotest.test_case "sub_64bit_comparison_and_flags" `Slow test_sub_64bit_comparison_and_flags;
+  Alcotest.test_case "indirect_jump_target_reg" `Slow test_indirect_jump_target_reg;
 ]

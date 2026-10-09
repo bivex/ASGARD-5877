@@ -52,6 +52,7 @@ type target =
   | Label of string
   | BlockId of int
   | TargetImm of int64
+  | TargetReg of Register.t
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
 type fp_conv = Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
@@ -218,6 +219,7 @@ let target_to_string = function
   | Label l -> l
   | BlockId id -> Printf.sprintf "BB_%d" id
   | TargetImm i -> Printf.sprintf "0x%LX" i
+  | TargetReg r -> Printf.sprintf "*%s" (Register.to_string r)
 
 let instr_to_string = function
   | Nop -> "nop"
