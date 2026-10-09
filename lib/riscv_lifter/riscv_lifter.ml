@@ -251,7 +251,8 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
         let s2_ir = raw_to_ir_operand src2 in
         Ok [
           Ir.Mov { dst = Reg tmp; src = raw_to_ir_operand (OpReg src1) };
-          Ir.Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          Ir.Alu { op = Shl; dst = tmp; src1 = Reg tmp; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Shr; dst = tmp; src1 = Reg tmp; src2 = Imm 32L; set_flags = false };
           Ir.Alu { op = Shr; dst = tmp; src1 = Reg tmp; src2 = s2_ir; set_flags = false };
           Ir.Mov { dst = Reg d_b64; src = Reg tmp };
           Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
@@ -735,7 +736,8 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
         let d_b64 = Register.with_width dst Register.B64 in
         Ok [
           Ir.Mov { dst = Reg d_b64; src = raw_to_ir_operand (OpReg src) };
-          Ir.Alu { op = And; dst = d_b64; src1 = Reg d_b64; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Shr; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
         ]
   | (("min" | "max" | "minu" | "maxu"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       if is_vzero dst then Ok [ Ir.Nop ]

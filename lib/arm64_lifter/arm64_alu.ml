@@ -182,10 +182,12 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       ]
   | ("umaddl", [ OpReg dst; OpReg src1; OpReg src2; OpReg src3 ]) ->
       Some [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = And; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 0xFFFFFFFFL; set_flags = false };
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.with_width src1 Register.B64) };
+        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 32L; set_flags = false };
+        Ir.Alu { op = Shr; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 32L; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp1; src = Reg (Register.with_width src2 Register.B64) };
+        Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
+        Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
         Ir.Alu { op = Mul; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Reg Register.vtmp1; set_flags = false };
         Ir.Alu { op = Add; dst; src1 = Reg src3; src2 = Reg Register.vtmp0; set_flags = false };
       ]
@@ -202,10 +204,12 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       ]
   | ("umsubl", [ OpReg dst; OpReg src1; OpReg src2; OpReg src3 ]) ->
       Some [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = And; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 0xFFFFFFFFL; set_flags = false };
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.with_width src1 Register.B64) };
+        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 32L; set_flags = false };
+        Ir.Alu { op = Shr; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 32L; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp1; src = Reg (Register.with_width src2 Register.B64) };
+        Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
+        Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
         Ir.Alu { op = Mul; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Reg Register.vtmp1; set_flags = false };
         Ir.Alu { op = Sub; dst; src1 = Reg src3; src2 = Reg Register.vtmp0; set_flags = false };
       ]
@@ -221,10 +225,12 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       ]
   | ("umull", [ OpReg dst; OpReg src1; OpReg src2 ]) ->
       Some [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src1 };
-        Ir.Alu { op = And; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 0xFFFFFFFFL; set_flags = false };
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.with_width src1 Register.B64) };
+        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 32L; set_flags = false };
+        Ir.Alu { op = Shr; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 32L; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp1; src = Reg (Register.with_width src2 Register.B64) };
+        Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
+        Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
         Ir.Alu { op = Mul; dst; src1 = Reg Register.vtmp0; src2 = Reg Register.vtmp1; set_flags = false };
       ]
 
@@ -348,9 +354,11 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | ("uxtw", [ OpReg dst; OpReg src ]) ->
       if is_vzero dst then Some [ Ir.Nop ]
       else
+        let d_b64 = Register.with_width dst Register.B64 in
         Some [
-          Ir.Mov { dst = Reg dst; src = Reg src };
-          Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          Ir.Mov { dst = Reg d_b64; src = Reg (Register.with_width src Register.B64) };
+          Ir.Alu { op = Shl; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Shr; dst = d_b64; src1 = Reg d_b64; src2 = Imm 32L; set_flags = false };
         ]
   | ("sxtb", [ OpReg dst; OpReg src ]) ->
       if is_vzero dst then Some [ Ir.Nop ]
@@ -517,8 +525,9 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       ]
   | ("cmp", (OpReg src1 :: OpReg src2 :: OpLabel ("uxtw" | "UXTW") :: _)) ->
       Some [
-        Ir.Mov { dst = Reg Register.vtmp0; src = Reg src2 };
-        Ir.Alu { op = And; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+        Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.with_width src2 Register.B64) };
+        Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 32L; set_flags = false };
+        Ir.Alu { op = Shr; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 32L; set_flags = false };
         Ir.Cmp { src1 = Reg src1; src2 = Reg Register.vtmp0 };
       ]
   | ("cmp", (OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->

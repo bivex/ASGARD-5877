@@ -993,16 +993,7 @@ func_native_shld_shrd:
     ctx.set_reg(vanguard_threaded_vm::REG_RSP, (uint64_t)(scratch + 8));
     ctx.set_rdi(0x1234567890ABCDEFULL);
     ctx.set_rsi(0xFEDCBA0987654321ULL);
-    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) {
-        printf("execute_threaded failed! trapped=%d\n", ctx.trapped);
-        return 1;
-    }
-    printf("results: rax=0x%llx r8=0x%llx r9=0x%llx r10=0x%llx r11=0x%llx\n",
-           (unsigned long long)ctx.get_rax(),
-           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_R8),
-           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_R9),
-           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_R10),
-           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_R11));
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
     if (ctx.get_rax() != 0x567890ABCDEFFEDCULL) return 2;
     if (ctx.get_reg(vanguard_threaded_vm::REG_R8) != 0x43211234567890ABULL) return 3;
     if (ctx.get_reg(vanguard_threaded_vm::REG_R9) != 0x1234567890ABCDEFULL) return 4;

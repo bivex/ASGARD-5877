@@ -859,24 +859,26 @@ let lift_instr mnem ops =
       let expected = Register.vtmp1 in
       let repl = Register.vtmp2 in
       let scratch = Register.vtmp3 in
-      let mask32 = 0xFFFFFFFFL in
       Ok [
         Ir.Mov { dst = Ir.Reg mem_val; src = Ir.Mem mem_ref };
         Ir.Mov { dst = Ir.Reg expected; src = Ir.Reg rdx };
         Ir.Alu { op = Ir.Shl; dst = expected; src1 = Ir.Reg expected; src2 = Ir.Imm 32L; set_flags = false };
         Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg rax };
-        Ir.Alu { op = Ir.And; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm mask32; set_flags = false };
+        Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 32L; set_flags = false };
+        Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 32L; set_flags = false };
         Ir.Alu { op = Ir.Or; dst = expected; src1 = Ir.Reg expected; src2 = Ir.Reg scratch; set_flags = false };
         Ir.Cmp { src1 = Ir.Reg mem_val; src2 = Ir.Reg expected };
         Ir.Mov { dst = Ir.Reg repl; src = Ir.Reg rcx };
         Ir.Alu { op = Ir.Shl; dst = repl; src1 = Ir.Reg repl; src2 = Ir.Imm 32L; set_flags = false };
         Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg rbx };
-        Ir.Alu { op = Ir.And; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm mask32; set_flags = false };
+        Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 32L; set_flags = false };
+        Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 32L; set_flags = false };
         Ir.Alu { op = Ir.Or; dst = repl; src1 = Ir.Reg repl; src2 = Ir.Reg scratch; set_flags = false };
         Ir.Cmov { cond = Flags.E; dst = mem_val; src = Ir.Reg repl };
         Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg mem_val };
         Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg mem_val };
-        Ir.Alu { op = Ir.And; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm mask32; set_flags = false };
+        Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 32L; set_flags = false };
+        Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 32L; set_flags = false };
         Ir.Cmov { cond = Flags.NE; dst = rax; src = Ir.Reg scratch };
         Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg mem_val };
         Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 32L; set_flags = false };
