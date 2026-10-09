@@ -85,6 +85,14 @@ type vec_op =
   | Vtrn2
   | Vtbl
   | Vtbx
+  | Vdiv
+  | Vrem
+  | Vdivu
+  | Vremu
+  | Vcmpne
+  | Vcmple
+  | Vcmpltu
+  | Vcmpleu
 type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 

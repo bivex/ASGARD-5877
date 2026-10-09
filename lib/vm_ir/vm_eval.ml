@@ -287,7 +287,47 @@ let vector_binary_value ~lane_bits ~elem ~op ~a ~b =
       let sa = sign_extend_lane lane_bits a in
       let res = if sa < 0L then Int64.neg sa else sa in
       Int64.logand res mask
-  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend | Vuzp1 | Vuzp2 | Vtrn1 | Vtrn2 | Vtbl | Vtbx), _ -> 0L
+  | Vdiv, VInt ->
+      let sa = sign_extend_lane lane_bits a in
+      let sb = sign_extend_lane lane_bits b in
+      let min_val = Int64.shift_left 1L (lane_bits - 1) in
+      let min_val_signed = sign_extend_lane lane_bits min_val in
+      if sb = 0L then -1L
+      else if sb = -1L && sa = min_val_signed then sa
+      else Int64.div sa sb
+  | Vdivu, VInt ->
+      let ua = Int64.logand a mask in
+      let ub = Int64.logand b mask in
+      if ub = 0L then mask
+      else Int64.unsigned_div ua ub
+  | Vrem, VInt ->
+      let sa = sign_extend_lane lane_bits a in
+      let sb = sign_extend_lane lane_bits b in
+      let min_val = Int64.shift_left 1L (lane_bits - 1) in
+      let min_val_signed = sign_extend_lane lane_bits min_val in
+      if sb = 0L then a
+      else if sb = -1L && sa = min_val_signed then 0L
+      else Int64.rem sa sb
+  | Vremu, VInt ->
+      let ua = Int64.logand a mask in
+      let ub = Int64.logand b mask in
+      if ub = 0L then a
+      else Int64.unsigned_rem ua ub
+  | Vcmpne, _ ->
+      if a <> b then mask else 0L
+  | Vcmple, _ ->
+      let sa = sign_extend_lane lane_bits a in
+      let sb = sign_extend_lane lane_bits b in
+      if sa <= sb then mask else 0L
+  | Vcmpltu, _ ->
+      let ua = Int64.logand a mask in
+      let ub = Int64.logand b mask in
+      if Int64.unsigned_compare ua ub < 0 then mask else 0L
+  | Vcmpleu, _ ->
+      let ua = Int64.logand a mask in
+      let ub = Int64.logand b mask in
+      if Int64.unsigned_compare ua ub <= 0 then mask else 0L
+  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend | Vuzp1 | Vuzp2 | Vtrn1 | Vtrn2 | Vtbl | Vtbx | Vdiv | Vrem | Vdivu | Vremu), _ -> 0L
 
 let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
   let mask = vector_lane_mask lane_bits in

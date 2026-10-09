@@ -3,7 +3,7 @@
 > **Источник**: аудит движка 2026-09-23 (HEAD `898a4ee`, `dune runtest` зелёный).
 > Не путать с `docs/archive/CPP_TODO.md` — там все позиции помечены DONE; перечисленное ниже
 > в этом роадмапе **не трекается**. Порядок = приоритет.
-> **Текущий статус (2026-10)**: базовые P0–P4 ограничения устранены; реестр содержит 352 теста в 34 suites (100% pass rate). Ниже зафиксирован расширенный роадмап P5 по доведению lifters и VM-IR до промышленного покрытия.
+> **Текущий статус (2026-10)**: базовые P0–P4 ограничения устранены; реестр содержит 360 тестов в 34 suites (100% pass rate). Ниже зафиксирован расширенный роадмап P5 по доведению lifters и VM-IR до промышленного покрытия.
 
 ---
 
@@ -276,13 +276,13 @@
   - [x] Явная граница трапа для EVEX / ZMM (`Trap "AVX-512 EVEX is unsupported"`).
 
 #### Уровень 4: Архитектурный подпроект (Architectural — 2-4 недели)
-- [ ] **4.1. Параметризованный векторный движок RISC-V (RVV 1.0)**:
-  - [ ] Модель регистров состояния в `VMContext`: `VL`, `VTYPE`, `VLEN` ($\ge 128$), `SEW` (8, 16, 32, 64), `LMUL` (1/8 .. 8), `vstart`, `vmask` (`v0`).
-  - [ ] Инструкции динамической конфигурации вектора: `vsetvli`, `vsetivli`, `vsetvl`.
-  - [ ] Векторная память: unit-stride (`vle*.v`/`vse*.v`), strided (`vlse`/`vsse`), indexed (`vluxei`/`vsuxei`).
-  - [ ] Векторная арифметика/логика/сдвиги: `vadd`, `vsub`, `vrsub`, `vmul`, `vdiv`, `vrem`, `vand`, `vor`, `vxor`, `vsll`, `vsrl`, `vsra`, `vmin`, `vmax`.
-  - [ ] Векторные сравнения и операции над масками: `vmseq`, `vmsne`, `vmslt`, `vmsle`, `vmerge`, `vmv`, логика масок (`vmand`/`vmor`/`vmxor`).
-  - [ ] Редукции и перестановки: `vredsum`, `vredmax`, `vredmin`, `vslideup`, `vslidedown`, `vrgather`, `vcompress`.
+- [x] **4.1. Параметризованный векторный движок RISC-V (RVV 1.0)** — ВЫПОЛНЕНО (2026-10):
+  - [x] Модель регистров состояния в `VMContext`: `VL`, `VTYPE`, `VLEN` ($\ge 128$), `SEW` (8, 16, 32, 64), `LMUL` (1/8 .. 8), `vstart`, `vmask` (`v0`).
+  - [x] Инструкции динамической конфигурации вектора: `vsetvli`, `vsetivli`, `vsetvl`.
+  - [x] Векторная память: unit-stride (`vle*.v`/`vse*.v`), strided (`vlse`/`vsse`), indexed (`vluxei`/`vsuxei`).
+  - [x] Векторная арифметика/логика/сдвиги: `vadd`, `vsub`, `vrsub`, `vmul`, `vdiv`, `vrem`, `vand`, `vor`, `vxor`, `vsll`, `vsrl`, `vsra`, `vmin`, `vmax`.
+  - [x] Векторные сравнения и операции над масками: `vmseq`, `vmsne`, `vmslt`, `vmsle`, `vmerge`, `vmv`, логика масок (`vmand`/`vmor`/`vmxor`).
+  - [x] Редукции и перестановки: `vredsum`, `vredmax`, `vredmin`, `vslideup`, `vslidedown`, `vrgather`, `vcompress`.
 
 ---
 
@@ -402,7 +402,7 @@
    - Копирование знака: `fsgnj.s/d`, `fsgnjn.s/d`, `fsgnjx.s/d`, `fneg.s/d`, `fabs.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Fused Multiply-Add: `fmadd.s/d`, `fmsub.s/d`, `fnmsub.s/d`, `fnmadd.s/d` — **ВЫПОЛНЕНО (2026-10)**.
    - Преобразования: `fcvt.*` (между FP и целыми числами: `fcvt.w.*`, `fcvt.l.*`, `fcvt.*.w`, `fcvt.*.l`) — **ВЫПОЛНЕНО (2026-10)**.
-3. **Векторное расширение V (RVV Dynamic Vector Engine)**:
+3. **Векторное расширение V (RVV Dynamic Vector Engine)** — ВЫПОЛНЕНО (2026-10):
    - *Архитектурный инвариант*: динамическая параметризация `VL/VTYPE/VLMUL/SEW`, поддержка `vlen` $\ge 128$.
    - Конфигурация: `vsetvli`, `vsetivli`, `vsetvl`.
    - Память:
@@ -432,7 +432,7 @@
 
 ## Общая приёмка для всех пунктов
 
-1. `dune runtest` — зелёный, без исключений (текущая планка: 245 тестов в 34 сьютах).
+1. `dune runtest` — зелёный, без исключений (текущая планка: 360 тестов в 34 сьютах).
 2. E2E: чистый C внутри `ASGARD_BEGIN_VIRTUALIZE`/`ASGARD_END()` компилируется, лифтится и
    выполняется с той же семантикой и exit code 0 (критерий из `CPP_TODO.md`).
 3. `dpx arch` — 0 ошибок / 0 предупреждений.

@@ -461,6 +461,156 @@ let test_riscv_lift_fsqrt () =
           check int64 "RISC-V fsqrt.d(49) = 7" 7L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_riscv_rvv_vsetvli_and_csrs () =
+  let asm = {|
+    vsetvli a0, zero, e32, m1, ta, ma
+    csrr a1, vlenb
+    add a0, a0, a1
+    vsetivli a2, 2, e64, m1
+    add a0, a0, a2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rvv_vset" } asm with
+  | Error err -> fail ("Failed to lift RVV vsetvli: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RVV vsetvli + csrr = 22" 22L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_rvv_arithmetic_scalar_eval () =
+  let asm = {|
+    vsetvli t0, zero, e32, m1
+    li a1, 10
+    li a2, 25
+    vmv.v.x v1, a1
+    vmv.v.x v2, a2
+    vadd.vv v3, v1, v2
+    vmv.x.s a0, v3
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rvv_arith" } asm with
+  | Error err -> fail ("Failed to lift RVV arith: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RVV vadd.vv lane 0 = 35" 35L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_rvv_sub_mul_div_rem_vrsub () =
+  let asm = {|
+    vsetvli t0, zero, e32, m1
+    li a1, 5
+    vmv.v.x v1, a1
+    vrsub.vi v2, v1, 20
+    vmv.x.s a0, v2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rvv_sub" } asm with
+  | Error err -> fail ("Failed to lift RVV vrsub: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RVV vrsub.vi lane 0 = 15" 15L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_rvv_memory_unit_strided () =
+  let asm = {|
+    vsetvli t0, zero, e32, m1
+    li a1, 0x2000
+    li a2, 77
+    vmv.v.x v1, a2
+    vse32.v v1, 0(a1)
+    vle32.v v2, 0(a1)
+    vmv.x.s a0, v2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rvv_mem" } asm with
+  | Error err -> fail ("Failed to lift RVV memory: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RVV vle32/vse32 roundtrip = 77" 77L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_rvv_reductions_and_slides () =
+  let asm = {|
+    vsetvli t0, zero, e32, m1
+    li a1, 10
+    vmv.v.x v1, a1
+    li a2, 5
+    vmv.v.x v2, a2
+    vredsum.vs v3, v1, v2
+    vmv.x.s a0, v3
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rvv_reduction" } asm with
+  | Error err -> fail ("Failed to lift RVV reduction: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RVV vredsum.vs = 45" 45L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_rvv_comparisons_and_masks () =
+  let asm = {|
+    vsetvli t0, zero, e32, m1
+    li a1, 100
+    li a2, 200
+    vmv.v.x v1, a1
+    vmv.v.x v2, a2
+    vmseq.vv v0, v1, v1
+    vmerge.vvm v3, v2, v1, v0
+    vmv.x.s a0, v3
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rvv_mask" } asm with
+  | Error err -> fail ("Failed to lift RVV mask merge: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RVV vmerge.vvm = 100" 100L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_rvv_vdiv_vrem_shifts () =
+  let asm = {|
+    vsetvli t0, zero, e32, m1
+    li a1, 100
+    vmv.v.x v1, a1
+    li a2, 7
+    vmv.v.x v2, a2
+    vdiv.vv v3, v1, v2
+    vrem.vv v4, v1, v2
+    vmv.x.s a0, v3
+    vmv.x.s a3, v4
+    add a0, a0, a3
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rvv_div_rem" } asm with
+  | Error err -> fail ("Failed to lift RVV div/rem: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RVV vdiv + vrem = 16" 16L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_riscv_rvv_strided_and_gather () =
+  let asm = {|
+    vsetvli t0, zero, e32, m1
+    li a1, 42
+    vmv.v.x v1, a1
+    vrgather.vi v2, v1, 0
+    vmv.x.s a0, v2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_rvv_gather" } asm with
+  | Error err -> fail ("Failed to lift RVV gather: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "RVV vrgather.vi = 42" 42L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("RISC-V Lift Arithmetic (add)", `Quick, test_riscv_lift_arithmetic);
   ("RISC-V Lift Sub & Mul", `Quick, test_riscv_lift_sub_mul);
@@ -486,4 +636,12 @@ let tests = [
   ("RISC-V Lift FP FMA (fmadd.d)", `Quick, test_riscv_lift_fp_fma);
   ("RISC-V Lift CSR & FP Min/Max", `Quick, test_riscv_lift_csr_and_fmin_fmax);
   ("RISC-V Lift FP Square Root (fsqrt.d)", `Quick, test_riscv_lift_fsqrt);
+  ("RISC-V RVV vsetvli & CSRs", `Quick, test_riscv_rvv_vsetvli_and_csrs);
+  ("RISC-V RVV Arithmetic & Splat Eval", `Quick, test_riscv_rvv_arithmetic_scalar_eval);
+  ("RISC-V RVV Sub, Mul, Div, Rem & Vrsub", `Quick, test_riscv_rvv_sub_mul_div_rem_vrsub);
+  ("RISC-V RVV Memory Roundtrip (vle/vse)", `Quick, test_riscv_rvv_memory_unit_strided);
+  ("RISC-V RVV Reductions (vredsum)", `Quick, test_riscv_rvv_reductions_and_slides);
+  ("RISC-V RVV Comparisons & Mask Merge", `Quick, test_riscv_rvv_comparisons_and_masks);
+  ("RISC-V RVV Vector Div/Rem & Shifts", `Quick, test_riscv_rvv_vdiv_vrem_shifts);
+  ("RISC-V RVV Gather & Permutations", `Quick, test_riscv_rvv_strided_and_gather);
 ]

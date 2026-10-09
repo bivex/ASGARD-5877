@@ -108,7 +108,11 @@ let map_riscv_reg ?(width = Register.B64) str =
   | "ft9" -> Ok (Register.Fpr (29, width))
   | "ft10" -> Ok (Register.Fpr (30, width))
   | "ft11" -> Ok (Register.Fpr (31, width))
-  (* Vector registers v0-v31 *)
+  (* Vector registers v0-v31 and mask registers v0.t-v31.t *)
+  | s when String.length s >= 4 && s.[0] = 'v' && String.ends_with ~suffix:".t" s -> (
+      match int_of_string_opt (String.sub s 1 (String.length s - 3)) with
+      | Some i when i >= 0 && i < 32 -> Ok (Register.Fpr (i, width))
+      | _ -> Error (Printf.sprintf "Unknown RISC-V register '%s'" str))
   | s when String.length s >= 2 && s.[0] = 'v' && (s.[1] >= '0' && s.[1] <= '9') -> (
       match int_of_string_opt (String.sub s 1 (String.length s - 1)) with
       | Some i when i >= 0 && i < 32 -> Ok (Register.Fpr (i, width))

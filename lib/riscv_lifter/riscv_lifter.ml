@@ -333,10 +333,32 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
       Ok [ Ir.Trap "ecall" ]
   | ("ebreak", _) ->
       Ok [ Ir.Trap "ebreak" ]
-  | (("csrr" | "csrrw" | "csrrs" | "csrrc"), (OpReg dst :: _)) ->
+  | (("csrr" | "csrrw" | "csrrs" | "csrrc"), (OpReg dst :: rest)) ->
       let is_zero = match dst with Register.Vreg (Register.VZERO, _) -> true | _ -> false in
       if is_zero then Ok [ Ir.Nop ]
-      else Ok [ Ir.Mov { dst = Reg dst; src = Imm 0L } ]
+      else
+        let csr_name = match rest with
+          | OpLabel s :: _ -> String.lowercase_ascii s
+          | _ -> ""
+        in
+        (match csr_name with
+        | "vlenb" -> Ok [ Ir.Mov { dst = Reg dst; src = Imm 16L } ]
+        | "vl" ->
+            let vl_val = match Riscv_vector.current_state.vl with
+              | Some v -> v
+              | None -> Int64.of_int (Riscv_vector.calculate_vlmax ~sew:Riscv_vector.current_state.sew ~lmul:Riscv_vector.current_state.lmul)
+            in
+            Ok [ Ir.Mov { dst = Reg dst; src = Imm vl_val } ]
+        | "vtype" ->
+            let sew_code = match Riscv_vector.current_state.sew with
+              | 8 -> 0 | 16 -> 1 | 32 -> 2 | _ -> 3
+            in
+            let lmul_code = match Riscv_vector.current_state.lmul with
+              | 1 -> 0 | 2 -> 1 | 4 -> 2 | 8 -> 3 | -8 -> 5 | -4 -> 6 | _ -> 7
+            in
+            let vtype_val = Int64.of_int ((sew_code lsl 3) lor lmul_code) in
+            Ok [ Ir.Mov { dst = Reg dst; src = Imm vtype_val } ]
+        | _ -> Ok [ Ir.Mov { dst = Reg dst; src = Imm 0L } ])
   | (("csrrwi" | "csrrsi" | "csrrci"), (OpReg dst :: _)) ->
       let is_zero = match dst with Register.Vreg (Register.VZERO, _) -> true | _ -> false in
       if is_zero then Ok [ Ir.Nop ]
@@ -531,27 +553,11 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
         Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg Register.vtmp0; set_flags = false };
       ]
 
-  (* V-extension: RVV Vector Operations *)
-  | ("vadd.vv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Ok [ Ir.Vec_binop { op = Vadd; elem = VInt; dst = d; src1 = s1; src2 = s2; bits = 128; lane_bits = 64 } ]
-  | ("vsub.vv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Ok [ Ir.Vec_binop { op = Vsub; elem = VInt; dst = d; src1 = s1; src2 = s2; bits = 128; lane_bits = 64 } ]
-  | ("vmul.vv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Ok [ Ir.Vec_binop { op = Vmul; elem = VInt; dst = d; src1 = s1; src2 = s2; bits = 128; lane_bits = 64 } ]
-  | ("vand.vv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Ok [ Ir.Vec_binop { op = Vand; elem = VInt; dst = d; src1 = s1; src2 = s2; bits = 128; lane_bits = 64 } ]
-  | ("vor.vv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Ok [ Ir.Vec_binop { op = Vor; elem = VInt; dst = d; src1 = s1; src2 = s2; bits = 128; lane_bits = 64 } ]
-  | ("vxor.vv", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Ok [ Ir.Vec_binop { op = Vxor; elem = VInt; dst = d; src1 = s1; src2 = s2; bits = 128; lane_bits = 64 } ]
-  | (("vle8.v" | "vle16.v" | "vle32.v" | "vle64.v"), [ OpReg (Register.Fpr (d, _)); OpMem m ]) ->
-      Ok [ Ir.Vec_load { dst = d; addr = { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = false; segment = None }; bits = 128 } ]
-  | (("vse8.v" | "vse16.v" | "vse32.v" | "vse64.v"), [ OpReg (Register.Fpr (s, _)); OpMem m ]) ->
-      Ok [ Ir.Vec_store { src = s; addr = { base = m.base; index = None; disp = m.disp; width = m.width; is_signed = false; segment = None }; bits = 128 } ]
-  | ("vmv.v.v", [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s, _)) ]) ->
-      Ok [ Ir.Vec_mov { dst = d; src = s; bits = 128 } ]
-  | (("vsetvli" | "vsetivli" | "vsetvl"), OpReg dst :: _) ->
-      Ok [ Ir.Mov { dst = Reg dst; src = Imm 16L } ]
+  (* V-extension: RVV Vector Operations via Riscv_vector module *)
+  | _ when (match Riscv_vector.lift_vector mnemonic ops with Some _ -> true | None -> false) -> (
+      match Riscv_vector.lift_vector mnemonic ops with
+      | Some res -> res
+      | None -> Error (Printf.sprintf "Unsupported RVV instruction: %s" mnemonic))
 
   | _ ->
       if String.starts_with ~prefix:"." mnemonic then
@@ -560,6 +566,7 @@ let lift_instr (mnemonic : string) (ops : raw_op list) : (Ir.instr list, string)
         Error (Printf.sprintf "Unsupported or invalid RISC-V instruction: %s" mnemonic)
 
 let lift_lines ?(options = default_options) (lines : raw_line list) : (Ir.func, string) result =
+  Riscv_vector.reset_state ();
   let blocks = ref [] in
   let label_aliases = Hashtbl.create 32 in
   let cur_labels = ref [ "entry" ] in

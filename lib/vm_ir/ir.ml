@@ -85,6 +85,14 @@ type vec_op =
   | Vtrn2
   | Vtbl
   | Vtbx
+  | Vdiv
+  | Vrem
+  | Vdivu
+  | Vremu
+  | Vcmpne
+  | Vcmple
+  | Vcmpltu
+  | Vcmpleu
 type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
@@ -269,6 +277,8 @@ let instr_to_string = function
         | Vuzp1 -> "vec_uzp1" | Vuzp2 -> "vec_uzp2"
         | Vtrn1 -> "vec_trn1" | Vtrn2 -> "vec_trn2"
         | Vtbl -> "vec_tbl" | Vtbx -> "vec_tbx"
+        | Vdiv -> "vec_div" | Vrem -> "vec_rem" | Vdivu -> "vec_divu" | Vremu -> "vec_remu"
+        | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
       in
       Printf.sprintf "%s.%d.%d.%s v%d, v%d, v%d" op_s bits lane_bits (vec_elem_to_string elem) dst src1 src2
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
@@ -284,6 +294,8 @@ let instr_to_string = function
         | Vuzp1 -> "vec_uzp1" | Vuzp2 -> "vec_uzp2"
         | Vtrn1 -> "vec_trn1" | Vtrn2 -> "vec_trn2"
         | Vtbl -> "vec_tbl" | Vtbx -> "vec_tbx"
+        | Vdiv -> "vec_div" | Vrem -> "vec_rem" | Vdivu -> "vec_divu" | Vremu -> "vec_remu"
+        | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
       in
       Printf.sprintf "%s_imm.%d.%d.%s v%d, v%d, 0x%LX" op_s bits lane_bits (vec_elem_to_string elem) dst src imm
   | Vec_load { dst; addr; bits } -> Printf.sprintf "vec_load.%d v%d, %s" bits dst (mem_ref_to_string addr)

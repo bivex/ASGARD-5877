@@ -282,6 +282,8 @@ let compile_and_package_multi
     | Ir.Vuzp1 -> 23 | Ir.Vuzp2 -> 24
     | Ir.Vtrn1 -> 25 | Ir.Vtrn2 -> 26
     | Ir.Vtbl -> 28 | Ir.Vtbx -> 29
+    | Ir.Vdiv -> 30 | Ir.Vdivu -> 31 | Ir.Vrem -> 32 | Ir.Vremu -> 33
+    | Ir.Vcmpne -> 34 | Ir.Vcmple -> 35 | Ir.Vcmpltu -> 36 | Ir.Vcmpleu -> 37
   in
   let vector_elem_code = function
     | Ir.VInt -> 0 | Ir.VF32 -> 1 | Ir.VF64 -> 2
