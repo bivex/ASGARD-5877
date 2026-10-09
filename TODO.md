@@ -2,7 +2,7 @@
 
 > **Статус**: Все пункты исторического аудита P0–P5 закрыты на 100%.  
 > Полная архивная спецификация аудита и лифтеров сохранена в [`docs/archive/AUDIT_TODO.md`](docs/archive/AUDIT_TODO.md).  
-> **Текущий статус (2026-10)**: 380 тестов в 36 сьютах проходят успешно (100% pass rate, 0 предупреждений под `-warn-error -a`).
+> **Текущий статус (2026-10)**: 383 теста в 36 сьютах проходят успешно (100% pass rate, 0 предупреждений под `-warn-error -a`).
 
 ---
 
@@ -22,7 +22,24 @@
 
 ---
 
-## 2. Перспективные направления (Stage 3 Backlog)
+## 2. Реализованный Stage 3 Focus (2026-10)
+
+- [x] **Windows PE / MSVC Toolchain & Native Runtime Parity (`lib/native_vm`)**:
+  - [x] `runtime_syscalls`: учёт `target_os = [ \`Darwin | \`Linux | \`Windows | \`Auto ]`, стелс-проверка PEB (`__readgsqword(0x60)` / `__readfsdword(0x30)` -> `BeingDebugged`, `NtGlobalFlag`), Win32 I/O и процессные примитивы.
+  - [x] `runtime_dual_map`: W^X dual-mapping для Windows через `CreateFileMappingW` (секционный маппинг страничного файла) + раздельные RW и RX `MapViewOfFile` с корректным `UnmapViewOfFile`.
+  - [x] `runtime_smc`: поддержка `_WIN32` в `ASGARD_SMC_STRICT`, сброс кеша инструкций через `FlushInstructionCache`, таймер `__rdtsc()`, диспетчер наномитов через `AddVectoredExceptionHandler`.
+  - [x] `vm_control_handlers`: эмиссия ловушек наномитов `__debugbreak()` для таргета `_WIN32`.
+  - [x] `runtime_probes`: сканирование аппаратных точек останова `Dr0..Dr7` через `GetThreadContext`, проверка подозрительных RWX-регионов через `VirtualQuery`, тайминг-дифференциал через `QueryPerformanceCounter`.
+  - [x] `runtime_ephemeral_jit`: сброс кеша инструкций `FlushInstructionCache` и Windows headers для эфемерного JIT.
+- [x] **Продвинутый синтез MBA 5-го порядка (`lib/mba_engine`)**:
+  - [x] `mba.ml`: нуль-полиномы 5-й степени над $\mathbb{Z}_{2^{64}}$ ($2^{61} \cdot x(x-1)(x-2)(x-3)(x-4) \equiv 0$) и нелинейные кросс-композиции 5-й степени на дизъюнктных булевых разбиениях.
+  - [x] `mba.mli`: тип `order = [ \`Deg4 | \`Deg5 ]`, расширение сигнатур `rewrite`, `obfuscate_alu`, экспорт нуль-инвариантов.
+  - [x] `egraph_rules.ml`: правила расширения 5-го порядка (`mul_nl_deg5_poly`, `mul_nl_deg5_cross`, `add_deg5_opaque`, `xor_deg5_opaque`), `rules_deg5`, `all_rules` (28 правил), `verify_all_rules`.
+  - [x] Спецификация и свойственные тесты эквивалентности для MBA 5-й степени (`test_mba_deg5_polynomial_invariants`, `test_mba_deg5_rewrite_equivalence`).
+
+---
+
+## 3. Перспективные направления (Stage 3 Backlog)
 
 - [ ] **JIT-движок (`rd_jit_vm`)**:
   - [ ] Расширение JIT-эмиттера для поддержки векторных и атомарных инструкций в нативном рантайме.
@@ -30,6 +47,4 @@
 - [ ] **E2E бенчмарки и стресс-тесты**:
   - [ ] Набор реальных C/C++ бинарников (OpenSSL, SQLite, Coreutils), компилируемых под Clang `-O3`.
   - [ ] Стресс-тестирование против автоматических деобфускаторов (angr, Triton, Ghidra, IDA Pro).
-- [ ] **Продвинутый синтез MBA**:
-  - [ ] Экспериментальный 5-й порядок полиномиального MBA-расширения.
-  - [ ] Обогащение грамматик NCFG новыми типами нелинейных операторов.
+- [ ] **Обогащение грамматик NCFG новыми типами нелинейных операторов**.

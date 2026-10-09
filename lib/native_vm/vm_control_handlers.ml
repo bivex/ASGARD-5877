@@ -12,6 +12,12 @@ let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_addre
   if enable_nanomites then begin
     Buffer.add_string b "#if defined(__APPLE__)\n";
     Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+    Buffer.add_string b "#elif defined(_WIN32)\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
+    Buffer.add_string b "        __debugbreak();\n";
+    Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)imm;\n";
     Buffer.add_string b "#elif defined(__linux__) && !defined(_MSC_VER)\n";
     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
@@ -35,6 +41,12 @@ let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_addre
   if enable_nanomites then begin
     Buffer.add_string b "#if defined(__APPLE__)\n";
     Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
+    Buffer.add_string b "#elif defined(_WIN32)\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = (uint32_t)c;\n";
+    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, t_true, t_false, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
+    Buffer.add_string b "        __debugbreak();\n";
+    Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)(c * t_true + (1ULL - c) * t_false);\n";
     Buffer.add_string b "#elif defined(__linux__) && !defined(_MSC_VER)\n";
     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = (uint32_t)c;\n";
@@ -66,6 +78,12 @@ let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_addre
    if enable_nanomites then begin
      Buffer.add_string b "#if defined(__APPLE__)\n";
      Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+     Buffer.add_string b "#elif defined(_WIN32)\n";
+     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
+     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
+     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
+     Buffer.add_string b "        __debugbreak();\n";
+     Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)imm;\n";
      Buffer.add_string b "#elif defined(__linux__) && !defined(_MSC_VER)\n";
      Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
      Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";

@@ -7,10 +7,21 @@ let emit_introspective_smc_header () =
 #if defined(__APPLE__)
 #include <libkern/OSCacheControl.h>
 #include <pthread.h>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 #endif
 
 #if defined(ASGARD_SMC_STRICT)
-#  if !defined(__APPLE__) && (!defined(__linux__) || !defined(MFD_CLOEXEC))
+#  if !defined(__APPLE__) && (!defined(__linux__) || !defined(MFD_CLOEXEC)) && !defined(_WIN32)
 #    error "ASGARD Security Violation: Strict SMC requested (max_security profile), but target platform does not support dual-mapping W^X memory aliasing!"
 #  endif
 #endif
@@ -125,21 +136,33 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     code_rw[5] = 0x05; code_rw[6] = 0x12; code_rw[7] = 0x00; code_rw[8] = 0x00; code_rw[9] = 0x00;
     code_rw[10] = 0xC3;
 
+#if defined(_MSC_VER)
+    uint64_t t0 = __rdtsc();
+#else
     uint64_t t0 = __builtin_ia32_rdtsc();
+#endif
 
     // Dynamic Self-Modification via RW alias
     uint8_t imm_val = (uint8_t)(seed & 0x7F);
     code_rw[6] = imm_val;
 
     // Hardware icache invalidation & pipeline clear
+#if defined(_WIN32)
+    FlushInstructionCache(GetCurrentProcess(), (void*)buf.rx_alias, 16);
+#else
     __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + 16);
+#endif
 
     // Execute via RX alias
     typedef uint32_t (*smc_fn_t)();
     smc_fn_t fn = (smc_fn_t)buf.rx_alias;
     uint32_t result = fn();
 
+#if defined(_MSC_VER)
+    uint64_t t1 = __rdtsc();
+#else
     uint64_t t1 = __builtin_ia32_rdtsc();
+#endif
 
     uint32_t expected = 0x5877 + imm_val;
     if (result != expected) {
@@ -239,6 +262,42 @@ inline NanomiteDispatcher g_nanomite_dispatcher;
 #if defined(__APPLE__)
 static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
     g_nanomite_dispatcher.seed = seed;
+    g_nanomite_dispatcher.installed = true;
+}
+#elif defined(_WIN32)
+static LONG WINAPI nanomite_vectored_handler(PEXCEPTION_POINTERS pExceptionInfo) {
+    if (pExceptionInfo && pExceptionInfo->ExceptionRecord) {
+        DWORD code = pExceptionInfo->ExceptionRecord->ExceptionCode;
+        if (code == EXCEPTION_BREAKPOINT || code == EXCEPTION_ILLEGAL_INSTRUCTION) {
+            uint64_t pc_val = 0;
+#if defined(_M_X64) || defined(__x86_64__)
+            if (pExceptionInfo->ContextRecord) {
+                pc_val = (uint64_t)pExceptionInfo->ContextRecord->Rip;
+            }
+#elif defined(_M_ARM64) || defined(__aarch64__)
+            if (pExceptionInfo->ContextRecord) {
+                pc_val = (uint64_t)pExceptionInfo->ContextRecord->Pc;
+            }
+#endif
+            g_nanomite_dispatcher.traps_handled = g_nanomite_dispatcher.traps_handled + 1;
+            uint32_t tid = g_nanomite_dispatcher.current_trap_id;
+            uint32_t cond = g_nanomite_dispatcher.current_condition;
+            g_nanomite_dispatcher.resolved_target = g_nanomite_dispatcher.resolve_target(tid, cond, pc_val);
+#if defined(_M_X64) || defined(__x86_64__)
+            if (code == EXCEPTION_BREAKPOINT && pExceptionInfo->ContextRecord) {
+                pExceptionInfo->ContextRecord->Rip += 1;
+            }
+#endif
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
+    g_nanomite_dispatcher.seed = seed;
+    if (g_nanomite_dispatcher.installed) return;
+    AddVectoredExceptionHandler(1, nanomite_vectored_handler);
     g_nanomite_dispatcher.installed = true;
 }
 #elif defined(__linux__) && !defined(_MSC_VER)

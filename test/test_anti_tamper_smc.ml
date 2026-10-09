@@ -408,6 +408,42 @@ int main() {
         done;
         Alcotest.(check bool) "output contains STRICT_SMC_OK" true !found)
 
+let test_windows_pe_runtime_headers () =
+  let sys_win = Hardened_runtime.emit_direct_syscalls_header ~target_os:`Windows () in
+  let contains s sub =
+    let ls = String.length s and lsub = String.length sub in
+    let rec loop i =
+      if i + lsub > ls then false
+      else if String.sub s i lsub = sub then true
+      else loop (i + 1)
+    in loop 0
+  in
+  Alcotest.(check bool) "defines ASGARD_TARGET_WINDOWS" true (contains sys_win "#define ASGARD_TARGET_WINDOWS 1");
+  Alcotest.(check bool) "includes windows.h" true (contains sys_win "<windows.h>");
+  Alcotest.(check bool) "includes winternl.h" true (contains sys_win "<winternl.h>");
+  Alcotest.(check bool) "PEB BeingDebugged check" true (contains sys_win "BeingDebugged");
+  Alcotest.(check bool) "PEB NtGlobalFlag check" true (contains sys_win "NtGlobalFlag");
+  Alcotest.(check bool) "Win32 GetCurrentProcessId" true (contains sys_win "GetCurrentProcessId");
+  Alcotest.(check bool) "Win32 ExitProcess" true (contains sys_win "ExitProcess");
+
+  let dual_win = Hardened_runtime.emit_dual_mapping_header () in
+  Alcotest.(check bool) "Dual mapping CreateFileMappingW" true (contains dual_win "CreateFileMappingW");
+  Alcotest.(check bool) "Dual mapping MapViewOfFile" true (contains dual_win "MapViewOfFile");
+  Alcotest.(check bool) "Dual mapping UnmapViewOfFile" true (contains dual_win "UnmapViewOfFile");
+
+  let smc_win = Hardened_runtime.emit_introspective_smc_header () in
+  Alcotest.(check bool) "SMC FlushInstructionCache" true (contains smc_win "FlushInstructionCache");
+
+  let nano_win = Hardened_runtime.emit_nanomite_engine_header () in
+  Alcotest.(check bool) "Nanomites AddVectoredExceptionHandler" true (contains nano_win "AddVectoredExceptionHandler");
+
+  let probes_win = Hardened_runtime.emit_anti_emulation_probes () in
+  Alcotest.(check bool) "Probes QueryPerformanceCounter" true (contains probes_win "QueryPerformanceCounter");
+
+  let mem_win = Hardened_runtime.emit_memory_integrity_scanner_header () in
+  Alcotest.(check bool) "Memory integrity VirtualQuery" true (contains mem_win "VirtualQuery");
+  Alcotest.(check bool) "Memory integrity Dr7 check" true (contains mem_win "dbg_ctx.Dr7")
+
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
   Alcotest.test_case "full_threaded_vm_with_layer3_protection" `Quick test_full_threaded_vm_with_layer3_protection;
@@ -416,4 +452,5 @@ let tests = [
   Alcotest.test_case "vector_isa_e2e" `Quick test_vector_isa_e2e;
   Alcotest.test_case "smc_diagnostics_and_modes" `Quick test_smc_diagnostics_and_modes;
   Alcotest.test_case "smc_strict_mode_and_max_security" `Quick test_smc_strict_mode_and_max_security;
+  Alcotest.test_case "windows_pe_runtime_headers" `Quick test_windows_pe_runtime_headers;
 ]

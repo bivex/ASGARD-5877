@@ -254,6 +254,59 @@ int main() {
     done;
     Alcotest.(check bool) "output contains EGRAPH_HANDLER_OK" true !found)
 
+let test_mba_deg5_polynomial_invariants () =
+  let rng = Random.State.make [| 0x58775877 |] in
+  Alcotest.(check bool) "verify_all_rules including degree 5" true
+    (Egraph.verify_all_rules ~rng ~trials:200);
+  Alcotest.(check int) "rules_deg5 count is 4" 4 (List.length Egraph.rules_deg5);
+  Alcotest.(check int) "all_rules count is 28" 28 (List.length Egraph.all_rules);
+
+  (* Edge vectors for zero_inv5_poly *)
+  let edge = [| 0L; 1L; -1L; 2L; 3L; 4L; 5L; 10L; 100L; Int64.min_int; Int64.max_int;
+                0x5555555555555555L; -0x5555555555555556L; 0x123456789ABCDEFL |] in
+  Array.iter (fun x ->
+    let e = Mba.zero_inv5_poly (Mba.Const x) in
+    Alcotest.(check int64) (Printf.sprintf "zero_inv5_poly(0x%LX) == 0" x) 0L (Mba.eval (fun _ -> 0L) e)
+  ) edge;
+
+  (* Randomized vectors for zero_inv5_poly & zero_inv5_nl *)
+  let vrng = Random.State.make [| 0x20261009 |] in
+  for _ = 1 to 500 do
+    let x = Random.State.int64 vrng Int64.max_int in
+    let y = Random.State.int64 vrng Int64.max_int in
+    let ep = Mba.zero_inv5_poly (Mba.Const x) in
+    Alcotest.(check int64) "random zero_inv5_poly == 0" 0L (Mba.eval (fun _ -> 0L) ep);
+    let enl = Mba.zero_inv5_nl (Mba.Const x) (Mba.Const y) in
+    Alcotest.(check int64) "random zero_inv5_nl == 0" 0L (Mba.eval (fun _ -> 0L) enl);
+  done
+
+let test_mba_deg5_rewrite_equivalence () =
+  let rng = Random.State.make [| 0xD365 |] in
+  let ops = [
+    ("add", Mba.Add (Mba.Var "a", Mba.Var "b"), Int64.add);
+    ("sub", Mba.Sub (Mba.Var "a", Mba.Var "b"), Int64.sub);
+    ("xor", Mba.Xor (Mba.Var "a", Mba.Var "b"), Int64.logxor);
+    ("and", Mba.And (Mba.Var "a", Mba.Var "b"), Int64.logand);
+    ("or",  Mba.Or  (Mba.Var "a", Mba.Var "b"), Int64.logor);
+    ("mul", Mba.Mul (Mba.Var "a", Mba.Var "b"), Int64.mul);
+  ] in
+  List.iter (fun (name, expr, ref_fn) ->
+    let rewritten = Mba.rewrite ~order:`Deg5 ~rng ~depth:2 expr in
+    Array.iter (fun (x, y) ->
+      let actual = eval2 x y rewritten in
+      let expected = ref_fn x y in
+      Alcotest.(check int64) (Printf.sprintf "%s deg5 rewrite edge (%Ld, %Ld)" name x y) expected actual
+    ) vectors;
+    let vrng = Random.State.make [| 0x7777 |] in
+    for _ = 1 to 30 do
+      let x = Random.State.int64 vrng Int64.max_int in
+      let y = Random.State.int64 vrng Int64.max_int in
+      let actual = eval2 x y rewritten in
+      let expected = ref_fn x y in
+      Alcotest.(check int64) (Printf.sprintf "%s deg5 rewrite rand (%Ld, %Ld)" name x y) expected actual
+    done
+  ) ops
+
 let tests = [
   Alcotest.test_case "rule_verification_24_identities" `Quick test_rule_verification;
   Alcotest.test_case "expansion_equivalence_all_ops" `Quick test_expansion_equivalence;
@@ -263,5 +316,7 @@ let tests = [
   Alcotest.test_case "budget_respected" `Quick test_budget_respected;
   Alcotest.test_case "vm_roundtrip_obfuscate_alu" `Quick test_vm_roundtrip;
   Alcotest.test_case "egraph_cpp_handler_expansion_e2e" `Quick test_egraph_cpp_handler_expansion;
+  Alcotest.test_case "mba_deg5_polynomial_invariants" `Quick test_mba_deg5_polynomial_invariants;
+  Alcotest.test_case "mba_deg5_rewrite_equivalence" `Quick test_mba_deg5_rewrite_equivalence;
   QCheck_alcotest.to_alcotest prop_egraph_equivalence;
 ]

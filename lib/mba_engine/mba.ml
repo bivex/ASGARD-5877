@@ -47,6 +47,8 @@ let rec eval env = function
   | Not a -> Int64.lognot (eval env a)
   | Neg a -> Int64.neg (eval env a)
 
+type order = [ `Deg4 | `Deg5 ]
+
 (* Semi-Linear Bitmask Constants (Disjoint 1-bit partitions) *)
 let mask_even = Const 0x5555555555555555L
 let mask_odd  = Const (-0x5555555555555556L) (* 0xAAAAAAAAAAAAAAAA in two's complement *)
@@ -64,61 +66,108 @@ let zero_inv3 a b =
   (* ((a & b) + (a & ~b)) - a == 0 *)
   Sub (Add (And (a, b), And (a, Not b)), a)
 
-(** XOR: 4 diverse forms (Linear + Semi-linear masked + Invariant blended) *)
-let xor_forms a b =
+(* Degree-5 Opaque Polynomial Zero Invariants over Z_{2^64} *)
+let zero_inv5_poly x =
+  (* Degree-5 null polynomial over Z_{2^64}: 2^61 * x * (x-1) * (x-2) * (x-3) * (x-4) == 0 (mod 2^64) *)
+  let c_2_61 = Const 0x2000000000000000L in
+  Mul (c_2_61,
+       Mul (x,
+            Mul (Sub (x, Const 1L),
+                 Mul (Sub (x, Const 2L),
+                      Mul (Sub (x, Const 3L),
+                           Sub (x, Const 4L))))))
+
+let zero_inv5_nl a b =
+  (* Degree-5 non-linear cross-term invariant: zero_inv1(a, b) * (a & b) * (a | b) * (a ^ b) * (a + b) == 0 *)
+  Mul (zero_inv1 a b,
+       Mul (And (a, b),
+            Mul (Or (a, b),
+                 Mul (Xor (a, b),
+                      Add (a, b)))))
+
+(** XOR: diverse forms (Linear + Semi-linear masked + Invariant blended + Degree-5) *)
+let xor_forms ?(order = `Deg5) a b =
   let f1 = Xor (Or (a, b), And (a, b)) in
   let f2 = Sub (Add (a, b), Mul (Const 2L, And (a, b))) in
   let f3 = Add (Xor (And (a, mask_even), And (b, mask_even)),
                 Xor (And (a, mask_odd),  And (b, mask_odd))) in
   let f4 = Add (Sub (Or (a, b), And (a, b)), zero_inv1 a b) in
-  [| f1; f2; f3; f4 |]
+  match order with
+  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg5 ->
+      let f5 = Add (f1, zero_inv5_poly a) in
+      let f6 = Add (f2, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5; f6 |]
 
-(** AND: 4 diverse forms *)
-let and_forms a b =
+(** AND: diverse forms *)
+let and_forms ?(order = `Deg5) a b =
   let f1 = Xor (Or (a, b), Xor (a, b)) in
   let f2 = Sub (Add (a, b), Or (a, b)) in
   let f3 = Add (And (And (a, b), mask_even),
                 And (And (a, b), mask_odd)) in
   let f4 = Add (Sub (a, And (a, Not b)), zero_inv2 a b) in
-  [| f1; f2; f3; f4 |]
+  match order with
+  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg5 ->
+      let f5 = Add (f2, zero_inv5_poly a) in
+      let f6 = Add (f4, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5; f6 |]
 
-(** OR: 4 diverse forms *)
-let or_forms a b =
+(** OR: diverse forms *)
+let or_forms ?(order = `Deg5) a b =
   let f1 = Xor (Xor (a, b), And (a, b)) in
   let f2 = Add (Xor (a, b), And (a, b)) in
   let f3 = Add (Or (And (a, mask_even), And (b, mask_even)),
                 Or (And (a, mask_odd),  And (b, mask_odd))) in
   let f4 = Add (Sub (Add (a, b), And (a, b)), zero_inv3 a b) in
-  [| f1; f2; f3; f4 |]
+  match order with
+  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg5 ->
+      let f5 = Add (f2, zero_inv5_poly a) in
+      let f6 = Add (f4, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5; f6 |]
 
-(** ADD: 4 diverse forms *)
-let add_forms a b =
+(** ADD: diverse forms *)
+let add_forms ?(order = `Deg5) a b =
   let f1 = Add (Xor (a, b), Mul (Const 2L, And (a, b))) in
   let f2 = Add (Or (a, b), And (a, b)) in
   let f3 = Add (Add (And (a, mask_even), And (b, mask_even)),
                 Add (And (a, mask_odd),  And (b, mask_odd))) in
   let f4 = Add (Sub (Mul (Const 2L, Or (a, b)), Xor (a, b)), zero_inv1 a b) in
-  [| f1; f2; f3; f4 |]
+  match order with
+  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg5 ->
+      let f5 = Add (f1, zero_inv5_poly a) in
+      let f6 = Add (f2, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5; f6 |]
 
-(** SUB: 4 diverse forms *)
-let sub_forms a b =
+(** SUB: diverse forms *)
+let sub_forms ?(order = `Deg5) a b =
   let f1 = Sub (Xor (a, b), Mul (Const 2L, And (Not a, b))) in
   let f2 = Sub (Mul (Const 2L, And (a, Not b)), Xor (a, b)) in
   let f3 = Add (Sub (And (a, mask_even), And (b, mask_even)),
                 Sub (And (a, mask_odd),  And (b, mask_odd))) in
   let f4 = Add (Sub (And (a, Not b), And (Not a, b)), zero_inv2 a b) in
-  [| f1; f2; f3; f4 |]
+  match order with
+  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg5 ->
+      let f5 = Add (f1, zero_inv5_poly a) in
+      let f6 = Add (f2, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5; f6 |]
 
-(** MUL: Non-Linear MBA (NLMBA) Multiplicative Formulations *)
-let mul_forms a b =
-  (* Form 1: (a & b)*(a | b) + (a & ~b)*(~a & b) *)
+(** MUL: Non-Linear MBA (NLMBA) Multiplicative Formulations up to Degree 5 *)
+let mul_forms ?(order = `Deg5) a b =
   let f1 = Add (Mul (And (a, b), Or (a, b)),
                 Mul (And (a, Not b), And (Not a, b))) in
-  (* Form 2: (a & b)*(a + b) + (a & ~b)*(~a & b) - (a & b)*(a & b) *)
   let f2 = Sub (Add (Mul (And (a, b), Add (a, b)),
                      Mul (And (a, Not b), And (Not a, b))),
                 Mul (And (a, b), And (a, b))) in
-  [| f1; f2 |]
+  match order with
+  | `Deg4 -> [| f1; f2 |]
+  | `Deg5 ->
+      let f3 = Add (f1, zero_inv5_poly a) in
+      let f4 = Add (f2, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4 |]
 
 (** NOT: 2 forms *)
 let not_forms a =
@@ -135,18 +184,18 @@ let pick rng forms =
 (* Main rewriter: applies verified MBA & NLMBA identities recursively  *)
 (* ------------------------------------------------------------------ *)
 
-let rec rewrite ~rng ~depth expr =
+let rec rewrite ?(order = `Deg5) ~rng ~depth expr =
   if depth <= 0 then expr
   else
-    let r = rewrite ~rng ~depth:(depth - 1) in
+    let r = rewrite ~order ~rng ~depth:(depth - 1) in
     match expr with
     | Var _ | Const _ -> expr
-    | Add (a, b) -> pick rng (add_forms (r a) (r b))
-    | Sub (a, b) -> pick rng (sub_forms (r a) (r b))
-    | Xor (a, b) -> pick rng (xor_forms (r a) (r b))
-    | And (a, b) -> pick rng (and_forms (r a) (r b))
-    | Or  (a, b) -> pick rng (or_forms  (r a) (r b))
-    | Mul (a, b) -> pick rng (mul_forms (r a) (r b))
+    | Add (a, b) -> pick rng (add_forms ~order (r a) (r b))
+    | Sub (a, b) -> pick rng (sub_forms ~order (r a) (r b))
+    | Xor (a, b) -> pick rng (xor_forms ~order (r a) (r b))
+    | And (a, b) -> pick rng (and_forms ~order (r a) (r b))
+    | Or  (a, b) -> pick rng (or_forms  ~order (r a) (r b))
+    | Mul (a, b) -> pick rng (mul_forms ~order (r a) (r b))
     | Not a      -> pick rng (not_forms (r a))
     | Neg a      ->
         (* -x = ~x + 1 [two's complement] *)
@@ -234,25 +283,25 @@ let lower_to_ir ~dst ~env expr =
   compile dst expr;
   List.rev !instrs
 
-let obfuscate_alu ~rng ~depth ~dst ~src1 ~src2 op =
+let obfuscate_alu ?(order = `Deg5) ~rng ~depth ~dst ~src1 ~src2 op =
   match op with
   | Ir.Add ->
-      let mba_tree = rewrite ~rng ~depth (Add (Var "a", Var "b")) in
+      let mba_tree = rewrite ~order ~rng ~depth (Add (Var "a", Var "b")) in
       lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
   | Ir.Sub ->
-      let mba_tree = rewrite ~rng ~depth (Sub (Var "a", Var "b")) in
+      let mba_tree = rewrite ~order ~rng ~depth (Sub (Var "a", Var "b")) in
       lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
   | Ir.Xor ->
-      let mba_tree = rewrite ~rng ~depth (Xor (Var "a", Var "b")) in
+      let mba_tree = rewrite ~order ~rng ~depth (Xor (Var "a", Var "b")) in
       lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
   | Ir.And ->
-      let mba_tree = rewrite ~rng ~depth (And (Var "a", Var "b")) in
+      let mba_tree = rewrite ~order ~rng ~depth (And (Var "a", Var "b")) in
       lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
   | Ir.Or ->
-      let mba_tree = rewrite ~rng ~depth (Or (Var "a", Var "b")) in
+      let mba_tree = rewrite ~order ~rng ~depth (Or (Var "a", Var "b")) in
       lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
   | Ir.Imul ->
-      let mba_tree = rewrite ~rng ~depth (Mul (Var "a", Var "b")) in
+      let mba_tree = rewrite ~order ~rng ~depth (Mul (Var "a", Var "b")) in
       lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
   | unsupported ->
       [ Ir.Alu { op = unsupported; dst; src1; src2; set_flags = false } ]

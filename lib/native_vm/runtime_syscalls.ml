@@ -1,27 +1,52 @@
 type target_os = [ `Darwin | `Linux | `Windows | `Auto ]
 
 let emit_direct_syscalls_header ?(target_os = `Auto) () =
-  let _ = target_os in
-  {|#pragma once
+  let os_macro =
+    match target_os with
+    | `Darwin -> "#define ASGARD_TARGET_DARWIN 1\n"
+    | `Linux -> "#define ASGARD_TARGET_LINUX 1\n"
+    | `Windows -> "#define ASGARD_TARGET_WINDOWS 1\n"
+    | `Auto -> ""
+  in
+  os_macro ^ {|#pragma once
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(ASGARD_TARGET_LINUX)
 #include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
+#elif defined(_WIN32) || defined(ASGARD_TARGET_WINDOWS)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <winternl.h>
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+#endif
+
+#if defined(_WIN32) || defined(ASGARD_TARGET_WINDOWS)
+#ifndef _PID_T_DEFINED
+#define _PID_T_DEFINED
+typedef int pid_t;
+#endif
 #endif
 
 #define ASGARD_DIRECT_SYSCALLS_ENABLED 1
 
 namespace asgard_syscalls {
 
-#if defined(__APPLE__) && (defined(__arm64__) || defined(__aarch64__))
+#if (defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)) && (defined(__arm64__) || defined(__aarch64__))
 // Direct Darwin ARM64 Syscall Stub (SVC #0x80 with BSD class 0x2000000)
 static inline __attribute__((always_inline)) int64_t direct_syscall_0(int64_t sys_num) noexcept {
     register int64_t x16 __asm__("x16") = sys_num;
@@ -214,43 +239,54 @@ static inline int64_t direct_syscall_6(int64_t s, int64_t a, int64_t b, int64_t 
 #endif
 
 static inline pid_t sys_getpid() noexcept {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
     return (pid_t)direct_syscall_0(20); // SYS_getpid
 #elif defined(__linux__) && defined(__x86_64__)
     return (pid_t)direct_syscall_0(39); // SYS_getpid
-#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
+#elif (defined(__linux__) || defined(ASGARD_TARGET_LINUX)) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
     return (pid_t)direct_syscall_0(172); // SYS_getpid
+#elif defined(_WIN32) || defined(ASGARD_TARGET_WINDOWS)
+    return (pid_t)GetCurrentProcessId();
 #else
     return 0;
 #endif
 }
 
 static inline int64_t sys_write(int fd, const void* buf, size_t count) noexcept {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
     return direct_syscall_3(4, (int64_t)fd, (int64_t)buf, (int64_t)count); // SYS_write
 #elif defined(__linux__) && defined(__x86_64__)
     return direct_syscall_3(1, (int64_t)fd, (int64_t)buf, (int64_t)count); // SYS_write
-#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
+#elif (defined(__linux__) || defined(ASGARD_TARGET_LINUX)) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
     return direct_syscall_3(64, (int64_t)fd, (int64_t)buf, (int64_t)count); // SYS_write
+#elif defined(_WIN32) || defined(ASGARD_TARGET_WINDOWS)
+    HANDLE h = (fd == 1) ? GetStdHandle(STD_OUTPUT_HANDLE) :
+               (fd == 2) ? GetStdHandle(STD_ERROR_HANDLE) : (HANDLE)(intptr_t)fd;
+    if (h == NULL || h == INVALID_HANDLE_VALUE) return -1;
+    DWORD written = 0;
+    if (WriteFile(h, buf, (DWORD)count, &written, NULL)) return (int64_t)written;
+    return -1;
 #else
     return 0;
 #endif
 }
 
 static inline void sys_exit(int status) noexcept {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
     direct_syscall_1(1, (int64_t)status); // SYS_exit
 #elif defined(__linux__) && defined(__x86_64__)
     direct_syscall_1(60, (int64_t)status); // SYS_exit
-#elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
+#elif (defined(__linux__) || defined(ASGARD_TARGET_LINUX)) && (defined(__arm64__) || defined(__aarch64__) || defined(__riscv) || defined(__riscv__))
     direct_syscall_1(93, (int64_t)status); // SYS_exit
+#elif defined(_WIN32) || defined(ASGARD_TARGET_WINDOWS)
+    ExitProcess((UINT)status);
 #else
     _exit(status);
 #endif
 }
 
 static inline bool sys_check_debugger_present() noexcept {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
     int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int)sys_getpid() };
     struct kinfo_proc kinfo = {};
     size_t ksize = sizeof(kinfo);
@@ -259,7 +295,7 @@ static inline bool sys_check_debugger_present() noexcept {
         return true;
     }
     return false;
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(ASGARD_TARGET_LINUX)
     int fd = -1;
 #if defined(__x86_64__)
     fd = (int)direct_syscall_2(2, (int64_t)"/proc/self/status", 0);
@@ -282,6 +318,28 @@ static inline bool sys_check_debugger_present() noexcept {
         }
     }
     return false;
+#elif defined(_WIN32) || defined(ASGARD_TARGET_WINDOWS)
+#if defined(_M_X64) || defined(__x86_64__)
+    // Stealth PEB interrogation on x64: GS:[0x60]
+    const uint8_t* peb = (const uint8_t*)__readgsqword(0x60);
+    if (peb) {
+        // PEB.BeingDebugged at offset +0x02
+        if (peb[2] != 0) return true;
+        // PEB.NtGlobalFlag at offset +0xBC
+        const uint32_t nt_global_flag = *(const uint32_t*)(peb + 0xBC);
+        // 0x70 = FLG_HEAP_ENABLE_TAIL_CHECK | FLG_HEAP_ENABLE_FREE_CHECK | FLG_HEAP_VALIDATE_PARAMETERS
+        if ((nt_global_flag & 0x70) == 0x70) return true;
+    }
+#elif defined(_M_IX86) || defined(__i386__)
+    // Stealth PEB interrogation on x86: FS:[0x30]
+    const uint8_t* peb = (const uint8_t*)__readfsdword(0x30);
+    if (peb) {
+        if (peb[2] != 0) return true;
+        const uint32_t nt_global_flag = *(const uint32_t*)(peb + 0x68);
+        if ((nt_global_flag & 0x70) == 0x70) return true;
+    }
+#endif
+    return IsDebuggerPresent() != 0;
 #else
     return false;
 #endif

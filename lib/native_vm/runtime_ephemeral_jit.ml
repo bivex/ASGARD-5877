@@ -6,6 +6,14 @@ let emit_ephemeral_jit_header () =
 #if defined(__APPLE__)
 #include <libkern/OSCacheControl.h>
 #include <pthread.h>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 
 namespace asgard_ephemeral_jit {
@@ -232,6 +240,8 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
 #if defined(__aarch64__)
     pthread_jit_write_protect_np(1);
 #endif
+#elif defined(_WIN32)
+    FlushInstructionCache(GetCurrentProcess(), (void*)buf.rx_alias, code_bytes);
 #else
     __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
 #endif
@@ -255,6 +265,8 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
 #if defined(__APPLE__)
     sys_dcache_flush(buf.rw_alias, code_bytes);
     sys_icache_invalidate((void*)buf.rx_alias, code_bytes);
+#elif defined(_WIN32)
+    FlushInstructionCache(GetCurrentProcess(), (void*)buf.rx_alias, code_bytes);
 #else
     __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
 #endif

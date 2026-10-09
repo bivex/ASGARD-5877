@@ -12,6 +12,14 @@ let emit_dual_mapping_header () =
 #include <sys/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 
 namespace asgard_memory {
@@ -26,6 +34,8 @@ struct DualMappedBuffer {
         return true;
 #elif defined(__linux__) && defined(MFD_CLOEXEC)
         return true;
+#elif defined(_WIN32)
+        return true;
 #else
         return false;
 #endif
@@ -34,6 +44,12 @@ struct DualMappedBuffer {
     static DualMappedBuffer allocate(size_t required_size) noexcept {
         DualMappedBuffer buf = {};
         size_t page_sz = 4096;
+
+#if defined(_WIN32)
+        SYSTEM_INFO si;
+        GetSystemInfo(&si);
+        if (si.dwPageSize) page_sz = (size_t)si.dwPageSize;
+#endif
         buf.size = (required_size + page_sz - 1) & ~(page_sz - 1);
 
 #if defined(__APPLE__)
@@ -70,6 +86,20 @@ struct DualMappedBuffer {
             }
             close(fd);
         }
+#elif defined(_WIN32)
+        HANDLE hMap = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_EXECUTE_READWRITE, 0, (DWORD)buf.size, NULL);
+        if (hMap != NULL) {
+            buf.rw_alias = MapViewOfFile(hMap, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, buf.size);
+            buf.rx_alias = MapViewOfFile(hMap, FILE_MAP_READ | FILE_MAP_EXECUTE, 0, 0, buf.size);
+            CloseHandle(hMap);
+            if (buf.rw_alias != NULL && buf.rx_alias != NULL) {
+                return buf;
+            }
+            if (buf.rw_alias != NULL) UnmapViewOfFile(buf.rw_alias);
+            if (buf.rx_alias != NULL) UnmapViewOfFile((void*)buf.rx_alias);
+            buf.rw_alias = nullptr;
+            buf.rx_alias = nullptr;
+        }
 #endif
         return buf;
     }
@@ -85,6 +115,9 @@ struct DualMappedBuffer {
 #elif defined(__linux__)
         if (rw_alias && rw_alias != MAP_FAILED) munmap(rw_alias, size);
         if (rx_alias && rx_alias != MAP_FAILED) munmap((void*)rx_alias, size);
+#elif defined(_WIN32)
+        if (rw_alias != nullptr) UnmapViewOfFile(rw_alias);
+        if (rx_alias != nullptr) UnmapViewOfFile((void*)rx_alias);
 #endif
         rw_alias = nullptr;
         rx_alias = nullptr;

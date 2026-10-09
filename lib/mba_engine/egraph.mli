@@ -60,6 +60,15 @@ val verify_rules : rng:Random.State.t -> trials:int -> bool
 (** Number of built-in rewrite rules. *)
 val rule_count : int
 
+(** Degree-5 rewrite rules incorporating 5th-order polynomial invariants and non-linear cross terms. *)
+val rules_deg5 : (string * Egraph_rules.pattern * Egraph_rules.pattern) list
+
+(** Combined set of all rewrite rules (Degree 4 + Degree 5). *)
+val all_rules : (string * Egraph_rules.pattern * Egraph_rules.pattern) list
+
+(** Evaluate all rewrite rules (including Degree 5) under randomized and edge-case assignments. *)
+val verify_all_rules : rng:Random.State.t -> trials:int -> bool
+
 (** E-graph-based counterpart of [Mba.obfuscate_alu]: expand the ALU
     operation via Equality Expansion and lower it to VM-IR instructions
     writing [dst]. Unsupported operations fall back to a plain ALU op. *)

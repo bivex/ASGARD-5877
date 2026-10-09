@@ -115,6 +115,28 @@ let rules : (string * pattern * pattern) list =
 
 let rule_count = List.length rules
 
+let p_c_2_61 = pC 0x2000000000000000L
+let p3 = pC 3L
+let p4 = pC 4L
+
+let zero5_poly a =
+  pMul p_c_2_61
+       (pMul a (pMul (pSub a p1c) (pMul (pSub a p2) (pMul (pSub a p3) (pSub a p4)))))
+
+let zero5_nl a b =
+  let zero1 a b = pSub (pAdd (pOr a b) (pAnd a b)) (pAdd a b) in
+  pMul (zero1 a b)
+       (pMul (pAnd a b) (pMul (pOr a b) (pMul (pXor a b) (pAdd a b))))
+
+let rules_deg5 : (string * pattern * pattern) list =
+  let x = pX and y = pY in
+  [ ("mul_nl_deg5_poly", pMul x y, pAdd (pAdd (pMul (pAnd x y) (pOr x y)) (pMul (pAnd x (pNot y)) (pAnd (pNot x) y))) (zero5_poly x));
+    ("mul_nl_deg5_cross", pMul x y, pAdd (pSub (pAdd (pMul (pAnd x y) (pAdd x y)) (pMul (pAnd x (pNot y)) (pAnd (pNot x) y))) (pMul (pAnd x y) (pAnd x y))) (zero5_nl x y));
+    ("add_deg5_opaque", pAdd x y, pAdd (pAdd (pXor x y) (pMul p2 (pAnd x y))) (zero5_poly x));
+    ("xor_deg5_opaque", pXor x y, pAdd (pSub (pOr x y) (pAnd x y)) (zero5_nl x y)) ]
+
+let all_rules = rules @ rules_deg5
+
 let rec pattern_to_expr = function
   | PVar s -> Var s
   | PConst c -> Const c
@@ -135,7 +157,7 @@ let rec pattern_vars acc = function
   | PAnd (a, b) | POr (a, b) | PXor (a, b) ->
       pattern_vars (pattern_vars acc a) b
 
-let verify_rules ~rng ~trials =
+let verify_rules_list ~rng ~trials rule_list =
   let edge =
     [| 0L; 1L; -1L; 2L; Int64.min_int; Int64.max_int;
        0x5555555555555555L; -0x5555555555555556L;
@@ -168,4 +190,8 @@ let verify_rules ~rng ~trials =
         if not (Int64.equal (eval envf el) (eval envf er)) then ok := false
       done;
       !ok)
-    rules
+    rule_list
+
+let verify_rules ~rng ~trials = verify_rules_list ~rng ~trials rules
+
+let verify_all_rules ~rng ~trials = verify_rules_list ~rng ~trials all_rules
