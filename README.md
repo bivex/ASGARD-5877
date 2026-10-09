@@ -1,14 +1,15 @@
 # ASGARD-5877: High-Assurance Virtualization-Based Obfuscation (VBO) and ISA Compiler Toolchain in OCaml
 
 [![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4+-orange.svg)](https://ocaml.org)
-[![Build and Tests](https://img.shields.io/badge/Tests-363%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
+[![Build and Tests](https://img.shields.io/badge/Tests-389%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%2F%20DDD%20(DPX%20Certified)-blue.svg)]()
 [![Targets](https://img.shields.io/badge/ISA-ARM64%20%7C%20x86__64%20%7C%20RISC--V%20Vector%201.0-red.svg)](https://github.com/riscv/riscv-v-spec)
+[![Platforms](https://img.shields.io/badge/Platforms-macOS%20%7C%20Linux%20%7C%20Windows%20PE-blue.svg)]()
 [![GPU Accelerated](https://img.shields.io/badge/GPU-Apple%20Metal%203.0%20(65k%20Threads)-purple.svg)]()
 
 ASGARD-5877 is an industrial-grade, mathematically verified code virtualization and binary protection compiler written in pure OCaml 5:
 
-1. **Hardened Multi-Architecture Code Virtualization (VBO)**: Lifts native ARM64 (Apple Silicon) and x86_64 machine code into a polymorphic, non-standard Turing-Complete Virtual Machine Architecture. Features 256-slot saturated jump tables with Computed GOTO, 4th-order Non-Linear Mixed Boolean-Arithmetic (MBA), Control-Flow Flattening (CFF), Super-Operator chain fusion, ephemeral self-consuming memory scrubbing, and multi-source jitter time watchdogs.
+1. **Hardened Multi-Architecture Code Virtualization (VBO)**: Lifts native ARM64 (Apple Silicon), x86_64, and RISC-V machine code into a polymorphic, non-standard Turing-Complete Virtual Machine Architecture. Features 256-slot saturated jump tables with Computed GOTO, 5th-order Non-Linear Mixed Boolean-Arithmetic (MBA), 100% Metamorphic Handler Synthesis ($3^{131} \approx 2.7 \times 10^{62}$ syntactic variants), Control-Flow Flattening (CFF) with invariant opaque predicates, Super-Operator chain fusion, ephemeral self-consuming memory scrubbing, cross-platform W^X dual-mapping, and multi-source jitter time watchdogs.
 2. **Cutting-Edge Academic Hardening (arXiv 2019-2026)**:
    - **Path-Oriented Protections (POP)** (*arXiv:1908.01549*): Cumulative ARX trace digest coupling inducing $O(2^N)$ state explosions against Dynamic Symbolic Execution (angr / Triton / Miasm).
    - **Anti-LLVM Def-Use Chain Scrambler** (*arXiv:2601.12916*): Breaks compiler data-flow graphs and Tigress VM deobfuscators via non-linear register aliasing and unresolvable side-effects.
@@ -30,23 +31,26 @@ ASGARD-5877 is an industrial-grade, mathematically verified code virtualization 
 | # | Protection Vector | Threat Model Addressed | Mechanism and Implementation |
 |---|:---|:---|:---|
 | **1** | **ARM64 and x86_64 Virtualization** | Static Decompilation (IDA / Hex-Rays / Ghidra) | 100% native machine code elimination; lifted into randomized Turing-Complete VM-IR. |
-| **2** | **4th-Order Non-Linear MBA** | SMT Solvers & Algebraic Simplifiers (Z3, Arybo) | Non-linear polynomial expansions ($D=4$), creating undecidable system constraints ($>1.24\text{M}$ clauses). |
+| **2** | **5th-Order Non-Linear MBA** | SMT Solvers & Algebraic Simplifiers (Z3, Arybo) | Non-linear polynomial expansions ($D=5$) over $\mathbb{Z}_{2^{64}}$ ($2^{61} \cdot x(x-1)(x-2)(x-3)(x-4) \equiv 0$) and disjoint Boolean partition cross-compositions ($>1.24\text{M}$ clauses). |
 | **3** | **E-Graph Equality Saturation** | SMT Simplification & Canonicalization | E-Graph equality rewrites synthesizing expanded algebraic equivalences and scrambling ASTs. |
-| **4** | **Control-Flow Flattening (CFF)** | CFG Recovery & Dominator Tree Analysis | Chenxi Wang state dispatcher topology flattening; conditional jumps lowered to branchless `CMOV`. |
+| **4** | **Control-Flow Flattening (CFF)** | CFG Recovery & Dominator Tree Analysis | Chenxi Wang state dispatcher topology flattening; conditional jumps lowered to branchless `CMOV` with $(x \land (x+1) \land 1 \equiv 0)$ opaque predicates. |
 | **5** | **POP Path-Oriented Digest** | Dynamic Symbolic Execution (angr, Triton, Miasm) | Cumulative ARX trace digest ($P_{t+1} = \text{ROL}_{13}(P_t) \oplus (\text{BlockID} \cdot G + \text{Cond})$) causing $O(2^N)$ path explosions. |
 | **6** | **Anti-LLVM Def-Use Scrambler** | Compiler Optimization & Tigress Deobfuscators | Scrambles def-use chains via aliased register XOR masks and opaque memory side-effects. |
 | **7** | **NCFG Transformer Resistance** | Deep Learning & Attention-Based Deobfuscation | Non-Context-Free Grammars destroying Self-Attention mechanisms in LLM decompilers. |
 | **8** | **ARM64 Literal Stitching** | Linear Sweep & Recursive Disassemblers | Injects masked data literal pools guarded by dynamic `ADR X16, #target` + `BR X16` branches. |
-| **9** | **Anti-Pushan Rolling Keys** | Replay Attacks & Fixed-Key De-obfuscation | Cryptographically evolving rolling keys per instruction dispatch, re-keyed across loop iterations. |
+| **9** | **Anti-Pushan Rolling Keys** | Replay Attacks & Fixed-Key De-obfuscation | Cryptographically evolving rolling keys per instruction dispatch, re-keyed across loop iterations and section hashes. |
 | **10** | **Dynamic Anti-Tamper & SMC** | Memory Patching, Hooking, & Frida | Dynamic Self-Modifying Code (SMC Layer 3) with continuous runtime integrity attestation and traps. |
 | **11** | **Super-Operator Chain Fusion** | VM Trace De-obfuscation & Analysis | Fused 3-4 opcode chains (`FUSED_MOV_ADD`, `FUSED_ADD_XOR`, `FUSED_CMP_CMOV`), reducing dispatch latency by 48.5%. |
 | **12** | **Direct Threading / Computed GOTO** | Indirect Branch Tracking & Hardware BTB Sniffing | Zero central `switch` loops; handlers dispatch directly via `&&label` jump tables with PRF key streams. |
-| **13** | **256-Slot Saturated Jump Table** | Handler Frequency & Static Table Profiling | 100% table occupancy with polymorphic decoy handlers (`H_DECOY_0`..`15`) trapping illegal transitions. |
+| **13** | **256-Slot Saturated Jump Table** | Handler Frequency & Static Table Profiling | 100% table occupancy with polymorphic decoy handlers (`H_DECOY_0`..`15`) rotated per dispatch domain. |
 | **14** | **Ephemeral Memory Scrubbing** | RAM Process Dumps (Scylla, CheatEngine, Volatility)| Virtual bytecode words are zeroed/overwritten in memory on fetch; $O(1)$ RAM lifetime. |
 | **15** | **Interleaved Dynamic Canaries** | Memory Corruption & Fault Injection Attacks | 32 dynamic canary frames with tripwires terminating execution on stack breach (100% OOB detection). |
 | **16** | **Speck-64 ARX Memory Core** | Linear Memory Permutation Analysis | Strict Avalanche Criterion ($SAC = 50.00\%$) memory scrambling with lossless reversibility. |
-| **17** | **Hardware Timing Watchdog** | Single-Step Debuggers & Instruction Tracing | Multi-source CPU cycle diff (`cntvct_el0` + `mach_absolute_time`) with 99.98% TPR and 0.00% FPR. |
+| **17** | **Hardware Timing Watchdog** | Single-Step Debuggers & Instruction Tracing | Multi-source CPU cycle diff (`cntvct_el0` + `mach_absolute_time`, Win32 `QueryPerformanceCounter`) with 99.98% TPR. |
 | **18** | **RNS-4 Garner CRT Engine** | Arithmetic Analysis & Value Set Tracking | Multi-residue integer representation splitting 64-bit values across coprime moduli. |
+| **19** | **100% Metamorphic VM Handlers** | Signature Matching & BinDiff / Diaphora | 100% ISA coverage across all 131 handlers (51 ALU, 17 Control, 63 Memory/FP/SIMD/Atomics) with 2–3 polymorphic variants per opcode ($3^{131} \approx 2.7 \times 10^{62}$ permutations) across 6 isolated RNG streams. |
+| **20** | **Cross-Platform Dual-Mapping & Section Hash** | Debuggers, Memory Patching & Inline Hooking | W^X dual-mapping on Windows (`CreateFileMappingW`/`MapViewOfFile`), Linux (`memfd_create`), macOS (`mach_vm_remap`) and `.text`/`.rodata` section integrity hashing bound to rolling key. |
+| **21** | **Stack-VM & Keyed Payload Auth** | VMPredator Bytecode Extractors & Tampering | SipHash-1-2 CBC payload authentication, Anti-VMPredator address-bound bytecode keys tied to handler delta hash $D$, universal NOR/NAND logic reduction, and fail-closed memory policy. |
 
 ---
 
@@ -121,16 +125,23 @@ ASGARD-5877/
 │   ├── x86_lifter/               # Intel x86_64 Machine Code Lifter
 │   │   ├── x86_parser.ml{,i}     # AT&T / Intel syntax x86_64 assembly parser
 │   │   └── x86_lifter.ml{,i}     # x86_64 to VM-IR lifting rules
+│   ├── riscv_lifter/             # RISC-V 64-bit Machine Code Lifter (RV64I/M/A/Zbb/Zba/FP/RVV)
 │   ├── mba_engine/               # Mixed Boolean-Arithmetic Engine
-│   │   ├── mba.ml{,i}            # 4th-order non-linear polynomial expansions
+│   │   ├── mba.ml{,i}            # 5th-order non-linear polynomial expansions and null invariants
 │   │   ├── egraph.ml{,i}         # E-graph equality saturation engine
+│   │   ├── egraph_rules.ml       # Algebraic rewrite rules (including 5th-degree expansions)
 │   │   ├── egraph_types.ml{,i}   # E-node representation and hash-consing
 │   │   ├── ncfg_synth.ml{,i}     # Non-Context-Free Grammar Transformer-resistant MBA
 │   │   └── rns_mba.ml{,i}        # Modular residue MBA expansion
 │   ├── cff/                      # Control-Flow Flattening Engine
 │   │   ├── cff.ml{,i}            # Wang state dispatcher and invariant opaque predicates
 │   │   └── pop_coupler.ml{,i}    # Path-Oriented Protections (POP) trace digest coupling
-│   ├── native_vm/                # Native Direct Threaded C++ VM Engine
+│   ├── native_vm/                # Native Direct Threaded C++ VM Engine (100% Metamorphic)
+│   │   ├── vm_alu_handlers.ml    # 100% Metamorphic ALU handlers (51/51 opcodes)
+│   │   ├── vm_control_handlers.ml # 100% Metamorphic Control & super-operators (17/17 opcodes)
+│   │   ├── vm_mem_handlers.ml{,i} # 100% Metamorphic Memory/SIMD/FP/Atomics (63/63 opcodes)
+│   │   ├── runtime_dual_map.ml{,i} # W^X dual-mapping (macOS / Linux / Windows PE)
+│   │   ├── runtime_probes.ml{,i} # Multi-platform section integrity hashing & anti-debug
 │   │   ├── vm_emitter.ml{,i}     # Direct Threaded Code runtime emitter (&&label, 256 saturated slots)
 │   │   ├── anti_tamper_smc.ml{,i} # Dynamic Anti-Tamper and Self-Modifying Code (Layer 3)
 │   │   ├── protection_config.ml{,i} # JSON protection schema and preset configurations
@@ -138,6 +149,9 @@ ASGARD-5877/
 │   │   ├── defuse_scrambler.ml{,i} # Anti-LLVM def-use chain scrambler
 │   │   ├── metrics.ml{,i}        # Shannon entropy, cyclomatic complexity, DRS score
 │   │   └── hardened_runtime.ml{,i} # Interleaved canaries, Speck-64 ARX, JIT write-protect
+│   ├── stack_vm/                 # Stack-VM Execution Engine
+│   │   ├── stack_encoder.ml{,i}  # Universal logic reduction, SipHash-1-2 payload auth tags
+│   │   └── stack_eval.ml{,i}     # Reference Stack-VM evaluator & fail-closed memory policy
 │   ├── multi_vm/                 # Multi-VM Metamorphic Architecture
 │   │   ├── bridge.ml{,i}         # Affine invertible transformation matrices in GL(16, Z/2^64Z)
 │   │   └── multi_vm.ml{,i}       # Multi-VM execution interleaving
@@ -166,7 +180,7 @@ ASGARD-5877/
 ├── scripts/                      # Unified benchmark and multi-build runners
 │   ├── run_benchmark_arm64.sh    # End-to-end security benchmark runner
 │   └── build_corpus_arm64.sh     # Polymorphic corpus compilation script
-└── test/                         # Comprehensive Verification Suite (304 tests, 35 suites)
+└── test/                         # Comprehensive Verification Suite (389 tests, 35 suites)
 ```
 
 ---
@@ -177,8 +191,8 @@ ASGARD-5877/
 
 - **OCaml**: `>= 5.0.0` (tested on OCaml 5.4.1)
 - **Dune**: `>= 3.0`
-- **C++ Compiler**: `clang++` supporting C++20
-- **Platform**: macOS (Apple Silicon ARM64) or Linux (x86_64)
+- **C++ Compiler**: `clang++` supporting C++20 or `g++` 15+ / MSVC 19+
+- **Platform**: macOS (Apple Silicon ARM64), Linux (x86_64, aarch64, riscv64), or Windows (x86_64, ARM64)
 
 Install OPAM dependencies:
 
@@ -193,7 +207,7 @@ opam install dune menhir cmdliner alcotest qcheck qcheck-alcotest yojson
 eval $(opam env)
 dune build
 
-# Run all 294 tests across 35 verification suites
+# Run all 389 tests across 35 verification suites
 dune test
 ```
 
@@ -255,7 +269,7 @@ The compiler executes the following pipeline:
 - **Unified VM Synthesis**: All virtualized functions in the module share a unified bijective opcode permutation and register bijection within a single C++ runtime header (`threaded_vm.hpp`), eliminating runtime bloat.
 - **Continuous Integrity Protection**: Each function receives an independent encrypted bytecode array (`embedded_bytecode_<fn>[]`), attested at runtime through continuous rolling hashing against `valid_hashes[]`.
 - **Cross-Platform Trampoline Generation**: Replaces each marked function body with a type-safe call to `vanguard_threaded_vm::asgard_vm_call(...)`. Automatically routes ABI calling convention registers for both ARM64 (`X0..X7`) and x86_64 System V (`RDI`, `RSI`, `RDX`, `RCX`, `R8`, `R9`).
-- **Container & Toolchain Compatibility**: Fully compatible with Apple Silicon macOS (Mach-O) and Linux ELF environments (Alpine musl, Ubuntu/Debian glibc, Docker) across Clang and GCC 15+.
+- **Container & Toolchain Compatibility**: Fully compatible with Apple Silicon macOS (Mach-O), Linux ELF environments (Alpine musl, Ubuntu/Debian glibc, Docker), and Windows PE/COFF environments (MSVC, Clang-cl) across Clang, GCC 15+, and MSVC 19+.
 
 ### Multi-Architecture & Docker Execution Matrix
 
@@ -267,6 +281,7 @@ ASGARD-5877 has been verified end-to-end across multiple architectures and conta
 | **ARM64** (`aarch64`) | Linux / Docker (`alpine:latest`) | Linux GCC 15 (`g++ -O2 -std=c++20`) | Native ELF container execution | **Verified** (Bit-for-bit pass) |
 | **x86_64** (`amd64`) | Linux / Docker (`alpine:latest`) | Linux GCC 15 (`-msse4.1 -std=c++20`) | Rosetta 2 / Native x86_64 ELF | **Verified** (Bit-for-bit pass) |
 | **RISC-V** (`riscv64`) | Linux / Docker (`riscv64/alpine`) | Linux GCC 15 / LLVM `riscv64-linux-gnu` | QEMU User / Native RV64GC | **Verified** (Toolchain & Lifter) |
+| **Windows PE** (`x86_64` / `arm64`) | Windows 10/11 / Windows Server | MSVC / Clang-cl (`/std:c++20`) | Native PE32+ (Dual-map W^X, PEB, SEH) | **Verified** (100% pass) |
 
 > [!NOTE]
 > **Container & Hypervisor Anti-Emulation Tuning**:
@@ -363,7 +378,7 @@ The repository includes a standalone ARM64 CrackMe challenge running inside the 
 
 ## Comprehensive Verification Suite
 
-ASGARD-5877 includes **363 tests** across **35 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
+ASGARD-5877 includes **389 tests** across **35 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
 
 1. **Domain Invariants**: Verification of aggregate roots and instruction semantics.
 2. **ISA Grammar**: AST node validation, operand constraints, and type soundness.
@@ -382,8 +397,8 @@ ASGARD-5877 includes **363 tests** across **35 suites** verified on every build 
 15. **Vanguard Emulator E2E**: Full execution of encrypted Vanguard instruction streams.
 16. **VM-IR and Lazy Flags**: Zero-extension register algebra and lazy flags arithmetic.
 17. **x86_64 Lifter and CFG**: Disassembly, basic block lifting, bit manipulation (`bswap`, `popcnt`, `lzcnt`/`bsr`, `tzcnt`/`bsf`, `bt`/`bts`/`btr`/`btc`), BMI1/BMI2 (`andn`, `bextr`, `bzhi`, `rorx`, `shlx`, `shrx`, `sarx`), double-precision shifts (`shld`, `shrd`), `movbe`, memory fences (`mfence`, `lfence`, `sfence`, `pause`), and scalar FP (`movss`/`movsd`, `addss`/`sd`, `subss`/`sd`, `mulss`/`sd`, `divss`/`sd`, `ucomiss`/`sd`).
-18. **Anti-Analysis (MBA and CFF)**: Algebraic equivalence of 4th-order polynomial expansions.
-19. **Native Threaded VM**: Direct Threading, super-operators, ephemeral scrubbing, and dynamic canaries.
+18. **Anti-Analysis (MBA and CFF)**: Algebraic equivalence of 4th and 5th-order polynomial expansions over $\mathbb{Z}_{2^{64}}$, disjoint Boolean cross-compositions, and Wang state dispatcher with invariant opaque predicates.
+19. **Native Threaded VM**: Direct Threading, 100% metamorphic handler diversity (131/131 opcodes across ALU, Control, Memory, FP, Atomics, SIMD), super-operators, ephemeral scrubbing, and dynamic canaries.
 20. **Native VM Sub-width Semantics**: Word-granular B16 memory, signed loads (movsx/movsxd/ldrsb/ldrsh/ldrsw), div/idiv remainder, B32 sub-register zero-extension, and multi-function marker pipeline.
 21. **Devirtualization Metrics**: DRS (Devirtualization Resistance Score) computation.
 22. **C Macro Obfuscation**: Polymorphic macro expansions, stack string encryption, and multi-function C trampolines.
@@ -394,10 +409,10 @@ ASGARD-5877 includes **363 tests** across **35 suites** verified on every build 
 27. **GPU Metal Acceleration and Synthesis**: Metal GPU parallel MBA synthesis (65k threads) and SAC diffusion verification.
 28. **Register-Driven JIT VM and RNS**: RNS-4 modular arithmetic and Garner CRT reconstruction.
 29. **arXiv Innovations (POP/DefUse/NCFG/LitStitch)**: POP digest determinism, Def-Use scrambling, NCFG 2,000-vector soundness, ARM64 literal stitching.
-30. **E-graph Equality Expansion (Scrambler)**: Equality saturation and algebraic term rewriting.
-31. **Anti-Pushan Rolling Key**: Context-dependent key evolution across loop iterations and branches.
-32. **Dynamic Anti-Tamper and SMC (Layer 3)**: Self-modifying bytecode runtime attestation.
-33. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, and preset generators.
+30. **E-graph Equality Expansion (Scrambler)**: Equality saturation and algebraic term rewriting with 5th-degree non-linear rules.
+31. **Anti-Pushan Rolling Key**: Context-dependent key evolution across loop iterations, branches, and section hashes.
+32. **Dynamic Anti-Tamper and SMC (Layer 3)**: Self-modifying bytecode runtime attestation, multi-platform section integrity hashing, W^X dual-mapping, and handler metamorphism diversity across 11 instruction categories.
+33. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, junk density & size budget enforcement, and preset generators.
 34. **RISC-V Lifter & CFG**: RV64I, RV64M (including `mulh`, `mulhu`, `mulhsu`), RV64A, Zbb (`clz`, `ctz`, `cpop`, `rev8`, `orc.b`, `sext.b/h`, `zext.h`, `min`, `max`, `minu`, `maxu`, `andn`, `orn`, `xnor`, `rol`, `ror`), Zba address generation (`sh1add`, `sh2add`, `sh3add`), memory fences (`fence`, `fence.i`), scalar FP (`fadd`, `fsub`, `fmul`, `fdiv`, `feq`, `flt`, `fle`, `fmin`, `fmax`, `fmv`, `fcvt`), memory (`flw`/`fld`, `fsw`/`fsd`), and RVV.
 35. **Stack-VM Execution Engine**: 32 verification tests covering address-bound bytecode keys (Anti-VMPredator Phase 6), independent payload/tag key halves, field layout randomization, polymorphic opcodes, and identifier scrambling.
 
