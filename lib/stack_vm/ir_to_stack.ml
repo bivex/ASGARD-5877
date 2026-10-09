@@ -159,7 +159,8 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
   | Ccmn { src1; src2; _ } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
-      src1_ops @ src2_ops @ [Add]
+      let dummy = Context_allocator.alloc_scratch ctx in
+      src1_ops @ src2_ops @ [Add; PopReg dummy]
   | Test { src1; src2 } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in

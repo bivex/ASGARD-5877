@@ -221,6 +221,7 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "        case 11: return !ctx.zf && (ctx.sf == ctx.of); // G\n";
   Buffer.add_string b "        case 12: return ctx.of;                        // O\n";
   Buffer.add_string b "        case 13: return !ctx.of;                       // NO\n";
+  Buffer.add_string b "        case 14: return true;                          // ALWAYS\n";
   Buffer.add_string b "        default: return true;\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "}\n\n";

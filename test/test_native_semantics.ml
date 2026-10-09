@@ -482,6 +482,244 @@ int main(void) {
 |})
         [ ("-O2", "s_o2"); ("-O3", "s_o3") ])
 
+let test_e2e_sub64_signed_comparisons_clang_o2_o3 () =
+  let c_src = {|
+#include <stdint.h>
+
+int32_t classify_range(int32_t x) {
+    if (x < -100) return -1;
+    if (x < 0) return -2;
+    if (x == 0) return 0;
+    if (x <= 100) return 1;
+    return 2;
+}
+|} in
+  let cfg =
+    Config_adapter.resolve
+      ~config_file:None
+      ~preset:None
+      ~enable_cff:false
+      ~enable_mba:false
+      ~mba_depth:2
+      ~seed:(Some 20261012)
+  in
+  with_temp_dir (fun tmp_dir ->
+      let c_path = Filename.concat tmp_dir "sub64_cmp.c" in
+      write_file_string c_path c_src;
+      List.iter
+        (fun (opt, name) ->
+          let asm_path = Filename.concat tmp_dir (name ^ ".s") in
+          let comp_status =
+            Sys.command
+              (Printf.sprintf
+                 "clang -S %s -fno-inline -fno-stack-protector -fno-asynchronous-unwind-tables -o %s %s"
+                 opt asm_path c_path)
+          in
+          Alcotest.(check int) (name ^ ": clang -S compiles") 0 comp_status;
+          let asm_text = read_file_string asm_path in
+          let lifted = Arm64_lifter.lift_function asm_text in
+          let func =
+            match lifted with
+            | Error err -> Alcotest.fail (Printf.sprintf "%s: lift failed: %s" name err)
+            | Ok f -> f
+          in
+          let rng = Random.State.make [| 20261012 |] in
+          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
+          run_custom_vm ~name tmp_dir pkg {|
+    int32_t r1 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)(-500LL));
+    int32_t r2 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)(-50LL));
+    int32_t r3 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 0ULL);
+    int32_t r4 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 50ULL);
+    int32_t r5 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 500ULL);
+    printf("classify_range results: r1=%d r2=%d r3=%d r4=%d r5=%d\n", r1, r2, r3, r4, r5);
+    if (r1 != -1 || r2 != -2 || r3 != 0 || r4 != 1 || r5 != 2) return 1;
+|})
+        [ ("-O2", "cmp_o2"); ("-O3", "cmp_o3") ])
+
+let test_e2e_stack_frame_sync_clang_o2_o3 () =
+  let c_src = {|
+#include <stdint.h>
+
+int64_t stack_sort(int64_t a, int64_t b, int64_t c, int64_t d) {
+    volatile int64_t arr[4];
+    arr[0] = a;
+    arr[1] = b;
+    arr[2] = c;
+    arr[3] = d;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3 - i; j++) {
+            if (arr[j] > arr[j + 1]) {
+                int64_t tmp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = tmp;
+            }
+        }
+    }
+    return (arr[0] * 1000) + (arr[1] * 100) + (arr[2] * 10) + arr[3];
+}
+|} in
+  let cfg =
+    Config_adapter.resolve
+      ~config_file:None
+      ~preset:None
+      ~enable_cff:false
+      ~enable_mba:false
+      ~mba_depth:2
+      ~seed:(Some 20261013)
+  in
+  with_temp_dir (fun tmp_dir ->
+      let c_path = Filename.concat tmp_dir "stack_sync.c" in
+      write_file_string c_path c_src;
+      List.iter
+        (fun (opt, name) ->
+          let asm_path = Filename.concat tmp_dir (name ^ ".s") in
+          let comp_status =
+            Sys.command
+              (Printf.sprintf
+                 "clang -S %s -fno-inline -fno-stack-protector -fno-asynchronous-unwind-tables -o %s %s"
+                 opt asm_path c_path)
+          in
+          Alcotest.(check int) (name ^ ": clang -S compiles") 0 comp_status;
+          let asm_text = read_file_string asm_path in
+          let lifted = Arm64_lifter.lift_function asm_text in
+          let func =
+            match lifted with
+            | Error err -> Alcotest.fail (Printf.sprintf "%s: lift failed: %s" name err)
+            | Ok f -> f
+          in
+          let rng = Random.State.make [| 20261013 |] in
+          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
+          run_custom_vm ~name tmp_dir pkg {|
+    // Input: 40, 10, 30, 20 -> Sorted: 10, 20, 30, 40 -> Result: 10*1000 + 20*100 + 30*10 + 40 = 12340
+    uint64_t r = vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 40ULL, 10ULL, 30ULL, 20ULL);
+    printf("stack_sort result: r=%llu\n", (unsigned long long)r);
+    if (r != 12340ULL) return 1;
+|})
+        [ ("-O2", "stk_o2"); ("-O3", "stk_o3") ])
+
+let test_e2e_switch_jump_table_clang_o2_o3 () =
+  let c_src = {|
+#include <stdint.h>
+
+int32_t dispatch_op(int32_t op, int32_t a, int32_t b) {
+    switch (op) {
+        case 0: return a + b;
+        case 1: return a - b;
+        case 2: return a * b;
+        case 3: return (b != 0) ? (a / b) : 0;
+        case 4: return a ^ b;
+        case 5: return a | b;
+        case 6: return a & b;
+        case 7: return (a << 3) + b;
+        default: return -1;
+    }
+}
+|} in
+  let cfg =
+    Config_adapter.resolve
+      ~config_file:None
+      ~preset:None
+      ~enable_cff:false
+      ~enable_mba:false
+      ~mba_depth:2
+      ~seed:(Some 20261014)
+  in
+  with_temp_dir (fun tmp_dir ->
+      let c_path = Filename.concat tmp_dir "switch_dispatch.c" in
+      write_file_string c_path c_src;
+      List.iter
+        (fun (opt, name) ->
+          let asm_path = Filename.concat tmp_dir (name ^ ".s") in
+          let comp_status =
+            Sys.command
+              (Printf.sprintf
+                 "clang -S %s -fno-inline -fno-stack-protector -fno-asynchronous-unwind-tables -o %s %s"
+                 opt asm_path c_path)
+          in
+          Alcotest.(check int) (name ^ ": clang -S compiles") 0 comp_status;
+          let asm_text = read_file_string asm_path in
+          let lifted = Arm64_lifter.lift_function asm_text in
+          let func =
+            match lifted with
+            | Error err -> Alcotest.fail (Printf.sprintf "%s: lift failed: %s" name err)
+            | Ok f -> f
+          in
+          let rng = Random.State.make [| 20261014 |] in
+          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
+          run_custom_vm ~name tmp_dir pkg {|
+    int32_t r0 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 0ULL, 10ULL, 20ULL);
+    int32_t r1 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 1ULL, 10ULL, 20ULL);
+    int32_t r2 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 2ULL, 10ULL, 20ULL);
+    int32_t r3 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 3ULL, 100ULL, 5ULL);
+    int32_t r4 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 4ULL, 0x12ULL, 0x34ULL);
+    int32_t r5 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 5ULL, 0x10ULL, 0x02ULL);
+    int32_t r6 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 6ULL, 0x12ULL, 0x02ULL);
+    int32_t r7 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 7ULL, 5ULL, 4ULL);
+    int32_t r_def = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 99ULL, 10ULL, 20ULL);
+    printf("switch dispatch results: r0=%d r1=%d r2=%d r3=%d r4=%d r5=%d r6=%d r7=%d r_def=%d\n",
+           r0, r1, r2, r3, r4, r5, r6, r7, r_def);
+    if (r0 != 30 || r1 != -10 || r2 != 200 || r3 != 20 || r4 != 0x26 || r5 != 0x12 || r6 != 0x02 || r7 != 44 || r_def != -1) return 1;
+|})
+        [ ("-O2", "sw_o2"); ("-O3", "sw_o3") ])
+
+let test_e2e_indirect_branch_clang_o2_o3 () =
+  let c_src = {|
+#include <stdint.h>
+
+typedef int32_t (*binop_fn)(int32_t, int32_t);
+
+int32_t dispatch_fn(binop_fn fn, int32_t a, int32_t b) {
+    if (!fn) return -1;
+    return fn(a, b);
+}
+|} in
+  let cfg =
+    Config_adapter.resolve
+      ~config_file:None
+      ~preset:None
+      ~enable_cff:false
+      ~enable_mba:false
+      ~mba_depth:2
+      ~seed:(Some 20261015)
+  in
+  with_temp_dir (fun tmp_dir ->
+      let c_path = Filename.concat tmp_dir "indirect_dispatch.c" in
+      write_file_string c_path c_src;
+      List.iter
+        (fun (opt, name) ->
+          let asm_path = Filename.concat tmp_dir (name ^ ".s") in
+          let comp_status =
+            Sys.command
+              (Printf.sprintf
+                 "clang -S %s -fno-inline -fno-stack-protector -fno-asynchronous-unwind-tables -o %s %s"
+                 opt asm_path c_path)
+          in
+          Alcotest.(check int) (name ^ ": clang -S compiles") 0 comp_status;
+          let asm_text = read_file_string asm_path in
+          let lifted = Arm64_lifter.lift_function asm_text in
+          let func =
+            match lifted with
+            | Error err -> Alcotest.fail (Printf.sprintf "%s: lift failed: %s" name err)
+            | Ok f -> f
+          in
+          let rng = Random.State.make [| 20261015 |] in
+          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
+          run_custom_vm ~name tmp_dir pkg {|
+    typedef int32_t (*host_fn_t)(int32_t, int32_t);
+    host_fn_t p_add = [](int32_t a, int32_t b) -> int32_t { return a + b; };
+    host_fn_t p_mul = [](int32_t a, int32_t b) -> int32_t { return a * b; };
+    int32_t r1 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)p_add, 10ULL, 20ULL);
+    int32_t r2 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)p_mul, 10ULL, 20ULL);
+    int32_t r3 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 0ULL, 10ULL, 20ULL);
+    printf("indirect branch results: r1=%d r2=%d r3=%d\n", r1, r2, r3);
+    if (r1 != 30 || r2 != 200 || r3 != -1) return 1;
+|})
+        [ ("-O2", "ibr_o2"); ("-O3", "ibr_o3") ])
+
 (* Item 9: 3-address ALU canonicalization unit test *)
 let test_canonicalize_3addr_alu_unit () =
   (* 1. Distinct registers: add rax, rbx, rcx *)
@@ -663,6 +901,10 @@ let tests = [
   Alcotest.test_case "e2e_multi_function_pipeline" `Slow test_e2e_multi_function_pipeline;
   Alcotest.test_case "e2e_uint16_clang_o2_o3" `Slow test_e2e_uint16_clang_o2_o3;
   Alcotest.test_case "e2e_signed_loads_clang_o2_o3" `Slow test_e2e_signed_loads_clang_o2_o3;
+  Alcotest.test_case "e2e_sub64_signed_comparisons_clang_o2_o3" `Slow test_e2e_sub64_signed_comparisons_clang_o2_o3;
+  Alcotest.test_case "e2e_stack_frame_sync_clang_o2_o3" `Slow test_e2e_stack_frame_sync_clang_o2_o3;
+  Alcotest.test_case "e2e_switch_jump_table_clang_o2_o3" `Slow test_e2e_switch_jump_table_clang_o2_o3;
+  Alcotest.test_case "e2e_indirect_branch_clang_o2_o3" `Slow test_e2e_indirect_branch_clang_o2_o3;
   Alcotest.test_case "canonicalize_3addr_alu_unit" `Quick test_canonicalize_3addr_alu_unit;
   Alcotest.test_case "native_3addr_alu" `Slow test_native_3addr_alu;
   Alcotest.test_case "native_arm64_3addr_madd_msub_sdiv_bic" `Slow test_native_arm64_3addr_madd_msub_sdiv_bic;
