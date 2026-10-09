@@ -444,6 +444,38 @@ let test_windows_pe_runtime_headers () =
   Alcotest.(check bool) "Memory integrity VirtualQuery" true (contains mem_win "VirtualQuery");
   Alcotest.(check bool) "Memory integrity Dr7 check" true (contains mem_win "dbg_ctx.Dr7")
 
+let test_section_integrity_hashing () =
+  let mem_header = Hardened_runtime.emit_memory_integrity_scanner_header () in
+  let contains s sub =
+    let ls = String.length s and lsub = String.length sub in
+    let rec loop i =
+      if i + lsub > ls then false
+      else if String.sub s i lsub = sub then true
+      else loop (i + 1)
+    in loop 0
+  in
+  Alcotest.(check bool) "Section integrity function defined" true
+    (contains mem_header "compute_section_integrity_hash");
+  Alcotest.(check bool) "Apple Mach-O getsectiondata" true
+    (contains mem_header "getsectiondata");
+  Alcotest.(check bool) "Linux ELF dl_iterate_phdr" true
+    (contains mem_header "dl_iterate_phdr");
+  Alcotest.(check bool) "Windows PE IMAGE_DOS_HEADER" true
+    (contains mem_header "IMAGE_DOS_HEADER");
+  Alcotest.(check bool) "Integrated into evaluate_memory_integrity" true
+    (contains mem_header "initial_sect_hash")
+
+let test_handler_metamorphism_diversity () =
+  let b1 = Buffer.create 4096 in
+  let b2 = Buffer.create 4096 in
+  let rng1 = Random.State.make [| 42; 100; 200 |] in
+  let rng2 = Random.State.make [| 999; 888; 777 |] in
+  Vm_handlers_emitter.emit_handlers_hpp b1 ~rng:rng1 ~enable_running_key:true ~enable_address_bound:false ~enable_timing_probes:false ~enable_nanomites:false ~enable_egraph_expansion:false ();
+  Vm_handlers_emitter.emit_handlers_hpp b2 ~rng:rng2 ~enable_running_key:true ~enable_address_bound:false ~enable_timing_probes:false ~enable_nanomites:false ~enable_egraph_expansion:false ();
+  let s1 = Buffer.contents b1 in
+  let s2 = Buffer.contents b2 in
+  Alcotest.(check bool) "Metamorphic emissions with different seeds differ" false (String.equal s1 s2)
+
 let tests = [
   Alcotest.test_case "smc_probe_c_compilation_and_execution" `Quick test_smc_probe_c_compilation_and_execution;
   Alcotest.test_case "full_threaded_vm_with_layer3_protection" `Quick test_full_threaded_vm_with_layer3_protection;
@@ -453,4 +485,6 @@ let tests = [
   Alcotest.test_case "smc_diagnostics_and_modes" `Quick test_smc_diagnostics_and_modes;
   Alcotest.test_case "smc_strict_mode_and_max_security" `Quick test_smc_strict_mode_and_max_security;
   Alcotest.test_case "windows_pe_runtime_headers" `Quick test_windows_pe_runtime_headers;
+  Alcotest.test_case "section_integrity_hashing" `Quick test_section_integrity_hashing;
+  Alcotest.test_case "handler_metamorphism_diversity" `Quick test_handler_metamorphism_diversity;
 ]

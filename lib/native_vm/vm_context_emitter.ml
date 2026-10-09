@@ -35,6 +35,7 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "            h *= 0xBF58476D1CE4E5B9ULL;\n";
   Buffer.add_string b "        }\n";
   Buffer.add_string b "    }\n";
+  Buffer.add_string b "    h ^= asgard_mem_integrity::compute_section_integrity_hash();\n";
   Buffer.add_string b "    return h ^ (h >> 31);\n";
   Buffer.add_string b "}\n\n";
 

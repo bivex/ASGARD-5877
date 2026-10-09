@@ -362,7 +362,13 @@ let emit_simd_handlers b =
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n\n"
 
-let emit_mem_and_ffi_handlers b =
+let emit_mem_and_ffi_handlers ?rng b =
+  let pick_variant n =
+    match rng with
+    | Some r -> Random.State.int r n
+    | None -> 0
+  in
+
   Buffer.add_string b "    H_CALL_EXTERN: {\n";
   Buffer.add_string b "        size_t sym_idx = (size_t)imm;\n";
   Buffer.add_string b "        if (sym_idx < sizeof(g_external_symbols) / sizeof(g_external_symbols[0]) && g_external_symbols[sym_idx][0] != '\\0') {\n";
@@ -430,23 +436,63 @@ let emit_mem_and_ffi_handlers b =
   Buffer.add_string b "    }\n\n";
 
   Buffer.add_string b "    H_LOAD_64: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        ctx.set_reg(dst, *reinterpret_cast<const uint64_t*>(addr));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, *reinterpret_cast<const uint64_t*>(addr));\n"
+   | 1 ->
+       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, *reinterpret_cast<const uint64_t*>(_base + imm));\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        uint64_t _v = 0;\n";
+       Buffer.add_string b "        std::memcpy(&_v, reinterpret_cast<const void*>(_ptr), sizeof(uint64_t));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, _v);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_LOAD_32: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint32_t*>(addr)));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint32_t*>(addr)));\n"
+   | 1 ->
+       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint32_t*>(_base + imm)));\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        uint32_t _v32 = 0;\n";
+       Buffer.add_string b "        std::memcpy(&_v32, reinterpret_cast<const void*>(_ptr), sizeof(uint32_t));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)_v32);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_LOAD_16: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint16_t*>(addr)));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint16_t*>(addr)));\n"
+   | 1 ->
+       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint16_t*>(_base + imm)));\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        uint16_t _v16 = 0;\n";
+       Buffer.add_string b "        std::memcpy(&_v16, reinterpret_cast<const void*>(_ptr), sizeof(uint16_t));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)_v16);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_LOAD_8: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint8_t*>(addr)));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint8_t*>(addr)));\n"
+   | 1 ->
+       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint8_t*>(_base + imm)));\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        uint8_t _v8 = 0;\n";
+       Buffer.add_string b "        std::memcpy(&_v8, reinterpret_cast<const void*>(_ptr), sizeof(uint8_t));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)_v8);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_LOAD_S32: {\n";
@@ -465,23 +511,59 @@ let emit_mem_and_ffi_handlers b =
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_STORE_64: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        *reinterpret_cast<uint64_t*>(addr) = ctx.get_reg(src);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        *reinterpret_cast<uint64_t*>(addr) = ctx.get_reg(src);\n"
+   | 1 ->
+       Buffer.add_string b "        char* _target = reinterpret_cast<char*>(ctx.get_reg(dst)) + imm;\n";
+       Buffer.add_string b "        *reinterpret_cast<uint64_t*>(_target) = ctx.get_reg(src);\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        uint64_t _src_v = ctx.get_reg(src);\n";
+       Buffer.add_string b "        std::memcpy(reinterpret_cast<void*>(_ptr), &_src_v, sizeof(uint64_t));\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_STORE_32: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        *reinterpret_cast<uint32_t*>(addr) = (uint32_t)ctx.get_reg(src);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        *reinterpret_cast<uint32_t*>(addr) = (uint32_t)ctx.get_reg(src);\n"
+   | 1 ->
+       Buffer.add_string b "        char* _target = reinterpret_cast<char*>(ctx.get_reg(dst)) + imm;\n";
+       Buffer.add_string b "        *reinterpret_cast<uint32_t*>(_target) = (uint32_t)ctx.get_reg(src);\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        uint32_t _v32 = (uint32_t)ctx.get_reg(src);\n";
+       Buffer.add_string b "        std::memcpy(reinterpret_cast<void*>(_ptr), &_v32, sizeof(uint32_t));\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_STORE_16: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        *reinterpret_cast<uint16_t*>(addr) = (uint16_t)ctx.get_reg(src);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        *reinterpret_cast<uint16_t*>(addr) = (uint16_t)ctx.get_reg(src);\n"
+   | 1 ->
+       Buffer.add_string b "        char* _target = reinterpret_cast<char*>(ctx.get_reg(dst)) + imm;\n";
+       Buffer.add_string b "        *reinterpret_cast<uint16_t*>(_target) = (uint16_t)ctx.get_reg(src);\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        uint16_t _v16 = (uint16_t)ctx.get_reg(src);\n";
+       Buffer.add_string b "        std::memcpy(reinterpret_cast<void*>(_ptr), &_v16, sizeof(uint16_t));\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_STORE_8: {\n";
-  Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        *reinterpret_cast<uint8_t*>(addr) = (uint8_t)ctx.get_reg(src);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        *reinterpret_cast<uint8_t*>(addr) = (uint8_t)ctx.get_reg(src);\n"
+   | 1 ->
+       Buffer.add_string b "        char* _target = reinterpret_cast<char*>(ctx.get_reg(dst)) + imm;\n";
+       Buffer.add_string b "        *reinterpret_cast<uint8_t*>(_target) = (uint8_t)ctx.get_reg(src);\n"
+   | _ ->
+       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
+       Buffer.add_string b "        uint8_t _v8 = (uint8_t)ctx.get_reg(src);\n";
+       Buffer.add_string b "        std::memcpy(reinterpret_cast<void*>(_ptr), &_v8, sizeof(uint8_t));\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_RESOLVE_SYM: {\n";

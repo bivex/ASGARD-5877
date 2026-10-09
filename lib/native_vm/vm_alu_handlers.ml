@@ -50,18 +50,37 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     if enable_egraph_expansion then Egraph_cpp_emitter.egraph_xor_rr ~rng
     else pick_poly_xor ()
   in
+  let pick_poly_and () =
+    match Random.State.int rng 3 with
+    | 0 -> "(ctx.get_reg(dst) & ctx.get_reg(src))"
+    | 1 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+    | _ -> "(~((~ctx.get_reg(dst)) | (~ctx.get_reg(src))))"
+  in
+  let pick_poly_or () =
+    match Random.State.int rng 3 with
+    | 0 -> "(ctx.get_reg(dst) | ctx.get_reg(src))"
+    | 1 -> "((ctx.get_reg(dst) & ctx.get_reg(src)) + (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+    | _ -> "(~((~ctx.get_reg(dst)) & (~ctx.get_reg(src))))"
+  in
+
   let h_and_rr_expr () =
     if enable_egraph_expansion then Egraph_cpp_emitter.egraph_and_rr ~rng
-    else "(ctx.get_reg(dst) & ctx.get_reg(src))"
+    else pick_poly_and ()
   in
   let h_or_rr_expr () =
     if enable_egraph_expansion then Egraph_cpp_emitter.egraph_or_rr ~rng
-    else "(ctx.get_reg(dst) | ctx.get_reg(src))"
+    else pick_poly_or ()
   in
 
   Buffer.add_string b "    H_NOP: ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_MOV_RR: ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    H_MOV_RI: ctx.set_reg(dst, (uint64_t)(uint32_t)imm); ctx.executed_instructions++; FETCH_NEXT();\n";
+  (match Random.State.int rng 3 with
+   | 0 -> Buffer.add_string b "    H_MOV_RR: ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT();\n"
+   | 1 -> Buffer.add_string b "    H_MOV_RR: { uint64_t _v = ctx.get_reg(src); ctx.set_reg(dst, _v); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_MOV_RR: { if (dst != src) ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+  (match Random.State.int rng 3 with
+   | 0 -> Buffer.add_string b "    H_MOV_RI: ctx.set_reg(dst, (uint64_t)(uint32_t)imm); ctx.executed_instructions++; FETCH_NEXT();\n"
+   | 1 -> Buffer.add_string b "    H_MOV_RI: { uint64_t _imm_u64 = static_cast<uint64_t>(static_cast<uint32_t>(imm)); ctx.set_reg(dst, _imm_u64); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_MOV_RI: { uint32_t _u32 = (uint32_t)imm; ctx.set_reg(dst, (uint64_t)_u32); ctx.executed_instructions++; FETCH_NEXT(); }\n");
   Buffer.add_string b "    H_MOV_HIGH: {\n";
   Buffer.add_string b "        uint64_t high_val = (uint64_t)(uint32_t)imm << 32;\n";
   Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) & 0xFFFFFFFFULL) | high_val);\n";
@@ -272,27 +291,72 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_PUSH_R: {\n";
-  Buffer.add_string b "        uint64_t val = ctx.get_reg(dst);\n";
-  Buffer.add_string b "        ctx.push(val);\n";
-  Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
-  Buffer.add_string b "        if (cur_sp >= 0x10008ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
-  Buffer.add_string b "            uint64_t sp_val = cur_sp - 8ULL;\n";
-  Buffer.add_string b "            ctx.set_reg(REG_RSP, sp_val);\n";
-  Buffer.add_string b "            *reinterpret_cast<uint64_t*>(sp_val) = val;\n";
-  Buffer.add_string b "        }\n";
+  (match Random.State.int rng 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst);\n";
+       Buffer.add_string b "        ctx.push(val);\n";
+       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
+       Buffer.add_string b "        if (cur_sp >= 0x10008ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
+       Buffer.add_string b "            uint64_t sp_val = cur_sp - 8ULL;\n";
+       Buffer.add_string b "            ctx.set_reg(REG_RSP, sp_val);\n";
+       Buffer.add_string b "            *reinterpret_cast<uint64_t*>(sp_val) = val;\n";
+       Buffer.add_string b "        }\n"
+   | 1 ->
+       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst);\n";
+       Buffer.add_string b "        ctx.push(val);\n";
+       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
+       Buffer.add_string b "        if (cur_sp >= 0x10008ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
+       Buffer.add_string b "            uint64_t* sp_ptr = reinterpret_cast<uint64_t*>(cur_sp - 8ULL);\n";
+       Buffer.add_string b "            ctx.set_reg(REG_RSP, reinterpret_cast<uint64_t>(sp_ptr));\n";
+       Buffer.add_string b "            *sp_ptr = val;\n";
+       Buffer.add_string b "        }\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst);\n";
+       Buffer.add_string b "        ctx.push(val);\n";
+       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
+       Buffer.add_string b "        if (cur_sp >= 0x10008ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
+       Buffer.add_string b "            uint64_t sp_val = cur_sp - 8ULL;\n";
+       Buffer.add_string b "            ctx.set_reg(REG_RSP, sp_val);\n";
+       Buffer.add_string b "            std::memcpy(reinterpret_cast<void*>(sp_val), &val, sizeof(uint64_t));\n";
+       Buffer.add_string b "        }\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_POP_R: {\n";
-  Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
-  Buffer.add_string b "        uint64_t val = 0;\n";
-  Buffer.add_string b "        if (cur_sp >= 0x10000ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
-  Buffer.add_string b "            val = *reinterpret_cast<const uint64_t*>(cur_sp);\n";
-  Buffer.add_string b "            ctx.set_reg(REG_RSP, cur_sp + 8ULL);\n";
-  Buffer.add_string b "            ctx.pop();\n";
-  Buffer.add_string b "        } else {\n";
-  Buffer.add_string b "            val = ctx.pop();\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.set_reg(dst, val);\n";
+  (match Random.State.int rng 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
+       Buffer.add_string b "        uint64_t val = 0;\n";
+       Buffer.add_string b "        if (cur_sp >= 0x10000ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
+       Buffer.add_string b "            val = *reinterpret_cast<const uint64_t*>(cur_sp);\n";
+       Buffer.add_string b "            ctx.set_reg(REG_RSP, cur_sp + 8ULL);\n";
+       Buffer.add_string b "            ctx.pop();\n";
+       Buffer.add_string b "        } else {\n";
+       Buffer.add_string b "            val = ctx.pop();\n";
+       Buffer.add_string b "        }\n";
+       Buffer.add_string b "        ctx.set_reg(dst, val);\n"
+   | 1 ->
+       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
+       Buffer.add_string b "        uint64_t val = 0;\n";
+       Buffer.add_string b "        if (cur_sp >= 0x10000ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
+       Buffer.add_string b "            std::memcpy(&val, reinterpret_cast<const void*>(cur_sp), sizeof(uint64_t));\n";
+       Buffer.add_string b "            ctx.set_reg(REG_RSP, cur_sp + 8ULL);\n";
+       Buffer.add_string b "            ctx.pop();\n";
+       Buffer.add_string b "        } else {\n";
+       Buffer.add_string b "            val = ctx.pop();\n";
+       Buffer.add_string b "        }\n";
+       Buffer.add_string b "        ctx.set_reg(dst, val);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
+       Buffer.add_string b "        uint64_t val = 0;\n";
+       Buffer.add_string b "        if (cur_sp >= 0x10000ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
+       Buffer.add_string b "            const uint64_t* sp_ptr = reinterpret_cast<const uint64_t*>(cur_sp);\n";
+       Buffer.add_string b "            val = *sp_ptr;\n";
+       Buffer.add_string b "            ctx.set_reg(REG_RSP, cur_sp + sizeof(uint64_t));\n";
+       Buffer.add_string b "            ctx.pop();\n";
+       Buffer.add_string b "        } else {\n";
+       Buffer.add_string b "            val = ctx.pop();\n";
+       Buffer.add_string b "        }\n";
+       Buffer.add_string b "        ctx.set_reg(dst, val);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ADC_RR: {\n";

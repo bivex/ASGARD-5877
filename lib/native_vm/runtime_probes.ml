@@ -98,9 +98,12 @@ let emit_memory_integrity_scanner_header () =
 #include <mach/thread_act.h>
 #include <mach/thread_status.h>
 #include <mach/vm_map.h>
+#include <mach-o/dyld.h>
+#include <mach-o/getsect.h>
 #elif defined(__linux__)
 #include <stdio.h>
 #include <string.h>
+#include <link.h>
 #elif defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -113,12 +116,104 @@ let emit_memory_integrity_scanner_header () =
 
 namespace asgard_mem_integrity {
 
+static inline __attribute__((always_inline)) uint64_t compute_section_integrity_hash() noexcept {
+    uint64_t h = 0x5877CAFE1337BEEFULL;
+
+#if defined(__APPLE__)
+    const struct mach_header_64* mh = (const struct mach_header_64*)_dyld_get_image_header(0);
+    if (mh) {
+        unsigned long text_sz = 0;
+        uint8_t* text_p = getsectiondata(mh, "__TEXT", "__text", &text_sz);
+        if (text_p && text_sz > 0) {
+            size_t sample = text_sz < 65536 ? text_sz : 65536;
+            for (size_t i = 0; i + 8 <= sample; i += 32) {
+                uint64_t w = *reinterpret_cast<const uint64_t*>(text_p + i);
+                h ^= w * 0x9E3779B97F4A7C15ULL;
+                h = (h << 13) | (h >> 51);
+                h *= 0x100000001B3ULL;
+            }
+        }
+        unsigned long const_sz = 0;
+        uint8_t* const_p = getsectiondata(mh, "__TEXT", "__const", &const_sz);
+        if (const_p && const_sz > 0) {
+            size_t sample = const_sz < 16384 ? const_sz : 16384;
+            for (size_t i = 0; i + 8 <= sample; i += 32) {
+                uint64_t w = *reinterpret_cast<const uint64_t*>(const_p + i);
+                h ^= w * 0xBF58476D1CE4E5B9ULL;
+                h = (h << 17) | (h >> 47);
+            }
+        }
+    }
+#elif defined(__linux__) && !defined(_MSC_VER)
+    struct PhdrContext {
+        uint64_t hash;
+        bool found;
+    } pctx = { h, false };
+
+    dl_iterate_phdr([](struct dl_phdr_info* info, size_t, void* data) -> int {
+        auto* ctx = reinterpret_cast<PhdrContext*>(data);
+        if (ctx->found) return 1;
+        for (int i = 0; i < info->dlpi_phnum; ++i) {
+            const ElfW(Phdr)& ph = info->dlpi_phdr[i];
+            if (ph.p_type == PT_LOAD && (ph.p_flags & PF_X)) {
+                const uint8_t* base = reinterpret_cast<const uint8_t*>(info->dlpi_addr + ph.p_vaddr);
+                size_t sz = ph.p_filesz < 65536 ? ph.p_filesz : 65536;
+                for (size_t j = 0; j + 8 <= sz; j += 32) {
+                    uint64_t w = *reinterpret_cast<const uint64_t*>(base + j);
+                    ctx->hash ^= w * 0x9E3779B97F4A7C15ULL;
+                    ctx->hash = (ctx->hash << 13) | (ctx->hash >> 51);
+                    ctx->hash *= 0x100000001B3ULL;
+                }
+                ctx->found = true;
+            }
+        }
+        return ctx->found ? 1 : 0;
+    }, &pctx);
+    h = pctx.hash;
+#elif defined(_WIN32)
+    HMODULE hMod = GetModuleHandleA(nullptr);
+    if (hMod) {
+        const uint8_t* base = reinterpret_cast<const uint8_t*>(hMod);
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+        if (dos->e_magic == IMAGE_DOS_SIGNATURE) {
+            const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+            if (nt->Signature == IMAGE_NT_SIGNATURE) {
+                const auto* sec = IMAGE_FIRST_SECTION(nt);
+                for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++sec) {
+                    if (sec->Characteristics & (IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_INITIALIZED_DATA)) {
+                        const uint8_t* p = base + sec->VirtualAddress;
+                        size_t sz = sec->Misc.VirtualSize < 65536 ? sec->Misc.VirtualSize : 65536;
+                        for (size_t j = 0; j + 8 <= sz; j += 32) {
+                            uint64_t w = *reinterpret_cast<const uint64_t*>(p + j);
+                            h ^= w * 0x9E3779B97F4A7C15ULL;
+                            h = (h << 13) | (h >> 51);
+                            h *= 0x100000001B3ULL;
+                        }
+                    }
+                }
+            }
+        }
+    }
+#endif
+
+    return h ^ (h >> 31);
+}
+
 // MEM-SBOM Style Memory Forensics & Injection Scanner
 static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity() noexcept {
     uint64_t penalty = 0;
 
+    // 1. Executable Section Dynamic Drift Check
+    static uint64_t initial_sect_hash = 0;
+    uint64_t current_sect_hash = compute_section_integrity_hash();
+    if (initial_sect_hash == 0) {
+        initial_sect_hash = current_sect_hash;
+    } else if (current_sect_hash != initial_sect_hash) {
+        penalty ^= 0x5877BAADC0DEDEADULL;
+    }
+
 #if defined(__APPLE__)
-    // 1. Thread Debug Register Inspection (DR0-DR3 / DBGBVR detection)
+    // 2. Thread Debug Register Inspection (DR0-DR3 / DBGBVR detection)
     mach_port_t thread = mach_thread_self();
 #if defined(__aarch64__) && defined(ARM_DEBUG_STATE64)
     arm_debug_state64_t dbg_state = {};
@@ -141,7 +236,7 @@ static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity(
 #endif
     mach_port_deallocate(mach_task_self(), thread);
 
-    // 2. Suspicious Anonymous RWX Memory Scanner (Anti-Frida / Shellcode Injection)
+    // 3. Suspicious Anonymous RWX Memory Scanner (Anti-Frida / Shellcode Injection)
     vm_address_t address = 0;
     vm_size_t size = 0;
     mach_port_t object_name = MACH_PORT_NULL;
@@ -170,7 +265,7 @@ static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity(
         fclose(fp);
     }
 #elif defined(_WIN32)
-    // 1. Thread Debug Register Inspection (DR0-DR3 / DR7 detection)
+    // Thread Debug Register Inspection (DR0-DR3 / DR7 detection)
     CONTEXT dbg_ctx = {};
     dbg_ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
     if (GetThreadContext(GetCurrentThread(), &dbg_ctx)) {
@@ -179,7 +274,7 @@ static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity(
         }
     }
 
-    // 2. Suspicious Anonymous RWX Memory Scanner (VirtualQuery)
+    // Suspicious Anonymous RWX Memory Scanner (VirtualQuery)
     MEMORY_BASIC_INFORMATION mbi = {};
     const uint8_t* addr = nullptr;
     int suspicious_rwx = 0;

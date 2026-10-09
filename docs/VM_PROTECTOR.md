@@ -193,6 +193,25 @@ Out of 256 possible 8-bit opcodes:
 * **235 slots** map to `&&H_DECOY`.
 * Any out-of-order execution, fuzzing attempt, or corrupted state immediately traps and halts the process.
 
+### 5.4 Dispatch Domain Architecture: Direct Threading vs. Decoy Diversification
+To frustrate jump table pattern recognition without degrading virtual execution speed, ASGARD-5877 introduces $N$ distinct Dispatch Domains (`all_dispatch_domains[domain_idx][op]`):
+* **Real Opcode Placement Invariant**: Real, functional VM opcode indices are preserved across all $N$ dispatch tables. This guarantees $O(1)$ zero-overhead direct-threaded jumps (`goto *dispatch_domains[domain_idx][op]`) without requiring dynamic opcode-translation indirection matrices or runtime lookup overhead on every instruction fetch step.
+* **Decoy Diversification**: The 216+ decoy slots ($>85\%$ of the table entries) are dynamically permuted per domain using $(base\_idx + d \times 7 + i \times 3) \pmod{16}$. This ensures that all $N$ dispatch jump tables in `.rodata` are structurally distinct byte sequences, thwarting automated memory signatures and binary diffing tools (BinDiff, Diaphora) while keeping hot-path direct jumps optimal.
+
+### 5.5 Section Integrity Hashing & Active Anti-Tamper Memory Probes
+VM integrity is anchored to physical executable code and read-only data sections:
+* **Multi-Platform Section Extraction**:
+  - **macOS (Mach-O)**: Utilizes `_dyld_get_image_header(0)` and `getsectiondata(mh, "__TEXT", "__text", &sz)` to locate and hash executable code.
+  - **Linux (ELF)**: Iterates loaded program segments using `dl_iterate_phdr`, identifying executable (`PF_X`) PT_LOAD mappings.
+  - **Windows (PE)**: Traverses `IMAGE_DOS_HEADER`, `IMAGE_NT_HEADERS`, and `IMAGE_SECTION_HEADER` via `GetModuleHandleW(NULL)` to scan `.text` and `.rdata`.
+* **FNV-1a / Murmur Keystream Anchoring**: The computed section hash is folded into `compute_handlers_hash()`, which anchors the Anti-Pushan rolling key (`rk`) and address-bound bytecode decryption. Any patch, breakpoint (`0xCC` / `BRK`), or hook in the protected module alters the section hash, causing rolling key desynchronization and cascading execution failure into decoy traps.
+* **Continuous Drift Detection**: `evaluate_memory_integrity()` periodically recomputes section checksums during execution, aborting the process if inline patches are applied dynamically.
+
+### 5.6 Handler Metamorphism & Signature Matching Elimination
+To defeat heuristic YARA signatures, disassembler pattern scanners, and ML-based deobfuscators, handler emission is equipped with build-time metamorphism:
+* **Variant Generation**: Every functional handler family (Control Flow: `H_JMP`, `H_JCC`, `H_CMOV`, `H_SETCC`; Memory Operations: `H_LOAD_*`, `H_STORE_*`; Move & Stack Ops: `H_MOV_RR`, `H_MOV_RI`, `H_PUSH_R`, `H_POP_R`) compiles 2–3 semantically equivalent instruction sequences (e.g., direct pointer dereference vs. base pointer arithmetic vs. `memcpy` primitives; conditional ternary vs. branchless arithmetic vs. branch-and-assign).
+* **PRNG Selection**: Handlers are probabilistically selected during code emission using `~rng`, ensuring that no two emitted VM protector builds share identical byte patterns or AST signatures.
+
 ---
 
 ## 6. Phase 5: Devirtualization Resistance Scoring (DRS)

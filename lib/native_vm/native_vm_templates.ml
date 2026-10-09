@@ -65,6 +65,11 @@ let threaded_header_template = {|#pragma once
 
 {%- if enable_mem_scan %}
 {{ mem_scan_header }}
+{%- else %}
+namespace asgard_mem_integrity {
+    static inline uint64_t compute_section_integrity_hash() noexcept { return 0x5877CAFE1337BEEFULL; }
+    static inline uint64_t evaluate_memory_integrity() noexcept { return 0; }
+}
 {%- endif %}
 
 {%- if enable_nanomites %}

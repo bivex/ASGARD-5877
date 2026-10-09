@@ -1,4 +1,10 @@
-let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_address_bound = false) () =
+let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_address_bound = false) () =
+  let pick_variant n =
+    match rng with
+    | Some r -> Random.State.int r n
+    | None -> 0
+  in
+
   let maybe_reanchor () =
     if enable_running_key then begin
       if enable_address_bound then
@@ -28,7 +34,10 @@ let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_addre
     Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
     Buffer.add_string b "#endif\n";
   end else begin
-    Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
+    (match pick_variant 3 with
+     | 0 -> Buffer.add_string b "        vIP_idx = (size_t)imm;\n"
+     | 1 -> Buffer.add_string b "        size_t _target = (size_t)imm; vIP_idx = _target;\n"
+     | _ -> Buffer.add_string b "        vIP_idx = (size_t)((uint64_t)imm & ~0ULL);\n");
   end;
   maybe_reanchor ();
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
@@ -57,20 +66,43 @@ let emit_control_handlers b ~enable_nanomites ~enable_running_key ?(enable_addre
     Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
     Buffer.add_string b "#endif\n";
   end else begin
-    Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
+    (match pick_variant 3 with
+     | 0 ->
+         Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n"
+     | 1 ->
+         Buffer.add_string b "        if (c) { vIP_idx = (size_t)t_true; } else { vIP_idx = (size_t)t_false; }\n"
+     | _ ->
+         Buffer.add_string b "        uint64_t _mask = c ? ~0ULL : 0ULL;\n";
+         Buffer.add_string b "        vIP_idx = (size_t)((t_true & _mask) | (t_false & ~_mask));\n");
   end;
   maybe_reanchor ();
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMOV: {\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_reg(dst, ctx.get_reg(src));\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_reg(dst, ctx.get_reg(src));\n"
+   | 1 ->
+       Buffer.add_string b "        uint64_t _m = eval_condition(ctx, cond) ? ~0ULL : 0ULL;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(src) & _m) | (ctx.get_reg(dst) & ~_m));\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _s = ctx.get_reg(src), _d = ctx.get_reg(dst);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, eval_condition(ctx, cond) ? _s : _d);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_SETCC: {\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        uint64_t val = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
-  Buffer.add_string b "        ctx.set_reg(dst, val);\n";
+  (match pick_variant 3 with
+   | 0 ->
+       Buffer.add_string b "        uint64_t val = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, val);\n"
+   | 1 ->
+       Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(eval_condition(ctx, cond) ? 1 : 0));\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _val = 0ULL;\n";
+       Buffer.add_string b "        if (eval_condition(ctx, cond)) _val = 1ULL;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, _val);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CALL: {\n";

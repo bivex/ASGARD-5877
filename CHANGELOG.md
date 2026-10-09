@@ -8,6 +8,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 
+- Add VM handler metamorphism (`vm_control_handlers.ml`, `vm_mem_handlers.ml`, `vm_alu_handlers.ml`) with 2–3 semantically equivalent polymorphic implementations per handler family (control flow, memory load/store, ALU, move, stack ops), randomly selected via `~rng` during emission to defeat static YARA and disassembler signature matching.
+- Add multi-platform section integrity hashing (`runtime_probes.ml`, `vm_context_emitter.ml`) scanning `.text` and `.rodata` sections across macOS (`_dyld_get_image_header(0)` / `getsectiondata`), Linux (`dl_iterate_phdr`), and Windows PE (`IMAGE_DOS_HEADER` / `IMAGE_NT_HEADERS`), folding into `compute_handlers_hash()` and active dynamic drift detection in `evaluate_memory_integrity()`.
+- Add architectural documentation for dispatch domain direct threading vs decoy diversification in `docs/VM_PROTECTOR.md`.
 - Add Stack-VM execution engine with universal logic reduction (NOR/NAND), stateful rolling key encryption, and stack balancing (`lib/stack_vm/`).
 - Add keyed payload integrity tag for Stack-VM (`Stack_encoder.payload_tag`, `tag_keys`, `derive_payload_tag`, `payload_tag_of_keys`): SipHash-1-2 in CBC mode over the word-padded cipher image, binding both the image length and every 64-bit word, domain-separated from the per-block key halves and invariant under `apply_addr_mask`. The C++ runtime verifies it in `asg_payload_auth_ok` before the first fetch, with a constant-time compare, and refuses to decode an unauthenticated image.
 - Add Anti-VMPredator address-bound bytecode keys for Stack-VM: pre-XOR stored seed and block key literals with ASLR/PIE-invariant handler address delta hash $D$ while preserving ciphertext bytes, and fold mask back at runtime entry.
