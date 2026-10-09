@@ -225,11 +225,11 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
        Buffer.add_string b "    H_RET: case_ret: ctx.executed_instructions++; goto EXIT_VM;\n";
        Buffer.add_string b "    H_EXIT: ctx.executed_instructions++; goto EXIT_VM;\n\n"
    | 1 ->
-       Buffer.add_string b "    H_RET: case_ret: { ctx.trapped = false; ctx.executed_instructions++; goto EXIT_VM; }\n";
-       Buffer.add_string b "    H_EXIT: { ctx.trapped = false; ctx.executed_instructions++; goto EXIT_VM; }\n\n"
+       Buffer.add_string b "    H_RET: case_ret: { if (!ctx.verify_canaries()) { ctx.trapped = true; } ctx.executed_instructions++; goto EXIT_VM; }\n";
+       Buffer.add_string b "    H_EXIT: { if (!ctx.verify_canaries()) { ctx.trapped = true; } ctx.executed_instructions++; goto EXIT_VM; }\n\n"
    | _ ->
-       Buffer.add_string b "    H_RET: case_ret: { ctx.executed_instructions += 1; goto EXIT_VM; }\n";
-       Buffer.add_string b "    H_EXIT: { ctx.executed_instructions += 1; goto EXIT_VM; }\n\n");
+       Buffer.add_string b "    H_RET: case_ret: { if (ctx.sp > 512) { ctx.trapped = true; } ctx.executed_instructions += 1; goto EXIT_VM; }\n";
+       Buffer.add_string b "    H_EXIT: { if (ctx.sp > 512) { ctx.trapped = true; } ctx.executed_instructions += 1; goto EXIT_VM; }\n\n");
 
   (match pick_variant 3 with
    | 0 ->
@@ -309,8 +309,9 @@ let emit_super_operators ?rng b =
    | 0 ->
        Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) + ctx.get_reg(src)) ^ (uint64_t)imm);\n"
    | 1 ->
-       Buffer.add_string b "        uint64_t _acc = ctx.get_reg(dst) + ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _acc ^ static_cast<uint64_t>(imm));\n"
+       Buffer.add_string b "        uint64_t _sum = ctx.get_reg(dst) + ctx.get_reg(src);\n";
+       Buffer.add_string b "        uint64_t _imm = static_cast<uint64_t>(imm);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (_sum + _imm) - 2 * (_sum & _imm));\n"
    | _ ->
        Buffer.add_string b "        uint64_t _imm = (uint64_t)imm;\n";
        Buffer.add_string b "        uint64_t _sum = ctx.get_reg(dst) + ctx.get_reg(src);\n";
@@ -325,7 +326,8 @@ let emit_super_operators ?rng b =
        Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) - ctx.get_reg(src)) ^ (uint64_t)imm);\n"
    | 1 ->
        Buffer.add_string b "        uint64_t _diff = ctx.get_reg(dst) - ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _diff ^ static_cast<uint64_t>(imm));\n"
+       Buffer.add_string b "        uint64_t _imm = static_cast<uint64_t>(imm);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, (_diff + _imm) - 2 * (_diff & _imm));\n"
    | _ ->
        Buffer.add_string b "        uint64_t _imm = (uint64_t)imm;\n";
        Buffer.add_string b "        uint64_t _diff = ctx.get_reg(dst) - ctx.get_reg(src);\n";
@@ -339,10 +341,12 @@ let emit_super_operators ?rng b =
    | 0 ->
        Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + (uint64_t)imm);\n"
    | 1 ->
-       Buffer.add_string b "        uint64_t _x = ctx.get_reg(dst) ^ ctx.get_reg(src);\n";
+       Buffer.add_string b "        uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src);\n";
+       Buffer.add_string b "        uint64_t _x = (_a + _b) - 2 * (_a & _b);\n";
        Buffer.add_string b "        ctx.set_reg(dst, _x + static_cast<uint64_t>(imm));\n"
    | _ ->
-       Buffer.add_string b "        uint64_t _x = ctx.get_reg(dst) ^ ctx.get_reg(src);\n";
+       Buffer.add_string b "        uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src);\n";
+       Buffer.add_string b "        uint64_t _x = (_a | _b) - (_a & _b);\n";
        Buffer.add_string b "        uint64_t _i = (uint64_t)imm;\n";
        Buffer.add_string b "        ctx.set_reg(dst, (_x | _i) + (_x & _i));\n");
   Buffer.add_string b "        ctx.executed_instructions += 2;\n";

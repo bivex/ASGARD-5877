@@ -764,12 +764,12 @@ let emit_mem_and_ffi_handlers ?rng b =
    | 0 ->
        Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
        Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-       Buffer.add_string b "        double r = (b != 0.0) ? (a / b) : 0.0;\n";
+       Buffer.add_string b "        double r = a / b;\n";
        Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n"
    | 1 ->
        Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
        Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
-       Buffer.add_string b "        double _q = (_b == 0.0) ? 0.0 : (_a / _b);\n";
+       Buffer.add_string b "        double _q = (_b == 0.0) ? ((_a == 0.0) ? NAN : (std::signbit(_a) ^ std::signbit(_b) ? -INFINITY : INFINITY)) : (_a / _b);\n";
        Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_q), 0);\n"
    | _ ->
        Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
@@ -782,11 +782,11 @@ let emit_mem_and_ffi_handlers ?rng b =
    | 0 ->
        Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
        Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
-       Buffer.add_string b "        double r = (a >= 0.0) ? std::sqrt(a) : 0.0;\n";
+       Buffer.add_string b "        double r = std::sqrt(a);\n";
        Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n"
    | 1 ->
        Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        double _root = (_a < 0.0) ? 0.0 : std::sqrt(_a);\n";
+       Buffer.add_string b "        double _root = (_a < 0.0) ? NAN : std::sqrt(_a);\n";
        Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_root), 0);\n"
    | _ ->
        Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0);\n";
@@ -895,12 +895,14 @@ let emit_mem_and_ffi_handlers ?rng b =
        Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
        Buffer.add_string b "        ctx.set_reg(dst, ptr->load(std::memory_order_seq_cst));\n"
    | 1 ->
-       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _p->load(std::memory_order_seq_cst));\n"
+       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(src) + static_cast<uint64_t>(imm);\n";
+       Buffer.add_string b "        uint64_t _val = __atomic_load_n(reinterpret_cast<uint64_t*>(_addr), __ATOMIC_SEQ_CST);\n";
+       Buffer.add_string b "        ctx.set_reg(dst, _val);\n"
    | _ ->
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(src) + (uint64_t)imm);\n";
-       Buffer.add_string b "        uint64_t _loaded = ptr->load(std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(src) + (uint64_t)imm;\n";
+       Buffer.add_string b "        std::atomic_thread_fence(std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        uint64_t _loaded = *reinterpret_cast<volatile uint64_t*>(_addr);\n";
+       Buffer.add_string b "        std::atomic_thread_fence(std::memory_order_seq_cst);\n";
        Buffer.add_string b "        ctx.set_reg(dst, _loaded);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -911,13 +913,11 @@ let emit_mem_and_ffi_handlers ?rng b =
        Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
        Buffer.add_string b "        ptr->store(ctx.get_reg(src), std::memory_order_seq_cst);\n"
    | 1 ->
-       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
-       Buffer.add_string b "        _p->store(ctx.get_reg(src), std::memory_order_seq_cst);\n"
+       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + static_cast<uint64_t>(imm);\n";
+       Buffer.add_string b "        __atomic_store_n(reinterpret_cast<uint64_t*>(_addr), ctx.get_reg(src), __ATOMIC_SEQ_CST);\n"
    | _ ->
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
-       Buffer.add_string b "        uint64_t _val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        ptr->store(_val, std::memory_order_seq_cst);\n");
+       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
+       Buffer.add_string b "        (void)__atomic_exchange_n(reinterpret_cast<uint64_t*>(_addr), ctx.get_reg(src), __ATOMIC_SEQ_CST);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ATOMIC_CAS: {\n";
@@ -930,15 +930,16 @@ let emit_mem_and_ffi_handlers ?rng b =
        Buffer.add_string b "        ptr->compare_exchange_strong(expected, desired, std::memory_order_seq_cst);\n";
        Buffer.add_string b "        ctx.set_reg(src, expected);\n"
    | 1 ->
-       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
+       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + static_cast<uint64_t>(imm);\n";
        Buffer.add_string b "        uint64_t _exp = ctx.get_reg(src), _des = ctx.get_reg(REG_RAX);\n";
-       Buffer.add_string b "        _p->compare_exchange_strong(_exp, _des, std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        __atomic_compare_exchange_n(reinterpret_cast<uint64_t*>(_addr), &_exp, _des, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);\n";
        Buffer.add_string b "        ctx.set_reg(src, _exp);\n"
    | _ ->
        Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
        Buffer.add_string b "        uint64_t expected = ctx.get_reg(src);\n";
-       Buffer.add_string b "        ptr->compare_exchange_strong(expected, ctx.get_reg(REG_RAX), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        while (!ptr->compare_exchange_weak(expected, ctx.get_reg(REG_RAX), std::memory_order_seq_cst, std::memory_order_seq_cst)) {\n";
+       Buffer.add_string b "            if (expected != ctx.get_reg(src)) break;\n";
+       Buffer.add_string b "        }\n";
        Buffer.add_string b "        ctx.set_reg(src, expected);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -950,13 +951,14 @@ let emit_mem_and_ffi_handlers ?rng b =
        Buffer.add_string b "        uint64_t old = ptr->fetch_add(ctx.get_reg(src), std::memory_order_seq_cst);\n";
        Buffer.add_string b "        ctx.set_reg(src, old);\n"
    | 1 ->
-       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
-       Buffer.add_string b "        uint64_t _old = _p->fetch_add(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + static_cast<uint64_t>(imm);\n";
+       Buffer.add_string b "        uint64_t _old = __atomic_fetch_add(reinterpret_cast<uint64_t*>(_addr), ctx.get_reg(src), __ATOMIC_SEQ_CST);\n";
        Buffer.add_string b "        ctx.set_reg(src, _old);\n"
    | _ ->
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
-       Buffer.add_string b "        uint64_t old = ptr->fetch_add(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        uint64_t* ptr = reinterpret_cast<uint64_t*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
+       Buffer.add_string b "        uint64_t old = __atomic_load_n(ptr, __ATOMIC_RELAXED);\n";
+       Buffer.add_string b "        uint64_t add_val = ctx.get_reg(src);\n";
+       Buffer.add_string b "        while (!__atomic_compare_exchange_n(ptr, &old, old + add_val, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {}\n";
        Buffer.add_string b "        ctx.set_reg(src, old);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -968,28 +970,41 @@ let emit_mem_and_ffi_handlers ?rng b =
        Buffer.add_string b "        uint64_t old = ptr->exchange(ctx.get_reg(src), std::memory_order_seq_cst);\n";
        Buffer.add_string b "        ctx.set_reg(src, old);\n"
    | 1 ->
-       Buffer.add_string b "        uintptr_t _addr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        std::atomic<uint64_t>* _p = reinterpret_cast<std::atomic<uint64_t>*>(_addr);\n";
-       Buffer.add_string b "        uint64_t _old = _p->exchange(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + static_cast<uint64_t>(imm);\n";
+       Buffer.add_string b "        uint64_t _old = __atomic_exchange_n(reinterpret_cast<uint64_t*>(_addr), ctx.get_reg(src), __ATOMIC_SEQ_CST);\n";
        Buffer.add_string b "        ctx.set_reg(src, _old);\n"
    | _ ->
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
-       Buffer.add_string b "        uint64_t old = ptr->exchange(ctx.get_reg(src), std::memory_order_seq_cst);\n";
+       Buffer.add_string b "        uint64_t* ptr = reinterpret_cast<uint64_t*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
+       Buffer.add_string b "        uint64_t old = __atomic_load_n(ptr, __ATOMIC_RELAXED);\n";
+       Buffer.add_string b "        uint64_t new_val = ctx.get_reg(src);\n";
+       Buffer.add_string b "        while (!__atomic_compare_exchange_n(ptr, &old, new_val, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {}\n";
        Buffer.add_string b "        ctx.set_reg(src, old);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_MOV_VR: {\n";
   (match pick_variant 3 with
    | 0 -> Buffer.add_string b "        ctx.set_vreg_lane(dst, 0, ctx.get_reg(src));\n"
-   | 1 -> Buffer.add_string b "        uint64_t _val = ctx.get_reg(src); ctx.set_vreg_lane(dst, 0, _val);\n"
-   | _ -> Buffer.add_string b "        ctx.set_vreg_lane(dst, 0, static_cast<uint64_t>(ctx.get_reg(src)));\n");
+   | 1 ->
+       Buffer.add_string b "        uint64_t _val = ctx.get_reg(src);\n";
+       Buffer.add_string b "        uint64_t _buf[1];\n";
+       Buffer.add_string b "        std::memcpy(_buf, &_val, sizeof(uint64_t));\n";
+       Buffer.add_string b "        ctx.set_vreg_lane(dst, 0, _buf[0]);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _val = ctx.get_reg(src) ^ 0xA5A5A5A55A5A5A5AULL;\n";
+       Buffer.add_string b "        ctx.set_vreg_lane(dst, 0, _val ^ 0xA5A5A5A55A5A5A5AULL);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_MOV_RV: {\n";
   (match pick_variant 3 with
    | 0 -> Buffer.add_string b "        ctx.set_reg(dst, ctx.get_vreg_lane(src, 0));\n"
-   | 1 -> Buffer.add_string b "        uint64_t _val = ctx.get_vreg_lane(src, 0); ctx.set_reg(dst, _val);\n"
-   | _ -> Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(ctx.get_vreg_lane(src, 0)));\n");
+   | 1 ->
+       Buffer.add_string b "        uint64_t _val = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "        uint64_t _buf[1];\n";
+       Buffer.add_string b "        std::memcpy(_buf, &_val, sizeof(uint64_t));\n";
+       Buffer.add_string b "        ctx.set_reg(dst, _buf[0]);\n"
+   | _ ->
+       Buffer.add_string b "        uint64_t _val = ctx.get_vreg_lane(src, 0) ^ 0x5A5A5A5AA5A5A5A5ULL;\n";
+       Buffer.add_string b "        ctx.set_reg(dst, _val ^ 0x5A5A5A5AA5A5A5A5ULL);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FCSEL_VV: {\n";

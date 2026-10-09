@@ -34,9 +34,10 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     | _ -> "ctx.rns_sub(ctx.get_reg(dst), ctx.get_reg(src))"
   in
   let pick_poly_xor () =
-    match Random.State.int rng 2 with
-    | 0 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) ^ (ctx.get_reg(dst) & ctx.get_reg(src)))"
-    | _ -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
+    match Random.State.int rng 3 with
+    | 0 -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
+    | 1 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) - (ctx.get_reg(dst) & ctx.get_reg(src)))"
+    | _ -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)))"
   in
 
   let h_add_rr_expr () =
@@ -54,14 +55,14 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   let pick_poly_and () =
     match Random.State.int rng 3 with
     | 0 -> "(ctx.get_reg(dst) & ctx.get_reg(src))"
-    | 1 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
-    | _ -> "(~((~ctx.get_reg(dst)) | (~ctx.get_reg(src))))"
+    | 1 -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - (ctx.get_reg(dst) | ctx.get_reg(src)))"
+    | _ -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) ^ (ctx.get_reg(dst) | ctx.get_reg(src)))"
   in
   let pick_poly_or () =
     match Random.State.int rng 3 with
     | 0 -> "(ctx.get_reg(dst) | ctx.get_reg(src))"
-    | 1 -> "((ctx.get_reg(dst) & ctx.get_reg(src)) + (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
-    | _ -> "(~((~ctx.get_reg(dst)) & (~ctx.get_reg(src))))"
+    | 1 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) + (ctx.get_reg(dst) & ctx.get_reg(src)))"
+    | _ -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - (ctx.get_reg(dst) & ctx.get_reg(src)))"
   in
 
   let h_and_rr_expr () =
@@ -136,27 +137,33 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
    | 0 ->
        Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
        Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
+       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t mval = val & mask;\n";
        Buffer.add_string b "        uint64_t res;\n";
        Buffer.add_string b "        if (bits <= 32) {\n";
-       Buffer.add_string b "            uint32_t v32 = (uint32_t)val;\n";
+       Buffer.add_string b "            uint32_t v32 = (uint32_t)mval;\n";
        Buffer.add_string b "            res = (v32 == 0) ? (uint64_t)bits : (uint64_t)(__builtin_clz(v32) - (32 - bits));\n";
        Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            res = (val == 0) ? 64ULL : (uint64_t)__builtin_clzll(val);\n";
+       Buffer.add_string b "            res = (mval == 0) ? 64ULL : (uint64_t)__builtin_clzll(mval);\n";
        Buffer.add_string b "        }\n";
        Buffer.add_string b "        ctx.set_reg(dst, res);\n"
    | 1 ->
        Buffer.add_string b "        uint64_t _s = ctx.get_reg(src);\n";
        Buffer.add_string b "        uint32_t _bits = static_cast<uint32_t>(imm);\n";
+       Buffer.add_string b "        uint64_t _mask = (_bits >= 64) ? ~0ULL : ((1ULL << _bits) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t _ms = _s & _mask;\n";
        Buffer.add_string b "        if (_bits <= 32) {\n";
-       Buffer.add_string b "            uint32_t _v32 = static_cast<uint32_t>(_s);\n";
+       Buffer.add_string b "            uint32_t _v32 = static_cast<uint32_t>(_ms);\n";
        Buffer.add_string b "            ctx.set_reg(dst, (_v32 == 0) ? static_cast<uint64_t>(_bits) : static_cast<uint64_t>(__builtin_clz(_v32) - (32 - _bits)));\n";
        Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (_s == 0) ? 64ULL : static_cast<uint64_t>(__builtin_clzll(_s)));\n";
+       Buffer.add_string b "            ctx.set_reg(dst, (_ms == 0) ? 64ULL : static_cast<uint64_t>(__builtin_clzll(_ms)));\n";
        Buffer.add_string b "        }\n"
    | _ ->
        Buffer.add_string b "        uint64_t val = ctx.get_reg(src); uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t _clz = (bits <= 32) ? (((uint32_t)val == 0) ? (uint64_t)bits : (uint64_t)(__builtin_clz((uint32_t)val) - (32 - bits)))\n";
-       Buffer.add_string b "                                     : ((val == 0) ? 64ULL : (uint64_t)__builtin_clzll(val));\n";
+       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t mval = val & mask;\n";
+       Buffer.add_string b "        uint64_t _clz = (bits <= 32) ? (((uint32_t)mval == 0) ? (uint64_t)bits : (uint64_t)(__builtin_clz((uint32_t)mval) - (32 - bits)))\n";
+       Buffer.add_string b "                                     : ((mval == 0) ? 64ULL : (uint64_t)__builtin_clzll(mval));\n";
        Buffer.add_string b "        ctx.set_reg(dst, _clz);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -165,27 +172,33 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
    | 0 ->
        Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
        Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
+       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t mval = val & mask;\n";
        Buffer.add_string b "        uint64_t res;\n";
        Buffer.add_string b "        if (bits <= 32) {\n";
-       Buffer.add_string b "            uint32_t v32 = (uint32_t)val;\n";
+       Buffer.add_string b "            uint32_t v32 = (uint32_t)mval;\n";
        Buffer.add_string b "            res = (v32 == 0) ? (uint64_t)bits : (uint64_t)__builtin_ctz(v32);\n";
        Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            res = (val == 0) ? 64ULL : (uint64_t)__builtin_ctzll(val);\n";
+       Buffer.add_string b "            res = (mval == 0) ? 64ULL : (uint64_t)__builtin_ctzll(mval);\n";
        Buffer.add_string b "        }\n";
        Buffer.add_string b "        ctx.set_reg(dst, res);\n"
    | 1 ->
        Buffer.add_string b "        uint64_t _s = ctx.get_reg(src);\n";
        Buffer.add_string b "        uint32_t _bits = static_cast<uint32_t>(imm);\n";
+       Buffer.add_string b "        uint64_t _mask = (_bits >= 64) ? ~0ULL : ((1ULL << _bits) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t _ms = _s & _mask;\n";
        Buffer.add_string b "        if (_bits <= 32) {\n";
-       Buffer.add_string b "            uint32_t _v32 = static_cast<uint32_t>(_s);\n";
+       Buffer.add_string b "            uint32_t _v32 = static_cast<uint32_t>(_ms);\n";
        Buffer.add_string b "            ctx.set_reg(dst, (_v32 == 0) ? static_cast<uint64_t>(_bits) : static_cast<uint64_t>(__builtin_ctz(_v32)));\n";
        Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (_s == 0) ? 64ULL : static_cast<uint64_t>(__builtin_ctzll(_s)));\n";
+       Buffer.add_string b "            ctx.set_reg(dst, (_ms == 0) ? 64ULL : static_cast<uint64_t>(__builtin_ctzll(_ms)));\n";
        Buffer.add_string b "        }\n"
    | _ ->
        Buffer.add_string b "        uint64_t val = ctx.get_reg(src); uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t _ctz = (bits <= 32) ? (((uint32_t)val == 0) ? (uint64_t)bits : (uint64_t)__builtin_ctz((uint32_t)val))\n";
-       Buffer.add_string b "                                     : ((val == 0) ? 64ULL : (uint64_t)__builtin_ctzll(val));\n";
+       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t mval = val & mask;\n";
+       Buffer.add_string b "        uint64_t _ctz = (bits <= 32) ? (((uint32_t)mval == 0) ? (uint64_t)bits : (uint64_t)__builtin_ctz((uint32_t)mval))\n";
+       Buffer.add_string b "                                     : ((mval == 0) ? 64ULL : (uint64_t)__builtin_ctzll(mval));\n";
        Buffer.add_string b "        ctx.set_reg(dst, _ctz);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -194,18 +207,25 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
    | 0 ->
        Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
        Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t res = (bits <= 32) ? (uint64_t)__builtin_popcount((uint32_t)val) : (uint64_t)__builtin_popcountll(val);\n";
+       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t mval = val & mask;\n";
+       Buffer.add_string b "        uint64_t res = (bits <= 32) ? (uint64_t)__builtin_popcount((uint32_t)mval) : (uint64_t)__builtin_popcountll(mval);\n";
        Buffer.add_string b "        ctx.set_reg(dst, res);\n"
    | 1 ->
        Buffer.add_string b "        uint64_t _s = ctx.get_reg(src);\n";
        Buffer.add_string b "        uint32_t _b = static_cast<uint32_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _res = (_b <= 32) ? static_cast<uint64_t>(__builtin_popcount(static_cast<uint32_t>(_s))) : static_cast<uint64_t>(__builtin_popcountll(_s));\n";
+       Buffer.add_string b "        uint64_t _mask = (_b >= 64) ? ~0ULL : ((1ULL << _b) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t _ms = _s & _mask;\n";
+       Buffer.add_string b "        uint64_t _res = (_b <= 32) ? static_cast<uint64_t>(__builtin_popcount(static_cast<uint32_t>(_ms))) : static_cast<uint64_t>(__builtin_popcountll(_ms));\n";
        Buffer.add_string b "        ctx.set_reg(dst, _res);\n"
    | _ ->
-       Buffer.add_string b "        if ((uint32_t)imm <= 32) {\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (uint64_t)__builtin_popcount((uint32_t)ctx.get_reg(src)));\n";
+       Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
+       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
+       Buffer.add_string b "        uint64_t mval = ctx.get_reg(src) & mask;\n";
+       Buffer.add_string b "        if (bits <= 32) {\n";
+       Buffer.add_string b "            ctx.set_reg(dst, (uint64_t)__builtin_popcount((uint32_t)mval));\n";
        Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (uint64_t)__builtin_popcountll(ctx.get_reg(src)));\n";
+       Buffer.add_string b "            ctx.set_reg(dst, (uint64_t)__builtin_popcountll(mval));\n";
        Buffer.add_string b "        }\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
@@ -301,19 +321,19 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "    }\n";
   Buffer.add_string b (Printf.sprintf "    H_XOR_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_xor_rr_expr ()));
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_XOR_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)imm) ^ (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 0 -> Buffer.add_string b "    H_XOR_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)imm) - (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
    | 1 -> Buffer.add_string b "    H_XOR_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d ^ static_cast<uint64_t>(imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_XOR_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, ((~_d) & _i) | (_d & (~_i))); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | _ -> Buffer.add_string b "    H_XOR_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, (_d + _i) - 2 * (_d & _i)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
   Buffer.add_string b (Printf.sprintf "    H_AND_RR: { ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_and_rr_expr ()));
   (match pick_variant 3 with
    | 0 -> Buffer.add_string b "    H_AND_RI: ctx.set_reg(dst, (ctx.get_reg(dst) + (uint64_t)imm) - (ctx.get_reg(dst) | (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n"
    | 1 -> Buffer.add_string b "    H_AND_RI: ctx.set_reg(dst, ctx.get_reg(dst) & static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT();\n"
-   | _ -> Buffer.add_string b "    H_AND_RI: { uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, ~(~_d | ~_i)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | _ -> Buffer.add_string b "    H_AND_RI: { uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, (_d | _i) - (_d ^ _i)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
   Buffer.add_string b (Printf.sprintf "    H_OR_RR: { ctx.set_reg(dst, %s); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_or_rr_expr ()));
   (match pick_variant 3 with
    | 0 -> Buffer.add_string b "    H_OR_RI: ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT();\n"
    | 1 -> Buffer.add_string b "    H_OR_RI: ctx.set_reg(dst, ctx.get_reg(dst) | static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT();\n"
-   | _ -> Buffer.add_string b "    H_OR_RI: { uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, ~(~_d & ~_i)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | _ -> Buffer.add_string b "    H_OR_RI: { uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, (_d + _i) - (_d & _i)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
 

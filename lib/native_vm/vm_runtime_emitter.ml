@@ -98,7 +98,8 @@ let emit_cpp_threaded_header
               in
               let diversified = (base_idx + (d * 7) + (i * 3)) mod 16 in
               Printf.sprintf "H_DECOY_%d" diversified
-            else h
+            else if d = 0 then h
+            else Printf.sprintf "%s_D%d" h ((d - 1) mod 2 + 1)
           in
           Jg_types.Tstr h)
       in
@@ -112,7 +113,8 @@ let emit_cpp_threaded_header
   let handlers_buf = Buffer.create 4096 in
   Vm_handlers_emitter.emit_handlers_hpp handlers_buf ~rng
     ~enable_running_key ~enable_address_bound ~enable_timing_probes
-    ~enable_nanomites ~enable_egraph_expansion ~enable_ephemeral_jit ();
+    ~enable_nanomites ~enable_egraph_expansion ~enable_ephemeral_jit
+    ~num_domains ();
   let handlers_source = Buffer.contents handlers_buf in
 
   let models : (string * Jg_types.tvalue) list = [
