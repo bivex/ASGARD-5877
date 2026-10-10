@@ -123,6 +123,84 @@ let test_ncfg_rewrite_depth2 () =
       failwith (Printf.sprintf "NCFG depth-2 rewrite unsound: got=%LX exp=%LX" res exp)
   done
 
+let test_ncfg_and_soundness () =
+  let rng = Random.State.make [| 2026 |] in
+  for _ = 1 to 2000 do
+    let x = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let y = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let env var = if var = "x" then x else if var = "y" then y else 0L in
+    let e = Ncfg_synth.synthesize_ncfg_and ~rng (Mba.Var "x") (Mba.Var "y") in
+    let res = Mba.eval env e in
+    let exp = Int64.logand x y in
+    if res <> exp then
+      failwith (Printf.sprintf "NCFG AND unsound: x=%LX y=%LX got=%LX exp=%LX" x y res exp)
+  done
+
+let test_ncfg_or_soundness () =
+  let rng = Random.State.make [| 2027 |] in
+  for _ = 1 to 2000 do
+    let x = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let y = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let env var = if var = "x" then x else if var = "y" then y else 0L in
+    let e = Ncfg_synth.synthesize_ncfg_or ~rng (Mba.Var "x") (Mba.Var "y") in
+    let res = Mba.eval env e in
+    let exp = Int64.logor x y in
+    if res <> exp then
+      failwith (Printf.sprintf "NCFG OR unsound: x=%LX y=%LX got=%LX exp=%LX" x y res exp)
+  done
+
+let test_ncfg_not_soundness () =
+  let rng = Random.State.make [| 2028 |] in
+  for _ = 1 to 2000 do
+    let x = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let env var = if var = "x" then x else 0L in
+    let e = Ncfg_synth.synthesize_ncfg_not ~rng (Mba.Var "x") in
+    let res = Mba.eval env e in
+    let exp = Int64.lognot x in
+    if res <> exp then
+      failwith (Printf.sprintf "NCFG NOT unsound: x=%LX got=%LX exp=%LX" x res exp)
+  done
+
+let test_ncfg_neg_soundness () =
+  let rng = Random.State.make [| 2029 |] in
+  for _ = 1 to 2000 do
+    let x = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let env var = if var = "x" then x else 0L in
+    let e = Ncfg_synth.synthesize_ncfg_neg ~rng (Mba.Var "x") in
+    let res = Mba.eval env e in
+    let exp = Int64.neg x in
+    if res <> exp then
+      failwith (Printf.sprintf "NCFG NEG unsound: x=%LX got=%LX exp=%LX" x res exp)
+  done
+
+let test_ncfg_mul_soundness () =
+  let rng = Random.State.make [| 2030 |] in
+  for _ = 1 to 2000 do
+    let x = Random.State.int64 rng 0x00000000FFFFFFFFL in
+    let y = Random.State.int64 rng 0x00000000FFFFFFFFL in
+    let env var = if var = "x" then x else if var = "y" then y else 0L in
+    let e = Ncfg_synth.synthesize_ncfg_mul ~rng (Mba.Var "x") (Mba.Var "y") in
+    let res = Mba.eval env e in
+    let exp = Int64.mul x y in
+    if res <> exp then
+      failwith (Printf.sprintf "NCFG MUL unsound: x=%LX y=%LX got=%LX exp=%LX" x y res exp)
+  done
+
+let test_ncfg_obfuscate_alu_soundness () =
+  let rng = Random.State.make [| 2031 |] in
+  let ops = [ Vm_ir.Ir.Add; Vm_ir.Ir.Sub; Vm_ir.Ir.Xor; Vm_ir.Ir.And; Vm_ir.Ir.Or; Vm_ir.Ir.Imul ] in
+  List.iter (fun op ->
+    let instrs =
+      Ncfg_synth.obfuscate_alu ~rng ~depth:2
+        ~dst:Vm_ir.Register.rax
+        ~src1:(Vm_ir.Ir.Reg Vm_ir.Register.rbx)
+        ~src2:(Vm_ir.Ir.Reg Vm_ir.Register.rcx)
+        op
+    in
+    if List.length instrs < 2 then
+      failwith "NCFG obfuscate_alu produced insufficient instructions"
+  ) ops
+
 (* -------------------------------------------------------------------------- *)
 (* 4. ARM64 Literal Stitcher (arXiv:2407.08924 & 2507.07246)                 *)
 (* -------------------------------------------------------------------------- *)
@@ -154,6 +232,12 @@ let tests = [
   ("NCFG XOR: 2000-vector soundness",      `Quick, test_ncfg_xor_soundness);
   ("NCFG ADD: 2000-vector soundness",      `Quick, test_ncfg_add_soundness);
   ("NCFG SUB: 2000-vector soundness",      `Quick, test_ncfg_sub_soundness);
+  ("NCFG AND: 2000-vector soundness",      `Quick, test_ncfg_and_soundness);
+  ("NCFG OR:  2000-vector soundness",      `Quick, test_ncfg_or_soundness);
+  ("NCFG NOT: 2000-vector soundness",      `Quick, test_ncfg_not_soundness);
+  ("NCFG NEG: 2000-vector soundness",      `Quick, test_ncfg_neg_soundness);
+  ("NCFG MUL: 2000-vector soundness",      `Quick, test_ncfg_mul_soundness);
+  ("NCFG ALU: IR expansion soundness",     `Quick, test_ncfg_obfuscate_alu_soundness);
   ("NCFG depth-2 rewrite soundness",       `Quick, test_ncfg_rewrite_depth2);
   ("ARM64 Stitcher: structure check",      `Quick, test_literal_stitcher_structure);
   ("ARM64 Stitcher: listing obfuscation",  `Quick, test_literal_stitcher_obfuscates);
