@@ -304,6 +304,11 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
             ctx.trapped = true; \
             goto EXIT_VM; \
         } \
+        if (__builtin_expect((vIP_idx & 0x7F) == 0 && !ctx.verify_canaries(), 0)) { \
+            ctx.trapped = true; \
+            ctx.reg_mask ^= 0xCAFEBABE13375877ULL; \
+            goto EXIT_VM; \
+        } \
         uint64_t k_pos = key64_for_offset(seed, vIP_idx); \
 {%- if enable_running_key %}
         uint64_t k_dyn = k_pos ^ ctx.running_key; \

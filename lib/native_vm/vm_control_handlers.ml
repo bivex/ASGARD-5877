@@ -43,6 +43,7 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_JCC: {\n";
+  Buffer.add_string b "        PROBE_START();\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
   Buffer.add_string b "        uint64_t t_true = (uint64_t)((word >> 22) & 0x1FFFFFULL);\n";
   Buffer.add_string b "        uint64_t t_false = (uint64_t)((word >> 43) & 0x1FFFFFULL);\n";
@@ -76,9 +77,11 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
          Buffer.add_string b "        vIP_idx = (size_t)((t_true & _mask) | (t_false & ~_mask));\n");
   end;
   maybe_reanchor ();
+  Buffer.add_string b "        PROBE_CHECK();\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CMOV: {\n";
+  Buffer.add_string b "        PROBE_START();\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
   (match pick_variant 3 with
    | 0 ->
@@ -89,9 +92,11 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
    | _ ->
        Buffer.add_string b "        uint64_t _s = ctx.get_reg(src), _d = ctx.get_reg(dst);\n";
        Buffer.add_string b "        ctx.set_reg(dst, eval_condition(ctx, cond) ? _s : _d);\n");
+  Buffer.add_string b "        PROBE_CHECK();\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_SETCC: {\n";
+  Buffer.add_string b "        PROBE_START();\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
   (match pick_variant 3 with
    | 0 ->
@@ -103,6 +108,7 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
        Buffer.add_string b "        uint64_t _val = 0ULL;\n";
        Buffer.add_string b "        if (eval_condition(ctx, cond)) _val = 1ULL;\n";
        Buffer.add_string b "        ctx.set_reg(dst, _val);\n");
+  Buffer.add_string b "        PROBE_CHECK();\n";
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CALL: {\n";
