@@ -156,7 +156,7 @@ let lightweight : t = {
     memory_sanitization = false;
     vector_isa = false;
     egraph_expansion = false;
-    ephemeral_jit = false;
+    ephemeral_jit = true;
   };
   c_macro = {
     enabled = false;

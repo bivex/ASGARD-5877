@@ -8,6 +8,7 @@ let emit_dual_mapping_header () =
 #include <mach/vm_map.h>
 #include <sys/mman.h>
 #include <pthread.h>
+#include <unistd.h>
 #elif defined(__linux__)
 #include <sys/mman.h>
 #include <unistd.h>
@@ -49,6 +50,9 @@ struct DualMappedBuffer {
         SYSTEM_INFO si;
         GetSystemInfo(&si);
         if (si.dwPageSize) page_sz = (size_t)si.dwPageSize;
+#elif defined(__APPLE__) || defined(__linux__)
+        long sc_ps = sysconf(_SC_PAGESIZE);
+        if (sc_ps > 0) page_sz = (size_t)sc_ps;
 #endif
         buf.size = (required_size + page_sz - 1) & ~(page_sz - 1);
 

@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline via Hexagonal Architecture) *)
-let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile_and_run =
+let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit enable_ephemeral_jit compile_and_run =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
     else if engine = "stack" then "stack"
@@ -12,13 +12,22 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
     else "threaded"
   in
   let effective_cfg =
-    Protect_adapters.Config_adapter.resolve
-      ~config_file
-      ~preset
-      ~enable_cff
-      ~enable_mba
-      ~mba_depth
-      ~seed
+    let resolved =
+      Protect_adapters.Config_adapter.resolve
+        ~config_file
+        ~preset
+        ~enable_cff
+        ~enable_mba
+        ~mba_depth
+        ~seed
+    in
+    if enable_ephemeral_jit then
+      let raw = Protect_adapters.Config_adapter.unwrap resolved in
+      Protect_adapters.Config_adapter.wrap {
+        raw with
+        vm_runtime = { raw.vm_runtime with ephemeral_jit = true };
+      }
+    else resolved
   in
   let rng =
     match Protect_ports.seed effective_cfg with
@@ -124,9 +133,13 @@ let protect_arm64_cmd =
     let doc = "Enable Register-Driven JIT VM (RD-JIT with ephemeral native code synthesis)" in
     Arg.(value & flag & info [ "jit" ] ~doc)
   in
+  let ephemeral_jit =
+    let doc = "Enable Ephemeral JIT micro-handlers synthesis in Threaded VM" in
+    Arg.(value & flag & info [ "ephemeral-jit" ] ~doc)
+  in
   let compile =
     let doc = "Compile native C++ runner and execute protected ARM64 binary" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ compile)) in
+  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ ephemeral_jit $ compile)) in
   Cmd.v (Cmd.info "protect-arm64" ~doc) term

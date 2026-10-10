@@ -390,6 +390,36 @@ let test_indirect_jump_target_reg () =
     Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
     Alcotest.(check bool) "rax is 4242" true (String.contains out_str '4' && String.contains out_str '2'))
 
+let test_ephemeral_jit_micro_handlers () =
+  let rng = Random.State.make [| 20261010 |] in
+  let asm = {|
+func_eph_jit:
+    mov rax, 42
+    add rax, 58
+    sub rax, 20
+    imul rax, 3
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let config = {
+        Protection_config.default with
+        vm_runtime = { Protection_config.default.vm_runtime with ephemeral_jit = true };
+      } in
+      let pkg = Vm_emitter.compile_and_package ~rng ~config func in
+      Alcotest.(check bool) "ephemeral jit define present" true
+        (string_contains pkg.cpp_runtime_source "ASGARD_EPHEMERAL_JIT");
+      Alcotest.(check bool) "ephemeral jit dispatch present" true
+        (string_contains pkg.cpp_runtime_source "execute_ephemeral_vm_op");
+      with_temp_dir (fun tmp_dir ->
+        let bin_path = compile_and_prepare_vm tmp_dir pkg in
+        let bc_path = Filename.concat tmp_dir "code.vanguard" in
+        write_bytecode_bin bc_path pkg.bytecode;
+        let status, out_str = run_command_capture (Printf.sprintf "%s %s" bin_path bc_path) in
+        Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
+        Alcotest.(check bool) "rax is 240 ((42+58-20)*3)" true (string_contains out_str "240"))
+
 let tests = [
   Alcotest.test_case "threaded_vm_compilation_and_execution" `Slow test_threaded_vm_compilation_and_execution;
   Alcotest.test_case "threaded_vm_with_cff" `Slow test_threaded_vm_with_cff;
@@ -402,4 +432,5 @@ let tests = [
   Alcotest.test_case "external_libc_call_trampoline" `Slow test_external_libc_call_trampoline;
   Alcotest.test_case "sub_64bit_comparison_and_flags" `Slow test_sub_64bit_comparison_and_flags;
   Alcotest.test_case "indirect_jump_target_reg" `Slow test_indirect_jump_target_reg;
+  Alcotest.test_case "ephemeral_jit_micro_handlers" `Slow test_ephemeral_jit_micro_handlers;
 ]
