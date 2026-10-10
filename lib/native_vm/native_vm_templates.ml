@@ -245,21 +245,32 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 #endif
 {%- endif %}
 
+    static uintptr_t all_dispatch_domains[{{ num_domains }}][256];
+    static bool dispatch_domains_ready = false;
+    if (__builtin_expect(!dispatch_domains_ready, 0)) {
 {%- for domain in dispatch_domains %}
-    static const void* const dispatch_domain{{ domain.index }}[256] = {
+        static void* raw_domain{{ domain.index }}[256] = {
 {%- for h in domain.handlers %}
-        &&{{ h }},
+            &&{{ h }},
 {%- endfor %}
-    };
+        };
 {%- endfor %}
-
-    static const void* const* const all_dispatch_domains[{{ num_domains }}] = {
+        static void** const raw_all_domains[{{ num_domains }}] = {
 {%- for domain in dispatch_domains %}
-        dispatch_domain{{ domain.index }},
+            raw_domain{{ domain.index }},
 {%- endfor %}
-    };
+        };
+        for (size_t d = 0; d < {{ num_domains }}; ++d) {
+            for (size_t o = 0; o < 256; ++o) {
+                uintptr_t k_slot = ((uintptr_t){{ key_seed_hex }} * 0x517CC1B727220A95ULL) ^ (((uintptr_t)d * 256ULL + (uintptr_t)o) * 0x6A09E667F3BCC908ULL);
+                all_dispatch_domains[d][o] = (uintptr_t)raw_all_domains[d][o] ^ k_slot;
+                *(reinterpret_cast<volatile uintptr_t*>(&raw_all_domains[d][o])) = k_slot ^ 0xDEADBEEF5A5A5A5AULL;
+            }
+        }
+        dispatch_domains_ready = true;
+    }
 
-    uint64_t g_handlers_hash = compute_handlers_hash((const void* const* const*)all_dispatch_domains, {{ num_domains }});
+    uint64_t g_handlers_hash = compute_handlers_hash((const uintptr_t*)all_dispatch_domains, {{ num_domains }});
 
 {%- if enable_address_bound %}
     uint64_t bound_buf[256];
@@ -289,6 +300,10 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 
     #define FETCH_NEXT() do { \
         if (__builtin_expect(vIP_idx >= count, 0)) goto EXIT_VM; \
+        if (__builtin_expect(ctx.executed_instructions > (count * 10000ULL + 1000000ULL), 0)) { \
+            ctx.trapped = true; \
+            goto EXIT_VM; \
+        } \
         uint64_t k_pos = key64_for_offset(seed, vIP_idx); \
 {%- if enable_running_key %}
         uint64_t k_dyn = k_pos ^ ctx.running_key; \
@@ -315,7 +330,9 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
         ctx.advance_running_key(op, dst, imm); \
 {%- endif %}
         uint8_t domain_idx = (uint8_t)((op ^ (uint8_t)(k_dyn & 0x07)) % {{ num_domains }}); \
-        goto *all_dispatch_domains[domain_idx][op]; \
+        uintptr_t k_slot = ((uintptr_t){{ key_seed_hex }} * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)op) * 0x6A09E667F3BCC908ULL); \
+        void* target = (void*)(all_dispatch_domains[domain_idx][op] ^ k_slot); \
+        goto *target; \
     } while(0)
 
 {%- if enable_running_key %}
@@ -398,7 +415,11 @@ static ASG_CALL_NOINLINE uint64_t asgard_vm_call(const uint64_t* bc, size_t len,
     ctx.set_reg(vanguard_threaded_vm::REG_R9,  a7);
 #endif
     vanguard_threaded_vm::execute_threaded(ctx, bc, len, false);
-    return ctx.get_rax();
+    uint64_t ret_val = ctx.get_rax();
+    if (__builtin_expect(ctx.trapped || ctx.canary_head != vanguard_threaded_vm::VMContext::CANARY_VAL || ctx.canary_tail != vanguard_threaded_vm::VMContext::CANARY_VAL, 0)) {
+        ret_val ^= 0xDEADBEEF5A5A5A5AULL ^ ctx.reg_mask;
+    }
+    return ((ret_val ^ 0x5877CAFE1337BEEFULL) + 2ULL * (ret_val & 0x5877CAFE1337BEEFULL)) - 0x5877CAFE1337BEEFULL;
 }
 
 } // namespace vanguard_threaded_vm
