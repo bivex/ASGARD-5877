@@ -27,12 +27,91 @@ let threaded_header_template = {|#pragma once
 #include <unistd.h>
 #include <mach/mach.h>
 #include <mach/thread_act.h>
+#include <mach-o/dyld.h>
+#include <mach-o/loader.h>
 #elif defined(__linux__)
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
 #elif defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
+#endif
+
+static inline int asg_strcmp(const char* s1, const char* s2) noexcept {
+    if (!s1 || !s2) return (s1 == s2) ? 0 : (s1 ? 1 : -1);
+    while (*s1 && (*s1 == *s2)) { s1++; s2++; }
+    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+}
+
+#if defined(__APPLE__) && defined(__MACH__)
+static inline uint64_t asg_read_uleb128(const uint8_t** p) noexcept {
+    uint64_t result = 0;
+    int shift = 0;
+    while (1) {
+        uint8_t byte = *(*p)++;
+        result |= ((uint64_t)(byte & 0x7f)) << shift;
+        if ((byte & 0x80) == 0) break;
+        shift += 7;
+    }
+    return result;
+}
+
+static inline void* asg_find_sym_in_trie(const uint8_t* trie_base, const uint8_t* node, uint32_t cur_h, uint32_t target_h, uintptr_t base) noexcept {
+    const uint8_t* p = node;
+    uint64_t terminal_size = asg_read_uleb128(&p);
+    if (terminal_size > 0 && cur_h == target_h) {
+        uint64_t flags = asg_read_uleb128(&p);
+        if ((flags & 0x08) == 0) {
+            uint64_t addr = asg_read_uleb128(&p);
+            return (void*)(addr + base);
+        }
+        return nullptr;
+    }
+    p += terminal_size;
+    uint8_t child_count = *p++;
+    for (uint8_t i = 0; i < child_count; i++) {
+        uint32_t child_h = cur_h;
+        while (*p) {
+            child_h = (child_h ^ (uint8_t)*p++) * 0x01000193U;
+        }
+        p++; /* skip null terminator */
+        uint64_t child_offset = asg_read_uleb128(&p);
+        void* res = asg_find_sym_in_trie(trie_base, trie_base + child_offset, child_h, target_h, base);
+        if (res) return res;
+    }
+    return nullptr;
+}
+
+static inline void* asgard_resolve_by_api_hash(uint32_t target_hash) noexcept {
+    if (target_hash == 0) return nullptr;
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        const struct mach_header_64* hdr = (const struct mach_header_64*)_dyld_get_image_header(i);
+        if (!hdr || hdr->magic != MH_MAGIC_64) continue;
+        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+        const struct load_command* cmd = (const struct load_command*)(hdr + 1);
+        uintptr_t linkedit_base = 0;
+        uint32_t dataoff = 0;
+        for (uint32_t c = 0; c < hdr->ncmds; c++) {
+            if (cmd->cmd == LC_SEGMENT_64) {
+                const struct segment_command_64* seg = (const struct segment_command_64*)cmd;
+                if (asg_strcmp(seg->segname, "__LINKEDIT") == 0) {
+                    linkedit_base = seg->vmaddr + slide - seg->fileoff;
+                }
+            } else if (cmd->cmd == 0x80000033 /* LC_DYLD_EXPORTS_TRIE */) {
+                const struct linkedit_data_command* lc = (const struct linkedit_data_command*)cmd;
+                dataoff = lc->dataoff;
+            }
+            cmd = (const struct load_command*)((const char*)cmd + cmd->cmdsize);
+        }
+        if (linkedit_base && dataoff) {
+            const uint8_t* trie = (const uint8_t*)(linkedit_base + dataoff);
+            void* resolved = asg_find_sym_in_trie(trie, trie, 0x811c9dc5U, target_hash, (uintptr_t)hdr);
+            if (resolved) return resolved;
+        }
+    }
+    return nullptr;
+}
 #endif
 
 {%- if enable_vector_isa %}
@@ -102,15 +181,31 @@ static const size_t g_block_lengths[] = {
 };
 {%- endif %}
 
-static const char* const g_external_symbols[] = {
+typedef struct {
+    uint32_t hash;
+    uint32_t alt_hash;
+    uint16_t len;
+    uint8_t enc_bytes[64];
+} asgard_ext_sym_t;
+
 {%- if not has_external_symbols %}
-    ""
+static const asgard_ext_sym_t g_external_symbols[] = { { 0, 0, 0, { 0 } } };
 {%- else %}
-{%- for s in external_symbols %}
-    "{{ s }}",
+static const asgard_ext_sym_t g_external_symbols[] = {
+{%- for sym in external_symbols %}
+    { {{ sym.hash }}U, {{ sym.alt_hash }}U, {{ sym.len }}, { {{ sym.enc_bytes }} } },
 {%- endfor %}
-{%- endif %}
 };
+{%- endif %}
+
+static inline void asg_decrypt_sym(const asgard_ext_sym_t* sym, char* out_buf, size_t out_cap) noexcept {
+    size_t n = sym->len < out_cap - 1 ? sym->len : out_cap - 1;
+    for (size_t i = 0; i < n; i++) {
+        uint8_t k = (uint8_t)(0x5A ^ ((i * 17 + 0x33) & 0xFF));
+        out_buf[i] = (char)(sym->enc_bytes[i] ^ k);
+    }
+    out_buf[n] = '\0';
+}
 
 struct AsgardConstantEntry {
     const char* name;
@@ -131,13 +226,66 @@ static const AsgardConstantEntry g_asgard_constants[] = {
 };
 {%- endif %}
 
-static inline void* asgard_resolve_constant(const char* name) {
+static inline void* asgard_resolve_constant(const char* name) noexcept {
     if (!name || name[0] == '\0') return nullptr;
     for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {
-        if (g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name) == 0) return (void*)g_asgard_constants[i].data;
-        if (name[0] == '_' && g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name + 1) == 0) return (void*)g_asgard_constants[i].data;
+        if (g_asgard_constants[i].size > 0 && asg_strcmp(g_asgard_constants[i].name, name) == 0) return (void*)g_asgard_constants[i].data;
+        if (name[0] == '_' && g_asgard_constants[i].size > 0 && asg_strcmp(g_asgard_constants[i].name, name + 1) == 0) return (void*)g_asgard_constants[i].data;
     }
     return nullptr;
+}
+
+static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
+    if (sym_idx < 0 || (size_t)sym_idx >= sizeof(g_external_symbols) / sizeof(g_external_symbols[0])) {
+        return nullptr;
+    }
+    const asgard_ext_sym_t* sym = &g_external_symbols[sym_idx];
+    if (sym->len == 0) return nullptr;
+
+#if defined(__APPLE__) && defined(__MACH__)
+    void* ptr = asgard_resolve_by_api_hash(sym->hash);
+    if (!ptr && sym->alt_hash != 0) {
+        ptr = asgard_resolve_by_api_hash(sym->alt_hash);
+    }
+    if (ptr) return ptr;
+#endif
+
+    char dec_name[64];
+    asg_decrypt_sym(sym, dec_name, sizeof(dec_name));
+    void* sym_ptr = asgard_resolve_constant(dec_name);
+
+#if defined(__APPLE__) && defined(__MACH__)
+    if (!sym_ptr) {
+        typedef void* (*dlsym_fn_t)(void*, const char*);
+        dlsym_fn_t dyn_dlsym = (dlsym_fn_t)asgard_resolve_by_api_hash(0xE628BBCDU /* FNV1a("_dlsym") */);
+        if (dyn_dlsym) {
+            sym_ptr = dyn_dlsym((void*)-2, dec_name);
+            if (!sym_ptr && dec_name[0] == '_') sym_ptr = dyn_dlsym((void*)-2, dec_name + 1);
+            if (!sym_ptr) {
+                char alt[66];
+                alt[0] = '_';
+                memcpy(alt + 1, dec_name, sym->len + 1);
+                sym_ptr = dyn_dlsym((void*)-2, alt);
+            }
+        }
+    }
+#else
+    if (!sym_ptr) {
+        sym_ptr = dlsym(RTLD_DEFAULT, dec_name);
+        if (!sym_ptr && dec_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, dec_name + 1);
+        if (!sym_ptr) {
+            char alt[66];
+            alt[0] = '_';
+            memcpy(alt + 1, dec_name, sym->len + 1);
+            sym_ptr = dlsym(RTLD_DEFAULT, alt);
+        }
+    }
+#endif
+
+    volatile char* p = dec_name;
+    while (*p) *p++ = 0;
+
+    return sym_ptr;
 }
 
 {{ context_source }}

@@ -63,7 +63,42 @@ let emit_cpp_threaded_header
     ) block_spans
   in
 
-  let ext_sym_models = List.map (fun s -> Jg_types.Tstr (String.escaped s)) external_symbols in
+  let fnv1a s =
+    let h = ref 0x811c9dc5l in
+    for i = 0 to String.length s - 1 do
+      h := Int32.logxor !h (Int32.of_int (Char.code s.[i]));
+      h := Int32.mul !h 0x01000193l
+    done;
+    !h
+  in
+  let ext_sym_models =
+    List.map (fun sym ->
+      let h = fnv1a sym in
+      let alt_sym =
+        if String.length sym > 0 && sym.[0] = '_' then
+          String.sub sym 1 (String.length sym - 1)
+        else "_" ^ sym
+      in
+      let alt_h = fnv1a alt_sym in
+      let len = String.length sym in
+      let enc_bytes =
+        List.init len (fun i ->
+          let k = (0x5A lxor ((i * 17 + 0x33) land 0xFF)) in
+          Printf.sprintf "0x%02X" (Char.code sym.[i] lxor k)
+        )
+      in
+      let enc_bytes_str =
+        if enc_bytes = [] then "0x00"
+        else String.concat ", " enc_bytes
+      in
+      Jg_types.Tobj [
+        ("hash", Jg_types.Tstr (Printf.sprintf "0x%08lX" h));
+        ("alt_hash", Jg_types.Tstr (Printf.sprintf "0x%08lX" alt_h));
+        ("len", Jg_types.Tint len);
+        ("enc_bytes", Jg_types.Tstr enc_bytes_str);
+      ]
+    ) external_symbols
+  in
 
   let constants_models =
     List.mapi (fun idx (name, bytes) ->

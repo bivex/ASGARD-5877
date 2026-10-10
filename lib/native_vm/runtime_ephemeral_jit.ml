@@ -4,8 +4,36 @@ let emit_ephemeral_jit_header () =
 #include <stddef.h>
 #include <stdbool.h>
 #if defined(__APPLE__)
-#include <libkern/OSCacheControl.h>
 #include <pthread.h>
+#if defined(__aarch64__)
+typedef void (*asg_pthread_jit_fn_t)(int);
+typedef void (*asg_dcache_flush_fn_t)(void*, size_t);
+typedef void (*asg_icache_inv_fn_t)(void*, size_t);
+
+static inline void asg_jit_write_protect(int enable) noexcept {
+    static asg_pthread_jit_fn_t fn = nullptr;
+    if (!fn) {
+        fn = (asg_pthread_jit_fn_t)asgard_resolve_by_api_hash(0xDB0F6309U /* _pthread_jit_write_protect_np */);
+        if (!fn) fn = (asg_pthread_jit_fn_t)asgard_resolve_by_api_hash(0x2B20D242U /* pthread_jit_write_protect_np */);
+    }
+    if (fn) fn(enable);
+}
+
+static inline void asg_flush_caches(void* rw_ptr, void* rx_ptr, size_t sz) noexcept {
+    static asg_dcache_flush_fn_t d_fn = nullptr;
+    static asg_icache_inv_fn_t i_fn = nullptr;
+    if (!d_fn) {
+        d_fn = (asg_dcache_flush_fn_t)asgard_resolve_by_api_hash(0xF17C864BU /* _sys_dcache_flush */);
+        if (!d_fn) d_fn = (asg_dcache_flush_fn_t)asgard_resolve_by_api_hash(0xA3519728U /* sys_dcache_flush */);
+    }
+    if (!i_fn) {
+        i_fn = (asg_icache_inv_fn_t)asgard_resolve_by_api_hash(0xB82CAAC5U /* _sys_icache_invalidate */);
+        if (!i_fn) i_fn = (asg_icache_inv_fn_t)asgard_resolve_by_api_hash(0x1BA4225CU /* sys_icache_invalidate */);
+    }
+    if (d_fn) d_fn(rw_ptr, sz);
+    if (i_fn) i_fn(rx_ptr, sz);
+}
+#endif
 #elif defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -136,7 +164,7 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     size_t code_bytes = 0;
 
 #if defined(__APPLE__) && defined(__aarch64__)
-    pthread_jit_write_protect_np(0);
+    asg_jit_write_protect(0);
 #endif
 
 #if defined(__aarch64__)
@@ -366,10 +394,11 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
 #endif
 
 #if defined(__APPLE__)
-    sys_dcache_flush(buf.rw_alias, code_bytes);
-    sys_icache_invalidate((void*)buf.rx_alias, code_bytes);
 #if defined(__aarch64__)
-    pthread_jit_write_protect_np(1);
+    asg_flush_caches(buf.rw_alias, (void*)buf.rx_alias, code_bytes);
+    asg_jit_write_protect(1);
+#else
+    __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
 #endif
 #elif defined(_WIN32)
     FlushInstructionCache(GetCurrentProcess(), (void*)buf.rx_alias, code_bytes);
@@ -382,7 +411,7 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     uint64_t result = fn();
 
 #if defined(__APPLE__) && defined(__aarch64__)
-    pthread_jit_write_protect_np(0);
+    asg_jit_write_protect(0);
 #endif
 
     ctx.set_reg(dst, result);
@@ -394,10 +423,11 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     }
 
 #if defined(__APPLE__)
-    sys_dcache_flush(buf.rw_alias, code_bytes);
-    sys_icache_invalidate((void*)buf.rx_alias, code_bytes);
 #if defined(__aarch64__)
-    pthread_jit_write_protect_np(1);
+    asg_flush_caches(buf.rw_alias, (void*)buf.rx_alias, code_bytes);
+    asg_jit_write_protect(1);
+#else
+    __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
 #endif
 #elif defined(_WIN32)
     FlushInstructionCache(GetCurrentProcess(), (void*)buf.rx_alias, code_bytes);

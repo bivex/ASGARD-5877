@@ -4,21 +4,16 @@
 #include "asgard_obf.h"
 
 /*
- * ASGARD-5877 Developer Experience: Caller Assimilation Architecture
- * By wrapping the entire entrypoint workflow in the virtualization region:
- *   ASGARD_BEGIN_VIRTUALIZE("main");
- *   ...
- *   ASGARD_END();
- *
- * ASGARD automatically assimilates the caller:
- *   - The caller entrypoint becomes a direct jump to asgard_vm_call()
+ * ASGARD-5877 Complete Caller Assimilation Architecture:
+ * The entire application entrypoint workflow runs inside the virtual machine:
  *   - Input reading (fgets/strcspn) executes inside the VM via virtual FFI dispatch
- *   - The boolean validation barrier is eliminated: no hookable sub_XXXX symbol exists
- *   - Return code and conditional grants are computed and returned directly from VM-IR
+ *   - Validation logic and key verification execute purely in VM-IR bytecode
+ *   - main() itself is fully virtualized; its native stub is a single jump to asgard_vm_call()
+ *   - The boolean validation barrier is completely eliminated: no hookable sub_XXXX exists
  */
 
-static int verify_license(void) {
-    ASGARD_BEGIN_VIRTUALIZE("verify_license");
+int main(void) {
+    ASGARD_BEGIN_VIRTUALIZE("main");
 
     char buf[64];
 
@@ -30,7 +25,7 @@ static int verify_license(void) {
 
     buf[0] = '\0';
     if (!fgets(buf, (int)sizeof(buf), stdin)) {
-        return 0;
+        return 1;
     }
     buf[strcspn(buf, "\r\n")] = '\0';
 
@@ -61,16 +56,5 @@ static int verify_license(void) {
     }
 
     ASGARD_END();
-    return ok;
-}
-
-int main(void) {
-    int ok = verify_license();
-    /*
-     * Key-Dependent Invariant:
-     * When valid (ok == 1): (ok ^ 1) == 0.
-     * When invalid (ok == 0): (ok ^ 1) == 1.
-     * Replaces conditional branch (cbnz) with a branchless arithmetic transform.
-     */
-    return ok ^ 1;
+    return ok ? 0 : 1;
 }

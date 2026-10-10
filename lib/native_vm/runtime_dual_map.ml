@@ -65,19 +65,32 @@ struct DualMappedBuffer {
             return buf;
         }
 #endif
+        typedef kern_return_t (*asg_vm_alloc_fn_t)(vm_map_t, vm_address_t*, vm_size_t, int);
+        typedef kern_return_t (*asg_vm_remap_fn_t)(vm_map_t, vm_address_t*, vm_size_t, vm_address_t, int, vm_map_t, vm_address_t, boolean_t, vm_prot_t*, vm_prot_t*, vm_inherit_t);
+        typedef kern_return_t (*asg_vm_prot_fn_t)(vm_map_t, vm_address_t, vm_size_t, boolean_t, vm_prot_t);
+        typedef kern_return_t (*asg_vm_dealloc_fn_t)(vm_map_t, vm_address_t, vm_size_t);
+        static asg_vm_alloc_fn_t p_vm_alloc = nullptr;
+        static asg_vm_remap_fn_t p_vm_remap = nullptr;
+        static asg_vm_prot_fn_t  p_vm_prot  = nullptr;
+        static asg_vm_dealloc_fn_t p_vm_dealloc = nullptr;
+        if (!p_vm_alloc) p_vm_alloc = (asg_vm_alloc_fn_t)asgard_resolve_by_api_hash(0xA0E735E5U /* _vm_allocate */);
+        if (!p_vm_remap) p_vm_remap = (asg_vm_remap_fn_t)asgard_resolve_by_api_hash(0xF034F085U /* _vm_remap */);
+        if (!p_vm_prot)  p_vm_prot  = (asg_vm_prot_fn_t)asgard_resolve_by_api_hash(0x9857D42CU /* _vm_protect */);
+        if (!p_vm_dealloc) p_vm_dealloc = (asg_vm_dealloc_fn_t)asgard_resolve_by_api_hash(0xE86CA72AU /* _vm_deallocate */);
+
         vm_address_t rw_addr = 0;
-        if (vm_allocate(mach_task_self(), &rw_addr, buf.size, VM_FLAGS_ANYWHERE) == KERN_SUCCESS) {
+        if (p_vm_alloc && p_vm_alloc(mach_task_self(), &rw_addr, buf.size, VM_FLAGS_ANYWHERE) == KERN_SUCCESS) {
             vm_address_t rx_addr = 0;
             vm_prot_t cur_prot, max_prot;
-            if (vm_remap(mach_task_self(), &rx_addr, buf.size, 0, VM_FLAGS_ANYWHERE,
+            if (p_vm_remap && p_vm_remap(mach_task_self(), &rx_addr, buf.size, 0, VM_FLAGS_ANYWHERE,
                           mach_task_self(), rw_addr, FALSE, &cur_prot, &max_prot, VM_INHERIT_NONE) == KERN_SUCCESS) {
-                if (vm_protect(mach_task_self(), rx_addr, buf.size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE) == KERN_SUCCESS) {
+                if (p_vm_prot && p_vm_prot(mach_task_self(), rx_addr, buf.size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE) == KERN_SUCCESS) {
                     buf.rw_alias = (void*)rw_addr;
                     buf.rx_alias = (const void*)rx_addr;
                     return buf;
                 }
             }
-            vm_deallocate(mach_task_self(), rw_addr, buf.size);
+            if (p_vm_dealloc) p_vm_dealloc(mach_task_self(), rw_addr, buf.size);
         }
 #elif defined(__linux__) && defined(MFD_CLOEXEC)
         int fd = memfd_create("asgard_dual_wx", MFD_CLOEXEC);
@@ -113,8 +126,13 @@ struct DualMappedBuffer {
         if (rw_alias == rx_alias && rw_alias != nullptr) {
             munmap(rw_alias, size);
         } else {
-            if (rw_alias) vm_deallocate(mach_task_self(), (vm_address_t)rw_alias, size);
-            if (rx_alias) vm_deallocate(mach_task_self(), (vm_address_t)rx_alias, size);
+            typedef kern_return_t (*asg_vm_dealloc_fn_t)(vm_map_t, vm_address_t, vm_size_t);
+            static asg_vm_dealloc_fn_t p_vm_dealloc = nullptr;
+            if (!p_vm_dealloc) p_vm_dealloc = (asg_vm_dealloc_fn_t)asgard_resolve_by_api_hash(0xE86CA72AU /* _vm_deallocate */);
+            if (p_vm_dealloc) {
+                if (rw_alias) p_vm_dealloc(mach_task_self(), (vm_address_t)rw_alias, size);
+                if (rx_alias) p_vm_dealloc(mach_task_self(), (vm_address_t)rx_alias, size);
+            }
         }
 #elif defined(__linux__)
         if (rw_alias && rw_alias != MAP_FAILED) munmap(rw_alias, size);
