@@ -987,86 +987,86 @@ let emit_decoy_handlers ?rng b =
   in
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_0: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_0: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, (_d ^ 0x5877ULL) + 0ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_0: { ctx.set_reg(dst, (~ctx.get_reg(dst)) ^ ~0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_0: { ctx.reg_mask ^= ((k_dyn * 0x6A09E667F3BCC908ULL) + 0x5877ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ (0x5877ULL + (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_0: { uint64_t _d = ctx.get_reg(dst); ctx.reg_mask ^= (k_dyn ^ 0x5877ULL) | 1ULL; ctx.set_reg(dst, (_d ^ 0x5877ULL) + ctx.reg_mask); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_0: { ctx.reg_mask ^= ((uint64_t)op * 0x9E3779B97F4A7C15ULL) | 1ULL; ctx.set_reg(dst, (~ctx.get_reg(dst)) ^ ~0x5877ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_1: { ctx.set_reg(dst, ctx.get_reg(dst) + (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_1: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d + static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_1: { ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_1: { ctx.reg_mask ^= (k_dyn + 0x1337ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) + (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_1: { uint64_t _d = ctx.get_reg(dst); ctx.reg_mask ^= ((uint64_t)op * 0x5877ULL) | 1ULL; ctx.set_reg(dst, _d + static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_1: { ctx.reg_mask ^= (k_dyn ^ (uint64_t)imm) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_2: { ctx.set_reg(dst, ctx.get_reg(dst) * 0x9E37ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_2: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, (_d * 0x9E37ULL) ^ 0ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_2: { ctx.set_reg(dst, ctx.get_reg(dst) * static_cast<uint64_t>(0x9E37ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_2: { ctx.reg_mask ^= ((uint64_t)op * 0xBF58476D1CE4E5B9ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) * 0x9E37ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_2: { uint64_t _d = ctx.get_reg(dst); ctx.reg_mask ^= (k_dyn * 0x9E37ULL) | 1ULL; ctx.set_reg(dst, (_d * 0x9E37ULL) ^ ctx.reg_mask); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_2: { ctx.reg_mask ^= (k_dyn ^ 0x9E37ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) * static_cast<uint64_t>(0x9E37ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_3: { ctx.set_reg(dst, (ctx.get_reg(dst) << 3) | (ctx.get_reg(dst) >> 61)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_3: { uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, (_v << 3) ^ (_v >> 61)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_3: { uint64_t _l = ctx.get_reg(dst) << 3, _r = ctx.get_reg(dst) >> 61; ctx.set_reg(dst, _l | _r); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_3: { ctx.reg_mask ^= (k_dyn >> 13) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) << 3) | (ctx.get_reg(dst) >> 61)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_3: { uint64_t _v = ctx.get_reg(dst); ctx.reg_mask ^= ((uint64_t)op << 7) | 1ULL; ctx.set_reg(dst, (_v << 3) ^ (_v >> 61)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_3: { uint64_t _l = ctx.get_reg(dst) << 3, _r = ctx.get_reg(dst) >> 61; ctx.reg_mask ^= (k_dyn * 0x517CC1B727220A95ULL) | 1ULL; ctx.set_reg(dst, _l | _r); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_4: { ctx.set_reg(dst, ctx.get_reg(src) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_4: { uint64_t _s = ctx.get_reg(src); ctx.set_reg(dst, _s ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_4: { ctx.set_reg(dst, (ctx.get_reg(src) | (uint64_t)imm) - (ctx.get_reg(src) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_4: { ctx.reg_mask ^= ((k_dyn ^ (uint64_t)imm) * 0x9E3779B97F4A7C15ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(src) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_4: { uint64_t _s = ctx.get_reg(src); ctx.reg_mask ^= ((uint64_t)op * 0xCAFEULL) | 1ULL; ctx.set_reg(dst, _s ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_4: { ctx.reg_mask ^= (k_dyn + (uint64_t)src) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(src) | (uint64_t)imm) - (ctx.get_reg(src) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_5: { ctx.set_reg(dst, ctx.get_reg(dst) & ~ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_5: { uint64_t _d = ctx.get_reg(dst), _s = ctx.get_reg(src); ctx.set_reg(dst, _d & (~_s)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_5: { ctx.set_reg(dst, ~(~ctx.get_reg(dst) | ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_5: { ctx.reg_mask ^= (k_dyn * 0x5877ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) & ~ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_5: { uint64_t _d = ctx.get_reg(dst), _s = ctx.get_reg(src); ctx.reg_mask ^= ((uint64_t)op * 0x1337ULL) | 1ULL; ctx.set_reg(dst, _d & (~_s)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_5: { ctx.reg_mask ^= (k_dyn ^ (uint64_t)dst) | 1ULL; ctx.set_reg(dst, ~(~ctx.get_reg(dst) | ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_6: { ctx.set_reg(dst, ctx.get_reg(dst) | 0xCAFEBABEULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_6: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d | static_cast<uint64_t>(0xCAFEBABEULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_6: { ctx.set_reg(dst, (ctx.get_reg(dst) ^ 0xCAFEBABEULL) + (ctx.get_reg(dst) & 0xCAFEBABEULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_6: { ctx.reg_mask ^= (k_dyn ^ 0xCAFEBABEULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) | 0xCAFEBABEULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_6: { uint64_t _d = ctx.get_reg(dst); ctx.reg_mask ^= ((uint64_t)op * 0xCAFEBABEULL) | 1ULL; ctx.set_reg(dst, _d | static_cast<uint64_t>(0xCAFEBABEULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_6: { ctx.reg_mask ^= (k_dyn + 0xCAFEBABEULL) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) ^ 0xCAFEBABEULL) + (ctx.get_reg(dst) & 0xCAFEBABEULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_7: { ctx.set_reg(dst, (ctx.get_reg(dst) >> 5) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_7: { uint64_t _sh = ctx.get_reg(dst) >> 5; ctx.set_reg(dst, _sh ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_7: { ctx.set_reg(dst, ((ctx.get_reg(dst) >> 5) | (uint64_t)imm) - ((ctx.get_reg(dst) >> 5) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_7: { ctx.reg_mask ^= (k_dyn >> 5) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) >> 5) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_7: { uint64_t _sh = ctx.get_reg(dst) >> 5; ctx.reg_mask ^= ((uint64_t)op ^ (uint64_t)imm) | 1ULL; ctx.set_reg(dst, _sh ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_7: { ctx.reg_mask ^= (k_dyn * 0x94D049BB133111EBULL) | 1ULL; ctx.set_reg(dst, ((ctx.get_reg(dst) >> 5) | (uint64_t)imm) - ((ctx.get_reg(dst) >> 5) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_8: { ctx.set_reg(dst, ctx.get_reg(dst) - 0x1337ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_8: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d - static_cast<uint64_t>(0x1337ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_8: { ctx.set_reg(dst, ctx.get_reg(dst) + (~0x1337ULL + 1ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_8: { ctx.reg_mask ^= (k_dyn ^ 0x1337ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) - 0x1337ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_8: { uint64_t _d = ctx.get_reg(dst); ctx.reg_mask ^= ((uint64_t)op - 0x1337ULL) | 1ULL; ctx.set_reg(dst, _d - static_cast<uint64_t>(0x1337ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_8: { ctx.reg_mask ^= (k_dyn * 0x1337ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) + (~0x1337ULL + 1ULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_9: { ctx.set_reg(dst, ctx.get_reg(dst) ^ (ctx.get_reg(src) + 1)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_9: { uint64_t _rhs = ctx.get_reg(src) + 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ _rhs); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_9: { ctx.set_reg(dst, (ctx.get_reg(dst) | (ctx.get_reg(src) + 1)) - (ctx.get_reg(dst) & (ctx.get_reg(src) + 1))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_9: { ctx.reg_mask ^= ((k_dyn + 1ULL) * 0x5877ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ (ctx.get_reg(src) + 1)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_9: { uint64_t _rhs = ctx.get_reg(src) + 1ULL; ctx.reg_mask ^= ((uint64_t)op ^ _rhs) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ _rhs); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_9: { ctx.reg_mask ^= (k_dyn ^ (uint64_t)src) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) | (ctx.get_reg(src) + 1)) - (ctx.get_reg(dst) & (ctx.get_reg(src) + 1))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_10: { ctx.set_reg(dst, (ctx.get_reg(dst) * 6364136223846793005ULL) + 1); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_10: { uint64_t _m = ctx.get_reg(dst) * 6364136223846793005ULL; ctx.set_reg(dst, _m + 1ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_10: { ctx.set_reg(dst, (ctx.get_reg(dst) * 6364136223846793005ULL) + static_cast<uint64_t>(1)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_10: { ctx.reg_mask ^= (k_dyn * 6364136223846793005ULL) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) * 6364136223846793005ULL) + 1); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_10: { uint64_t _m = ctx.get_reg(dst) * 6364136223846793005ULL; ctx.reg_mask ^= ((uint64_t)op * 0x6A09ULL) | 1ULL; ctx.set_reg(dst, _m + 1ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_10: { ctx.reg_mask ^= (k_dyn + 0x6364ULL) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) * 6364136223846793005ULL) + static_cast<uint64_t>(1)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_11: { ctx.set_reg(dst, (ctx.get_reg(dst) << 7) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_11: { uint64_t _sh = ctx.get_reg(dst) << 7; ctx.set_reg(dst, _sh ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_11: { ctx.set_reg(dst, ((ctx.get_reg(dst) << 7) | (uint64_t)imm) - ((ctx.get_reg(dst) << 7) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_11: { ctx.reg_mask ^= (k_dyn << 7) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) << 7) ^ (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_11: { uint64_t _sh = ctx.get_reg(dst) << 7; ctx.reg_mask ^= ((uint64_t)op << 7) | 1ULL; ctx.set_reg(dst, _sh ^ static_cast<uint64_t>(imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_11: { ctx.reg_mask ^= (k_dyn * 0x517CC1B727220A95ULL) | 1ULL; ctx.set_reg(dst, ((ctx.get_reg(dst) << 7) | (uint64_t)imm) - ((ctx.get_reg(dst) << 7) & (uint64_t)imm)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_12: { ctx.set_reg(dst, ctx.get_reg(dst) ^ 0xDEADBEEFULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_12: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d ^ static_cast<uint64_t>(0xDEADBEEFULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_12: { ctx.set_reg(dst, (~ctx.get_reg(dst)) ^ ~0xDEADBEEFULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_12: { ctx.reg_mask ^= (k_dyn ^ 0xDEADBEEFULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ 0xDEADBEEFULL); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_12: { uint64_t _d = ctx.get_reg(dst); ctx.reg_mask ^= ((uint64_t)op * 0xDEADBEEFULL) | 1ULL; ctx.set_reg(dst, _d ^ static_cast<uint64_t>(0xDEADBEEFULL)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_12: { ctx.reg_mask ^= (k_dyn + 0xDEADBEEFULL) | 1ULL; ctx.set_reg(dst, (~ctx.get_reg(dst)) ^ ~0xDEADBEEFULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_13: { ctx.set_reg(dst, ctx.get_reg(dst) + ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_13: { uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src); ctx.set_reg(dst, _a + _b); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_13: { ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + 2 * (ctx.get_reg(dst) & ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_13: { ctx.reg_mask ^= (k_dyn + (uint64_t)src) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) + ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_13: { uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src); ctx.reg_mask ^= ((uint64_t)op + _a) | 1ULL; ctx.set_reg(dst, _a + _b); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_13: { ctx.reg_mask ^= (k_dyn ^ (uint64_t)dst) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + 2 * (ctx.get_reg(dst) & ctx.get_reg(src))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_14: { ctx.set_reg(dst, ctx.get_reg(dst) ^ (uint64_t)(imm * 3)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_14: { uint64_t _adj = static_cast<uint64_t>(imm * 3); ctx.set_reg(dst, ctx.get_reg(dst) ^ _adj); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_14: { ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)(imm * 3)) - (ctx.get_reg(dst) & (uint64_t)(imm * 3))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_14: { ctx.reg_mask ^= (k_dyn ^ (uint64_t)(imm * 3)) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ (uint64_t)(imm * 3)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_14: { uint64_t _adj = static_cast<uint64_t>(imm * 3); ctx.reg_mask ^= ((uint64_t)op * _adj) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ _adj); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_14: { ctx.reg_mask ^= (k_dyn * 0x3ULL) | 1ULL; ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)(imm * 3)) - (ctx.get_reg(dst) & (uint64_t)(imm * 3))); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY_15: { ctx.set_reg(dst, ~ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_DECOY_15: { uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, ~_d); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_DECOY_15: { ctx.set_reg(dst, ctx.get_reg(dst) ^ ~0ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> Buffer.add_string b "    H_DECOY_15: { ctx.reg_mask ^= ~k_dyn | 1ULL; ctx.set_reg(dst, ~ctx.get_reg(dst)); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 1 -> Buffer.add_string b "    H_DECOY_15: { uint64_t _d = ctx.get_reg(dst); ctx.reg_mask ^= ~((uint64_t)op) | 1ULL; ctx.set_reg(dst, ~_d); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | _ -> Buffer.add_string b "    H_DECOY_15: { ctx.reg_mask ^= (k_dyn * 0xBF58476D1CE4E5B9ULL) | 1ULL; ctx.set_reg(dst, ctx.get_reg(dst) ^ ~0ULL); ctx.executed_instructions++; FETCH_NEXT(); }\n");
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_DECOY: { ctx.trapped = true; goto EXIT_VM; }\n\n"
-   | 1 -> Buffer.add_string b "    H_DECOY: { ctx.trapped = true; ctx.executed_instructions++; goto EXIT_VM; }\n\n"
-   | _ -> Buffer.add_string b "    H_DECOY: { bool _trap = true; ctx.trapped = _trap; goto EXIT_VM; }\n\n")
+   | 0 -> Buffer.add_string b "    H_DECOY: { uint64_t _p = (k_dyn * 0x5877CAFEBEEFULL) ^ ((uint64_t)op * 0x9E3779B97F4A7C15ULL) ^ 0xDEADBEEF5A5A5A5AULL; ctx.reg_mask ^= (_p | 1ULL); ctx.set_reg(dst, ctx.get_reg(dst) + ctx.reg_mask); ctx.executed_instructions++; FETCH_NEXT(); }\n\n"
+   | 1 -> Buffer.add_string b "    H_DECOY: { uint64_t _p = ((uint64_t)op * 0xBF58476D1CE4E5B9ULL) ^ (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0xCAFEBABE13375877ULL; ctx.reg_mask ^= (_p | 1ULL); ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.reg_mask) + (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n\n"
+   | _ -> Buffer.add_string b "    H_DECOY: { uint64_t _p = (k_dyn ^ ((uint64_t)op * 0x517CC1B727220A95ULL)) * 0x94D049BB133111EBULL; ctx.reg_mask ^= (_p | 1ULL); ctx.set_reg(dst, ctx.get_reg(dst) ^ ctx.reg_mask); ctx.executed_instructions++; FETCH_NEXT(); }\n\n")

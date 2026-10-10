@@ -37,6 +37,8 @@ let threaded_header_template = {|#pragma once
 #include <windows.h>
 #endif
 
+#ifndef ASGARD_API_HASH_RESOLVER_DEFINED
+#define ASGARD_API_HASH_RESOLVER_DEFINED
 static inline int asg_strcmp(const char* s1, const char* s2) noexcept {
     if (!s1 || !s2) return (s1 == s2) ? 0 : (s1 ? 1 : -1);
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
@@ -44,6 +46,9 @@ static inline int asg_strcmp(const char* s1, const char* s2) noexcept {
 }
 
 #if defined(__APPLE__) && defined(__MACH__)
+#include <mach-o/dyld.h>
+#include <mach-o/loader.h>
+
 static inline uint64_t asg_read_uleb128(const uint8_t** p) noexcept {
     uint64_t result = 0;
     int shift = 0;
@@ -112,6 +117,9 @@ static inline void* asgard_resolve_by_api_hash(uint32_t target_hash) noexcept {
     }
     return nullptr;
 }
+#else
+static inline void* asgard_resolve_by_api_hash(uint32_t) noexcept { return nullptr; }
+#endif
 #endif
 
 {%- if enable_vector_isa %}
@@ -441,10 +449,12 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 {%- endif %}
 
     uint64_t word = 0;
+    uint64_t k_dyn = 0;
     uint8_t op = 0;
     uint8_t dst = 0;
     uint8_t src = 0;
     int64_t imm = 0;
+    size_t next_canary_step = 47 + ((uint64_t)seed & 0x3FULL);
 
     #define FETCH_NEXT() do { \
         if (__builtin_expect(vIP_idx >= count, 0)) goto EXIT_VM; \
@@ -452,17 +462,20 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
             ctx.trapped = true; \
             goto EXIT_VM; \
         } \
-        if (__builtin_expect((vIP_idx & 0x7F) == 0 && !ctx.verify_canaries(), 0)) { \
-            ctx.trapped = true; \
-            ctx.reg_mask ^= 0xCAFEBABE13375877ULL; \
-            goto EXIT_VM; \
-        } \
         uint64_t k_pos = key64_for_offset(seed, vIP_idx); \
 {%- if enable_running_key %}
-        uint64_t k_dyn = k_pos ^ ctx.running_key; \
+        k_dyn = k_pos ^ ctx.running_key; \
 {%- else %}
-        uint64_t k_dyn = k_pos; \
+        k_dyn = k_pos; \
 {%- endif %}
+        if (__builtin_expect(ctx.executed_instructions >= next_canary_step, 0)) { \
+            if (__builtin_expect(!ctx.verify_canaries(), 0)) { \
+                /* Deceptive Delayed Poisoning: silently corrupt register blinding */ \
+                ctx.reg_mask ^= (0xCAFEBABE13375877ULL ^ (k_dyn * 0x9E3779B97F4A7C15ULL)) | 1ULL; \
+            } \
+            /* Dynamic Jitter: unpredictable interval [47..174] derived from state */ \
+            next_canary_step = ctx.executed_instructions + 47 + ((k_dyn >> 21) & 0x7FULL); \
+        } \
 {%- if enable_address_bound %}
         work_bc[vIP_idx] = bound_bc[vIP_idx]; \
 {%- else %}
