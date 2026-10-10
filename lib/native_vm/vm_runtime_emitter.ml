@@ -204,14 +204,27 @@ let emit_cpp_threaded_header
 
   let constants_models =
     List.mapi (fun idx (name, bytes) ->
+      let h = fnv1a name in
+      let alt_name =
+        if String.length name > 0 && name.[0] = '_' then
+          String.sub name 1 (String.length name - 1)
+        else "_" ^ name
+      in
+      let alt_h = fnv1a alt_name in
+      let xor_key = ((Random.State.bits rng) land 0x7FFFFFFF) lxor (idx * 0x1337 + 0x5877) in
       let hex_b = Buffer.create (String.length bytes * 6) in
       for i = 0 to String.length bytes - 1 do
-        Buffer.add_string hex_b (Printf.sprintf "0x%02X, " (Char.code bytes.[i]))
+        let orig = Char.code bytes.[i] in
+        let k = ((xor_key lsr ((i land 3) * 8)) lxor (i * 0x5D + 0x33)) land 0xFF in
+        let enc_val = orig lxor k in
+        Buffer.add_string hex_b (Printf.sprintf "0x%02X, " enc_val)
       done;
       Jg_types.Tobj [
         ("index", Jg_types.Tint idx);
-        ("escaped_name", Jg_types.Tstr (String.escaped name));
+        ("hash", Jg_types.Tstr (Printf.sprintf "0x%08lX" h));
+        ("alt_hash", Jg_types.Tstr (Printf.sprintf "0x%08lX" alt_h));
         ("size", Jg_types.Tint (String.length bytes));
+        ("xor_key", Jg_types.Tstr (Printf.sprintf "0x%08X" xor_key));
         ("hex_bytes", Jg_types.Tstr (Buffer.contents hex_b));
       ]
     ) constants

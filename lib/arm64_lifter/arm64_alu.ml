@@ -579,17 +579,11 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       if is_vzero dst then Some [ Ir.Nop ]
       else
         let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
-        Some [
-          Ir.Mov { dst = Reg dst; src = Imm 0L };
-          Ir.Setcc { cond = map_cond_str c_str; dst = Reg dst };
-        ]
+        Some [ Ir.Setcc { cond = map_cond_str c_str; dst = Reg dst } ]
   | ("cset", (OpReg dst :: _)) ->
       if is_vzero dst then Some [ Ir.Nop ]
       else
-        Some [
-          Ir.Mov { dst = Reg dst; src = Imm 0L };
-          Ir.Setcc { cond = E; dst = Reg dst };
-        ]
+        Some [ Ir.Setcc { cond = E; dst = Reg dst } ]
   | ("fcsel", (OpReg (Register.Fpr (d, dw)) :: src1_op :: src2_op :: cond_op :: _)) ->
       let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
       let cond = map_cond_str c_str in

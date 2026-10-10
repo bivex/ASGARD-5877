@@ -304,21 +304,6 @@ let generate_c_runtime
     | None -> Stack_encoder.encode_program prog
   in
   let has_constants = constants <> [] in
-  let constants_model =
-    List.mapi (fun idx (name, bytes) ->
-      let hex_bytes =
-        String.concat "" (List.init (String.length bytes) (fun i ->
-          Printf.sprintf "0x%02X, " (Char.code bytes.[i])))
-      in
-      Jingoo.Jg_types.Tobj [
-        ("index", Jingoo.Jg_types.Tint idx);
-        ("escaped_name", Jingoo.Jg_types.Tstr (String.escaped name));
-        ("hex_bytes", Jingoo.Jg_types.Tstr hex_bytes);
-        ("size", Jingoo.Jg_types.Tint (String.length bytes));
-      ]
-    ) constants
-  in
-  let has_symbols = external_symbols <> [] in
   let fnv1a s =
     let h = ref 0x811c9dc5L in
     for i = 0 to String.length s - 1 do
@@ -327,6 +312,34 @@ let generate_c_runtime
     done;
     Int64.to_int32 !h
   in
+  let constants_model =
+    List.mapi (fun idx (name, bytes) ->
+      let h = fnv1a name in
+      let alt_name =
+        if String.length name > 0 && name.[0] = '_' then
+          String.sub name 1 (String.length name - 1)
+        else "_" ^ name
+      in
+      let alt_h = fnv1a alt_name in
+      let xor_key = (0x5877A55A lxor (idx * 0x1337 + 0x42)) land 0x7FFFFFFF in
+      let hex_b = Buffer.create (String.length bytes * 6) in
+      for i = 0 to String.length bytes - 1 do
+        let orig = Char.code bytes.[i] in
+        let k = ((xor_key lsr ((i land 3) * 8)) lxor (i * 0x5D + 0x33)) land 0xFF in
+        let enc_val = orig lxor k in
+        Buffer.add_string hex_b (Printf.sprintf "0x%02X, " enc_val)
+      done;
+      Jingoo.Jg_types.Tobj [
+        ("index", Jingoo.Jg_types.Tint idx);
+        ("hash", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08lX" h));
+        ("alt_hash", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08lX" alt_h));
+        ("size", Jingoo.Jg_types.Tint (String.length bytes));
+        ("xor_key", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08X" xor_key));
+        ("hex_bytes", Jingoo.Jg_types.Tstr (Buffer.contents hex_b));
+      ]
+    ) constants
+  in
+  let has_symbols = external_symbols <> [] in
   let symbols_model =
     List.map (fun sym ->
       let h = fnv1a sym in

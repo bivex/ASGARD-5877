@@ -65,14 +65,14 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     if (!buf.rw_alias || !buf.rx_alias) {
 #if defined(ASGARD_SMC_STRICT)
         g_smc_status = SMC_STATUS_FAILED;
-#if !defined(ASGARD_QUIET)
-        fprintf(stderr, "[ASGARD_SMC_ERROR] Strict SMC required by max_security profile, but dual-mapping buffer allocation failed!\n");
+#if defined(ASGARD_DEBUG_DIAGNOSTICS)
+        fprintf(stderr, "[SMC_ERROR] Strict SMC required by max_security profile, but dual-mapping buffer allocation failed!\n");
 #endif
         return 0xDEAD53C0CAFE0001ULL; // Non-zero penalty that corrupts VM context and forces abort/divergence
 #else
         g_smc_status = SMC_STATUS_DEGRADED;
-#if !defined(ASGARD_QUIET) && defined(ASGARD_DEBUG_DIAGNOSTICS)
-        fprintf(stderr, "[ASGARD_SMC_WARN] Dual-mapping unsupported or failed; SMC degraded gracefully.\n");
+#if defined(ASGARD_DEBUG_DIAGNOSTICS)
+        fprintf(stderr, "[SMC_WARN] Dual-mapping unsupported or failed; SMC degraded gracefully.\n");
 #endif
         return 0; // If dual-mapping is unsupported and not in strict mode, degrade gracefully
 #endif

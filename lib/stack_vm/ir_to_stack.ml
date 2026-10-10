@@ -87,7 +87,7 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
        PushReg sp_slot; PushImm 8L; Add; PopReg sp_slot;
        PushReg scratch_val] @
       store_to_operand ctx dst
-  | Alu { op; dst; src1; src2; _ } ->
+  | Alu { op; dst; src1; src2; set_flags } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
       let alu_ops = match op with
@@ -137,8 +137,12 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         | Idiv -> [Idiv] (* signed; guarded against #DE *)
         | Mulh | Imulh -> failwith "ir_to_stack: Mulh/Imulh not supported in stack VM"
       in
-      src1_ops @ src2_ops @ alu_ops @ [PopReg (Context_allocator.slot_of_reg ctx dst)]
-  | Unary { op; dst; src; _ } ->
+      let dst_slot = Context_allocator.slot_of_reg ctx dst in
+      if set_flags then
+        src1_ops @ src2_ops @ alu_ops @ [PopReg dst_slot]
+      else
+        [PushFlags] @ src1_ops @ src2_ops @ alu_ops @ [PopReg dst_slot; PopFlags]
+  | Unary { op; dst; src; set_flags } ->
       let src_ops = lower_operand ctx src in
       let un_ops = match op with
         | Not -> Stack_logic_pass.expand_not_nor
@@ -147,20 +151,48 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         | Dec -> [PushImm 1L; Sub]
         | _ -> []
       in
-      src_ops @ un_ops @ [PopReg (Context_allocator.slot_of_reg ctx dst)]
+      let dst_slot = Context_allocator.slot_of_reg ctx dst in
+      if set_flags then
+        src_ops @ un_ops @ [PopReg dst_slot]
+      else
+        [PushFlags] @ src_ops @ un_ops @ [PopReg dst_slot; PopFlags]
   | Cmp { src1; src2 } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
       src1_ops @ src2_ops @ [Cmp]
-  | Ccmp { src1; src2; _ } ->
+  | Ccmp { cond; src1; src2; nzcv } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
-      src1_ops @ src2_ops @ [Cmp]
-  | Ccmn { src1; src2; _ } ->
+      let s_cond = Context_allocator.alloc_scratch ctx in
+      let s_fl = Context_allocator.alloc_scratch ctx in
+      let raw_nzcv =
+        let sf = if nzcv land 8 <> 0 then 0x80L else 0L in
+        let zf = if nzcv land 4 <> 0 then 0x40L else 0L in
+        let cf = if nzcv land 2 <> 0 then 0x01L else 0L in
+        let of_ = if nzcv land 1 <> 0 then 0x800L else 0L in
+        Int64.logor (Int64.logor sf (Int64.logor zf (Int64.logor cf of_))) 0x02L
+      in
+      [Setcc cond; PopReg s_cond; PushImm raw_nzcv; PopReg s_fl]
+      @ src1_ops @ src2_ops @ [Cmp; PushFlags]
+      @ [PushReg s_cond; PushImm 0L; Cmp; Cmov (Flags.NE, s_fl)]
+      @ [PushReg s_fl; PopFlags]
+  | Ccmn { cond; src1; src2; nzcv } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in
+      let s_cond = Context_allocator.alloc_scratch ctx in
+      let s_fl = Context_allocator.alloc_scratch ctx in
       let dummy = Context_allocator.alloc_scratch ctx in
-      src1_ops @ src2_ops @ [Add; PopReg dummy]
+      let raw_nzcv =
+        let sf = if nzcv land 8 <> 0 then 0x80L else 0L in
+        let zf = if nzcv land 4 <> 0 then 0x40L else 0L in
+        let cf = if nzcv land 2 <> 0 then 0x01L else 0L in
+        let of_ = if nzcv land 1 <> 0 then 0x800L else 0L in
+        Int64.logor (Int64.logor sf (Int64.logor zf (Int64.logor cf of_))) 0x02L
+      in
+      [Setcc cond; PopReg s_cond; PushImm raw_nzcv; PopReg s_fl]
+      @ src1_ops @ src2_ops @ [Add; PopReg dummy; PushFlags]
+      @ [PushReg s_cond; PushImm 0L; Cmp; Cmov (Flags.NE, s_fl)]
+      @ [PushReg s_fl; PopFlags]
   | Test { src1; src2 } ->
       let src1_ops = lower_operand ctx src1 in
       let src2_ops = lower_operand ctx src2 in

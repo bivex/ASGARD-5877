@@ -216,31 +216,67 @@ static inline void asg_decrypt_sym(const asgard_ext_sym_t* sym, char* out_buf, s
 }
 
 struct AsgardConstantEntry {
-    const char* name;
-    const uint8_t* data;
+    uint32_t hash;
+    uint32_t alt_hash;
+    const uint8_t* enc_data;
+    uint8_t* dec_data;
     size_t size;
+    uint32_t xor_key;
+    volatile int ready;
 };
 
 {%- if not has_constants %}
-static const AsgardConstantEntry g_asgard_constants[] = { { "", nullptr, 0 } };
+static AsgardConstantEntry g_asgard_constants[] = { { 0, 0, nullptr, nullptr, 0, 0, 1 } };
 {%- else %}
 {%- for c in constants %}
-static const uint8_t cdata_{{ c.index }}[] = { {{ c.hex_bytes }}0x00 };
+static const uint8_t cdata_enc_{{ c.index }}[] = { {{ c.hex_bytes }}0x00 };
+static uint8_t cdata_dec_{{ c.index }}[{{ c.size }} + 1];
 {%- endfor %}
-static const AsgardConstantEntry g_asgard_constants[] = {
+static AsgardConstantEntry g_asgard_constants[] = {
 {%- for c in constants %}
-    { "{{ c.escaped_name }}", cdata_{{ c.index }}, {{ c.size }} },
+    { {{ c.hash }}U, {{ c.alt_hash }}U, cdata_enc_{{ c.index }}, cdata_dec_{{ c.index }}, {{ c.size }}, {{ c.xor_key }}U, 0 },
 {%- endfor %}
 };
 {%- endif %}
 
-static inline void* asgard_resolve_constant(const char* name) noexcept {
-    if (!name || name[0] == '\0') return nullptr;
+static inline void* asgard_resolve_constant(uint32_t hash, uint32_t alt_hash) noexcept {
     for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {
-        if (g_asgard_constants[i].size > 0 && asg_strcmp(g_asgard_constants[i].name, name) == 0) return (void*)g_asgard_constants[i].data;
-        if (name[0] == '_' && g_asgard_constants[i].size > 0 && asg_strcmp(g_asgard_constants[i].name, name + 1) == 0) return (void*)g_asgard_constants[i].data;
+        AsgardConstantEntry* c = &g_asgard_constants[i];
+        if (c->size > 0) {
+            if (c->hash == hash ||
+                (alt_hash != 0 && c->hash == alt_hash) ||
+                (c->alt_hash != 0 && (c->alt_hash == hash || c->alt_hash == alt_hash))) {
+                if (__builtin_expect(!c->ready, 0)) {
+                    for (size_t j = 0; j < c->size; ++j) {
+                        uint8_t k = (uint8_t)(((c->xor_key >> ((j & 3) * 8)) ^ (j * 0x5D + 0x33)) & 0xFF);
+                        c->dec_data[j] = (uint8_t)(c->enc_data[j] ^ k);
+                    }
+                    c->dec_data[c->size] = 0;
+                    c->ready = 1;
+                }
+                return (void*)c->dec_data;
+            }
+        }
     }
     return nullptr;
+}
+
+static inline void* asgard_resolve_constant_name(const char* name) noexcept {
+    if (!name || name[0] == '\0') return nullptr;
+    uint32_t h = 0x811C9DC5U;
+    const char* p = name;
+    while (*p) {
+        h = (h ^ (uint8_t)*p++) * 0x01000193U;
+    }
+    uint32_t ah = 0;
+    if (name[0] == '_') {
+        ah = 0x811C9DC5U;
+        p = name + 1;
+        while (*p) {
+            ah = (ah ^ (uint8_t)*p++) * 0x01000193U;
+        }
+    }
+    return asgard_resolve_constant(h, ah);
 }
 
 static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
@@ -250,17 +286,20 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     const asgard_ext_sym_t* sym = &g_external_symbols[sym_idx];
     if (sym->len == 0) return nullptr;
 
+    void* sym_ptr = asgard_resolve_constant(sym->hash, sym->alt_hash);
+    if (sym_ptr) return sym_ptr;
+
 #if defined(__APPLE__) && defined(__MACH__)
-    void* ptr = asgard_resolve_by_api_hash(sym->hash);
-    if (!ptr && sym->alt_hash != 0) {
-        ptr = asgard_resolve_by_api_hash(sym->alt_hash);
+    sym_ptr = asgard_resolve_by_api_hash(sym->hash);
+    if (!sym_ptr && sym->alt_hash != 0) {
+        sym_ptr = asgard_resolve_by_api_hash(sym->alt_hash);
     }
-    if (ptr) return ptr;
+    if (sym_ptr) return sym_ptr;
 #endif
 
     char dec_name[64];
     asg_decrypt_sym(sym, dec_name, sizeof(dec_name));
-    void* sym_ptr = asgard_resolve_constant(dec_name);
+    if (!sym_ptr) sym_ptr = asgard_resolve_constant_name(dec_name);
 
 #if defined(__APPLE__) && defined(__MACH__)
     if (!sym_ptr) {

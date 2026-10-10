@@ -13,7 +13,6 @@ let written_gprs : instr -> Register.t list = function
   | Unary { dst; _ } -> [ dst ]
   | Pop (Reg d) -> [ d ]
   | Cmov { dst; _ } -> [ dst ]
-  | Setcc { dst = Reg d; _ } -> [ d ]
   | Setcc _ -> []
   | Load_symbol { dst; _ } -> [ dst ]
   | Get_flags d -> [ d ]

@@ -16,32 +16,73 @@ let runtime_hpp_template = {|#include <stdint.h>
 #include <dlfcn.h>
 #endif
 
+static inline int asg_strcmp(const char* s1, const char* s2) noexcept {
+    while (*s1 && (*s1 == *s2)) { ++s1; ++s2; }
+    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+}
+
 struct AsgardConstantEntry {
-    const char* name;
-    const uint8_t* data;
+    uint32_t hash;
+    uint32_t alt_hash;
+    const uint8_t* enc_data;
+    uint8_t* dec_data;
     size_t size;
+    uint32_t xor_key;
+    volatile int ready;
 };
 
 {%- if not has_constants %}
-static const AsgardConstantEntry g_asgard_constants[] = { { "", nullptr, 0 } };
+static AsgardConstantEntry g_asgard_constants[] = { { 0, 0, nullptr, nullptr, 0, 0, 1 } };
 {%- else %}
 {%- for c in constants %}
-static const uint8_t cdata_{{ c.index }}[] = { {{ c.hex_bytes }}0x00 };
+static const uint8_t cdata_enc_{{ c.index }}[] = { {{ c.hex_bytes }}0x00 };
+static uint8_t cdata_dec_{{ c.index }}[{{ c.size }} + 1];
 {%- endfor %}
-static const AsgardConstantEntry g_asgard_constants[] = {
+static AsgardConstantEntry g_asgard_constants[] = {
 {%- for c in constants %}
-    { "{{ c.escaped_name }}", cdata_{{ c.index }}, {{ c.size }} },
+    { {{ c.hash }}U, {{ c.alt_hash }}U, cdata_enc_{{ c.index }}, cdata_dec_{{ c.index }}, {{ c.size }}, {{ c.xor_key }}U, 0 },
 {%- endfor %}
 };
 {%- endif %}
 
-static inline void* asgard_resolve_constant(const char* name) {
-    if (!name || name[0] == '\0') return nullptr;
+static inline void* asgard_resolve_constant(uint32_t hash, uint32_t alt_hash) noexcept {
     for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {
-        if (g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name) == 0) return (void*)g_asgard_constants[i].data;
-        if (name[0] == '_' && g_asgard_constants[i].size > 0 && strcmp(g_asgard_constants[i].name, name + 1) == 0) return (void*)g_asgard_constants[i].data;
+        AsgardConstantEntry* c = &g_asgard_constants[i];
+        if (c->size > 0) {
+            if (c->hash == hash ||
+                (alt_hash != 0 && c->hash == alt_hash) ||
+                (c->alt_hash != 0 && (c->alt_hash == hash || c->alt_hash == alt_hash))) {
+                if (__builtin_expect(!c->ready, 0)) {
+                    for (size_t j = 0; j < c->size; ++j) {
+                        uint8_t k = (uint8_t)(((c->xor_key >> ((j & 3) * 8)) ^ (j * 0x5D + 0x33)) & 0xFF);
+                        c->dec_data[j] = (uint8_t)(c->enc_data[j] ^ k);
+                    }
+                    c->dec_data[c->size] = 0;
+                    c->ready = 1;
+                }
+                return (void*)c->dec_data;
+            }
+        }
     }
     return nullptr;
+}
+
+static inline void* asgard_resolve_constant_name(const char* name) noexcept {
+    if (!name || name[0] == '\0') return nullptr;
+    uint32_t h = 0x811C9DC5U;
+    const char* p = name;
+    while (*p) {
+        h = (h ^ (uint8_t)*p++) * 0x01000193U;
+    }
+    uint32_t ah = 0;
+    if (name[0] == '_') {
+        ah = 0x811C9DC5U;
+        p = name + 1;
+        while (*p) {
+            ah = (ah ^ (uint8_t)*p++) * 0x01000193U;
+        }
+    }
+    return asgard_resolve_constant(h, ah);
 }
 
 typedef struct {
@@ -88,13 +129,12 @@ static void* asg_find_sym_in_trie(const uint8_t* trie_base, const uint8_t* node,
     p += terminal_size;
     uint8_t child_count = *p++;
     for (uint8_t i = 0; i < child_count; i++) {
-        const char* edge_str = (const char*)p;
-        p += strlen(edge_str) + 1;
-        uint64_t child_offset = asg_read_uleb128(&p);
         uint32_t child_h = cur_h;
-        for (const char* c = edge_str; *c; c++) {
-            child_h = (child_h ^ (uint8_t)*c) * 0x01000193U;
+        while (*p) {
+            child_h = (child_h ^ (uint8_t)*p++) * 0x01000193U;
         }
+        p++; /* skip null terminator */
+        uint64_t child_offset = asg_read_uleb128(&p);
         void* res = asg_find_sym_in_trie(trie_base, trie_base + child_offset, child_h, target_h, base);
         if (res) return res;
     }
@@ -114,7 +154,7 @@ static void* asgard_resolve_by_api_hash(uint32_t target_hash) {
         for (uint32_t c = 0; c < hdr->ncmds; c++) {
             if (cmd->cmd == LC_SEGMENT_64) {
                 const struct segment_command_64* seg = (const struct segment_command_64*)cmd;
-                if (strcmp(seg->segname, "__LINKEDIT") == 0) {
+                if (asg_strcmp(seg->segname, "__LINKEDIT") == 0) {
                     linkedit_base = seg->vmaddr + slide - seg->fileoff;
                 }
             } else if (cmd->cmd == 0x80000033 /* LC_DYLD_EXPORTS_TRIE */) {
@@ -149,19 +189,22 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
     const asgard_ext_sym_t* sym = &g_external_symbols[sym_idx];
     if (sym->len == 0) return nullptr;
 
+    void* sym_ptr = asgard_resolve_constant(sym->hash, sym->alt_hash);
+    if (sym_ptr) return sym_ptr;
+
 #if defined(__APPLE__) && defined(__MACH__)
     /* 1. Primary: Direct Mach-O export trie walking by 32-bit API Hash (0 imports) */
-    void* ptr = asgard_resolve_by_api_hash(sym->hash);
-    if (!ptr && sym->alt_hash != 0) {
-        ptr = asgard_resolve_by_api_hash(sym->alt_hash);
+    sym_ptr = asgard_resolve_by_api_hash(sym->hash);
+    if (!sym_ptr && sym->alt_hash != 0) {
+        sym_ptr = asgard_resolve_by_api_hash(sym->alt_hash);
     }
-    if (ptr) return ptr;
+    if (sym_ptr) return sym_ptr;
 #endif
 
     /* 2. Secondary: Decrypt symbol name on stack */
     char dec_name[64];
     asg_decrypt_sym(sym, dec_name, sizeof(dec_name));
-    void* sym_ptr = asgard_resolve_constant(dec_name);
+    if (!sym_ptr) sym_ptr = asgard_resolve_constant_name(dec_name);
 
 #if defined(__APPLE__) && defined(__MACH__)
     if (!sym_ptr) {
@@ -767,8 +810,46 @@ static void h_call_extern(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) 
         uint64_t a6 = vm->ctx[0]; /* RAX */
         uint64_t a7 = vm->ctx[3]; /* RBX */
 {%- endif %}
-        typedef uint64_t (*ext_fn_8)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-        uint64_t ret = ((ext_fn_8)sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
+        uint32_t sym_h = g_external_symbols[sym_idx].hash;
+        uint32_t sym_ah = g_external_symbols[sym_idx].alt_hash;
+        const uint64_t* stk = (const uint64_t*)vm->ctx[4];
+        uint64_t ret = 0;
+        if (sym_h == 0x42FCF5CFU || sym_ah == 0x42FCF5CFU || sym_h == 0x07554ACDU || sym_ah == 0x07554ACDU || sym_h == 0xE76FB4AAU || sym_ah == 0xE76FB4AAU) {
+            typedef int (*printf_fn_t)(const char*, ...);
+            printf_fn_t pfn = (printf_fn_t)sym_ptr;
+#if defined(__APPLE__) && defined(__aarch64__)
+            ret = (uint64_t)pfn((const char*)a0, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+#else
+            ret = (uint64_t)pfn((const char*)a0, a1, a2, a3, a4, a5, a6, a7);
+#endif
+        } else if (sym_h == 0xFCB512E2U || sym_ah == 0xFCB512E2U || sym_h == 0x4B3C5330U || sym_ah == 0x4B3C5330U || sym_h == 0x937D1EF6U || sym_ah == 0x937D1EF6U || sym_h == 0xCB76D42BU || sym_ah == 0xCB76D42BU || sym_h == 0xD54CE817U || sym_ah == 0xD54CE817U || sym_h == 0xBBED3905U || sym_ah == 0xBBED3905U || sym_h == 0x42C07C7CU || sym_ah == 0x42C07C7CU || sym_h == 0x24559DBDU || sym_ah == 0x24559DBDU) {
+            typedef int (*fprintf_fn_t)(void*, const char*, ...);
+            fprintf_fn_t fpfn = (fprintf_fn_t)sym_ptr;
+#if defined(__APPLE__) && defined(__aarch64__)
+            ret = (uint64_t)fpfn((void*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+#else
+            ret = (uint64_t)fpfn((void*)a0, (const char*)a1, a2, a3, a4, a5, a6, a7);
+#endif
+        } else if (sym_h == 0x7FE32B00U || sym_ah == 0x7FE32B00U || sym_h == 0xBCBF60EEU || sym_ah == 0xBCBF60EEU || sym_h == 0x70E2D349U || sym_ah == 0x70E2D349U || sym_h == 0x44FA3468U || sym_ah == 0x44FA3468U) {
+            typedef int (*sprintf_fn_t)(char*, const char*, ...);
+            sprintf_fn_t spfn = (sprintf_fn_t)sym_ptr;
+#if defined(__APPLE__) && defined(__aarch64__)
+            ret = (uint64_t)spfn((char*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+#else
+            ret = (uint64_t)spfn((char*)a0, (const char*)a1, a2, a3, a4, a5, a6, a7);
+#endif
+        } else if (sym_h == 0x54EE11FAU || sym_ah == 0x54EE11FAU || sym_h == 0x933075F4U || sym_ah == 0x933075F4U || sym_h == 0x3FD5EB6FU || sym_ah == 0x3FD5EB6FU || sym_h == 0x5B3553B4U || sym_ah == 0x5B3553B4U) {
+            typedef int (*snprintf_fn_t)(char*, size_t, const char*, ...);
+            snprintf_fn_t snpfn = (snprintf_fn_t)sym_ptr;
+#if defined(__APPLE__) && defined(__aarch64__)
+            ret = (uint64_t)snpfn((char*)a0, (size_t)a1, (const char*)a2, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+#else
+            ret = (uint64_t)snpfn((char*)a0, (size_t)a1, (const char*)a2, a3, a4, a5, a6, a7);
+#endif
+        } else {
+            typedef uint64_t (*ext_fn_8)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+            ret = ((ext_fn_8)sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
+        }
         vm->ctx[0] = ret;
     } else {
         vm->halted = 1; /* fail-closed: extern symbol unresolved */
@@ -1053,9 +1134,13 @@ static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t a
     return ((diff | (0 - diff)) >> 63) == 0;
 }
 
+static thread_local int g_last_auth_failed = 0;
+
 static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t size) {
     vm->bc_size = size;
+    g_last_auth_failed = 0;
     if (!asg_payload_auth_ok(bytecode, size, vm->addr_key)) {
+        g_last_auth_failed = 1;
         /* Fail-closed, and indistinguishable from an ordinary denial: the
            context is zeroed rather than left holding the caller's arguments,
            so the caller sees the same "not granted" answer, the same exit
@@ -1173,7 +1258,11 @@ namespace vanguard_threaded_vm {
     static inline uint64_t asgard_vm_call(const uint64_t* bc, size_t len,
                                           uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0,
                                           uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {
-        return asgard_stack_vm::stack_vm_call(bc, len, a0, a1, a2, a3, a4, a5, a6, a7);
+        uint64_t res = asgard_stack_vm::stack_vm_call(bc, len, a0, a1, a2, a3, a4, a5, a6, a7);
+        if (__builtin_expect(asgard_stack_vm::g_last_auth_failed, 0)) {
+            return 1;
+        }
+        return res;
     }
 } // namespace vanguard_threaded_vm
 |}
