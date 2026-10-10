@@ -249,12 +249,19 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     uint64_t r_val = next_jit_rng(rng_state);
     size_t code_bytes = 0;
 
+    // Ephemeral floating JIT slot: randomize offset within dual-mapped buffer
+    size_t max_slots = (buf.size >= 1024) ? ((buf.size - 256) / 64) : 1;
+    size_t slot_idx = ((size_t)(r_val ^ (r_val >> 12))) % max_slots;
+    size_t slot_offset = slot_idx * 64;
+    uint8_t* rw_slot = (uint8_t*)buf.rw_alias + slot_offset;
+    uint8_t* rx_slot = (uint8_t*)buf.rx_alias + slot_offset;
+
 #if defined(__APPLE__) && defined(__aarch64__)
     asg_jit_write_protect(0);
 #endif
 
 #if defined(__aarch64__)
-    uint32_t* code = (uint32_t*)buf.rw_alias;
+    uint32_t* code = (uint32_t*)rw_slot;
     size_t idx = 0;
 
     // Polymorphic scratch registers: randomly pick r1, r2 from {x9, x10, x11, x12, x13, x14, x15}
@@ -356,7 +363,7 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     code_bytes = idx * sizeof(uint32_t);
 
 #elif defined(__x86_64__)
-    uint8_t* code = (uint8_t*)buf.rw_alias;
+    uint8_t* code = rw_slot;
     size_t idx = 0;
 
     auto emit_u64 = [&](uint64_t v) {
@@ -481,19 +488,19 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
 
 #if defined(__APPLE__)
 #if defined(__aarch64__)
-    asg_flush_caches(buf.rw_alias, (void*)buf.rx_alias, code_bytes);
+    asg_flush_caches(rw_slot, (void*)rx_slot, code_bytes);
     asg_jit_write_protect(1);
 #else
-    __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
+    __builtin___clear_cache((char*)rw_slot, (char*)rw_slot + code_bytes);
 #endif
 #elif defined(_WIN32)
-    FlushInstructionCache(GetCurrentProcess(), (void*)buf.rx_alias, code_bytes);
+    FlushInstructionCache(GetCurrentProcess(), (void*)rx_slot, code_bytes);
 #else
-    __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
+    __builtin___clear_cache((char*)rw_slot, (char*)rw_slot + code_bytes);
 #endif
 
     using JITFn = uint64_t (*)();
-    auto fn = (JITFn)buf.rx_alias;
+    auto fn = (JITFn)rx_slot;
     uint64_t result = fn();
 
 #if defined(__APPLE__) && defined(__aarch64__)
@@ -503,22 +510,22 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     ctx.set_reg(dst, result);
 
     // Ephemeral self-consuming: zeroize machine code immediately
-    volatile uint8_t* p = (volatile uint8_t*)buf.rw_alias;
+    volatile uint8_t* p = (volatile uint8_t*)rw_slot;
     for (size_t i = 0; i < code_bytes; ++i) {
         p[i] = 0;
     }
 
 #if defined(__APPLE__)
 #if defined(__aarch64__)
-    asg_flush_caches(buf.rw_alias, (void*)buf.rx_alias, code_bytes);
+    asg_flush_caches(rw_slot, (void*)rx_slot, code_bytes);
     asg_jit_write_protect(1);
 #else
-    __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
+    __builtin___clear_cache((char*)rw_slot, (char*)rw_slot + code_bytes);
 #endif
 #elif defined(_WIN32)
-    FlushInstructionCache(GetCurrentProcess(), (void*)buf.rx_alias, code_bytes);
+    FlushInstructionCache(GetCurrentProcess(), (void*)rx_slot, code_bytes);
 #else
-    __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + code_bytes);
+    __builtin___clear_cache((char*)rw_slot, (char*)rw_slot + code_bytes);
 #endif
 }
 

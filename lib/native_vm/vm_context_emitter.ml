@@ -55,7 +55,7 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    bool trapped;\n";
   Buffer.add_string b "    size_t executed_instructions;\n";
   Buffer.add_string b "    uint64_t canary_tail = CANARY_VAL;\n\n";
-  Buffer.add_string b (Printf.sprintf "    inline void init(uint32_t seed = 0x%08lXU) noexcept {\n" key_seed);
+  Buffer.add_string b (Printf.sprintf "    inline void init(uint32_t seed = asgard_wbox_derive_seed() /* seed = 0x%08lXU */) noexcept {\n" key_seed);
   Buffer.add_string b "        init_seed = seed;\n";
   Buffer.add_string b "        poison_penalty = (key64_for_offset(seed, 0x5877) ^ 0xCAA7E1D8718BF877ULL) | 1ULL;\n";
   Buffer.add_string b "        running_key = key64_for_offset(seed, 0x13375877ULL) ^ 0xCAFEBABE13375877ULL;\n";

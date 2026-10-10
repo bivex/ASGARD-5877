@@ -296,13 +296,15 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     return sym_ptr;
 }
 
+{{ wbox_seed_source }}
+
 {{ context_source }}
 
 #define SCRUB_WORD(ptr, val) do { \
     *(reinterpret_cast<volatile uint64_t*>(ptr)) = (val); \
 } while(0)
 
-static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = {{ key_seed_hex }}, bool scrub_source = false) {
+static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = asgard_wbox_derive_seed() /* seed = {{ key_seed_hex }} */, bool scrub_source = false) {
     if (ctx.reg_mask == 0) ctx.init(seed);
 {%- if enable_nanomites %}
     /* Nanomite Hardware Signal Dispatcher (Hardware TRAP/Branch Interceptor) */
@@ -397,7 +399,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 
 {%- if enable_ephemeral_jit %}
 #if defined(ASGARD_EPHEMERAL_JIT)
-    static thread_local asgard_memory::DualMappedBuffer g_ephemeral_jit_buf = asgard_memory::DualMappedBuffer::allocate(4096);
+    static thread_local asgard_memory::DualMappedBuffer g_ephemeral_jit_buf = asgard_memory::DualMappedBuffer::allocate(16384);
 #endif
 {%- endif %}
 
@@ -418,7 +420,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
         };
         for (size_t d = 0; d < {{ num_domains }}; ++d) {
             for (size_t o = 0; o < 256; ++o) {
-                uintptr_t k_slot = ((uintptr_t){{ key_seed_hex }} * 0x517CC1B727220A95ULL) ^ (((uintptr_t)d * 256ULL + (uintptr_t)o) * 0x6A09E667F3BCC908ULL);
+                uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)d * 256ULL + (uintptr_t)o) * 0x6A09E667F3BCC908ULL);
                 all_dispatch_domains[d][o] = (uintptr_t)raw_all_domains[d][o] ^ k_slot;
                 *(reinterpret_cast<volatile uintptr_t*>(&raw_all_domains[d][o])) = k_slot ^ 0xDEADBEEF5A5A5A5AULL;
             }
@@ -496,7 +498,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
         ctx.advance_running_key(op, dst, imm); \
 {%- endif %}
         uint8_t domain_idx = (uint8_t)((op ^ (uint8_t)(k_dyn & 0x07)) % {{ num_domains }}); \
-        uintptr_t k_slot = ((uintptr_t){{ key_seed_hex }} * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)op) * 0x6A09E667F3BCC908ULL); \
+        uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)op) * 0x6A09E667F3BCC908ULL); \
         void* target = (void*)(all_dispatch_domains[domain_idx][op] ^ k_slot); \
         goto *target; \
     } while(0)
@@ -533,7 +535,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 }
 
 static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, bool scrub_source) {
-    return execute_threaded(ctx, bytecode, count, {{ key_seed_hex }}, scrub_source);
+    return execute_threaded(ctx, bytecode, count, asgard_wbox_derive_seed(), scrub_source);
 }
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -546,7 +548,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 
 static ASG_CALL_NOINLINE uint64_t asgard_vm_call(const uint64_t* bc, size_t len, uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0, uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {
     vanguard_threaded_vm::VMContext ctx = {};
-    ctx.init({{ key_seed_hex }});
+    ctx.init(asgard_wbox_derive_seed());
     alignas(16) static thread_local uint8_t host_stack[1048576];
     ctx.set_reg(vanguard_threaded_vm::REG_RSP, (uint64_t)(host_stack + sizeof(host_stack) - 8192));
     ctx.set_reg(vanguard_threaded_vm::REG_RBP, (uint64_t)(host_stack + sizeof(host_stack) - 8192));

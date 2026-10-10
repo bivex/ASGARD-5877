@@ -1,5 +1,10 @@
 (** Vm_runtime_emitter — Emission of Native Threaded VM C++ runtime and runners using Jingoo templates. *)
 
+val generate_wbox_seed_derivation :
+  rng:Random.State.t ->
+  int32 ->
+  string
+
 val emit_cpp_threaded_header :
   rng:Random.State.t ->
   key_seed:int32 ->

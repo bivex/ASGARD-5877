@@ -1,5 +1,107 @@
 open Jingoo
 
+let generate_wbox_seed_derivation ~rng (key_seed : int32) : string =
+  let rotl32 x n =
+    let n = n land 31 in
+    Int32.logor (Int32.shift_left x n) (Int32.shift_right_logical x (32 - n))
+  in
+  let rand32 () =
+    Int32.logxor (Random.State.int32 rng Int32.max_int)
+      (Int32.shift_left (Random.State.int32 rng 2l) 31)
+  in
+  let s0 = rand32 () in
+
+  let t0_0 = Array.init 256 (fun _ -> rand32 ()) in
+  let t0_1 = Array.init 256 (fun _ -> rand32 ()) in
+  let t0_2 = Array.init 256 (fun _ -> rand32 ()) in
+  let t0_3 = Array.init 256 (fun _ -> rand32 ()) in
+
+  let b0 = Int32.to_int (Int32.logand s0 0xFFl) in
+  let b1 = Int32.to_int (Int32.logand (Int32.shift_right_logical s0 8) 0xFFl) in
+  let b2 = Int32.to_int (Int32.logand (Int32.shift_right_logical s0 16) 0xFFl) in
+  let b3 = Int32.to_int (Int32.logand (Int32.shift_right_logical s0 24) 0xFFl) in
+
+  let x0 = t0_0.(b0) in
+  let x1 = t0_1.(b1) in
+  let x2 = t0_2.(b2) in
+  let x3 = t0_3.(b3) in
+
+  let y0 = Int32.logxor (rotl32 x0 7) x1 in
+  let y1 = Int32.logxor (rotl32 x1 11) x2 in
+  let y2 = Int32.logxor (rotl32 x2 19) x3 in
+  let y3 = Int32.logxor (rotl32 x3 23) x0 in
+
+  let t1_0 = Array.init 256 (fun _ -> rand32 ()) in
+  let t1_1 = Array.init 256 (fun _ -> rand32 ()) in
+  let t1_2 = Array.init 256 (fun _ -> rand32 ()) in
+  let t1_3 = Array.init 256 (fun _ -> rand32 ()) in
+
+  let k0 = Int32.to_int (Int32.logand y0 0xFFl) in
+  let k1 = Int32.to_int (Int32.logand y1 0xFFl) in
+  let k2 = Int32.to_int (Int32.logand y2 0xFFl) in
+  let k3 = Int32.to_int (Int32.logand y3 0xFFl) in
+
+  let required_t1_3_k3 =
+    Int32.logxor key_seed (Int32.logxor t1_0.(k0) (Int32.logxor t1_1.(k1) t1_2.(k2)))
+  in
+  t1_3.(k3) <- required_t1_3_k3;
+
+  let format_table name arr =
+    let b = Buffer.create 2048 in
+    Buffer.add_string b (Printf.sprintf "static const uint32_t %s[256] = {\n" name);
+    Array.iteri (fun i v ->
+      if i mod 8 = 0 then Buffer.add_string b "    ";
+      Buffer.add_string b (Printf.sprintf "0x%08lXU" v);
+      if i < 255 then Buffer.add_string b ", ";
+      if i mod 8 = 7 then Buffer.add_string b "\n";
+    ) arr;
+    Buffer.add_string b "};\n\n";
+    Buffer.contents b
+  in
+
+  let b = Buffer.create 8192 in
+  Buffer.add_string b "namespace asgard_whitebox {\n\n";
+  Buffer.add_string b (format_table "T0_0" t0_0);
+  Buffer.add_string b (format_table "T0_1" t0_1);
+  Buffer.add_string b (format_table "T0_2" t0_2);
+  Buffer.add_string b (format_table "T0_3" t0_3);
+  Buffer.add_string b (format_table "T1_0" t1_0);
+  Buffer.add_string b (format_table "T1_1" t1_1);
+  Buffer.add_string b (format_table "T1_2" t1_2);
+  Buffer.add_string b (format_table "T1_3" t1_3);
+  Buffer.add_string b {|static inline __attribute__((always_inline)) uint32_t rotl32(uint32_t x, uint32_t n) noexcept {
+    return (x << n) | (x >> (32 - n));
+}
+
+static inline __attribute__((always_inline)) uint32_t derive_seed() noexcept {
+|};
+  Buffer.add_string b (Printf.sprintf "    const uint32_t s0 = 0x%08lXU;\n" s0);
+  Buffer.add_string b {|    uint32_t x0 = T0_0[s0 & 0xFF];
+    uint32_t x1 = T0_1[(s0 >> 8) & 0xFF];
+    uint32_t x2 = T0_2[(s0 >> 16) & 0xFF];
+    uint32_t x3 = T0_3[(s0 >> 24) & 0xFF];
+
+    uint32_t y0 = rotl32(x0, 7) ^ x1;
+    uint32_t y1 = rotl32(x1, 11) ^ x2;
+    uint32_t y2 = rotl32(x2, 19) ^ x3;
+    uint32_t y3 = rotl32(x3, 23) ^ x0;
+
+    uint32_t z0 = T1_0[y0 & 0xFF];
+    uint32_t z1 = T1_1[y1 & 0xFF];
+    uint32_t z2 = T1_2[y2 & 0xFF];
+    uint32_t z3 = T1_3[y3 & 0xFF];
+
+    return z0 ^ z1 ^ z2 ^ z3;
+}
+
+} // namespace asgard_whitebox
+
+static inline __attribute__((always_inline)) uint32_t asgard_wbox_derive_seed() noexcept {
+    return asgard_whitebox::derive_seed();
+}
+|};
+  Buffer.contents b
+
 let emit_cpp_threaded_header
     ~rng
     ~key_seed
@@ -151,6 +253,7 @@ let emit_cpp_threaded_header
     ~enable_nanomites ~enable_egraph_expansion ~enable_ephemeral_jit
     ~num_domains ();
   let handlers_source = Buffer.contents handlers_buf in
+  let wbox_seed_source = generate_wbox_seed_derivation ~rng key_seed in
 
   let models : (string * Jg_types.tvalue) list = [
     ("enable_vector_isa", Jg_types.Tbool enable_vector_isa);
@@ -178,6 +281,7 @@ let emit_cpp_threaded_header
     ("external_symbols", Jg_types.Tlist ext_sym_models);
     ("has_constants", Jg_types.Tbool (constants <> []));
     ("constants", Jg_types.Tlist constants_models);
+    ("wbox_seed_source", Jg_types.Tstr wbox_seed_source);
     ("context_source", Jg_types.Tstr context_source);
     ("key_seed_hex", Jg_types.Tstr (Printf.sprintf "0x%08lXU" key_seed));
     ("expected_hash_hex", Jg_types.Tstr (Printf.sprintf "0x%016LXULL" expected_hash));

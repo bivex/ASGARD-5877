@@ -4,6 +4,7 @@ let emit_anti_emulation_probes () =
 #include <stdbool.h>
 #if defined(__APPLE__)
 #include <mach/mach_time.h>
+#include <mach-o/dyld.h>
 #elif defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -80,6 +81,48 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
         penalty ^= 0x5877AABBCCDDEEFFULL;
     }
 #endif
+#endif
+
+#if defined(__APPLE__)
+    // In-memory DBI & Dynamic Instrumentation Detection (Frida, Gum, Substrate)
+    uint32_t img_count = _dyld_image_count();
+    for (uint32_t i = 0; i < img_count; ++i) {
+        const char* name = _dyld_get_image_name(i);
+        if (name) {
+            for (const char* p = name; *p != '\0'; ++p) {
+                // "frida"
+                if ((p[0] == 'f' || p[0] == 'F') &&
+                    (p[1] == 'r' || p[1] == 'R') &&
+                    (p[2] == 'i' || p[2] == 'I') &&
+                    (p[3] == 'd' || p[3] == 'D') &&
+                    (p[4] == 'a' || p[4] == 'A')) {
+                    penalty ^= 0xFA15ECAFE1337BEEULL;
+                    break;
+                }
+                // "gum-"
+                if ((p[0] == 'g' || p[0] == 'G') &&
+                    (p[1] == 'u' || p[1] == 'U') &&
+                    (p[2] == 'm' || p[2] == 'M') &&
+                    p[3] == '-') {
+                    penalty ^= 0xFA15ECAFE1337BEEULL;
+                    break;
+                }
+                // "substrate"
+                if ((p[0] == 's' || p[0] == 'S') &&
+                    (p[1] == 'u' || p[1] == 'U') &&
+                    (p[2] == 'b' || p[2] == 'B') &&
+                    (p[3] == 's' || p[3] == 'S') &&
+                    (p[4] == 't' || p[4] == 'T') &&
+                    (p[5] == 'r' || p[5] == 'R') &&
+                    (p[6] == 'a' || p[6] == 'A') &&
+                    (p[7] == 't' || p[7] == 'T') &&
+                    (p[8] == 'e' || p[8] == 'E')) {
+                    penalty ^= 0xFA15ECAFE1337BEEULL;
+                    break;
+                }
+            }
+        }
+    }
 #endif
 
     return penalty;
