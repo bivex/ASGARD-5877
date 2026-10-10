@@ -4,31 +4,45 @@
 #include "asgard_obf.h"
 
 /*
- * ASGARD-5877 Developer Experience:
- * Simply wrap the sensitive function or logic with two markers:
- *   ASGARD_BEGIN_VIRTUALIZE("tag");
- *   ... clean, idiomatic C code ...
+ * ASGARD-5877 Developer Experience: Caller Assimilation Architecture
+ * By wrapping the entire entrypoint workflow in the virtualization region:
+ *   ASGARD_BEGIN_VIRTUALIZE("main");
+ *   ...
  *   ASGARD_END();
  *
- * ASGARD automatically covers the region with:
- *   - Stack string encryption (ASG_STR)
- *   - Constant blinding (ASG_BLIND_*)
- *   - Mixed Boolean-Arithmetic (ASG_MBA_*)
- *   - Opaque predicates & control-flow hardening
+ * ASGARD automatically assimilates the caller:
+ *   - The caller entrypoint becomes a direct jump to asgard_vm_call()
+ *   - Input reading (fgets/strcspn) executes inside the VM via virtual FFI dispatch
+ *   - The boolean validation barrier is eliminated: no hookable sub_XXXX symbol exists
+ *   - Return code and conditional grants are computed and returned directly from VM-IR
  */
 
-static int verify_license(const char* input) {
+static int verify_license(void) {
     ASGARD_BEGIN_VIRTUALIZE("verify_license");
+
+    char buf[64];
+
+    puts("=========================================");
+    puts("[ASGARD SECURE AGENT] License Validator");
+    puts("=========================================");
+    printf("Enter license key: ");
+    fflush(stdout);
+
+    buf[0] = '\0';
+    if (!fgets(buf, (int)sizeof(buf), stdin)) {
+        return 0;
+    }
+    buf[strcspn(buf, "\r\n")] = '\0';
 
     const char* expected = "ASGARD-5877-GOLD";
     int ok = 1;
 
     for (int i = 0; i < 16; i++) {
-        if (input[i] != expected[i]) {
+        if (buf[i] != expected[i]) {
             ok = 0;
         }
     }
-    if (input[16] != '\0') {
+    if (buf[16] != '\0') {
         ok = 0;
     }
 
@@ -51,21 +65,7 @@ static int verify_license(const char* input) {
 }
 
 int main(void) {
-    char buf[64];
-
-    puts("=========================================");
-    puts("[ASGARD SECURE AGENT] License Validator");
-    puts("=========================================");
-    printf("Enter license key: ");
-    fflush(stdout);
-
-    buf[0] = '\0';
-    if (!fgets(buf, (int)sizeof(buf), stdin)) {
-        return 2;
-    }
-    buf[strcspn(buf, "\r\n")] = '\0';
-
-    int ok = verify_license(buf);
+    int ok = verify_license();
     /*
      * Key-Dependent Invariant:
      * When valid (ok == 1): (ok ^ 1) == 0.

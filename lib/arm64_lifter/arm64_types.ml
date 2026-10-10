@@ -9,6 +9,7 @@ type raw_mem = {
   base : Register.t option;
   index : (Register.t * int) option;
   disp : int64;
+  symbol : string option;
   width : Register.width;
   wb : writeback;
 }

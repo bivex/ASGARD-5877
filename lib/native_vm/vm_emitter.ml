@@ -212,8 +212,12 @@ let compile_and_package_multi
   Array.iter (fun (id, fused) -> Hashtbl.replace block_fused_ops id fused) results;
 
   let words_of_fused = function
-    | Raw (Ir.Mov { src = Ir.Imm imm; _ }) when Int64.shift_right_logical imm 32 <> 0L -> 2
+    | Raw (Ir.Mov { dst = Ir.Reg (Register.Fpr _); src = Ir.Imm imm }) ->
+        if Int64.shift_right_logical imm 32 <> 0L then 3 else 2
+    | Raw (Ir.Mov { dst = Ir.Reg _; src = Ir.Imm imm }) when Int64.shift_right_logical imm 32 <> 0L -> 2
+    | Raw (Ir.Mov { dst = Ir.Mem _; src = Ir.Imm _ }) -> 2
     | Raw (Ir.Load_symbol { addend; _ }) when addend <> 0L -> 2
+    | Raw (Ir.Set_flags (Ir.Imm _ | Ir.Mem _)) -> 2
     | _ -> 1
   in
   let block_offsets = Hashtbl.create (List.length sorted_blocks) in
@@ -413,7 +417,11 @@ let compile_and_package_multi
               | Ir.Mov { dst = Ir.Mem m; src = Ir.Imm imm } ->
                   if m.index <> None then
                     failwith "vm_emitter: uncanonicalized SIB indexed memory store (must be canonicalized before emission)";
-                  let temp_reg = Register.vtmp0 in
+                  let temp_reg =
+                    match m.base with
+                    | Some b when Register.to_string b = Register.to_string Register.vtmp0 -> Register.vtmp1
+                    | _ -> Register.vtmp0
+                  in
                   encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx temp_reg) 0 imm;
                   let op =
                     match m.width with

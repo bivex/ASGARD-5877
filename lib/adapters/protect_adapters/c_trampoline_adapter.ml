@@ -227,23 +227,157 @@ let embed_vm_trampoline
     List.rev !acc
   in
 
-  let format_bc_array name bc =
-    let bc_lines =
-      List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) bc
-      |> String.concat "\n"
-    in
-    Printf.sprintf "static uint64_t %s[] = {\n%s\n};\n\n" name bc_lines
+  let chunk_struct_def = {|
+#ifndef ASGARD_BYTECODE_CHUNK_DEF
+#define ASGARD_BYTECODE_CHUNK_DEF
+#include <stdint.h>
+#include <stddef.h>
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#define ASG_CHUNK_BARRIER() MemoryBarrier()
+#define ASG_CHUNK_TRAP() __debugbreak()
+#else
+#define ASG_CHUNK_BARRIER() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+#define ASG_CHUNK_TRAP() __builtin_trap()
+#endif
+
+#pragma pack(push, 1)
+typedef struct {
+    uint32_t chunk_id;
+    uint32_t next_chunk_id;
+    uint32_t word_offset;
+    uint32_t word_count;
+    uint32_t canary;
+    uint32_t entropy_seed;
+    uint64_t junk_pad[2];
+    const uint64_t* data;
+} AsgardBytecodeChunk;
+#pragma pack(pop)
+#endif
+|} in
+
+  let format_fragmented_bytecode name bc =
+    let total_words = List.length bc in
+    if total_words = 0 then
+      Printf.sprintf "static uint64_t %s[1] = { 0 };\n__attribute__((unused)) static inline void %s_ensure_assembled(void) {}\n\n" name name
+    else
+      let chunk_size = 64 in
+      let rec split idx offset acc remaining =
+        if remaining = [] then List.rev acc
+        else
+          let rec take n l taken =
+            match (n, l) with
+            | 0, _ | _, [] -> (List.rev taken, l)
+            | n, x :: xs -> take (n - 1) xs (x :: taken)
+          in
+          let chunk_words, rest = take chunk_size remaining [] in
+          let count = List.length chunk_words in
+          split (idx + 1) (offset + count) ((idx, offset, count, chunk_words) :: acc) rest
+      in
+      let raw_chunks = split 0 0 [] bc in
+      let num_chunks = List.length raw_chunks in
+      let chunks_info =
+        List.map (fun (idx, offset, count, chunk_words) ->
+          let chunk_id = (idx * 0x1337 + 0x5877) land 0x7FFFFFFF in
+          let next_chunk_id =
+            if idx < num_chunks - 1 then ((idx + 1) * 0x1337 + 0x5877) land 0x7FFFFFFF
+            else 0xFFFFFFFF
+          in
+          let canary = Int64.logand (Int64.add (Int64.mul (Int64.of_int chunk_id) 0xDEADL) 0xCAFEL) 0xFFFFFFFFL in
+          let entropy_seed = Int64.logand (Int64.add (Int64.mul (Int64.of_int idx) 0x6A09L) 0xBEEFL) 0xFFFFFFFFL in
+          let junk_pad0 = Int64.logxor 0x5877CAFE1337BEEFL (Int64.mul (Int64.of_int idx) 0x9E3779B97F4A7C15L) in
+          let junk_pad1 = Int64.logxor 0xDEADBEEFCAFEBABEL (Int64.mul (Int64.of_int chunk_id) 0x517CC1B727220A95L) in
+          let k_dyn = Int64.logxor 0x5877A56A11223344L (Int64.mul (Int64.of_int chunk_id) 0x9E3779B97F4A7C15L) in
+          let masked_words =
+            List.mapi (fun j w ->
+              let word_key = Int64.add k_dyn (Int64.mul (Int64.of_int j) 0x100000001B3L) in
+              Int64.logxor w word_key
+            ) chunk_words
+          in
+          (idx, chunk_id, next_chunk_id, offset, count, canary, entropy_seed, junk_pad0, junk_pad1, masked_words)
+        ) raw_chunks
+      in
+      let chunk_arrays =
+        List.map (fun (idx, _, _, _, _, _, _, _, _, masked_words) ->
+          let lines =
+            List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) masked_words
+            |> String.concat "\n"
+          in
+          Printf.sprintf "static const uint64_t %s_chk_%04x[] = {\n%s\n};\n" name idx lines
+        ) chunks_info
+        |> String.concat "\n"
+      in
+      let permuted_chunks =
+        let arr = Array.of_list chunks_info in
+        let n = Array.length arr in
+        let rng = Random.State.make [| 0x5877; n; 0xA56A |] in
+        for i = n - 1 downto 1 do
+          let j = Random.State.int rng (i + 1) in
+          let tmp = arr.(i) in
+          arr.(i) <- arr.(j);
+          arr.(j) <- tmp
+        done;
+        Array.to_list arr
+      in
+      let chunk_table_entries =
+        List.map (fun (idx, chunk_id, next_chunk_id, offset, count, canary, entropy_seed, junk0, junk1, _) ->
+          Printf.sprintf
+            "    { 0x%08xU, 0x%08xU, %d, %d, 0x%08LXU, 0x%08LXU, { 0x%016LXULL, 0x%016LXULL }, %s_chk_%04x },"
+            chunk_id next_chunk_id offset count canary entropy_seed junk0 junk1 name idx
+        ) permuted_chunks
+        |> String.concat "\n"
+      in
+      Printf.sprintf
+{|%s
+static const AsgardBytecodeChunk %s_chunks[%d] = {
+%s
+};
+
+__attribute__((unused)) static uint64_t %s[%d];
+__attribute__((unused)) static volatile int %s_assembled = 0;
+
+__attribute__((unused)) static inline void %s_ensure_assembled(void) {
+    if (__builtin_expect(!%s_assembled, 0)) {
+        for (size_t _idx = 0; _idx < %d; ++_idx) {
+            const AsgardBytecodeChunk* c = &%s_chunks[_idx];
+            if (__builtin_expect(c->canary != (((c->chunk_id * 0xDEADU) + 0xCAFEU) & 0xFFFFFFFFU), 0)) {
+                ASG_CHUNK_TRAP();
+            }
+            uint64_t k_dyn = 0x5877A56A11223344ULL ^ ((uint64_t)c->chunk_id * 0x9E3779B97F4A7C15ULL);
+            for (size_t j = 0; j < c->word_count; ++j) {
+                uint64_t word_key = k_dyn + ((uint64_t)j * 0x100000001B3ULL);
+                %s[c->word_offset + j] = c->data[j] ^ word_key;
+            }
+        }
+        ASG_CHUNK_BARRIER();
+        %s_assembled = 1;
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((constructor, unused)) static void %s_auto_init(void) {
+    %s_ensure_assembled();
+}
+#endif
+
+|}
+        chunk_arrays
+        name num_chunks chunk_table_entries
+        name total_words
+        name
+        name name num_chunks name
+        name
+        name
+        name name
   in
 
   match marked_fns with
   | [] ->
-      let bc_lines =
-        List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) bytecode
-        |> String.concat "\n"
-      in
+      let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let bc_header =
-        Printf.sprintf "\n#include \"%s\"\n\nstatic uint64_t embedded_bytecode[] = {\n%s\n};\n\n"
-          header_name bc_lines
+        Printf.sprintf "\n#include \"%s\"\n\n%s\n%s\n"
+          header_name chunk_struct_def bc_formatted
       in
       let oc = open_out out_path in
       output_string oc (bc_header ^ c_src);
@@ -251,13 +385,10 @@ let embed_vm_trampoline
 
   | [ single_fn ] when (match bytecodes with Some bcs -> List.length bcs <= 1 | None -> true) ->
       (* Backward-compatible single function path *)
-      let bc_lines =
-        List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) bytecode
-        |> String.concat "\n"
-      in
+      let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let bc_header =
-        Printf.sprintf "\n#include \"%s\"\n\nstatic uint64_t embedded_bytecode[] = {\n%s\n};\n\n"
-          header_name bc_lines
+        Printf.sprintf "\n#include \"%s\"\n\n%s\n%s\n"
+          header_name chunk_struct_def bc_formatted
       in
       let before_body = String.sub c_src 0 (single_fn.open_brace_idx + 1) in
       let after_body = String.sub c_src single_fn.close_brace_idx (len - single_fn.close_brace_idx) in
@@ -269,11 +400,11 @@ let embed_vm_trampoline
       in
       let trampoline_body =
         if is_void then
-          Printf.sprintf "\n    %s;\n    return;\n" call_str
+          Printf.sprintf "\n    embedded_bytecode_ensure_assembled();\n    %s;\n    return;\n" call_str
         else if is_ptr then
-          Printf.sprintf "\n    return (%s)(uintptr_t)%s;\n" single_fn.ret_type call_str
+          Printf.sprintf "\n    embedded_bytecode_ensure_assembled();\n    return (%s)(uintptr_t)%s;\n" single_fn.ret_type call_str
         else
-          Printf.sprintf "\n    return %s;\n" call_str
+          Printf.sprintf "\n    embedded_bytecode_ensure_assembled();\n    return %s;\n" call_str
       in
       let full_out = bc_header ^ before_body ^ trampoline_body ^ after_body in
       let oc = open_out out_path in
@@ -298,12 +429,12 @@ let embed_vm_trampoline
       in
 
       let header_buf = Buffer.create 2048 in
-      Buffer.add_string header_buf (Printf.sprintf "\n#include \"%s\"\n\n" header_name);
+      Buffer.add_string header_buf (Printf.sprintf "\n#include \"%s\"\n\n%s\n" header_name chunk_struct_def);
 
       List.iteri (fun idx fn ->
         let fn_bc = find_bc_for_fn idx fn.fn_name in
         let arr_name = Printf.sprintf "embedded_bytecode_%s" (sanitize_ident fn.fn_name) in
-        Buffer.add_string header_buf (format_bc_array arr_name fn_bc)
+        Buffer.add_string header_buf (format_fragmented_bytecode arr_name fn_bc)
       ) multi_fns;
 
       (* Fallback alias / first bytecode for embedded_bytecode symbol search *)
@@ -311,7 +442,7 @@ let embed_vm_trampoline
         | hd :: _ -> find_bc_for_fn 0 hd.fn_name
         | [] -> bytecode
       in
-      Buffer.add_string header_buf (format_bc_array "embedded_bytecode" first_bc);
+      Buffer.add_string header_buf (format_fragmented_bytecode "embedded_bytecode" first_bc);
 
       let body_buf = Buffer.create (len + 2048) in
       Buffer.add_string body_buf (Buffer.contents header_buf);
@@ -328,11 +459,11 @@ let embed_vm_trampoline
         in
         let trampoline_body =
           if is_void then
-            Printf.sprintf "\n    %s;\n    return;\n" call_str
+            Printf.sprintf "\n    %s_ensure_assembled();\n    %s;\n    return;\n" arr_name call_str
           else if is_ptr then
-            Printf.sprintf "\n    return (%s)(uintptr_t)%s;\n" fn.ret_type call_str
+            Printf.sprintf "\n    %s_ensure_assembled();\n    return (%s)(uintptr_t)%s;\n" arr_name fn.ret_type call_str
           else
-            Printf.sprintf "\n    return %s;\n" call_str
+            Printf.sprintf "\n    %s_ensure_assembled();\n    return %s;\n" arr_name call_str
         in
         Buffer.add_string body_buf trampoline_body;
         last_pos := fn.close_brace_idx

@@ -4,6 +4,15 @@ open Arm64_common
 
 let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   match (mnemonic, ops) with
+  (* GOTPAGEOFF load: when dst is loaded from [base, sym@GOTPAGEOFF], base already has &sym from adrp *)
+  | (("ldr" | "ldur"), [ OpReg dst; OpMem { symbol = Some sym; base = Some base_reg; _ } ])
+      when String.ends_with ~suffix:"@GOTPAGEOFF" sym ->
+      let clean_sym = strip_page_suffix sym in
+      if Register.to_string dst = Register.to_string base_reg then
+        Some [ Ir.Nop ]
+      else
+        Some [ Ir.Load_symbol { dst; sym = clean_sym; addend = 0L } ]
+
   (* Memory Load with Pre/Post-Indexed Writeback *)
   | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw"
      | "ldar" | "ldarb" | "ldarh" | "ldapr" | "ldaprb" | "ldaprh"
@@ -46,16 +55,13 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   (* Memory Store with Pre/Post-Indexed Writeback *)
   | (("str" | "strb" | "strh" | "stur" | "sturb" | "stlr" | "stlrb" | "stlrh"
      | "sttr" | "sttrb" | "sttrh"), [ (OpReg _ | OpImm _) as src; OpMem m ]) ->
-      let scratch =
-        match src with
-        | OpReg r when Register.to_string r = Register.to_string Register.vtmp0 -> Register.vtmp1
-        | _ -> Register.vtmp0
-      in
-      let (m, addr_prep) = lower_mem_operand ~scratch_reg:scratch m in
+      let addr_scratch = Register.vtmp0 in
+      let val_scratch = Register.vtmp1 in
+      let (m, addr_prep) = lower_mem_operand ~scratch_reg:addr_scratch m in
       let (src_ir, src_prep) =
         match src with
         | OpImm imm ->
-            (Ir.Reg scratch, [ Ir.Mov { dst = Reg scratch; src = Imm imm } ])
+            (Ir.Reg val_scratch, [ Ir.Mov { dst = Reg val_scratch; src = Imm imm } ])
         | _ ->
             (raw_to_ir_operand src, [])
       in
@@ -94,8 +100,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       | WbPre ->
           (match m.base with
           | Some base_reg ->
-              let m1 = { base = Some base_reg; index = None; disp = 0L; width = w; wb = WbNone } in
-              let m2 = { base = Some base_reg; index = None; disp = stride; width = w; wb = WbNone } in
+              let m1 = { base = Some base_reg; index = None; disp = 0L; symbol = None; width = w; wb = WbNone } in
+              let m2 = { base = Some base_reg; index = None; disp = stride; symbol = None; width = w; wb = WbNone } in
               Some [
                 Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
                 Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = s1 };
@@ -111,8 +117,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       | WbPost post_imm ->
           (match m.base with
           | Some base_reg ->
-              let m1 = { base = Some base_reg; index = None; disp = 0L; width = w; wb = WbNone } in
-              let m2 = { base = Some base_reg; index = None; disp = stride; width = w; wb = WbNone } in
+              let m1 = { base = Some base_reg; index = None; disp = 0L; symbol = None; width = w; wb = WbNone } in
+              let m2 = { base = Some base_reg; index = None; disp = stride; symbol = None; width = w; wb = WbNone } in
               Some [
                 Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = s1 };
                 Ir.Mov { dst = raw_to_ir_operand (OpMem m2); src = s2 };
@@ -143,8 +149,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       | WbPre ->
           (match m.base with
           | Some base_reg ->
-              let m1 = { base = Some base_reg; index = None; disp = 0L; width = w; wb = WbNone } in
-              let m2 = { base = Some base_reg; index = None; disp = stride; width = w; wb = WbNone } in
+              let m1 = { base = Some base_reg; index = None; disp = 0L; symbol = None; width = w; wb = WbNone } in
+              let m2 = { base = Some base_reg; index = None; disp = stride; symbol = None; width = w; wb = WbNone } in
               Some [
                 Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
                 Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
@@ -160,8 +166,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       | WbPost post_imm ->
           (match m.base with
           | Some base_reg ->
-              let m1 = { base = Some base_reg; index = None; disp = 0L; width = w; wb = WbNone } in
-              let m2 = { base = Some base_reg; index = None; disp = stride; width = w; wb = WbNone } in
+              let m1 = { base = Some base_reg; index = None; disp = 0L; symbol = None; width = w; wb = WbNone } in
+              let m2 = { base = Some base_reg; index = None; disp = stride; symbol = None; width = w; wb = WbNone } in
               Some [
                 Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
                 Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };

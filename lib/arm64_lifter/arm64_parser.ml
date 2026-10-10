@@ -50,17 +50,22 @@ let parse_mem str width =
     match parts with
     | [ base_str ] ->
         (match map_arm64_reg base_str with
-        | Ok b -> Ok { base = Some b; index = None; disp = 0L; width; wb }
+        | Ok b -> Ok { base = Some b; index = None; disp = 0L; symbol = None; width; wb }
         | Error err -> Error err)
     | [ base_str; disp_str ] ->
         (match map_arm64_reg base_str with
         | Error err -> Error err
         | Ok b ->
             (match map_arm64_reg disp_str with
-            | Ok idx_reg -> Ok { base = Some b; index = Some (idx_reg, 1); disp = 0L; width; wb }
+            | Ok idx_reg -> Ok { base = Some b; index = Some (idx_reg, 1); disp = 0L; symbol = None; width; wb }
             | Error _ ->
+                let sym_opt =
+                  if String.contains disp_str '@' || String.starts_with ~prefix:"_" disp_str then
+                    Some disp_str
+                  else None
+                in
                 let d = match parse_imm disp_str with Ok i -> i | Error _ -> 0L in
-                Ok { base = Some b; index = None; disp = d; width; wb }))
+                Ok { base = Some b; index = None; disp = d; symbol = sym_opt; width; wb }))
     | [ base_str; idx_str; shift_str ] ->
         (match map_arm64_reg base_str, map_arm64_reg idx_str with
         | Ok b, Ok idx_reg ->
@@ -77,9 +82,9 @@ let parse_mem str width =
                 | _ -> 1
               else 1
             in
-            Ok { base = Some b; index = Some (idx_reg, scale); disp = 0L; width; wb }
-        | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width; wb })
-    | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; width; wb }
+            Ok { base = Some b; index = Some (idx_reg, scale); disp = 0L; symbol = None; width; wb }
+        | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; symbol = None; width; wb })
+    | _ -> Ok { base = Some (Register.Gpr (Register.RSP, Register.B64)); index = None; disp = 0L; symbol = None; width; wb }
 
 let parse_vec_operand str =
   let s = String.trim str in
