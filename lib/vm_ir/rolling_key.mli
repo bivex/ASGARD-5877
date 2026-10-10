@@ -18,3 +18,6 @@ val decode_fields : int64 -> int * int * int * int64
     FETCH_NEXT macro does.  [imm] is the sign-extended 32-bit slice of bits 18..49 —
     the runtime never sees the full 46-bit immediate, so chain simulation must use
     this truncated view, never the source immediate. *)
+
+val poly_multiplier_of_seed : int32 -> int64
+val poly_init_of_seed : int32 -> int64

@@ -146,6 +146,8 @@ let emit_cpp_threaded_header
     ("context_source", Jg_types.Tstr context_source);
     ("key_seed_hex", Jg_types.Tstr (Printf.sprintf "0x%08lXU" key_seed));
     ("expected_hash_hex", Jg_types.Tstr (Printf.sprintf "0x%016LXULL" expected_hash));
+    ("poly_multiplier_hex", Jg_types.Tstr (Printf.sprintf "0x%016LXULL" (Vm_ir.Rolling_key.poly_multiplier_of_seed key_seed)));
+    ("poly_init_hex", Jg_types.Tstr (Printf.sprintf "0x%016LXULL" (Vm_ir.Rolling_key.poly_init_of_seed key_seed)));
     ("has_multi_hashes", Jg_types.Tbool (match expected_hashes with Some hl when List.length hl > 1 -> true | _ -> false));
     ("expected_hashes", Jg_types.Tlist (match expected_hashes with Some hl when List.length hl > 1 -> List.map (fun h -> Jg_types.Tstr (Printf.sprintf "0x%016LXULL" h)) hl | _ -> []));
     ("enable_mem_sanitize", Jg_types.Tbool enable_mem_sanitize);

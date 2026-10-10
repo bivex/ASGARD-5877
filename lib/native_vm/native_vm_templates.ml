@@ -152,10 +152,10 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     /* Nanomite Hardware Signal Dispatcher (Hardware TRAP/Branch Interceptor) */
     asgard_nanomites::install_nanomite_handlers(seed);
 {%- endif %}
-    /* High-Speed Continuous Bytecode Integrity Guard (Anti-Patching / Breakpoint Detection) */
-    uint64_t full_hash = 0x811C9DC5C9DC5119ULL ^ (uint64_t)seed;
+    /* High-Speed Continuous Keyed Poly-Hash Bytecode Integrity Guard */
+    uint64_t full_hash = {{ poly_init_hex }};
     for (size_t i = 0; i < count; ++i) {
-        full_hash = ((full_hash ^ bytecode[i]) * 0x100000001B3ULL) + (uint64_t)i;
+        full_hash = ((full_hash ^ bytecode[i]) * {{ poly_multiplier_hex }}) + (uint64_t)i;
     }
 {%- if has_multi_hashes %}
     static const uint64_t valid_hashes[] = {
@@ -169,14 +169,15 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     }
     if (!hash_ok) {
         /* Anti-Patching Tripwire: Silent Context Poisoning */
-        ctx.reg_mask ^= 0xDEADBEEF5A5A5A5AULL;
+        ctx.reg_mask ^= 0xDEADBEEF5A5A5A5AULL ^ full_hash;
         ctx.trapped = true;
         return false;
     }
 {%- else %}
-    if (full_hash != {{ expected_hash_hex }}) {
+    uint64_t hash_diff = full_hash ^ {{ expected_hash_hex }};
+    if (hash_diff != 0) {
         /* Anti-Patching Tripwire: Silent Context Poisoning */
-        ctx.reg_mask ^= 0xDEADBEEF5A5A5A5AULL;
+        ctx.reg_mask ^= (hash_diff * 0x5877CAFEBEEFULL) ^ 0xDEADBEEF5A5A5A5AULL;
         ctx.trapped = true;
         return false;
     }
@@ -272,9 +273,9 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
             uint64_t k_pos = key64_for_offset(seed, idx);
             uint64_t plain = bytecode[idx] ^ k_pos;
             bound_bc[idx] = plain ^ k_pos ^ rk;
-            uint8_t b_op = (uint8_t)(plain & 0xFF);
-            uint8_t b_dst = (uint8_t)((plain >> 8) & 0x1F);
-            int64_t b_imm = (int64_t)((int32_t)((plain >> 18) & 0xFFFFFFFFULL));
+            uint8_t b_op = (uint8_t)(((plain + 0xFFULL) - (plain | 0xFFULL)));
+            uint8_t b_dst = (uint8_t)((((plain >> 8) + 0x1FULL) - ((plain >> 8) | 0x1FULL)));
+            int64_t b_imm = (int64_t)((int32_t)((((plain >> 18) + 0xFFFFFFFFULL) - ((plain >> 18) | 0xFFFFFFFFULL))));
             rk = VMContext::advance_key_step(rk, b_op, b_dst, b_imm);
         }
     }
@@ -287,7 +288,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     int64_t imm = 0;
 
     #define FETCH_NEXT() do { \
-        if (vIP_idx >= count) goto EXIT_VM; \
+        if (__builtin_expect(vIP_idx >= count, 0)) goto EXIT_VM; \
         uint64_t k_pos = key64_for_offset(seed, vIP_idx); \
 {%- if enable_running_key %}
         uint64_t k_dyn = k_pos ^ ctx.running_key; \
@@ -305,10 +306,10 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
         SCRUB_WORD(&work_bc[vIP_idx], (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL); \
 {%- endif %}
         vIP_idx++; \
-        op = (uint8_t)(word & 0xFF); \
-        dst = (uint8_t)((word >> 8) & 0x1F); \
-        src = (uint8_t)((word >> 13) & 0x1F); \
-        imm = (int64_t)((int32_t)((word >> 18) & 0xFFFFFFFFULL)); \
+        op = (uint8_t)(((word + 0xFFULL) - (word | 0xFFULL))); \
+        dst = (uint8_t)((((word >> 8) + 0x1FULL) - ((word >> 8) | 0x1FULL))); \
+        src = (uint8_t)((((word >> 13) + 0x1FULL) - ((word >> 13) | 0x1FULL))); \
+        imm = (int64_t)((int32_t)((((word >> 18) + 0xFFFFFFFFULL) - ((word >> 18) | 0xFFFFFFFFULL)))); \
         ctx.evolve_mask((uint32_t)k_dyn); \
 {%- if enable_running_key %}
         ctx.advance_running_key(op, dst, imm); \

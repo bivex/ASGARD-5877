@@ -18,6 +18,9 @@ let shuffle_array rng arr =
     arr.(j) <- tmp
   done
 
+let poly_multiplier_of_seed = Rolling_key.poly_multiplier_of_seed
+let poly_init_of_seed = Rolling_key.poly_init_of_seed
+
 let compile_and_package_multi
     ~rng
     ?runtime_profile
@@ -113,11 +116,12 @@ let compile_and_package_multi
   in
 
   let compute_bytecode_hash seed bc =
-    let h = ref (Int64.logxor 0x811C9DC5C9DC5119L (Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL)) in
+    let mul_k = poly_multiplier_of_seed seed in
+    let h = ref (poly_init_of_seed seed) in
     List.iteri
       (fun i w ->
         let mixed = Int64.logxor !h w in
-        let mul = Int64.mul mixed 0x100000001B3L in
+        let mul = Int64.mul mixed mul_k in
         h := Int64.add mul (Int64.of_int i))
       bc;
     !h

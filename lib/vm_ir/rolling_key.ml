@@ -44,3 +44,12 @@ let decode_fields (w : int64) : int * int * int * int64 =
   let src = Int64.to_int (Int64.logand (Int64.shift_right_logical w 13) 0x1FL) in
   let imm = sign_extend_32 (Int64.logand (Int64.shift_right_logical w 18) 0xFFFFFFFFL) in
   (op, dst, src, imm)
+
+let poly_multiplier_of_seed (seed : int32) : int64 =
+  let s64 = Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL in
+  let mixed = Int64.logxor 0x100000001B3L (Int64.mul s64 0x517CC1B727220A95L) in
+  Int64.logor mixed 1L
+
+let poly_init_of_seed (seed : int32) : int64 =
+  let s64 = Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL in
+  Int64.logxor 0x811C9DC5C9DC5119L (Int64.mul s64 0x9E3779B97F4A7C15L)

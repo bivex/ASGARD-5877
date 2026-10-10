@@ -1010,15 +1010,15 @@ let emit_mem_and_ffi_handlers ?rng b =
   Buffer.add_string b "    H_FCSEL_VV: {\n";
   (match pick_variant 3 with
    | 0 ->
-       Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
+       Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
        Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_vreg_lane(dst, 0, ctx.get_vreg_lane(src, 0));\n"
    | 1 ->
-       Buffer.add_string b "        if (eval_condition(ctx, static_cast<uint8_t>((word >> 18) & 0x0F))) {\n";
+       Buffer.add_string b "        if (eval_condition(ctx, static_cast<uint8_t>((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL))))) {\n";
        Buffer.add_string b "            uint64_t _v = ctx.get_vreg_lane(src, 0);\n";
        Buffer.add_string b "            ctx.set_vreg_lane(dst, 0, _v);\n";
        Buffer.add_string b "        }\n"
    | _ ->
-       Buffer.add_string b "        uint8_t _c = (uint8_t)((word >> 18) & 0x0F);\n";
+       Buffer.add_string b "        uint8_t _c = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
        Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0);\n";
        Buffer.add_string b "        if (eval_condition(ctx, _c)) ctx.set_vreg_lane(dst, 0, _s);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";

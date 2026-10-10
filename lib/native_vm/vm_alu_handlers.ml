@@ -827,9 +827,9 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CCMP_RR: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((word >> 22) & 0x0F);\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x7F);\n";
+  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
+  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((((word >> 22) + 0x0FULL) - ((word >> 22) | 0x0FULL)));\n";
+  Buffer.add_string b "        uint32_t bits = (uint32_t)((((word >> 50) + 0x7FULL) - ((word >> 50) | 0x7FULL)));\n";
   (match pick_variant 2 with
    | 0 ->
        Buffer.add_string b "        if (eval_condition(ctx, cond)) {\n";
@@ -854,10 +854,10 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CCMP_RI: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((word >> 22) & 0x0F);\n";
-  Buffer.add_string b "        uint64_t b = (uint64_t)((word >> 26) & 0x1FULL);\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x7F);\n";
+  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
+  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((((word >> 22) + 0x0FULL) - ((word >> 22) | 0x0FULL)));\n";
+  Buffer.add_string b "        uint64_t b = (uint64_t)((((word >> 26) + 0x1FULL) - ((word >> 26) | 0x1FULL)));\n";
+  Buffer.add_string b "        uint32_t bits = (uint32_t)((((word >> 50) + 0x7FULL) - ((word >> 50) | 0x7FULL)));\n";
   (match pick_variant 2 with
    | 0 ->
        Buffer.add_string b "        if (eval_condition(ctx, cond)) {\n";
@@ -882,9 +882,9 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CCMN_RR: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((word >> 22) & 0x0F);\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x7F);\n";
+  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
+  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((((word >> 22) + 0x0FULL) - ((word >> 22) | 0x0FULL)));\n";
+  Buffer.add_string b "        uint32_t bits = (uint32_t)((((word >> 50) + 0x7FULL) - ((word >> 50) | 0x7FULL)));\n";
   (match pick_variant 2 with
    | 0 ->
        Buffer.add_string b "        if (eval_condition(ctx, cond)) {\n";
@@ -909,10 +909,10 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_CCMN_RI: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 18) & 0x0F);\n";
-  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((word >> 22) & 0x0F);\n";
-  Buffer.add_string b "        uint64_t b = (uint64_t)((word >> 26) & 0x1FULL);\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x7F);\n";
+  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
+  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((((word >> 22) + 0x0FULL) - ((word >> 22) | 0x0FULL)));\n";
+  Buffer.add_string b "        uint64_t b = (uint64_t)((((word >> 26) + 0x1FULL) - ((word >> 26) | 0x1FULL)));\n";
+  Buffer.add_string b "        uint32_t bits = (uint32_t)((((word >> 50) + 0x7FULL) - ((word >> 50) | 0x7FULL)));\n";
   (match pick_variant 2 with
    | 0 ->
        Buffer.add_string b "        if (eval_condition(ctx, cond)) {\n";

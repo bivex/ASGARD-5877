@@ -32,5 +32,5 @@ val compile_and_package_multi :
   (string * Ir.func) list ->
   vm_package
 
-
-
+val poly_multiplier_of_seed : int32 -> int64
+val poly_init_of_seed : int32 -> int64
