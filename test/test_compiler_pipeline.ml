@@ -59,12 +59,25 @@ let test_end_to_end_pipeline () =
   | Error msg -> fail ("Pipeline compilation failed: " ^ msg)
 
 let test_rns_roundtrip () =
-  let test_vals = [ 0L; 1L; 42L; 1337L; 0x13375877L; 0x7FFFFFFFFFFFFFFFL ] in
+  let test_vals = [
+    0L; 1L; 2L; 42L; 1337L; 0x13375877L;
+    0x5555555555555555L;
+    0x123456789ABCDEF0L;
+    0x7FFFFFFFFFFFFFFFL;
+  ] in
   List.iter (fun x ->
     let enc = Rns.encode x in
     let dec = Rns.decode enc in
     check int64 (Printf.sprintf "RNS Roundtrip 0x%016LX" x) x dec
-  ) test_vals
+  ) test_vals;
+  (* Randomized 100 positive values *)
+  let rng = Random.State.make [| 0x5877 |] in
+  for _ = 1 to 100 do
+    let x = Random.State.int64 rng Int64.max_int in
+    let enc = Rns.encode x in
+    let dec = Rns.decode enc in
+    check int64 (Printf.sprintf "RNS Random Roundtrip 0x%016LX" x) x dec
+  done
 
 let test_rns_arithmetic () =
   let pairs = [
@@ -72,6 +85,7 @@ let test_rns_arithmetic () =
     (0x1337L, 0x5877L);
     (42L, 58L);
     (1000L, 500L);
+    (0x10000000L, 0x20000000L);
   ] in
   List.iter (fun (a, b) ->
     let ea = Rns.encode a in
@@ -88,7 +102,25 @@ let test_rns_arithmetic () =
     let e_mul = Rns.mul ea eb in
     let d_mul = Rns.decode e_mul in
     check int64 (Printf.sprintf "RNS Mul %Ld * %Ld" a b) (Int64.mul a b) d_mul;
-  ) pairs
+  ) pairs;
+  (* Randomized arithmetic pairs *)
+  let rng = Random.State.make [| 0x9292 |] in
+  for _ = 1 to 100 do
+    let a = Random.State.int64 rng 0x3FFFFFFFFFFFFFFFL in
+    let b = Random.State.int64 rng 0x3FFFFFFFFFFFFFFFL in
+    let ea = Rns.encode a in
+    let eb = Rns.encode b in
+    let e_sum = Rns.add ea eb in
+    check int64 "RNS randomized add" (Int64.add a b) (Rns.decode e_sum);
+    let (high, low) = if a >= b then (a, b) else (b, a) in
+    let e_sub = Rns.sub (Rns.encode high) (Rns.encode low) in
+    check int64 "RNS randomized sub" (Int64.sub high low) (Rns.decode e_sub);
+    (* Multiplication within RNS dynamic range a * b < M *)
+    let ma = Random.State.int64 rng 0x7FFFFFFFL in
+    let mb = Random.State.int64 rng 0x7FFFFFFFL in
+    let e_mul = Rns.mul (Rns.encode ma) (Rns.encode mb) in
+    check int64 "RNS randomized mul" (Int64.mul ma mb) (Rns.decode e_mul)
+  done
 
 let test_egraph_saturation () =
   let eg = Ir_egraph.create () in

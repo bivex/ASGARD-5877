@@ -200,7 +200,45 @@ ASGARD-5877 formally proves the fundamental equivalence theorems of computer arc
 
 ---
 
-## 6. How to Run the Formal Proofs & Codegen
+## 6. Formally Verified Residue Number System & CRT (`fstar/Rns_Verified.fst`)
+
+ASGARD-5877 uses a 4-channel Residue Number System (RNS-4) to split 64-bit integer calculations into carry-free parallel modular channels ($m_1, m_2, m_3, m_4$), obscuring arithmetic dataflow against symbolic deobfuscation and SMT synthesis attacks.
+
+Reconstruction of the original integer uses the **Garner Mixed-Radix Conversion algorithm** (a constructive Chinese Remainder Theorem implementation).
+
+Module [`fstar/Rns_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.fst) formally proves:
+
+### 6.1 Moduli and Dynamic Range
+* $m_1 = 65537$ ($2^{16} + 1$, Fermat prime)
+* $m_2 = 65521$ (largest prime $< 2^{16}$)
+* $m_3 = 65519$ (second largest prime $< 2^{16}$)
+* $m_4 = 65497$ (third largest prime $< 2^{16}$)
+* **Dynamic Range (`theorem_dynamic_range`)**:
+  $$M = \prod_{i=1}^4 m_i = 18427046975179708711 > 2^{63} - 1$$
+  *Proves*: Range covers all non-negative 63-bit integers without overflow.
+
+### 6.2 Precomputed Bézout Inverses (`theorem_inverses`)
+F* rigorously proves all 6 mixed-radix inverses:
+* $(m_1 \cdot 61426) \equiv 1 \pmod{m_2}$
+* $(m_1 \cdot 3640) \equiv 1 \pmod{m_3}$
+* $(m_1 \cdot 11462) \equiv 1 \pmod{m_4}$
+* $(m_2 \cdot 32760) \equiv 1 \pmod{m_3}$
+* $(m_2 \cdot 62768) \equiv 1 \pmod{m_4}$
+* $(m_3 \cdot 20840) \equiv 1 \pmod{m_4}$
+
+### 6.3 Garner Mixed-Radix Reconstruction
+Reconstruction evaluates the Horner polynomial:
+$$X = v_1 + m_1 (v_2 + m_2 (v_3 + m_3 v_4))$$
+
+Proven theorems:
+1. **Range Bound (`theorem_garner_range`)**: $\forall r, \; \text{decode}(r) < M$.
+2. **Channel 1 Congruence (`theorem_garner_m1`)**: $\text{decode}(r) \equiv r_1 \pmod{m_1}$.
+3. **Channel 2 Congruence (`theorem_garner_m2`)**: $\text{decode}(r) \equiv r_2 \pmod{m_2}$.
+4. **Channel Additive Homomorphism (`theorem_rns_add_homomorphism`)**: Parallel addition across moduli preserves $(a + b) \pmod{m_i}$ on all 4 channels.
+
+---
+
+## 7. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
@@ -224,6 +262,13 @@ fstar.exe \
   --cache_checked_modules \
   --cache_dir . \
   Flags_Verified.fst
+
+# 3. Verify Residue Number System (RNS-4) & CRT theorems
+fstar.exe \
+  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+  --cache_checked_modules \
+  --cache_dir . \
+  Rns_Verified.fst
 ```
 
 **Expected Output:**
@@ -231,6 +276,8 @@ fstar.exe \
 Verified module: Mba_Verified
 All verification conditions discharged successfully
 Verified module: Flags_Verified
+All verification conditions discharged successfully
+Verified module: Rns_Verified
 All verification conditions discharged successfully
 ```
 
@@ -243,10 +290,12 @@ fstar.exe \
   --codegen OCaml \
   --extract Mba_Verified \
   --extract Flags_Verified \
+  --extract Rns_Verified \
   --cache_checked_modules \
   --cache_dir . \
   --odir . \
-  Mba_Verified.fst Flags_Verified.fst
+  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml) and [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml) contain pure OCaml code with all proofs erased.
+The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), and [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml) contain pure OCaml code with all proofs erased.
+
