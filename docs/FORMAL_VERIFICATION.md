@@ -394,7 +394,43 @@ Module [`fstar/Cff_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fsta
 
 ---
 
-## 12. How to Run the Formal Proofs & Codegen
+## 12. Formally Verified Instruction Lifter & Simulation Equivalence (`fstar/Lifter_Verified.fst`)
+
+The instruction lifter frontend translates architectural x86_64 instructions into VM-IR instructions. Any semantic discrepancy or register clobbering across lowering corrupts application logic.
+
+Module [`fstar/Lifter_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Lifter_Verified.fst) formally specifies the architectural x86_64 operational semantics, the VM-IR execution semantics, and proves strict forward simulation:
+
+### 12.1 Primitive ALU & Unary Equivalence
+* **ALU Equivalence (`theorem_lift_alu_equiv`)**:
+  $$\forall op \in \{\text{Add}, \text{Sub}, \text{Xor}, \text{And}, \text{Or}, \text{Shl}, \text{Shr}, \text{Rol}, \text{Ror}\}, \quad \text{step}_{\text{vm}}^*(\text{lift}(\text{Arch\_Alu } op \; dst \; src), \sigma) \sim_{\text{arch}} \text{step}_{\text{arch}}(\text{Arch\_Alu } op \; dst \; src, \sigma)$$
+* **Unary Equivalence (`theorem_lift_unary_equiv`)**:
+  $$\forall op \in \{\text{Inc}, \text{Dec}, \text{Not}, \text{Neg}\}, \quad \text{step}_{\text{vm}}^*(\text{lift}(\text{Arch\_Unary } op \; dst), \sigma) \sim_{\text{arch}} \text{step}_{\text{arch}}(\text{Arch\_Unary } op \; dst, \sigma)$$
+* **Flag Predicates (`theorem_lift_cmp_equiv`, `theorem_lift_test_equiv`)**:
+  Formally proves that VM-IR comparison and test lowering compute exact arithmetic borrow (`cf`), zero (`zf`), sign (`sf`), and signed overflow (`of`).
+* **Conditional Movement (`theorem_lift_cmov_equiv`)**:
+  Lowering `Cmov cc dst src` conditionally updates `dst` if and only if the architectural condition code evaluates to true on current flags.
+
+### 12.2 Composite Lowering Soundness
+1. **Exchange Invariance (`theorem_lift_xchg_equiv`)**:
+   Lowering `xchg r1, r2` via `VTMP0` scratch register swaps values with zero loss:
+   $$\sigma' = \text{step}_{\text{vm}}^*(\text{lift}(\text{Arch\_Xchg } r_1 \; r_2), \sigma) \implies \sigma'(r_1) = \sigma(r_2) \land \sigma'(r_2) = \sigma(r_1)$$
+
+2. **Atomic Fetch-and-Add (`theorem_lift_xadd_equiv`)**:
+   Lowering `xadd dst, src` correctly handles both distinct registers ($dst \neq src$) and aliased self-addition ($dst = src$):
+   $$\sigma'(dst) = \sigma(dst) + \sigma(src) \land (dst \neq src \implies \sigma'(src) = \sigma(dst))$$
+
+3. **Bitwise AND-NOT (`theorem_lift_andn_equiv`)**:
+   Lowering BMI instruction `andn dst, s1, s2` via temporary inversion in `VTMP1` guarantees:
+   $$\sigma'(dst) = (\sim \sigma(s_1)) \mathbin{\&} \text{eval}(s_2, \sigma)$$
+
+### 12.3 Complete Simulation Soundness
+* **Lifter Simulation Theorem (`theorem_lifter_soundness`)**:
+  For ANY valid architectural instruction $I_{\text{arch}}$, the lifted sequence $L(I_{\text{arch}})$ preserves exact architectural machine state modulo internal VM temporary registers:
+  $$\forall \sigma, \quad \text{step}_{\text{vm}}^*(L(I_{\text{arch}}), \sigma) \sim_{\text{arch}} \text{step}_{\text{arch}}(I_{\text{arch}}, \sigma)$$
+
+---
+
+## 13. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
@@ -460,6 +496,13 @@ fstar.exe \
   --cache_checked_modules \
   --cache_dir . \
   Cff_Verified.fst
+
+# 9. Verify Instruction Lifter & Simulation Equivalence theorems
+fstar.exe \
+  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+  --cache_checked_modules \
+  --cache_dir . \
+  Lifter_Verified.fst
 ```
 
 **Expected Output:**
@@ -480,6 +523,8 @@ Verified module: Rolling_Key_Verified
 All verification conditions discharged successfully
 Verified module: Cff_Verified
 All verification conditions discharged successfully
+Verified module: Lifter_Verified
+All verification conditions discharged successfully
 ```
 
 ### Extraction to OCaml
@@ -497,13 +542,14 @@ fstar.exe \
   --extract Poly_Verified \
   --extract Rolling_Key_Verified \
   --extract Cff_Verified \
+  --extract Lifter_Verified \
   --cache_checked_modules \
   --cache_dir . \
   --odir . \
-  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst Poly_Verified.fst Rolling_Key_Verified.fst Cff_Verified.fst
+  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst Poly_Verified.fst Rolling_Key_Verified.fst Cff_Verified.fst Lifter_Verified.fst
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml), [`fstar/Poly_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.ml), [`fstar/Rolling_Key_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rolling_Key_Verified.ml), and [`fstar/Cff_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Cff_Verified.ml) contain pure OCaml code with all proofs erased.
+The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml), [`fstar/Poly_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.ml), [`fstar/Rolling_Key_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rolling_Key_Verified.ml), [`fstar/Cff_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Cff_Verified.ml), and [`fstar/Lifter_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Lifter_Verified.ml) contain pure OCaml code with all proofs erased.
 
 
 

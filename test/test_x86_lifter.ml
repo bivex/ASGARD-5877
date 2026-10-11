@@ -981,6 +981,45 @@ test_xadd:
           Alcotest.(check int64) "xadd mem old in src" 50L (get_reg state Register.rcx);
           Alcotest.(check int64) "xadd mem sum in mem" 80L (get_reg state Register.rdx)
 
+let test_x86_lift_xadd_same_reg () =
+  let asm = {|
+test_xadd_same:
+    mov rax, 21
+    xadd rax, rax
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "xadd rax rax doubles rax" 42L (get_reg state Register.rax)
+
+let test_x86_lift_verified_alu_simulation () =
+  let asm = {|
+test_sim:
+    mov rax, 100
+    mov rbx, 35
+    add rax, rbx
+    sub rax, 15
+    xor rax, 0x55
+    and rax, 0xFF
+    or  rax, 0x100
+    not rax
+    neg rax
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "alu simulation matches composite semantics" 302L (get_reg state Register.rax)
+
 let test_x86_lift_xlat () =
   let asm = {|
 test_xlat:
@@ -1628,5 +1667,7 @@ let tests = [
   Alcotest.test_case "lift_x86_moffs_memory" `Quick test_x86_moffs_memory;
   Alcotest.test_case "lift_x86_segment_registers_push_pop_mov" `Quick test_x86_segment_registers_push_pop_mov;
   Alcotest.test_case "lift_x86_fsbase_gsbase_rdfsbase_wrfsbase" `Quick test_x86_fsbase_gsbase_rdfsbase_wrfsbase;
+  Alcotest.test_case "lift_x86_xadd_same_reg" `Quick test_x86_lift_xadd_same_reg;
+  Alcotest.test_case "lift_x86_verified_alu_simulation" `Quick test_x86_lift_verified_alu_simulation;
 ]
 
