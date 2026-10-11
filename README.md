@@ -439,6 +439,7 @@ ASGARD-5877 includes **389 tests** across **35 suites** verified on every build 
 ## Documentation
 
 - [`docs/markdown-style-guide.md`](docs/markdown-style-guide.md): Repository documentation and formatting standards.
+- [`docs/PARALLELS_WINDOWS_DEBUGGING.md`](docs/PARALLELS_WINDOWS_DEBUGGING.md): Running and debugging ASGARD-5877 on Windows ARM64 via Parallels Desktop from macOS (MSVC `cl.exe`, WinDbg/CDB automation, nanomite VEH, tripwire diagnostics).
 - [`docs/REAL_WORLD_BENCHMARKS.md`](docs/REAL_WORLD_BENCHMARKS.md): Real-world C production benchmark corpus (OpenSSL, Coreutils, SQLite, WireGuard, Zstandard), DRS profiling, overhead analysis, and ARM64 NEON lifter integration.
 - [`docs/VM_PROTECTOR.md`](docs/VM_PROTECTOR.md): In-depth guide to VM architecture, handlers, CFF, and trampoline generation.
 - [`docs/ENTROPY_MODEL.md`](docs/ENTROPY_MODEL.md): Information-theoretic entropy verification and Shannon metric models.
