@@ -139,11 +139,28 @@ let prop_vanguard_roundtrip =
                   dec_m = mnem && d = dst && s_1 = s1 && s_2 = s2 && im = imm && mk = mask
               | Error _ -> false))
 
+let test_parser_total_safety_fuzzing () =
+  let rng = Random.State.make [| 0xCAFE; 0xBABE |] in
+  let mnemonics = [ "vadd"; "vsub"; "vmul"; "vdiv" ] in
+  match generate ~rng ~mnemonics () with
+  | Error err -> Alcotest.fail err
+  | Ok scheme ->
+      let key = Rolling_key.make ~seed:scheme.key_seed in
+      (* Fuzz with 5,000 completely random 64-bit words *)
+      for _ = 1 to 5000 do
+        let raw = Random.State.int64 rng Int64.max_int in
+        let res = decode_word scheme ~key raw in
+        match res with
+        | Ok _ | Error `Junk_opcode | Error (`Unknown_opcode _) | Error (`Corrupted_field _) -> ()
+      done;
+      Alcotest.(check bool) "5000 random inputs handled without panic" true true
+
 let tests = [
   Alcotest.test_case "layout_validation" `Quick test_layout_validation;
   Alcotest.test_case "opcode_map_and_junk" `Quick test_opcode_map_and_junk;
   Alcotest.test_case "rolling_key" `Quick test_rolling_key;
   Alcotest.test_case "encode_decode_roundtrip" `Quick test_encode_decode_roundtrip;
   Alcotest.test_case "junk_opcode_detection" `Quick test_junk_opcode_detection;
+  Alcotest.test_case "parser_total_safety_fuzzing" `Quick test_parser_total_safety_fuzzing;
   QCheck_alcotest.to_alcotest prop_vanguard_roundtrip;
 ]

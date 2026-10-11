@@ -277,7 +277,38 @@ Module [`fstar/Stack_Balance_Verified.fst`](file:///Volumes/External/Code/ASGARD
 
 ---
 
-## 8. How to Run the Formal Proofs & Codegen
+## 8. Formally Verified Instruction Codec & Total Parser Safety (`fstar/Codec_Verified.fst`)
+
+Vanguard-9292 uses randomized bitfield layout permutation and rolling key XOR stream encryption for all instruction words. A critical vulnerability in binary interpreters is parser panics / out-of-bounds crashes when encountering corrupted bytes, junk opcodes, or adversarial payloads.
+
+Module [`fstar/Codec_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.fst) formally specifies bitfield slices and rolling key encryption, proving roundtrip fidelity and total parser safety.
+
+### 8.1 Disjoint Slice Packing & Extraction
+* **Prefix / Suffix / Nested Invariants (`lemma_slice_prefix`, `lemma_slice_suffix`, `lemma_slice_nested`)**:
+  Formally establishes non-interference across bitfield concatenation:
+  $$\text{slice}(\text{append } s_1 \; s_2, 0, |s_1|) = s_1$$
+  $$\text{slice}(\text{append } s_1 \; s_2, |s_1| + i, |s_1| + j) = \text{slice}(s_2, i, j)$$
+
+### 8.2 Theorems of Codec Fidelity & Security
+1. **Unencrypted Packing Roundtrip (`theorem_pack_unpack_roundtrip`)**:
+   $$\forall i \in \text{v\_instr}, \quad \text{unpack}(\text{pack}(i)) \equiv i$$
+   *Proves*: Bitfield packing of Opcode (8b), Dst (8b), Src1 (8b), Src2 (8b), Imm (16b), Mask (8b), Junk (8b) into 64-bit words has zero bit crosstalk and recovers all fields identically.
+
+2. **Rolling Key Involution (`theorem_key_involution`)**:
+   $$\forall W, K \in \mathbb{B}^{64}, \quad (W \oplus K) \oplus K = W$$
+
+3. **End-to-End Encrypted Codec Roundtrip (`theorem_codec_roundtrip`)**:
+   $$\forall i, K, \quad \text{decode}(\text{encode}(i, K), K) \equiv i$$
+   *Proves*: Any instruction encrypted with a rolling key is decoded back to the exact original instruction without loss.
+
+4. **Parser Total Safety / Crash Freedom (`theorem_parser_total_safety`)**:
+   For ANY 64-bit word $W \in \mathbb{B}^{64}$ and arbitrary stream key $K$:
+   $$\text{parse\_word}(W, K, \text{is\_junk}, \text{is\_valid}) \text{ is total and never panics}$$
+   *Proves*: Decoder terminates unconditionally on any arbitrary input (including malformed fuzzing vectors) and partitions all words into structured `Parse_Success`, `Parse_Junk`, or `Parse_Invalid`.
+
+---
+
+## 9. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
@@ -315,6 +346,13 @@ fstar.exe \
   --cache_checked_modules \
   --cache_dir . \
   Stack_Balance_Verified.fst
+
+# 5. Verify Vanguard-9292 Codec & Total Parser Safety theorems
+fstar.exe \
+  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+  --cache_checked_modules \
+  --cache_dir . \
+  Codec_Verified.fst
 ```
 
 **Expected Output:**
@@ -326,6 +364,8 @@ All verification conditions discharged successfully
 Verified module: Rns_Verified
 All verification conditions discharged successfully
 Verified module: Stack_Balance_Verified
+All verification conditions discharged successfully
+Verified module: Codec_Verified
 All verification conditions discharged successfully
 ```
 
@@ -340,12 +380,14 @@ fstar.exe \
   --extract Flags_Verified \
   --extract Rns_Verified \
   --extract Stack_Balance_Verified \
+  --extract Codec_Verified \
   --cache_checked_modules \
   --cache_dir . \
   --odir . \
-  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst
+  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), and [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml) contain pure OCaml code with all proofs erased.
+The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), and [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml) contain pure OCaml code with all proofs erased.
+
 
 
