@@ -321,15 +321,73 @@ let test_mba_zero_invariants () =
       Alcotest.(check int64) "zero_inv5_nl = 0" 0L (Mba.eval env (Mba.zero_inv5_nl a b)))
     test_values
 
+let test_cff_flatten_with_opaque_predicates () =
+  let rng = Random.State.make [| 9999 |] in
+  let b0 = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm 0L };
+    Ir.Mov { dst = Ir.Reg Register.rbx; src = Ir.Imm 1L };
+    Ir.Mov { dst = Ir.Reg Register.rcx; src = Ir.Imm 10L };
+    Ir.Jmp (Ir.BlockId 1);
+  ] in
+  let b1 = Ir.make_block ~id:1 ~label:"loop_header" ~instrs:[
+    Ir.Cmp { src1 = Ir.Reg Register.rcx; src2 = Ir.Imm 0L };
+    Ir.Jcc { cond = Flags.LE; target_true = Ir.BlockId 3; target_false = Ir.BlockId 2 };
+  ] in
+  let b2 = Ir.make_block ~id:2 ~label:"loop_body" ~instrs:[
+    Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
+    Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.rbx; set_flags = false };
+    Ir.Mov { dst = Ir.Reg Register.rbx; src = Ir.Reg Register.rdx };
+    Ir.Unary { op = Ir.Dec; dst = Register.rcx; src = Ir.Reg Register.rcx; set_flags = true };
+    Ir.Jmp (Ir.BlockId 1);
+  ] in
+  let b3 = Ir.make_block ~id:3 ~label:"done" ~instrs:[
+    Ir.Vm_exit;
+  ] in
+  let orig_func = Ir.make_func ~name:"fib_opaque" ~entry_id:0 ~blocks:[ b0; b1; b2; b3 ] in
+
+  let options = { Cff.inject_opaque_predicates = true; obfuscate_states = true } in
+  match Cff.flatten_func ~options ~rng orig_func with
+  | Error e -> Alcotest.fail e
+  | Ok flattened_func ->
+      let state = make_state () in
+      match run_func state flattened_func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check bool) "halted without trap" true state.halted;
+          Alcotest.(check int64) "flattened fib(10) with opaque predicates is 55" 55L (get_reg state Register.rax)
+
+let test_cff_opaque_parity_extremes () =
+  let extremes = [
+    0L; 1L; -1L; 2L; -2L; 42L; 0x5555555555555555L; -0x5555555555555556L;
+    0x7FFFFFFFFFFFFFFFL; Int64.min_int; 0xCAFEBABE12345678L;
+  ] in
+  List.iter
+    (fun x ->
+      let res = Int64.logand (Int64.logand x (Int64.add x 1L)) 1L in
+      Alcotest.(check int64) "parity predicate is always 0" 0L res)
+    extremes
+
+let prop_cff_opaque_parity_1000 =
+  QCheck.Test.make
+    ~name:"cff_opaque_parity_predicate_1000_seeds"
+    ~count:1000
+    QCheck.int64
+    (fun x ->
+      let res = Int64.logand (Int64.logand x (Int64.add x 1L)) 1L in
+      res = 0L)
+
 let tests = [
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
   Alcotest.test_case "mba_lowering_to_vm_ir" `Quick test_mba_lowering_to_vm_ir;
   Alcotest.test_case "mba_verified_rewriters" `Quick test_mba_verified_rewriters;
   Alcotest.test_case "mba_zero_invariants" `Quick test_mba_zero_invariants;
   Alcotest.test_case "cff_flatten_fibonacci" `Quick test_cff_flatten_fibonacci;
+  Alcotest.test_case "cff_flatten_with_opaque_predicates" `Quick test_cff_flatten_with_opaque_predicates;
   Alcotest.test_case "cff_flatten_lifted_factorial" `Quick test_cff_flatten_lifted_factorial;
   Alcotest.test_case "cff_flatten_lifted_abs" `Quick test_cff_flatten_lifted_abs;
   Alcotest.test_case "cff_ocamlgraph_cfg_metrics" `Quick test_cff_ocamlgraph_cfg_metrics;
   Alcotest.test_case "cff_ocamlgraph_dot_and_reachability" `Quick test_cff_ocamlgraph_dot_and_reachability;
+  Alcotest.test_case "cff_opaque_parity_extremes" `Quick test_cff_opaque_parity_extremes;
   QCheck_alcotest.to_alcotest prop_mba_equivalence_1000;
+  QCheck_alcotest.to_alcotest prop_cff_opaque_parity_1000;
 ]

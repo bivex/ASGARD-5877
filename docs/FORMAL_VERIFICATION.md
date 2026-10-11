@@ -365,7 +365,36 @@ Module [`fstar/Rolling_Key_Verified.fst`](file:///Volumes/External/Code/ASGARD-5
 
 ---
 
-## 11. How to Run the Formal Proofs & Codegen
+## 11. Formally Verified Control Flow Flattening (CFF) & Opaque Predicates (`fstar/Cff_Verified.fst`)
+
+In control flow obfuscation, ASGARD-5877 flattens control flow graphs into centralized dispatcher state ladders and inserts opaque predicates to defeat symbolic execution and decompiler CFG recovery.
+A critical soundness requirement is that the dispatcher must faithfully preserve original CFG edge semantics and that opaque predicate traps must never be triggered on valid execution paths.
+
+Module [`fstar/Cff_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Cff_Verified.fst) formally proves:
+
+### 11.1 Opaque Parity Invariant
+* **Parity Annihilation (`theorem_opaque_parity_is_zero`)**:
+  $$\forall x \in \mathbb{U}_{64}, \quad (x \mathbin{\&} (x + 1)) \mathbin{\&} 1 \equiv 0$$
+  *Proof*: For any 64-bit integer $x$, the least significant bit $\text{lsb}(x) \neq \text{lsb}(x + 1)$. Therefore $x \mathbin{\&} (x + 1)$ has a 0 in bit 0, and further masking with 1 yields strictly 0.
+  *Soundness Guarantee*: In `Cff.inject_opaque_predicate`, the conditional branch `jne trap_block` is mathematically unreachable; execution unconditionally proceeds along the valid target edge.
+
+### 11.2 Dispatcher Soundness & Step Bisimulation
+1. **Dispatcher Target Soundness (`theorem_dispatch_finds_target`)**:
+   $$\forall \text{ladder}, \text{entry}, \quad (\text{distinct\_states}(\text{ladder}) \land \text{entry} \in \text{ladder}) \implies \text{dispatch}(\text{ladder}, \text{entry}.\text{state}) = \text{Some } \text{entry}.\text{target}$$
+   *Proves*: If all state keys in the ladder are distinct, looking up any valid entry's key yields its exact target block without misdirection.
+
+2. **Trap Freedom on Reachable States (`theorem_dispatch_reachable_not_none`)**:
+   $$\forall \text{ladder}, \text{entry}, \quad (\text{distinct\_states}(\text{ladder}) \land \text{entry} \in \text{ladder}) \implies \text{dispatch}(\text{ladder}, \text{entry}.\text{state}) \neq \text{None}$$
+   *Proves*: The dispatcher never falls through to the terminal trap block on any valid CFG transition.
+
+3. **CFG Step Bisimulation / Congruence (`theorem_cff_step_congruence`)**:
+   For any CFG with direct edge $B_{\text{cur}} \to B_{\text{next}}$, state mapping $\sigma(B_{\text{next}}) = s$, and ladder containing $(s, B_{\text{next}})$:
+   $$\text{cff\_step}(\text{edges}, \text{ladder}, \sigma, B_{\text{cur}}) = \text{direct\_step}(\text{edges}, B_{\text{cur}})$$
+   *Proves*: Flattening through the dispatcher state machine preserves exact execution trace semantics.
+
+---
+
+## 12. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
@@ -424,6 +453,13 @@ fstar.exe \
   --cache_checked_modules \
   --cache_dir . \
   Rolling_Key_Verified.fst
+
+# 8. Verify Control Flow Flattening & Opaque Predicates theorems
+fstar.exe \
+  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+  --cache_checked_modules \
+  --cache_dir . \
+  Cff_Verified.fst
 ```
 
 **Expected Output:**
@@ -442,6 +478,8 @@ Verified module: Poly_Verified
 All verification conditions discharged successfully
 Verified module: Rolling_Key_Verified
 All verification conditions discharged successfully
+Verified module: Cff_Verified
+All verification conditions discharged successfully
 ```
 
 ### Extraction to OCaml
@@ -458,13 +496,14 @@ fstar.exe \
   --extract Codec_Verified \
   --extract Poly_Verified \
   --extract Rolling_Key_Verified \
+  --extract Cff_Verified \
   --cache_checked_modules \
   --cache_dir . \
   --odir . \
-  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst Poly_Verified.fst Rolling_Key_Verified.fst
+  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst Poly_Verified.fst Rolling_Key_Verified.fst Cff_Verified.fst
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml), [`fstar/Poly_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.ml), and [`fstar/Rolling_Key_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rolling_Key_Verified.ml) contain pure OCaml code with all proofs erased.
+The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml), [`fstar/Poly_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.ml), [`fstar/Rolling_Key_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rolling_Key_Verified.ml), and [`fstar/Cff_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Cff_Verified.ml) contain pure OCaml code with all proofs erased.
 
 
 
