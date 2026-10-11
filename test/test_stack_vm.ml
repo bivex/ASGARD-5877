@@ -165,7 +165,42 @@ let test_stack_balance_pass () =
   let prog = make_program 1 [b_unbalanced] 10 in
   let repaired_prog = Stack_balance_pass.repair_program ctx prog in
   let errors = Stack_balance_pass.verify_program repaired_prog in
-  Alcotest.(check int) "no balance errors after repair" 0 (List.length errors)
+  Alcotest.(check int) "no balance errors after repair" 0 (List.length errors);
+
+  (* Test block with negative delta (underflow) *)
+  let b_underflow = make_block 2 "underflow" [
+    PopReg 0;
+    PopReg 1;
+    Exit;
+  ] in
+  let res_under = Stack_balance_pass.analyze_block b_underflow in
+  Alcotest.(check bool) "underflow block is not balanced" false res_under.is_balanced;
+  Alcotest.(check int) "underflow block final delta" (-2) res_under.final_delta;
+
+  let prog_under = make_program 2 [b_underflow] 10 in
+  let rep_under = Stack_balance_pass.repair_program ctx prog_under in
+  let errors_under = Stack_balance_pass.verify_program rep_under in
+  Alcotest.(check int) "no balance errors after underflow repair" 0 (List.length errors_under);
+
+  (* Formally verified property tests: 1,000 random blocks must always satisfy theorem_repair_balanced *)
+  let rng = Random.State.make [| 0x57AC; 0xBA1A; 0x9CE |] in
+  let sample_ops = [|
+    PushImm 42L; PushReg 0; PopReg 1; ReadMem 0; WriteMem 1;
+    Add; Sub; Mul; Nor; Nand; Shl; Shr; Dup; Swap; PushFlags; PopFlags;
+    AddImm 10L; SubImm 5L; AddImmImm (1L, 2L); SubImmImm (3L, 4L)
+  |] in
+  for i = 1 to 1000 do
+    let len = 1 + Random.State.int rng 40 in
+    let random_ops = List.init len (fun _ ->
+      let idx = Random.State.int rng (Array.length sample_ops) in
+      sample_ops.(idx)
+    ) @ [Exit] in
+    let block = make_block i (Printf.sprintf "rand_%d" i) random_ops in
+    let repaired = Stack_balance_pass.repair_block ctx block in
+    let res = Stack_balance_pass.analyze_block repaired in
+    if not res.is_balanced || res.final_delta <> 0 then
+      Alcotest.fail (Printf.sprintf "Random block %d failed theorem_repair_balanced: delta=%d" i res.final_delta)
+  done
 
 let test_rolling_key_encoder_and_eval () =
   let b = make_block 0 "entry" [

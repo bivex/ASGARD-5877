@@ -31,3 +31,4 @@ __pycache__/
 protected_*/
 profile_results.json
 *.zip
+*.checked

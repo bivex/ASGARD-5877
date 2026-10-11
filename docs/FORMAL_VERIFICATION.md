@@ -238,7 +238,46 @@ Proven theorems:
 
 ---
 
-## 7. How to Run the Formal Proofs & Codegen
+## 7. Formally Verified Stack-VM Balance & Underflow Freedom (`fstar/Stack_Balance_Verified.fst`)
+
+In bytecode virtualization, basic blocks execute stack pushes and pops. Any stack imbalance across join points or negative stack underflow leads to fatal VM crashes (unmapped host stack reads or register context corruption).
+
+Module [`fstar/Stack_Balance_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.fst) formally models all 37 Stack-VM opcodes, their push/pop weights, and proves the correctness of the balance analysis and repair pass.
+
+### 7.1 Core Stack Delta Algebra
+* **Delta Homomorphism (`lemma_sum_delta_append`)**:
+  $$\forall L_1, L_2, \quad \Delta(L_1 \mathbin{+\!+} L_2) = \Delta(L_1) + \Delta(L_2)$$
+* **Repetition Homomorphism (`lemma_sum_delta_repeat`)**:
+  $$\forall n, op, \quad \Delta(\text{repeat } n \; op) = n \cdot \delta(op)$$
+* **Non-destructive Splitting (`lemma_split_append`)**:
+  Separating basic blocks at the first terminator into $(\text{prefix}, \text{suffix})$ preserves exact instruction sequence.
+
+### 7.2 Theorems of Balance & Safety
+1. **Total Balance Repair Soundness (`theorem_repair_balanced`)**:
+   $$\forall ops, reg, \quad \Delta(\text{repair\_ops}(ops, reg)) \equiv 0$$
+   *Proves*: For any arbitrary block with excess values ($d > 0$), inserting $d$ `PopReg`s before terminators, or for blocks with stack deficiency ($d < 0$), prepending $-d$ `PushImm`s, mathematically guarantees zero net stack drift.
+
+2. **CFG Path Stack Invariance (`theorem_path_balance`)**:
+   For any execution path $P = [B_1, B_2, \dots, B_k]$ composed of repaired blocks:
+   $$\Delta_{\text{total}}(P) = \sum_{i=1}^k \Delta(B_i) = 0$$
+   *Proves*: Arbitrary branch, loop, and jump executions never accumulate phantom stack drift across CFG join points.
+
+3. **Dynamic Execution Semantics (`theorem_eval_depth_delta`)**:
+   If dynamic execution from depth $cur$ completes safely without underflow:
+   $$\text{eval\_depth}(cur, ops) = \text{Some } final\_d \implies final\_d = cur + \Delta(ops)$$
+
+4. **Underflow Freedom Invariant (`theorem_min_req_safe`)**:
+   Given inductive minimum required depth $\text{min\_req}(ops)$:
+   $$cur \ge \text{min\_req}(ops) \implies \text{eval\_depth}(cur, ops) \neq \text{None}$$
+   *Proves*: The stack never encounters underflow at any intermediate execution step.
+
+5. **Padded Trace Safety (`theorem_padded_never_underflows`)**:
+   Prepending $\text{min\_req}(ops)$ `PushImm` instructions guarantees that starting from an empty stack ($depth = 0$), execution always completes without underflow:
+   $$\text{eval\_depth}(0, \text{repeat } (\text{min\_req } ops) \; (\text{PushImm } 0) \mathbin{+\!+} ops) \neq \text{None}$$
+
+---
+
+## 8. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
@@ -269,6 +308,13 @@ fstar.exe \
   --cache_checked_modules \
   --cache_dir . \
   Rns_Verified.fst
+
+# 4. Verify Stack-VM Balance & Underflow Freedom theorems
+fstar.exe \
+  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+  --cache_checked_modules \
+  --cache_dir . \
+  Stack_Balance_Verified.fst
 ```
 
 **Expected Output:**
@@ -278,6 +324,8 @@ All verification conditions discharged successfully
 Verified module: Flags_Verified
 All verification conditions discharged successfully
 Verified module: Rns_Verified
+All verification conditions discharged successfully
+Verified module: Stack_Balance_Verified
 All verification conditions discharged successfully
 ```
 
@@ -291,11 +339,13 @@ fstar.exe \
   --extract Mba_Verified \
   --extract Flags_Verified \
   --extract Rns_Verified \
+  --extract Stack_Balance_Verified \
   --cache_checked_modules \
   --cache_dir . \
   --odir . \
-  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst
+  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), and [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml) contain pure OCaml code with all proofs erased.
+The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), and [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml) contain pure OCaml code with all proofs erased.
+
 
