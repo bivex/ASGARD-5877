@@ -260,9 +260,72 @@ let test_cff_ocamlgraph_dot_and_reachability () =
   Alcotest.(check bool) "dot contains digraph" true (String.length dot > 0 && String.sub dot 0 7 = "digraph");
   Alcotest.(check bool) "dot contains node_0" true (String.contains dot '0')
 
+let test_mba_verified_rewriters () =
+  let test_values = [
+    (0L, 0L); (1L, 1L); (-1L, -1L); (100L, -50L);
+    (Int64.min_int, Int64.max_int);
+    (0x5555555555555555L, -0x5555555555555556L);
+    (0x1234567890ABCDEFL, 0xFEDCBA0987654321L);
+  ] in
+  List.iter
+    (fun (x, y) ->
+      let env v = if v = "a" then x else if v = "b" then y else 0L in
+      let a = Mba.Var "a" and b = Mba.Var "b" in
+      (* Check rewrite_verified sound equivalence *)
+      let e_add = Mba.rewrite_verified ~depth:2 (Mba.Add (a, b)) in
+      let e_sub = Mba.rewrite_verified ~depth:2 (Mba.Sub (a, b)) in
+      let e_xor = Mba.rewrite_verified ~depth:2 (Mba.Xor (a, b)) in
+      let e_and = Mba.rewrite_verified ~depth:2 (Mba.And (a, b)) in
+      let e_or  = Mba.rewrite_verified ~depth:2 (Mba.Or (a, b)) in
+      let e_not = Mba.rewrite_verified ~depth:2 (Mba.Not a) in
+      let e_neg = Mba.rewrite_verified ~depth:2 (Mba.Neg a) in
+
+      Alcotest.(check int64) "verified add" (Int64.add x y) (Mba.eval env e_add);
+      Alcotest.(check int64) "verified sub" (Int64.sub x y) (Mba.eval env e_sub);
+      Alcotest.(check int64) "verified xor" (Int64.logxor x y) (Mba.eval env e_xor);
+      Alcotest.(check int64) "verified and" (Int64.logand x y) (Mba.eval env e_and);
+      Alcotest.(check int64) "verified or"  (Int64.logor x y) (Mba.eval env e_or);
+      Alcotest.(check int64) "verified not" (Int64.lognot x) (Mba.eval env e_not);
+      Alcotest.(check int64) "verified neg" (Int64.neg x) (Mba.eval env e_neg);
+
+      (* Check rewrite_demorgan sound equivalence *)
+      let d_and = Mba.rewrite_demorgan ~depth:2 (Mba.And (a, b)) in
+      let d_or  = Mba.rewrite_demorgan ~depth:2 (Mba.Or (a, b)) in
+      let d_xor = Mba.rewrite_demorgan ~depth:2 (Mba.Xor (a, b)) in
+
+      Alcotest.(check int64) "demorgan and" (Int64.logand x y) (Mba.eval env d_and);
+      Alcotest.(check int64) "demorgan or"  (Int64.logor x y) (Mba.eval env d_or);
+      Alcotest.(check int64) "demorgan xor" (Int64.logxor x y) (Mba.eval env d_xor))
+    test_values
+
+let test_mba_zero_invariants () =
+  let test_values = [
+    (0L, 0L); (1L, 2L); (-1L, 1L); (42L, 99L);
+    (Int64.min_int, Int64.max_int);
+    (0x5555555555555555L, -0x5555555555555556L);
+    (0xCAFEBABE12345678L, 0x0123456789ABCDEFL);
+  ] in
+  List.iter
+    (fun (x, y) ->
+      let env v = if v = "a" then x else if v = "b" then y else 0L in
+      let a = Mba.Var "a" and b = Mba.Var "b" in
+
+      Alcotest.(check int64) "zero_inv1 = 0" 0L (Mba.eval env (Mba.zero_inv1 a b));
+      Alcotest.(check int64) "zero_inv2 = 0" 0L (Mba.eval env (Mba.zero_inv2 a b));
+      Alcotest.(check int64) "zero_inv3 = 0" 0L (Mba.eval env (Mba.zero_inv3 a b));
+      Alcotest.(check int64) "zero_inv4 = 0" 0L (Mba.eval env (Mba.zero_inv4 a b));
+      Alcotest.(check int64) "zero_inv_demorgan_and = 0" 0L (Mba.eval env (Mba.zero_inv_demorgan_and a b));
+      Alcotest.(check int64) "zero_inv_demorgan_or = 0" 0L (Mba.eval env (Mba.zero_inv_demorgan_or a b));
+      Alcotest.(check int64) "zero_inv_sub_not = 0" 0L (Mba.eval env (Mba.zero_inv_sub_not a b));
+      Alcotest.(check int64) "zero_inv5_poly = 0" 0L (Mba.eval env (Mba.zero_inv5_poly a));
+      Alcotest.(check int64) "zero_inv5_nl = 0" 0L (Mba.eval env (Mba.zero_inv5_nl a b)))
+    test_values
+
 let tests = [
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
   Alcotest.test_case "mba_lowering_to_vm_ir" `Quick test_mba_lowering_to_vm_ir;
+  Alcotest.test_case "mba_verified_rewriters" `Quick test_mba_verified_rewriters;
+  Alcotest.test_case "mba_zero_invariants" `Quick test_mba_zero_invariants;
   Alcotest.test_case "cff_flatten_fibonacci" `Quick test_cff_flatten_fibonacci;
   Alcotest.test_case "cff_flatten_lifted_factorial" `Quick test_cff_flatten_lifted_factorial;
   Alcotest.test_case "cff_flatten_lifted_abs" `Quick test_cff_flatten_lifted_abs;

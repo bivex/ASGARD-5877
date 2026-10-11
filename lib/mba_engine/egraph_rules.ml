@@ -87,30 +87,41 @@ let rules : (string * pattern * pattern) list =
   (* (a^b)-((a|b)-(a&b)) = 0 *)
   let zero3 a b = pSub (pAdd (pAnd a b) (pAnd a (pNot b))) a in
   (* ((a&b)+(a&~b))-a = 0 *)
+  let zero4 a b = pSub (pAdd (pXor a b) (pMul p2 (pAnd a b))) (pAdd a b) in
+  (* ((a^b)+2(a&b))-(a+b) = 0 *)
+  let zero_sub_not a b = pSub (pSub a b) (pAdd a (pAdd (pNot b) p1c)) in
+  (* (a-b)-(a+(~b+1)) = 0 *)
   let slice op a b = pAdd (op (pAnd a pMe) (pAnd b pMe)) (op (pAnd a pMo) (pAnd b pMo)) in
   [ ("xor_or_minus_and", pXor x y, pSub (pOr x y) (pAnd x y));
     ("xor_add_minus_two_and", pXor x y, pSub (pAdd x y) (pMul p2 (pAnd x y)));
     ("xor_mask_sliced", pXor x y, slice pXor x y);
     ("xor_opaque_zero", pXor x y, pAdd (pSub (pOr x y) (pAnd x y)) (zero1 x y));
+    ("xor_inverted", pXor x y, pXor (pNot x) (pNot y));
     ("add_xor_plus_two_and", pAdd x y, pAdd (pXor x y) (pMul p2 (pAnd x y)));
     ("add_or_plus_and", pAdd x y, pAdd (pOr x y) (pAnd x y));
     ("add_mask_sliced", pAdd x y, slice pAdd x y);
     ("add_two_or_minus_xor_opaque", pAdd x y, pAdd (pSub (pMul p2 (pOr x y)) (pXor x y)) (zero1 x y));
+    ("add_zero4_opaque", pAdd x y, pAdd (pAdd (pXor x y) (pMul p2 (pAnd x y))) (zero4 x y));
     ("sub_xor_minus_two_notand", pSub x y, pSub (pXor x y) (pMul p2 (pAnd (pNot x) y)));
     ("sub_two_andnot_minus_xor", pSub x y, pSub (pMul p2 (pAnd x (pNot y))) (pXor x y));
     ("sub_mask_sliced", pSub x y, slice pSub x y);
     ("sub_bitsdiff_opaque", pSub x y, pAdd (pSub (pAnd x (pNot y)) (pAnd (pNot x) y)) (zero2 x y));
+    ("sub_twos_complement", pSub x y, pAdd x (pAdd (pNot y) p1c));
+    ("sub_twos_opaque", pSub x y, pAdd (pAdd x (pAdd (pNot y) p1c)) (zero_sub_not x y));
     ("and_add_minus_or", pAnd x y, pSub (pAdd x y) (pOr x y));
     ("and_mask_sliced", pAnd x y, pAdd (pAnd (pAnd x y) pMe) (pAnd (pAnd x y) pMo));
     ("and_keep_opaque", pAnd x y, pAdd (pSub x (pAnd x (pNot y))) (zero2 x y));
+    ("and_demorgan", pAnd x y, pNot (pOr (pNot x) (pNot y)));
     ("or_xor_plus_and", pOr x y, pAdd (pXor x y) (pAnd x y));
     ("or_add_minus_and", pOr x y, pSub (pAdd x y) (pAnd x y));
     ("or_mask_sliced", pOr x y, slice pOr x y);
     ("or_sum_minus_and_opaque", pOr x y, pAdd (pSub (pAdd x y) (pAnd x y)) (zero3 x y));
+    ("or_demorgan", pOr x y, pNot (pAnd (pNot x) (pNot y)));
     ("mul_nl_partition", pMul x y, pAdd (pMul (pAnd x y) (pOr x y)) (pMul (pAnd x (pNot y)) (pAnd (pNot x) y)));
     ("mul_nl_sum_form", pMul x y, pSub (pAdd (pMul (pAnd x y) (pAdd x y)) (pMul (pAnd x (pNot y)) (pAnd (pNot x) y))) (pMul (pAnd x y) (pAnd x y)));
     ("not_xor_all_ones", pNot x, pXor x pm1);
     ("not_sub_minus_one", pNot x, pSub pm1 x);
+    ("not_double_cancel", pNot (pNot x), x);
     ("neg_not_plus_one", pNeg x, pAdd (pNot x) p1c) ]
 
 let rule_count = List.length rules

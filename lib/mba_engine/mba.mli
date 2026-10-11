@@ -20,11 +20,21 @@ val eval : (string -> int64) -> expr -> int64
 val zero_inv1 : expr -> expr -> expr
 val zero_inv2 : expr -> expr -> expr
 val zero_inv3 : expr -> expr -> expr
+val zero_inv4 : expr -> expr -> expr
+val zero_inv_demorgan_and : expr -> expr -> expr
+val zero_inv_demorgan_or : expr -> expr -> expr
+val zero_inv_sub_not : expr -> expr -> expr
 val zero_inv5_poly : expr -> expr
 val zero_inv5_nl : expr -> expr -> expr
 
 (** Rewrites an expression into a Mixed Boolean-Arithmetic (MBA) polynomial of given recursion depth and polynomial order. *)
 val rewrite : ?order:order -> rng:Random.State.t -> depth:int -> expr -> expr
+
+(** Formally verified deterministic MBA rewriter matching Mba_Verified.rewrite in F*. *)
+val rewrite_verified : depth:int -> expr -> expr
+
+(** Formally verified De Morgan rewriter matching Mba_Verified.rewrite_demorgan in F*. *)
+val rewrite_demorgan : depth:int -> expr -> expr
 
 (** Lowers an MBA expression AST into a sequence of VM-IR instructions writing the result to [dst]. *)
 val lower_to_ir : dst:Register.t -> env:(string * Ir.operand) list -> expr -> Ir.instr list

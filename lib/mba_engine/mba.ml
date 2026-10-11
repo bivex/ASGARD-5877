@@ -66,6 +66,22 @@ let zero_inv3 a b =
   (* ((a & b) + (a & ~b)) - a == 0 *)
   Sub (Add (And (a, b), And (a, Not b)), a)
 
+let zero_inv4 a b =
+  (* ((a ^ b) + 2 * (a & b)) - (a + b) == 0 *)
+  Sub (Add (Xor (a, b), Mul (Const 2L, And (a, b))), Add (a, b))
+
+let zero_inv_demorgan_and a b =
+  (* (a & b) - ~(~a | ~b) == 0 *)
+  Sub (And (a, b), Not (Or (Not a, Not b)))
+
+let zero_inv_demorgan_or a b =
+  (* (a | b) - ~(~a & ~b) == 0 *)
+  Sub (Or (a, b), Not (And (Not a, Not b)))
+
+let zero_inv_sub_not a b =
+  (* (a - b) - (a + (~b + 1)) == 0 *)
+  Sub (Sub (a, b), Add (a, Add (Not b, Const 1L)))
+
 (* Degree-5 Opaque Polynomial Zero Invariants over Z_{2^64} *)
 let zero_inv5_poly x =
   (* Degree-5 null polynomial over Z_{2^64}: 2^61 * x * (x-1) * (x-2) * (x-3) * (x-4) == 0 (mod 2^64) *)
@@ -92,12 +108,13 @@ let xor_forms ?(order = `Deg5) a b =
   let f3 = Add (Xor (And (a, mask_even), And (b, mask_even)),
                 Xor (And (a, mask_odd),  And (b, mask_odd))) in
   let f4 = Add (Sub (Or (a, b), And (a, b)), zero_inv1 a b) in
+  let f5_not = Xor (Not a, Not b) in
   match order with
-  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg4 -> [| f1; f2; f3; f4; f5_not |]
   | `Deg5 ->
-      let f5 = Add (f1, zero_inv5_poly a) in
-      let f6 = Add (f2, zero_inv5_nl a b) in
-      [| f1; f2; f3; f4; f5; f6 |]
+      let f6 = Add (f1, zero_inv5_poly a) in
+      let f7 = Add (f2, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5_not; f6; f7 |]
 
 (** AND: diverse forms *)
 let and_forms ?(order = `Deg5) a b =
@@ -106,12 +123,13 @@ let and_forms ?(order = `Deg5) a b =
   let f3 = Add (And (And (a, b), mask_even),
                 And (And (a, b), mask_odd)) in
   let f4 = Add (Sub (a, And (a, Not b)), zero_inv2 a b) in
+  let f5_demorgan = Not (Or (Not a, Not b)) in
   match order with
-  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg4 -> [| f1; f2; f3; f4; f5_demorgan |]
   | `Deg5 ->
-      let f5 = Add (f2, zero_inv5_poly a) in
-      let f6 = Add (f4, zero_inv5_nl a b) in
-      [| f1; f2; f3; f4; f5; f6 |]
+      let f6 = Add (f2, zero_inv5_poly a) in
+      let f7 = Add (f4, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5_demorgan; f6; f7 |]
 
 (** OR: diverse forms *)
 let or_forms ?(order = `Deg5) a b =
@@ -120,12 +138,13 @@ let or_forms ?(order = `Deg5) a b =
   let f3 = Add (Or (And (a, mask_even), And (b, mask_even)),
                 Or (And (a, mask_odd),  And (b, mask_odd))) in
   let f4 = Add (Sub (Add (a, b), And (a, b)), zero_inv3 a b) in
+  let f5_demorgan = Not (And (Not a, Not b)) in
   match order with
-  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg4 -> [| f1; f2; f3; f4; f5_demorgan |]
   | `Deg5 ->
-      let f5 = Add (f2, zero_inv5_poly a) in
-      let f6 = Add (f4, zero_inv5_nl a b) in
-      [| f1; f2; f3; f4; f5; f6 |]
+      let f6 = Add (f2, zero_inv5_poly a) in
+      let f7 = Add (f4, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5_demorgan; f6; f7 |]
 
 (** ADD: diverse forms *)
 let add_forms ?(order = `Deg5) a b =
@@ -134,12 +153,13 @@ let add_forms ?(order = `Deg5) a b =
   let f3 = Add (Add (And (a, mask_even), And (b, mask_even)),
                 Add (And (a, mask_odd),  And (b, mask_odd))) in
   let f4 = Add (Sub (Mul (Const 2L, Or (a, b)), Xor (a, b)), zero_inv1 a b) in
+  let f5_zero4 = Add (f1, zero_inv4 a b) in
   match order with
-  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg4 -> [| f1; f2; f3; f4; f5_zero4 |]
   | `Deg5 ->
-      let f5 = Add (f1, zero_inv5_poly a) in
-      let f6 = Add (f2, zero_inv5_nl a b) in
-      [| f1; f2; f3; f4; f5; f6 |]
+      let f6 = Add (f1, zero_inv5_poly a) in
+      let f7 = Add (f2, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5_zero4; f6; f7 |]
 
 (** SUB: diverse forms *)
 let sub_forms ?(order = `Deg5) a b =
@@ -148,12 +168,14 @@ let sub_forms ?(order = `Deg5) a b =
   let f3 = Add (Sub (And (a, mask_even), And (b, mask_even)),
                 Sub (And (a, mask_odd),  And (b, mask_odd))) in
   let f4 = Add (Sub (And (a, Not b), And (Not a, b)), zero_inv2 a b) in
+  let f5_twos = Add (a, Add (Not b, Const 1L)) in
+  let f6_opaque = Add (f5_twos, zero_inv_sub_not a b) in
   match order with
-  | `Deg4 -> [| f1; f2; f3; f4 |]
+  | `Deg4 -> [| f1; f2; f3; f4; f5_twos; f6_opaque |]
   | `Deg5 ->
-      let f5 = Add (f1, zero_inv5_poly a) in
-      let f6 = Add (f2, zero_inv5_nl a b) in
-      [| f1; f2; f3; f4; f5; f6 |]
+      let f7 = Add (f1, zero_inv5_poly a) in
+      let f8 = Add (f2, zero_inv5_nl a b) in
+      [| f1; f2; f3; f4; f5_twos; f6_opaque; f7; f8 |]
 
 (** MUL: Non-Linear MBA (NLMBA) Multiplicative Formulations up to Degree 5 *)
 let mul_forms ?(order = `Deg5) a b =
@@ -169,11 +191,12 @@ let mul_forms ?(order = `Deg5) a b =
       let f4 = Add (f2, zero_inv5_nl a b) in
       [| f1; f2; f3; f4 |]
 
-(** NOT: 2 forms *)
+(** NOT: 3 forms *)
 let not_forms a =
   let f1 = Xor (a, Const (-1L)) in
   let f2 = Sub (Neg a, Const 1L) in
-  [| f1; f2 |]
+  let f3 = Sub (Const (-1L), a) in
+  [| f1; f2; f3 |]
 
 (** Pick randomly from an array of verified equivalent forms *)
 let pick rng forms =
@@ -200,6 +223,38 @@ let rec rewrite ?(order = `Deg5) ~rng ~depth expr =
     | Neg a      ->
         (* -x = ~x + 1 [two's complement] *)
         Add (Not (r a), Const 1L)
+
+(** Formally verified deterministic MBA rewriter matching Mba_Verified.rewrite in F*. *)
+let rec rewrite_verified ~depth expr =
+  if depth <= 0 then expr
+  else
+    let r = rewrite_verified ~depth:(depth - 1) in
+    match expr with
+    | Var _ | Const _ -> expr
+    | Add (a, b) -> Add (r a, r b)
+    | Sub (a, b) -> Add (r a, Add (Not (r b), Const 1L))
+    | Xor (a, b) -> Xor (Or (r a, r b), And (r a, r b))
+    | And (a, b) -> Xor (Or (r a, r b), Xor (r a, r b))
+    | Or  (a, b) -> Xor (Xor (r a, r b), And (r a, r b))
+    | Mul (a, b) -> Mul (r a, r b)
+    | Not a      -> Xor (r a, Const (-1L))
+    | Neg a      -> Add (Not (r a), Const 1L)
+
+(** Formally verified De Morgan rewriter matching Mba_Verified.rewrite_demorgan in F*. *)
+let rec rewrite_demorgan ~depth expr =
+  if depth <= 0 then expr
+  else
+    let r = rewrite_demorgan ~depth:(depth - 1) in
+    match expr with
+    | Var _ | Const _ -> expr
+    | Add (a, b) -> Add (r a, r b)
+    | Sub (a, b) -> Sub (r a, r b)
+    | Mul (a, b) -> Mul (r a, r b)
+    | Xor (a, b) -> Xor (Not (r a), Not (r b))
+    | And (a, b) -> Not (Or (Not (r a), Not (r b)))
+    | Or  (a, b) -> Not (And (Not (r a), Not (r b)))
+    | Not a      -> Not (r a)
+    | Neg a      -> Neg (r a)
 
 (* ------------------------------------------------------------------ *)
 (* IR lowering: stack-based compilation of MBA AST to VM-IR            *)

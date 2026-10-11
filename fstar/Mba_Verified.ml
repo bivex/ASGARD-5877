@@ -10,6 +10,7 @@ type expr =
   | And of expr * expr 
   | Or of expr * expr 
   | Not of expr 
+  | Neg of expr 
 let uu___is_Var (projectee : expr) : Prims.bool=
   match projectee with | Var _0 -> true | uu___ -> false
 let __proj__Var__item___0 (projectee : expr) : Prims.string=
@@ -52,6 +53,10 @@ let uu___is_Not (projectee : expr) : Prims.bool=
   match projectee with | Not _0 -> true | uu___ -> false
 let __proj__Not__item___0 (projectee : expr) : expr=
   match projectee with | Not _0 -> _0
+let uu___is_Neg (projectee : expr) : Prims.bool=
+  match projectee with | Neg _0 -> true | uu___ -> false
+let __proj__Neg__item___0 (projectee : expr) : expr=
+  match projectee with | Neg _0 -> _0
 type env_t = Prims.string -> u64
 let rec eval (e : env_t) (uu___ : expr) : u64=
   match uu___ with
@@ -63,14 +68,34 @@ let rec eval (e : env_t) (uu___ : expr) : u64=
   | And (a, b) -> FStar_UInt.logand w (eval e a) (eval e b)
   | Or (a, b) -> FStar_UInt.logor w (eval e a) (eval e b)
   | Not a -> FStar_UInt.lognot w (eval e a)
+  | Neg a -> FStar_UInt.sub_mod w Prims.int_zero (eval e a)
 let rec rewrite (depth : Prims.nat) (e : expr) : expr=
   if depth = Prims.int_zero
   then e
   else
     (let r = rewrite (depth - Prims.int_one) in
      match e with
+     | Var uu___ -> e
+     | Const uu___ -> e
+     | Add (a, b) -> Add ((r a), (r b))
+     | Sub (a, b) -> Add ((r a), (Add ((Not (r b)), (Const Prims.int_one))))
      | Xor (a, b) -> Xor ((Or ((r a), (r b))), (And ((r a), (r b))))
      | And (a, b) -> Xor ((Or ((r a), (r b))), (Xor ((r a), (r b))))
      | Or (a, b) -> Xor ((Xor ((r a), (r b))), (And ((r a), (r b))))
      | Not a -> Xor ((r a), (Const (FStar_UInt.ones w)))
-     | uu___ -> e)
+     | Neg a -> Add ((Not (r a)), (Const Prims.int_one)))
+let rec rewrite_demorgan (depth : Prims.nat) (e : expr) : expr=
+  if depth = Prims.int_zero
+  then e
+  else
+    (let r = rewrite_demorgan (depth - Prims.int_one) in
+     match e with
+     | Var uu___ -> e
+     | Const uu___ -> e
+     | Add (a, b) -> Add ((r a), (r b))
+     | Sub (a, b) -> Sub ((r a), (r b))
+     | Xor (a, b) -> Xor ((Not (r a)), (Not (r b)))
+     | And (a, b) -> Not (Or ((Not (r a)), (Not (r b))))
+     | Or (a, b) -> Not (And ((Not (r a)), (Not (r b))))
+     | Not a -> Not (r a)
+     | Neg a -> Neg (r a))
