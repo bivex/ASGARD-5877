@@ -354,10 +354,47 @@ func_tamper:
       let succeeded_and_120 = (status = Unix.WEXITED 0) && string_contains out_str "120" in
       Alcotest.(check bool) "tampered handler binding aborts/fails execution" false succeeded_and_120
 
+let invert_key_step (k_next : int64) (op : int) (dst : int) (imm : int64) : int64 =
+  let const_M_inv = 0x96DE1B173F119089L in
+  let const_C = 0x5877CAFE1337BEEFL in
+  let temp1 = Int64.logxor k_next const_C in
+  let rot = Int64.mul temp1 const_M_inv in
+  let x = Int64.logor (Int64.shift_left rot 23) (Int64.shift_right_logical rot 41) in
+  let delta =
+    Int64.add
+      (Int64.add
+         (Int64.mul (Int64.of_int op) 0x9E3779B97F4A7C15L)
+         (Int64.shift_left (Int64.of_int dst) 24))
+      imm
+  in
+  Int64.logxor x delta
+
+let test_rolling_key_bijectivity_and_inversion () =
+  (* 1. Test inversion on golden vector *)
+  let k_orig = 0xDEADBEEFCAFEBABEL in
+  let k_next = Vm_ir.Rolling_key.advance_key_step k_orig 0x61 7 0x11223344L in
+  let k_rec = invert_key_step k_next 0x61 7 0x11223344L in
+  Alcotest.(check int64) "golden vector invertible" k_orig k_rec;
+
+  (* 2. Test 1,000 randomized steps *)
+  let rng = Random.State.make [| 0x1234; 0x5678 |] in
+  for _ = 1 to 1000 do
+    let k = Random.State.int64 rng Int64.max_int in
+    let op = Random.State.int rng 256 in
+    let dst = Random.State.int rng 32 in
+    let imm = Random.State.int64 rng Int64.max_int in
+    let next_k = Vm_ir.Rolling_key.advance_key_step k op dst imm in
+    let rec_k = invert_key_step next_k op dst imm in
+    if rec_k <> k then
+      Alcotest.fail (Printf.sprintf "Bijectivity violated: expected 0x%LX, got 0x%LX" k rec_k)
+  done;
+  Alcotest.(check bool) "1000 random key transitions are strictly bijective" true true
+
 let tests = [
   Alcotest.test_case "running_key_advances_on_execution" `Quick test_running_key_advances_on_execution;
   Alcotest.test_case "rolling_key_derivation_vectors" `Quick test_rolling_key_derivation_vectors;
   Alcotest.test_case "decode_fields_truncation" `Quick test_decode_fields_truncation;
+  Alcotest.test_case "rolling_key_bijectivity_and_inversion" `Quick test_rolling_key_bijectivity_and_inversion;
   Alcotest.test_case "block_chained_keystream_mirror" `Quick test_block_chained_keystream_mirror;
   Alcotest.test_case "disabled_flag_is_legacy_bytecode" `Quick test_disabled_flag_is_legacy_bytecode;
   Alcotest.test_case "loop_history_soundness" `Quick test_loop_history_soundness;

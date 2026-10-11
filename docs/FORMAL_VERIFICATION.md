@@ -336,7 +336,36 @@ Module [`fstar/Poly_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fst
 
 ---
 
-## 10. How to Run the Formal Proofs & Codegen
+## 10. Formally Verified Anti-Pushan Rolling Keys & Cryptographic Bijectivity (`fstar/Rolling_Key_Verified.fst`)
+
+In ASGARD-5877, instruction execution history dynamically mutates a 64-bit running cryptographic key via the `advance_key_step` state evolution primitive. To ensure that the keystream space never collapses, degrades into fixed points, or loses entropy across execution depth, the transition mapping must be mathematically bijective (one-to-one and onto).
+
+Module [`fstar/Rolling_Key_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rolling_Key_Verified.fst) formally proves:
+
+### 10.1 Modular Inverse & Cyclic Rotations
+* **Bézout Multiplier Inverse (`theorem_multiplier_inverse`, `lemma_mul_inverse_cancel`)**:
+  For $M = \text{0xBF58476D1CE4E5B9}$ (odd, coprime to $2^{64}$), there exists an exact modular inverse $M^{-1} = \text{0x96DE1B173F119089}$ such that:
+  $$(M \cdot M^{-1}) \equiv 1 \pmod{2^{64}}$$
+  $$(X \cdot M \cdot M^{-1}) \equiv X \pmod{2^{64}}$$
+* **Cyclic Rotation Cancellation (`lemma_rot_cancel`)**:
+  $$\forall x \in \mathbb{U}_{64}, \quad \text{rol23}(\text{ror23}(x)) \equiv x$$
+
+### 10.2 Bijectivity & Collision Freedom
+1. **Roundtrip Invertibility Theorem (`theorem_key_step_invertible`)**:
+   $$\forall k, \Delta \in \mathbb{U}_{64}, \quad \text{invert\_key\_step}(\text{advance\_key\_step}(k, \Delta), \Delta) \equiv k$$
+   *Proves*: With known execution transition $\Delta$, the state evolution is unconditionally reversible and exact.
+
+2. **Strict Injective / Collision-Free Guarantee (`theorem_key_step_injective`)**:
+   $$\forall k_1, k_2, \Delta \in \mathbb{U}_{64}, \quad k_1 \neq k_2 \implies \text{advance\_key\_step}(k_1, \Delta) \neq \text{advance\_key\_step}(k_2, \Delta)$$
+   *Proves*: Different execution keys cannot collide into the same state after any step. The key space cardinality $|S| = 2^{64}$ is perfectly preserved.
+
+3. **Odd Multiplier Coprimality (`theorem_odd_multiplier`)**:
+   $$\forall \text{mixed} \in \mathbb{U}_{64}, \quad (\text{ensure\_odd}(\text{mixed})) \equiv 1 \pmod 2 \implies \gcd(\text{ensure\_odd}(\text{mixed}), 2^{64}) = 1$$
+   *Proves*: Linear congruential polynomial generators in `poly_multiplier_of_seed` are guaranteed permutations over $\mathbb{Z}_{2^{64}}$.
+
+---
+
+## 11. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
@@ -388,6 +417,13 @@ fstar.exe \
   --cache_checked_modules \
   --cache_dir . \
   Poly_Verified.fst
+
+# 7. Verify Anti-Pushan Rolling Key bijectivity theorems
+fstar.exe \
+  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+  --cache_checked_modules \
+  --cache_dir . \
+  Rolling_Key_Verified.fst
 ```
 
 **Expected Output:**
@@ -404,6 +440,8 @@ Verified module: Codec_Verified
 All verification conditions discharged successfully
 Verified module: Poly_Verified
 All verification conditions discharged successfully
+Verified module: Rolling_Key_Verified
+All verification conditions discharged successfully
 ```
 
 ### Extraction to OCaml
@@ -419,13 +457,15 @@ fstar.exe \
   --extract Stack_Balance_Verified \
   --extract Codec_Verified \
   --extract Poly_Verified \
+  --extract Rolling_Key_Verified \
   --cache_checked_modules \
   --cache_dir . \
   --odir . \
-  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst Poly_Verified.fst
+  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst Poly_Verified.fst Rolling_Key_Verified.fst
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml), and [`fstar/Poly_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.ml) contain pure OCaml code with all proofs erased.
+The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml), [`fstar/Poly_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.ml), and [`fstar/Rolling_Key_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rolling_Key_Verified.ml) contain pure OCaml code with all proofs erased.
+
 
 
 
