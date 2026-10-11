@@ -28,7 +28,7 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
   let target_args =
     match arch with
     | X86_64 -> Cmd.(v "-target" % "x86_64-apple-darwin" % "-masm=intel")
-    | Arm64 -> Cmd.(v "-target" % "arm64-apple-darwin" % "-fno-inline" % "-fno-stack-check" % "-mno-stack-arg-probe")
+    | Arm64 -> Cmd.(v "-target" % "arm64-apple-darwin" % "-fno-inline" % "-fno-stack-check" % "-mno-stack-arg-probe" % "-ffixed-x14" % "-ffixed-x15" % "-ffixed-x24" % "-ffixed-x25" % "-ffixed-x26" % "-ffixed-x27" % "-ffixed-x28")
     | Riscv64 -> Cmd.(v "-target" % "riscv64-linux-gnu" % "-march=rv64gc" % "-mabi=lp64d" % "-fno-inline")
   in
   let inc_args = get_inc_args include_dir c_source in

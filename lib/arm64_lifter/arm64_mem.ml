@@ -91,11 +91,17 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       )
 
   (* Pair Store (stp, stnp) with Pre/Post-Indexed Writeback *)
-  | (("stp" | "stnp"), [ OpReg r1; OpReg r2; OpMem m ]) ->
-      let stride = Int64.of_int (Register.width_to_bytes (Register.get_width r1)) in
-      let w = Register.get_width r1 in
-      let s1 = raw_to_ir_operand (OpReg r1) in
-      let s2 = raw_to_ir_operand (OpReg r2) in
+  | (("stp" | "stnp"), [ op1; op2; OpMem m ]) when (match op1, op2 with (OpReg _ | OpVec _), (OpReg _ | OpVec _) -> true | _ -> false) ->
+      let (w, stride) =
+        match op1 with
+        | OpReg r -> (Register.get_width r, Int64.of_int (Register.width_to_bytes (Register.get_width r)))
+        | OpVec { bits; _ } ->
+            let w = match bits with 128 -> Register.B128 | 64 -> Register.B64 | 32 -> Register.B32 | _ -> Register.B128 in
+            (w, Int64.of_int (bits / 8))
+        | _ -> (Register.B64, 8L)
+      in
+      let s1 = raw_to_ir_operand op1 in
+      let s2 = raw_to_ir_operand op2 in
       (match m.wb with
       | WbPre ->
           (match m.base with
@@ -138,13 +144,21 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
             Ir.Mov { dst = raw_to_ir_operand (OpMem m1); src = s1 };
             Ir.Mov { dst = raw_to_ir_operand (OpMem m2); src = s2 };
           ])
-  | (("stp" | "stnp"), (OpReg r1 :: OpReg r2 :: _)) ->
-      Some [ Ir.Push (Reg r1); Ir.Push (Reg r2) ]
+  | (("stp" | "stnp"), (op1 :: op2 :: _)) when (match op1, op2 with (OpReg _ | OpVec _), (OpReg _ | OpVec _) -> true | _ -> false) ->
+      Some [ Ir.Push (raw_to_ir_operand op1); Ir.Push (raw_to_ir_operand op2) ]
 
   (* Pair Load (ldp, ldnp) with Pre/Post-Indexed Writeback *)
-  | (("ldp" | "ldnp"), [ OpReg r1; OpReg r2; OpMem m ]) ->
-      let stride = Int64.of_int (Register.width_to_bytes (Register.get_width r1)) in
-      let w = Register.get_width r1 in
+  | (("ldp" | "ldnp"), [ op1; op2; OpMem m ]) when (match op1, op2 with (OpReg _ | OpVec _), (OpReg _ | OpVec _) -> true | _ -> false) ->
+      let (w, stride) =
+        match op1 with
+        | OpReg r -> (Register.get_width r, Int64.of_int (Register.width_to_bytes (Register.get_width r)))
+        | OpVec { bits; _ } ->
+            let w = match bits with 128 -> Register.B128 | 64 -> Register.B64 | 32 -> Register.B32 | _ -> Register.B128 in
+            (w, Int64.of_int (bits / 8))
+        | _ -> (Register.B64, 8L)
+      in
+      let d1 = raw_to_ir_operand op1 in
+      let d2 = raw_to_ir_operand op2 in
       (match m.wb with
       | WbPre ->
           (match m.base with
@@ -153,15 +167,15 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
               let m2 = { base = Some base_reg; index = None; disp = stride; symbol = None; width = w; wb = WbNone } in
               Some [
                 Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm m.disp; set_flags = false };
-                Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
-                Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+                Ir.Mov { dst = d1; src = raw_to_ir_operand (OpMem m1) };
+                Ir.Mov { dst = d2; src = raw_to_ir_operand (OpMem m2) };
               ]
           | None ->
               let m1 = { m with width = w } in
               let m2 = { m with disp = Int64.add m.disp stride; width = w } in
               Some [
-                Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
-                Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+                Ir.Mov { dst = d1; src = raw_to_ir_operand (OpMem m1) };
+                Ir.Mov { dst = d2; src = raw_to_ir_operand (OpMem m2) };
               ])
       | WbPost post_imm ->
           (match m.base with
@@ -169,26 +183,26 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
               let m1 = { base = Some base_reg; index = None; disp = 0L; symbol = None; width = w; wb = WbNone } in
               let m2 = { base = Some base_reg; index = None; disp = stride; symbol = None; width = w; wb = WbNone } in
               Some [
-                Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
-                Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+                Ir.Mov { dst = d1; src = raw_to_ir_operand (OpMem m1) };
+                Ir.Mov { dst = d2; src = raw_to_ir_operand (OpMem m2) };
                 Ir.Alu { op = Add; dst = base_reg; src1 = Reg base_reg; src2 = Imm post_imm; set_flags = false };
               ]
           | None ->
               let m1 = { m with width = w } in
               let m2 = { m with disp = Int64.add m.disp stride; width = w } in
               Some [
-                Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
-                Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+                Ir.Mov { dst = d1; src = raw_to_ir_operand (OpMem m1) };
+                Ir.Mov { dst = d2; src = raw_to_ir_operand (OpMem m2) };
               ])
       | WbNone ->
           let m1 = { m with width = w } in
           let m2 = { m with disp = Int64.add m.disp stride; width = w } in
           Some [
-            Ir.Mov { dst = Reg r1; src = raw_to_ir_operand (OpMem m1) };
-            Ir.Mov { dst = Reg r2; src = raw_to_ir_operand (OpMem m2) };
+            Ir.Mov { dst = d1; src = raw_to_ir_operand (OpMem m1) };
+            Ir.Mov { dst = d2; src = raw_to_ir_operand (OpMem m2) };
           ])
-  | (("ldp" | "ldnp"), (OpReg r1 :: OpReg r2 :: _)) ->
-      Some [ Ir.Pop (Reg r2); Ir.Pop (Reg r1) ]
+  | (("ldp" | "ldnp"), (op1 :: op2 :: _)) when (match op1, op2 with (OpReg _ | OpVec _), (OpReg _ | OpVec _) -> true | _ -> false) ->
+      Some [ Ir.Pop (raw_to_ir_operand op2); Ir.Pop (raw_to_ir_operand op1) ]
 
   (* ARMv8.1-A Atomics & Memory Ordering *)
   | (("ldxr" | "ldaxr" | "ldxrb" | "ldaxrb" | "ldxrh" | "ldaxrh"), [ OpReg dst; OpMem m ]) ->

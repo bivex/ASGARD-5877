@@ -66,9 +66,6 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "            vregs[i][0] = 0ULL;\n";
   Buffer.add_string b "            for (size_t v = 1; v < 8; ++v) vregs[i][v] = 0ULL;\n";
   Buffer.add_string b "        }\n";
-  Buffer.add_string b "        gprs[REG_VKEY] = running_key ^ reg_mask;\n";
-  Buffer.add_string b "        gprs[REG_VX25] = 0x60000000ULL ^ reg_mask;\n";
-  Buffer.add_string b "        gprs[REG_VX26] = 0x70000000ULL ^ reg_mask;\n";
   Buffer.add_string b "        sp = 0;\n";
   Buffer.add_string b "        cf = zf = sf = of = false;\n";
   Buffer.add_string b "        trapped = false;\n";
@@ -82,7 +79,6 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline void advance_running_key(uint8_t op, uint8_t dst, int64_t imm) noexcept {\n";
   Buffer.add_string b "        running_key = advance_key_step(running_key, op, dst, imm);\n";
-  Buffer.add_string b "        gprs[REG_VKEY] = running_key ^ reg_mask;\n";
   Buffer.add_string b "    }\n\n";
   (* Anti-Pushan block-chained rolling key: domain-separated block-entry anchor.
      The xor-domains keep the anchor PRF distinct from k_pos, otherwise the first
@@ -92,7 +88,6 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline void reanchor_running_key(uint64_t off, uint64_t addr_hash = 0) noexcept {\n";
   Buffer.add_string b "        running_key = anchor_key(init_seed, off, addr_hash);\n";
-  Buffer.add_string b "        gprs[REG_VKEY] = running_key ^ reg_mask;\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline uint64_t get_vkey() const noexcept { return running_key; }\n\n";
   Buffer.add_string b "    inline bool verify_canaries() const noexcept {\n";

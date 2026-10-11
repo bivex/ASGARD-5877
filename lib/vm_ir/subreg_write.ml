@@ -23,6 +23,7 @@ let same_reg a b = Register.to_string a = Register.to_string b
 let is_arm_gpr_alias v =
   match v with
   | Register.VTMP0 | Register.VTMP1 | Register.VTMP2 | Register.VTMP3
+  | Register.VIP | Register.VSP | Register.VKEY
   | Register.VX18 | Register.VX19 | Register.VX20 | Register.VX21
   | Register.VX22 | Register.VX23 | Register.VX24 | Register.VX25
   | Register.VX26 -> true
@@ -71,10 +72,10 @@ let instr_regs i =
   | _ -> []
 
 let pick_scratch used =
-  let candidates = [ Register.vtmp0; Register.vtmp1; Register.vtmp2; Register.vx26 ] in
+  let candidates = [ Register.vtmp0; Register.vtmp1 ] in
   match List.find_opt (fun candidate -> not (List.exists (same_reg candidate) used)) candidates with
   | Some candidate -> candidate
-  | None -> Register.vx26
+  | None -> Register.vtmp0
 
 let mask_of_width = function
   | Register.B8 -> 0xFFL

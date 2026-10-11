@@ -149,7 +149,7 @@ let obfuscate_source ?(config = default_config) src =
       done
     end
     else if c = '"' && config.obfuscate_strings then begin
-      let is_marker_tag () =
+      let is_exempt () =
         let p = ref (!i - 1) in
         while !p >= 0 && (src.[!p] = ' ' || src.[!p] = '\t' || src.[!p] = '\n' || src.[!p] = '\r' || src.[!p] = '(') do
           decr p
@@ -161,10 +161,11 @@ let obfuscate_source ?(config = default_config) src =
         let start_id = !p + 1 in
         if end_id >= start_id then
           let id = String.sub src start_id (end_id - start_id + 1) in
-          String.starts_with ~prefix:"ASGARD_BEGIN" id
+          String.starts_with ~prefix:"ASGARD_BEGIN" id ||
+          id = "extern" || id = "visibility" || id = "__visibility__" || id = "asm" || id = "__asm__"
         else false
       in
-      if is_marker_tag () then begin
+      if is_exempt () then begin
         Buffer.add_char buf c;
         incr i;
         let escaped = ref false in

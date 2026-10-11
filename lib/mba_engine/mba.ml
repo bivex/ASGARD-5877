@@ -283,8 +283,19 @@ let lower_to_ir ~dst ~env expr =
   compile dst expr;
   List.rev !instrs
 
+let is_stack_reg = function
+  | Register.Gpr (Register.RSP, _) | Register.Vreg (Register.VSP, _) -> true
+  | _ -> false
+
+let is_stack_op = function
+  | Ir.Reg r -> is_stack_reg r
+  | _ -> false
+
 let obfuscate_alu ?(order = `Deg5) ~rng ~depth ~dst ~src1 ~src2 op =
-  match op with
+  if is_stack_reg dst || is_stack_op src1 || is_stack_op src2 then
+    [ Ir.Alu { op; dst; src1; src2; set_flags = false } ]
+  else
+    match op with
   | Ir.Add ->
       let mba_tree = rewrite ~order ~rng ~depth (Add (Var "a", Var "b")) in
       lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree

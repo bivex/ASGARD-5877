@@ -106,8 +106,19 @@ let expand ~rng ?(config = default_config) e = fst (expand_full ~rng ~config e)
 
 let default_op_config = { node_limit = 80; time_budget_s = 0.05; iter_limit = 4 }
 
+let is_stack_reg = function
+  | Register.Gpr (Register.RSP, _) | Register.Vreg (Register.VSP, _) -> true
+  | _ -> false
+
+let is_stack_op = function
+  | Ir.Reg r -> is_stack_reg r
+  | _ -> false
+
 let obfuscate_alu ~rng ?(config = default_op_config) ~dst ~src1 ~src2 op =
-  let expr_of = function
+  if is_stack_reg dst || is_stack_op src1 || is_stack_op src2 then
+    [ Ir.Alu { op; dst; src1; src2; set_flags = false } ]
+  else
+    let expr_of = function
     | Ir.Add -> Some (Add (Var "a", Var "b"))
     | Ir.Sub -> Some (Sub (Var "a", Var "b"))
     | Ir.Xor -> Some (Xor (Var "a", Var "b"))

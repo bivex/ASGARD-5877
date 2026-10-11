@@ -183,20 +183,31 @@ let compile_and_package_multi
           if enable_mba then
             List.concat_map
               (function
-                | Ir.Alu { op; dst; src1; src2; _ } -> (
-                    try
-                      match mba_engine with
-                      | `Egraph ->
-                          let eg_cfg = { Mba_engine.Egraph.default_op_config with iter_limit = max 1 (min 4 mba_depth) } in
-                          Mba_engine.Egraph.obfuscate_alu ~config:eg_cfg ~rng:brng ~dst ~src1 ~src2 op
-                      | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
-                      | `Ncfg   -> Mba_engine.Ncfg_synth.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
-                      | `Gpu_metal -> (
-                          match gpu_mba_pool with
-                          | Some gpool -> Gpu_synth.Gpu_mba.obfuscate_alu ~pool:gpool ~rng:brng ~dst ~src1 ~src2 op
-                          | None -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op)
-                    with _ ->
-                      [ Ir.Alu { op; dst; src1; src2; set_flags = false } ])
+                | Ir.Alu { op; dst; src1; src2; _ } ->
+                    let is_stack_reg = function
+                      | Register.Gpr (Register.RSP, _) | Register.Vreg (Register.VSP, _) -> true
+                      | _ -> false
+                    in
+                    let is_stack_op = function
+                      | Ir.Reg r -> is_stack_reg r
+                      | _ -> false
+                    in
+                    if is_stack_reg dst || is_stack_op src1 || is_stack_op src2 then
+                      [ Ir.Alu { op; dst; src1; src2; set_flags = false } ]
+                    else (
+                      try
+                        match mba_engine with
+                        | `Egraph ->
+                            let eg_cfg = { Mba_engine.Egraph.default_op_config with iter_limit = max 1 (min 4 mba_depth) } in
+                            Mba_engine.Egraph.obfuscate_alu ~config:eg_cfg ~rng:brng ~dst ~src1 ~src2 op
+                        | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
+                        | `Ncfg   -> Mba_engine.Ncfg_synth.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
+                        | `Gpu_metal -> (
+                            match gpu_mba_pool with
+                            | Some gpool -> Gpu_synth.Gpu_mba.obfuscate_alu ~pool:gpool ~rng:brng ~dst ~src1 ~src2 op
+                            | None -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op)
+                      with _ ->
+                        [ Ir.Alu { op; dst; src1; src2; set_flags = false } ])
                 | other -> [ other ])
               b.instrs
           else b.instrs
@@ -355,8 +366,9 @@ let compile_and_package_multi
           | Raw instr -> (
               match instr with
               | Ir.Nop -> encode_raw_word (get_opcode OP_NOP) 0 0 0L
-              | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, _)); src = Ir.Reg (Register.Fpr (s, _)) } ->
-                  encode_raw_word (get_opcode OP_VEC_MOV) (d mod 32) (s mod 32) 64L
+              | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, w)); src = Ir.Reg (Register.Fpr (s, _)) } ->
+                  let bits = Int64.of_int (Register.width_to_bytes w * 8) in
+                  encode_raw_word (get_opcode OP_VEC_MOV) (d mod 32) (s mod 32) bits
               | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, _)); src = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_MOV_VR) (d mod 32) (get_reg_idx s) 0L
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg (Register.Fpr (s, _)) } ->
@@ -369,12 +381,14 @@ let compile_and_package_multi
                   if high <> 0L then
                     encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx temp_reg) 0 high;
                   encode_raw_word (get_opcode OP_MOV_VR) (d mod 32) (get_reg_idx temp_reg) 0L
-              | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, _)); src = Ir.Mem m } ->
+              | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, w)); src = Ir.Mem m } ->
+                  let bits = Int64.of_int (Register.width_to_bytes w * 8) in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
-                  encode_raw_word ~extra_bits:64L (get_opcode OP_VEC_LOAD) (d mod 32) base_idx m.disp
-              | Ir.Mov { dst = Ir.Mem m; src = Ir.Reg (Register.Fpr (s, _)) } ->
+                  encode_raw_word ~extra_bits:bits (get_opcode OP_VEC_LOAD) (d mod 32) base_idx m.disp
+              | Ir.Mov { dst = Ir.Mem m; src = Ir.Reg (Register.Fpr (s, w)) } ->
+                  let bits = Int64.of_int (Register.width_to_bytes w * 8) in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
-                  encode_raw_word ~extra_bits:64L (get_opcode OP_VEC_STORE) base_idx (s mod 32) m.disp
+                  encode_raw_word ~extra_bits:bits (get_opcode OP_VEC_STORE) base_idx (s mod 32) m.disp
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->
                   encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Imm imm } ->

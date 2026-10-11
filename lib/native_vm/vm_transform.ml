@@ -18,7 +18,7 @@ let reg_to_index = function
   | Register.Vreg (Register.VX24, _)  -> 29
   | Register.Vreg (Register.VX25, _)  -> 30
   | Register.Vreg (Register.VX26, _)  -> 31
-  | Register.Vreg (Register.VZERO, _) -> 16
+  | Register.Vreg (Register.VZERO, _) -> 31
   | Register.Fpr (i, _) -> (23 + (i mod 9)) mod 32
 
 let cond_to_code = function

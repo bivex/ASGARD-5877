@@ -2,21 +2,65 @@ open Vm_ir
 open Arm64_types
 open Arm64_common
 
-(* Shifted-register ALU operand (e.g. `add w8, w8, w0, lsr #16`): materialise the
-   shifted source into vtmp1, then apply the op through [emit_3addr_alu] so the
-   src1 = dst emitter convention holds even for 3-operand forms. *)
-let emit_shifted_alu ~op ~dst ~src1 ~src2 ~shift_op ~shift =
-  [
-    Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-    Ir.Alu { op = shift_op; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-  ]
-  @ emit_3addr_alu ~op ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false
-
 let shift_op_of_label = function
   | "lsl" | "LSL" -> Ir.Shl
   | "asr" | "ASR" -> Ir.Sar
   | "ror" | "ROR" -> Ir.Ror
   | _ -> Ir.Shr
+
+let emit_shifted_operand ~src ~shift_op ~shift =
+  if Register.get_width src = Register.B32 then
+    match shift_op with
+    | Ir.Ror ->
+        let s = (Int64.to_int shift) land 31 in
+        if s = 0 then
+          [ Ir.Mov { dst = Reg Register.vtmp1; src = Reg src } ]
+        else
+          let s_hi = 32 - s in
+          [
+            Ir.Mov { dst = Reg Register.vtmp1; src = Reg (Register.with_width src Register.B64) };
+            Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm (Int64.of_int s); set_flags = false };
+            Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.with_width src Register.B64) };
+            Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm (Int64.of_int s_hi); set_flags = false };
+            Ir.Alu { op = Or; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Reg Register.vtmp0; set_flags = false };
+            Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          ]
+    | Ir.Shl ->
+        [
+          Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
+          Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
+          Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+        ]
+    | Ir.Shr ->
+        [
+          Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
+          Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
+        ]
+    | Ir.Sar ->
+        [
+          Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
+          Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm (Int64.add 32L shift); set_flags = false };
+          Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+        ]
+    | op ->
+        [
+          Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
+          Ir.Alu { op; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
+        ]
+  else
+    [
+      Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
+      Ir.Alu { op = shift_op; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
+    ]
+
+(* Shifted-register ALU operand (e.g. `add w8, w8, w0, lsr #16`): materialise the
+   shifted source into vtmp1, then apply the op through [emit_3addr_alu] so the
+   src1 = dst emitter convention holds even for 3-operand forms. *)
+let emit_shifted_alu ~op ~dst ~src1 ~src2 ~shift_op ~shift =
+  emit_shifted_operand ~src:src2 ~shift_op ~shift
+  @ emit_3addr_alu ~op ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false
 
 let is_vzero = function
   | Register.Vreg (Register.VZERO, _) -> true
@@ -89,16 +133,12 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       if is_vzero dst then Some [ Ir.Nop ]
       else Some (emit_shifted_alu ~op:Add ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
   | ("adds", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
-      let tmp1 = Register.with_width Register.vtmp1 (Register.get_width src2) in
-      let prep = [
-        Ir.Mov { dst = Reg tmp1; src = Reg src2 };
-        Ir.Alu { op = shift_op_of_label sh; dst = tmp1; src1 = Reg tmp1; src2 = Imm shift; set_flags = false };
-      ] in
-      let ccmn_instr = Ir.Ccmn { cond = Flags.ALWAYS; src1 = Reg src1; src2 = Reg tmp1; nzcv = 0 } in
+      let prep = emit_shifted_operand ~src:src2 ~shift_op:(shift_op_of_label sh) ~shift in
+      let ccmn_instr = Ir.Ccmn { cond = Flags.ALWAYS; src1 = Reg src1; src2 = Reg Register.vtmp1; nzcv = 0 } in
       if is_vzero dst then
         Some (prep @ [ ccmn_instr ])
       else
-        Some (prep @ [ ccmn_instr ] @ emit_3addr_alu ~op:Add ~dst ~src1 ~src2:(OpReg tmp1) ~set_flags:false)
+        Some (prep @ [ ccmn_instr ] @ emit_3addr_alu ~op:Add ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false)
   | ("add", (OpReg dst :: OpReg src1 :: _)) ->
       if is_vzero dst then Some [ Ir.Nop ]
       else Some (emit_3addr_alu ~op:Add ~dst ~src1 ~src2:(OpImm 0L) ~set_flags:false)
@@ -113,16 +153,12 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       if is_vzero dst then Some [ Ir.Nop ]
       else Some (emit_shifted_alu ~op:Sub ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
   | ("subs", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
-      let tmp1 = Register.with_width Register.vtmp1 (Register.get_width src2) in
-      let prep = [
-        Ir.Mov { dst = Reg tmp1; src = Reg src2 };
-        Ir.Alu { op = shift_op_of_label sh; dst = tmp1; src1 = Reg tmp1; src2 = Imm shift; set_flags = false };
-      ] in
-      let cmp_instr = Ir.Cmp { src1 = Reg src1; src2 = Reg tmp1 } in
+      let prep = emit_shifted_operand ~src:src2 ~shift_op:(shift_op_of_label sh) ~shift in
+      let cmp_instr = Ir.Cmp { src1 = Reg src1; src2 = Reg Register.vtmp1 } in
       if is_vzero dst then
         Some (prep @ [ cmp_instr ])
       else
-        Some (prep @ [ cmp_instr ] @ emit_3addr_alu ~op:Sub ~dst ~src1 ~src2:(OpReg tmp1) ~set_flags:false)
+        Some (prep @ [ cmp_instr ] @ emit_3addr_alu ~op:Sub ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false)
   | ("sub", [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       if is_vzero dst then Some [ Ir.Nop ]
       else Some (emit_3addr_alu ~op:Sub ~dst ~src1 ~src2 ~set_flags:false)
@@ -239,16 +275,12 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       if is_vzero dst then Some [ Ir.Nop ]
       else Some (emit_shifted_alu ~op:And ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
   | ("ands", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
-      let tmp1 = Register.with_width Register.vtmp1 (Register.get_width src2) in
-      let prep = [
-        Ir.Mov { dst = Reg tmp1; src = Reg src2 };
-        Ir.Alu { op = shift_op_of_label sh; dst = tmp1; src1 = Reg tmp1; src2 = Imm shift; set_flags = false };
-      ] in
-      let test_instr = Ir.Test { src1 = Reg src1; src2 = Reg tmp1 } in
+      let prep = emit_shifted_operand ~src:src2 ~shift_op:(shift_op_of_label sh) ~shift in
+      let test_instr = Ir.Test { src1 = Reg src1; src2 = Reg Register.vtmp1 } in
       if is_vzero dst then
         Some (prep @ [ test_instr ])
       else
-        Some (prep @ [ test_instr ] @ emit_3addr_alu ~op:And ~dst ~src1 ~src2:(OpReg tmp1) ~set_flags:false)
+        Some (prep @ [ test_instr ] @ emit_3addr_alu ~op:And ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false)
   | ("orr", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
       if is_vzero dst then Some [ Ir.Nop ]
       else Some (emit_shifted_alu ~op:Or ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
@@ -257,18 +289,18 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       else Some (emit_shifted_alu ~op:Xor ~dst ~src1 ~src2 ~shift_op:(shift_op_of_label sh) ~shift)
   | ("bic", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
       if is_vzero dst then Some [ Ir.Nop ]
-      else Some [
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = shift_op_of_label sh; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-        Ir.Unary { op = Not; dst = Register.vtmp1; src = Reg Register.vtmp1; set_flags = false };
-        Ir.Alu { op = And; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
-      ]
+      else Some (
+        emit_shifted_operand ~src:src2 ~shift_op:(shift_op_of_label sh) ~shift
+        @ [
+          Ir.Unary { op = Not; dst = Register.vtmp1; src = Reg Register.vtmp1; set_flags = false };
+          Ir.Alu { op = And; dst; src1 = Reg src1; src2 = Reg Register.vtmp1; set_flags = false };
+        ]
+      )
   | ("bics", (OpReg dst :: OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
-      let prep = [
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = shift_op_of_label sh; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-        Ir.Unary { op = Not; dst = Register.vtmp1; src = Reg Register.vtmp1; set_flags = false };
-      ] in
+      let prep =
+        emit_shifted_operand ~src:src2 ~shift_op:(shift_op_of_label sh) ~shift
+        @ [ Ir.Unary { op = Not; dst = Register.vtmp1; src = Reg Register.vtmp1; set_flags = false } ]
+      in
       let test_instr = Ir.Test { src1 = Reg src1; src2 = Reg Register.vtmp1 } in
       if is_vzero dst then
         Some (prep @ [ test_instr ])
@@ -331,10 +363,57 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       else Some (emit_3addr_alu ~op:Shr ~dst ~src1 ~src2 ~set_flags:false)
   | (("asr" | "asrv"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       if is_vzero dst then Some [ Ir.Nop ]
-      else Some (emit_3addr_alu ~op:Sar ~dst ~src1 ~src2 ~set_flags:false)
+      else if Register.get_width dst = Register.B32 then
+        match src2 with
+        | OpImm shift ->
+            let s = (Int64.to_int shift) land 31 in
+            Some [
+              Ir.Mov { dst = Reg Register.vtmp1; src = Reg src1 };
+              Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
+              Ir.Alu { op = Sar; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm (Int64.of_int (32 + s)); set_flags = false };
+              Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+              Ir.Mov { dst = Reg dst; src = Reg Register.vtmp1 };
+            ]
+        | _ -> Some (emit_3addr_alu ~op:Sar ~dst ~src1 ~src2 ~set_flags:false)
+      else
+        Some (emit_3addr_alu ~op:Sar ~dst ~src1 ~src2 ~set_flags:false)
   | (("ror" | "rorv"), [ OpReg dst; OpReg src1; ((OpReg _ | OpImm _) as src2) ]) ->
       if is_vzero dst then Some [ Ir.Nop ]
-      else Some (emit_3addr_alu ~op:Ror ~dst ~src1 ~src2 ~set_flags:false)
+      else if Register.get_width dst = Register.B32 then
+        match src2 with
+        | OpImm shift ->
+            let s = (Int64.to_int shift) land 31 in
+            if s = 0 then
+              Some [ Ir.Mov { dst = Reg dst; src = Reg src1 } ]
+            else
+              let s_hi = 32 - s in
+              Some [
+                Ir.Mov { dst = Reg Register.vtmp1; src = Reg (Register.with_width src1 Register.B64) };
+                Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm (Int64.of_int s); set_flags = false };
+                Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.with_width src1 Register.B64) };
+                Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm (Int64.of_int s_hi); set_flags = false };
+                Ir.Alu { op = Or; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Reg Register.vtmp0; set_flags = false };
+                Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+                Ir.Mov { dst = Reg dst; src = Reg Register.vtmp1 };
+              ]
+        | OpReg sreg ->
+            Some [
+              Ir.Mov { dst = Reg Register.vtmp2; src = Reg sreg };
+              Ir.Alu { op = And; dst = Register.vtmp2; src1 = Reg Register.vtmp2; src2 = Imm 31L; set_flags = false };
+              Ir.Mov { dst = Reg Register.vtmp1; src = Reg (Register.with_width src1 Register.B64) };
+              Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Reg Register.vtmp2; set_flags = false };
+              Ir.Mov { dst = Reg Register.vtmp0; src = Imm 32L };
+              Ir.Alu { op = Sub; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Reg Register.vtmp2; set_flags = false };
+              Ir.Alu { op = And; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm 31L; set_flags = false };
+              Ir.Mov { dst = Reg Register.vtmp3; src = Reg (Register.with_width src1 Register.B64) };
+              Ir.Alu { op = Shl; dst = Register.vtmp3; src1 = Reg Register.vtmp3; src2 = Reg Register.vtmp0; set_flags = false };
+              Ir.Alu { op = Or; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Reg Register.vtmp3; set_flags = false };
+              Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+              Ir.Mov { dst = Reg dst; src = Reg Register.vtmp1 };
+            ]
+        | _ -> Some (emit_3addr_alu ~op:Ror ~dst ~src1 ~src2 ~set_flags:false)
+      else
+        Some (emit_3addr_alu ~op:Ror ~dst ~src1 ~src2 ~set_flags:false)
 
   (* Sign & Zero Extensions *)
   | ("uxtb", [ OpReg dst; OpReg src ]) ->
@@ -479,7 +558,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       let sh = Int64.to_int shift in
       if sh = 0 then
         Some [ Ir.Mov { dst = Reg dst; src = Reg src2 } ]
-      else if Register.to_string src1 = Register.to_string src2 then
+      else if total_bits = 64 && Register.to_string src1 = Register.to_string src2 then
         Some [
           Ir.Mov { dst = Reg dst; src = Reg src1 };
           Ir.Alu { op = Ror; dst; src1 = Reg dst; src2 = Imm shift; set_flags = false };
@@ -492,6 +571,10 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
           Ir.Mov { dst = Reg Register.vtmp1; src = Reg src1 };
           Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm sh_hi; set_flags = false };
           Ir.Alu { op = Or; dst; src1 = Reg dst; src2 = Reg Register.vtmp1; set_flags = false };
+          (if total_bits = 32 then
+            Ir.Alu { op = And; dst; src1 = Reg dst; src2 = Imm 0xFFFFFFFFL; set_flags = false }
+           else
+            Ir.Nop);
         ]
   | ("neg", [ OpReg dst; OpReg src ]) ->
       Some [ Ir.Unary { op = Neg; dst; src = Reg src; set_flags = false } ]
@@ -531,24 +614,20 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Cmp { src1 = Reg src1; src2 = Reg Register.vtmp0 };
       ]
   | ("cmp", (OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
-      Some [
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = shift_op_of_label sh; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-        Ir.Cmp { src1 = Reg src1; src2 = Reg Register.vtmp1 };
-      ]
+      Some (
+        emit_shifted_operand ~src:src2 ~shift_op:(shift_op_of_label sh) ~shift
+        @ [ Ir.Cmp { src1 = Reg src1; src2 = Reg Register.vtmp1 } ]
+      )
   | ("cmn", (OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
-      let tmp1 = Register.with_width Register.vtmp1 (Register.get_width src2) in
-      Some [
-        Ir.Mov { dst = Reg tmp1; src = Reg src2 };
-        Ir.Alu { op = shift_op_of_label sh; dst = tmp1; src1 = Reg tmp1; src2 = Imm shift; set_flags = false };
-        Ir.Ccmn { cond = Flags.ALWAYS; src1 = Reg src1; src2 = Reg tmp1; nzcv = 0 };
-      ]
+      Some (
+        emit_shifted_operand ~src:src2 ~shift_op:(shift_op_of_label sh) ~shift
+        @ [ Ir.Ccmn { cond = Flags.ALWAYS; src1 = Reg src1; src2 = Reg Register.vtmp1; nzcv = 0 } ]
+      )
   | ("tst", (OpReg src1 :: OpReg src2 :: OpLabel (("lsl" | "LSL" | "lsr" | "LSR" | "asr" | "ASR" | "ror" | "ROR") as sh) :: OpImm shift :: _)) ->
-      Some [
-        Ir.Mov { dst = Reg Register.vtmp1; src = Reg src2 };
-        Ir.Alu { op = shift_op_of_label sh; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-        Ir.Test { src1 = Reg src1; src2 = Reg Register.vtmp1 };
-      ]
+      Some (
+        emit_shifted_operand ~src:src2 ~shift_op:(shift_op_of_label sh) ~shift
+        @ [ Ir.Test { src1 = Reg src1; src2 = Reg Register.vtmp1 } ]
+      )
   | ("cmp", (OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Some [ Ir.Cmp { src1 = Reg src1; src2 = raw_to_ir_operand src2 } ]
   | ("cmn", (OpReg src1 :: OpReg src2 :: _)) ->

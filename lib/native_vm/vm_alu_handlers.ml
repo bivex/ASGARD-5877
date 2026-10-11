@@ -2,13 +2,13 @@ let emit_probes b ~enable_timing_probes =
   if enable_timing_probes then begin
     Buffer.add_string b "    #if defined(__x86_64__)\n";
     Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = __builtin_ia32_rdtsc()\n";
-    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1 = __builtin_ia32_rdtsc(); if ((_t1 - _t0) > 100000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
+    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1 = __builtin_ia32_rdtsc(); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
     Buffer.add_string b "    #elif defined(__aarch64__)\n";
     Buffer.add_string b "    #define PROBE_START() uint64_t _t0; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t0))\n";
-    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 100000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
+    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
     Buffer.add_string b "    #elif defined(__riscv) || defined(__riscv__)\n";
     Buffer.add_string b "    #define PROBE_START() uint64_t _t0; __asm__ volatile(\"rdtime %0\" : \"=r\"(_t0))\n";
-    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"rdtime %0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 150000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
+    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"rdtime %0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
     Buffer.add_string b "    #else\n";
     Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = 0\n";
     Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n";

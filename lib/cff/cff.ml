@@ -216,7 +216,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     (* Entry Block: sets state to func.cfg.entry_id's state and jumps to disp_base_id *)
     let initial_state = get_state func.cfg.entry_id in
     let entry_instrs = [
-      Ir.Mov { dst = Ir.Reg Register.vtmp3; src = Ir.Imm initial_state };
+      Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Imm initial_state };
       Ir.Jmp (Ir.BlockId disp_base_id);
     ] in
     let entry_block = Ir.make_block ~id:entry_block_id ~label:(func.name ^ "_cff_entry") ~instrs:entry_instrs in
@@ -249,7 +249,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
       let target_b = List.nth ladder_blocks i in
       let target_state = get_state target_b.id in
       let d_instrs = [
-        Ir.Cmp { src1 = Ir.Reg Register.vtmp3; src2 = Ir.Imm target_state };
+        Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Imm target_state };
         Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_b.id; target_false = next_disp_target };
       ] in
       let blk = Ir.make_block ~id:cur_disp_id ~label:(Printf.sprintf "%s_disp_%d" func.name i) ~instrs:d_instrs in
@@ -271,7 +271,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                 | Ir.Jmp (Ir.BlockId target_id) ->
                     let next_state = get_state target_id in
                     body @ [
-                      Ir.Mov { dst = Ir.Reg Register.vtmp3; src = Ir.Imm next_state };
+                      Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Imm next_state };
                       Ir.Jmp (Ir.BlockId disp_base_id);
                     ]
                 | Ir.Jcc { cond; target_true = Ir.BlockId t_id; target_false = Ir.BlockId f_id } ->
@@ -285,7 +285,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                           Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
                           Ir.Cmp cmp_args;
                           Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                          Ir.Mov { dst = Ir.Reg Register.vtmp3; src = Ir.Reg Register.vtmp1 };
+                          Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
                           Ir.Jmp (Ir.BlockId disp_base_id);
                         ]
                     | _ ->
@@ -293,7 +293,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                           Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
                           Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
                           Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                          Ir.Mov { dst = Ir.Reg Register.vtmp3; src = Ir.Reg Register.vtmp1 };
+                          Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
                           Ir.Jmp (Ir.BlockId disp_base_id);
                         ])
                 | Ir.Ret | Ir.Vm_exit | Ir.Trap _ ->

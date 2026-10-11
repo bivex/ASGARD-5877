@@ -371,46 +371,132 @@ let extract_constants text =
   let lines = String.split_on_char '\n' text in
   let constants = ref [] in
   let cur_label = ref None in
+  let cur_buf = Buffer.create 256 in
+
+  let commit_current () =
+    match !cur_label with
+    | Some lbl when Buffer.length cur_buf > 0 ->
+        if not (String.starts_with ~prefix:"ASGARD_BEG" lbl ||
+                String.starts_with ~prefix:"ASGARD_END" lbl) then
+          constants := (lbl, Buffer.contents cur_buf) :: !constants;
+        Buffer.clear cur_buf;
+        cur_label := None
+    | _ ->
+        Buffer.clear cur_buf;
+        cur_label := None
+  in
+
+  let parse_asm_int s =
+    let clean = String.trim s in
+    try Int64.of_string clean
+    with _ -> 0L
+  in
+
   List.iter
     (fun l ->
       let clean = strip_comments l in
+      let trimmed = String.trim clean in
       if String.ends_with ~suffix:":" clean then (
+        commit_current ();
         let lbl = String.trim (String.sub clean 0 (String.length clean - 1)) in
         cur_label := Some lbl
+      ) else if String.starts_with ~prefix:".section" trimmed ||
+                String.starts_with ~prefix:".text" trimmed ||
+                String.starts_with ~prefix:".data" trimmed ||
+                String.starts_with ~prefix:".globl" trimmed ||
+                String.starts_with ~prefix:".global" trimmed ||
+                String.starts_with ~prefix:".cfi_" trimmed then (
+        commit_current ()
       ) else (
         match !cur_label with
         | None -> ()
-        | Some lbl ->
-            let trimmed = String.trim clean in
-            if String.starts_with ~prefix:".ascii" trimmed || String.starts_with ~prefix:".asciz" trimmed || String.starts_with ~prefix:".string" trimmed then (
-              let is_asciz = String.starts_with ~prefix:".asciz" trimmed || String.starts_with ~prefix:".string" trimmed in
+        | Some _lbl ->
+            if String.starts_with ~prefix:".ascii" trimmed ||
+               String.starts_with ~prefix:".asciz" trimmed ||
+               String.starts_with ~prefix:".string" trimmed then (
+              let is_asciz = String.starts_with ~prefix:".asciz" trimmed ||
+                             String.starts_with ~prefix:".string" trimmed in
               match find_string_bounds trimmed with
               | Some (q1, q2) ->
                   let raw_str = String.sub trimmed (q1 + 1) (q2 - q1 - 1) in
                   let unescaped = unescape_asm_str raw_str in
                   if String.starts_with ~prefix:"ASGARD_BEG" unescaped ||
                      String.starts_with ~prefix:"ASGARD_END" unescaped then (
+                    Buffer.clear cur_buf;
                     cur_label := None
                   ) else (
-                    let data = if is_asciz then unescaped ^ "\000" else unescaped in
-                    constants := (lbl, data) :: !constants;
-                    cur_label := None
+                    Buffer.add_string cur_buf unescaped;
+                    if is_asciz then Buffer.add_char cur_buf '\000'
                   )
               | None -> ()
             ) else if String.starts_with ~prefix:".byte" trimmed then (
               let rest = String.sub trimmed 5 (String.length trimmed - 5) in
               let parts = String.split_on_char ',' rest |> List.map String.trim in
-              let buf = Buffer.create (List.length parts) in
               List.iter
                 (fun p ->
-                  let v = try int_of_string p land 0xFF with _ -> 0 in
-                  Buffer.add_char buf (Char.chr v))
-                parts;
-              constants := (lbl, Buffer.contents buf) :: !constants;
-              cur_label := None
-            ) else if String.starts_with ~prefix:"." trimmed && not (String.starts_with ~prefix:".p2align" trimmed || String.starts_with ~prefix:".align" trimmed) then (
+                  let v = parse_asm_int p in
+                  Buffer.add_char cur_buf (Char.chr (Int64.to_int (Int64.logand v 0xFFL))))
+                parts
+            ) else if String.starts_with ~prefix:".short" trimmed ||
+                      String.starts_with ~prefix:".hword" trimmed ||
+                      String.starts_with ~prefix:".2byte" trimmed then (
+              let kw_len = 6 in
+              let rest = String.sub trimmed kw_len (String.length trimmed - kw_len) in
+              let parts = String.split_on_char ',' rest |> List.map String.trim in
+              List.iter
+                (fun p ->
+                  let v = parse_asm_int p in
+                  for i = 0 to 1 do
+                    let b = Int64.to_int (Int64.logand (Int64.shift_right_logical v (i * 8)) 0xFFL) in
+                    Buffer.add_char cur_buf (Char.chr b)
+                  done)
+                parts
+            ) else if String.starts_with ~prefix:".long" trimmed ||
+                      String.starts_with ~prefix:".word" trimmed ||
+                      String.starts_with ~prefix:".4byte" trimmed then (
+              let kw_len = 5 in
+              let rest = String.sub trimmed kw_len (String.length trimmed - kw_len) in
+              let parts = String.split_on_char ',' rest |> List.map String.trim in
+              List.iter
+                (fun p ->
+                  let v = parse_asm_int p in
+                  for i = 0 to 3 do
+                    let b = Int64.to_int (Int64.logand (Int64.shift_right_logical v (i * 8)) 0xFFL) in
+                    Buffer.add_char cur_buf (Char.chr b)
+                  done)
+                parts
+            ) else if String.starts_with ~prefix:".quad" trimmed ||
+                      String.starts_with ~prefix:".8byte" trimmed ||
+                      String.starts_with ~prefix:".xword" trimmed then (
+              let kw_len = if String.starts_with ~prefix:".8byte" trimmed then 6 else 5 in
+              let rest = String.sub trimmed kw_len (String.length trimmed - kw_len) in
+              let parts = String.split_on_char ',' rest |> List.map String.trim in
+              List.iter
+                (fun p ->
+                  let v = parse_asm_int p in
+                  for i = 0 to 7 do
+                    let b = Int64.to_int (Int64.logand (Int64.shift_right_logical v (i * 8)) 0xFFL) in
+                    Buffer.add_char cur_buf (Char.chr b)
+                  done)
+                parts
+            ) else if String.starts_with ~prefix:".zero" trimmed ||
+                      String.starts_with ~prefix:".space" trimmed ||
+                      String.starts_with ~prefix:".skip" trimmed then (
+              let kw_len = 5 in
+              let rest = String.sub trimmed kw_len (String.length trimmed - kw_len) in
+              let parts = String.split_on_char ',' rest |> List.map String.trim in
+              let count = match parts with c :: _ -> (try int_of_string c with _ -> 0) | [] -> 0 in
+              let fill = match parts with _ :: f :: _ -> (try int_of_string f land 0xFF with _ -> 0) | _ -> 0 in
+              for _ = 1 to count do
+                Buffer.add_char cur_buf (Char.chr fill)
+              done
+            ) else if String.starts_with ~prefix:"." trimmed &&
+                      (String.starts_with ~prefix:".p2align" trimmed || String.starts_with ~prefix:".align" trimmed) then (
               ()
+            ) else if trimmed <> "" && not (String.starts_with ~prefix:"." trimmed) then (
+              commit_current ()
             )
       ))
     lines;
+  commit_current ();
   List.rev !constants

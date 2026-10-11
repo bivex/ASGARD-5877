@@ -117,6 +117,35 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
           Some [ Ir.Vec_splat { dst; src = Register.Fpr (src, Register.B64); bits; lane_bits } ]
       | _ -> None)
 
+  (* Vector Immediate Move: movi, movi.2d, movi.16b, movi.4s, etc. *)
+  | (m, [ op_dst; OpImm imm ]) when String.starts_with ~prefix:"movi" m -> (
+      match get_vec_info op_dst with
+      | Some (dst, bits, lane_bits, _) ->
+          let (bits, lane_bits) =
+            if String.contains m '.' then
+              let parts = String.split_on_char '.' m in
+              match List.nth_opt parts 1 with
+              | Some "16b" -> (128, 8)
+              | Some "8b" -> (64, 8)
+              | Some "8h" -> (128, 16)
+              | Some "4h" -> (64, 16)
+              | Some "4s" -> (128, 32)
+              | Some "2s" -> (64, 32)
+              | Some "2d" -> (128, 64)
+              | Some ("1d" | "d") -> (64, 64)
+              | _ -> (bits, lane_bits)
+            else (bits, lane_bits)
+          in
+          if imm = 0L then
+            Some [ Ir.Vec_splat { dst; src = Register.Vreg (Register.VZERO, Register.B64); bits; lane_bits } ]
+          else
+            let t_reg = Register.Vreg (Register.VTMP0, Register.B64) in
+            Some [
+              Ir.Mov { dst = Reg t_reg; src = Imm imm };
+              Ir.Vec_splat { dst; src = t_reg; bits; lane_bits }
+            ]
+      | _ -> None)
+
   (* NEON Permutations and Interleaving: zip1, zip2, uzp1, uzp2, trn1, trn2 *)
   | (("zip1" | "zip2"), [ op_dst; op_s1; op_s2 ]) -> (
       match get_vec_info op_dst, get_vec_info op_s1, get_vec_info op_s2 with

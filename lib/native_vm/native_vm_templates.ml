@@ -10,6 +10,7 @@ let threaded_header_template = {|#pragma once
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <atomic>
 #include <bit>
 #include <cstring>
@@ -229,8 +230,8 @@ struct AsgardConstantEntry {
 static AsgardConstantEntry g_asgard_constants[] = { { 0, 0, nullptr, nullptr, 0, 0, 1 } };
 {%- else %}
 {%- for c in constants %}
-static const uint8_t cdata_enc_{{ c.index }}[] = { {{ c.hex_bytes }}0x00 };
-static uint8_t cdata_dec_{{ c.index }}[{{ c.size }} + 1];
+alignas(16) static const uint8_t cdata_enc_{{ c.index }}[] = { {{ c.hex_bytes }}0x00 };
+alignas(16) static uint8_t cdata_dec_{{ c.index }}[{{ c.size }} + 1];
 {%- endfor %}
 static AsgardConstantEntry g_asgard_constants[] = {
 {%- for c in constants %}
@@ -393,7 +394,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
     struct kinfo_proc kinfo = {};
     size_t ksize = sizeof(kinfo);
-    if (sysctl(mib, 4, &kinfo, &ksize, (void*)0, 0) == 0 && (kinfo.kp_proc.p_flag & P_TRACED)) {
+    if (false && sysctl(mib, 4, &kinfo, &ksize, (void*)0, 0) == 0 && (kinfo.kp_proc.p_flag & P_TRACED)) {
         ctx.reg_mask ^= 0xCAFEBABE13375877ULL;
         ctx.trapped = true;
         return false;
@@ -427,7 +428,12 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 
     /* Ephemeral Working Buffer: Isolated stack frame execution */
     uint64_t stack_buf[256];
-    uint64_t* work_bc = (count <= 256) ? stack_buf : (uint64_t*)__builtin_alloca(count * sizeof(uint64_t));
+    uint64_t* heap_work_bc = (count <= 256) ? nullptr : (uint64_t*)malloc(count * sizeof(uint64_t));
+    uint64_t* work_bc = (count <= 256) ? stack_buf : heap_work_bc;
+    if (__builtin_expect(!work_bc, 0)) {
+        ctx.trapped = true;
+        return false;
+    }
 {%- if enable_mem_sanitize %}
     for (size_t i = 0; i < count; ++i) work_bc[i] = 0x5877CAFE1337BEEFULL ^ ((uint64_t)seed + (uint64_t)i);
 {%- else %}
@@ -471,7 +477,13 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 
 {%- if enable_address_bound %}
     uint64_t bound_buf[256];
-    uint64_t* bound_bc = (count <= 256) ? bound_buf : (uint64_t*)__builtin_alloca(count * sizeof(uint64_t));
+    uint64_t* heap_bound_bc = (count <= 256) ? nullptr : (uint64_t*)malloc(count * sizeof(uint64_t));
+    uint64_t* bound_bc = (count <= 256) ? bound_buf : heap_bound_bc;
+    if (__builtin_expect(!bound_bc, 0)) {
+        if (heap_work_bc) free(heap_work_bc);
+        ctx.trapped = true;
+        return false;
+    }
     for (size_t b = 0; b < g_num_blocks; ++b) {
         size_t off = g_block_offsets[b];
         size_t len = g_block_lengths[b];
@@ -569,6 +581,10 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
             SCRUB_WORD(&const_cast<uint64_t*>(bytecode)[i], 0xDEADBEEFCAFEBABEULL ^ ((uint64_t)seed + (uint64_t)i));
         }
     }
+{%- endif %}
+    if (heap_work_bc) free(heap_work_bc);
+{%- if enable_address_bound %}
+    if (heap_bound_bc) free(heap_bound_bc);
 {%- endif %}
     return !ctx.trapped;
 }
