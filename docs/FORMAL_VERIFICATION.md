@@ -156,26 +156,81 @@ The formally verified proofs directly back the obfuscation pipeline in ASGARD-58
 
 ---
 
-## 5. How to Run the Formal Proofs & Codegen
+## 5. Formally Verified Lazy Flags & Branch Conditions (`fstar/Flags_Verified.fst`)
+
+In binary virtualization, CPU flags (Carry, Zero, Sign, Overflow) determine all conditional branch decisions (`jcc`). ASGARD-5877 calculates flags lazily using optimized 64-bit bitwise expressions.
+
+Module [`fstar/Flags_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.fst) formally proves that these lazy expressions are **100% equivalent** to architectural x86_64 / ARM64 hardware specifications under all $2^{64} \times 2^{64}$ inputs.
+
+### 5.1 Arithmetic Flags Theorems
+
+1. **Carry Flag on ADD (`theorem_cf_add`)**:
+   $$a + b \ge 2^{64} \iff \text{add\_mod}(a, b) < a$$
+   *Proves*: Unsigned addition overflow is identically detected by comparing the modular sum to the first operand.
+
+2. **Borrow Flag on SUB (`theorem_cf_sub`)**:
+   $$a < b \iff \text{lazy\_cf\_sub}(a, b)$$
+
+3. **Zero Flag (`theorem_zf`) & Sign Flag (`theorem_sf`)**:
+   $$\text{compute\_zf}(res) \iff res = 0, \quad \text{compute\_sf}(res) \iff \text{to\_signed}(res) < 0$$
+   *Proves*: MSB extraction (`msb res`) rigorously tests negative numbers under two's complement.
+
+4. **Overflow Flag on ADD (`theorem_of_add`)**:
+   $$\text{hw\_of\_add}(a, b) \iff \text{msb}(((a \oplus dst) \land (b \oplus dst)))$$
+   *Proves*: Signed addition overflow ($(a > 0 \land b > 0 \land dst < 0) \lor (a < 0 \land b < 0 \land dst \ge 0)$) exactly matches the single-cycle bitwise formula used in the VM.
+
+5. **Overflow Flag on SUB (`theorem_of_sub`)**:
+   $$\text{hw\_of\_sub}(a, b) \iff \text{msb}(((a \oplus b) \land (a \oplus dst)))$$
+   *Proves*: Signed subtraction overflow is identically detected.
+
+### 5.2 Branch Condition Code (Jcc) Theorems
+
+ASGARD-5877 formally proves the fundamental equivalence theorems of computer architecture:
+
+| Condition | Flag Formula | Architectural Meaning | Formally Proven Theorem |
+|---|---|---|---|
+| **L** (Less / JL) | $SF \neq OF$ | $\text{to\_signed}(a) < \text{to\_signed}(b)$ | `theorem_cond_l` |
+| **GE** (Greater or Equal / JGE) | $SF = OF$ | $\text{to\_signed}(a) \ge \text{to\_signed}(b)$ | `theorem_cond_ge` |
+| **LE** (Less or Equal / JLE) | $ZF \lor (SF \neq OF)$ | $\text{to\_signed}(a) \le \text{to\_signed}(b)$ | `theorem_cond_le` |
+| **G** (Greater / JG) | $\neg ZF \land (SF = OF)$ | $\text{to\_signed}(a) > \text{to\_signed}(b)$ | `theorem_cond_g` |
+| **B** (Below / JB / Carry) | $CF$ | $a <_{unsigned} b$ | `theorem_cond_b` |
+| **AE** (Above or Equal / JAE) | $\neg CF$ | $a \ge_{unsigned} b$ | `theorem_cond_ae` |
+| **BE** (Below or Equal / JBE) | $CF \lor ZF$ | $a \le_{unsigned} b$ | `theorem_cond_be` |
+| **A** (Above / JA) | $\neg CF \land \neg ZF$ | $a >_{unsigned} b$ | `theorem_cond_a` |
+
+---
+
+## 6. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
 * `z3` 5.0.0 (installed at `/opt/homebrew/bin/z3`)
 
-### Verification Command
-To verify the complete formal specification with 100% conditions discharged:
+### Verification Commands
+To verify the complete formal specifications with 100% conditions discharged:
 ```bash
 cd fstar
+
+# 1. Verify MBA engine theorems
 fstar.exe \
   --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
   --cache_checked_modules \
   --cache_dir . \
   Mba_Verified.fst
+
+# 2. Verify Lazy Flags and Jcc condition theorems
+fstar.exe \
+  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+  --cache_checked_modules \
+  --cache_dir . \
+  Flags_Verified.fst
 ```
 
 **Expected Output:**
 ```text
 Verified module: Mba_Verified
+All verification conditions discharged successfully
+Verified module: Flags_Verified
 All verification conditions discharged successfully
 ```
 
@@ -187,10 +242,11 @@ fstar.exe \
   --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
   --codegen OCaml \
   --extract Mba_Verified \
+  --extract Flags_Verified \
   --cache_checked_modules \
   --cache_dir . \
   --odir . \
-  Mba_Verified.fst
+  Mba_Verified.fst Flags_Verified.fst
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml) file contains pure OCaml code with all proofs erased.
+The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml) and [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml) contain pure OCaml code with all proofs erased.

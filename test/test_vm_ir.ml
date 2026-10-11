@@ -208,6 +208,51 @@ let prop_lazy_flags =
 
       inv1 && inv2 && inv3 && inv4 && inv5)
 
+let prop_verified_condition_codes =
+  QCheck.Test.make
+    ~name:"verified_condition_codes_sub_1000_seeds"
+    ~count:1000
+    (QCheck.pair QCheck.int64 QCheck.int64)
+    (fun (a, b) ->
+      let diff = Int64.sub a b in
+      let op_sub = CC_OP_SUB { src1 = a; src2 = b; dst = diff; width = B64 } in
+
+      (* Mathematical signed comparisons: *)
+      let s_lt = a < b in
+      let s_ge = a >= b in
+      let s_le = a <= b in
+      let s_gt = a > b in
+
+      (* Mathematical unsigned comparisons: *)
+      let u_cmp = Int64.unsigned_compare a b in
+      let u_lt = u_cmp < 0 in
+      let u_ge = u_cmp >= 0 in
+      let u_le = u_cmp <= 0 in
+      let u_gt = u_cmp > 0 in
+
+      (* Flags-based condition evaluation: *)
+      let cond_l  = evaluate_condition op_sub L in
+      let cond_ge = evaluate_condition op_sub GE in
+      let cond_le = evaluate_condition op_sub LE in
+      let cond_g  = evaluate_condition op_sub G in
+      let cond_b  = evaluate_condition op_sub B in
+      let cond_ae = evaluate_condition op_sub AE in
+      let cond_be = evaluate_condition op_sub BE in
+      let cond_a  = evaluate_condition op_sub A in
+      let cond_e  = evaluate_condition op_sub E in
+      let cond_ne = evaluate_condition op_sub NE in
+
+      cond_l = s_lt &&
+      cond_ge = s_ge &&
+      cond_le = s_le &&
+      cond_g = s_gt &&
+      cond_b = u_lt &&
+      cond_ae = u_ge &&
+      cond_be = u_le &&
+      cond_a = u_gt &&
+      cond_e = (a = b) &&
+      cond_ne = (a <> b))
+
 let tests = [
   Alcotest.test_case "registers_and_subregisters" `Quick test_registers_and_subregisters;
   Alcotest.test_case "lazy_flags_add" `Quick test_lazy_flags_add;
@@ -216,4 +261,5 @@ let tests = [
   Alcotest.test_case "fibonacci_function_execution" `Quick test_fibonacci_function_execution;
   Alcotest.test_case "memory_and_stack" `Quick test_memory_and_stack;
   QCheck_alcotest.to_alcotest prop_lazy_flags;
+  QCheck_alcotest.to_alcotest prop_verified_condition_codes;
 ]
