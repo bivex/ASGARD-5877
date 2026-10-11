@@ -308,7 +308,35 @@ Module [`fstar/Codec_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fs
 
 ---
 
-## 9. How to Run the Formal Proofs & Codegen
+## 9. Formally Verified Degree-5 Null-Polynomials over $\mathbb{Z}_{2^{64}}$ (`fstar/Poly_Verified.fst`)
+
+ASGARD-5877 uses degree-5 opaque polynomial zero invariants in Control Flow Flattening (CFF) and dead-code generator passes to create branch conditions that are algebraically impossible to evaluate to non-zero, defeating symbolic execution solvers and heuristic deobfuscators.
+
+Module [`fstar/Poly_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.fst) formally proves:
+
+### 9.1 Divisibility by $2^3 = 8$
+* **Parity Division Step (`lemma_consecutive_even`, `lemma_even_step2_div8`, `lemma_odd_step2_div8`)**:
+  - If $x$ is even: $x = 2k \implies x(x-2) = 4k(k-1)$. Since $k(k-1)$ is even, $x(x-2) = 8m \implies x(x-2) \equiv 0 \pmod 8$.
+  - If $x$ is odd: $x-1 = 2k \implies (x-1)(x-3) = 4k(k-1) = 8m \implies (x-1)(x-3) \equiv 0 \pmod 8$.
+* **Consecutive Factor Theorem (`theorem_poly5_divisible_by_8`)**:
+  $$\forall x \in \mathbb{Z}, \quad x(x - 1)(x - 2)(x - 3)(x - 4) \equiv 0 \pmod 8$$
+* **Symmetric Factor Theorem (`theorem_poly5_sym_divisible_by_8`)**:
+  $$\forall x \in \mathbb{Z}, \quad (x - 2)(x - 1)x(x + 1)(x + 2) \equiv 0 \pmod 8$$
+
+### 9.2 Opaque Annihilation Modulo $2^{64}$
+1. **Canonical Degree-5 Null Invariant (`theorem_zero_inv5_poly`)**:
+   $$\forall x \in \mathbb{Z}, \quad 2^{61} \cdot x(x - 1)(x - 2)(x - 3)(x - 4) \equiv 0 \pmod{2^{64}}$$
+   *Proof*: Since $P(x) = 8k = 2^3 k$, then $2^{61} \cdot P(x) = 2^{61} \cdot 2^3 k = 2^{64} k \equiv 0 \pmod{2^{64}}$.
+
+2. **Symmetric Centered Degree-5 Invariant (`theorem_zero_inv5_sym_poly`)**:
+   $$\forall x \in \mathbb{Z}, \quad 2^{61} \cdot (x - 2)(x - 1)x(x + 1)(x + 2) \equiv 0 \pmod{2^{64}}$$
+
+3. **Non-linear Cross-term Annihilation (`theorem_zero_inv5_nl`)**:
+   $$\forall E \in \mathbb{Z}, \quad \text{zero\_factor} \equiv 0 \pmod{2^{64}} \implies (\text{zero\_factor} \cdot E) \equiv 0 \pmod{2^{64}}$$
+
+---
+
+## 10. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
@@ -353,6 +381,13 @@ fstar.exe \
   --cache_checked_modules \
   --cache_dir . \
   Codec_Verified.fst
+
+# 6. Verify Degree-5 Null Polynomial theorems
+fstar.exe \
+  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+  --cache_checked_modules \
+  --cache_dir . \
+  Poly_Verified.fst
 ```
 
 **Expected Output:**
@@ -366,6 +401,8 @@ All verification conditions discharged successfully
 Verified module: Stack_Balance_Verified
 All verification conditions discharged successfully
 Verified module: Codec_Verified
+All verification conditions discharged successfully
+Verified module: Poly_Verified
 All verification conditions discharged successfully
 ```
 
@@ -381,13 +418,15 @@ fstar.exe \
   --extract Rns_Verified \
   --extract Stack_Balance_Verified \
   --extract Codec_Verified \
+  --extract Poly_Verified \
   --cache_checked_modules \
   --cache_dir . \
   --odir . \
-  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst
+  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst Poly_Verified.fst
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), and [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml) contain pure OCaml code with all proofs erased.
+The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml), and [`fstar/Poly_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.ml) contain pure OCaml code with all proofs erased.
+
 
 
 
