@@ -430,7 +430,58 @@ Module [`fstar/Lifter_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/f
 
 ---
 
-## 13. How to Run the Formal Proofs & Codegen
+## 13. Formally Verified Multi-VM Invertible Affine Bridge (`fstar/Bridge_Verified.fst`)
+
+In ASGARD-5877, complex functions are partitioned across heterogeneous virtual machines (Native-VM and Stack-VM). Crossing VM boundaries requires morphing register context through an invertible affine transformation masked by a cumulative execution trace digest:
+$$V_{\text{dst}} = (M_{\text{fwd}} \cdot V_{\text{src}}) \oplus \text{TraceDigest}$$
+
+Module [`fstar/Bridge_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Bridge_Verified.fst) formally proves:
+
+### 13.1 Quadratic Newton-Raphson Inversion
+* **Hensel Lifting Error Contraction (`lemma_nr_formula`)**:
+  $$\forall y \in \mathbb{U}_{64}, \quad 1 - y(2 - y) \equiv (1 - y)^2 \pmod{2^{64}}$$
+  *Proves*: Each iteration of $x_{k+1} = x_k(2 - a x_k)$ doubles the precision of the modular inverse.
+* **Constant Multiplier Inversion (`theorem_mod_inv_odd_constant`)**:
+  Formally proves $a \cdot \text{mod\_inv\_64}(a) \equiv 1 \pmod{2^{64}}$ for the core constants (SplitMix64 and the Golden Ratio constant $\phi = \text{0x9E3779B97F4A7C15}$).
+
+### 13.2 Trace Digest & Affine Morphing Bijectivity
+1. **Trace Digest Invertibility (`theorem_trace_digest_invertible`)**:
+   $$\forall \text{prev}, \text{op}, \text{vip}, \quad \text{invert\_trace\_digest}(\text{update\_trace\_digest}(\text{prev}, \text{op}, \text{vip}), \text{op}, \text{vip}) \equiv \text{prev}$$
+   *Proves*: The execution digest evolution $K_{t+1} = \text{ROL13}(K_t) \oplus (\text{Op} + \text{VIP} \cdot \phi)$ is strictly bijective and reversible given block metadata.
+
+2. **Channel Masking Involution (`theorem_apply_mask_involution`)**:
+   $$\forall V \in \mathbb{U}_{64}^4, D \in \mathbb{U}_{64}, \quad \text{apply\_mask}(\text{apply\_mask}(V, D), D) \equiv V$$
+
+3. **End-to-End Affine Bridge Roundtrip (`theorem_affine_bridge_roundtrip`)**:
+   For any invertible matrix pair $(M_{\text{fwd}}, M_{\text{inv}})$ where $M_{\text{inv}} M_{\text{fwd}} = I$:
+   $$\forall V, D, \quad \text{inverse\_morph}(M_{\text{inv}}, \text{forward\_morph}(M_{\text{fwd}}, V, D), D) \equiv V$$
+   *Proves*: State transferred across VMs via the affine bridge suffers zero distortion or data loss.
+
+---
+
+## 14. Formally Verified Stack-VM Superoperator Fusion Pass (`fstar/Superop_Verified.fst`)
+
+In Stack-VM virtualization, Phase 2a fuses recurring multi-dispatch bytecode sequences into specialized superoperators (`AddImmImm`, `SubImmImm`, `AddRegImm`, `SetRegImm`, `AddImm`, `SubImm`).
+
+Module [`fstar/Superop_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Superop_Verified.fst) formally proves:
+
+### 14.1 Stack Delta Invariance
+* **Delta Preservation Theorems (`theorem_delta_add_imm_imm` .. `theorem_delta_sub_imm`)**:
+  - $\Delta([\text{PushImm } a; \text{PushImm } b; \text{Add}]) = \Delta([\text{AddImmImm}(a, b)]) = +1$
+  - $\Delta([\text{PushImm } a; \text{PushImm } b; \text{Sub}]) = \Delta([\text{SubImmImm}(a, b)]) = +1$
+  - $\Delta([\text{PushReg } r; \text{PushImm } c; \text{Add}]) = \Delta([\text{AddRegImm}(r, c)]) = +1$
+  - $\Delta([\text{PushImm } c; \text{PopReg } r]) = \Delta([\text{SetRegImm}(r, c)]) = 0$
+  - $\Delta([\text{PushImm } c; \text{Add}]) = \Delta([\text{AddImm } c]) = 0$
+  - $\Delta([\text{PushImm } c; \text{Sub}]) = \Delta([\text{SubImm } c]) = 0$
+
+### 14.2 Trace Equivalence & Flag Preservation
+* **Soundness Theorems (`theorem_eval_equiv_add_imm_imm` .. `theorem_eval_equiv_sub_imm`)**:
+  For all 6 fused patterns, the fused superoperator produces the exact same stack state, register file, and CPU condition flags (`cf`, `zf`, `sf`, `of`) as the original sequence:
+  $$\forall \sigma, \quad \text{eval\_trace}(\sigma, \text{fused}) \equiv \text{eval\_trace}(\sigma, \text{unfused})$$
+
+---
+
+## 15. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
 * `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
@@ -441,68 +492,25 @@ To verify the complete formal specifications with 100% conditions discharged:
 ```bash
 cd fstar
 
-# 1. Verify MBA engine theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Mba_Verified.fst
-
-# 2. Verify Lazy Flags and Jcc condition theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Flags_Verified.fst
-
-# 3. Verify Residue Number System (RNS-4) & CRT theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Rns_Verified.fst
-
-# 4. Verify Stack-VM Balance & Underflow Freedom theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Stack_Balance_Verified.fst
-
-# 5. Verify Vanguard-9292 Codec & Total Parser Safety theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Codec_Verified.fst
-
-# 6. Verify Degree-5 Null Polynomial theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Poly_Verified.fst
-
-# 7. Verify Anti-Pushan Rolling Key bijectivity theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Rolling_Key_Verified.fst
-
-# 8. Verify Control Flow Flattening & Opaque Predicates theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Cff_Verified.fst
-
-# 9. Verify Instruction Lifter & Simulation Equivalence theorems
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --cache_checked_modules \
-  --cache_dir . \
-  Lifter_Verified.fst
+# Verify all 10 modules sequentially
+for f in \
+  Mba_Verified.fst \
+  Flags_Verified.fst \
+  Rns_Verified.fst \
+  Stack_Balance_Verified.fst \
+  Codec_Verified.fst \
+  Poly_Verified.fst \
+  Rolling_Key_Verified.fst \
+  Cff_Verified.fst \
+  Lifter_Verified.fst \
+  Bridge_Verified.fst \
+  Superop_Verified.fst; do
+  fstar.exe \
+    --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+    --cache_checked_modules \
+    --cache_dir . \
+    "$f"
+done
 ```
 
 **Expected Output:**
@@ -525,31 +533,40 @@ Verified module: Cff_Verified
 All verification conditions discharged successfully
 Verified module: Lifter_Verified
 All verification conditions discharged successfully
+Verified module: Bridge_Verified
+All verification conditions discharged successfully
+Verified module: Superop_Verified
+All verification conditions discharged successfully
 ```
 
 ### Extraction to OCaml
 To extract the verified code to OCaml:
 ```bash
 cd fstar
-fstar.exe \
-  --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
-  --codegen OCaml \
-  --extract Mba_Verified \
-  --extract Flags_Verified \
-  --extract Rns_Verified \
-  --extract Stack_Balance_Verified \
-  --extract Codec_Verified \
-  --extract Poly_Verified \
-  --extract Rolling_Key_Verified \
-  --extract Cff_Verified \
-  --extract Lifter_Verified \
-  --cache_checked_modules \
-  --cache_dir . \
-  --odir . \
-  Mba_Verified.fst Flags_Verified.fst Rns_Verified.fst Stack_Balance_Verified.fst Codec_Verified.fst Poly_Verified.fst Rolling_Key_Verified.fst Cff_Verified.fst Lifter_Verified.fst
+for f in \
+  Mba_Verified \
+  Flags_Verified \
+  Rns_Verified \
+  Stack_Balance_Verified \
+  Codec_Verified \
+  Poly_Verified \
+  Rolling_Key_Verified \
+  Cff_Verified \
+  Lifter_Verified \
+  Bridge_Verified \
+  Superop_Verified; do
+  fstar.exe \
+    --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+    --codegen OCaml \
+    --extract "$f" \
+    --cache_checked_modules \
+    --cache_dir . \
+    --odir . \
+    "$f.fst"
+done
 ```
 
-The resulting [`fstar/Mba_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Mba_Verified.ml), [`fstar/Flags_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.ml), [`fstar/Rns_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.ml), [`fstar/Stack_Balance_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.ml), [`fstar/Codec_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.ml), [`fstar/Poly_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.ml), [`fstar/Rolling_Key_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rolling_Key_Verified.ml), [`fstar/Cff_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Cff_Verified.ml), and [`fstar/Lifter_Verified.ml`](file:///Volumes/External/Code/ASGARD-5877/fstar/Lifter_Verified.ml) contain pure OCaml code with all proofs erased.
+The resulting `.ml` files in [`fstar/`](file:///Volumes/External/Code/ASGARD-5877/fstar/) contain pure OCaml code with all proofs erased.
 
 
 

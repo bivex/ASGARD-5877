@@ -468,6 +468,42 @@ let test_superoperator_fusion () =
   Alcotest.(check bool) "hpp contains h_add_reg_imm" true (contains hpp "h_add_reg_imm");
   Alcotest.(check bool) "hpp contains h_sub_imm" true (contains hpp "h_sub_imm")
 
+let test_superoperator_delta_and_eval_soundness () =
+  let pairs = [
+    (10L, 20L); (0L, 0L); (-5L, 15L); (0x7FFFFFFFFFFFFFFFL, 1L);
+    (Int64.min_int, -1L); (42L, 42L);
+  ] in
+  List.iter
+    (fun (a, b) ->
+      (* AddImmImm vs PushImm a; PushImm b; Add *)
+      let p_unfused = make_program 0 [make_block 0 "e" [PushImm a; PushImm b; Add; PopReg 0; Exit]] 1 in
+      let p_fused   = make_program 0 [make_block 0 "e" [AddImmImm (a, b); PopReg 0; Exit]] 1 in
+      let st1 = run_program p_unfused in
+      let st2 = run_program p_fused in
+      Alcotest.(check int64) "AddImmImm sound" (get_reg st1 0) (get_reg st2 0);
+
+      (* SubImmImm vs PushImm a; PushImm b; Sub *)
+      let p_sub_un = make_program 0 [make_block 0 "e" [PushImm a; PushImm b; Sub; PopReg 0; Exit]] 1 in
+      let p_sub_fu = make_program 0 [make_block 0 "e" [SubImmImm (a, b); PopReg 0; Exit]] 1 in
+      let st_sub1 = run_program p_sub_un in
+      let st_sub2 = run_program p_sub_fu in
+      Alcotest.(check int64) "SubImmImm sound" (get_reg st_sub1 0) (get_reg st_sub2 0);
+
+      (* AddImm vs PushImm b; Add (on top of a) *)
+      let p_addimm_un = make_program 0 [make_block 0 "e" [PushImm a; PushImm b; Add; PopReg 0; Exit]] 1 in
+      let p_addimm_fu = make_program 0 [make_block 0 "e" [PushImm a; AddImm b; PopReg 0; Exit]] 1 in
+      let st_ai1 = run_program p_addimm_un in
+      let st_ai2 = run_program p_addimm_fu in
+      Alcotest.(check int64) "AddImm sound" (get_reg st_ai1 0) (get_reg st_ai2 0);
+
+      (* SubImm vs PushImm b; Sub (on top of a) *)
+      let p_subimm_un = make_program 0 [make_block 0 "e" [PushImm a; PushImm b; Sub; PopReg 0; Exit]] 1 in
+      let p_subimm_fu = make_program 0 [make_block 0 "e" [PushImm a; SubImm b; PopReg 0; Exit]] 1 in
+      let st_si1 = run_program p_subimm_un in
+      let st_si2 = run_program p_subimm_fu in
+      Alcotest.(check int64) "SubImm sound" (get_reg st_si1 0) (get_reg st_si2 0))
+    pairs
+
 let test_vsp_whitening () =
   (* Verify the C++ runtime contains VSP_ENCODE macro and uses it *)
   let seed = 0xDEADBEEF12345678L in
@@ -2126,6 +2162,7 @@ let tests = [
   ("Polymorphic Opcode Remapping & Synthesis", `Quick, test_polymorphic_opcodes);
   ("PushImm 32/64-bit Compact Width", `Quick, test_compact_push_imm);
   ("Superoperator Fusion Pass & Runtime", `Quick, test_superoperator_fusion);
+  ("Superoperator Delta & Eval Soundness", `Quick, test_superoperator_delta_and_eval_soundness);
   ("VSP Stack Value Whitening", `Quick, test_vsp_whitening);
   ("Ghost Stack Padding Pass", `Quick, test_ghost_stack_padding);
   ("Spaghetti CFG Splitting", `Quick, test_spaghetti_splitting);

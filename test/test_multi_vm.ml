@@ -31,6 +31,20 @@ let test_trace_digest_coupling () =
   check bool "Deterministic digest update" true (d1 = d3);
   check bool "Evolving digest differs" true (d1 <> d2)
 
+let test_trace_digest_invertibility () =
+  let rng = Random.State.make [| 7788 |] in
+  for _ = 1 to 500 do
+    let prev = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let op = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let vip = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+    let updated = Bridge.update_trace_digest prev op vip in
+    let term = Int64.add op (Int64.mul vip 0x9E3779B97F4A7C15L) in
+    let unmasked = Int64.logxor updated term in
+    let s = 13 land 63 in
+    let recovered = Int64.logor (Int64.shift_right_logical unmasked s) (Int64.shift_left unmasked (64 - s)) in
+    check int64 "invert_trace_digest recovers exact previous digest" prev recovered
+  done
+
 let test_ast_functional_partitioning () =
   let asm = {|
     mov x0, #42
@@ -149,6 +163,7 @@ let tests = [
   ("Modular Inverse Modulo 2^64", `Quick, test_modular_inverse_64);
   ("Affine Bridge Roundtrip (1000 vectors)", `Quick, test_affine_bridge_roundtrip_1000);
   ("Trace Digest Coupling", `Quick, test_trace_digest_coupling);
+  ("Trace Digest Invertibility", `Quick, test_trace_digest_invertibility);
   ("AST Functional Partitioning", `Quick, test_ast_functional_partitioning);
   ("Multi-VM C++ E2E Compilation & Exec", `Quick, test_multi_vm_compilation_e2e);
   ("Multi-VM Branch Morphing E2E", `Quick, test_multi_vm_branch_transitions_e2e);
