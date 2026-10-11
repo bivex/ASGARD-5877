@@ -78,7 +78,7 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
 #endif
     }
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(_M_ARM64)
 #if defined(__APPLE__)
     pthread_jit_write_protect_np(0);
 #endif
@@ -92,7 +92,11 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     code_rw[2] = 0xd65f03c0; // ret
 
     uint64_t t0;
+#if defined(_MSC_VER)
+    t0 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
+#else
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t0));
+#endif
 
     // Dynamic Self-Modification via RW alias: mutate immediate in add (bits 10..21)
     uint32_t imm_val = (uint32_t)(seed & 0x7F);
@@ -103,6 +107,8 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     sys_dcache_flush(buf.rw_alias, 16);
     sys_icache_invalidate((void*)buf.rx_alias, 16);
     pthread_jit_write_protect_np(1);
+#elif defined(_WIN32)
+    FlushInstructionCache(GetCurrentProcess(), (void*)buf.rx_alias, 16);
 #else
     __builtin___clear_cache((char*)buf.rw_alias, (char*)buf.rw_alias + 16);
 #endif
@@ -117,7 +123,11 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
 #endif
 
     uint64_t t1;
+#if defined(_MSC_VER)
+    t1 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
+#else
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t1));
+#endif
 
     uint32_t expected = 0x5877 + imm_val;
     if (result != expected) {
@@ -126,7 +136,7 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     if ((t1 - t0) > 100000ULL) {
         penalty ^= 0xDEAD1337CAFE5877ULL; // JIT/hypervisor emulation slow-path
     }
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) || defined(_M_X64)
     // Emit x86_64:
     // mov eax, 0x5877  -> B8 77 58 00 00
     // add eax, 0x12    -> 05 12 00 00 00
@@ -286,6 +296,10 @@ static LONG WINAPI nanomite_vectored_handler(PEXCEPTION_POINTERS pExceptionInfo)
 #if defined(_M_X64) || defined(__x86_64__)
             if (code == EXCEPTION_BREAKPOINT && pExceptionInfo->ContextRecord) {
                 pExceptionInfo->ContextRecord->Rip += 1;
+            }
+#elif defined(_M_ARM64) || defined(__aarch64__)
+            if (code == EXCEPTION_BREAKPOINT && pExceptionInfo->ContextRecord) {
+                pExceptionInfo->ContextRecord->Pc += 4;
             }
 #endif
             return EXCEPTION_CONTINUE_EXECUTION;

@@ -12,6 +12,13 @@ let runtime_hpp_template = {|#include <stdint.h>
 #if defined(__APPLE__) && defined(__MACH__)
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
+#elif defined(_WIN32) || defined(_WIN64)
+#include <windows.h>
+#if defined(_MSC_VER) && !defined(__clang__)
+#ifndef __attribute__
+#define __attribute__(x)
+#endif
+#endif
 #else
 #include <dlfcn.h>
 #endif
@@ -219,6 +226,18 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
                 memcpy(alt + 1, dec_name, sym->len + 1);
                 sym_ptr = dyn_dlsym((void*)-2, alt);
             }
+        }
+    }
+#elif defined(_WIN32) || defined(_WIN64)
+    if (!sym_ptr) {
+        HMODULE hMain = GetModuleHandleA(NULL);
+        sym_ptr = (void*)GetProcAddress(hMain, dec_name);
+        if (!sym_ptr && dec_name[0] == '_') sym_ptr = (void*)GetProcAddress(hMain, dec_name + 1);
+        if (!sym_ptr) {
+            char alt[66];
+            alt[0] = '_';
+            memcpy(alt + 1, dec_name, sym->len + 1);
+            sym_ptr = (void*)GetProcAddress(hMain, alt);
         }
     }
 #else

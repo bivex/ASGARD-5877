@@ -102,7 +102,13 @@ let emit_guards_macros ?(emit_timing = true) ?(emit_anti_debug = true) ?(emit_si
     add ("static inline bool " ^ p ^ "check_hw_breakpoints(void) {");
     add "    CONTEXT ctx; memset(&ctx, 0, sizeof(ctx)); ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;";
     add "    if (GetThreadContext(GetCurrentThread(), &ctx)) {";
+    add "#if defined(_M_ARM64) || defined(__aarch64__)";
+    add "        for (size_t i = 0; i < sizeof(ctx.Bcr)/sizeof(ctx.Bcr[0]); ++i) {";
+    add "            if (ctx.Bcr[i] & 1) return true;";
+    add "        }";
+    add "#elif defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)";
     add "        if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3 || (ctx.Dr7 & 0xFF)) return true;";
+    add "#endif";
     add "    }";
     add "    return false;";
     add "}";

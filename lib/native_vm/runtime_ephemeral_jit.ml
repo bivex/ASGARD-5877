@@ -161,7 +161,7 @@ enum EphemeralOp : uint8_t {
     EPH_OP_NEG_R
 };
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(_M_ARM64)
 static inline void emit_arm64_imm(uint32_t* code, size_t& idx, uint8_t reg, uint64_t imm) noexcept {
     uint32_t w0 = (uint32_t)(imm & 0xFFFFULL);
     uint32_t w1 = (uint32_t)((imm >> 16) & 0xFFFFULL);
@@ -362,7 +362,7 @@ __attribute__((always_inline)) static inline void execute_ephemeral_vm_op(
     code[idx++] = 0xd65f03c0; // ret
     code_bytes = idx * sizeof(uint32_t);
 
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) || defined(_M_X64)
     uint8_t* code = rw_slot;
     size_t idx = 0;
 

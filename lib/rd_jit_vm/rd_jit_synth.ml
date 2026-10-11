@@ -58,6 +58,8 @@ typedef void (*JITBlockFn)(RD_JIT_Context* ctx);
 #include <string.h>
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <dlfcn.h>
+#else
+#include <windows.h>
 #endif
 
 static inline void asgard_rd_jit_call_extern(RD_JIT_Context* ctx, uint64_t sym_idx) {
@@ -72,6 +74,15 @@ static inline void asgard_rd_jit_call_extern(RD_JIT_Context* ctx, uint64_t sym_i
         char alt_name[256];
         snprintf(alt_name, sizeof(alt_name), "_%s", sym_name);
         sym_ptr = dlsym(RTLD_DEFAULT, alt_name);
+    }
+#else
+    HMODULE hMain = GetModuleHandleA(NULL);
+    sym_ptr = (void*)GetProcAddress(hMain, sym_name);
+    if (!sym_ptr && sym_name[0] == '_') sym_ptr = (void*)GetProcAddress(hMain, sym_name + 1);
+    if (!sym_ptr) {
+        char alt_name[256];
+        snprintf(alt_name, sizeof(alt_name), "_%s", sym_name);
+        sym_ptr = (void*)GetProcAddress(hMain, alt_name);
     }
 #endif
     if (!sym_ptr) return;

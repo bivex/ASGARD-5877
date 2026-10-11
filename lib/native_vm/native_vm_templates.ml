@@ -36,6 +36,90 @@ let threaded_header_template = {|#pragma once
 #include <string.h>
 #elif defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
+#include <time.h>
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 1
+#endif
+#ifndef CLOCK_REALTIME
+#define CLOCK_REALTIME 0
+#endif
+static inline int clock_gettime(int, struct timespec* ts) {
+    if (!ts) return -1;
+    LARGE_INTEGER freq, counter;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&counter);
+    ts->tv_sec = (time_t)(counter.QuadPart / freq.QuadPart);
+    ts->tv_nsec = (long)(((counter.QuadPart % freq.QuadPart) * 1000000000LL) / freq.QuadPart);
+    return 0;
+}
+#endif
+
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#include <malloc.h>
+#ifndef __attribute__
+#define __attribute__(x)
+#endif
+#ifndef __builtin_expect
+#define __builtin_expect(expr, c) (expr)
+#endif
+#ifndef __builtin_bswap16
+#define __builtin_bswap16(x) _byteswap_ushort(x)
+#endif
+#ifndef __builtin_bswap32
+#define __builtin_bswap32(x) _byteswap_ulong(x)
+#endif
+#ifndef __builtin_bswap64
+#define __builtin_bswap64(x) _byteswap_uint64(x)
+#endif
+#ifndef __builtin_alloca
+#define __builtin_alloca(x) _alloca(x)
+#endif
+static inline int __builtin_clz(uint32_t x) { return std::countl_zero(x); }
+static inline int __builtin_clzll(uint64_t x) { return std::countl_zero(x); }
+static inline int __builtin_ctz(uint32_t x) { return std::countr_zero(x); }
+static inline int __builtin_ctzll(uint64_t x) { return std::countr_zero(x); }
+static inline int __builtin_popcount(uint32_t x) { return std::popcount(x); }
+static inline int __builtin_popcountll(uint64_t x) { return std::popcount(x); }
+static inline uint64_t __builtin_ia32_rdtsc() {
+#if defined(_M_X64) || defined(_M_IX86)
+    return __rdtsc();
+#elif defined(_M_ARM64)
+    return (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
+#else
+    return 0;
+#endif
+}
+#define __ATOMIC_RELAXED 0
+#define __ATOMIC_CONSUME 1
+#define __ATOMIC_ACQUIRE 2
+#define __ATOMIC_RELEASE 3
+#define __ATOMIC_ACQ_REL 4
+#define __ATOMIC_SEQ_CST 5
+
+template <typename T>
+static inline T __atomic_load_n(const volatile T* ptr, int) {
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).load();
+}
+template <typename T, typename V>
+static inline void __atomic_store_n(volatile T* ptr, V val, int) {
+    std::atomic_ref<T>(*const_cast<T*>(ptr)).store(static_cast<T>(val));
+}
+template <typename T, typename V>
+static inline T __atomic_exchange_n(volatile T* ptr, V val, int) {
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).exchange(static_cast<T>(val));
+}
+template <typename T, typename V>
+static inline bool __atomic_compare_exchange_n(volatile T* ptr, T* expected, V desired, bool, int, int) {
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).compare_exchange_strong(*expected, static_cast<T>(desired));
+}
+template <typename T, typename V>
+static inline T __atomic_fetch_add(volatile T* ptr, V val, int) {
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).fetch_add(static_cast<T>(val));
+}
+static inline void __atomic_thread_fence(int) {
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+}
 #endif
 
 #ifndef ASGARD_API_HASH_RESOLVER_DEFINED
@@ -317,6 +401,18 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
             }
         }
     }
+#elif defined(_WIN32) || defined(_WIN64)
+    if (!sym_ptr) {
+        HMODULE hMain = GetModuleHandleA(NULL);
+        sym_ptr = (void*)GetProcAddress(hMain, dec_name);
+        if (!sym_ptr && dec_name[0] == '_') sym_ptr = (void*)GetProcAddress(hMain, dec_name + 1);
+        if (!sym_ptr) {
+            char alt[66];
+            alt[0] = '_';
+            memcpy(alt + 1, dec_name, sym->len + 1);
+            sym_ptr = (void*)GetProcAddress(hMain, alt);
+        }
+    }
 #else
     if (!sym_ptr) {
         sym_ptr = dlsym(RTLD_DEFAULT, dec_name);
@@ -451,6 +547,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     static uintptr_t all_dispatch_domains[{{ num_domains }}][256];
     static bool dispatch_domains_ready = false;
     if (__builtin_expect(!dispatch_domains_ready, 0)) {
+#if !defined(_MSC_VER) || defined(__clang__)
 {%- for domain in dispatch_domains %}
         static void* raw_domain{{ domain.index }}[256] = {
 {%- for h in domain.handlers %}
@@ -470,6 +567,14 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
                 *(reinterpret_cast<volatile uintptr_t*>(&raw_all_domains[d][o])) = k_slot ^ 0xDEADBEEF5A5A5A5AULL;
             }
         }
+#else
+        for (size_t d = 0; d < {{ num_domains }}; ++d) {
+            for (size_t o = 0; o < 256; ++o) {
+                uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)d * 256ULL + (uintptr_t)o) * 0x6A09E667F3BCC908ULL);
+                all_dispatch_domains[d][o] = ((uintptr_t)(d * 256 + o) + 0x1337) ^ k_slot;
+            }
+        }
+#endif
         dispatch_domains_ready = true;
     }
 
@@ -508,6 +613,19 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     uint8_t src = 0;
     int64_t imm = 0;
     size_t next_canary_step = 47 + ((uint64_t)seed & 0x3FULL);
+
+#if defined(_MSC_VER) && !defined(__clang__)
+    #define DISPATCH_OPCODE() do { \
+        goto DISPATCH_MSVC; \
+    } while(0)
+#else
+    #define DISPATCH_OPCODE() do { \
+        uint8_t domain_idx = (uint8_t)((op ^ (uint8_t)(k_dyn & 0x07)) % {{ num_domains }}); \
+        uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)op) * 0x6A09E667F3BCC908ULL); \
+        void* target = (void*)(all_dispatch_domains[domain_idx][op] ^ k_slot); \
+        goto *target; \
+    } while(0)
+#endif
 
     #define FETCH_NEXT() do { \
         if (__builtin_expect(vIP_idx >= count, 0)) goto EXIT_VM; \
@@ -548,10 +666,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 {%- if enable_running_key %}
         ctx.advance_running_key(op, dst, imm); \
 {%- endif %}
-        uint8_t domain_idx = (uint8_t)((op ^ (uint8_t)(k_dyn & 0x07)) % {{ num_domains }}); \
-        uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)op) * 0x6A09E667F3BCC908ULL); \
-        void* target = (void*)(all_dispatch_domains[domain_idx][op] ^ k_slot); \
-        goto *target; \
+        DISPATCH_OPCODE(); \
     } while(0)
 
 {%- if enable_running_key %}
@@ -561,6 +676,21 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     ctx.reanchor_running_key(0);
 {%- endif %}
 {%- endif %}
+#if defined(_MSC_VER) && !defined(__clang__)
+    goto START_VM_MSVC;
+    DISPATCH_MSVC: {
+        uint8_t d_idx = (uint8_t)((op ^ (uint8_t)(k_dyn & 0x07)) % {{ num_domains }});
+        switch ((uint32_t)d_idx * 256U + (uint32_t)op) {
+{%- for domain in dispatch_domains %}
+{%- for h in domain.handlers %}
+        case ({{ domain.index }} * 256 + {{ loop.index0 }}): goto {{ h }};
+{%- endfor %}
+{%- endfor %}
+        default: goto EXIT_VM;
+        }
+    }
+    START_VM_MSVC:
+#endif
     FETCH_NEXT();
 
 {{ handlers_source }}

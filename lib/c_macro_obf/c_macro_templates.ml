@@ -44,8 +44,13 @@ let emit_base_macros ?(emit_api_hash = true) b ~p =
   add "    return buf;";
   add "}";
   add "#if defined(__cplusplus)";
+  add "#if defined(_MSC_VER)";
+  add ("#define " ^ p ^ "STR(enc_bytes, len, key) \\");
+  add ("    " ^ p ^ "decrypt_str((char*)_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))");
+  add "#else";
   add ("#define " ^ p ^ "STR(enc_bytes, len, key) \\");
   add ("    " ^ p ^ "decrypt_str((char*)__builtin_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))");
+  add "#endif";
   add "#elif defined(__GNUC__) || defined(__clang__)";
   add ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\");
   add "    static const uint8_t _enc[] = enc_bytes; \\";

@@ -66,9 +66,15 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
 #elif defined(__aarch64__) || defined(_M_ARM64)
     // ARM64 Virtual Counter Overhead & Multi-Source Jitter Probe
     uint64_t t0, t1;
+#if defined(_MSC_VER)
+    t0 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
+    for (int i = 0; i < 64; ++i) { __nop(); }
+    t1 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
+#else
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t0));
     for (int i = 0; i < 64; ++i) { __asm__ volatile("nop"); }
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t1));
+#endif
     if ((t1 - t0) > 30000ULL) {
         penalty ^= 0xFEEDFACE5877CAFEULL;
     }
@@ -223,7 +229,7 @@ static inline __attribute__((always_inline)) uint64_t compute_section_integrity_
             if (nt->Signature == IMAGE_NT_SIGNATURE) {
                 const auto* sec = IMAGE_FIRST_SECTION(nt);
                 for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++sec) {
-                    if (sec->Characteristics & (IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_INITIALIZED_DATA)) {
+                    if ((sec->Characteristics & IMAGE_SCN_MEM_EXECUTE) && !(sec->Characteristics & IMAGE_SCN_MEM_WRITE)) {
                         const uint8_t* p = base + sec->VirtualAddress;
                         size_t sz = sec->Misc.VirtualSize < 65536 ? sec->Misc.VirtualSize : 65536;
                         for (size_t j = 0; j + 8 <= sz; j += 32) {
@@ -312,9 +318,18 @@ static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity(
     CONTEXT dbg_ctx = {};
     dbg_ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
     if (GetThreadContext(GetCurrentThread(), &dbg_ctx)) {
+#if defined(_M_ARM64) || defined(__aarch64__)
+        for (size_t b = 0; b < sizeof(dbg_ctx.Bcr)/sizeof(dbg_ctx.Bcr[0]); ++b) {
+            if (dbg_ctx.Bcr[b] & 1) {
+                penalty ^= 0xCAFEBABE00000002ULL;
+                break;
+            }
+        }
+#elif defined(_M_X64) || defined(_M_IX86) || defined(__x86_64__) || defined(__i386__)
         if (dbg_ctx.Dr7 & 0x000000FF) {
             penalty ^= 0xCAFEBABE00000002ULL;
         }
+#endif
     }
 
     // Suspicious Anonymous RWX Memory Scanner (VirtualQuery)
