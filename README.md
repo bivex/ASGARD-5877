@@ -97,9 +97,11 @@ Evaluated against authentic C algorithms from production libraries under full AR
 
 | Benchmark Suite | Workload Core | Verification | DRS Score | Native Time | VM Protected Time | Overhead Factor | Bytecode Size |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **OpenSSL SHA-256** | FIPS 180-4 Block Transform | **PASS** | **93.7 / 100.0** | 16 µs | 3.85 s | **240,647x** | 484.0 KB |
-| **GNU Coreutils CRC-32** | IEEE 802.3 `cksum` Engine | **PASS** | **86.2 / 100.0** | 98 µs | 3.28 s | **33,419x** | 41.1 KB |
-| **SQLite Varint/Checksum** | Varint64 & Page Checksum | **PASS** | **88.7 / 100.0** | 13 µs | 265.72 ms | **20,439x** | 70.1 KB |
+| **OpenSSL SHA-256** | FIPS 180-4 Block Transform | **PASS** | **93.7 / 100.0** | 40 µs | 4.96 s | **123,916x** | 502.5 KB |
+| **GNU Coreutils CRC-32** | IEEE 802.3 `cksum` Engine | **PASS** | **86.2 / 100.0** | 98 µs | 4.08 s | **41,627x** | 42.0 KB |
+| **SQLite Varint/Checksum** | Varint64 & Page Checksum | **PASS** | **88.7 / 100.0** | 14 µs | 253.19 ms | **18,085x** | 53.1 KB |
+| **WireGuard ChaCha20** | RFC 8439 Block Transform | **PASS** | **83.7 / 100.0** | 13 µs | 1.57 s | **120,429x** | 822.0 KB |
+| **Zstandard xxHash64** | 64-bit Stream Checksum | **PASS** | **93.7 / 100.0** | 4 µs | 371.89 ms | **92,972x** | 867.2 KB |
 
 > For comprehensive analysis, ARM64 NEON lifter additions, and reproduction steps, see [`docs/REAL_WORLD_BENCHMARKS.md`](docs/REAL_WORLD_BENCHMARKS.md). Runner: `./scripts/run_real_world_benchmarks.sh`.
 
@@ -430,14 +432,14 @@ ASGARD-5877 includes **389 tests** across **35 suites** verified on every build 
 33. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, junk density & size budget enforcement, and preset generators.
 34. **RISC-V Lifter & CFG**: RV64I, RV64M (including `mulh`, `mulhu`, `mulhsu`), RV64A, Zbb (`clz`, `ctz`, `cpop`, `rev8`, `orc.b`, `sext.b/h`, `zext.h`, `min`, `max`, `minu`, `maxu`, `andn`, `orn`, `xnor`, `rol`, `ror`), Zba address generation (`sh1add`, `sh2add`, `sh3add`), memory fences (`fence`, `fence.i`), scalar FP (`fadd`, `fsub`, `fmul`, `fdiv`, `feq`, `flt`, `fle`, `fmin`, `fmax`, `fmv`, `fcvt`), memory (`flw`/`fld`, `fsw`/`fsd`), and RVV.
 35. **Stack-VM Execution Engine**: 32 verification tests covering address-bound bytecode keys (Anti-VMPredator Phase 6), independent payload/tag key halves, field layout randomization, polymorphic opcodes, and identifier scrambling.
-36. **Real-World Production Corpus**: 100% verification across OpenSSL SHA-256 (FIPS 180-4), GNU Coreutils CRC-32 (IEEE 802.3), and SQLite3 Varint64/PageChecksum under ARM64 virtualization (`--flatten --mba`), achieving DRS scores of 86.2–93.7/100.0.
+36. **Real-World Production Corpus**: 100% verification across OpenSSL SHA-256 (FIPS 180-4), GNU Coreutils CRC-32 (IEEE 802.3), SQLite3 Varint64/PageChecksum, WireGuard ChaCha20 (RFC 8439), and Zstandard xxHash64 under ARM64 virtualization (`--flatten --mba`), achieving DRS scores of 83.7–93.7/100.0.
 
 ---
 
 ## Documentation
 
 - [`docs/markdown-style-guide.md`](docs/markdown-style-guide.md): Repository documentation and formatting standards.
-- [`docs/REAL_WORLD_BENCHMARKS.md`](docs/REAL_WORLD_BENCHMARKS.md): Real-world C production benchmark corpus (OpenSSL, Coreutils, SQLite), DRS profiling, overhead analysis, and ARM64 NEON lifter integration.
+- [`docs/REAL_WORLD_BENCHMARKS.md`](docs/REAL_WORLD_BENCHMARKS.md): Real-world C production benchmark corpus (OpenSSL, Coreutils, SQLite, WireGuard, Zstandard), DRS profiling, overhead analysis, and ARM64 NEON lifter integration.
 - [`docs/VM_PROTECTOR.md`](docs/VM_PROTECTOR.md): In-depth guide to VM architecture, handlers, CFF, and trampoline generation.
 - [`docs/ENTROPY_MODEL.md`](docs/ENTROPY_MODEL.md): Information-theoretic entropy verification and Shannon metric models.
 - [`docs/FORMAL_VERIFICATION.md`](docs/FORMAL_VERIFICATION.md): Formal Sail ISA verification and property testing proofs.

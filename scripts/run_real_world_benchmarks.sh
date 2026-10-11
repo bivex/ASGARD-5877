@@ -16,7 +16,7 @@ echo "   ASGARD-5877: REAL-WORLD PRODUCTION CORPUS BENCHMARK SUITE             "
 echo "========================================================================="
 echo "Host: $(uname -s) $(uname -m) | OS: $(sw_vers -productVersion 2>/dev/null || uname -r)"
 echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-echo "Workloads: OpenSSL (FIPS 180-4 SHA-256), GNU Coreutils (CRC-32), SQLite (B-Tree/Varint)"
+echo "Workloads: OpenSSL (SHA-256), Coreutils (CRC-32), SQLite (Varint), WireGuard (ChaCha20), Zstandard (xxHash64)"
 echo "Protection Profile: Full ARM64 Virtualization + CFF + 2-Round MBA + RNS-4"
 echo "-------------------------------------------------------------------------"
 
@@ -126,10 +126,12 @@ with open('$RESULTS_JSON', 'w') as f:
     echo "[+] $DISPLAY_NAME: 100% PASS (DRS: $DRS_SCORE / 100.0)"
 }
 
-# Run the 3 real-world workloads
+# Run the 5 real-world workloads
 run_benchmark "openssl" "OpenSSL (SHA-256 Transform)" "openssl_sha256.c" "100"
 run_benchmark "coreutils" "GNU Coreutils (CRC-32 cksum)" "coreutils_crc32.c" "200"
 run_benchmark "sqlite" "SQLite (Varint64 & Page Checksum)" "sqlite_varint_hash.c" "200"
+run_benchmark "wireguard" "WireGuard (ChaCha20 Block)" "wireguard_chacha20.c" "100"
+run_benchmark "zstd" "Zstandard (xxHash64 Checksum)" "zstd_xxhash64.c" "200"
 
 echo ""
 echo "========================================================================="
@@ -158,7 +160,7 @@ for d in data:
 print('\n')
 all_pass = all(d['verif'] == 'PASS' for d in data)
 if all_pass:
-    print('>>> ALL 3 REAL-WORLD BENCHMARK SUITES VERIFIED AND PASSED 100% <<<')
+    print('>>> ALL 5 REAL-WORLD BENCHMARK SUITES VERIFIED AND PASSED 100% <<<')
 else:
     print('>>> WARNING: Some benchmarks failed verification! <<<')
 "

@@ -8,13 +8,15 @@ This document details the architecture, integration, toolchain enhancements, and
 
 Synthetic micro-benchmarks often fail to expose corner cases in complex compilers: deep nested loops, SIMD auto-vectorization, variable-length bit manipulation, 128-bit vector register spilling, and dynamic symbol resolution.
 
-To prove production readiness and evaluate the true security and performance trade-offs of the ASGARD-5877 Virtualization-Based Obfuscation (VBO) engine, three mission-critical C algorithms were integrated from production software:
+To prove production readiness and evaluate the true security and performance trade-offs of the ASGARD-5877 Virtualization-Based Obfuscation (VBO) engine, five mission-critical C algorithms were integrated from production software:
 
 1. **OpenSSL (FIPS 180-4 SHA-256)**: 64-round cryptographic block transformation with non-linear bitwise logic ($\text{Ch}$, $\text{Maj}$), cyclic rotations, and round constants.
 2. **GNU Coreutils (`cksum` / IEEE 802.3 CRC-32)**: Polynomial bit-shift table lookups and block processing operating on arbitrary byte streams.
 3. **SQLite3 (`sqlite3PutVarint64`, `sqlite3GetVarint64`, `sqlite3PageChecksum`)**: Variable-length 64-bit integer codec (1 to 9 bytes) and 64-bit B-Tree/WAL page hash mixing.
+4. **WireGuard (RFC 8439 ChaCha20)**: 20-round stream cipher block transformation with 4-way quarter-round ARX arithmetic and dynamic 256-bit key scheduling.
+5. **Zstandard (xxHash64)**: 64-bit striped parallel checksum engine with prime multipliers, rotational convergence, and avalanche finalization.
 
-All three workloads achieve **100% test vector verification** under full ARM64 virtualization (`--flatten --mba`), yielding **Devirtualization Resistance Scores (DRS) between 86.2 and 93.7 / 100.0** ("MIL-GRADE HARDENED").
+All five workloads achieve **100% test vector verification** under full ARM64 virtualization (`--flatten --mba`), yielding **Devirtualization Resistance Scores (DRS) between 83.7 and 93.7 / 100.0** ("MIL-GRADE HARDENED").
 
 ---
 
@@ -51,11 +53,29 @@ All three workloads achieve **100% test vector verification** under full ARM64 v
   - External C symbol linkage across virtualized function boundaries.
 - **Test Vector**: Boundary suite of 16 integers across 200 workload rounds with accumulator integrity checks.
 
+### 2.4 WireGuard ChaCha20 Block Transform (`wireguard_chacha20.c`)
+- **Origin**: WireGuard VPN / RFC 8439 ChaCha20 reference specification.
+- **Core Algorithm**: ChaCha20 20-round block transformation operating on a $4 \times 4$ 32-bit matrix.
+- **Operations Tested**:
+  - 4-way quarter-round ARX updates: $\text{add}_{32}$, $\text{xor}_{32}$, and left rotations by $16$, $12$, $8$, and $7$ bits.
+  - 10 column rounds alternating with 10 diagonal rounds.
+  - Feed-forward addition of original state matrix into output keystream block.
+- **Test Vector**: RFC 8439 Section 2.3.2 standard test vector (key $0\text{x00}..0\text{x1F}$, nonce $0\text{x00000009}..$, counter $1$). Verified against first 4 words `0xE4E7F110`, `0x15593BD1`, `0x1FDD0F50`, `0xC47120A3`.
+
+### 2.5 Zstandard xxHash64 Streaming Checksum (`zstd_xxhash64.c`)
+- **Origin**: Zstandard compression library / Yann Collet xxHash64 reference.
+- **Core Algorithm**: High-throughput 64-bit non-cryptographic hash with 4-lane striping.
+- **Operations Tested**:
+  - 4-lane parallel accumulation using 64-bit prime multipliers (`PRIME64_1` .. `PRIME64_5`).
+  - Merge-round convergence with rotations ($31$, $27$, $11$ bits) and XOR folding.
+  - Multi-round avalanche finalizer destroying all linear bit relationships.
+- **Test Vector**: Empty string (`0xEF46DB3751D8E999`) and 32-byte sequence `"12345678901234567890123456789012"` (`0x40FD1AA52D98274C`).
+
 ---
 
 ## 3. Toolchain and Engine Enhancements
 
-Lifting and virtualizing real-world code compiled with Clang at `-O3` required five architectural fixes across the ARM64 lifter, native VM emitter, MBA engine, and C preprocessor obfuscator:
+Lifting and virtualizing real-world code compiled with Clang at `-O3` required six architectural enhancements across the ARM64 lifter, native VM emitter, MBA engine, C preprocessor obfuscator, and function inlining strategy:
 
 ### 3.1 ARM64 NEON Vector Splat Lifter (`arm64_neon.ml`, `arm64_parser.ml`)
 Clang `-O3` aggressively vectorizes zeroing loops and `memset` operations using `movi` with vector arrangements:
@@ -83,6 +103,9 @@ The C macro obfuscator encrypts string literals on the stack using `ASG_STR(...)
 - **Fix**: Extended `is_exempt()` in `lib/c_macro_obf/c_macro_obf.ml` to skip string literal encryption following `extern`, `visibility`, `__visibility__`, `asm`, and `__asm__`.
 - In corpus sources, `#pragma GCC visibility push(default)` and `extern "C"` wrappers ensure exported helper symbols remain discoverable via runtime `dlsym`.
 
+### 3.6 Subroutine Inlining inside Virtualized Regions
+When cryptographic or hashing algorithms decompose operations into subroutines (such as `XXH64_round` or `XXH_rotl64`), Clang at `-O3` may generate branch-with-link (`bl`) instructions if not forcefully inlined. Inlining these subroutines with `__attribute__((always_inline))` ensures that the entire algorithm compiles into a single contiguous basic block graph, fully captured by `ASGARD_BEGIN_ULTRA` and virtualized without external call overhead.
+
 ---
 
 ## 4. Empirical Evaluation Results
@@ -93,11 +116,13 @@ Tests executed on Apple Silicon (ARM64, macOS 15 Darwin 24.6.0). All binaries co
 
 | Benchmark Suite | Workload Core | Verification | DRS Score | Native Time | VM Protected Time | Overhead Factor | Bytecode Size | Binary Bloat |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **OpenSSL (SHA-256 Transform)** | OPENSSL Core | **PASS** | **93.7 / 100.0** | 16 us | 3.85 s | **240647.2x** | 484.0 KB | 22.1x |
-| **GNU Coreutils (CRC-32 cksum)** | COREUTILS Core | **PASS** | **86.2 / 100.0** | 98 us | 3.28 s | **33419.3x** | 41.1 KB | 7.4x |
-| **SQLite (Varint64 & Page Checksum)** | SQLITE Core | **PASS** | **88.7 / 100.0** | 13 us | 265.72 ms | **20439.8x** | 70.1 KB | 8.3x |
+| **OpenSSL (SHA-256 Transform)** | OPENSSL Core | **PASS** | **93.7 / 100.0** | 40 us | 4.96 s | **123916.1x** | 502.5 KB | 22.6x |
+| **GNU Coreutils (CRC-32 cksum)** | COREUTILS Core | **PASS** | **86.2 / 100.0** | 98 us | 4.08 s | **41627.2x** | 42.0 KB | 7.4x |
+| **SQLite (Varint64 & Page Checksum)** | SQLITE Core | **PASS** | **88.7 / 100.0** | 14 us | 253.19 ms | **18085.4x** | 53.1 KB | 7.9x |
+| **WireGuard (ChaCha20 Block)** | WIREGUARD Core | **PASS** | **83.7 / 100.0** | 13 us | 1.57 s | **120428.8x** | 822.0 KB | 33.3x |
+| **Zstandard (xxHash64 Checksum)** | ZSTD Core | **PASS** | **93.7 / 100.0** | 4 us | 371.89 ms | **92972.2x** | 867.2 KB | 35.3x |
 
-*Note: Native Time reflects 100 iterations (OpenSSL) or 200 iterations (Coreutils, SQLite) of the core transformation.*
+*Note: Native Time reflects 100 iterations (OpenSSL, WireGuard) or 200 iterations (Coreutils, SQLite, Zstandard) of the core transformation.*
 
 ```
 ================ DEVIRTUALIZATION RESISTANCE REPORT ================
