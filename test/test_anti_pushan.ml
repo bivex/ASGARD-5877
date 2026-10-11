@@ -264,6 +264,18 @@ let string_contains s sub =
     in
     check 0
 
+let rec replace_all ~pattern ~with_str s =
+  let len_p = String.length pattern in
+  let len_s = String.length s in
+  let rec find i =
+    if i + len_p > len_s then s
+    else if String.sub s i len_p = pattern then
+      String.sub s 0 i ^ with_str ^ replace_all ~pattern ~with_str (String.sub s (i + len_p) (len_s - (i + len_p)))
+    else
+      find (i + 1)
+  in
+  find 0
+
 let replace_first ~pattern ~with_str s =
   let len_p = String.length pattern in
   let len_s = String.length s in
@@ -331,7 +343,7 @@ func_tamper:
       let pkg = Vm_emitter.compile_and_package ~rng ~config:addr_cfg func in
       (* Simulate an emulator or hook tampering with handler address binding on branch *)
       let tampered_src =
-        replace_first
+        replace_all
           ~pattern:"ctx.reanchor_running_key((uint64_t)vIP_idx, g_handlers_hash);"
           ~with_str:"ctx.reanchor_running_key((uint64_t)vIP_idx, 0ULL);"
           pkg.cpp_runtime_source
