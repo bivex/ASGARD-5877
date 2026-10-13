@@ -1,4 +1,4 @@
-.PHONY: all build test clean corpus corpus-arm64 benchmark benchmark-arm64 coverage
+.PHONY: all build test clean corpus corpus-arm64 benchmark benchmark-arm64 coverage backup
 
 all: build
 
@@ -26,3 +26,6 @@ benchmark-arm64:
 clean:
 	@dune clean
 	@rm -rf binaries/corpus_build binaries/corpus_build_arm64 /tmp/.asgard_build
+
+backup:
+	@./scripts/backup.sh

@@ -63,30 +63,50 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const
   in
 
+  let synth_chameleon_expr ~x ~y sem =
+    let w = Chameleon_handlers.synth_chameleon_weights rng sem in
+    let (y_term, add_bias) = match sem with
+      | Chameleon_handlers.SemSub -> (bit_not y, u64 1L)
+      | _ -> (y, u64 0L)
+    in
+    let term_xor = u64 w.w_xor *~ (x ^~ y_term) in
+    let term_and = u64 w.w_and *~ (x &~ y_term) in
+    let term_or  = u64 w.w_or  *~ (x |~ y_term) in
+    let sum = (term_xor +~ term_and) +~ term_or in
+    let res = if sem = Chameleon_handlers.SemSub then sum +~ add_bias else sum in
+    if Random.State.bool rng then
+      (res +~ u64 w.w_bias) -~ u64 w.w_bias
+    else
+      res
+  in
+
   let pick_poly_add_ast () =
-    let raw = match Random.State.int rng 5 with
-      | 0 -> (reg_dst ^~ reg_src) +~ (u64 2L *~ (reg_dst &~ reg_src))
-      | 1 -> (reg_dst |~ reg_src) +~ (reg_dst &~ reg_src)
-      | 2 -> (u64 2L *~ (reg_dst |~ reg_src)) -~ (reg_dst ^~ reg_src)
-      | 3 -> synth_basis_add ()
+    let raw = match Random.State.int rng 6 with
+      | 0 -> synth_chameleon_expr ~x:reg_dst ~y:reg_src Chameleon_handlers.SemAdd
+      | 1 -> (reg_dst ^~ reg_src) +~ (u64 2L *~ (reg_dst &~ reg_src))
+      | 2 -> (reg_dst |~ reg_src) +~ (reg_dst &~ reg_src)
+      | 3 -> (u64 2L *~ (reg_dst |~ reg_src)) -~ (reg_dst ^~ reg_src)
+      | 4 -> synth_basis_add ()
       | _ -> call "ctx.rns_add" [reg_dst; reg_src]
     in
     if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let pick_poly_sub_ast () =
-    let raw = match Random.State.int rng 4 with
-      | 0 -> (reg_dst ^~ reg_src) -~ (u64 2L *~ (bit_not reg_dst &~ reg_src))
-      | 1 -> (u64 2L *~ (reg_dst &~ bit_not reg_src)) -~ (reg_dst ^~ reg_src)
-      | 2 -> synth_basis_sub ()
+    let raw = match Random.State.int rng 5 with
+      | 0 -> synth_chameleon_expr ~x:reg_dst ~y:reg_src Chameleon_handlers.SemSub
+      | 1 -> (reg_dst ^~ reg_src) -~ (u64 2L *~ (bit_not reg_dst &~ reg_src))
+      | 2 -> (u64 2L *~ (reg_dst &~ bit_not reg_src)) -~ (reg_dst ^~ reg_src)
+      | 3 -> synth_basis_sub ()
       | _ -> call "ctx.rns_sub" [reg_dst; reg_src]
     in
     if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let pick_poly_xor_ast () =
-    let raw = match Random.State.int rng 4 with
-      | 0 -> (reg_dst +~ reg_src) -~ (u64 2L *~ (reg_dst &~ reg_src))
-      | 1 -> (reg_dst |~ reg_src) -~ (reg_dst &~ reg_src)
-      | 2 -> synth_basis_xor ()
+    let raw = match Random.State.int rng 5 with
+      | 0 -> synth_chameleon_expr ~x:reg_dst ~y:reg_src Chameleon_handlers.SemXor
+      | 1 -> (reg_dst +~ reg_src) -~ (u64 2L *~ (reg_dst &~ reg_src))
+      | 2 -> (reg_dst |~ reg_src) -~ (reg_dst &~ reg_src)
+      | 3 -> synth_basis_xor ()
       | _ -> (reg_dst ^~ reg_src)
     in
     if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
@@ -108,17 +128,19 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let pick_poly_and_ast () =
-    let raw = match Random.State.int rng 3 with
-      | 0 -> reg_dst &~ reg_src
-      | 1 -> (reg_dst +~ reg_src) -~ (reg_dst |~ reg_src)
+    let raw = match Random.State.int rng 4 with
+      | 0 -> synth_chameleon_expr ~x:reg_dst ~y:reg_src Chameleon_handlers.SemAnd
+      | 1 -> reg_dst &~ reg_src
+      | 2 -> (reg_dst +~ reg_src) -~ (reg_dst |~ reg_src)
       | _ -> (reg_dst ^~ reg_src) ^~ (reg_dst |~ reg_src)
     in
     if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let pick_poly_or_ast () =
-    let raw = match Random.State.int rng 3 with
-      | 0 -> reg_dst |~ reg_src
-      | 1 -> (reg_dst ^~ reg_src) +~ (reg_dst &~ reg_src)
+    let raw = match Random.State.int rng 4 with
+      | 0 -> synth_chameleon_expr ~x:reg_dst ~y:reg_src Chameleon_handlers.SemOr
+      | 1 -> reg_dst |~ reg_src
+      | 2 -> (reg_dst ^~ reg_src) +~ (reg_dst &~ reg_src)
       | _ -> (reg_dst +~ reg_src) -~ (reg_dst &~ reg_src)
     in
     if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
@@ -352,14 +374,16 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   end;
     let imm_u64 = cast UInt64 (var "imm") in
     emit_handler_inline_ast b "H_ADD_RR" [ probe_start; set_reg (var "dst") (h_add_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
-  (match pick_variant 3 with
-   | 0 -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) +~ (u64 2L *~ (reg_dst &~ imm_u64))); probe_check; inc_instrs; fetch_next ]
-   | 1 -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" +~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+  (match pick_variant 4 with
+   | 0 -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; set_reg (var "dst") (synth_chameleon_expr ~x:reg_dst ~y:imm_u64 Chameleon_handlers.SemAdd); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) +~ (u64 2L *~ (reg_dst &~ imm_u64))); probe_check; inc_instrs; fetch_next ]
+   | 2 -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" +~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
    | _ -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") ((var "_d" |~ var "_i") +~ (var "_d" &~ var "_i")); probe_check; inc_instrs; fetch_next ]);
   emit_handler_inline_ast b "H_SUB_RR" [ probe_start; set_reg (var "dst") (h_sub_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
-  (match pick_variant 3 with
-   | 0 -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) -~ (u64 2L *~ (bit_not reg_dst &~ imm_u64))); probe_check; inc_instrs; fetch_next ]
-   | 1 -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" -~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+  (match pick_variant 4 with
+   | 0 -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; set_reg (var "dst") (synth_chameleon_expr ~x:reg_dst ~y:imm_u64 Chameleon_handlers.SemSub); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) -~ (u64 2L *~ (bit_not reg_dst &~ imm_u64))); probe_check; inc_instrs; fetch_next ]
+   | 2 -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" -~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
    | _ -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") (var "_d" +~ (bit_not (var "_i") +~ u64 1L)); probe_check; inc_instrs; fetch_next ]);
   Buffer.add_string b "    H_IMUL_RR: {\n";
   (match pick_variant 3 with
@@ -398,19 +422,22 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   emit_handler_inline_ast b "H_XOR_RR" [ probe_start; set_reg (var "dst") (h_xor_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
-  (match pick_variant 3 with
-   | 0 -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; set_reg (var "dst") ((reg_dst |~ imm_u64) -~ (reg_dst &~ imm_u64)); probe_check; inc_instrs; fetch_next ]
-   | 1 -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" ^~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+  (match pick_variant 4 with
+   | 0 -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; set_reg (var "dst") (synth_chameleon_expr ~x:reg_dst ~y:imm_u64 Chameleon_handlers.SemXor); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; set_reg (var "dst") ((reg_dst |~ imm_u64) -~ (reg_dst &~ imm_u64)); probe_check; inc_instrs; fetch_next ]
+   | 2 -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" ^~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
    | _ -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") ((var "_d" +~ var "_i") -~ (u64 2L *~ (var "_d" &~ var "_i"))); probe_check; inc_instrs; fetch_next ]);
   emit_handler_inline_ast b "H_AND_RR" [ probe_start; set_reg (var "dst") (h_and_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
-  (match pick_variant 3 with
-   | 0 -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; set_reg (var "dst") ((reg_dst +~ imm_u64) -~ (reg_dst |~ imm_u64)); probe_check; inc_instrs; fetch_next ]
-   | 1 -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; set_reg (var "dst") (reg_dst &~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+  (match pick_variant 4 with
+   | 0 -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; set_reg (var "dst") (synth_chameleon_expr ~x:reg_dst ~y:imm_u64 Chameleon_handlers.SemAnd); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; set_reg (var "dst") ((reg_dst +~ imm_u64) -~ (reg_dst |~ imm_u64)); probe_check; inc_instrs; fetch_next ]
+   | 2 -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; set_reg (var "dst") (reg_dst &~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
    | _ -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") ((var "_d" |~ var "_i") -~ (var "_d" ^~ var "_i")); probe_check; inc_instrs; fetch_next ]);
   emit_handler_inline_ast b "H_OR_RR" [ probe_start; set_reg (var "dst") (h_or_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
-  (match pick_variant 3 with
-   | 0 -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) +~ (reg_dst &~ imm_u64)); probe_check; inc_instrs; fetch_next ]
-   | 1 -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; set_reg (var "dst") (reg_dst |~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+  (match pick_variant 4 with
+   | 0 -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; set_reg (var "dst") (synth_chameleon_expr ~x:reg_dst ~y:imm_u64 Chameleon_handlers.SemOr); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) +~ (reg_dst &~ imm_u64)); probe_check; inc_instrs; fetch_next ]
+   | 2 -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; set_reg (var "dst") (reg_dst |~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
    | _ -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") ((var "_d" +~ var "_i") -~ (var "_d" &~ var "_i")); probe_check; inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";

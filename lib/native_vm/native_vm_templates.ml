@@ -220,6 +220,8 @@ static inline void* asgard_resolve_by_api_hash(uint32_t) noexcept { return nullp
 
 {{ branchless_vip_header }}
 
+{{ chameleon_header }}
+
 {%- if enable_direct_syscalls %}
 {{ direct_syscalls_header }}
 {%- endif %}

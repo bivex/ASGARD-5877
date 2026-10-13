@@ -59,6 +59,7 @@ type vm_runtime_config = {
   vector_isa : bool;
   egraph_expansion : bool;
   ephemeral_jit : bool;
+  chameleon_handlers : bool;
 }
 
 type c_macro_config = {
@@ -139,6 +140,9 @@ val ephemeral_jit_enabled : t option -> bool
 
 val eh_shadowing_enabled : t option -> bool
 (** Tech-2601 Exception Handling Shadowing gate: [true] when enabled in eh_shadowing config. *)
+
+val chameleon_handlers_enabled : t option -> bool
+(** Chameleon ALU polymorphic handlers gate: [true] when enabled in vm_runtime. *)
 
 type builder
 (** Mutable builder for [Protection_config.t]. *)

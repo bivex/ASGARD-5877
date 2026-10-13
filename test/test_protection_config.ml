@@ -30,6 +30,7 @@ let test_json_roundtrip () =
       Alcotest.(check int) "vm_runtime.num_dispatch_domains matches" original.vm_runtime.num_dispatch_domains parsed.vm_runtime.num_dispatch_domains;
       Alcotest.(check bool) "vm_runtime.vector_isa matches" original.vm_runtime.vector_isa parsed.vm_runtime.vector_isa;
       Alcotest.(check bool) "vm_runtime.egraph_expansion matches" original.vm_runtime.egraph_expansion parsed.vm_runtime.egraph_expansion;
+      Alcotest.(check bool) "vm_runtime.chameleon_handlers matches" original.vm_runtime.chameleon_handlers parsed.vm_runtime.chameleon_handlers;
       Alcotest.(check bool) "stack_vm.enabled matches" original.stack_vm.enabled parsed.stack_vm.enabled;
       Alcotest.(check bool) "stack_vm.superoperators matches" original.stack_vm.superoperators parsed.stack_vm.superoperators;
       Alcotest.(check bool) "stack_vm.state_feedback matches" original.stack_vm.state_feedback parsed.stack_vm.state_feedback;

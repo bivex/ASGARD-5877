@@ -151,6 +151,7 @@ let emit_cpp_threaded_header
   let mem_scan_header = if enable_mem_scan then Hardened_runtime.emit_memory_integrity_scanner_header () else "" in
   let nanomite_header = if enable_nanomites then Hardened_runtime.emit_nanomite_engine_header () else "" in
   let ephemeral_jit_header = if enable_ephemeral_jit then Hardened_runtime.emit_ephemeral_jit_header () else "" in
+  let chameleon_header = Chameleon_handlers.emit_chameleon_handlers_hpp rng in
 
   let (has_gpu_constants, gpu_constants) = match gpu_matrix with
     | Some mat -> (true, Gpu_synth.Gpu_matrix.emit_cpp_constants mat)
@@ -273,6 +274,7 @@ let emit_cpp_threaded_header
     ("enable_vector_isa", Jg_types.Tbool enable_vector_isa);
     ("rns_header", Jg_types.Tstr rns_header);
     ("branchless_vip_header", Jg_types.Tstr branchless_vip_header);
+    ("chameleon_header", Jg_types.Tstr chameleon_header);
     ("enable_direct_syscalls", Jg_types.Tbool enable_direct_syscalls);
     ("direct_syscalls_header", Jg_types.Tstr direct_syscalls_header);
     ("enable_anti_emu", Jg_types.Tbool enable_anti_emu);

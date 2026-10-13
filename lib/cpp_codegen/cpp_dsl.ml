@@ -101,4 +101,4 @@ let set_reg dst_e val_e : stmt = expr_stmt (call "ctx.set_reg" [dst_e; val_e])
 let fetch_next : stmt = expr_stmt (call "FETCH_NEXT" [])
 let probe_start : stmt = expr_stmt (call "PROBE_START" [])
 let probe_check : stmt = expr_stmt (call "PROBE_CHECK" [])
-let inc_instrs : stmt = expr_stmt (call "ctx.executed_instructions++" [])
+let inc_instrs : stmt = raw "ctx.executed_instructions++;"

@@ -104,6 +104,7 @@ type vm_runtime_config = {
   vector_isa : bool [@default true];
   egraph_expansion : bool [@default true];
   ephemeral_jit : bool [@default false];
+  chameleon_handlers : bool [@default true];
 } [@@deriving yojson]
 
 type c_macro_config = {
@@ -146,6 +147,7 @@ let default_vm_runtime = {
   enable_super_operators = true; stack_scrambling = true;
   memory_sanitization = true; vector_isa = true;
   egraph_expansion = true; ephemeral_jit = false;
+  chameleon_handlers = true;
 }
 let default_c_macro = {
   enabled = true; macro_prefix = "ASG_"; obfuscate_strings = true;
@@ -210,5 +212,10 @@ let ephemeral_jit_enabled (config : t option) : bool =
 let eh_shadowing_enabled (config : t option) : bool =
   match config with
   | Some c -> c.eh_shadowing.enabled
+  | None -> true
+
+let chameleon_handlers_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.vm_runtime.chameleon_handlers
   | None -> true
 

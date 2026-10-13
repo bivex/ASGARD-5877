@@ -33,4 +33,5 @@ profile_results.json
 *.zip
 *.checked
 *.tar.gz
+backup/
 gemini-code-1791925199080.sh

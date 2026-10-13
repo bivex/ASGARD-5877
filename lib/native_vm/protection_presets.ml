@@ -41,6 +41,7 @@ let default : t = {
     vector_isa = true;
     egraph_expansion = true;
     ephemeral_jit = false;
+    chameleon_handlers = true;
   };
   c_macro = {
     enabled = true;
@@ -101,6 +102,7 @@ let max_security : t = {
     vector_isa = true;
     egraph_expansion = true;
     ephemeral_jit = true;
+    chameleon_handlers = true;
   };
   c_macro = {
     enabled = true;
@@ -172,6 +174,7 @@ let lightweight : t = {
     vector_isa = false;
     egraph_expansion = false;
     ephemeral_jit = true;
+    chameleon_handlers = false;
   };
   c_macro = {
     enabled = true;
@@ -243,6 +246,7 @@ let stealth : t = {
     vector_isa = true;
     egraph_expansion = true;
     ephemeral_jit = false;
+    chameleon_handlers = true;
   };
   c_macro = {
     enabled = true;
@@ -314,6 +318,7 @@ let minimal : t = {
     vector_isa = false;
     egraph_expansion = false;
     ephemeral_jit = false;
+    chameleon_handlers = false;
   };
   c_macro = {
     enabled = false;
@@ -385,6 +390,7 @@ let high : t = {
     vector_isa = true;
     egraph_expansion = true;
     ephemeral_jit = false;
+    chameleon_handlers = true;
   };
   c_macro = {
     enabled = true;
