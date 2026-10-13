@@ -350,26 +350,29 @@ let obfuscate_alu ?(order = `Deg5) ~rng ~depth ~dst ~src1 ~src2 op =
   if is_stack_reg dst || is_stack_op src1 || is_stack_op src2 then
     [ Ir.Alu { op; dst; src1; src2; set_flags = false } ]
   else
-    match op with
-  | Ir.Add ->
-      let mba_tree = rewrite ~order ~rng ~depth (Add (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
-  | Ir.Sub ->
-      let mba_tree = rewrite ~order ~rng ~depth (Sub (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
-  | Ir.Xor ->
-      let mba_tree = rewrite ~order ~rng ~depth (Xor (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
-  | Ir.And ->
-      let mba_tree = rewrite ~order ~rng ~depth (And (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
-  | Ir.Or ->
-      let mba_tree = rewrite ~order ~rng ~depth (Or (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
-  | Ir.Imul ->
-      let mba_tree = rewrite ~order ~rng ~depth (Mul (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
-  | unsupported ->
-      [ Ir.Alu { op = unsupported; dst; src1; src2; set_flags = false } ]
+    let raw = match op with
+    | Ir.Add ->
+        let mba_tree = rewrite ~order ~rng ~depth (Add (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+    | Ir.Sub ->
+        let mba_tree = rewrite ~order ~rng ~depth (Sub (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+    | Ir.Xor ->
+        let mba_tree = rewrite ~order ~rng ~depth (Xor (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+    | Ir.And ->
+        let mba_tree = rewrite ~order ~rng ~depth (And (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+    | Ir.Or ->
+        let mba_tree = rewrite ~order ~rng ~depth (Or (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+    | Ir.Imul ->
+        let mba_tree = rewrite ~order ~rng ~depth (Mul (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] mba_tree
+    | unsupported ->
+        [ Ir.Alu { op = unsupported; dst; src1; src2; set_flags = false } ]
+    in
+    if depth >= 2 then Non_linear_bijection.wrap_non_algebraic_mba ~rng ~dst raw
+    else raw
 
 

@@ -6,6 +6,7 @@ type ghost_config = {
   seed        : int64;
   ghost_rate  : int;
   max_ghosts  : int;
+  entangle    : bool;
 }
 
 val default_ghost_config : int64 -> ghost_config

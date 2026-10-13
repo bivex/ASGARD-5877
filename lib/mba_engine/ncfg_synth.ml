@@ -236,24 +236,27 @@ let obfuscate_alu ~rng ~depth ~dst ~src1 ~src2 op =
   if is_stack_reg dst || is_stack_op src1 || is_stack_op src2 then
     [ Ir.Alu { op; dst; src1; src2; set_flags = false } ]
   else
-    match op with
-  | Ir.Add ->
-      let tree = rewrite_ncfg ~rng ~depth (Add (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
-  | Ir.Sub ->
-      let tree = rewrite_ncfg ~rng ~depth (Sub (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
-  | Ir.Xor ->
-      let tree = rewrite_ncfg ~rng ~depth (Xor (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
-  | Ir.And ->
-      let tree = rewrite_ncfg ~rng ~depth (And (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
-  | Ir.Or ->
-      let tree = rewrite_ncfg ~rng ~depth (Or (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
-  | Ir.Imul ->
-      let tree = rewrite_ncfg ~rng ~depth (Mul (Var "a", Var "b")) in
-      lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
-  | unsupported ->
-      [ Ir.Alu { op = unsupported; dst; src1; src2; set_flags = false } ]
+    let raw = match op with
+    | Ir.Add ->
+        let tree = rewrite_ncfg ~rng ~depth (Add (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
+    | Ir.Sub ->
+        let tree = rewrite_ncfg ~rng ~depth (Sub (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
+    | Ir.Xor ->
+        let tree = rewrite_ncfg ~rng ~depth (Xor (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
+    | Ir.And ->
+        let tree = rewrite_ncfg ~rng ~depth (And (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
+    | Ir.Or ->
+        let tree = rewrite_ncfg ~rng ~depth (Or (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
+    | Ir.Imul ->
+        let tree = rewrite_ncfg ~rng ~depth (Mul (Var "a", Var "b")) in
+        lower_to_ir ~dst ~env:[ ("a", src1); ("b", src2) ] tree
+    | unsupported ->
+        [ Ir.Alu { op = unsupported; dst; src1; src2; set_flags = false } ]
+    in
+    if depth >= 2 then Non_linear_bijection.wrap_non_algebraic_mba ~rng ~dst raw
+    else raw

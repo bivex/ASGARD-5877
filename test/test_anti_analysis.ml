@@ -376,11 +376,32 @@ let prop_cff_opaque_parity_1000 =
       let res = Int64.logand (Int64.logand x (Int64.add x 1L)) 1L in
       res = 0L)
 
+let test_non_linear_bijection () =
+  let rng = Random.State.make [| 0x1337 |] in
+  let params = Non_linear_bijection.random_params ~shift:33 rng in
+  let test_vals = [
+    0L; 1L; 42L; -1L; 0x7FFFFFFFFFFFFFFFL; 0x1234567890ABCDEFL; 0xCAFEBABE12345678L
+  ] in
+  List.iter (fun x ->
+    let y = Non_linear_bijection.forward params x in
+    let rec_x = Non_linear_bijection.inverse params y in
+    Alcotest.(check int64) "non-linear bijection forward/inverse roundtrip" x rec_x;
+    let dst = Register.rax in
+    let ir = Non_linear_bijection.synth_xorshift_involution ~rng ~dst in
+    let state = Vm_eval.make_state () in
+    Vm_eval.set_reg state dst x;
+    (match Vm_eval.run_block state { id = 0; label = "entry"; instrs = ir } with
+     | Ok None -> ()
+     | _ -> Alcotest.fail "IR execution failed");
+    Alcotest.(check int64) "non-linear bijection IR preserves dst" x (Vm_eval.get_reg state dst)
+  ) test_vals
+
 let tests = [
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
   Alcotest.test_case "mba_lowering_to_vm_ir" `Quick test_mba_lowering_to_vm_ir;
   Alcotest.test_case "mba_verified_rewriters" `Quick test_mba_verified_rewriters;
   Alcotest.test_case "mba_zero_invariants" `Quick test_mba_zero_invariants;
+  Alcotest.test_case "non_linear_bijection_roundtrip" `Quick test_non_linear_bijection;
   Alcotest.test_case "cff_flatten_fibonacci" `Quick test_cff_flatten_fibonacci;
   Alcotest.test_case "cff_flatten_with_opaque_predicates" `Quick test_cff_flatten_with_opaque_predicates;
   Alcotest.test_case "cff_flatten_lifted_factorial" `Quick test_cff_flatten_lifted_factorial;
