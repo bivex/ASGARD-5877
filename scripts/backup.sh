@@ -27,7 +27,7 @@ show_help() {
 Использование: $0 [ОПЦИИ] [ПАПКА_НАЗНАЧЕНИЯ]
 
 Опции:
-  -z, --zip       Создать ZIP-архив (.zip)
+  -z, --zip       Создать ZIP-архив (.zip, без сжатия: zip -0)
   -t, --tar       Создать TAR.GZ-архив (.tar.gz) [по умолчанию]
   -b, --both      Создать оба архива (.tar.gz и .zip)
   -h, --help      Показать эту справку
@@ -144,11 +144,11 @@ create_zip() {
     # Удаляем существующий архив с тем же именем, если есть
     rm -f "$archive_path"
 
-    echo "==> Упаковка ZIP архива: $archive_name"
+    echo "==> Упаковка ZIP архива (без сжатия, -0): $archive_name"
     if [[ "$IS_GIT" -eq 1 ]]; then
-        git ls-files --cached --others --exclude-standard | zip -q "$archive_path" -@
+        git ls-files --cached --others --exclude-standard | zip -0 -q "$archive_path" -@
     else
-        zip -r -q "$archive_path" . "${ZIP_EXCLUDES[@]}"
+        zip -0 -r -q "$archive_path" . "${ZIP_EXCLUDES[@]}"
     fi
 
     local size
