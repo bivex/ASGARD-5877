@@ -40,6 +40,7 @@ let () =
     ("Ring Codec (Data-Space Automorphisms)", Test_ring_codec.tests);
     ("Null-Space MBA Synthesis", Test_nullspace_mba.tests);
     ("Cross-Seed Metrics", Test_cross_seed_metrics.tests);
+    ("Metamorphic ISA & Ring Codec", Test_metamorphic_isa.tests);
   ]
 
 

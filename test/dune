@@ -41,6 +41,7 @@
   test_ring_codec
   test_nullspace_mba
   test_cross_seed_metrics
+  test_metamorphic_isa
   test_helpers
   run_tests)
  (libraries
