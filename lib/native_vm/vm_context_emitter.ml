@@ -89,6 +89,18 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    inline void reanchor_running_key(uint64_t off, uint64_t addr_hash = 0) noexcept {\n";
   Buffer.add_string b "        running_key = anchor_key(init_seed, off, addr_hash);\n";
   Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    static inline uint64_t poly_hash64(uint64_t x) noexcept {\n";
+  Buffer.add_string b "        uint64_t x1 = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;\n";
+  Buffer.add_string b "        uint64_t x2 = (x1 ^ (x1 >> 27)) * 0x94D049BB133111EBULL;\n";
+  Buffer.add_string b "        return x2 ^ (x2 >> 31);\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    static inline uint64_t branch_invariant_poly_update(uint64_t key, uint64_t delta, uint64_t poly_const) noexcept {\n";
+  Buffer.add_string b "        uint64_t c = poly_const | 1ULL;\n";
+  Buffer.add_string b "        return poly_hash64(key ^ (c * delta));\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline void apply_poly_merge_update(uint64_t delta, uint64_t poly_const) noexcept {\n";
+  Buffer.add_string b "        running_key = branch_invariant_poly_update(running_key, delta, poly_const);\n";
+  Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline uint64_t get_vkey() const noexcept { return running_key; }\n\n";
   Buffer.add_string b "    inline bool verify_canaries() const noexcept {\n";
   Buffer.add_string b "        if (canary_head != CANARY_VAL || canary_tail != CANARY_VAL) return false;\n";

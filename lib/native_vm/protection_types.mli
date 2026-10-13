@@ -25,7 +25,9 @@ type cff_config = {
   enabled : bool;
   obfuscate_states : bool;
   inject_opaque_predicates : bool;
+  input_tainted_transitions : bool;
 }
+
 
 type anti_pushan_config = {
   enabled : bool;

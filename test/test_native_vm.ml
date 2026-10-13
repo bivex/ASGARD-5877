@@ -83,7 +83,9 @@ func_cff_opaque:
           enabled = true;
           obfuscate_states = true;
           inject_opaque_predicates = true;
+          input_tainted_transitions = true;
         };
+
       } in
       let pkg = Vm_emitter.compile_and_package ~rng ~config func in
       Alcotest.(check bool) "flattening depth >= 3" true (Metrics.flattening_depth pkg.metrics >= 3);

@@ -53,3 +53,50 @@ let poly_multiplier_of_seed (seed : int32) : int64 =
 let poly_init_of_seed (seed : int32) : int64 =
   let s64 = Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL in
   Int64.logxor 0x811C9DC5C9DC5119L (Int64.mul s64 0x9E3779B97F4A7C15L)
+
+(* Anti-DSE branch-invariant polynomial key updates (P2-01):
+   Eliminates static key ^= fixup_const at CFG merge points.
+   K_{new} = H(K_{old} ^ (C * Delta)) where H is SplitMix64 non-linear permutation. *)
+
+let poly_hash64 (x : int64) : int64 =
+  let x1 = Int64.mul (Int64.logxor x (Int64.shift_right_logical x 30)) 0xBF58476D1CE4E5B9L in
+  let x2 = Int64.mul (Int64.logxor x1 (Int64.shift_right_logical x1 27)) 0x94D049BB133111EBL in
+  Int64.logxor x2 (Int64.shift_right_logical x2 31)
+
+let unshift_xor_right (y : int64) (shift : int) : int64 =
+  let rec loop acc s =
+    if s >= 64 then acc
+    else loop (Int64.logxor acc (Int64.shift_right_logical y s)) (s + shift)
+  in
+  loop y shift
+
+let mod_inverse_64 (a : int64) : int64 =
+  let rec iter x i =
+    if i >= 6 then x
+    else
+      let next_x = Int64.mul x (Int64.sub 2L (Int64.mul a x)) in
+      iter next_x (i + 1)
+  in
+  iter a 0
+
+let poly_unhash64 (y : int64) : int64 =
+  let x2 = unshift_xor_right y 31 in
+  let inv2 = mod_inverse_64 0x94D049BB133111EBL in
+  let w1 = Int64.mul x2 inv2 in
+  let x1 = unshift_xor_right w1 27 in
+  let inv1 = mod_inverse_64 0xBF58476D1CE4E5B9L in
+  let w0 = Int64.mul x1 inv1 in
+  unshift_xor_right w0 30
+
+let branch_invariant_poly_update ~(key : int64) ~(path_delta : int64) ~(poly_const : int64) : int64 =
+  let c = Int64.logor poly_const 1L in
+  let term = Int64.mul c path_delta in
+  poly_hash64 (Int64.logxor key term)
+
+let solve_path_delta ~(k_old : int64) ~(k_target : int64) ~(poly_const : int64) : int64 =
+  let c = Int64.logor poly_const 1L in
+  let c_inv = mod_inverse_64 c in
+  let target_pre = poly_unhash64 k_target in
+  let term = Int64.logxor k_old target_pre in
+  Int64.mul term c_inv
+

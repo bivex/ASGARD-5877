@@ -8,6 +8,7 @@ let default : t = {
     enabled = true;
     obfuscate_states = true;
     inject_opaque_predicates = false;
+    input_tainted_transitions = true;
   };
   mba = {
     enabled = true;
@@ -65,6 +66,7 @@ let max_security : t = {
     enabled = true;
     obfuscate_states = true;
     inject_opaque_predicates = true;
+    input_tainted_transitions = true;
   };
   mba = {
     enabled = true;
@@ -133,6 +135,7 @@ let lightweight : t = {
     enabled = false;
     obfuscate_states = false;
     inject_opaque_predicates = false;
+    input_tainted_transitions = false;
   };
   mba = {
     enabled = true;
@@ -201,6 +204,7 @@ let stealth : t = {
     enabled = true;
     obfuscate_states = true;
     inject_opaque_predicates = true;
+    input_tainted_transitions = true;
   };
   mba = {
     enabled = true;
@@ -269,6 +273,7 @@ let minimal : t = {
     enabled = false;
     obfuscate_states = false;
     inject_opaque_predicates = false;
+    input_tainted_transitions = false;
   };
   mba = {
     enabled = false;
@@ -337,6 +342,7 @@ let high : t = {
     enabled = true;
     obfuscate_states = true;
     inject_opaque_predicates = true;
+    input_tainted_transitions = true;
   };
   mba = {
     enabled = true;

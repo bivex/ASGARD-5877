@@ -21,3 +21,15 @@ val decode_fields : int64 -> int * int * int * int64
 
 val poly_multiplier_of_seed : int32 -> int64
 val poly_init_of_seed : int32 -> int64
+
+val poly_hash64 : int64 -> int64
+val poly_unhash64 : int64 -> int64
+
+val branch_invariant_poly_update : key:int64 -> path_delta:int64 -> poly_const:int64 -> int64
+(** [branch_invariant_poly_update ~key ~path_delta ~poly_const] computes
+    non-linear key transition [K_new = H(K_old ^ (C * Delta))] for CFG merge blocks. *)
+
+val solve_path_delta : k_old:int64 -> k_target:int64 -> poly_const:int64 -> int64
+(** [solve_path_delta ~k_old ~k_target ~poly_const] finds path delta [Delta]
+    such that [branch_invariant_poly_update ~key:k_old ~path_delta:Delta ~poly_const = k_target]. *)
+

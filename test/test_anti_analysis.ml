@@ -345,7 +345,8 @@ let test_cff_flatten_with_opaque_predicates () =
   ] in
   let orig_func = Ir.make_func ~name:"fib_opaque" ~entry_id:0 ~blocks:[ b0; b1; b2; b3 ] in
 
-  let options = { Cff.inject_opaque_predicates = true; obfuscate_states = true } in
+  let options = { Cff.inject_opaque_predicates = true; obfuscate_states = true; input_tainted_transitions = true } in
+
   match Cff.flatten_func ~options ~rng orig_func with
   | Error e -> Alcotest.fail e
   | Ok flattened_func ->
@@ -396,19 +397,86 @@ let test_non_linear_bijection () =
     Alcotest.(check int64) "non-linear bijection IR preserves dst" x (Vm_eval.get_reg state dst)
   ) test_vals
 
+let test_branch_invariant_poly_key_update () =
+  let poly_const = 0x517CC1B727220A95L in
+  let test_vals = [
+    0L; 1L; -1L; 42L; 0x1234567890ABCDEFL; 0xCAFEBABE13375877L;
+    0x7FFFFFFFFFFFFFFFL; Int64.min_int
+  ] in
+  (* 1. Verify poly_hash64 / poly_unhash64 bijectivity *)
+  List.iter (fun x ->
+    let h = Rolling_key.poly_hash64 x in
+    let rec_x = Rolling_key.poly_unhash64 h in
+    Alcotest.(check int64) "poly_hash64 roundtrip" x rec_x
+  ) test_vals;
+
+  (* 2. Verify CFG merge point convergence: two distinct paths converge to k_target *)
+  let k_old_path1 = 0xAAAABBBBCCCCDDDDL in
+  let k_old_path2 = 0x123456789ABCDEF0L in
+  let k_target = 0x5877CAFEBABE1337L in
+  let delta1 = Rolling_key.solve_path_delta ~k_old:k_old_path1 ~k_target ~poly_const in
+  let delta2 = Rolling_key.solve_path_delta ~k_old:k_old_path2 ~k_target ~poly_const in
+  let res1 = Rolling_key.branch_invariant_poly_update ~key:k_old_path1 ~path_delta:delta1 ~poly_const in
+  let res2 = Rolling_key.branch_invariant_poly_update ~key:k_old_path2 ~path_delta:delta2 ~poly_const in
+  Alcotest.(check int64) "path 1 converges to k_target" k_target res1;
+  Alcotest.(check int64) "path 2 converges to k_target" k_target res2;
+  Alcotest.(check bool) "deltas differ" true (delta1 <> delta2)
+
+let test_cff_tainted_transitions_dynamic_input () =
+  let rng = Random.State.make [| 9999 |] in
+  let asm = {|
+func_taint_test:
+    mov rax, rdi
+    cmp rdi, 10
+    jle .Lle
+    add rax, 100
+    jmp .Lexit
+.Lle:
+    sub rax, 5
+.Lexit:
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok lifted_func ->
+      let options = { Cff.inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
+      match Cff.flatten_func ~options ~rng lifted_func with
+      | Error e -> Alcotest.fail e
+      | Ok flattened_func ->
+          (* Test input with upper 32 bits non-zero: 0x100000005L (> 10) *)
+          let state1 = make_state () in
+          set_reg state1 Register.rdi 0x100000005L;
+          (match run_func state1 flattened_func with
+          | Error e -> Alcotest.fail e
+          | Ok () ->
+              (* 0x100000005L + 100 = 0x100000069L *)
+              Alcotest.(check int64) "flattened tainted branch > 10" 0x100000069L (get_reg state1 Register.rax));
+
+          (* Test input with upper 32 bits non-zero: 0x200000003L (<= 10) *)
+          let state2 = make_state () in
+          set_reg state2 Register.rdi 3L;
+          (match run_func state2 flattened_func with
+          | Error e -> Alcotest.fail e
+          | Ok () ->
+              (* 3 - 5 = -2 *)
+              Alcotest.(check int64) "flattened tainted branch <= 10" (-2L) (get_reg state2 Register.rax))
+
 let tests = [
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
   Alcotest.test_case "mba_lowering_to_vm_ir" `Quick test_mba_lowering_to_vm_ir;
   Alcotest.test_case "mba_verified_rewriters" `Quick test_mba_verified_rewriters;
   Alcotest.test_case "mba_zero_invariants" `Quick test_mba_zero_invariants;
   Alcotest.test_case "non_linear_bijection_roundtrip" `Quick test_non_linear_bijection;
+  Alcotest.test_case "branch_invariant_poly_key_update" `Quick test_branch_invariant_poly_key_update;
   Alcotest.test_case "cff_flatten_fibonacci" `Quick test_cff_flatten_fibonacci;
   Alcotest.test_case "cff_flatten_with_opaque_predicates" `Quick test_cff_flatten_with_opaque_predicates;
   Alcotest.test_case "cff_flatten_lifted_factorial" `Quick test_cff_flatten_lifted_factorial;
   Alcotest.test_case "cff_flatten_lifted_abs" `Quick test_cff_flatten_lifted_abs;
+  Alcotest.test_case "cff_tainted_transitions_dynamic_input" `Quick test_cff_tainted_transitions_dynamic_input;
   Alcotest.test_case "cff_ocamlgraph_cfg_metrics" `Quick test_cff_ocamlgraph_cfg_metrics;
   Alcotest.test_case "cff_ocamlgraph_dot_and_reachability" `Quick test_cff_ocamlgraph_dot_and_reachability;
   Alcotest.test_case "cff_opaque_parity_extremes" `Quick test_cff_opaque_parity_extremes;
   QCheck_alcotest.to_alcotest prop_mba_equivalence_1000;
   QCheck_alcotest.to_alcotest prop_cff_opaque_parity_1000;
 ]
+

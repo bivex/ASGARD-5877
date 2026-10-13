@@ -3,7 +3,9 @@ open Vm_ir
 type cff_options = {
   inject_opaque_predicates : bool;
   obfuscate_states : bool;
+  input_tainted_transitions : bool;
 }
+
 
 val default_cff_options : cff_options
 
