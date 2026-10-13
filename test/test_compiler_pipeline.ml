@@ -132,6 +132,96 @@ let test_egraph_saturation () =
   let sat_cost = Ir_egraph.complexity_of_expr extracted in
   check bool "E-Graph saturation increases complexity" true (sat_cost >= init_cost)
 
+let test_equivalence_memory_and_callee_saved () =
+  let mem_target = {
+    Ir.base = Some Register.rsp;
+    index = None;
+    disp = -8L;
+    width = Register.B64;
+    is_signed = false;
+    segment = None;
+  } in
+  let b1 = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 10L; set_flags = false };
+    Ir.Mov { dst = Ir.Mem mem_target; src = Ir.Reg Register.rax };
+    Ir.Ret;
+  ] in
+  let f_orig = Ir.make_func ~name:"mem_orig" ~entry_id:0 ~blocks:[ b1 ] in
+  (* Equivalent function splitting add into 5 + 5 *)
+  let b2 = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 5L; set_flags = false };
+    Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 5L; set_flags = false };
+    Ir.Mov { dst = Ir.Mem mem_target; src = Ir.Reg Register.rax };
+    Ir.Ret;
+  ] in
+  let f_trans = Ir.make_func ~name:"mem_trans" ~entry_id:0 ~blocks:[ b2 ] in
+  match Equivalence.assert_equivalent ~trials:50 ~check_callee_saved:true ~check_memory:true f_orig f_trans with
+  | Ok () -> ()
+  | Error disc -> fail ("Expected memory & callee-saved equivalence to pass: " ^ disc.details)
+
+let test_equivalence_catches_callee_saved_clobber () =
+  let b1 = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm 42L };
+    Ir.Ret;
+  ] in
+  let f_good = Ir.make_func ~name:"good" ~entry_id:0 ~blocks:[ b1 ] in
+  (* Mutant clobbers rbx *)
+  let b_bad = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm 42L };
+    Ir.Mov { dst = Ir.Reg Register.rbx; src = Ir.Imm 0xDEADBEEFL };
+    Ir.Ret;
+  ] in
+  let f_bad = Ir.make_func ~name:"bad" ~entry_id:0 ~blocks:[ b_bad ] in
+  match Equivalence.assert_equivalent ~trials:10 ~check_callee_saved:true f_good f_bad with
+  | Error { kind = Equivalence.CalleeSavedClobbered { reg; _ }; _ } ->
+      check string "Clobbered register is rbx" "rbx" (Register.to_string reg)
+  | Error disc -> fail ("Expected CalleeSavedClobbered error, got: " ^ disc.details)
+  | Ok () -> fail "Expected equivalence failure when callee-saved register is clobbered"
+
+let test_equivalence_catches_memory_mismatch () =
+  let mem_target = {
+    Ir.base = Some Register.rsp;
+    index = None;
+    disp = -8L;
+    width = Register.B64;
+    is_signed = false;
+    segment = None;
+  } in
+  let b1 = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Mov { dst = Ir.Mem mem_target; src = Ir.Imm 0x1122334455667788L };
+    Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm 0L };
+    Ir.Ret;
+  ] in
+  let f_good = Ir.make_func ~name:"mem_good" ~entry_id:0 ~blocks:[ b1 ] in
+  (* Mutant writes wrong byte to memory *)
+  let b_bad = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Mov { dst = Ir.Mem mem_target; src = Ir.Imm 0x1122334455667799L };
+    Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm 0L };
+    Ir.Ret;
+  ] in
+  let f_bad = Ir.make_func ~name:"mem_bad" ~entry_id:0 ~blocks:[ b_bad ] in
+  match Equivalence.assert_equivalent ~trials:10 ~check_memory:true f_good f_bad with
+  | Error { kind = Equivalence.MemoryMismatch _; _ } -> ()
+  | Error disc -> fail ("Expected MemoryMismatch error, got: " ^ disc.details)
+  | Ok () -> fail "Expected equivalence failure when memory contents differ"
+
+let test_equivalence_catches_flags_mismatch () =
+  let b1 = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Imm 0L; src2 = Ir.Imm 0L; set_flags = true };
+    Ir.Ret;
+  ] in
+  let f_good = Ir.make_func ~name:"flags_good" ~entry_id:0 ~blocks:[ b1 ] in
+  (* Mutant does not set ZF (set_flags = false) *)
+  let b_bad = Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Imm 0L; src2 = Ir.Imm 0L; set_flags = false };
+    Ir.Ret;
+  ] in
+  let f_bad = Ir.make_func ~name:"flags_bad" ~entry_id:0 ~blocks:[ b_bad ] in
+  match Equivalence.assert_equivalent ~trials:10 ~check_flags:true f_good f_bad with
+  | Error { kind = Equivalence.FlagsMismatch _; _ } -> ()
+  | Error disc -> fail ("Expected FlagsMismatch error, got: " ^ disc.details)
+  | Ok () -> fail "Expected equivalence failure when flags differ"
+
 let tests = [
   ("Seed Determinism", `Quick, test_seed_determinism);
   ("IR Verifier Success", `Quick, test_ir_verify_success);
@@ -142,4 +232,9 @@ let tests = [
   ("RNS Roundtrip & CRT", `Quick, test_rns_roundtrip);
   ("RNS Modular Arithmetic", `Quick, test_rns_arithmetic);
   ("E-Graph Equality Saturation", `Quick, test_egraph_saturation);
+  ("Equivalence Memory & Callee-Saved", `Quick, test_equivalence_memory_and_callee_saved);
+  ("Equivalence Catches Callee-Saved Clobber", `Quick, test_equivalence_catches_callee_saved_clobber);
+  ("Equivalence Catches Memory Mismatch", `Quick, test_equivalence_catches_memory_mismatch);
+  ("Equivalence Catches Flags Mismatch", `Quick, test_equivalence_catches_flags_mismatch);
 ]
+

@@ -2,6 +2,9 @@ open Ir
 
 type execution_snapshot = {
   final_rax : int64;
+  final_rflags : int64;
+  final_vsp : int64;
+  final_trapped : string option;
   registers : (Register.t, int64) Hashtbl.t;
   memory_writes : (int64, int) Hashtbl.t;
   steps_taken : int;
@@ -17,10 +20,14 @@ let evaluate ?(initial_regs = []) ?(initial_mem = []) ?(max_steps = 50000) (f : 
   | Error msg -> Error msg
   | Ok () ->
       let final_rax = Vm_eval.get_reg state Register.rax in
+      let final_rflags = Flags.materialize_rflags state.flags in
       let reg_copy = Hashtbl.copy state.vregs in
       let mem_copy = Hashtbl.copy state.memory in
       Ok {
         final_rax;
+        final_rflags;
+        final_vsp = state.vsp;
+        final_trapped = state.trapped;
         registers = reg_copy;
         memory_writes = mem_copy;
         steps_taken = 0;

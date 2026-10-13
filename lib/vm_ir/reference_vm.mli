@@ -3,6 +3,9 @@
 
 type execution_snapshot = {
   final_rax : int64;
+  final_rflags : int64;
+  final_vsp : int64;
+  final_trapped : string option;
   registers : (Register.t, int64) Hashtbl.t;
   memory_writes : (int64, int) Hashtbl.t;
   steps_taken : int;
