@@ -32,3 +32,4 @@ protected_*/
 profile_results.json
 *.zip
 *.checked
+*.tar.gz

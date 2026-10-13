@@ -45,8 +45,9 @@ inline bool push_shadow_frame(
 ) noexcept {
     auto& st = get_tls_shadow_stack();
     if (st.depth >= MAX_SHADOW_FRAMES) return false;
+    const uint64_t salted_cookie = cookie ^ (static_cast<uint64_t>(st.depth) + 1ULL);
     st.frames[st.depth] = ShadowFrame{
-        entry_sp, landing_pad, ctx_ptr, ctx_size, cookie, 1U
+        entry_sp, landing_pad, ctx_ptr, ctx_size, salted_cookie, 1U
     };
     ++st.depth;
     return true;
@@ -61,7 +62,8 @@ inline uintptr_t tech_2601_rollback_stack(uintptr_t current_sp, uint64_t expecte
     for (size_t i = 0; i < MAX_SHADOW_FRAMES; ++i) {
         const uint64_t is_active = st.frames[i].active;
         const uint64_t sp_match  = (st.frames[i].vm_entry_sp >= current_sp);
-        const uint64_t ck_match  = (st.frames[i].frame_cookie == expected_cookie);
+        const uint64_t expected  = expected_cookie ^ (static_cast<uint64_t>(i) + 1ULL);
+        const uint64_t ck_match  = (st.frames[i].frame_cookie == expected);
         const uintptr_t mask     = -static_cast<uintptr_t>(is_active & sp_match & ck_match);
 
         resolved_pad = (resolved_pad & ~mask) | (st.frames[i].handler_landing_pad & mask);

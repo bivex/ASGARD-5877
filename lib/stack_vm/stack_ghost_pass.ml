@@ -211,14 +211,29 @@ let apply_block cfg ctx block =
   in
   { block with ops = new_ops }
 
+let entangle_with_accumulator ~(acc_slot : int) ~(delta : int64) : Stack_ir.stack_op list =
+  if delta = 0L then []
+  else [
+    PushReg acc_slot;
+    PushImm delta;
+    Add;
+    PopReg acc_slot;
+  ]
+
 (** [apply_program cfg ctx prog] applies ghost padding to every block in
     [prog]. The stack balance of each block is preserved exactly by
     construction (each ghost sequence has delta = 0). *)
 let apply_program cfg ctx prog =
+  let block_ids =
+    Hashtbl.fold (fun id _ acc -> id :: acc) prog.blocks []
+    |> List.sort Int.compare
+  in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-  Hashtbl.iter (fun id b ->
-    Hashtbl.replace new_blocks id (apply_block cfg ctx b)
-  ) prog.blocks;
+  List.iter (fun id ->
+    match Hashtbl.find_opt prog.blocks id with
+    | Some b -> Hashtbl.replace new_blocks id (apply_block cfg ctx b)
+    | None -> ()
+  ) block_ids;
   (* Ghost PopReg slots may be freshly allocated — grow the context *)
   { prog with
     blocks = new_blocks;

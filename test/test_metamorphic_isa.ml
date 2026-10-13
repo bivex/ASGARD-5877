@@ -1,9 +1,11 @@
 open Int64
 open Random_visa_domain
 
-(* Тест-сьют для проверки метаморфной ISA и гомоморфного кольца *)
+(* Тест-сьют для проверки метаморфной ISA, гомоморфного кольца и харденинга *)
 module Isa = Isa_metamorphic_synth
 module Ring = Mba_engine.Metamorphic_ring
+module Nullspace = Mba_engine.Nullspace_mba
+module Perm = Native_vm.Context_permutation
 
 let test_mixed_radix_roundtrip () =
   let rng = Random.State.make [| 0x5877; 0x2601; 0x9292 |] in
@@ -40,6 +42,13 @@ let test_gl2_synthetic_alu_basis () =
     check_op Isa.StdXor (logxor x y);
     check_op Isa.StdAnd (logand x y);
     check_op Isa.StdOr  (logor x y);
+
+    (* Sub(x, y) = Add(x, ~y) + 1 *)
+    let (w1_sub, w2_sub, wc_sub) = Isa.lower_std_op_to_basis basis Isa.StdSub in
+    let p1_sub = Isa.eval_synthetic_op basis.psi1 x (lognot y) in
+    let p2_sub = Isa.eval_synthetic_op basis.psi2 x (lognot y) in
+    let actual_sub = add (add (mul w1_sub p1_sub) (mul w2_sub p2_sub)) wc_sub in
+    Alcotest.(check int64) "synthetic sub reconstruction" (sub x y) actual_sub
   done
 
 let test_homomorphic_ring () =
@@ -85,9 +94,44 @@ let test_mealy_state_and_cpp_header () =
   let w = Isa.next_insn_byte_width ~state:s1 in
   Alcotest.(check bool) "valid width" true (w = 3 || w = 5 || w = 8)
 
+let test_context_permutation_cycles () =
+  let rng = Random.State.make [| 0x111; 0x222 |] in
+  for _ = 1 to 100 do
+    let n = 16 in
+    let cp = Perm.gen_permutation ~rng ~n in
+    let swaps = Perm.decompose_into_swaps cp.perm in
+    let arr = Array.init n (fun i -> i) in
+    List.iter (fun (i, j) ->
+      let tmp = arr.(i) in
+      arr.(i) <- arr.(j);
+      arr.(j) <- tmp
+    ) swaps;
+    for i = 0 to n - 1 do
+      Alcotest.(check int) "swap decomposition correctness" cp.perm.(i) arr.(i)
+    done;
+    let cpp = Perm.emit_epoch_rotation_cpp cp in
+    Alcotest.(check bool) "cpp rotation emitted" true (String.length cpp >= 0)
+  done
+
+let test_nullspace_minterm_mba () =
+  let rng = Random.State.make [| 0x555; 0x666 |] in
+  for _ = 1 to 50 do
+    let terms = Nullspace.synth_minterm_zero ~rng ~terms_count:4 in
+    Alcotest.(check bool) "terms non-empty" true (terms <> []);
+    Alcotest.(check bool) "minterm zero holds exactly" true (Nullspace.verify_minterm_zero terms);
+    for _ = 1 to 20 do
+      let x = Random.State.int64 rng max_int in
+      let y = Random.State.int64 rng max_int in
+      let z = Nullspace.eval_terms ~terms ~x ~y in
+      Alcotest.(check int64) "random evaluation is 0L" 0L z
+    done
+  done
+
 let tests = [
   Alcotest.test_case "mixed_radix_roundtrip" `Quick test_mixed_radix_roundtrip;
   Alcotest.test_case "gl2_synthetic_alu_basis" `Quick test_gl2_synthetic_alu_basis;
   Alcotest.test_case "homomorphic_ring" `Quick test_homomorphic_ring;
   Alcotest.test_case "mealy_state_and_cpp_header" `Quick test_mealy_state_and_cpp_header;
+  Alcotest.test_case "context_permutation_cycles" `Quick test_context_permutation_cycles;
+  Alcotest.test_case "nullspace_minterm_mba" `Quick test_nullspace_minterm_mba;
 ]

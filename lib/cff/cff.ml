@@ -182,6 +182,37 @@ let reachable_blocks ~entry_id (g : CFG.t) : int list =
     List.rev !res
   end else []
 
+let kronecker_product_states ~(base_states : int64 list) ~(dim : int) ~(seed : int64) : int64 list =
+  let factors = List.init dim (fun i ->
+    Int64.add seed (Int64.shift_left (Int64.of_int (i + 1)) 32)
+  ) in
+  List.concat_map (fun s ->
+    List.map (fun f -> Int64.logxor s f) factors
+  ) base_states
+
+let split_hot_states ~(sorted_orig : Ir.basic_block list) ~(split_rate : int) ~rng ~(used_states : (int64, unit) Hashtbl.t) =
+  let clone_map = Hashtbl.create (List.length sorted_orig) in
+  let clone_entries = ref [] in
+  if split_rate > 0 then
+    List.iter
+      (fun (b : Ir.basic_block) ->
+        if Random.State.int rng 100 < split_rate then begin
+          let rec gen_clone_state () =
+            let s = Int64.logand (Int64.of_int32 (Random.State.int32 rng Int32.max_int)) 0xFFFFFFFEL in
+            let s = if s = 0L then 0x200L else s in
+            if Hashtbl.mem used_states s then gen_clone_state ()
+            else begin
+              Hashtbl.replace used_states s ();
+              s
+            end
+          in
+          let cs = gen_clone_state () in
+          Hashtbl.replace clone_map b.id cs;
+          clone_entries := (cs, b.id) :: !clone_entries
+        end)
+      sorted_orig;
+  (clone_map, !clone_entries)
+
 let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
   let cfg = build_cfg func in
   let metrics = analyze_cfg ~entry_id:func.cfg.entry_id cfg in
@@ -214,6 +245,13 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         Hashtbl.replace state_map b.id (gen_state ()))
       sorted_orig;
 
+    let _kp_states =
+      if options.obfuscate_states then
+        let base_keys = Hashtbl.fold (fun _ s acc -> s :: acc) state_map [] in
+        kronecker_product_states ~base_states:base_keys ~dim:2 ~seed:(Random.State.int64 rng Int64.max_int)
+      else []
+    in
+
     let get_state bid =
       match Hashtbl.find_opt state_map bid with
       | Some s -> s
@@ -221,26 +259,10 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     in
 
     (* State splitting: generate state aliases for blocks based on split_rate *)
-    let clone_map = Hashtbl.create n in
-    let clone_entries = ref [] in (* (clone_state, target_block_id) *)
-    if options.split_rate > 0 then
-      List.iter
-        (fun (b : Ir.basic_block) ->
-          if Random.State.int rng 100 < options.split_rate then begin
-            let rec gen_clone_state () =
-              let s = Int64.logand (Int64.of_int32 (Random.State.int32 rng Int32.max_int)) 0xFFFFFFFEL in
-              let s = if s = 0L then 0x200L else s in
-              if Hashtbl.mem used_states s then gen_clone_state ()
-              else begin
-                Hashtbl.replace used_states s ();
-                s
-              end
-            in
-            let cs = gen_clone_state () in
-            Hashtbl.replace clone_map b.id cs;
-            clone_entries := (cs, b.id) :: !clone_entries
-          end)
-        sorted_orig;
+    let (clone_map, clone_entries_list) =
+      split_hot_states ~sorted_orig ~split_rate:options.split_rate ~rng ~used_states
+    in
+    let clone_entries = ref clone_entries_list in
 
     let get_target_state bid =
       match Hashtbl.find_opt clone_map bid with

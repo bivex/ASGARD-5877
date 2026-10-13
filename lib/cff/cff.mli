@@ -56,4 +56,17 @@ val inject_opaque_predicate :
   Ir.basic_block ->
   Ir.basic_block
 
+val kronecker_product_states :
+  base_states:int64 list ->
+  dim:int ->
+  seed:int64 ->
+  int64 list
+
+val split_hot_states :
+  sorted_orig:Ir.basic_block list ->
+  split_rate:int ->
+  rng:Random.State.t ->
+  used_states:(int64, unit) Hashtbl.t ->
+  (int, int64) Hashtbl.t * (int64 * int) list
+
 module Pop_coupler : module type of Pop_coupler

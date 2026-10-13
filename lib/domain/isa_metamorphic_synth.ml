@@ -103,15 +103,12 @@ let lower_std_op_to_basis (basis : alu_basis_pair) (op : std_alu_op)
     | StdXor -> (1L, 0L)
     | StdAnd -> (0L, 1L)
     | StdOr  -> (1L, 1L)
-    | StdAdd -> (1L, 2L)
-    | StdSub ->
-      (* Для вычитания x - y испозьзуется предварительная инверсия второго операнда,
-         либо тождество над (x ^ y) и (~x & y); здесь базовое разложение для сумматора *)
-      (1L, 2L)
+    | StdAdd | StdSub -> (1L, 2L)
   in
   let w1 = add (mul k_xor basis.inv_11) (mul k_and basis.inv_21) in
   let w2 = add (mul k_xor basis.inv_12) (mul k_and basis.inv_22) in
-  let w_const = neg (add (mul w1 basis.psi1.bias) (mul w2 basis.psi2.bias)) in
+  let base_const = neg (add (mul w1 basis.psi1.bias) (mul w2 basis.psi2.bias)) in
+  let w_const = if op = StdSub then add base_const 1L else base_const in
   (w1, w2, w_const)
 
 let gen_non_separable_isa_spec (rng : Random.State.t) : isa_radix_spec =
