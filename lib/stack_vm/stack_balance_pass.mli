@@ -3,6 +3,7 @@ open Stack_ir
 type balance_result = {
   block_id : int;
   max_depth : int;
+  min_depth : int;
   final_delta : int;
   is_balanced : bool;
 }

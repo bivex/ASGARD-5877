@@ -2148,6 +2148,130 @@ let test_runtime_hardening () =
     end
   end
 
+let test_stack_invariants_prefix_and_merge () =
+  (* Case 1: Sound balanced program *)
+  let b0 = make_block 0 "entry" [ PushImm 42L; PopReg 0; Exit ] in
+  let prog_ok = make_program 0 [b0] 4 in
+  Alcotest.(check bool) "valid program satisfies stack invariants" true
+    (Result.is_ok (Stack_invariants.check_stack_invariants prog_ok));
+
+  (* Case 2: Block with prefix underflow even if net delta would be 0 *)
+  let b_under = make_block 1 "underflow_prefix" [ PopReg 0; PushImm 99L; Exit ] in
+  let prog_under = make_program 1 [b_under] 4 in
+  (match Stack_invariants.check_stack_invariants prog_under with
+   | Error [ Stack_invariants.Underflow { block_id = 1; op_index = 0; depth = -1; _ } ] -> ()
+   | _ -> Alcotest.fail "Expected Underflow violation at op_index 0");
+
+  (* Case 3: Sound repair fixes prefix underflow and satisfies invariant *)
+  let ctx = Context_allocator.create () in
+  let repaired_prog = Stack_balance_pass.repair_program ctx prog_under in
+  Alcotest.(check bool) "repaired program satisfies stack invariants" true
+    (Result.is_ok (Stack_invariants.check_stack_invariants repaired_prog));
+
+  (* Case 4: Depth mismatch at CFG merge point *)
+  let b_entry = make_block 0 "entry" [ JccRel (1, Flags.E); JmpRel 2 ] in
+  let b_path1 = make_block 1 "path1" [ PushImm 10L; JmpRel 3 ] in (* exit depth = 1 *)
+  let b_path2 = make_block 2 "path2" [ JmpRel 3 ] in             (* exit depth = 0 *)
+  let b_merge = make_block 3 "merge" [ Exit ] in
+  let prog_mismatch = make_program 0 [b_entry; b_path1; b_path2; b_merge] 4 in
+  (match Stack_invariants.check_stack_invariants prog_mismatch with
+   | Error violations ->
+       let has_mismatch = List.exists (function
+         | Stack_invariants.DepthMismatchAtMerge { block_id = 3; _ } -> true
+         | _ -> false) violations
+       in
+       Alcotest.(check bool) "detects depth mismatch at merge block 3" true has_mismatch
+   | Ok () -> Alcotest.fail "Expected DepthMismatchAtMerge violation")
+
+let test_cfg_invariants_and_slots () =
+  (* Case 1: Missing entry block *)
+  let b0 = make_block 1 "lonely" [ Exit ] in
+  let prog_no_entry = make_program 0 [b0] 4 in
+  (match Stack_invariants.check_cfg_invariants prog_no_entry with
+   | Error (Stack_invariants.MissingEntryBlock 0 :: _) -> ()
+   | _ -> Alcotest.fail "Expected MissingEntryBlock 0");
+
+  (* Case 2: Jump to non-existent block *)
+  let b_bad_jmp = make_block 0 "bad_jmp" [ JmpRel 999 ] in
+  let prog_bad_target = make_program 0 [b_bad_jmp] 4 in
+  (match Stack_invariants.check_cfg_invariants prog_bad_target with
+   | Error (Stack_invariants.MissingTargetBlock { from_block = 0; target_block = 999 } :: _) -> ()
+   | _ -> Alcotest.fail "Expected MissingTargetBlock 999");
+
+  (* Case 3: Out-of-bounds context slot access *)
+  let b_bad_slot = make_block 0 "bad_slot" [ PushReg 12; Exit ] in
+  let prog_bad_slot = make_program 0 [b_bad_slot] 8 in (* max slots = 8, accessed = 12 *)
+  (match Stack_invariants.check_cfg_invariants prog_bad_slot with
+   | Error (Stack_invariants.InvalidContextSlot { block_id = 0; slot = 12; max_slots = 8; _ } :: _) -> ()
+   | _ -> Alcotest.fail "Expected InvalidContextSlot 12");
+
+  (* Case 4: Missing block terminator *)
+  let b_no_term = make_block 0 "no_term" [ PushImm 1L; PopReg 0 ] in
+  let prog_no_term = make_program 0 [b_no_term] 4 in
+  (match Stack_invariants.check_cfg_invariants prog_no_term with
+   | Error (Stack_invariants.MissingTerminator { block_id = 0 } :: _) -> ()
+   | _ -> Alcotest.fail "Expected MissingTerminator for block 0")
+
+let test_key_invariants_at_merge () =
+  (* Two incoming paths into merge block 3: path 1 modifies rolling key by KeyAdjust, path 2 does not *)
+  let b_entry = make_block 0 "entry" [ JccRel (1, Flags.E); JmpRel 2 ] in
+  let b_path1 = make_block 1 "path1" [ KeyAdjust 0xDEADBEEFL; JmpRel 3 ] in
+  let b_path2 = make_block 2 "path2" [ JmpRel 3 ] in
+  let b_merge = make_block 3 "merge" [ Exit ] in
+  let prog_key_diverge = make_program 0 [b_entry; b_path1; b_path2; b_merge] 4 in
+  (match Stack_invariants.check_key_invariants ~initial_key:0x1000L prog_key_diverge with
+   | Error [ Stack_invariants.KeyMismatchAtMerge { block_id = 3; _ } ] -> ()
+   | _ -> Alcotest.fail "Expected KeyMismatchAtMerge for block 3");
+
+  (* When both incoming edges apply the exact same KeyAdjust, key state is coherent *)
+  let b_path2_coherent = make_block 2 "path2" [ KeyAdjust 0xDEADBEEFL; JmpRel 3 ] in
+  let prog_key_coherent = make_program 0 [b_entry; b_path1; b_path2_coherent; b_merge] 4 in
+  Alcotest.(check bool) "coherent key states pass verification" true
+    (Result.is_ok (Stack_invariants.check_key_invariants ~initial_key:0x1000L prog_key_coherent))
+
+let test_pass_contracts_and_pipeline () =
+  let b0 = make_block 0 "entry" [ PushImm 10L; PopReg 0; Exit ] in
+  let prog0 = make_program 0 [b0] 4 in
+
+  (* Pass 1: Sound transformation pass verified by formal invariants *)
+  let sound_pass =
+    Stack_pass.make_pass
+      ~name:"SoundAddImmPass"
+      ~pre:(fun p -> match Stack_invariants.verify_all_invariants p with
+        | Ok () -> Ok ()
+        | Error errs -> Error (Stack_invariants.violation_to_string (List.hd errs)))
+      ~post:(fun p -> match Stack_invariants.verify_all_invariants p with
+        | Ok () -> Ok ()
+        | Error errs -> Error (Stack_invariants.violation_to_string (List.hd errs)))
+      (fun p ->
+        (* Invert sign or add neutral ops *)
+        p)
+  in
+  let res1 = Stack_pass.run_pass sound_pass prog0 in
+  Alcotest.(check bool) "sound pass succeeds through contract" true (Result.is_ok res1);
+
+  (* Pass 2: Buggy pass that breaks post-condition (introduces stack underflow) *)
+  let buggy_pass =
+    Stack_pass.make_pass
+      ~name:"BuggyUnderflowPass"
+      ~post:(fun p -> match Stack_invariants.check_stack_invariants p with
+        | Ok () -> Ok ()
+        | Error (err :: _) -> Error (Stack_invariants.violation_to_string (Stack_invariants.StackViolation err))
+        | Error [] -> Ok ())
+      (fun p ->
+        let corrupted_blocks = Hashtbl.create 1 in
+        let bad_b = make_block 0 "entry" [ PopReg 0; Exit ] in (* underflows! *)
+        Hashtbl.replace corrupted_blocks 0 bad_b;
+        { p with blocks = corrupted_blocks })
+  in
+  let res2 = Stack_pass.run_pass buggy_pass prog0 in
+  Alcotest.(check bool) "buggy pass fails post-condition contract fail-closed" true (Result.is_error res2);
+
+  (* Pipeline of sequential passes *)
+  let pipeline = [sound_pass; sound_pass] in
+  let pipe_res = Stack_pass.run_pipeline pipeline prog0 in
+  Alcotest.(check bool) "pipeline executes cleanly when contracts hold" true (Result.is_ok pipe_res)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
@@ -2182,6 +2306,10 @@ let tests = [
   ("Full Pipeline + C++ Runtime + Args", `Slow, test_full_pipeline_c_runtime_with_args);
   ("Address-Bound C++ Runtime Probe & Run", `Slow, test_address_bound_c_runtime_probe_and_run);
   ("Real License Check Macro + Stack-VM E2E", `Slow, test_real_license_check_macro_stack_vm_e2e);
+  ("P2: Stack Invariants Prefix & Merge", `Quick, test_stack_invariants_prefix_and_merge);
+  ("P2: CFG Invariants & Slot Bounds", `Quick, test_cfg_invariants_and_slots);
+  ("P2: Key Invariants at Merge Points", `Quick, test_key_invariants_at_merge);
+  ("P2: Formal Pass Contracts & Pipeline", `Quick, test_pass_contracts_and_pipeline);
 ]
 
 
