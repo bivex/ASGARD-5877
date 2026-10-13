@@ -36,6 +36,7 @@
   test_protection_config
   test_riscv_lifter
   test_stack_vm
+  test_bytecode_crypto
   test_helpers
   run_tests)
  (libraries
@@ -62,6 +63,7 @@
   cff
   native_vm
   c_macro_obf
+  bytecode_crypto
   alcotest
   qcheck
   qcheck-alcotest

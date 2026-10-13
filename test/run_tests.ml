@@ -35,6 +35,7 @@ let () =
     ("Protection Config (JSON/Presets)", Test_protection_config.tests);
     ("RISC-V Lifter & CFG", Test_riscv_lifter.tests);
     ("Stack-VM Execution Engine", Test_stack_vm.tests);
+    ("Bytecode Cryptography & Integrity", Test_bytecode_crypto.tests);
   ]
 
 
