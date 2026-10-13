@@ -28,6 +28,13 @@ type reproducibility_metrics = {
   differential_pass_rate : float;
 }
 
+type drs_v2_metrics = {
+  r_ssa : float;
+  d_nl : float;
+  e_cfg : float;
+  composite_score : float;
+}
+
 type metrics_report = {
   shannon_entropy : float;
   cyclomatic_complexity : int;
@@ -40,7 +47,9 @@ type metrics_report = {
   runtime_overhead : runtime_overhead_metrics;
   code_size : code_size_metrics;
   reproducibility : reproducibility_metrics;
+  drs_v2 : drs_v2_metrics;
 }
+
 
 let calculate_shannon_entropy words =
   if words = [] then 0.0
@@ -82,6 +91,9 @@ let calculate_resilience_metrics
     ?(dynamic_key_active = true)
     ?native_ir_ops
     ?(differential_verified = true)
+    ?(data_flow_entangled = true)
+    ?non_linear_degree
+    ?(taint_transitions_active = true)
     ~bytecode
     ~func
     ~decoy_count
@@ -160,6 +172,32 @@ let calculate_resilience_metrics
     differential_pass_rate = if differential_verified then 1.0 else 0.0;
   } in
 
+  (* P3-01: DRS v2 Resilience Vector (Anti-SMT / Anti-DSE / Anti-Slicing) *)
+  let r_ssa = if data_flow_entangled then 1.0 else 0.35 in
+  let d_nl =
+    match non_linear_degree with
+    | Some d -> d
+    | None ->
+        if mba_nodes > 0 then 2.0 +. min 3.0 (float_of_int mba_nodes /. 15.0)
+        else 1.0
+  in
+  let e_cfg =
+    if taint_transitions_active then
+      (float_of_int flattening_depth ** 1.2) *. (1.0 +. (float_of_int complexity /. 4.0))
+    else
+      float_of_int complexity
+  in
+  let s_r_ssa = r_ssa *. 35.0 in
+  let s_d_nl = min 35.0 ((d_nl /. 4.0) *. 35.0) in
+  let s_e_cfg = min 30.0 ((e_cfg /. 10.0) *. 30.0) in
+  let drs_v2_score = min 100.0 (max 0.0 (s_r_ssa +. s_d_nl +. s_e_cfg)) in
+  let drs_v2 = {
+    r_ssa;
+    d_nl;
+    e_cfg;
+    composite_score = drs_v2_score;
+  } in
+
   {
     shannon_entropy = entropy;
     cyclomatic_complexity = complexity;
@@ -172,6 +210,7 @@ let calculate_resilience_metrics
     runtime_overhead;
     code_size;
     reproducibility;
+    drs_v2;
   }
 
 let calculate_metrics ~bytecode ~func ~decoy_count ~total_handlers ~mba_nodes =
@@ -212,6 +251,11 @@ let report_to_string r =
   Buffer.add_string b "  --- 5. Reproducibility & Formal Equivalence ---\n";
   Buffer.add_string b (Printf.sprintf "    Seed Entropy:                  %d bits\n" r.reproducibility.seed_entropy_bits);
   Buffer.add_string b (Printf.sprintf "    Golden VM Equivalence Pass:    %.1f%%\n" (r.reproducibility.differential_pass_rate *. 100.0));
+  Buffer.add_string b "  --- 6. DRS v2 Resilience Vector (Anti-SMT/DSE) ---\n";
+  Buffer.add_string b (Printf.sprintf "    R_SSA (DCE Survival Ratio):    %.1f%%\n" (r.drs_v2.r_ssa *. 100.0));
+  Buffer.add_string b (Printf.sprintf "    D_NL (Ring-Mixing Degree):     %.2f\n" r.drs_v2.d_nl);
+  Buffer.add_string b (Printf.sprintf "    E_CFG (Branch Entanglement):   %.2f\n" r.drs_v2.e_cfg);
+  Buffer.add_string b (Printf.sprintf "    Composite DRS v2 Score:        %.1f / 100.0\n" r.drs_v2.composite_score);
   Buffer.add_string b "====================================================================\n";
   Buffer.contents b
 
@@ -227,3 +271,5 @@ let decoding_ambiguity r = r.decoding_ambiguity
 let runtime_overhead r = r.runtime_overhead
 let code_size r = r.code_size
 let reproducibility r = r.reproducibility
+let drs_v2 r = r.drs_v2
+

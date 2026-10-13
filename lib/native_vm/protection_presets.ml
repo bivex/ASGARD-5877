@@ -8,7 +8,7 @@ let default : t = {
     enabled = true;
     obfuscate_states = true;
     inject_opaque_predicates = false;
-    input_tainted_transitions = true;
+    input_tainted_transitions = false;
   };
   mba = {
     enabled = true;

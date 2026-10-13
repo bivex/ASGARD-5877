@@ -28,6 +28,13 @@ type reproducibility_metrics = {
   differential_pass_rate : float;
 }
 
+type drs_v2_metrics = {
+  r_ssa : float;
+  d_nl : float;
+  e_cfg : float;
+  composite_score : float;
+}
+
 type metrics_report = {
   shannon_entropy : float;
   cyclomatic_complexity : int;
@@ -40,6 +47,7 @@ type metrics_report = {
   runtime_overhead : runtime_overhead_metrics;
   code_size : code_size_metrics;
   reproducibility : reproducibility_metrics;
+  drs_v2 : drs_v2_metrics;
 }
 
 val shannon_entropy : metrics_report -> float
@@ -54,6 +62,7 @@ val decoding_ambiguity : metrics_report -> decoding_ambiguity_metrics
 val runtime_overhead : metrics_report -> runtime_overhead_metrics
 val code_size : metrics_report -> code_size_metrics
 val reproducibility : metrics_report -> reproducibility_metrics
+val drs_v2 : metrics_report -> drs_v2_metrics
 
 val calculate_shannon_entropy : int64 list -> float
 val calculate_cfg_complexity : Ir.func -> int
@@ -70,6 +79,9 @@ val calculate_resilience_metrics :
   ?dynamic_key_active:bool ->
   ?native_ir_ops:int ->
   ?differential_verified:bool ->
+  ?data_flow_entangled:bool ->
+  ?non_linear_degree:float ->
+  ?taint_transitions_active:bool ->
   bytecode:int64 list ->
   func:Ir.func ->
   decoy_count:int ->
@@ -79,3 +91,4 @@ val calculate_resilience_metrics :
   metrics_report
 
 val report_to_string : metrics_report -> string
+

@@ -81,3 +81,25 @@ let dump_mapping ctx =
     list := (slot, Register.to_string reg) :: !list
   ) ctx.slot_to_reg;
   List.sort (fun (s1, _) (s2, _) -> compare s1 s2) !list
+
+let permute_epoch ?(seed = 0x5877) ctx ~epoch =
+  let epoch_seed = seed lxor ((epoch * 0x9E3779B9) land 0x7FFFFFFF) in
+  let rng = Random.State.make [| epoch_seed |] in
+  let reg_to_slot = Hashtbl.create 64 in
+  let slot_to_reg = Hashtbl.create 64 in
+  let registered = Hashtbl.fold (fun reg _ acc -> reg :: acc) ctx.reg_to_slot [] in
+  let permuted_regs = shuffle_list rng registered in
+  List.iteri (fun slot reg ->
+    Hashtbl.replace reg_to_slot reg slot;
+    Hashtbl.replace slot_to_reg slot reg;
+  ) permuted_regs;
+  { reg_to_slot; slot_to_reg; next_slot = ctx.next_slot }
+
+let slot_of_reg_epoch ctx ~epoch reg =
+  let epoch_ctx = permute_epoch ctx ~epoch in
+  slot_of_reg epoch_ctx reg
+
+let reg_of_slot_epoch ctx ~epoch slot =
+  let epoch_ctx = permute_epoch ctx ~epoch in
+  reg_of_slot epoch_ctx slot
+

@@ -9,7 +9,7 @@ type cff_options = {
 let default_cff_options = {
   inject_opaque_predicates = false; (* default false, can enable explicitly *)
   obfuscate_states = true;
-  input_tainted_transitions = true;
+  input_tainted_transitions = false;
 }
 
 
@@ -330,7 +330,8 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                             Ir.Jmp (Ir.BlockId disp_base_id);
                           ]
                       | _ ->
-                          body @ setup_states @ [
+                          body @ [ Ir.Get_flags Register.vtmp3 ] @ setup_states @ [
+                            Ir.Set_flags (Ir.Reg Register.vtmp3);
                             Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
                             Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
                             Ir.Jmp (Ir.BlockId disp_base_id);

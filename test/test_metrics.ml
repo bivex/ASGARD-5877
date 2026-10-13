@@ -127,13 +127,61 @@ let test_p3_independent_resilience_metrics () =
   Alcotest.(check int) "seed entropy is 64 bits" 64 rep_rob.seed_entropy_bits;
   Alcotest.(check bool) "differential pass rate is 100%" true (rep_rob.differential_pass_rate = 1.0);
 
+  (* 6. DRS v2 Resilience Vector *)
+  let v2 = Metrics.drs_v2 rep in
+  Alcotest.(check bool) "R_SSA is 1.0" true (v2.r_ssa = 1.0);
+  Alcotest.(check bool) "D_NL >= 2.0" true (v2.d_nl >= 2.0);
+  Alcotest.(check bool) "E_CFG > 0" true (v2.e_cfg > 0.0);
+  Alcotest.(check bool) "DRS v2 composite score > 0" true (v2.composite_score > 0.0);
+
   (* Structured Report String Verification *)
   let summary = Metrics.report_to_string rep in
   Alcotest.(check bool) "summary has CFG Recovery section" true (String.contains summary 'C' && String.contains summary 'F' && String.contains summary 'G');
   Alcotest.(check bool) "summary has Decoding Ambiguity section" true (String.contains summary 'A' && String.contains summary 'm' && String.contains summary 'b');
   Alcotest.(check bool) "summary has Overhead Vector section" true (String.contains summary 'O' && String.contains summary 'v' && String.contains summary 'e');
   Alcotest.(check bool) "summary has Footprint section" true (String.contains summary 'F' && String.contains summary 'o' && String.contains summary 'o');
-  Alcotest.(check bool) "summary has Reproducibility section" true (String.contains summary 'R' && String.contains summary 'e' && String.contains summary 'p')
+  Alcotest.(check bool) "summary has Reproducibility section" true (String.contains summary 'R' && String.contains summary 'e' && String.contains summary 'p');
+  Alcotest.(check bool) "summary has DRS v2 section" true (String.contains summary 'v' && String.contains summary '2')
+
+let test_p3_drs_v2_vector () =
+  let b0 = { Ir.id = 0; label = "entry"; instrs = [ Ir.Jcc { cond = Flags.E; target_true = Ir.Label "b1"; target_false = Ir.Label "b2" } ] } in
+  let b1 = { Ir.id = 1; label = "b1"; instrs = [ Ir.Ret ] } in
+  let b2 = { Ir.id = 2; label = "b2"; instrs = [ Ir.Ret ] } in
+  let blocks = Hashtbl.create 3 in
+  Hashtbl.replace blocks 0 b0;
+  Hashtbl.replace blocks 1 b1;
+  Hashtbl.replace blocks 2 b2;
+  let func = { Ir.name = "branchy_func"; cfg = { Ir.entry_id = 0; blocks } } in
+  let bc = [ 0x1122334455667788L; 0x99AABBCCDDEEFF00L ] in
+
+  let rep = Metrics.calculate_resilience_metrics
+    ~data_flow_entangled:true
+    ~taint_transitions_active:true
+    ~bytecode:bc
+    ~func
+    ~decoy_count:15
+    ~total_handlers:256
+    ~mba_nodes:30
+    () in
+  let v2 = Metrics.drs_v2 rep in
+  Alcotest.(check bool) "R_SSA is 1.0 (entangled)" true (v2.r_ssa = 1.0);
+  Alcotest.(check bool) "D_NL > 2.0 (non-linear ring mixing)" true (v2.d_nl >= 2.0);
+  Alcotest.(check bool) "E_CFG > 0 (symbolic branch entanglement)" true (v2.e_cfg > 0.0);
+  Alcotest.(check bool) "composite DRS v2 score > 50" true (v2.composite_score >= 50.0);
+
+  let unentangled_rep = Metrics.calculate_resilience_metrics
+    ~data_flow_entangled:false
+    ~taint_transitions_active:false
+    ~bytecode:bc
+    ~func
+    ~decoy_count:0
+    ~total_handlers:256
+    ~mba_nodes:0
+    () in
+  let un_v2 = Metrics.drs_v2 unentangled_rep in
+  Alcotest.(check bool) "unentangled R_SSA is 0.35" true (un_v2.r_ssa = 0.35);
+  Alcotest.(check bool) "unentangled D_NL is 1.0" true (un_v2.d_nl = 1.0);
+  Alcotest.(check bool) "entangled DRS v2 score exceeds unentangled" true (v2.composite_score > un_v2.composite_score)
 
 let tests = [
   Alcotest.test_case "shannon_entropy_high_and_low" `Quick test_shannon_entropy_high_and_low;
@@ -143,4 +191,6 @@ let tests = [
   Alcotest.test_case "cfg_complexity_diamond" `Quick test_cfg_complexity_diamond;
   Alcotest.test_case "calculate_metrics_and_report_to_string" `Quick test_calculate_metrics_and_report_to_string;
   Alcotest.test_case "p3_independent_resilience_metrics" `Quick test_p3_independent_resilience_metrics;
+  Alcotest.test_case "p3_drs_v2_vector" `Quick test_p3_drs_v2_vector;
 ]
+

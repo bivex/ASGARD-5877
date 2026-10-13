@@ -44,7 +44,24 @@ let test_context_allocator () =
   Alcotest.(check bool) "permutations are active" true (Context_allocator.total_slots ctx_perm1 > 0);
   (* Check slot bounds *)
   Alcotest.(check bool) "valid slot range s1" true (s1 >= 0 && s1 < Context_allocator.total_slots ctx_perm1);
-  Alcotest.(check bool) "valid slot range s2" true (s2 >= 0 && s2 < Context_allocator.total_slots ctx_perm2)
+  Alcotest.(check bool) "valid slot range s2" true (s2 >= 0 && s2 < Context_allocator.total_slots ctx_perm2);
+
+  (* Test P3-02 epoch permutation *)
+  let ctx_ep0 = Context_allocator.permute_epoch ctx ~epoch:0 in
+  let ctx_ep1 = Context_allocator.permute_epoch ctx ~epoch:1 in
+  let ep0_rax = Context_allocator.slot_of_reg ctx_ep0 rax in
+  let ep1_rax = Context_allocator.slot_of_reg ctx_ep1 rax in
+  Alcotest.(check bool) "epochs produce valid slots" true
+    (ep0_rax >= 0 && ep0_rax < Context_allocator.total_slots ctx_ep0 &&
+     ep1_rax >= 0 && ep1_rax < Context_allocator.total_slots ctx_ep1);
+  Alcotest.(check bool) "epoch roundtrip" true
+    (match Context_allocator.reg_of_slot ctx_ep0 ep0_rax with
+     | Some r -> r = Register.rax
+     | None -> false);
+
+  Alcotest.(check int) "slot_of_reg_epoch matches permute_epoch" ep0_rax
+    (Context_allocator.slot_of_reg_epoch ctx ~epoch:0 rax)
+
 
 let test_logic_reduction_truth_tables () =
   let ctx = Context_allocator.create () in
