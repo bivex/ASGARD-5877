@@ -14,3 +14,4 @@ val cfg_seed : t -> int64
 val constant_seed : t -> int64
 val mba_seed : t -> int64
 val superop_seed : t -> int64
+val codec_seed : t -> int64

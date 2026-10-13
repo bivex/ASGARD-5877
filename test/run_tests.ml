@@ -37,6 +37,7 @@ let () =
     ("Stack-VM Execution Engine", Test_stack_vm.tests);
     ("Bytecode Cryptography & Integrity", Test_bytecode_crypto.tests);
     ("Tech-2601 Exception Handling", Test_tech_2601.tests);
+    ("Ring Codec (Data-Space Automorphisms)", Test_ring_codec.tests);
   ]
 
 

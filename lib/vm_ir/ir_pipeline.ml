@@ -14,8 +14,12 @@ let compile ?(seed = Seed.create ()) ?(strategy = Register_allocator.Randomized)
       (* Stage 2: Semantic Diversification (Modular Inverses & Non-Linear MBA) *)
       let sem_f = Semantic_transform.transform_func ~seed orig_f in
       
+      (* Stage 2b: Data-Space Ring Codec (Affine Automorphisms) *)
+      let codec_cfg = Codec_pass.default_config (Seed.codec_seed seed) in
+      let codec_f = Codec_pass.transform_func ~cfg:codec_cfg sem_f in
+
       (* Stage 3: Superoperator Fusion & Decoy Interleaving *)
-      let super_f = Superoperator.transform_func ~seed sem_f in
+      let super_f = Superoperator.transform_func ~seed codec_f in
       
       (* Stage 4: CFG Diversification (Block Splitting, Decoys & Topological Shuffling) *)
       let cfg_f = Cfg_transform.transform ~seed super_f in

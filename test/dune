@@ -38,6 +38,7 @@
   test_stack_vm
   test_bytecode_crypto
   test_tech_2601
+  test_ring_codec
   test_helpers
   run_tests)
  (libraries

@@ -33,3 +33,6 @@ val solve_path_delta : k_old:int64 -> k_target:int64 -> poly_const:int64 -> int6
 (** [solve_path_delta ~k_old ~k_target ~poly_const] finds path delta [Delta]
     such that [branch_invariant_poly_update ~key:k_old ~path_delta:Delta ~poly_const = k_target]. *)
 
+val mod_inverse_64 : int64 -> int64
+(** Modular multiplicative inverse in Z_{2^64} via Newton-Raphson. *)
+

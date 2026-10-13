@@ -6,6 +6,7 @@ type t = {
   constant_seed : int64;
   mba_seed : int64;
   superop_seed : int64;
+  codec_seed : int64;
 }
 
 let fnv1a_64 (str : string) : int64 =
@@ -39,6 +40,7 @@ let create ?master_seed () : t =
     constant_seed = 0L;
     mba_seed = 0L;
     superop_seed = 0L;
+    codec_seed = 0L;
   } in
   {
     master_seed = master;
@@ -48,6 +50,7 @@ let create ?master_seed () : t =
     constant_seed = derive_subseed base_t "CONSTANT_BLINDING";
     mba_seed = derive_subseed base_t "MBA_TRANSFORMATION";
     superop_seed = derive_subseed base_t "SUPEROPERATOR_FUSION";
+    codec_seed = derive_subseed base_t "DATA_CODEC";
   }
 
 let make_rng (seed : int64) : Random.State.t =
@@ -69,3 +72,4 @@ let cfg_seed (t : t) : int64 = t.cfg_seed
 let constant_seed (t : t) : int64 = t.constant_seed
 let mba_seed (t : t) : int64 = t.mba_seed
 let superop_seed (t : t) : int64 = t.superop_seed
+let codec_seed (t : t) : int64 = t.codec_seed
