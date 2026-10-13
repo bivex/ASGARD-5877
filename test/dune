@@ -39,6 +39,7 @@
   test_bytecode_crypto
   test_tech_2601
   test_ring_codec
+  test_nullspace_mba
   test_helpers
   run_tests)
  (libraries

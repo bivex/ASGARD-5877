@@ -15,7 +15,7 @@ let float_of_yojson = function
 
 let float_to_yojson f = `Float f
 
-type mba_engine = [ `Egraph | `Poly | `Ncfg | `Gpu_metal ]
+type mba_engine = [ `Egraph | `Poly | `Ncfg | `Gpu_metal | `Nullspace ]
 
 let mba_engine_of_yojson = function
   | `String s -> (
@@ -23,6 +23,7 @@ let mba_engine_of_yojson = function
       | "egraph" | "e-graph" | "scrambler" -> Ok `Egraph
       | "ncfg" -> Ok `Ncfg
       | "gpu" | "gpu_metal" | "metal" -> Ok `Gpu_metal
+      | "nullspace" | "null" | "kernel" -> Ok `Nullspace
       | "poly" | "polynomial" | _ -> Ok `Poly)
   | _ -> Error "Expected string for mba_engine"
 
@@ -31,6 +32,7 @@ let mba_engine_to_yojson = function
   | `Poly -> `String "poly"
   | `Ncfg -> `String "ncfg"
   | `Gpu_metal -> `String "gpu_metal"
+  | `Nullspace -> `String "nullspace"
 
 type mba_config = {
   enabled : bool [@default true];

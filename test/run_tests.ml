@@ -38,6 +38,7 @@ let () =
     ("Bytecode Cryptography & Integrity", Test_bytecode_crypto.tests);
     ("Tech-2601 Exception Handling", Test_tech_2601.tests);
     ("Ring Codec (Data-Space Automorphisms)", Test_ring_codec.tests);
+    ("Null-Space MBA Synthesis", Test_nullspace_mba.tests);
   ]
 
 
