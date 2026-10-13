@@ -93,10 +93,16 @@ let apply_block cfg block =
   { block with ops = aux block.ops }
 
 let apply_program cfg prog =
+  let block_ids =
+    Hashtbl.fold (fun id _ acc -> id :: acc) prog.blocks []
+    |> List.sort Int.compare
+  in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-  Hashtbl.iter (fun id b ->
-    Hashtbl.replace new_blocks id (apply_block cfg b)
-  ) prog.blocks;
+  List.iter (fun id ->
+    match Hashtbl.find_opt prog.blocks id with
+    | Some b -> Hashtbl.replace new_blocks id (apply_block cfg b)
+    | None -> ()
+  ) block_ids;
   { prog with blocks = new_blocks }
 
 let count_superops prog =

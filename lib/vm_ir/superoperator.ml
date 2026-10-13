@@ -5,6 +5,17 @@ let is_terminator = function
   | Jmp _ | Jcc _ | Call _ | Ret | Vm_exit | Trap _ -> true
   | _ -> false
 
+(* SplitMix64 for block-level deterministic randomization *)
+let splitmix64_once (s : int64) : int64 =
+  let s = Int64.add s 0x9E3779B97F4A7C15L in
+  let z = s in
+  let z = Int64.logxor z (Int64.shift_right_logical z 30) in
+  let z = Int64.mul z 0xBF58476D1CE4E5B9L in
+  let z = Int64.logxor z (Int64.shift_right_logical z 27) in
+  let z = Int64.mul z 0x94D049BB133111EBL in
+  let z = Int64.logxor z (Int64.shift_right_logical z 31) in
+  z
+
 let make_decoy_instr (rng : Random.State.t) : instr =
   let shadow_regs = [ vtmp0; vtmp1; vtmp2; vtmp3 ] in
   let target_reg = List.nth shadow_regs (Random.State.int rng 4) in
@@ -43,10 +54,20 @@ let fuse_and_interleave_block ~(rng : Random.State.t) (b : basic_block) : basic_
   { b with instrs = transformed }
 
 let transform_func ~(seed : Seed.t) (f : func) : func =
-  let rng = Seed.make_rng (Seed.superop_seed seed) in
+  let super_seed = Seed.superop_seed seed in
+  (* Sort block ids for deterministic traversal *)
+  let block_ids =
+    Hashtbl.fold (fun id _ acc -> id :: acc) f.cfg.blocks []
+    |> List.sort Int.compare
+  in
   let new_blocks = Hashtbl.create (Hashtbl.length f.cfg.blocks) in
-  Hashtbl.iter (fun id b ->
-    let tb = fuse_and_interleave_block ~rng b in
-    Hashtbl.replace new_blocks id tb
-  ) f.cfg.blocks;
+  List.iter (fun id ->
+    match Hashtbl.find_opt f.cfg.blocks id with
+    | Some b ->
+        let block_seed = splitmix64_once (Int64.logxor super_seed (Int64.of_int (b.id lxor 0x5009_0001))) in
+        let rng = Seed.make_rng block_seed in
+        let tb = fuse_and_interleave_block ~rng b in
+        Hashtbl.replace new_blocks id tb
+    | None -> ()
+  ) block_ids;
   { f with cfg = { f.cfg with blocks = new_blocks } }
