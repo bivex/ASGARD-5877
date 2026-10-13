@@ -69,11 +69,11 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
   end else begin
     (match pick_variant 3 with
      | 0 ->
-         Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n"
+         Buffer.add_string b "        vIP_idx = (size_t)asgard::branchless_vip::select_vip(c, t_true, t_false);\n"
      | 1 ->
-         Buffer.add_string b "        if (c) { vIP_idx = (size_t)t_true; } else { vIP_idx = (size_t)t_false; }\n"
+         Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n"
      | _ ->
-         Buffer.add_string b "        uint64_t _mask = c ? ~0ULL : 0ULL;\n";
+         Buffer.add_string b "        uint64_t _mask = 0ULL - c;\n";
          Buffer.add_string b "        vIP_idx = (size_t)((t_true & _mask) | (t_false & ~_mask));\n");
   end;
   maybe_reanchor ();

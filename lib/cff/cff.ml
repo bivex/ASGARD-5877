@@ -245,28 +245,49 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         Hashtbl.replace state_map b.id (gen_state ()))
       sorted_orig;
 
-    let _kp_states =
-      if options.obfuscate_states then
-        let base_keys = Hashtbl.fold (fun _ s acc -> s :: acc) state_map [] in
-        kronecker_product_states ~base_states:base_keys ~dim:2 ~seed:(Random.State.int64 rng Int64.max_int)
-      else []
-    in
-
     let get_state bid =
       match Hashtbl.find_opt state_map bid with
       | Some s -> s
       | None -> 0xDEADBEEFL
     in
 
+    let state_pool = Hashtbl.create n in
+    List.iter (fun (b : Ir.basic_block) ->
+      Hashtbl.replace state_pool b.id [get_state b.id]
+    ) sorted_orig;
+
     (* State splitting: generate state aliases for blocks based on split_rate *)
     let (clone_map, clone_entries_list) =
       split_hot_states ~sorted_orig ~split_rate:options.split_rate ~rng ~used_states
     in
     let clone_entries = ref clone_entries_list in
+    Hashtbl.iter (fun bid cs ->
+      let cur = match Hashtbl.find_opt state_pool bid with Some l -> l | None -> [get_state bid] in
+      Hashtbl.replace state_pool bid (cs :: cur)
+    ) clone_map;
+
+    (* Kronecker product state expansion: create non-isomorphic algebraic state clusters *)
+    if options.obfuscate_states then begin
+      let kron_seed = Random.State.int64 rng Int64.max_int in
+      List.iter (fun (b : Ir.basic_block) ->
+        let base_s = get_state b.id in
+        let ks_list = kronecker_product_states ~base_states:[base_s] ~dim:2 ~seed:kron_seed in
+        List.iter (fun ks ->
+          if ks <> 0L && not (Hashtbl.mem used_states ks) then begin
+            Hashtbl.replace used_states ks ();
+            clone_entries := (ks, b.id) :: !clone_entries;
+            let cur = match Hashtbl.find_opt state_pool b.id with Some l -> l | None -> [base_s] in
+            Hashtbl.replace state_pool b.id (ks :: cur)
+          end
+        ) ks_list
+      ) sorted_orig
+    end;
 
     let get_target_state bid =
-      match Hashtbl.find_opt clone_map bid with
-      | Some cs when Random.State.bool rng -> cs
+      match Hashtbl.find_opt state_pool bid with
+      | Some pool when pool <> [] ->
+          let idx = Random.State.int rng (List.length pool) in
+          List.nth pool idx
       | _ -> get_state bid
     in
 

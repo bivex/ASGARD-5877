@@ -143,6 +143,7 @@ let emit_cpp_threaded_header
   let enable_ephemeral_jit = Protection_config.ephemeral_jit_enabled config in
 
   let rns_header = Vm_ir.Rns.emit_cpp_rns_header () in
+  let branchless_vip_header = Vm_ir.Branchless_vip.emit_branchless_vip_cpp_header () in
   let direct_syscalls_header = if enable_direct_syscalls then Hardened_runtime.emit_direct_syscalls_header () else "" in
   let anti_emulation_header = if enable_anti_emu then Hardened_runtime.emit_anti_emulation_probes () else "" in
   let dual_mapping_header = Hardened_runtime.emit_dual_mapping_header () in
@@ -271,6 +272,7 @@ let emit_cpp_threaded_header
   let models : (string * Jg_types.tvalue) list = [
     ("enable_vector_isa", Jg_types.Tbool enable_vector_isa);
     ("rns_header", Jg_types.Tstr rns_header);
+    ("branchless_vip_header", Jg_types.Tstr branchless_vip_header);
     ("enable_direct_syscalls", Jg_types.Tbool enable_direct_syscalls);
     ("direct_syscalls_header", Jg_types.Tstr direct_syscalls_header);
     ("enable_anti_emu", Jg_types.Tbool enable_anti_emu);

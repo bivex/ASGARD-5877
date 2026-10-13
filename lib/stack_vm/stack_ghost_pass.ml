@@ -63,6 +63,15 @@ type ghost_kind =
   | GhostFlags
   | GhostMemRead
 
+let entangle_with_accumulator ~(acc_slot : int) ~(delta : int64) : Stack_ir.stack_op list =
+  if delta = 0L then []
+  else [
+    PushReg acc_slot;
+    PushImm delta;
+    Add;
+    PopReg acc_slot;
+  ]
+
 (* ── Emitting a ghost sequence ────────────────────────────────────────── *)
 (** [emit_ghost rng ctx stack_depth flags_live] returns a list of ops forming
     a stack-neutral ghost sequence. Choices depend on current stack depth and
@@ -82,7 +91,7 @@ let emit_ghost ?(entangle = true) rng ctx entangle_slot stack_depth flags_live =
   match kind with
   | GhostPushPop when entangle && not flags_live ->
     let imm = next_int64 rng in
-    ([ PushImm imm; PushReg entangle_slot; Add; PopReg entangle_slot ], imm)
+    (entangle_with_accumulator ~acc_slot:entangle_slot ~delta:imm, imm)
   | GhostPushPop ->
     let imm = next_int64 rng in
     ([ PushImm imm; PopReg (scratch ()) ], 0L)
@@ -92,20 +101,14 @@ let emit_ghost ?(entangle = true) rng ctx entangle_slot stack_depth flags_live =
     let a = next_int64 rng in
     let b = next_int64 rng in
     let sum = Int64.add a b in
-    ([ PushImm a; PushImm b; Add; PushReg entangle_slot; Add; PopReg entangle_slot ], sum)
+    ([ PushImm a; PushImm b; Add; PopReg (scratch ()) ] @
+     entangle_with_accumulator ~acc_slot:entangle_slot ~delta:sum, sum)
   | GhostArith ->
     let a = next_int64 rng in
     let b = next_int64 rng in
     ([ PushImm a; PushImm b; Add; PopReg (scratch ()) ], 0L)
   | GhostKeyAdj ->
-    (* Use a non-zero random delta so the key stream is genuinely perturbed.
-       Two consecutive KeyAdjust with the same delta cancel:
-         key' = key XOR d XOR d = key  (XOR is self-inverse)
-       The runtime decoder sees the same effective key at the next real op,
-       but a static analyser tracing the key stream must symbolically evaluate
-       both mutations instead of recognising a trivial XOR-0 no-op. *)
     let d = ref (next_int64 rng) in
-    (* Guarantee non-zero: loop is extremely unlikely to iterate more than once *)
     while Int64.equal !d 0L do d := next_int64 rng done;
     ([ KeyAdjust !d; KeyAdjust !d ], 0L)
   | GhostFlags ->
@@ -125,10 +128,8 @@ let insert_ghosts_into_ops ?(entangle = true) rng ctx ops ghost_rate =
   let entangle_slot = Context_allocator.slot_of_reg ctx Register.vtmp3 in
   let checksum = ref 0L in
   let depth = ref 0 in
-  (* We operate on a list-accumulator for efficiency *)
   let result = ref [] in
   let emit op = result := op :: !result in
-  (* live.(i): flags entering instruction i are still needed *)
   let live = Stack_flag_liveness.analyze_list ops in
   let idx = ref 0 in
   let emit_ghost_here flags_live =
@@ -139,19 +140,29 @@ let insert_ghosts_into_ops ?(entangle = true) rng ctx ops ghost_rate =
       depth := !depth + stack_delta gop
     ) ghost_ops
   in
-  let maybe_entangle_mem flags_live =
+  let maybe_entangle_mem is_write flags_live =
     if entangle && !checksum <> 0L && not flags_live then begin
-      emit (PushReg entangle_slot);
-      emit (PushImm !checksum);
-      emit Sub;
-      emit Add
+      if is_write then begin
+        emit Swap;
+        emit (PushReg entangle_slot);
+        emit (PushImm !checksum);
+        emit Sub;
+        emit Add;
+        emit Swap
+      end else begin
+        emit (PushReg entangle_slot);
+        emit (PushImm !checksum);
+        emit Sub;
+        emit Add
+      end
     end
   in
   List.iter (fun op ->
     let i = !idx in
     incr idx;
     (match op with
-     | ReadMem _ | WriteMem _ -> maybe_entangle_mem live.(i)
+     | ReadMem _ -> maybe_entangle_mem false live.(i)
+     | WriteMem _ -> maybe_entangle_mem true live.(i)
      | _ -> ());
     if Stack_balance_pass.is_terminator op then begin
       (* Before the terminator, optionally insert a ghost. The terminator
@@ -210,15 +221,6 @@ let apply_block cfg ctx block =
     end
   in
   { block with ops = new_ops }
-
-let entangle_with_accumulator ~(acc_slot : int) ~(delta : int64) : Stack_ir.stack_op list =
-  if delta = 0L then []
-  else [
-    PushReg acc_slot;
-    PushImm delta;
-    Add;
-    PopReg acc_slot;
-  ]
 
 (** [apply_program cfg ctx prog] applies ghost padding to every block in
     [prog]. The stack balance of each block is preserved exactly by

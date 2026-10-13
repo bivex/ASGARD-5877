@@ -155,6 +155,31 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "        }\n";
   Buffer.add_string b "        reg_mask = new_mask;\n";
   Buffer.add_string b "    }\n\n";
+
+  let sched = Context_permutation.gen_epoch_schedule (Random.State.make [| Int32.to_int key_seed; 0x1337 |]) ~n_regs:16 ~n_epochs:4 in
+  Buffer.add_string b "    /* Dynamic Cycle-Decomposed Epoch Rotation (Fisher-Yates Transposition Schedule) */\n";
+  Buffer.add_string b "    inline void rotate_registers_epoch(uint32_t from_ep, uint32_t to_ep) noexcept {\n";
+  Buffer.add_string b "        uint32_t tr = ((from_ep & 3) << 2) | (to_ep & 3);\n";
+  Buffer.add_string b "        switch (tr) {\n";
+  for from_e = 0 to 3 do
+    for to_e = 0 to 3 do
+      if from_e <> to_e then begin
+        let target = Array.init 16 (fun s ->
+          let r = sched.inv_perms.(from_e).(s) in
+          sched.epoch_perms.(to_e).(r)
+        ) in
+        let swaps = Context_permutation.decompose_into_swaps target in
+        Buffer.add_string b (Printf.sprintf "        case 0x%X: {\n" ((from_e lsl 2) lor to_e));
+        List.iter (fun (u, v) ->
+          Buffer.add_string b (Printf.sprintf "            std::swap(gprs[%d], gprs[%d]);\n" u v)
+        ) swaps;
+        Buffer.add_string b "            break;\n        }\n";
+      end
+    done
+  done;
+  Buffer.add_string b "        default: break;\n";
+  Buffer.add_string b "        }\n";
+  Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    /* Virtual Stack Scrambling (8-Round Speck-64 ARX Permutation Core) */\n";
   Buffer.add_string b "    static inline constexpr size_t STACK_SIZE = 512;\n";
   Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_STRIDE = %d;\n" stride);

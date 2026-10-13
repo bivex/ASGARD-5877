@@ -32,58 +32,107 @@ let emit_handler_inline_ast b label (stmts : stmt list) =
 
 let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = false) () =
   let pick_variant n = Random.State.int rng n in
+  let wrap_metamorphic_involution_ast expr =
+    let c_odd = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
+    let shifted e = ((e &~ u64 0x7FFFFFFFL) *~ u64 c_odd) <<~ u64 33L in
+    let e_once = expr ^~ (shifted expr) in
+    e_once ^~ (shifted e_once)
+  in
+
+  let synth_basis_add () =
+    let basis = Random_visa_domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
+    let (w1, w2, w_const) = Random_visa_domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Random_visa_domain.Isa_metamorphic_synth.StdAdd in
+    let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi1.bias in
+    let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi2.bias in
+    (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const
+  in
+
+  let synth_basis_sub () =
+    let basis = Random_visa_domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
+    let (w1, w2, w_const) = Random_visa_domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Random_visa_domain.Isa_metamorphic_synth.StdSub in
+    let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi1.bias in
+    let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi2.bias in
+    (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const
+  in
+
+  let synth_basis_xor () =
+    let basis = Random_visa_domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
+    let (w1, w2, w_const) = Random_visa_domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Random_visa_domain.Isa_metamorphic_synth.StdXor in
+    let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi1.bias in
+    let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi2.bias in
+    (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const
+  in
+
   let pick_poly_add_ast () =
-    match Random.State.int rng 4 with
-    | 0 -> (reg_dst ^~ reg_src) +~ (u64 2L *~ (reg_dst &~ reg_src))
-    | 1 -> (reg_dst |~ reg_src) +~ (reg_dst &~ reg_src)
-    | 2 -> (u64 2L *~ (reg_dst |~ reg_src)) -~ (reg_dst ^~ reg_src)
-    | _ -> call "ctx.rns_add" [reg_dst; reg_src]
+    let raw = match Random.State.int rng 5 with
+      | 0 -> (reg_dst ^~ reg_src) +~ (u64 2L *~ (reg_dst &~ reg_src))
+      | 1 -> (reg_dst |~ reg_src) +~ (reg_dst &~ reg_src)
+      | 2 -> (u64 2L *~ (reg_dst |~ reg_src)) -~ (reg_dst ^~ reg_src)
+      | 3 -> synth_basis_add ()
+      | _ -> call "ctx.rns_add" [reg_dst; reg_src]
+    in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let pick_poly_sub_ast () =
-    match Random.State.int rng 3 with
-    | 0 -> (reg_dst ^~ reg_src) -~ (u64 2L *~ (bit_not reg_dst &~ reg_src))
-    | 1 -> (u64 2L *~ (reg_dst &~ bit_not reg_src)) -~ (reg_dst ^~ reg_src)
-    | _ -> call "ctx.rns_sub" [reg_dst; reg_src]
+    let raw = match Random.State.int rng 4 with
+      | 0 -> (reg_dst ^~ reg_src) -~ (u64 2L *~ (bit_not reg_dst &~ reg_src))
+      | 1 -> (u64 2L *~ (reg_dst &~ bit_not reg_src)) -~ (reg_dst ^~ reg_src)
+      | 2 -> synth_basis_sub ()
+      | _ -> call "ctx.rns_sub" [reg_dst; reg_src]
+    in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let pick_poly_xor_ast () =
-    match Random.State.int rng 3 with
-    | 0 -> (reg_dst +~ reg_src) -~ (u64 2L *~ (reg_dst &~ reg_src))
-    | 1 -> (reg_dst |~ reg_src) -~ (reg_dst &~ reg_src)
-    | _ -> (reg_dst ^~ reg_src)
+    let raw = match Random.State.int rng 4 with
+      | 0 -> (reg_dst +~ reg_src) -~ (u64 2L *~ (reg_dst &~ reg_src))
+      | 1 -> (reg_dst |~ reg_src) -~ (reg_dst &~ reg_src)
+      | 2 -> synth_basis_xor ()
+      | _ -> (reg_dst ^~ reg_src)
+    in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
 
   let h_add_rr_expr_ast () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_add_rr_ast ~rng
-    else pick_poly_add_ast ()
+    let raw = if enable_egraph_expansion then Egraph_cpp_emitter.egraph_add_rr_ast ~rng
+              else pick_poly_add_ast () in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let h_sub_rr_expr_ast () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_sub_rr_ast ~rng
-    else pick_poly_sub_ast ()
+    let raw = if enable_egraph_expansion then Egraph_cpp_emitter.egraph_sub_rr_ast ~rng
+              else pick_poly_sub_ast () in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let h_xor_rr_expr_ast () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_xor_rr_ast ~rng
-    else pick_poly_xor_ast ()
+    let raw = if enable_egraph_expansion then Egraph_cpp_emitter.egraph_xor_rr_ast ~rng
+              else pick_poly_xor_ast () in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let pick_poly_and_ast () =
-    match Random.State.int rng 3 with
-    | 0 -> reg_dst &~ reg_src
-    | 1 -> (reg_dst +~ reg_src) -~ (reg_dst |~ reg_src)
-    | _ -> (reg_dst ^~ reg_src) ^~ (reg_dst |~ reg_src)
+    let raw = match Random.State.int rng 3 with
+      | 0 -> reg_dst &~ reg_src
+      | 1 -> (reg_dst +~ reg_src) -~ (reg_dst |~ reg_src)
+      | _ -> (reg_dst ^~ reg_src) ^~ (reg_dst |~ reg_src)
+    in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let pick_poly_or_ast () =
-    match Random.State.int rng 3 with
-    | 0 -> reg_dst |~ reg_src
-    | 1 -> (reg_dst ^~ reg_src) +~ (reg_dst &~ reg_src)
-    | _ -> (reg_dst +~ reg_src) -~ (reg_dst &~ reg_src)
+    let raw = match Random.State.int rng 3 with
+      | 0 -> reg_dst |~ reg_src
+      | 1 -> (reg_dst ^~ reg_src) +~ (reg_dst &~ reg_src)
+      | _ -> (reg_dst +~ reg_src) -~ (reg_dst &~ reg_src)
+    in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
 
   let h_and_rr_expr_ast () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_and_rr_ast ~rng
-    else pick_poly_and_ast ()
+    let raw = if enable_egraph_expansion then Egraph_cpp_emitter.egraph_and_rr_ast ~rng
+              else pick_poly_and_ast () in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
   let h_or_rr_expr_ast () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_or_rr_ast ~rng
-    else pick_poly_or_ast ()
+    let raw = if enable_egraph_expansion then Egraph_cpp_emitter.egraph_or_rr_ast ~rng
+              else pick_poly_or_ast () in
+    if Random.State.bool rng then wrap_metamorphic_involution_ast raw else raw
   in
 
   (match pick_variant 3 with
