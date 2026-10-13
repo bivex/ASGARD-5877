@@ -80,3 +80,14 @@
 
 ; Make examples/license_check.c available in _build/default/test/
 (copy_files ../examples/license_check.c)
+
+(test
+ (name test_tier4_nextgen)
+ (modules test_tier4_nextgen)
+ (libraries
+  vm_ir
+  native_vm
+  multi_vm
+  rd_jit_vm
+  mba_engine
+  alcotest))

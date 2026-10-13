@@ -99,7 +99,7 @@ let test_context_permutation_cycles () =
   for _ = 1 to 100 do
     let n = 16 in
     let cp = Perm.gen_permutation ~rng ~n in
-    let swaps = Perm.decompose_into_swaps cp.perm in
+    let swaps = Perm.decompose_into_swaps cp.inv_perm in
     let arr = Array.init n (fun i -> i) in
     List.iter (fun (i, j) ->
       let tmp = arr.(i) in
