@@ -166,6 +166,7 @@ let compute_shannon_entropy (b : bytes) : float =
     !entropy
 
 let make_stack_metrics
+    ?(amplifier_info = "Bytecode amplification: N/A")
     ?(superop_info   = "Superoperator fusion: N/A")
     ?(spaghetti_info = "Spaghetti splitting: N/A")
     ?(ghost_info     = "Ghost padding: N/A")
@@ -198,6 +199,7 @@ let make_stack_metrics
        - Opcode Mapping: Dynamic Polymorphic ISA (Unique Build Permutation)\n\
        - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
        - PushImm Operand Width: %s\n\
+       - %s\n\
        - Superoperator Fusion: %s\n\
        - Spaghetti CFG Splitting: %s\n\
        - Ghost Stack Padding: %s\n\
@@ -214,6 +216,7 @@ let make_stack_metrics
        - Rolling Key Seed: 0x%016LX\n\
        ==============================================="
       imm_width_info
+      amplifier_info
       superop_info
       spaghetti_info ghost_info feedback_info
       (Stack_vm.Stack_encoder.format_field_layout enc.layout)
@@ -255,6 +258,12 @@ module Stack_vm_packager : Vm_packager = struct
     let ext_syms = Hashtbl.create 16 in
     let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
+
+    (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing) *)
+    let amp_profile = Stack_vm.Bytecode_amplifier.default_heavy_profile in
+    let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~profile:amp_profile prog in
+    let amplifier_info = Stack_vm.Bytecode_amplifier.amplifier_stats prog prog_amplified in
+    let prog = prog_amplified in
 
     (* Phase 2a: Superoperator Fusion — fuse recurring patterns into fused ops *)
     let prog, superop_info =
@@ -400,6 +409,7 @@ module Stack_vm_packager : Vm_packager = struct
       make_stack_metrics
         ~compact_imm
         ~runtime_hardening:obfuscate_runtime
+        ~amplifier_info
         ~superop_info
         ~spaghetti_info ~ghost_info ~feedback_info ~mba_info ~cff_info
         ~real_ops ~real_blocks prog enc

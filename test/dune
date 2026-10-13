@@ -99,3 +99,13 @@
   cpp_codegen
   native_vm
   alcotest))
+
+(test
+ (name test_bytecode_amplifier)
+ (modules test_bytecode_amplifier)
+ (libraries
+  random_visa.stack_vm
+  mba_engine
+  vm_ir
+  alcotest))
+
