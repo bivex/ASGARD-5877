@@ -91,3 +91,10 @@
   rd_jit_vm
   mba_engine
   alcotest))
+
+(test
+ (name test_cpp_codegen)
+ (modules test_cpp_codegen)
+ (libraries
+  cpp_codegen
+  alcotest))

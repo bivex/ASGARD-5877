@@ -48,54 +48,90 @@ let simulate_nano_slot_lifecycle (ticket : nano_block_ticket) ~(master_key : int
   Bytes.blit wiped_slot 0 active_slot 0 (Bytes.length active_slot);
   (materialized_snapshot, active_slot)
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+
+let build_nano_jit_slot_ast () : top_decl list =
+  let splitmix_fn = FuncDecl {
+    attrs    = [AlwaysInline; NoExcept];
+    ret_type = UInt64;
+    name     = "splitmix_stream";
+    params   = [(UInt64, "key"); (UInt64, "nonce"); (SizeT, "idx")];
+    body     = [
+      let_u64 "z" (var "key" +~ (var "nonce" ^~ (var "idx" *~ u64 0x9E3779B97F4A7C15L)));
+      var "z" := (var "z" ^~ (var "z" >>~ u64 30L)) *~ u64 0xBF58476D1CE4E5B9L;
+      var "z" := (var "z" ^~ (var "z" >>~ u64 27L)) *~ u64 0x94D049BB133111EBL;
+      ret (var "z" ^~ (var "z" >>~ u64 31L));
+    ];
+  } in
+
+  let materialize_fn = FuncDecl {
+    attrs    = [AlwaysInline; NoExcept];
+    ret_type = Void;
+    name     = "materialize_nano_block";
+    params   = [
+      (Ref (StructType "EphemeralSlot"), "slot");
+      (ConstPtr UInt64, "encrypted_words");
+      (SizeT, "word_count");
+      (UInt64, "master_key");
+      (UInt64, "nonce");
+    ];
+    body     = [
+      decl_var ~is_volatile:true (Ptr UInt64) "dst" ~init:(var "slot" $. "code_words");
+      ForRange {
+        var_name = "i";
+        start_e  = u64 0L;
+        limit_e  = ternary (var "word_count" <~ u64 16L) (var "word_count") (u64 16L);
+        body     = [
+          (idx (var "dst") (var "i")) :=
+            ((idx (var "encrypted_words") (var "i")) ^~
+             (call "splitmix_stream" [var "master_key"; var "nonce"; var "i"]));
+        ];
+      };
+      FenceSeqCst;
+    ];
+  } in
+
+  let wipe_fn = FuncDecl {
+    attrs    = [AlwaysInline; NoExcept];
+    ret_type = Void;
+    name     = "wipe_nano_block";
+    params   = [
+      (Ref (StructType "EphemeralSlot"), "slot");
+      (UInt64, "wipe_gamma");
+    ];
+    body     = [
+      decl_var ~is_volatile:true (Ptr UInt64) "dst" ~init:(var "slot" $. "code_words");
+      ForRange {
+        var_name = "i";
+        start_e  = u64 0L;
+        limit_e  = u64 16L;
+        body     = [
+          (idx (var "dst") (var "i")) :=
+            (call "splitmix_stream" [var "wipe_gamma"; var "i"; var "i" ^~ u64 0x5877L]);
+        ];
+      };
+      FenceSeqCst;
+    ];
+  } in
+
+  [
+    IncludeSys "cstdint";
+    IncludeSys "cstddef";
+    IncludeSys "atomic";
+    Namespace ("asgard::nano_jit", [
+      ConstexprGlobal (SizeT, "NANO_SLOT_SIZE", u64 128L);
+      StructDecl {
+        align_as = Some 64;
+        name     = "EphemeralSlot";
+        fields   = [(Array (UInt64, 16), "code_words")];
+      };
+      splitmix_fn;
+      materialize_fn;
+      wipe_fn;
+    ]);
+  ]
+
 let emit_self_wiping_nano_jit_hpp () : string =
-{|#pragma once
-// AUTO-GENERATED SINGLE-BLOCK SELF-WIPING NANO-JIT ENGINE (STEP 5 TIER-4+)
-#include <cstdint>
-#include <cstddef>
-#include <atomic>
+  Cpp_codegen.Cpp_printer.render_header_unit (build_nano_jit_slot_ast ())
 
-namespace asgard::nano_jit {
-
-constexpr size_t NANO_SLOT_SIZE = 128;
-
-struct alignas(64) EphemeralSlot {
-    uint64_t code_words[NANO_SLOT_SIZE / sizeof(uint64_t)];
-};
-
-__attribute__((always_inline)) inline uint64_t splitmix_stream(uint64_t key, uint64_t nonce, size_t idx) noexcept {
-    uint64_t z = key + (nonce ^ (idx * 0x9E3779B97F4A7C15ULL));
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    return z ^ (z >> 31);
-}
-
-// Материализует ровно один базовый блок в 128-байтный буфер перед прыжком
-__attribute__((always_inline)) inline void materialize_nano_block(
-    EphemeralSlot& slot,
-    const uint64_t* encrypted_words,
-    size_t word_count,
-    uint64_t master_key,
-    uint64_t nonce
-) noexcept {
-    volatile uint64_t* dst = slot.code_words;
-    for (size_t i = 0; i < word_count && i < 16; ++i) {
-        dst[i] = encrypted_words[i] ^ splitmix_stream(master_key, nonce, i);
-    }
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-}
-
-// Вызывается немедленно при выходе из блока: перезаписывает машинный код шумом
-__attribute__((always_inline)) inline void wipe_nano_block(
-    EphemeralSlot& slot,
-    uint64_t wipe_gamma
-) noexcept {
-    volatile uint64_t* dst = slot.code_words;
-    for (size_t i = 0; i < 16; ++i) {
-        dst[i] = splitmix_stream(wipe_gamma, i, i ^ 0x5877ULL);
-    }
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-}
-
-} // namespace asgard::nano_jit
-|}

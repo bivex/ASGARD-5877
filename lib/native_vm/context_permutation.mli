@@ -30,5 +30,9 @@ val decompose_into_swaps : int array -> (int * int) list
 (** Симуляция ротации массива регистров между эпохами в OCaml (для верификации) *)
 val apply_swaps_in_place : int64 array -> (int * int) list -> unit
 
+(** Построение C++20 AST функции ротации регистров между эпохами по расписанию *)
+val build_schedule_epoch_rotation_ast :
+  epoch_schedule -> from_epoch:int -> to_epoch:int -> Cpp_codegen.Cpp_ast.top_decl
+
 (** Генерация C++20 функции in-place ротации регистров между эпохами по расписанию *)
 val emit_schedule_epoch_rotation_cpp : epoch_schedule -> from_epoch:int -> to_epoch:int -> string

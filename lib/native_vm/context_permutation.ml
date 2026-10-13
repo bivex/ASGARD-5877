@@ -87,7 +87,10 @@ let emit_epoch_rotation_cpp (t : t) : string =
   ) swaps in
   String.concat "\n" lines
 
-let emit_schedule_epoch_rotation_cpp (sched : epoch_schedule) ~(from_epoch : int) ~(to_epoch : int) : string =
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+
+let build_schedule_epoch_rotation_ast (sched : epoch_schedule) ~(from_epoch : int) ~(to_epoch : int) : top_decl =
   let n_ep = Array.length sched.epoch_perms in
   let e_from = from_epoch mod n_ep in
   let e_to   = to_epoch mod n_ep in
@@ -96,13 +99,26 @@ let emit_schedule_epoch_rotation_cpp (sched : epoch_schedule) ~(from_epoch : int
     sched.epoch_perms.(e_to).(r)
   ) in
   let swaps = decompose_into_swaps target in
+  let fn_name = Printf.sprintf "rotate_context_epoch_%d_to_%d" e_from e_to in
+  let body = List.map (fun (u, v) ->
+    Block [
+      let_u64 "t" (idx (var "regs") (i32 u));
+      (idx (var "regs") (i32 u)) := (idx (var "regs") (i32 v));
+      (idx (var "regs") (i32 v)) := (var "t");
+    ]
+  ) swaps in
+  FuncDecl {
+    attrs    = [AlwaysInline; NoExcept];
+    ret_type = Void;
+    name     = fn_name;
+    params   = [(Ptr UInt64, "regs")];
+    body;
+  }
+
+let emit_schedule_epoch_rotation_cpp (sched : epoch_schedule) ~(from_epoch : int) ~(to_epoch : int) : string =
+  let decl = build_schedule_epoch_rotation_ast sched ~from_epoch ~to_epoch in
   let buf = Buffer.create 512 in
-  Buffer.add_string buf (Printf.sprintf
-    "__attribute__((always_inline)) inline void rotate_context_epoch_%d_to_%d(uint64_t* regs) noexcept {\n"
-    e_from e_to);
-  List.iter (fun (u, v) ->
-    Buffer.add_string buf (Printf.sprintf
-      "    { uint64_t t = regs[%d]; regs[%d] = regs[%d]; regs[%d] = t; }\n" u u v v)
-  ) swaps;
-  Buffer.add_string buf "}\n";
+  let fmt = Format.formatter_of_buffer buf in
+  Format.fprintf fmt "%a@." Cpp_codegen.Cpp_printer.pp_top_decl decl;
   Buffer.contents buf
+

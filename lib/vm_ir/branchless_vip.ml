@@ -56,35 +56,63 @@ let compute_vip_and_key_branchless
   let next_key = mul (logxor base_key active_delta) 0x9E3779B97F4A7C15L in
   (next_vip, next_key)
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+
+let build_branchless_vip_ast () : top_decl list =
+  let is_zero_fn = FuncDecl {
+    attrs    = [AlwaysInline; ConstexprFn; NoExcept];
+    ret_type = UInt64;
+    name     = "is_zero_u64";
+    params   = [(UInt64, "d")];
+    body     = [
+      ret (u64 1L -~ ((var "d" |~ (u64 0L -~ var "d")) >>~ u64 63L));
+    ];
+  } in
+
+  let is_ult_fn = FuncDecl {
+    attrs    = [AlwaysInline; ConstexprFn; NoExcept];
+    ret_type = UInt64;
+    name     = "is_ult_u64";
+    params   = [(UInt64, "x"); (UInt64, "y")];
+    body     = [
+      let_u64 "diff" (var "x" -~ var "y");
+      let_u64 "borrow" (((bit_not (var "x")) &~ var "y") |~ (((bit_not (var "x")) |~ var "y") &~ var "diff"));
+      ret (var "borrow" >>~ u64 63L);
+    ];
+  } in
+
+  let is_slt_fn = FuncDecl {
+    attrs    = [AlwaysInline; ConstexprFn; NoExcept];
+    ret_type = UInt64;
+    name     = "is_slt_u64";
+    params   = [(UInt64, "x"); (UInt64, "y")];
+    body     = [
+      constexpr_u64 "SIGN_BIT" min_int;
+      ret (call "is_ult_u64" [var "x" ^~ var "SIGN_BIT"; var "y" ^~ var "SIGN_BIT"]);
+    ];
+  } in
+
+  let select_vip_fn = FuncDecl {
+    attrs    = [AlwaysInline; ConstexprFn; NoExcept];
+    ret_type = UInt64;
+    name     = "select_vip";
+    params   = [(UInt64, "cond_bit"); (UInt64, "target_vip"); (UInt64, "fallthrough_vip")];
+    body     = [
+      ret (var "fallthrough_vip" +~ (var "cond_bit" *~ (var "target_vip" -~ var "fallthrough_vip")));
+    ];
+  } in
+
+  [
+    IncludeSys "cstdint";
+    Namespace ("asgard::branchless_vip", [
+      is_zero_fn;
+      is_ult_fn;
+      is_slt_fn;
+      select_vip_fn;
+    ]);
+  ]
+
 let emit_branchless_vip_cpp_header () : string =
-{|#pragma once
-// AUTO-GENERATED BRANCHLESS VIP ARITHMETIC ENGINE (STEP 1 TIER-4+)
-#include <cstdint>
+  Cpp_codegen.Cpp_printer.render_header_unit (build_branchless_vip_ast ())
 
-namespace asgard::branchless_vip {
-
-__attribute__((always_inline)) constexpr uint64_t is_zero_u64(uint64_t d) noexcept {
-    return 1ULL - ((d | (0ULL - d)) >> 63);
-}
-
-__attribute__((always_inline)) constexpr uint64_t is_ult_u64(uint64_t x, uint64_t y) noexcept {
-    uint64_t diff = x - y;
-    uint64_t borrow = ((~x) & y) | (((~x) | y) & diff);
-    return borrow >> 63;
-}
-
-__attribute__((always_inline)) constexpr uint64_t is_slt_u64(uint64_t x, uint64_t y) noexcept {
-    constexpr uint64_t SIGN_BIT = 0x8000000000000000ULL;
-    return is_ult_u64(x ^ SIGN_BIT, y ^ SIGN_BIT);
-}
-
-__attribute__((always_inline)) constexpr uint64_t select_vip(
-    uint64_t cond_bit,
-    uint64_t target_vip,
-    uint64_t fallthrough_vip
-) noexcept {
-    return fallthrough_vip + cond_bit * (target_vip - fallthrough_vip);
-}
-
-} // namespace asgard::branchless_vip
-|}

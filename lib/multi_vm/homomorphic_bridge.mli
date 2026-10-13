@@ -20,6 +20,10 @@ val apply_bridge_morphism : transition_morphism -> int64 -> int64
 (** Композиция двух мостов (например, VM_1 -> VM_2 -> VM_3): T_{1->3} = T_{2->3} \circ T_{1->2} *)
 val compose_morphisms : first:transition_morphism -> second:transition_morphism -> transition_morphism
 
+(** Построение C++20 AST функции бесшовного перехода между двумя VM *)
+val build_homomorphic_bridge_ast :
+  bridge_name:string -> transition_morphism array -> Cpp_codegen.Cpp_ast.top_decl
+
 (** Эмиссия C++20 кода бесшовного перехода между двумя виртуальными машинами *)
 val emit_cpp20_homomorphic_bridge :
   bridge_name:string -> transition_morphism array -> string

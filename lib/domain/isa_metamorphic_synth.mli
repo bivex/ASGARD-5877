@@ -87,5 +87,9 @@ val step_mealy_grammar_state :
 (** Определение длины следующей инструкции в байтах (3, 5, 8) по состоянию автомата Мили *)
 val next_insn_byte_width : state:int64 -> int
 
+(** Построение типизированного C++20 AST для декодера метаморфной ISA *)
+val build_metamorphic_isa_ast :
+  isa_radix_spec -> alu_basis_pair -> Cpp_codegen.Cpp_ast.top_decl list
+
 (** Эмиссия C++20 заголовка декодера и синтетических хендлеров для заданной спецификации *)
 val emit_cpp20_decoder_header : isa_radix_spec -> alu_basis_pair -> string

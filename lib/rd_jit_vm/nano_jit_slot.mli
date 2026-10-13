@@ -19,5 +19,8 @@ val seal_nano_block :
 val simulate_nano_slot_lifecycle :
   nano_block_ticket -> master_key:int64 -> bytes * bytes
 
+(** Построение C++20 AST контроллера самозатирающегося 128-байтного слота Nano-JIT *)
+val build_nano_jit_slot_ast : unit -> Cpp_codegen.Cpp_ast.top_decl list
+
 (** Эмиссия C++20 контроллера самозатирающегося 128-байтного слота Nano-JIT *)
 val emit_self_wiping_nano_jit_hpp : unit -> string

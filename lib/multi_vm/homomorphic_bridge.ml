@@ -22,16 +22,28 @@ let compose_morphisms ~(first : transition_morphism) ~(second : transition_morph
   let shift = add (mul second.scale first.shift) second.shift in
   { scale; shift }
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+
+let build_homomorphic_bridge_ast ~(bridge_name : string) (morphisms : transition_morphism array) : top_decl =
+  let stmts = Array.to_list (Array.mapi (fun i m ->
+    (idx (var "callee_regs") (i32 i)) :=
+      ((idx (var "caller_regs") (i32 i)) *~ u64 m.scale) +~ u64 m.shift
+  ) morphisms) in
+
+  FuncDecl {
+    attrs    = [AlwaysInline; NoExcept];
+    ret_type = Void;
+    name     = bridge_name;
+    params   = [(ConstPtr UInt64, "caller_regs"); (Ptr UInt64, "callee_regs")];
+    body     = stmts;
+  }
+
 let emit_cpp20_homomorphic_bridge ~(bridge_name : string) (morphisms : transition_morphism array) : string =
+  let fn = build_homomorphic_bridge_ast ~bridge_name morphisms in
   let buf = Buffer.create 512 in
-  Buffer.add_string buf (Printf.sprintf
-    "// AUTO-GENERATED HOMOMORPHIC VM-TO-VM BRIDGE (NO ABI EXPOSURE)\n\
-     __attribute__((always_inline)) inline void %s(const uint64_t* caller_regs, uint64_t* callee_regs) noexcept {\n"
-    bridge_name);
-  Array.iteri (fun i m ->
-    Buffer.add_string buf (Printf.sprintf
-      "    callee_regs[%d] = caller_regs[%d] * 0x%016LxULL + 0x%016LxULL;\n"
-      i i m.scale m.shift)
-  ) morphisms;
-  Buffer.add_string buf "}\n";
+  let fmt = Format.formatter_of_buffer buf in
+  Format.fprintf fmt "// AUTO-GENERATED HOMOMORPHIC VM-TO-VM BRIDGE (NO ABI EXPOSURE)@,%a@."
+    Cpp_codegen.Cpp_printer.pp_top_decl fn;
   Buffer.contents buf
+
