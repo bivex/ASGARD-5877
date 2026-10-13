@@ -26,6 +26,8 @@ type cff_config = {
   obfuscate_states : bool;
   inject_opaque_predicates : bool;
   input_tainted_transitions : bool;
+  split_rate : int;
+  hub_count : int;
 }
 
 

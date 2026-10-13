@@ -80,6 +80,7 @@ func_cff_opaque:
       let config = {
         Protection_config.default with
         cff = {
+          Protection_config.default.cff with
           enabled = true;
           obfuscate_states = true;
           inject_opaque_predicates = true;

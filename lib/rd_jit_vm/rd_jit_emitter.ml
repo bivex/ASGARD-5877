@@ -23,6 +23,8 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
               Cff.inject_opaque_predicates = c.cff.inject_opaque_predicates;
               obfuscate_states = c.cff.obfuscate_states;
               input_tainted_transitions = c.cff.input_tainted_transitions;
+              split_rate = c.cff.split_rate;
+              hub_count = c.cff.hub_count;
             }
         | None -> Cff.default_cff_options
 

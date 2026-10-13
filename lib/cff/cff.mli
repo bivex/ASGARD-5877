@@ -4,8 +4,9 @@ type cff_options = {
   inject_opaque_predicates : bool;
   obfuscate_states : bool;
   input_tainted_transitions : bool;
+  split_rate : int;   (** 0..100: probability of splitting a block into two state aliases *)
+  hub_count : int;    (** 1..6: number of dispatcher hubs for multi-hub partitioning *)
 }
-
 
 val default_cff_options : cff_options
 

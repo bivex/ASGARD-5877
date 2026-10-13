@@ -345,7 +345,7 @@ let test_cff_flatten_with_opaque_predicates () =
   ] in
   let orig_func = Ir.make_func ~name:"fib_opaque" ~entry_id:0 ~blocks:[ b0; b1; b2; b3 ] in
 
-  let options = { Cff.inject_opaque_predicates = true; obfuscate_states = true; input_tainted_transitions = true } in
+  let options = { Cff.default_cff_options with inject_opaque_predicates = true; obfuscate_states = true; input_tainted_transitions = true } in
 
   match Cff.flatten_func ~options ~rng orig_func with
   | Error e -> Alcotest.fail e
@@ -439,7 +439,7 @@ func_taint_test:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok lifted_func ->
-      let options = { Cff.inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
+      let options = { Cff.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
       match Cff.flatten_func ~options ~rng lifted_func with
       | Error e -> Alcotest.fail e
       | Ok flattened_func ->

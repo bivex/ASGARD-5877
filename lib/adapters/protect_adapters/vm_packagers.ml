@@ -233,6 +233,8 @@ module Stack_vm_packager : Vm_packager = struct
           Cff.inject_opaque_predicates = native_cfg.cff.inject_opaque_predicates;
           obfuscate_states = native_cfg.cff.obfuscate_states;
           input_tainted_transitions = native_cfg.cff.input_tainted_transitions;
+          split_rate = native_cfg.cff.split_rate;
+          hub_count = native_cfg.cff.hub_count;
         } in
 
         match Cff.flatten_func ~options:cff_opts ~rng ir with

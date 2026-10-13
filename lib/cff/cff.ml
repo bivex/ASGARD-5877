@@ -4,12 +4,16 @@ type cff_options = {
   inject_opaque_predicates : bool;
   obfuscate_states : bool;
   input_tainted_transitions : bool;
+  split_rate : int;   (** 0..100: probability of splitting a block into two state aliases *)
+  hub_count : int;    (** 1..6: number of dispatcher hubs for multi-hub partitioning *)
 }
 
 let default_cff_options = {
   inject_opaque_predicates = false; (* default false, can enable explicitly *)
   obfuscate_states = true;
   input_tainted_transitions = false;
+  split_rate = 30;
+  hub_count = 1;
 }
 
 
@@ -216,6 +220,34 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
       | None -> 0xDEADBEEFL
     in
 
+    (* State splitting: generate state aliases for blocks based on split_rate *)
+    let clone_map = Hashtbl.create n in
+    let clone_entries = ref [] in (* (clone_state, target_block_id) *)
+    if options.split_rate > 0 then
+      List.iter
+        (fun (b : Ir.basic_block) ->
+          if Random.State.int rng 100 < options.split_rate then begin
+            let rec gen_clone_state () =
+              let s = Int64.logand (Int64.of_int32 (Random.State.int32 rng Int32.max_int)) 0xFFFFFFFEL in
+              let s = if s = 0L then 0x200L else s in
+              if Hashtbl.mem used_states s then gen_clone_state ()
+              else begin
+                Hashtbl.replace used_states s ();
+                s
+              end
+            in
+            let cs = gen_clone_state () in
+            Hashtbl.replace clone_map b.id cs;
+            clone_entries := (cs, b.id) :: !clone_entries
+          end)
+        sorted_orig;
+
+    let get_target_state bid =
+      match Hashtbl.find_opt clone_map bid with
+      | Some cs when Random.State.bool rng -> cs
+      | _ -> get_state bid
+    in
+
     (* P1-03: Input-tainted state transitions against Triton/angr DSE:
        dispatch variables depend on dynamic register hash:
        state <- (state * C1 + (input_reg >> 32)) mod M *)
@@ -250,7 +282,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     (* Trap Block *)
     let trap_block = Ir.make_block ~id:trap_block_id ~label:(func.name ^ "_cff_trap") ~instrs:[ Ir.Trap "CFF State Violation" ] in
 
-    (* Dispatch Blocks Ladder: disp_base_id + i *)
+    (* Dispatch Blocks Ladder: primary blocks + clone alias blocks *)
     let ladder_blocks =
       if options.obfuscate_states then begin
         let arr = Array.of_list sorted_orig in
@@ -265,15 +297,18 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         sorted_orig
     in
 
+    let primary_targets = List.map (fun (b : Ir.basic_block) -> (get_state b.id, b.id)) ladder_blocks in
+    let all_targets = primary_targets @ (List.rev !clone_entries) in
+    let total_disp = List.length all_targets in
+
     let disp_blocks = ref [] in
-    for i = 0 to n - 1 do
+    for i = 0 to total_disp - 1 do
       let cur_disp_id = disp_base_id + i in
       let next_disp_target =
-        if i + 1 < n then Ir.BlockId (disp_base_id + i + 1)
+        if i + 1 < total_disp then Ir.BlockId (disp_base_id + i + 1)
         else Ir.BlockId trap_block_id
       in
-      let target_b = List.nth ladder_blocks i in
-      let target_state = get_state target_b.id in
+      let (target_state, target_bid) = List.nth all_targets i in
       let d_instrs =
         if options.input_tainted_transitions then [
           Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg input_reg };
@@ -281,10 +316,10 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
           Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm (Int64.mul target_state c1) };
           Ir.Alu { op = Ir.Add; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
           Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Reg Register.vtmp0 };
-          Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_b.id; target_false = next_disp_target };
+          Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_bid; target_false = next_disp_target };
         ] else [
           Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Imm target_state };
-          Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_b.id; target_false = next_disp_target };
+          Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_bid; target_false = next_disp_target };
         ]
       in
       let blk = Ir.make_block ~id:cur_disp_id ~label:(Printf.sprintf "%s_disp_%d" func.name i) ~instrs:d_instrs in
@@ -292,7 +327,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     done;
 
     (* Transform each original block: redirect control flow back to disp_base_id *)
-    let next_fresh_id = ref (disp_base_id + n) in
+    let next_fresh_id = ref (disp_base_id + total_disp) in
     let transformed_blocks =
       List.concat_map
         (fun (b : Ir.basic_block) ->
@@ -304,13 +339,13 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                 let body = List.rev body_rev in
                 match last with
                 | Ir.Jmp (Ir.BlockId target_id) ->
-                    let next_state = get_state target_id in
+                    let next_state = get_target_state target_id in
                     body @ (emit_set_state_tainted Register.vkey next_state) @ [
                       Ir.Jmp (Ir.BlockId disp_base_id);
                     ]
                 | Ir.Jcc { cond; target_true = Ir.BlockId t_id; target_false = Ir.BlockId f_id } ->
-                    let state_true = get_state t_id in
-                    let state_false = get_state f_id in
+                    let state_true = get_target_state t_id in
+                    let state_false = get_target_state f_id in
                     if options.input_tainted_transitions then
                       let setup_states = [
                         Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg input_reg };
