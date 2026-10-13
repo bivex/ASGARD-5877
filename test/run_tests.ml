@@ -39,6 +39,7 @@ let () =
     ("Tech-2601 Exception Handling", Test_tech_2601.tests);
     ("Ring Codec (Data-Space Automorphisms)", Test_ring_codec.tests);
     ("Null-Space MBA Synthesis", Test_nullspace_mba.tests);
+    ("Cross-Seed Metrics", Test_cross_seed_metrics.tests);
   ]
 
 

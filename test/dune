@@ -40,6 +40,7 @@
   test_tech_2601
   test_ring_codec
   test_nullspace_mba
+  test_cross_seed_metrics
   test_helpers
   run_tests)
  (libraries
