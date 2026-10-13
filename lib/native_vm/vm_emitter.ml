@@ -700,6 +700,8 @@ let compile_and_package_multi
                       encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx src) imm
                   | AtSwp ->
                       encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx src) imm)
+              | Ir.Fence _ ->
+                  encode_raw_word (get_opcode OP_FENCE) 0 0 0L
               | Ir.Get_flags d ->
                   encode_raw_word (get_opcode OP_GET_FLAGS_R) (get_reg_idx d) 0 0L
               | Ir.Set_flags (Ir.Reg s) ->

@@ -97,6 +97,8 @@ type vec_op =
 type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
+type mem_order = SeqCst | Acquire | Release | AcqRel | Relaxed
+
 type instr =
   | Nop
   | Mov of { dst : operand; src : operand }
@@ -136,6 +138,7 @@ type instr =
   | Vec_ext of { dst : int; src1 : int; src2 : int; imm : int; bits : int }
   | Pmovmskb of { dst : Register.t; src : int; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
+  | Fence of mem_order
   | Get_flags of Register.t
   | Set_flags of operand
 

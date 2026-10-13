@@ -269,6 +269,23 @@ int main() {
     bool tamper_detected = !tech_2601_unseal(master_key, sizeof(master_key), container, out_meta);
     assert(tamper_detected && "Tamper detection failed to fail-closed in C++");
 
+    // Test 5: ThreadShadowStack TLS isolation and rollback (P0-02)
+    ThreadShadowStack& stack = get_tls_shadow_stack();
+    stack.push(0x2000, current_sp, 32, 0x3000);
+    assert(stack.size() == 1);
+    assert(stack.top()->func_pc == 0x2000);
+    ShadowFrame frame;
+    assert(stack.pop(frame));
+    assert(frame.shadow_sp == current_sp);
+    assert(frame.shadow_alloc_size == 32);
+    assert(stack.size() == 0);
+
+    // Test 6: Memory sanitization / secure_wipe (P2-02)
+    out_meta.secure_wipe();
+    assert(out_meta.scopes.empty());
+    assert(out_meta.dtors.empty());
+    assert(out_meta.code_start_pc == 0);
+
     std::cout << "CPP_TECH_2601_SUCCESS\n";
     return 0;
 }

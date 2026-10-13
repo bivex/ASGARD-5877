@@ -937,6 +937,10 @@ let emit_mem_and_ffi_handlers ?rng b =
        Buffer.add_string b "        ctx.set_reg(src, old);\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
+  Buffer.add_string b "    H_FENCE: {\n";
+  Buffer.add_string b "        std::atomic_thread_fence(std::memory_order_seq_cst);\n";
+  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
+  Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_MOV_VR: {\n";
   (match pick_variant 3 with
    | 0 -> Buffer.add_string b "        ctx.set_vreg_lane(dst, 0, ctx.get_reg(src));\n"

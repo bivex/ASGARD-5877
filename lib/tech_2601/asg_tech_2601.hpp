@@ -20,12 +20,16 @@ inline bool constant_time_memcmp(const uint8_t* a, const uint8_t* b, size_t len)
     return diff == 0;
 }
 
-// In-place secure buffer sanitization
-inline void secure_zero(void* ptr, size_t len) {
+// In-place secure buffer sanitization (P2-02)
+inline void secure_zeroize(void* ptr, size_t len) {
     volatile uint8_t* p = static_cast<volatile uint8_t*>(ptr);
     while (len--) {
         *p++ = 0;
     }
+}
+
+inline void secure_zero(void* ptr, size_t len) {
+    secure_zeroize(ptr, len);
 }
 
 // RFC 6234 SHA-256
@@ -221,7 +225,70 @@ struct Tech2601OriginalMetadata {
     uint32_t code_size;
     std::vector<Tech2601TryScope> scopes;
     std::vector<Tech2601Destructor> dtors;
+
+    void secure_wipe() {
+        if (!scopes.empty()) {
+            secure_zeroize(scopes.data(), scopes.size() * sizeof(Tech2601TryScope));
+            scopes.clear();
+        }
+        if (!dtors.empty()) {
+            secure_zeroize(dtors.data(), dtors.size() * sizeof(Tech2601Destructor));
+            dtors.clear();
+        }
+        if (!func_name.empty()) {
+            secure_zeroize(&func_name[0], func_name.size());
+            func_name.clear();
+        }
+        code_start_pc = 0;
+        code_size = 0;
+    }
+
+    ~Tech2601OriginalMetadata() {
+        secure_wipe();
+    }
 };
+
+// Thread-safe shadow stack state (P0-02)
+struct ShadowFrame {
+    uint64_t func_pc;
+    uintptr_t shadow_sp;
+    uint32_t shadow_alloc_size;
+    uint64_t return_address;
+};
+
+class ThreadShadowStack {
+private:
+    std::vector<ShadowFrame> frames;
+public:
+    void push(uint64_t func_pc, uintptr_t shadow_sp, uint32_t alloc_size, uint64_t ret_addr) {
+        frames.push_back({func_pc, shadow_sp, alloc_size, ret_addr});
+    }
+    bool pop(ShadowFrame& out) {
+        if (frames.empty()) return false;
+        out = frames.back();
+        frames.pop_back();
+        return true;
+    }
+    const ShadowFrame* top() const {
+        if (frames.empty()) return nullptr;
+        return &frames.back();
+    }
+    size_t size() const { return frames.size(); }
+    void clear() {
+        for (auto& f : frames) {
+            secure_zeroize(&f, sizeof(ShadowFrame));
+        }
+        frames.clear();
+    }
+    ~ThreadShadowStack() {
+        clear();
+    }
+};
+
+inline ThreadShadowStack& get_tls_shadow_stack() {
+    thread_local ThreadShadowStack tls_stack;
+    return tls_stack;
+}
 
 struct Tech2601ProtectedContainer {
     std::string func_name;
@@ -236,7 +303,13 @@ struct Tech2601ProtectedContainer {
 inline uintptr_t tech_2601_rollback_stack(uintptr_t current_sp, uint32_t shadow_alloc_size) {
     // In downward-growing stack (x86-64/ARM64), global unwind restored frame by adding alloc_size.
     // Rollback subtracts the shadow allocation to return SP to inner frame state.
+#if defined(_WIN32) || defined(_WIN64)
+    // Windows x64 SEH requires SP to remain 16-byte aligned and within thread stack bounds
+    uintptr_t target_sp = current_sp - shadow_alloc_size;
+    return target_sp & ~static_cast<uintptr_t>(0xF);
+#else
     return current_sp - shadow_alloc_size;
+#endif
 }
 
 // Stream keystream XOR

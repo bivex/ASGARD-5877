@@ -702,7 +702,8 @@ let lift_rc_op mnem dst count_opt =
 
 let lift_instr mnem ops =
   match mnem, ops with
-  | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align" | "mfence" | "lfence" | "sfence" | "pause" | "prefetcht0" | "prefetcht1" | "prefetcht2" | "prefetchnta" | "prefetch" | "clflush" | "clflushopt"), _ -> Ok [ Ir.Nop ]
+  | ("mfence" | "lfence" | "sfence"), _ -> Ok [ Ir.Fence Ir.SeqCst ]
+  | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align" | "pause" | "prefetcht0" | "prefetcht1" | "prefetcht2" | "prefetchnta" | "prefetch" | "clflush" | "clflushopt"), _ -> Ok [ Ir.Nop ]
   | "ret", [] -> Ok [ Ir.Ret ]
   | "vm_enter", [] -> Ok [ Ir.Vm_enter ]
   | "vm_exit", [] -> Ok [ Ir.Vm_exit ]
@@ -839,15 +840,14 @@ let lift_instr mnem ops =
       | OpMem m ->
           let w = m.width in
           let acc = Register.with_width Register.rax w in
-          let tmp = Register.with_width Register.vtmp0 w in
-          let mem_ref = { (ir_mem_of_raw m) with width = w } in
-          Ok [
-            Ir.Mov { dst = Ir.Reg tmp; src = Ir.Mem mem_ref };
-            Ir.Cmp { src1 = Ir.Reg acc; src2 = Ir.Reg tmp };
-            Ir.Cmov { cond = Flags.NE; dst = acc; src = Ir.Reg tmp };
-            Ir.Cmov { cond = Flags.E; dst = tmp; src = ir_s };
-            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp };
-          ]
+          let prep, base, disp =
+            match m.base, m.index with
+            | Some b, None -> [], b, m.disp
+            | _ ->
+                let tmp = Register.vtmp2 in
+                [ Ir.Lea { dst = tmp; addr = ir_mem_of_raw m } ], tmp, 0L
+          in
+          Ok (prep @ [ Ir.Atomic_mem { op = AtCas; dst = acc; addr = base; src = s; imm = disp } ])
       | _ -> Error "cmpxchg destination must be register or memory")
   | "cmpxchg8b", [ OpMem m ] ->
       let rax = Register.Gpr (Register.RAX, Register.B64) in
@@ -933,17 +933,14 @@ let lift_instr mnem ops =
               Ir.Mov { dst = Ir.Reg s; src = Ir.Reg tmp_d };
             ]
       | OpMem m ->
-          let w = m.width in
-          let tmp_m = Register.with_width Register.vtmp0 w in
-          let tmp_sum = Register.with_width Register.vtmp1 w in
-          let mem_ref = { (ir_mem_of_raw m) with width = w } in
-          Ok [
-            Ir.Mov { dst = Ir.Reg tmp_m; src = Ir.Mem mem_ref };
-            Ir.Mov { dst = Ir.Reg tmp_sum; src = Ir.Reg tmp_m };
-            Ir.Alu { op = Ir.Add; dst = tmp_sum; src1 = Ir.Reg tmp_sum; src2 = Ir.Reg s; set_flags = true };
-            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp_sum };
-            Ir.Mov { dst = Ir.Reg s; src = Ir.Reg tmp_m };
-          ]
+          let prep, base, disp =
+            match m.base, m.index with
+            | Some b, None -> [], b, m.disp
+            | _ ->
+                let tmp = Register.vtmp2 in
+                [ Ir.Lea { dst = tmp; addr = ir_mem_of_raw m } ], tmp, 0L
+          in
+          Ok (prep @ [ Ir.Atomic_mem { op = AtAdd; dst = s; addr = base; src = s; imm = disp } ])
       | _ -> Error "xadd destination must be register or memory")
   | ("xlat" | "xlatb"), _ ->
       let rax = Register.Gpr (Register.RAX, Register.B64) in

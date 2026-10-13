@@ -91,6 +91,7 @@ type raw_op_kind =
   | OP_ATOMIC_CAS
   | OP_ATOMIC_ADD
   | OP_ATOMIC_SWP
+  | OP_FENCE
   | OP_BSWAP_RR
   | OP_CLZ_RR
   | OP_CTZ_RR

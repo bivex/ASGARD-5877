@@ -246,6 +246,7 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
   | Atomic_mem { dst; src; _ } ->
       [PushReg (Context_allocator.slot_of_reg ctx src);
        PopReg (Context_allocator.slot_of_reg ctx dst)]
+  | Fence _ -> []
   | Get_flags dst ->
       [PushFlags; PopReg (Context_allocator.slot_of_reg ctx dst)]
   | Set_flags src ->

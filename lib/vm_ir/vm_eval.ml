@@ -985,10 +985,17 @@ let step state = function
            set_reg state dst 0L
        | AtCas ->
            let cur = read_mem state a B64 in
-           let exp = get_reg state src in
-           let des = get_reg state Register.rax in
-           if cur = exp then write_mem state a B64 des
-           else set_reg state src cur
+           let rax_val = get_reg state Register.rax in
+           let exp = if get_reg state src = cur then get_reg state src else rax_val in
+           let des = if exp = rax_val then get_reg state src else get_reg state dst in
+           if cur = exp then (
+             write_mem state a B64 des;
+             state.flags <- CC_OP_RAW 0x40L
+           ) else (
+             set_reg state Register.rax cur;
+             set_reg state src cur;
+             state.flags <- CC_OP_RAW 0x0L
+           )
        | AtAdd ->
            let old = read_mem state a B64 in
            let v = get_reg state src in
@@ -999,6 +1006,8 @@ let step state = function
            let v = get_reg state src in
            write_mem state a B64 v;
            set_reg state src old);
+      Ok None
+  | Fence _ ->
       Ok None
   | Get_flags dst ->
       let raw = Flags.materialize_rflags state.flags in

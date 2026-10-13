@@ -96,6 +96,7 @@ type vec_op =
   | Vcmpleu
 type vec_elem = VInt | VF32 | VF64
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
+type mem_order = SeqCst | Acquire | Release | AcqRel | Relaxed
 
 type instr =
   | Nop
@@ -136,6 +137,7 @@ type instr =
   | Vec_ext of { dst : int; src1 : int; src2 : int; imm : int; bits : int }
   | Pmovmskb of { dst : Register.t; src : int; bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
+  | Fence of mem_order
   | Get_flags of Register.t
   | Set_flags of operand
 
@@ -312,6 +314,9 @@ let instr_to_string = function
   | Atomic_mem { op; dst; addr; src; imm } ->
       let op_s = match op with AtLoad -> "at_load" | AtStore -> "at_store" | AtCas -> "at_cas" | AtAdd -> "at_add" | AtSwp -> "at_swp" in
       Printf.sprintf "%s %s, [%s + 0x%LX], %s" op_s (Register.to_string dst) (Register.to_string addr) imm (Register.to_string src)
+  | Fence ord ->
+      let ord_s = match ord with SeqCst -> "seq_cst" | Acquire -> "acquire" | Release -> "release" | AcqRel -> "acq_rel" | Relaxed -> "relaxed" in
+      Printf.sprintf "fence.%s" ord_s
   | Get_flags d -> Printf.sprintf "get_flags %s" (Register.to_string d)
   | Set_flags s -> Printf.sprintf "set_flags %s" (operand_to_string s)
 
