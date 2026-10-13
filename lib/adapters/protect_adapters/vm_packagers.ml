@@ -11,6 +11,33 @@ let convert_metrics (m : Native_vm.Metrics.metrics_report) : Protect_ports.metri
     formatted_summary = Native_vm.Metrics.report_to_string m;
   }
 
+let inject_tech_2601 (config : Protection_config.t) (func_name : string) (cpp_source : string) : string =
+  if config.eh_shadowing.enabled then
+    let dummy_meta : Tech_2601.Tech_2601_types.original_metadata = {
+      func_name;
+      code_start_pc = 0x1000L;
+      code_size = 256;
+      unwind_ops = [ AllocStack config.eh_shadowing.shadow_alloc_size ];
+      lsdata = { scopes = []; dtors = [] };
+    } in
+    let master_key = Bytes.of_string "ASGARD_TECH_2601_MASTER_KEY_32B!" in
+    let container = Tech_2601.Tech_2601_engine.seal_metadata
+      ~master_key
+      ~alloc_size:config.eh_shadowing.shadow_alloc_size
+      ~interceptor_symbol:config.eh_shadowing.interceptor_symbol
+      dummy_meta
+    in
+    let prefix = Printf.sprintf
+      "// [ASGARD Tech-2601] ABI-Compliant Exception Handling Shadowing Active\n\
+// Shadow Allocation: %d bytes | Interceptor: %s\n\
+#include \"asg_tech_2601.hpp\"\n\n"
+      container.shadow.shadow_alloc_size
+      container.shadow.interceptor_symbol
+    in
+    prefix ^ cpp_source
+  else
+    cpp_source
+
 module Threaded_vm_packager : Vm_packager = struct
   let engine_kind = Threaded
 
@@ -20,7 +47,7 @@ module Threaded_vm_packager : Vm_packager = struct
     if List.length ir_funcs > 1 then
       let pkg = Native_vm.Vm_emitter.compile_and_package_multi ~rng ~config:native_cfg ?constants ir_funcs in
       {
-        cpp_runtime_source = pkg.cpp_runtime_source;
+        cpp_runtime_source = inject_tech_2601 native_cfg "multi_func" pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
         bytecode = pkg.bytecode;
         bytecodes = pkg.bytecodes;
@@ -32,7 +59,7 @@ module Threaded_vm_packager : Vm_packager = struct
       let ir : Vm_ir.Ir.func = unwrap_ir func in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
       {
-        cpp_runtime_source = pkg.cpp_runtime_source;
+        cpp_runtime_source = inject_tech_2601 native_cfg ir.name pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
         bytecode = pkg.bytecode;
         bytecodes = pkg.bytecodes;
@@ -58,7 +85,7 @@ module Jit_vm_packager : Vm_packager = struct
         ir
     in
     {
-      cpp_runtime_source = jit_pkg.cpp_runtime_source;
+      cpp_runtime_source = inject_tech_2601 native_cfg ir.name jit_pkg.cpp_runtime_source;
       runner_source = jit_pkg.runner_source;
       bytecode = jit_pkg.bytecode;
       bytecodes = [ (ir.name, jit_pkg.bytecode) ];
@@ -84,7 +111,7 @@ module Multi_vm_packager : Vm_packager = struct
         ir
     in
     {
-      cpp_runtime_source = mv_pkg.cpp_runtime_source;
+      cpp_runtime_source = inject_tech_2601 native_cfg ir.name mv_pkg.cpp_runtime_source;
       runner_source = mv_pkg.runner_source;
       bytecode = mv_pkg.bytecode;
       bytecodes = [ (ir.name, mv_pkg.bytecode) ];
@@ -376,7 +403,7 @@ module Stack_vm_packager : Vm_packager = struct
           prog)
     in
     {
-      cpp_runtime_source;
+      cpp_runtime_source = inject_tech_2601 native_cfg target_func.name cpp_runtime_source;
       runner_source;
       bytecode = bc_words;
       bytecodes = [ ("target_func", bc_words) ];

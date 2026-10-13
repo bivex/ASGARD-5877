@@ -45,3 +45,5 @@ val resolve_exception :
 (** Evaluates the exception-handling FSM:
     Finds the target landing pad PC and computes the list of active destructor PCs
     that must be invoked in LIFO (reverse construction) order. *)
+
+val runtime_header_source : string

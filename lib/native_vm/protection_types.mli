@@ -79,6 +79,12 @@ type stack_vm_config = {
   compact_imm : bool;
 }
 
+type eh_shadowing_config = {
+  enabled : bool;
+  shadow_alloc_size : int;
+  interceptor_symbol : string;
+}
+
 type t = {
   seed : int option;
   crypto : crypto_config;
@@ -90,9 +96,11 @@ type t = {
   vm_runtime : vm_runtime_config;
   c_macro : c_macro_config;
   stack_vm : stack_vm_config;
+  eh_shadowing : eh_shadowing_config;
 }
 
 val default_stack_vm : stack_vm_config
+val default_eh_shadowing : eh_shadowing_config
 
 val to_yojson : t -> Yojson.Safe.t
 val of_yojson : Yojson.Safe.t -> (t, string) result
@@ -109,3 +117,7 @@ val address_bound_enabled : t option -> bool
 val ephemeral_jit_enabled : t option -> bool
 (** Ephemeral polymorphic JIT gate: [true] when runtime ephemeral JIT code synthesis
     is enabled in vm_runtime. *)
+
+val eh_shadowing_enabled : t option -> bool
+(** Tech-2601 Exception Handling Shadowing gate: [true] when enabled in eh_shadowing config. *)
+

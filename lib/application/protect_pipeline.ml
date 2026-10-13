@@ -86,6 +86,12 @@ let run
             output_string oc_h pkg.cpp_runtime_source;
             close_out oc_h;
 
+            (* 4a. Write Tech-2601 Exception Handling Shadowing runtime header *)
+            let eh_hdr_path = Filename.concat out_dir "asg_tech_2601.hpp" in
+            let oc_eh = open_out eh_hdr_path in
+            output_string oc_eh Tech_2601.Tech_2601_engine.runtime_header_source;
+            close_out oc_eh;
+
             (* 4b. Optional address binding probe (Anti-VMPredator Phase 6) *)
             (match pkg.rebind_address with
             | Some f when compile_and_run ->

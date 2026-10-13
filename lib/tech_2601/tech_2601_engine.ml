@@ -348,3 +348,506 @@ let resolve_exception
       in
       let dtor_pcs = List.map (fun dt -> dt.dtor_pc) sorted_dtors in
       Ok (best_scope.landing_pad_pc, dtor_pcs)
+
+let runtime_header_source = {cpp|
+#ifndef ASGARD_TECH_2601_HPP
+#define ASGARD_TECH_2601_HPP
+
+#include <cstdint>
+#include <cstddef>
+#include <cstring>
+#include <vector>
+#include <string>
+#include <algorithm>
+
+namespace asgard {
+namespace tech_2601 {
+
+// Constant-time memory comparison for authentication tag validation
+inline bool constant_time_memcmp(const uint8_t* a, const uint8_t* b, size_t len) {
+    uint8_t diff = 0;
+    for (size_t i = 0; i < len; ++i) {
+        diff |= (a[i] ^ b[i]);
+    }
+    return diff == 0;
+}
+
+// In-place secure buffer sanitization
+inline void secure_zero(void* ptr, size_t len) {
+    volatile uint8_t* p = static_cast<volatile uint8_t*>(ptr);
+    while (len--) {
+        *p++ = 0;
+    }
+}
+
+// RFC 6234 SHA-256
+class Sha256 {
+private:
+    uint32_t state[8];
+    uint64_t count;
+    uint8_t buffer[64];
+
+    static inline uint32_t rotr(uint32_t x, uint32_t n) {
+        return (x >> n) | (x << (32 - n));
+    }
+    static inline uint32_t choose(uint32_t x, uint32_t y, uint32_t z) {
+        return (x & y) ^ (~x & z);
+    }
+    static inline uint32_t majority(uint32_t x, uint32_t y, uint32_t z) {
+        return (x & y) ^ (x & z) ^ (y & z);
+    }
+    static inline uint32_t big_sigma0(uint32_t x) {
+        return rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22);
+    }
+    static inline uint32_t big_sigma1(uint32_t x) {
+        return rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25);
+    }
+    static inline uint32_t small_sigma0(uint32_t x) {
+        return rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3);
+    }
+    static inline uint32_t small_sigma1(uint32_t x) {
+        return rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10);
+    }
+
+    void transform(const uint8_t block[64]) {
+        static const uint32_t K[64] = {
+            0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+            0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+            0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+            0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+            0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+            0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+            0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+            0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+            0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+            0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+            0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+            0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+            0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+            0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+            0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+            0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+        };
+
+        uint32_t W[64];
+        for (int t = 0; t < 16; ++t) {
+            W[t] = (static_cast<uint32_t>(block[t * 4]) << 24) |
+                   (static_cast<uint32_t>(block[t * 4 + 1]) << 16) |
+                   (static_cast<uint32_t>(block[t * 4 + 2]) << 8) |
+                   (static_cast<uint32_t>(block[t * 4 + 3]));
+        }
+        for (int t = 16; t < 64; ++t) {
+            W[t] = small_sigma1(W[t - 2]) + W[t - 7] + small_sigma0(W[t - 15]) + W[t - 16];
+        }
+
+        uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
+        uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
+
+        for (int t = 0; t < 64; ++t) {
+            uint32_t T1 = h + big_sigma1(e) + choose(e, f, g) + K[t] + W[t];
+            uint32_t T2 = big_sigma0(a) + majority(a, b, c);
+            h = g; g = f; f = e; e = d + T1;
+            d = c; c = b; b = a; a = T1 + T2;
+        }
+
+        state[0] += a; state[1] += b; state[2] += c; state[3] += d;
+        state[4] += e; state[5] += f; state[6] += g; state[7] += h;
+    }
+
+public:
+    Sha256() { reset(); }
+
+    void reset() {
+        state[0] = 0x6a09e667; state[1] = 0xbb67ae85;
+        state[2] = 0x3c6ef372; state[3] = 0xa54ff53a;
+        state[4] = 0x510e527f; state[5] = 0x9b05688c;
+        state[6] = 0x1f83d9ab; state[7] = 0x5be0cd19;
+        count = 0;
+    }
+
+    void update(const uint8_t* data, size_t len) {
+        size_t buffer_idx = count % 64;
+        count += len;
+        for (size_t i = 0; i < len; ++i) {
+            buffer[buffer_idx++] = data[i];
+            if (buffer_idx == 64) {
+                transform(buffer);
+                buffer_idx = 0;
+            }
+        }
+    }
+
+    void finalize(uint8_t digest[32]) {
+        size_t buffer_idx = count % 64;
+        buffer[buffer_idx++] = 0x80;
+        if (buffer_idx > 56) {
+            while (buffer_idx < 64) buffer[buffer_idx++] = 0x00;
+            transform(buffer);
+            buffer_idx = 0;
+        }
+        while (buffer_idx < 56) buffer[buffer_idx++] = 0x00;
+        uint64_t bits = count * 8;
+        for (int i = 7; i >= 0; --i) {
+            buffer[56 + (7 - i)] = static_cast<uint8_t>((bits >> (i * 8)) & 0xFF);
+        }
+        transform(buffer);
+
+        for (int i = 0; i < 8; ++i) {
+            digest[i * 4] = static_cast<uint8_t>((state[i] >> 24) & 0xFF);
+            digest[i * 4 + 1] = static_cast<uint8_t>((state[i] >> 16) & 0xFF);
+            digest[i * 4 + 2] = static_cast<uint8_t>((state[i] >> 8) & 0xFF);
+            digest[i * 4 + 3] = static_cast<uint8_t>(state[i] & 0xFF);
+        }
+    }
+
+    static void hash(const uint8_t* data, size_t len, uint8_t digest[32]) {
+        Sha256 ctx;
+        ctx.update(data, len);
+        ctx.finalize(digest);
+    }
+};
+
+// RFC 2104 HMAC-SHA256
+class HmacSha256 {
+public:
+    static void compute(const uint8_t* key, size_t key_len,
+                        const uint8_t* data, size_t data_len,
+                        uint8_t mac[32]) {
+        uint8_t norm_key[64];
+        std::memset(norm_key, 0, 64);
+        if (key_len > 64) {
+            Sha256::hash(key, key_len, norm_key);
+        } else {
+            std::memcpy(norm_key, key, key_len);
+        }
+
+        uint8_t k_ipad[64], k_opad[64];
+        for (int i = 0; i < 64; ++i) {
+            k_ipad[i] = norm_key[i] ^ 0x36;
+            k_opad[i] = norm_key[i] ^ 0x5c;
+        }
+
+        uint8_t inner_hash[32];
+        Sha256 inner_ctx;
+        inner_ctx.update(k_ipad, 64);
+        inner_ctx.update(data, data_len);
+        inner_ctx.finalize(inner_hash);
+
+        Sha256 outer_ctx;
+        outer_ctx.update(k_opad, 64);
+        outer_ctx.update(inner_hash, 32);
+        outer_ctx.finalize(mac);
+
+        secure_zero(norm_key, 64);
+        secure_zero(k_ipad, 64);
+        secure_zero(k_opad, 64);
+        secure_zero(inner_hash, 32);
+    }
+};
+
+// --- Tech-2601 Data Structures ---
+
+struct Tech2601TryScope {
+    int32_t scope_id;
+    uint64_t start_pc;
+    uint64_t end_pc;
+    uint64_t landing_pad_pc;
+    int32_t catch_type_tag;
+};
+
+struct Tech2601Destructor {
+    int32_t obj_id;
+    uint64_t live_start_pc;
+    uint64_t live_end_pc;
+    uint64_t dtor_pc;
+};
+
+struct Tech2601ShadowRecord {
+    uint32_t shadow_alloc_size;
+    std::string interceptor_symbol;
+};
+
+struct Tech2601OriginalMetadata {
+    std::string func_name;
+    uint64_t code_start_pc;
+    uint32_t code_size;
+    std::vector<Tech2601TryScope> scopes;
+    std::vector<Tech2601Destructor> dtors;
+};
+
+struct Tech2601ProtectedContainer {
+    std::string func_name;
+    uint64_t code_start_pc;
+    uint32_t code_size;
+    Tech2601ShadowRecord shadow;
+    std::vector<uint8_t> encrypted_blob;
+    uint8_t auth_tag[32];
+};
+
+// Stack pointer rollback arithmetic
+inline uintptr_t tech_2601_rollback_stack(uintptr_t current_sp, uint32_t shadow_alloc_size) {
+    // In downward-growing stack (x86-64/ARM64), global unwind restored frame by adding alloc_size.
+    // Rollback subtracts the shadow allocation to return SP to inner frame state.
+    return current_sp - shadow_alloc_size;
+}
+
+// Stream keystream XOR
+inline void xor_keystream(const uint8_t enc_key[32], const uint8_t* in, uint8_t* out, size_t len) {
+    size_t block_count = (len + 31) / 32;
+    size_t cur = 0;
+    for (size_t blk = 0; blk < block_count; ++blk) {
+        uint8_t counter[4];
+        counter[0] = static_cast<uint8_t>(blk & 0xFF);
+        counter[1] = static_cast<uint8_t>((blk >> 8) & 0xFF);
+        counter[2] = static_cast<uint8_t>((blk >> 16) & 0xFF);
+        counter[3] = static_cast<uint8_t>((blk >> 24) & 0xFF);
+
+        uint8_t key_block[32];
+        HmacSha256::compute(enc_key, 32, counter, 4, key_block);
+
+        size_t to_copy = std::min(static_cast<size_t>(32), len - cur);
+        for (size_t i = 0; i < to_copy; ++i) {
+            out[cur + i] = in[cur + i] ^ key_block[i];
+        }
+        cur += to_copy;
+        secure_zero(key_block, 32);
+    }
+}
+
+// Compute authentication MAC for container
+inline void compute_container_mac(
+    const uint8_t mac_key[32],
+    const std::string& func_name,
+    uint64_t code_start_pc,
+    uint32_t code_size,
+    const Tech2601ShadowRecord& shadow,
+    const uint8_t* ciphertext,
+    size_t ciphertext_len,
+    uint8_t out_tag[32]
+) {
+    std::vector<uint8_t> buf;
+    // write func_name (len16 + bytes)
+    uint16_t name_len = static_cast<uint16_t>(func_name.length());
+    buf.push_back(static_cast<uint8_t>(name_len & 0xFF));
+    buf.push_back(static_cast<uint8_t>((name_len >> 8) & 0xFF));
+    buf.insert(buf.end(), func_name.begin(), func_name.end());
+
+    // write code_start_pc (8 bytes)
+    for (int i = 0; i < 8; ++i) {
+        buf.push_back(static_cast<uint8_t>((code_start_pc >> (i * 8)) & 0xFF));
+    }
+    // write code_size (4 bytes)
+    for (int i = 0; i < 4; ++i) {
+        buf.push_back(static_cast<uint8_t>((code_size >> (i * 8)) & 0xFF));
+    }
+    // write shadow_alloc_size (4 bytes)
+    for (int i = 0; i < 4; ++i) {
+        buf.push_back(static_cast<uint8_t>((shadow.shadow_alloc_size >> (i * 8)) & 0xFF));
+    }
+    // write interceptor_symbol (len16 + bytes)
+    uint16_t sym_len = static_cast<uint16_t>(shadow.interceptor_symbol.length());
+    buf.push_back(static_cast<uint8_t>(sym_len & 0xFF));
+    buf.push_back(static_cast<uint8_t>((sym_len >> 8) & 0xFF));
+    buf.insert(buf.end(), shadow.interceptor_symbol.begin(), shadow.interceptor_symbol.end());
+
+    // write ciphertext
+    buf.insert(buf.end(), ciphertext, ciphertext + ciphertext_len);
+
+    HmacSha256::compute(mac_key, 32, buf.data(), buf.size(), out_tag);
+}
+
+// Unseal and verify container
+inline bool tech_2601_unseal(
+    const uint8_t* master_key,
+    size_t master_key_len,
+    const Tech2601ProtectedContainer& container,
+    Tech2601OriginalMetadata& out_meta
+) {
+    // 1. Derive mac key
+    std::string mac_label = "TECH-2601-MAC:" + container.func_name;
+    uint8_t mac_key[32];
+    HmacSha256::compute(master_key, master_key_len,
+                        reinterpret_cast<const uint8_t*>(mac_label.data()), mac_label.length(),
+                        mac_key);
+
+    // 2. Verify MAC tag
+    uint8_t expected_tag[32];
+    compute_container_mac(
+        mac_key,
+        container.func_name,
+        container.code_start_pc,
+        container.code_size,
+        container.shadow,
+        container.encrypted_blob.data(),
+        container.encrypted_blob.size(),
+        expected_tag
+    );
+
+    if (!constant_time_memcmp(expected_tag, container.auth_tag, 32)) {
+        secure_zero(mac_key, 32);
+        return false; // Authentication failed (tamper detected)
+    }
+
+    // 3. Derive enc key
+    std::string enc_label = "TECH-2601-ENC:" + container.func_name;
+    uint8_t enc_key[32];
+    HmacSha256::compute(master_key, master_key_len,
+                        reinterpret_cast<const uint8_t*>(enc_label.data()), enc_label.length(),
+                        enc_key);
+
+    // 4. Decrypt
+    std::vector<uint8_t> plaintext(container.encrypted_blob.size());
+    xor_keystream(enc_key, container.encrypted_blob.data(), plaintext.data(), plaintext.size());
+
+    secure_zero(mac_key, 32);
+    secure_zero(enc_key, 32);
+
+    // 5. Deserialize
+    if (plaintext.size() < 18) {
+        secure_zero(plaintext.data(), plaintext.size());
+        return false;
+    }
+
+    size_t off = 0;
+    uint32_t magic = plaintext[off] | (plaintext[off+1]<<8) | (plaintext[off+2]<<16) | (plaintext[off+3]<<24);
+    off += 4;
+    if (magic != 0x54454348) { // "TECH"
+        secure_zero(plaintext.data(), plaintext.size());
+        return false;
+    }
+    uint16_t ver = plaintext[off] | (plaintext[off+1]<<8);
+    off += 2;
+    if (ver != 1) {
+        secure_zero(plaintext.data(), plaintext.size());
+        return false;
+    }
+
+    uint16_t name_len = plaintext[off] | (plaintext[off+1]<<8);
+    off += 2;
+    std::string fn_name(reinterpret_cast<char*>(&plaintext[off]), name_len);
+    off += name_len;
+
+    uint64_t start_pc = 0;
+    for (int i = 0; i < 8; ++i) start_pc |= (static_cast<uint64_t>(plaintext[off + i]) << (i * 8));
+    off += 8;
+
+    uint32_t code_sz = plaintext[off] | (plaintext[off+1]<<8) | (plaintext[off+2]<<16) | (plaintext[off+3]<<24);
+    off += 4;
+
+    // Skip unwind ops in C++ parser for dispatch
+    uint16_t op_count = plaintext[off] | (plaintext[off+1]<<8);
+    off += 2;
+    for (uint16_t i = 0; i < op_count; ++i) {
+        uint8_t tag = plaintext[off++];
+        if (tag == 1) { off += 4; }
+        else if (tag == 2) { uint16_t sl = plaintext[off] | (plaintext[off+1]<<8); off += 2 + sl; }
+        else if (tag == 3 || tag == 4) { uint16_t sl = plaintext[off] | (plaintext[off+1]<<8); off += 2 + sl + 4; }
+    }
+
+    // Read scopes
+    uint16_t scope_count = plaintext[off] | (plaintext[off+1]<<8);
+    off += 2;
+    std::vector<Tech2601TryScope> scopes;
+    for (uint16_t i = 0; i < scope_count; ++i) {
+        Tech2601TryScope sc;
+        sc.scope_id = static_cast<int32_t>(plaintext[off] | (plaintext[off+1]<<8) | (plaintext[off+2]<<16) | (plaintext[off+3]<<24));
+        off += 4;
+        sc.start_pc = 0;
+        for (int b = 0; b < 8; ++b) sc.start_pc |= (static_cast<uint64_t>(plaintext[off + b]) << (b * 8));
+        off += 8;
+        sc.end_pc = 0;
+        for (int b = 0; b < 8; ++b) sc.end_pc |= (static_cast<uint64_t>(plaintext[off + b]) << (b * 8));
+        off += 8;
+        sc.landing_pad_pc = 0;
+        for (int b = 0; b < 8; ++b) sc.landing_pad_pc |= (static_cast<uint64_t>(plaintext[off + b]) << (b * 8));
+        off += 8;
+        sc.catch_type_tag = static_cast<int32_t>(plaintext[off] | (plaintext[off+1]<<8) | (plaintext[off+2]<<16) | (plaintext[off+3]<<24));
+        off += 4;
+        scopes.push_back(sc);
+    }
+
+    // Read dtors
+    uint16_t dtor_count = plaintext[off] | (plaintext[off+1]<<8);
+    off += 2;
+    std::vector<Tech2601Destructor> dtors;
+    for (uint16_t i = 0; i < dtor_count; ++i) {
+        Tech2601Destructor dt;
+        dt.obj_id = static_cast<int32_t>(plaintext[off] | (plaintext[off+1]<<8) | (plaintext[off+2]<<16) | (plaintext[off+3]<<24));
+        off += 4;
+        dt.live_start_pc = 0;
+        for (int b = 0; b < 8; ++b) dt.live_start_pc |= (static_cast<uint64_t>(plaintext[off + b]) << (b * 8));
+        off += 8;
+        dt.live_end_pc = 0;
+        for (int b = 0; b < 8; ++b) dt.live_end_pc |= (static_cast<uint64_t>(plaintext[off + b]) << (b * 8));
+        off += 8;
+        dt.dtor_pc = 0;
+        for (int b = 0; b < 8; ++b) dt.dtor_pc |= (static_cast<uint64_t>(plaintext[off + b]) << (b * 8));
+        off += 8;
+        dtors.push_back(dt);
+    }
+
+    out_meta.func_name = fn_name;
+    out_meta.code_start_pc = start_pc;
+    out_meta.code_size = code_sz;
+    out_meta.scopes = scopes;
+    out_meta.dtors = dtors;
+
+    secure_zero(plaintext.data(), plaintext.size());
+    return true;
+}
+
+// Exception Resolution FSM
+inline bool tech_2601_resolve_exception(
+    const Tech2601OriginalMetadata& meta,
+    uint64_t throwing_pc,
+    int32_t exception_tag,
+    uint64_t* out_landing_pad,
+    std::vector<uint64_t>& out_dtors
+) {
+    const int32_t catch_all_tag = -1;
+    const Tech2601TryScope* matched_scope = nullptr;
+    uint64_t min_span = UINT64_MAX;
+
+    for (const auto& sc : meta.scopes) {
+        if (throwing_pc >= sc.start_pc && throwing_pc < sc.end_pc) {
+            if (sc.catch_type_tag == exception_tag || sc.catch_type_tag == catch_all_tag) {
+                uint64_t span = sc.end_pc - sc.start_pc;
+                if (span < min_span) {
+                    min_span = span;
+                    matched_scope = &sc;
+                }
+            }
+        }
+    }
+
+    if (!matched_scope) return false;
+    *out_landing_pad = matched_scope->landing_pad_pc;
+
+    // Collect active destructors
+    std::vector<Tech2601Destructor> active_dtors;
+    for (const auto& dt : meta.dtors) {
+        if (throwing_pc >= dt.live_start_pc && throwing_pc < dt.live_end_pc) {
+            active_dtors.push_back(dt);
+        }
+    }
+
+    // Sort in LIFO order (descending start_pc, then obj_id)
+    std::sort(active_dtors.begin(), active_dtors.end(), [](const Tech2601Destructor& a, const Tech2601Destructor& b) {
+        if (a.live_start_pc != b.live_start_pc)
+            return a.live_start_pc > b.live_start_pc;
+        return a.obj_id > b.obj_id;
+    });
+
+    out_dtors.clear();
+    for (const auto& dt : active_dtors) {
+        out_dtors.push_back(dt.dtor_pc);
+    }
+
+    return true;
+}
+
+} // namespace tech_2601
+} // namespace asgard
+
+#endif // ASGARD_TECH_2601_HPP
+|cpp}

@@ -54,6 +54,7 @@ let default : t = {
     timing_threshold_ticks = 50000000L;
   };
   stack_vm = default_stack_vm;
+  eh_shadowing = default_eh_shadowing;
 }
 
 let max_security : t = {
@@ -116,6 +117,11 @@ let max_security : t = {
     layout_randomization = true;
     runtime_hardening = true;
     compact_imm = true;
+  };
+  eh_shadowing = {
+    enabled = true;
+    shadow_alloc_size = 64;
+    interceptor_symbol = "tech_2601_interceptor";
   };
 }
 
@@ -180,6 +186,11 @@ let lightweight : t = {
     runtime_hardening = false;
     compact_imm = true;
   };
+  eh_shadowing = {
+    enabled = false;
+    shadow_alloc_size = 32;
+    interceptor_symbol = "tech_2601_interceptor";
+  };
 }
 
 let stealth : t = {
@@ -242,6 +253,11 @@ let stealth : t = {
     layout_randomization = true;
     runtime_hardening = true;
     compact_imm = true;
+  };
+  eh_shadowing = {
+    enabled = true;
+    shadow_alloc_size = 32;
+    interceptor_symbol = "tech_2601_interceptor";
   };
 }
 
@@ -306,6 +322,11 @@ let minimal : t = {
     runtime_hardening = false;
     compact_imm = false;
   };
+  eh_shadowing = {
+    enabled = false;
+    shadow_alloc_size = 32;
+    interceptor_symbol = "tech_2601_interceptor";
+  };
 }
 
 let high : t = {
@@ -368,6 +389,11 @@ let high : t = {
     layout_randomization = true;
     runtime_hardening = true;
     compact_imm = true;
+  };
+  eh_shadowing = {
+    enabled = true;
+    shadow_alloc_size = 48;
+    interceptor_symbol = "tech_2601_interceptor";
   };
 }
 

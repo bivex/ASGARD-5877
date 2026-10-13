@@ -5,6 +5,8 @@
 open Alcotest
 open Tech_2601.Tech_2601_types
 open Tech_2601.Tech_2601_engine
+open Random_visa_ports
+open Protect_ports
 
 let test_abi_shadow_rules () =
   (* Valid 16-byte aligned alloc *)
@@ -298,6 +300,31 @@ int main() {
 
   (try Sys.remove tmp_cpp; Sys.remove tmp_bin with _ -> ())
 
+let test_packager_integration () =
+  let rng = Random.State.make [| 2601 |] in
+  let b = Vm_ir.Ir.make_block ~id:0 ~label:"entry" ~instrs:[
+    Vm_ir.Ir.Mov { dst = Vm_ir.Ir.Reg Vm_ir.Register.rax; src = Vm_ir.Ir.Imm 42L };
+    Vm_ir.Ir.Ret;
+  ] in
+  let ir_fn = Vm_ir.Ir.make_func ~name:"target_fn" ~entry_id:0 ~blocks:[b] in
+  let wrapped_ir = Protect_ports.wrap_ir ir_fn in
+
+  (* Case 1: eh_shadowing enabled *)
+  let cfg_enabled = Native_vm.Protection_config.default in
+  let wrapped_cfg_enabled = Protect_adapters.Config_adapter.wrap cfg_enabled in
+  let pkg_enabled = Protect_adapters.Vm_packagers.Threaded_vm_packager.package ~rng ~config:wrapped_cfg_enabled wrapped_ir in
+  check bool "Package includes Tech-2601 header when enabled" true
+    (Test_helpers.string_contains pkg_enabled.cpp_runtime_source "asg_tech_2601.hpp");
+  check bool "Package includes Tech-2601 comment" true
+    (Test_helpers.string_contains pkg_enabled.cpp_runtime_source "[ASGARD Tech-2601]");
+
+  (* Case 2: eh_shadowing disabled *)
+  let cfg_disabled = Native_vm.Protection_config.minimal in
+  let wrapped_cfg_disabled = Protect_adapters.Config_adapter.wrap cfg_disabled in
+  let pkg_disabled = Protect_adapters.Vm_packagers.Threaded_vm_packager.package ~rng ~config:wrapped_cfg_disabled wrapped_ir in
+  check bool "Package omits Tech-2601 header when disabled" false
+    (Test_helpers.string_contains pkg_disabled.cpp_runtime_source "asg_tech_2601.hpp")
+
 let tests = [
   ("ABI Shadow Rules Validation", `Quick, test_abi_shadow_rules);
   ("Shadow Record Generation", `Quick, test_shadow_record_generation);
@@ -306,4 +333,5 @@ let tests = [
   ("Cryptographic Seal & Integrity Verification", `Quick, test_seal_and_unseal_integrity);
   ("Exception Resolution FSM & LIFO Destructors", `Quick, test_exception_resolution_fsm);
   ("C++ Runtime Interceptor Roundtrip E2E", `Quick, test_cpp_runtime_e2e);
+  ("VM Packager Pipeline Integration", `Quick, test_packager_integration);
 ]

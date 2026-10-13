@@ -147,6 +147,18 @@ let default_c_macro = {
   signal_dispatch = false; nanomites = false; timing_guard = true;
   timing_threshold_ticks = 50000000L;
 }
+type eh_shadowing_config = {
+  enabled : bool [@default true];
+  shadow_alloc_size : int [@default 32];
+  interceptor_symbol : string [@default "tech_2601_interceptor"];
+} [@@deriving yojson]
+
+let default_eh_shadowing = {
+  enabled = true;
+  shadow_alloc_size = 32;
+  interceptor_symbol = "tech_2601_interceptor";
+}
+
 let default_stack_vm = {
   enabled = true;
   superoperators = true;
@@ -167,6 +179,7 @@ type t = {
   vm_runtime : vm_runtime_config [@default default_vm_runtime];
   c_macro : c_macro_config [@default default_c_macro];
   stack_vm : stack_vm_config [@default default_stack_vm];
+  eh_shadowing : eh_shadowing_config [@default default_eh_shadowing];
 } [@@deriving yojson]
 
 (* Single source of truth for the Anti-Pushan rolling-key gate: the encoder
@@ -186,3 +199,9 @@ let ephemeral_jit_enabled (config : t option) : bool =
   match config with
   | Some c -> c.vm_runtime.ephemeral_jit
   | None -> false
+
+let eh_shadowing_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.eh_shadowing.enabled
+  | None -> true
+

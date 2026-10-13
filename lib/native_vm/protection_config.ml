@@ -36,6 +36,16 @@ let with_stack_vm ?superoperators ?state_feedback ?layout_randomization ?runtime
   b := { !b with stack_vm };
   b
 
+let with_eh_shadowing ?shadow_alloc_size ?interceptor_symbol enabled b =
+  let curr = !b.eh_shadowing in
+  let eh_shadowing = {
+    enabled;
+    shadow_alloc_size = Option.value ~default:curr.shadow_alloc_size shadow_alloc_size;
+    interceptor_symbol = Option.value ~default:curr.interceptor_symbol interceptor_symbol;
+  } in
+  b := { !b with eh_shadowing };
+  b
+
 let with_seed seed b =
   b := { !b with seed };
   b

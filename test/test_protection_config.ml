@@ -35,7 +35,9 @@ let test_json_roundtrip () =
       Alcotest.(check bool) "stack_vm.state_feedback matches" original.stack_vm.state_feedback parsed.stack_vm.state_feedback;
       Alcotest.(check bool) "stack_vm.layout_randomization matches" original.stack_vm.layout_randomization parsed.stack_vm.layout_randomization;
       Alcotest.(check bool) "stack_vm.runtime_hardening matches" original.stack_vm.runtime_hardening parsed.stack_vm.runtime_hardening;
-      Alcotest.(check bool) "stack_vm.compact_imm matches" original.stack_vm.compact_imm parsed.stack_vm.compact_imm
+      Alcotest.(check bool) "stack_vm.compact_imm matches" original.stack_vm.compact_imm parsed.stack_vm.compact_imm;
+      Alcotest.(check bool) "eh_shadowing.enabled matches" original.eh_shadowing.enabled parsed.eh_shadowing.enabled;
+      Alcotest.(check int) "eh_shadowing.shadow_alloc_size matches" original.eh_shadowing.shadow_alloc_size parsed.eh_shadowing.shadow_alloc_size
 
 let test_partial_json_parsing () =
   let partial_json = {|
@@ -144,6 +146,18 @@ func_dom_test:
       Alcotest.(check bool) "cpp_source contains compute_handlers_hash" true
         (Test_helpers.string_contains pkg.cpp_runtime_source "compute_handlers_hash")
 
+let test_eh_shadowing_config () =
+  Alcotest.(check bool) "default has eh_shadowing enabled" true Protection_config.default.eh_shadowing.enabled;
+  Alcotest.(check bool) "max_security has eh_shadowing enabled" true Protection_config.max_security.eh_shadowing.enabled;
+  Alcotest.(check int) "max_security shadow_alloc_size is 64" 64 Protection_config.max_security.eh_shadowing.shadow_alloc_size;
+  Alcotest.(check bool) "minimal has eh_shadowing disabled" false Protection_config.minimal.eh_shadowing.enabled;
+  Alcotest.(check bool) "lightweight has eh_shadowing disabled" false Protection_config.lightweight.eh_shadowing.enabled;
+
+  let builder = Protection_config.create_builder () in
+  let custom = Protection_config.with_eh_shadowing ~shadow_alloc_size:48 false builder |> Protection_config.build in
+  Alcotest.(check bool) "builder disabled eh_shadowing" false custom.eh_shadowing.enabled;
+  Alcotest.(check int) "builder shadow_alloc_size 48" 48 custom.eh_shadowing.shadow_alloc_size
+
 let tests = [
   Alcotest.test_case "presets" `Quick test_presets;
   Alcotest.test_case "json_roundtrip" `Quick test_json_roundtrip;
@@ -153,4 +167,5 @@ let tests = [
   Alcotest.test_case "junk_density_scaling" `Quick test_junk_density_scaling;
   Alcotest.test_case "presets_opaque_predicates" `Quick test_presets_opaque_predicates;
   Alcotest.test_case "dispatch_domain_diversification" `Quick test_dispatch_domain_diversification;
+  Alcotest.test_case "eh_shadowing_config" `Quick test_eh_shadowing_config;
 ]

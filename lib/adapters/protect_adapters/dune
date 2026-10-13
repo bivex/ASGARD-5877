@@ -13,5 +13,6 @@
   multi_vm
   stack_vm
   cff
+  tech_2601
   bos
   unix))

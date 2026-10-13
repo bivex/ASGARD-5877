@@ -81,6 +81,12 @@ type stack_vm_config = {
   compact_imm : bool;
 }
 
+type eh_shadowing_config = {
+  enabled : bool;
+  shadow_alloc_size : int;
+  interceptor_symbol : string;
+}
+
 type t = {
   seed : int option;
   crypto : crypto_config;
@@ -92,7 +98,10 @@ type t = {
   vm_runtime : vm_runtime_config;
   c_macro : c_macro_config;
   stack_vm : stack_vm_config;
+  eh_shadowing : eh_shadowing_config;
 }
+
+val default_eh_shadowing : eh_shadowing_config
 
 val minimal : t
 val lightweight : t
@@ -124,6 +133,9 @@ val ephemeral_jit_enabled : t option -> bool
 (** Ephemeral polymorphic JIT gate: [true] when runtime ephemeral JIT code synthesis
     is enabled in vm_runtime. *)
 
+val eh_shadowing_enabled : t option -> bool
+(** Tech-2601 Exception Handling Shadowing gate: [true] when enabled in eh_shadowing config. *)
+
 type builder
 (** Mutable builder for [Protection_config.t]. *)
 
@@ -136,6 +148,12 @@ val with_stack_vm :
   ?layout_randomization:bool ->
   ?runtime_hardening:bool ->
   ?compact_imm:bool ->
+  bool ->
+  builder ->
+  builder
+val with_eh_shadowing :
+  ?shadow_alloc_size:int ->
+  ?interceptor_symbol:string ->
   bool ->
   builder ->
   builder
