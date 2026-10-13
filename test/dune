@@ -109,3 +109,12 @@
   vm_ir
   alcotest))
 
+(test
+ (name test_chameleon_handlers)
+ (modules test_chameleon_handlers)
+ (libraries
+  native_vm
+  cpp_codegen
+  alcotest))
+
+
