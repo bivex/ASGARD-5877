@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# backup.sh — Создание архива исходного кода в папку backup
+# backup.sh — Создание архива исходного кода в папку backup (.tar.gz / .zip)
 #
 
 set -euo pipefail
@@ -16,54 +16,179 @@ else
 fi
 
 PROJECT_NAME="$(basename "$PROJECT_ROOT")"
-BACKUP_DIR="${1:-$PROJECT_ROOT/backup}"
 TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
-ARCHIVE_NAME="${PROJECT_NAME}_backup_${TIMESTAMP}.tar.gz"
-ARCHIVE_PATH="${BACKUP_DIR}/${ARCHIVE_NAME}"
 
-# Создание целевой директории
+# Формат по умолчанию: tar (или из переменной окружения BACKUP_FORMAT)
+FORMAT="${BACKUP_FORMAT:-tar}"
+BACKUP_DIR=""
+
+show_help() {
+    cat <<EOF
+Использование: $0 [ОПЦИИ] [ПАПКА_НАЗНАЧЕНИЯ]
+
+Опции:
+  -z, --zip       Создать ZIP-архив (.zip)
+  -t, --tar       Создать TAR.GZ-архив (.tar.gz) [по умолчанию]
+  -b, --both      Создать оба архива (.tar.gz и .zip)
+  -h, --help      Показать эту справку
+
+Примеры:
+  $0                  # Создает .tar.gz в ./backup
+  $0 --zip            # Создает .zip в ./backup
+  $0 --both           # Создает и .tar.gz, и .zip
+  $0 --zip /tmp/pack  # Создает .zip в указанной папке
+EOF
+}
+
+# Разбор аргументов командной строки
+for arg in "$@"; do
+    case "$arg" in
+        -z|--zip|zip)
+            FORMAT="zip"
+            ;;
+        -t|--tar|tar)
+            FORMAT="tar"
+            ;;
+        -b|--both|both)
+            FORMAT="both"
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            if [[ -z "$BACKUP_DIR" ]]; then
+                BACKUP_DIR="$arg"
+            else
+                echo "Ошибка: неизвестный аргумент '$arg'" >&2
+                show_help
+                exit 1
+            fi
+            ;;
+    esac
+done
+
+BACKUP_DIR="${BACKUP_DIR:-$PROJECT_ROOT/backup}"
 mkdir -p "$BACKUP_DIR"
-
-echo "==> Создание архива исходников..."
-echo "    Проект:  $PROJECT_ROOT"
-echo "    Папка:   $BACKUP_DIR"
-echo "    Архив:   $ARCHIVE_NAME"
 
 cd "$PROJECT_ROOT"
 
-# Если проект находится в Git-репозитории, используем git ls-files:
-# это включает все отслеживаемые и неотслеживаемые исходники, но гарантированно игнорирует всё из .gitignore
+IS_GIT=0
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    echo "    Режим:   Git (исходники + неотслеживаемые файлы, исключая .gitignore)"
-    git ls-files --cached --others --exclude-standard | tar -czf "$ARCHIVE_PATH" -T -
-else
-    echo "    Режим:   Стандартный tar (с фильтрацией бинарников и временных файлов)"
-    tar -czf "$ARCHIVE_PATH" \
-        --exclude="./backup" \
-        --exclude="backup" \
-        --exclude="./_build" \
-        --exclude="_build" \
-        --exclude="./build" \
-        --exclude="build" \
-        --exclude="./.git" \
-        --exclude=".git" \
-        --exclude="./.DS_Store" \
-        --exclude=".DS_Store" \
-        --exclude="*.tar.gz" \
-        --exclude="*.zip" \
-        --exclude="./scratch" \
-        --exclude="scratch" \
-        --exclude="./output" \
-        --exclude="output" \
-        --exclude="__pycache__" \
-        .
+    IS_GIT=1
 fi
 
-# Информация о созданном архиве
-ARCHIVE_SIZE="$(du -h "$ARCHIVE_PATH" | cut -f1)"
-FILES_COUNT="$(tar -tzf "$ARCHIVE_PATH" | wc -l | tr -d ' ')"
+TAR_EXCLUDES=(
+    --exclude="./backup"
+    --exclude="backup"
+    --exclude="./_build"
+    --exclude="_build"
+    --exclude="./build"
+    --exclude="build"
+    --exclude="./.git"
+    --exclude=".git"
+    --exclude="./.DS_Store"
+    --exclude=".DS_Store"
+    --exclude="*.tar.gz"
+    --exclude="*.zip"
+    --exclude="./scratch"
+    --exclude="scratch"
+    --exclude="./output"
+    --exclude="output"
+    --exclude="__pycache__"
+)
 
-echo "==> Успешно создано!"
-echo "    Путь:    $ARCHIVE_PATH"
-echo "    Размер:  $ARCHIVE_SIZE"
-echo "    Файлов:  $FILES_COUNT"
+ZIP_EXCLUDES=(
+    -x
+    "*.git*"
+    "*_build*"
+    "*backup*"
+    "*.DS_Store*"
+    "*.tar.gz*"
+    "*.zip*"
+    "*scratch*"
+    "*output*"
+    "*__pycache__*"
+)
+
+create_tar() {
+    local archive_name="${PROJECT_NAME}_backup_${TIMESTAMP}.tar.gz"
+    local archive_path="${BACKUP_DIR}/${archive_name}"
+
+    echo "==> Упаковка TAR.GZ архива: $archive_name"
+    if [[ "$IS_GIT" -eq 1 ]]; then
+        git ls-files --cached --others --exclude-standard | tar -czf "$archive_path" -T -
+    else
+        tar -czf "$archive_path" "${TAR_EXCLUDES[@]}" .
+    fi
+
+    local size
+    size="$(du -h "$archive_path" | cut -f1)"
+    local count
+    count="$(tar -tzf "$archive_path" | wc -l | tr -d ' ')"
+
+    echo "    ✓ Создан: $archive_path"
+    echo "    Размер:   $size"
+    echo "    Файлов:   $count"
+}
+
+create_zip() {
+    if ! command -v zip >/dev/null 2>&1; then
+        echo "Ошибка: утилита zip не найдена в системе" >&2
+        return 1
+    fi
+
+    local archive_name="${PROJECT_NAME}_backup_${TIMESTAMP}.zip"
+    local archive_path="${BACKUP_DIR}/${archive_name}"
+
+    # Удаляем существующий архив с тем же именем, если есть
+    rm -f "$archive_path"
+
+    echo "==> Упаковка ZIP архива: $archive_name"
+    if [[ "$IS_GIT" -eq 1 ]]; then
+        git ls-files --cached --others --exclude-standard | zip -q "$archive_path" -@
+    else
+        zip -r -q "$archive_path" . "${ZIP_EXCLUDES[@]}"
+    fi
+
+    local size
+    size="$(du -h "$archive_path" | cut -f1)"
+    local count
+    count="$(unzip -l "$archive_path" | tail -n 1 | awk '{print $(NF-1)}')"
+
+    echo "    ✓ Создан: $archive_path"
+    echo "    Размер:   $size"
+    echo "    Файлов:   $count"
+}
+
+echo "========================================"
+echo " Резервное копирование исходников"
+echo " Проект: $PROJECT_ROOT"
+echo " Папка:  $BACKUP_DIR"
+if [[ "$IS_GIT" -eq 1 ]]; then
+    echo " Режим:  Git (отслеживаемые + новые файлы, исключая .gitignore)"
+else
+    echo " Режим:  Tar/Zip (исключая временные каталоги и сборку)"
+fi
+echo "========================================"
+
+case "$FORMAT" in
+    tar)
+        create_tar
+        ;;
+    zip)
+        create_zip
+        ;;
+    both)
+        create_tar
+        echo ""
+        create_zip
+        ;;
+    *)
+        echo "Ошибка: неизвестный формат архива '$FORMAT'" >&2
+        exit 1
+        ;;
+esac
+
+echo "========================================"
+echo "Готово!"

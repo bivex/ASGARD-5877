@@ -14,6 +14,25 @@ let default_heavy_profile = {
   expander_chord_rate = 75;
 }
 
+let balanced_profile = {
+  horner_degree       = 3;
+  bit_slice_lanes     = 2;
+  expander_chord_len  = 8;
+  expander_chord_rate = 50;
+}
+
+let light_profile = {
+  horner_degree       = 2;
+  bit_slice_lanes     = 1;
+  expander_chord_len  = 10;
+  expander_chord_rate = 25;
+}
+
+let adaptive_profile ?(block_size = 0) ?(post_mba = false) () =
+  if post_mba || block_size > 80 then light_profile
+  else if block_size > 25 then balanced_profile
+  else default_heavy_profile
+
 let rand_u64 (rng : Random.State.t) : int64 =
   let hi = Int64.of_int (Random.State.bits rng) in
   let mid = Int64.of_int (Random.State.bits rng) in

@@ -15,6 +15,9 @@ type amplification_profile = {
 }
 
 val default_heavy_profile : amplification_profile
+val balanced_profile : amplification_profile
+val light_profile : amplification_profile
+val adaptive_profile : ?block_size:int -> ?post_mba:bool -> unit -> amplification_profile
 
 val rand_u64 : Random.State.t -> int64
 

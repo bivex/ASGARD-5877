@@ -715,6 +715,37 @@ static void h_dup(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     }
 }
 
+static void h_dup2(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    (void)bytecode; (void)vip;
+    /* Dup2: duplicate top 2 elements [..., b, a] -> [..., b, a, b, a] */
+    if (vm->vsp_idx >= 2 && vm->vsp_idx + 2 <= 4096) {
+        int ib = vm->vsp_idx - 2, ia = vm->vsp_idx - 1;
+        uint64_t db = VSP_ENCODE(ib, vm->vsp[ib]);
+        uint64_t da = VSP_ENCODE(ia, vm->vsp[ia]);
+        vm->vsp[vm->vsp_idx]     = VSP_ENCODE(vm->vsp_idx, db);
+        vm->vsp[vm->vsp_idx + 1] = VSP_ENCODE(vm->vsp_idx + 1, da);
+        vm->vsp_idx += 2;
+    } else {
+        vm->halted = 1; /* fail-closed: underflow or overflow */
+    }
+}
+
+static void h_rot(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    (void)bytecode; (void)vip;
+    /* Rot: rotate top 3 elements: [..., c, b, a] -> [..., b, a, c] */
+    if (vm->vsp_idx >= 3) {
+        int ic = vm->vsp_idx - 3, ib = vm->vsp_idx - 2, ia = vm->vsp_idx - 1;
+        uint64_t dc = VSP_ENCODE(ic, vm->vsp[ic]);
+        uint64_t db = VSP_ENCODE(ib, vm->vsp[ib]);
+        uint64_t da = VSP_ENCODE(ia, vm->vsp[ia]);
+        vm->vsp[ic] = VSP_ENCODE(ic, db);
+        vm->vsp[ib] = VSP_ENCODE(ib, da);
+        vm->vsp[ia] = VSP_ENCODE(ia, dc);
+    } else {
+        vm->halted = 1; /* fail-closed: underflow */
+    }
+}
+
 static void h_swap(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     (void)bytecode; (void)vip;
     /* Swap: decode both positions, re-encode at swapped positions */
@@ -1077,7 +1108,7 @@ static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size
     &h_push_imm, &h_push_imm32, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
     &h_add, &h_sub, &h_mul, &h_nor, &h_nand,
     &h_shl, &h_shr, &h_sar, &h_div, &h_idiv,
-    &h_dup, &h_swap, &h_push_flags, &h_pop_flags, &h_jmp_rel,
+    &h_dup, &h_dup2, &h_rot, &h_swap, &h_push_flags, &h_pop_flags, &h_jmp_rel,
     &h_jcc_rel, &h_key_adjust, &h_exit, &h_call_extern, &h_resolve_sym,
     &h_setcc, &h_cmov, &h_cmp, &h_test,
     &h_add_imm, &h_sub_imm, &h_add_ii, &h_sub_ii, &h_set_reg_imm, &h_add_reg_imm,

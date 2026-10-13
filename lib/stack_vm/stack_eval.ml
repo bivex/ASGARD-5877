@@ -215,6 +215,17 @@ let step_op state = function
            state.vstack <- top :: state.vstack;
            state.vsp <- Int64.sub state.vsp 8L
        | [] -> state.halted <- true)
+  | Dup2 ->
+      (match state.vstack with
+       | a :: b :: _ ->
+           state.vstack <- a :: b :: state.vstack;
+           state.vsp <- Int64.sub state.vsp 16L
+       | _ -> state.halted <- true)
+  | Rot ->
+      (match state.vstack with
+       | a :: b :: c :: rest ->
+           state.vstack <- c :: a :: b :: rest
+       | _ -> state.halted <- true)
   | Swap ->
       (match state.vstack with
        | a :: b :: rest ->

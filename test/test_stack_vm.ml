@@ -20,7 +20,11 @@ let test_stack_ir_primitives () =
   Alcotest.(check int) "delta Add" (-1) (stack_delta op_add);
 
   Alcotest.(check int) "delta PopReg" (-1) (stack_delta op_pop);
+  Alcotest.(check int) "delta Dup2" 2 (stack_delta Dup2);
+  Alcotest.(check int) "delta Rot" 0 (stack_delta Rot);
   Alcotest.(check string) "op_to_string Add" "ADD" (op_to_string op_add);
+  Alcotest.(check string) "op_to_string Dup2" "DUP2" (op_to_string Dup2);
+  Alcotest.(check string) "op_to_string Rot" "ROT" (op_to_string Rot);
   Alcotest.(check string) "op_to_string Exit" "EXIT" (op_to_string Exit)
 
 let test_context_allocator () =
@@ -333,7 +337,7 @@ let test_polymorphic_opcodes () =
   Alcotest.(check int) "deterministic ADD" map1.op_add map1_dup.op_add;
   Alcotest.(check int) "deterministic EXIT" map1.op_exit map1_dup.op_exit;
 
-  (* 2. Verify all 37 opcodes in map1 are unique and non-zero *)
+  (* 2. Verify all 39 opcodes in map1 are unique and non-zero *)
   let ops_list1 = [
     map1.op_push_imm; map1.op_push_reg; map1.op_pop_reg; map1.op_read_mem; map1.op_write_mem;
     map1.op_add; map1.op_sub; map1.op_mul; map1.op_nor; map1.op_nand;
@@ -343,12 +347,13 @@ let test_polymorphic_opcodes () =
     map1.op_sar; map1.op_div; map1.op_idiv; map1.op_push_imm32;
     map1.op_add_imm; map1.op_sub_imm; map1.op_add_ii; map1.op_sub_ii;
     map1.op_set_reg_imm; map1.op_add_reg_imm; map1.op_key_feedback;
+    map1.op_dup2; map1.op_rot;
   ] in
   List.iter (fun op ->
     Alcotest.(check bool) "opcode is in range 1..254" true (op >= 1 && op <= 254)
   ) ops_list1;
   let unique1 = List.sort_uniq compare ops_list1 in
-  Alcotest.(check int) "all 37 opcodes are strictly unique" 37 (List.length unique1);
+  Alcotest.(check int) "all 39 opcodes are strictly unique" 39 (List.length unique1);
 
   (* 3. Verify diversity between different seeds *)
   let ops_list2 = [
@@ -360,6 +365,7 @@ let test_polymorphic_opcodes () =
     map2.op_sar; map2.op_div; map2.op_idiv; map2.op_push_imm32;
     map2.op_add_imm; map2.op_sub_imm; map2.op_add_ii; map2.op_sub_ii;
     map2.op_set_reg_imm; map2.op_add_reg_imm; map2.op_key_feedback;
+    map2.op_dup2; map2.op_rot;
   ] in
   let diff_count = List.fold_left2 (fun acc a b -> if a <> b then acc + 1 else acc) 0 ops_list1 ops_list2 in
   Alcotest.(check bool) "most opcodes differ between seed1 and seed2" true (diff_count >= 20);
@@ -2289,8 +2295,31 @@ let test_pass_contracts_and_pipeline () =
   let pipe_res = Stack_pass.run_pipeline pipeline prog0 in
   Alcotest.(check bool) "pipeline executes cleanly when contracts hold" true (Result.is_ok pipe_res)
 
+let test_dup2_rot_eval_and_encoder () =
+  let st = create_state () in
+  (* Test Dup2: [20; 10] (10 is top) -> [10; 20; 10; 20] *)
+  st.vstack <- [10L; 20L];
+  step_op st Dup2;
+  Alcotest.(check (list int64)) "Dup2 duplicate pair" [10L; 20L; 10L; 20L] st.vstack;
+
+  (* Test Rot: [10; 20; 30] (10 is top) -> [30; 10; 20] *)
+  st.vstack <- [10L; 20L; 30L];
+  step_op st Rot;
+  Alcotest.(check (list int64)) "Rot rotate top 3" [30L; 10L; 20L] st.vstack;
+
+  (* Test codec roundtrip *)
+  let enc = Stack_encoder.encode_program (make_program 0 [
+    make_block 0 "entry" [
+      PushImm 1L; PushImm 2L; Dup2; Rot; PopReg 0; PopReg 0; PopReg 0; PopReg 0; Exit
+    ]
+  ] 1) in
+  let decoded = Stack_encoder.decode_enc enc in
+  Alcotest.(check bool) "Decoded ops contains Dup2" true (List.mem Dup2 decoded);
+  Alcotest.(check bool) "Decoded ops contains Rot" true (List.mem Rot decoded)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
+  ("Dup2 & Rot Semantics, Invariants & Codec", `Quick, test_dup2_rot_eval_and_encoder);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
   ("Universal Logic Reduction Truth Tables", `Quick, test_logic_reduction_truth_tables);
   ("IR to Stack-VM Lowering & Execution", `Quick, test_ir_to_stack_and_eval);

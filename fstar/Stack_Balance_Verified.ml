@@ -65,6 +65,8 @@ type stack_op =
   | Div 
   | Idiv 
   | Dup 
+  | Dup2
+  | Rot
   | Swap 
   | PushFlags 
   | PopFlags 
@@ -227,6 +229,8 @@ let push_weight (op : stack_op) : Prims.nat=
   | Div -> Prims.int_one
   | Idiv -> Prims.int_one
   | Dup -> Prims.of_int 2
+  | Dup2 -> Prims.of_int 4
+  | Rot -> Prims.of_int 3
   | Swap -> Prims.of_int 2
   | PushFlags -> Prims.int_one
   | PopFlags -> Prims.int_zero
@@ -265,6 +269,8 @@ let pop_weight (op : stack_op) : Prims.nat=
   | Div -> Prims.of_int 2
   | Idiv -> Prims.of_int 2
   | Dup -> Prims.int_one
+  | Dup2 -> Prims.of_int 2
+  | Rot -> Prims.of_int 3
   | Swap -> Prims.of_int 2
   | PushFlags -> Prims.int_zero
   | PopFlags -> Prims.int_one

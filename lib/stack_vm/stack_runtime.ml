@@ -160,6 +160,21 @@ let emit_handler cfg op =
         Printf.sprintf "sub     %s, 8" cfg.stack_reg;
         Printf.sprintf "mov     [%s], rax" cfg.stack_reg;
       ]
+    | Dup2 -> [
+        Printf.sprintf "mov     rax, [%s]" cfg.stack_reg;
+        Printf.sprintf "mov     rdx, [%s + 8]" cfg.stack_reg;
+        Printf.sprintf "sub     %s, 16" cfg.stack_reg;
+        Printf.sprintf "mov     [%s], rax" cfg.stack_reg;
+        Printf.sprintf "mov     [%s + 8], rdx" cfg.stack_reg;
+      ]
+    | Rot -> [
+        Printf.sprintf "mov     rax, [%s]" cfg.stack_reg;
+        Printf.sprintf "mov     rdx, [%s + 8]" cfg.stack_reg;
+        Printf.sprintf "mov     rcx, [%s + 16]" cfg.stack_reg;
+        Printf.sprintf "mov     [%s], rcx" cfg.stack_reg;
+        Printf.sprintf "mov     [%s + 8], rax" cfg.stack_reg;
+        Printf.sprintf "mov     [%s + 16], rdx" cfg.stack_reg;
+      ]
     | Swap -> [
         Printf.sprintf "mov     rax, [%s]" cfg.stack_reg;
         Printf.sprintf "mov     rdx, [%s + 8]" cfg.stack_reg;
@@ -183,7 +198,7 @@ let identifier_scramble_map seed =
     "h_push_imm"; "h_push_imm32"; "h_push_reg"; "h_pop_reg"; "h_read_mem"; "h_write_mem";
     "h_add"; "h_sub"; "h_mul"; "h_nor"; "h_nand";
     "h_shl"; "h_shr"; "h_sar"; "h_div"; "h_idiv";
-    "h_dup"; "h_swap"; "h_push_flags"; "h_pop_flags";
+    "h_dup"; "h_dup2"; "h_rot"; "h_swap"; "h_push_flags"; "h_pop_flags";
     "h_jmp_rel"; "h_jcc_rel"; "h_key_adjust"; "h_exit";
     "h_call_extern"; "h_resolve_sym"; "h_setcc"; "h_cmov";
     "h_cmp"; "h_test"; "h_add_imm"; "h_sub_imm";
@@ -435,6 +450,8 @@ let generate_c_runtime
     mk_case enc.op_map.op_div "DIV" "h_div";
     mk_case enc.op_map.op_idiv "IDIV" "h_idiv";
     mk_case enc.op_map.op_dup "DUP" "h_dup";
+    mk_case enc.op_map.op_dup2 "DUP2" "h_dup2";
+    mk_case enc.op_map.op_rot "ROT" "h_rot";
     mk_case enc.op_map.op_swap "SWAP" "h_swap";
     mk_case enc.op_map.op_push_flags "PUSH_FLAGS" "h_push_flags";
     mk_case enc.op_map.op_pop_flags "POP_FLAGS" "h_pop_flags";

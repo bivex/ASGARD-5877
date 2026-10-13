@@ -1,4 +1,4 @@
-.PHONY: all build test clean corpus corpus-arm64 benchmark benchmark-arm64 coverage backup
+.PHONY: all build test clean corpus corpus-arm64 benchmark benchmark-arm64 coverage backup backup-zip backup-all
 
 all: build
 
@@ -29,3 +29,9 @@ clean:
 
 backup:
 	@./scripts/backup.sh
+
+backup-zip:
+	@./scripts/backup.sh --zip
+
+backup-all:
+	@./scripts/backup.sh --both

@@ -38,6 +38,8 @@ type opcode_map = {
   op_set_reg_imm : int;
   op_add_reg_imm : int;
   op_key_feedback : int;
+  op_dup2 : int;
+  op_rot : int;
 }
 
 val default_opcode_map : opcode_map

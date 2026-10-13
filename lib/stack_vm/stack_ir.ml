@@ -18,6 +18,8 @@ type stack_op =
   | Div
   | Idiv
   | Dup
+  | Dup2
+  | Rot
   | Swap
   | PushFlags
   | PopFlags
@@ -59,6 +61,8 @@ let push_weight = function
   | WriteMem _ -> 0
   | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv -> 1
   | Dup -> 2
+  | Dup2 -> 4
+  | Rot -> 3
   | Swap -> 2
   | PushFlags -> 1
   | PopFlags -> 0
@@ -81,6 +85,8 @@ let pop_weight = function
   | WriteMem _ -> 2
   | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv -> 2
   | Dup -> 1
+  | Dup2 -> 2
+  | Rot -> 3
   | Swap -> 2
   | PushFlags -> 0
   | PopFlags -> 1
@@ -115,6 +121,8 @@ let op_to_string = function
   | Div -> "DIV"
   | Idiv -> "IDIV"
   | Dup -> "DUP"
+  | Dup2 -> "DUP2"
+  | Rot -> "ROT"
   | Swap -> "SWAP"
   | PushFlags -> "PUSH_FLAGS"
   | PopFlags -> "POP_FLAGS"
@@ -154,3 +162,6 @@ let make_program entry_id block_list context_slots =
   let tbl = Hashtbl.create (List.length block_list) in
   List.iter (fun b -> Hashtbl.replace tbl b.id b) block_list;
   { entry_id; blocks = tbl; context_slots }
+
+let sdup2 = Dup2
+let srot = Rot

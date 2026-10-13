@@ -40,6 +40,8 @@ type opcode_map = {
   op_set_reg_imm : int;
   op_add_reg_imm : int;
   op_key_feedback : int;
+  op_dup2 : int;
+  op_rot : int;
 }
 
 let default_opcode_map = {
@@ -80,6 +82,8 @@ let default_opcode_map = {
   op_set_reg_imm = 0x23;
   op_add_reg_imm = 0x24;
   op_key_feedback = 0x25;
+  op_dup2 = 0x26;
+  op_rot = 0x27;
 }
 
 let splitmix64 state =
@@ -95,7 +99,7 @@ let splitmix64 state =
 let generate_opcode_map seed =
   let state = ref (if seed = 0L then 0x5877A564D00FL else seed) in
   let pool = Array.init 254 (fun i -> i + 1) in
-  for i = 0 to 36 do
+  for i = 0 to 38 do
     let r = splitmix64 state in
     let range = 254 - i in
     let offset = Int64.to_int (Int64.rem (Int64.logand r 0x7FFFFFFFFFFFFFFFL) (Int64.of_int range)) in
@@ -142,6 +146,8 @@ let generate_opcode_map seed =
     op_set_reg_imm  = pool.(34);
     op_add_reg_imm  = pool.(35);
     op_key_feedback = pool.(36);
+    op_dup2         = pool.(37);
+    op_rot          = pool.(38);
   }
 
 type field_layout = {
@@ -417,6 +423,8 @@ let encode_op_into ?(compact_imm = false) ?(layout = default_field_layout) op_ma
   | Div -> Buffer.add_char buf (Char.chr op_map.op_div)
   | Idiv -> Buffer.add_char buf (Char.chr op_map.op_idiv)
   | Dup -> Buffer.add_char buf (Char.chr op_map.op_dup)
+  | Dup2 -> Buffer.add_char buf (Char.chr op_map.op_dup2)
+  | Rot -> Buffer.add_char buf (Char.chr op_map.op_rot)
   | Swap -> Buffer.add_char buf (Char.chr op_map.op_swap)
   | PushFlags -> Buffer.add_char buf (Char.chr op_map.op_push_flags)
   | PopFlags -> Buffer.add_char buf (Char.chr op_map.op_pop_flags)
@@ -665,6 +673,8 @@ let decode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?c
   | Some b when b = op_map.op_div -> Some Div
   | Some b when b = op_map.op_idiv -> Some Idiv
   | Some b when b = op_map.op_dup -> Some Dup
+  | Some b when b = op_map.op_dup2 -> Some Dup2
+  | Some b when b = op_map.op_rot -> Some Rot
   | Some b when b = op_map.op_swap -> Some Swap
   | Some b when b = op_map.op_push_flags -> Some PushFlags
   | Some b when b = op_map.op_pop_flags -> Some PopFlags

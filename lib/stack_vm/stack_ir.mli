@@ -18,6 +18,8 @@ type stack_op =
   | Div
   | Idiv
   | Dup
+  | Dup2
+  | Rot
   | Swap
   | PushFlags
   | PopFlags
@@ -61,3 +63,7 @@ val make_program : int -> block list -> int -> program
 val push_weight : stack_op -> int
 val pop_weight : stack_op -> int
 val stack_delta : stack_op -> int
+
+val sdup2 : stack_op
+val srot : stack_op
+

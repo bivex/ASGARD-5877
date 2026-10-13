@@ -32,7 +32,7 @@ type stack_op =
   | ReadMem : int -> stack_op
   | WriteMem : int -> stack_op
   | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv
-  | Dup | Swap
+  | Dup | Dup2 | Rot | Swap
   | PushFlags | PopFlags
   | JmpRel : int -> stack_op
   | JccRel : int -> condition -> stack_op
@@ -60,6 +60,8 @@ let push_weight (op:stack_op) : nat =
   | WriteMem _ -> 0
   | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv -> 1
   | Dup -> 2
+  | Dup2 -> 4
+  | Rot -> 3
   | Swap -> 2
   | PushFlags -> 1
   | PopFlags -> 0
@@ -82,6 +84,8 @@ let pop_weight (op:stack_op) : nat =
   | WriteMem _ -> 2
   | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv -> 2
   | Dup -> 1
+  | Dup2 -> 2
+  | Rot -> 3
   | Swap -> 2
   | PushFlags -> 0
   | PopFlags -> 1
@@ -97,6 +101,14 @@ let pop_weight (op:stack_op) : nat =
 
 let stack_delta (op:stack_op) : int =
   push_weight op - pop_weight op
+
+(** Лемма: Дельта Dup2 строго равна +2 *)
+val lemma_dup2_delta : unit -> Lemma (stack_delta Dup2 == 2)
+let lemma_dup2_delta () = ()
+
+(** Лемма: Дельта Rot строго равна 0 *)
+val lemma_rot_delta : unit -> Lemma (stack_delta Rot == 0)
+let lemma_rot_delta () = ()
 
 let is_terminator (op:stack_op) : bool =
   match op with

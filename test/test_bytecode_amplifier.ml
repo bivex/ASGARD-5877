@@ -128,6 +128,43 @@ let test_program_amplification () =
   | _ ->
       Alcotest.fail "Stack length is not 1 after amplified program execution"
 
+let test_profiles_and_invariants () =
+  let heavy = Amp.default_heavy_profile in
+  let balanced = Amp.balanced_profile in
+  let light = Amp.light_profile in
+  Alcotest.(check int) "heavy degree 6" 6 heavy.horner_degree;
+  Alcotest.(check int) "balanced degree 3" 3 balanced.horner_degree;
+  Alcotest.(check int) "light degree 2" 2 light.horner_degree;
+
+  let a_small = Amp.adaptive_profile ~block_size:10 () in
+  let a_med = Amp.adaptive_profile ~block_size:40 () in
+  let a_large = Amp.adaptive_profile ~block_size:100 () in
+  let a_post_mba = Amp.adaptive_profile ~post_mba:true () in
+  Alcotest.(check int) "small block uses heavy" 6 a_small.horner_degree;
+  Alcotest.(check int) "med block uses balanced" 3 a_med.horner_degree;
+  Alcotest.(check int) "large block uses light" 2 a_large.horner_degree;
+  Alcotest.(check int) "post-mba uses light" 2 a_post_mba.horner_degree;
+
+  (* Verify Stack_invariants.check_stack_invariants holds on amplified program *)
+  let rng = Random.State.make [| 0x1234; 0x5678 |] in
+  let blocks = Hashtbl.create 1 in
+  let block0 = {
+    id = 0;
+    label = "entry";
+    ops = [
+      PushImm 100L;
+      PushImm 200L;
+      Add;
+      PopReg 0;
+      Exit;
+    ];
+  } in
+  Hashtbl.replace blocks 0 block0;
+  let sample_prog = { entry_id = 0; blocks; context_slots = 8 } in
+  let amplified = Amp.amplify_stack_program rng ~profile:balanced sample_prog in
+  let inv_res = Stack_vm.Stack_invariants.check_stack_invariants amplified in
+  Alcotest.(check bool) "Amplified program satisfies stack invariants" true (Result.is_ok inv_res)
+
 let () =
   let open Alcotest in
   run "Bytecode Amplifier & Treewidth Expander" [
@@ -148,5 +185,6 @@ let () =
     ( "program_amplification",
       [
         test_case "Program expansion >= 10x and semantic equivalence" `Quick test_program_amplification;
+        test_case "Profiles and stack invariants preservation" `Quick test_profiles_and_invariants;
       ] );
   ]

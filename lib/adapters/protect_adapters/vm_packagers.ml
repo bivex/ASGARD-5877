@@ -259,8 +259,13 @@ module Stack_vm_packager : Vm_packager = struct
     let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
 
-    (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing) *)
-    let amp_profile = Stack_vm.Bytecode_amplifier.default_heavy_profile in
+    (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing)
+       Pass Order Architecture: Bytecode_amplifier runs BEFORE Phase 2b (Stack_mba_pass) so that
+       polynomial constant synthesis (Horner degree 6) targets ONLY original program constants.
+       Running amplifier after MBA would cause multiplicative explosion O(MBA * Amplifier) ~ 1000x.
+       We also use adaptive_profile to automatically scale Horner degree (2..6) based on block size. *)
+    let max_block_size = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> max acc (List.length b.ops)) prog.blocks 0 in
+    let amp_profile = Stack_vm.Bytecode_amplifier.adaptive_profile ~block_size:max_block_size () in
     let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~profile:amp_profile prog in
     let amplifier_info = Stack_vm.Bytecode_amplifier.amplifier_stats prog prog_amplified in
     let prog = prog_amplified in
