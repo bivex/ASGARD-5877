@@ -40,6 +40,7 @@ let bit_not a = Unary (BitNot, a)
 let log_not a = Unary (LogNot, a)
 let deref a = Unary (Deref, a)
 let addr_of a = Unary (AddrOf, a)
+let neg a = Unary (Neg, a)
 let neg_u64 a = Binary (Sub, LitU64 0L, a)
 let cast ty e = Cast (ty, e)
 let bit_cast ty e = BitCast (ty, e)
@@ -62,6 +63,9 @@ let constexpr_u64 name (v : int64) : stmt =
 let decl_var ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : stmt =
   DeclVar { is_const; is_constexpr; is_volatile; ty; name; init }
 
+let i64 (v : int64) : expr = LitI64 v
+let str_lit (s : string) : expr = LitStr s
+
 let ( := ) lhs rhs : stmt = Assign (AssignPlain, lhs, rhs)
 let ( += ) lhs rhs : stmt = Assign (AssignAdd, lhs, rhs)
 let ( -= ) lhs rhs : stmt = Assign (AssignSub, lhs, rhs)
@@ -70,12 +74,28 @@ let ( |= ) lhs rhs : stmt = Assign (AssignOr, lhs, rhs)
 let ( &= ) lhs rhs : stmt = Assign (AssignAnd, lhs, rhs)
 let ( /= ) lhs rhs : stmt = Assign (AssignDiv, lhs, rhs)
 
+let block (stmts : stmt list) : stmt = Block stmts
 let ret (e : expr) : stmt = Return (Some e)
 let ret_void : stmt = Return None
 let expr_stmt (e : expr) : stmt = ExprStmt e
 let if_then cond then_b : stmt = If (cond, then_b, [])
 let if_then_else cond then_b else_b : stmt = If (cond, then_b, else_b)
 let for_range var_name start_e limit_e body : stmt = ForRange { var_name; start_e; limit_e; body }
+let while_loop cond body : stmt = While (cond, body)
 let switch cond cases default : stmt = Switch { cond; cases; default }
+let break_stmt : stmt = Break
+let continue_stmt : stmt = Continue
+let goto (s : string) : stmt = Goto s
+let label (s : string) : stmt = Label s
+let raw (s : string) : stmt = Raw s
 let fence_seq_cst : stmt = FenceSeqCst
 let comment s : stmt = Comment s
+
+(* Удобные VM-шорткаты для генерации хендлеров *)
+let reg_dst : expr = call "ctx.get_reg" [var "dst"]
+let reg_src : expr = call "ctx.get_reg" [var "src"]
+let set_reg dst_e val_e : stmt = expr_stmt (call "ctx.set_reg" [dst_e; val_e])
+let fetch_next : stmt = expr_stmt (call "FETCH_NEXT" [])
+let probe_start : stmt = expr_stmt (call "PROBE_START" [])
+let probe_check : stmt = expr_stmt (call "PROBE_CHECK" [])
+let inc_instrs : stmt = expr_stmt (call "ctx.executed_instructions++" [])

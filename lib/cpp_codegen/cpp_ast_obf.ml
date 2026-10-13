@@ -26,7 +26,7 @@ let rec scramble_expr (rng : Random.State.t) (e : expr) : expr =
   | Member (a, f) -> Member (scramble_expr rng a, f)
   | PtrMember (a, f) -> PtrMember (scramble_expr rng a, f)
   | Call (fn, args) -> Call (fn, List.map (scramble_expr rng) args)
-  | LitU64 _ | LitU32 _ | LitInt _ | LitBool _ | Var _ -> e
+  | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitBool _ | LitStr _ | Var _ -> e
 
 let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
   match s with
@@ -43,6 +43,8 @@ let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
       ForRange { r with start_e = scramble_expr rng r.start_e;
                         limit_e = scramble_expr rng r.limit_e;
                         body    = List.map (scramble_stmt rng) r.body }
+  | While (c, b) ->
+      While (scramble_expr rng c, List.map (scramble_stmt rng) b)
   | Switch r ->
       Switch {
         cond    = scramble_expr rng r.cond;
@@ -50,7 +52,7 @@ let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
                     (scramble_expr rng ce, List.map (scramble_stmt rng) body)) r.cases;
         default = Option.map (List.map (scramble_stmt rng)) r.default;
       }
-  | FenceSeqCst | Comment _ -> s
+  | Break | Continue | Goto _ | Label _ | Raw _ | FenceSeqCst | Comment _ -> s
 
 let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
   match d with

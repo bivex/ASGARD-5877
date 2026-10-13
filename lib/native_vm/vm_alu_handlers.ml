@@ -18,60 +18,72 @@ let emit_probes b ~enable_timing_probes =
     Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n\n";
   end
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let emit_handler_inline_ast b label (stmts : stmt list) =
+  Buffer.add_string b (Printf.sprintf "    %s: { " label);
+  List.iter (fun s ->
+    Buffer.add_string b (string_of_stmt s);
+    Buffer.add_char b ' ';
+  ) stmts;
+  Buffer.add_string b "}\n"
+
 let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = false) () =
   let pick_variant n = Random.State.int rng n in
-  let pick_poly_add () =
+  let pick_poly_add_ast () =
     match Random.State.int rng 4 with
-    | 0 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) + 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
-    | 1 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) + (ctx.get_reg(dst) & ctx.get_reg(src)))"
-    | 2 -> "(2 * (ctx.get_reg(dst) | ctx.get_reg(src)) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
-    | _ -> "ctx.rns_add(ctx.get_reg(dst), ctx.get_reg(src))"
+    | 0 -> (reg_dst ^~ reg_src) +~ (u64 2L *~ (reg_dst &~ reg_src))
+    | 1 -> (reg_dst |~ reg_src) +~ (reg_dst &~ reg_src)
+    | 2 -> (u64 2L *~ (reg_dst |~ reg_src)) -~ (reg_dst ^~ reg_src)
+    | _ -> call "ctx.rns_add" [reg_dst; reg_src]
   in
-  let pick_poly_sub () =
+  let pick_poly_sub_ast () =
     match Random.State.int rng 3 with
-    | 0 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) - 2 * ((~ctx.get_reg(dst)) & ctx.get_reg(src)))"
-    | 1 -> "(2 * (ctx.get_reg(dst) & (~ctx.get_reg(src))) - (ctx.get_reg(dst) ^ ctx.get_reg(src)))"
-    | _ -> "ctx.rns_sub(ctx.get_reg(dst), ctx.get_reg(src))"
+    | 0 -> (reg_dst ^~ reg_src) -~ (u64 2L *~ (bit_not reg_dst &~ reg_src))
+    | 1 -> (u64 2L *~ (reg_dst &~ bit_not reg_src)) -~ (reg_dst ^~ reg_src)
+    | _ -> call "ctx.rns_sub" [reg_dst; reg_src]
   in
-  let pick_poly_xor () =
+  let pick_poly_xor_ast () =
     match Random.State.int rng 3 with
-    | 0 -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - 2 * (ctx.get_reg(dst) & ctx.get_reg(src)))"
-    | 1 -> "((ctx.get_reg(dst) | ctx.get_reg(src)) - (ctx.get_reg(dst) & ctx.get_reg(src)))"
-    | _ -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)))"
+    | 0 -> (reg_dst +~ reg_src) -~ (u64 2L *~ (reg_dst &~ reg_src))
+    | 1 -> (reg_dst |~ reg_src) -~ (reg_dst &~ reg_src)
+    | _ -> (reg_dst ^~ reg_src)
   in
 
-  let h_add_rr_expr () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_add_rr ~rng
-    else pick_poly_add ()
+  let h_add_rr_expr_ast () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_add_rr_ast ~rng
+    else pick_poly_add_ast ()
   in
-  let h_sub_rr_expr () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_sub_rr ~rng
-    else pick_poly_sub ()
+  let h_sub_rr_expr_ast () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_sub_rr_ast ~rng
+    else pick_poly_sub_ast ()
   in
-  let h_xor_rr_expr () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_xor_rr ~rng
-    else pick_poly_xor ()
+  let h_xor_rr_expr_ast () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_xor_rr_ast ~rng
+    else pick_poly_xor_ast ()
   in
-  let pick_poly_and () =
+  let pick_poly_and_ast () =
     match Random.State.int rng 3 with
-    | 0 -> "(ctx.get_reg(dst) & ctx.get_reg(src))"
-    | 1 -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - (ctx.get_reg(dst) | ctx.get_reg(src)))"
-    | _ -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) ^ (ctx.get_reg(dst) | ctx.get_reg(src)))"
+    | 0 -> reg_dst &~ reg_src
+    | 1 -> (reg_dst +~ reg_src) -~ (reg_dst |~ reg_src)
+    | _ -> (reg_dst ^~ reg_src) ^~ (reg_dst |~ reg_src)
   in
-  let pick_poly_or () =
+  let pick_poly_or_ast () =
     match Random.State.int rng 3 with
-    | 0 -> "(ctx.get_reg(dst) | ctx.get_reg(src))"
-    | 1 -> "((ctx.get_reg(dst) ^ ctx.get_reg(src)) + (ctx.get_reg(dst) & ctx.get_reg(src)))"
-    | _ -> "((ctx.get_reg(dst) + ctx.get_reg(src)) - (ctx.get_reg(dst) & ctx.get_reg(src)))"
+    | 0 -> reg_dst |~ reg_src
+    | 1 -> (reg_dst ^~ reg_src) +~ (reg_dst &~ reg_src)
+    | _ -> (reg_dst +~ reg_src) -~ (reg_dst &~ reg_src)
   in
 
-  let h_and_rr_expr () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_and_rr ~rng
-    else pick_poly_and ()
+  let h_and_rr_expr_ast () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_and_rr_ast ~rng
+    else pick_poly_and_ast ()
   in
-  let h_or_rr_expr () =
-    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_or_rr ~rng
-    else pick_poly_or ()
+  let h_or_rr_expr_ast () =
+    if enable_egraph_expansion then Egraph_cpp_emitter.egraph_or_rr_ast ~rng
+    else pick_poly_or_ast ()
   in
 
   (match pick_variant 3 with
@@ -289,16 +301,17 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     Buffer.add_string b "    H_OR_RI:  { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_OR_RI,  dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
     Buffer.add_string b "#else\n"
   end;
-    Buffer.add_string b (Printf.sprintf "    H_ADD_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_add_rr_expr ()));
+    let imm_u64 = cast UInt64 (var "imm") in
+    emit_handler_inline_ast b "H_ADD_RR" [ probe_start; set_reg (var "dst") (h_add_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_ADD_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + 2 * (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_ADD_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d + static_cast<uint64_t>(imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_ADD_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, (_d | _i) + (_d & _i)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
-  Buffer.add_string b (Printf.sprintf "    H_SUB_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_sub_rr_expr ()));
+   | 0 -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) +~ (u64 2L *~ (reg_dst &~ imm_u64))); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" +~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+   | _ -> emit_handler_inline_ast b "H_ADD_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") ((var "_d" |~ var "_i") +~ (var "_d" &~ var "_i")); probe_check; inc_instrs; fetch_next ]);
+  emit_handler_inline_ast b "H_SUB_RR" [ probe_start; set_reg (var "dst") (h_sub_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_SUB_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) - 2 * ((~ctx.get_reg(dst)) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_SUB_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d - static_cast<uint64_t>(imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_SUB_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, _d + (~_i + 1ULL)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) -~ (u64 2L *~ (bit_not reg_dst &~ imm_u64))); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" -~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+   | _ -> emit_handler_inline_ast b "H_SUB_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") (var "_d" +~ (bit_not (var "_i") +~ u64 1L)); probe_check; inc_instrs; fetch_next ]);
   Buffer.add_string b "    H_IMUL_RR: {\n";
   (match pick_variant 3 with
    | 0 ->
@@ -335,21 +348,21 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
        Buffer.add_string b "        PROBE_CHECK();\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
-  Buffer.add_string b (Printf.sprintf "    H_XOR_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_xor_rr_expr ()));
+  emit_handler_inline_ast b "H_XOR_RR" [ probe_start; set_reg (var "dst") (h_xor_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_XOR_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) | (uint64_t)imm) - (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_XOR_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst); ctx.set_reg(dst, _d ^ static_cast<uint64_t>(imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_XOR_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, (_d + _i) - 2 * (_d & _i)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
-  Buffer.add_string b (Printf.sprintf "    H_AND_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_and_rr_expr ()));
+   | 0 -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; set_reg (var "dst") ((reg_dst |~ imm_u64) -~ (reg_dst &~ imm_u64)); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; let_u64 "_d" reg_dst; set_reg (var "dst") (var "_d" ^~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+   | _ -> emit_handler_inline_ast b "H_XOR_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") ((var "_d" +~ var "_i") -~ (u64 2L *~ (var "_d" &~ var "_i"))); probe_check; inc_instrs; fetch_next ]);
+  emit_handler_inline_ast b "H_AND_RR" [ probe_start; set_reg (var "dst") (h_and_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_AND_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) + (uint64_t)imm) - (ctx.get_reg(dst) | (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_AND_RI: { PROBE_START(); ctx.set_reg(dst, ctx.get_reg(dst) & static_cast<uint64_t>(imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_AND_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, (_d | _i) - (_d ^ _i)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
-  Buffer.add_string b (Printf.sprintf "    H_OR_RR: { PROBE_START(); ctx.set_reg(dst, %s); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" (h_or_rr_expr ()));
+   | 0 -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; set_reg (var "dst") ((reg_dst +~ imm_u64) -~ (reg_dst |~ imm_u64)); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; set_reg (var "dst") (reg_dst &~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+   | _ -> emit_handler_inline_ast b "H_AND_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") ((var "_d" |~ var "_i") -~ (var "_d" ^~ var "_i")); probe_check; inc_instrs; fetch_next ]);
+  emit_handler_inline_ast b "H_OR_RR" [ probe_start; set_reg (var "dst") (h_or_rr_expr_ast ()); probe_check; inc_instrs; fetch_next ];
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_OR_RI: { PROBE_START(); ctx.set_reg(dst, (ctx.get_reg(dst) ^ (uint64_t)imm) + (ctx.get_reg(dst) & (uint64_t)imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | 1 -> Buffer.add_string b "    H_OR_RI: { PROBE_START(); ctx.set_reg(dst, ctx.get_reg(dst) | static_cast<uint64_t>(imm)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_OR_RI: { PROBE_START(); uint64_t _d = ctx.get_reg(dst), _i = (uint64_t)imm; ctx.set_reg(dst, (_d + _i) - (_d & _i)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; set_reg (var "dst") ((reg_dst ^~ imm_u64) +~ (reg_dst &~ imm_u64)); probe_check; inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; set_reg (var "dst") (reg_dst |~ cast UInt64 (var "imm")); probe_check; inc_instrs; fetch_next ]
+   | _ -> emit_handler_inline_ast b "H_OR_RI" [ probe_start; let_u64 "_d" reg_dst; let_u64 "_i" imm_u64; set_reg (var "dst") ((var "_d" +~ var "_i") -~ (var "_d" &~ var "_i")); probe_check; inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
 

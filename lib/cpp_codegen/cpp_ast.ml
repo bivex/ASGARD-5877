@@ -4,7 +4,9 @@
 type ctype =
   | Void
   | Bool
+  | Int8 | Int16 | Int32 | Int64
   | UInt8 | UInt16 | UInt32 | UInt64 | UIntPtr | SizeT
+  | Float | Double
   | Ptr of ctype
   | ConstPtr of ctype
   | VolatilePtr of ctype
@@ -25,8 +27,10 @@ type unop =
 type expr =
   | LitU64 of int64
   | LitU32 of int32
+  | LitI64 of int64
   | LitInt of int
   | LitBool of bool
+  | LitStr of string
   | Var of string
   | Member of expr * string            (* obj.field *)
   | PtrMember of expr * string         (* ptr->field *)
@@ -61,11 +65,17 @@ type stmt =
       limit_e  : expr;
       body     : stmt list;
     }
+  | While of expr * stmt list          (* while (cond) { ... } *)
   | Switch of {
       cond    : expr;
       cases   : (expr * stmt list) list;
       default : stmt list option;
     }
+  | Break
+  | Continue
+  | Goto of string                     (* goto EXIT_VM; *)
+  | Label of string                    (* label: *)
+  | Raw of string                      (* raw C++ line *)
   | FenceSeqCst                        (* std::atomic_signal_fence(std::memory_order_seq_cst); *)
   | Comment of string
 

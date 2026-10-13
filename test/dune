@@ -97,4 +97,5 @@
  (modules test_cpp_codegen)
  (libraries
   cpp_codegen
+  native_vm
   alcotest))
