@@ -2,6 +2,16 @@ open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
 
+let contains_str str sub =
+  let slen = String.length str in
+  let sublen = String.length sub in
+  let rec check i =
+    if i + sublen > slen then false
+    else if String.sub str i sublen = sub then true
+    else check (i + 1)
+  in
+  check 0
+
 let () =
   let rng = Random.State.make [| 0x5877; 0xED51 |] in
   
@@ -132,16 +142,6 @@ let () =
     opcode_to_handler
   in
   assert (String.length header_src > 5000);
-  let contains_str str sub =
-    let slen = String.length str in
-    let sublen = String.length sub in
-    let rec check i =
-      if i + sublen > slen then false
-      else if String.sub str i sublen = sub then true
-      else check (i + 1)
-    in
-    check 0
-  in
   assert (contains_str header_src "vanguard/platform_compat.hpp");
   assert (contains_str header_src "vanguard/crypto_primitives.hpp");
   assert (contains_str header_src "vanguard/sanitization.hpp");
@@ -470,7 +470,98 @@ let () =
    | Ok () -> ()
    | Error err -> failwith ("Multi-VM runner main function syntax validation failed: " ^ err));
   assert (String.length multi_vm_main_cpp > 300);
-  Printf.printf "[PASS] Step 30: Multi-VM runner main function & weak global linkage emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 30: Multi-VM runner main function & weak global linkage emitted using typed AST.\n";
+
+  (* 31. Native VM external symbols & constants tables AST *)
+  let native_ext_syms_decl = Native_vm.Vm_runtime_emitter.emit_external_symbols_table_ast [ "printf"; "malloc"; "_free" ] in
+  let native_consts_decls = Native_vm.Vm_runtime_emitter.emit_constants_tables_ast ~rng [ ("hello", "world"); ("sec", "\x01\x02\x03\x04") ] in
+  let native_ext_syms_cpp = render_top_decl native_ext_syms_decl in
+  let native_consts_cpp = render_top_decls native_consts_decls in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax native_ext_syms_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Native VM external symbols table syntax validation failed: " ^ err));
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax native_consts_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Native VM constants tables syntax validation failed: " ^ err));
+  assert (String.length native_ext_syms_cpp > 50);
+  assert (String.length native_consts_cpp > 100);
+  Printf.printf "[PASS] Step 31: Native VM external symbols & aligned constants tables emitted using typed AST.\n";
+
+  (* 32. Stack-VM external symbols & constants tables AST *)
+  let stack_ext_syms_decl = Stack_vm.Stack_runtime.emit_stack_external_symbols_table_ast [ "puts"; "_exit" ] in
+  let stack_consts_decls = Stack_vm.Stack_runtime.emit_stack_constants_tables_ast [ ("cfg", "alpha_beta"); ("key", "12345678") ] in
+  let stack_ext_syms_cpp = render_top_decl stack_ext_syms_decl in
+  let stack_consts_cpp = render_top_decls stack_consts_decls in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax stack_ext_syms_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Stack-VM external symbols table syntax validation failed: " ^ err));
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax stack_consts_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Stack-VM constants tables syntax validation failed: " ^ err));
+  assert (String.length stack_ext_syms_cpp > 50);
+  assert (String.length stack_consts_cpp > 100);
+  Printf.printf "[PASS] Step 32: Stack-VM external symbols & constants tables emitted using typed AST.\n";
+
+  (* 33. Core SDK additions: Pragma, MacroDef, DoWhile *)
+  let pragma_decl = pragma "once" in
+  let macro_decl1 = macro_def ~value:(i32 1) "FOO_FLAG" in
+  let macro_decl2 = macro_def "BAR_EMPTY" in
+  let dowhile_fn = func_decl Void "loop_test" [] [
+    let_u32 "x" (u32 10l);
+    do_while (var "x" >~ i32 0) [
+      var "x" -= i32 1;
+    ];
+    ret_void;
+  ] in
+  let sdk_cpp = render_top_decls [ pragma_decl; macro_decl1; macro_decl2; dowhile_fn ] in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax sdk_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Core SDK pragma/macro/dowhile validation failed: " ^ err));
+  assert (String.contains sdk_cpp '#');
+  Printf.printf "[PASS] Step 33: Core SDK Pragma, MacroDef, and DoWhile validated.\n";
+
+  (* 34. Native VM address-bound block spans tables AST *)
+  let spans = [ (0, 32); (32, 64); (96, 48) ] in
+  let native_spans_decls = Native_vm.Vm_runtime_emitter.emit_block_spans_tables_ast spans in
+  let native_spans_cpp = render_top_decls native_spans_decls in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax native_spans_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Native VM block spans tables validation failed: " ^ err));
+  assert (contains_str native_spans_cpp "g_num_blocks");
+  assert (contains_str native_spans_cpp "g_block_offsets");
+  assert (contains_str native_spans_cpp "g_block_lengths");
+  Printf.printf "[PASS] Step 34: Native VM address-bound block spans tables emitted using typed AST.\n";
+
+  (* 35. Stack-VM block tables AST *)
+  let stack_tables_decls = Stack_vm.Stack_runtime.emit_stack_block_tables_ast
+    ~max_bid:2
+    ~block_offsets:[ 0x1000L; 0x2000L; 0x3000L ]
+    ~block_keys:[ 0xCAFEBABEL; 0xDEADBEEFL; 0x1337BEEFL ]
+    ~tag_key0:0x58775877L
+    ~tag_key1:0x92929292L
+    ()
+  in
+  let stack_tables_cpp = render_top_decls stack_tables_decls in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax stack_tables_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Stack-VM block tables validation failed: " ^ err));
+  assert (contains_str stack_tables_cpp "g_stack_block_offsets");
+  assert (contains_str stack_tables_cpp "g_stack_block_keys");
+  assert (contains_str stack_tables_cpp "g_stack_tag_keys");
+  Printf.printf "[PASS] Step 35: Stack-VM block tables emitted using typed AST.\n";
+
+  (* 36. Multi-VM header AST & source emission *)
+  let multi_vm_hdr_cpp = Multi_vm.Multi_vm_emitter.emit_multi_vm_header_source
+    ~bridge_cpp:"// test bridge code\n"
+    ~asgard_multi_vm_source:"namespace asgard_multi_vm { struct DummyCtx {}; }\n"
+    ~base_runtime_source:"namespace vanguard_threaded_vm { struct BaseCtx {}; }\n"
+    ()
+  in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax multi_vm_hdr_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Multi-VM header syntax validation failed: " ^ err));
+  assert (contains_str multi_vm_hdr_cpp "ASGARD_MULTI_VM_ENABLED");
+  Printf.printf "[PASS] Step 36: Multi-VM header emitted using typed EDSL without Jingoo.\n"
 
 
 

@@ -28,6 +28,19 @@ val generate_wbox_seed_derivation :
   int32 ->
   string
 
+val emit_external_symbols_table_ast :
+  string list ->
+  Cpp_codegen.Cpp_ast.top_decl
+
+val emit_constants_tables_ast :
+  rng:Random.State.t ->
+  (string * string) list ->
+  Cpp_codegen.Cpp_ast.top_decl list
+
+val emit_block_spans_tables_ast :
+  (int * int) list ->
+  Cpp_codegen.Cpp_ast.top_decl list
+
 val emit_cpp_threaded_header :
   rng:Random.State.t ->
   key_seed:int32 ->

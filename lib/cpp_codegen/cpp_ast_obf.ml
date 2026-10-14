@@ -48,6 +48,8 @@ let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
                         body    = List.map (scramble_stmt rng) r.body }
   | While (c, b) ->
       While (scramble_expr rng c, List.map (scramble_stmt rng) b)
+  | DoWhile (c, b) ->
+      DoWhile (scramble_expr rng c, List.map (scramble_stmt rng) b)
   | Switch r ->
       Switch {
         cond    = scramble_expr rng r.cond;
@@ -95,4 +97,6 @@ let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
       ConstexprGlobal (ty, name, scramble_expr rng e)
   | GlobalVar g ->
       GlobalVar { g with init = Option.map (scramble_expr rng) g.init }
-  | StructDecl _ | UnionDecl _ | EnumDecl _ | RawTop _ | CommentTop _ | IncludeSys _ | IncludeLocal _ | FuncProto _ | Typedef _ -> d
+  | MacroDef (name, opt) ->
+      MacroDef (name, Option.map (scramble_expr rng) opt)
+  | Pragma _ | StructDecl _ | UnionDecl _ | EnumDecl _ | RawTop _ | CommentTop _ | IncludeSys _ | IncludeLocal _ | FuncProto _ | Typedef _ -> d

@@ -102,6 +102,7 @@ let if_then cond then_b : stmt = If (cond, then_b, [])
 let if_then_else cond then_b else_b : stmt = If (cond, then_b, else_b)
 let for_range var_name start_e limit_e body : stmt = ForRange { var_name; start_e; limit_e; body }
 let while_loop cond body : stmt = While (cond, body)
+let do_while cond body : stmt = DoWhile (cond, body)
 let switch cond cases default : stmt = Switch { cond; cases; default }
 let break_stmt : stmt = Break
 let continue_stmt : stmt = Continue
@@ -138,10 +139,12 @@ let enum_decl ?underlying_ty name items : top_decl = EnumDecl { name; underlying
 let func_decl ?(attrs=[]) ret_type name params body : top_decl = FuncDecl { attrs; ret_type; name; params; body }
 let func_proto ?(attrs=[]) ret_type name params : top_decl = FuncProto { attrs; ret_type; name; params; body = [] }
 let typedef ty name : top_decl = Typedef (ty, name)
+let pragma s : top_decl = Pragma s
+let macro_def ?value name : top_decl = MacroDef (name, value)
 let include_sys s : top_decl = IncludeSys s
 let include_local s : top_decl = IncludeLocal s
-let global_var ?(is_extern_c=false) ?(is_weak=false) ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : top_decl =
-  GlobalVar { is_extern_c; is_weak; is_static; is_const; is_constexpr; is_volatile; ty; name; init }
+let global_var ?align_as ?(is_extern_c=false) ?(is_weak=false) ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : top_decl =
+  GlobalVar { align_as; is_extern_c; is_weak; is_static; is_const; is_constexpr; is_volatile; ty; name; init }
 let raw_top s : top_decl = RawTop s
 let comment_top s : top_decl = CommentTop s
 let namespace_def name decls : top_decl = Namespace (name, decls)

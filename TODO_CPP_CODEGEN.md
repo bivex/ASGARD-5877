@@ -191,15 +191,33 @@
 - [x] Миграция Multi-VM Runner ([`lib/multi_vm/multi_vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/multi_vm_emitter.ml)):
   - Точка входа `main` переведена на typed AST `emit_multi_vm_runner_main_def`.
   - Генерация глобальных переменных с weak linkage `extern "C" __attribute__((weak))` и раннера `runner_cpp` переведена на typed EDSL.
+
+### Stage 6.2: Core EDSL SDK Expansion & Decoupling Jingoo Loops from Native, Stack & Multi VM (`lib/cpp_codegen/`, `lib/native_vm/`, `lib/stack_vm/`, `lib/multi_vm/`)
+- [x] Расширение ядра EDSL SDK ([`lib/cpp_codegen/`](file:///Volumes/External/Code/ASGARD-5877/lib/cpp_codegen/)):
+  - Добавлены `Pragma of string` (`#pragma ...`) и `MacroDef of string * expr option` (`#define NAME [VALUE]`) в `Cpp_ast.top_decl`.
+  - Добавлен стейтмент `DoWhile of expr * stmt list` (`do { ... } while (...);`) в `Cpp_ast.stmt`.
+  - В `Cpp_dsl` добавлены комбинаторы `pragma`, `macro_def`, `do_while`.
+  - В `Cpp_printer` и `Cpp_ast_obf` реализована печать и трансформация новых конструкций.
+- [x] Миграция Address-Bound таблиц Native VM ([`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml)):
+  - Реализован типизированный генератор `emit_block_spans_tables_ast` (`g_num_blocks`, `g_block_offsets`, `g_block_lengths`).
+  - Устранен сырой цикл Jinja `for b in block_spans` в [`lib/native_vm/native_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/native_vm_templates.ml).
+- [x] Миграция таблиц смещений и крипто-ключей Stack-VM ([`lib/stack_vm/stack_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_runtime.ml)):
+  - Реализован типизированный генератор `emit_stack_block_tables_ast` (`g_stack_block_offsets`, `g_stack_block_keys`, `g_stack_tag_keys`, макросы демаскирования).
+  - Устранены циклы Jinja `for off in block_offsets` и `for k in block_keys` в [`lib/stack_vm/stack_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_vm_templates.ml).
+- [x] Полное устранение шаблонизатора Jingoo из Heterogeneous Multi-VM ([`lib/multi_vm/multi_vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/multi_vm_emitter.ml)):
+  - Реализованы `emit_multi_vm_header_decls` и `emit_multi_vm_header_source` на чистом типизированном EDSL.
+  - `multi_vm_emitter.ml` теперь полностью автономен и не вызывает `Jg_template.from_string`.
 - [x] Тесты:
-  - Steps 1..30 в `test_cpp_codegen.ml` (все 30 шагов) — 100% PASS.
+  - Steps 1..36 в `test_cpp_codegen.ml` (все 36 шагов) — 100% PASS.
   - `Native Threaded VM` (12/12) — PASS.
   - `Stack-VM Execution Engine` (38/38) — PASS.
   - `Multi-VM & Direct Zero-Bridge` (8/8) — PASS.
   - `Register-Driven JIT VM & RNS` (5/5) — PASS.
-  - `C++ Emulator E2E` (Clang++ E2E) — PASS.
-  - `C11 Emulator E2E` (Clang E2E) — PASS.
+  - `Tech-2603 Anti-VPC Tracking` (7/7) — PASS.
+  - `Tech-2608 Anti-Trace-Synthesis` (4/4) — PASS.
   - `Tier 4 Next-Gen` (5/5) — PASS.
+  - `Chameleon & Delayed-Commit Handlers` (3/3) — PASS.
+  - `Bytecode Amplifier & Treewidth Expander` (7/7) — PASS.
 
 ---
 

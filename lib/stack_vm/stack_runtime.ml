@@ -307,6 +307,136 @@ let scramble_c_runtime ?(seed = 0x5877A564D00FL) ?(strip_comments = true) src =
   done;
   Buffer.contents buf
 
+let calc_stack_fnv1a32 (s : string) : int32 =
+  let h = ref 0x811c9dc5L in
+  for i = 0 to String.length s - 1 do
+    let c = Int64.of_int (Char.code s.[i]) in
+    Stdlib.(h := Int64.logand (Int64.mul (Int64.logxor !h c) 0x01000193L) 0xFFFFFFFFL)
+  done;
+  Int64.to_int32 !h
+
+let emit_stack_external_symbols_table_ast external_symbols : Cpp_codegen.Cpp_ast.top_decl =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let entries =
+    if external_symbols = [] then
+      [ init_list [ u32 0l; u32 0l; i32 0; init_list [ i32 0 ] ] ]
+    else
+      List.map (fun sym ->
+        let h = calc_stack_fnv1a32 sym in
+        let alt_sym =
+          if String.length sym > 0 && sym.[0] = '_' then
+            String.sub sym 1 (String.length sym - 1)
+          else "_" ^ sym
+        in
+        let alt_h = calc_stack_fnv1a32 alt_sym in
+        let len = String.length sym in
+        let enc_bytes =
+          List.init len (fun i ->
+            let k = (0x5A lxor ((i * 17 + 0x33) land 0xFF)) in
+            u8 (Char.code sym.[i] lxor k)
+          )
+        in
+        let enc_list = if enc_bytes = [] then [ u8 0 ] else enc_bytes in
+        init_list [ u32 h; u32 alt_h; i32 len; init_list enc_list ]
+      ) external_symbols
+  in
+  global_var ~is_static:true ~is_const:true
+    (Array (StructType "asgard_ext_sym_t", 0))
+    "g_external_symbols"
+    ~init:(init_list entries)
+
+let emit_stack_constants_tables_ast constants : Cpp_codegen.Cpp_ast.top_decl list =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  if constants = [] then
+    [
+      global_var ~is_static:true
+        (Array (StructType "AsgardConstantEntry", 0))
+        "g_asgard_constants"
+        ~init:(init_list [ init_list [ u32 0l; u32 0l; nullptr; nullptr; u64 0L; u32 0l; i32 1 ] ])
+    ]
+  else
+    let cdata_decls =
+      List.concat_map (fun (idx, (_name, bytes)) ->
+        let xor_key = (0x5877A55A lxor (idx * 0x1337 + 0x42)) land 0x7FFFFFFF in
+        let enc_bytes =
+          List.init (String.length bytes) (fun i ->
+            let orig = Char.code bytes.[i] in
+            let k = ((xor_key lsr ((i land 3) * 8)) lxor (i * 0x5D + 0x33)) land 0xFF in
+            u8 (orig lxor k)
+          ) @ [ u8 0 ]
+        in
+        let enc_decl =
+          global_var ~is_static:true ~is_const:true
+            (Array (UInt8, 0))
+            (Printf.sprintf "cdata_enc_%d" idx)
+            ~init:(init_list enc_bytes)
+        in
+        let dec_decl =
+          global_var ~is_static:true
+            (Array (UInt8, String.length bytes + 1))
+            (Printf.sprintf "cdata_dec_%d" idx)
+        in
+        [ enc_decl; dec_decl ]
+      ) (List.mapi (fun i c -> (i, c)) constants)
+    in
+    let table_entries =
+      List.mapi (fun idx (name, bytes) ->
+        let h = calc_stack_fnv1a32 name in
+        let alt_name =
+          if String.length name > 0 && name.[0] = '_' then
+            String.sub name 1 (String.length name - 1)
+          else "_" ^ name
+        in
+        let alt_h = calc_stack_fnv1a32 alt_name in
+        let xor_key = (0x5877A55A lxor (idx * 0x1337 + 0x42)) land 0x7FFFFFFF in
+        init_list [
+          u32 h;
+          u32 alt_h;
+          var (Printf.sprintf "cdata_enc_%d" idx);
+          var (Printf.sprintf "cdata_dec_%d" idx);
+          u64 (Int64.of_int (String.length bytes));
+          u32 (Int32.of_int xor_key);
+          i32 0;
+        ]
+      ) constants
+    in
+    let table_decl =
+      global_var ~is_static:true
+        (Array (StructType "AsgardConstantEntry", 0))
+        "g_asgard_constants"
+        ~init:(init_list table_entries)
+    in
+    cdata_decls @ [ table_decl ]
+
+let emit_stack_block_tables_ast ~max_bid ~block_offsets ~block_keys ~tag_key0 ~tag_key1 () : Cpp_codegen.Cpp_ast.top_decl list =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let count = max_bid + 1 in
+  let offsets_exprs = List.map (fun off -> u32 (Int64.to_int32 off)) block_offsets in
+  let keys_exprs = List.map u64 block_keys in
+  let tag_keys_exprs = [ u64 tag_key0; u64 tag_key1 ] in
+  [
+    raw_top "#define ASG_UNMASK_OFFSET(bid) ((uint32_t)(g_stack_block_offsets[(bid)] ^ (uint32_t)(0x5877A564UL + (uint32_t)(bid) * 0x19E3779BUL)))";
+    raw_top "#define ASG_UNMASK_KEY(bid) (g_stack_block_keys[(bid)] ^ (UINT64_C(0xD00F5877A5640000) + (uint64_t)(bid) * UINT64_C(0x9E3779B97F4A7C15)))";
+    global_var ~is_static:true ~is_const:true
+      (Array (UInt32, count))
+      "g_stack_block_offsets"
+      ~init:(init_list offsets_exprs);
+    global_var ~is_static:true ~is_const:true
+      (Array (UInt64, count))
+      "g_stack_block_keys"
+      ~init:(init_list keys_exprs);
+    comment_top "Payload-tag key halves, masked with the same address-binding scheme as the block keys above";
+    global_var ~is_static:true ~is_const:true
+      (Array (UInt64, 2))
+      "g_stack_tag_keys"
+      ~init:(init_list tag_keys_exprs);
+    raw_top "#define ASG_UNMASK_TAG_K0() (g_stack_tag_keys[0] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(0) * UINT64_C(0x9E3779B97F4A7C15)))";
+    raw_top "#define ASG_UNMASK_TAG_K1() (g_stack_tag_keys[1] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(1) * UINT64_C(0x9E3779B97F4A7C15)))";
+  ]
+
 let generate_c_runtime
     ?(external_symbols = [])
     ?(constants = [])
@@ -319,14 +449,7 @@ let generate_c_runtime
     | None -> Stack_encoder.encode_program prog
   in
   let has_constants = constants <> [] in
-  let fnv1a s =
-    let h = ref 0x811c9dc5L in
-    for i = 0 to String.length s - 1 do
-      let c = Int64.of_int (Char.code s.[i]) in
-      h := Int64.logand (Int64.mul (Int64.logxor !h c) 0x01000193L) 0xFFFFFFFFL
-    done;
-    Int64.to_int32 !h
-  in
+  let fnv1a = calc_stack_fnv1a32 in
   let constants_model =
     List.mapi (fun idx (name, bytes) ->
       let h = fnv1a name in
@@ -394,37 +517,48 @@ let generate_c_runtime
     let stride = Int64.mul (Int64.of_int i) 0x9E3779B97F4A7C15L in
     Int64.add base stride
   in
-  let block_offsets_model =
+  let raw_block_offsets =
     let l = ref [] in
     for i = 0 to max_bid do
       let off = match Hashtbl.find_opt enc.block_offsets i with Some o -> o | None -> 0 in
       let masked_off = Int64.logxor (Int64.of_int off) (mask32 i) in
-      l := Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08LX" masked_off) :: !l
+      l := masked_off :: !l
     done;
     List.rev !l
   in
-  let block_keys_model =
+  let block_offsets_model =
+    List.map (fun v -> Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08LX" v)) raw_block_offsets
+  in
+  let raw_block_keys =
     let l = ref [] in
     for i = 0 to max_bid do
       let k = match Hashtbl.find_opt enc.block_keys i with Some k -> k | None -> enc.seed_key in
       let masked_k = Int64.logxor k (mask64 i) in
-      l := Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" masked_k) :: !l
+      l := masked_k :: !l
     done;
     List.rev !l
+  in
+  let block_keys_model =
+    List.map (fun v -> Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" v)) raw_block_keys
   in
   (* Payload-tag key halves ride the same mask64 ladder at indices 0 and 1;
      the runtime unmasks them with the identical expressions in
      ASG_UNMASK_TAG_K0/K1. *)
-  let tag_key_model i =
+  let raw_tag_key i =
     match Hashtbl.find_opt enc.tag_keys i with
-    | Some k -> Printf.sprintf "%016LX" (Int64.logxor k (mask64 i))
+    | Some k -> Int64.logxor k (mask64 i)
     | None ->
         failwith
           (Printf.sprintf
              "stack_runtime: encrypted_bytecode is missing tag key %d — \
               rebuild it with Stack_encoder.encode_program" i)
   in
-  let tag_key0 = tag_key_model 0 and tag_key1 = tag_key_model 1 in
+  let raw_tag_key0 = raw_tag_key 0 and raw_tag_key1 = raw_tag_key 1 in
+  let tag_key0 = Printf.sprintf "%016LX" raw_tag_key0 and tag_key1 = Printf.sprintf "%016LX" raw_tag_key1 in
+  let block_tables_source =
+    Cpp_codegen.Cpp_printer.render_top_decls
+      (emit_stack_block_tables_ast ~max_bid ~block_offsets:raw_block_offsets ~block_keys:raw_block_keys ~tag_key0:raw_tag_key0 ~tag_key1:raw_tag_key1 ())
+  in
   let mk_case op_val name fn =
     Jingoo.Jg_types.Tobj [
       ("hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%02X" op_val));
@@ -473,15 +607,24 @@ let generate_c_runtime
     mk_case enc.op_map.op_add_reg_imm "ADD_REG_IMM" "h_add_reg_imm";
     mk_case enc.op_map.op_key_feedback "KEY_FEEDBACK" "h_key_feedback";
   ] in
+  let external_symbols_source =
+    Cpp_codegen.Cpp_printer.render_top_decl (emit_stack_external_symbols_table_ast external_symbols)
+  in
+  let constants_source =
+    Cpp_codegen.Cpp_printer.render_top_decls (emit_stack_constants_tables_ast constants)
+  in
   let models = [
     ("has_constants", Jingoo.Jg_types.Tbool has_constants);
     ("constants", Jingoo.Jg_types.Tlist constants_model);
+    ("constants_source", Jingoo.Jg_types.Tstr constants_source);
     ("has_symbols", Jingoo.Jg_types.Tbool has_symbols);
     ("external_symbols", Jingoo.Jg_types.Tlist symbols_model);
+    ("external_symbols_source", Jingoo.Jg_types.Tstr external_symbols_source);
     ("block_offsets_count", Jingoo.Jg_types.Tint (max_bid + 1));
     ("block_offsets", Jingoo.Jg_types.Tlist block_offsets_model);
     ("block_keys_count", Jingoo.Jg_types.Tint (max_bid + 1));
     ("block_keys", Jingoo.Jg_types.Tlist block_keys_model);
+    ("block_tables_source", Jingoo.Jg_types.Tstr block_tables_source);
     ("context_slots", Jingoo.Jg_types.Tint (max 64 prog.context_slots));
     ("dispatch_cases", Jingoo.Jg_types.Tlist dispatch_cases);
     ("is_address_bound", Jingoo.Jg_types.Tbool (enc.addr_mask <> 0L));

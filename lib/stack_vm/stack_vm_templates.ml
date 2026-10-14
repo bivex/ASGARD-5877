@@ -38,19 +38,7 @@ struct AsgardConstantEntry {
     volatile int ready;
 };
 
-{%- if not has_constants %}
-static AsgardConstantEntry g_asgard_constants[] = { { 0, 0, nullptr, nullptr, 0, 0, 1 } };
-{%- else %}
-{%- for c in constants %}
-static const uint8_t cdata_enc_{{ c.index }}[] = { {{ c.hex_bytes }}0x00 };
-static uint8_t cdata_dec_{{ c.index }}[{{ c.size }} + 1];
-{%- endfor %}
-static AsgardConstantEntry g_asgard_constants[] = {
-{%- for c in constants %}
-    { {{ c.hash }}U, {{ c.alt_hash }}U, cdata_enc_{{ c.index }}, cdata_dec_{{ c.index }}, {{ c.size }}, {{ c.xor_key }}U, 0 },
-{%- endfor %}
-};
-{%- endif %}
+{{ constants_source }}
 
 static inline void* asgard_resolve_constant(uint32_t hash, uint32_t alt_hash) noexcept {
     for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {
@@ -99,15 +87,7 @@ typedef struct {
     uint8_t enc_bytes[64];
 } asgard_ext_sym_t;
 
-{%- if not has_symbols %}
-static const asgard_ext_sym_t g_external_symbols[] = { { 0, 0, 0, { 0 } } };
-{%- else %}
-static const asgard_ext_sym_t g_external_symbols[] = {
-{%- for sym in external_symbols %}
-    { {{ sym.hash }}U, {{ sym.alt_hash }}U, {{ sym.len }}, { {{ sym.enc_bytes }} } },
-{%- endfor %}
-};
-{%- endif %}
+{{ external_symbols_source }}
 
 #if defined(__APPLE__) && defined(__MACH__)
 static inline uint64_t asg_read_uleb128(const uint8_t** p) {
@@ -259,31 +239,7 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
     return sym_ptr;
 }
 
-#define ASG_UNMASK_OFFSET(bid) ((uint32_t)(g_stack_block_offsets[(bid)] ^ (uint32_t)(0x5877A564UL + (uint32_t)(bid) * 0x19E3779BUL)))
-#define ASG_UNMASK_KEY(bid) (g_stack_block_keys[(bid)] ^ (UINT64_C(0xD00F5877A5640000) + (uint64_t)(bid) * UINT64_C(0x9E3779B97F4A7C15)))
-
-static const uint32_t g_stack_block_offsets[{{ block_offsets_count }}] = {
-{%- for off in block_offsets %}
-    {{ off }},
-{%- endfor %}
-};
-
-static const uint64_t g_stack_block_keys[{{ block_keys_count }}] = {
-{%- for k in block_keys %}
-    0x{{ k }}ULL,
-{%- endfor %}
-};
-
-/* Payload-tag key halves, masked with the same address-binding scheme as the
-   block keys above (indices 0 and 1 of the mask64 ladder). The runtime folds
-   derive_addr_key() back out, exactly once, in asg_payload_auth_ok. */
-static const uint64_t g_stack_tag_keys[2] = {
-    0x{{ tag_key0 }}ULL,
-    0x{{ tag_key1 }}ULL,
-};
-
-#define ASG_UNMASK_TAG_K0() (g_stack_tag_keys[0] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(0) * UINT64_C(0x9E3779B97F4A7C15)))
-#define ASG_UNMASK_TAG_K1() (g_stack_tag_keys[1] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(1) * UINT64_C(0x9E3779B97F4A7C15)))
+{{ block_tables_source }}
 
 namespace asgard_stack_vm {
 

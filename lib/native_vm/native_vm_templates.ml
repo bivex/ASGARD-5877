@@ -370,43 +370,12 @@ namespace asgard_mem_integrity {
 namespace vanguard_threaded_vm {
 
 {%- if enable_address_bound %}
-#define ASGARD_ADDRESS_BOUND_BYTECODE 1
-static const size_t g_num_blocks = {{ num_blocks }};
-static const size_t g_block_offsets[] = {
-{%- for b in block_spans %}
-    {{ b.off }},
-{%- endfor %}
-};
-static const size_t g_block_lengths[] = {
-{%- for b in block_spans %}
-    {{ b.len }},
-{%- endfor %}
-};
+{{ block_spans_source }}
 {%- endif %}
 
-{%- if not has_external_symbols %}
-static const asgard_ext_sym_t g_external_symbols[] = { { 0, 0, 0, { 0 } } };
-{%- else %}
-static const asgard_ext_sym_t g_external_symbols[] = {
-{%- for sym in external_symbols %}
-    { {{ sym.hash }}U, {{ sym.alt_hash }}U, {{ sym.len }}, { {{ sym.enc_bytes }} } },
-{%- endfor %}
-};
-{%- endif %}
+{{ external_symbols_source }}
 
-{%- if not has_constants %}
-static AsgardConstantEntry g_asgard_constants[] = { { 0, 0, nullptr, nullptr, 0, 0, 1 } };
-{%- else %}
-{%- for c in constants %}
-alignas(16) static const uint8_t cdata_enc_{{ c.index }}[] = { {{ c.hex_bytes }}0x00 };
-alignas(16) static uint8_t cdata_dec_{{ c.index }}[{{ c.size }} + 1];
-{%- endfor %}
-static AsgardConstantEntry g_asgard_constants[] = {
-{%- for c in constants %}
-    { {{ c.hash }}U, {{ c.alt_hash }}U, cdata_enc_{{ c.index }}, cdata_dec_{{ c.index }}, {{ c.size }}, {{ c.xor_key }}U, 0 },
-{%- endfor %}
-};
-{%- endif %}
+{{ constants_source }}
 
 static inline void* asgard_resolve_constant(uint32_t hash, uint32_t alt_hash) noexcept {
     for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {

@@ -94,6 +94,28 @@ let emit_multi_vm_runner_main_def ~math_blocks ~flow_blocks ~inter_vm_transition
     ret (i32 0);
   ]
 
+let emit_multi_vm_header_decls ~bridge_cpp ~asgard_multi_vm_source ~base_runtime_source () : Cpp_codegen.Cpp_ast.top_decl list =
+  let open Cpp_codegen.Cpp_dsl in
+  [
+    pragma "once";
+    macro_def ~value:(i32 1) "ASGARD_MULTI_VM_ENABLED";
+    comment_top "=========================================================================";
+    comment_top "ASGARD-5877: HETEROGENEOUS DUAL-VM RUNTIME (MATH-VM & FLOW-VM)";
+    comment_top "In-Place Affine State Morphing & Zero-Native Dispatch";
+    comment_top "=========================================================================";
+    include_sys "stdint.h";
+    include_sys "stdbool.h";
+    include_sys "string.h";
+    raw_top bridge_cpp;
+    raw_top asgard_multi_vm_source;
+    comment_top "Threaded base engine integration";
+    raw_top base_runtime_source;
+  ]
+
+let emit_multi_vm_header_source ~bridge_cpp ~asgard_multi_vm_source ~base_runtime_source () : string =
+  Cpp_codegen.Cpp_printer.render_top_decls
+    (emit_multi_vm_header_decls ~bridge_cpp ~asgard_multi_vm_source ~base_runtime_source ())
+
 let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_depth = 2) ?config ?constants (f : Ir.func) : multi_vm_package =
   let bridge = Bridge.generate_bridge rng in
   let partition = Partitioner.partition_function f in
@@ -113,12 +135,13 @@ let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_dep
 
   let bridge_cpp = Bridge.emit_cpp_bridge_code bridge in
 
-  let hdr_models = [
-    ("bridge_cpp", Jingoo.Jg_types.Tstr bridge_cpp);
-    ("asgard_multi_vm_namespace", Jingoo.Jg_types.Tstr (Multi_vm_context_emitter.emit_asgard_multi_vm_source ()));
-    ("base_runtime_source", Jingoo.Jg_types.Tstr base_pkg.cpp_runtime_source);
-  ] in
-  let multi_vm_hdr = Multi_vm_templates.render Multi_vm_templates.multi_vm_header_template hdr_models in
+  let multi_vm_hdr =
+    emit_multi_vm_header_source
+      ~bridge_cpp
+      ~asgard_multi_vm_source:(Multi_vm_context_emitter.emit_asgard_multi_vm_source ())
+      ~base_runtime_source:base_pkg.cpp_runtime_source
+      ()
+  in
 
   let open Cpp_codegen.Cpp_ast in
   let open Cpp_codegen.Cpp_dsl in

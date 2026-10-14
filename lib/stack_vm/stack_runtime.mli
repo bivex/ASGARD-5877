@@ -27,6 +27,23 @@ val scramble_c_runtime :
   string ->
   string
 
+val emit_stack_external_symbols_table_ast :
+  string list ->
+  Cpp_codegen.Cpp_ast.top_decl
+
+val emit_stack_constants_tables_ast :
+  (string * string) list ->
+  Cpp_codegen.Cpp_ast.top_decl list
+
+val emit_stack_block_tables_ast :
+  max_bid:int ->
+  block_offsets:int64 list ->
+  block_keys:int64 list ->
+  tag_key0:int64 ->
+  tag_key1:int64 ->
+  unit ->
+  Cpp_codegen.Cpp_ast.top_decl list
+
 val generate_c_runtime :
   ?external_symbols:string list ->
   ?constants:(string * string) list ->

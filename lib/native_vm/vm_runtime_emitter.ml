@@ -188,6 +188,135 @@ module Runtime_policy = struct
     ]
 end
 
+let calc_fnv1a32 (s : string) : int32 =
+  let h = ref 0x811c9dc5l in
+  for i = 0 to String.length s - 1 do
+    Stdlib.(h := Int32.logxor !h (Int32.of_int (Char.code s.[i])));
+    Stdlib.(h := Int32.mul !h 0x01000193l)
+  done;
+  !h
+
+let emit_external_symbols_table_ast external_symbols : Cpp_codegen.Cpp_ast.top_decl =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let entries =
+    if external_symbols = [] then
+      [ init_list [ u32 0l; u32 0l; i32 0; init_list [ i32 0 ] ] ]
+    else
+      List.map (fun sym ->
+        let h = calc_fnv1a32 sym in
+        let alt_sym =
+          if String.length sym > 0 && sym.[0] = '_' then
+            String.sub sym 1 (String.length sym - 1)
+          else "_" ^ sym
+        in
+        let alt_h = calc_fnv1a32 alt_sym in
+        let len = String.length sym in
+        let enc_bytes =
+          List.init len (fun i ->
+            let k = (0x5A lxor ((i * 17 + 0x33) land 0xFF)) in
+            u8 (Char.code sym.[i] lxor k)
+          )
+        in
+        let enc_list = if enc_bytes = [] then [ u8 0 ] else enc_bytes in
+        init_list [ u32 h; u32 alt_h; i32 len; init_list enc_list ]
+      ) external_symbols
+  in
+  global_var ~is_static:true ~is_const:true
+    (Array (StructType "asgard_ext_sym_t", 0))
+    "g_external_symbols"
+    ~init:(init_list entries)
+
+let emit_constants_tables_ast ~rng constants : Cpp_codegen.Cpp_ast.top_decl list =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  if constants = [] then
+    [
+      global_var ~is_static:true
+        (Array (StructType "AsgardConstantEntry", 0))
+        "g_asgard_constants"
+        ~init:(init_list [ init_list [ u32 0l; u32 0l; nullptr; nullptr; u64 0L; u32 0l; i32 1 ] ])
+    ]
+  else
+    let cdata_decls =
+      List.concat_map (fun (idx, (_name, bytes)) ->
+        let xor_key = ((Random.State.bits rng) land 0x7FFFFFFF) lxor (idx * 0x1337 + 0x5877) in
+        let enc_bytes =
+          List.init (String.length bytes) (fun i ->
+            let orig = Char.code bytes.[i] in
+            let k = ((xor_key lsr ((i land 3) * 8)) lxor (i * 0x5D + 0x33)) land 0xFF in
+            u8 (orig lxor k)
+          ) @ [ u8 0 ]
+        in
+        let enc_decl =
+          global_var ~align_as:16 ~is_static:true ~is_const:true
+            (Array (UInt8, 0))
+            (Printf.sprintf "cdata_enc_%d" idx)
+            ~init:(init_list enc_bytes)
+        in
+        let dec_decl =
+          global_var ~align_as:16 ~is_static:true
+            (Array (UInt8, String.length bytes + 1))
+            (Printf.sprintf "cdata_dec_%d" idx)
+        in
+        [ enc_decl; dec_decl ]
+      ) (List.mapi (fun i c -> (i, c)) constants)
+    in
+    let table_entries =
+      List.mapi (fun idx (name, bytes) ->
+        let h = calc_fnv1a32 name in
+        let alt_name =
+          if String.length name > 0 && name.[0] = '_' then
+            String.sub name 1 (String.length name - 1)
+          else "_" ^ name
+        in
+        let alt_h = calc_fnv1a32 alt_name in
+        let xor_key = ((Random.State.bits rng) land 0x7FFFFFFF) lxor (idx * 0x1337 + 0x5877) in
+        init_list [
+          u32 h;
+          u32 alt_h;
+          var (Printf.sprintf "cdata_enc_%d" idx);
+          var (Printf.sprintf "cdata_dec_%d" idx);
+          u64 (Int64.of_int (String.length bytes));
+          u32 (Int32.of_int xor_key);
+          i32 0;
+        ]
+      ) constants
+    in
+    let table_decl =
+      global_var ~is_static:true
+        (Array (StructType "AsgardConstantEntry", 0))
+        "g_asgard_constants"
+        ~init:(init_list table_entries)
+    in
+    cdata_decls @ [ table_decl ]
+
+let emit_block_spans_tables_ast (block_spans : (int * int) list) : Cpp_codegen.Cpp_ast.top_decl list =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  if block_spans = [] then []
+  else
+    let num_blocks_decl =
+      global_var ~is_static:true ~is_const:true SizeT "g_num_blocks"
+        ~init:(i32 (List.length block_spans))
+    in
+    let offsets_decl =
+      global_var ~is_static:true ~is_const:true
+        (Array (SizeT, 0)) "g_block_offsets"
+        ~init:(init_list (List.map (fun (off, _) -> i32 off) block_spans))
+    in
+    let lengths_decl =
+      global_var ~is_static:true ~is_const:true
+        (Array (SizeT, 0)) "g_block_lengths"
+        ~init:(init_list (List.map (fun (_, len) -> i32 len) block_spans))
+    in
+    [
+      macro_def ~value:(i32 1) "ASGARD_ADDRESS_BOUND_BYTECODE";
+      num_blocks_decl;
+      offsets_decl;
+      lengths_decl;
+    ]
+
 let emit_cpp_threaded_header
     ~rng
     ~key_seed
@@ -361,6 +490,17 @@ let emit_cpp_threaded_header
     ~num_domains ();
   let handlers_source = Buffer.contents handlers_buf in
   let wbox_seed_source = generate_wbox_seed_derivation ~rng key_seed in
+  let external_symbols_source =
+    Cpp_codegen.Cpp_printer.render_top_decl (emit_external_symbols_table_ast external_symbols)
+  in
+  let constants_source =
+    Cpp_codegen.Cpp_printer.render_top_decls (emit_constants_tables_ast ~rng constants)
+  in
+  let block_spans_source =
+    if policy.enable_address_bound then
+      Cpp_codegen.Cpp_printer.render_top_decls (emit_block_spans_tables_ast block_spans)
+    else ""
+  in
 
   let models : (string * Jg_types.tvalue) list =
     Runtime_policy.to_models policy @ [
@@ -378,10 +518,13 @@ let emit_cpp_threaded_header
       ("gpu_constants", Jg_types.Tstr gpu_constants);
       ("num_blocks", Jg_types.Tint (List.length block_spans));
       ("block_spans", Jg_types.Tlist block_spans_models);
+      ("block_spans_source", Jg_types.Tstr block_spans_source);
       ("has_external_symbols", Jg_types.Tbool (external_symbols <> []));
       ("external_symbols", Jg_types.Tlist ext_sym_models);
+      ("external_symbols_source", Jg_types.Tstr external_symbols_source);
       ("has_constants", Jg_types.Tbool (constants <> []));
       ("constants", Jg_types.Tlist constants_models);
+      ("constants_source", Jg_types.Tstr constants_source);
       ("wbox_seed_source", Jg_types.Tstr wbox_seed_source);
       ("context_source", Jg_types.Tstr context_source);
       ("key_seed_hex", Jg_types.Tstr (Printf.sprintf "0x%08lXU" key_seed));

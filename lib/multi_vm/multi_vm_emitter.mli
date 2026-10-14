@@ -9,6 +9,20 @@ type multi_vm_package = {
   metrics : Native_vm.Metrics.metrics_report;
 }
 
+val emit_multi_vm_header_decls :
+  bridge_cpp:string ->
+  asgard_multi_vm_source:string ->
+  base_runtime_source:string ->
+  unit ->
+  Cpp_codegen.Cpp_ast.top_decl list
+
+val emit_multi_vm_header_source :
+  bridge_cpp:string ->
+  asgard_multi_vm_source:string ->
+  base_runtime_source:string ->
+  unit ->
+  string
+
 val emit_multi_vm_runner_main_def :
   math_blocks:int ->
   flow_blocks:int ->

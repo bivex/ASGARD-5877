@@ -144,6 +144,8 @@ let rec pp_stmt fmt = function
         var_name pp_expr start_e var_name pp_expr limit_e var_name pp_stmt_list body
   | While (cond, body) ->
       fprintf fmt "while (%a) {@[<v 4>@,%a@]@,}" pp_condition cond pp_stmt_list body
+  | DoWhile (cond, body) ->
+      fprintf fmt "do {@[<v 4>@,%a@]@,} while (%a);" pp_stmt_list body pp_condition cond
   | Switch { cond; cases; default } ->
       fprintf fmt "switch (%a) {@[<v 2>@," pp_expr cond;
       List.iter (fun (ce, body) ->
@@ -261,15 +263,26 @@ let pp_struct_member fmt = function
       fprintf fmt "// %s@," s
 
 let rec pp_top_decl fmt = function
+  | Pragma s ->
+      fprintf fmt "#pragma %s" s
+  | MacroDef (name, Some v) ->
+      fprintf fmt "#define %s %a" name pp_expr v
+  | MacroDef (name, None) ->
+      fprintf fmt "#define %s" name
   | IncludeSys h ->
       fprintf fmt "#include <%s>" h
   | IncludeLocal h ->
       fprintf fmt "#include \"%s\"" h
   | ConstexprGlobal (ty, name, e) ->
       fprintf fmt "constexpr %a %s = %a;" pp_ctype ty name pp_expr e
-  | GlobalVar { is_extern_c; is_weak; is_static; is_const; is_constexpr; is_volatile; ty; name; init } ->
+  | GlobalVar { align_as; is_extern_c; is_weak; is_static; is_const; is_constexpr; is_volatile; ty; name; init } ->
+      let align_str = match align_as with
+        | Some n -> Printf.sprintf "alignas(%d) " n
+        | None -> ""
+      in
       let prefix =
-        (if is_extern_c then "extern \"C\" " else "")
+        align_str
+        ^ (if is_extern_c then "extern \"C\" " else "")
         ^ (if is_weak then "__attribute__((weak)) " else "")
         ^ (if is_static then "static " else "")
         ^ (if is_volatile then "volatile " else "")

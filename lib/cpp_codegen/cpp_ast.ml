@@ -72,6 +72,7 @@ type stmt =
       body     : stmt list;
     }
   | While of expr * stmt list          (* while (cond) { ... } *)
+  | DoWhile of expr * stmt list        (* do { ... } while (cond); *)
   | Switch of {
       cond    : expr;
       cases   : (expr * stmt list) list;
@@ -156,11 +157,14 @@ type struct_def = {
 }
 
 type top_decl =
+  | Pragma of string                   (* #pragma once *)
+  | MacroDef of string * expr option   (* #define NAME [VALUE] *)
   | IncludeSys of string               (* #include <cstdint> *)
   | IncludeLocal of string             (* #include "asg_crypto.hpp" *)
   | Namespace of string * top_decl list
   | ConstexprGlobal of ctype * string * expr
   | GlobalVar of {
+      align_as     : int option;
       is_extern_c  : bool;
       is_weak      : bool;
       is_static    : bool;
