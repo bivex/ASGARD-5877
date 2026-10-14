@@ -1,16 +1,20 @@
-let external_symbols_header symbols =
-  let entries =
-    match symbols with
-    | [] -> [ "    \"\"" ]
-    | xs -> List.map (fun s -> Printf.sprintf "    \"%s\"" (String.escaped s)) xs
-  in
-  "static const char* const g_rd_jit_external_symbols[] = {\n"
-  ^ String.concat ",\n" entries
-  ^ "\n};\n\n"
-
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
+
+let external_symbols_header symbols =
+  let entries =
+    match symbols with
+    | [] -> [ str_lit "" ]
+    | xs -> List.map str_lit xs
+  in
+  let decl =
+    global_var ~is_static:true ~is_const:true
+      (Array (Ptr (StructType "char"), 0))
+      "g_rd_jit_external_symbols"
+      ~init:(init_list entries)
+  in
+  render_top_decl decl ^ "\n\n"
 
 let jit_op_kind_decl () : top_decl =
   EnumDecl {

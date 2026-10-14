@@ -4,10 +4,10 @@ open Cpp_codegen.Cpp_printer
 
 let rns_moduli_decls () : top_decl list = [
   comment_top "RNS-4 Moduli Definition (Pairwise coprime, Product > 2^64)";
-  raw_top "static const uint64_t RNS_M1 = 4294967291ULL;";
-  raw_top "static const uint64_t RNS_M2 = 4294967279ULL;";
-  raw_top "static const uint64_t RNS_M3 = 4294967231ULL;";
-  raw_top "static const uint64_t RNS_M4 = 4294967197ULL;";
+  global_var ~is_static:true ~is_const:true UInt64 "RNS_M1" ~init:(u64 4294967291L);
+  global_var ~is_static:true ~is_const:true UInt64 "RNS_M2" ~init:(u64 4294967279L);
+  global_var ~is_static:true ~is_const:true UInt64 "RNS_M3" ~init:(u64 4294967231L);
+  global_var ~is_static:true ~is_const:true UInt64 "RNS_M4" ~init:(u64 4294967197L);
 ]
 
 let rns_register_def () : top_decl =
@@ -38,10 +38,10 @@ let rns_register_def () : top_decl =
         var "r4" := ((var "r4" +~ var "RNS_M4") -~ ((var "o" $. "r4") %~ var "RNS_M4")) %~ var "RNS_M4";
       ];
       member_method ~attrs:[AlwaysInline] Void "mul" [(ConstRef (StructType "RNS_Register"), "o")] [
-        raw "r1 = (uint64_t)((__uint128_t)r1 * o.r1 % RNS_M1);";
-        raw "r2 = (uint64_t)((__uint128_t)r2 * o.r2 % RNS_M2);";
-        raw "r3 = (uint64_t)((__uint128_t)r3 * o.r3 % RNS_M3);";
-        raw "r4 = (uint64_t)((__uint128_t)r4 * o.r4 % RNS_M4);";
+        var "r1" := c_cast UInt64 (((c_cast (StructType "__uint128_t") (var "r1")) *~ (var "o" $. "r1")) %~ var "RNS_M1");
+        var "r2" := c_cast UInt64 (((c_cast (StructType "__uint128_t") (var "r2")) *~ (var "o" $. "r2")) %~ var "RNS_M2");
+        var "r3" := c_cast UInt64 (((c_cast (StructType "__uint128_t") (var "r3")) *~ (var "o" $. "r3")) %~ var "RNS_M3");
+        var "r4" := c_cast UInt64 (((c_cast (StructType "__uint128_t") (var "r4")) *~ (var "o" $. "r4")) %~ var "RNS_M4");
       ];
       member_method ~attrs:[AlwaysInline] ~is_const:true UInt64 "decode_crt" [] [
         ret (var "r1");
