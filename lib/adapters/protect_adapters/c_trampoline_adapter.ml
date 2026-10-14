@@ -358,45 +358,54 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
           (Printf.sprintf "%s_chunks" name)
           ~init:(init_list chunk_table_entries)
       in
-      let all_chunks_code = render_top_decls (chunk_array_decls @ [ chunks_decl ]) in
-      Printf.sprintf
-{|%s
-
-__attribute__((unused)) static uint64_t %s[%d];
-__attribute__((unused)) static volatile int %s_assembled = 0;
-
-__attribute__((unused)) static inline void %s_ensure_assembled(void) {
-    if (__builtin_expect(!%s_assembled, 0)) {
-        for (size_t _idx = 0; _idx < %d; ++_idx) {
-            const AsgardBytecodeChunk* c = &%s_chunks[_idx];
-            if (__builtin_expect(c->canary != (((c->chunk_id * 0xDEADU) + 0xCAFEU) & 0xFFFFFFFFU), 0)) {
-                ASG_CHUNK_TRAP();
-            }
-            uint64_t k_dyn = 0x5877A56A11223344ULL ^ ((uint64_t)c->chunk_id * 0x9E3779B97F4A7C15ULL);
-            for (size_t j = 0; j < c->word_count; ++j) {
-                uint64_t word_key = k_dyn + ((uint64_t)j * 0x100000001B3ULL);
-                %s[c->word_offset + j] = c->data[j] ^ word_key;
-            }
-        }
-        ASG_CHUNK_BARRIER();
-        %s_assembled = 1;
-    }
-}
-
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((constructor, unused)) static void %s_auto_init(void) {
-    %s_ensure_assembled();
-}
-#endif
-
-|}
-        all_chunks_code
-        name total_words
-        name
-        name name num_chunks name
-        name
-        name
-        name name
+      let assembled_var =
+        global_var ~is_static:true ~is_volatile:true
+          Int32 (Printf.sprintf "%s_assembled" name) ~init:(i32 0)
+      in
+      let target_array =
+        global_var ~is_static:true
+          (Array (UInt64, total_words)) name
+      in
+      let ensure_assembled_fn =
+        func_decl
+          ~attrs:[StaticFn; InlineFn]
+          Void
+          (Printf.sprintf "%s_ensure_assembled" name)
+          []
+          [
+            if_then (log_not (var (Printf.sprintf "%s_assembled" name))) [
+              for_range "_idx" (i32 0) (i32 num_chunks) [
+                decl_var ~is_const:true (ConstPtr (StructType "AsgardBytecodeChunk")) "c"
+                  ~init:(addr_of (idx (var (Printf.sprintf "%s_chunks" name)) (var "_idx")));
+                if_then (ne (var "c" $-> "canary") (c_cast UInt64 (((var "c" $-> "chunk_id" *~ u32 0xDEADl) +~ u32 0xCAFEl) &~ u32 0xFFFFFFFFl))) [
+                  expr_stmt (call "ASG_CHUNK_TRAP" []);
+                ];
+                let_u64 "k_dyn" (u64 0x5877A56A11223344L ^~ (c_cast UInt64 (var "c" $-> "chunk_id") *~ u64 0x9E3779B97F4A7C15L));
+                for_range "j" (i32 0) (c_cast Int32 (var "c" $-> "word_count")) [
+                  let_u64 "word_key" (var "k_dyn" +~ (c_cast UInt64 (var "j") *~ u64 0x100000001B3L));
+                  idx (var name) ((var "c" $-> "word_offset") +~ var "j") :=
+                    (idx (var "c" $-> "data") (var "j") ^~ var "word_key");
+                ];
+              ];
+              expr_stmt (call "ASG_CHUNK_BARRIER" []);
+              (var (Printf.sprintf "%s_assembled" name)) := i32 1;
+            ];
+          ]
+      in
+      let auto_init_fn =
+        func_decl
+          ~attrs:[StaticFn; Constructor]
+          Void
+          (Printf.sprintf "%s_auto_init" name)
+          []
+          [
+            expr_stmt (call (Printf.sprintf "%s_ensure_assembled" name) []);
+          ]
+      in
+      render_top_decls (
+        chunk_array_decls
+        @ [ chunks_decl; target_array; assembled_var; ensure_assembled_fn; auto_init_fn ]
+      )
   in
 
   match marked_fns with
