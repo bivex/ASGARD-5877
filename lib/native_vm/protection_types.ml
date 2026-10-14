@@ -72,7 +72,7 @@ type cff_config = {
   enabled : bool [@default true];
   obfuscate_states : bool [@default true];
   inject_opaque_predicates : bool [@default false];
-  input_tainted_transitions : bool [@default false];
+  input_tainted_transitions : bool [@default true];
   split_rate : int [@default 30];
   hub_count : int [@default 1];
 } [@@deriving yojson]
@@ -133,7 +133,7 @@ type stack_vm_config = {
 
 let default_crypto = { rounds = 16; key_bits = 128 }
 let default_bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5 }
-let default_cff = { enabled = true; obfuscate_states = true; inject_opaque_predicates = false; input_tainted_transitions = false; split_rate = 30; hub_count = 1 }
+let default_cff = { enabled = true; obfuscate_states = true; inject_opaque_predicates = false; input_tainted_transitions = true; split_rate = 30; hub_count = 1 }
 
 let default_mba = { enabled = true; depth = 2; engine = `Egraph }
 let default_anti_pushan = { enabled = true; running_key = true; address_bound = false }

@@ -504,7 +504,40 @@ func_clobber_test:
           | Ok () ->
               Alcotest.(check int64) "flattened with clobbered rdi <= 10" (-1L) (get_reg state2 Register.rax))
 
+let test_cff_tainted_stack_vm () =
+  let rng = Random.State.make [| 9999 |] in
+  let asm = {|
+func_taint_test:
+    mov rax, rdi
+    cmp rdi, 10
+    jle .Lle
+    add rax, 100
+    jmp .Lexit
+.Lle:
+    sub rax, 5
+.Lexit:
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok lifted_func ->
+      let options = { Cff.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
+      match Cff.flatten_func ~options ~rng lifted_func with
+      | Error e -> Alcotest.fail e
+      | Ok flattened_func ->
+          let ext_syms = Hashtbl.create 16 in
+          let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ext_syms flattened_func in
+          let rdi_slot = Stack_vm.Context_allocator.slot_of_reg ctx Register.rdi in
+          let rax_slot = Stack_vm.Context_allocator.slot_of_reg ctx Register.rax in
+          let state1 = Stack_vm.Stack_eval.run_program ~initial_ctx:[ (rdi_slot, 15L) ] prog in
+          let res1 = Stack_vm.Stack_eval.get_reg state1 rax_slot in
+          Alcotest.(check int64) "stack_eval tainted branch 15 > 10" 115L res1;
+          let state2 = Stack_vm.Stack_eval.run_program ~initial_ctx:[ (rdi_slot, 3L) ] prog in
+          let res2 = Stack_vm.Stack_eval.get_reg state2 rax_slot in
+          Alcotest.(check int64) "stack_eval tainted branch 3 <= 10" (-2L) res2
+
 let tests = [
+  Alcotest.test_case "cff_tainted_stack_vm" `Quick test_cff_tainted_stack_vm;
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
   Alcotest.test_case "mba_lowering_to_vm_ir" `Quick test_mba_lowering_to_vm_ir;
   Alcotest.test_case "mba_verified_rewriters" `Quick test_mba_verified_rewriters;
