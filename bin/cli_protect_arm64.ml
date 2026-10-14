@@ -85,6 +85,8 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
           (match res.execution_output with
           | Some (code, out) ->
               print_string out;
+              if String.length out > 0 && not (String.ends_with ~suffix:"\n" out) then
+                print_newline ();
               Printf.printf "--------------------------------------------------------\n\n";
               Printf.printf "--- Target Execution Complete (Return Code: %d) ---\n" code
           | None -> ());

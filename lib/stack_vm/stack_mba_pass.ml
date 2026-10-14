@@ -237,10 +237,15 @@ let mba_stats prog_before prog_after =
   let push_after  = count_push_imm prog_after  in
   let ops_before  = count_ops prog_before in
   let ops_after   = count_ops prog_after  in
+  let pct_str =
+    if push_before = 0 then "0% eliminated"
+    else if push_after >= push_before then
+      let exp = float_of_int (push_after - push_before) /. float_of_int push_before *. 100.0 in
+      Printf.sprintf "+%.0f%% expanded" exp
+    else
+      let elim = float_of_int (push_before - push_after) /. float_of_int push_before *. 100.0 in
+      Printf.sprintf "%.0f%% eliminated" elim
+  in
   Printf.sprintf
-    "MBA+Egraph: %d PushImm → %d (%.0f%% eliminated); ops %d → %d"
-    push_before push_after
-    (if push_before = 0 then 0.0
-     else float_of_int (push_before - push_after)
-          /. float_of_int push_before *. 100.0)
-    ops_before ops_after
+    "MBA+Egraph: %d PushImm → %d (%s); ops %d → %d"
+    push_before push_after pct_str ops_before ops_after
