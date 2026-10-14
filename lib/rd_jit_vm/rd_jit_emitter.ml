@@ -9,6 +9,32 @@ let emit_rd_jit_runtime_header ~external_symbols =
   ^ Rd_jit_synth.external_symbols_header external_symbols
   ^ Rd_jit_synth.header ~external_symbols ()
 
+let emit_rd_jit_main_def () : top_decl =
+  func_decl Int32 "main" [(Int32, "argc"); (Ptr (Ptr (StructType "char")), "argv")] [
+    raw "std::cout << \"[ASGARD-RD-JIT] Initializing Register-Driven JIT Virtual Machine...\\n\";";
+    raw "std::cout << \"  * Architecture: Register-Driven RISC (No Stack Emulation)\\n\";";
+    raw "std::cout << \"  * Arithmetic: RNS-4 Modular Residue Splitting (M > 2^64)\\n\";";
+    raw "std::cout << \"  * Memory Protection: Dual-Mapped W^X Ephemeral Buffer\\n\";";
+    raw "std::cout << \"  * Blocks: \" << num_jit_blocks << \" dynamic JIT synthesis block(s)\\n\";";
+    raw "asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);";
+    raw "asgard_rd_jit::RD_JIT_Context ctx;";
+    expr_stmt (call "ctx.init" []);
+    let_u64 "arg1" (ternary (var "argc" >~ i32 1) (c_cast UInt64 (call "atoll" [Index (var "argv", i32 1)])) (u64 42L));
+    let_u64 "arg2" (ternary (var "argc" >~ i32 2) (c_cast UInt64 (call "atoll" [Index (var "argv", i32 2)])) (u64 58L));
+    expr_stmt (call "ctx.set_reg" [i32 0; var "arg1"]);
+    expr_stmt (call "ctx.set_reg" [i32 1; var "arg2"]);
+    raw "auto t0 = std::chrono::high_resolution_clock::now();";
+    raw "asgard_rd_jit::execute_jit_function(jit_buf, ctx, jit_blocks, num_jit_blocks);";
+    raw "auto t1 = std::chrono::high_resolution_clock::now();";
+    raw "double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();";
+    let_u64 "res" (call "ctx.get_reg" [i32 0]);
+    raw "std::cout << \"[ASGARD-RD-JIT] Ephemeral Execution Successful!\\n\";";
+    raw "std::cout << \"  * Result (REG 0): \" << res << \" (0x\" << std::hex << res << std::dec << \")\\n\";";
+    raw "std::cout << \"  * RNS Residues: (\" << ctx.vregs[0].r1 << \", \" << ctx.vregs[0].r2 << \", \" << ctx.vregs[0].r3 << \", \" << ctx.vregs[0].r4 << \")\\n\";";
+    raw "std::cout << \"  * JIT Cycle Time: \" << elapsed_us << \" us\\n\";";
+    ret (i32 0);
+  ]
+
 let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false) ?(mba_depth = 2) (func : Ir.func) : rd_jit_package =
   let (enable_cff, enable_mba, mba_depth) =
     match config with
@@ -185,49 +211,21 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
 
   let rd_jit_hdr = emit_rd_jit_runtime_header ~external_symbols:!external_symbols in
 
-  let runner_cpp = Printf.sprintf {|#if __has_include("jit_vm_runtime.hpp")
-#include "jit_vm_runtime.hpp"
-#elif __has_include("rd_jit_runtime.hpp")
-#include "rd_jit_runtime.hpp"
-#else
-#include "threaded_vm.hpp"
-#endif
-#include <iostream>
-#include <chrono>
-
-// JIT Block Descriptors
-%s
-
-int main(int argc, char** argv) {
-    std::cout << "[ASGARD-RD-JIT] Initializing Register-Driven JIT Virtual Machine...\n";
-    std::cout << "  * Architecture: Register-Driven RISC (No Stack Emulation)\n";
-    std::cout << "  * Arithmetic: RNS-4 Modular Residue Splitting (M > 2^64)\n";
-    std::cout << "  * Memory Protection: Dual-Mapped W^X Ephemeral Buffer\n";
-    std::cout << "  * Blocks: " << num_jit_blocks << " dynamic JIT synthesis block(s)\n";
-
-    asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);
-    asgard_rd_jit::RD_JIT_Context ctx;
-    ctx.init();
-
-    uint64_t arg1 = (argc > 1) ? (uint64_t)atoll(argv[1]) : 42ULL;
-    uint64_t arg2 = (argc > 2) ? (uint64_t)atoll(argv[2]) : 58ULL;
-    ctx.set_reg(0, arg1);
-    ctx.set_reg(1, arg2);
-
-    auto t0 = std::chrono::high_resolution_clock::now();
-    asgard_rd_jit::execute_jit_function(jit_buf, ctx, jit_blocks, num_jit_blocks);
-    auto t1 = std::chrono::high_resolution_clock::now();
-
-    double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
-    uint64_t res = ctx.get_reg(0);
-
-    std::cout << "[ASGARD-RD-JIT] Ephemeral Execution Successful!\n";
-    std::cout << "  * Result (REG 0): " << res << " (0x" << std::hex << res << std::dec << ")\n";
-    std::cout << "  * RNS Residues: (" << ctx.vregs[0].r1 << ", " << ctx.vregs[0].r2 << ", " << ctx.vregs[0].r3 << ", " << ctx.vregs[0].r4 << ")\n";
-    std::cout << "  * JIT Cycle Time: " << elapsed_us << " us\n";
-    return 0;
-}
-|} jit_descriptors_code in
+  let runner_cpp =
+    "#if __has_include(\"jit_vm_runtime.hpp\")\n\
+#include \"jit_vm_runtime.hpp\"\n\
+#elif __has_include(\"rd_jit_runtime.hpp\")\n\
+#include \"rd_jit_runtime.hpp\"\n\
+#else\n\
+#include \"threaded_vm.hpp\"\n\
+#endif\n\
+#include <iostream>\n\
+#include <chrono>\n\n\
+// JIT Block Descriptors\n"
+    ^ jit_descriptors_code
+    ^ "\n\n"
+    ^ render_top_decl (emit_rd_jit_main_def ())
+    ^ "\n" in
 
   {
     cpp_runtime_source = rd_jit_hdr;

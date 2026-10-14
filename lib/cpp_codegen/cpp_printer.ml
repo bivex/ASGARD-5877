@@ -36,6 +36,18 @@ let binop_str = function
 let unop_str = function
   | BitNot -> "~" | Neg -> "-" | LogNot -> "!" | Deref -> "*" | AddrOf -> "&"
 
+let escape_c_string s =
+  let b = Buffer.create (String.length s + 8) in
+  String.iter (function
+    | '\\' -> Buffer.add_string b "\\\\"
+    | '"' -> Buffer.add_string b "\\\""
+    | '\n' -> Buffer.add_string b "\\n"
+    | '\r' -> Buffer.add_string b "\\r"
+    | '\t' -> Buffer.add_string b "\\t"
+    | c -> Buffer.add_char b c
+  ) s;
+  Buffer.contents b
+
 let rec pp_expr fmt = function
   | LitU64 v          -> fprintf fmt "0x%016LxULL" v
   | LitU32 v          -> fprintf fmt "0x%08lxU" v
@@ -43,7 +55,7 @@ let rec pp_expr fmt = function
   | LitInt n          -> fprintf fmt "%d" n
   | LitU8 b           -> fprintf fmt "0x%02x" (b land 0xFF)
   | LitBool b         -> fprintf fmt "%s" (if b then "true" else "false")
-  | LitStr s          -> fprintf fmt "\"%s\"" s
+  | LitStr s          -> fprintf fmt "\"%s\"" (escape_c_string s)
   | InitList []       -> fprintf fmt "{}"
   | InitList es       ->
       let has_nested = List.exists (function InitList _ -> true | _ -> false) es in
@@ -105,11 +117,11 @@ let rec pp_stmt fmt = function
       in
       (match ty, init with
        | Array (elem_ty, n), None ->
-           fprintf fmt "%s%a %s[%d]{};" prefix pp_ctype elem_ty name n
+           fprintf fmt "%s%a %s[%d];" prefix pp_ctype elem_ty name n
        | _, Some e ->
            fprintf fmt "%s%a %s = %a;" prefix pp_ctype ty name pp_expr e
        | _, None ->
-           fprintf fmt "%s%a %s{};" prefix pp_ctype ty name)
+           fprintf fmt "%s%a %s;" prefix pp_ctype ty name)
   | Assign (op, lhs, rhs) ->
       fprintf fmt "%a %s %a;" pp_expr lhs (assign_op_str op) pp_expr rhs
   | ExprStmt e ->

@@ -405,7 +405,29 @@ let () =
    | Ok () -> ()
    | Error err -> failwith ("Tech-2608 header syntax validation failed: " ^ err));
   assert (String.length tech_2608_cpp > 300);
-  Printf.printf "[PASS] Step 25: Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pool emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 25: Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pool emitted using typed AST.\n";
+
+  (* 26. Vector ISA C++ Emulator main.cpp and ISA constants AST *)
+  (match Random_visa_domain.Isa_grammar.generate_isa ~rng ~name:"Emulator_Test" ~num_instructions:4 () with
+   | Error _ -> failwith "Failed to generate test ISA spec"
+   | Ok test_spec ->
+       let isa_consts = Random_visa_cpp_emitter.Cpp_header_emitters.emit_isa_constants_defs test_spec in
+       let main_cpp = Random_visa_cpp_emitter.Cpp_emitter_adapter.emit_main_cpp test_spec in
+       (match Cpp_codegen.Cpp_validator.validate_cpp_syntax main_cpp with
+        | Ok () -> ()
+        | Error err -> failwith ("Vector ISA main.cpp syntax validation failed: " ^ err));
+       assert (List.length isa_consts = 4);
+       assert (String.length main_cpp > 300);
+       Printf.printf "[PASS] Step 26: Vector ISA C++ Emulator main.cpp & constants emitted using typed AST.\n");
+
+  (* 27. RD-JIT VM runner main function AST *)
+  let rd_main_decl = Rd_jit_vm.Rd_jit_emitter.emit_rd_jit_main_def () in
+  let rd_main_cpp = render_top_decl rd_main_decl in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax rd_main_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("RD-JIT main function syntax validation failed: " ^ err));
+  assert (String.length rd_main_cpp > 200);
+  Printf.printf "[PASS] Step 27: RD-JIT VM runner main function emitted using typed AST.\n"
 
 
 

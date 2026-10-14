@@ -136,19 +136,26 @@ let emit_emulator_state_def () : top_decl =
     ];
   }
 
+let emit_isa_constants_defs (spec : Vector_isa_spec.t) : top_decl list =
+  let vlen = spec.config.vlen in
+  let num_vregs = spec.config.num_vregs in
+  [
+    ConstexprGlobal (SizeT, "VLEN", i32 vlen);
+    ConstexprGlobal (SizeT, "VLEN_BYTES", var "VLEN" /~ i32 8);
+    ConstexprGlobal (SizeT, "NUM_VREGS", i32 num_vregs);
+    ConstexprGlobal (SizeT, "NUM_XREGS", i32 32);
+  ]
+
 let emit_isa_state_hpp (spec : Vector_isa_spec.t) =
   let b = Buffer.create 2048 in
   let vlen = spec.config.vlen in
-  let num_vregs = spec.config.num_vregs in
   let sew = Types.Sew.to_bits spec.config.default_sew in
   let default_vl = vlen / sew in
   Buffer.add_string b "#pragma once\n";
   Buffer.add_string b "#include <cstdint>\n#include <cstddef>\n#include <array>\n#include <vector>\n#include <cstring>\n#include <iostream>\n#include <iomanip>\n#include <algorithm>\n\n";
   Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b (Printf.sprintf "constexpr size_t VLEN = %d;\n" vlen);
-  Buffer.add_string b "constexpr size_t VLEN_BYTES = VLEN / 8;\n";
-  Buffer.add_string b (Printf.sprintf "constexpr size_t NUM_VREGS = %d;\n" num_vregs);
-  Buffer.add_string b "constexpr size_t NUM_XREGS = 32;\n\n";
+  Buffer.add_string b (render_top_decls (emit_isa_constants_defs spec));
+  Buffer.add_string b "\n\n";
   Buffer.add_string b (render_top_decl (emit_csr_state_def default_vl));
   Buffer.add_string b "\n\n";
   Buffer.add_string b (render_top_decl (emit_vreg_file_def ()));

@@ -377,7 +377,7 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
               for_range "_idx" (i32 0) (i32 num_chunks) [
                 decl_var ~is_const:true (ConstPtr (StructType "AsgardBytecodeChunk")) "c"
                   ~init:(addr_of (idx (var (Printf.sprintf "%s_chunks" name)) (var "_idx")));
-                if_then (ne (var "c" $-> "canary") (c_cast UInt64 (((var "c" $-> "chunk_id" *~ u32 0xDEADl) +~ u32 0xCAFEl) &~ u32 0xFFFFFFFFl))) [
+                if_then (ne (var "c" $-> "canary") (c_cast UInt64 ((((var "c" $-> "chunk_id") *~ u32 0xDEADl) +~ u32 0xCAFEl) &~ u32 0xFFFFFFFFl))) [
                   expr_stmt (call "ASG_CHUNK_TRAP" []);
                 ];
                 let_u64 "k_dyn" (u64 0x5877A56A11223344L ^~ (c_cast UInt64 (var "c" $-> "chunk_id") *~ u64 0x9E3779B97F4A7C15L));
@@ -408,6 +408,23 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
       )
   in
 
+  let build_trampoline_body arr_name ret_type args_to_pass =
+    let open Cpp_codegen.Cpp_dsl in
+    let open Cpp_codegen.Cpp_printer in
+    let ensure_stmt = expr_stmt (call (Printf.sprintf "%s_ensure_assembled" arr_name) []) in
+    let comma_args = if args_to_pass = "" then "" else ", " ^ args_to_pass in
+    let call_expr = var (Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(%s, sizeof(%s) / sizeof(%s[0])%s)" arr_name arr_name arr_name comma_args) in
+    let is_void = ret_type = "void" in
+    let is_ptr = String.contains ret_type '*' in
+    let ret_stmts =
+      if is_void then [expr_stmt call_expr; ret_void]
+      else if is_ptr then [ret (var (Printf.sprintf "(%s)(uintptr_t)%s" ret_type (string_of_expr call_expr)))]
+      else [ret call_expr]
+    in
+    let rendered = string_of_stmts (ensure_stmt :: ret_stmts) in
+    "\n    " ^ String.concat "\n    " (String.split_on_char '\n' (String.trim rendered)) ^ "\n"
+  in
+
   match marked_fns with
   | [] ->
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
@@ -428,20 +445,7 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
       in
       let before_body = String.sub c_src 0 (single_fn.open_brace_idx + 1) in
       let after_body = String.sub c_src single_fn.close_brace_idx (len - single_fn.close_brace_idx) in
-      let is_void = single_fn.ret_type = "void" in
-      let is_ptr = String.contains single_fn.ret_type '*' in
-      let comma_args = if single_fn.args_to_pass = "" then "" else ", " ^ single_fn.args_to_pass in
-      let call_str =
-        Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0])%s)" comma_args
-      in
-      let trampoline_body =
-        if is_void then
-          Printf.sprintf "\n    embedded_bytecode_ensure_assembled();\n    %s;\n    return;\n" call_str
-        else if is_ptr then
-          Printf.sprintf "\n    embedded_bytecode_ensure_assembled();\n    return (%s)(uintptr_t)%s;\n" single_fn.ret_type call_str
-        else
-          Printf.sprintf "\n    embedded_bytecode_ensure_assembled();\n    return %s;\n" call_str
-      in
+      let trampoline_body = build_trampoline_body "embedded_bytecode" single_fn.ret_type single_fn.args_to_pass in
       let full_out = bc_header ^ before_body ^ trampoline_body ^ after_body in
       let oc = open_out out_path in
       output_string oc full_out;
@@ -487,20 +491,7 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
       List.iter (fun fn ->
         let arr_name = Printf.sprintf "embedded_bytecode_%s" (sanitize_ident fn.fn_name) in
         Buffer.add_string body_buf (String.sub c_src !last_pos (fn.open_brace_idx + 1 - !last_pos));
-        let is_void = fn.ret_type = "void" in
-        let is_ptr = String.contains fn.ret_type '*' in
-        let comma_args = if fn.args_to_pass = "" then "" else ", " ^ fn.args_to_pass in
-        let call_str =
-          Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(%s, sizeof(%s) / sizeof(%s[0])%s)" arr_name arr_name arr_name comma_args
-        in
-        let trampoline_body =
-          if is_void then
-            Printf.sprintf "\n    %s_ensure_assembled();\n    %s;\n    return;\n" arr_name call_str
-          else if is_ptr then
-            Printf.sprintf "\n    %s_ensure_assembled();\n    return (%s)(uintptr_t)%s;\n" arr_name fn.ret_type call_str
-          else
-            Printf.sprintf "\n    %s_ensure_assembled();\n    return %s;\n" arr_name call_str
-        in
+        let trampoline_body = build_trampoline_body arr_name fn.ret_type fn.args_to_pass in
         Buffer.add_string body_buf trampoline_body;
         last_pos := fn.close_brace_idx
       ) multi_fns;

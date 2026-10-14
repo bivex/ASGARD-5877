@@ -144,18 +144,24 @@
   - Структура `NonLinearVPCDispatcher` переведена на `TemplateStructDef` с проверкой `static_assert`, методами `logical_to_physical`, `physical_to_logical`, `next_physical`.
 - [x] Тесты: Steps 16 и 17 в `test_cpp_codegen.ml`, `C++ Emulator E2E` (Clang++ E2E компиляция и запуск) и `Tech-2603 Anti-VPC Tracking` (7/7) — 100% PASS.
 
-### Stage 5.4: C11 ISA, GPU MBA, C Nanomites, Multi-VM Bridge, Whitebox, RNS-4, Tech-2603/2608 & Trampoline (`e548e9c` .. `86753e1`)
+### Stage 5.4: C11 ISA, GPU MBA, C Nanomites, Multi-VM Bridge, Whitebox, RNS-4, Tech-2603/2608, Trampoline & E2E Mains (`e548e9c` .. `HEAD`)
 - [x] Расширение ядра EDSL:
   - Добавлены `GlobalVar` (с поддержкой 1D/2D массивов, `static`, `constexpr`, `const`, `volatile`), `InitList` (с авто-форматированием вложенных списков и скаляров), `LitU8` (байтовые литералы), `CCast` (C-style cast `(T)(e)` без `static_cast` syntax error в C11).
   - Добавлены `let_u32`, `const_u32`, `namespace_def`, атрибут `Constructor` (`__attribute__((constructor))`).
+  - Добавлено экранирование спецсимволов C-строк (`\n`, `\t`, `\"`, `\\`) в `LitStr` для предотвращения многострочных разрывов строковых литералов.
+  - Исправлен рендеринг неинициализированных локальных переменных `DeclVar` (`T name;` вместо `T name{};` для 100% совместимости со стандартом C11).
 - [x] Миграция C11 Vector ISA Emulator ([`lib/adapters/c11_emitter/c11_emitter_adapter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/c11_emitter/c11_emitter_adapter.ml)):
   - Структуры `CSRState`, `EmulatorState`, `DecodedInst`, прототипы `emit_c11_prototypes` переведены на типизированные `StructDecl` и `FuncProto`.
-- [x] Миграция RD-JIT VM массивов и дескрипторов ([`lib/rd_jit_vm/rd_jit_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/rd_jit_emitter.ml)):
+- [x] Миграция Vector ISA C++ Emulator Main & Constants ([`lib/adapters/cpp_emitter/cpp_header_emitters.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/cpp_emitter/cpp_header_emitters.ml), [`lib/adapters/cpp_emitter/cpp_emitter_adapter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/cpp_emitter/cpp_emitter_adapter.ml)):
+  - Константы `VLEN`, `VLEN_BYTES`, `NUM_VREGS`, `NUM_XREGS` переведены на типизированные `ConstexprGlobal`.
+  - Функции `setup_test_state`, `run_self_tests`, `main` в `emit_main_cpp` полностью переведены на типизированные `FuncDecl`.
+- [x] Миграция RD-JIT VM массивов, дескрипторов и точки входа ([`lib/rd_jit_vm/rd_jit_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/rd_jit_emitter.ml)):
   - Генерация массивов `JITInstr` и `JITBlock` переведена на typed `global_var` и `init_list`.
+  - Точка входа `main` автономного раннера RD-JIT переведена на типизированный AST `emit_rd_jit_main_def`.
   - Модули RNS-4 (`RNS_M1`..`M4`), CRT-декодер и метод умножения `RNS_Register::mul` в [`lib/rd_jit_vm/rd_jit_buffer.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/rd_jit_buffer.ml) переведены на typed EDSL.
   - Таблица внешних символов `g_rd_jit_external_symbols` в [`lib/rd_jit_vm/rd_jit_synth.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/rd_jit_synth.ml) переведена на typed `global_var`.
 - [x] Миграция Trampoline Chunk & Assembler ([`lib/adapters/protect_adapters/c_trampoline_adapter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml)):
-  - Массивы байткода `chunks[]`, глобальный буфер сборки `embedded_bytecode[]`, переменная `assembled`, функция проверки канареек и расшифровки `embedded_bytecode_ensure_assembled()` и конструктор `auto_init()` переведены на typed `global_var` и `func_decl`.
+  - Массивы байткода `chunks[]`, глобальный буфер сборки `embedded_bytecode[]`, переменная `assembled`, функция проверки канареек и расшифровки `embedded_bytecode_ensure_assembled()`, конструктор `auto_init()` и тело трамплина `build_trampoline_body` переведены на typed `global_var`, `func_decl` и типизированные стейтменты.
 - [x] Миграция GPU MBA Substitution Matrix ([`lib/gpu_synth/gpu_matrix.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/gpu_matrix.ml)):
   - Матрицы подстановок `MBA_FORWARD_MATRIX` и `MBA_INVERSE_MATRIX` переведены на типизированный AST `emit_cpp_constants_ast`.
 - [x] Миграция C Nanomite Preamble ([`lib/c_macro_obf/c_nanomites.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_nanomites.ml)):
@@ -168,7 +174,7 @@
   - Заголовок `asgard_rns` с константами модулей, инверсий, структурой `RNSVal` и функциями `encode`, `add`, `sub`, `mul`, `decode` полностью переведен на typed EDSL (`emit_cpp_rns_ast`).
 - [x] Миграция заголовков Tech-2603 и Tech-2608 ([`lib/tech_2603/tech_2603_engine.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/tech_2603/tech_2603_engine.ml), [`lib/tech_2608/tech_2608_engine.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/tech_2608/tech_2608_engine.ml)):
   - `ChaffMemoryPool` переведен на `template_struct_def`, а генераторы заголовков `emit_tech_2603_cpp_header` и `emit_tech_2608_cpp_header` переведены на `render_top_decls`.
-- [x] Тесты: Steps 18, 19, 20, 21, 22, 23, 24, 25 в `test_cpp_codegen.ml` (все 25 шагов) + `Multi-VM & Direct Zero-Bridge` (8/8) + `Register-Driven JIT VM & RNS` (5/5) + `C Macro Obfuscation` (12/12) + `Tech-2603` (7/7) + `Tech-2608` (4/4) — 100% PASS.
+- [x] Тесты: Steps 1..27 в `test_cpp_codegen.ml` (все 27 шагов) + `C++ Emulator E2E` + `C11 Emulator E2E` + `Multi-VM & Direct Zero-Bridge` (8/8) + `Register-Driven JIT VM & RNS` (5/5) + `C Macro Obfuscation` (12/12) + `Tech-2603` (7/7) + `Tech-2608` (4/4) — 100% PASS.
 
 ---
 

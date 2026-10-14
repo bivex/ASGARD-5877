@@ -6,3 +6,4 @@ open Random_visa_ports
 include Ports.Cpp_code_emitter
 
 val emit_to_files : Vector_isa_spec.t -> output_dir:string -> (string list, Errors.t) result
+val emit_main_cpp : Vector_isa_spec.t -> string

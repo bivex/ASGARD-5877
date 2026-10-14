@@ -9,6 +9,7 @@ type rd_jit_package = {
 }
 
 val emit_rd_jit_runtime_header : external_symbols:string list -> string
+val emit_rd_jit_main_def : unit -> Cpp_codegen.Cpp_ast.top_decl
 
 val compile_and_package :
   rng:Random.State.t ->

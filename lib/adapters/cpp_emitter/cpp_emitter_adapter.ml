@@ -213,66 +213,102 @@ let emit_emulator_hpp () =
   Buffer.add_string b "} // namespace visa_emulator\n";
   Buffer.contents b
 
+let emit_setup_test_state_def () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "setup_test_state";
+    params = [(Ref (StructType "visa_emulator::EmulatorState"), "state")];
+    body = [
+      for_range "i" (i32 0) (var "state.csr.vl") [
+        expr_stmt (call "state.vregs.set_elem<int32_t>" [i32 1; var "i"; cast Int32 ((var "i" +~ i32 1) *~ i32 10)]);
+        expr_stmt (call "state.vregs.set_elem<int32_t>" [i32 2; var "i"; cast Int32 ((var "i" +~ i32 1) *~ i32 2)]);
+      ];
+      expr_stmt (call "state.set_xreg" [i32 1; u64 5L]);
+    ];
+  }
+
+let emit_run_self_tests_def (spec : Vector_isa_spec.t) : top_decl =
+  let test_cases =
+    List.map (fun (inst : Vector_instruction.t) ->
+      let word = Vector_instruction.encode ~vd:3 ~vs2:2 ~vs1_or_rs1_or_imm:1 ~vm:1 inst in
+      let log_stmt =
+        if inst.is_widening then
+          raw (Printf.sprintf "std::cout << \"[TEST] %s: word=0x\" << std::hex << word << std::dec << \" res[0]=\" << emu.state.vregs.get_elem<int64_t>(3, 0) << \"\\n\";" inst.mnemonic)
+        else
+          raw (Printf.sprintf "std::cout << \"[TEST] %s: word=0x\" << std::hex << word << std::dec << \" res[0]=\" << emu.state.vregs.get_elem<int32_t>(3, 0) << \"\\n\";" inst.mnemonic)
+      in
+      Block [
+        expr_stmt (call "setup_test_state" [var "emu.state"]);
+        decl_var UInt32 "word" ~init:(u32 word);
+        decl_var Bool "ok" ~init:(call "emu.step" [var "word"]);
+        if_then (log_not (var "ok")) [
+          raw (Printf.sprintf "std::cerr << \"[FAIL] %s failed to execute\\n\";" inst.mnemonic);
+          ret (i32 1);
+        ];
+        log_stmt;
+        var "passed" += i32 1;
+      ]
+    ) spec.instructions
+  in
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Int32;
+    name = "run_self_tests";
+    params = [(Ref (StructType "visa_emulator::VectorEmulator"), "emu")];
+    body = [decl_var Int32 "passed" ~init:(i32 0)]
+           @ test_cases
+           @ [
+             raw "std::cout << \"=== ALL EMULATOR TESTS PASSED (\" << passed << \" instructions verified) ===\\n\";";
+             ret (i32 0);
+           ];
+  }
+
+let emit_main_def () : top_decl =
+  FuncDecl {
+    attrs = [];
+    ret_type = Int32;
+    name = "main";
+    params = [(Int32, "argc"); (Ptr (Ptr (StructType "char")), "argv")];
+    body = [
+      decl_var (StructType "visa_emulator::VectorEmulator") "emu";
+      if_then (var "argc" >~ i32 1) [
+        decl_var (StructType "std::string") "arg" ~init:(Index (var "argv", i32 1));
+        if_then ((var "arg" ==~ str_lit "--bin") &&~ (var "argc" >~ i32 2)) [
+          decl_var (StructType "std::ifstream") "file" ~init:(call "std::ifstream" [Index (var "argv", i32 2); var "std::ios::binary"]);
+          if_then (log_not (var "file")) [
+            raw "std::cerr << \"Cannot open bytecode file: \" << argv[2] << \"\\n\";";
+            ret (i32 1);
+          ];
+          decl_var (StructType "std::vector<uint32_t>") "code";
+          decl_var UInt32 "w";
+          raw "while (file.read(reinterpret_cast<char*>(&w), sizeof(w))) code.push_back(w);";
+          expr_stmt (call "setup_test_state" [var "emu.state"]);
+          decl_var SizeT "n" ~init:(call "emu.run_program" [var "code"]);
+          raw "std::cout << \"Executed \" << n << \" bytecode words.\\n\";";
+          ret (i32 0);
+        ];
+        if_then ((var "arg" ==~ str_lit "--hex") &&~ (var "argc" >~ i32 2)) [
+          decl_var UInt32 "w" ~init:(call "std::stoul" [Index (var "argv", i32 2); var "nullptr"; i32 16]);
+          expr_stmt (call "setup_test_state" [var "emu.state"]);
+          decl_var Bool "ok" ~init:(call "emu.step" [var "w"]);
+          ret (ternary (var "ok") (i32 0) (i32 1));
+        ];
+      ];
+      ret (call "run_self_tests" [var "emu"]);
+    ];
+  }
+
 let emit_main_cpp (spec : Vector_isa_spec.t) =
   let b = Buffer.create 4096 in
   Buffer.add_string b "#include \"emulator.hpp\"\n#include \"decoder.hpp\"\n#include \"instructions.hpp\"\n";
   Buffer.add_string b "#include <iostream>\n#include <fstream>\n#include <vector>\n#include <iomanip>\n#include <string>\n\n";
-  Buffer.add_string b "static void setup_test_state(visa_emulator::EmulatorState& state) {\n";
-  Buffer.add_string b "    for (size_t i = 0; i < state.csr.vl; ++i) {\n";
-  Buffer.add_string b "        state.vregs.set_elem<int32_t>(1, i, static_cast<int32_t>((i + 1) * 10));\n";
-  Buffer.add_string b "        state.vregs.set_elem<int32_t>(2, i, static_cast<int32_t>((i + 1) * 2));\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    state.set_xreg(1, 5);\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "static int run_self_tests(visa_emulator::VectorEmulator& emu) {\n";
-  Buffer.add_string b "    int passed = 0;\n";
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
-      let word = Vector_instruction.encode ~vd:3 ~vs2:2 ~vs1_or_rs1_or_imm:1 ~vm:1 inst in
-      Buffer.add_string b "    {\n";
-      Buffer.add_string b "        setup_test_state(emu.state);\n";
-      Buffer.add_string b (Printf.sprintf "        uint32_t word = 0x%08X;\n" (Int32.to_int word));
-      Buffer.add_string b "        bool ok = emu.step(word);\n";
-      Buffer.add_string b "        if (!ok) {\n";
-      Buffer.add_string b (Printf.sprintf "            std::cerr << \"[FAIL] %s failed to execute\\n\";\n" inst.mnemonic);
-      Buffer.add_string b "            return 1;\n";
-      Buffer.add_string b "        }\n";
-      if inst.is_widening then
-        Buffer.add_string b (Printf.sprintf "        std::cout << \"[TEST] %s: word=0x\" << std::hex << word << std::dec << \" res[0]=\" << emu.state.vregs.get_elem<int64_t>(3, 0) << \"\\n\";\n" inst.mnemonic)
-      else
-        Buffer.add_string b (Printf.sprintf "        std::cout << \"[TEST] %s: word=0x\" << std::hex << word << std::dec << \" res[0]=\" << emu.state.vregs.get_elem<int32_t>(3, 0) << \"\\n\";\n" inst.mnemonic);
-      Buffer.add_string b "        ++passed;\n";
-      Buffer.add_string b "    }\n")
-    spec.instructions;
-  Buffer.add_string b "    std::cout << \"=== ALL EMULATOR TESTS PASSED (\" << passed << \" instructions verified) ===\\n\";\n";
-  Buffer.add_string b "    return 0;\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "int main(int argc, char** argv) {\n";
-  Buffer.add_string b "    visa_emulator::VectorEmulator emu;\n";
-  Buffer.add_string b "    if (argc > 1) {\n";
-  Buffer.add_string b "        std::string arg = argv[1];\n";
-  Buffer.add_string b "        if (arg == \"--bin\" && argc > 2) {\n";
-  Buffer.add_string b "            std::ifstream file(argv[2], std::ios::binary);\n";
-  Buffer.add_string b "            if (!file) {\n";
-  Buffer.add_string b "                std::cerr << \"Cannot open bytecode file: \" << argv[2] << \"\\n\";\n";
-  Buffer.add_string b "                return 1;\n";
-  Buffer.add_string b "            }\n";
-  Buffer.add_string b "            std::vector<uint32_t> code;\n";
-  Buffer.add_string b "            uint32_t w;\n";
-  Buffer.add_string b "            while (file.read(reinterpret_cast<char*>(&w), sizeof(w))) code.push_back(w);\n";
-  Buffer.add_string b "            setup_test_state(emu.state);\n";
-  Buffer.add_string b "            size_t n = emu.run_program(code);\n";
-  Buffer.add_string b "            std::cout << \"Executed \" << n << \" bytecode words.\\n\";\n";
-  Buffer.add_string b "            return 0;\n";
-  Buffer.add_string b "        } else if (arg == \"--hex\" && argc > 2) {\n";
-  Buffer.add_string b "            uint32_t w = std::stoul(argv[2], nullptr, 16);\n";
-  Buffer.add_string b "            setup_test_state(emu.state);\n";
-  Buffer.add_string b "            bool ok = emu.step(w);\n";
-  Buffer.add_string b "            return ok ? 0 : 1;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    return run_self_tests(emu);\n";
-  Buffer.add_string b "}\n";
+  Buffer.add_string b (render_top_decls [
+    emit_setup_test_state_def ();
+    emit_run_self_tests_def spec;
+    emit_main_def ();
+  ]);
+  Buffer.add_string b "\n";
   Buffer.contents b
 
 let emit_cmakelists (spec : Vector_isa_spec.t) =
