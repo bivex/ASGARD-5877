@@ -323,7 +323,12 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
     in
-    let spaghetti_cfg = Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed in
+    let cur_b = Hashtbl.length prog.blocks in
+    let max_splits = max 16 (min 128 (cur_b / 4)) in
+    let spaghetti_cfg = {
+      (Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed) with
+      max_blocks = cur_b + max_splits;
+    } in
     let prog_spaghetti = Stack_vm.Stack_spaghetti_pass.apply_program spaghetti_cfg prog in
     let spaghetti_info = Stack_vm.Stack_spaghetti_pass.spaghetti_stats prog prog_spaghetti in
     let prog = prog_spaghetti in
