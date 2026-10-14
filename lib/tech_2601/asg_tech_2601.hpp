@@ -305,11 +305,18 @@ inline uintptr_t tech_2601_rollback_stack(uintptr_t current_sp, uint32_t shadow_
     // Rollback subtracts the shadow allocation to return SP to inner frame state.
 #if defined(_WIN32) || defined(_WIN64)
     // Windows x64 SEH requires SP to remain 16-byte aligned and within thread stack bounds
-    uintptr_t target_sp = current_sp - shadow_alloc_size;
-    return target_sp & ~static_cast<uintptr_t>(0xF);
+    uintptr_t target_sp = (current_sp - shadow_alloc_size) & ~static_cast<uintptr_t>(0xF);
+    return target_sp;
 #else
     return current_sp - shadow_alloc_size;
 #endif
+}
+
+// Memory Remanence Protection: zero-scrub stack region between target_sp and current_sp (P2-01)
+inline void tech_2601_scrub_stack(uintptr_t target_sp, uintptr_t current_sp) noexcept {
+    if (current_sp > target_sp && target_sp != 0) {
+        secure_zeroize(reinterpret_cast<void*>(target_sp), current_sp - target_sp);
+    }
 }
 
 // Stream keystream XOR

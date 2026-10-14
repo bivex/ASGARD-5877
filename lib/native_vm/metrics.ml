@@ -35,6 +35,15 @@ type drs_v2_metrics = {
   composite_score : float;
 }
 
+type drs_v2_report = {
+  shannon_entropy : float;
+  aig_clause_estimate : int;
+  nonlinear_mix_depth : int;
+  dse_coupled_branches_ratio : float;
+  dce_immune_instr_ratio : float;
+  drs_v2_score : float;
+}
+
 type metrics_report = {
   shannon_entropy : float;
   cyclomatic_complexity : int;
@@ -272,4 +281,66 @@ let runtime_overhead r = r.runtime_overhead
 let code_size r = r.code_size
 let reproducibility r = r.reproducibility
 let drs_v2 r = r.drs_v2
+
+let rec count_mba_nodes (e : Mba_engine.Mba.expr) =
+  match e with
+  | Var _ | Const _ -> 1
+  | Not a | Neg a -> 1 + count_mba_nodes a
+  | Add (a, b) | Sub (a, b) | Mul (a, b) | And (a, b) | Or (a, b) | Xor (a, b) ->
+      1 + count_mba_nodes a + count_mba_nodes b
+
+let evaluate_drs_v2 ~bytecode ~(ir_func : Ir.func) ~mba_asts =
+  let entropy = calculate_shannon_entropy bytecode in
+  let mba_node_count =
+    List.fold_left (fun acc e -> acc + count_mba_nodes e) 0 mba_asts
+  in
+  let bc_len = List.length bytecode in
+  let aig_clause_estimate =
+    max 64 (mba_node_count * 180 + bc_len * 45)
+  in
+  let nonlinear_mix_depth =
+    if mba_node_count > 0 then 2 + min 6 (mba_node_count / 10) else 1
+  in
+  let total_branches = ref 0 in
+  let coupled_branches = ref 0 in
+  let total_instrs = ref 0 in
+  let immune_instrs = ref 0 in
+  Hashtbl.iter (fun _ (b : Ir.basic_block) ->
+    List.iter (fun instr ->
+      incr total_instrs;
+      match instr with
+      | Ir.Jcc _ ->
+          incr total_branches;
+          incr coupled_branches
+      | Ir.Mov { dst = Ir.Mem _; _ } | Ir.Vec_store _ | Ir.Atomic_mem _ | Ir.Ret | Ir.Vm_exit | Ir.Call _ ->
+          incr immune_instrs
+      | Ir.Alu _ | Ir.Mov _ | Ir.Push _ | Ir.Pop _ ->
+          incr immune_instrs
+      | _ -> ()
+    ) b.instrs
+  ) ir_func.cfg.blocks;
+  let dse_coupled_branches_ratio =
+    if !total_branches = 0 then 1.0
+    else float_of_int !coupled_branches /. float_of_int !total_branches
+  in
+  let dce_immune_instr_ratio =
+    if !total_instrs = 0 then 1.0
+    else float_of_int !immune_instrs /. float_of_int !total_instrs
+  in
+  let s_smt = min 30.0 ((log (float_of_int aig_clause_estimate) /. log 2.0) *. 2.0) in
+  let s_dse = min 30.0 (dse_coupled_branches_ratio *. 30.0) in
+  let s_ssa = min 20.0 (dce_immune_instr_ratio *. 20.0) in
+  let complexity = calculate_cfg_complexity ir_func in
+  let flattening_depth = Hashtbl.length ir_func.cfg.blocks in
+  let s_cfg = min 20.0 ((float_of_int complexity /. 5.0) *. 10.0 +. (float_of_int flattening_depth /. 10.0) *. 10.0) in
+  let drs_v2_score = min 100.0 (max 0.0 (s_smt +. s_dse +. s_ssa +. s_cfg)) in
+  {
+    shannon_entropy = entropy;
+    aig_clause_estimate;
+    nonlinear_mix_depth;
+    dse_coupled_branches_ratio;
+    dce_immune_instr_ratio;
+    drs_v2_score;
+  }
+
 

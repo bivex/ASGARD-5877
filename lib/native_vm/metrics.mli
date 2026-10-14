@@ -35,6 +35,15 @@ type drs_v2_metrics = {
   composite_score : float;
 }
 
+type drs_v2_report = {
+  shannon_entropy : float;          (** Информационная плотность байткода [0..8] *)
+  aig_clause_estimate : int;        (** Оценка числа клозов Tseitin CNF для Z3 bit-blasting *)
+  nonlinear_mix_depth : int;        (** Глубина чередования несовместимых колец (GF(2)^64 <-> Z/2^64Z + Perm) *)
+  dse_coupled_branches_ratio : float; (** Доля переходов со скрытыми целями, зависящими от POP/running_key *)
+  dce_immune_instr_ratio : float;   (** Доля инструкций, связанных с сайд-эффектами памяти и выходом (защита от LLVM DCE) *)
+  drs_v2_score : float;             (** Итоговый индекс [0.0 .. 100.0] с логарифмическим масштабированием *)
+}
+
 type metrics_report = {
   shannon_entropy : float;
   cyclomatic_complexity : int;
@@ -91,4 +100,11 @@ val calculate_resilience_metrics :
   metrics_report
 
 val report_to_string : metrics_report -> string
+
+val evaluate_drs_v2 :
+  bytecode:int64 list ->
+  ir_func:Vm_ir.Ir.func ->
+  mba_asts:Mba_engine.Mba.expr list ->
+  drs_v2_report
+
 

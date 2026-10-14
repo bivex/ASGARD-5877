@@ -183,6 +183,28 @@ let test_p3_drs_v2_vector () =
   Alcotest.(check bool) "unentangled D_NL is 1.0" true (un_v2.d_nl = 1.0);
   Alcotest.(check bool) "entangled DRS v2 score exceeds unentangled" true (v2.composite_score > un_v2.composite_score)
 
+let test_evaluate_drs_v2_report () =
+  let b0 = { Ir.id = 0; label = "entry"; instrs = [ Ir.Jcc { cond = Flags.E; target_true = Ir.Label "b1"; target_false = Ir.Label "b2" } ] } in
+  let b1 = { Ir.id = 1; label = "b1"; instrs = [ Ir.Alu { op = Ir.Add; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = false }; Ir.Ret ] } in
+  let b2 = { Ir.id = 2; label = "b2"; instrs = [ Ir.Ret ] } in
+  let blocks = Hashtbl.create 3 in
+  Hashtbl.replace blocks 0 b0;
+  Hashtbl.replace blocks 1 b1;
+  Hashtbl.replace blocks 2 b2;
+  let func = { Ir.name = "drs2_func"; cfg = { Ir.entry_id = 0; blocks } } in
+  let bc = [ 0x1122334455667788L; 0x99AABBCCDDEEFF00L; 0xCAFEBABE58771337L ] in
+  let mba_asts = [
+    Mba_engine.Mba.Add (Mba_engine.Mba.Var "x", Mba_engine.Mba.Const 42L);
+    Mba_engine.Mba.Xor (Mba_engine.Mba.Var "y", Mba_engine.Mba.Var "z");
+  ] in
+  let rep = Metrics.evaluate_drs_v2 ~bytecode:bc ~ir_func:func ~mba_asts in
+  Alcotest.(check bool) "shannon entropy > 0" true (rep.shannon_entropy > 0.0);
+  Alcotest.(check bool) "aig clause estimate > 0" true (rep.aig_clause_estimate > 0);
+  Alcotest.(check bool) "nonlinear mix depth >= 2" true (rep.nonlinear_mix_depth >= 2);
+  Alcotest.(check bool) "dse coupled branches ratio 1.0" true (rep.dse_coupled_branches_ratio = 1.0);
+  Alcotest.(check bool) "dce immune instr ratio > 0" true (rep.dce_immune_instr_ratio > 0.0);
+  Alcotest.(check bool) "drs_v2_score in [0, 100]" true (rep.drs_v2_score >= 0.0 && rep.drs_v2_score <= 100.0)
+
 let tests = [
   Alcotest.test_case "shannon_entropy_high_and_low" `Quick test_shannon_entropy_high_and_low;
   Alcotest.test_case "shannon_entropy_empty" `Quick test_shannon_entropy_empty;
@@ -192,5 +214,7 @@ let tests = [
   Alcotest.test_case "calculate_metrics_and_report_to_string" `Quick test_calculate_metrics_and_report_to_string;
   Alcotest.test_case "p3_independent_resilience_metrics" `Quick test_p3_independent_resilience_metrics;
   Alcotest.test_case "p3_drs_v2_vector" `Quick test_p3_drs_v2_vector;
+  Alcotest.test_case "evaluate_drs_v2_report" `Quick test_evaluate_drs_v2_report;
 ]
+
 
