@@ -270,6 +270,38 @@ let evaluate_trace_metrics (trace : int array) : tech_2603_metrics =
     }
   end
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let emit_split_vpc_def () : top_decl =
+  StructDef {
+    align_as = Some 16;
+    name = "SplitVPC";
+    members = [
+      member_field UInt64 "key" ~init:(u64 0L);
+      member_field UInt64 "masked" ~init:(u64 0L);
+      member_field UInt32 "epoch" ~init:(u32 0l);
+      MemberStaticConstexpr { ty = UInt64; name = "MASK_31"; init = u64 0x7FFFFFFFL };
+      member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true SizeT "resolve" [] [
+        const_u64 "key_low" (var "key" &~ var "MASK_31");
+        ret (cast SizeT (var "masked" ^~ var "key_low"));
+      ];
+      member_method ~attrs:[AlwaysInline; NoExcept] Void "advance" [(SizeT, "next_slot"); (UInt64, "dynamic_key")] [
+        var "epoch" += i32 1;
+        comment "SplitMix64 evolution of the key state";
+        let_u64 "s" (var "key" ^~ var "dynamic_key" ^~ (cast UInt64 (var "epoch") *~ u64 0x9E3779B97F4A7C15L));
+        var "s" += u64 0x9E3779B97F4A7C15L;
+        let_u64 "z" (var "s");
+        var "z" := (var "z" ^~ (var "z" >>~ i32 30)) *~ u64 0xBF58476D1CE4E5B9L;
+        var "z" := (var "z" ^~ (var "z" >>~ i32 27)) *~ u64 0x94D049BB133111EBL;
+        var "key" := var "z" ^~ (var "z" >>~ i32 31);
+        const_u64 "key_low" (var "key" &~ var "MASK_31");
+        var "masked" := cast UInt64 (var "next_slot") ^~ var "key_low";
+      ];
+    ];
+  }
+
 (* ── Standalone C++20 Header Emitter ──────────────────────────────────────── *)
 let emit_tech_2603_cpp_header () : string =
   let b = Buffer.create 4096 in
@@ -288,34 +320,10 @@ let emit_tech_2603_cpp_header () : string =
 #include <bit>
 
 namespace asgard::tech_2603 {
-
-struct alignas(16) SplitVPC {
-    uint64_t key{0};
-    uint64_t masked{0};
-    uint32_t epoch{0};
-
-    static constexpr uint64_t MASK_31 = 0x7FFFFFFFULL;
-
-    [[nodiscard]] inline size_t resolve() const noexcept {
-        const uint64_t key_low = key & MASK_31;
-        return static_cast<size_t>(masked ^ key_low);
-    }
-
-    inline void advance(size_t next_slot, uint64_t dynamic_key) noexcept {
-        epoch++;
-        // SplitMix64 evolution of the key state
-        uint64_t s = key ^ dynamic_key ^ (static_cast<uint64_t>(epoch) * 0x9E3779B97F4A7C15ULL);
-        s += 0x9E3779B97F4A7C15ULL;
-        uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-        key = z ^ (z >> 31);
-        const uint64_t key_low = key & MASK_31;
-        masked = static_cast<uint64_t>(next_slot) ^ key_low;
-    }
-};
-
-template<size_t Capacity>
+|};
+  Buffer.add_string b (render_top_decl (emit_split_vpc_def ()));
+  Buffer.add_string b "\n\n";
+  Buffer.add_string b {|template<size_t Capacity>
 struct NonLinearVPCDispatcher {
     static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power-of-two");
     static constexpr size_t MASK = Capacity - 1;
