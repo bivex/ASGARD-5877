@@ -9,31 +9,59 @@ type cff_options = {
 }
 
 let default_cff_options = {
-  inject_opaque_predicates = false; (* default false, can enable explicitly *)
+  inject_opaque_predicates = false;
   obfuscate_states = true;
   input_tainted_transitions = false;
   split_rate = 30;
   hub_count = 1;
 }
 
-
 let inject_opaque_predicate ?next_block_id ~rng ~trap_block_id (b : Ir.basic_block) =
-  let _ = rng in
   let target_next =
     match next_block_id with
     | Some id -> Ir.BlockId id
     | None -> (if b.label <> "" then Ir.Label b.label else Ir.BlockId b.id)
   in
-  (* Invariant: (x & (x + 1)) & 1 is always 0 because x and x+1 have opposite parities *)
-  let opaque_check = [
-    Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
-    Ir.Alu { op = Ir.Add; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = false };
-    Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-    Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = true };
-    Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
-    (* If not equal to 0 (which is mathematically impossible), jump to trap *)
-    Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
-  ] in
+  let variant = Random.State.int rng 3 in
+  let opaque_check =
+    match variant with
+    | 0 ->
+        (* Invariant 1 (Parity): (x & (x + 1)) & 1 == 0 for all integers *)
+        [
+          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
+          Ir.Alu { op = Ir.Add; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = false };
+          Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = true };
+          Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
+          Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
+        ]
+    | 1 ->
+        (* Invariant 2 (Klimov-Shamir 2-adic): (x * (x + 1)) & 1 == 0 for all integers *)
+        [
+          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
+          Ir.Alu { op = Ir.Add; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = false };
+          Ir.Alu { op = Ir.Mul; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = true };
+          Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
+          Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
+        ]
+    | _ ->
+        (* Invariant 3 (Nilpotent Boolean MBA identity): ((x ^ c) ^ (x | c)) ^ (x & c) == 0 *)
+        let c = 0x5877A564D00FL in
+        [
+          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
+          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm c };
+          Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 };
+          Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Alu { op = Ir.Or; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+          Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.rax };
+          Ir.Alu { op = Ir.And; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = true };
+          Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
+          Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
+        ]
+  in
   { b with instrs = opaque_check @ b.instrs }
 
 module Node = struct
@@ -213,6 +241,40 @@ let split_hot_states ~(sorted_orig : Ir.basic_block list) ~(split_rate : int) ~r
       sorted_orig;
   (clone_map, !clone_entries)
 
+let emit_poly_hash64 ~dst ~src ~scratch =
+  [
+    Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg src };
+    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
+    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 30L; set_flags = false };
+    Ir.Alu { op = Ir.Xor; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
+    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm 0xBF58476D1CE4E5B9L };
+    Ir.Alu { op = Ir.Mul; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
+
+    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
+    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 27L; set_flags = false };
+    Ir.Alu { op = Ir.Xor; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
+    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm 0x94D049BB133111EBL };
+    Ir.Alu { op = Ir.Mul; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
+
+    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
+    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 31L; set_flags = false };
+    Ir.Alu { op = Ir.Xor; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
+  ]
+
+let select_input_reg (func : Ir.func) : Register.t =
+  let uses_rdi = ref false in
+  Hashtbl.iter (fun _ (b : Ir.basic_block) ->
+    List.iter (function
+      | Ir.Mov { src = Ir.Reg r; _ } when r = Register.rdi -> uses_rdi := true
+      | Ir.Cmp { src1 = Ir.Reg r; _ } when r = Register.rdi -> uses_rdi := true
+      | Ir.Cmp { src2 = Ir.Reg r; _ } when r = Register.rdi -> uses_rdi := true
+      | Ir.Alu { src1 = Ir.Reg r; _ } when r = Register.rdi -> uses_rdi := true
+      | Ir.Alu { src2 = Ir.Reg r; _ } when r = Register.rdi -> uses_rdi := true
+      | _ -> ()
+    ) b.instrs
+  ) func.cfg.blocks;
+  if !uses_rdi then Register.rdi else Register.rax
+
 let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
   let cfg = build_cfg func in
   let metrics = analyze_cfg ~entry_id:func.cfg.entry_id cfg in
@@ -228,93 +290,82 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     let trap_block_id = max_id + 2 in
     let disp_base_id = max_id + 3 in
 
-    (* Map block IDs to unique random 64-bit state keys *)
-    let state_map = Hashtbl.create n in
-    let used_states = Hashtbl.create n in
-    List.iter
-      (fun (b : Ir.basic_block) ->
-        let rec gen_state () =
-          let s = Int64.logand (Int64.of_int32 (Random.State.int32 rng Int32.max_int)) 0xFFFFFFFEL in
-          let s = if s = 0L then 0x100L else s in
-          if Hashtbl.mem used_states s then gen_state ()
-          else begin
-            Hashtbl.replace used_states s ();
-            s
-          end
-        in
-        Hashtbl.replace state_map b.id (gen_state ()))
-      sorted_orig;
+    let input_reg = select_input_reg func in
 
-    let get_state bid =
-      match Hashtbl.find_opt state_map bid with
-      | Some s -> s
-      | None -> 0xDEADBEEFL
+    (* Secret affine parameters for non-linear slot coding *)
+    let secret_salt =
+      let s = Random.State.int64 rng Int64.max_int in
+      if s = 0L then 0x5877CAFE1337BEEFL else s
     in
-
-    let state_pool = Hashtbl.create n in
-    List.iter (fun (b : Ir.basic_block) ->
-      Hashtbl.replace state_pool b.id [get_state b.id]
-    ) sorted_orig;
-
-    (* State splitting: generate state aliases for blocks based on split_rate *)
-    let (clone_map, clone_entries_list) =
-      split_hot_states ~sorted_orig ~split_rate:options.split_rate ~rng ~used_states
+    let stride =
+      let s = Random.State.int64 rng Int64.max_int in
+      let s = Int64.logor s 1L in
+      if s = 0L then 0x9E3779B97F4A7C15L else s
     in
-    let clone_entries = ref clone_entries_list in
-    Hashtbl.iter (fun bid cs ->
-      let cur = match Hashtbl.find_opt state_pool bid with Some l -> l | None -> [get_state bid] in
-      Hashtbl.replace state_pool bid (cs :: cur)
-    ) clone_map;
+    let stride_inv = Rolling_key.mod_inverse_64 stride in
 
-    (* Kronecker product state expansion: create non-isomorphic algebraic state clusters *)
+    (* Gather all target block IDs (primary blocks + alias clones) *)
+    let (_, clone_entries_list) =
+      split_hot_states ~sorted_orig ~split_rate:options.split_rate ~rng ~used_states:(Hashtbl.create 16)
+    in
+    let clone_bids = List.map snd clone_entries_list in
+    let primary_bids = List.map (fun (b : Ir.basic_block) -> b.id) sorted_orig in
+    let all_bids = primary_bids @ clone_bids in
+    let total_disp = List.length all_bids in
+    let targets_array = Array.of_list all_bids in
+
+    (* Fisher-Yates shuffle targets_array if obfuscate_states *)
     if options.obfuscate_states then begin
-      let kron_seed = Random.State.int64 rng Int64.max_int in
-      List.iter (fun (b : Ir.basic_block) ->
-        let base_s = get_state b.id in
-        let ks_list = kronecker_product_states ~base_states:[base_s] ~dim:2 ~seed:kron_seed in
-        List.iter (fun ks ->
-          if ks <> 0L && not (Hashtbl.mem used_states ks) then begin
-            Hashtbl.replace used_states ks ();
-            clone_entries := (ks, b.id) :: !clone_entries;
-            let cur = match Hashtbl.find_opt state_pool b.id with Some l -> l | None -> [base_s] in
-            Hashtbl.replace state_pool b.id (ks :: cur)
-          end
-        ) ks_list
-      ) sorted_orig
+      for i = total_disp - 1 downto 1 do
+        let j = Random.State.int rng (i + 1) in
+        let tmp = targets_array.(i) in
+        targets_array.(i) <- targets_array.(j);
+        targets_array.(j) <- tmp
+      done
     end;
+
+    (* Assign secret 64-bit state tokens to each slot:
+       coded_i = secret_salt + i * stride
+       state_i = poly_unhash64 coded_i
+       And populate state_pool mapping bid -> state list *)
+    let state_pool = Hashtbl.create n in
+    for slot_idx = 0 to total_disp - 1 do
+      let bid = targets_array.(slot_idx) in
+      let coded = Int64.add secret_salt (Int64.mul (Int64.of_int slot_idx) stride) in
+      let state = Rolling_key.poly_unhash64 coded in
+      let cur = match Hashtbl.find_opt state_pool bid with Some l -> l | None -> [] in
+      Hashtbl.replace state_pool bid (state :: cur)
+    done;
 
     let get_target_state bid =
       match Hashtbl.find_opt state_pool bid with
-      | Some pool when pool <> [] ->
-          let idx = Random.State.int rng (List.length pool) in
-          List.nth pool idx
-      | _ -> get_state bid
+      | Some (_ :: _) ->
+          let pool = Hashtbl.find state_pool bid in
+          List.nth pool (Random.State.int rng (List.length pool))
+      | _ ->
+          let coded = secret_salt in
+          Rolling_key.poly_unhash64 coded
     in
-
-    (* P1-03: Input-tainted state transitions against Triton/angr DSE:
-       dispatch variables depend on dynamic register hash:
-       state <- (state * C1 + (input_reg >> 32)) mod M *)
-    let c1 =
-      let r = Random.State.int64 rng Int64.max_int in
-      let c = Int64.logor r 1L in
-      if c = 0L then 0x517CC1B727220A95L else c
-    in
-
-    let input_reg = Register.rdi in
 
     let emit_set_state_tainted dst_reg target_state =
-      if options.input_tainted_transitions then [
-        Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg input_reg };
-        Ir.Alu { op = Ir.Shr; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 32L; set_flags = false };
-        Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm (Int64.mul target_state c1) };
-        Ir.Alu { op = Ir.Add; dst = dst_reg; src1 = Ir.Reg dst_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-      ] else [
-        Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm target_state };
-      ]
+      if options.input_tainted_transitions then
+        [
+          Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg input_reg };
+          Ir.Alu { op = Ir.Shr; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 32L; set_flags = false };
+        ]
+        @ (emit_poly_hash64 ~dst:Register.vtmp2 ~src:Register.vtmp2 ~scratch:Register.vtmp3)
+        @ [
+          Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm target_state };
+          Ir.Alu { op = Ir.Xor; dst = dst_reg; src1 = Ir.Reg dst_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+        ]
+      else
+        [
+          Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm target_state };
+        ]
     in
 
     (* Entry Block: sets state to func.cfg.entry_id's state and jumps to disp_base_id *)
-    let initial_state = get_state func.cfg.entry_id in
+    let initial_state = get_target_state func.cfg.entry_id in
     let entry_instrs =
       (emit_set_state_tainted Register.vkey initial_state) @ [
         Ir.Jmp (Ir.BlockId disp_base_id);
@@ -325,56 +376,57 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     (* Trap Block *)
     let trap_block = Ir.make_block ~id:trap_block_id ~label:(func.name ^ "_cff_trap") ~instrs:[ Ir.Trap "CFF State Violation" ] in
 
-    (* Dispatch Blocks Ladder: primary blocks + clone alias blocks *)
-    let ladder_blocks =
-      if options.obfuscate_states then begin
-        let arr = Array.of_list sorted_orig in
-        for i = Array.length arr - 1 downto 1 do
-          let j = Random.State.int rng (i + 1) in
-          let tmp = arr.(i) in
-          arr.(i) <- arr.(j);
-          arr.(j) <- tmp
-        done;
-        Array.to_list arr
-      end else
-        sorted_orig
+    (* Binary Decision Tree Construction *)
+    let next_fresh_id = ref (disp_base_id + 1) in
+    let tree_blocks = ref [] in
+    let rec build_tree low high =
+      if low = high then
+        Ir.BlockId targets_array.(low)
+      else
+        let mid = (low + high) / 2 in
+        let left_target = build_tree low mid in
+        let right_target = build_tree (mid + 1) high in
+        let node_id = !next_fresh_id in
+        incr next_fresh_id;
+        let instrs = [
+          Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int mid) };
+          Ir.Jcc { cond = Flags.LE; target_true = left_target; target_false = right_target };
+        ] in
+        let blk = Ir.make_block ~id:node_id ~label:(Printf.sprintf "%s_cff_tree_%d" func.name node_id) ~instrs in
+        tree_blocks := blk :: !tree_blocks;
+        Ir.BlockId node_id
     in
+    let tree_root_target = build_tree 0 (total_disp - 1) in
 
-    let primary_targets = List.map (fun (b : Ir.basic_block) -> (get_state b.id, b.id)) ladder_blocks in
-    let all_targets = primary_targets @ (List.rev !clone_entries) in
-    let total_disp = List.length all_targets in
-
-    let disp_blocks = ref [] in
-    for i = 0 to total_disp - 1 do
-      let cur_disp_id = disp_base_id + i in
-      let next_disp_target =
-        if i + 1 < total_disp then Ir.BlockId (disp_base_id + i + 1)
-        else Ir.BlockId trap_block_id
-      in
-      let (target_state, target_bid) = List.nth all_targets i in
-      let d_instrs =
-        if options.input_tainted_transitions then [
-          Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg input_reg };
-          Ir.Alu { op = Ir.Shr; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 32L; set_flags = false };
-          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm (Int64.mul target_state c1) };
-          Ir.Alu { op = Ir.Add; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-          Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Reg Register.vtmp0 };
-          Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_bid; target_false = next_disp_target };
-        ] else if Int64.shift_right_logical target_state 32 <> 0L || Int64.logand target_state 0x80000000L <> 0L then [
-          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm target_state };
-          Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Reg Register.vtmp0 };
-          Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_bid; target_false = next_disp_target };
-        ] else [
-          Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Imm target_state };
-          Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_bid; target_false = next_disp_target };
-        ]
-      in
-      let blk = Ir.make_block ~id:cur_disp_id ~label:(Printf.sprintf "%s_disp_%d" func.name i) ~instrs:d_instrs in
-      disp_blocks := blk :: !disp_blocks
-    done;
+    (* Dispatcher Entry Block: unmasks dynamic taint, computes poly_hash64, decodes slot *)
+    let disp_entry_instrs =
+      (if options.input_tainted_transitions then
+         [
+           Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg input_reg };
+           Ir.Alu { op = Ir.Shr; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 32L; set_flags = false };
+         ]
+         @ (emit_poly_hash64 ~dst:Register.vtmp2 ~src:Register.vtmp2 ~scratch:Register.vtmp3)
+         @ [
+           Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
+           Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+         ]
+       else
+         [
+           Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
+         ])
+      @ (emit_poly_hash64 ~dst:Register.vtmp0 ~src:Register.vtmp0 ~scratch:Register.vtmp1)
+      @ [
+        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm secret_salt };
+        Ir.Alu { op = Ir.Sub; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm stride_inv };
+        Ir.Alu { op = Ir.Mul; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+        Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int total_disp) };
+        Ir.Jcc { cond = Flags.AE; target_true = Ir.BlockId trap_block_id; target_false = tree_root_target };
+      ]
+    in
+    let disp_entry_block = Ir.make_block ~id:disp_base_id ~label:(func.name ^ "_disp_entry") ~instrs:disp_entry_instrs in
 
     (* Transform each original block: redirect control flow back to disp_base_id *)
-    let next_fresh_id = ref (disp_base_id + total_disp) in
     let transformed_blocks =
       List.concat_map
         (fun (b : Ir.basic_block) ->
@@ -393,51 +445,41 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                 | Ir.Jcc { cond; target_true = Ir.BlockId t_id; target_false = Ir.BlockId f_id } ->
                     let state_true = get_target_state t_id in
                     let state_false = get_target_state f_id in
-                    if options.input_tainted_transitions then
-                      let setup_states = [
-                        Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg input_reg };
-                        Ir.Alu { op = Ir.Shr; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 32L; set_flags = false };
-                        Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm (Int64.mul state_true c1) };
-                        Ir.Alu { op = Ir.Add; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-                        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm (Int64.mul state_false c1) };
-                        Ir.Alu { op = Ir.Add; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-                      ] in
-                      (match body_rev with
-                      | Ir.Cmp cmp_args :: prev_body_rev ->
-                          let prev_body = List.rev prev_body_rev in
-                          prev_body @ setup_states @ [
-                            Ir.Cmp cmp_args;
-                            Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                            Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
-                            Ir.Jmp (Ir.BlockId disp_base_id);
-                          ]
-                      | _ ->
-                          body @ [ Ir.Get_flags Register.vtmp3 ] @ setup_states @ [
-                            Ir.Set_flags (Ir.Reg Register.vtmp3);
-                            Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                            Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
-                            Ir.Jmp (Ir.BlockId disp_base_id);
-                          ])
-                    else
-                      (match body_rev with
-                      | Ir.Cmp cmp_args :: prev_body_rev ->
-                          let prev_body = List.rev prev_body_rev in
-                          prev_body @ [
-                            Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
-                            Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
-                            Ir.Cmp cmp_args;
-                            Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                            Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
-                            Ir.Jmp (Ir.BlockId disp_base_id);
-                          ]
-                      | _ ->
-                          body @ [
-                            Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
-                            Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
-                            Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                            Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
-                            Ir.Jmp (Ir.BlockId disp_base_id);
-                          ])
+                    let setup_states =
+                      if options.input_tainted_transitions then
+                        [
+                          Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg input_reg };
+                          Ir.Alu { op = Ir.Shr; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Imm 32L; set_flags = false };
+                        ]
+                        @ (emit_poly_hash64 ~dst:Register.vtmp2 ~src:Register.vtmp2 ~scratch:Register.vtmp0)
+                        @ [
+                          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
+                          Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+                          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
+                          Ir.Alu { op = Ir.Xor; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+                        ]
+                      else
+                        [
+                          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
+                          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
+                        ]
+                    in
+                    (match body_rev with
+                    | Ir.Cmp cmp_args :: prev_body_rev ->
+                        let prev_body = List.rev prev_body_rev in
+                        prev_body @ setup_states @ [
+                          Ir.Cmp cmp_args;
+                          Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
+                          Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
+                          Ir.Jmp (Ir.BlockId disp_base_id);
+                        ]
+                    | _ ->
+                        body @ [ Ir.Get_flags Register.vtmp3 ] @ setup_states @ [
+                          Ir.Set_flags (Ir.Reg Register.vtmp3);
+                          Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
+                          Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
+                          Ir.Jmp (Ir.BlockId disp_base_id);
+                        ])
                 | Ir.Ret | Ir.Vm_exit | Ir.Trap _ ->
                     b.instrs
                 | other ->
@@ -457,7 +499,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         sorted_orig
     in
 
-    let all_blocks = (entry_block :: trap_block :: !disp_blocks) @ transformed_blocks in
+    let all_blocks = (entry_block :: trap_block :: disp_entry_block :: !tree_blocks) @ transformed_blocks in
     let new_func = Ir.make_func ~name:func.name ~entry_id:entry_block_id ~blocks:all_blocks in
     Ok new_func
 

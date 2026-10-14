@@ -238,7 +238,7 @@ let report_to_string r =
   Buffer.add_string b "================ DEVIRTUALIZATION RESISTANCE REPORT ================\n";
   Buffer.add_string b (Printf.sprintf "  [Aggregated DRS]:                %.1f / 100.0 [ %s ]\n"
                          r.devirtualization_resistance_score
-                         (if r.devirtualization_resistance_score >= 80.0 then "MIL-GRADE HARDENED"
+                         (if r.devirtualization_resistance_score >= 80.0 then "TIER 3+ RESILIENT"
                           else if r.devirtualization_resistance_score >= 50.0 then "STRONG OBFUSCATION"
                           else "STANDARD PROTECTION"));
   Buffer.add_string b "--------------------------------------------------------------------\n";

@@ -72,7 +72,7 @@ type cff_config = {
   enabled : bool [@default true];
   obfuscate_states : bool [@default true];
   inject_opaque_predicates : bool [@default false];
-  input_tainted_transitions : bool [@default true];
+  input_tainted_transitions : bool [@default false];
   split_rate : int [@default 30];
   hub_count : int [@default 1];
 } [@@deriving yojson]
