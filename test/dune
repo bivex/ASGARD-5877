@@ -101,6 +101,7 @@
  (modules test_cpp_codegen)
  (libraries
   cpp_codegen
+  vm_ir
   native_vm
   multi_vm
   random_visa.stack_vm

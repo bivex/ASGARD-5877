@@ -362,7 +362,34 @@ let () =
    | Ok () -> ()
    | Error err -> failwith ("Nanomite preamble syntax validation failed: " ^ err));
   assert (String.length nano_cpp > 100);
-  Printf.printf "[PASS] Step 20: C Nanomite branch functions & auto-init constructor emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 20: C Nanomite branch functions & auto-init constructor emitted using typed AST.\n";
+
+  (* 21. Multi-VM Affine Bridge Matrices & Morphing AST *)
+  let bridge = Multi_vm.Bridge.generate_bridge rng in
+  let bridge_cpp = Multi_vm.Bridge.emit_cpp_bridge_code bridge in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax bridge_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Multi-VM Bridge syntax validation failed: " ^ err));
+  assert (String.length bridge_cpp > 500);
+  Printf.printf "[PASS] Step 21: Multi-VM affine bridge matrices & morphing functions emitted using typed AST.\n";
+
+  (* 22. Native VM Whitebox Seed Derivation AST *)
+  let wbox_cpp = Native_vm.Vm_runtime_emitter.generate_wbox_seed_derivation ~rng 0x5877CAFEl in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax wbox_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Whitebox seed derivation syntax validation failed: " ^ err));
+  assert (String.length wbox_cpp > 500);
+  Printf.printf "[PASS] Step 22: Native VM whitebox seed derivation emitted using typed AST.\n";
+
+  (* 23. Residue Number System (RNS-4) Garner CRT AST *)
+  let rns_ast = Vm_ir.Rns.emit_cpp_rns_ast () in
+  let rns_cpp = Vm_ir.Rns.emit_cpp_rns_header () in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax rns_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("RNS Garner CRT syntax validation failed: " ^ err));
+  assert (List.length rns_ast > 0);
+  assert (String.length rns_cpp > 300);
+  Printf.printf "[PASS] Step 23: Residue Number System (RNS-4) Garner CRT emitted using typed AST.\n"
 
 
 
