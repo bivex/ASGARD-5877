@@ -21,6 +21,7 @@ let rec scramble_expr (rng : Random.State.t) (e : expr) : expr =
   | Ternary (c, t, f) ->
       Ternary (scramble_expr rng c, scramble_expr rng t, scramble_expr rng f)
   | Cast (ty, a) -> Cast (ty, scramble_expr rng a)
+  | CCast (ty, a) -> CCast (ty, scramble_expr rng a)
   | BitCast (ty, a) -> BitCast (ty, scramble_expr rng a)
   | ReinterpretCast (ty, a) -> ReinterpretCast (ty, scramble_expr rng a)
   | Index (arr, i) -> Index (scramble_expr rng arr, scramble_expr rng i)
@@ -91,4 +92,4 @@ let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
       Namespace (ns, List.map (scramble_top_decl rng) decls)
   | ConstexprGlobal (ty, name, e) ->
       ConstexprGlobal (ty, name, scramble_expr rng e)
-  | StructDecl _ | UnionDecl _ | EnumDecl _ | RawTop _ | CommentTop _ | IncludeSys _ | IncludeLocal _ -> d
+  | StructDecl _ | UnionDecl _ | EnumDecl _ | RawTop _ | CommentTop _ | IncludeSys _ | IncludeLocal _ | FuncProto _ | Typedef _ -> d

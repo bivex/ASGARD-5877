@@ -51,6 +51,7 @@ let rec pp_expr fmt = function
   | Binary (op, a, b) -> fprintf fmt "(%a %s %a)" pp_expr a (binop_str op) pp_expr b
   | Ternary (c, t, f) -> fprintf fmt "(%a ? %a : %a)" pp_expr c pp_expr t pp_expr f
   | Cast (ty, e)      -> fprintf fmt "static_cast<%a>(%a)" pp_ctype ty pp_expr e
+  | CCast (ty, e)     -> fprintf fmt "((%a)(%a))" pp_ctype ty pp_expr e
   | BitCast (ty, e)   -> fprintf fmt "std::bit_cast<%a>(%a)" pp_ctype ty pp_expr e
   | ReinterpretCast (ty, e) -> fprintf fmt "reinterpret_cast<%a>(%a)" pp_ctype ty pp_expr e
   | Call (fn, args)   ->
@@ -58,7 +59,7 @@ let rec pp_expr fmt = function
         (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_expr) args
 
 and pp_expr_atom fmt e = match e with
-  | Var _ | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitBool _ | LitStr _ | Index _ | Member _ | PtrMember _ | Call _ ->
+  | Var _ | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitBool _ | LitStr _ | Index _ | Member _ | PtrMember _ | Call _ | CCast _ ->
       pp_expr fmt e
   | _ -> fprintf fmt "(%a)" pp_expr e
 
@@ -330,6 +331,18 @@ let rec pp_top_decl fmt = function
            (fun fmt (ty, pname) -> fprintf fmt "%a %s" pp_ctype ty pname)) params
         (if is_noexcept then " noexcept" else "")
         pp_stmt_list body
+  | FuncProto { attrs; ret_type; name; params; _ } ->
+      List.iter (pp_attr fmt) attrs;
+      let is_noexcept = List.mem NoExcept attrs in
+      fprintf fmt "%a %s(%a)%s;"
+        pp_ctype ret_type name
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+           (fun fmt (ty, pname) ->
+              if pname = "" then pp_ctype fmt ty
+              else fprintf fmt "%a %s" pp_ctype ty pname)) params
+        (if is_noexcept then " noexcept" else "")
+  | Typedef (ty, name) ->
+      fprintf fmt "typedef %a %s;" pp_ctype ty name
   | Namespace (ns, decls) ->
       fprintf fmt "namespace %s {@[<v 0>@,@,%a@]@,@,} // namespace %s"
         ns (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@,@,") pp_top_decl) decls ns

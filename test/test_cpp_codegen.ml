@@ -321,7 +321,19 @@ let () =
    | Ok () -> ()
    | Error err -> failwith ("NonLinearVPCDispatcher syntax validation failed: " ^ err));
   assert (String.length vpc_dispatcher_code > 300);
-  Printf.printf "[PASS] Step 17: Tech-2603 NonLinearVPCDispatcher template struct emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 17: Tech-2603 NonLinearVPCDispatcher template struct emitted using typed AST.\n";
+
+  (* 18. C11 Vector ISA Emulator AST *)
+  let c11_csr = render_top_decls (Random_visa_c11_emitter.C11_emitter_adapter.emit_csr_state_c11_def ()) in
+  let c11_emu = render_top_decls (Random_visa_c11_emitter.C11_emitter_adapter.emit_emulator_state_c11_def ()) in
+  let c11_dec = render_top_decls (Random_visa_c11_emitter.C11_emitter_adapter.emit_decoded_inst_c11_def ()) in
+  let c11_protos = render_top_decls (Random_visa_c11_emitter.C11_emitter_adapter.emit_c11_prototypes ()) in
+  assert (String.length c11_csr > 50);
+  assert (String.length c11_emu > 50);
+  assert (String.length c11_dec > 50);
+  assert (String.length c11_protos > 100);
+  Printf.printf "[PASS] Step 18: C11 Vector ISA Emulator structs & prototypes emitted using typed AST.\n"
+
 
 
 

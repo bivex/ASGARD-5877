@@ -46,6 +46,8 @@ let addr_of a = Unary (AddrOf, a)
 let neg a = Unary (Neg, a)
 let neg_u64 a = Binary (Sub, LitU64 0L, a)
 let cast ty e = Cast (ty, e)
+let c_cast ty e = CCast (ty, e)
+let ccast ty e = CCast (ty, e)
 let bit_cast ty e = BitCast (ty, e)
 let reinterpret_cast ty e = ReinterpretCast (ty, e)
 let call fn args = Call (fn, args)
@@ -121,6 +123,8 @@ let union_decl ?align_as name fields : top_decl = UnionDecl { align_as; name; fi
 let union_def ?align_as name members : top_decl = UnionDef { align_as; name; members }
 let enum_decl ?underlying_ty name items : top_decl = EnumDecl { name; underlying_ty; items }
 let func_decl ?(attrs=[]) ret_type name params body : top_decl = FuncDecl { attrs; ret_type; name; params; body }
+let func_proto ?(attrs=[]) ret_type name params : top_decl = FuncProto { attrs; ret_type; name; params; body = [] }
+let typedef ty name : top_decl = Typedef (ty, name)
 let raw_top s : top_decl = RawTop s
 let comment_top s : top_decl = CommentTop s
 

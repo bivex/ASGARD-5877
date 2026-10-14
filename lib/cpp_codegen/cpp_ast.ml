@@ -39,6 +39,7 @@ type expr =
   | Binary of binop * expr * expr
   | Ternary of expr * expr * expr      (* cond ? tr : fl *)
   | Cast of ctype * expr               (* static_cast<T>(e) *)
+  | CCast of ctype * expr              (* (T)(e) C-style cast *)
   | BitCast of ctype * expr            (* std::bit_cast<T>(e) *)
   | ReinterpretCast of ctype * expr    (* reinterpret_cast<T>(e) *)
   | Call of string * expr list         (* fn(a, b, ...) *)
@@ -163,5 +164,7 @@ type top_decl =
   | UnionDef of struct_def
   | EnumDecl of { name : string; underlying_ty : ctype option; items : (string * expr option) list }
   | FuncDecl of func_decl
+  | FuncProto of func_decl
+  | Typedef of ctype * string
   | RawTop of string
   | CommentTop of string

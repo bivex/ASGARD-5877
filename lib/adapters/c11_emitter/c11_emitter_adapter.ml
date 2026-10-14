@@ -37,6 +37,73 @@ let group_by_funct6 (instructions : Vector_instruction.t list) =
   in
   List.sort (fun (a, _) (b, _) -> Int.compare a b) groups
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let emit_csr_state_c11_def () : top_decl list =
+  [
+    struct_decl "CSRState" [
+      (UInt64, "vl");
+      (UInt64, "vtype");
+      (UInt64, "vstart");
+      (UInt64, "vxrm");
+      (UInt64, "vxsat");
+      (UInt64, "pc");
+    ];
+    typedef (StructType "struct CSRState") "CSRState";
+  ]
+
+let emit_vreg_file_c11_def () : top_decl list =
+  [
+    raw_top "typedef struct {\n    _Alignas(64) uint8_t regs[VISA_NUM_VREGS][VISA_VLEN_BYTES];\n} VRegFile;";
+  ]
+
+let emit_emulator_state_c11_def () : top_decl list =
+  [
+    struct_decl "EmulatorState" [
+      (StructType "VRegFile", "vregs");
+      (Array (UInt64, 32), "xregs");
+      (StructType "CSRState", "csr");
+    ];
+    typedef (StructType "struct EmulatorState") "EmulatorState";
+  ]
+
+let emit_decoded_inst_c11_def () : top_decl list =
+  [
+    struct_decl "DecodedInstruction" [
+      (ConstPtr (StructType "char"), "mnemonic");
+      (UInt8, "opcode");
+      (UInt8, "funct3");
+      (UInt8, "funct6");
+      (UInt8, "vd");
+      (UInt8, "vs2");
+      (UInt8, "vs1");
+      (UInt8, "rs1");
+      (Int8, "imm");
+      (UInt8, "vm");
+      (UInt32, "raw_word");
+    ];
+    typedef (StructType "struct DecodedInstruction") "DecodedInstruction";
+  ]
+
+let emit_c11_prototypes () : top_decl list =
+  let emu_state_ptr = Ptr (StructType "EmulatorState") in
+  let const_emu_state_ptr = ConstPtr (StructType "EmulatorState") in
+  let const_decoded_ptr = ConstPtr (StructType "DecodedInstruction") in
+  [
+    func_proto Void "visa_emulator_init" [(emu_state_ptr, "state")];
+    func_proto Void "visa_emulator_reset" [(emu_state_ptr, "state")];
+    func_proto UInt64 "visa_get_xreg" [(const_emu_state_ptr, "state"); (SizeT, "idx")];
+    func_proto Void "visa_set_xreg" [(emu_state_ptr, "state"); (SizeT, "idx"); (UInt64, "val")];
+    func_proto Bool "visa_is_mask_set" [(const_emu_state_ptr, "state"); (SizeT, "mask_reg"); (SizeT, "elem_idx")];
+    func_proto Void "visa_dump_vregs" [(const_emu_state_ptr, "state")];
+    func_proto (StructType "DecodedInstruction") "visa_decode" [(UInt32, "word")];
+    func_proto Bool "visa_execute" [(emu_state_ptr, "state"); (const_decoded_ptr, "inst")];
+    func_proto Bool "visa_step" [(emu_state_ptr, "state"); (UInt32, "word")];
+    func_proto SizeT "visa_run_program" [(emu_state_ptr, "state"); (ConstPtr UInt32, "program"); (SizeT, "count")];
+  ]
+
 let emit_header (spec : Vector_isa_spec.t) =
   let b = Buffer.create 2048 in
   let vlen = spec.config.vlen in
@@ -47,235 +114,300 @@ let emit_header (spec : Vector_isa_spec.t) =
   Buffer.add_string b "#define VISA_VLEN_BYTES (VISA_VLEN / 8)\n";
   Buffer.add_string b (Printf.sprintf "#define VISA_NUM_VREGS %d\n" num_vregs);
   Buffer.add_string b "#define VISA_NUM_XREGS 32\n\n";
-  Buffer.add_string b "typedef struct {\n";
-  Buffer.add_string b "    uint64_t vl;\n    uint64_t vtype;\n    uint64_t vstart;\n    uint64_t vxrm;\n    uint64_t vxsat;\n    uint64_t pc;\n";
-  Buffer.add_string b "} CSRState;\n\n";
-  Buffer.add_string b "typedef struct {\n    _Alignas(64) uint8_t regs[VISA_NUM_VREGS][VISA_VLEN_BYTES];\n} VRegFile;\n\n";
-  Buffer.add_string b "typedef struct {\n    VRegFile vregs;\n    uint64_t xregs[VISA_NUM_XREGS];\n    CSRState csr;\n} EmulatorState;\n\n";
-  Buffer.add_string b "typedef struct {\n";
-  Buffer.add_string b "    const char* mnemonic;\n";
-  Buffer.add_string b "    uint8_t opcode;\n    uint8_t funct3;\n    uint8_t funct6;\n    uint8_t vd;\n    uint8_t vs2;\n    uint8_t vs1;\n    uint8_t rs1;\n    int8_t imm;\n    uint8_t vm;\n    uint32_t raw_word;\n";
-  Buffer.add_string b "} DecodedInstruction;\n\n";
-  Buffer.add_string b "void visa_emulator_init(EmulatorState* state);\n";
-  Buffer.add_string b "void visa_emulator_reset(EmulatorState* state);\n";
-  Buffer.add_string b "uint64_t visa_get_xreg(const EmulatorState* state, size_t idx);\n";
-  Buffer.add_string b "void visa_set_xreg(EmulatorState* state, size_t idx, uint64_t val);\n";
-  Buffer.add_string b "bool visa_is_mask_set(const EmulatorState* state, size_t mask_reg, size_t elem_idx);\n";
-  Buffer.add_string b "void visa_dump_vregs(const EmulatorState* state);\n\n";
-  Buffer.add_string b "DecodedInstruction visa_decode(uint32_t word);\n";
-  Buffer.add_string b "bool visa_execute(EmulatorState* state, const DecodedInstruction* inst);\n";
-  Buffer.add_string b "bool visa_step(EmulatorState* state, uint32_t word);\n";
-  Buffer.add_string b "size_t visa_run_program(EmulatorState* state, const uint32_t* program, size_t count);\n\n";
-  Buffer.add_string b "#endif // VISA_EMULATOR_H\n";
+  Buffer.add_string b (render_top_decls (emit_csr_state_c11_def ()));
+  Buffer.add_string b "\n\n";
+  Buffer.add_string b (render_top_decls (emit_vreg_file_c11_def ()));
+  Buffer.add_string b "\n\n";
+  Buffer.add_string b (render_top_decls (emit_emulator_state_c11_def ()));
+  Buffer.add_string b "\n\n";
+  Buffer.add_string b (render_top_decls (emit_decoded_inst_c11_def ()));
+  Buffer.add_string b "\n\n";
+  Buffer.add_string b (render_top_decls (emit_c11_prototypes ()));
+  Buffer.add_string b "\n\n#endif // VISA_EMULATOR_H\n";
   Buffer.contents b
+
+let cast = c_cast
 
 let emit_emulator_c (spec : Vector_isa_spec.t) =
   let b = Buffer.create 2048 in
   let sew = Types.Sew.to_bits spec.config.default_sew in
   let default_vl = spec.config.vlen / sew in
-  Buffer.add_string b "#include \"visa_emulator.h\"\n\n";
-  Buffer.add_string b "void visa_emulator_init(EmulatorState* state) {\n";
-  Buffer.add_string b "    memset(state, 0, sizeof(*state));\n";
-  Buffer.add_string b (Printf.sprintf "    state->csr.vl = %d;\n" default_vl);
-  Buffer.add_string b "    state->csr.pc = 0x80000000;\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "void visa_emulator_reset(EmulatorState* state) {\n    visa_emulator_init(state);\n}\n\n";
-  Buffer.add_string b "uint64_t visa_get_xreg(const EmulatorState* state, size_t idx) {\n";
-  Buffer.add_string b "    if (idx == 0 || idx >= VISA_NUM_XREGS) return 0;\n    return state->xregs[idx];\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "void visa_set_xreg(EmulatorState* state, size_t idx, uint64_t val) {\n";
-  Buffer.add_string b "    if (idx > 0 && idx < VISA_NUM_XREGS) state->xregs[idx] = val;\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "bool visa_is_mask_set(const EmulatorState* state, size_t mask_reg, size_t elem_idx) {\n";
-  Buffer.add_string b "    if (mask_reg >= VISA_NUM_VREGS) return false;\n";
-  Buffer.add_string b "    size_t byte_idx = elem_idx / 8;\n    size_t bit_idx = elem_idx % 8;\n";
-  Buffer.add_string b "    if (byte_idx >= VISA_VLEN_BYTES) return false;\n";
-  Buffer.add_string b "    return (state->vregs.regs[mask_reg][byte_idx] & (1 << bit_idx)) != 0;\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "void visa_dump_vregs(const EmulatorState* state) {\n";
-  Buffer.add_string b "    for (size_t i = 0; i < VISA_NUM_VREGS; ++i) {\n";
-  Buffer.add_string b "        printf(\"v%02zu: [ \", i);\n";
-  Buffer.add_string b "        for (int b = (int)VISA_VLEN_BYTES - 1; b >= 0; --b) printf(\"%02x \", state->vregs.regs[i][b]);\n";
-  Buffer.add_string b "        printf(\"]\\n\");\n    }\n}\n\n";
-  Buffer.add_string b "DecodedInstruction visa_decode(uint32_t word) {\n";
-  Buffer.add_string b "    DecodedInstruction dec;\n    memset(&dec, 0, sizeof(dec));\n";
-  Buffer.add_string b "    dec.raw_word = word;\n";
-  Buffer.add_string b "    dec.opcode = word & 0x7F;\n";
-  Buffer.add_string b "    dec.vd = (word >> 7) & 0x1F;\n";
-  Buffer.add_string b "    dec.funct3 = (word >> 12) & 0x7;\n";
-  Buffer.add_string b "    dec.vs1 = (word >> 15) & 0x1F;\n";
-  Buffer.add_string b "    dec.rs1 = dec.vs1;\n";
-  Buffer.add_string b "    int32_t imm5 = (int32_t)((word >> 15) & 0x1F);\n";
-  Buffer.add_string b "    if (imm5 & 0x10) imm5 |= ~0x1F;\n";
-  Buffer.add_string b "    dec.imm = (int8_t)imm5;\n";
-  Buffer.add_string b "    dec.vs2 = (word >> 20) & 0x1F;\n";
-  Buffer.add_string b "    dec.vm = (word >> 25) & 0x1;\n";
-  Buffer.add_string b "    dec.funct6 = (word >> 26) & 0x3F;\n";
-  Buffer.add_string b "    dec.mnemonic = \"unknown\";\n\n";
-  Buffer.add_string b "    if (dec.opcode != 0x57) return dec;\n\n";
-  Buffer.add_string b "    switch (dec.funct6) {\n";
-
   let groups = group_by_funct6 spec.instructions in
-  List.iter
-    (fun (f6, insts) ->
-      Buffer.add_string b (Printf.sprintf "    case %d:\n" f6);
-      List.iter
-        (fun (inst : Vector_instruction.t) ->
-          Buffer.add_string b (Printf.sprintf "        if (dec.funct3 == %d) { dec.mnemonic = \"%s\"; return dec; }\n" inst.funct3 inst.mnemonic))
-        insts;
-      Buffer.add_string b "        break;\n")
-    groups;
-
-  Buffer.add_string b "    default:\n        break;\n    }\n    return dec;\n}\n\n";
-  Buffer.add_string b "bool visa_step(EmulatorState* state, uint32_t word) {\n";
-  Buffer.add_string b "    DecodedInstruction dec = visa_decode(word);\n";
-  Buffer.add_string b "    if (strcmp(dec.mnemonic, \"unknown\") == 0) return false;\n";
-  Buffer.add_string b "    bool ok = visa_execute(state, &dec);\n";
-  Buffer.add_string b "    if (ok) state->csr.pc += 4;\n";
-  Buffer.add_string b "    return ok;\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "size_t visa_run_program(EmulatorState* state, const uint32_t* program, size_t count) {\n";
-  Buffer.add_string b "    size_t executed = 0;\n";
-  Buffer.add_string b "    for (size_t i = 0; i < count; ++i) {\n";
-  Buffer.add_string b "        if (!visa_step(state, program[i])) break;\n";
-  Buffer.add_string b "        ++executed;\n    }\n    return executed;\n}\n";
+  let decode_cases =
+    List.map (fun (f6, insts) ->
+      (i32 f6,
+       List.map (fun (inst : Vector_instruction.t) ->
+         if_then ((var "dec" $. "funct3") ==~ i32 inst.funct3) [
+           (var "dec" $. "mnemonic") := str_lit inst.mnemonic;
+           ret (var "dec");
+         ]
+       ) insts @ [break_stmt])
+    ) groups
+  in
+  let funcs = [
+    func_decl Void "visa_emulator_init" [(Ptr (StructType "EmulatorState"), "state")] [
+      expr_stmt (call "memset" [var "state"; i32 0; call "sizeof" [deref (var "state")]]);
+      (var "state" $-> "csr.vl") := i32 default_vl;
+      (var "state" $-> "csr.pc") := u64 0x80000000L;
+    ];
+    func_decl Void "visa_emulator_reset" [(Ptr (StructType "EmulatorState"), "state")] [
+      expr_stmt (call "visa_emulator_init" [var "state"]);
+    ];
+    func_decl UInt64 "visa_get_xreg" [(ConstPtr (StructType "EmulatorState"), "state"); (SizeT, "idx")] [
+      if_then ((var "idx" ==~ i32 0) ||~ (var "idx" >=~ var "VISA_NUM_XREGS")) [
+        ret (u64 0L);
+      ];
+      ret (Index (var "state" $-> "xregs", var "idx"));
+    ];
+    func_decl Void "visa_set_xreg" [(Ptr (StructType "EmulatorState"), "state"); (SizeT, "idx"); (UInt64, "val")] [
+      if_then ((var "idx" >~ i32 0) &&~ (var "idx" <~ var "VISA_NUM_XREGS")) [
+        Index (var "state" $-> "xregs", var "idx") := var "val";
+      ];
+    ];
+    func_decl Bool "visa_is_mask_set" [(ConstPtr (StructType "EmulatorState"), "state"); (SizeT, "mask_reg"); (SizeT, "elem_idx")] [
+      if_then (var "mask_reg" >=~ var "VISA_NUM_VREGS") [ret (bool_lit false)];
+      decl_var SizeT "byte_idx" ~init:(var "elem_idx" /~ i32 8);
+      decl_var SizeT "bit_idx" ~init:(var "elem_idx" %~ i32 8);
+      if_then (var "byte_idx" >=~ var "VISA_VLEN_BYTES") [ret (bool_lit false)];
+      ret (ne (Index (Index (var "state" $-> "vregs.regs", var "mask_reg"), var "byte_idx") &~ (i32 1 <<~ var "bit_idx")) (i32 0));
+    ];
+    func_decl Void "visa_dump_vregs" [(ConstPtr (StructType "EmulatorState"), "state")] [
+      for_range "i" (i32 0) (var "VISA_NUM_VREGS") [
+        expr_stmt (call "printf" [str_lit "v%02zu: [ "; var "i"]);
+        raw "for (int b = (int)VISA_VLEN_BYTES - 1; b >= 0; --b) printf(\"%02x \", state->vregs.regs[i][b]);";
+        expr_stmt (call "printf" [str_lit "]\n"]);
+      ];
+    ];
+    func_decl (StructType "DecodedInstruction") "visa_decode" [(UInt32, "word")] [
+      decl_var (StructType "DecodedInstruction") "dec";
+      expr_stmt (call "memset" [addr_of (var "dec"); i32 0; call "sizeof" [var "dec"]]);
+      (var "dec" $. "raw_word") := var "word";
+      (var "dec" $. "opcode") := var "word" &~ u32 0x7Fl;
+      (var "dec" $. "vd") := (var "word" >>~ i32 7) &~ u32 0x1Fl;
+      (var "dec" $. "funct3") := (var "word" >>~ i32 12) &~ u32 0x7l;
+      (var "dec" $. "vs1") := (var "word" >>~ i32 15) &~ u32 0x1Fl;
+      (var "dec" $. "rs1") := (var "dec" $. "vs1");
+      decl_var Int32 "imm5" ~init:(cast Int32 ((var "word" >>~ i32 15) &~ u32 0x1Fl));
+      if_then (ne (var "imm5" &~ i32 0x10) (i32 0)) [
+        var "imm5" |= bit_not (i32 0x1F);
+      ];
+      (var "dec" $. "imm") := cast Int8 (var "imm5");
+      (var "dec" $. "vs2") := (var "word" >>~ i32 20) &~ u32 0x1Fl;
+      (var "dec" $. "vm") := (var "word" >>~ i32 25) &~ u32 0x1l;
+      (var "dec" $. "funct6") := (var "word" >>~ i32 26) &~ u32 0x3Fl;
+      (var "dec" $. "mnemonic") := str_lit "unknown";
+      if_then (ne (var "dec" $. "opcode") (u32 0x57l)) [
+        ret (var "dec");
+      ];
+      switch (var "dec" $. "funct6") decode_cases (Some [break_stmt]);
+      ret (var "dec");
+    ];
+    func_decl Bool "visa_step" [(Ptr (StructType "EmulatorState"), "state"); (UInt32, "word")] [
+      decl_var (StructType "DecodedInstruction") "dec" ~init:(call "visa_decode" [var "word"]);
+      if_then (call "strcmp" [var "dec" $. "mnemonic"; str_lit "unknown"] ==~ i32 0) [ret (bool_lit false)];
+      decl_var Bool "ok" ~init:(call "visa_execute" [var "state"; addr_of (var "dec")]);
+      if_then (var "ok") [(var "state" $-> "csr.pc") += i32 4];
+      ret (var "ok");
+    ];
+    func_decl SizeT "visa_run_program" [(Ptr (StructType "EmulatorState"), "state"); (ConstPtr UInt32, "program"); (SizeT, "count")] [
+      decl_var SizeT "executed" ~init:(i32 0);
+      for_range "i" (i32 0) (var "count") [
+        if_then (log_not (call "visa_step" [var "state"; Index (var "program", var "i")])) [break_stmt];
+        var "executed" += i32 1;
+      ];
+      ret (var "executed");
+    ];
+  ] in
+  Buffer.add_string b "#include \"visa_emulator.h\"\n\n";
+  Buffer.add_string b (render_top_decls funcs);
   Buffer.contents b
 
-let generate_c11_op_expr (inst : Vector_instruction.t) =
+let generate_c11_op_expr (inst : Vector_instruction.t) : expr =
   match inst.binary_op with
-  | Some ADD -> "(int32_t)((uint32_t)op2 + (uint32_t)op1)"
-  | Some SUB -> "(int32_t)((uint32_t)op2 - (uint32_t)op1)"
-  | Some MUL -> "(int32_t)((uint32_t)op2 * (uint32_t)op1)"
-  | Some DIV -> "(op1 == 0) ? -1 : ((op2 == INT32_MIN && op1 == -1) ? INT32_MIN : (op2 / op1))"
-  | Some REM -> "(op1 == 0) ? op2 : ((op2 == INT32_MIN && op1 == -1) ? 0 : (op2 % op1))"
-  | Some AND -> "op2 & op1"
-  | Some OR  -> "op2 | op1"
-  | Some XOR -> "op2 ^ op1"
-  | Some SLL -> "(int32_t)((uint32_t)op2 << (op1 & 31u))"
-  | Some SRL -> "(int32_t)((uint32_t)op2 >> (op1 & 31u))"
-  | Some SRA -> "op2 >> (op1 & 31u)"
-  | Some MIN -> "(op2 < op1) ? op2 : op1"
-  | Some MAX -> "(op2 > op1) ? op2 : op1"
-  | Some SADD -> "clamp_i32((int64_t)op2 + op1)"
-  | Some SSUB -> "clamp_i32((int64_t)op2 - op1)"
-  | Some CMPEQ -> "(op2 == op1) ? 1 : 0"
-  | Some CMPNE -> "(op2 != op1) ? 1 : 0"
-  | Some CMPLT -> "(op2 < op1) ? 1 : 0"
-  | Some CMPGE -> "(op2 >= op1) ? 1 : 0"
+  | Some ADD -> cast Int32 (cast UInt32 (var "op2") +~ cast UInt32 (var "op1"))
+  | Some SUB -> cast Int32 (cast UInt32 (var "op2") -~ cast UInt32 (var "op1"))
+  | Some MUL -> cast Int32 (cast UInt32 (var "op2") *~ cast UInt32 (var "op1"))
+  | Some DIV ->
+      ternary (var "op1" ==~ i32 0) (i32 (-1))
+        (ternary ((var "op2" ==~ var "INT32_MIN") &&~ (var "op1" ==~ i32 (-1)))
+           (var "INT32_MIN")
+           (var "op2" /~ var "op1"))
+  | Some REM ->
+      ternary (var "op1" ==~ i32 0) (var "op2")
+        (ternary ((var "op2" ==~ var "INT32_MIN") &&~ (var "op1" ==~ i32 (-1)))
+           (i32 0)
+           (var "op2" %~ var "op1"))
+  | Some AND -> var "op2" &~ var "op1"
+  | Some OR  -> var "op2" |~ var "op1"
+  | Some XOR -> var "op2" ^~ var "op1"
+  | Some SLL -> cast Int32 (cast UInt32 (var "op2") <<~ (var "op1" &~ var "31u"))
+  | Some SRL -> cast Int32 (cast UInt32 (var "op2") >>~ (var "op1" &~ var "31u"))
+  | Some SRA -> var "op2" >>~ (var "op1" &~ var "31u")
+  | Some MIN -> ternary (var "op2" <~ var "op1") (var "op2") (var "op1")
+  | Some MAX -> ternary (var "op2" >~ var "op1") (var "op2") (var "op1")
+  | Some SADD -> call "clamp_i32" [cast Int64 (var "op2") +~ cast Int64 (var "op1")]
+  | Some SSUB -> call "clamp_i32" [cast Int64 (var "op2") -~ cast Int64 (var "op1")]
+  | Some CMPEQ -> ternary (var "op2" ==~ var "op1") (i32 1) (i32 0)
+  | Some CMPNE -> ternary (ne (var "op2") (var "op1")) (i32 1) (i32 0)
+  | Some CMPLT -> ternary (var "op2" <~ var "op1") (i32 1) (i32 0)
+  | Some CMPGE -> ternary (var "op2" >=~ var "op1") (i32 1) (i32 0)
   | None -> (
       match inst.unary_op with
-      | Some NEG -> "(int32_t)(0u - (uint32_t)op2)"
-      | Some NOT -> "~op2"
-      | Some ABS -> "(op2 == INT32_MIN) ? INT32_MIN : ((op2 < 0) ? -op2 : op2)"
-      | Some CLZ -> "(op2 == 0) ? 32 : __builtin_clz((uint32_t)op2)"
-      | Some CTZ -> "(op2 == 0) ? 32 : __builtin_ctz((uint32_t)op2)"
-      | Some CPOP -> "__builtin_popcount((uint32_t)op2)"
-      | None -> "op2")
+      | Some NEG -> cast Int32 (var "0u" -~ cast UInt32 (var "op2"))
+      | Some NOT -> bit_not (var "op2")
+      | Some ABS ->
+          ternary (var "op2" ==~ var "INT32_MIN") (var "INT32_MIN")
+            (ternary (var "op2" <~ i32 0) (neg (var "op2")) (var "op2"))
+      | Some CLZ -> ternary (var "op2" ==~ i32 0) (i32 32) (call "__builtin_clz" [cast UInt32 (var "op2")])
+      | Some CTZ -> ternary (var "op2" ==~ i32 0) (i32 32) (call "__builtin_ctz" [cast UInt32 (var "op2")])
+      | Some CPOP -> call "__builtin_popcount" [cast UInt32 (var "op2")]
+      | None -> var "op2")
+
+let emit_exec_c11_inst (inst : Vector_instruction.t) : top_decl =
+  let body_header = [
+    decl_var ~is_const:true SizeT "vl" ~init:(cast SizeT (var "state" $-> "csr.vl"));
+    decl_var (Ptr Int32) "vd_ptr" ~init:(cast (Ptr Int32) (Index (var "state" $-> "vregs.regs", var "inst" $-> "vd")));
+    decl_var (ConstPtr Int32) "vs2_ptr" ~init:(cast (ConstPtr Int32) (Index (var "state" $-> "vregs.regs", var "inst" $-> "vs2")));
+  ] in
+  let has_op1_scalar = inst.format = Types.Instruction_format.OP_VX || inst.format = Types.Instruction_format.OP_VI in
+  let op1_setup =
+    if has_op1_scalar then
+      if inst.format = Types.Instruction_format.OP_VX then
+        [decl_var ~is_const:true Int32 "op1_scalar" ~init:(cast Int32 (call "visa_get_xreg" [var "state"; var "inst" $-> "rs1"]))]
+      else
+        [decl_var ~is_const:true Int32 "op1_scalar" ~init:(cast Int32 (var "inst" $-> "imm"))]
+    else if inst.binary_op <> None then
+      [decl_var (ConstPtr Int32) "vs1_ptr" ~init:(cast (ConstPtr Int32) (Index (var "state" $-> "vregs.regs", var "inst" $-> "vs1")))]
+    else
+      []
+  in
+  let expr = generate_c11_op_expr inst in
+  let unmasked_loop_body =
+    [
+      decl_var Int32 "op2" ~init:(Index (var "vs2_ptr", var "i"));
+    ] @ (
+      if inst.binary_op <> None then
+        if has_op1_scalar then
+          [decl_var Int32 "op1" ~init:(var "op1_scalar")]
+        else
+          [decl_var Int32 "op1" ~init:(Index (var "vs1_ptr", var "i"))]
+      else []
+    ) @ [
+      decl_var Int32 "res" ~init:expr;
+      Index (var "vd_ptr", var "i") := var "res";
+    ]
+  in
+  let masked_loop_body =
+    [
+      if_then (log_not (call "visa_is_mask_set" [var "state"; i32 0; var "i"])) [continue_stmt];
+      decl_var Int32 "op2" ~init:(Index (var "vs2_ptr", var "i"));
+    ] @ (
+      if inst.binary_op <> None then
+        if has_op1_scalar then
+          [decl_var Int32 "op1" ~init:(var "op1_scalar")]
+        else
+          [decl_var Int32 "op1" ~init:(Index (var "vs1_ptr", var "i"))]
+      else []
+    ) @ [
+      decl_var Int32 "res" ~init:expr;
+      Index (var "vd_ptr", var "i") := var "res";
+    ]
+  in
+  let loops =
+    if_then_else
+      ((var "inst" $-> "vm") ==~ i32 1)
+      [for_range "i" (i32 0) (var "vl") unmasked_loop_body]
+      [for_range "i" (i32 0) (var "vl") masked_loop_body]
+  in
+  func_decl ~attrs:[StaticFn] Bool ("exec_" ^ inst.mnemonic)
+    [(Ptr (StructType "EmulatorState"), "state"); (ConstPtr (StructType "DecodedInstruction"), "inst")]
+    (body_header @ op1_setup @ [loops; ret (bool_lit true)])
 
 let emit_instructions_c (spec : Vector_isa_spec.t) =
   let b = Buffer.create 4096 in
+  let clamp_func =
+    func_decl ~attrs:[StaticFn; InlineFn] Int32 "clamp_i32" [(Int64, "val")] [
+      if_then (var "val" <~ cast Int64 (var "INT32_MIN")) [ret (var "INT32_MIN")];
+      if_then (var "val" >~ cast Int64 (var "INT32_MAX")) [ret (var "INT32_MAX")];
+      ret (cast Int32 (var "val"));
+    ]
+  in
+  let exec_funcs = List.map emit_exec_c11_inst spec.instructions in
+  let visa_execute_func =
+    func_decl Bool "visa_execute"
+      [(Ptr (StructType "EmulatorState"), "state"); (ConstPtr (StructType "DecodedInstruction"), "inst")]
+      (List.map (fun (inst : Vector_instruction.t) ->
+         if_then (call "strcmp" [var "inst" $-> "mnemonic"; str_lit inst.mnemonic] ==~ i32 0) [
+           ret (call ("exec_" ^ inst.mnemonic) [var "state"; var "inst"]);
+         ]
+       ) spec.instructions @ [ret (bool_lit false)])
+  in
   Buffer.add_string b "#include \"visa_emulator.h\"\n#include <limits.h>\n\n";
-  Buffer.add_string b "static inline int32_t clamp_i32(int64_t val) {\n";
-  Buffer.add_string b "    if (val < (int64_t)INT32_MIN) return INT32_MIN;\n";
-  Buffer.add_string b "    if (val > (int64_t)INT32_MAX) return INT32_MAX;\n";
-  Buffer.add_string b "    return (int32_t)val;\n}\n\n";
-
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
-      Buffer.add_string b (Printf.sprintf "static bool exec_%s(EmulatorState* state, const DecodedInstruction* inst) {\n" inst.mnemonic);
-      Buffer.add_string b "    const size_t vl = (size_t)state->csr.vl;\n";
-      Buffer.add_string b "    int32_t* vd_ptr = (int32_t*)state->vregs.regs[inst->vd];\n";
-      Buffer.add_string b "    const int32_t* vs2_ptr = (const int32_t*)state->vregs.regs[inst->vs2];\n";
-
-      let has_op1_scalar = inst.format = Types.Instruction_format.OP_VX || inst.format = Types.Instruction_format.OP_VI in
-      if has_op1_scalar then begin
-        if inst.format = Types.Instruction_format.OP_VX then
-          Buffer.add_string b "    const int32_t op1_scalar = (int32_t)visa_get_xreg(state, inst->rs1);\n"
-        else
-          Buffer.add_string b "    const int32_t op1_scalar = (int32_t)inst->imm;\n"
-      end else if inst.binary_op <> None then begin
-        Buffer.add_string b "    const int32_t* vs1_ptr = (const int32_t*)state->vregs.regs[inst->vs1];\n"
-      end;
-
-      let expr = generate_c11_op_expr inst in
-
-      Buffer.add_string b "    if (inst->vm == 1) {\n";
-      Buffer.add_string b "        for (size_t i = 0; i < vl; ++i) {\n";
-      Buffer.add_string b "            int32_t op2 = vs2_ptr[i];\n";
-      if inst.binary_op <> None then begin
-        if has_op1_scalar then
-          Buffer.add_string b "            int32_t op1 = op1_scalar;\n"
-        else
-          Buffer.add_string b "            int32_t op1 = vs1_ptr[i];\n"
-      end;
-      Buffer.add_string b (Printf.sprintf "            int32_t res = %s;\n" expr);
-      Buffer.add_string b "            vd_ptr[i] = res;\n";
-      Buffer.add_string b "        }\n";
-      Buffer.add_string b "    } else {\n";
-      Buffer.add_string b "        for (size_t i = 0; i < vl; ++i) {\n";
-      Buffer.add_string b "            if (!visa_is_mask_set(state, 0, i)) continue;\n";
-      Buffer.add_string b "            int32_t op2 = vs2_ptr[i];\n";
-      if inst.binary_op <> None then begin
-        if has_op1_scalar then
-          Buffer.add_string b "            int32_t op1 = op1_scalar;\n"
-        else
-          Buffer.add_string b "            int32_t op1 = vs1_ptr[i];\n"
-      end;
-      Buffer.add_string b (Printf.sprintf "            int32_t res = %s;\n" expr);
-      Buffer.add_string b "            vd_ptr[i] = res;\n";
-      Buffer.add_string b "        }\n";
-      Buffer.add_string b "    }\n";
-      Buffer.add_string b "    return true;\n}\n\n")
-    spec.instructions;
-
-  Buffer.add_string b "bool visa_execute(EmulatorState* state, const DecodedInstruction* inst) {\n";
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
-      Buffer.add_string b (Printf.sprintf "    if (strcmp(inst->mnemonic, \"%s\") == 0) return exec_%s(state, inst);\n" inst.mnemonic inst.mnemonic))
-    spec.instructions;
-  Buffer.add_string b "    return false;\n}\n";
+  Buffer.add_string b (render_top_decls ([clamp_func] @ exec_funcs @ [visa_execute_func]));
   Buffer.contents b
 
 let emit_main_c (spec : Vector_isa_spec.t) =
   let b = Buffer.create 4096 in
-  Buffer.add_string b "#include \"visa_emulator.h\"\n#include <stdlib.h>\n\n";
-  Buffer.add_string b "static void setup_test_state(EmulatorState* state) {\n";
-  Buffer.add_string b "    for (size_t i = 0; i < state->csr.vl; ++i) {\n";
-  Buffer.add_string b "        ((int32_t*)state->vregs.regs[1])[i] = (int32_t)((i + 1) * 10);\n";
-  Buffer.add_string b "        ((int32_t*)state->vregs.regs[2])[i] = (int32_t)((i + 1) * 2);\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    visa_set_xreg(state, 1, 5);\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "static int run_self_tests(EmulatorState* state) {\n";
-  Buffer.add_string b "    int passed = 0;\n";
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
+  let setup_test_state =
+    func_decl ~attrs:[StaticFn] Void "setup_test_state" [(Ptr (StructType "EmulatorState"), "state")] [
+      for_range "i" (i32 0) (var "state" $-> "csr.vl") [
+        Index (cast (Ptr Int32) (Index (var "state" $-> "vregs.regs", i32 1)), var "i") :=
+          cast Int32 ((var "i" +~ i32 1) *~ i32 10);
+        Index (cast (Ptr Int32) (Index (var "state" $-> "vregs.regs", i32 2)), var "i") :=
+          cast Int32 ((var "i" +~ i32 1) *~ i32 2);
+      ];
+      expr_stmt (call "visa_set_xreg" [var "state"; i32 1; u64 5L]);
+    ]
+  in
+  let test_cases =
+    List.map (fun (inst : Vector_instruction.t) ->
       let word = Vector_instruction.encode ~vd:3 ~vs2:2 ~vs1_or_rs1_or_imm:1 ~vm:1 inst in
-      Buffer.add_string b "    {\n";
-      Buffer.add_string b "        setup_test_state(state);\n";
-      Buffer.add_string b (Printf.sprintf "        uint32_t word = 0x%08X;\n" (Int32.to_int word));
-      Buffer.add_string b "        bool ok = visa_step(state, word);\n";
-      Buffer.add_string b "        if (!ok) {\n";
-      Buffer.add_string b (Printf.sprintf "            fprintf(stderr, \"[FAIL] %s failed to execute\\n\");\n" inst.mnemonic);
-      Buffer.add_string b "            return 1;\n";
-      Buffer.add_string b "        }\n";
-      Buffer.add_string b (Printf.sprintf "        printf(\"[TEST] %s: word=0x%%08x res[0]=%%d\\n\", word, ((int32_t*)state->vregs.regs[3])[0]);\n" inst.mnemonic);
-      Buffer.add_string b "        ++passed;\n";
-      Buffer.add_string b "    }\n")
-    spec.instructions;
-  Buffer.add_string b "    printf(\"=== ALL C11 EMULATOR TESTS PASSED (%d instructions verified) ===\\n\", passed);\n";
-  Buffer.add_string b "    return 0;\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "int main(int argc, char** argv) {\n";
-  Buffer.add_string b "    EmulatorState state;\n    visa_emulator_init(&state);\n";
-  Buffer.add_string b "    if (argc > 1) {\n";
-  Buffer.add_string b "        if (strcmp(argv[1], \"--hex\") == 0 && argc > 2) {\n";
-  Buffer.add_string b "            uint32_t w = (uint32_t)strtoul(argv[2], NULL, 16);\n";
-  Buffer.add_string b "            setup_test_state(&state);\n";
-  Buffer.add_string b "            return visa_step(&state, w) ? 0 : 1;\n";
-  Buffer.add_string b "        }\n    }\n";
-  Buffer.add_string b "    return run_self_tests(&state);\n";
-  Buffer.add_string b "}\n";
+      Block [
+        expr_stmt (call "setup_test_state" [var "state"]);
+        decl_var UInt32 "word" ~init:(u32 word);
+        decl_var Bool "ok" ~init:(call "visa_step" [var "state"; var "word"]);
+        if_then (log_not (var "ok")) [
+          expr_stmt (call "fprintf" [var "stderr"; str_lit (Printf.sprintf "[FAIL] %s failed to execute\n" inst.mnemonic)]);
+          ret (i32 1);
+        ];
+        expr_stmt (call "printf" [
+          str_lit (Printf.sprintf "[TEST] %s: word=0x%%08x res[0]=%%d\n" inst.mnemonic);
+          var "word";
+          Index (cast (Ptr Int32) (Index (var "state" $-> "vregs.regs", i32 3)), i32 0);
+        ]);
+        var "passed" += i32 1;
+      ]
+    ) spec.instructions
+  in
+  let run_self_tests =
+    func_decl ~attrs:[StaticFn] Int32 "run_self_tests" [(Ptr (StructType "EmulatorState"), "state")] (
+      [decl_var Int32 "passed" ~init:(i32 0)]
+      @ test_cases
+      @ [
+        expr_stmt (call "printf" [
+          str_lit "=== ALL C11 EMULATOR TESTS PASSED (%d instructions verified) ===\n";
+          var "passed";
+        ]);
+        ret (i32 0);
+      ]
+    )
+  in
+  let main_func =
+    func_decl Int32 "main" [(Int32, "argc"); (Ptr (Ptr (StructType "char")), "argv")] [
+      decl_var (StructType "EmulatorState") "state";
+      expr_stmt (call "visa_emulator_init" [addr_of (var "state")]);
+      if_then (var "argc" >~ i32 1) [
+        if_then ((call "strcmp" [Index (var "argv", i32 1); str_lit "--hex"] ==~ i32 0) &&~ (var "argc" >~ i32 2)) [
+          decl_var UInt32 "w" ~init:(cast UInt32 (call "strtoul" [Index (var "argv", i32 2); var "NULL"; i32 16]));
+          expr_stmt (call "setup_test_state" [addr_of (var "state")]);
+          ret (ternary (call "visa_step" [addr_of (var "state"); var "w"]) (i32 0) (i32 1));
+        ];
+      ];
+      ret (call "run_self_tests" [addr_of (var "state")]);
+    ]
+  in
+  Buffer.add_string b "#include \"visa_emulator.h\"\n#include <stdlib.h>\n\n";
+  Buffer.add_string b (render_top_decls [setup_test_state; run_self_tests; main_func]);
   Buffer.contents b
 
 let emit_makefile () =
