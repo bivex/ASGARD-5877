@@ -389,7 +389,23 @@ let () =
    | Error err -> failwith ("RNS Garner CRT syntax validation failed: " ^ err));
   assert (List.length rns_ast > 0);
   assert (String.length rns_cpp > 300);
-  Printf.printf "[PASS] Step 23: Residue Number System (RNS-4) Garner CRT emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 23: Residue Number System (RNS-4) Garner CRT emitted using typed AST.\n";
+
+  (* 24. Tech-2603 Anti-VPC-Tracking C++20 Header AST *)
+  let tech_2603_cpp = Tech_2603.Tech_2603_engine.emit_tech_2603_cpp_header () in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax tech_2603_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Tech-2603 header syntax validation failed: " ^ err));
+  assert (String.length tech_2603_cpp > 300);
+  Printf.printf "[PASS] Step 24: Tech-2603 Anti-VPC-Tracking runtime emitted using typed AST.\n";
+
+  (* 25. Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pool C++20 Header AST *)
+  let tech_2608_cpp = Tech_2608.Tech_2608_engine.emit_tech_2608_cpp_header () in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax tech_2608_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Tech-2608 header syntax validation failed: " ^ err));
+  assert (String.length tech_2608_cpp > 300);
+  Printf.printf "[PASS] Step 25: Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pool emitted using typed AST.\n"
 
 
 
