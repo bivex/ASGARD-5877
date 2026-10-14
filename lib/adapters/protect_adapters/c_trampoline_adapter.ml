@@ -375,7 +375,7 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
           [
             if_then (log_not (var (Printf.sprintf "%s_assembled" name))) [
               for_range "_idx" (i32 0) (i32 num_chunks) [
-                decl_var ~is_const:true (ConstPtr (StructType "AsgardBytecodeChunk")) "c"
+                decl_var (ConstPtr (StructType "AsgardBytecodeChunk")) "c"
                   ~init:(addr_of (idx (var (Printf.sprintf "%s_chunks" name)) (var "_idx")));
                 if_then (ne (var "c" $-> "canary") (c_cast UInt64 ((((var "c" $-> "chunk_id") *~ u32 0xDEADl) +~ u32 0xCAFEl) &~ u32 0xFFFFFFFFl))) [
                   expr_stmt (call "ASG_CHUNK_TRAP" []);
