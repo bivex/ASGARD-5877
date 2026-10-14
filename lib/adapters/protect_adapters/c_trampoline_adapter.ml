@@ -227,7 +227,25 @@ let embed_vm_trampoline
     List.rev !acc
   in
 
-  let chunk_struct_def = {|
+  let chunk_struct_decl =
+    Cpp_codegen.Cpp_ast.StructDecl {
+      align_as = None;
+      name = "AsgardBytecodeChunk";
+      fields = [
+        (Cpp_codegen.Cpp_ast.UInt32, "chunk_id");
+        (Cpp_codegen.Cpp_ast.UInt32, "next_chunk_id");
+        (Cpp_codegen.Cpp_ast.UInt32, "word_offset");
+        (Cpp_codegen.Cpp_ast.UInt32, "word_count");
+        (Cpp_codegen.Cpp_ast.UInt32, "canary");
+        (Cpp_codegen.Cpp_ast.UInt32, "entropy_seed");
+        (Cpp_codegen.Cpp_ast.Array (Cpp_codegen.Cpp_ast.UInt64, 2), "junk_pad");
+        (Cpp_codegen.Cpp_ast.ConstPtr Cpp_codegen.Cpp_ast.UInt64, "data");
+      ];
+    }
+  in
+  let chunk_struct_cpp = Cpp_codegen.Cpp_printer.string_of_top_decl chunk_struct_decl in
+
+  let chunk_struct_def = Printf.sprintf {|
 #ifndef ASGARD_BYTECODE_CHUNK_DEF
 #define ASGARD_BYTECODE_CHUNK_DEF
 #include <stdint.h>
@@ -243,19 +261,11 @@ let embed_vm_trampoline
 #endif
 
 #pragma pack(push, 1)
-typedef struct {
-    uint32_t chunk_id;
-    uint32_t next_chunk_id;
-    uint32_t word_offset;
-    uint32_t word_count;
-    uint32_t canary;
-    uint32_t entropy_seed;
-    uint64_t junk_pad[2];
-    const uint64_t* data;
-} AsgardBytecodeChunk;
+%s
+typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
 #pragma pack(pop)
 #endif
-|} in
+|} chunk_struct_cpp in
 
   let format_fragmented_bytecode name bc =
     let total_words = List.length bc in

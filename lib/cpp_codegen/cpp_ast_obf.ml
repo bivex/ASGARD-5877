@@ -60,6 +60,12 @@ let scramble_struct_member rng = function
       MemberField { f with init = Option.map (scramble_expr rng) f.init }
   | MemberMethod m ->
       MemberMethod { m with body = List.map (scramble_stmt rng) m.body }
+  | MemberConstructor c ->
+      MemberConstructor {
+        c with
+        init_list = List.map (fun (n, e) -> (n, scramble_expr rng e)) c.init_list;
+        body = List.map (scramble_stmt rng) c.body;
+      }
   | MemberStaticConstexpr c ->
       MemberStaticConstexpr { c with init = scramble_expr rng c.init }
   | (MemberRaw _ | MemberComment _) as m -> m

@@ -28,11 +28,19 @@ val emit_h_idiv : unit -> top_decl
 val emit_h_push_flags : unit -> top_decl
 val emit_h_pop_flags : unit -> top_decl
 
+val emit_h_cmp : unit -> top_decl
+val emit_h_test : unit -> top_decl
+val emit_h_add_imm : unit -> top_decl
+val emit_h_sub_imm : unit -> top_decl
+val emit_h_add_ii : unit -> top_decl
+val emit_h_sub_ii : unit -> top_decl
+
 val emit_push_pop_handlers : unit -> top_decl list
 val emit_dup_swap_handlers : unit -> top_decl list
 val emit_mem_handlers : unit -> top_decl list
 val emit_alu_handlers : unit -> top_decl list
 val emit_flags_handlers : unit -> top_decl list
+val emit_superop_handlers : unit -> top_decl list
 val emit_all_stack_manipulation_handlers : unit -> top_decl list
 
 val emit_push_pop_handlers_string : unit -> string
@@ -40,6 +48,7 @@ val emit_dup_swap_handlers_string : unit -> string
 val emit_mem_handlers_string : unit -> string
 val emit_alu_handlers_string : unit -> string
 val emit_flags_handlers_string : unit -> string
+val emit_superop_handlers_string : unit -> string
 val emit_all_handlers_string : unit -> string
 
 val emit_handlers_source : Buffer.t -> unit

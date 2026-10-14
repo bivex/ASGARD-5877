@@ -105,6 +105,7 @@
   multi_vm
   random_visa.stack_vm
   rd_jit_vm
+  vanguard_9292
   alcotest))
 
 (test

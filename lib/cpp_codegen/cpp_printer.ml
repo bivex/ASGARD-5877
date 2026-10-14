@@ -62,6 +62,21 @@ and pp_expr_atom fmt e = match e with
       pp_expr fmt e
   | _ -> fprintf fmt "(%a)" pp_expr e
 
+(* Statement-condition context.
+   [Binary], [Unary] and [Ternary] expressions already wrap themselves in
+   parentheses via [pp_expr], and the statement keyword (if/while) adds its
+   own pair, so printing the condition with [pp_expr] yields e.g.
+   "if ((w == 1))". The extra pair around an equality comparison trips
+   clang's -Wparentheses-equality. Since every operand is printed with
+   [pp_expr] (which self-parenthesizes), dropping only the outermost
+   wrapper preserves the exact operator grouping. *)
+let pp_condition fmt e =
+  match e with
+  | Binary (op, a, b) -> fprintf fmt "%a %s %a" pp_expr a (binop_str op) pp_expr b
+  | Ternary (c, t, f) -> fprintf fmt "%a ? %a : %a" pp_expr c pp_expr t pp_expr f
+  | Unary (op, e') -> fprintf fmt "%s%a" (unop_str op) pp_expr e'
+  | _ -> pp_expr fmt e
+
 let assign_op_str = function
   | AssignPlain -> "="  | AssignAdd -> "+=" | AssignSub -> "-=" | AssignMul -> "*="
   | AssignXor   -> "^=" | AssignOr  -> "|=" | AssignAnd -> "&=" | AssignDiv -> "/="
@@ -92,15 +107,15 @@ let rec pp_stmt fmt = function
   | Block stmts ->
       fprintf fmt "{@[<v 4>@,%a@]@,}" pp_stmt_list stmts
   | If (cond, then_b, []) ->
-      fprintf fmt "if (%a) {@[<v 4>@,%a@]@,}" pp_expr cond pp_stmt_list then_b
+      fprintf fmt "if (%a) {@[<v 4>@,%a@]@,}" pp_condition cond pp_stmt_list then_b
   | If (cond, then_b, else_b) ->
       fprintf fmt "if (%a) {@[<v 4>@,%a@]@,} else {@[<v 4>@,%a@]@,}"
-        pp_expr cond pp_stmt_list then_b pp_stmt_list else_b
+        pp_condition cond pp_stmt_list then_b pp_stmt_list else_b
   | ForRange { var_name; start_e; limit_e; body } ->
       fprintf fmt "for (size_t %s = %a; %s < %a; ++%s) {@[<v 4>@,%a@]@,}"
         var_name pp_expr start_e var_name pp_expr limit_e var_name pp_stmt_list body
   | While (cond, body) ->
-      fprintf fmt "while (%a) {@[<v 4>@,%a@]@,}" pp_expr cond pp_stmt_list body
+      fprintf fmt "while (%a) {@[<v 4>@,%a@]@,}" pp_condition cond pp_stmt_list body
   | Switch { cond; cases; default } ->
       fprintf fmt "switch (%a) {@[<v 2>@," pp_expr cond;
       List.iter (fun (ce, body) ->
@@ -134,6 +149,61 @@ let pp_attr fmt = function
   | NoExcept     -> ()
   | ConstexprFn  -> fprintf fmt "constexpr "
   | StaticFn     -> fprintf fmt "static "
+
+let pp_struct_member fmt = function
+  | MemberField { ty; name; init = Some e } ->
+      fprintf fmt "%a %s = %a;@," pp_ctype ty name pp_expr e
+  | MemberField { ty = Array (Array (et, sz2), sz1); name; init = None } ->
+      fprintf fmt "%a %s[%d][%d];@," pp_ctype et name sz1 sz2
+  | MemberField { ty = Array (et, sz); name; init = None } ->
+      fprintf fmt "%a %s[%d];@," pp_ctype et name sz
+  | MemberField { ty; name; init = None } ->
+      fprintf fmt "%a %s;@," pp_ctype ty name
+  | MemberStaticConstexpr { ty; name; init } ->
+      fprintf fmt "static inline constexpr %a %s = %a;@," pp_ctype ty name pp_expr init
+  | MemberMethod { attrs; is_static; is_const; ret_type; name; params; body } ->
+      if is_static then fprintf fmt "static ";
+      List.iter (pp_attr fmt) attrs;
+      let is_noexcept = List.mem NoExcept attrs in
+      fprintf fmt "%a %s(%a)%s%s {@[<v 4>@,%a@]@,}@,"
+        pp_ctype ret_type name
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+           (fun fmt (ty, pname) ->
+              if pname = "" then pp_ctype fmt ty
+              else fprintf fmt "%a %s" pp_ctype ty pname)) params
+        (if is_const then " const" else "")
+        (if is_noexcept then " noexcept" else "")
+        pp_stmt_list body
+  | MemberConstructor { attrs; is_explicit; name; params; init_list; body } ->
+      List.iter (pp_attr fmt) attrs;
+      if is_explicit then fprintf fmt "explicit ";
+      let is_noexcept = List.mem NoExcept attrs in
+      let init_str =
+        match init_list with
+        | [] -> ""
+        | inits ->
+            let b = Buffer.create 64 in
+            let f = formatter_of_buffer b in
+            fprintf f " : %a"
+              (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+                 (fun fmt (fname, e) -> fprintf fmt "%s(%a)" fname pp_expr e))
+              inits;
+            pp_print_flush f ();
+            Buffer.contents b
+      in
+      fprintf fmt "%s(%a)%s%s {@[<v 4>@,%a@]@,}@,"
+        name
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+           (fun fmt (ty, pname) ->
+              if pname = "" then pp_ctype fmt ty
+              else fprintf fmt "%a %s" pp_ctype ty pname)) params
+        (if is_noexcept then " noexcept" else "")
+        init_str
+        pp_stmt_list body
+  | MemberRaw s ->
+      fprintf fmt "%s@," s
+  | MemberComment s ->
+      fprintf fmt "// %s@," s
 
 let rec pp_top_decl fmt = function
   | IncludeSys h ->
@@ -172,35 +242,7 @@ let rec pp_top_decl fmt = function
         | None -> ""
       in
       fprintf fmt "struct %s%s {@[<v 4>@," align_str name;
-      List.iter (function
-        | MemberField { ty; name; init = Some e } ->
-            fprintf fmt "%a %s = %a;@," pp_ctype ty name pp_expr e
-        | MemberField { ty = Array (Array (et, sz2), sz1); name; init = None } ->
-            fprintf fmt "%a %s[%d][%d];@," pp_ctype et name sz1 sz2
-        | MemberField { ty = Array (et, sz); name; init = None } ->
-            fprintf fmt "%a %s[%d];@," pp_ctype et name sz
-        | MemberField { ty; name; init = None } ->
-            fprintf fmt "%a %s;@," pp_ctype ty name
-        | MemberStaticConstexpr { ty; name; init } ->
-            fprintf fmt "static inline constexpr %a %s = %a;@," pp_ctype ty name pp_expr init
-        | MemberMethod { attrs; is_static; is_const; ret_type; name; params; body } ->
-            if is_static then fprintf fmt "static ";
-            List.iter (pp_attr fmt) attrs;
-            let is_noexcept = List.mem NoExcept attrs in
-            fprintf fmt "%a %s(%a)%s%s {@[<v 4>@,%a@]@,}@,"
-              pp_ctype ret_type name
-              (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
-                 (fun fmt (ty, pname) ->
-                    if pname = "" then pp_ctype fmt ty
-                    else fprintf fmt "%a %s" pp_ctype ty pname)) params
-              (if is_const then " const" else "")
-              (if is_noexcept then " noexcept" else "")
-              pp_stmt_list body
-        | MemberRaw s ->
-            fprintf fmt "%s@," s
-        | MemberComment s ->
-            fprintf fmt "// %s@," s
-      ) members;
+      List.iter (pp_struct_member fmt) members;
       fprintf fmt "@]@,};"
   | UnionDef { align_as; name; members } ->
       let align_str = match align_as with
@@ -208,35 +250,7 @@ let rec pp_top_decl fmt = function
         | None -> ""
       in
       fprintf fmt "union %s%s {@[<v 4>@," align_str name;
-      List.iter (function
-        | MemberField { ty; name; init = Some e } ->
-            fprintf fmt "%a %s = %a;@," pp_ctype ty name pp_expr e
-        | MemberField { ty = Array (Array (et, sz2), sz1); name; init = None } ->
-            fprintf fmt "%a %s[%d][%d];@," pp_ctype et name sz1 sz2
-        | MemberField { ty = Array (et, sz); name; init = None } ->
-            fprintf fmt "%a %s[%d];@," pp_ctype et name sz
-        | MemberField { ty; name; init = None } ->
-            fprintf fmt "%a %s;@," pp_ctype ty name
-        | MemberStaticConstexpr { ty; name; init } ->
-            fprintf fmt "static inline constexpr %a %s = %a;@," pp_ctype ty name pp_expr init
-        | MemberMethod { attrs; is_static; is_const; ret_type; name; params; body } ->
-            if is_static then fprintf fmt "static ";
-            List.iter (pp_attr fmt) attrs;
-            let is_noexcept = List.mem NoExcept attrs in
-            fprintf fmt "%a %s(%a)%s%s {@[<v 4>@,%a@]@,}@,"
-              pp_ctype ret_type name
-              (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
-                 (fun fmt (ty, pname) ->
-                    if pname = "" then pp_ctype fmt ty
-                    else fprintf fmt "%a %s" pp_ctype ty pname)) params
-              (if is_const then " const" else "")
-              (if is_noexcept then " noexcept" else "")
-              pp_stmt_list body
-        | MemberRaw s ->
-            fprintf fmt "%s@," s
-        | MemberComment s ->
-            fprintf fmt "// %s@," s
-      ) members;
+      List.iter (pp_struct_member fmt) members;
       fprintf fmt "@]@,};"
   | EnumDecl { name; underlying_ty; items } ->
       let ty_str = match underlying_ty with

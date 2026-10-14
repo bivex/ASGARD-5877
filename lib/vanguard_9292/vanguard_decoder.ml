@@ -1,5 +1,7 @@
 open Random_visa_domain
 open Vanguard_types
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
 
 let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
   let find_field kind =
@@ -14,105 +16,142 @@ let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
   let imm_off, imm_w = find_field Imm in
   let mask_off, _ = find_field Mask in
 
-  let mask_expr width =
-    if width >= 64 then "0xFFFFFFFFFFFFFFFFULL"
-    else Printf.sprintf "0x%LXULL" (Int64.sub (Int64.shift_left 1L width) 1L)
+  let mask_val width =
+    if width >= 64 then 0xFFFFFFFFFFFFFFFFL
+    else Int64.sub (Int64.shift_left 1L width) 1L
   in
 
-  let b = Buffer.create 4096 in
-  Buffer.add_string b "#pragma once\n";
-  Buffer.add_string b "#include \"isa_state.hpp\"\n";
-  Buffer.add_string b "#include \"decoder.hpp\"\n";
-  Buffer.add_string b "#include \"instructions.hpp\"\n";
-  Buffer.add_string b "#include <cstdint>\n#include <iostream>\n#include <iomanip>\n\n";
-  Buffer.add_string b "namespace vanguard_vm {\n\n";
+  (* RollingKey class as typed C++ AST *)
+  let rolling_key_decl =
+    struct_def "RollingKey" [
+      member_field UInt32 "state";
+      member_field ~init:(u32 0l) UInt32 "counter";
+      member_constructor
+        ~attrs:[AlwaysInline; NoExcept]
+        ~is_explicit:true
+        ~params:[ (UInt32, "seed") ]
+        ~init_list:[
+          ("state", ternary (var "seed" ==~ u32 0l) (LitU32 0x1337BEEFl) (var "seed"));
+          ("counter", u32 0l);
+        ]
+        "RollingKey"
+        [];
+      member_method
+        ~attrs:[AlwaysInline; NoExcept]
+        UInt32 "next" []
+        [
+          raw "counter++;";
+          decl_var ~init:(var "state") UInt32 "x";
+          (var "x") ^= (var "x" <<~ i32 13);
+          (var "x") ^= (var "x" >>~ i32 17);
+          (var "x") ^= (var "x" <<~ i32 5);
+          decl_var ~init:((var "x" <<~ i32 7) |~ (var "x" >>~ i32 25)) UInt32 "rot";
+          decl_var ~init:(var "rot" +~ (var "counter" *~ LitU32 0x9E3779B9l)) UInt32 "mixed";
+          if_then (var "mixed" ==~ u32 0l) [ (var "mixed") := LitU32 0x1337BEEFl ];
+          (var "state") := var "mixed";
+          ret (var "mixed");
+        ];
+      member_method
+        ~attrs:[AlwaysInline; NoExcept]
+        UInt64 "next64" []
+        [
+          decl_var ~init:(cast UInt64 (call "next" [])) UInt64 "w1";
+          decl_var ~init:(cast UInt64 (call "next" [])) UInt64 "w2";
+          ret ((var "w1" <<~ i32 32) |~ var "w2");
+        ];
+    ]
+  in
 
-  (* RollingKey class *)
-  Buffer.add_string b "struct RollingKey {\n";
-  Buffer.add_string b "    uint32_t state;\n";
-  Buffer.add_string b "    uint32_t counter{0};\n";
-  Buffer.add_string b "    inline explicit RollingKey(uint32_t seed) noexcept\n";
-  Buffer.add_string b "        : state(seed == 0 ? 0x1337BEEFU : seed), counter(0) {}\n\n";
-  Buffer.add_string b "    inline uint32_t next() noexcept {\n";
-  Buffer.add_string b "        counter++;\n";
-  Buffer.add_string b "        uint32_t x = state;\n";
-  Buffer.add_string b "        x ^= x << 13;\n";
-  Buffer.add_string b "        x ^= x >> 17;\n";
-  Buffer.add_string b "        x ^= x << 5;\n";
-  Buffer.add_string b "        uint32_t rot = (x << 7) | (x >> 25);\n";
-  Buffer.add_string b "        uint32_t mixed = rot + (counter * 0x9E3779B9U);\n";
-  Buffer.add_string b "        if (mixed == 0) mixed = 0x1337BEEFU;\n";
-  Buffer.add_string b "        state = mixed;\n";
-  Buffer.add_string b "        return mixed;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline uint64_t next64() noexcept {\n";
-  Buffer.add_string b "        uint64_t w1 = (uint64_t)next();\n";
-  Buffer.add_string b "        uint64_t w2 = (uint64_t)next();\n";
-  Buffer.add_string b "        return (w1 << 32) | w2;\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "};\n\n";
+  let inst_cases =
+    List.filter_map
+      (fun (inst : Vector_instruction.t) ->
+        match Opcode_map.encode t.opcodes inst.mnemonic with
+        | None -> None
+        | Some code ->
+            Some (
+              LitU32 (Int32.of_int code),
+              [
+                comment inst.mnemonic;
+                (var "dec.id") := var ("visa_emulator::InstId::" ^ String.uppercase_ascii inst.mnemonic);
+                (var "dec.mnemonic") := LitStr inst.mnemonic;
+                if_then (Unary (LogNot, call "visa_emulator::InstructionExecutor::execute" [var "state"; var "dec"]))
+                  [ ret (LitBool false) ];
+                raw "executed_instructions++;";
+                ret (LitBool true);
+              ]
+            ))
+      spec.instructions
+  in
 
-  (* VanguardDecoder class *)
-  Buffer.add_string b "class VanguardDecoder {\npublic:\n";
-  Buffer.add_string b "    RollingKey key;\n";
-  Buffer.add_string b "    bool trapped{false};\n";
-  Buffer.add_string b "    size_t executed_instructions{0};\n\n";
-  Buffer.add_string b (Printf.sprintf "    explicit VanguardDecoder(uint32_t seed = 0x%08lXU) noexcept : key(seed) {}\n\n" t.key_seed);
-  Buffer.add_string b "    bool decode_and_execute(visa_emulator::EmulatorState& state, uint64_t raw_word) {\n";
-  Buffer.add_string b "        uint64_t word = raw_word ^ key.next64();\n\n";
-  Buffer.add_string b (Printf.sprintf "        uint32_t opcode = (word >> %d) & %s;\n" op_off (mask_expr op_w));
-  Buffer.add_string b (Printf.sprintf "        size_t dst = (word >> %d) & %s;\n" dst_off (mask_expr dst_w));
-  Buffer.add_string b (Printf.sprintf "        size_t src1 = (word >> %d) & %s;\n" s1_off (mask_expr s1_w));
-  Buffer.add_string b (Printf.sprintf "        size_t src2 = (word >> %d) & %s;\n" s2_off (mask_expr s2_w));
-  Buffer.add_string b (Printf.sprintf "        int64_t imm = (word >> %d) & %s;\n" imm_off (mask_expr imm_w));
-  Buffer.add_string b (Printf.sprintf "        bool mask = ((word >> %d) & 1) != 0;\n\n" mask_off);
-
-  Buffer.add_string b "        visa_emulator::DecodedInstruction dec;\n";
-  Buffer.add_string b "        dec.vd = static_cast<uint8_t>(dst);\n";
-  Buffer.add_string b "        dec.vs2 = static_cast<uint8_t>(src2);\n";
-  Buffer.add_string b "        dec.vs1 = static_cast<uint8_t>(src1);\n";
-  Buffer.add_string b "        dec.rs1 = static_cast<uint8_t>(src1);\n";
-  Buffer.add_string b "        dec.imm = static_cast<int8_t>(imm);\n";
-  Buffer.add_string b "        dec.vm = mask ? 1 : 0;\n\n";
-
-  Buffer.add_string b "        switch (opcode) {\n";
-
-  (* Instruction cases *)
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
-      match Opcode_map.encode t.opcodes inst.mnemonic with
-      | None -> ()
-      | Some code ->
-          Buffer.add_string b (Printf.sprintf "            case 0x%02X: // %s\n" code inst.mnemonic);
-          Buffer.add_string b (Printf.sprintf "                dec.id = visa_emulator::InstId::%s;\n" (String.uppercase_ascii inst.mnemonic));
-          Buffer.add_string b (Printf.sprintf "                dec.mnemonic = \"%s\";\n" inst.mnemonic);
-          Buffer.add_string b "                if (!visa_emulator::InstructionExecutor::execute(state, dec)) return false;\n";
-          Buffer.add_string b "                executed_instructions++;\n";
-          Buffer.add_string b "                return true;\n")
-    spec.instructions;
-
-  (* Decoy junk opcode traps *)
   let junk_codes = ref [] in
   for c = 0 to (1 lsl (Opcode_map.opcode_bits t.opcodes)) - 1 do
-    if Opcode_map.is_junk t.opcodes c then junk_codes := c :: !junk_codes
+    if Opcode_map.is_junk t.opcodes c then junk_codes.contents <- c :: junk_codes.contents
   done;
 
-  if !junk_codes <> [] then begin
-    Buffer.add_string b "\n            // Decoy Junk Trap Opcode Handlers\n";
-    List.iter
-      (fun c -> Buffer.add_string b (Printf.sprintf "            case 0x%02X:\n" c))
-      (List.rev !junk_codes);
-    Buffer.add_string b "                std::cerr << \"[VANGUARD-TRAP] Decoy junk opcode caught at runtime: 0x\" << std::hex << opcode << \"\\n\";\n";
-    Buffer.add_string b "                trapped = true;\n";
-    Buffer.add_string b "                return false;\n";
-  end;
+  let junk_trap_stmts = [
+    raw "std::cerr << \"[VANGUARD-TRAP] Decoy junk opcode caught at runtime: 0x\" << std::hex << opcode << \"\\n\";";
+    (var "trapped") := LitBool true;
+    ret (LitBool false);
+  ] in
 
-  Buffer.add_string b "            default:\n";
-  Buffer.add_string b "                std::cerr << \"[VANGUARD-TRAP] Unmapped opcode caught: 0x\" << std::hex << opcode << \"\\n\";\n";
-  Buffer.add_string b "                trapped = true;\n";
-  Buffer.add_string b "                return false;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "};\n\n";
-  Buffer.add_string b "} // namespace vanguard_vm\n";
-  Buffer.contents b
+  let junk_cases =
+    List.map (fun c -> (LitU32 (Int32.of_int c), junk_trap_stmts)) (List.rev !junk_codes)
+  in
+
+  let default_case = Some [
+    raw "std::cerr << \"[VANGUARD-TRAP] Unmapped opcode caught: 0x\" << std::hex << opcode << \"\\n\";";
+    (var "trapped") := LitBool true;
+    ret (LitBool false);
+  ] in
+
+  let decoder_body = [
+    decl_var ~init:(var "raw_word" ^~ call "key.next64" []) UInt64 "word";
+    decl_var ~init:(cast UInt32 ((var "word" >>~ i32 op_off) &~ LitU64 (mask_val op_w))) UInt32 "opcode";
+    decl_var ~init:(cast SizeT ((var "word" >>~ i32 dst_off) &~ LitU64 (mask_val dst_w))) SizeT "dst";
+    decl_var ~init:(cast SizeT ((var "word" >>~ i32 s1_off) &~ LitU64 (mask_val s1_w))) SizeT "src1";
+    decl_var ~init:(cast SizeT ((var "word" >>~ i32 s2_off) &~ LitU64 (mask_val s2_w))) SizeT "src2";
+    decl_var ~init:(cast Int64 ((var "word" >>~ i32 imm_off) &~ LitU64 (mask_val imm_w))) Int64 "imm";
+    decl_var ~init:(((var "word" >>~ i32 mask_off) &~ LitU64 1L) <>~ LitU64 0L) Bool "mask";
+    raw "visa_emulator::DecodedInstruction dec;";
+    (var "dec.vd") := cast UInt8 (var "dst");
+    (var "dec.vs2") := cast UInt8 (var "src2");
+    (var "dec.vs1") := cast UInt8 (var "src1");
+    (var "dec.rs1") := cast UInt8 (var "src1");
+    (var "dec.imm") := cast Int8 (var "imm");
+    (var "dec.vm") := ternary (var "mask") (LitInt 1) (LitInt 0);
+    switch (var "opcode") (inst_cases @ junk_cases) default_case;
+  ] in
+
+  let vanguard_decoder_decl =
+    struct_def "VanguardDecoder" [
+      member_field (StructType "RollingKey") "key";
+      member_field ~init:(LitBool false) Bool "trapped";
+      member_field ~init:(LitU64 0L) SizeT "executed_instructions";
+      member_constructor
+        ~attrs:[NoExcept]
+        ~is_explicit:true
+        ~params:[ (UInt32, Printf.sprintf "seed = 0x%08lXU" t.key_seed) ]
+        ~init_list:[ ("key", var "seed") ]
+        "VanguardDecoder"
+        [];
+      member_method
+        Bool "decode_and_execute"
+        [ (Ref (StructType "visa_emulator::EmulatorState"), "state"); (UInt64, "raw_word") ]
+        decoder_body;
+    ]
+  in
+
+  let header_ast = [
+    IncludeLocal "isa_state.hpp";
+    IncludeLocal "decoder.hpp";
+    IncludeLocal "instructions.hpp";
+    IncludeSys "cstdint";
+    IncludeSys "iostream";
+    IncludeSys "iomanip";
+    Namespace ("vanguard_vm", [
+      rolling_key_decl;
+      vanguard_decoder_decl;
+    ]);
+  ] in
+
+  Cpp_codegen.Cpp_printer.render_header_unit header_ast

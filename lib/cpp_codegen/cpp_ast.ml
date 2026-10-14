@@ -112,6 +112,14 @@ type struct_member =
       params     : (ctype * string) list;
       body       : stmt list;
     }
+  | MemberConstructor of {
+      attrs       : func_attr list;
+      is_explicit : bool;
+      name        : string;
+      params      : (ctype * string) list;
+      init_list   : (string * expr) list;
+      body        : stmt list;
+    }
   | MemberStaticConstexpr of { ty : ctype; name : string; init : expr }
   | MemberRaw of string
   | MemberComment of string

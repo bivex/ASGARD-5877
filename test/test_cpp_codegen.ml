@@ -245,6 +245,43 @@ let () =
     in
     if not (find 0) then failwith ("Missing RD-JIT Synth keyword in header: " ^ kw)
   ) [ "enum JITOpKind : uint8_t"; "struct JITInstr"; "struct JITBlock"; "JITBlockFn" ];
-  Printf.printf "[PASS] Step 13: RD-JIT VM typed RNS & context emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 13: RD-JIT VM typed RNS & context emitted using typed AST.\n";
+
+  (* 14. Test Stack-VM superoperators and Vanguard-9292 decoder typed AST *)
+  let superops = Stack_vm.Stack_handlers_emitter.emit_superop_handlers_string () in
+  assert (String.length superops > 500);
+  List.iter (fun kw ->
+    let rec find idx =
+      if idx + String.length kw > String.length superops then false
+      else if String.sub superops idx (String.length kw) = kw then true
+      else find (idx + 1)
+    in
+    if not (find 0) then failwith ("Missing Stack-VM superoperator: " ^ kw)
+  ) [ "h_cmp"; "h_test"; "h_add_imm"; "h_sub_imm"; "h_add_ii"; "h_sub_ii" ];
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax superops with
+   | Ok () -> ()
+   | Error err -> failwith ("Superops syntax validation failed: " ^ err));
+
+  let rng = Random.State.make [| 42 |] in
+  (match Random_visa_domain.Isa_grammar.generate_isa ~rng ~name:"Vanguard_Test" ~num_instructions:4 () with
+   | Error _ -> failwith "Failed to generate test ISA spec"
+   | Ok spec ->
+       (match Vanguard_9292.of_isa_spec ~rng spec with
+        | Error err -> failwith ("Failed to generate vanguard scheme: " ^ err)
+        | Ok vanguard_scheme ->
+            let decoder_cpp = Vanguard_9292.emit_cpp_decoder vanguard_scheme spec in
+            assert (String.length decoder_cpp > 1000);
+            List.iter (fun kw ->
+              let rec find idx =
+                if idx + String.length kw > String.length decoder_cpp then false
+                else if String.sub decoder_cpp idx (String.length kw) = kw then true
+                else find (idx + 1)
+              in
+              if not (find 0) then failwith ("Missing Vanguard decoder keyword: " ^ kw)
+            ) [ "struct RollingKey"; "struct VanguardDecoder"; "decode_and_execute"; "next64" ];
+            (match Cpp_codegen.Cpp_validator.validate_cpp_syntax decoder_cpp with
+             | Ok () -> ()
+             | Error err -> failwith ("Vanguard decoder syntax validation failed: " ^ err))));
+  Printf.printf "[PASS] Step 14: Stack-VM superoperators & Vanguard 9292 decoder emitted using typed AST.\n"
 
 

@@ -571,9 +571,179 @@ let emit_flags_handlers () : top_decl list = [
   emit_h_pop_flags ();
 ]
 
+let emit_h_cmp () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_cmp";
+    params = vm_handler_params;
+    body = [
+      expr_stmt (cast Void (var "bytecode"));
+      expr_stmt (cast Void (var "vip"));
+      if_then_else (vm_vsp_idx >=~ i32 2)
+        [
+          vm_vsp_idx -= i32 1;
+          let_u64 "b" (vsp_encode vm_vsp_idx (idx vm_vsp vm_vsp_idx));
+          vm_vsp_idx -= i32 1;
+          let_u64 "a" (vsp_encode vm_vsp_idx (idx vm_vsp vm_vsp_idx));
+          let_u64 "res" (var "a" -~ var "b");
+          vm_zf := cast UInt8 (var "res" ==~ u64 0L);
+          vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
+          vm_cf := cast UInt8 (var "a" <~ var "b");
+          vm_of := cast UInt8 ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
+          vm_pf := call "parity8" [var "res"];
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_test () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_test";
+    params = vm_handler_params;
+    body = [
+      expr_stmt (cast Void (var "bytecode"));
+      expr_stmt (cast Void (var "vip"));
+      if_then_else (vm_vsp_idx >=~ i32 2)
+        [
+          vm_vsp_idx -= i32 1;
+          let_u64 "b" (vsp_encode vm_vsp_idx (idx vm_vsp vm_vsp_idx));
+          vm_vsp_idx -= i32 1;
+          let_u64 "a" (vsp_encode vm_vsp_idx (idx vm_vsp vm_vsp_idx));
+          let_u64 "res" (var "a" &~ var "b");
+          vm_zf := cast UInt8 (var "res" ==~ u64 0L);
+          vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
+          vm_cf := cast UInt8 (i32 0);
+          vm_of := cast UInt8 (i32 0);
+          vm_pf := call "parity8" [var "res"];
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_add_imm () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_add_imm";
+    params = vm_handler_params;
+    body = [
+      let_u64 "imm" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      if_then_else (vm_vsp_idx >=~ i32 1)
+        [
+          let_u64 "a" (vsp_encode (vm_vsp_idx -~ i32 1) (idx vm_vsp (vm_vsp_idx -~ i32 1)));
+          let_u64 "b" (var "imm");
+          let_u64 "res" (var "a" +~ var "b");
+          vm_zf := cast UInt8 (var "res" ==~ u64 0L);
+          vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
+          vm_cf := cast UInt8 (var "res" <~ var "a");
+          vm_of := cast UInt8 (((bit_not (var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
+          vm_pf := call "parity8" [var "res"];
+          idx vm_vsp (vm_vsp_idx -~ i32 1) := vsp_encode (vm_vsp_idx -~ i32 1) (var "res");
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_sub_imm () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_sub_imm";
+    params = vm_handler_params;
+    body = [
+      let_u64 "imm" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      if_then_else (vm_vsp_idx >=~ i32 1)
+        [
+          let_u64 "a" (vsp_encode (vm_vsp_idx -~ i32 1) (idx vm_vsp (vm_vsp_idx -~ i32 1)));
+          let_u64 "b" (var "imm");
+          let_u64 "res" (var "a" -~ var "b");
+          vm_zf := cast UInt8 (var "res" ==~ u64 0L);
+          vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
+          vm_cf := cast UInt8 (var "a" <~ var "b");
+          vm_of := cast UInt8 ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
+          vm_pf := call "parity8" [var "res"];
+          idx vm_vsp (vm_vsp_idx -~ i32 1) := vsp_encode (vm_vsp_idx -~ i32 1) (var "res");
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_add_ii () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_add_ii";
+    params = vm_handler_params;
+    body = [
+      let_u64 "a" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      let_u64 "b" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      let_u64 "res" (var "a" +~ var "b");
+      vm_zf := cast UInt8 (var "res" ==~ u64 0L);
+      vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
+      vm_cf := cast UInt8 (var "res" <~ var "a");
+      vm_of := cast UInt8 (((bit_not (var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
+      vm_pf := call "parity8" [var "res"];
+      if_then_else (vm_vsp_idx <~ i32 4096)
+        [
+          idx vm_vsp vm_vsp_idx := vsp_encode vm_vsp_idx (var "res");
+          vm_vsp_idx += i32 1;
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_sub_ii () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_sub_ii";
+    params = vm_handler_params;
+    body = [
+      let_u64 "a" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      let_u64 "b" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      let_u64 "res" (var "a" -~ var "b");
+      vm_zf := cast UInt8 (var "res" ==~ u64 0L);
+      vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
+      vm_cf := cast UInt8 (var "a" <~ var "b");
+      vm_of := cast UInt8 ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
+      vm_pf := call "parity8" [var "res"];
+      if_then_else (vm_vsp_idx <~ i32 4096)
+        [
+          idx vm_vsp vm_vsp_idx := vsp_encode vm_vsp_idx (var "res");
+          vm_vsp_idx += i32 1;
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_superop_handlers () : top_decl list = [
+  emit_h_cmp ();
+  emit_h_test ();
+  emit_h_add_imm ();
+  emit_h_sub_imm ();
+  emit_h_add_ii ();
+  emit_h_sub_ii ();
+]
+
 let emit_all_stack_manipulation_handlers () : top_decl list =
   emit_push_pop_handlers () @ emit_dup_swap_handlers () @
-  emit_mem_handlers () @ emit_alu_handlers () @ emit_flags_handlers ()
+  emit_mem_handlers () @ emit_alu_handlers () @ emit_flags_handlers () @
+  emit_superop_handlers ()
 
 let emit_push_pop_handlers_string () : string =
   render_top_decls (emit_push_pop_handlers ())
@@ -589,6 +759,9 @@ let emit_alu_handlers_string () : string =
 
 let emit_flags_handlers_string () : string =
   render_top_decls (emit_flags_handlers ())
+
+let emit_superop_handlers_string () : string =
+  render_top_decls (emit_superop_handlers ())
 
 let emit_all_handlers_string () : string =
   render_top_decls (emit_all_stack_manipulation_handlers ())
