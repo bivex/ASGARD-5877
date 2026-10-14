@@ -43,6 +43,8 @@ val emit_cpp_threaded_header :
   string array ->
   string
 
+val emit_native_runner_main_def : unit -> Cpp_codegen.Cpp_ast.top_decl
+
 val emit_runner_cpp :
   ?key_seed:int64 ->
   reg_perm:int array ->

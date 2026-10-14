@@ -29,7 +29,7 @@ let rec scramble_expr (rng : Random.State.t) (e : expr) : expr =
   | PtrMember (a, f) -> PtrMember (scramble_expr rng a, f)
   | Call (fn, args) -> Call (fn, List.map (scramble_expr rng) args)
   | InitList es -> InitList (List.map (scramble_expr rng) es)
-  | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitU8 _ | LitBool _ | LitStr _ | Var _ -> e
+  | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitU8 _ | LitBool _ | LitStr _ | LitNull | SizeOfType _ | Var _ -> e
 
 let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
   match s with

@@ -176,6 +176,31 @@
   - `ChaffMemoryPool` переведен на `template_struct_def`, а генераторы заголовков `emit_tech_2603_cpp_header` и `emit_tech_2608_cpp_header` переведены на `render_top_decls`.
 - [x] Тесты: Steps 1..27 в `test_cpp_codegen.ml` (все 27 шагов) + `C++ Emulator E2E` + `C11 Emulator E2E` + `Multi-VM & Direct Zero-Bridge` (8/8) + `Register-Driven JIT VM & RNS` (5/5) + `C Macro Obfuscation` (12/12) + `Tech-2603` (7/7) + `Tech-2608` (4/4) — 100% PASS.
 
+### Stage 5.5: Расширение EDSL SDK и миграция VM Runners (Native, Stack, Multi-VM) (`HEAD`)
+- [x] Расширение ядра EDSL:
+  - Добавлены `LitNull` (`nullptr`), `SizeOfType of ctype` (`sizeof(T)`), флаги компоновки `is_extern_c : bool` и `is_weak : bool` в `GlobalVar` (`Cpp_ast`).
+  - В `Cpp_dsl`: добавлены комбинаторы `nullptr`, `sizeof_ty`, `include_sys`, `include_local`, расширена функция `global_var` именованными аргументами `?is_extern_c` и `?is_weak`.
+  - В `Cpp_printer`: реализована печать `nullptr`, `sizeof(T)`, префиксов `extern "C" ` и `__attribute__((weak)) ` для глобальных переменных.
+  - В `Cpp_ast_obf`: безопасная обработка `LitNull` и `SizeOfType`.
+- [x] Миграция Native VM Runner ([`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml)):
+  - Точка входа `main` переведена на typed AST `emit_native_runner_main_def`.
+  - Функция `emit_runner_cpp` переведена с шаблонизатора Jingoo на typed EDSL с дезинфекцией динамической памяти.
+- [x] Миграция Stack-VM Runner & Probe ([`lib/stack_vm/stack_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_runtime.ml)):
+  - Точки входа `main` для раннера и пробы адреса переведены на typed `emit_stack_runner_main_def` и `emit_stack_probe_main_def`.
+  - Функции `emit_runner_cpp` и `emit_probe_cpp` переведены с шаблонизатора Jingoo на typed EDSL `render_top_decls`.
+- [x] Миграция Multi-VM Runner ([`lib/multi_vm/multi_vm_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/multi_vm_emitter.ml)):
+  - Точка входа `main` переведена на typed AST `emit_multi_vm_runner_main_def`.
+  - Генерация глобальных переменных с weak linkage `extern "C" __attribute__((weak))` и раннера `runner_cpp` переведена на typed EDSL.
+- [x] Тесты:
+  - Steps 1..30 в `test_cpp_codegen.ml` (все 30 шагов) — 100% PASS.
+  - `Native Threaded VM` (12/12) — PASS.
+  - `Stack-VM Execution Engine` (38/38) — PASS.
+  - `Multi-VM & Direct Zero-Bridge` (8/8) — PASS.
+  - `Register-Driven JIT VM & RNS` (5/5) — PASS.
+  - `C++ Emulator E2E` (Clang++ E2E) — PASS.
+  - `C11 Emulator E2E` (Clang E2E) — PASS.
+  - `Tier 4 Next-Gen` (5/5) — PASS.
+
 ---
 
 ## ⚠️ Архитектурные инварианты и правила безопасности

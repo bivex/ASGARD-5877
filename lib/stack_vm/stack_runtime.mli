@@ -36,6 +36,10 @@ val generate_c_runtime :
   program ->
   string
 
+val emit_stack_runner_main_def : unit -> Cpp_codegen.Cpp_ast.top_decl
+
+val emit_stack_probe_main_def : unit -> Cpp_codegen.Cpp_ast.top_decl
+
 val emit_runner_cpp : ?header_name:string -> int64 list -> string
 
 val emit_probe_cpp : ?header_name:string -> unit -> string

@@ -69,6 +69,31 @@ let inject_bridge_transitions (bridge : Bridge.affine_bridge) (partition : Parti
     ) f.cfg.blocks;
     ({ f with cfg = { f.cfg with blocks = new_blocks } }, !trans_count)
 
+let emit_multi_vm_runner_main_def ~math_blocks ~flow_blocks ~inter_vm_transitions () : Cpp_codegen.Cpp_ast.top_decl =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  func_decl Int32 "main" [(Int32, "argc"); (Ptr (Ptr (StructType "char")), "argv")] [
+    raw "std::cout << \"[ASGARD-MULTI-VM] Initializing In-Place Heterogeneous Dual-VM Runtime...\\n\";";
+    raw (Printf.sprintf "std::cout << \"  Engine 1: Math-VM (Register/RNS Oriented, \" << %d << \" blocks)\\n\";" math_blocks);
+    raw (Printf.sprintf "std::cout << \"  Engine 2: Flow-VM (Stack/CFF Markov Oriented, \" << %d << \" blocks)\\n\";" flow_blocks);
+    raw (Printf.sprintf "std::cout << \"  Zero-Bridge Transitions: \" << %d << \" affine morphing junctions\\n\";" inter_vm_transitions);
+    raw "asgard_multi_vm::SharedVMContext shared_ctx = {};";
+    expr_stmt (call "shared_ctx.math.init" [var "ASGARD_INITIAL_DIGEST"]);
+    raw "vanguard_threaded_vm::VMContext base_ctx = {};";
+    expr_stmt (call "base_ctx.init" []);
+    let_u64 "init_rdi" (ternary (var "argc" >~ i32 1) (c_cast UInt64 (call "atoll" [Index (var "argv", i32 1)])) (u64 42L));
+    expr_stmt (call "base_ctx.set_rdi" [var "init_rdi"]);
+    raw "auto t0 = std::chrono::high_resolution_clock::now();";
+    expr_stmt (call "vanguard_threaded_vm::execute_threaded" [var "base_ctx"; var "embedded_bytecode"; var "embedded_bytecode_len"]);
+    raw "auto t1 = std::chrono::high_resolution_clock::now();";
+    raw "double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();";
+    let_u64 "res" (call "base_ctx.get_rax" []);
+    raw "std::cout << \"[ASGARD-MULTI-VM] Execution Successful!\\n\";";
+    raw "std::cout << \"  Result (RAX): \" << res << \" (0x\" << std::hex << res << std::dec << \")\\n\";";
+    raw "std::cout << \"  Execution Time: \" << elapsed_us << \" us\\n\";";
+    ret (i32 0);
+  ]
+
 let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_depth = 2) ?config ?constants (f : Ir.func) : multi_vm_package =
   let bridge = Bridge.generate_bridge rng in
   let partition = Partitioner.partition_function f in
@@ -95,16 +120,27 @@ let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_dep
   ] in
   let multi_vm_hdr = Multi_vm_templates.render Multi_vm_templates.multi_vm_header_template hdr_models in
 
-  let bytecode_words =
-    List.map (fun w -> Jingoo.Jg_types.Tstr (Printf.sprintf "    0x%016LXULL" w)) base_pkg.bytecode
-  in
-  let runner_models = [
-    ("bytecode_words", Jingoo.Jg_types.Tlist bytecode_words);
-    ("math_blocks", Jingoo.Jg_types.Tint updated_partition.math_blocks);
-    ("flow_blocks", Jingoo.Jg_types.Tint updated_partition.flow_blocks);
-    ("inter_vm_transitions", Jingoo.Jg_types.Tint updated_partition.inter_vm_transitions);
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let open Cpp_codegen.Cpp_printer in
+  let runner_decls = [
+    include_local "multi_vm_runtime.hpp";
+    include_sys "iostream";
+    include_sys "vector";
+    include_sys "chrono";
+    global_var ~is_extern_c:true ~is_weak:true ~is_const:true
+      (Array (UInt64, 0)) "embedded_bytecode"
+      ~init:(init_list (List.map u64 base_pkg.bytecode));
+    global_var ~is_extern_c:true ~is_weak:true ~is_const:true
+      SizeT "embedded_bytecode_len"
+      ~init:(sizeof_expr (var "embedded_bytecode") /~ sizeof_expr (idx (var "embedded_bytecode") (i32 0)));
+    emit_multi_vm_runner_main_def
+      ~math_blocks:updated_partition.math_blocks
+      ~flow_blocks:updated_partition.flow_blocks
+      ~inter_vm_transitions:updated_partition.inter_vm_transitions
+      ();
   ] in
-  let runner_cpp = Multi_vm_templates.render Multi_vm_templates.runner_template runner_models in
+  let runner_cpp = render_top_decls runner_decls ^ "\n" in
 
   {
     bridge;

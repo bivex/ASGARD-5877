@@ -32,6 +32,8 @@ type expr =
   | LitU8 of int                       (* 0x12 *)
   | LitBool of bool
   | LitStr of string
+  | LitNull
+  | SizeOfType of ctype
   | InitList of expr list              (* { a, b, c } *)
   | Var of string
   | Member of expr * string            (* obj.field *)
@@ -159,6 +161,8 @@ type top_decl =
   | Namespace of string * top_decl list
   | ConstexprGlobal of ctype * string * expr
   | GlobalVar of {
+      is_extern_c  : bool;
+      is_weak      : bool;
       is_static    : bool;
       is_const     : bool;
       is_constexpr : bool;

@@ -9,6 +9,13 @@ type multi_vm_package = {
   metrics : Native_vm.Metrics.metrics_report;
 }
 
+val emit_multi_vm_runner_main_def :
+  math_blocks:int ->
+  flow_blocks:int ->
+  inter_vm_transitions:int ->
+  unit ->
+  Cpp_codegen.Cpp_ast.top_decl
+
 val compile_and_package :
   rng:Random.State.t ->
   ?enable_cff:bool ->

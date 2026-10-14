@@ -427,7 +427,51 @@ let () =
    | Ok () -> ()
    | Error err -> failwith ("RD-JIT main function syntax validation failed: " ^ err));
   assert (String.length rd_main_cpp > 200);
-  Printf.printf "[PASS] Step 27: RD-JIT VM runner main function emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 27: RD-JIT VM runner main function emitted using typed AST.\n";
+
+  (* 28. Native VM runner main function & full runner AST *)
+  let native_main_decl = Native_vm.Vm_runtime_emitter.emit_native_runner_main_def () in
+  let native_runner_cpp = Native_vm.Vm_runtime_emitter.emit_runner_cpp ~reg_perm:[|0;1;2;3|] [0x123456789ABCDEF0L; 0xDEADBEEFCAFEBABEL] in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax (render_top_decl native_main_decl) with
+   | Ok () -> ()
+   | Error err -> failwith ("Native VM main function syntax validation failed: " ^ err));
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax native_runner_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Native VM runner.cpp syntax validation failed: " ^ err));
+  assert (String.length native_runner_cpp > 400);
+  Printf.printf "[PASS] Step 28: Native VM runner main function & full runner emitted using typed AST.\n";
+
+  (* 29. Stack-VM runner & probe AST *)
+  let stack_runner_decl = Stack_vm.Stack_runtime.emit_stack_runner_main_def () in
+  let stack_probe_decl = Stack_vm.Stack_runtime.emit_stack_probe_main_def () in
+  let stack_runner_cpp = Stack_vm.Stack_runtime.emit_runner_cpp [0x1111222233334444L; 0x5555666677778888L] in
+  let stack_probe_cpp = Stack_vm.Stack_runtime.emit_probe_cpp () in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax (render_top_decl stack_runner_decl) with
+   | Ok () -> ()
+   | Error err -> failwith ("Stack-VM runner main function syntax validation failed: " ^ err));
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax (render_top_decl stack_probe_decl) with
+   | Ok () -> ()
+   | Error err -> failwith ("Stack-VM probe main function syntax validation failed: " ^ err));
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax stack_runner_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Stack-VM runner.cpp syntax validation failed: " ^ err));
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax stack_probe_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Stack-VM probe.cpp syntax validation failed: " ^ err));
+  assert (String.length stack_runner_cpp > 300);
+  assert (String.length stack_probe_cpp > 100);
+  Printf.printf "[PASS] Step 29: Stack-VM runner & probe emitted using typed AST.\n";
+
+  (* 30. Multi-VM runner main function & runner AST *)
+  let multi_vm_main_decl = Multi_vm.Multi_vm_emitter.emit_multi_vm_runner_main_def
+    ~math_blocks:3 ~flow_blocks:2 ~inter_vm_transitions:4 () in
+  let multi_vm_main_cpp = render_top_decl multi_vm_main_decl in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax multi_vm_main_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Multi-VM runner main function syntax validation failed: " ^ err));
+  assert (String.length multi_vm_main_cpp > 300);
+  Printf.printf "[PASS] Step 30: Multi-VM runner main function & weak global linkage emitted using typed AST.\n"
+
 
 
 

@@ -515,18 +515,73 @@ let generate_c_runtime
   else
     raw
 
+let emit_stack_runner_main_def () : Cpp_codegen.Cpp_ast.top_decl =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  func_decl Int32 "main" [(Int32, "argc"); (Ptr (Ptr (StructType "char")), "argv")] [
+    decl_var (Ptr UInt64) "bc_ptr" ~init:(var "embedded_bytecode");
+    decl_var SizeT "bc_len" ~init:(sizeof_expr (var "embedded_bytecode") /~ sizeof_expr (idx (var "embedded_bytecode") (i32 0)));
+    if_then (var "argc" >=~ i32 2) [
+      decl_var (Ptr (StructType "FILE")) "f" ~init:(call "fopen" [idx (var "argv") (i32 1); str_lit "rb"]);
+      if_then (ne (var "f") nullptr) [
+        expr_stmt (call "fseek" [var "f"; i32 0; var "SEEK_END"]);
+        decl_var (StructType "long") "sz" ~init:(call "ftell" [var "f"]);
+        expr_stmt (call "fseek" [var "f"; i32 0; var "SEEK_SET"]);
+        if_then ((var "sz" >~ i32 0) &&~ ((var "sz" %~ i32 8) ==~ i32 0)) [
+          decl_var SizeT "count" ~init:(c_cast SizeT (var "sz") /~ u64 8L);
+          decl_var (Ptr UInt64) "heap_bc" ~init:(c_cast (Ptr UInt64) (call "malloc" [c_cast SizeT (var "sz")]));
+          if_then ((ne (var "heap_bc") nullptr) &&~ (call "fread" [var "heap_bc"; u64 8L; var "count"; var "f"] ==~ var "count")) [
+            var "bc_ptr" := var "heap_bc";
+            var "bc_len" := var "count";
+          ];
+        ];
+        expr_stmt (call "fclose" [var "f"]);
+      ];
+    ];
+    let_u64 "ret" (call "vanguard_threaded_vm::asgard_vm_call" [var "bc_ptr"; var "bc_len"]);
+    expr_stmt (call "printf" [
+      str_lit "[Stack-VM] Execution SUCCESS! Result: %llu\n";
+      c_cast (StructType "unsigned long long") (var "ret");
+    ]);
+    ret (i32 0);
+  ]
+
+let emit_stack_probe_main_def () : Cpp_codegen.Cpp_ast.top_decl =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  func_decl Int32 "main" [(Void, "")] [
+    expr_stmt (call "printf" [
+      str_lit "ADDR_KEY: %016llX\n";
+      c_cast (StructType "unsigned long long") (call "asgard_stack_vm::derive_addr_key" []);
+    ]);
+    ret (i32 0);
+  ]
+
 let emit_runner_cpp ?(header_name = "stack_vm_runtime.hpp") bytecode =
-  let words =
-    List.map (fun w -> Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" w)) bytecode
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let open Cpp_codegen.Cpp_printer in
+  let embedded_bc_decl =
+    global_var ~is_static:true
+      (Array (UInt64, 0))
+      "embedded_bytecode"
+      ~init:(init_list (List.map u64 bytecode))
   in
-  let models = [
-    ("header_name", Jingoo.Jg_types.Tstr header_name);
-    ("words", Jingoo.Jg_types.Tlist words);
+  let top_decls = [
+    include_local header_name;
+    include_sys "stdio.h";
+    include_sys "stdlib.h";
+    embedded_bc_decl;
+    emit_stack_runner_main_def ();
   ] in
-  Stack_vm_templates.render Stack_vm_templates.runner_cpp_template models
+  render_top_decls top_decls ^ "\n"
 
 let emit_probe_cpp ?(header_name = "stack_vm_runtime.hpp") () =
-  let models = [
-    ("header_name", Jingoo.Jg_types.Tstr header_name);
+  let open Cpp_codegen.Cpp_dsl in
+  let open Cpp_codegen.Cpp_printer in
+  let top_decls = [
+    include_local header_name;
+    include_sys "stdio.h";
+    emit_stack_probe_main_def ();
   ] in
-  Stack_vm_templates.render Stack_vm_templates.probe_cpp_template models
+  render_top_decls top_decls ^ "\n"

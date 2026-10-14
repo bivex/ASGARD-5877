@@ -56,6 +56,8 @@ let rec pp_expr fmt = function
   | LitU8 b           -> fprintf fmt "0x%02x" (b land 0xFF)
   | LitBool b         -> fprintf fmt "%s" (if b then "true" else "false")
   | LitStr s          -> fprintf fmt "\"%s\"" (escape_c_string s)
+  | LitNull           -> fprintf fmt "nullptr"
+  | SizeOfType ty     -> fprintf fmt "sizeof(%a)" pp_ctype ty
   | InitList []       -> fprintf fmt "{}"
   | InitList es       ->
       let has_nested = List.exists (function InitList _ -> true | _ -> false) es in
@@ -84,7 +86,7 @@ let rec pp_expr fmt = function
         (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_expr) args
 
 and pp_expr_atom fmt e = match e with
-  | Var _ | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitU8 _ | LitBool _ | LitStr _ | InitList _ | Index _ | Member _ | PtrMember _ | Call _ | CCast _ ->
+  | Var _ | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitU8 _ | LitBool _ | LitStr _ | LitNull | SizeOfType _ | InitList _ | Index _ | Member _ | PtrMember _ | Call _ | CCast _ ->
       pp_expr fmt e
   | _ -> fprintf fmt "(%a)" pp_expr e
 
@@ -265,9 +267,11 @@ let rec pp_top_decl fmt = function
       fprintf fmt "#include \"%s\"" h
   | ConstexprGlobal (ty, name, e) ->
       fprintf fmt "constexpr %a %s = %a;" pp_ctype ty name pp_expr e
-  | GlobalVar { is_static; is_const; is_constexpr; is_volatile; ty; name; init } ->
+  | GlobalVar { is_extern_c; is_weak; is_static; is_const; is_constexpr; is_volatile; ty; name; init } ->
       let prefix =
-        (if is_static then "static " else "")
+        (if is_extern_c then "extern \"C\" " else "")
+        ^ (if is_weak then "__attribute__((weak)) " else "")
+        ^ (if is_static then "static " else "")
         ^ (if is_volatile then "volatile " else "")
         ^ (if is_constexpr then "constexpr "
            else if is_const then "const "

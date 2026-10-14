@@ -397,13 +397,68 @@ let emit_cpp_threaded_header
   in
   Native_vm_templates.render Native_vm_templates.threaded_header_template models
 
+let emit_native_runner_main_def () : Cpp_codegen.Cpp_ast.top_decl =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  func_decl Int32 "main" [(Int32, "argc"); (Ptr (Ptr (StructType "char")), "argv")] [
+    decl_var (Ptr UInt64) "bc_ptr" ~init:(var "embedded_bytecode");
+    decl_var SizeT "bc_len" ~init:(sizeof_expr (var "embedded_bytecode") /~ sizeof_expr (idx (var "embedded_bytecode") (i32 0)));
+    decl_var (Ptr UInt64) "heap_bc" ~init:nullptr;
+    if_then (var "argc" >=~ i32 2) [
+      decl_var (Ptr (StructType "FILE")) "f" ~init:(call "fopen" [idx (var "argv") (i32 1); str_lit "rb"]);
+      if_then (ne (var "f") nullptr) [
+        expr_stmt (call "fseek" [var "f"; i32 0; var "SEEK_END"]);
+        decl_var (StructType "long") "sz" ~init:(call "ftell" [var "f"]);
+        expr_stmt (call "fseek" [var "f"; i32 0; var "SEEK_SET"]);
+        if_then ((var "sz" >~ i32 0) &&~ ((var "sz" %~ i32 8) ==~ i32 0)) [
+          decl_var SizeT "count" ~init:(c_cast SizeT (var "sz") /~ u64 8L);
+          var "heap_bc" := c_cast (Ptr UInt64) (call "malloc" [c_cast SizeT (var "sz")]);
+          if_then ((ne (var "heap_bc") nullptr) &&~ (call "fread" [var "heap_bc"; u64 8L; var "count"; var "f"] ==~ var "count")) [
+            var "bc_ptr" := var "heap_bc";
+            var "bc_len" := var "count";
+          ];
+        ];
+        expr_stmt (call "fclose" [var "f"]);
+      ];
+    ];
+    decl_var (StructType "vanguard_threaded_vm::VMContext") "ctx" ~init:(init_list []);
+    decl_var Bool "ok" ~init:(call "vanguard_threaded_vm::execute_threaded" [var "ctx"; var "bc_ptr"; var "bc_len"; bool_lit true]);
+    if_then (ne (var "heap_bc") nullptr) [
+      comment "Ephemeral Heap Sanitization: Scrub all dynamically allocated bytecode before free";
+      for_range "i" (u64 0L) (var "bc_len") [
+        expr_stmt (call "SCRUB_WORD" [addr_of (idx (var "heap_bc") (var "i")); u64 0xDEADBEEFCAFEBABEL ^~ c_cast UInt64 (var "i")]);
+      ];
+      expr_stmt (call "free" [var "heap_bc"]);
+    ];
+    if_then (log_not (var "ok")) [
+      ret (i32 2);
+    ];
+    expr_stmt (call "printf" [
+      str_lit "[VM] Execution SUCCESS! Verified %zu instructions. RAX: %llu\n";
+      var "ctx.executed_instructions";
+      c_cast (StructType "unsigned long long") (call "ctx.get_rax" []);
+    ]);
+    ret (i32 0);
+  ]
+
 let emit_runner_cpp ?(key_seed = 0x5877CAFEL) ~reg_perm bytecode =
   let _ = key_seed in
   let _ = reg_perm in
-  let bytecode_words =
-    List.map (fun w -> Jg_types.Tstr (Printf.sprintf "0x%016LXULL" w)) bytecode
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let open Cpp_codegen.Cpp_printer in
+  let embedded_bc_decl =
+    global_var ~is_static:true
+      (Array (UInt64, 0))
+      "embedded_bytecode"
+      ~init:(init_list (List.map u64 bytecode))
   in
-  let models = [
-    ("bytecode_words", Jg_types.Tlist bytecode_words);
+  let top_decls = [
+    include_local "threaded_vm.hpp";
+    include_sys "stdio.h";
+    include_sys "stdlib.h";
+    comment_top "Self-contained embedded encrypted bytecode (Mutable for Ephemeral Memory Scrubbing)";
+    embedded_bc_decl;
+    emit_native_runner_main_def ();
   ] in
-  Native_vm_templates.render Native_vm_templates.runner_template models
+  render_top_decls top_decls ^ "\n"
