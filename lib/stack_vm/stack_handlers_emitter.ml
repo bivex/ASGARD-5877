@@ -740,10 +740,274 @@ let emit_superop_handlers () : top_decl list = [
   emit_h_sub_ii ();
 ]
 
+let emit_h_jmp_rel () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_jmp_rel";
+    params = vm_handler_params;
+    body = [
+      decl_var Int32 "target_bid" ~init:(call "fetch_i32" [var "vm"; var "bytecode"; var "vip"]);
+      if_then_else
+        ((var "target_bid" >=~ i32 0) &&~
+         (cast SizeT (var "target_bid") <~ (sizeof (var "g_stack_block_offsets") /~ sizeof (idx (var "g_stack_block_offsets") (i32 0)))))
+        [
+          deref (var "vip") := call "ASG_UNMASK_OFFSET" [var "target_bid"];
+          (var "vm" $-> "vkey") := (call "ASG_UNMASK_KEY" [var "target_bid"] ^~ (var "vm" $-> "addr_key"));
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_jcc_rel ?(target_first = true) () : top_decl =
+  let fetch_decls =
+    if target_first then [
+      decl_var Int32 "target_bid" ~init:(call "fetch_i32" [var "vm"; var "bytecode"; var "vip"]);
+      decl_var UInt8 "cond" ~init:(call "fetch_byte" [var "vm"; var "bytecode"; var "vip"]);
+    ] else [
+      decl_var UInt8 "cond" ~init:(call "fetch_byte" [var "vm"; var "bytecode"; var "vip"]);
+      decl_var Int32 "target_bid" ~init:(call "fetch_i32" [var "vm"; var "bytecode"; var "vip"]);
+    ]
+  in
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_jcc_rel";
+    params = vm_handler_params;
+    body = fetch_decls @ [
+      if_then (call "eval_cond" [var "vm"; var "cond"])
+        [
+          if_then_else
+            ((var "target_bid" >=~ i32 0) &&~
+             (cast SizeT (var "target_bid") <~ (sizeof (var "g_stack_block_offsets") /~ sizeof (idx (var "g_stack_block_offsets") (i32 0)))))
+            [
+              deref (var "vip") := call "ASG_UNMASK_OFFSET" [var "target_bid"];
+              (var "vm" $-> "vkey") := (call "ASG_UNMASK_KEY" [var "target_bid"] ^~ (var "vm" $-> "addr_key"));
+            ]
+            [
+              vm_halted := i32 1;
+            ];
+        ];
+    ];
+  }
+
+let emit_h_key_adjust () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_key_adjust";
+    params = vm_handler_params;
+    body = [
+      decl_var Int64 "delta" ~init:(call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]);
+      (var "vm" $-> "vkey") ^= cast UInt64 (var "delta");
+    ];
+  }
+
+let emit_h_exit () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_exit";
+    params = vm_handler_params;
+    body = [
+      expr_stmt (cast Void (var "bytecode"));
+      expr_stmt (cast Void (var "vip"));
+      vm_halted := i32 1;
+    ];
+  }
+
+let emit_h_resolve_sym () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_resolve_sym";
+    params = vm_handler_params;
+    body = [
+      decl_var Int32 "sym_idx" ~init:(call "fetch_i32" [var "vm"; var "bytecode"; var "vip"]);
+      decl_var (Ptr Void) "sym_ptr" ~init:(call "asgard_resolve_sym_idx" [var "sym_idx"]);
+      if_then_else (vm_vsp_idx <~ i32 4096)
+        [
+          idx vm_vsp vm_vsp_idx := vsp_encode vm_vsp_idx (reinterpret_cast UInt64 (var "sym_ptr"));
+          vm_vsp_idx += i32 1;
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_setcc () : top_decl =
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_setcc";
+    params = vm_handler_params;
+    body = [
+      decl_var UInt8 "cond" ~init:(call "fetch_byte" [var "vm"; var "bytecode"; var "vip"]);
+      let_u64 "res" (ternary (call "eval_cond" [var "vm"; var "cond"]) (u64 1L) (u64 0L));
+      if_then_else (vm_vsp_idx <~ i32 4096)
+        [
+          idx vm_vsp vm_vsp_idx := vsp_encode vm_vsp_idx (var "res");
+          vm_vsp_idx += i32 1;
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_cmov ?(slot_first = true) () : top_decl =
+  let max_ctx = cast Int32 (sizeof vm_ctx /~ sizeof (idx vm_ctx (i32 0))) in
+  let fetch_decls =
+    if slot_first then [
+      decl_var Int16 "idx" ~init:(call "fetch_i16" [var "vm"; var "bytecode"; var "vip"]);
+      decl_var UInt8 "cond" ~init:(call "fetch_byte" [var "vm"; var "bytecode"; var "vip"]);
+    ] else [
+      decl_var UInt8 "cond" ~init:(call "fetch_byte" [var "vm"; var "bytecode"; var "vip"]);
+      decl_var Int16 "idx" ~init:(call "fetch_i16" [var "vm"; var "bytecode"; var "vip"]);
+    ]
+  in
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_cmov";
+    params = vm_handler_params;
+    body = [
+      decl_var ~is_const:true Int32 "max_ctx" ~init:max_ctx;
+    ] @ fetch_decls @ [
+      if_then_else (vm_vsp_idx >~ i32 0)
+        [
+          vm_vsp_idx -= i32 1;
+          let_u64 "v" (vsp_encode vm_vsp_idx (idx vm_vsp vm_vsp_idx));
+          if_then
+            ((call "eval_cond" [var "vm"; var "cond"]) &&~
+             (var "idx" >=~ i32 0) &&~
+             (var "idx" <~ var "max_ctx"))
+            [
+              idx vm_ctx (var "idx") := var "v";
+            ];
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_set_reg_imm ?(imm_first = true) () : top_decl =
+  let max_ctx = cast Int32 (sizeof vm_ctx /~ sizeof (idx vm_ctx (i32 0))) in
+  let fetch_decls =
+    if imm_first then [
+      let_u64 "imm" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      decl_var Int16 "idx" ~init:(call "fetch_i16" [var "vm"; var "bytecode"; var "vip"]);
+    ] else [
+      decl_var Int16 "idx" ~init:(call "fetch_i16" [var "vm"; var "bytecode"; var "vip"]);
+      let_u64 "imm" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+    ]
+  in
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_set_reg_imm";
+    params = vm_handler_params;
+    body = fetch_decls @ [
+      decl_var ~is_const:true Int32 "max_ctx" ~init:max_ctx;
+      if_then_else
+        ((var "idx" >=~ i32 0) &&~ (var "idx" <~ var "max_ctx"))
+        [
+          idx vm_ctx (var "idx") := var "imm";
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_add_reg_imm ?(imm_first = true) () : top_decl =
+  let max_ctx = cast Int32 (sizeof vm_ctx /~ sizeof (idx vm_ctx (i32 0))) in
+  let fetch_decls =
+    if imm_first then [
+      let_u64 "imm" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      decl_var Int16 "idx" ~init:(call "fetch_i16" [var "vm"; var "bytecode"; var "vip"]);
+    ] else [
+      decl_var Int16 "idx" ~init:(call "fetch_i16" [var "vm"; var "bytecode"; var "vip"]);
+      let_u64 "imm" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+    ]
+  in
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_add_reg_imm";
+    params = vm_handler_params;
+    body = fetch_decls @ [
+      decl_var ~is_const:true Int32 "max_ctx" ~init:max_ctx;
+      if_then_else
+        ((var "idx" >=~ i32 0) &&~ (var "idx" <~ var "max_ctx") &&~ (vm_vsp_idx <~ i32 4096))
+        [
+          let_u64 "a" (idx vm_ctx (var "idx"));
+          let_u64 "b" (var "imm");
+          let_u64 "res" (var "a" +~ var "b");
+          vm_zf := cast UInt8 (var "res" ==~ u64 0L);
+          vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
+          vm_cf := cast UInt8 (var "res" <~ var "a");
+          vm_of := cast UInt8 (((bit_not (var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
+          vm_pf := call "parity8" [var "res"];
+          idx vm_vsp vm_vsp_idx := vsp_encode vm_vsp_idx (var "res");
+          vm_vsp_idx += i32 1;
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_h_key_feedback () : top_decl =
+  let max_ctx = cast Int32 (sizeof vm_ctx /~ sizeof (idx vm_ctx (i32 0))) in
+  FuncDecl {
+    attrs = [StaticFn];
+    ret_type = Void;
+    name = "h_key_feedback";
+    params = vm_handler_params;
+    body = [
+      decl_var Int16 "slot" ~init:(call "fetch_i16" [var "vm"; var "bytecode"; var "vip"]);
+      decl_var ~is_const:true Int32 "max_ctx" ~init:max_ctx;
+      if_then_else
+        ((var "slot" >=~ i32 0) &&~ (var "slot" <~ var "max_ctx"))
+        [
+          let_u64 "val" (idx vm_ctx (var "slot"));
+          (var "vm" $-> "vkey") ^= call "feedback_hash" [var "val"];
+        ]
+        [
+          vm_halted := i32 1;
+        ];
+    ];
+  }
+
+let emit_control_handlers ?(jcc_target_first = true) () : top_decl list = [
+  emit_h_jmp_rel ();
+  emit_h_jcc_rel ~target_first:jcc_target_first ();
+  emit_h_key_adjust ();
+  emit_h_exit ();
+]
+
+let emit_cond_handlers ?(cmov_slot_first = true) () : top_decl list = [
+  emit_h_resolve_sym ();
+  emit_h_setcc ();
+  emit_h_cmov ~slot_first:cmov_slot_first ();
+]
+
+let emit_reg_imm_handlers ?(set_reg_imm_first = true) ?(add_reg_imm_first = true) () : top_decl list = [
+  emit_h_set_reg_imm ~imm_first:set_reg_imm_first ();
+  emit_h_add_reg_imm ~imm_first:add_reg_imm_first ();
+  emit_h_key_feedback ();
+]
+
 let emit_all_stack_manipulation_handlers () : top_decl list =
   emit_push_pop_handlers () @ emit_dup_swap_handlers () @
   emit_mem_handlers () @ emit_alu_handlers () @ emit_flags_handlers () @
-  emit_superop_handlers ()
+  emit_superop_handlers () @
+  emit_control_handlers () @ emit_cond_handlers () @ emit_reg_imm_handlers ()
 
 let emit_push_pop_handlers_string () : string =
   render_top_decls (emit_push_pop_handlers ())
@@ -762,6 +1026,15 @@ let emit_flags_handlers_string () : string =
 
 let emit_superop_handlers_string () : string =
   render_top_decls (emit_superop_handlers ())
+
+let emit_control_handlers_string ?(jcc_target_first = true) () : string =
+  render_top_decls (emit_control_handlers ~jcc_target_first ())
+
+let emit_cond_handlers_string ?(cmov_slot_first = true) () : string =
+  render_top_decls (emit_cond_handlers ~cmov_slot_first ())
+
+let emit_reg_imm_handlers_string ?(set_reg_imm_first = true) ?(add_reg_imm_first = true) () : string =
+  render_top_decls (emit_reg_imm_handlers ~set_reg_imm_first ~add_reg_imm_first ())
 
 let emit_all_handlers_string () : string =
   render_top_decls (emit_all_stack_manipulation_handlers ())

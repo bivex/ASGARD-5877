@@ -282,6 +282,27 @@ let () =
             (match Cpp_codegen.Cpp_validator.validate_cpp_syntax decoder_cpp with
              | Ok () -> ()
              | Error err -> failwith ("Vanguard decoder syntax validation failed: " ^ err))));
-  Printf.printf "[PASS] Step 14: Stack-VM superoperators & Vanguard 9292 decoder emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 14: Stack-VM superoperators & Vanguard 9292 decoder emitted using typed AST.\n";
+
+  (* 15. Test Stack-VM control, cond, and reg_imm handlers typed AST *)
+  let ctrl_handlers = Stack_vm.Stack_handlers_emitter.emit_control_handlers_string () in
+  let cond_handlers = Stack_vm.Stack_handlers_emitter.emit_cond_handlers_string () in
+  let reg_imm_handlers = Stack_vm.Stack_handlers_emitter.emit_reg_imm_handlers_string () in
+  assert (String.length ctrl_handlers > 200);
+  assert (String.length cond_handlers > 200);
+  assert (String.length reg_imm_handlers > 200);
+  List.iter (fun kw ->
+    let rec find s idx =
+      if idx + String.length kw > String.length s then false
+      else if String.sub s idx (String.length kw) = kw then true
+      else find s (idx + 1)
+    in
+    if not (find ctrl_handlers 0 || find cond_handlers 0 || find reg_imm_handlers 0) then
+      failwith ("Missing Stack-VM handler: " ^ kw)
+  ) [ "h_jmp_rel"; "h_jcc_rel"; "h_key_adjust"; "h_exit"; "h_resolve_sym"; "h_setcc"; "h_cmov"; "h_set_reg_imm"; "h_add_reg_imm"; "h_key_feedback" ];
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax (ctrl_handlers ^ "\n" ^ cond_handlers ^ "\n" ^ reg_imm_handlers) with
+   | Ok () -> ()
+   | Error err -> failwith ("Control/Cond/RegImm handlers syntax validation failed: " ^ err));
+  Printf.printf "[PASS] Step 15: Stack-VM control, cond & reg_imm handlers emitted using typed AST.\n"
 
 

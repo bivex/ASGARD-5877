@@ -505,6 +505,9 @@ let generate_c_runtime
     ("stack_alu_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_alu_handlers_string ()));
     ("stack_flags_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_flags_handlers_string ()));
     ("stack_superop_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_superop_handlers_string ()));
+    ("stack_control_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_control_handlers_string ~jcc_target_first:enc.layout.jcc_target_first ()));
+    ("stack_cond_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_cond_handlers_string ~cmov_slot_first:enc.layout.cmov_slot_first ()));
+    ("stack_reg_imm_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_reg_imm_handlers_string ~set_reg_imm_first:enc.layout.set_reg_imm_first ~add_reg_imm_first:enc.layout.add_reg_imm_first ()));
   ] in
   let raw = Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models in
   if obfuscate_runtime then

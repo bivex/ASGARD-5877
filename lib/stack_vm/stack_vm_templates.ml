@@ -439,43 +439,8 @@ static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
 {{ stack_flags_handlers }}
 
 
-static void h_jmp_rel(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    int32_t target_bid = fetch_i32(vm, bytecode, vip);
-    if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {
-        *vip = ASG_UNMASK_OFFSET(target_bid);
-        vm->vkey = ASG_UNMASK_KEY(target_bid) ^ vm->addr_key;
-    } else {
-        vm->halted = 1; /* fail-closed: unknown block id */
-    }
-}
+{{ stack_control_handlers }}
 
-static void h_jcc_rel(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-{%- if layout_jcc_target_first %}
-    int32_t target_bid = fetch_i32(vm, bytecode, vip);
-    uint8_t cond = fetch_byte(vm, bytecode, vip);
-{%- else %}
-    uint8_t cond = fetch_byte(vm, bytecode, vip);
-    int32_t target_bid = fetch_i32(vm, bytecode, vip);
-{%- endif %}
-    if (eval_cond(vm, cond)) {
-        if (target_bid >= 0 && (size_t)target_bid < sizeof(g_stack_block_offsets)/sizeof(g_stack_block_offsets[0])) {
-            *vip = ASG_UNMASK_OFFSET(target_bid);
-            vm->vkey = ASG_UNMASK_KEY(target_bid) ^ vm->addr_key;
-        } else {
-            vm->halted = 1; /* fail-closed: unknown block id */
-        }
-    }
-}
-
-static void h_key_adjust(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    int64_t delta = fetch_i64(vm, bytecode, vip);
-    vm->vkey ^= (uint64_t)delta;
-}
-
-static void h_exit(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    (void)bytecode; (void)vip;
-    vm->halted = 1;
-}
 
 static void h_call_extern(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     int32_t sym_idx = fetch_i32(vm, bytecode, vip);
@@ -555,101 +520,13 @@ static void h_call_extern(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) 
     }
 }
 
-static void h_resolve_sym(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    int32_t sym_idx = fetch_i32(vm, bytecode, vip);
-    void* sym_ptr = asgard_resolve_sym_idx(sym_idx);
-    if (vm->vsp_idx < 4096) {
-        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, (uint64_t)sym_ptr);
-        ++vm->vsp_idx;
-    } else {
-        vm->halted = 1; /* fail-closed: VSP overflow */
-    }
-}
+{{ stack_cond_handlers }}
 
-static void h_setcc(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    uint8_t cond = fetch_byte(vm, bytecode, vip);
-    uint64_t res = eval_cond(vm, cond) ? 1ULL : 0ULL;
-    if (vm->vsp_idx < 4096) {
-        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);
-        ++vm->vsp_idx;
-    } else {
-        vm->halted = 1; /* fail-closed: VSP overflow */
-    }
-}
-
-static void h_cmov(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
-{%- if layout_cmov_slot_first %}
-    int16_t idx = fetch_i16(vm, bytecode, vip);
-    uint8_t cond = fetch_byte(vm, bytecode, vip);
-{%- else %}
-    uint8_t cond = fetch_byte(vm, bytecode, vip);
-    int16_t idx = fetch_i16(vm, bytecode, vip);
-{%- endif %}
-    if (vm->vsp_idx > 0) {
-        --vm->vsp_idx;
-        uint64_t v = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);
-        if (eval_cond(vm, cond) && idx >= 0 && idx < max_ctx) {
-            vm->ctx[idx] = v;
-        }
-    } else {
-        vm->halted = 1; /* fail-closed: underflow */
-    }
-}
 
 {{ stack_superop_handlers }}
 
-static void h_set_reg_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-{%- if layout_set_reg_imm_first %}
-    uint64_t imm = fetch_i64(vm, bytecode, vip);
-    int16_t idx = fetch_i16(vm, bytecode, vip);
-{%- else %}
-    int16_t idx = fetch_i16(vm, bytecode, vip);
-    uint64_t imm = fetch_i64(vm, bytecode, vip);
-{%- endif %}
-    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
-    if (idx >= 0 && idx < max_ctx) {
-        vm->ctx[idx] = imm;
-    } else {
-        vm->halted = 1;
-    }
-}
+{{ stack_reg_imm_handlers }}
 
-static void h_add_reg_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-{%- if layout_add_reg_imm_first %}
-    uint64_t imm = fetch_i64(vm, bytecode, vip);
-    int16_t idx = fetch_i16(vm, bytecode, vip);
-{%- else %}
-    int16_t idx = fetch_i16(vm, bytecode, vip);
-    uint64_t imm = fetch_i64(vm, bytecode, vip);
-{%- endif %}
-    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
-    if (idx >= 0 && idx < max_ctx && vm->vsp_idx < 4096) {
-        uint64_t a = vm->ctx[idx];
-        uint64_t b = imm;
-        uint64_t res = a + b;
-        vm->zf = (res == 0);
-        vm->sf = ((int64_t)res < 0);
-        vm->cf = (res < a);
-        vm->of = ((~(a ^ b) & (a ^ res)) >> 63) & 1;
-        vm->pf = parity8(res);
-        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, res);
-        ++vm->vsp_idx;
-    } else {
-        vm->halted = 1;
-    }
-}
-
-static void h_key_feedback(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    int16_t slot = fetch_i16(vm, bytecode, vip);
-    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
-    if (slot >= 0 && slot < max_ctx) {
-        uint64_t val = vm->ctx[slot];
-        vm->vkey ^= feedback_hash(val);
-    } else {
-        vm->halted = 1;
-    }
-}
 
 static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {
     &h_push_imm, &h_push_imm32, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
