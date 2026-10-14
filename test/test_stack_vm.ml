@@ -438,6 +438,10 @@ let test_superoperator_fusion () =
     PushReg 2; PushImm 99L; Sub; PopReg 4;            (* 900 *)
     PushImm 10L; PopReg 5;
     PushReg 5; PushImm 40L; Add; PopReg 5;            (* 50 *)
+    PushImm 200L; PushImm (-50L); Add; PopReg 6;       (* 150 -> canonicalized to SubImmImm *)
+    PushImm 30L; PushReg 5; Add; PopReg 7;            (* 80 -> commutative AddRegImm *)
+    PushReg 7; Dup; PushImm (-10L); Add; PopReg 8;    (* 70 -> canonicalized to SubImm 10L *)
+    PopReg 7;
     Exit;
   ] in
   let prog_orig = make_program 0 [b0] 16 in
@@ -450,6 +454,9 @@ let test_superoperator_fusion () =
   Alcotest.(check int64) "orig reg3" 1000L (get_reg st_orig 3);
   Alcotest.(check int64) "orig reg4" 900L (get_reg st_orig 4);
   Alcotest.(check int64) "orig reg5" 50L  (get_reg st_orig 5);
+  Alcotest.(check int64) "orig reg6" 150L (get_reg st_orig 6);
+  Alcotest.(check int64) "orig reg7" 80L  (get_reg st_orig 7);
+  Alcotest.(check int64) "orig reg8" 70L  (get_reg st_orig 8);
 
   (* 2. Apply Superoperator fusion pass at 100% rate *)
   let cfg = { (Stack_superop_pass.default_superop_config seed) with fusion_rate = 100 } in
@@ -458,10 +465,10 @@ let test_superoperator_fusion () =
 
   Alcotest.(check bool) "ops were fused" true (stats.fused_ops > 0);
   Alcotest.(check bool) "AddImmImm fused" true (stats.add_ii_count >= 1);
-  Alcotest.(check bool) "SubImmImm fused" true (stats.sub_ii_count >= 1);
+  Alcotest.(check bool) "SubImmImm fused" true (stats.sub_ii_count >= 2);
   Alcotest.(check bool) "SetRegImm fused" true (stats.set_reg_imm_count >= 1);
-  Alcotest.(check bool) "AddRegImm fused" true (stats.add_reg_imm_count >= 1);
-  Alcotest.(check bool) "SubImm fused" true (stats.sub_imm_count >= 1);
+  Alcotest.(check bool) "AddRegImm fused" true (stats.add_reg_imm_count >= 2);
+  Alcotest.(check bool) "SubImm fused" true (stats.sub_imm_count >= 2);
 
   (* 3. Verify VM execution of fused program *)
   let st_fused = run_program prog_fused in
@@ -471,6 +478,9 @@ let test_superoperator_fusion () =
   Alcotest.(check int64) "fused reg3" 1000L (get_reg st_fused 3);
   Alcotest.(check int64) "fused reg4" 900L (get_reg st_fused 4);
   Alcotest.(check int64) "fused reg5" 50L  (get_reg st_fused 5);
+  Alcotest.(check int64) "fused reg6" 150L (get_reg st_fused 6);
+  Alcotest.(check int64) "fused reg7" 80L  (get_reg st_fused 7);
+  Alcotest.(check int64) "fused reg8" 70L  (get_reg st_fused 8);
 
   (* 4. Verify bytecode encode & decode round-trip *)
   let enc = Stack_encoder.encode_program ~seed_key:seed prog_fused in
@@ -481,6 +491,9 @@ let test_superoperator_fusion () =
   Alcotest.(check int64) "bc reg3" 1000L (get_reg st_bc 3);
   Alcotest.(check int64) "bc reg4" 900L (get_reg st_bc 4);
   Alcotest.(check int64) "bc reg5" 50L  (get_reg st_bc 5);
+  Alcotest.(check int64) "bc reg6" 150L (get_reg st_bc 6);
+  Alcotest.(check int64) "bc reg7" 80L  (get_reg st_bc 7);
+  Alcotest.(check int64) "bc reg8" 70L  (get_reg st_bc 8);
 
   (* 5. Verify C++ runtime emission with superoperators *)
   let runtime_cfg = Stack_runtime.default_config Stack_runtime.X86_64 in

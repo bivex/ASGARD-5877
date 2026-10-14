@@ -253,6 +253,37 @@ let prop_verified_condition_codes =
       cond_e = (a = b) &&
       cond_ne = (a <> b))
 
+let test_superoperator_fusion_ir () =
+  let seed = Seed.create ~master_seed:0x58771337L () in
+  let b = {
+    id = 0;
+    label = "entry";
+    instrs = [
+      Alu { op = Add; dst = rax; src1 = Reg rax; src2 = Imm (-50L); set_flags = false };
+      Mov { dst = Reg rbx; src = Imm 100L };
+      Alu { op = Add; dst = rbx; src1 = Reg rbx; src2 = Reg rcx; set_flags = false };
+      Ret;
+    ];
+  } in
+  let cfg = { entry_id = 0; blocks = Hashtbl.create 1 } in
+  Hashtbl.replace cfg.blocks 0 b;
+  let f = { name = "test"; cfg } in
+  let transformed = Superoperator.transform_func ~seed f in
+  let tb = Hashtbl.find transformed.cfg.blocks 0 in
+  let real_instrs = List.filter (function
+    | Alu { dst = Vreg ((VTMP0 | VTMP1 | VTMP2 | VTMP3), _); _ }
+    | Mov { dst = Reg (Vreg ((VTMP0 | VTMP1 | VTMP2 | VTMP3), _)); _ }
+    | Unary { dst = Vreg ((VTMP0 | VTMP1 | VTMP2 | VTMP3), _); _ } -> false
+    | _ -> true
+  ) tb.instrs in
+  match real_instrs with
+  | [ Alu { op = Sub; dst = d1; src1 = Reg s1; src2 = Imm 50L; _ };
+      Alu { op = Add; dst = d2; src1 = Reg s2; src2 = Imm 100L; _ };
+      Ret ] ->
+      Alcotest.(check bool) "canonicalized to Sub" true (d1 = rax && s1 = rax);
+      Alcotest.(check bool) "fused to AddRegImm" true (d2 = rbx && s2 = rcx)
+  | _ -> Alcotest.fail "Expected canonicalized Sub and fused AddRegImm"
+
 let tests = [
   Alcotest.test_case "registers_and_subregisters" `Quick test_registers_and_subregisters;
   Alcotest.test_case "lazy_flags_add" `Quick test_lazy_flags_add;
@@ -260,6 +291,7 @@ let tests = [
   Alcotest.test_case "parity_flag" `Quick test_parity_flag;
   Alcotest.test_case "fibonacci_function_execution" `Quick test_fibonacci_function_execution;
   Alcotest.test_case "memory_and_stack" `Quick test_memory_and_stack;
+  Alcotest.test_case "superoperator_fusion_ir" `Quick test_superoperator_fusion_ir;
   QCheck_alcotest.to_alcotest prop_lazy_flags;
   QCheck_alcotest.to_alcotest prop_verified_condition_codes;
 ]

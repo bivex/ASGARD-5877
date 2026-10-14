@@ -75,18 +75,42 @@ let apply_block cfg block =
   let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id lxor 0x5170_0001))) in
   let rec aux = function
     | [] -> []
-    | PushImm a :: PushImm b :: Add :: rest when cfg.enable_add_ii && maybe rng cfg.fusion_rate ->
-        AddImmImm (a, b) :: aux rest
-    | PushImm a :: PushImm b :: Sub :: rest when cfg.enable_sub_ii && maybe rng cfg.fusion_rate ->
-        SubImmImm (a, b) :: aux rest
+    | PushImm a :: PushImm b :: Add :: rest when maybe rng cfg.fusion_rate ->
+        if b < 0L && b <> Int64.min_int && cfg.enable_sub_ii then
+          SubImmImm (a, Int64.neg b) :: aux rest
+        else if a < 0L && a <> Int64.min_int && b >= 0L && cfg.enable_sub_ii then
+          SubImmImm (b, Int64.neg a) :: aux rest
+        else if cfg.enable_add_ii then
+          AddImmImm (a, b) :: aux rest
+        else
+          PushImm a :: aux (PushImm b :: Add :: rest)
+    | PushImm a :: PushImm b :: Sub :: rest when maybe rng cfg.fusion_rate ->
+        if b < 0L && b <> Int64.min_int && cfg.enable_add_ii then
+          AddImmImm (a, Int64.neg b) :: aux rest
+        else if cfg.enable_sub_ii then
+          SubImmImm (a, b) :: aux rest
+        else
+          PushImm a :: aux (PushImm b :: Sub :: rest)
     | PushReg r :: PushImm c :: Add :: rest when cfg.enable_add_reg_imm && maybe rng cfg.fusion_rate ->
+        AddRegImm (r, c) :: aux rest
+    | PushImm c :: PushReg r :: Add :: rest when cfg.enable_add_reg_imm && maybe rng cfg.fusion_rate ->
         AddRegImm (r, c) :: aux rest
     | PushImm c :: PopReg r :: rest when cfg.enable_set_reg_imm && maybe rng cfg.fusion_rate ->
         SetRegImm (r, c) :: aux rest
-    | PushImm c :: Add :: rest when cfg.enable_add_imm && maybe rng cfg.fusion_rate ->
-        AddImm c :: aux rest
-    | PushImm c :: Sub :: rest when cfg.enable_sub_imm && maybe rng cfg.fusion_rate ->
-        SubImm c :: aux rest
+    | PushImm c :: Add :: rest when maybe rng cfg.fusion_rate ->
+        if c < 0L && c <> Int64.min_int && cfg.enable_sub_imm then
+          SubImm (Int64.neg c) :: aux rest
+        else if cfg.enable_add_imm then
+          AddImm c :: aux rest
+        else
+          PushImm c :: aux (Add :: rest)
+    | PushImm c :: Sub :: rest when maybe rng cfg.fusion_rate ->
+        if c < 0L && c <> Int64.min_int && cfg.enable_add_imm then
+          AddImm (Int64.neg c) :: aux rest
+        else if cfg.enable_sub_imm then
+          SubImm c :: aux rest
+        else
+          PushImm c :: aux (Sub :: rest)
     | op :: rest ->
         op :: aux rest
   in

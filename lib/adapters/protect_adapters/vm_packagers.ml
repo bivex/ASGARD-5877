@@ -260,6 +260,22 @@ module Stack_vm_packager : Vm_packager = struct
     let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
 
+    (* Phase 2a (Pre-amplification): Superoperator Fusion on original lowered program instructions *)
+    let prog, pre_superop_stats =
+      if native_cfg.stack_vm.superoperators then
+        let superop_seed =
+          Int64.logxor
+            (Int64.of_int (Random.State.bits rng))
+            (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
+        in
+        let superop_cfg = Stack_vm.Stack_superop_pass.default_superop_config superop_seed in
+        let prog_superop = Stack_vm.Stack_superop_pass.apply_program superop_cfg prog in
+        let stats = Stack_vm.Stack_superop_pass.superop_stats prog prog_superop in
+        (prog_superop, Some (superop_cfg, stats))
+      else
+        (prog, None)
+    in
+
     (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing)
        Pass Order Architecture: Bytecode_amplifier runs BEFORE Phase 2b (Stack_mba_pass) so that
        polynomial constant synthesis (Horner degree 6) targets ONLY original program constants.
@@ -271,26 +287,27 @@ module Stack_vm_packager : Vm_packager = struct
     let amplifier_info = Stack_vm.Bytecode_amplifier.amplifier_stats prog prog_amplified in
     let prog = prog_amplified in
 
-    (* Phase 2a: Superoperator Fusion — fuse recurring patterns into fused ops *)
+    (* Phase 2a (Post-amplification): Superoperator Fusion on synthesized constants *)
     let prog, superop_info =
-      if native_cfg.stack_vm.superoperators then
-        let superop_seed =
-          Int64.logxor
-            (Int64.of_int (Random.State.bits rng))
-            (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
-        in
-        let superop_cfg = Stack_vm.Stack_superop_pass.default_superop_config superop_seed in
-        let prog_superop = Stack_vm.Stack_superop_pass.apply_program superop_cfg prog in
-        let superop_stats = Stack_vm.Stack_superop_pass.superop_stats prog prog_superop in
-        let info =
-          Printf.sprintf "%d ops fused (AddImm:%d SubImm:%d AddII:%d SubII:%d SetRegImm:%d AddRegImm:%d)"
-            superop_stats.fused_ops superop_stats.add_imm_count superop_stats.sub_imm_count
-            superop_stats.add_ii_count superop_stats.sub_ii_count superop_stats.set_reg_imm_count
-            superop_stats.add_reg_imm_count
-        in
-        (prog_superop, info)
-      else
-        (prog, "Disabled (Plain ISA)")
+      match pre_superop_stats with
+      | Some (superop_cfg, pre_stats) ->
+          let prog_superop = Stack_vm.Stack_superop_pass.apply_program superop_cfg prog in
+          let post_stats = Stack_vm.Stack_superop_pass.superop_stats prog prog_superop in
+          let total_fused = pre_stats.fused_ops + post_stats.fused_ops in
+          let total_add_imm = pre_stats.add_imm_count + post_stats.add_imm_count in
+          let total_sub_imm = pre_stats.sub_imm_count + post_stats.sub_imm_count in
+          let total_add_ii = pre_stats.add_ii_count + post_stats.add_ii_count in
+          let total_sub_ii = pre_stats.sub_ii_count + post_stats.sub_ii_count in
+          let total_set_reg_imm = pre_stats.set_reg_imm_count + post_stats.set_reg_imm_count in
+          let total_add_reg_imm = pre_stats.add_reg_imm_count + post_stats.add_reg_imm_count in
+          let info =
+            Printf.sprintf "%d ops fused (AddImm:%d SubImm:%d AddII:%d SubII:%d SetRegImm:%d AddRegImm:%d)"
+              total_fused total_add_imm total_sub_imm total_add_ii total_sub_ii total_set_reg_imm
+              total_add_reg_imm
+          in
+          (prog_superop, info)
+      | None ->
+          (prog, "Disabled (Plain ISA)")
     in
 
     (* Phase 2b: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
