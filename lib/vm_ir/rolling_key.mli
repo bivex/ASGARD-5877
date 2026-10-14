@@ -36,3 +36,8 @@ val solve_path_delta : k_old:int64 -> k_target:int64 -> poly_const:int64 -> int6
 val mod_inverse_64 : int64 -> int64
 (** Modular multiplicative inverse in Z_{2^64} via Newton-Raphson. *)
 
+val solve_join_compensation : k_in:int64 -> k_target:int64 -> op:int -> dst:int -> int64
+(** [solve_join_compensation ~k_in ~k_target ~op ~dst] computes the exact
+    64-bit immediate field such that [advance_key_step k_in op dst imm = k_target].
+    Enables keyless CFG join points without reanchoring or explicit KEY_ADJUST beacons. *)
+

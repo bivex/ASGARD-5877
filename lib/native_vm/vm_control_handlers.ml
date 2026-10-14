@@ -45,8 +45,12 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
   Buffer.add_string b "    H_JCC: {\n";
   Buffer.add_string b "        PROBE_START();\n";
   Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint64_t t_true = (uint64_t)((word >> 22) & 0x1FFFFFULL);\n";
-  Buffer.add_string b "        uint64_t t_false = (uint64_t)((word >> 43) & 0x1FFFFFULL);\n";
+  Buffer.add_string b "        uint64_t base_vip = (uint64_t)((word >> 22) & 0x1FFFFFULL);\n";
+  Buffer.add_string b "        uint64_t enc_delta = (uint64_t)((word >> 43) & 0x1FFFFFULL);\n";
+  Buffer.add_string b "        uint64_t salt = ((uint64_t)cond * 0x5877ULL ^ 0x1337BEEFULL) & 0x1FFFFFULL;\n";
+  Buffer.add_string b "        uint64_t delta = enc_delta ^ salt;\n";
+  Buffer.add_string b "        uint64_t t_true = base_vip ^ delta;\n";
+  Buffer.add_string b "        uint64_t t_false = base_vip;\n";
   Buffer.add_string b "        uint64_t c = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
   if enable_nanomites then begin
     Buffer.add_string b "#if defined(__APPLE__)\n";

@@ -287,7 +287,12 @@ let compile_and_package_multi
     w := Int64.logor !w (Int64.of_int op);
     w := Int64.logor !w (Int64.shift_left (Int64.of_int dst) 8);
     w := Int64.logor !w (Int64.shift_left (Int64.of_int src) 13);
-    let imm_masked = Int64.logand imm 0x3FFFFFFFFFFL in
+    let imm_masked =
+      if extra_bits <> 0L then
+        Int64.logand imm 0xFFFFFFFFL
+      else
+        Int64.logand imm 0x3FFFFFFFFFFFL
+    in
     w := Int64.logor !w (Int64.shift_left imm_masked 18);
     if extra_bits <> 0L then
       w := Int64.logor !w (Int64.shift_left (Int64.logand extra_bits 0x3FFFL) 50);
@@ -609,8 +614,12 @@ let compile_and_package_multi
                   let c = cond_to_code cond in
                   let t_off = resolve_target target_true in
                   let f_off = resolve_target target_false in
-                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left (Int64.logand t_off 0x1FFFFFL) 4) in
-                  let imm = Int64.logor imm (Int64.shift_left (Int64.logand f_off 0x1FFFFFL) 25) in
+                  let base_vip = Int64.logand f_off 0x1FFFFFL in
+                  let delta = Int64.logxor (Int64.logand t_off 0x1FFFFFL) base_vip in
+                  let salt = Int64.logand (Int64.logxor (Int64.mul (Int64.of_int c) 0x5877L) 0x1337BEEFL) 0x1FFFFFL in
+                  let enc_delta = Int64.logxor delta salt in
+                  let imm = Int64.logor (Int64.of_int c) (Int64.shift_left base_vip 4) in
+                  let imm = Int64.logor imm (Int64.shift_left enc_delta 25) in
                   encode_raw_word (get_opcode OP_JCC) 0 0 imm
               | Ir.Cmov { cond; dst = Register.Fpr (d, _); src = Ir.Reg (Register.Fpr (s, _)) } ->
                   encode_raw_word (get_opcode OP_FCSEL_VV) (d mod 32) (s mod 32) (Int64.of_int (cond_to_code cond))

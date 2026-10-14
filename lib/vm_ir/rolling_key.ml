@@ -100,3 +100,22 @@ let solve_path_delta ~(k_old : int64) ~(k_target : int64) ~(poly_const : int64) 
   let term = Int64.logxor k_old target_pre in
   Int64.mul term c_inv
 
+let _m_const = 0xBF58476D1CE4E5B9L
+let m_inv   = 0x96DE1B173F119089L (* Formally verified in fstar/Rolling_Key_Verified.fst *)
+let c_const = 0x5877CAFE1337BEEFL
+let phi_op  = 0x9E3779B97F4A7C15L
+
+let rol64 x n =
+  Int64.logor (Int64.shift_left x n) (Int64.shift_right_logical x (64 - n))
+
+(** Solves for 64-bit delta_imm such that advance_key_step(k_in, op, dst, delta_imm) == k_target *)
+let solve_join_compensation ~(k_in : int64) ~(k_target : int64) ~(op : int) ~(dst : int) : int64 =
+  let step1 = Int64.logxor k_target c_const in
+  let unmul = Int64.mul step1 m_inv in
+  let unrot = rol64 unmul 23 in
+  let req_mix = Int64.logxor k_in unrot in
+  let op_part = Int64.mul (Int64.of_int op) phi_op in
+  let dst_part = Int64.shift_left (Int64.of_int dst) 24 in
+  Int64.sub req_mix (Int64.add op_part dst_part)
+
+
