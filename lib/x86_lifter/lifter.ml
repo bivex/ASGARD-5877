@@ -700,7 +700,13 @@ let lift_rc_op mnem dst count_opt =
         Ok (load @ steps @ store)
     | _ -> Error "rcl/rcr destination must be register or memory"
 
-let lift_instr mnem ops =
+let lift_instr raw_mnem ops =
+  let is_locked, mnem =
+    if String.starts_with ~prefix:"lock " raw_mnem then
+      (true, String.trim (String.sub raw_mnem 5 (String.length raw_mnem - 5)))
+    else
+      (false, raw_mnem)
+  in
   match mnem, ops with
   | ("mfence" | "lfence" | "sfence"), _ -> Ok [ Ir.Fence Ir.SeqCst ]
   | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align" | "pause" | "prefetcht0" | "prefetcht1" | "prefetcht2" | "prefetchnta" | "prefetch" | "clflush" | "clflushopt"), _ -> Ok [ Ir.Nop ]
@@ -823,7 +829,17 @@ let lift_instr mnem ops =
   | "xchg", [ a; b ] ->
       let* ir_a = to_ir_operand a in
       let* ir_b = to_ir_operand b in
-      Ok [ Ir.Xchg (ir_a, ir_b) ]
+      (match ir_a, ir_b with
+      | Ir.Reg reg, Ir.Mem m | Ir.Mem m, Ir.Reg reg ->
+          let prep, base, disp =
+            match m.base, m.index with
+            | Some b_reg, None -> [], b_reg, m.disp
+            | _ ->
+                let tmp = Register.vtmp2 in
+                [ Ir.Lea { dst = tmp; addr = m } ], tmp, 0L
+          in
+          Ok (prep @ [ Ir.Atomic_mem { op = AtSwp; dst = reg; addr = base; src = reg; imm = disp } ])
+      | _ -> Ok [ Ir.Xchg (ir_a, ir_b) ])
   | "cmpxchg", [ dst; OpReg s ] ->
       let* ir_s = to_ir_operand (OpReg s) in
       (match dst with
@@ -1079,12 +1095,46 @@ let lift_instr mnem ops =
       | OpReg r ->
           Ok [ Ir.Alu { op = alu_op; dst = r; src1 = Ir.Reg r; src2 = ir_src; set_flags = true } ]
       | OpMem m ->
-          let mem_ref = ir_mem_of_raw m in
-          Ok [
-            Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
-            Ir.Alu { op = alu_op; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = ir_src; set_flags = true };
-            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg Register.vtmp0 };
-          ]
+          let is_stack_frame = match m.base with
+            | Some (Register.Gpr (Register.RSP, _))
+            | Some (Register.Gpr (Register.RBP, _))
+            | Some (Register.Vreg (Register.VSP, _)) -> true
+            | _ -> false
+          in
+          if (not is_stack_frame || is_locked) && alu_op = Ir.Add then
+            let prep, base, disp =
+              match m.base, m.index with
+              | Some b, None -> [], b, m.disp
+              | _ ->
+                  let tmp = Register.vtmp2 in
+                  [ Ir.Lea { dst = tmp; addr = ir_mem_of_raw m } ], tmp, 0L
+            in
+            let val_reg = Register.vtmp0 in
+            Ok (prep @ [
+              Ir.Mov { dst = Ir.Reg val_reg; src = ir_src };
+              Ir.Atomic_mem { op = AtAdd; dst = val_reg; addr = base; src = val_reg; imm = disp };
+            ])
+          else if (not is_stack_frame || is_locked) && alu_op = Ir.Sub then
+            let prep, base, disp =
+              match m.base, m.index with
+              | Some b, None -> [], b, m.disp
+              | _ ->
+                  let tmp = Register.vtmp2 in
+                  [ Ir.Lea { dst = tmp; addr = ir_mem_of_raw m } ], tmp, 0L
+            in
+            let val_reg = Register.vtmp0 in
+            Ok (prep @ [
+              Ir.Mov { dst = Ir.Reg val_reg; src = ir_src };
+              Ir.Unary { op = Ir.Neg; dst = val_reg; src = Ir.Reg val_reg; set_flags = false };
+              Ir.Atomic_mem { op = AtAdd; dst = val_reg; addr = base; src = val_reg; imm = disp };
+            ])
+          else
+            let mem_ref = ir_mem_of_raw m in
+            Ok [
+              Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
+              Ir.Alu { op = alu_op; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = ir_src; set_flags = true };
+              Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg Register.vtmp0 };
+            ]
       | OpImm _ | OpLabel _ -> Error "Destination cannot be immediate or label")
 
   | ("shl" | "shr" | "sar" | "rol" | "ror"), [ dst ] ->
@@ -1489,12 +1539,45 @@ let lift_instr mnem ops =
       | OpReg r ->
           Ok [ Ir.Unary { op = un_op; dst = r; src = Ir.Reg r; set_flags = true } ]
       | OpMem m ->
-          let mem_ref = ir_mem_of_raw m in
-          Ok [
-            Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
-            Ir.Unary { op = un_op; dst = Register.vtmp0; src = Ir.Reg Register.vtmp0; set_flags = true };
-            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg Register.vtmp0 };
-          ]
+          let is_stack_frame = match m.base with
+            | Some (Register.Gpr (Register.RSP, _))
+            | Some (Register.Gpr (Register.RBP, _))
+            | Some (Register.Vreg (Register.VSP, _)) -> true
+            | _ -> false
+          in
+          if (not is_stack_frame || is_locked) && un_op = Ir.Inc then
+            let prep, base, disp =
+              match m.base, m.index with
+              | Some b, None -> [], b, m.disp
+              | _ ->
+                  let tmp = Register.vtmp2 in
+                  [ Ir.Lea { dst = tmp; addr = ir_mem_of_raw m } ], tmp, 0L
+            in
+            let val_reg = Register.vtmp0 in
+            Ok (prep @ [
+              Ir.Mov { dst = Ir.Reg val_reg; src = Ir.Imm 1L };
+              Ir.Atomic_mem { op = AtAdd; dst = val_reg; addr = base; src = val_reg; imm = disp };
+            ])
+          else if (not is_stack_frame || is_locked) && un_op = Ir.Dec then
+            let prep, base, disp =
+              match m.base, m.index with
+              | Some b, None -> [], b, m.disp
+              | _ ->
+                  let tmp = Register.vtmp2 in
+                  [ Ir.Lea { dst = tmp; addr = ir_mem_of_raw m } ], tmp, 0L
+            in
+            let val_reg = Register.vtmp0 in
+            Ok (prep @ [
+              Ir.Mov { dst = Ir.Reg val_reg; src = Ir.Imm (-1L) };
+              Ir.Atomic_mem { op = AtAdd; dst = val_reg; addr = base; src = val_reg; imm = disp };
+            ])
+          else
+            let mem_ref = ir_mem_of_raw m in
+            Ok [
+              Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Mem mem_ref };
+              Ir.Unary { op = un_op; dst = Register.vtmp0; src = Ir.Reg Register.vtmp0; set_flags = true };
+              Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg Register.vtmp0 };
+            ]
       | _ -> Error "Destination must be register or memory")
   | "cmp", [ s1; s2 ] ->
       let* ir_s1 = to_ir_operand s1 in

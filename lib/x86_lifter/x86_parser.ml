@@ -305,7 +305,10 @@ let parse_line line =
               (word ^ " " ^ next_word, next_rest)
             else
               (next_word, next_rest)
-        | "lock" | "data16" ->
+        | "lock" ->
+            let (next_word, next_rest) = strip_prefixes rest in
+            ("lock " ^ next_word, next_rest)
+        | "data16" ->
             strip_prefixes rest
         | _ -> (word, rest)
     in

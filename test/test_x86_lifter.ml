@@ -1601,6 +1601,46 @@ base_test:
           Alcotest.(check int64) "updated fs_base" 0x1122334455667788L (get_reg state Register.r8);
           Alcotest.(check int64) "updated gs_base" 0x8877665544332211L (get_reg state Register.r9)
 
+let test_x86_lift_atomic_rmw_and_lock () =
+  let asm = {|
+func_atomic_rmw:
+    mov qword ptr [rsp - 16], 100
+    lock add qword ptr [rsp - 16], 25
+    lock sub qword ptr [rsp - 16], 10
+    lock inc qword ptr [rsp - 16]
+    lock dec qword ptr [rsp - 16]
+    mov rax, qword ptr [rsp - 16]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          (* 100 + 25 - 10 + 1 - 1 = 115 *)
+          Alcotest.(check int64) "lock rmw 100+25-10+1-1=115" 115L (get_reg state Register.rax)
+
+let test_x86_lift_atomic_mem_nodes () =
+  let asm = {|
+func_atomic_nodes:
+    lock add qword ptr [rdi], 42
+    lock sub qword ptr [rdi], 12
+    lock inc qword ptr [rdi]
+    xchg qword ptr [rdi], rsi
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let b0 = Hashtbl.find func.cfg.blocks 0 in
+      let atomic_count = List.fold_left (fun acc -> function
+        | Ir.Atomic_mem _ -> acc + 1
+        | _ -> acc
+      ) 0 b0.instrs in
+      Alcotest.(check bool) "emits Atomic_mem for locked/memory RMW" true (atomic_count >= 4)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -1669,5 +1709,7 @@ let tests = [
   Alcotest.test_case "lift_x86_fsbase_gsbase_rdfsbase_wrfsbase" `Quick test_x86_fsbase_gsbase_rdfsbase_wrfsbase;
   Alcotest.test_case "lift_x86_xadd_same_reg" `Quick test_x86_lift_xadd_same_reg;
   Alcotest.test_case "lift_x86_verified_alu_simulation" `Quick test_x86_lift_verified_alu_simulation;
+  Alcotest.test_case "lift_x86_atomic_rmw_and_lock" `Quick test_x86_lift_atomic_rmw_and_lock;
+  Alcotest.test_case "lift_x86_atomic_mem_nodes" `Quick test_x86_lift_atomic_mem_nodes;
 ]
 
