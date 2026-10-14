@@ -499,6 +499,8 @@ let generate_c_runtime
        g_stack_block_keys[entry_bid] is the SipHash-derived key for the
        entry block, replacing the old global seed_key initialisation. *)
     ("entry_bid", Jingoo.Jg_types.Tint prog.entry_id);
+    ("stack_push_pop_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_push_pop_handlers_string ()));
+    ("stack_dup_swap_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_dup_swap_handlers_string ()));
   ] in
   let raw = Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models in
   if obfuscate_runtime then

@@ -5,7 +5,12 @@ let env = { Jg_types.std_env with autoescape = false }
 let render template models =
   Jg_template.from_string ~env ~models template
 
-let threaded_header_template = {|#pragma once
+let platform_compat_header = {|#pragma once
+// ============================================================================
+// ASGARD-5877 Vanguard Runtime: Platform Compatibility Layer
+// Supports Clang, GCC, and MSVC across macOS, Linux, and Windows.
+// ============================================================================
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -16,12 +21,15 @@ let threaded_header_template = {|#pragma once
 #include <cstring>
 #include <algorithm>
 #include <cmath>
+
 #if !defined(_WIN32) && !defined(_WIN64)
 #include <dlfcn.h>
 #endif
+
 #if !defined(RTLD_DEFAULT)
 #define RTLD_DEFAULT ((void*)0)
 #endif
+
 #if defined(__APPLE__)
 #include <sys/types.h>
 #include <sys/sysctl.h>
@@ -122,8 +130,29 @@ static inline void __atomic_thread_fence(int) {
 }
 #endif
 
-#ifndef ASGARD_API_HASH_RESOLVER_DEFINED
-#define ASGARD_API_HASH_RESOLVER_DEFINED
+#if defined(__GNUC__) || defined(__clang__)
+#define ASG_CALL_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define ASG_CALL_NOINLINE __declspec(noinline)
+#else
+#define ASG_CALL_NOINLINE
+#endif
+|}
+
+let crypto_primitives_header = {|#pragma once
+// ============================================================================
+// ASGARD-5877 Vanguard Runtime: Cryptographic Primitives & Dynamic Resolution
+// FNV-1a, Mach-O Dyld Exports Trie Resolver, Dynamic Symbol Decryption
+// ============================================================================
+
+#ifndef ASGARD_CRYPTO_PRIMITIVES_DEFINED
+#define ASGARD_CRYPTO_PRIMITIVES_DEFINED
+#define ASGARD_API_HASH_RESOLVER_DEFINED 1
+
+static constexpr inline uint32_t asgard_fnv1a_const(const char* str, uint32_t hash = 0x811C9DC5U) noexcept {
+    return (*str == 0) ? hash : asgard_fnv1a_const(str + 1, (hash ^ static_cast<uint8_t>(*str)) * 0x01000193U);
+}
+
 static inline int asg_strcmp(const char* s1, const char* s2) noexcept {
     if (!s1 || !s2) return (s1 == s2) ? 0 : (s1 ? 1 : -1);
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }
@@ -205,9 +234,86 @@ static inline void* asgard_resolve_by_api_hash(uint32_t target_hash) noexcept {
 #else
 static inline void* asgard_resolve_by_api_hash(uint32_t) noexcept { return nullptr; }
 #endif
-#endif
 
-{%- if enable_vector_isa %}
+typedef struct {
+    uint32_t hash;
+    uint32_t alt_hash;
+    uint16_t len;
+    uint8_t enc_bytes[64];
+} asgard_ext_sym_t;
+
+static inline void asg_decrypt_sym(const asgard_ext_sym_t* sym, char* out_buf, size_t out_cap) noexcept {
+    size_t n = sym->len < out_cap - 1 ? sym->len : out_cap - 1;
+    for (size_t i = 0; i < n; i++) {
+        uint8_t k = (uint8_t)(0x5A ^ ((i * 17 + 0x33) & 0xFF));
+        out_buf[i] = (char)(sym->enc_bytes[i] ^ k);
+    }
+    out_buf[n] = '\0';
+}
+
+struct AsgardConstantEntry {
+    uint32_t hash;
+    uint32_t alt_hash;
+    const uint8_t* enc_data;
+    uint8_t* dec_data;
+    size_t size;
+    uint32_t xor_key;
+    volatile int ready;
+};
+
+#endif // ASGARD_CRYPTO_PRIMITIVES_DEFINED
+|}
+
+let sanitization_header = {|#pragma once
+// ============================================================================
+// ASGARD-5877 Vanguard Runtime: Memory Sanitization & Anti-Forensics
+// Ephemeral Memory Scrubbing, Rolling Noise Invalidation, Canary Verification
+// ============================================================================
+
+#ifndef ASGARD_SANITIZATION_DEFINED
+#define ASGARD_SANITIZATION_DEFINED
+
+#define SCRUB_WORD(ptr, val) do { \
+    *(reinterpret_cast<volatile uint64_t*>(ptr)) = (val); \
+} while(0)
+
+namespace asgard_sanitization {
+
+static inline void scrub_memory_range(volatile uint64_t* ptr, size_t count, uint64_t noise_seed) noexcept {
+    if (!ptr || count == 0) return;
+    for (size_t i = 0; i < count; ++i) {
+        ptr[i] = (noise_seed * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL ^ (uint64_t)i;
+    }
+}
+
+static inline void ephemeral_wipe_buffer(void* ptr, size_t byte_count) noexcept {
+    if (!ptr || byte_count == 0) return;
+    volatile uint8_t* p = reinterpret_cast<volatile uint8_t*>(ptr);
+    for (size_t i = 0; i < byte_count; ++i) {
+        p[i] = static_cast<uint8_t>(0x5A ^ ((i * 37 + 0x7F) & 0xFF));
+    }
+    for (size_t i = 0; i < byte_count; ++i) {
+        p[i] = 0;
+    }
+}
+
+} // namespace asgard_sanitization
+
+#endif // ASGARD_SANITIZATION_DEFINED
+|}
+
+let threaded_header_template =
+  "#pragma once\n" ^
+  "#if __has_include(\"vanguard/platform_compat.hpp\")\n" ^
+  "#include \"vanguard/platform_compat.hpp\"\n" ^
+  "#include \"vanguard/crypto_primitives.hpp\"\n" ^
+  "#include \"vanguard/sanitization.hpp\"\n" ^
+  "#else\n" ^
+  platform_compat_header ^ "\n" ^
+  crypto_primitives_header ^ "\n" ^
+  sanitization_header ^ "\n" ^
+  "#endif\n\n" ^
+  {|{%- if enable_vector_isa %}
 #define ASGARD_VECTOR_ISA 1
 #if defined(__aarch64__)
 #include <arm_neon.h>
@@ -278,13 +384,6 @@ static const size_t g_block_lengths[] = {
 };
 {%- endif %}
 
-typedef struct {
-    uint32_t hash;
-    uint32_t alt_hash;
-    uint16_t len;
-    uint8_t enc_bytes[64];
-} asgard_ext_sym_t;
-
 {%- if not has_external_symbols %}
 static const asgard_ext_sym_t g_external_symbols[] = { { 0, 0, 0, { 0 } } };
 {%- else %}
@@ -294,25 +393,6 @@ static const asgard_ext_sym_t g_external_symbols[] = {
 {%- endfor %}
 };
 {%- endif %}
-
-static inline void asg_decrypt_sym(const asgard_ext_sym_t* sym, char* out_buf, size_t out_cap) noexcept {
-    size_t n = sym->len < out_cap - 1 ? sym->len : out_cap - 1;
-    for (size_t i = 0; i < n; i++) {
-        uint8_t k = (uint8_t)(0x5A ^ ((i * 17 + 0x33) & 0xFF));
-        out_buf[i] = (char)(sym->enc_bytes[i] ^ k);
-    }
-    out_buf[n] = '\0';
-}
-
-struct AsgardConstantEntry {
-    uint32_t hash;
-    uint32_t alt_hash;
-    const uint8_t* enc_data;
-    uint8_t* dec_data;
-    size_t size;
-    uint32_t xor_key;
-    volatile int ready;
-};
 
 {%- if not has_constants %}
 static AsgardConstantEntry g_asgard_constants[] = { { 0, 0, nullptr, nullptr, 0, 0, 1 } };
@@ -439,10 +519,6 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
 {{ wbox_seed_source }}
 
 {{ context_source }}
-
-#define SCRUB_WORD(ptr, val) do { \
-    *(reinterpret_cast<volatile uint64_t*>(ptr)) = (val); \
-} while(0)
 
 static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, uint32_t seed = asgard_wbox_derive_seed() /* seed = {{ key_seed_hex }} */, bool scrub_source = false) {
     if (ctx.reg_mask == 0) ctx.init(seed);
@@ -736,14 +812,6 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, size_t count, bool scrub_source) {
     return execute_threaded(ctx, bytecode, count, asgard_wbox_derive_seed(), scrub_source);
 }
-
-#if defined(__GNUC__) || defined(__clang__)
-#define ASG_CALL_NOINLINE __attribute__((noinline))
-#elif defined(_MSC_VER)
-#define ASG_CALL_NOINLINE __declspec(noinline)
-#else
-#define ASG_CALL_NOINLINE
-#endif
 
 static ASG_CALL_NOINLINE uint64_t asgard_vm_call(const uint64_t* bc, size_t len, uint64_t a0 = 0, uint64_t a1 = 0, uint64_t a2 = 0, uint64_t a3 = 0, uint64_t a4 = 0, uint64_t a5 = 0, uint64_t a6 = 0, uint64_t a7 = 0) {
     vanguard_threaded_vm::VMContext ctx = {};

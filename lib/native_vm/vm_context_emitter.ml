@@ -1,309 +1,451 @@
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
 let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize =
   ignore enable_running_key;
-  Buffer.add_string b "/* ------------------------------------------------------------------------- */\n";
-  Buffer.add_string b "/* Randomized Architectural Register Map (π ∈ S_32)                          */\n";
-  Buffer.add_string b "/* ------------------------------------------------------------------------- */\n";
-  Buffer.add_string b "enum RegMap : uint8_t {\n";
+
   let gpr_names = [|
     "REG_RAX"; "REG_RCX"; "REG_RDX"; "REG_RBX"; "REG_RSP"; "REG_RBP"; "REG_RSI"; "REG_RDI";
     "REG_R8";  "REG_R9";  "REG_R10"; "REG_R11"; "REG_R12"; "REG_R13"; "REG_R14"; "REG_R15";
     "REG_VTMP0"; "REG_VTMP1"; "REG_VTMP2"; "REG_VTMP3"; "REG_VIP"; "REG_VSP"; "REG_VKEY";
     "REG_VX18"; "REG_VX19"; "REG_VX20"; "REG_VX21"; "REG_VX22"; "REG_VX23"; "REG_VX24"; "REG_VX25"; "REG_VX26"
   |] in
-  Array.iteri
-    (fun i name ->
-      Buffer.add_string b (Printf.sprintf "    %s = %d,\n" name reg_perm.(i)))
-    gpr_names;
-  Buffer.add_string b "};\n\n";
 
-  (* 64-bit Cryptographic Key Derivation for Bytecode Offset (SplitMix64) *)
-  Buffer.add_string b "static inline uint64_t key64_for_offset(uint32_t seed, size_t offset) noexcept {\n";
-  Buffer.add_string b "    uint64_t s64 = (uint64_t)seed;\n";
-  Buffer.add_string b "    uint64_t x0 = ((s64 << 32) | (s64 ^ 0x9E3779B9ULL)) ^ ((uint64_t)offset * 0x517CC1B727220A95ULL);\n";
-  Buffer.add_string b "    uint64_t x1 = (x0 ^ (x0 >> 30)) * 0xBF58476D1CE4E5B9ULL;\n";
-  Buffer.add_string b "    uint64_t x2 = (x1 ^ (x1 >> 27)) * 0x94D049BB133111EBULL;\n";
-  Buffer.add_string b "    return x2 ^ (x2 >> 31);\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "static inline uint64_t compute_handlers_hash(const uintptr_t* all_domains, size_t num_domains) noexcept {\n";
-  Buffer.add_string b "    uint64_t h = 0x5877CAFEBABE1337ULL;\n";
-  Buffer.add_string b "    for (size_t d = 0; d < num_domains; ++d) {\n";
-  Buffer.add_string b "        for (size_t op = 0; op < 256; ++op) {\n";
-  Buffer.add_string b "            uint64_t ptr_val = (uint64_t)all_domains[d * 256 + op];\n";
-  Buffer.add_string b "            h ^= ptr_val * 0x9E3779B97F4A7C15ULL;\n";
-  Buffer.add_string b "            h = (h >> 27) | (h << 37);\n";
-  Buffer.add_string b "            h *= 0xBF58476D1CE4E5B9ULL;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    h ^= asgard_mem_integrity::compute_section_integrity_hash();\n";
-  Buffer.add_string b "    return h ^ (h >> 31);\n";
-  Buffer.add_string b "}\n\n";
+  (* 1. Randomized Architectural Register Map (π ∈ S_32) *)
+  let enum_reg_map = enum_decl ~underlying_ty:UInt8 "RegMap" (
+    Array.to_list (Array.mapi (fun i name -> (name, Some (i32 reg_perm.(i)))) gpr_names)
+  ) in
 
-  (* Blinded VMContext with Canary Guard Zones & Per-Slot Masking (P1-04b) *)
-  Buffer.add_string b "struct VMContext {\n";
-  Buffer.add_string b "    static inline constexpr uint64_t CANARY_VAL = 0xCAFEBABE13375877ULL;\n";
-  Buffer.add_string b "    uint64_t canary_head = CANARY_VAL;\n";
-  Buffer.add_string b "    uint64_t mid_canaries[32]; // Interleaved dynamic canaries across every 16 stack frames\n";
-  Buffer.add_string b "    uint64_t gprs[32]; // Blinded in memory: actual_val = gprs[i] ^ slot_masks[i] ^ reg_mask\n";
-  Buffer.add_string b "    uint64_t slot_masks[32]; // Per-slot evolving blinding masks (P1-04b)\n";
-  Buffer.add_string b "    uint64_t vregs[32][8]; // vector register bank: up to 512 bits\n";
-  Buffer.add_string b "    uint64_t stack[512];\n";
-  Buffer.add_string b "    size_t sp;\n";
-  Buffer.add_string b "    uint64_t reg_mask;\n";
-  Buffer.add_string b "    uint32_t init_seed;\n";
-  Buffer.add_string b "    uint64_t poison_penalty;\n";
-  Buffer.add_string b "    uint64_t running_key;\n";
-  Buffer.add_string b "    bool cf, zf, sf, of;\n";
-  Buffer.add_string b "    bool trapped;\n";
-  Buffer.add_string b "    size_t executed_instructions;\n";
-  Buffer.add_string b "    uint64_t canary_tail = CANARY_VAL;\n\n";
-  Buffer.add_string b (Printf.sprintf "    inline void init(uint32_t seed = asgard_wbox_derive_seed() /* seed = 0x%08lXU */) noexcept {\n" key_seed);
-  Buffer.add_string b "        init_seed = seed;\n";
-  Buffer.add_string b "        poison_penalty = (key64_for_offset(seed, 0x5877) ^ 0xCAA7E1D8718BF877ULL) | 1ULL;\n";
-  Buffer.add_string b "        running_key = key64_for_offset(seed, 0x13375877ULL) ^ 0xCAFEBABE13375877ULL;\n";
-  Buffer.add_string b "        reg_mask = 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed * 0x9E3779B97F4A7C15ULL);\n";
-  Buffer.add_string b "        for (size_t i = 0; i < 32; ++i) {\n";
-  Buffer.add_string b "            slot_masks[i] = key64_for_offset(seed, 0x1000 + i) ^ 0xA5A5A5A51337BEEFULL;\n";
-  Buffer.add_string b "            gprs[i] = slot_masks[i] ^ reg_mask; // Initialized to 0 (0 ^ slot_masks[i] ^ reg_mask)\n";
-  Buffer.add_string b "            mid_canaries[i] = CANARY_VAL ^ ((uint64_t)i * 0x517CC1B727220A95ULL) ^ (uint64_t)seed;\n";
-  Buffer.add_string b "            vregs[i][0] = 0ULL;\n";
-  Buffer.add_string b "            for (size_t v = 1; v < 8; ++v) vregs[i][v] = 0ULL;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        sp = 0;\n";
-  Buffer.add_string b "        cf = zf = sf = of = false;\n";
-  Buffer.add_string b "        trapped = false;\n";
-  Buffer.add_string b "        executed_instructions = 0;\n";
-  Buffer.add_string b "        canary_head = canary_tail = CANARY_VAL;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    static inline uint64_t advance_key_step(uint64_t k, uint8_t op, uint8_t dst, int64_t imm) noexcept {\n";
-  Buffer.add_string b "        uint64_t x = k ^ (((uint64_t)op * 0x9E3779B97F4A7C15ULL) + ((uint64_t)dst << 24) + (uint64_t)imm);\n";
-  Buffer.add_string b "        uint64_t rot = (x >> 23) | (x << 41);\n";
-  Buffer.add_string b "        return (rot * 0xBF58476D1CE4E5B9ULL) ^ 0x5877CAFE1337BEEFULL;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void advance_running_key(uint8_t op, uint8_t dst, int64_t imm) noexcept {\n";
-  Buffer.add_string b "        running_key = advance_key_step(running_key, op, dst, imm);\n";
-  Buffer.add_string b "    }\n\n";
-  (* Anti-Pushan block-chained rolling key: domain-separated block-entry anchor.
-     The xor-domains keep the anchor PRF distinct from k_pos, otherwise the first
-     in-block mask (k_pos ^ anchor) would collapse to zero. *)
-  Buffer.add_string b "    static inline uint64_t anchor_key(uint32_t seed, uint64_t off, uint64_t addr_hash = 0) noexcept {\n";
-  Buffer.add_string b "        return key64_for_offset(seed ^ 0x5BD1E995U, (size_t)(off ^ 0x13375877ULL)) ^ addr_hash;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void reanchor_running_key(uint64_t off, uint64_t addr_hash = 0) noexcept {\n";
-  Buffer.add_string b "        running_key = anchor_key(init_seed, off, addr_hash);\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    static inline uint64_t poly_hash64(uint64_t x) noexcept {\n";
-  Buffer.add_string b "        uint64_t x1 = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;\n";
-  Buffer.add_string b "        uint64_t x2 = (x1 ^ (x1 >> 27)) * 0x94D049BB133111EBULL;\n";
-  Buffer.add_string b "        return x2 ^ (x2 >> 31);\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    static inline uint64_t branch_invariant_poly_update(uint64_t key, uint64_t delta, uint64_t poly_const) noexcept {\n";
-  Buffer.add_string b "        uint64_t c = poly_const | 1ULL;\n";
-  Buffer.add_string b "        return poly_hash64(key ^ (c * delta));\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void apply_poly_merge_update(uint64_t delta, uint64_t poly_const) noexcept {\n";
-  Buffer.add_string b "        running_key = branch_invariant_poly_update(running_key, delta, poly_const);\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline uint64_t get_vkey() const noexcept { return running_key; }\n\n";
-  Buffer.add_string b "    inline bool verify_canaries() const noexcept {\n";
-  Buffer.add_string b "        if (canary_head != CANARY_VAL || canary_tail != CANARY_VAL) return false;\n";
-  Buffer.add_string b "        size_t frame = (sp >> 4) & 31;\n";
-  Buffer.add_string b "        uint64_t expected = CANARY_VAL ^ ((uint64_t)frame * 0x517CC1B727220A95ULL) ^ (uint64_t)init_seed;\n";
-  Buffer.add_string b "        return (mid_canaries[frame] == expected);\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline uint64_t get_reg(uint8_t i) const noexcept {\n";
-  Buffer.add_string b "        uint8_t idx = i & 31;\n";
-  Buffer.add_string b "        return gprs[idx] ^ slot_masks[idx] ^ reg_mask;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void set_reg(uint8_t i, uint64_t v) noexcept {\n";
-  Buffer.add_string b "        uint8_t idx = i & 31;\n";
-  Buffer.add_string b "        uint64_t new_m = (slot_masks[idx] ^ running_key) * 0x9E3779B97F4A7C15ULL;\n";
-  Buffer.add_string b "        slot_masks[idx] = new_m;\n";
-  Buffer.add_string b "        gprs[idx] = v ^ new_m ^ reg_mask;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void evolve_slot_mask(uint8_t i, uint32_t k) noexcept {\n";
-  Buffer.add_string b "        uint8_t idx = i & 31;\n";
-  Buffer.add_string b "        uint64_t cur_val = gprs[idx] ^ slot_masks[idx] ^ reg_mask;\n";
-  Buffer.add_string b "        uint64_t delta = ((uint64_t)k * 0x6A09E667F3BCC908ULL) ^ ((uint64_t)idx * 0x517CC1B727220A95ULL);\n";
-  Buffer.add_string b "        slot_masks[idx] = (slot_masks[idx] ^ delta) * 0xBF58476D1CE4E5B9ULL;\n";
-  Buffer.add_string b "        gprs[idx] = cur_val ^ slot_masks[idx] ^ reg_mask;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline uint64_t get_vreg_lane(uint8_t i, size_t lane) const noexcept {\n";
-  Buffer.add_string b "        return vregs[i & 31][lane & 7];\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void set_vreg_lane(uint8_t i, size_t lane, uint64_t value) noexcept {\n";
-  Buffer.add_string b "        vregs[i & 31][lane & 7] = value;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void set_vreg(uint8_t i, uint64_t lo, uint64_t hi) noexcept {\n";
-  Buffer.add_string b "        vregs[i & 31][0] = lo;\n";
-  Buffer.add_string b "        vregs[i & 31][1] = hi;\n";
-  Buffer.add_string b "        for (size_t v = 2; v < 8; ++v) vregs[i & 31][v] = 0ULL;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    // Named architectural register accessors via randomized permutation\n";
-  Buffer.add_string b "    inline uint64_t get_rax() const noexcept { return get_reg(REG_RAX); }\n";
-  Buffer.add_string b "    inline void set_rax(uint64_t v) noexcept { set_reg(REG_RAX, v); }\n";
-  Buffer.add_string b "    inline uint64_t get_rdi() const noexcept { return get_reg(REG_RDI); }\n";
-  Buffer.add_string b "    inline void set_rdi(uint64_t v) noexcept { set_reg(REG_RDI, v); }\n";
-  Buffer.add_string b "    inline uint64_t get_rsi() const noexcept { return get_reg(REG_RSI); }\n";
-  Buffer.add_string b "    inline void set_rsi(uint64_t v) noexcept { set_reg(REG_RSI, v); }\n";
-  Buffer.add_string b "    inline uint64_t get_fs_base() const noexcept { return get_reg(REG_VX25); }\n";
-  Buffer.add_string b "    inline void set_fs_base(uint64_t v) noexcept { set_reg(REG_VX25, v); }\n";
-  Buffer.add_string b "    inline uint64_t get_gs_base() const noexcept { return get_reg(REG_VX26); }\n";
-  Buffer.add_string b "    inline void set_gs_base(uint64_t v) noexcept { set_reg(REG_VX26, v); }\n\n";
-  Buffer.add_string b "    // RNS-4 Residue Arithmetic Engine (Garner CRT)\n";
-  Buffer.add_string b "    inline uint64_t rns_add(uint64_t a, uint64_t b) const noexcept {\n";
-  Buffer.add_string b "        return asgard_rns::decode(asgard_rns::add(asgard_rns::encode(a), asgard_rns::encode(b)));\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    inline uint64_t rns_sub(uint64_t a, uint64_t b) const noexcept {\n";
-  Buffer.add_string b "        return asgard_rns::decode(asgard_rns::sub(asgard_rns::encode(a), asgard_rns::encode(b)));\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    inline uint64_t rns_mul(uint64_t a, uint64_t b) const noexcept {\n";
-  Buffer.add_string b "        return asgard_rns::decode(asgard_rns::mul(asgard_rns::encode(a), asgard_rns::encode(b)));\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void evolve_mask(uint32_t k) noexcept {\n";
-  Buffer.add_string b "        uint64_t delta = ((uint64_t)k * 0x6A09E667F3BCC908ULL) ^ 0x1337ULL;\n";
-  Buffer.add_string b "        uint64_t old_mask = reg_mask;\n";
-  Buffer.add_string b "        uint64_t new_mask = (reg_mask ^ delta) + 0x5877ULL;\n";
-  Buffer.add_string b "        for (size_t i = 0; i < 32; ++i) {\n";
-  Buffer.add_string b "            gprs[i] = (gprs[i] ^ old_mask) ^ new_mask;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        reg_mask = new_mask;\n";
-  Buffer.add_string b "    }\n\n";
+  (* 2. SplitMix64 Cryptographic Key Derivation *)
+  let fn_key64 = FuncDecl {
+    attrs = [AlwaysInline; NoExcept; StaticFn];
+    ret_type = UInt64;
+    name = "key64_for_offset";
+    params = [(UInt32, "seed"); (SizeT, "offset")];
+    body = [
+      let_u64 "s64" (cast UInt64 (var "seed"));
+      let_u64 "x0" (((var "s64" <<~ u64 32L) |~ (var "s64" ^~ u64 0x9E3779B9L)) ^~ (cast UInt64 (var "offset") *~ u64 0x517CC1B727220A95L));
+      let_u64 "x1" ((var "x0" ^~ (var "x0" >>~ u64 30L)) *~ u64 0xBF58476D1CE4E5B9L);
+      let_u64 "x2" ((var "x1" ^~ (var "x1" >>~ u64 27L)) *~ u64 0x94D049BB133111EBL);
+      ret (var "x2" ^~ (var "x2" >>~ u64 31L));
+    ];
+  } in
 
-  let sched = Context_permutation.gen_epoch_schedule (Random.State.make [| Int32.to_int key_seed; 0x1337 |]) ~n_regs:16 ~n_epochs:4 in
-  Buffer.add_string b "    /* Dynamic Cycle-Decomposed Epoch Rotation (Fisher-Yates Transposition Schedule) */\n";
-  Buffer.add_string b "    inline void rotate_registers_epoch(uint32_t from_ep, uint32_t to_ep) noexcept {\n";
-  Buffer.add_string b "        uint32_t tr = ((from_ep & 3) << 2) | (to_ep & 3);\n";
-  Buffer.add_string b "        switch (tr) {\n";
-  for from_e = 0 to 3 do
-    for to_e = 0 to 3 do
-      if from_e <> to_e then begin
-        let target = Array.init 16 (fun s ->
-          let r = sched.inv_perms.(from_e).(s) in
-          sched.epoch_perms.(to_e).(r)
-        ) in
-        let swaps = Context_permutation.decompose_into_swaps target in
-        Buffer.add_string b (Printf.sprintf "        case 0x%X: {\n" ((from_e lsl 2) lor to_e));
-        List.iter (fun (u, v) ->
-          Buffer.add_string b (Printf.sprintf "            std::swap(gprs[%d], gprs[%d]);\n" u v);
-          Buffer.add_string b (Printf.sprintf "            std::swap(slot_masks[%d], slot_masks[%d]);\n" u v)
-        ) swaps;
-        Buffer.add_string b "            break;\n        }\n";
-      end
-    done
-  done;
-  Buffer.add_string b "        default: break;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    /* Virtual Stack Scrambling (8-Round Speck-64 ARX Permutation Core) */\n";
-  Buffer.add_string b "    static inline constexpr size_t STACK_SIZE = 512;\n";
-  Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_STRIDE = %d;\n" stride);
-  Buffer.add_string b (Printf.sprintf "    static inline constexpr size_t STACK_OFFSET = %d;\n\n" offset);
-  if enable_stack_scramble then
-    Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n        return (size_t)((index * STACK_STRIDE + STACK_OFFSET) & (STACK_SIZE - 1));\n    }\n\n"
-  else
-    Buffer.add_string b "    inline size_t scramble_stack_idx(size_t index) const noexcept {\n        return index;\n    }\n\n";
-  Buffer.add_string b "    inline void push(uint64_t v) noexcept {\n";
-  Buffer.add_string b "        if (!verify_canaries()) { reg_mask ^= poison_penalty; trapped = true; }\n";
-  Buffer.add_string b "        if (sp < STACK_SIZE) {\n";
-  Buffer.add_string b "            size_t phys_idx = scramble_stack_idx(sp);\n";
-  Buffer.add_string b "            uint64_t enc_mask = ((uint64_t)sp * 0x9E3779B97F4A7C15ULL) ^ 0xA5A5A5A55A5A5A5AULL;\n";
-  Buffer.add_string b "            stack[phys_idx] = v ^ enc_mask;\n";
-  Buffer.add_string b "            sp++;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline uint64_t pop() noexcept {\n";
-  Buffer.add_string b "        if (!verify_canaries()) { reg_mask ^= poison_penalty; trapped = true; }\n";
-  Buffer.add_string b "        if (sp > 0) {\n";
-  Buffer.add_string b "            sp--;\n";
-  Buffer.add_string b "            size_t phys_idx = scramble_stack_idx(sp);\n";
-  Buffer.add_string b "            uint64_t enc_mask = ((uint64_t)sp * 0x9E3779B97F4A7C15ULL) ^ 0xA5A5A5A55A5A5A5AULL;\n";
-  Buffer.add_string b "            uint64_t val = stack[phys_idx] ^ enc_mask;\n";
-  if enable_mem_sanitize then
-    Buffer.add_string b "            stack[phys_idx] = 0xDEADBEEFCAFE1337ULL ^ enc_mask; // Ephemeral slot wipe\n";
-  Buffer.add_string b "            return val;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        return 0ULL;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    uint64_t trace_digest = 0x53B7D9F7A1B4283EULL;\n";
-  Buffer.add_string b "    uint64_t bridge_state[16] = {0};\n\n";
-  Buffer.add_string b "    inline void morph_math_to_flow(uint64_t target_digest = 0) noexcept {\n";
-  Buffer.add_string b "#if defined(ASGARD_MULTI_VM_ENABLED)\n";
-  Buffer.add_string b "        uint64_t dig = target_digest ? target_digest : trace_digest;\n";
-  Buffer.add_string b "        uint64_t regs[16];\n";
-  Buffer.add_string b "        for (int i = 0; i < 16; ++i) regs[i] = get_reg(i);\n";
-  Buffer.add_string b "        in_place_morph_math_to_flow(regs, bridge_state, dig);\n";
-  Buffer.add_string b "        trace_digest = bridge_rol64(dig, 13) ^ 0x5877CAFEULL;\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "        (void)target_digest;\n";
-  Buffer.add_string b "#endif\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    inline void morph_flow_to_math(uint64_t target_digest = 0) noexcept {\n";
-  Buffer.add_string b "#if defined(ASGARD_MULTI_VM_ENABLED)\n";
-  Buffer.add_string b "        uint64_t dig = target_digest ? target_digest : (bridge_rol64(trace_digest, 51) ^ 0x5877CAFEULL);\n";
-  Buffer.add_string b "        uint64_t regs[16];\n";
-  Buffer.add_string b "        in_place_morph_flow_to_math(bridge_state, regs, dig);\n";
-  Buffer.add_string b "        trace_digest = dig;\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "        (void)target_digest;\n";
-  Buffer.add_string b "#endif\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "};\n\n";
+  (* 3. Compute Handlers Integrity Hash *)
+  let fn_handlers_hash = FuncDecl {
+    attrs = [AlwaysInline; NoExcept; StaticFn];
+    ret_type = UInt64;
+    name = "compute_handlers_hash";
+    params = [(ConstPtr UIntPtr, "all_domains"); (SizeT, "num_domains")];
+    body = [
+      let_u64 "h" (u64 0x5877CAFEBABE1337L);
+      for_range "d" (u64 0L) (var "num_domains") [
+        for_range "op" (u64 0L) (u64 256L) [
+          let_u64 "ptr_val" (cast UInt64 (idx (var "all_domains") ((var "d" *~ u64 256L) +~ var "op")));
+          (var "h" ^= (var "ptr_val" *~ u64 0x9E3779B97F4A7C15L));
+          (var "h" := ((var "h" >>~ u64 27L) |~ (var "h" <<~ u64 37L)));
+          (var "h" *= u64 0xBF58476D1CE4E5B9L);
+        ];
+      ];
+      (var "h" ^= call "asgard_mem_integrity::compute_section_integrity_hash" []);
+      ret (var "h" ^~ (var "h" >>~ u64 31L));
+    ];
+  } in
 
-  Buffer.add_string b "static inline bool eval_condition(const VMContext& ctx, uint8_t cond) noexcept {\n";
-  Buffer.add_string b "    switch (cond) {\n";
-  Buffer.add_string b "        case 0: return ctx.zf;                         // E\n";
-  Buffer.add_string b "        case 1: return !ctx.zf;                        // NE\n";
-  Buffer.add_string b "        case 2: return ctx.cf;                         // B\n";
-  Buffer.add_string b "        case 3: return !ctx.cf;                        // AE\n";
-  Buffer.add_string b "        case 4: return ctx.cf || ctx.zf;               // BE\n";
-  Buffer.add_string b "        case 5: return !ctx.cf && !ctx.zf;             // A\n";
-  Buffer.add_string b "        case 6: return ctx.sf;                         // S\n";
-  Buffer.add_string b "        case 7: return !ctx.sf;                        // NS\n";
-  Buffer.add_string b "        case 8: return ctx.sf != ctx.of;               // L\n";
-  Buffer.add_string b "        case 9: return ctx.sf == ctx.of;               // GE\n";
-  Buffer.add_string b "        case 10: return ctx.zf || (ctx.sf != ctx.of);  // LE\n";
-  Buffer.add_string b "        case 11: return !ctx.zf && (ctx.sf == ctx.of); // G\n";
-  Buffer.add_string b "        case 12: return ctx.of;                        // O\n";
-  Buffer.add_string b "        case 13: return !ctx.of;                       // NO\n";
-  Buffer.add_string b "        case 14: return true;                          // ALWAYS\n";
-  Buffer.add_string b "        default: return true;\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "static inline void compute_sub_flags(VMContext& ctx, uint64_t a, uint64_t b, uint32_t bits) noexcept {\n";
-  Buffer.add_string b "    if (bits == 0 || bits >= 64) {\n";
-  Buffer.add_string b "        uint64_t res = a - b;\n";
-  Buffer.add_string b "        ctx.zf = (res == 0);\n";
-  Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-  Buffer.add_string b "        ctx.cf = (a < b);\n";
-  Buffer.add_string b "        ctx.of = ((((a ^ b) & (a ^ res)) >> 63) != 0);\n";
-  Buffer.add_string b "    } else {\n";
-  Buffer.add_string b "        uint64_t mask = (1ULL << bits) - 1ULL;\n";
-  Buffer.add_string b "        uint64_t sign_bit = 1ULL << (bits - 1);\n";
-  Buffer.add_string b "        uint64_t a_val = a & mask;\n";
-  Buffer.add_string b "        uint64_t b_val = b & mask;\n";
-  Buffer.add_string b "        uint64_t res = (a_val - b_val) & mask;\n";
-  Buffer.add_string b "        ctx.zf = (res == 0);\n";
-  Buffer.add_string b "        ctx.sf = ((res & sign_bit) != 0);\n";
-  Buffer.add_string b "        ctx.cf = (a_val < b_val);\n";
-  Buffer.add_string b "        ctx.of = ((((a_val ^ b_val) & (a_val ^ res)) & sign_bit) != 0);\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "}\n\n";
-  Buffer.add_string b "static inline void compute_add_flags(VMContext& ctx, uint64_t a, uint64_t b, uint32_t bits) noexcept {\n";
-  Buffer.add_string b "    if (bits == 0 || bits >= 64) {\n";
-  Buffer.add_string b "        uint64_t res = a + b;\n";
-  Buffer.add_string b "        ctx.zf = (res == 0);\n";
-  Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-  Buffer.add_string b "        ctx.cf = (res < a);\n";
-  Buffer.add_string b "        ctx.of = (((~(a ^ b) & (a ^ res)) >> 63) != 0);\n";
-  Buffer.add_string b "    } else {\n";
-  Buffer.add_string b "        uint64_t mask = (1ULL << bits) - 1ULL;\n";
-  Buffer.add_string b "        uint64_t sign_bit = 1ULL << (bits - 1);\n";
-  Buffer.add_string b "        uint64_t a_val = a & mask;\n";
-  Buffer.add_string b "        uint64_t b_val = b & mask;\n";
-  Buffer.add_string b "        uint64_t res = (a_val + b_val) & mask;\n";
-  Buffer.add_string b "        ctx.zf = (res == 0);\n";
-  Buffer.add_string b "        ctx.sf = ((res & sign_bit) != 0);\n";
-  Buffer.add_string b "        ctx.cf = (res < a_val);\n";
-  Buffer.add_string b "        ctx.of = (((~(a_val ^ b_val) & (a_val ^ res)) & sign_bit) != 0);\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "}\n\n"
+  (* 4. VMContext Structure with Affine Register Map & Security Guards *)
+  let affine_a = ((Int32.to_int (Int32.shift_right_logical key_seed 16)) land 0x1E) lor 1 in
+  let affine_b = (Int32.to_int key_seed) land 31 in
+
+  let sched = Context_permutation.gen_epoch_schedule
+    (Random.State.make [| Int32.to_int key_seed; 0x1337 |]) ~n_regs:16 ~n_epochs:4 in
+
+  let rotate_cases =
+    let cases = ref [] in
+    for from_e = 0 to 3 do
+      for to_e = 0 to 3 do
+        if from_e <> to_e then begin
+          let target = Array.init 16 (fun s ->
+            let r = sched.inv_perms.(from_e).(s) in
+            sched.epoch_perms.(to_e).(r)
+          ) in
+          let swaps = Context_permutation.decompose_into_swaps target in
+          let swap_stmts = List.fold_left (fun acc (u, v) ->
+            let idx_u = call "reg_phys_idx" [i32 u] in
+            let idx_v = call "reg_phys_idx" [i32 v] in
+            acc @ [
+              expr_stmt (call "std::swap" [idx (var "gprs") idx_u; idx (var "gprs") idx_v]);
+              expr_stmt (call "std::swap" [idx (var "slot_masks") idx_u; idx (var "slot_masks") idx_v]);
+            ]
+          ) [] swaps in
+          cases.contents <- (i32 ((from_e lsl 2) lor to_e), swap_stmts @ [ break_stmt ]) :: cases.contents;
+        end
+      done
+    done;
+    List.rev cases.contents
+  in
+
+  let vm_context_members : struct_member list = [
+    member_static_constexpr UInt64 "CANARY_VAL" (u64 0xCAFEBABE13375877L);
+    member_field ~init:(var "CANARY_VAL") UInt64 "canary_head";
+    member_field (Array (UInt64, 32)) "mid_canaries";
+    member_field (Array (UInt64, 32)) "gprs";
+    member_field (Array (UInt64, 32)) "slot_masks";
+    member_field (Array (Array (UInt64, 8), 32)) "vregs";
+    member_field (Array (UInt64, 512)) "stack";
+    member_field SizeT "sp";
+    member_field UInt64 "reg_mask";
+    member_field UInt32 "init_seed";
+    member_field UInt64 "poison_penalty";
+    member_field UInt64 "running_key";
+    member_field Bool "cf";
+    member_field Bool "zf";
+    member_field Bool "sf";
+    member_field Bool "of";
+    member_field Bool "trapped";
+    member_field SizeT "executed_instructions";
+    member_field ~init:(var "CANARY_VAL") UInt64 "canary_tail";
+
+    (* Affine Register Mapping Constants & Helper *)
+    member_static_constexpr SizeT "REG_AFFINE_A" (i32 affine_a);
+    member_static_constexpr SizeT "REG_AFFINE_B" (i32 affine_b);
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt8 "reg_phys_idx" [(UInt8, "i")] [
+      ret (cast UInt8 (((cast SizeT (var "i" &~ i32 31) *~ var "REG_AFFINE_A") +~ var "REG_AFFINE_B") &~ i32 31));
+    ];
+
+    (* VMContext Initialization *)
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "init" [(UInt32, "seed = asgard_wbox_derive_seed()")] [
+      (var "init_seed" := var "seed");
+      (var "poison_penalty" := ((call "key64_for_offset" [var "seed"; u64 0x5877L] ^~ u64 0xCAA7E1D8718BF877L) |~ u64 1L));
+      (var "running_key" := (call "key64_for_offset" [var "seed"; u64 0x13375877L] ^~ u64 0xCAFEBABE13375877L));
+      (var "reg_mask" := (u64 0x5A5A5A5A13375877L ^~ (cast UInt64 (var "seed") *~ u64 0x9E3779B97F4A7C15L)));
+      for_range "i" (u64 0L) (u64 32L) [
+        (idx (var "slot_masks") (var "i") := (call "key64_for_offset" [var "seed"; u64 0x1000L +~ var "i"] ^~ u64 0xA5A5A5A51337BEEFL));
+        (idx (var "gprs") (var "i") := (idx (var "slot_masks") (var "i") ^~ var "reg_mask"));
+        (idx (var "mid_canaries") (var "i") := (var "CANARY_VAL" ^~ (cast UInt64 (var "i") *~ u64 0x517CC1B727220A95L) ^~ cast UInt64 (var "seed")));
+        (idx (idx (var "vregs") (var "i")) (i32 0) := u64 0L);
+        for_range "v" (u64 1L) (u64 8L) [
+          (idx (idx (var "vregs") (var "i")) (var "v") := u64 0L);
+        ];
+      ];
+      (var "sp" := u64 0L);
+      (var "cf" := bool_lit false); (var "zf" := bool_lit false);
+      (var "sf" := bool_lit false); (var "of" := bool_lit false);
+      (var "trapped" := bool_lit false);
+      (var "executed_instructions" := u64 0L);
+      (var "canary_head" := var "CANARY_VAL");
+      (var "canary_tail" := var "CANARY_VAL");
+    ];
+
+    (* Rolling Key Derivations *)
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "advance_key_step"
+      [(UInt64, "k"); (UInt8, "op"); (UInt8, "dst"); (Int64, "imm")] [
+      let_u64 "x" (var "k" ^~ (((cast UInt64 (var "op") *~ u64 0x9E3779B97F4A7C15L) +~ (cast UInt64 (var "dst") <<~ u64 24L)) +~ cast UInt64 (var "imm")));
+      let_u64 "rot" ((var "x" >>~ u64 23L) |~ (var "x" <<~ u64 41L));
+      ret ((var "rot" *~ u64 0xBF58476D1CE4E5B9L) ^~ u64 0x5877CAFE1337BEEFL);
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "advance_running_key"
+      [(UInt8, "op"); (UInt8, "dst"); (Int64, "imm")] [
+      (var "running_key" := call "advance_key_step" [var "running_key"; var "op"; var "dst"; var "imm"]);
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "anchor_key"
+      [(UInt32, "seed"); (UInt64, "off"); (UInt64, "addr_hash = 0")] [
+      ret (call "key64_for_offset" [var "seed" ^~ u32 0x5BD1E995l; cast SizeT (var "off" ^~ u64 0x13375877L)] ^~ var "addr_hash");
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "reanchor_running_key"
+      [(UInt64, "off"); (UInt64, "addr_hash = 0")] [
+      (var "running_key" := call "anchor_key" [var "init_seed"; var "off"; var "addr_hash"]);
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "poly_hash64" [(UInt64, "x")] [
+      let_u64 "x1" ((var "x" ^~ (var "x" >>~ u64 30L)) *~ u64 0xBF58476D1CE4E5B9L);
+      let_u64 "x2" ((var "x1" ^~ (var "x1" >>~ u64 27L)) *~ u64 0x94D049BB133111EBL);
+      ret (var "x2" ^~ (var "x2" >>~ u64 31L));
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "branch_invariant_poly_update"
+      [(UInt64, "key"); (UInt64, "delta"); (UInt64, "poly_const")] [
+      let_u64 "c" (var "poly_const" |~ u64 1L);
+      ret (call "poly_hash64" [var "key" ^~ (var "c" *~ var "delta")]);
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "apply_poly_merge_update"
+      [(UInt64, "delta"); (UInt64, "poly_const")] [
+      (var "running_key" := call "branch_invariant_poly_update" [var "running_key"; var "delta"; var "poly_const"]);
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_vkey" [] [
+      ret (var "running_key");
+    ];
+
+    (* Dynamic Canary Guard Validator *)
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true Bool "verify_canaries" [] [
+      if_then ((var "canary_head" <>~ var "CANARY_VAL") ||~ (var "canary_tail" <>~ var "CANARY_VAL")) [
+        ret (bool_lit false);
+      ];
+      decl_var ~init:((var "sp" >>~ u64 4L) &~ u64 31L) SizeT "frame";
+      let_u64 "expected" ((var "CANARY_VAL" ^~ (cast UInt64 (var "frame") *~ u64 0x517CC1B727220A95L)) ^~ cast UInt64 (var "init_seed"));
+      ret (idx (var "mid_canaries") (var "frame") ==~ var "expected");
+    ];
+
+    (* Register Accessors with Per-Slot Masking and Affine Permutation *)
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_reg" [(UInt8, "i")] [
+      decl_var ~init:(cast SizeT (call "reg_phys_idx" [var "i"])) SizeT "idx";
+      ret ((idx (var "gprs") (var "idx") ^~ idx (var "slot_masks") (var "idx")) ^~ var "reg_mask");
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_reg" [(UInt8, "i"); (UInt64, "v")] [
+      decl_var ~init:(cast SizeT (call "reg_phys_idx" [var "i"])) SizeT "idx";
+      let_u64 "new_m" ((idx (var "slot_masks") (var "idx") ^~ var "running_key") *~ u64 0x9E3779B97F4A7C15L);
+      (idx (var "slot_masks") (var "idx") := var "new_m");
+      (idx (var "gprs") (var "idx") := (var "v" ^~ var "new_m" ^~ var "reg_mask"));
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "evolve_slot_mask" [(UInt8, "i"); (UInt32, "k")] [
+      decl_var ~init:(cast SizeT (call "reg_phys_idx" [var "i"])) SizeT "idx";
+      let_u64 "cur_val" (idx (var "gprs") (var "idx") ^~ idx (var "slot_masks") (var "idx") ^~ var "reg_mask");
+      let_u64 "delta" ((cast UInt64 (var "k") *~ u64 0x6A09E667F3BCC908L) ^~ (cast UInt64 (var "idx") *~ u64 0x517CC1B727220A95L));
+      (idx (var "slot_masks") (var "idx") := (idx (var "slot_masks") (var "idx") ^~ var "delta") *~ u64 0xBF58476D1CE4E5B9L);
+      (idx (var "gprs") (var "idx") := var "cur_val" ^~ idx (var "slot_masks") (var "idx") ^~ var "reg_mask");
+    ];
+
+    (* Vector Register Accessors *)
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_vreg_lane" [(UInt8, "i"); (SizeT, "lane")] [
+      ret (idx (idx (var "vregs") (var "i" &~ i32 31)) (var "lane" &~ i32 7));
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_vreg_lane" [(UInt8, "i"); (SizeT, "lane"); (UInt64, "value")] [
+      (idx (idx (var "vregs") (var "i" &~ i32 31)) (var "lane" &~ i32 7) := var "value");
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_vreg" [(UInt8, "i"); (UInt64, "lo"); (UInt64, "hi")] [
+      (idx (idx (var "vregs") (var "i" &~ i32 31)) (i32 0) := var "lo");
+      (idx (idx (var "vregs") (var "i" &~ i32 31)) (i32 1) := var "hi");
+      for_range "v" (u64 2L) (u64 8L) [
+        (idx (idx (var "vregs") (var "i" &~ i32 31)) (var "v") := u64 0L);
+      ];
+    ];
+
+    (* Named Architectural Register Accessors *)
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_rax" [] [ ret (call "get_reg" [var "REG_RAX"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_rax" [(UInt64, "v")] [ expr_stmt (call "set_reg" [var "REG_RAX"; var "v"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_rdi" [] [ ret (call "get_reg" [var "REG_RDI"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_rdi" [(UInt64, "v")] [ expr_stmt (call "set_reg" [var "REG_RDI"; var "v"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_rsi" [] [ ret (call "get_reg" [var "REG_RSI"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_rsi" [(UInt64, "v")] [ expr_stmt (call "set_reg" [var "REG_RSI"; var "v"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_fs_base" [] [ ret (call "get_reg" [var "REG_VX25"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_fs_base" [(UInt64, "v")] [ expr_stmt (call "set_reg" [var "REG_VX25"; var "v"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_gs_base" [] [ ret (call "get_reg" [var "REG_VX26"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_gs_base" [(UInt64, "v")] [ expr_stmt (call "set_reg" [var "REG_VX26"; var "v"]) ];
+
+    (* RNS-4 Residue Arithmetic Engine *)
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "rns_add" [(UInt64, "a"); (UInt64, "b")] [
+      ret (call "asgard_rns::decode" [call "asgard_rns::add" [call "asgard_rns::encode" [var "a"]; call "asgard_rns::encode" [var "b"]]]);
+    ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "rns_sub" [(UInt64, "a"); (UInt64, "b")] [
+      ret (call "asgard_rns::decode" [call "asgard_rns::sub" [call "asgard_rns::encode" [var "a"]; call "asgard_rns::encode" [var "b"]]]);
+    ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "rns_mul" [(UInt64, "a"); (UInt64, "b")] [
+      ret (call "asgard_rns::decode" [call "asgard_rns::mul" [call "asgard_rns::encode" [var "a"]; call "asgard_rns::encode" [var "b"]]]);
+    ];
+
+    (* Global Mask Evolution *)
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "evolve_mask" [(UInt32, "k")] [
+      let_u64 "delta" ((cast UInt64 (var "k") *~ u64 0x6A09E667F3BCC908L) ^~ u64 0x1337L);
+      let_u64 "old_mask" (var "reg_mask");
+      let_u64 "new_mask" ((var "reg_mask" ^~ var "delta") +~ u64 0x5877L);
+      for_range "i" (u64 0L) (u64 32L) [
+        (idx (var "gprs") (var "i") := (idx (var "gprs") (var "i") ^~ var "old_mask") ^~ var "new_mask");
+      ];
+      (var "reg_mask" := var "new_mask");
+    ];
+
+    (* Dynamic Epoch Rotation *)
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "rotate_registers_epoch" [(UInt32, "from_ep"); (UInt32, "to_ep")] [
+      decl_var ~init:(((var "from_ep" &~ i32 3) <<~ i32 2) |~ (var "to_ep" &~ i32 3)) UInt32 "tr";
+      switch (var "tr") rotate_cases (Some [ break_stmt ]);
+    ];
+
+    (* Virtual Stack Scrambling *)
+    member_static_constexpr SizeT "STACK_SIZE" (i32 512);
+    member_static_constexpr SizeT "STACK_STRIDE" (i32 stride);
+    member_static_constexpr SizeT "STACK_OFFSET" (i32 offset);
+
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true SizeT "scramble_stack_idx" [(SizeT, "index")] [
+      ret (if enable_stack_scramble then
+        cast SizeT (((var "index" *~ var "STACK_STRIDE") +~ var "STACK_OFFSET") &~ (var "STACK_SIZE" -~ i32 1))
+      else
+        var "index");
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "push" [(UInt64, "v")] [
+      if_then (log_not (call "verify_canaries" [])) [
+        (var "reg_mask" ^= var "poison_penalty");
+        (var "trapped" := bool_lit true);
+      ];
+      if_then (var "sp" <~ var "STACK_SIZE") [
+        decl_var ~init:(call "scramble_stack_idx" [var "sp"]) SizeT "phys_idx";
+        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 0x9E3779B97F4A7C15L) ^~ u64 0xA5A5A5A55A5A5A5AL);
+        (idx (var "stack") (var "phys_idx") := var "v" ^~ var "enc_mask");
+        (var "sp" += i32 1);
+      ];
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] UInt64 "pop" [] ([
+      if_then (log_not (call "verify_canaries" [])) [
+        (var "reg_mask" ^= var "poison_penalty");
+        (var "trapped" := bool_lit true);
+      ];
+      if_then (var "sp" >~ i32 0) ([
+        (var "sp" -= i32 1);
+        decl_var ~init:(call "scramble_stack_idx" [var "sp"]) SizeT "phys_idx";
+        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 0x9E3779B97F4A7C15L) ^~ u64 0xA5A5A5A55A5A5A5AL);
+        let_u64 "val" (idx (var "stack") (var "phys_idx") ^~ var "enc_mask");
+      ] @ (if enable_mem_sanitize then [
+        (idx (var "stack") (var "phys_idx") := u64 0xDEADBEEFCAFE1337L ^~ var "enc_mask");
+      ] else []) @ [
+        ret (var "val");
+      ]);
+      ret (u64 0L);
+    ]);
+
+    (* Multi-VM Domain morphing *)
+    member_field ~init:(u64 0x53B7D9F7A1B4283EL) UInt64 "trace_digest";
+    member_field (Array (UInt64, 16)) "bridge_state";
+
+    member_raw "    inline void morph_math_to_flow(uint64_t target_digest = 0) noexcept {
+#if defined(ASGARD_MULTI_VM_ENABLED)
+        uint64_t dig = target_digest ? target_digest : trace_digest;
+        uint64_t regs[16];
+        for (int i = 0; i < 16; ++i) regs[i] = get_reg(i);
+        in_place_morph_math_to_flow(regs, bridge_state, dig);
+        trace_digest = bridge_rol64(dig, 13) ^ 0x5877CAFEULL;
+#else
+        (void)target_digest;
+#endif
+    }";
+
+    member_raw "    inline void morph_flow_to_math(uint64_t target_digest = 0) noexcept {
+#if defined(ASGARD_MULTI_VM_ENABLED)
+        uint64_t dig = target_digest ? target_digest : (bridge_rol64(trace_digest, 51) ^ 0x5877CAFEULL);
+        uint64_t regs[16];
+        for (int i = 0; i < 16; ++i) regs[i] = get_reg(i);
+        in_place_morph_flow_to_math(bridge_state, regs, dig);
+        trace_digest = dig;
+#else
+        (void)target_digest;
+#endif
+    }";
+  ] in
+
+  let struct_vm_context = struct_def "VMContext" vm_context_members in
+
+  (* 5. Standalone Flag Evaluation Functions *)
+  let fn_eval_condition = FuncDecl {
+    attrs = [AlwaysInline; NoExcept; StaticFn];
+    ret_type = Bool;
+    name = "eval_condition";
+    params = [(ConstRef (StructType "VMContext"), "ctx"); (UInt8, "cond")];
+    body = [
+      switch (var "cond") [
+        (i32 0,  [ ret (var "ctx.zf") ]);
+        (i32 1,  [ ret (log_not (var "ctx.zf")) ]);
+        (i32 2,  [ ret (var "ctx.cf") ]);
+        (i32 3,  [ ret (log_not (var "ctx.cf")) ]);
+        (i32 4,  [ ret (var "ctx.cf" ||~ var "ctx.zf") ]);
+        (i32 5,  [ ret (log_not (var "ctx.cf") &&~ log_not (var "ctx.zf")) ]);
+        (i32 6,  [ ret (var "ctx.sf") ]);
+        (i32 7,  [ ret (log_not (var "ctx.sf")) ]);
+        (i32 8,  [ ret (var "ctx.sf" <>~ var "ctx.of") ]);
+        (i32 9,  [ ret (var "ctx.sf" ==~ var "ctx.of") ]);
+        (i32 10, [ ret (var "ctx.zf" ||~ (var "ctx.sf" <>~ var "ctx.of")) ]);
+        (i32 11, [ ret (log_not (var "ctx.zf") &&~ (var "ctx.sf" ==~ var "ctx.of")) ]);
+        (i32 12, [ ret (var "ctx.of") ]);
+        (i32 13, [ ret (log_not (var "ctx.of")) ]);
+        (i32 14, [ ret (bool_lit true) ]);
+      ] (Some [ ret (bool_lit true) ]);
+    ];
+  } in
+
+  let fn_compute_sub_flags = FuncDecl {
+    attrs = [AlwaysInline; NoExcept; StaticFn];
+    ret_type = Void;
+    name = "compute_sub_flags";
+    params = [
+      (Ref (StructType "VMContext"), "ctx");
+      (UInt64, "a");
+      (UInt64, "b");
+      (UInt32, "bits");
+    ];
+    body = [
+      if_then_else ((var "bits" ==~ i32 0) ||~ (var "bits" >=~ i32 64)) [
+        let_u64 "res" (var "a" -~ var "b");
+        (var "ctx.zf" := (var "res" ==~ u64 0L));
+        (var "ctx.sf" := (cast Int64 (var "res") <~ i64 0L));
+        (var "ctx.cf" := (var "a" <~ var "b"));
+        (var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ u64 63L) <>~ u64 0L));
+      ] [
+        let_u64 "mask" ((u64 1L <<~ var "bits") -~ u64 1L);
+        let_u64 "sign_bit" (u64 1L <<~ (var "bits" -~ i32 1));
+        let_u64 "a_val" (var "a" &~ var "mask");
+        let_u64 "b_val" (var "b" &~ var "mask");
+        let_u64 "res" ((var "a_val" -~ var "b_val") &~ var "mask");
+        (var "ctx.zf" := (var "res" ==~ u64 0L));
+        (var "ctx.sf" := ((var "res" &~ var "sign_bit") <>~ u64 0L));
+        (var "ctx.cf" := (var "a_val" <~ var "b_val"));
+        (var "ctx.of" := ((((var "a_val" ^~ var "b_val") &~ (var "a_val" ^~ var "res")) &~ var "sign_bit") <>~ u64 0L));
+      ];
+    ];
+  } in
+
+  let fn_compute_add_flags = FuncDecl {
+    attrs = [AlwaysInline; NoExcept; StaticFn];
+    ret_type = Void;
+    name = "compute_add_flags";
+    params = [
+      (Ref (StructType "VMContext"), "ctx");
+      (UInt64, "a");
+      (UInt64, "b");
+      (UInt32, "bits");
+    ];
+    body = [
+      if_then_else ((var "bits" ==~ i32 0) ||~ (var "bits" >=~ i32 64)) [
+        let_u64 "res" (var "a" +~ var "b");
+        (var "ctx.zf" := (var "res" ==~ u64 0L));
+        (var "ctx.sf" := (cast Int64 (var "res") <~ i64 0L));
+        (var "ctx.cf" := (var "res" <~ var "a"));
+        (var "ctx.of" := (((bit_not (var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ u64 63L) <>~ u64 0L));
+      ] [
+        let_u64 "mask" ((u64 1L <<~ var "bits") -~ u64 1L);
+        let_u64 "sign_bit" (u64 1L <<~ (var "bits" -~ i32 1));
+        let_u64 "a_val" (var "a" &~ var "mask");
+        let_u64 "b_val" (var "b" &~ var "mask");
+        let_u64 "res" ((var "a_val" +~ var "b_val") &~ var "mask");
+        (var "ctx.zf" := (var "res" ==~ u64 0L));
+        (var "ctx.sf" := ((var "res" &~ var "sign_bit") <>~ u64 0L));
+        (var "ctx.cf" := (var "res" <~ var "a_val"));
+        (var "ctx.of" := (((bit_not (var "a_val" ^~ var "b_val") &~ (var "a_val" ^~ var "res")) &~ var "sign_bit") <>~ u64 0L));
+      ];
+    ];
+  } in
+
+  let decls : top_decl list = [
+    comment_top "Randomized Architectural Register Map (π ∈ S_32)";
+    enum_reg_map;
+    comment_top "64-bit Cryptographic Key Derivation for Bytecode Offset (SplitMix64)";
+    fn_key64;
+    comment_top "Handlers Table Integrity Hash";
+    fn_handlers_hash;
+    comment_top "Blinded VMContext with Canary Guard Zones & Per-Slot Masking (P1-04b)";
+    struct_vm_context;
+    comment_top "Flag Evaluation and Condition Check Helpers";
+    fn_eval_condition;
+    fn_compute_sub_flags;
+    fn_compute_add_flags;
+  ] in
+
+  let rendered = render_top_decls decls in
+  Buffer.add_string b rendered

@@ -102,6 +102,8 @@
  (libraries
   cpp_codegen
   native_vm
+  multi_vm
+  random_visa.stack_vm
   alcotest))
 
 (test

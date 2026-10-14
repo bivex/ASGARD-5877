@@ -90,6 +90,7 @@ let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_dep
 
   let hdr_models = [
     ("bridge_cpp", Jingoo.Jg_types.Tstr bridge_cpp);
+    ("asgard_multi_vm_namespace", Jingoo.Jg_types.Tstr (Multi_vm_context_emitter.emit_asgard_multi_vm_source ()));
     ("base_runtime_source", Jingoo.Jg_types.Tstr base_pkg.cpp_runtime_source);
   ] in
   let multi_vm_hdr = Multi_vm_templates.render Multi_vm_templates.multi_vm_header_template hdr_models in

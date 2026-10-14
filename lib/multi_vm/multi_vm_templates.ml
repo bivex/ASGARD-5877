@@ -17,58 +17,7 @@ let multi_vm_header_template = {|#pragma once
 
 {{ bridge_cpp }}
 
-namespace asgard_multi_vm {
-
-struct MathVMContext {
-    uint64_t gprs[32];
-    uint64_t vip;
-    uint64_t rns_slots[4];
-    uint64_t trace_digest;
-    
-    inline void init(uint64_t init_digest) {
-        memset(this, 0, sizeof(*this));
-        trace_digest = init_digest;
-    }
-};
-
-struct FlowVMContext {
-    uint64_t vstack[64];
-    uint64_t vsp;
-    uint64_t vip;
-    uint64_t state_var;
-    uint64_t trace_digest;
-
-    inline void init(uint64_t init_digest) {
-        memset(this, 0, sizeof(*this));
-        trace_digest = init_digest;
-    }
-};
-
-union SharedVMContext {
-    MathVMContext math;
-    FlowVMContext flow;
-    uint8_t raw[1024];
-};
-
-static inline void bridge_switch_to_flow(SharedVMContext& ctx) {
-    uint64_t cur_digest = ctx.math.trace_digest;
-    uint64_t temp_math_regs[16];
-    for (int i = 0; i < 16; ++i) temp_math_regs[i] = ctx.math.gprs[i];
-    
-    ctx.flow.init(cur_digest);
-    in_place_morph_math_to_flow(temp_math_regs, ctx.flow.vstack, cur_digest);
-}
-
-static inline void bridge_switch_to_math(SharedVMContext& ctx) {
-    uint64_t cur_digest = ctx.flow.trace_digest;
-    uint64_t temp_flow_stack[16];
-    for (int i = 0; i < 16; ++i) temp_flow_stack[i] = ctx.flow.vstack[i];
-    
-    ctx.math.init(cur_digest);
-    in_place_morph_flow_to_math(temp_flow_stack, ctx.math.gprs, cur_digest);
-}
-
-} // namespace asgard_multi_vm
+{{ asgard_multi_vm_namespace }}
 
 // Threaded base engine integration
 {{ base_runtime_source }}

@@ -17,8 +17,8 @@
 |---|---|:---:|:---:|
 | **Stage 1** | Ядро типизированного EDSL (`Cpp_ast`, `Cpp_dsl`, `Cpp_printer`, `Cpp_ast_obf`) + 5 модулей Tier 4 Next-Gen | ✅ Завершен | `33c1a54` |
 | **Stage 2** | E-graph равенства, ALU и Decoy хендлеры (`egraph_cpp_emitter.ml`, `vm_alu_handlers.ml`, `vm_mem_handlers.ml`) | ✅ Завершен | `62f984a` |
-| **Stage 3** | Control Flow, супер-операторы, VMContext и модульные заголовки | ⏳ В планах | — |
-| **Stage 4** | Stack-VM, Multi-VM шаблоны и финальная декомпозиция Jingoo | ⏳ В планах | — |
+| **Stage 3** | Control Flow, супер-операторы, VMContext и модульные заголовки Vanguard | ✅ Завершен | `3.1, 3.2, 3.3` |
+| **Stage 4** | Stack-VM хендлеры, Multi-VM контексты и pre-flight синтаксический валидатор | ✅ Завершен | `4.1, 4.2` |
 
 ---
 
@@ -44,51 +44,71 @@
 - [x] Миграция хендлеров барьеров памяти (`H_FENCE`), пересылки векторных регистров (`H_MOV_VR`, `H_MOV_RV`) и 16 классов ложных decoy-хендлеров (`H_DECOY_0`..`H_DECOY_15`, `H_DECOY`) в [`lib/native_vm/vm_mem_handlers.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_mem_handlers.ml).
 - [x] Тесты: `test_cpp_codegen.exe`, `E-graph Equality Expansion.*` (11/11), `Metamorphic ISA & Ring Codec` (6/6) — PASS.
 
----
-
-## 📋 План реализации: Stage 3 (Control Flow, Context & Dispatcher)
-
-### 3.1. Миграция управляющих инструкций ветвления (`lib/native_vm/vm_control_handlers.ml`)
-- [ ] Переписать генераторы основных переходов на типизированные `stmt list`:
-  - `H_JMP` (прямой переход, поддержка наномитов через кросс-платформенные макросы `__debugbreak()` / `raise(SIGTRAP)`).
+### Stage 3.1: Control Flow & супер-операторы (`lib/native_vm/vm_control_handlers.ml`)
+- [x] Расширение ядра EDSL: поддержка `ReinterpretCast of ctype * expr` в [`lib/cpp_codegen/`](file:///Volumes/External/Code/ASGARD-5877/lib/cpp_codegen/).
+- [x] Полная миграция инструкций управления и переходов на типизированные `stmt list`:
+  - `H_JMP` (прямой переход, поддержка наномитов через макросы `__debugbreak()` / `raise(SIGTRAP)`).
   - `H_JCC` (ветвление по условию флагов, branchless вычисление vIP).
   - `H_CMOV` (условное копирование регистров).
   - `H_SETCC` (установка байта регистра по флагу).
-  - `H_CALL` / `H_RET` (эмуляция стековых фреймов вызова, пересчет указателей).
-- [ ] Миграция супер-операторов (`emit_super_operators`):
-  - `H_SUPER_ADD_JMP`
-  - `H_SUPER_XOR_STORE`
-  - `H_SUPER_AND_TEST`
-  - `H_SUPER_MOV_LOAD`
-- [ ] Сохранение строгой разметки меток диспетчера `    H_<NAME>:` для совместимости с `transform_domain_labels`.
+  - `H_CALL` / `H_RET` / `H_EXIT` (эмуляция стековых фреймов вызова, пересчет указателей).
+  - `H_IJMP_R` / `H_ICALL_R` (косвенные переходы и нативные FFI вызовы).
+  - `H_BRIDGE_TO_FLOW` / `H_BRIDGE_TO_MATH` (доменные мосты Multi-VM).
+- [x] Миграция супер-операторов (`emit_super_operators`):
+  - `H_FUSED_MOV_ADD_RRI`
+  - `H_FUSED_ADD_IMUL_RRI`
+  - `H_FUSED_ADD_XOR_RRI`
+  - `H_FUSED_SUB_XOR_RRI`
+  - `H_FUSED_XOR_ADD_RRI`
+  - `H_FUSED_CMP_CMOV`
+- [x] Сохранение строгой разметки меток диспетчера `    H_<NAME>:` для совместимости с `transform_domain_labels`.
+- [x] Тесты: Step 6 и Step 7 в `test_cpp_codegen.ml` — 100% PASS.
 
-### 3.2. Миграция структуры контекста VM (`lib/native_vm/vm_context_emitter.ml`)
-- [ ] Перевод генерации `VMContext` на типизированные декларации C++:
-  - Поля регистров: аффинная рандомизация смещений `affine_a * idx + affine_b`.
-  - Защитные канарейки `canary_head`, `canary_tail` с динамическими валидаторами.
-  - Аксессоры `get_reg`, `set_reg`, `get_vreg_lane`, `set_vreg`.
-  - Методы обновления скользящего ключа `reanchor_running_key`.
-  - Логика очистки и маскирования регистров (`reg_mask`).
+### Stage 3.2: VMContext & Структурные Декларации (`lib/native_vm/vm_context_emitter.ml`)
+- [x] Расширение ядра EDSL: добавлены `StructDef`, `struct_member` (`MemberField`, `MemberMethod`, `MemberStaticConstexpr`, `MemberRaw`), `EnumDecl`, `RawTop`, `CommentTop` и оператор присваивания `( *= )`.
+- [x] Полная миграция `VMContext` на типизированные декларации C++:
+  - Поля регистров: аффинная рандомизация смещений `(REG_AFFINE_A * idx + REG_AFFINE_B) & 31` через `reg_phys_idx`.
+  - Защитные канарейки `canary_head`, `canary_tail` и массив динамических межфреймовых канареек `mid_canaries` с валидатором `verify_canaries()`.
+  - Аксессоры регистров `get_reg`, `set_reg`, векторные `get_vreg_lane`, `set_vreg`, а также именованные регистры ABI.
+  - Методы скользящего крипто-ключа `advance_running_key`, `reanchor_running_key`, `apply_poly_merge_update`.
+  - Динамическое маскирование: `evolve_mask`, `evolve_slot_mask`, виртуальный стек Speck-64 `scramble_stack_idx`, `push`, `pop`.
+  - Свободные типизированные функции C++: `eval_condition`, `compute_sub_flags`, `compute_add_flags`, `key64_for_offset`, `compute_handlers_hash`.
+- [x] Тесты: Step 8 в `test_cpp_codegen.ml` — 100% PASS (эмитировано 63040 байт валидного C++20).
 
-### 3.3. Модуляризация монолитных шаблонов (`native_vm_templates.ml`)
-- [ ] Вынесение статических рантайм-компонентов из гигантского литерала Jingoo (`threaded_header_template`, ~800 строк) в модульные `.hpp` заголовки под `runtime/include/vanguard/`:
-  - `platform_compat.hpp` (макросы MSVC / Clang / GCC, интринсики `__builtin_expect`, `clock_gettime`).
-  - `crypto_primitives.hpp` (FNV-1a, AES/Chacha PRF, White-box seed derivation).
-  - `sanitization.hpp` (эфемеральное затирание памяти `SCRUB_WORD`, canary checks).
-- [ ] Замена Jingoo-переменных на типизированную конфигурацию (`Runtime_config` / `Policy_flags`).
+### Stage 3.3: Модуляризация монолитных шаблонов (`native_vm_templates.ml`)
+- [x] Вынесение статических рантайм-компонентов из гигантского литерала Jingoo (`threaded_header_template`) в модульные `.hpp` заголовки под `runtime/include/vanguard/`:
+  - [`platform_compat.hpp`](file:///Volumes/External/Code/ASGARD-5877/runtime/include/vanguard/platform_compat.hpp) (макросы MSVC / Clang / GCC, интринсики `__builtin_expect`, `clock_gettime`).
+  - [`crypto_primitives.hpp`](file:///Volumes/External/Code/ASGARD-5877/runtime/include/vanguard/crypto_primitives.hpp) (FNV-1a, Mach-O Dyld Exports Trie Resolver, Dynamic Symbol Decryption).
+  - [`sanitization.hpp`](file:///Volumes/External/Code/ASGARD-5877/runtime/include/vanguard/sanitization.hpp) (эфемеральное затирание памяти `SCRUB_WORD`, canary checks).
+- [x] Двойная стратегия поставки: директива `#if __has_include("vanguard/platform_compat.hpp")` для модульной сборки + инлайнинг для автономных single-header артефактов без нарушения границ гексагональной архитектуры.
+- [x] Замена loose-флагов Jingoo на строго типизированный модуль `Runtime_policy` в [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml).
+- [x] Тесты: Step 9 в `test_cpp_codegen.ml` — 100% PASS (298323 байт эмитировано).
 
----
+### Stage 4.1: Миграция Stack-VM хендлеров (`lib/stack_vm/stack_handlers_emitter.ml`)
+- [x] Создан типизированный генератор Stack-VM хендлеров манипуляции стеком [`lib/stack_vm/stack_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_handlers_emitter.ml).
+- [x] Типизированные AST хендлеры:
+  - `h_push_imm`, `h_push_imm32`
+  - `h_push_reg`, `h_pop_reg`
+  - `h_dup`, `h_dup2`, `h_rot`, `h_swap`
+- [x] Полная интеграция с макросами VSP-вайтнинга (`VSP_ENCODE(slot, val)`).
+- [x] Замена хардкодных строк в [`lib/stack_vm/stack_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_vm_templates.ml) и подключение в [`lib/stack_vm/stack_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_runtime.ml).
+- [x] Тесты: Step 10 в `test_cpp_codegen.ml` (5034 байт) + все 38 тестов `Stack-VM Execution Engine` — 100% PASS.
 
-## 📋 План реализации: Stage 4 (Stack-VM, Multi-VM & Final Cleanup)
-
-### 4.1. Миграция Stack-VM (`lib/stack_vm/stack_vm_templates.ml`)
-- [ ] Замена строковых блоков стековой виртуальной машины на EDSL стейтменты.
-- [ ] Типизация хендлеров манипуляции стеком (`PUSH`, `POP`, `DUP`, `SWAP`, `ROT`).
-- [ ] Генерация типизированного диспетчера Stack-VM.
-
-### 4.2. Миграция Multi-VM и адаптеров мостов (`lib/multi_vm/multi_vm_templates.ml`)
-- [ ] Перевод интер-доменных трансляторов и роутеров между Native-VM и Stack-VM на типизированные структуры C++.
-- [ ] Подключение валидатора C++ синтаксиса перед записью артефактов на диск.
+### Stage 4.2: Multi-VM структуры, мосты и валидация (`lib/multi_vm/multi_vm_context_emitter.ml`, `lib/cpp_codegen/cpp_validator.ml`)
+- [x] Расширение ядра EDSL: поддержка `UnionDecl` и `UnionDef` в `Cpp_ast`, `Cpp_dsl`, `Cpp_printer`, `Cpp_ast_obf`.
+- [x] Создан типизированный генератор контекстов Multi-VM [`lib/multi_vm/multi_vm_context_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/multi_vm_context_emitter.ml):
+  - `MathVMContext` (GPRs, VIP, RNS-слоты, trace digest, метод `init`).
+  - `FlowVMContext` (виртуальный стек vstack, vsp, vip, state_var, trace digest, метод `init`).
+  - `SharedVMContext` (`union` из `MathVMContext`, `FlowVMContext`, `raw[1024]`).
+  - Междоменные аффинные мосты `bridge_switch_to_flow`, `bridge_switch_to_math`.
+- [x] Замена хардкодного блока `asgard_multi_vm` в [`lib/multi_vm/multi_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/multi_vm_templates.ml) на типизированную генерацию.
+- [x] Реализован pre-flight структурный и компиляторный валидатор [`lib/cpp_codegen/cpp_validator.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/cpp_codegen/cpp_validator.ml):
+  - Посимвольный лексический трекер строк и колонок.
+  - Проверка баланса скобок `()`, `[]`, `{}` со стеком позиций открытия.
+  - Пропуск строковых/символьных литералов, raw strings, экранирований, однострочных и блочных комментариев.
+  - Проверка отсутствия неразрешенных тегов шаблонизатора (`{{`, `}}`, `{%`, `%}`).
+  - Интеграция с компилятором `clang++ -fsyntax-only` для строгой проверки перед записью на диск.
+- [x] Тесты: Step 11 и Step 12 в `test_cpp_codegen.ml` + 8/8 тестов `Multi-VM & Direct Zero-Bridge` (включая E2E сборку Clang и запуск) — 100% PASS.
 
 ---
 

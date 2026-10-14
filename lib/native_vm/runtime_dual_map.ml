@@ -23,8 +23,9 @@ let emit_dual_mapping_header () =
 #include <windows.h>
 #endif
 
-#ifndef ASGARD_API_HASH_RESOLVER_DEFINED
-#define ASGARD_API_HASH_RESOLVER_DEFINED
+#if !defined(ASGARD_API_HASH_RESOLVER_DEFINED) && !defined(ASGARD_CRYPTO_PRIMITIVES_DEFINED)
+#define ASGARD_API_HASH_RESOLVER_DEFINED 1
+#define ASGARD_CRYPTO_PRIMITIVES_DEFINED 1
 static inline int asg_strcmp(const char* s1, const char* s2) noexcept {
     if (!s1 || !s2) return (s1 == s2) ? 0 : (s1 ? 1 : -1);
     while (*s1 && (*s1 == *s2)) { s1++; s2++; }

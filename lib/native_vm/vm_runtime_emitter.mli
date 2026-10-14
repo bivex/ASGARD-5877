@@ -1,5 +1,28 @@
 (** Vm_runtime_emitter — Emission of Native Threaded VM C++ runtime and runners using Jingoo templates. *)
 
+module Runtime_policy : sig
+  type t = {
+    num_domains : int;
+    enable_smc : bool;
+    enable_smc_strict : bool;
+    enable_anti_emu : bool;
+    enable_mem_scan : bool;
+    enable_timing_probes : bool;
+    enable_nanomites : bool;
+    enable_direct_syscalls : bool;
+    enable_running_key : bool;
+    enable_address_bound : bool;
+    enable_stack_scramble : bool;
+    enable_mem_sanitize : bool;
+    enable_vector_isa : bool;
+    enable_egraph_expansion : bool;
+    enable_ephemeral_jit : bool;
+  }
+
+  val of_config : ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t -> Protection_config.t option -> t
+  val to_models : t -> (string * Jingoo.Jg_types.tvalue) list
+end
+
 val generate_wbox_seed_derivation :
   rng:Random.State.t ->
   int32 ->

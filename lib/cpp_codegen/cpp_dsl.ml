@@ -47,6 +47,7 @@ let neg a = Unary (Neg, a)
 let neg_u64 a = Binary (Sub, LitU64 0L, a)
 let cast ty e = Cast (ty, e)
 let bit_cast ty e = BitCast (ty, e)
+let reinterpret_cast ty e = ReinterpretCast (ty, e)
 let call fn args = Call (fn, args)
 
 let ternary c t f = Ternary (c, t, f)
@@ -72,6 +73,7 @@ let str_lit (s : string) : expr = LitStr s
 let ( := ) lhs rhs : stmt = Assign (AssignPlain, lhs, rhs)
 let ( += ) lhs rhs : stmt = Assign (AssignAdd, lhs, rhs)
 let ( -= ) lhs rhs : stmt = Assign (AssignSub, lhs, rhs)
+let ( *= ) lhs rhs : stmt = Assign (AssignMul, lhs, rhs)
 let ( ^= ) lhs rhs : stmt = Assign (AssignXor, lhs, rhs)
 let ( |= ) lhs rhs : stmt = Assign (AssignOr, lhs, rhs)
 let ( &= ) lhs rhs : stmt = Assign (AssignAnd, lhs, rhs)
@@ -93,6 +95,21 @@ let label (s : string) : stmt = Label s
 let raw (s : string) : stmt = Raw s
 let fence_seq_cst : stmt = FenceSeqCst
 let comment s : stmt = Comment s
+
+let member_field ?init ty name : struct_member = MemberField { ty; name; init }
+let member_method ?(attrs=[]) ?(is_static=false) ?(is_const=false) ret_type name params body : struct_member =
+  MemberMethod { attrs; is_static; is_const; ret_type; name; params; body }
+let member_static_constexpr ty name init : struct_member = MemberStaticConstexpr { ty; name; init }
+let member_raw s : struct_member = MemberRaw s
+let member_comment s : struct_member = MemberComment s
+let struct_decl ?align_as name fields : top_decl = StructDecl { align_as; name; fields }
+let struct_def ?align_as name members : top_decl = StructDef { align_as; name; members }
+let union_decl ?align_as name fields : top_decl = UnionDecl { align_as; name; fields }
+let union_def ?align_as name members : top_decl = UnionDef { align_as; name; members }
+let enum_decl ?underlying_ty name items : top_decl = EnumDecl { name; underlying_ty; items }
+let func_decl ?(attrs=[]) ret_type name params body : top_decl = FuncDecl { attrs; ret_type; name; params; body }
+let raw_top s : top_decl = RawTop s
+let comment_top s : top_decl = CommentTop s
 
 (* Удобные VM-шорткаты для генерации хендлеров *)
 let reg_dst : expr = call "ctx.get_reg" [var "dst"]

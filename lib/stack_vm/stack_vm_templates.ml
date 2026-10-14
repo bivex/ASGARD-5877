@@ -396,48 +396,7 @@ static inline int eval_cond(const stack_vm_t *vm, uint8_t cond) {
     }
 }
 
-static void h_push_imm(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    uint64_t imm = (uint64_t)fetch_i64(vm, bytecode, vip);
-    if (vm->vsp_idx < 4096) {
-        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, imm);
-        ++vm->vsp_idx;
-    } else {
-        vm->halted = 1; /* fail-closed: VSP overflow */
-    }
-}
-
-static void h_push_imm32(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    int32_t imm32 = fetch_i32(vm, bytecode, vip);
-    uint64_t imm = (uint64_t)(int64_t)imm32;
-    if (vm->vsp_idx < 4096) {
-        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, imm);
-        ++vm->vsp_idx;
-    } else {
-        vm->halted = 1; /* fail-closed: VSP overflow */
-    }
-}
-
-static void h_push_reg(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
-    int16_t idx = fetch_i16(vm, bytecode, vip);
-    if (vm->vsp_idx < 4096 && idx >= 0 && idx < max_ctx) {
-        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, vm->ctx[idx]);
-        ++vm->vsp_idx;
-    } else {
-        vm->halted = 1; /* fail-closed: overflow or bad ctx idx */
-    }
-}
-
-static void h_pop_reg(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    const int max_ctx = (int)(sizeof(vm->ctx) / sizeof(vm->ctx[0]));
-    int16_t idx = fetch_i16(vm, bytecode, vip);
-    if (vm->vsp_idx > 0 && idx >= 0 && idx < max_ctx) {
-        --vm->vsp_idx;
-        vm->ctx[idx] = VSP_ENCODE(vm->vsp_idx, vm->vsp[vm->vsp_idx]);
-    } else {
-        vm->halted = 1; /* fail-closed: underflow or bad ctx idx */
-    }
-}
+{{ stack_push_pop_handlers }}
 
 /* ── Guest memory access policy ────────────────────────────────────────
    READ_MEM/WRITE_MEM pop a VSP value and dereference it. That value is
@@ -702,63 +661,7 @@ static void h_idiv(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     }
 }
 
-static void h_dup(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    (void)bytecode; (void)vip;
-    /* Dup: decode value from src slot, re-encode at new slot */
-    if (vm->vsp_idx > 0 && vm->vsp_idx < 4096) {
-        int src = vm->vsp_idx - 1;
-        uint64_t decoded = VSP_ENCODE(src, vm->vsp[src]);
-        vm->vsp[vm->vsp_idx] = VSP_ENCODE(vm->vsp_idx, decoded);
-        ++vm->vsp_idx;
-    } else {
-        vm->halted = 1; /* fail-closed: underflow or overflow */
-    }
-}
-
-static void h_dup2(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    (void)bytecode; (void)vip;
-    /* Dup2: duplicate top 2 elements [..., b, a] -> [..., b, a, b, a] */
-    if (vm->vsp_idx >= 2 && vm->vsp_idx + 2 <= 4096) {
-        int ib = vm->vsp_idx - 2, ia = vm->vsp_idx - 1;
-        uint64_t db = VSP_ENCODE(ib, vm->vsp[ib]);
-        uint64_t da = VSP_ENCODE(ia, vm->vsp[ia]);
-        vm->vsp[vm->vsp_idx]     = VSP_ENCODE(vm->vsp_idx, db);
-        vm->vsp[vm->vsp_idx + 1] = VSP_ENCODE(vm->vsp_idx + 1, da);
-        vm->vsp_idx += 2;
-    } else {
-        vm->halted = 1; /* fail-closed: underflow or overflow */
-    }
-}
-
-static void h_rot(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    (void)bytecode; (void)vip;
-    /* Rot: rotate top 3 elements: [..., c, b, a] -> [..., b, a, c] */
-    if (vm->vsp_idx >= 3) {
-        int ic = vm->vsp_idx - 3, ib = vm->vsp_idx - 2, ia = vm->vsp_idx - 1;
-        uint64_t dc = VSP_ENCODE(ic, vm->vsp[ic]);
-        uint64_t db = VSP_ENCODE(ib, vm->vsp[ib]);
-        uint64_t da = VSP_ENCODE(ia, vm->vsp[ia]);
-        vm->vsp[ic] = VSP_ENCODE(ic, db);
-        vm->vsp[ib] = VSP_ENCODE(ib, da);
-        vm->vsp[ia] = VSP_ENCODE(ia, dc);
-    } else {
-        vm->halted = 1; /* fail-closed: underflow */
-    }
-}
-
-static void h_swap(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
-    (void)bytecode; (void)vip;
-    /* Swap: decode both positions, re-encode at swapped positions */
-    if (vm->vsp_idx >= 2) {
-        int ia = vm->vsp_idx - 1, ib = vm->vsp_idx - 2;
-        uint64_t da = VSP_ENCODE(ia, vm->vsp[ia]);
-        uint64_t db = VSP_ENCODE(ib, vm->vsp[ib]);
-        vm->vsp[ia] = VSP_ENCODE(ia, db);
-        vm->vsp[ib] = VSP_ENCODE(ib, da);
-    } else {
-        vm->halted = 1; /* fail-closed: underflow */
-    }
-}
+{{ stack_dup_swap_handlers }}
 
 static void h_push_flags(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
     (void)bytecode; (void)vip;

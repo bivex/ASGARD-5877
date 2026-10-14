@@ -52,6 +52,7 @@ let rec pp_expr fmt = function
   | Ternary (c, t, f) -> fprintf fmt "(%a ? %a : %a)" pp_expr c pp_expr t pp_expr f
   | Cast (ty, e)      -> fprintf fmt "static_cast<%a>(%a)" pp_ctype ty pp_expr e
   | BitCast (ty, e)   -> fprintf fmt "std::bit_cast<%a>(%a)" pp_ctype ty pp_expr e
+  | ReinterpretCast (ty, e) -> fprintf fmt "reinterpret_cast<%a>(%a)" pp_ctype ty pp_expr e
   | Call (fn, args)   ->
       fprintf fmt "%s(%a)" fn
         (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_expr) args
@@ -62,7 +63,7 @@ and pp_expr_atom fmt e = match e with
   | _ -> fprintf fmt "(%a)" pp_expr e
 
 let assign_op_str = function
-  | AssignPlain -> "="  | AssignAdd -> "+=" | AssignSub -> "-="
+  | AssignPlain -> "="  | AssignAdd -> "+=" | AssignSub -> "-=" | AssignMul -> "*="
   | AssignXor   -> "^=" | AssignOr  -> "|=" | AssignAnd -> "&=" | AssignDiv -> "/="
 
 let rec pp_stmt fmt = function
@@ -153,6 +154,107 @@ let rec pp_top_decl fmt = function
         | _ -> fprintf fmt "%a %s;@," pp_ctype ty fname
       ) fields;
       fprintf fmt "@]@,};"
+  | UnionDecl { align_as; name; fields } ->
+      let align_str = match align_as with
+        | Some n -> Printf.sprintf "alignas(%d) " n
+        | None -> ""
+      in
+      fprintf fmt "union %s%s {@[<v 4>@," align_str name;
+      List.iter (fun (ty, fname) ->
+        match ty with
+        | Array (et, sz) -> fprintf fmt "%a %s[%d];@," pp_ctype et fname sz
+        | _ -> fprintf fmt "%a %s;@," pp_ctype ty fname
+      ) fields;
+      fprintf fmt "@]@,};"
+  | StructDef { align_as; name; members } ->
+      let align_str = match align_as with
+        | Some n -> Printf.sprintf "alignas(%d) " n
+        | None -> ""
+      in
+      fprintf fmt "struct %s%s {@[<v 4>@," align_str name;
+      List.iter (function
+        | MemberField { ty; name; init = Some e } ->
+            fprintf fmt "%a %s = %a;@," pp_ctype ty name pp_expr e
+        | MemberField { ty = Array (Array (et, sz2), sz1); name; init = None } ->
+            fprintf fmt "%a %s[%d][%d];@," pp_ctype et name sz1 sz2
+        | MemberField { ty = Array (et, sz); name; init = None } ->
+            fprintf fmt "%a %s[%d];@," pp_ctype et name sz
+        | MemberField { ty; name; init = None } ->
+            fprintf fmt "%a %s;@," pp_ctype ty name
+        | MemberStaticConstexpr { ty; name; init } ->
+            fprintf fmt "static inline constexpr %a %s = %a;@," pp_ctype ty name pp_expr init
+        | MemberMethod { attrs; is_static; is_const; ret_type; name; params; body } ->
+            if is_static then fprintf fmt "static ";
+            List.iter (pp_attr fmt) attrs;
+            let is_noexcept = List.mem NoExcept attrs in
+            fprintf fmt "%a %s(%a)%s%s {@[<v 4>@,%a@]@,}@,"
+              pp_ctype ret_type name
+              (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+                 (fun fmt (ty, pname) ->
+                    if pname = "" then pp_ctype fmt ty
+                    else fprintf fmt "%a %s" pp_ctype ty pname)) params
+              (if is_const then " const" else "")
+              (if is_noexcept then " noexcept" else "")
+              pp_stmt_list body
+        | MemberRaw s ->
+            fprintf fmt "%s@," s
+        | MemberComment s ->
+            fprintf fmt "// %s@," s
+      ) members;
+      fprintf fmt "@]@,};"
+  | UnionDef { align_as; name; members } ->
+      let align_str = match align_as with
+        | Some n -> Printf.sprintf "alignas(%d) " n
+        | None -> ""
+      in
+      fprintf fmt "union %s%s {@[<v 4>@," align_str name;
+      List.iter (function
+        | MemberField { ty; name; init = Some e } ->
+            fprintf fmt "%a %s = %a;@," pp_ctype ty name pp_expr e
+        | MemberField { ty = Array (Array (et, sz2), sz1); name; init = None } ->
+            fprintf fmt "%a %s[%d][%d];@," pp_ctype et name sz1 sz2
+        | MemberField { ty = Array (et, sz); name; init = None } ->
+            fprintf fmt "%a %s[%d];@," pp_ctype et name sz
+        | MemberField { ty; name; init = None } ->
+            fprintf fmt "%a %s;@," pp_ctype ty name
+        | MemberStaticConstexpr { ty; name; init } ->
+            fprintf fmt "static inline constexpr %a %s = %a;@," pp_ctype ty name pp_expr init
+        | MemberMethod { attrs; is_static; is_const; ret_type; name; params; body } ->
+            if is_static then fprintf fmt "static ";
+            List.iter (pp_attr fmt) attrs;
+            let is_noexcept = List.mem NoExcept attrs in
+            fprintf fmt "%a %s(%a)%s%s {@[<v 4>@,%a@]@,}@,"
+              pp_ctype ret_type name
+              (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+                 (fun fmt (ty, pname) ->
+                    if pname = "" then pp_ctype fmt ty
+                    else fprintf fmt "%a %s" pp_ctype ty pname)) params
+              (if is_const then " const" else "")
+              (if is_noexcept then " noexcept" else "")
+              pp_stmt_list body
+        | MemberRaw s ->
+            fprintf fmt "%s@," s
+        | MemberComment s ->
+            fprintf fmt "// %s@," s
+      ) members;
+      fprintf fmt "@]@,};"
+  | EnumDecl { name; underlying_ty; items } ->
+      let ty_str = match underlying_ty with
+        | Some t ->
+            let buf = Buffer.create 16 in
+            let f = formatter_of_buffer buf in
+            fprintf f " : %a" pp_ctype t;
+            pp_print_flush f ();
+            Buffer.contents buf
+        | None -> ""
+      in
+      fprintf fmt "enum %s%s {@[<v 4>@," name ty_str;
+      List.iter (fun (iname, val_opt) ->
+        match val_opt with
+        | Some e -> fprintf fmt "%s = %a,@," iname pp_expr e
+        | None -> fprintf fmt "%s,@," iname
+      ) items;
+      fprintf fmt "@]@,};"
   | FuncDecl { attrs; ret_type; name; params; body } ->
       List.iter (pp_attr fmt) attrs;
       let is_noexcept = List.mem NoExcept attrs in
@@ -165,12 +267,30 @@ let rec pp_top_decl fmt = function
   | Namespace (ns, decls) ->
       fprintf fmt "namespace %s {@[<v 0>@,@,%a@]@,@,} // namespace %s"
         ns (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@,@,") pp_top_decl) decls ns
+  | RawTop s ->
+      fprintf fmt "%s" s
+  | CommentTop s ->
+      fprintf fmt "// %s" s
 
 let render_header_unit (decls : top_decl list) : string =
   let buf = Buffer.create 4096 in
   let fmt = formatter_of_buffer buf in
   fprintf fmt "@[<v 0>#pragma once@,// AUTO-GENERATED BY ASGARD-5877 TYPED C++20 EDSL@,@,%a@,@]@."
     (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@,@,") pp_top_decl) decls;
+  Buffer.contents buf
+
+let render_top_decls (decls : top_decl list) : string =
+  let buf = Buffer.create 4096 in
+  let fmt = formatter_of_buffer buf in
+  fprintf fmt "@[<v 0>%a@]@."
+    (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@,@,") pp_top_decl) decls;
+  Buffer.contents buf
+
+let string_of_ctype (t : ctype) : string =
+  let buf = Buffer.create 32 in
+  let fmt = formatter_of_buffer buf in
+  pp_ctype fmt t;
+  pp_print_flush fmt ();
   Buffer.contents buf
 
 let string_of_expr (e : expr) : string =

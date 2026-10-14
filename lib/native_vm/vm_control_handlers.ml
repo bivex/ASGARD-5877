@@ -1,3 +1,16 @@
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let emit_handler_ast b label (stmts : stmt list) =
+  Buffer.add_string b (Printf.sprintf "    %s: {\n" label);
+  List.iter (fun s ->
+    Buffer.add_string b "        ";
+    Buffer.add_string b (string_of_stmt s);
+    Buffer.add_char b '\n';
+  ) stmts;
+  Buffer.add_string b "    }\n"
+
 let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_address_bound = false) () =
   let pick_variant n =
     match rng with
@@ -5,278 +18,347 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
     | None -> 0
   in
 
-  let maybe_reanchor () =
-    if enable_running_key then begin
+  let maybe_reanchor () : stmt list =
+    if enable_running_key then
       if enable_address_bound then
-        Buffer.add_string b "        ctx.reanchor_running_key((uint64_t)vIP_idx, g_handlers_hash);\n"
+        [ expr_stmt (call "ctx.reanchor_running_key" [cast UInt64 (var "vIP_idx"); var "g_handlers_hash"]) ]
       else
-        Buffer.add_string b "        ctx.reanchor_running_key((uint64_t)vIP_idx);\n"
-    end
+        [ expr_stmt (call "ctx.reanchor_running_key" [cast UInt64 (var "vIP_idx")]) ]
+    else []
   in
 
-  Buffer.add_string b "    H_JMP: {\n";
-  if enable_nanomites then begin
-    Buffer.add_string b "#if defined(__APPLE__)\n";
-    Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
-    Buffer.add_string b "#elif defined(_WIN32)\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
-    Buffer.add_string b "        __debugbreak();\n";
-    Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)imm;\n";
-    Buffer.add_string b "#elif defined(__linux__) && !defined(_MSC_VER)\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
-    Buffer.add_string b "        raise(SIGTRAP);\n";
-    Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)imm;\n";
-    Buffer.add_string b "#else\n";
-    Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
-    Buffer.add_string b "#endif\n";
-  end else begin
-    (match pick_variant 3 with
-     | 0 -> Buffer.add_string b "        vIP_idx = (size_t)imm;\n"
-     | 1 -> Buffer.add_string b "        size_t _target = (size_t)imm; vIP_idx = _target;\n"
-     | _ -> Buffer.add_string b "        vIP_idx = (size_t)((uint64_t)imm & ~0ULL);\n");
-  end;
-  maybe_reanchor ();
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_JCC: {\n";
-  Buffer.add_string b "        PROBE_START();\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint64_t base_vip = (uint64_t)((word >> 22) & 0x1FFFFFULL);\n";
-  Buffer.add_string b "        uint64_t enc_delta = (uint64_t)((word >> 43) & 0x1FFFFFULL);\n";
-  Buffer.add_string b "        uint64_t salt = ((uint64_t)cond * 0x5877ULL ^ 0x1337BEEFULL) & 0x1FFFFFULL;\n";
-  Buffer.add_string b "        uint64_t delta = enc_delta ^ salt;\n";
-  Buffer.add_string b "        uint64_t t_true = base_vip ^ delta;\n";
-  Buffer.add_string b "        uint64_t t_false = base_vip;\n";
-  Buffer.add_string b "        uint64_t c = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
-  if enable_nanomites then begin
-    Buffer.add_string b "#if defined(__APPLE__)\n";
-    Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
-    Buffer.add_string b "#elif defined(_WIN32)\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = (uint32_t)c;\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, t_true, t_false, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
-    Buffer.add_string b "        __debugbreak();\n";
-    Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)(c * t_true + (1ULL - c) * t_false);\n";
-    Buffer.add_string b "#elif defined(__linux__) && !defined(_MSC_VER)\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = (uint32_t)c;\n";
-    Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, t_true, t_false, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
-    Buffer.add_string b "        raise(SIGTRAP);\n";
-    Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)(c * t_true + (1ULL - c) * t_false);\n";
-    Buffer.add_string b "#else\n";
-    Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n";
-    Buffer.add_string b "#endif\n";
-  end else begin
-    (match pick_variant 3 with
-     | 0 ->
-         Buffer.add_string b "        vIP_idx = (size_t)asgard::branchless_vip::select_vip(c, t_true, t_false);\n"
-     | 1 ->
-         Buffer.add_string b "        vIP_idx = (size_t)(c * t_true + (1ULL - c) * t_false);\n"
-     | _ ->
-         Buffer.add_string b "        uint64_t _mask = 0ULL - c;\n";
-         Buffer.add_string b "        vIP_idx = (size_t)((t_true & _mask) | (t_false & ~_mask));\n");
-  end;
-  maybe_reanchor ();
-  Buffer.add_string b "        PROBE_CHECK();\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CMOV: {\n";
-  Buffer.add_string b "        PROBE_START();\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_reg(dst, ctx.get_reg(src));\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _m = eval_condition(ctx, cond) ? ~0ULL : 0ULL;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(src) & _m) | (ctx.get_reg(dst) & ~_m));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_reg(src), _d = ctx.get_reg(dst);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, eval_condition(ctx, cond) ? _s : _d);\n");
-  Buffer.add_string b "        PROBE_CHECK();\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SETCC: {\n";
-  Buffer.add_string b "        PROBE_START();\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = eval_condition(ctx, cond) ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, val);\n"
-   | 1 ->
-       Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(eval_condition(ctx, cond) ? 1 : 0));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _val = 0ULL;\n";
-       Buffer.add_string b "        if (eval_condition(ctx, cond)) _val = 1ULL;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _val);\n");
-  Buffer.add_string b "        PROBE_CHECK();\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CALL: {\n";
-  Buffer.add_string b "        ctx.push((uint64_t)vIP_idx);\n";
-   if enable_nanomites then begin
-     Buffer.add_string b "#if defined(__APPLE__)\n";
-     Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
-     Buffer.add_string b "#elif defined(_WIN32)\n";
-     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
-     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
-     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
-     Buffer.add_string b "        __debugbreak();\n";
-     Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)imm;\n";
-     Buffer.add_string b "#elif defined(__linux__) && !defined(_MSC_VER)\n";
-     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_trap_id = (uint32_t)vIP_idx;\n";
-     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.current_condition = 1;\n";
-     Buffer.add_string b "        asgard_nanomites::g_nanomite_dispatcher.register_nanomite((uint32_t)vIP_idx, (uint64_t)imm, (uint64_t)imm, (uint64_t)(seed ^ (uint32_t)vIP_idx));\n";
-     Buffer.add_string b "        raise(SIGTRAP);\n";
-     Buffer.add_string b "        vIP_idx = asgard_nanomites::g_nanomite_dispatcher.resolved_target != 0 ? (size_t)asgard_nanomites::g_nanomite_dispatcher.resolved_target : (size_t)imm;\n";
-     Buffer.add_string b "#else\n";
-     Buffer.add_string b "        vIP_idx = (size_t)imm;\n";
-     Buffer.add_string b "#endif\n";
-   end else begin
-     (match pick_variant 3 with
-      | 0 -> Buffer.add_string b "        vIP_idx = (size_t)imm;\n"
-      | 1 ->
-          Buffer.add_string b "        size_t _target_vip = static_cast<size_t>(imm);\n";
-          Buffer.add_string b "        vIP_idx = _target_vip;\n"
-      | _ ->
-          Buffer.add_string b "        uint64_t _imm_target = (uint64_t)imm;\n";
-          Buffer.add_string b "        vIP_idx = (size_t)_imm_target;\n");
-   end;
-  maybe_reanchor ();
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_IJMP_R: {\n";
-  Buffer.add_string b "        uint64_t target = ctx.get_reg(dst);\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        if (target < count) {\n";
-       Buffer.add_string b "            vIP_idx = (size_t)target;\n";
-       Buffer.add_string b "        } else if (target) {\n"
-   | 1 ->
-       Buffer.add_string b "        if (__builtin_expect(target < count, 1)) {\n";
-       Buffer.add_string b "            vIP_idx = static_cast<size_t>(target);\n";
-       Buffer.add_string b "        } else if (target != 0) {\n"
-   | _ ->
-       Buffer.add_string b "        size_t _t_idx = (size_t)target;\n";
-       Buffer.add_string b "        if (_t_idx < count) {\n";
-       Buffer.add_string b "            vIP_idx = _t_idx;\n";
-       Buffer.add_string b "        } else if (target) {\n");
-  Buffer.add_string b "#if defined(__x86_64__) || defined(_M_X64)\n";
-  Buffer.add_string b "            uint64_t a0 = ctx.get_reg(REG_RDI);\n";
-  Buffer.add_string b "            uint64_t a1 = ctx.get_reg(REG_RSI);\n";
-  Buffer.add_string b "            uint64_t a2 = ctx.get_reg(REG_RDX);\n";
-  Buffer.add_string b "            uint64_t a3 = ctx.get_reg(REG_RCX);\n";
-  Buffer.add_string b "            uint64_t a4 = ctx.get_reg(REG_R8);\n";
-  Buffer.add_string b "            uint64_t a5 = ctx.get_reg(REG_R9);\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "            uint64_t a0 = ctx.get_reg(REG_RAX);\n";
-  Buffer.add_string b "            uint64_t a1 = ctx.get_reg(REG_RCX);\n";
-  Buffer.add_string b "            uint64_t a2 = ctx.get_reg(REG_RDX);\n";
-  Buffer.add_string b "            uint64_t a3 = ctx.get_reg(REG_RBX);\n";
-  Buffer.add_string b "            uint64_t a4 = ctx.get_reg(REG_RSI);\n";
-  Buffer.add_string b "            uint64_t a5 = ctx.get_reg(REG_RDI);\n";
-  Buffer.add_string b "#endif\n";
-  Buffer.add_string b "            typedef uint64_t (*indirect_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);\n";
-  Buffer.add_string b "            indirect_fn_t fn = reinterpret_cast<indirect_fn_t>(target);\n";
-  Buffer.add_string b "            uint64_t ret_val = fn(a0, a1, a2, a3, a4, a5);\n";
-  Buffer.add_string b "            ctx.set_reg(REG_RAX, ret_val);\n";
-  Buffer.add_string b "            goto EXIT_VM;\n";
-  Buffer.add_string b "        }\n";
-  maybe_reanchor ();
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ICALL_R: {\n";
-  Buffer.add_string b "        uint64_t target_ptr = ctx.get_reg(dst);\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        if (target_ptr < count) {\n";
-       Buffer.add_string b "            ctx.push((uint64_t)vIP_idx);\n";
-       Buffer.add_string b "            vIP_idx = (size_t)target_ptr;\n";
-       Buffer.add_string b "        } else if (target_ptr) {\n"
-   | 1 ->
-       Buffer.add_string b "        if (__builtin_expect(target_ptr < count, 1)) {\n";
-       Buffer.add_string b "            uint64_t _ret = (uint64_t)vIP_idx;\n";
-       Buffer.add_string b "            ctx.push(_ret);\n";
-       Buffer.add_string b "            vIP_idx = static_cast<size_t>(target_ptr);\n";
-       Buffer.add_string b "        } else if (target_ptr != 0) {\n"
-   | _ ->
-       Buffer.add_string b "        if (target_ptr < count) {\n";
-       Buffer.add_string b "            ctx.push(static_cast<uint64_t>(vIP_idx));\n";
-       Buffer.add_string b "            vIP_idx = (size_t)target_ptr;\n";
-       Buffer.add_string b "        } else if (target_ptr) {\n");
-  Buffer.add_string b "#if defined(__x86_64__) || defined(_M_X64)\n";
-  Buffer.add_string b "            uint64_t a0 = ctx.get_reg(REG_RDI);\n";
-  Buffer.add_string b "            uint64_t a1 = ctx.get_reg(REG_RSI);\n";
-  Buffer.add_string b "            uint64_t a2 = ctx.get_reg(REG_RDX);\n";
-  Buffer.add_string b "            uint64_t a3 = ctx.get_reg(REG_RCX);\n";
-  Buffer.add_string b "            uint64_t a4 = ctx.get_reg(REG_R8);\n";
-  Buffer.add_string b "            uint64_t a5 = ctx.get_reg(REG_R9);\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "            uint64_t a0 = ctx.get_reg(REG_RAX);\n";
-  Buffer.add_string b "            uint64_t a1 = ctx.get_reg(REG_RCX);\n";
-  Buffer.add_string b "            uint64_t a2 = ctx.get_reg(REG_RDX);\n";
-  Buffer.add_string b "            uint64_t a3 = ctx.get_reg(REG_RBX);\n";
-  Buffer.add_string b "            uint64_t a4 = ctx.get_reg(REG_RSI);\n";
-  Buffer.add_string b "            uint64_t a5 = ctx.get_reg(REG_RDI);\n";
-  Buffer.add_string b "#endif\n";
-  Buffer.add_string b "            typedef uint64_t (*indirect_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);\n";
-  Buffer.add_string b "            indirect_fn_t fn = reinterpret_cast<indirect_fn_t>(target_ptr);\n";
-  Buffer.add_string b "            uint64_t ret_val = fn(a0, a1, a2, a3, a4, a5);\n";
-  Buffer.add_string b "            ctx.set_reg(REG_RAX, ret_val);\n";
-  Buffer.add_string b "        }\n";
-  maybe_reanchor ();
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "    H_RET: case_ret: ctx.executed_instructions++; goto EXIT_VM;\n";
-       Buffer.add_string b "    H_EXIT: ctx.executed_instructions++; goto EXIT_VM;\n\n"
-   | 1 ->
-       Buffer.add_string b "    H_RET: case_ret: { if (!ctx.verify_canaries()) { ctx.trapped = true; } ctx.executed_instructions++; goto EXIT_VM; }\n";
-       Buffer.add_string b "    H_EXIT: { if (!ctx.verify_canaries()) { ctx.trapped = true; } ctx.executed_instructions++; goto EXIT_VM; }\n\n"
-   | _ ->
-       Buffer.add_string b "    H_RET: case_ret: { if (ctx.sp > 512) { ctx.trapped = true; } ctx.executed_instructions += 1; goto EXIT_VM; }\n";
-       Buffer.add_string b "    H_EXIT: { if (ctx.sp > 512) { ctx.trapped = true; } ctx.executed_instructions += 1; goto EXIT_VM; }\n\n");
+  (* H_JMP: Direct unconditional branch *)
+  let jmp_stmts =
+    if enable_nanomites then [
+      raw "#if defined(__APPLE__)";
+      (var "vIP_idx" := cast SizeT (var "imm"));
+      raw "#elif defined(_WIN32)";
+      (var "asgard_nanomites::g_nanomite_dispatcher.current_trap_id" := cast UInt32 (var "vIP_idx"));
+      (var "asgard_nanomites::g_nanomite_dispatcher.current_condition" := i32 1);
+      expr_stmt (call "asgard_nanomites::g_nanomite_dispatcher.register_nanomite" [
+        cast UInt32 (var "vIP_idx");
+        cast UInt64 (var "imm");
+        cast UInt64 (var "imm");
+        cast UInt64 (var "seed" ^~ cast UInt32 (var "vIP_idx"))
+      ]);
+      expr_stmt (call "__debugbreak" []);
+      (var "vIP_idx" := ternary (ne (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target") (i32 0))
+                                  (cast SizeT (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target"))
+                                  (cast SizeT (var "imm")));
+      raw "#elif defined(__linux__) && !defined(_MSC_VER)";
+      (var "asgard_nanomites::g_nanomite_dispatcher.current_trap_id" := cast UInt32 (var "vIP_idx"));
+      (var "asgard_nanomites::g_nanomite_dispatcher.current_condition" := i32 1);
+      expr_stmt (call "asgard_nanomites::g_nanomite_dispatcher.register_nanomite" [
+        cast UInt32 (var "vIP_idx");
+        cast UInt64 (var "imm");
+        cast UInt64 (var "imm");
+        cast UInt64 (var "seed" ^~ cast UInt32 (var "vIP_idx"))
+      ]);
+      expr_stmt (call "raise" [var "SIGTRAP"]);
+      (var "vIP_idx" := ternary (ne (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target") (i32 0))
+                                  (cast SizeT (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target"))
+                                  (cast SizeT (var "imm")));
+      raw "#else";
+      (var "vIP_idx" := cast SizeT (var "imm"));
+      raw "#endif";
+    ] else match pick_variant 3 with
+      | 0 -> [ (var "vIP_idx" := cast SizeT (var "imm")) ]
+      | 1 -> [ decl_var ~init:(cast SizeT (var "imm")) SizeT "_target"; (var "vIP_idx" := var "_target") ]
+      | _ -> [ (var "vIP_idx" := cast SizeT (cast UInt64 (var "imm") &~ bit_not (u64 0L))) ]
+  in
+  emit_handler_ast b "H_JMP" (jmp_stmts @ maybe_reanchor () @ [ inc_instrs; fetch_next ]);
 
+  (* H_JCC: Conditional branch with branchless evaluation *)
+  let cond_decode_stmts = [
+    probe_start;
+    decl_var ~init:(cast UInt8 (((var "word" >>~ u64 18L) +~ u64 0x0FL) -~ ((var "word" >>~ u64 18L) |~ u64 0x0FL))) UInt8 "cond";
+    decl_var ~init:(cast UInt64 ((var "word" >>~ u64 22L) &~ u64 0x1FFFFFL)) UInt64 "base_vip";
+    decl_var ~init:(cast UInt64 ((var "word" >>~ u64 43L) &~ u64 0x1FFFFFL)) UInt64 "enc_delta";
+    decl_var ~init:(((cast UInt64 (var "cond") *~ u64 0x5877L) ^~ u64 0x1337BEEFL) &~ u64 0x1FFFFFL) UInt64 "salt";
+    decl_var ~init:(var "enc_delta" ^~ var "salt") UInt64 "delta";
+    decl_var ~init:(var "base_vip" ^~ var "delta") UInt64 "t_true";
+    decl_var ~init:(var "base_vip") UInt64 "t_false";
+    decl_var ~init:(ternary (call "eval_condition" [var "ctx"; var "cond"]) (u64 1L) (u64 0L)) UInt64 "c";
+  ] in
+  let branch_stmts =
+    if enable_nanomites then [
+      raw "#if defined(__APPLE__)";
+      (var "vIP_idx" := cast SizeT ((var "c" *~ var "t_true") +~ ((u64 1L -~ var "c") *~ var "t_false")));
+      raw "#elif defined(_WIN32)";
+      (var "asgard_nanomites::g_nanomite_dispatcher.current_trap_id" := cast UInt32 (var "vIP_idx"));
+      (var "asgard_nanomites::g_nanomite_dispatcher.current_condition" := cast UInt32 (var "c"));
+      expr_stmt (call "asgard_nanomites::g_nanomite_dispatcher.register_nanomite" [
+        cast UInt32 (var "vIP_idx");
+        var "t_true";
+        var "t_false";
+        cast UInt64 (var "seed" ^~ cast UInt32 (var "vIP_idx"))
+      ]);
+      expr_stmt (call "__debugbreak" []);
+      (var "vIP_idx" := ternary (ne (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target") (i32 0))
+                                  (cast SizeT (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target"))
+                                  (cast SizeT ((var "c" *~ var "t_true") +~ ((u64 1L -~ var "c") *~ var "t_false"))));
+      raw "#elif defined(__linux__) && !defined(_MSC_VER)";
+      (var "asgard_nanomites::g_nanomite_dispatcher.current_trap_id" := cast UInt32 (var "vIP_idx"));
+      (var "asgard_nanomites::g_nanomite_dispatcher.current_condition" := cast UInt32 (var "c"));
+      expr_stmt (call "asgard_nanomites::g_nanomite_dispatcher.register_nanomite" [
+        cast UInt32 (var "vIP_idx");
+        var "t_true";
+        var "t_false";
+        cast UInt64 (var "seed" ^~ cast UInt32 (var "vIP_idx"))
+      ]);
+      expr_stmt (call "raise" [var "SIGTRAP"]);
+      (var "vIP_idx" := ternary (ne (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target") (i32 0))
+                                  (cast SizeT (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target"))
+                                  (cast SizeT ((var "c" *~ var "t_true") +~ ((u64 1L -~ var "c") *~ var "t_false"))));
+      raw "#else";
+      (var "vIP_idx" := cast SizeT ((var "c" *~ var "t_true") +~ ((u64 1L -~ var "c") *~ var "t_false")));
+      raw "#endif";
+    ] else match pick_variant 3 with
+      | 0 -> [
+          (var "vIP_idx" := cast SizeT (call "asgard::branchless_vip::select_vip" [var "c"; var "t_true"; var "t_false"]))
+        ]
+      | 1 -> [
+          (var "vIP_idx" := cast SizeT ((var "c" *~ var "t_true") +~ ((u64 1L -~ var "c") *~ var "t_false")))
+        ]
+      | _ -> [
+          let_u64 "_mask" (u64 0L -~ var "c");
+          (var "vIP_idx" := cast SizeT ((var "t_true" &~ var "_mask") |~ (var "t_false" &~ bit_not (var "_mask"))))
+        ]
+  in
+  emit_handler_ast b "H_JCC" (cond_decode_stmts @ branch_stmts @ maybe_reanchor () @ [ probe_check; inc_instrs; fetch_next ]);
+
+  (* H_CMOV: Conditional move *)
+  let cmov_stmts = [
+    probe_start;
+    decl_var ~init:(cast UInt8 (((var "word" >>~ u64 18L) +~ u64 0x0FL) -~ ((var "word" >>~ u64 18L) |~ u64 0x0FL))) UInt8 "cond";
+  ] @ (match pick_variant 3 with
+    | 0 -> [
+        if_then (call "eval_condition" [var "ctx"; var "cond"]) [ set_reg (var "dst") reg_src ]
+      ]
+    | 1 -> [
+        let_u64 "_m" (ternary (call "eval_condition" [var "ctx"; var "cond"]) (bit_not (u64 0L)) (u64 0L));
+        set_reg (var "dst") ((reg_src &~ var "_m") |~ (reg_dst &~ bit_not (var "_m")))
+      ]
+    | _ -> [
+        let_u64 "_s" reg_src;
+        let_u64 "_d" reg_dst;
+        set_reg (var "dst") (ternary (call "eval_condition" [var "ctx"; var "cond"]) (var "_s") (var "_d"))
+      ]) @ [ probe_check; inc_instrs; fetch_next ]
+  in
+  emit_handler_ast b "H_CMOV" cmov_stmts;
+
+  (* H_SETCC: Conditional set byte *)
+  let setcc_stmts = [
+    probe_start;
+    decl_var ~init:(cast UInt8 (((var "word" >>~ u64 18L) +~ u64 0x0FL) -~ ((var "word" >>~ u64 18L) |~ u64 0x0FL))) UInt8 "cond";
+  ] @ (match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" (ternary (call "eval_condition" [var "ctx"; var "cond"]) (u64 1L) (u64 0L));
+        set_reg (var "dst") (var "val")
+      ]
+    | 1 -> [
+        set_reg (var "dst") (cast UInt64 (ternary (call "eval_condition" [var "ctx"; var "cond"]) (i32 1) (i32 0)))
+      ]
+    | _ -> [
+        let_u64 "_val" (u64 0L);
+        if_then (call "eval_condition" [var "ctx"; var "cond"]) [ (var "_val" := u64 1L) ];
+        set_reg (var "dst") (var "_val")
+      ]) @ [ probe_check; inc_instrs; fetch_next ]
+  in
+  emit_handler_ast b "H_SETCC" setcc_stmts;
+
+  (* H_CALL: Direct call *)
+  let call_stmts = [
+    expr_stmt (call "ctx.push" [cast UInt64 (var "vIP_idx")]);
+  ] @ (if enable_nanomites then [
+    raw "#if defined(__APPLE__)";
+    (var "vIP_idx" := cast SizeT (var "imm"));
+    raw "#elif defined(_WIN32)";
+    (var "asgard_nanomites::g_nanomite_dispatcher.current_trap_id" := cast UInt32 (var "vIP_idx"));
+    (var "asgard_nanomites::g_nanomite_dispatcher.current_condition" := i32 1);
+    expr_stmt (call "asgard_nanomites::g_nanomite_dispatcher.register_nanomite" [
+      cast UInt32 (var "vIP_idx");
+      cast UInt64 (var "imm");
+      cast UInt64 (var "imm");
+      cast UInt64 (var "seed" ^~ cast UInt32 (var "vIP_idx"))
+    ]);
+    expr_stmt (call "__debugbreak" []);
+    (var "vIP_idx" := ternary (ne (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target") (i32 0))
+                                (cast SizeT (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target"))
+                                (cast SizeT (var "imm")));
+    raw "#elif defined(__linux__) && !defined(_MSC_VER)";
+    (var "asgard_nanomites::g_nanomite_dispatcher.current_trap_id" := cast UInt32 (var "vIP_idx"));
+    (var "asgard_nanomites::g_nanomite_dispatcher.current_condition" := i32 1);
+    expr_stmt (call "asgard_nanomites::g_nanomite_dispatcher.register_nanomite" [
+      cast UInt32 (var "vIP_idx");
+      cast UInt64 (var "imm");
+      cast UInt64 (var "imm");
+      cast UInt64 (var "seed" ^~ cast UInt32 (var "vIP_idx"))
+    ]);
+    expr_stmt (call "raise" [var "SIGTRAP"]);
+    (var "vIP_idx" := ternary (ne (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target") (i32 0))
+                                (cast SizeT (var "asgard_nanomites::g_nanomite_dispatcher.resolved_target"))
+                                (cast SizeT (var "imm")));
+    raw "#else";
+    (var "vIP_idx" := cast SizeT (var "imm"));
+    raw "#endif";
+  ] else match pick_variant 3 with
+    | 0 -> [ (var "vIP_idx" := cast SizeT (var "imm")) ]
+    | 1 -> [
+        decl_var ~init:(cast SizeT (var "imm")) SizeT "_target_vip";
+        (var "vIP_idx" := var "_target_vip")
+      ]
+    | _ -> [
+        let_u64 "_imm_target" (cast UInt64 (var "imm"));
+        (var "vIP_idx" := cast SizeT (var "_imm_target"))
+      ]) @ maybe_reanchor () @ [ inc_instrs; fetch_next ]
+  in
+  emit_handler_ast b "H_CALL" call_stmts;
+
+  (* Helper for indirect ABI dispatch on x86_64 vs generic *)
+  let indirect_abi_args = [
+    raw "#if defined(__x86_64__) || defined(_M_X64)";
+    let_u64 "a0" (call "ctx.get_reg" [var "REG_RDI"]);
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_RSI"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_RDX"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_RCX"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_R8"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_R9"]);
+    raw "#else";
+    let_u64 "a0" (call "ctx.get_reg" [var "REG_RAX"]);
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_RCX"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_RDX"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_RBX"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_RSI"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_RDI"]);
+    raw "#endif";
+  ] in
+  let emit_indirect_call_stmts target_e ~is_jump =
+    indirect_abi_args @ [
+      raw "typedef uint64_t (*indirect_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);";
+      decl_var ~init:(reinterpret_cast (StructType "indirect_fn_t") target_e) (StructType "indirect_fn_t") "fn";
+      let_u64 "ret_val" (call "fn" [var "a0"; var "a1"; var "a2"; var "a3"; var "a4"; var "a5"]);
+      set_reg (var "REG_RAX") (var "ret_val");
+    ] @ (if is_jump then [ goto "EXIT_VM" ] else [])
+  in
+
+  (* H_IJMP_R: Register-indirect jump or native FFI dispatch *)
+  let ijmp_stmts = [
+    let_u64 "target" (call "ctx.get_reg" [var "dst"]);
+  ] @ (match pick_variant 3 with
+    | 0 -> [
+        if_then_else (var "target" <~ var "count")
+          [ (var "vIP_idx" := cast SizeT (var "target")) ]
+          [ if_then (ne (var "target") (u64 0L)) (emit_indirect_call_stmts (var "target") ~is_jump:true) ]
+      ]
+    | 1 -> [
+        if_then_else (call "__builtin_expect" [var "target" <~ var "count"; i32 1])
+          [ (var "vIP_idx" := cast SizeT (var "target")) ]
+          [ if_then (ne (var "target") (i32 0)) (emit_indirect_call_stmts (var "target") ~is_jump:true) ]
+      ]
+    | _ -> [
+        decl_var ~init:(cast SizeT (var "target")) SizeT "_t_idx";
+        if_then_else (var "_t_idx" <~ var "count")
+          [ (var "vIP_idx" := var "_t_idx") ]
+          [ if_then (ne (var "target") (u64 0L)) (emit_indirect_call_stmts (var "target") ~is_jump:true) ]
+      ]) @ maybe_reanchor () @ [ inc_instrs; fetch_next ]
+  in
+  emit_handler_ast b "H_IJMP_R" ijmp_stmts;
+
+  (* H_ICALL_R: Register-indirect call or native FFI dispatch *)
+  let icall_stmts = [
+    let_u64 "target_ptr" (call "ctx.get_reg" [var "dst"]);
+  ] @ (match pick_variant 3 with
+    | 0 -> [
+        if_then_else (var "target_ptr" <~ var "count")
+          [
+            expr_stmt (call "ctx.push" [cast UInt64 (var "vIP_idx")]);
+            (var "vIP_idx" := cast SizeT (var "target_ptr"));
+          ]
+          [ if_then (ne (var "target_ptr") (u64 0L)) (emit_indirect_call_stmts (var "target_ptr") ~is_jump:false) ]
+      ]
+    | 1 -> [
+        if_then_else (call "__builtin_expect" [var "target_ptr" <~ var "count"; i32 1])
+          [
+            let_u64 "_ret" (cast UInt64 (var "vIP_idx"));
+            expr_stmt (call "ctx.push" [var "_ret"]);
+            (var "vIP_idx" := cast SizeT (var "target_ptr"));
+          ]
+          [ if_then (ne (var "target_ptr") (i32 0)) (emit_indirect_call_stmts (var "target_ptr") ~is_jump:false) ]
+      ]
+    | _ -> [
+        if_then_else (var "target_ptr" <~ var "count")
+          [
+            expr_stmt (call "ctx.push" [cast UInt64 (var "vIP_idx")]);
+            (var "vIP_idx" := cast SizeT (var "target_ptr"));
+          ]
+          [ if_then (ne (var "target_ptr") (u64 0L)) (emit_indirect_call_stmts (var "target_ptr") ~is_jump:false) ]
+      ]) @ maybe_reanchor () @ [ inc_instrs; fetch_next ]
+  in
+  emit_handler_ast b "H_ICALL_R" icall_stmts;
+
+  (* H_RET & H_EXIT: Strict label formatting for transform_domain_labels compatibility *)
   (match pick_variant 3 with
    | 0 ->
-       Buffer.add_string b "    H_BRIDGE_TO_FLOW: {\n";
-       Buffer.add_string b "        ctx.morph_math_to_flow((uint64_t)imm);\n";
-       Buffer.add_string b "        ctx.executed_instructions++;\n";
-       Buffer.add_string b "        FETCH_NEXT();\n";
-       Buffer.add_string b "    }\n";
-       Buffer.add_string b "    H_BRIDGE_TO_MATH: {\n";
-       Buffer.add_string b "        ctx.morph_flow_to_math((uint64_t)imm);\n";
-       Buffer.add_string b "        ctx.executed_instructions++;\n";
-       Buffer.add_string b "        FETCH_NEXT();\n";
-       Buffer.add_string b "    }\n\n"
+       let s = String.concat " " (List.map string_of_stmt [ inc_instrs; goto "EXIT_VM" ]) in
+       Buffer.add_string b (Printf.sprintf "    H_RET: case_ret: %s\n" s);
+       Buffer.add_string b (Printf.sprintf "    H_EXIT: %s\n\n" s)
    | 1 ->
-       Buffer.add_string b "    H_BRIDGE_TO_FLOW: {\n";
-       Buffer.add_string b "        uint64_t _imm_flow = static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        ctx.morph_math_to_flow(_imm_flow);\n";
-       Buffer.add_string b "        ctx.executed_instructions += 1;\n";
-       Buffer.add_string b "        FETCH_NEXT();\n";
-       Buffer.add_string b "    }\n";
-       Buffer.add_string b "    H_BRIDGE_TO_MATH: {\n";
-       Buffer.add_string b "        uint64_t _imm_math = static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        ctx.morph_flow_to_math(_imm_math);\n";
-       Buffer.add_string b "        ctx.executed_instructions += 1;\n";
-       Buffer.add_string b "        FETCH_NEXT();\n";
-       Buffer.add_string b "    }\n\n"
+       let s = String.concat " " (List.map string_of_stmt [
+         if_then (log_not (call "ctx.verify_canaries" [])) [ (var "ctx.trapped" := bool_lit true) ];
+         inc_instrs;
+         goto "EXIT_VM"
+       ]) in
+       Buffer.add_string b (Printf.sprintf "    H_RET: case_ret: { %s }\n" s);
+       Buffer.add_string b (Printf.sprintf "    H_EXIT: { %s }\n\n" s)
    | _ ->
-       Buffer.add_string b "    H_BRIDGE_TO_FLOW: {\n";
-       Buffer.add_string b "        ctx.morph_math_to_flow((uint64_t)(imm & 0xFFFFFFFFFFFFFFFFULL));\n";
-       Buffer.add_string b "        ctx.executed_instructions++;\n";
-       Buffer.add_string b "        FETCH_NEXT();\n";
-       Buffer.add_string b "    }\n";
-       Buffer.add_string b "    H_BRIDGE_TO_MATH: {\n";
-       Buffer.add_string b "        ctx.morph_flow_to_math((uint64_t)(imm & 0xFFFFFFFFFFFFFFFFULL));\n";
-       Buffer.add_string b "        ctx.executed_instructions++;\n";
-       Buffer.add_string b "        FETCH_NEXT();\n";
-       Buffer.add_string b "    }\n\n")
+       let s = String.concat " " (List.map string_of_stmt [
+         if_then (var "ctx.sp" >~ i32 512) [ (var "ctx.trapped" := bool_lit true) ];
+         Assign (AssignAdd, var "ctx.executed_instructions", i32 1);
+         goto "EXIT_VM"
+       ]) in
+       Buffer.add_string b (Printf.sprintf "    H_RET: case_ret: { %s }\n" s);
+       Buffer.add_string b (Printf.sprintf "    H_EXIT: { %s }\n\n" s));
+
+  (* Multi-VM Domain morphing bridges *)
+  let bridge_flow_stmts = match pick_variant 3 with
+    | 0 -> [
+        expr_stmt (call "ctx.morph_math_to_flow" [cast UInt64 (var "imm")]);
+        inc_instrs;
+        fetch_next;
+      ]
+    | 1 -> [
+        let_u64 "_imm_flow" (cast UInt64 (var "imm"));
+        expr_stmt (call "ctx.morph_math_to_flow" [var "_imm_flow"]);
+        Assign (AssignAdd, var "ctx.executed_instructions", i32 1);
+        fetch_next;
+      ]
+    | _ -> [
+        expr_stmt (call "ctx.morph_math_to_flow" [cast UInt64 (var "imm" &~ u64 0xFFFFFFFFFFFFFFFFL)]);
+        inc_instrs;
+        fetch_next;
+      ]
+  in
+  let bridge_math_stmts = match pick_variant 3 with
+    | 0 -> [
+        expr_stmt (call "ctx.morph_flow_to_math" [cast UInt64 (var "imm")]);
+        inc_instrs;
+        fetch_next;
+      ]
+    | 1 -> [
+        let_u64 "_imm_math" (cast UInt64 (var "imm"));
+        expr_stmt (call "ctx.morph_flow_to_math" [var "_imm_math"]);
+        Assign (AssignAdd, var "ctx.executed_instructions", i32 1);
+        fetch_next;
+      ]
+    | _ -> [
+        expr_stmt (call "ctx.morph_flow_to_math" [cast UInt64 (var "imm" &~ u64 0xFFFFFFFFFFFFFFFFL)]);
+        inc_instrs;
+        fetch_next;
+      ]
+  in
+  emit_handler_ast b "H_BRIDGE_TO_FLOW" bridge_flow_stmts;
+  emit_handler_ast b "H_BRIDGE_TO_MATH" bridge_math_stmts
 
 let emit_super_operators ?rng b =
   let pick_variant n =
@@ -285,106 +367,117 @@ let emit_super_operators ?rng b =
     | None -> 0
   in
 
-  Buffer.add_string b "    H_FUSED_MOV_ADD_RRI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        ctx.set_reg(dst, ctx.get_reg(src) + (uint64_t)imm);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _base = ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _base + static_cast<uint64_t>(imm));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_reg(src), _i = (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (_s ^ _i) + 2 * (_s & _i));\n");
-  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
-  Buffer.add_string b "        FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  (* H_FUSED_MOV_ADD_RRI *)
+  let fused_mov_add_stmts = (match pick_variant 3 with
+    | 0 -> [ set_reg (var "dst") (reg_src +~ cast UInt64 (var "imm")) ]
+    | 1 -> [
+        let_u64 "_base" reg_src;
+        set_reg (var "dst") (var "_base" +~ cast UInt64 (var "imm"))
+      ]
+    | _ -> [
+        let_u64 "_s" reg_src;
+        let_u64 "_i" (cast UInt64 (var "imm"));
+        set_reg (var "dst") ((var "_s" ^~ var "_i") +~ (u64 2L *~ (var "_s" &~ var "_i")))
+      ]) @ [
+    Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_FUSED_MOV_ADD_RRI" fused_mov_add_stmts;
 
-  Buffer.add_string b "    H_FUSED_ADD_IMUL_RRI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) + ctx.get_reg(src)) * (uint64_t)imm);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _sum = ctx.get_reg(dst) + ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _sum * static_cast<uint64_t>(imm));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _imm = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t _res = (ctx.get_reg(dst) * _imm) + (ctx.get_reg(src) * _imm);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n");
-  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
-  Buffer.add_string b "        FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  (* H_FUSED_ADD_IMUL_RRI *)
+  let fused_add_imul_stmts = (match pick_variant 3 with
+    | 0 -> [ set_reg (var "dst") ((reg_dst +~ reg_src) *~ cast UInt64 (var "imm")) ]
+    | 1 -> [
+        let_u64 "_sum" (reg_dst +~ reg_src);
+        set_reg (var "dst") (var "_sum" *~ cast UInt64 (var "imm"))
+      ]
+    | _ -> [
+        let_u64 "_imm" (cast UInt64 (var "imm"));
+        let_u64 "_res" ((reg_dst *~ var "_imm") +~ (reg_src *~ var "_imm"));
+        set_reg (var "dst") (var "_res")
+      ]) @ [
+    Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_FUSED_ADD_IMUL_RRI" fused_add_imul_stmts;
 
-  Buffer.add_string b "    H_FUSED_ADD_XOR_RRI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) + ctx.get_reg(src)) ^ (uint64_t)imm);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _sum = ctx.get_reg(dst) + ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t _imm = static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (_sum + _imm) - 2 * (_sum & _imm));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _imm = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t _sum = ctx.get_reg(dst) + ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (_sum | _imm) - (_sum & _imm));\n");
-  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
-  Buffer.add_string b "        FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  (* H_FUSED_ADD_XOR_RRI *)
+  let fused_add_xor_stmts = (match pick_variant 3 with
+    | 0 -> [ set_reg (var "dst") ((reg_dst +~ reg_src) ^~ cast UInt64 (var "imm")) ]
+    | 1 -> [
+        let_u64 "_sum" (reg_dst +~ reg_src);
+        let_u64 "_imm" (cast UInt64 (var "imm"));
+        set_reg (var "dst") ((var "_sum" +~ var "_imm") -~ (u64 2L *~ (var "_sum" &~ var "_imm")))
+      ]
+    | _ -> [
+        let_u64 "_imm" (cast UInt64 (var "imm"));
+        let_u64 "_sum" (reg_dst +~ reg_src);
+        set_reg (var "dst") ((var "_sum" |~ var "_imm") -~ (var "_sum" &~ var "_imm"))
+      ]) @ [
+    Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_FUSED_ADD_XOR_RRI" fused_add_xor_stmts;
 
-  Buffer.add_string b "    H_FUSED_SUB_XOR_RRI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) - ctx.get_reg(src)) ^ (uint64_t)imm);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _diff = ctx.get_reg(dst) - ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t _imm = static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (_diff + _imm) - 2 * (_diff & _imm));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _imm = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t _diff = ctx.get_reg(dst) - ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (_diff | _imm) - (_diff & _imm));\n");
-  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
-  Buffer.add_string b "        FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  (* H_FUSED_SUB_XOR_RRI *)
+  let fused_sub_xor_stmts = (match pick_variant 3 with
+    | 0 -> [ set_reg (var "dst") ((reg_dst -~ reg_src) ^~ cast UInt64 (var "imm")) ]
+    | 1 -> [
+        let_u64 "_diff" (reg_dst -~ reg_src);
+        let_u64 "_imm" (cast UInt64 (var "imm"));
+        set_reg (var "dst") ((var "_diff" +~ var "_imm") -~ (u64 2L *~ (var "_diff" &~ var "_imm")))
+      ]
+    | _ -> [
+        let_u64 "_imm" (cast UInt64 (var "imm"));
+        let_u64 "_diff" (reg_dst -~ reg_src);
+        set_reg (var "dst") ((var "_diff" |~ var "_imm") -~ (var "_diff" &~ var "_imm"))
+      ]) @ [
+    Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_FUSED_SUB_XOR_RRI" fused_sub_xor_stmts;
 
-  Buffer.add_string b "    H_FUSED_XOR_ADD_RRI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) ^ ctx.get_reg(src)) + (uint64_t)imm);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t _x = (_a + _b) - 2 * (_a & _b);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _x + static_cast<uint64_t>(imm));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t _x = (_a | _b) - (_a & _b);\n";
-       Buffer.add_string b "        uint64_t _i = (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (_x | _i) + (_x & _i));\n");
-  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
-  Buffer.add_string b "        FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  (* H_FUSED_XOR_ADD_RRI *)
+  let fused_xor_add_stmts = (match pick_variant 3 with
+    | 0 -> [ set_reg (var "dst") ((reg_dst ^~ reg_src) +~ cast UInt64 (var "imm")) ]
+    | 1 -> [
+        let_u64 "_a" reg_dst;
+        let_u64 "_b" reg_src;
+        let_u64 "_x" ((var "_a" +~ var "_b") -~ (u64 2L *~ (var "_a" &~ var "_b")));
+        set_reg (var "dst") (var "_x" +~ cast UInt64 (var "imm"))
+      ]
+    | _ -> [
+        let_u64 "_a" reg_dst;
+        let_u64 "_b" reg_src;
+        let_u64 "_x" ((var "_a" |~ var "_b") -~ (var "_a" &~ var "_b"));
+        let_u64 "_i" (cast UInt64 (var "imm"));
+        set_reg (var "dst") ((var "_x" |~ var "_i") +~ (var "_x" &~ var "_i"))
+      ]) @ [
+    Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_FUSED_XOR_ADD_RRI" fused_xor_add_stmts;
 
-  Buffer.add_string b "    H_FUSED_CMP_CMOV: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 50) & 0x0F);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 54) & 0x7F);\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_reg(dst, ctx.get_reg(src));\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 50) & 0x0F);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 54) & 0x7F);\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        uint64_t _m = eval_condition(ctx, cond) ? ~0ULL : 0ULL;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(src) & _m) | (a & ~_m));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint8_t cond = (uint8_t)((word >> 50) & 0x0F);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 54) & 0x7F);\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        uint64_t _val = eval_condition(ctx, cond) ? ctx.get_reg(src) : a;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _val);\n");
-  Buffer.add_string b "        ctx.executed_instructions += 2;\n";
-  Buffer.add_string b "        FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n\n"
+  (* H_FUSED_CMP_CMOV *)
+  let fused_cmp_cmov_stmts = [
+    let_u64 "a" reg_dst;
+    let_u64 "b" (cast UInt64 (var "imm"));
+    decl_var ~init:(cast UInt8 ((var "word" >>~ u64 50L) &~ u64 0x0FL)) UInt8 "cond";
+    decl_var ~init:(cast UInt32 ((var "word" >>~ u64 54L) &~ u64 0x7FL)) UInt32 "bits";
+    expr_stmt (call "compute_sub_flags" [var "ctx"; var "a"; var "b"; var "bits"]);
+  ] @ (match pick_variant 3 with
+    | 0 -> [
+        if_then (call "eval_condition" [var "ctx"; var "cond"]) [ set_reg (var "dst") reg_src ]
+      ]
+    | 1 -> [
+        let_u64 "_m" (ternary (call "eval_condition" [var "ctx"; var "cond"]) (bit_not (u64 0L)) (u64 0L));
+        set_reg (var "dst") ((reg_src &~ var "_m") |~ (var "a" &~ bit_not (var "_m")))
+      ]
+    | _ -> [
+        let_u64 "_val" (ternary (call "eval_condition" [var "ctx"; var "cond"]) reg_src (var "a"));
+        set_reg (var "dst") (var "_val")
+      ]) @ [
+    Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_FUSED_CMP_CMOV" fused_cmp_cmov_stmts

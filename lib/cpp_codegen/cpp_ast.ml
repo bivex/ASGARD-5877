@@ -40,10 +40,11 @@ type expr =
   | Ternary of expr * expr * expr      (* cond ? tr : fl *)
   | Cast of ctype * expr               (* static_cast<T>(e) *)
   | BitCast of ctype * expr            (* std::bit_cast<T>(e) *)
+  | ReinterpretCast of ctype * expr    (* reinterpret_cast<T>(e) *)
   | Call of string * expr list         (* fn(a, b, ...) *)
 
 type assign_op =
-  | AssignPlain | AssignAdd | AssignSub | AssignXor | AssignOr | AssignAnd | AssignDiv
+  | AssignPlain | AssignAdd | AssignSub | AssignMul | AssignXor | AssignOr | AssignAnd | AssignDiv
 
 type stmt =
   | DeclVar of {
@@ -100,10 +101,37 @@ type struct_decl = {
   fields   : (ctype * string) list;
 }
 
+type struct_member =
+  | MemberField of { ty : ctype; name : string; init : expr option }
+  | MemberMethod of {
+      attrs      : func_attr list;
+      is_static  : bool;
+      is_const   : bool;
+      ret_type   : ctype;
+      name       : string;
+      params     : (ctype * string) list;
+      body       : stmt list;
+    }
+  | MemberStaticConstexpr of { ty : ctype; name : string; init : expr }
+  | MemberRaw of string
+  | MemberComment of string
+
+type struct_def = {
+  align_as : int option;
+  name     : string;
+  members  : struct_member list;
+}
+
 type top_decl =
   | IncludeSys of string               (* #include <cstdint> *)
   | IncludeLocal of string             (* #include "asg_crypto.hpp" *)
   | Namespace of string * top_decl list
   | ConstexprGlobal of ctype * string * expr
   | StructDecl of struct_decl
+  | StructDef of struct_def
+  | UnionDecl of struct_decl
+  | UnionDef of struct_def
+  | EnumDecl of { name : string; underlying_ty : ctype option; items : (string * expr option) list }
   | FuncDecl of func_decl
+  | RawTop of string
+  | CommentTop of string

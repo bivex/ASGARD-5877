@@ -22,6 +22,7 @@ let rec scramble_expr (rng : Random.State.t) (e : expr) : expr =
       Ternary (scramble_expr rng c, scramble_expr rng t, scramble_expr rng f)
   | Cast (ty, a) -> Cast (ty, scramble_expr rng a)
   | BitCast (ty, a) -> BitCast (ty, scramble_expr rng a)
+  | ReinterpretCast (ty, a) -> ReinterpretCast (ty, scramble_expr rng a)
   | Index (arr, i) -> Index (scramble_expr rng arr, scramble_expr rng i)
   | Member (a, f) -> Member (scramble_expr rng a, f)
   | PtrMember (a, f) -> PtrMember (scramble_expr rng a, f)
@@ -54,12 +55,25 @@ let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
       }
   | Break | Continue | Goto _ | Label _ | Raw _ | FenceSeqCst | Comment _ -> s
 
+let scramble_struct_member rng = function
+  | MemberField f ->
+      MemberField { f with init = Option.map (scramble_expr rng) f.init }
+  | MemberMethod m ->
+      MemberMethod { m with body = List.map (scramble_stmt rng) m.body }
+  | MemberStaticConstexpr c ->
+      MemberStaticConstexpr { c with init = scramble_expr rng c.init }
+  | (MemberRaw _ | MemberComment _) as m -> m
+
 let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
   match d with
   | FuncDecl f ->
       FuncDecl { f with body = List.map (scramble_stmt rng) f.body }
+  | StructDef s ->
+      StructDef { s with members = List.map (scramble_struct_member rng) s.members }
+  | UnionDef s ->
+      UnionDef { s with members = List.map (scramble_struct_member rng) s.members }
   | Namespace (ns, decls) ->
       Namespace (ns, List.map (scramble_top_decl rng) decls)
   | ConstexprGlobal (ty, name, e) ->
       ConstexprGlobal (ty, name, scramble_expr rng e)
-  | StructDecl _ | IncludeSys _ | IncludeLocal _ -> d
+  | StructDecl _ | UnionDecl _ | EnumDecl _ | RawTop _ | CommentTop _ | IncludeSys _ | IncludeLocal _ -> d
