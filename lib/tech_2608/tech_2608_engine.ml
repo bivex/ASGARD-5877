@@ -199,42 +199,32 @@ let emit_chaff_load_method () : struct_member =
     ]
 
 let emit_chaff_memory_pool_def () : top_decl =
-  StructDef {
-    align_as = Some 64;
-    name = "ChaffMemoryPool";
-    members = [
-      MemberRaw "static_assert((PoolSize & (PoolSize - 1)) == 0, \"PoolSize must be power-of-two\");";
-      MemberRaw "static_assert(PoolSize >= 64, \"PoolSize must be at least 64 bytes\");";
-      MemberRaw "alignas(64) volatile uint64_t storage[PoolSize / sizeof(uint64_t)]{0};";
-      MemberRaw "static constexpr size_t MASK_WORDS = (PoolSize / sizeof(uint64_t)) - 1;";
-      emit_chaff_store_method ();
-      emit_chaff_load_method ();
-    ];
-  }
+  template_struct_def ~align_as:64 ~template_params:["size_t PoolSize = 4096"] "ChaffMemoryPool" [
+    member_static_assert ((var "PoolSize" &~ (var "PoolSize" -~ i32 1)) ==~ i32 0) "PoolSize must be power-of-two";
+    member_static_assert (var "PoolSize" >=~ i32 64) "PoolSize must be at least 64 bytes";
+    MemberRaw "alignas(64) volatile uint64_t storage[PoolSize / sizeof(uint64_t)]{0};";
+    member_static_constexpr SizeT "MASK_WORDS" ((var "PoolSize" /~ sizeof_expr (var "uint64_t")) -~ i32 1);
+    emit_chaff_store_method ();
+    emit_chaff_load_method ();
+  ]
 
 (* ── Standalone C++20 Header Emitter ──────────────────────────────────────── *)
 let emit_tech_2608_cpp_header () : string =
-  let prefix = {|#pragma once
-// ============================================================================
-// ASGARD-5877: Tech-2608 (arXiv:2608.20628)
-// Anti-Trace-Synthesis & Memory Chaffing Runtime
-// Thwarts BinMirror/LLM behavioral specification synthesis via:
-//   1. Shadow Memory Chaff Pool with volatile decoys
-//   2. Register-entangled memory reads and writes
-//   3. Opaque-guarded side-effects indistinguishable from guest memory
-// ============================================================================
-
-#include <cstdint>
-#include <cstddef>
-#include <array>
-
-namespace asgard::tech_2608 {
-
-template<size_t PoolSize = 4096>
-|} in
-  let struct_str = render_top_decl (emit_chaff_memory_pool_def ()) in
-  let suffix = {|
-} // namespace asgard::tech_2608
-|} in
-  prefix ^ "\n" ^ struct_str ^ "\n" ^ suffix
+  let decls = [
+    comment_top "============================================================================";
+    comment_top "ASGARD-5877: Tech-2608 (arXiv:2608.20628)";
+    comment_top "Anti-Trace-Synthesis & Memory Chaffing Runtime";
+    comment_top "Thwarts BinMirror/LLM behavioral specification synthesis via:";
+    comment_top "  1. Shadow Memory Chaff Pool with volatile decoys";
+    comment_top "  2. Register-entangled memory reads and writes";
+    comment_top "  3. Opaque-guarded side-effects indistinguishable from guest memory";
+    comment_top "============================================================================";
+    IncludeSys "cstdint";
+    IncludeSys "cstddef";
+    IncludeSys "array";
+    namespace_def "asgard::tech_2608" [
+      emit_chaff_memory_pool_def ();
+    ];
+  ] in
+  "#pragma once\n" ^ render_top_decls decls
 

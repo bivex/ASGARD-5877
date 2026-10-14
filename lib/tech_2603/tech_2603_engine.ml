@@ -332,25 +332,21 @@ let emit_nonlinear_vpc_dispatcher_def () : top_decl =
 
 (* ── Standalone C++20 Header Emitter ──────────────────────────────────────── *)
 let emit_tech_2603_cpp_header () : string =
-  let b = Buffer.create 4096 in
-  Buffer.add_string b {|#pragma once
-// ============================================================================
-// ASGARD-5877: Tech-2603 (arXiv:2603.18355)
-// Anti-VPC-Tracking & Non-Linear Dispatch Runtime
-// Thwarts PUSHAN/VM-Doctor heuristic VPC identification via:
-//   1. Non-linear affine bijective VPC hopping: next_vpc = (a * vpc + b) & mask
-//   2. Dual-variable Split-VPC: physical_slot = masked ^ (key & 0x7FFFFFFF)
-//   3. Decoy padding with entropy whitening
-// ============================================================================
-
-#include <cstdint>
-#include <cstddef>
-#include <bit>
-
-namespace asgard::tech_2603 {
-|};
-  Buffer.add_string b (render_top_decl (emit_split_vpc_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decl (emit_nonlinear_vpc_dispatcher_def ()));
-  Buffer.add_string b "\n\n} // namespace asgard::tech_2603\n";
-  Buffer.contents b
+  let decls = [
+    comment_top "============================================================================";
+    comment_top "ASGARD-5877: Tech-2603 (arXiv:2603.18355)";
+    comment_top "Anti-VPC-Tracking & Non-Linear Dispatch Runtime";
+    comment_top "Thwarts PUSHAN/VM-Doctor heuristic VPC identification via:";
+    comment_top "  1. Non-linear affine bijective VPC hopping: next_vpc = (a * vpc + b) & mask";
+    comment_top "  2. Dual-variable Split-VPC: physical_slot = masked ^ (key & 0x7FFFFFFF)";
+    comment_top "  3. Decoy padding with entropy whitening";
+    comment_top "============================================================================";
+    IncludeSys "cstdint";
+    IncludeSys "cstddef";
+    IncludeSys "bit";
+    namespace_def "asgard::tech_2603" [
+      emit_split_vpc_def ();
+      emit_nonlinear_vpc_dispatcher_def ();
+    ];
+  ] in
+  "#pragma once\n" ^ render_top_decls decls
