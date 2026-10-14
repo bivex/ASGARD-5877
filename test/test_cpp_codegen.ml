@@ -332,7 +332,19 @@ let () =
   assert (String.length c11_emu > 50);
   assert (String.length c11_dec > 50);
   assert (String.length c11_protos > 100);
-  Printf.printf "[PASS] Step 18: C11 Vector ISA Emulator structs & prototypes emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 18: C11 Vector ISA Emulator structs & prototypes emitted using typed AST.\n";
+
+  (* 19. GPU MBA Substitution Matrix AST *)
+  let rng = Random.State.make [| 42 |] in
+  let mat = Gpu_synth.Gpu_matrix.generate ~dim:16 ~rng () in
+  let mat_ast_decls = Gpu_synth.Gpu_matrix.emit_cpp_constants_ast mat in
+  let mat_cpp = render_top_decls mat_ast_decls in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax mat_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("GPU MBA Matrix syntax validation failed: " ^ err));
+  assert (String.length mat_cpp > 100);
+  Printf.printf "[PASS] Step 19: GPU MBA substitution matrix emitted using typed AST.\n"
+
 
 
 

@@ -33,3 +33,6 @@ val inverse_transform_vector : substitution_matrix -> int64 array -> int64 array
 
 (** Render forward and inverse substitution matrices as C++ constexpr arrays. *)
 val emit_cpp_constants : substitution_matrix -> string
+
+(** Render forward and inverse substitution matrices as typed C++ AST declarations. *)
+val emit_cpp_constants_ast : substitution_matrix -> Cpp_codegen.Cpp_ast.top_decl list

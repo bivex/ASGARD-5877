@@ -88,26 +88,27 @@ let transform_vector (mat : substitution_matrix) v =
 let inverse_transform_vector (mat : substitution_matrix) v =
   matrix_multiply mat.inverse v mat.dim
 
-let emit_cpp_constants (mat : substitution_matrix) =
-  let b = Buffer.create 2048 in
-  Buffer.add_string b (Printf.sprintf "// GPU-Synthesized MBA Substitution Matrix (SAC Diffusion: %.2f%%)\n" mat.sac);
-  Buffer.add_string b (Printf.sprintf "static constexpr uint64_t GPU_MBA_FWD_MATRIX[%d][%d] = {\n" mat.dim mat.dim);
-  for i = 0 to mat.dim - 1 do
-    Buffer.add_string b "    { ";
-    for j = 0 to mat.dim - 1 do
-      Buffer.add_string b (Printf.sprintf "0x%016LXULL%s" mat.forward.(i).(j) (if j = mat.dim - 1 then "" else ", "));
-    done;
-    Buffer.add_string b (if i = mat.dim - 1 then " }\n" else " },\n");
-  done;
-  Buffer.add_string b "};\n\n";
+let emit_cpp_constants_ast (mat : substitution_matrix) : Cpp_codegen.Cpp_ast.top_decl list =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let to_init_list arr =
+    init_list (List.init mat.dim (fun i ->
+      init_list (List.init mat.dim (fun j -> u64 arr.(i).(j)))))
+  in
+  let comment = comment_top (Printf.sprintf "GPU-Synthesized MBA Substitution Matrix (SAC Diffusion: %.2f%%)" mat.sac) in
+  let fwd_decl =
+    global_var ~is_static:true ~is_constexpr:true
+      (Array (Array (UInt64, mat.dim), mat.dim))
+      "GPU_MBA_FWD_MATRIX"
+      ~init:(to_init_list mat.forward)
+  in
+  let inv_decl =
+    global_var ~is_static:true ~is_constexpr:true
+      (Array (Array (UInt64, mat.dim), mat.dim))
+      "GPU_MBA_INV_MATRIX"
+      ~init:(to_init_list mat.inverse)
+  in
+  [ comment; fwd_decl; inv_decl ]
 
-  Buffer.add_string b (Printf.sprintf "static constexpr uint64_t GPU_MBA_INV_MATRIX[%d][%d] = {\n" mat.dim mat.dim);
-  for i = 0 to mat.dim - 1 do
-    Buffer.add_string b "    { ";
-    for j = 0 to mat.dim - 1 do
-      Buffer.add_string b (Printf.sprintf "0x%016LXULL%s" mat.inverse.(i).(j) (if j = mat.dim - 1 then "" else ", "));
-    done;
-    Buffer.add_string b (if i = mat.dim - 1 then " }\n" else " },\n");
-  done;
-  Buffer.add_string b "};\n";
-  Buffer.contents b
+let emit_cpp_constants (mat : substitution_matrix) : string =
+  Cpp_codegen.Cpp_printer.render_top_decls (emit_cpp_constants_ast mat)

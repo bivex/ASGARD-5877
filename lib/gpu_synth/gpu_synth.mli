@@ -58,4 +58,5 @@ module Gpu_matrix : sig
   val transform_vector : substitution_matrix -> int64 array -> int64 array
   val inverse_transform_vector : substitution_matrix -> int64 array -> int64 array
   val emit_cpp_constants : substitution_matrix -> string
+  val emit_cpp_constants_ast : substitution_matrix -> Cpp_codegen.Cpp_ast.top_decl list
 end

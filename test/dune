@@ -109,6 +109,7 @@
   random_visa_cpp_emitter
   random_visa_c11_emitter
   tech_2603
+  gpu_synth
   alcotest))
 
 (test
