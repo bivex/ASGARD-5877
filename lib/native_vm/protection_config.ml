@@ -46,6 +46,27 @@ let with_eh_shadowing ?shadow_alloc_size ?interceptor_symbol enabled b =
   b := { !b with eh_shadowing };
   b
 
+let with_anti_vpc ?scramble_vpc ?split_vpc ?entropy_whitening enabled b =
+  let curr = !b.anti_vpc in
+  let anti_vpc = {
+    enabled;
+    scramble_vpc = Option.value ~default:curr.scramble_vpc scramble_vpc;
+    split_vpc = Option.value ~default:curr.split_vpc split_vpc;
+    entropy_whitening = Option.value ~default:curr.entropy_whitening entropy_whitening;
+  } in
+  b := { !b with anti_vpc };
+  b
+
+let with_memory_chaffing ?pool_size ?chaff_ratio enabled b =
+  let curr = !b.memory_chaffing in
+  let memory_chaffing = {
+    enabled;
+    pool_size = Option.value ~default:curr.pool_size pool_size;
+    chaff_ratio = Option.value ~default:curr.chaff_ratio chaff_ratio;
+  } in
+  b := { !b with memory_chaffing };
+  b
+
 let with_seed seed b =
   b := { !b with seed };
   b

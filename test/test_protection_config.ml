@@ -38,7 +38,13 @@ let test_json_roundtrip () =
       Alcotest.(check bool) "stack_vm.runtime_hardening matches" original.stack_vm.runtime_hardening parsed.stack_vm.runtime_hardening;
       Alcotest.(check bool) "stack_vm.compact_imm matches" original.stack_vm.compact_imm parsed.stack_vm.compact_imm;
       Alcotest.(check bool) "eh_shadowing.enabled matches" original.eh_shadowing.enabled parsed.eh_shadowing.enabled;
-      Alcotest.(check int) "eh_shadowing.shadow_alloc_size matches" original.eh_shadowing.shadow_alloc_size parsed.eh_shadowing.shadow_alloc_size
+      Alcotest.(check int) "eh_shadowing.shadow_alloc_size matches" original.eh_shadowing.shadow_alloc_size parsed.eh_shadowing.shadow_alloc_size;
+      Alcotest.(check bool) "anti_vpc.enabled matches" original.anti_vpc.enabled parsed.anti_vpc.enabled;
+      Alcotest.(check bool) "anti_vpc.scramble_vpc matches" original.anti_vpc.scramble_vpc parsed.anti_vpc.scramble_vpc;
+      Alcotest.(check bool) "anti_vpc.split_vpc matches" original.anti_vpc.split_vpc parsed.anti_vpc.split_vpc;
+      Alcotest.(check bool) "anti_vpc.entropy_whitening matches" original.anti_vpc.entropy_whitening parsed.anti_vpc.entropy_whitening;
+      Alcotest.(check bool) "memory_chaffing.enabled matches" original.memory_chaffing.enabled parsed.memory_chaffing.enabled;
+      Alcotest.(check int) "memory_chaffing.pool_size matches" original.memory_chaffing.pool_size parsed.memory_chaffing.pool_size
 
 let test_partial_json_parsing () =
   let partial_json = {|
@@ -82,7 +88,15 @@ let test_stack_vm_presets () =
     |> Protection_config.build
   in
   Alcotest.(check bool) "custom stack_vm superoperators disabled" false custom.stack_vm.superoperators;
-  Alcotest.(check bool) "custom stack_vm runtime_hardening disabled" false custom.stack_vm.runtime_hardening
+  Alcotest.(check bool) "custom stack_vm runtime_hardening disabled" false custom.stack_vm.runtime_hardening;
+  let custom_vpc =
+    Protection_config.create_builder ~base:def ()
+    |> Protection_config.with_anti_vpc ~scramble_vpc:false false
+    |> Protection_config.with_memory_chaffing ~pool_size:2048 ~chaff_ratio:1.5 true
+    |> Protection_config.build
+  in
+  Alcotest.(check bool) "custom anti_vpc disabled" false custom_vpc.anti_vpc.enabled;
+  Alcotest.(check int) "custom memory_chaffing pool_size" 2048 custom_vpc.memory_chaffing.pool_size
 
 let test_protection_with_config () =
   let rng = Random.State.make [| 42 |] in

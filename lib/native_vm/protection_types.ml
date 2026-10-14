@@ -168,6 +168,32 @@ let default_eh_shadowing = {
   interceptor_symbol = "tech_2601_interceptor";
 }
 
+type anti_vpc_config = {
+  enabled : bool [@default true];
+  scramble_vpc : bool [@default true];
+  split_vpc : bool [@default true];
+  entropy_whitening : bool [@default true];
+} [@@deriving yojson]
+
+let default_anti_vpc = {
+  enabled = true;
+  scramble_vpc = true;
+  split_vpc = true;
+  entropy_whitening = true;
+}
+
+type memory_chaffing_config = {
+  enabled : bool [@default true];
+  pool_size : int [@default 4096];
+  chaff_ratio : float [@default 2.0];
+} [@@deriving yojson]
+
+let default_memory_chaffing = {
+  enabled = true;
+  pool_size = 4096;
+  chaff_ratio = 2.0;
+}
+
 let default_stack_vm = {
   enabled = true;
   superoperators = true;
@@ -189,6 +215,8 @@ type t = {
   c_macro : c_macro_config [@default default_c_macro];
   stack_vm : stack_vm_config [@default default_stack_vm];
   eh_shadowing : eh_shadowing_config [@default default_eh_shadowing];
+  anti_vpc : anti_vpc_config [@default default_anti_vpc];
+  memory_chaffing : memory_chaffing_config [@default default_memory_chaffing];
 } [@@deriving yojson]
 
 (* Single source of truth for the Anti-Pushan rolling-key gate: the encoder
@@ -217,5 +245,15 @@ let eh_shadowing_enabled (config : t option) : bool =
 let chameleon_handlers_enabled (config : t option) : bool =
   match config with
   | Some c -> c.vm_runtime.chameleon_handlers
+  | None -> true
+
+let anti_vpc_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.anti_vpc.enabled
+  | None -> true
+
+let memory_chaffing_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.memory_chaffing.enabled
   | None -> true
 

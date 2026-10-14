@@ -38,6 +38,8 @@
   test_stack_vm
   test_bytecode_crypto
   test_tech_2601
+  test_tech_2603
+  test_tech_2608
   test_ring_codec
   test_nullspace_mba
   test_cross_seed_metrics
@@ -70,6 +72,8 @@
   c_macro_obf
   bytecode_crypto
   tech_2601
+  tech_2603
+  tech_2608
   alcotest
   qcheck
   qcheck-alcotest

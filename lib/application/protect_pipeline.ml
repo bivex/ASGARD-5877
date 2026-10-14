@@ -96,6 +96,18 @@ let run
             output_string oc_eh Tech_2601.Tech_2601_engine.runtime_header_source;
             close_out oc_eh;
 
+            (* 4c. Write Tech-2603 Anti-VPC-Tracking runtime header *)
+            let vpc_hdr_path = Filename.concat out_dir "asg_tech_2603.hpp" in
+            let oc_vpc = open_out vpc_hdr_path in
+            output_string oc_vpc (Tech_2603.Tech_2603_engine.emit_tech_2603_cpp_header ());
+            close_out oc_vpc;
+
+            (* 4d. Write Tech-2608 Anti-Trace-Synthesis runtime header *)
+            let chaff_hdr_path = Filename.concat out_dir "asg_tech_2608.hpp" in
+            let oc_chaff = open_out chaff_hdr_path in
+            output_string oc_chaff (Tech_2608.Tech_2608_engine.emit_tech_2608_cpp_header ());
+            close_out oc_chaff;
+
             (* 4b. Optional address binding probe (Anti-VMPredator Phase 6) *)
             (match pkg.rebind_address with
             | Some f when compile_and_run ->

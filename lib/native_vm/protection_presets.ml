@@ -59,6 +59,8 @@ let default : t = {
   };
   stack_vm = default_stack_vm;
   eh_shadowing = default_eh_shadowing;
+  anti_vpc = default_anti_vpc;
+  memory_chaffing = default_memory_chaffing;
 }
 
 let max_security : t = {
@@ -130,6 +132,17 @@ let max_security : t = {
     enabled = true;
     shadow_alloc_size = 64;
     interceptor_symbol = "tech_2601_interceptor";
+  };
+  anti_vpc = {
+    enabled = true;
+    scramble_vpc = true;
+    split_vpc = true;
+    entropy_whitening = true;
+  };
+  memory_chaffing = {
+    enabled = true;
+    pool_size = 16384;
+    chaff_ratio = 4.0;
   };
 }
 
@@ -203,6 +216,17 @@ let lightweight : t = {
     shadow_alloc_size = 32;
     interceptor_symbol = "tech_2601_interceptor";
   };
+  anti_vpc = {
+    enabled = true;
+    scramble_vpc = true;
+    split_vpc = false;
+    entropy_whitening = false;
+  };
+  memory_chaffing = {
+    enabled = false;
+    pool_size = 1024;
+    chaff_ratio = 0.5;
+  };
 }
 
 let stealth : t = {
@@ -274,6 +298,12 @@ let stealth : t = {
     enabled = true;
     shadow_alloc_size = 32;
     interceptor_symbol = "tech_2601_interceptor";
+  };
+  anti_vpc = default_anti_vpc;
+  memory_chaffing = {
+    enabled = true;
+    pool_size = 8192;
+    chaff_ratio = 3.0;
   };
 }
 
@@ -347,6 +377,17 @@ let minimal : t = {
     shadow_alloc_size = 32;
     interceptor_symbol = "tech_2601_interceptor";
   };
+  anti_vpc = {
+    enabled = false;
+    scramble_vpc = false;
+    split_vpc = false;
+    entropy_whitening = false;
+  };
+  memory_chaffing = {
+    enabled = false;
+    pool_size = 1024;
+    chaff_ratio = 0.0;
+  };
 }
 
 let high : t = {
@@ -419,6 +460,8 @@ let high : t = {
     shadow_alloc_size = 48;
     interceptor_symbol = "tech_2601_interceptor";
   };
+  anti_vpc = default_anti_vpc;
+  memory_chaffing = default_memory_chaffing;
 }
 
 let from_preset name =

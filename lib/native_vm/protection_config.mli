@@ -92,6 +92,19 @@ type eh_shadowing_config = {
   interceptor_symbol : string;
 }
 
+type anti_vpc_config = {
+  enabled : bool;
+  scramble_vpc : bool;
+  split_vpc : bool;
+  entropy_whitening : bool;
+}
+
+type memory_chaffing_config = {
+  enabled : bool;
+  pool_size : int;
+  chaff_ratio : float;
+}
+
 type t = {
   seed : int option;
   crypto : crypto_config;
@@ -104,9 +117,13 @@ type t = {
   c_macro : c_macro_config;
   stack_vm : stack_vm_config;
   eh_shadowing : eh_shadowing_config;
+  anti_vpc : anti_vpc_config;
+  memory_chaffing : memory_chaffing_config;
 }
 
 val default_eh_shadowing : eh_shadowing_config
+val default_anti_vpc : anti_vpc_config
+val default_memory_chaffing : memory_chaffing_config
 
 val minimal : t
 val lightweight : t
@@ -144,6 +161,12 @@ val eh_shadowing_enabled : t option -> bool
 val chameleon_handlers_enabled : t option -> bool
 (** Chameleon ALU polymorphic handlers gate: [true] when enabled in vm_runtime. *)
 
+val anti_vpc_enabled : t option -> bool
+(** Tech-2603 Anti-VPC-Tracking gate: [true] when enabled in anti_vpc config. *)
+
+val memory_chaffing_enabled : t option -> bool
+(** Tech-2608 Anti-Trace-Synthesis gate: [true] when enabled in memory_chaffing config. *)
+
 type builder
 (** Mutable builder for [Protection_config.t]. *)
 
@@ -162,6 +185,19 @@ val with_stack_vm :
 val with_eh_shadowing :
   ?shadow_alloc_size:int ->
   ?interceptor_symbol:string ->
+  bool ->
+  builder ->
+  builder
+val with_anti_vpc :
+  ?scramble_vpc:bool ->
+  ?split_vpc:bool ->
+  ?entropy_whitening:bool ->
+  bool ->
+  builder ->
+  builder
+val with_memory_chaffing :
+  ?pool_size:int ->
+  ?chaff_ratio:float ->
   bool ->
   builder ->
   builder

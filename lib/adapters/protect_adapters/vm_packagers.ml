@@ -38,6 +38,22 @@ let inject_tech_2601 (config : Protection_config.t) (func_name : string) (cpp_so
   else
     cpp_source
 
+let inject_pipeline_hardening (config : Protection_config.t) (func_name : string) (cpp_source : string) : string =
+  let s = inject_tech_2601 config func_name cpp_source in
+  let s =
+    if Protection_config.anti_vpc_enabled (Some config) then
+      "// [ASGARD Tech-2603] Anti-VPC-Tracking & Non-Linear Dispatch Active\n\
+#include \"asg_tech_2603.hpp\"\n\n" ^ s
+    else s
+  in
+  let s =
+    if Protection_config.memory_chaffing_enabled (Some config) then
+      "// [ASGARD Tech-2608] Anti-Trace-Synthesis & Memory Chaffing Active\n\
+#include \"asg_tech_2608.hpp\"\n\n" ^ s
+    else s
+  in
+  s
+
 module Threaded_vm_packager : Vm_packager = struct
   let engine_kind = Threaded
 
@@ -57,7 +73,7 @@ module Threaded_vm_packager : Vm_packager = struct
       let diversified_funcs = List.map (fun (name, f) -> (name, transform_func ~rng f)) ir_funcs in
       let pkg = Native_vm.Vm_emitter.compile_and_package_multi ~rng ~config:native_cfg ?constants diversified_funcs in
       {
-        cpp_runtime_source = inject_tech_2601 native_cfg "multi_func" pkg.cpp_runtime_source;
+        cpp_runtime_source = inject_pipeline_hardening native_cfg "multi_func" pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
         bytecode = pkg.bytecode;
         bytecodes = pkg.bytecodes;
@@ -69,7 +85,7 @@ module Threaded_vm_packager : Vm_packager = struct
       let ir : Vm_ir.Ir.func = transform_func ~rng (unwrap_ir func) in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
       {
-        cpp_runtime_source = inject_tech_2601 native_cfg ir.name pkg.cpp_runtime_source;
+        cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
         bytecode = pkg.bytecode;
         bytecodes = pkg.bytecodes;
@@ -95,7 +111,7 @@ module Jit_vm_packager : Vm_packager = struct
         ir
     in
     {
-      cpp_runtime_source = inject_tech_2601 native_cfg ir.name jit_pkg.cpp_runtime_source;
+      cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name jit_pkg.cpp_runtime_source;
       runner_source = jit_pkg.runner_source;
       bytecode = jit_pkg.bytecode;
       bytecodes = [ (ir.name, jit_pkg.bytecode) ];
@@ -122,7 +138,7 @@ module Multi_vm_packager : Vm_packager = struct
         ir
     in
     {
-      cpp_runtime_source = inject_tech_2601 native_cfg ir.name mv_pkg.cpp_runtime_source;
+      cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name mv_pkg.cpp_runtime_source;
       runner_source = mv_pkg.runner_source;
       bytecode = mv_pkg.bytecode;
       bytecodes = [ (ir.name, mv_pkg.bytecode) ];
@@ -455,7 +471,7 @@ module Stack_vm_packager : Vm_packager = struct
           prog)
     in
     {
-      cpp_runtime_source = inject_tech_2601 native_cfg target_func.name cpp_runtime_source;
+      cpp_runtime_source = inject_pipeline_hardening native_cfg target_func.name cpp_runtime_source;
       runner_source;
       bytecode = bc_words;
       bytecodes = [ ("target_func", bc_words) ];
