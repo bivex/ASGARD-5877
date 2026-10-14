@@ -501,11 +501,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
         full_hash = ((full_hash ^ bytecode[i]) * {{ poly_multiplier_hex }}) + (uint64_t)i;
     }
 {%- if has_multi_hashes %}
-    static const uint64_t valid_hashes[] = {
-{%- for h in expected_hashes %}
-        {{ h }},
-{%- endfor %}
-    };
+    {{ valid_hashes_source }}
     bool hash_ok = false;
     for (size_t hi = 0; hi < sizeof(valid_hashes)/sizeof(valid_hashes[0]); ++hi) {
         if (full_hash == valid_hashes[hi]) { hash_ok = true; break; }
@@ -594,28 +590,13 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 #endif
 {%- endif %}
 
-    static const uint8_t domain_salt[{{ num_domains }}] = {
-{%- for s in domain_salts %}
-        {{ s }},
-{%- endfor %}
-    };
+    {{ domain_salt_source }}
 
     static uintptr_t all_dispatch_domains[{{ num_domains }}][256];
     static bool dispatch_domains_ready = false;
     if (__builtin_expect(!dispatch_domains_ready, 0)) {
 #if !defined(_MSC_VER) || defined(__clang__)
-{%- for domain in dispatch_domains %}
-        static void* raw_domain{{ domain.index }}[256] = {
-{%- for h in domain.handlers %}
-            &&{{ h }},
-{%- endfor %}
-        };
-{%- endfor %}
-        static void** const raw_all_domains[{{ num_domains }}] = {
-{%- for domain in dispatch_domains %}
-            raw_domain{{ domain.index }},
-{%- endfor %}
-        };
+        {{ dispatch_domains_source }}
         for (size_t d = 0; d < {{ num_domains }}; ++d) {
             for (size_t o = 0; o < 256; ++o) {
                 uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)d * 256ULL + (uintptr_t)o) * 0x6A09E667F3BCC908ULL);
@@ -740,11 +721,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
         uint8_t d_idx = (uint8_t)((k_dyn >> 32) % {{ num_domains }});
         uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[d_idx]);
         switch ((uint32_t)d_idx * 256U + (uint32_t)permuted_slot) {
-{%- for domain in dispatch_domains %}
-{%- for h in domain.handlers %}
-        case ({{ domain.index }} * 256 + {{ loop.index0 }}): goto {{ h }};
-{%- endfor %}
-{%- endfor %}
+{{ msvc_switch_cases_source }}
         default: goto EXIT_VM;
         }
     }

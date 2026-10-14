@@ -44,6 +44,16 @@ val emit_stack_block_tables_ast :
   unit ->
   Cpp_codegen.Cpp_ast.top_decl list
 
+val emit_stack_dispatch_stmts :
+  entry_bid:int ->
+  (int * string * string) list ->
+  Cpp_codegen.Cpp_ast.stmt list
+
+val emit_stack_dispatch_source :
+  entry_bid:int ->
+  (int * string * string) list ->
+  string
+
 val generate_c_runtime :
   ?external_symbols:string list ->
   ?constants:(string * string) list ->

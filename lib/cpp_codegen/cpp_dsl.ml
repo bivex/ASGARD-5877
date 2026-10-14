@@ -10,6 +10,9 @@ let i32 (v : int)   : expr = LitInt v
 let bool_lit (b : bool) : expr = LitBool b
 let var (s : string) : expr = Var s
 let init_list (es : expr list) : expr = InitList es
+let label_addr (s : string) : expr = LabelAddr s
+let desig_idx (i : expr) (v : expr) : expr = DesignatedIndex (i, v)
+let desig_range (s : expr) (e : expr) (v : expr) : expr = DesignatedRange (s, e, v)
 
 let ( $. ) (e : expr) (field : string) : expr = Member (e, field)
 let ( $-> ) (e : expr) (field : string) : expr = PtrMember (e, field)
@@ -60,27 +63,27 @@ let call fn args = Call (fn, args)
 let ternary c t f = Ternary (c, t, f)
 
 let let_u64 name init_e : stmt =
-  DeclVar { is_const = false; is_constexpr = false; is_volatile = false;
+  DeclVar { is_static = false; is_const = false; is_constexpr = false; is_volatile = false;
             ty = UInt64; name; init = Some init_e }
 
 let const_u64 name init_e : stmt =
-  DeclVar { is_const = true; is_constexpr = false; is_volatile = false;
+  DeclVar { is_static = false; is_const = true; is_constexpr = false; is_volatile = false;
             ty = UInt64; name; init = Some init_e }
 
 let constexpr_u64 name (v : int64) : stmt =
-  DeclVar { is_const = false; is_constexpr = true; is_volatile = false;
+  DeclVar { is_static = false; is_const = false; is_constexpr = true; is_volatile = false;
             ty = UInt64; name; init = Some (LitU64 v) }
 
 let let_u32 name init_e : stmt =
-  DeclVar { is_const = false; is_constexpr = false; is_volatile = false;
+  DeclVar { is_static = false; is_const = false; is_constexpr = false; is_volatile = false;
             ty = UInt32; name; init = Some init_e }
 
 let const_u32 name init_e : stmt =
-  DeclVar { is_const = true; is_constexpr = false; is_volatile = false;
+  DeclVar { is_static = false; is_const = true; is_constexpr = false; is_volatile = false;
             ty = UInt32; name; init = Some init_e }
 
-let decl_var ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : stmt =
-  DeclVar { is_const; is_constexpr; is_volatile; ty; name; init }
+let decl_var ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : stmt =
+  DeclVar { is_static; is_const; is_constexpr; is_volatile; ty; name; init }
 
 let i64 (v : int64) : expr = LitI64 v
 let str_lit (s : string) : expr = LitStr s
@@ -103,11 +106,17 @@ let if_then_else cond then_b else_b : stmt = If (cond, then_b, else_b)
 let for_range var_name start_e limit_e body : stmt = ForRange { var_name; start_e; limit_e; body }
 let while_loop cond body : stmt = While (cond, body)
 let do_while cond body : stmt = DoWhile (cond, body)
-let switch cond cases default : stmt = Switch { cond; cases; default }
+let switch cond (cases : (expr * stmt list) list) default : stmt =
+  Switch { cond; cases = List.map (fun (e, b) -> (e, None, b)) cases; default }
+let switch_annotated cond (cases : (expr * string option * stmt list) list) default : stmt =
+  Switch { cond; cases; default }
+let case ?comment ce body : expr * string option * stmt list = (ce, comment, body)
 let break_stmt : stmt = Break
 let continue_stmt : stmt = Continue
 let goto (s : string) : stmt = Goto s
+let computed_goto (e : expr) : stmt = ComputedGoto e
 let label (s : string) : stmt = Label s
+let preproc_if_stmt ?(else_stmts=[]) cond then_b : stmt = PreprocIfStmt (cond, then_b, else_stmts)
 let raw (s : string) : stmt = Raw s
 let fence_seq_cst : stmt = FenceSeqCst
 let comment s : stmt = Comment s
@@ -141,6 +150,9 @@ let func_proto ?(attrs=[]) ret_type name params : top_decl = FuncProto { attrs; 
 let typedef ty name : top_decl = Typedef (ty, name)
 let pragma s : top_decl = Pragma s
 let macro_def ?value name : top_decl = MacroDef (name, value)
+let preproc_if ?(else_decls=[]) cond then_decls : top_decl = PreprocIf (cond, then_decls, else_decls)
+let preproc_ifdef ?(else_decls=[]) macro then_decls : top_decl = PreprocIfdef (macro, then_decls, else_decls)
+let preproc_ifndef ?(else_decls=[]) macro then_decls : top_decl = PreprocIfndef (macro, then_decls, else_decls)
 let include_sys s : top_decl = IncludeSys s
 let include_local s : top_decl = IncludeLocal s
 let global_var ?align_as ?(is_extern_c=false) ?(is_weak=false) ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : top_decl =

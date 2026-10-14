@@ -243,29 +243,33 @@ let embed_vm_trampoline
       ];
     }
   in
-  let chunk_struct_cpp = Cpp_codegen.Cpp_printer.string_of_top_decl chunk_struct_decl in
-
-  let chunk_struct_def = Printf.sprintf {|
-#ifndef ASGARD_BYTECODE_CHUNK_DEF
-#define ASGARD_BYTECODE_CHUNK_DEF
-#include <stdint.h>
-#include <stddef.h>
-
-#if defined(_MSC_VER) && !defined(__clang__)
-#include <intrin.h>
-#define ASG_CHUNK_BARRIER() MemoryBarrier()
-#define ASG_CHUNK_TRAP() __debugbreak()
-#else
-#define ASG_CHUNK_BARRIER() __atomic_thread_fence(__ATOMIC_SEQ_CST)
-#define ASG_CHUNK_TRAP() __builtin_trap()
-#endif
-
-#pragma pack(push, 1)
-%s
-typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
-#pragma pack(pop)
-#endif
-|} chunk_struct_cpp in
+  let chunk_struct_decls =
+    let open Cpp_codegen.Cpp_ast in
+    let open Cpp_codegen.Cpp_dsl in
+    [
+      include_local header_name;
+      preproc_ifndef "ASGARD_BYTECODE_CHUNK_DEF" [
+        macro_def "ASGARD_BYTECODE_CHUNK_DEF";
+        include_sys "stdint.h";
+        include_sys "stddef.h";
+        preproc_if "defined(_MSC_VER) && !defined(__clang__)"
+          [
+            include_sys "intrin.h";
+            macro_def ~value:(call "MemoryBarrier" []) "ASG_CHUNK_BARRIER()";
+            macro_def ~value:(call "__debugbreak" []) "ASG_CHUNK_TRAP()";
+          ]
+          ~else_decls:[
+            macro_def ~value:(call "__atomic_thread_fence" [var "__ATOMIC_SEQ_CST"]) "ASG_CHUNK_BARRIER()";
+            macro_def ~value:(call "__builtin_trap" []) "ASG_CHUNK_TRAP()";
+          ];
+        pragma "pack(push, 1)";
+        chunk_struct_decl;
+        typedef (StructType "struct AsgardBytecodeChunk") "AsgardBytecodeChunk";
+        pragma "pack(pop)";
+      ];
+    ]
+  in
+  let chunk_struct_def = Cpp_codegen.Cpp_printer.render_top_decls chunk_struct_decls in
 
   let format_fragmented_bytecode name bc =
     let open Cpp_codegen.Cpp_ast in
@@ -429,8 +433,8 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
   | [] ->
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let bc_header =
-        Printf.sprintf "\n#include \"%s\"\n\n%s\n%s\n"
-          header_name chunk_struct_def bc_formatted
+        Printf.sprintf "\n%s\n%s\n"
+          chunk_struct_def bc_formatted
       in
       let oc = open_out out_path in
       output_string oc (bc_header ^ c_src);
@@ -440,8 +444,8 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
       (* Backward-compatible single function path *)
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let bc_header =
-        Printf.sprintf "\n#include \"%s\"\n\n%s\n%s\n"
-          header_name chunk_struct_def bc_formatted
+        Printf.sprintf "\n%s\n%s\n"
+          chunk_struct_def bc_formatted
       in
       let before_body = String.sub c_src 0 (single_fn.open_brace_idx + 1) in
       let after_body = String.sub c_src single_fn.close_brace_idx (len - single_fn.close_brace_idx) in
@@ -469,7 +473,7 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
       in
 
       let header_buf = Buffer.create 2048 in
-      Buffer.add_string header_buf (Printf.sprintf "\n#include \"%s\"\n\n%s\n" header_name chunk_struct_def);
+      Buffer.add_string header_buf (Printf.sprintf "\n%s\n" chunk_struct_def);
 
       List.iteri (fun idx fn ->
         let fn_bc = find_bc_for_fn idx fn.fn_name in

@@ -21,6 +21,7 @@
 | **Stage 4** | Stack-VM хендлеры, Multi-VM контексты и pre-flight синтаксический валидатор | ✅ Завершен | `4.1, 4.2` |
 | **Stage 5** | RD-JIT VM, Vector ISA, Tech-2603/2608, Vanguard 9292 Decoder, Stack-VM Superops & Trampoline | ✅ Завершен | `1c22026`, `e8aacea` |
 | **Stage 6** | C11 ISA, GPU MBA, C Nanomites, Multi-VM Bridge, Whitebox & RNS-4 Garner CRT | ✅ Завершен | `e548e9c` .. `1d493ad` |
+| **Stage 6.3** | Computed Goto, Preprocessor AST, Trampoline Chunk, Stack-VM & Native VM Dispatch | ✅ Завершен | `HEAD` |
 
 ---
 
@@ -218,6 +219,31 @@
   - `Tier 4 Next-Gen` (5/5) — PASS.
   - `Chameleon & Delayed-Commit Handlers` (3/3) — PASS.
   - `Bytecode Amplifier & Treewidth Expander` (7/7) — PASS.
+
+### Stage 6.3: Computed Goto, Preprocessor AST, Trampoline Chunk, Stack-VM & Native VM Dispatch (`HEAD`)
+- [x] Расширение ядра EDSL SDK ([`lib/cpp_codegen/`](file:///Volumes/External/Code/ASGARD-5877/lib/cpp_codegen/)):
+  - В `Cpp_ast.expr` добавлены `LabelAddr of string` (`&&label`), `DesignatedIndex of expr * expr` (`[idx] = val`), `DesignatedRange of expr * expr * expr` (`[start ... end] = val`).
+  - В `Cpp_ast.stmt` добавлены `ComputedGoto of expr` (`goto *expr;`), `PreprocIfStmt of string * stmt list * stmt list` (`#if cond ... #else ... #endif`), добавлен флаг `is_static : bool` в `DeclVar`, расширен `Switch` для поддержки аннотаций/комментариев вариантов: `(expr * string option * stmt list) list`.
+  - В `Cpp_ast.top_decl` добавлены `PreprocIf`, `PreprocIfdef`, `PreprocIfndef`.
+  - В `Cpp_dsl` добавлены комбинаторы `label_addr`, `desig_idx`, `desig_range`, `computed_goto`, `preproc_if_stmt`, `preproc_if`, `preproc_ifdef`, `preproc_ifndef`, `switch_annotated`, `case`.
+  - В `Cpp_printer` добавлено верхнерегистровое форматирование `LitU8` (`0x%02X`), поддержка инициализации массивов в `DeclVar`, жесткие переводы строк `@\n` для директив препроцессора.
+  - В `Cpp_ast_obf` реализована обработка всех новых AST узлов.
+- [x] Миграция Trampoline Chunk Definition ([`lib/adapters/protect_adapters/c_trampoline_adapter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml)):
+  - Полный переход `chunk_struct_def` со строковой склейки на типизированный EDSL AST (`preproc_ifndef`, `pragma "pack(push, 1)"`, `typedef`, и т.д.).
+  - Устранено дублирование директив `#include`.
+- [x] Миграция диспетчеризации Stack-VM ([`lib/stack_vm/stack_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_runtime.ml), [`lib/stack_vm/stack_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_vm_templates.ml)):
+  - Реализованы `emit_stack_dispatch_stmts` и `emit_stack_dispatch_source` на EDSL.
+  - Поддержка GCC/Clang computed goto таблицы (`dispatch_table[256]` с designated ranges `[0 ... 255] = &&lbl_default`) и фоллбэка под MSVC (`switch_annotated`).
+  - Устранено 45 строк Jinja-шаблона цикла `for op in opcodes` в `stack_vm_templates.ml`.
+- [x] Миграция таблиц и циклов диспетчеризации Native VM ([`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml), [`lib/native_vm/native_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/native_vm_templates.ml)):
+  - Реализованы `emit_native_domain_salt_ast`, `emit_native_dispatch_domains_stmts`, `emit_native_msvc_switch_cases_source`, `emit_native_valid_hashes_ast`.
+  - Заменены все циклы Jinja (`valid_hashes`, `domain_salts`, `raw_domain*`, `raw_all_domains`, и MSVC switch cases).
+  - **В `threaded_header_template` осталось 0 циклов Jinja `for`!**
+- [x] Тесты:
+  - Steps 37 и 38 добавлены в [`test/test_cpp_codegen.ml`](file:///Volumes/External/Code/ASGARD-5877/test/test_cpp_codegen.ml) — все 38/38 шагов 100% PASS.
+  - `Native Threaded VM` (12/12) — PASS.
+  - `Stack-VM Execution Engine` (38/38) — PASS.
+  - `./build_license.sh` компилирует и запускает `protected_app` без единого предупреждения (0 warnings).
 
 ---
 

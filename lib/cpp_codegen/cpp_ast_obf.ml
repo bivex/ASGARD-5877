@@ -29,6 +29,9 @@ let rec scramble_expr (rng : Random.State.t) (e : expr) : expr =
   | PtrMember (a, f) -> PtrMember (scramble_expr rng a, f)
   | Call (fn, args) -> Call (fn, List.map (scramble_expr rng) args)
   | InitList es -> InitList (List.map (scramble_expr rng) es)
+  | LabelAddr _ -> e
+  | DesignatedIndex (i, v) -> DesignatedIndex (scramble_expr rng i, scramble_expr rng v)
+  | DesignatedRange (s, limit, v) -> DesignatedRange (scramble_expr rng s, scramble_expr rng limit, scramble_expr rng v)
   | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitU8 _ | LitBool _ | LitStr _ | LitNull | SizeOfType _ | Var _ -> e
 
 let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
@@ -53,10 +56,13 @@ let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
   | Switch r ->
       Switch {
         cond    = scramble_expr rng r.cond;
-        cases   = List.map (fun (ce, body) ->
-                    (scramble_expr rng ce, List.map (scramble_stmt rng) body)) r.cases;
+        cases   = List.map (fun (ce, c, body) ->
+                    (scramble_expr rng ce, c, List.map (scramble_stmt rng) body)) r.cases;
         default = Option.map (List.map (scramble_stmt rng)) r.default;
       }
+  | ComputedGoto e -> ComputedGoto (scramble_expr rng e)
+  | PreprocIfStmt (c, t, f) ->
+      PreprocIfStmt (c, List.map (scramble_stmt rng) t, List.map (scramble_stmt rng) f)
   | Break | Continue | Goto _ | Label _ | Raw _ | FenceSeqCst | Comment _ -> s
 
 let scramble_struct_member rng = function
@@ -99,4 +105,10 @@ let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
       GlobalVar { g with init = Option.map (scramble_expr rng) g.init }
   | MacroDef (name, opt) ->
       MacroDef (name, Option.map (scramble_expr rng) opt)
+  | PreprocIf (c, t, f) ->
+      PreprocIf (c, List.map (scramble_top_decl rng) t, List.map (scramble_top_decl rng) f)
+  | PreprocIfdef (m, t, f) ->
+      PreprocIfdef (m, List.map (scramble_top_decl rng) t, List.map (scramble_top_decl rng) f)
+  | PreprocIfndef (m, t, f) ->
+      PreprocIfndef (m, List.map (scramble_top_decl rng) t, List.map (scramble_top_decl rng) f)
   | Pragma _ | StructDecl _ | UnionDecl _ | EnumDecl _ | RawTop _ | CommentTop _ | IncludeSys _ | IncludeLocal _ | FuncProto _ | Typedef _ -> d

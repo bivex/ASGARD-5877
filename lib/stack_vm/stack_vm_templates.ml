@@ -587,50 +587,7 @@ static inline void stack_vm_run(stack_vm_t *vm, const uint8_t *bytecode, size_t 
         vm->vsp_idx = 0;
         return;
     }
-    size_t vip = ASG_UNMASK_OFFSET({{ entry_bid }});
-#if defined(__GNUC__) || defined(__clang__)
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Winitializer-overrides"
-    static const void* const dispatch_table[256] = {
-        [0 ... 255] = &&lbl_default,
-{%- for d in dispatch_cases %}
-        [0x{{ d.hex }}] = &&lbl_{{ d.hex }},
-{%- endfor %}
-    };
-    #pragma clang diagnostic pop
-
-    #define ASG_DISPATCH_STEP() do { \
-        if (vm->halted || vip >= size) goto lbl_exit; \
-        uint8_t op = fetch_byte(vm, bytecode, &vip); \
-        goto *dispatch_table[op]; \
-    } while (0)
-
-    ASG_DISPATCH_STEP();
-
-{%- for d in dispatch_cases %}
-lbl_{{ d.hex }}:
-    {{ d.fn }}(vm, bytecode, &vip);
-    ASG_DISPATCH_STEP();
-{%- endfor %}
-
-lbl_default:
-    vm->halted = 1;
-    goto lbl_exit;
-
-lbl_exit:
-    return;
-    #undef ASG_DISPATCH_STEP
-#else
-    while (!vm->halted && vip < size) {
-        uint8_t op = fetch_byte(vm, bytecode, &vip);
-        switch (op) {
-{%- for d in dispatch_cases %}
-            case 0x{{ d.hex }}: /* {{ d.name }} */ { {{ d.fn }}(vm, bytecode, &vip); break; }
-{%- endfor %}
-            default: vm->halted = 1; break;
-        }
-    }
-#endif
+    {{ dispatch_source }}
 }
 
 static inline uint64_t stack_vm_call(const uint64_t* bc_words, size_t len_words,

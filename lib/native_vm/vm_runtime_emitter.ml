@@ -317,6 +317,58 @@ let emit_block_spans_tables_ast (block_spans : (int * int) list) : Cpp_codegen.C
       lengths_decl;
     ]
 
+let emit_native_domain_salt_ast (domain_salts : int array) : Cpp_codegen.Cpp_ast.stmt =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let num_domains = Array.length domain_salts in
+  let exprs = List.map (fun s -> u8 s) (Array.to_list domain_salts) in
+  decl_var ~is_static:true ~is_const:true
+    (Array (UInt8, num_domains))
+    "domain_salt"
+    ~init:(init_list exprs)
+
+let emit_native_dispatch_domains_stmts (dispatch_domains : (int * string list) list) : Cpp_codegen.Cpp_ast.stmt list =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let num_domains = List.length dispatch_domains in
+  let raw_domains =
+    List.map (fun (domain_idx, handlers) ->
+      let label_exprs = List.map (fun h -> label_addr h) handlers in
+      decl_var ~is_static:true
+        (Array (Ptr Void, 256))
+        (Printf.sprintf "raw_domain%d" domain_idx)
+        ~init:(init_list label_exprs)
+    ) dispatch_domains
+  in
+  let raw_all_init =
+    init_list (List.map (fun (d_idx, _) -> var (Printf.sprintf "raw_domain%d" d_idx)) dispatch_domains)
+  in
+  let raw_all_decl =
+    decl_var ~is_static:true
+      (Array (Ptr (Ptr Void), num_domains))
+      "raw_all_domains"
+      ~init:raw_all_init
+  in
+  raw_domains @ [ raw_all_decl ]
+
+let emit_native_msvc_switch_cases_source (dispatch_domains : (int * string list) list) : string =
+  let buf = Buffer.create 2048 in
+  List.iter (fun (d_idx, handlers) ->
+    List.iteri (fun slot_idx h ->
+      Buffer.add_string buf (Printf.sprintf "        case (%d * 256 + %d): goto %s;\n" d_idx slot_idx h)
+    ) handlers
+  ) dispatch_domains;
+  Buffer.contents buf
+
+let emit_native_valid_hashes_ast (hashes : int64 list) : Cpp_codegen.Cpp_ast.stmt =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let exprs = List.map u64 hashes in
+  decl_var ~is_static:true ~is_const:true
+    (Array (UInt64, List.length hashes))
+    "valid_hashes"
+    ~init:(init_list exprs)
+
 let emit_cpp_threaded_header
     ~rng
     ~key_seed
@@ -452,31 +504,50 @@ let emit_cpp_threaded_header
     )
   in
 
-  let dispatch_domain_models =
+  let raw_dispatch_domains =
     List.init num_domains (fun d ->
       let salt = domain_salts.(d) in
       let handlers =
         List.init 256 (fun i ->
           let raw_opcode = i lxor salt in
           let h = opcode_to_handler.(raw_opcode) in
-          let h =
-            if String.starts_with ~prefix:"H_DECOY_" h then
-              let base_idx =
-                try int_of_string (String.sub h 8 (String.length h - 8))
-                with _ -> 0
-              in
-              let diversified = (base_idx + (d * 7) + (i * 3)) mod 16 in
-              Printf.sprintf "H_DECOY_%d" diversified
-            else if d = 0 then h
-            else Printf.sprintf "%s_D%d" h ((d - 1) mod 2 + 1)
-          in
-          Jg_types.Tstr h)
+          if String.starts_with ~prefix:"H_DECOY_" h then
+            let base_idx =
+              try int_of_string (String.sub h 8 (String.length h - 8))
+              with _ -> 0
+            in
+            let diversified = (base_idx + (d * 7) + (i * 3)) mod 16 in
+            Printf.sprintf "H_DECOY_%d" diversified
+          else if d = 0 then h
+          else Printf.sprintf "%s_D%d" h ((d - 1) mod 2 + 1)
+        )
       in
+      (d, handlers)
+    )
+  in
+  let domain_salt_source =
+    Cpp_codegen.Cpp_printer.string_of_stmt (emit_native_domain_salt_ast domain_salts)
+  in
+  let dispatch_domains_source =
+    Cpp_codegen.Cpp_printer.string_of_stmts (emit_native_dispatch_domains_stmts raw_dispatch_domains)
+  in
+  let msvc_switch_cases_source =
+    emit_native_msvc_switch_cases_source raw_dispatch_domains
+  in
+  let valid_hashes_source =
+    match expected_hashes with
+    | Some hl when List.length hl > 1 ->
+        Cpp_codegen.Cpp_printer.string_of_stmt (emit_native_valid_hashes_ast hl)
+    | _ -> ""
+  in
+
+  let dispatch_domain_models =
+    List.map (fun (d, handlers) ->
       Jg_types.Tobj [
         ("index", Jg_types.Tint d);
-        ("handlers", Jg_types.Tlist handlers);
+        ("handlers", Jg_types.Tlist (List.map (fun h -> Jg_types.Tstr h) handlers));
       ]
-    )
+    ) raw_dispatch_domains
   in
 
   let handlers_buf = Buffer.create 4096 in
@@ -535,6 +606,10 @@ let emit_cpp_threaded_header
       ("expected_hashes", Jg_types.Tlist (match expected_hashes with Some hl when List.length hl > 1 -> List.map (fun h -> Jg_types.Tstr (Printf.sprintf "0x%016LXULL" h)) hl | _ -> []));
       ("dispatch_domains", Jg_types.Tlist dispatch_domain_models);
       ("domain_salts", Jg_types.Tlist (Array.to_list (Array.map (fun s -> Jg_types.Tint s) domain_salts)));
+      ("domain_salt_source", Jg_types.Tstr domain_salt_source);
+      ("dispatch_domains_source", Jg_types.Tstr dispatch_domains_source);
+      ("msvc_switch_cases_source", Jg_types.Tstr msvc_switch_cases_source);
+      ("valid_hashes_source", Jg_types.Tstr valid_hashes_source);
       ("handlers_source", Jg_types.Tstr handlers_source);
     ]
   in

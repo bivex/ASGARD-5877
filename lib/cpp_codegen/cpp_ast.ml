@@ -47,12 +47,16 @@ type expr =
   | BitCast of ctype * expr            (* std::bit_cast<T>(e) *)
   | ReinterpretCast of ctype * expr    (* reinterpret_cast<T>(e) *)
   | Call of string * expr list         (* fn(a, b, ...) *)
+  | LabelAddr of string                (* &&label (GNU C computed goto label address) *)
+  | DesignatedIndex of expr * expr     (* [idx] = value *)
+  | DesignatedRange of expr * expr * expr (* [start ... limit] = value *)
 
 type assign_op =
   | AssignPlain | AssignAdd | AssignSub | AssignMul | AssignXor | AssignOr | AssignAnd | AssignDiv
 
 type stmt =
   | DeclVar of {
+      is_static   : bool;
       is_const    : bool;
       is_constexpr: bool;
       is_volatile : bool;
@@ -75,13 +79,15 @@ type stmt =
   | DoWhile of expr * stmt list        (* do { ... } while (cond); *)
   | Switch of {
       cond    : expr;
-      cases   : (expr * stmt list) list;
+      cases   : (expr * string option * stmt list) list;
       default : stmt list option;
     }
   | Break
   | Continue
   | Goto of string                     (* goto EXIT_VM; *)
+  | ComputedGoto of expr               (* goto *target; (computed goto) *)
   | Label of string                    (* label: *)
+  | PreprocIfStmt of string * stmt list * stmt list (* #if cond ... #else ... #endif *)
   | Raw of string                      (* raw C++ line *)
   | FenceSeqCst                        (* std::atomic_signal_fence(std::memory_order_seq_cst); *)
   | Comment of string
@@ -159,6 +165,9 @@ type struct_def = {
 type top_decl =
   | Pragma of string                   (* #pragma once *)
   | MacroDef of string * expr option   (* #define NAME [VALUE] *)
+  | PreprocIf of string * top_decl list * top_decl list (* #if cond ... #else ... #endif *)
+  | PreprocIfdef of string * top_decl list * top_decl list (* #ifdef MACRO ... #else ... #endif *)
+  | PreprocIfndef of string * top_decl list * top_decl list (* #ifndef MACRO ... #else ... #endif *)
   | IncludeSys of string               (* #include <cstdint> *)
   | IncludeLocal of string             (* #include "asg_crypto.hpp" *)
   | Namespace of string * top_decl list

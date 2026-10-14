@@ -41,6 +41,18 @@ val emit_block_spans_tables_ast :
   (int * int) list ->
   Cpp_codegen.Cpp_ast.top_decl list
 
+val emit_native_domain_salt_ast :
+  int array ->
+  Cpp_codegen.Cpp_ast.stmt
+
+val emit_native_dispatch_domains_stmts :
+  (int * string list) list ->
+  Cpp_codegen.Cpp_ast.stmt list
+
+val emit_native_valid_hashes_ast :
+  int64 list ->
+  Cpp_codegen.Cpp_ast.stmt
+
 val emit_cpp_threaded_header :
   rng:Random.State.t ->
   key_seed:int32 ->

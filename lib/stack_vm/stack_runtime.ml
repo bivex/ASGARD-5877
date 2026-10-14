@@ -437,6 +437,79 @@ let emit_stack_block_tables_ast ~max_bid ~block_offsets ~block_keys ~tag_key0 ~t
     raw_top "#define ASG_UNMASK_TAG_K1() (g_stack_tag_keys[1] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(1) * UINT64_C(0x9E3779B97F4A7C15)))";
   ]
 
+let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) : Cpp_codegen.Cpp_ast.stmt list =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let vip_decl =
+    decl_var SizeT "vip" ~init:(call "ASG_UNMASK_OFFSET" [ i32 entry_bid ])
+  in
+  let gnuc_stmts =
+    let table_init =
+      init_list (
+        desig_range (i32 0) (i32 255) (label_addr "lbl_default")
+        :: List.map (fun (op, _name, _fn) ->
+             desig_idx (u8 op) (label_addr (Printf.sprintf "lbl_%02X" op))
+           ) cases
+      )
+    in
+    let table_decl =
+      decl_var ~is_static:true
+        (Array (ConstPtr Void, 256))
+        "dispatch_table"
+        ~init:table_init
+    in
+    let handler_blocks =
+      List.concat_map (fun (op, _name, fn) ->
+        [
+          label (Printf.sprintf "lbl_%02X" op);
+          expr_stmt (call fn [ var "vm"; var "bytecode"; addr_of (var "vip") ]);
+          raw "ASG_DISPATCH_STEP();";
+        ]
+      ) cases
+    in
+    [
+      raw "#pragma clang diagnostic push";
+      raw "#pragma clang diagnostic ignored \"-Winitializer-overrides\"";
+      table_decl;
+      raw "#pragma clang diagnostic pop";
+      raw "#define ASG_DISPATCH_STEP() do { \\\n        if (vm->halted || vip >= size) goto lbl_exit; \\\n        uint8_t op = fetch_byte(vm, bytecode, &vip); \\\n        goto *dispatch_table[op]; \\\n    } while (0)";
+      raw "ASG_DISPATCH_STEP();";
+    ]
+    @ handler_blocks
+    @ [
+      label "lbl_default";
+      var "vm" $-> "halted" := i32 1;
+      goto "lbl_exit";
+      label "lbl_exit";
+      ret_void;
+      raw "#undef ASG_DISPATCH_STEP";
+    ]
+  in
+  let fallback_cases =
+    List.map (fun (op, name, fn) ->
+      case ~comment:name (u8 op) [
+        expr_stmt (call fn [ var "vm"; var "bytecode"; addr_of (var "vip") ]);
+        break_stmt;
+      ]
+    ) cases
+  in
+  let fallback_stmts =
+    [
+      while_loop (log_not (var "vm" $-> "halted") &&~ (var "vip" <~ var "size")) [
+        decl_var UInt8 "op" ~init:(call "fetch_byte" [ var "vm"; var "bytecode"; addr_of (var "vip") ]);
+        switch_annotated (var "op") fallback_cases (Some [ var "vm" $-> "halted" := i32 1; break_stmt ]);
+      ]
+    ]
+  in
+  [
+    vip_decl;
+    preproc_if_stmt "defined(__GNUC__) || defined(__clang__)" gnuc_stmts ~else_stmts:fallback_stmts;
+  ]
+
+let emit_stack_dispatch_source ~entry_bid cases : string =
+  let stmts = emit_stack_dispatch_stmts ~entry_bid cases in
+  Cpp_codegen.Cpp_printer.string_of_stmts stmts
+
 let generate_c_runtime
     ?(external_symbols = [])
     ?(constants = [])
@@ -566,47 +639,53 @@ let generate_c_runtime
       ("fn", Jingoo.Jg_types.Tstr fn);
     ]
   in
-  let dispatch_cases = [
-    mk_case enc.op_map.op_push_imm "PUSH_IMM" "h_push_imm";
-    mk_case enc.op_map.op_push_imm32 "PUSH_IMM32" "h_push_imm32";
-    mk_case enc.op_map.op_push_reg "PUSH_REG" "h_push_reg";
-    mk_case enc.op_map.op_pop_reg "POP_REG" "h_pop_reg";
-    mk_case enc.op_map.op_read_mem "READ_MEM" "h_read_mem";
-    mk_case enc.op_map.op_write_mem "WRITE_MEM" "h_write_mem";
-    mk_case enc.op_map.op_add "ADD" "h_add";
-    mk_case enc.op_map.op_sub "SUB" "h_sub";
-    mk_case enc.op_map.op_mul "MUL" "h_mul";
-    mk_case enc.op_map.op_nor "NOR" "h_nor";
-    mk_case enc.op_map.op_nand "NAND" "h_nand";
-    mk_case enc.op_map.op_shl "SHL" "h_shl";
-    mk_case enc.op_map.op_shr "SHR" "h_shr";
-    mk_case enc.op_map.op_sar "SAR" "h_sar";
-    mk_case enc.op_map.op_div "DIV" "h_div";
-    mk_case enc.op_map.op_idiv "IDIV" "h_idiv";
-    mk_case enc.op_map.op_dup "DUP" "h_dup";
-    mk_case enc.op_map.op_dup2 "DUP2" "h_dup2";
-    mk_case enc.op_map.op_rot "ROT" "h_rot";
-    mk_case enc.op_map.op_swap "SWAP" "h_swap";
-    mk_case enc.op_map.op_push_flags "PUSH_FLAGS" "h_push_flags";
-    mk_case enc.op_map.op_pop_flags "POP_FLAGS" "h_pop_flags";
-    mk_case enc.op_map.op_jmp_rel "JMP_REL" "h_jmp_rel";
-    mk_case enc.op_map.op_jcc_rel "JCC_REL" "h_jcc_rel";
-    mk_case enc.op_map.op_key_adjust "KEY_ADJUST" "h_key_adjust";
-    mk_case enc.op_map.op_exit "EXIT" "h_exit";
-    mk_case enc.op_map.op_call_extern "CALL_EXTERN" "h_call_extern";
-    mk_case enc.op_map.op_resolve_sym "RESOLVE_SYM" "h_resolve_sym";
-    mk_case enc.op_map.op_setcc "SETCC" "h_setcc";
-    mk_case enc.op_map.op_cmov "CMOV" "h_cmov";
-    mk_case enc.op_map.op_cmp "CMP" "h_cmp";
-    mk_case enc.op_map.op_test "TEST" "h_test";
-    mk_case enc.op_map.op_add_imm "ADD_IMM" "h_add_imm";
-    mk_case enc.op_map.op_sub_imm "SUB_IMM" "h_sub_imm";
-    mk_case enc.op_map.op_add_ii "ADD_II" "h_add_ii";
-    mk_case enc.op_map.op_sub_ii "SUB_II" "h_sub_ii";
-    mk_case enc.op_map.op_set_reg_imm "SET_REG_IMM" "h_set_reg_imm";
-    mk_case enc.op_map.op_add_reg_imm "ADD_REG_IMM" "h_add_reg_imm";
-    mk_case enc.op_map.op_key_feedback "KEY_FEEDBACK" "h_key_feedback";
+  let raw_dispatch_cases = [
+    (enc.op_map.op_push_imm, "PUSH_IMM", "h_push_imm");
+    (enc.op_map.op_push_imm32, "PUSH_IMM32", "h_push_imm32");
+    (enc.op_map.op_push_reg, "PUSH_REG", "h_push_reg");
+    (enc.op_map.op_pop_reg, "POP_REG", "h_pop_reg");
+    (enc.op_map.op_read_mem, "READ_MEM", "h_read_mem");
+    (enc.op_map.op_write_mem, "WRITE_MEM", "h_write_mem");
+    (enc.op_map.op_add, "ADD", "h_add");
+    (enc.op_map.op_sub, "SUB", "h_sub");
+    (enc.op_map.op_mul, "MUL", "h_mul");
+    (enc.op_map.op_nor, "NOR", "h_nor");
+    (enc.op_map.op_nand, "NAND", "h_nand");
+    (enc.op_map.op_shl, "SHL", "h_shl");
+    (enc.op_map.op_shr, "SHR", "h_shr");
+    (enc.op_map.op_sar, "SAR", "h_sar");
+    (enc.op_map.op_div, "DIV", "h_div");
+    (enc.op_map.op_idiv, "IDIV", "h_idiv");
+    (enc.op_map.op_dup, "DUP", "h_dup");
+    (enc.op_map.op_dup2, "DUP2", "h_dup2");
+    (enc.op_map.op_rot, "ROT", "h_rot");
+    (enc.op_map.op_swap, "SWAP", "h_swap");
+    (enc.op_map.op_push_flags, "PUSH_FLAGS", "h_push_flags");
+    (enc.op_map.op_pop_flags, "POP_FLAGS", "h_pop_flags");
+    (enc.op_map.op_jmp_rel, "JMP_REL", "h_jmp_rel");
+    (enc.op_map.op_jcc_rel, "JCC_REL", "h_jcc_rel");
+    (enc.op_map.op_key_adjust, "KEY_ADJUST", "h_key_adjust");
+    (enc.op_map.op_exit, "EXIT", "h_exit");
+    (enc.op_map.op_call_extern, "CALL_EXTERN", "h_call_extern");
+    (enc.op_map.op_resolve_sym, "RESOLVE_SYM", "h_resolve_sym");
+    (enc.op_map.op_setcc, "SETCC", "h_setcc");
+    (enc.op_map.op_cmov, "CMOV", "h_cmov");
+    (enc.op_map.op_cmp, "CMP", "h_cmp");
+    (enc.op_map.op_test, "TEST", "h_test");
+    (enc.op_map.op_add_imm, "ADD_IMM", "h_add_imm");
+    (enc.op_map.op_sub_imm, "SUB_IMM", "h_sub_imm");
+    (enc.op_map.op_add_ii, "ADD_II", "h_add_ii");
+    (enc.op_map.op_sub_ii, "SUB_II", "h_sub_ii");
+    (enc.op_map.op_set_reg_imm, "SET_REG_IMM", "h_set_reg_imm");
+    (enc.op_map.op_add_reg_imm, "ADD_REG_IMM", "h_add_reg_imm");
+    (enc.op_map.op_key_feedback, "KEY_FEEDBACK", "h_key_feedback");
   ] in
+  let dispatch_cases =
+    List.map (fun (op, name, fn) -> mk_case op name fn) raw_dispatch_cases
+  in
+  let dispatch_source =
+    emit_stack_dispatch_source ~entry_bid:prog.entry_id raw_dispatch_cases
+  in
   let external_symbols_source =
     Cpp_codegen.Cpp_printer.render_top_decl (emit_stack_external_symbols_table_ast external_symbols)
   in
@@ -627,6 +706,7 @@ let generate_c_runtime
     ("block_tables_source", Jingoo.Jg_types.Tstr block_tables_source);
     ("context_slots", Jingoo.Jg_types.Tint (max 64 prog.context_slots));
     ("dispatch_cases", Jingoo.Jg_types.Tlist dispatch_cases);
+    ("dispatch_source", Jingoo.Jg_types.Tstr dispatch_source);
     ("is_address_bound", Jingoo.Jg_types.Tbool (enc.addr_mask <> 0L));
     ("is_aarch64", Jingoo.Jg_types.Tbool (cfg.arch = AArch64));
     ("is_riscv", Jingoo.Jg_types.Tbool (cfg.arch = RV64));

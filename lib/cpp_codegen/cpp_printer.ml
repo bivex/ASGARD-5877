@@ -53,7 +53,7 @@ let rec pp_expr fmt = function
   | LitU32 v          -> fprintf fmt "0x%08lxU" v
   | LitI64 v          -> fprintf fmt "%LdLL" v
   | LitInt n          -> fprintf fmt "%d" n
-  | LitU8 b           -> fprintf fmt "0x%02x" (b land 0xFF)
+  | LitU8 b           -> fprintf fmt "0x%02X" (b land 0xFF)
   | LitBool b         -> fprintf fmt "%s" (if b then "true" else "false")
   | LitStr s          -> fprintf fmt "\"%s\"" (escape_c_string s)
   | LitNull           -> fprintf fmt "nullptr"
@@ -84,9 +84,12 @@ let rec pp_expr fmt = function
   | Call (fn, args)   ->
       fprintf fmt "%s(%a)" fn
         (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_expr) args
+  | LabelAddr lbl     -> fprintf fmt "&&%s" lbl
+  | DesignatedIndex (i, v) -> fprintf fmt "[%a] = %a" pp_expr i pp_expr v
+  | DesignatedRange (s, e, v) -> fprintf fmt "[%a ... %a] = %a" pp_expr s pp_expr e pp_expr v
 
 and pp_expr_atom fmt e = match e with
-  | Var _ | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitU8 _ | LitBool _ | LitStr _ | LitNull | SizeOfType _ | InitList _ | Index _ | Member _ | PtrMember _ | Call _ | CCast _ ->
+  | Var _ | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitU8 _ | LitBool _ | LitStr _ | LitNull | SizeOfType _ | InitList _ | Index _ | Member _ | PtrMember _ | Call _ | CCast _ | LabelAddr _ | DesignatedIndex _ | DesignatedRange _ ->
       pp_expr fmt e
   | _ -> fprintf fmt "(%a)" pp_expr e
 
@@ -110,16 +113,21 @@ let assign_op_str = function
   | AssignXor   -> "^=" | AssignOr  -> "|=" | AssignAnd -> "&=" | AssignDiv -> "/="
 
 let rec pp_stmt fmt = function
-  | DeclVar { is_const; is_constexpr; is_volatile; ty; name; init } ->
+  | DeclVar { is_static; is_const; is_constexpr; is_volatile; ty; name; init } ->
       let prefix =
-        if is_constexpr then "constexpr "
-        else if is_const then "const "
-        else if is_volatile then "volatile "
-        else ""
+        (if is_static then "static " else "")
+        ^ (if is_constexpr then "constexpr "
+           else if is_const then "const "
+           else if is_volatile then "volatile "
+           else "")
       in
       (match ty, init with
        | Array (elem_ty, n), None ->
-           fprintf fmt "%s%a %s[%d];" prefix pp_ctype elem_ty name n
+           let sz_str = if n > 0 then string_of_int n else "" in
+           fprintf fmt "%s%a %s[%s];" prefix pp_ctype elem_ty name sz_str
+       | Array (elem_ty, n), Some e ->
+           let sz_str = if n > 0 then string_of_int n else "" in
+           fprintf fmt "%s%a %s[%s] = %a;" prefix pp_ctype elem_ty name sz_str pp_expr e
        | _, Some e ->
            fprintf fmt "%s%a %s = %a;" prefix pp_ctype ty name pp_expr e
        | _, None ->
@@ -148,8 +156,10 @@ let rec pp_stmt fmt = function
       fprintf fmt "do {@[<v 4>@,%a@]@,} while (%a);" pp_stmt_list body pp_condition cond
   | Switch { cond; cases; default } ->
       fprintf fmt "switch (%a) {@[<v 2>@," pp_expr cond;
-      List.iter (fun (ce, body) ->
-        fprintf fmt "case %a: {@[<v 4>@,%a@]@,}@," pp_expr ce pp_stmt_list body
+      List.iter (fun (ce, comment_opt, body) ->
+        match comment_opt with
+        | Some c -> fprintf fmt "case %a: /* %s */ {@[<v 4>@,%a@]@,}@," pp_expr ce c pp_stmt_list body
+        | None -> fprintf fmt "case %a: {@[<v 4>@,%a@]@,}@," pp_expr ce pp_stmt_list body
       ) cases;
       (match default with
        | Some d -> fprintf fmt "default: {@[<v 4>@,%a@]@,}" pp_stmt_list d
@@ -161,8 +171,16 @@ let rec pp_stmt fmt = function
       fprintf fmt "continue;"
   | Goto s ->
       fprintf fmt "goto %s;" s
+  | ComputedGoto target ->
+      fprintf fmt "goto *%a;" pp_expr target
   | Label s ->
       fprintf fmt "%s:" s
+  | PreprocIfStmt (cond, then_b, else_b) ->
+      fprintf fmt "@\n#if %s@\n@[<v 0>%a@]" cond pp_stmt_list then_b;
+      (match else_b with
+       | [] -> ()
+       | _ -> fprintf fmt "@\n#else@\n@[<v 0>%a@]" pp_stmt_list else_b);
+      fprintf fmt "@\n#endif@\n"
   | Raw s ->
       fprintf fmt "%s" s
   | FenceSeqCst ->
@@ -171,7 +189,7 @@ let rec pp_stmt fmt = function
       fprintf fmt "// %s" s
 
 and pp_stmt_list fmt stmts =
-  pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@,") pp_stmt fmt stmts
+  pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n") pp_stmt fmt stmts
 
 let pp_attr fmt = function
   | AlwaysInline -> fprintf fmt "__attribute__((always_inline)) inline "
@@ -269,6 +287,33 @@ let rec pp_top_decl fmt = function
       fprintf fmt "#define %s %a" name pp_expr v
   | MacroDef (name, None) ->
       fprintf fmt "#define %s" name
+  | PreprocIf (cond, then_decls, else_decls) ->
+      fprintf fmt "@\n#if %s@\n@[<v 0>%a@]" cond
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) then_decls;
+      (match else_decls with
+       | [] -> ()
+       | _ ->
+           fprintf fmt "@\n#else@\n@[<v 0>%a@]"
+             (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) else_decls);
+      fprintf fmt "@\n#endif@\n"
+  | PreprocIfdef (macro, then_decls, else_decls) ->
+      fprintf fmt "@\n#ifdef %s@\n@[<v 0>%a@]" macro
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) then_decls;
+      (match else_decls with
+       | [] -> ()
+       | _ ->
+           fprintf fmt "@\n#else@\n@[<v 0>%a@]"
+             (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) else_decls);
+      fprintf fmt "@\n#endif@\n"
+  | PreprocIfndef (macro, then_decls, else_decls) ->
+      fprintf fmt "@\n#ifndef %s@\n@[<v 0>%a@]" macro
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) then_decls;
+      (match else_decls with
+       | [] -> ()
+       | _ ->
+           fprintf fmt "@\n#else@\n@[<v 0>%a@]"
+             (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) else_decls);
+      fprintf fmt "@\n#endif@\n"
   | IncludeSys h ->
       fprintf fmt "#include <%s>" h
   | IncludeLocal h ->

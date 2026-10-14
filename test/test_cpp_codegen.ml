@@ -561,7 +561,68 @@ let () =
    | Ok () -> ()
    | Error err -> failwith ("Multi-VM header syntax validation failed: " ^ err));
   assert (contains_str multi_vm_hdr_cpp "ASGARD_MULTI_VM_ENABLED");
-  Printf.printf "[PASS] Step 36: Multi-VM header emitted using typed EDSL without Jingoo.\n"
+  Printf.printf "[PASS] Step 36: Multi-VM header emitted using typed EDSL without Jingoo.\n";
+
+  (* 37. Core SDK Preproc directives, ComputedGoto, LabelAddr, DesignatedIndex/Range *)
+  let preproc_test_decl =
+    preproc_ifndef "TEST_GUARD" [
+      macro_def "TEST_GUARD";
+      include_sys "stdint.h";
+      preproc_if "defined(__GNUC__)" [
+        func_decl Void "test_gnuc" [] [
+          decl_var ~is_static:true (Array (ConstPtr Void, 4)) "tbl"
+            ~init:(init_list [
+              desig_range (i32 0) (i32 2) (label_addr "l_default");
+              desig_idx (u8 3) (label_addr "l_three");
+            ]);
+          computed_goto (idx (var "tbl") (i32 0));
+          label "l_three";
+          ret_void;
+          label "l_default";
+          ret_void;
+        ];
+      ] ~else_decls:[
+        func_decl Void "test_fallback" [] [
+          preproc_if_stmt "defined(_MSC_VER)" [
+            raw "// msvc path";
+          ] ~else_stmts:[
+            raw "// generic path";
+          ];
+          ret_void;
+        ];
+      ];
+    ]
+  in
+  let preproc_test_cpp = render_top_decls [ preproc_test_decl ] in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax preproc_test_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Core SDK Preproc and ComputedGoto validation failed: " ^ err));
+  assert (contains_str preproc_test_cpp "#ifndef TEST_GUARD");
+  assert (contains_str preproc_test_cpp "#if defined(__GNUC__)");
+  assert (contains_str preproc_test_cpp "&&l_default");
+  assert (contains_str preproc_test_cpp "goto *");
+  Printf.printf "[PASS] Step 37: Core SDK Preproc directives, ComputedGoto, LabelAddr, and DesignatedIndex/Range validated.\n";
+
+  (* 38. Stack-VM typed dispatch EDSL & Native VM dispatch tables AST *)
+  let test_dispatch_cases = [
+    (0x01, "PUSH_IMM", "h_push_imm");
+    (0x02, "ADD", "h_add");
+    (0xFF, "EXIT", "h_exit");
+  ] in
+  let stack_disp_cpp = Stack_vm.Stack_runtime.emit_stack_dispatch_source ~entry_bid:0 test_dispatch_cases in
+  assert (contains_str stack_disp_cpp "dispatch_table[256]");
+  assert (contains_str stack_disp_cpp "&&lbl_default");
+  assert (contains_str stack_disp_cpp "case 0x01: /* PUSH_IMM */");
+  assert (contains_str stack_disp_cpp "case 0x02: /* ADD */");
+  assert (contains_str stack_disp_cpp "case 0xFF: /* EXIT */");
+
+  let test_domain_salts = [| 0x11; 0x22 |] in
+  let native_salt_stmt = Native_vm.Vm_runtime_emitter.emit_native_domain_salt_ast test_domain_salts in
+  let native_salt_cpp = Cpp_codegen.Cpp_printer.string_of_stmt native_salt_stmt in
+  assert (contains_str native_salt_cpp "domain_salt[2]");
+  assert (contains_str native_salt_cpp "0x11");
+  assert (contains_str native_salt_cpp "0x22");
+  Printf.printf "[PASS] Step 38: Stack-VM typed dispatch EDSL and Native VM dispatch tables AST validated.\n"
 
 
 
