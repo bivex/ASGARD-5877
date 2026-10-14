@@ -237,11 +237,28 @@ let emit_cpp_threaded_header
     ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize;
   let context_source = Buffer.contents ctx_buf in
 
+  let domain_salts =
+    let used = Hashtbl.create num_domains in
+    Hashtbl.replace used 0 ();
+    Array.init num_domains (fun d ->
+      if d = 0 then 0
+      else
+        let rec pick () =
+          let s = (Random.State.int rng 255) + 1 in
+          if Hashtbl.mem used s then pick ()
+          else (Hashtbl.replace used s (); s)
+        in
+        pick ()
+    )
+  in
+
   let dispatch_domain_models =
     List.init num_domains (fun d ->
+      let salt = domain_salts.(d) in
       let handlers =
         List.init 256 (fun i ->
-          let h = opcode_to_handler.(i) in
+          let raw_opcode = i lxor salt in
+          let h = opcode_to_handler.(raw_opcode) in
           let h =
             if String.starts_with ~prefix:"H_DECOY_" h then
               let base_idx =
@@ -308,6 +325,7 @@ let emit_cpp_threaded_header
     ("expected_hashes", Jg_types.Tlist (match expected_hashes with Some hl when List.length hl > 1 -> List.map (fun h -> Jg_types.Tstr (Printf.sprintf "0x%016LXULL" h)) hl | _ -> []));
     ("enable_mem_sanitize", Jg_types.Tbool enable_mem_sanitize);
     ("dispatch_domains", Jg_types.Tlist dispatch_domain_models);
+    ("domain_salts", Jg_types.Tlist (Array.to_list (Array.map (fun s -> Jg_types.Tint s) domain_salts)));
     ("num_domains", Jg_types.Tint num_domains);
     ("enable_running_key", Jg_types.Tbool enable_running_key);
     ("handlers_source", Jg_types.Tstr handlers_source);

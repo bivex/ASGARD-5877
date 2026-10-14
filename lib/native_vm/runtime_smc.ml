@@ -206,6 +206,7 @@ let emit_nanomite_engine_header () =
 #include <stdbool.h>
 #include <signal.h>
 #include <string.h>
+#include <atomic>
 
 #if defined(__APPLE__)
 #include <mach/mach.h>
@@ -267,7 +268,12 @@ public:
     }
 };
 
-inline NanomiteDispatcher g_nanomite_dispatcher;
+/* P0-02a: The SIGTRAP / VEH handler executes synchronously on the trapping
+   thread, so all per-trap communication state (current_trap_id, current_condition,
+   resolved_target, the keyed nanomite table) is thread-local. This removes the
+   inter-thread data race when several threads run virtualized nanomite code
+   concurrently without any locking on the hot path. */
+inline thread_local NanomiteDispatcher g_nanomite_dispatcher;
 
 #if defined(__APPLE__)
 static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
@@ -310,8 +316,12 @@ static LONG WINAPI nanomite_vectored_handler(PEXCEPTION_POINTERS pExceptionInfo)
 
 static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
     g_nanomite_dispatcher.seed = seed;
-    if (g_nanomite_dispatcher.installed) return;
-    AddVectoredExceptionHandler(1, nanomite_vectored_handler);
+    /* Process-wide one-shot guard: per-thread dispatchers must not re-register
+       the VEH chain on every thread (leaks handlers under heavy threading). */
+    static std::atomic<bool> g_veh_installed{false};
+    if (!g_veh_installed.exchange(true)) {
+        AddVectoredExceptionHandler(1, nanomite_vectored_handler);
+    }
     g_nanomite_dispatcher.installed = true;
 }
 #elif defined(__linux__) && !defined(_MSC_VER)
@@ -350,14 +360,18 @@ static void nanomite_trap_handler(int sig, siginfo_t* info, void* ucontext_ptr) 
 
 static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
     g_nanomite_dispatcher.seed = seed;
-    if (g_nanomite_dispatcher.installed) return;
-    struct sigaction sa;
-    memset(&sa, 0, sizeof(sa));
-    sa.sa_sigaction = nanomite_trap_handler;
-    sa.sa_flags = SA_SIGINFO;
-    sigemptyset(&sa.sa_mask);
-    sigaction(SIGTRAP, &sa, NULL);
-    sigaction(SIGILL, &sa, NULL);
+    /* Process-wide one-shot guard: sigaction() is process-wide, so per-thread
+       dispatchers only need to install the signal handler once. */
+    static std::atomic<bool> g_sigaction_installed{false};
+    if (!g_sigaction_installed.exchange(true)) {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_sigaction = nanomite_trap_handler;
+        sa.sa_flags = SA_SIGINFO;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGTRAP, &sa, NULL);
+        sigaction(SIGILL, &sa, NULL);
+    }
     g_nanomite_dispatcher.installed = true;
 }
 #else

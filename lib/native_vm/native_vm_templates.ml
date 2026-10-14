@@ -473,9 +473,10 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     }
 {%- else %}
     uint64_t hash_diff = full_hash ^ {{ expected_hash_hex }};
+    ctx.running_key ^= hash_diff;
+    ctx.reg_mask ^= (hash_diff * 0x5877CAFEBEEFULL);
     if (hash_diff != 0) {
         /* Anti-Patching Tripwire: Silent Context Poisoning */
-        ctx.reg_mask ^= (hash_diff * 0x5877CAFEBEEFULL) ^ 0xDEADBEEF5A5A5A5AULL;
         ctx.trapped = true;
         return false;
     }
@@ -547,6 +548,12 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     static thread_local asgard_memory::DualMappedBuffer g_ephemeral_jit_buf = asgard_memory::DualMappedBuffer::allocate(16384);
 #endif
 {%- endif %}
+
+    static const uint8_t domain_salt[{{ num_domains }}] = {
+{%- for s in domain_salts %}
+        {{ s }},
+{%- endfor %}
+    };
 
     static uintptr_t all_dispatch_domains[{{ num_domains }}][256];
     static bool dispatch_domains_ready = false;
@@ -624,9 +631,10 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
     } while(0)
 #else
     #define DISPATCH_OPCODE() do { \
-        uint8_t domain_idx = (uint8_t)((op ^ (uint8_t)(k_dyn & 0x07)) % {{ num_domains }}); \
-        uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)op) * 0x6A09E667F3BCC908ULL); \
-        void* target = (void*)(all_dispatch_domains[domain_idx][op] ^ k_slot); \
+        uint8_t domain_idx = (uint8_t)((k_dyn >> 32) % {{ num_domains }}); \
+        uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[domain_idx]); \
+        uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)permuted_slot) * 0x6A09E667F3BCC908ULL); \
+        void* target = (void*)(all_dispatch_domains[domain_idx][permuted_slot] ^ k_slot); \
         goto *target; \
     } while(0)
 #endif
@@ -683,8 +691,9 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
 #if defined(_MSC_VER) && !defined(__clang__)
     goto START_VM_MSVC;
     DISPATCH_MSVC: {
-        uint8_t d_idx = (uint8_t)((op ^ (uint8_t)(k_dyn & 0x07)) % {{ num_domains }});
-        switch ((uint32_t)d_idx * 256U + (uint32_t)op) {
+        uint8_t d_idx = (uint8_t)((k_dyn >> 32) % {{ num_domains }});
+        uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[d_idx]);
+        switch ((uint32_t)d_idx * 256U + (uint32_t)permuted_slot) {
 {%- for domain in dispatch_domains %}
 {%- for h in domain.handlers %}
         case ({{ domain.index }} * 256 + {{ loop.index0 }}): goto {{ h }};
