@@ -38,12 +38,13 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "    return h ^ (h >> 31);\n";
   Buffer.add_string b "}\n\n";
 
-  (* Blinded VMContext with Canary Guard Zones *)
+  (* Blinded VMContext with Canary Guard Zones & Per-Slot Masking (P1-04b) *)
   Buffer.add_string b "struct VMContext {\n";
   Buffer.add_string b "    static inline constexpr uint64_t CANARY_VAL = 0xCAFEBABE13375877ULL;\n";
   Buffer.add_string b "    uint64_t canary_head = CANARY_VAL;\n";
   Buffer.add_string b "    uint64_t mid_canaries[32]; // Interleaved dynamic canaries across every 16 stack frames\n";
-  Buffer.add_string b "    uint64_t gprs[32]; // Blinded in memory: actual_val = gprs[i] ^ reg_mask\n";
+  Buffer.add_string b "    uint64_t gprs[32]; // Blinded in memory: actual_val = gprs[i] ^ slot_masks[i] ^ reg_mask\n";
+  Buffer.add_string b "    uint64_t slot_masks[32]; // Per-slot evolving blinding masks (P1-04b)\n";
   Buffer.add_string b "    uint64_t vregs[32][8]; // vector register bank: up to 512 bits\n";
   Buffer.add_string b "    uint64_t stack[512];\n";
   Buffer.add_string b "    size_t sp;\n";
@@ -61,7 +62,8 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "        running_key = key64_for_offset(seed, 0x13375877ULL) ^ 0xCAFEBABE13375877ULL;\n";
   Buffer.add_string b "        reg_mask = 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed * 0x9E3779B97F4A7C15ULL);\n";
   Buffer.add_string b "        for (size_t i = 0; i < 32; ++i) {\n";
-  Buffer.add_string b "            gprs[i] = reg_mask; // Initialized to 0 (0 ^ reg_mask)\n";
+  Buffer.add_string b "            slot_masks[i] = key64_for_offset(seed, 0x1000 + i) ^ 0xA5A5A5A51337BEEFULL;\n";
+  Buffer.add_string b "            gprs[i] = slot_masks[i] ^ reg_mask; // Initialized to 0 (0 ^ slot_masks[i] ^ reg_mask)\n";
   Buffer.add_string b "            mid_canaries[i] = CANARY_VAL ^ ((uint64_t)i * 0x517CC1B727220A95ULL) ^ (uint64_t)seed;\n";
   Buffer.add_string b "            vregs[i][0] = 0ULL;\n";
   Buffer.add_string b "            for (size_t v = 1; v < 8; ++v) vregs[i][v] = 0ULL;\n";
@@ -109,10 +111,21 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   Buffer.add_string b "        return (mid_canaries[frame] == expected);\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline uint64_t get_reg(uint8_t i) const noexcept {\n";
-  Buffer.add_string b "        return gprs[i] ^ reg_mask;\n";
+  Buffer.add_string b "        uint8_t idx = i & 31;\n";
+  Buffer.add_string b "        return gprs[idx] ^ slot_masks[idx] ^ reg_mask;\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline void set_reg(uint8_t i, uint64_t v) noexcept {\n";
-  Buffer.add_string b "        gprs[i] = v ^ reg_mask;\n";
+  Buffer.add_string b "        uint8_t idx = i & 31;\n";
+  Buffer.add_string b "        uint64_t new_m = (slot_masks[idx] ^ running_key) * 0x9E3779B97F4A7C15ULL;\n";
+  Buffer.add_string b "        slot_masks[idx] = new_m;\n";
+  Buffer.add_string b "        gprs[idx] = v ^ new_m ^ reg_mask;\n";
+  Buffer.add_string b "    }\n\n";
+  Buffer.add_string b "    inline void evolve_slot_mask(uint8_t i, uint32_t k) noexcept {\n";
+  Buffer.add_string b "        uint8_t idx = i & 31;\n";
+  Buffer.add_string b "        uint64_t cur_val = gprs[idx] ^ slot_masks[idx] ^ reg_mask;\n";
+  Buffer.add_string b "        uint64_t delta = ((uint64_t)k * 0x6A09E667F3BCC908ULL) ^ ((uint64_t)idx * 0x517CC1B727220A95ULL);\n";
+  Buffer.add_string b "        slot_masks[idx] = (slot_masks[idx] ^ delta) * 0xBF58476D1CE4E5B9ULL;\n";
+  Buffer.add_string b "        gprs[idx] = cur_val ^ slot_masks[idx] ^ reg_mask;\n";
   Buffer.add_string b "    }\n\n";
   Buffer.add_string b "    inline uint64_t get_vreg_lane(uint8_t i, size_t lane) const noexcept {\n";
   Buffer.add_string b "        return vregs[i & 31][lane & 7];\n";
@@ -171,7 +184,8 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         let swaps = Context_permutation.decompose_into_swaps target in
         Buffer.add_string b (Printf.sprintf "        case 0x%X: {\n" ((from_e lsl 2) lor to_e));
         List.iter (fun (u, v) ->
-          Buffer.add_string b (Printf.sprintf "            std::swap(gprs[%d], gprs[%d]);\n" u v)
+          Buffer.add_string b (Printf.sprintf "            std::swap(gprs[%d], gprs[%d]);\n" u v);
+          Buffer.add_string b (Printf.sprintf "            std::swap(slot_masks[%d], slot_masks[%d]);\n" u v)
         ) swaps;
         Buffer.add_string b "            break;\n        }\n";
       end

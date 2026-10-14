@@ -675,6 +675,7 @@ static inline bool execute_threaded(VMContext& ctx, const uint64_t* bytecode, si
         src = (uint8_t)((((word >> 13) + 0x1FULL) - ((word >> 13) | 0x1FULL))); \
         imm = (int64_t)((int32_t)((((word >> 18) + 0xFFFFFFFFULL) - ((word >> 18) | 0xFFFFFFFFULL)))); \
         ctx.evolve_mask((uint32_t)k_dyn); \
+        ctx.evolve_slot_mask(dst, (uint32_t)k_dyn); \
 {%- if enable_running_key %}
         ctx.advance_running_key(op, dst, imm); \
 {%- endif %}
