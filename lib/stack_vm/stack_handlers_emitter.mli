@@ -13,12 +13,34 @@ val emit_h_dup2 : unit -> top_decl
 val emit_h_rot : unit -> top_decl
 val emit_h_swap : unit -> top_decl
 
+val emit_h_read_mem : unit -> top_decl
+val emit_h_write_mem : unit -> top_decl
+val emit_h_add : unit -> top_decl
+val emit_h_sub : unit -> top_decl
+val emit_h_mul : unit -> top_decl
+val emit_h_nor : unit -> top_decl
+val emit_h_nand : unit -> top_decl
+val emit_h_shl : unit -> top_decl
+val emit_h_shr : unit -> top_decl
+val emit_h_sar : unit -> top_decl
+val emit_h_div : unit -> top_decl
+val emit_h_idiv : unit -> top_decl
+val emit_h_push_flags : unit -> top_decl
+val emit_h_pop_flags : unit -> top_decl
+
 val emit_push_pop_handlers : unit -> top_decl list
 val emit_dup_swap_handlers : unit -> top_decl list
+val emit_mem_handlers : unit -> top_decl list
+val emit_alu_handlers : unit -> top_decl list
+val emit_flags_handlers : unit -> top_decl list
 val emit_all_stack_manipulation_handlers : unit -> top_decl list
 
 val emit_push_pop_handlers_string : unit -> string
 val emit_dup_swap_handlers_string : unit -> string
+val emit_mem_handlers_string : unit -> string
+val emit_alu_handlers_string : unit -> string
+val emit_flags_handlers_string : unit -> string
 val emit_all_handlers_string : unit -> string
 
 val emit_handlers_source : Buffer.t -> unit
+

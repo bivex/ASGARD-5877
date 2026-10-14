@@ -501,6 +501,9 @@ let generate_c_runtime
     ("entry_bid", Jingoo.Jg_types.Tint prog.entry_id);
     ("stack_push_pop_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_push_pop_handlers_string ()));
     ("stack_dup_swap_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_dup_swap_handlers_string ()));
+    ("stack_mem_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_mem_handlers_string ()));
+    ("stack_alu_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_alu_handlers_string ()));
+    ("stack_flags_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_flags_handlers_string ()));
   ] in
   let raw = Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models in
   if obfuscate_runtime then
