@@ -23,4 +23,5 @@ val sub : rns_val -> rns_val -> rns_val
 val mul : rns_val -> rns_val -> rns_val
 
 (** Emits standalone C++20 Residue Number System header implementing Garner CRT. *)
+val emit_cpp_rns_ast : unit -> Cpp_codegen.Cpp_ast.top_decl list
 val emit_cpp_rns_header : unit -> string

@@ -69,6 +69,14 @@ let constexpr_u64 name (v : int64) : stmt =
   DeclVar { is_const = false; is_constexpr = true; is_volatile = false;
             ty = UInt64; name; init = Some (LitU64 v) }
 
+let let_u32 name init_e : stmt =
+  DeclVar { is_const = false; is_constexpr = false; is_volatile = false;
+            ty = UInt32; name; init = Some init_e }
+
+let const_u32 name init_e : stmt =
+  DeclVar { is_const = true; is_constexpr = false; is_volatile = false;
+            ty = UInt32; name; init = Some init_e }
+
 let decl_var ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : stmt =
   DeclVar { is_const; is_constexpr; is_volatile; ty; name; init }
 
@@ -132,6 +140,7 @@ let global_var ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?(is_v
   GlobalVar { is_static; is_const; is_constexpr; is_volatile; ty; name; init }
 let raw_top s : top_decl = RawTop s
 let comment_top s : top_decl = CommentTop s
+let namespace_def name decls : top_decl = Namespace (name, decls)
 
 (* Удобные VM-шорткаты для генерации хендлеров *)
 let reg_dst : expr = call "ctx.get_reg" [var "dst"]
