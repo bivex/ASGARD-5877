@@ -245,6 +245,34 @@
   - `Stack-VM Execution Engine` (38/38) — PASS.
   - `./build_license.sh` компилирует и запускает `protected_app` без единого предупреждения (0 warnings).
 
+### Stage 7.1: Typed C++20 EDSL Stack-VM Header Migration & Complete Jingoo Decommissioning in Stack/Multi-VM (`HEAD`)
+- [x] Расширение ядра EDSL SDK ([`lib/cpp_codegen/`](file:///Volumes/External/Code/ASGARD-5877/lib/cpp_codegen/)):
+  - В `Cpp_ast.stmt`: добавлены `align_as : int option` и `is_thread_local : bool` в `DeclVar`, добавлен `MacroUndefStmt of string` (`#undef NAME`).
+  - В `Cpp_ast.struct_member`: добавлен `is_volatile : bool` в `MemberField`.
+  - В `Cpp_ast.top_decl`: добавлены `align_as : int option` и `is_thread_local : bool` в `GlobalVar`, добавлен `MacroUndef of string` (`#undef NAME`).
+  - В `Cpp_dsl`: добавлены комбинаторы `macro_undef`, `macro_undef_stmt`, обновлены `decl_var`, `member_field`, `global_var`.
+  - В `Cpp_printer`: реализована печать `alignas(...)`, `thread_local`, `volatile`, `#undef NAME`.
+  - В `Cpp_ast_obf`: поддержка обфускации для всех новых узлов AST.
+  - В [`lib/domain/isa_metamorphic_synth.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/isa_metamorphic_synth.ml): переход на конструктор `decl_var`.
+- [x] Полная типизированная миграция заголовка Stack-VM ([`lib/stack_vm/stack_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_runtime.ml)):
+  - Реализован типизированный генератор `emit_h_call_extern : target_arch -> top_decl` с архитектурно-зависимой настройкой аргументов ABI (RV64, AArch64, X86_64).
+  - Реализован `emit_stack_runtime_hpp_decls : ?external_symbols -> ?constants -> ?enc -> runtime_config -> program -> top_decl list`:
+    - Преамбула и платформо-совместимый `asg_strcmp`.
+    - Определение структуры `AsgardConstantEntry` с `volatile int32_t ready;` и функций резолвинга констант.
+    - Определение структуры `asgard_ext_sym_t` и резолвера внешних символов через экспортное дерево Apple Dyld (trie) и системный dlsym / GetProcAddress.
+    - Таблицы демаскирования блоков и ключей.
+    - Пространство имен `namespace asgard_stack_vm`: определение структуры `stack_vm_t`, хелперы сдвигов/обратной связи, макросы VSP whitening, таблица обработчиков `g_stack_handler_table`, SIPHash аутентификация полезной нагрузки, `stack_vm_run` (с вызовом типизированного диспетчера), `stack_vm_call`.
+    - Пространство имен `namespace vanguard_threaded_vm`: функция `asgard_vm_call`.
+  - Функция `generate_c_runtime` переведена на прямой рендеринг через `Cpp_printer.render_top_decls`. Полностью устранены все модели Jinja/Jingoo (`constants_model`, `symbols_model`, `block_offsets_model`, `block_keys_model`, `mk_case`).
+- [x] Полный вывод из эксплуатации (decommissioning) шаблонов Jingoo в Stack-VM и Multi-VM:
+  - Удалены устаревшие файлы `lib/multi_vm/multi_vm_templates.ml`, `lib/multi_vm/multi_vm_templates.mli`, `lib/stack_vm/stack_vm_templates.ml`, `lib/stack_vm/stack_vm_templates.mli`.
+  - Удалена зависимость `jingoo` из [`lib/multi_vm/dune`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/dune) и [`lib/stack_vm/dune`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/dune).
+- [x] Тесты:
+  - Добавлен Step 39 в [`test/test_cpp_codegen.ml`](file:///Volumes/External/Code/ASGARD-5877/test/test_cpp_codegen.ml) — все 39/39 шагов 100% PASS.
+  - `Stack-VM Execution Engine` (38/38) — PASS.
+  - `./build_license.sh` компилирует `stack_vm_runtime.hpp` и запускает `protected_app` без ошибок и предупреждений (0 warnings).
+
+
 ---
 
 ## ⚠️ Архитектурные инварианты и правила безопасности

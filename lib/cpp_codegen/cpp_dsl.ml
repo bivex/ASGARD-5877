@@ -62,28 +62,14 @@ let call fn args = Call (fn, args)
 
 let ternary c t f = Ternary (c, t, f)
 
-let let_u64 name init_e : stmt =
-  DeclVar { is_static = false; is_const = false; is_constexpr = false; is_volatile = false;
-            ty = UInt64; name; init = Some init_e }
+let decl_var ?align_as ?(is_static=false) ?(is_thread_local=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : stmt =
+  DeclVar { align_as; is_static; is_thread_local; is_const; is_constexpr; is_volatile; ty; name; init }
 
-let const_u64 name init_e : stmt =
-  DeclVar { is_static = false; is_const = true; is_constexpr = false; is_volatile = false;
-            ty = UInt64; name; init = Some init_e }
-
-let constexpr_u64 name (v : int64) : stmt =
-  DeclVar { is_static = false; is_const = false; is_constexpr = true; is_volatile = false;
-            ty = UInt64; name; init = Some (LitU64 v) }
-
-let let_u32 name init_e : stmt =
-  DeclVar { is_static = false; is_const = false; is_constexpr = false; is_volatile = false;
-            ty = UInt32; name; init = Some init_e }
-
-let const_u32 name init_e : stmt =
-  DeclVar { is_static = false; is_const = true; is_constexpr = false; is_volatile = false;
-            ty = UInt32; name; init = Some init_e }
-
-let decl_var ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : stmt =
-  DeclVar { is_static; is_const; is_constexpr; is_volatile; ty; name; init }
+let let_u64 name init_e : stmt = decl_var UInt64 name ~init:init_e
+let const_u64 name init_e : stmt = decl_var ~is_const:true UInt64 name ~init:init_e
+let constexpr_u64 name (v : int64) : stmt = decl_var ~is_constexpr:true UInt64 name ~init:(LitU64 v)
+let let_u32 name init_e : stmt = decl_var UInt32 name ~init:init_e
+let const_u32 name init_e : stmt = decl_var ~is_const:true UInt32 name ~init:init_e
 
 let i64 (v : int64) : expr = LitI64 v
 let str_lit (s : string) : expr = LitStr s
@@ -117,11 +103,12 @@ let goto (s : string) : stmt = Goto s
 let computed_goto (e : expr) : stmt = ComputedGoto e
 let label (s : string) : stmt = Label s
 let preproc_if_stmt ?(else_stmts=[]) cond then_b : stmt = PreprocIfStmt (cond, then_b, else_stmts)
+let macro_undef_stmt (s : string) : stmt = MacroUndefStmt s
 let raw (s : string) : stmt = Raw s
 let fence_seq_cst : stmt = FenceSeqCst
 let comment s : stmt = Comment s
 
-let member_field ?init ty name : struct_member = MemberField { ty; name; init }
+let member_field ?(is_volatile=false) ?init ty name : struct_member = MemberField { is_volatile; ty; name; init }
 let member_method ?(attrs=[]) ?(is_static=false) ?(is_const=false) ?(template_params=[]) ret_type name params body : struct_member =
   MemberMethod { attrs; is_static; is_const; template_params; ret_type; name; params; body }
 let member_method_decl ?(attrs=[]) ?(is_static=false) ?(is_const=false) ?(template_params=[]) ret_type name params : struct_member =
@@ -150,13 +137,14 @@ let func_proto ?(attrs=[]) ret_type name params : top_decl = FuncProto { attrs; 
 let typedef ty name : top_decl = Typedef (ty, name)
 let pragma s : top_decl = Pragma s
 let macro_def ?value name : top_decl = MacroDef (name, value)
+let macro_undef name : top_decl = MacroUndef name
 let preproc_if ?(else_decls=[]) cond then_decls : top_decl = PreprocIf (cond, then_decls, else_decls)
 let preproc_ifdef ?(else_decls=[]) macro then_decls : top_decl = PreprocIfdef (macro, then_decls, else_decls)
 let preproc_ifndef ?(else_decls=[]) macro then_decls : top_decl = PreprocIfndef (macro, then_decls, else_decls)
 let include_sys s : top_decl = IncludeSys s
 let include_local s : top_decl = IncludeLocal s
-let global_var ?align_as ?(is_extern_c=false) ?(is_weak=false) ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : top_decl =
-  GlobalVar { align_as; is_extern_c; is_weak; is_static; is_const; is_constexpr; is_volatile; ty; name; init }
+let global_var ?align_as ?(is_extern_c=false) ?(is_weak=false) ?(is_static=false) ?(is_thread_local=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : top_decl =
+  GlobalVar { align_as; is_extern_c; is_weak; is_static; is_thread_local; is_const; is_constexpr; is_volatile; ty; name; init }
 let raw_top s : top_decl = RawTop s
 let comment_top s : top_decl = CommentTop s
 let namespace_def name decls : top_decl = Namespace (name, decls)

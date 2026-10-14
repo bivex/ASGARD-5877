@@ -1,6 +1,6 @@
 (library
  (name multi_vm)
  (public_name random_visa.multi_vm)
- (libraries mba_engine vm_ir native_vm cpp_codegen ocamlgraph jingoo))
+ (libraries mba_engine vm_ir native_vm cpp_codegen ocamlgraph))
 
 

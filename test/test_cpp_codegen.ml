@@ -622,7 +622,30 @@ let () =
   assert (contains_str native_salt_cpp "domain_salt[2]");
   assert (contains_str native_salt_cpp "0x11");
   assert (contains_str native_salt_cpp "0x22");
-  Printf.printf "[PASS] Step 38: Stack-VM typed dispatch EDSL and Native VM dispatch tables AST validated.\n"
+  Printf.printf "[PASS] Step 38: Stack-VM typed dispatch EDSL and Native VM dispatch tables AST validated.\n";
+
+  (* 39. Stack-VM complete typed C++20 EDSL runtime emission *)
+  let blk = Stack_vm.Stack_ir.make_block 0 "entry" [Stack_vm.Stack_ir.PushImm 42L; Stack_vm.Stack_ir.Exit] in
+  let prog = Stack_vm.Stack_ir.make_program 0 [blk] 16 in
+  let cfg = Stack_vm.Stack_runtime.default_config Stack_vm.Stack_runtime.X86_64 in
+  let decls = Stack_vm.Stack_runtime.emit_stack_runtime_hpp_decls cfg prog in
+  let stack_runtime_cpp = Cpp_codegen.Cpp_printer.render_top_decls decls in
+  assert (contains_str stack_runtime_cpp "struct AsgardConstantEntry");
+  assert (contains_str stack_runtime_cpp "volatile int32_t ready;");
+  assert (contains_str stack_runtime_cpp "struct asgard_ext_sym_t");
+  assert (contains_str stack_runtime_cpp "namespace asgard_stack_vm");
+  assert (contains_str stack_runtime_cpp "struct stack_vm_t");
+  assert (contains_str stack_runtime_cpp "g_stack_handler_table");
+  assert (contains_str stack_runtime_cpp "stack_vm_run");
+  assert (contains_str stack_runtime_cpp "stack_vm_call");
+  assert (contains_str stack_runtime_cpp "namespace vanguard_threaded_vm");
+  assert (contains_str stack_runtime_cpp "asgard_vm_call");
+  let h_extern = Stack_vm.Stack_runtime.emit_h_call_extern Stack_vm.Stack_runtime.X86_64 in
+  let h_extern_cpp = Cpp_codegen.Cpp_printer.string_of_top_decl h_extern in
+  assert (contains_str h_extern_cpp "h_call_extern");
+  assert (contains_str h_extern_cpp "asgard_resolve_sym_idx");
+  Printf.printf "[PASS] Step 39: Stack-VM complete typed C++20 EDSL runtime emission and ABI extern calls validated.\n"
+
 
 
 

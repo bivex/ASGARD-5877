@@ -113,9 +113,15 @@ let assign_op_str = function
   | AssignXor   -> "^=" | AssignOr  -> "|=" | AssignAnd -> "&=" | AssignDiv -> "/="
 
 let rec pp_stmt fmt = function
-  | DeclVar { is_static; is_const; is_constexpr; is_volatile; ty; name; init } ->
+  | DeclVar { align_as; is_static; is_thread_local; is_const; is_constexpr; is_volatile; ty; name; init } ->
+      let align_str = match align_as with
+        | Some n -> Printf.sprintf "alignas(%d) " n
+        | None -> ""
+      in
       let prefix =
-        (if is_static then "static " else "")
+        align_str
+        ^ (if is_static then "static " else "")
+        ^ (if is_thread_local then "thread_local " else "")
         ^ (if is_constexpr then "constexpr "
            else if is_const then "const "
            else if is_volatile then "volatile "
@@ -181,6 +187,8 @@ let rec pp_stmt fmt = function
        | [] -> ()
        | _ -> fprintf fmt "@\n#else@\n@[<v 0>%a@]" pp_stmt_list else_b);
       fprintf fmt "@\n#endif@\n"
+  | MacroUndefStmt name ->
+      fprintf fmt "@\n#undef %s@\n" name
   | Raw s ->
       fprintf fmt "%s" s
   | FenceSeqCst ->
@@ -202,14 +210,14 @@ let pp_attr fmt = function
   | Constructor  -> fprintf fmt "__attribute__((constructor)) "
 
 let pp_struct_member fmt = function
-  | MemberField { ty; name; init = Some e } ->
-      fprintf fmt "%a %s = %a;@," pp_ctype ty name pp_expr e
-  | MemberField { ty = Array (Array (et, sz2), sz1); name; init = None } ->
-      fprintf fmt "%a %s[%d][%d];@," pp_ctype et name sz1 sz2
-  | MemberField { ty = Array (et, sz); name; init = None } ->
-      fprintf fmt "%a %s[%d];@," pp_ctype et name sz
-  | MemberField { ty; name; init = None } ->
-      fprintf fmt "%a %s;@," pp_ctype ty name
+  | MemberField { is_volatile; ty; name; init = Some e } ->
+      fprintf fmt "%s%a %s = %a;@," (if is_volatile then "volatile " else "") pp_ctype ty name pp_expr e
+  | MemberField { is_volatile; ty = Array (Array (et, sz2), sz1); name; init = None } ->
+      fprintf fmt "%s%a %s[%d][%d];@," (if is_volatile then "volatile " else "") pp_ctype et name sz1 sz2
+  | MemberField { is_volatile; ty = Array (et, sz); name; init = None } ->
+      fprintf fmt "%s%a %s[%d];@," (if is_volatile then "volatile " else "") pp_ctype et name sz
+  | MemberField { is_volatile; ty; name; init = None } ->
+      fprintf fmt "%s%a %s;@," (if is_volatile then "volatile " else "") pp_ctype ty name
   | MemberStaticConstexpr { ty; name; init } ->
       fprintf fmt "static inline constexpr %a %s = %a;@," pp_ctype ty name pp_expr init
   | MemberVisibility Public ->
@@ -287,6 +295,8 @@ let rec pp_top_decl fmt = function
       fprintf fmt "#define %s %a" name pp_expr v
   | MacroDef (name, None) ->
       fprintf fmt "#define %s" name
+  | MacroUndef name ->
+      fprintf fmt "#undef %s" name
   | PreprocIf (cond, then_decls, else_decls) ->
       fprintf fmt "@\n#if %s@\n@[<v 0>%a@]" cond
         (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) then_decls;
@@ -320,7 +330,7 @@ let rec pp_top_decl fmt = function
       fprintf fmt "#include \"%s\"" h
   | ConstexprGlobal (ty, name, e) ->
       fprintf fmt "constexpr %a %s = %a;" pp_ctype ty name pp_expr e
-  | GlobalVar { align_as; is_extern_c; is_weak; is_static; is_const; is_constexpr; is_volatile; ty; name; init } ->
+  | GlobalVar { align_as; is_extern_c; is_weak; is_static; is_thread_local; is_const; is_constexpr; is_volatile; ty; name; init } ->
       let align_str = match align_as with
         | Some n -> Printf.sprintf "alignas(%d) " n
         | None -> ""
@@ -330,6 +340,7 @@ let rec pp_top_decl fmt = function
         ^ (if is_extern_c then "extern \"C\" " else "")
         ^ (if is_weak then "__attribute__((weak)) " else "")
         ^ (if is_static then "static " else "")
+        ^ (if is_thread_local then "thread_local " else "")
         ^ (if is_volatile then "volatile " else "")
         ^ (if is_constexpr then "constexpr "
            else if is_const then "const "

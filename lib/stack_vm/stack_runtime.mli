@@ -54,6 +54,16 @@ val emit_stack_dispatch_source :
   (int * string * string) list ->
   string
 
+val emit_h_call_extern : target_arch -> Cpp_codegen.Cpp_ast.top_decl
+
+val emit_stack_runtime_hpp_decls :
+  ?external_symbols:string list ->
+  ?constants:(string * string) list ->
+  ?enc:Stack_encoder.encrypted_bytecode ->
+  runtime_config ->
+  program ->
+  Cpp_codegen.Cpp_ast.top_decl list
+
 val generate_c_runtime :
   ?external_symbols:string list ->
   ?constants:(string * string) list ->

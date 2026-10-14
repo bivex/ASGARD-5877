@@ -203,8 +203,7 @@ let build_metamorphic_isa_ast (spec : isa_radix_spec) (basis : alu_basis_pair) :
     params   = [(UInt64, "raw_word"); (UInt64, "rolling_key")];
     body     = [
       let_u64 "u" (((var "raw_word" ^~ var "rolling_key") -~ var "ISA_AFFINE_B") *~ var "ISA_AFFINE_A_INV");
-      DeclVar { is_static = false; is_const = false; is_constexpr = false; is_volatile = false;
-                ty = StructType "DecodedInsn"; name = "out"; init = None };
+      decl_var (StructType "DecodedInsn") "out";
     ]
     @ extract_field "opcode"   "ISA_N_OPCODES"
     @ extract_field "rd"       "ISA_N_REGS"

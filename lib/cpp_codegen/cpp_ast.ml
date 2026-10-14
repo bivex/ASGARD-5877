@@ -56,13 +56,15 @@ type assign_op =
 
 type stmt =
   | DeclVar of {
-      is_static   : bool;
-      is_const    : bool;
-      is_constexpr: bool;
-      is_volatile : bool;
-      ty          : ctype;
-      name        : string;
-      init        : expr option;
+      align_as        : int option;
+      is_static       : bool;
+      is_thread_local : bool;
+      is_const        : bool;
+      is_constexpr    : bool;
+      is_volatile     : bool;
+      ty              : ctype;
+      name            : string;
+      init            : expr option;
     }
   | Assign of assign_op * expr * expr  (* lhs op= rhs; *)
   | ExprStmt of expr                   (* call(); *)
@@ -88,6 +90,7 @@ type stmt =
   | ComputedGoto of expr               (* goto *target; (computed goto) *)
   | Label of string                    (* label: *)
   | PreprocIfStmt of string * stmt list * stmt list (* #if cond ... #else ... #endif *)
+  | MacroUndefStmt of string           (* #undef NAME *)
   | Raw of string                      (* raw C++ line *)
   | FenceSeqCst                        (* std::atomic_signal_fence(std::memory_order_seq_cst); *)
   | Comment of string
@@ -122,7 +125,12 @@ type visibility =
   | Protected
 
 type struct_member =
-  | MemberField of { ty : ctype; name : string; init : expr option }
+  | MemberField of {
+      is_volatile : bool;
+      ty          : ctype;
+      name        : string;
+      init        : expr option;
+    }
   | MemberMethod of {
       attrs           : func_attr list;
       is_static       : bool;
@@ -165,6 +173,7 @@ type struct_def = {
 type top_decl =
   | Pragma of string                   (* #pragma once *)
   | MacroDef of string * expr option   (* #define NAME [VALUE] *)
+  | MacroUndef of string               (* #undef NAME *)
   | PreprocIf of string * top_decl list * top_decl list (* #if cond ... #else ... #endif *)
   | PreprocIfdef of string * top_decl list * top_decl list (* #ifdef MACRO ... #else ... #endif *)
   | PreprocIfndef of string * top_decl list * top_decl list (* #ifndef MACRO ... #else ... #endif *)
@@ -173,16 +182,17 @@ type top_decl =
   | Namespace of string * top_decl list
   | ConstexprGlobal of ctype * string * expr
   | GlobalVar of {
-      align_as     : int option;
-      is_extern_c  : bool;
-      is_weak      : bool;
-      is_static    : bool;
-      is_const     : bool;
-      is_constexpr : bool;
-      is_volatile  : bool;
-      ty           : ctype;
-      name         : string;
-      init         : expr option;
+      align_as        : int option;
+      is_extern_c     : bool;
+      is_weak         : bool;
+      is_static       : bool;
+      is_thread_local : bool;
+      is_const        : bool;
+      is_constexpr    : bool;
+      is_volatile     : bool;
+      ty              : ctype;
+      name            : string;
+      init            : expr option;
     }
   | StructDecl of struct_decl
   | StructDef of struct_def

@@ -63,7 +63,7 @@ let rec scramble_stmt (rng : Random.State.t) (s : stmt) : stmt =
   | ComputedGoto e -> ComputedGoto (scramble_expr rng e)
   | PreprocIfStmt (c, t, f) ->
       PreprocIfStmt (c, List.map (scramble_stmt rng) t, List.map (scramble_stmt rng) f)
-  | Break | Continue | Goto _ | Label _ | Raw _ | FenceSeqCst | Comment _ -> s
+  | Break | Continue | Goto _ | Label _ | Raw _ | FenceSeqCst | Comment _ | MacroUndefStmt _ -> s
 
 let scramble_struct_member rng = function
   | MemberField f ->
@@ -105,6 +105,7 @@ let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
       GlobalVar { g with init = Option.map (scramble_expr rng) g.init }
   | MacroDef (name, opt) ->
       MacroDef (name, Option.map (scramble_expr rng) opt)
+  | MacroUndef _ -> d
   | PreprocIf (c, t, f) ->
       PreprocIf (c, List.map (scramble_top_decl rng) t, List.map (scramble_top_decl rng) f)
   | PreprocIfdef (m, t, f) ->

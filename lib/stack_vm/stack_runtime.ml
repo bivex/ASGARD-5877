@@ -510,74 +510,97 @@ let emit_stack_dispatch_source ~entry_bid cases : string =
   let stmts = emit_stack_dispatch_stmts ~entry_bid cases in
   Cpp_codegen.Cpp_printer.string_of_stmts stmts
 
-let generate_c_runtime
+let emit_h_call_extern arch : Cpp_codegen.Cpp_ast.top_decl =
+  let open Cpp_codegen.Cpp_dsl in
+  let reg_setup = match arch with
+    | RV64 ->
+        {|        uint64_t a0 = vm->ctx[0];  /* a0 (RAX) */
+        uint64_t a1 = vm->ctx[2];  /* a1 (RDX) */
+        uint64_t a2 = vm->ctx[1];  /* a2 (RCX) */
+        uint64_t a3 = vm->ctx[6];  /* a3 (RSI) */
+        uint64_t a4 = vm->ctx[7];  /* a4 (RDI) */
+        uint64_t a5 = vm->ctx[8];  /* a5 (R8)  */
+        uint64_t a6 = vm->ctx[9];  /* a6 (R9)  */
+        uint64_t a7 = vm->ctx[12]; /* a7 (R12) */|}
+    | AArch64 ->
+        {|        uint64_t a0 = vm->ctx[0]; /* X0 (RAX) */
+        uint64_t a1 = vm->ctx[1]; /* X1 (RCX) */
+        uint64_t a2 = vm->ctx[2]; /* X2 (RDX) */
+        uint64_t a3 = vm->ctx[3]; /* X3 (RBX) */
+        uint64_t a4 = vm->ctx[6]; /* X4 (RSI) */
+        uint64_t a5 = vm->ctx[7]; /* X5 (RDI) */
+        uint64_t a6 = vm->ctx[8]; /* X6 (R8)  */
+        uint64_t a7 = vm->ctx[9]; /* X7 (R9)  */|}
+    | X86_64 ->
+        {|        uint64_t a0 = vm->ctx[7]; /* RDI */
+        uint64_t a1 = vm->ctx[6]; /* RSI */
+        uint64_t a2 = vm->ctx[2]; /* RDX */
+        uint64_t a3 = vm->ctx[1]; /* RCX */
+        uint64_t a4 = vm->ctx[8]; /* R8  */
+        uint64_t a5 = vm->ctx[9]; /* R9  */
+        uint64_t a6 = vm->ctx[0]; /* RAX */
+        uint64_t a7 = vm->ctx[3]; /* RBX */|}
+  in
+  raw_top (Printf.sprintf {|static void h_call_extern(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    int32_t sym_idx = fetch_i32(vm, bytecode, vip);
+    void* sym_ptr = asgard_resolve_sym_idx(sym_idx);
+    if (sym_ptr) {
+%s
+        uint32_t sym_h = g_external_symbols[sym_idx].hash;
+        uint32_t sym_ah = g_external_symbols[sym_idx].alt_hash;
+        const uint64_t* stk = (const uint64_t*)vm->ctx[4];
+        uint64_t ret = 0;
+        if (sym_h == 0x42FCF5CFU || sym_ah == 0x42FCF5CFU || sym_h == 0x07554ACDU || sym_ah == 0x07554ACDU || sym_h == 0xE76FB4AAU || sym_ah == 0xE76FB4AAU) {
+            typedef int (*printf_fn_t)(const char*, ...);
+            printf_fn_t pfn = (printf_fn_t)sym_ptr;
+#if defined(__APPLE__) && defined(__aarch64__)
+            ret = (uint64_t)pfn((const char*)a0, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+#else
+            ret = (uint64_t)pfn((const char*)a0, a1, a2, a3, a4, a5, a6, a7);
+#endif
+        } else if (sym_h == 0xFCB512E2U || sym_ah == 0xFCB512E2U || sym_h == 0x4B3C5330U || sym_ah == 0x4B3C5330U || sym_h == 0x937D1EF6U || sym_ah == 0x937D1EF6U || sym_h == 0xCB76D42BU || sym_ah == 0xCB76D42BU || sym_h == 0xD54CE817U || sym_ah == 0xD54CE817U || sym_h == 0xBBED3905U || sym_ah == 0xBBED3905U || sym_h == 0x42C07C7CU || sym_ah == 0x42C07C7CU || sym_h == 0x24559DBDU || sym_ah == 0x24559DBDU) {
+            typedef int (*fprintf_fn_t)(void*, const char*, ...);
+            fprintf_fn_t fpfn = (fprintf_fn_t)sym_ptr;
+#if defined(__APPLE__) && defined(__aarch64__)
+            ret = (uint64_t)fpfn((void*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+#else
+            ret = (uint64_t)fpfn((void*)a0, (const char*)a1, a2, a3, a4, a5, a6, a7);
+#endif
+        } else if (sym_h == 0x7FE32B00U || sym_ah == 0x7FE32B00U || sym_h == 0xBCBF60EEU || sym_ah == 0xBCBF60EEU || sym_h == 0x70E2D349U || sym_ah == 0x70E2D349U || sym_h == 0x44FA3468U || sym_ah == 0x44FA3468U) {
+            typedef int (*sprintf_fn_t)(char*, const char*, ...);
+            sprintf_fn_t spfn = (sprintf_fn_t)sym_ptr;
+#if defined(__APPLE__) && defined(__aarch64__)
+            ret = (uint64_t)spfn((char*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+#else
+            ret = (uint64_t)spfn((char*)a0, (const char*)a1, a2, a3, a4, a5, a6, a7);
+#endif
+        } else if (sym_h == 0x54EE11FAU || sym_ah == 0x54EE11FAU || sym_h == 0x933075F4U || sym_ah == 0x933075F4U || sym_h == 0x3FD5EB6FU || sym_ah == 0x3FD5EB6FU || sym_h == 0x5B3553B4U || sym_ah == 0x5B3553B4U) {
+            typedef int (*snprintf_fn_t)(char*, size_t, const char*, ...);
+            snprintf_fn_t snpfn = (snprintf_fn_t)sym_ptr;
+#if defined(__APPLE__) && defined(__aarch64__)
+            ret = (uint64_t)snpfn((char*)a0, (size_t)a1, (const char*)a2, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
+#else
+            ret = (uint64_t)snpfn((char*)a0, (size_t)a1, (const char*)a2, a3, a4, a5, a6, a7);
+#endif
+        } else {
+            typedef uint64_t (*ext_fn_8)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+            ret = ((ext_fn_8)sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
+        }
+        vm->ctx[0] = ret;
+    } else {
+        vm->halted = 1; /* fail-closed: extern symbol unresolved */
+    }
+}|} reg_setup)
+
+let emit_stack_runtime_hpp_decls
     ?(external_symbols = [])
     ?(constants = [])
-    ?(obfuscate_runtime = false)
     ?enc
     cfg
-    prog =
+    prog : Cpp_codegen.Cpp_ast.top_decl list =
   let enc = match enc with
     | Some e -> e
     | None -> Stack_encoder.encode_program prog
-  in
-  let has_constants = constants <> [] in
-  let fnv1a = calc_stack_fnv1a32 in
-  let constants_model =
-    List.mapi (fun idx (name, bytes) ->
-      let h = fnv1a name in
-      let alt_name =
-        if String.length name > 0 && name.[0] = '_' then
-          String.sub name 1 (String.length name - 1)
-        else "_" ^ name
-      in
-      let alt_h = fnv1a alt_name in
-      let xor_key = (0x5877A55A lxor (idx * 0x1337 + 0x42)) land 0x7FFFFFFF in
-      let hex_b = Buffer.create (String.length bytes * 6) in
-      for i = 0 to String.length bytes - 1 do
-        let orig = Char.code bytes.[i] in
-        let k = ((xor_key lsr ((i land 3) * 8)) lxor (i * 0x5D + 0x33)) land 0xFF in
-        let enc_val = orig lxor k in
-        Buffer.add_string hex_b (Printf.sprintf "0x%02X, " enc_val)
-      done;
-      Jingoo.Jg_types.Tobj [
-        ("index", Jingoo.Jg_types.Tint idx);
-        ("hash", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08lX" h));
-        ("alt_hash", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08lX" alt_h));
-        ("size", Jingoo.Jg_types.Tint (String.length bytes));
-        ("xor_key", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08X" xor_key));
-        ("hex_bytes", Jingoo.Jg_types.Tstr (Buffer.contents hex_b));
-      ]
-    ) constants
-  in
-  let has_symbols = external_symbols <> [] in
-  let symbols_model =
-    List.map (fun sym ->
-      let h = fnv1a sym in
-      let alt_sym =
-        if String.length sym > 0 && sym.[0] = '_' then
-          String.sub sym 1 (String.length sym - 1)
-        else "_" ^ sym
-      in
-      let alt_h = fnv1a alt_sym in
-      let len = String.length sym in
-      let enc_bytes =
-        List.init len (fun i ->
-          let k = (0x5A lxor ((i * 17 + 0x33) land 0xFF)) in
-          Printf.sprintf "0x%02X" (Char.code sym.[i] lxor k)
-        )
-      in
-      let enc_bytes_str =
-        if enc_bytes = [] then "0x00"
-        else String.concat ", " enc_bytes
-      in
-      Jingoo.Jg_types.Tobj [
-        ("hash", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08lX" h));
-        ("alt_hash", Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08lX" alt_h));
-        ("len", Jingoo.Jg_types.Tint len);
-        ("enc_bytes", Jingoo.Jg_types.Tstr enc_bytes_str);
-      ]
-    ) external_symbols
   in
   let max_bid = Hashtbl.fold (fun id _ acc -> max id acc) enc.block_offsets 0 in
   let mask32 i =
@@ -599,9 +622,6 @@ let generate_c_runtime
     done;
     List.rev !l
   in
-  let block_offsets_model =
-    List.map (fun v -> Jingoo.Jg_types.Tstr (Printf.sprintf "0x%08LX" v)) raw_block_offsets
-  in
   let raw_block_keys =
     let l = ref [] in
     for i = 0 to max_bid do
@@ -611,12 +631,6 @@ let generate_c_runtime
     done;
     List.rev !l
   in
-  let block_keys_model =
-    List.map (fun v -> Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" v)) raw_block_keys
-  in
-  (* Payload-tag key halves ride the same mask64 ladder at indices 0 and 1;
-     the runtime unmasks them with the identical expressions in
-     ASG_UNMASK_TAG_K0/K1. *)
   let raw_tag_key i =
     match Hashtbl.find_opt enc.tag_keys i with
     | Some k -> Int64.logxor k (mask64 i)
@@ -627,18 +641,7 @@ let generate_c_runtime
               rebuild it with Stack_encoder.encode_program" i)
   in
   let raw_tag_key0 = raw_tag_key 0 and raw_tag_key1 = raw_tag_key 1 in
-  let tag_key0 = Printf.sprintf "%016LX" raw_tag_key0 and tag_key1 = Printf.sprintf "%016LX" raw_tag_key1 in
-  let block_tables_source =
-    Cpp_codegen.Cpp_printer.render_top_decls
-      (emit_stack_block_tables_ast ~max_bid ~block_offsets:raw_block_offsets ~block_keys:raw_block_keys ~tag_key0:raw_tag_key0 ~tag_key1:raw_tag_key1 ())
-  in
-  let mk_case op_val name fn =
-    Jingoo.Jg_types.Tobj [
-      ("hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%02X" op_val));
-      ("name", Jingoo.Jg_types.Tstr name);
-      ("fn", Jingoo.Jg_types.Tstr fn);
-    ]
-  in
+
   let raw_dispatch_cases = [
     (enc.op_map.op_push_imm, "PUSH_IMM", "h_push_imm");
     (enc.op_map.op_push_imm32, "PUSH_IMM32", "h_push_imm32");
@@ -680,59 +683,588 @@ let generate_c_runtime
     (enc.op_map.op_add_reg_imm, "ADD_REG_IMM", "h_add_reg_imm");
     (enc.op_map.op_key_feedback, "KEY_FEEDBACK", "h_key_feedback");
   ] in
-  let dispatch_cases =
-    List.map (fun (op, name, fn) -> mk_case op name fn) raw_dispatch_cases
-  in
-  let dispatch_source =
-    emit_stack_dispatch_source ~entry_bid:prog.entry_id raw_dispatch_cases
-  in
-  let external_symbols_source =
-    Cpp_codegen.Cpp_printer.render_top_decl (emit_stack_external_symbols_table_ast external_symbols)
-  in
-  let constants_source =
-    Cpp_codegen.Cpp_printer.render_top_decls (emit_stack_constants_tables_ast constants)
-  in
-  let models = [
-    ("has_constants", Jingoo.Jg_types.Tbool has_constants);
-    ("constants", Jingoo.Jg_types.Tlist constants_model);
-    ("constants_source", Jingoo.Jg_types.Tstr constants_source);
-    ("has_symbols", Jingoo.Jg_types.Tbool has_symbols);
-    ("external_symbols", Jingoo.Jg_types.Tlist symbols_model);
-    ("external_symbols_source", Jingoo.Jg_types.Tstr external_symbols_source);
-    ("block_offsets_count", Jingoo.Jg_types.Tint (max_bid + 1));
-    ("block_offsets", Jingoo.Jg_types.Tlist block_offsets_model);
-    ("block_keys_count", Jingoo.Jg_types.Tint (max_bid + 1));
-    ("block_keys", Jingoo.Jg_types.Tlist block_keys_model);
-    ("block_tables_source", Jingoo.Jg_types.Tstr block_tables_source);
-    ("context_slots", Jingoo.Jg_types.Tint (max 64 prog.context_slots));
-    ("dispatch_cases", Jingoo.Jg_types.Tlist dispatch_cases);
-    ("dispatch_source", Jingoo.Jg_types.Tstr dispatch_source);
-    ("is_address_bound", Jingoo.Jg_types.Tbool (enc.addr_mask <> 0L));
-    ("is_aarch64", Jingoo.Jg_types.Tbool (cfg.arch = AArch64));
-    ("is_riscv", Jingoo.Jg_types.Tbool (cfg.arch = RV64));
-    ("seed_key_hex", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.seed_key));
-    ("tag_key0", Jingoo.Jg_types.Tstr tag_key0);
-    ("tag_key1", Jingoo.Jg_types.Tstr tag_key1);
-    ("payload_tag", Jingoo.Jg_types.Tstr (Printf.sprintf "%016LX" enc.payload_tag));
-    ("layout_jcc_target_first", Jingoo.Jg_types.Tbool enc.layout.jcc_target_first);
-    ("layout_cmov_slot_first", Jingoo.Jg_types.Tbool enc.layout.cmov_slot_first);
-    ("layout_set_reg_imm_first", Jingoo.Jg_types.Tbool enc.layout.set_reg_imm_first);
-    ("layout_add_reg_imm_first", Jingoo.Jg_types.Tbool enc.layout.add_reg_imm_first);
-    (* entry_bid: which block_keys index to use at VM startup.
-       g_stack_block_keys[entry_bid] is the SipHash-derived key for the
-       entry block, replacing the old global seed_key initialisation. *)
-    ("entry_bid", Jingoo.Jg_types.Tint prog.entry_id);
-    ("stack_push_pop_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_push_pop_handlers_string ()));
-    ("stack_dup_swap_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_dup_swap_handlers_string ()));
-    ("stack_mem_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_mem_handlers_string ()));
-    ("stack_alu_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_alu_handlers_string ()));
-    ("stack_flags_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_flags_handlers_string ()));
-    ("stack_superop_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_superop_handlers_string ()));
-    ("stack_control_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_control_handlers_string ~jcc_target_first:enc.layout.jcc_target_first ()));
-    ("stack_cond_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_cond_handlers_string ~cmov_slot_first:enc.layout.cmov_slot_first ()));
-    ("stack_reg_imm_handlers", Jingoo.Jg_types.Tstr (Stack_handlers_emitter.emit_reg_imm_handlers_string ~set_reg_imm_first:enc.layout.set_reg_imm_first ~add_reg_imm_first:enc.layout.add_reg_imm_first ()));
+
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let preamble_decls = [
+    include_sys "stdint.h";
+    include_sys "stdlib.h";
+    include_sys "string.h";
+    include_sys "stdio.h";
+    preproc_if "defined(__APPLE__) && defined(__MACH__)" [
+      include_sys "mach-o/dyld.h";
+      include_sys "mach-o/loader.h";
+    ] ~else_decls:[
+      preproc_if "defined(_WIN32) || defined(_WIN64)" [
+        include_sys "windows.h";
+        preproc_if "defined(_MSC_VER) && !defined(__clang__)" [
+          preproc_ifndef "__attribute__" [
+            macro_def "__attribute__(x)";
+          ];
+        ];
+      ] ~else_decls:[
+        include_sys "dlfcn.h";
+      ];
+    ];
+    raw_top {|static inline int asg_strcmp(const char* s1, const char* s2) noexcept {
+    while (*s1 && (*s1 == *s2)) { ++s1; ++s2; }
+    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+}|};
   ] in
-  let raw = Stack_vm_templates.render Stack_vm_templates.runtime_hpp_template models in
+
+  let constants_decls = [
+    struct_def "AsgardConstantEntry" [
+      member_field UInt32 "hash";
+      member_field UInt32 "alt_hash";
+      member_field (ConstPtr UInt8) "enc_data";
+      member_field (Ptr UInt8) "dec_data";
+      member_field SizeT "size";
+      member_field UInt32 "xor_key";
+      member_field ~is_volatile:true Int32 "ready";
+    ];
+  ]
+  @ emit_stack_constants_tables_ast constants
+  @ [
+    raw_top {|static inline void* asgard_resolve_constant(uint32_t hash, uint32_t alt_hash) noexcept {
+    for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {
+        AsgardConstantEntry* c = &g_asgard_constants[i];
+        if (c->size > 0) {
+            if (c->hash == hash ||
+                (alt_hash != 0 && c->hash == alt_hash) ||
+                (c->alt_hash != 0 && (c->alt_hash == hash || c->alt_hash == alt_hash))) {
+                if (__builtin_expect(!c->ready, 0)) {
+                    for (size_t j = 0; j < c->size; ++j) {
+                        uint8_t k = (uint8_t)(((c->xor_key >> ((j & 3) * 8)) ^ (j * 0x5D + 0x33)) & 0xFF);
+                        c->dec_data[j] = (uint8_t)(c->enc_data[j] ^ k);
+                    }
+                    c->dec_data[c->size] = 0;
+                    c->ready = 1;
+                }
+                return (void*)c->dec_data;
+            }
+        }
+    }
+    return nullptr;
+}
+
+static inline void* asgard_resolve_constant_name(const char* name) noexcept {
+    if (!name || name[0] == '\0') return nullptr;
+    uint32_t h = 0x811C9DC5U;
+    const char* p = name;
+    while (*p) {
+        h = (h ^ (uint8_t)*p++) * 0x01000193U;
+    }
+    uint32_t ah = 0;
+    if (name[0] == '_') {
+        ah = 0x811C9DC5U;
+        p = name + 1;
+        while (*p) {
+            ah = (ah ^ (uint8_t)*p++) * 0x01000193U;
+        }
+    }
+    return asgard_resolve_constant(h, ah);
+}|};
+  ] in
+
+  let symbols_decls = [
+    struct_def "asgard_ext_sym_t" [
+      member_field UInt32 "hash";
+      member_field UInt32 "alt_hash";
+      member_field UInt16 "len";
+      member_field (Array (UInt8, 64)) "enc_bytes";
+    ];
+    emit_stack_external_symbols_table_ast external_symbols;
+    raw_top {|#if defined(__APPLE__) && defined(__MACH__)
+static inline uint64_t asg_read_uleb128(const uint8_t** p) {
+    uint64_t result = 0;
+    int shift = 0;
+    while (1) {
+        uint8_t byte = *(*p)++;
+        result |= ((uint64_t)(byte & 0x7f)) << shift;
+        if ((byte & 0x80) == 0) break;
+        shift += 7;
+    }
+    return result;
+}
+
+static void* asg_find_sym_in_trie(const uint8_t* trie_base, const uint8_t* node, uint32_t cur_h, uint32_t target_h, uintptr_t base) {
+    const uint8_t* p = node;
+    uint64_t terminal_size = asg_read_uleb128(&p);
+    if (terminal_size > 0 && cur_h == target_h) {
+        uint64_t flags = asg_read_uleb128(&p);
+        if ((flags & 0x08) == 0) {
+            uint64_t addr = asg_read_uleb128(&p);
+            return (void*)(addr + base);
+        }
+        return nullptr;
+    }
+    p += terminal_size;
+    uint8_t child_count = *p++;
+    for (uint8_t i = 0; i < child_count; i++) {
+        uint32_t child_h = cur_h;
+        while (*p) {
+            child_h = (child_h ^ (uint8_t)*p++) * 0x01000193U;
+        }
+        p++; /* skip null terminator */
+        uint64_t child_offset = asg_read_uleb128(&p);
+        void* res = asg_find_sym_in_trie(trie_base, trie_base + child_offset, child_h, target_h, base);
+        if (res) return res;
+    }
+    return nullptr;
+}
+
+static void* asgard_resolve_by_api_hash(uint32_t target_hash) {
+    if (target_hash == 0) return nullptr;
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        const struct mach_header_64* hdr = (const struct mach_header_64*)_dyld_get_image_header(i);
+        if (!hdr || hdr->magic != MH_MAGIC_64) continue;
+        intptr_t slide = _dyld_get_image_vmaddr_slide(i);
+        const struct load_command* cmd = (const struct load_command*)(hdr + 1);
+        uintptr_t linkedit_base = 0;
+        uint32_t dataoff = 0;
+        for (uint32_t c = 0; c < hdr->ncmds; c++) {
+            if (cmd->cmd == LC_SEGMENT_64) {
+                const struct segment_command_64* seg = (const struct segment_command_64*)cmd;
+                if (asg_strcmp(seg->segname, "__LINKEDIT") == 0) {
+                    linkedit_base = seg->vmaddr + slide - seg->fileoff;
+                }
+            } else if (cmd->cmd == 0x80000033 /* LC_DYLD_EXPORTS_TRIE */) {
+                const struct linkedit_data_command* lc = (const struct linkedit_data_command*)cmd;
+                dataoff = lc->dataoff;
+            }
+            cmd = (const struct load_command*)((const char*)cmd + cmd->cmdsize);
+        }
+        if (linkedit_base && dataoff) {
+            const uint8_t* trie = (const uint8_t*)(linkedit_base + dataoff);
+            void* resolved = asg_find_sym_in_trie(trie, trie, 0x811c9dc5U, target_hash, (uintptr_t)hdr);
+            if (resolved) return resolved;
+        }
+    }
+    return nullptr;
+}
+#endif
+
+static inline void asg_decrypt_sym(const asgard_ext_sym_t* sym, char* out_buf, size_t out_cap) {
+    size_t n = sym->len < out_cap - 1 ? sym->len : out_cap - 1;
+    for (size_t i = 0; i < n; i++) {
+        uint8_t k = (uint8_t)(0x5A ^ ((i * 17 + 0x33) & 0xFF));
+        out_buf[i] = (char)(sym->enc_bytes[i] ^ k);
+    }
+    out_buf[n] = '\0';
+}
+
+static void* asgard_resolve_sym_idx(int32_t sym_idx) {
+    if (sym_idx < 0 || (size_t)sym_idx >= sizeof(g_external_symbols) / sizeof(g_external_symbols[0])) {
+        return nullptr;
+    }
+    const asgard_ext_sym_t* sym = &g_external_symbols[sym_idx];
+    if (sym->len == 0) return nullptr;
+
+    void* sym_ptr = asgard_resolve_constant(sym->hash, sym->alt_hash);
+    if (sym_ptr) return sym_ptr;
+
+#if defined(__APPLE__) && defined(__MACH__)
+    /* 1. Primary: Direct Mach-O export trie walking by 32-bit API Hash (0 imports) */
+    sym_ptr = asgard_resolve_by_api_hash(sym->hash);
+    if (!sym_ptr && sym->alt_hash != 0) {
+        sym_ptr = asgard_resolve_by_api_hash(sym->alt_hash);
+    }
+    if (sym_ptr) return sym_ptr;
+#endif
+
+    /* 2. Secondary: Decrypt symbol name on stack */
+    char dec_name[64];
+    asg_decrypt_sym(sym, dec_name, sizeof(dec_name));
+    if (!sym_ptr) sym_ptr = asgard_resolve_constant_name(dec_name);
+
+#if defined(__APPLE__) && defined(__MACH__)
+    if (!sym_ptr) {
+        typedef void* (*dlsym_fn_t)(void*, const char*);
+        dlsym_fn_t dyn_dlsym = (dlsym_fn_t)asgard_resolve_by_api_hash(0xE628BBCDU /* FNV1a("_dlsym") */);
+        if (dyn_dlsym) {
+            sym_ptr = dyn_dlsym((void*)-2, dec_name);
+            if (!sym_ptr && dec_name[0] == '_') sym_ptr = dyn_dlsym((void*)-2, dec_name + 1);
+            if (!sym_ptr) {
+                char alt[66];
+                alt[0] = '_';
+                memcpy(alt + 1, dec_name, sym->len + 1);
+                sym_ptr = dyn_dlsym((void*)-2, alt);
+            }
+        }
+    }
+#elif defined(_WIN32) || defined(_WIN64)
+    if (!sym_ptr) {
+        HMODULE hMain = GetModuleHandleA(NULL);
+        sym_ptr = (void*)GetProcAddress(hMain, dec_name);
+        if (!sym_ptr && dec_name[0] == '_') sym_ptr = (void*)GetProcAddress(hMain, dec_name + 1);
+        if (!sym_ptr) {
+            char alt[66];
+            alt[0] = '_';
+            memcpy(alt + 1, dec_name, sym->len + 1);
+            sym_ptr = (void*)GetProcAddress(hMain, alt);
+        }
+    }
+#else
+    if (!sym_ptr) {
+        sym_ptr = dlsym(RTLD_DEFAULT, dec_name);
+        if (!sym_ptr && dec_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, dec_name + 1);
+        if (!sym_ptr) {
+            char alt[66];
+            alt[0] = '_';
+            memcpy(alt + 1, dec_name, sym->len + 1);
+            sym_ptr = dlsym(RTLD_DEFAULT, alt);
+        }
+    }
+#endif
+
+    volatile char* p = dec_name;
+    while (*p) *p++ = 0;
+
+    return sym_ptr;
+}|};
+  ] in
+
+  let block_tables_decls =
+    emit_stack_block_tables_ast ~max_bid ~block_offsets:raw_block_offsets ~block_keys:raw_block_keys ~tag_key0:raw_tag_key0 ~tag_key1:raw_tag_key1 ()
+  in
+
+  let context_slots = max 64 prog.context_slots in
+  let stack_vm_t_def =
+    struct_def "stack_vm_t" [
+      member_field (Array (UInt64, 4096)) "vsp";
+      member_field Int32 "vsp_idx";
+      member_field (Array (UInt64, context_slots)) "ctx";
+      member_field UInt64 "vkey";
+      member_field UInt64 "vsp_key";
+      member_field UInt64 "addr_key";
+      member_field SizeT "bc_size";
+      member_field UInt8 "zf";
+      member_field UInt8 "sf";
+      member_field UInt8 "cf";
+      member_field UInt8 "pf";
+      member_field UInt8 "of";
+      member_field Int32 "halted";
+      member_field Int32 "auth_failed";
+    ]
+  in
+
+  let run_func =
+    func_decl ~attrs:[StaticFn; InlineFn] Void "stack_vm_run"
+      [ (Ptr (StructType "stack_vm_t"), "vm"); (ConstPtr UInt8, "bytecode"); (SizeT, "size") ]
+      ([
+        (var "vm" $-> "bc_size") := var "size";
+        var "g_last_auth_failed" := i32 0;
+        if_then (log_not (call "asg_payload_auth_ok" [ var "bytecode"; var "size"; var "vm" $-> "addr_key" ])) [
+          var "g_last_auth_failed" := i32 1;
+          (var "vm" $-> "auth_failed") := i32 1;
+          (var "vm" $-> "halted") := i32 1;
+          expr_stmt (call "memset" [ var "vm" $-> "ctx"; i32 0; sizeof_expr (var "vm" $-> "ctx") ]);
+          (var "vm" $-> "vsp_idx") := i32 0;
+          ret_void;
+        ];
+      ] @ emit_stack_dispatch_stmts ~entry_bid:prog.entry_id raw_dispatch_cases)
+  in
+
+  let is_addr_bound = enc.addr_mask <> 0L in
+  let call_func =
+    func_decl ~attrs:[StaticFn; InlineFn] UInt64 "stack_vm_call"
+      [
+        (ConstPtr UInt64, "bc_words");
+        (SizeT, "len_words");
+        (UInt64, "a0 = 0"); (UInt64, "a1 = 0"); (UInt64, "a2 = 0"); (UInt64, "a3 = 0");
+        (UInt64, "a4 = 0"); (UInt64, "a5 = 0"); (UInt64, "a6 = 0"); (UInt64, "a7 = 0");
+      ]
+      [
+        decl_var (StructType "stack_vm_t") "vm";
+        expr_stmt (call "memset" [ addr_of (var "vm"); i32 0; sizeof_expr (var "vm") ]);
+        (if is_addr_bound then
+           block [
+             (var "vm" $. "addr_key") := call "derive_addr_key" [];
+             (var "vm" $. "vkey") := call "ASG_UNMASK_KEY" [ i32 prog.entry_id ] ^~ (var "vm" $. "addr_key");
+           ]
+         else
+           block [
+             (var "vm" $. "vkey") := call "ASG_UNMASK_KEY" [ i32 prog.entry_id ];
+           ]);
+        raw "vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);";
+        decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, 1048576)) "host_stack";
+        let_u64 "sp_val" (c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L));
+        idx (var "vm" $. "ctx") (i32 4) := var "sp_val";
+        idx (var "vm" $. "ctx") (i32 5) := var "sp_val";
+        (match cfg.arch with
+         | RV64 ->
+             block [
+               idx (var "vm" $. "ctx") (i32 0) := var "a0";
+               idx (var "vm" $. "ctx") (i32 2) := var "a1";
+               idx (var "vm" $. "ctx") (i32 1) := var "a2";
+               idx (var "vm" $. "ctx") (i32 6) := var "a3";
+               idx (var "vm" $. "ctx") (i32 7) := var "a4";
+               idx (var "vm" $. "ctx") (i32 8) := var "a5";
+               idx (var "vm" $. "ctx") (i32 9) := var "a6";
+               idx (var "vm" $. "ctx") (i32 12) := var "a7";
+             ]
+         | AArch64 ->
+             block [
+               idx (var "vm" $. "ctx") (i32 0) := var "a0";
+               idx (var "vm" $. "ctx") (i32 1) := var "a1";
+               idx (var "vm" $. "ctx") (i32 2) := var "a2";
+               idx (var "vm" $. "ctx") (i32 3) := var "a3";
+               idx (var "vm" $. "ctx") (i32 6) := var "a4";
+               idx (var "vm" $. "ctx") (i32 7) := var "a5";
+               idx (var "vm" $. "ctx") (i32 8) := var "a6";
+               idx (var "vm" $. "ctx") (i32 9) := var "a7";
+             ]
+         | X86_64 ->
+             block [
+               idx (var "vm" $. "ctx") (i32 7) := var "a0";
+               idx (var "vm" $. "ctx") (i32 6) := var "a1";
+               idx (var "vm" $. "ctx") (i32 2) := var "a2";
+               idx (var "vm" $. "ctx") (i32 1) := var "a3";
+               idx (var "vm" $. "ctx") (i32 8) := var "a4";
+               idx (var "vm" $. "ctx") (i32 9) := var "a5";
+               idx (var "vm" $. "ctx") (i32 0) := var "a6";
+               idx (var "vm" $. "ctx") (i32 3) := var "a7";
+             ]);
+        decl_var (ConstPtr UInt8) "bc_bytes" ~init:(c_cast (ConstPtr UInt8) (var "bc_words"));
+        expr_stmt (call "stack_vm_run" [ addr_of (var "vm"); var "bc_bytes"; var "len_words" *~ u64 8L ]);
+        ret (idx (var "vm" $. "ctx") (i32 0));
+      ]
+  in
+
+  let stack_vm_ns =
+    namespace_def "asgard_stack_vm" (
+      [
+        stack_vm_t_def;
+        typedef (StructType "stack_vm_t") "stack_vm_t";
+        raw_top {|static inline uint64_t rotl64(uint64_t v, int k) {
+    return (v << (k & 63)) | (v >> ((64 - k) & 63));
+}
+
+static inline void step_key(uint64_t *key, uint8_t p) {
+    *key = rotl64(*key, 3) + (p ^ 0x5A);
+}
+
+static inline uint64_t feedback_hash(uint64_t v) {
+    v ^= v >> 33;
+    v *= UINT64_C(0xFF51AFD7ED558CCD);
+    v ^= v >> 33;
+    v *= UINT64_C(0xC4CEB9FE1A85EC53);
+    v ^= v >> 33;
+    return v;
+}
+
+static inline uint8_t fetch_byte(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {
+    if (*vip >= vm->bc_size) {
+        vm->halted = 1;
+        return 0;
+    }
+    uint8_t c = bc[(*vip)++];
+    uint8_t op = c ^ (uint8_t)(vm->vkey & 0xFF);
+    step_key(&vm->vkey, op);
+    return op;
+}
+
+static inline int16_t fetch_i16(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {
+    uint16_t b0 = fetch_byte(vm, bc, vip);
+    uint16_t b1 = fetch_byte(vm, bc, vip);
+    return (int16_t)(b0 | (b1 << 8));
+}
+
+static inline int32_t fetch_i32(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {
+    uint32_t b0 = fetch_byte(vm, bc, vip);
+    uint32_t b1 = fetch_byte(vm, bc, vip);
+    uint32_t b2 = fetch_byte(vm, bc, vip);
+    uint32_t b3 = fetch_byte(vm, bc, vip);
+    return (int32_t)(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24));
+}
+
+static inline int64_t fetch_i64(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {
+    uint64_t res = 0;
+    for (int i = 0; i < 8; ++i) {
+        uint64_t b = fetch_byte(vm, bc, vip);
+        res |= (b << (i * 8));
+    }
+    return (int64_t)res;
+}
+
+#define VSP_MASK(slot) (vm->vsp_key + (uint64_t)(slot) * UINT64_C(0x9E3779B97F4A7C15))
+#define VSP_ENCODE(slot, v) ((v) ^ VSP_MASK(slot))
+
+static inline uint8_t parity8(uint64_t v) {
+    uint8_t x = (uint8_t)(v & 0xFF);
+    x ^= x >> 4; x ^= x >> 2; x ^= x >> 1;
+    return (~x) & 1;
+}
+
+static inline int eval_cond(const stack_vm_t *vm, uint8_t cond) {
+    switch (cond) {
+        case 0: return vm->zf;
+        case 1: return !vm->zf;
+        case 2: return vm->cf;
+        case 3: return !vm->cf;
+        case 4: return vm->cf || vm->zf;
+        case 5: return !vm->cf && !vm->zf;
+        case 6: return vm->sf;
+        case 7: return !vm->sf;
+        case 8: return vm->sf != vm->of;
+        case 9: return vm->sf == vm->of;
+        case 10: return vm->zf || (vm->sf != vm->of);
+        case 11: return !vm->zf && (vm->sf == vm->of);
+        case 12: return vm->of;
+        case 13: return !vm->of;
+        case 14: return vm->pf;
+        case 15: return !vm->pf;
+        case 16: return 1;
+        default: return 1;
+    }
+}|};
+      ]
+      @ Stack_handlers_emitter.emit_push_pop_handlers ()
+      @ [
+        raw_top {|static inline int asg_addr_canonical(uint64_t addr) {
+    uint64_t top = addr >> 48;
+    return top == ((addr & (UINT64_C(1) << 47)) ? UINT64_C(0xFFFF) : UINT64_C(0));
+}
+
+static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
+    if (w != 1 && w != 2 && w != 4 && w != 8) return 0;
+    if (addr == 0) return 0;
+    if ((addr & (uint64_t)(w - 1)) != 0) return 0;
+    if (!asg_addr_canonical(addr)) return 0;
+    if (addr > UINT64_MAX - (uint64_t)(w - 1)) return 0;
+    return 1;
+}|};
+      ]
+      @ Stack_handlers_emitter.emit_mem_handlers ()
+      @ Stack_handlers_emitter.emit_alu_handlers ()
+      @ Stack_handlers_emitter.emit_dup_swap_handlers ()
+      @ Stack_handlers_emitter.emit_flags_handlers ()
+      @ Stack_handlers_emitter.emit_control_handlers ~jcc_target_first:enc.layout.jcc_target_first ()
+      @ [ emit_h_call_extern cfg.arch ]
+      @ Stack_handlers_emitter.emit_cond_handlers ~cmov_slot_first:enc.layout.cmov_slot_first ()
+      @ Stack_handlers_emitter.emit_superop_handlers ()
+      @ Stack_handlers_emitter.emit_reg_imm_handlers
+          ~set_reg_imm_first:enc.layout.set_reg_imm_first
+          ~add_reg_imm_first:enc.layout.add_reg_imm_first ()
+      @ [
+        raw_top {|static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {
+    &h_push_imm, &h_push_imm32, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
+    &h_add, &h_sub, &h_mul, &h_nor, &h_nand,
+    &h_shl, &h_shr, &h_sar, &h_div, &h_idiv,
+    &h_dup, &h_dup2, &h_rot, &h_swap, &h_push_flags, &h_pop_flags, &h_jmp_rel,
+    &h_jcc_rel, &h_key_adjust, &h_exit, &h_call_extern, &h_resolve_sym,
+    &h_setcc, &h_cmov, &h_cmp, &h_test,
+    &h_add_imm, &h_sub_imm, &h_add_ii, &h_sub_ii, &h_set_reg_imm, &h_add_reg_imm,
+    &h_key_feedback
+};
+__attribute__((noinline))
+static uint64_t derive_addr_key(void) {
+    const size_t n = sizeof(g_stack_handler_table) / sizeof(g_stack_handler_table[0]);
+    uint64_t acc = UINT64_C(0x9E3779B97F4A7C15);
+#if defined(__clang__)
+    #pragma clang loop unroll(disable)
+#elif defined(__GNUC__)
+    #pragma GCC unroll 0
+#endif
+    for (size_t i = 0; i + 1 < n; ++i) {
+        uint64_t d = (uint64_t)((uintptr_t)g_stack_handler_table[i + 1] - (uintptr_t)g_stack_handler_table[i]);
+        acc ^= d + UINT64_C(0x165667B19E3779F9) + (acc << 6) + (acc >> 2);
+    }
+    return rotl64(acc, 31) ^ UINT64_C(0xA5A5A5A5A5A5A5A5);
+}|};
+        macro_def ~value:(var (Printf.sprintf "UINT64_C(0x%016LX)" enc.payload_tag)) "ASG_PAYLOAD_TAG";
+        raw_top {|static inline uint64_t asg_siphash12(uint64_t k0, uint64_t k1, uint64_t m) {
+    uint64_t v0 = k0 ^ UINT64_C(0x736F6D6570736575);
+    uint64_t v1 = k1 ^ UINT64_C(0x646F72616E646F6D);
+    uint64_t v2 = k0 ^ UINT64_C(0x6C7967656E657261);
+    uint64_t v3 = k1 ^ UINT64_C(0x7465646279746573);
+    v3 ^= m;
+    v0 += v1; v1 = rotl64(v1, 13); v1 ^= v0;
+    v0 = rotl64(v0, 32);
+    v2 += v3; v3 = rotl64(v3, 16); v3 ^= v2;
+    v0 += v3; v3 = rotl64(v3, 21); v3 ^= v0;
+    v2 += v1; v1 = rotl64(v1, 17); v1 ^= v2;
+    v2 = rotl64(v2, 32);
+    v0 ^= m;
+    v2 ^= UINT64_C(0xFF);
+    for (int r = 0; r < 2; ++r) {
+        v0 += v1; v1 = rotl64(v1, 13); v1 ^= v0;
+        v0 = rotl64(v0, 32);
+        v2 += v3; v3 = rotl64(v3, 16); v3 ^= v2;
+        v0 += v3; v3 = rotl64(v3, 21); v3 ^= v0;
+        v2 += v1; v1 = rotl64(v1, 17); v1 ^= v2;
+        v2 = rotl64(v2, 32);
+    }
+    return v0 ^ v1 ^ v2 ^ v3;
+}
+
+static uint64_t asg_payload_tag(uint64_t k0, uint64_t k1, const uint8_t *bc, size_t size) {
+    uint64_t acc = asg_siphash12(k0, k1, UINT64_C(0x5041594C4F414421) ^ (uint64_t)size);
+    for (size_t i = 0; i < size; i += 8) {
+        uint64_t w = 0;
+        for (int j = 7; j >= 0; --j) w = (w << 8) | (uint64_t)bc[i + (size_t)j];
+        acc = asg_siphash12(k0, k1, acc ^ w);
+    }
+    return acc;
+}
+
+static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t addr_key) {
+    if (size == 0 || (size & 7) != 0) return 0;
+    uint64_t k0 = ASG_UNMASK_TAG_K0() ^ addr_key;
+    uint64_t k1 = ASG_UNMASK_TAG_K1() ^ addr_key;
+    uint64_t diff = asg_payload_tag(k0, k1, bc, size) ^ ASG_PAYLOAD_TAG;
+    return ((diff | (0 - diff)) >> 63) == 0;
+}|};
+        global_var ~is_static:true ~is_thread_local:true ~init:(i32 0) Int32 "g_last_auth_failed";
+        run_func;
+        call_func;
+      ]
+    )
+  in
+
+  let vanguard_ns =
+    namespace_def "vanguard_threaded_vm" [
+      func_decl ~attrs:[StaticFn; InlineFn] UInt64 "asgard_vm_call"
+        [
+          (ConstPtr UInt64, "bc");
+          (SizeT, "len");
+          (UInt64, "a0 = 0"); (UInt64, "a1 = 0"); (UInt64, "a2 = 0"); (UInt64, "a3 = 0");
+          (UInt64, "a4 = 0"); (UInt64, "a5 = 0"); (UInt64, "a6 = 0"); (UInt64, "a7 = 0");
+        ]
+        [
+          let_u64 "res" (call "asgard_stack_vm::stack_vm_call" [
+            var "bc"; var "len";
+            var "a0"; var "a1"; var "a2"; var "a3";
+            var "a4"; var "a5"; var "a6"; var "a7";
+          ]);
+          if_then (call "__builtin_expect" [ var "asgard_stack_vm::g_last_auth_failed"; i32 0 ]) [
+            ret (u64 1L);
+          ];
+          ret (var "res");
+        ];
+    ]
+  in
+
+  preamble_decls
+  @ constants_decls
+  @ symbols_decls
+  @ block_tables_decls
+  @ [ stack_vm_ns; vanguard_ns ]
+
+let generate_c_runtime
+    ?(external_symbols = [])
+    ?(constants = [])
+    ?(obfuscate_runtime = false)
+    ?enc
+    cfg
+    prog =
+  let enc = match enc with
+    | Some e -> e
+    | None -> Stack_encoder.encode_program prog
+  in
+  let decls = emit_stack_runtime_hpp_decls ~external_symbols ~constants ~enc cfg prog in
+  let raw = Cpp_codegen.Cpp_printer.render_top_decls decls in
   if obfuscate_runtime then
     scramble_c_runtime ~seed:enc.seed_key ~strip_comments:true raw
   else
