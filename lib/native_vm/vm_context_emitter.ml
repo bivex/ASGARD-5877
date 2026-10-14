@@ -2,7 +2,7 @@ open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
 
-let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize =
+let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize : top_decl list =
   ignore enable_running_key;
 
   let gpr_names = [|
@@ -446,6 +446,10 @@ let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     fn_compute_sub_flags;
     fn_compute_add_flags;
   ] in
+  decls
 
+let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize =
+  let decls = emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize in
   let rendered = render_top_decls decls in
   Buffer.add_string b rendered
+

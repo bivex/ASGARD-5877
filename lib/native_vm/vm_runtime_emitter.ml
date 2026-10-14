@@ -1,6 +1,4 @@
-open Jingoo
-
-let generate_wbox_seed_derivation ~rng (key_seed : int32) : string =
+let generate_wbox_seed_derivation_decls ~rng (key_seed : int32) : Cpp_codegen.Cpp_ast.top_decl list =
   let rotl32 x n =
     let n = n land 31 in
     Int32.logor (Int32.shift_left x n) (Int32.shift_right_logical x (32 - n))
@@ -48,7 +46,6 @@ let generate_wbox_seed_derivation ~rng (key_seed : int32) : string =
 
   let open Cpp_codegen.Cpp_ast in
   let open Cpp_codegen.Cpp_dsl in
-  let open Cpp_codegen.Cpp_printer in
 
   let format_table_decl name arr =
     global_var ~is_static:true ~is_const:true
@@ -106,7 +103,7 @@ let generate_wbox_seed_derivation ~rng (key_seed : int32) : string =
       ]
   in
 
-  render_top_decls [
+  [
     namespace_def "asgard_whitebox" [
       format_table_decl "T0_0" t0_0;
       format_table_decl "T0_1" t0_1;
@@ -121,6 +118,9 @@ let generate_wbox_seed_derivation ~rng (key_seed : int32) : string =
     ];
     asgard_wbox_derive_seed_fn;
   ]
+
+let generate_wbox_seed_derivation ~rng (key_seed : int32) : string =
+  Cpp_codegen.Cpp_printer.render_top_decls (generate_wbox_seed_derivation_decls ~rng key_seed)
 
 module Runtime_policy = struct
   type t = {
@@ -167,25 +167,6 @@ module Runtime_policy = struct
       enable_egraph_expansion = (match config with Some c -> c.vm_runtime.egraph_expansion | None -> true);
       enable_ephemeral_jit = Protection_config.ephemeral_jit_enabled config;
     }
-
-  let to_models (p : t) : (string * Jg_types.tvalue) list =
-    [
-      ("num_domains", Jg_types.Tint p.num_domains);
-      ("enable_smc", Jg_types.Tbool p.enable_smc);
-      ("enable_smc_strict", Jg_types.Tbool p.enable_smc_strict);
-      ("enable_anti_emu", Jg_types.Tbool p.enable_anti_emu);
-      ("enable_mem_scan", Jg_types.Tbool p.enable_mem_scan);
-      ("enable_timing_probes", Jg_types.Tbool p.enable_timing_probes);
-      ("enable_nanomites", Jg_types.Tbool p.enable_nanomites);
-      ("enable_direct_syscalls", Jg_types.Tbool p.enable_direct_syscalls);
-      ("enable_running_key", Jg_types.Tbool p.enable_running_key);
-      ("enable_address_bound", Jg_types.Tbool p.enable_address_bound);
-      ("enable_stack_scramble", Jg_types.Tbool p.enable_stack_scramble);
-      ("enable_mem_sanitize", Jg_types.Tbool p.enable_mem_sanitize);
-      ("enable_vector_isa", Jg_types.Tbool p.enable_vector_isa);
-      ("enable_egraph_expansion", Jg_types.Tbool p.enable_egraph_expansion);
-      ("enable_ephemeral_jit", Jg_types.Tbool p.enable_ephemeral_jit);
-    ]
 end
 
 let calc_fnv1a32 (s : string) : int32 =
@@ -369,7 +350,7 @@ let emit_native_valid_hashes_ast (hashes : int64 list) : Cpp_codegen.Cpp_ast.stm
     "valid_hashes"
     ~init:(init_list exprs)
 
-let emit_cpp_threaded_header
+let emit_native_runtime_hpp_decls
     ~rng
     ~key_seed
     ~reg_perm
@@ -381,7 +362,7 @@ let emit_cpp_threaded_header
     ?(constants = [])
     ?(block_spans = [])
     ?gpu_matrix
-    opcode_to_handler =
+    opcode_to_handler : Cpp_codegen.Cpp_ast.top_decl list =
 
   let profile = match runtime_profile with
     | Some p -> p
@@ -407,87 +388,6 @@ let emit_cpp_threaded_header
     | Some mat -> (true, Gpu_synth.Gpu_matrix.emit_cpp_constants mat)
     | None -> (false, "")
   in
-
-  let block_spans_models =
-    List.map (fun (off, len) ->
-      Jg_types.Tobj [
-        ("off", Jg_types.Tint off);
-        ("len", Jg_types.Tint len);
-      ]
-    ) block_spans
-  in
-
-  let fnv1a s =
-    let h = ref 0x811c9dc5l in
-    for i = 0 to String.length s - 1 do
-      h := Int32.logxor !h (Int32.of_int (Char.code s.[i]));
-      h := Int32.mul !h 0x01000193l
-    done;
-    !h
-  in
-  let ext_sym_models =
-    List.map (fun sym ->
-      let h = fnv1a sym in
-      let alt_sym =
-        if String.length sym > 0 && sym.[0] = '_' then
-          String.sub sym 1 (String.length sym - 1)
-        else "_" ^ sym
-      in
-      let alt_h = fnv1a alt_sym in
-      let len = String.length sym in
-      let enc_bytes =
-        List.init len (fun i ->
-          let k = (0x5A lxor ((i * 17 + 0x33) land 0xFF)) in
-          Printf.sprintf "0x%02X" (Char.code sym.[i] lxor k)
-        )
-      in
-      let enc_bytes_str =
-        if enc_bytes = [] then "0x00"
-        else String.concat ", " enc_bytes
-      in
-      Jg_types.Tobj [
-        ("hash", Jg_types.Tstr (Printf.sprintf "0x%08lX" h));
-        ("alt_hash", Jg_types.Tstr (Printf.sprintf "0x%08lX" alt_h));
-        ("len", Jg_types.Tint len);
-        ("enc_bytes", Jg_types.Tstr enc_bytes_str);
-      ]
-    ) external_symbols
-  in
-
-  let constants_models =
-    List.mapi (fun idx (name, bytes) ->
-      let h = fnv1a name in
-      let alt_name =
-        if String.length name > 0 && name.[0] = '_' then
-          String.sub name 1 (String.length name - 1)
-        else "_" ^ name
-      in
-      let alt_h = fnv1a alt_name in
-      let xor_key = ((Random.State.bits rng) land 0x7FFFFFFF) lxor (idx * 0x1337 + 0x5877) in
-      let hex_b = Buffer.create (String.length bytes * 6) in
-      for i = 0 to String.length bytes - 1 do
-        let orig = Char.code bytes.[i] in
-        let k = ((xor_key lsr ((i land 3) * 8)) lxor (i * 0x5D + 0x33)) land 0xFF in
-        let enc_val = orig lxor k in
-        Buffer.add_string hex_b (Printf.sprintf "0x%02X, " enc_val)
-      done;
-      Jg_types.Tobj [
-        ("index", Jg_types.Tint idx);
-        ("hash", Jg_types.Tstr (Printf.sprintf "0x%08lX" h));
-        ("alt_hash", Jg_types.Tstr (Printf.sprintf "0x%08lX" alt_h));
-        ("size", Jg_types.Tint (String.length bytes));
-        ("xor_key", Jg_types.Tstr (Printf.sprintf "0x%08X" xor_key));
-        ("hex_bytes", Jg_types.Tstr (Buffer.contents hex_b));
-      ]
-    ) constants
-  in
-
-  let ctx_buf = Buffer.create 2048 in
-  Vm_context_emitter.emit_context_hpp ctx_buf ~key_seed ~reg_perm ~stride ~offset
-    ~enable_running_key:policy.enable_running_key
-    ~enable_stack_scramble:policy.enable_stack_scramble
-    ~enable_mem_sanitize:policy.enable_mem_sanitize;
-  let context_source = Buffer.contents ctx_buf in
 
   let domain_salts =
     let used = Hashtbl.create num_domains in
@@ -525,29 +425,8 @@ let emit_cpp_threaded_header
       (d, handlers)
     )
   in
-  let domain_salt_source =
-    Cpp_codegen.Cpp_printer.string_of_stmt (emit_native_domain_salt_ast domain_salts)
-  in
-  let dispatch_domains_source =
-    Cpp_codegen.Cpp_printer.string_of_stmts (emit_native_dispatch_domains_stmts raw_dispatch_domains)
-  in
   let msvc_switch_cases_source =
     emit_native_msvc_switch_cases_source raw_dispatch_domains
-  in
-  let valid_hashes_source =
-    match expected_hashes with
-    | Some hl when List.length hl > 1 ->
-        Cpp_codegen.Cpp_printer.string_of_stmt (emit_native_valid_hashes_ast hl)
-    | _ -> ""
-  in
-
-  let dispatch_domain_models =
-    List.map (fun (d, handlers) ->
-      Jg_types.Tobj [
-        ("index", Jg_types.Tint d);
-        ("handlers", Jg_types.Tlist (List.map (fun h -> Jg_types.Tstr h) handlers));
-      ]
-    ) raw_dispatch_domains
   in
 
   let handlers_buf = Buffer.create 4096 in
@@ -560,60 +439,538 @@ let emit_cpp_threaded_header
     ~enable_ephemeral_jit:policy.enable_ephemeral_jit
     ~num_domains ();
   let handlers_source = Buffer.contents handlers_buf in
-  let wbox_seed_source = generate_wbox_seed_derivation ~rng key_seed in
-  let external_symbols_source =
-    Cpp_codegen.Cpp_printer.render_top_decl (emit_external_symbols_table_ast external_symbols)
-  in
-  let constants_source =
-    Cpp_codegen.Cpp_printer.render_top_decls (emit_constants_tables_ast ~rng constants)
-  in
-  let block_spans_source =
-    if policy.enable_address_bound then
-      Cpp_codegen.Cpp_printer.render_top_decls (emit_block_spans_tables_ast block_spans)
-    else ""
+
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+
+  let preamble_decls : top_decl list = [
+    pragma "once";
+    raw_top ({|#if __has_include("vanguard/platform_compat.hpp")
+#include "vanguard/platform_compat.hpp"
+#include "vanguard/crypto_primitives.hpp"
+#include "vanguard/sanitization.hpp"
+#else
+|} ^ Native_vm_templates.platform_compat_header ^ "\n"
+  ^ Native_vm_templates.crypto_primitives_header ^ "\n"
+  ^ Native_vm_templates.sanitization_header ^ "\n#endif");
+  ]
+  @ (if policy.enable_vector_isa then [
+      macro_def ~value:(i32 1) "ASGARD_VECTOR_ISA";
+      raw_top {|#if defined(__aarch64__)
+#include <arm_neon.h>
+#elif defined(__x86_64__)
+#include <immintrin.h>
+#endif|};
+    ] else [])
+  @ [
+    raw_top rns_header;
+    raw_top branchless_vip_header;
+    raw_top chameleon_header;
+  ]
+  @ (if policy.enable_direct_syscalls then [ raw_top direct_syscalls_header ] else [])
+  @ (if policy.enable_anti_emu then [ raw_top anti_emulation_header ] else [])
+  @ [ raw_top dual_mapping_header ]
+  @ (if policy.enable_smc then
+       (if policy.enable_smc_strict then [ macro_def ~value:(i32 1) "ASGARD_SMC_STRICT" ] else [])
+       @ [ raw_top smc_header ]
+     else [])
+  @ (if policy.enable_mem_scan then [ raw_top mem_scan_header ]
+     else [
+       raw_top {|namespace asgard_mem_integrity {
+    static inline uint64_t compute_section_integrity_hash() noexcept { return 0x5877CAFE1337BEEFULL; }
+    static inline uint64_t evaluate_memory_integrity() noexcept { return 0; }
+}|};
+     ])
+  @ (if policy.enable_nanomites then [ raw_top nanomite_header ] else [])
+  @ (if policy.enable_ephemeral_jit then [
+      macro_def ~value:(i32 1) "ASGARD_EPHEMERAL_JIT";
+      raw_top ephemeral_jit_header;
+    ] else [])
+  @ (if has_gpu_constants then [ raw_top gpu_constants ] else [])
   in
 
-  let models : (string * Jg_types.tvalue) list =
-    Runtime_policy.to_models policy @ [
-      ("rns_header", Jg_types.Tstr rns_header);
-      ("branchless_vip_header", Jg_types.Tstr branchless_vip_header);
-      ("chameleon_header", Jg_types.Tstr chameleon_header);
-      ("direct_syscalls_header", Jg_types.Tstr direct_syscalls_header);
-      ("anti_emulation_header", Jg_types.Tstr anti_emulation_header);
-      ("dual_mapping_header", Jg_types.Tstr dual_mapping_header);
-      ("smc_header", Jg_types.Tstr smc_header);
-      ("mem_scan_header", Jg_types.Tstr mem_scan_header);
-      ("nanomite_header", Jg_types.Tstr nanomite_header);
-      ("ephemeral_jit_header", Jg_types.Tstr ephemeral_jit_header);
-      ("has_gpu_constants", Jg_types.Tbool has_gpu_constants);
-      ("gpu_constants", Jg_types.Tstr gpu_constants);
-      ("num_blocks", Jg_types.Tint (List.length block_spans));
-      ("block_spans", Jg_types.Tlist block_spans_models);
-      ("block_spans_source", Jg_types.Tstr block_spans_source);
-      ("has_external_symbols", Jg_types.Tbool (external_symbols <> []));
-      ("external_symbols", Jg_types.Tlist ext_sym_models);
-      ("external_symbols_source", Jg_types.Tstr external_symbols_source);
-      ("has_constants", Jg_types.Tbool (constants <> []));
-      ("constants", Jg_types.Tlist constants_models);
-      ("constants_source", Jg_types.Tstr constants_source);
-      ("wbox_seed_source", Jg_types.Tstr wbox_seed_source);
-      ("context_source", Jg_types.Tstr context_source);
-      ("key_seed_hex", Jg_types.Tstr (Printf.sprintf "0x%08lXU" key_seed));
-      ("expected_hash_hex", Jg_types.Tstr (Printf.sprintf "0x%016LXULL" expected_hash));
-      ("poly_multiplier_hex", Jg_types.Tstr (Printf.sprintf "0x%016LXULL" (Vm_ir.Rolling_key.poly_multiplier_of_seed key_seed)));
-      ("poly_init_hex", Jg_types.Tstr (Printf.sprintf "0x%016LXULL" (Vm_ir.Rolling_key.poly_init_of_seed key_seed)));
-      ("has_multi_hashes", Jg_types.Tbool (match expected_hashes with Some hl when List.length hl > 1 -> true | _ -> false));
-      ("expected_hashes", Jg_types.Tlist (match expected_hashes with Some hl when List.length hl > 1 -> List.map (fun h -> Jg_types.Tstr (Printf.sprintf "0x%016LXULL" h)) hl | _ -> []));
-      ("dispatch_domains", Jg_types.Tlist dispatch_domain_models);
-      ("domain_salts", Jg_types.Tlist (Array.to_list (Array.map (fun s -> Jg_types.Tint s) domain_salts)));
-      ("domain_salt_source", Jg_types.Tstr domain_salt_source);
-      ("dispatch_domains_source", Jg_types.Tstr dispatch_domains_source);
-      ("msvc_switch_cases_source", Jg_types.Tstr msvc_switch_cases_source);
-      ("valid_hashes_source", Jg_types.Tstr valid_hashes_source);
-      ("handlers_source", Jg_types.Tstr handlers_source);
-    ]
+  let dynamic_resolvers : top_decl list = [
+    raw_top {|static inline void* asgard_resolve_constant(uint32_t hash, uint32_t alt_hash) noexcept {
+    for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {
+        AsgardConstantEntry* c = &g_asgard_constants[i];
+        if (c->size > 0) {
+            if (c->hash == hash ||
+                (alt_hash != 0 && c->hash == alt_hash) ||
+                (c->alt_hash != 0 && (c->alt_hash == hash || c->alt_hash == alt_hash))) {
+                if (__builtin_expect(!c->ready, 0)) {
+                    for (size_t j = 0; j < c->size; ++j) {
+                        uint8_t k = (uint8_t)(((c->xor_key >> ((j & 3) * 8)) ^ (j * 0x5D + 0x33)) & 0xFF);
+                        c->dec_data[j] = (uint8_t)(c->enc_data[j] ^ k);
+                    }
+                    c->dec_data[c->size] = 0;
+                    c->ready = 1;
+                }
+                return (void*)c->dec_data;
+            }
+        }
+    }
+    return nullptr;
+}
+
+static inline void* asgard_resolve_constant_name(const char* name) noexcept {
+    if (!name || name[0] == '\0') return nullptr;
+    uint32_t h = 0x811C9DC5U;
+    const char* p = name;
+    while (*p) {
+        h = (h ^ (uint8_t)*p++) * 0x01000193U;
+    }
+    uint32_t ah = 0;
+    if (name[0] == '_') {
+        ah = 0x811C9DC5U;
+        p = name + 1;
+        while (*p) {
+            ah = (ah ^ (uint8_t)*p++) * 0x01000193U;
+        }
+    }
+    return asgard_resolve_constant(h, ah);
+}
+
+static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
+    if (sym_idx < 0 || (size_t)sym_idx >= sizeof(g_external_symbols) / sizeof(g_external_symbols[0])) {
+        return nullptr;
+    }
+    const asgard_ext_sym_t* sym = &g_external_symbols[sym_idx];
+    if (sym->len == 0) return nullptr;
+
+    void* sym_ptr = asgard_resolve_constant(sym->hash, sym->alt_hash);
+    if (sym_ptr) return sym_ptr;
+
+#if defined(__APPLE__) && defined(__MACH__)
+    sym_ptr = asgard_resolve_by_api_hash(sym->hash);
+    if (!sym_ptr && sym->alt_hash != 0) {
+        sym_ptr = asgard_resolve_by_api_hash(sym->alt_hash);
+    }
+    if (sym_ptr) return sym_ptr;
+#endif
+
+    char dec_name[64];
+    asg_decrypt_sym(sym, dec_name, sizeof(dec_name));
+    if (!sym_ptr) sym_ptr = asgard_resolve_constant_name(dec_name);
+
+#if defined(__APPLE__) && defined(__MACH__)
+    if (!sym_ptr) {
+        typedef void* (*dlsym_fn_t)(void*, const char*);
+        dlsym_fn_t dyn_dlsym = (dlsym_fn_t)asgard_resolve_by_api_hash(0xE628BBCDU /* FNV1a("_dlsym") */);
+        if (dyn_dlsym) {
+            sym_ptr = dyn_dlsym((void*)-2, dec_name);
+            if (!sym_ptr && dec_name[0] == '_') sym_ptr = dyn_dlsym((void*)-2, dec_name + 1);
+            if (!sym_ptr) {
+                char alt[66];
+                alt[0] = '_';
+                memcpy(alt + 1, dec_name, sym->len + 1);
+                sym_ptr = dyn_dlsym((void*)-2, alt);
+            }
+        }
+    }
+#elif defined(_WIN32) || defined(_WIN64)
+    if (!sym_ptr) {
+        HMODULE hMain = GetModuleHandleA(NULL);
+        sym_ptr = (void*)GetProcAddress(hMain, dec_name);
+        if (!sym_ptr && dec_name[0] == '_') sym_ptr = (void*)GetProcAddress(hMain, dec_name + 1);
+        if (!sym_ptr) {
+            char alt[66];
+            alt[0] = '_';
+            memcpy(alt + 1, dec_name, sym->len + 1);
+            sym_ptr = (void*)GetProcAddress(hMain, alt);
+        }
+    }
+#else
+    if (!sym_ptr) {
+        sym_ptr = dlsym(RTLD_DEFAULT, dec_name);
+        if (!sym_ptr && dec_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, dec_name + 1);
+        if (!sym_ptr) {
+            char alt[66];
+            alt[0] = '_';
+            memcpy(alt + 1, dec_name, sym->len + 1);
+            sym_ptr = dlsym(RTLD_DEFAULT, alt);
+        }
+    }
+#endif
+
+    volatile char* p = dec_name;
+    while (*p) *p++ = 0;
+
+    return sym_ptr;
+}|};
+  ] in
+
+  let wbox_decls = generate_wbox_seed_derivation_decls ~rng key_seed in
+  let context_decls =
+    Vm_context_emitter.emit_context_decls
+      ~key_seed ~reg_perm ~stride ~offset
+      ~enable_running_key:policy.enable_running_key
+      ~enable_stack_scramble:policy.enable_stack_scramble
+      ~enable_mem_sanitize:policy.enable_mem_sanitize
   in
-  Native_vm_templates.render Native_vm_templates.threaded_header_template models
+
+  let fn_execute_threaded =
+    func_decl ~attrs:[StaticFn; InlineFn] Bool "execute_threaded"
+      [
+        (Ref (StructType "VMContext"), "ctx");
+        (ConstPtr UInt64, "bytecode");
+        (SizeT, "count");
+        (UInt32, Printf.sprintf "seed = asgard_wbox_derive_seed() /* seed = 0x%08lXU */" key_seed);
+        (Bool, "scrub_source = false");
+      ]
+      ([
+        if_then (var "ctx.reg_mask" ==~ u64 0L) [ expr_stmt (call "ctx.init" [var "seed"]) ];
+      ]
+      @ (if policy.enable_nanomites then [
+          expr_stmt (call "asgard_nanomites::install_nanomite_handlers" [var "seed"]);
+        ] else [])
+      @ [
+        let_u64 "full_hash" (u64 (Vm_ir.Rolling_key.poly_init_of_seed key_seed));
+        for_range "i" (u64 0L) (var "count") [
+          (var "full_hash" := (((var "full_hash" ^~ idx (var "bytecode") (var "i")) *~ u64 (Vm_ir.Rolling_key.poly_multiplier_of_seed key_seed)) +~ c_cast UInt64 (var "i")));
+        ];
+      ]
+      @ (match expected_hashes with
+         | Some hl when List.length hl > 1 ->
+             [
+               emit_native_valid_hashes_ast hl;
+               raw {|    bool hash_ok = false;
+    for (size_t hi = 0; hi < sizeof(valid_hashes)/sizeof(valid_hashes[0]); ++hi) {
+        if (full_hash == valid_hashes[hi]) { hash_ok = true; break; }
+    }
+    if (!hash_ok) {
+        ctx.reg_mask ^= 0xDEADBEEF5A5A5A5AULL ^ full_hash;
+        ctx.trapped = true;
+        return false;
+    }|};
+             ]
+         | _ ->
+             [
+               let_u64 "hash_diff" (var "full_hash" ^~ u64 expected_hash);
+               (var "ctx.running_key" ^= var "hash_diff");
+               (var "ctx.reg_mask" ^= (var "hash_diff" *~ u64 0x5877CAFEBEEFL));
+               if_then (var "hash_diff" <>~ u64 0L) [
+                 (var "ctx.trapped" := bool_lit true);
+                 ret (bool_lit false);
+               ];
+             ])
+      @ (if policy.enable_direct_syscalls then [
+          if_then (call "asgard_syscalls::sys_check_debugger_present" []) [
+            (var "ctx.reg_mask" ^= u64 0xCAFEBABE13375877L);
+            (var "ctx.trapped" := bool_lit true);
+            ret (bool_lit false);
+          ];
+        ] else [
+          raw {|#if defined(__APPLE__)
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
+    struct kinfo_proc kinfo = {};
+    size_t ksize = sizeof(kinfo);
+    if (false && sysctl(mib, 4, &kinfo, &ksize, (void*)0, 0) == 0 && (kinfo.kp_proc.p_flag & P_TRACED)) {
+        ctx.reg_mask ^= 0xCAFEBABE13375877ULL;
+        ctx.trapped = true;
+        return false;
+    }
+#endif|};
+        ])
+      @ (if policy.enable_anti_emu then [
+          let_u64 "emu_penalty" (call "asgard_anti_emulation::evaluate_emulation_differential" []);
+          if_then (var "emu_penalty" <>~ u64 0L) [ (var "ctx.reg_mask" ^= var "emu_penalty") ];
+        ] else [])
+      @ (if policy.enable_smc then [
+          let_u64 "smc_penalty" (call "asgard_smc::execute_introspective_smc_probe" [c_cast UInt64 (var "seed")]);
+          if_then (var "smc_penalty" <>~ u64 0L) [ (var "ctx.reg_mask" ^= var "smc_penalty") ];
+        ] else [])
+      @ (if policy.enable_mem_scan then [
+          let_u64 "mem_penalty" (call "asgard_mem_integrity::evaluate_memory_integrity" []);
+          if_then (var "mem_penalty" <>~ u64 0L) [ (var "ctx.reg_mask" ^= var "mem_penalty") ];
+        ] else [])
+      @ [
+        decl_var (Array (UInt64, 256)) "stack_buf";
+        decl_var (Ptr UInt64) "heap_work_bc" ~init:(ternary (var "count" <=~ u64 256L) nullptr (c_cast (Ptr UInt64) (call "malloc" [var "count" *~ sizeof_ty UInt64])));
+        decl_var (Ptr UInt64) "work_bc" ~init:(ternary (var "count" <=~ u64 256L) (var "stack_buf") (var "heap_work_bc"));
+        if_then (call "__builtin_expect" [log_not (var "work_bc"); i32 0]) [
+          (var "ctx.trapped" := bool_lit true);
+          ret (bool_lit false);
+        ];
+      ]
+      @ (if policy.enable_mem_sanitize then [
+          for_range "i" (u64 0L) (var "count") [
+            idx (var "work_bc") (var "i") := u64 0x5877CAFE1337BEEFL ^~ (c_cast UInt64 (var "seed") +~ c_cast UInt64 (var "i"));
+          ];
+        ] else [
+          for_range "i" (u64 0L) (var "count") [
+            idx (var "work_bc") (var "i") := idx (var "bytecode") (var "i");
+          ];
+        ])
+      @ [
+        decl_var SizeT "vIP_idx" ~init:(u64 0L);
+      ]
+      @ (if policy.enable_ephemeral_jit then [
+          raw "#if defined(ASGARD_EPHEMERAL_JIT)\n    static thread_local asgard_memory::DualMappedBuffer g_ephemeral_jit_buf = asgard_memory::DualMappedBuffer::allocate(16384);\n#endif";
+        ] else [])
+      @ [
+        emit_native_domain_salt_ast domain_salts;
+        raw (Printf.sprintf "static uintptr_t all_dispatch_domains[%d][256];\n    static bool dispatch_domains_ready = false;\n    if (__builtin_expect(!dispatch_domains_ready, 0)) {\n#if !defined(_MSC_VER) || defined(__clang__)" num_domains);
+      ]
+      @ emit_native_dispatch_domains_stmts raw_dispatch_domains
+      @ [
+        raw (Printf.sprintf {|        for (size_t d = 0; d < %d; ++d) {
+            for (size_t o = 0; o < 256; ++o) {
+                uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)d * 256ULL + (uintptr_t)o) * 0x6A09E667F3BCC908ULL);
+                all_dispatch_domains[d][o] = (uintptr_t)raw_all_domains[d][o] ^ k_slot;
+                *(reinterpret_cast<volatile uintptr_t*>(&raw_all_domains[d][o])) = k_slot ^ 0xDEADBEEF5A5A5A5AULL;
+            }
+        }
+#else
+        for (size_t d = 0; d < %d; ++d) {
+            for (size_t o = 0; o < 256; ++o) {
+                uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)d * 256ULL + (uintptr_t)o) * 0x6A09E667F3BCC908ULL);
+                all_dispatch_domains[d][o] = ((uintptr_t)(d * 256 + o) + 0x1337) ^ k_slot;
+            }
+        }
+#endif
+        dispatch_domains_ready = true;
+    }|} num_domains num_domains);
+        let_u64 "g_handlers_hash" (call "compute_handlers_hash" [c_cast (ConstPtr (StructType "uintptr_t")) (var "all_dispatch_domains"); i32 num_domains]);
+      ]
+      @ (if policy.enable_address_bound then [
+          raw {|    uint64_t bound_buf[256];
+    uint64_t* heap_bound_bc = (count <= 256) ? nullptr : (uint64_t*)malloc(count * sizeof(uint64_t));
+    uint64_t* bound_bc = (count <= 256) ? bound_buf : heap_bound_bc;
+    if (__builtin_expect(!bound_bc, 0)) {
+        if (heap_work_bc) free(heap_work_bc);
+        ctx.trapped = true;
+        return false;
+    }
+    for (size_t b = 0; b < g_num_blocks; ++b) {
+        size_t off = g_block_offsets[b];
+        size_t len = g_block_lengths[b];
+        uint64_t rk = VMContext::anchor_key(seed, (uint64_t)off, g_handlers_hash);
+        for (size_t j = 0; j < len; ++j) {
+            size_t idx = off + j;
+            uint64_t k_pos = key64_for_offset(seed, idx);
+            uint64_t plain = bytecode[idx] ^ k_pos;
+            bound_bc[idx] = plain ^ k_pos ^ rk;
+            uint8_t b_op = (uint8_t)(((plain + 0xFFULL) - (plain | 0xFFULL)));
+            uint8_t b_dst = (uint8_t)((((plain >> 8) + 0x1FULL) - ((plain >> 8) | 0x1FULL)));
+            int64_t b_imm = (int64_t)((int32_t)((((plain >> 18) + 0xFFFFFFFFULL) - ((plain >> 18) | 0xFFFFFFFFULL))));
+            rk = VMContext::advance_key_step(rk, b_op, b_dst, b_imm);
+        }
+    }|};
+        ] else [])
+      @ [
+        raw (Printf.sprintf {|    uint64_t word = 0;
+    uint64_t k_dyn = 0;
+    uint8_t op = 0;
+    uint8_t dst = 0;
+    uint8_t src = 0;
+    int64_t imm = 0;
+    size_t next_canary_step = 47 + ((uint64_t)seed & 0x3FULL);
+
+#if defined(_MSC_VER) && !defined(__clang__)
+    #define DISPATCH_OPCODE() do { \
+        goto DISPATCH_MSVC; \
+    } while(0)
+#else
+    #define DISPATCH_OPCODE() do { \
+        uint8_t domain_idx = (uint8_t)((k_dyn >> 32) %% %d); \
+        uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[domain_idx]); \
+        uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)permuted_slot) * 0x6A09E667F3BCC908ULL); \
+        void* target = (void*)(all_dispatch_domains[domain_idx][permuted_slot] ^ k_slot); \
+        goto *target; \
+    } while(0)
+#endif
+
+    #define FETCH_NEXT() do { \
+        if (__builtin_expect(vIP_idx >= count, 0)) goto EXIT_VM; \
+        if (__builtin_expect(ctx.executed_instructions > (count * 10000ULL + 1000000ULL), 0)) { \
+            ctx.trapped = true; \
+            goto EXIT_VM; \
+        } \
+        uint64_t k_pos = key64_for_offset(seed, vIP_idx); \
+        %s \
+        if (__builtin_expect(ctx.executed_instructions >= next_canary_step, 0)) { \
+            if (__builtin_expect(!ctx.verify_canaries(), 0)) { \
+                ctx.reg_mask ^= (0xCAFEBABE13375877ULL ^ (k_dyn * 0x9E3779B97F4A7C15ULL)) | 1ULL; \
+            } \
+            next_canary_step = ctx.executed_instructions + 47 + ((k_dyn >> 21) & 0x7FULL); \
+        } \
+        %s \
+        word = work_bc[vIP_idx] ^ k_dyn; \
+        %s \
+        vIP_idx++; \
+        op = (uint8_t)(((word + 0xFFULL) - (word | 0xFFULL))); \
+        dst = (uint8_t)((((word >> 8) + 0x1FULL) - ((word >> 8) | 0x1FULL))); \
+        src = (uint8_t)((((word >> 13) + 0x1FULL) - ((word >> 13) | 0x1FULL))); \
+        imm = (int64_t)((int32_t)((((word >> 18) + 0xFFFFFFFFULL) - ((word >> 18) | 0xFFFFFFFFULL)))); \
+        ctx.evolve_mask((uint32_t)k_dyn); \
+        ctx.evolve_slot_mask(dst, (uint32_t)k_dyn); \
+        %s \
+        DISPATCH_OPCODE(); \
+    } while(0)|}
+          num_domains
+          (if policy.enable_running_key then "k_dyn = k_pos ^ ctx.running_key;" else "k_dyn = k_pos;")
+          (if policy.enable_address_bound then "work_bc[vIP_idx] = bound_bc[vIP_idx];" else "work_bc[vIP_idx] = bytecode[vIP_idx];")
+          (if policy.enable_mem_sanitize then "SCRUB_WORD(&work_bc[vIP_idx], (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL);" else "")
+          (if policy.enable_running_key then "ctx.advance_running_key(op, dst, imm);" else "")
+        );
+      ]
+      @ (if policy.enable_running_key then [
+          if policy.enable_address_bound then
+            expr_stmt (call "ctx.reanchor_running_key" [u64 0L; var "g_handlers_hash"])
+          else
+            expr_stmt (call "ctx.reanchor_running_key" [u64 0L])
+        ] else [])
+      @ [
+        raw (Printf.sprintf {|#if defined(_MSC_VER) && !defined(__clang__)
+    goto START_VM_MSVC;
+    DISPATCH_MSVC: {
+        uint8_t d_idx = (uint8_t)((k_dyn >> 32) %% %d);
+        uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[d_idx]);
+        switch ((uint32_t)d_idx * 256U + (uint32_t)permuted_slot) {
+%s
+        default: goto EXIT_VM;
+        }
+    }
+    START_VM_MSVC:
+#endif|} num_domains msvc_switch_cases_source);
+        raw "FETCH_NEXT();";
+        raw handlers_source;
+        label "EXIT_VM";
+      ]
+      @ (if policy.enable_mem_sanitize then [
+          raw {|    for (size_t i = 0; i < count; ++i) {
+        SCRUB_WORD(&work_bc[i], 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed + (uint64_t)i));
+    }|};
+        ] else [])
+      @ (if policy.enable_mem_sanitize && policy.enable_address_bound then [
+          raw {|    for (size_t i = 0; i < count; ++i) {
+        SCRUB_WORD(&bound_bc[i], 0xDEADBEEF5877CAFEULL ^ ((uint64_t)seed + (uint64_t)i));
+    }|};
+        ] else [])
+      @ (if policy.enable_mem_sanitize then [
+          raw {|    if (scrub_source && bytecode) {
+        for (size_t i = 0; i < count; ++i) {
+            SCRUB_WORD(&const_cast<uint64_t*>(bytecode)[i], 0xDEADBEEFCAFEBABEULL ^ ((uint64_t)seed + (uint64_t)i));
+        }
+    }|};
+        ] else [])
+      @ [
+        if_then (ne (var "heap_work_bc") nullptr) [ expr_stmt (call "free" [var "heap_work_bc"]) ];
+      ]
+      @ (if policy.enable_address_bound then [
+          raw "if (heap_bound_bc) free(heap_bound_bc);";
+        ] else [])
+      @ [
+        macro_undef_stmt "DISPATCH_OPCODE";
+        macro_undef_stmt "FETCH_NEXT";
+        ret (log_not (var "ctx.trapped"));
+      ])
+  in
+
+  let fn_execute_threaded_short =
+    func_decl ~attrs:[StaticFn; InlineFn] Bool "execute_threaded"
+      [
+        (Ref (StructType "VMContext"), "ctx");
+        (ConstPtr UInt64, "bytecode");
+        (SizeT, "count");
+        (Bool, "scrub_source");
+      ]
+      [
+        ret (call "execute_threaded" [
+          var "ctx"; var "bytecode"; var "count"; call "asgard_wbox_derive_seed" []; var "scrub_source"
+        ]);
+      ]
+  in
+
+  let fn_asgard_vm_call =
+    func_decl ~attrs:[StaticFn; InlineFn; NoInline] UInt64 "asgard_vm_call"
+      [
+        (ConstPtr UInt64, "bc");
+        (SizeT, "len");
+        (UInt64, "a0 = 0"); (UInt64, "a1 = 0"); (UInt64, "a2 = 0"); (UInt64, "a3 = 0");
+        (UInt64, "a4 = 0"); (UInt64, "a5 = 0"); (UInt64, "a6 = 0"); (UInt64, "a7 = 0");
+      ]
+      [
+        decl_var (StructType "vanguard_threaded_vm::VMContext") "ctx" ~init:(init_list []);
+        expr_stmt (call "ctx.init" [call "asgard_wbox_derive_seed" []]);
+        decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, 1048576)) "host_stack";
+        expr_stmt (call "ctx.set_reg" [var "vanguard_threaded_vm::REG_RSP"; c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L)]);
+        expr_stmt (call "ctx.set_reg" [var "vanguard_threaded_vm::REG_RBP"; c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L)]);
+        raw {|#if defined(__x86_64__) || defined(_M_X64)
+    // System V / Windows x64 ABI argument registers
+    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a0);
+    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a1);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a2);
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a3);
+    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a4);
+    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a5);
+    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
+#elif defined(__riscv) || defined(__riscv__)
+    // RISC-V LP64 ABI argument mapping (a0->RAX, a1->RDX, a2->RCX, a3->RSI, a4->RDI, a5->R8, a6->R9, a7->R12)
+    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a1);
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a2);
+    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a3);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a4);
+    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a5);
+    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a6);
+    ctx.set_reg(vanguard_threaded_vm::REG_R12, a7);
+#else
+    // ARM64 calling convention mapping (x0->RAX, x1->RCX, x2->RDX, x3->RBX, x4->RSI, x5->RDI, x6->R8, x7->R9)
+    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a1);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a2);
+    ctx.set_reg(vanguard_threaded_vm::REG_RBX, a3);
+    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a4);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a5);
+    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a6);
+    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a7);
+#endif|};
+        expr_stmt (call "vanguard_threaded_vm::execute_threaded" [var "ctx"; var "bc"; var "len"; bool_lit false]);
+        let_u64 "ret_val" (call "ctx.get_rax" []);
+        raw {|if (__builtin_expect(ctx.trapped || ctx.canary_head != vanguard_threaded_vm::VMContext::CANARY_VAL || ctx.canary_tail != vanguard_threaded_vm::VMContext::CANARY_VAL, 0)) {
+        ret_val ^= 0xDEADBEEF5A5A5A5AULL ^ ctx.reg_mask;
+    }|};
+        ret (((var "ret_val" ^~ u64 0x5877CAFE1337BEEFL) +~ (u64 2L *~ (var "ret_val" &~ u64 0x5877CAFE1337BEEFL))) -~ u64 0x5877CAFE1337BEEFL);
+      ]
+  in
+
+  let vanguard_ns =
+    namespace_def "vanguard_threaded_vm" (
+      (if policy.enable_address_bound then emit_block_spans_tables_ast block_spans else [])
+      @ [ emit_external_symbols_table_ast external_symbols ]
+      @ emit_constants_tables_ast ~rng constants
+      @ dynamic_resolvers
+      @ wbox_decls
+      @ context_decls
+      @ [
+        fn_execute_threaded;
+        fn_execute_threaded_short;
+        fn_asgard_vm_call;
+      ]
+    )
+  in
+
+  preamble_decls @ [ vanguard_ns ]
+
+let emit_cpp_threaded_header
+    ~rng
+    ~key_seed
+    ~reg_perm
+    ~expected_hash
+    ?expected_hashes
+    ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option)
+    ?(config : Protection_config.t option)
+    ?(external_symbols = [])
+    ?(constants = [])
+    ?(block_spans = [])
+    ?gpu_matrix
+    opcode_to_handler =
+  let decls = emit_native_runtime_hpp_decls
+    ~rng ~key_seed ~reg_perm ~expected_hash ?expected_hashes ?runtime_profile ?config
+    ~external_symbols ~constants ~block_spans ?gpu_matrix opcode_to_handler
+  in
+  Cpp_codegen.Cpp_printer.render_top_decls decls ^ "\n"
 
 let emit_native_runner_main_def () : Cpp_codegen.Cpp_ast.top_decl =
   let open Cpp_codegen.Cpp_ast in

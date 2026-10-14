@@ -1,4 +1,4 @@
-(** Vm_runtime_emitter — Emission of Native Threaded VM C++ runtime and runners using Jingoo templates. *)
+(** Vm_runtime_emitter — Emission of Native Threaded VM C++ runtime and runners using Typed EDSL AST. *)
 
 module Runtime_policy : sig
   type t = {
@@ -20,8 +20,12 @@ module Runtime_policy : sig
   }
 
   val of_config : ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t -> Protection_config.t option -> t
-  val to_models : t -> (string * Jingoo.Jg_types.tvalue) list
 end
+
+val generate_wbox_seed_derivation_decls :
+  rng:Random.State.t ->
+  int32 ->
+  Cpp_codegen.Cpp_ast.top_decl list
 
 val generate_wbox_seed_derivation :
   rng:Random.State.t ->
@@ -52,6 +56,21 @@ val emit_native_dispatch_domains_stmts :
 val emit_native_valid_hashes_ast :
   int64 list ->
   Cpp_codegen.Cpp_ast.stmt
+
+val emit_native_runtime_hpp_decls :
+  rng:Random.State.t ->
+  key_seed:int32 ->
+  reg_perm:int array ->
+  expected_hash:int64 ->
+  ?expected_hashes:int64 list ->
+  ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t ->
+  ?config:Protection_config.t ->
+  ?external_symbols:string list ->
+  ?constants:(string * string) list ->
+  ?block_spans:(int * int) list ->
+  ?gpu_matrix:Gpu_synth.Gpu_matrix.substitution_matrix ->
+  string array ->
+  Cpp_codegen.Cpp_ast.top_decl list
 
 val emit_cpp_threaded_header :
   rng:Random.State.t ->

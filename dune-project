@@ -10,7 +10,6 @@
   (ocaml (>= 4.14.0))
   (dune (>= 3.0))
   cmdliner
-  jingoo
   menhir
   alcotest
   qcheck

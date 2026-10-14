@@ -133,8 +133,6 @@ let () =
   assert (default_policy.enable_smc = true);
   assert (default_policy.enable_anti_emu = true);
   assert (default_policy.num_domains >= 1);
-  let models = Native_vm.Vm_runtime_emitter.Runtime_policy.to_models default_policy in
-  assert (List.length models = 15);
 
   let opcode_to_handler = Array.make 256 "H_NOP" in
   let header_src = Native_vm.Vm_runtime_emitter.emit_cpp_threaded_header
@@ -644,7 +642,25 @@ let () =
   let h_extern_cpp = Cpp_codegen.Cpp_printer.string_of_top_decl h_extern in
   assert (contains_str h_extern_cpp "h_call_extern");
   assert (contains_str h_extern_cpp "asgard_resolve_sym_idx");
-  Printf.printf "[PASS] Step 39: Stack-VM complete typed C++20 EDSL runtime emission and ABI extern calls validated.\n"
+  Printf.printf "[PASS] Step 39: Stack-VM complete typed C++20 EDSL runtime emission and ABI extern calls validated.\n";
+
+  (* 40. Native Threaded VM complete typed C++20 EDSL runtime emission *)
+  let native_decls = Native_vm.Vm_runtime_emitter.emit_native_runtime_hpp_decls
+    ~rng ~key_seed:0x1337BEEFl ~reg_perm ~expected_hash:0xCAFEBABE12345678L
+    (Array.make 256 "H_NOP")
+  in
+  assert (List.length native_decls > 5);
+  let native_runtime_cpp = Cpp_codegen.Cpp_printer.render_top_decls native_decls in
+  assert (contains_str native_runtime_cpp "namespace vanguard_threaded_vm");
+  assert (contains_str native_runtime_cpp "struct VMContext");
+  assert (contains_str native_runtime_cpp "execute_threaded");
+  assert (contains_str native_runtime_cpp "asgard_vm_call");
+  assert (contains_str native_runtime_cpp "vanguard/platform_compat.hpp");
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax native_runtime_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Native runtime header syntax validation failed: " ^ err));
+  Printf.printf "[PASS] Step 40: Native Threaded VM pure typed EDSL AST and header emission validated.\n"
+
 
 
 

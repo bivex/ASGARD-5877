@@ -21,7 +21,9 @@
 | **Stage 4** | Stack-VM хендлеры, Multi-VM контексты и pre-flight синтаксический валидатор | ✅ Завершен | `4.1, 4.2` |
 | **Stage 5** | RD-JIT VM, Vector ISA, Tech-2603/2608, Vanguard 9292 Decoder, Stack-VM Superops & Trampoline | ✅ Завершен | `1c22026`, `e8aacea` |
 | **Stage 6** | C11 ISA, GPU MBA, C Nanomites, Multi-VM Bridge, Whitebox & RNS-4 Garner CRT | ✅ Завершен | `e548e9c` .. `1d493ad` |
-| **Stage 6.3** | Computed Goto, Preprocessor AST, Trampoline Chunk, Stack-VM & Native VM Dispatch | ✅ Завершен | `HEAD` |
+| **Stage 6.3** | Computed Goto, Preprocessor AST, Trampoline Chunk, Stack-VM & Native VM Dispatch | ✅ Завершен | `bf7f634` |
+| **Stage 7.1** | Typed C++20 EDSL Stack-VM Header Migration & Decommissioning in Stack/Multi-VM | ✅ Завершен | `7fc48ab` |
+| **Stage 7.2** | Native Threaded VM EDSL Migration & 100% Jingoo Decommissioning from Repo | ✅ Завершен | `HEAD` |
 
 ---
 
@@ -271,6 +273,29 @@
   - Добавлен Step 39 в [`test/test_cpp_codegen.ml`](file:///Volumes/External/Code/ASGARD-5877/test/test_cpp_codegen.ml) — все 39/39 шагов 100% PASS.
   - `Stack-VM Execution Engine` (38/38) — PASS.
   - `./build_license.sh` компилирует `stack_vm_runtime.hpp` и запускает `protected_app` без ошибок и предупреждений (0 warnings).
+
+### Stage 7.2: Native Threaded VM EDSL Migration & 100% Jingoo Decommissioning (`HEAD`)
+- [x] Полная типизированная C++20 EDSL миграция Native Threaded VM:
+  - В [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml) и [`.mli`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.mli):
+    - Реализована функция `emit_native_runtime_hpp_decls : ... -> top_decl list` для чисто типизированной генерации `threaded_vm.hpp`.
+    - Реализована `generate_wbox_seed_derivation_decls : rng:Random.State.t -> int32 -> top_decl list`.
+    - Полностью удалены словари моделей Jinja/Jingoo (`models`, `to_dict`, `to_models` в `Runtime_policy`).
+    - Функция `emit_cpp_threaded_header` переведена на вызов `render_top_decls (emit_native_runtime_hpp_decls ...)`.
+  - В [`lib/native_vm/vm_context_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_context_emitter.ml):
+    - Экспортирована функция `emit_context_decls`, возвращающая `top_decl list` для внедрения `struct VMContext` и хелперов контекста в AST заголовка.
+  - В [`lib/native_vm/native_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/native_vm_templates.ml) и [`.mli`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/native_vm_templates.mli):
+    - Удалены все шаблоны Jingoo (`threaded_header_template`, `runner_template`, `let env`, `let render`, `open Jingoo`).
+    - Оставлены чистые статические строки заголовков (`platform_compat_header`, `crypto_primitives_header`, `sanitization_header`).
+- [x] Полное удаление `jingoo` из дерева зависимостей репозитория:
+  - Удалена библиотека `jingoo` из [`lib/native_vm/dune`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/dune).
+  - Удалена зависимость `jingoo` из [`dune-project`](file:///Volumes/External/Code/ASGARD-5877/dune-project) и [`random_visa.opam`](file:///Volumes/External/Code/ASGARD-5877/random_visa.opam).
+  - В проекте больше нет ни одной зависимости или вызова шаблонизатора Jingoo!
+- [x] Тесты и верификация:
+  - Добавлен Step 40 в [`test/test_cpp_codegen.ml`](file:///Volumes/External/Code/ASGARD-5877/test/test_cpp_codegen.ml) — все 40/40 шагов 100% PASS.
+  - Набор тестов `Native Threaded VM` (12/12) — PASS.
+  - Набор тестов `Stack-VM Execution Engine` (38/38) — PASS.
+  - Скрипт `./build_license.sh` компилирует ARM64 рантайм и успешно исполняет защищенный бинарник `protected_app` (0 warnings, 0 errors).
+
 
 
 ---
