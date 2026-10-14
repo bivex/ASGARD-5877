@@ -15,5 +15,6 @@ val compile_and_package :
   ?enable_mba:bool ->
   ?mba_depth:int ->
   ?config:Native_vm.Protection_config.t ->
+  ?constants:(string * string) list ->
   Ir.func ->
   multi_vm_package

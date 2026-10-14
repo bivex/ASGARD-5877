@@ -108,7 +108,7 @@ end
 module Multi_vm_packager : Vm_packager = struct
   let engine_kind = MultiVm
 
-  let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
+  let package ~rng ~config ?constants (func : ir_func) : package_result =
     let ir : Vm_ir.Ir.func = unwrap_ir func in
     let native_cfg : Protection_config.t = unwrap_config config in
     let mv_pkg =
@@ -118,6 +118,7 @@ module Multi_vm_packager : Vm_packager = struct
         ~enable_mba:native_cfg.mba.enabled
         ~mba_depth:native_cfg.mba.depth
         ~config:native_cfg
+        ?constants
         ir
     in
     {
