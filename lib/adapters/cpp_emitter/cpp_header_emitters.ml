@@ -21,6 +21,53 @@ let group_by_funct6 (instructions : Vector_instruction.t list) =
   in
   List.sort (fun (a, _) (b, _) -> Int.compare a b) groups
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let emit_csr_state_def (default_vl : int) : top_decl =
+  StructDef {
+    align_as = None;
+    name = "CSRState";
+    members = [
+      member_field UInt64 "vl" ~init:(u64 (Int64.of_int default_vl));
+      member_field UInt64 "vtype" ~init:(u64 0L);
+      member_field UInt64 "vstart" ~init:(u64 0L);
+      member_field UInt64 "vxrm" ~init:(u64 0L);
+      member_field UInt64 "vxsat" ~init:(u64 0L);
+      member_field UInt64 "pc" ~init:(u64 0x80000000L);
+    ];
+  }
+
+let emit_inst_id_enum (instructions : Vector_instruction.t list) : top_decl =
+  EnumDecl {
+    name = "class InstId";
+    underlying_ty = None;
+    items = ("UNKNOWN", Some (i32 0)) :: List.map (fun (inst : Vector_instruction.t) ->
+      (String.uppercase_ascii inst.mnemonic, None)
+    ) instructions;
+  }
+
+let emit_decoded_instruction_def () : top_decl =
+  StructDef {
+    align_as = None;
+    name = "DecodedInstruction";
+    members = [
+      member_field (StructType "InstId") "id" ~init:(var "InstId::UNKNOWN");
+      member_field (StructType "std::string_view") "mnemonic" ~init:(str_lit "unknown");
+      member_field UInt8 "opcode" ~init:(u32 0l);
+      member_field UInt8 "funct3" ~init:(u32 0l);
+      member_field UInt8 "funct6" ~init:(u32 0l);
+      member_field UInt8 "vd" ~init:(u32 0l);
+      member_field UInt8 "vs2" ~init:(u32 0l);
+      member_field UInt8 "vs1" ~init:(u32 0l);
+      member_field UInt8 "rs1" ~init:(u32 0l);
+      member_field Int8 "imm" ~init:(i32 0);
+      member_field UInt8 "vm" ~init:(u32 1l);
+      member_field UInt32 "raw_word" ~init:(u32 0l);
+    ];
+  }
+
 let emit_isa_state_hpp (spec : Vector_isa_spec.t) =
   let b = Buffer.create 2048 in
   let vlen = spec.config.vlen in
@@ -34,14 +81,8 @@ let emit_isa_state_hpp (spec : Vector_isa_spec.t) =
   Buffer.add_string b "constexpr size_t VLEN_BYTES = VLEN / 8;\n";
   Buffer.add_string b (Printf.sprintf "constexpr size_t NUM_VREGS = %d;\n" num_vregs);
   Buffer.add_string b "constexpr size_t NUM_XREGS = 32;\n\n";
-  Buffer.add_string b "struct CSRState {\n";
-  Buffer.add_string b (Printf.sprintf "    uint64_t vl{%d};\n" default_vl);
-  Buffer.add_string b "    uint64_t vtype{0};\n";
-  Buffer.add_string b "    uint64_t vstart{0};\n";
-  Buffer.add_string b "    uint64_t vxrm{0};\n";
-  Buffer.add_string b "    uint64_t vxsat{0};\n";
-  Buffer.add_string b "    uint64_t pc{0x80000000};\n";
-  Buffer.add_string b "};\n\n";
+  Buffer.add_string b (render_top_decl (emit_csr_state_def default_vl));
+  Buffer.add_string b "\n\n";
   Buffer.add_string b "class VRegFile {\npublic:\n";
   Buffer.add_string b "    alignas(64) std::array<std::array<uint8_t, VLEN_BYTES>, NUM_VREGS> regs{};\n\n";
   Buffer.add_string b "    void reset() noexcept {\n";
@@ -97,26 +138,10 @@ let emit_decoder_hpp (spec : Vector_isa_spec.t) =
   let b = Buffer.create 2048 in
   Buffer.add_string b "#pragma once\n#include <cstdint>\n#include <string_view>\n#include <optional>\n\n";
   Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b "enum class InstId {\n    UNKNOWN = 0,\n";
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
-      Buffer.add_string b (Printf.sprintf "    %s,\n" (String.uppercase_ascii inst.mnemonic)))
-    spec.instructions;
-  Buffer.add_string b "};\n\n";
-  Buffer.add_string b "struct DecodedInstruction {\n";
-  Buffer.add_string b "    InstId id{InstId::UNKNOWN};\n";
-  Buffer.add_string b "    std::string_view mnemonic{\"unknown\"};\n";
-  Buffer.add_string b "    uint8_t opcode{0};\n";
-  Buffer.add_string b "    uint8_t funct3{0};\n";
-  Buffer.add_string b "    uint8_t funct6{0};\n";
-  Buffer.add_string b "    uint8_t vd{0};\n";
-  Buffer.add_string b "    uint8_t vs2{0};\n";
-  Buffer.add_string b "    uint8_t vs1{0};\n";
-  Buffer.add_string b "    uint8_t rs1{0};\n";
-  Buffer.add_string b "    int8_t imm{0};\n";
-  Buffer.add_string b "    uint8_t vm{1};\n";
-  Buffer.add_string b "    uint32_t raw_word{0};\n";
-  Buffer.add_string b "};\n\n";
+  Buffer.add_string b (render_top_decl (emit_inst_id_enum spec.instructions));
+  Buffer.add_string b "\n\n";
+  Buffer.add_string b (render_top_decl (emit_decoded_instruction_def ()));
+  Buffer.add_string b "\n\n";
   Buffer.add_string b "class Decoder {\npublic:\n";
   Buffer.add_string b "    static inline DecodedInstruction decode(uint32_t word) noexcept {\n";
   Buffer.add_string b "        DecodedInstruction dec;\n";

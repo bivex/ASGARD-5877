@@ -313,3 +313,10 @@ let string_of_stmts (stmts : stmt list) : string =
   pp_stmt_list fmt stmts;
   pp_print_flush fmt ();
   Buffer.contents buf
+
+let string_of_top_decl (d : top_decl) : string =
+  render_top_decls [d]
+
+let render_top_decl (d : top_decl) : string =
+  render_top_decls [d]
+
