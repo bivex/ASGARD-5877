@@ -29,8 +29,10 @@ type expr =
   | LitU32 of int32
   | LitI64 of int64
   | LitInt of int
+  | LitU8 of int                       (* 0x12 *)
   | LitBool of bool
   | LitStr of string
+  | InitList of expr list              (* { a, b, c } *)
   | Var of string
   | Member of expr * string            (* obj.field *)
   | PtrMember of expr * string         (* ptr->field *)
@@ -155,6 +157,14 @@ type top_decl =
   | IncludeLocal of string             (* #include "asg_crypto.hpp" *)
   | Namespace of string * top_decl list
   | ConstexprGlobal of ctype * string * expr
+  | GlobalVar of {
+      is_static    : bool;
+      is_const     : bool;
+      is_constexpr : bool;
+      ty           : ctype;
+      name         : string;
+      init         : expr option;
+    }
   | StructDecl of struct_decl
   | StructDef of struct_def
   | ClassDef of struct_def

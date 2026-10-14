@@ -41,8 +41,21 @@ let rec pp_expr fmt = function
   | LitU32 v          -> fprintf fmt "0x%08lxU" v
   | LitI64 v          -> fprintf fmt "%LdLL" v
   | LitInt n          -> fprintf fmt "%d" n
+  | LitU8 b           -> fprintf fmt "0x%02x" (b land 0xFF)
   | LitBool b         -> fprintf fmt "%s" (if b then "true" else "false")
   | LitStr s          -> fprintf fmt "\"%s\"" s
+  | InitList []       -> fprintf fmt "{}"
+  | InitList es       ->
+      let has_nested = List.exists (function InitList _ -> true | _ -> false) es in
+      if has_nested then
+        fprintf fmt "{@;<1 4>@[<v>%a@]@;<1 0>}"
+          (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ",@,") pp_expr) es
+      else if List.length es <= 8 then
+        fprintf fmt "{ %a }"
+          (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_expr) es
+      else
+        fprintf fmt "{@;<1 4>@[<hv>%a@]@;<1 0>}"
+          (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ",@ ") pp_expr) es
   | Var s             -> fprintf fmt "%s" s
   | Member (e, f)     -> fprintf fmt "%a.%s" pp_expr_atom e f
   | PtrMember (e, f)  -> fprintf fmt "%a->%s" pp_expr_atom e f
@@ -59,7 +72,7 @@ let rec pp_expr fmt = function
         (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_expr) args
 
 and pp_expr_atom fmt e = match e with
-  | Var _ | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitBool _ | LitStr _ | Index _ | Member _ | PtrMember _ | Call _ | CCast _ ->
+  | Var _ | LitU64 _ | LitU32 _ | LitI64 _ | LitInt _ | LitU8 _ | LitBool _ | LitStr _ | InitList _ | Index _ | Member _ | PtrMember _ | Call _ | CCast _ ->
       pp_expr fmt e
   | _ -> fprintf fmt "(%a)" pp_expr e
 
@@ -239,6 +252,29 @@ let rec pp_top_decl fmt = function
       fprintf fmt "#include \"%s\"" h
   | ConstexprGlobal (ty, name, e) ->
       fprintf fmt "constexpr %a %s = %a;" pp_ctype ty name pp_expr e
+  | GlobalVar { is_static; is_const; is_constexpr; ty; name; init } ->
+      let prefix =
+        (if is_static then "static " else "")
+        ^ (if is_constexpr then "constexpr "
+           else if is_const then "const "
+           else "")
+      in
+      (match ty with
+       | Array (Array (et, sz2), sz1) ->
+           let sz1_str = if sz1 > 0 then string_of_int sz1 else "" in
+           let sz2_str = if sz2 > 0 then string_of_int sz2 else "" in
+           (match init with
+            | Some e -> fprintf fmt "%s%a %s[%s][%s] = %a;" prefix pp_ctype et name sz1_str sz2_str pp_expr e
+            | None -> fprintf fmt "%s%a %s[%s][%s];" prefix pp_ctype et name sz1_str sz2_str)
+       | Array (et, sz) ->
+           let sz_str = if sz > 0 then string_of_int sz else "" in
+           (match init with
+            | Some e -> fprintf fmt "%s%a %s[%s] = %a;" prefix pp_ctype et name sz_str pp_expr e
+            | None -> fprintf fmt "%s%a %s[%s];" prefix pp_ctype et name sz_str)
+       | _ ->
+           (match init with
+            | Some e -> fprintf fmt "%s%a %s = %a;" prefix pp_ctype ty name pp_expr e
+            | None -> fprintf fmt "%s%a %s;" prefix pp_ctype ty name))
   | StructDecl { align_as; name; fields } ->
       let align_str = match align_as with
         | Some n -> Printf.sprintf "alignas(%d) " n

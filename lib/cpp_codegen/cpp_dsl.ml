@@ -5,9 +5,11 @@ open Cpp_ast
 
 let u64 (v : int64) : expr = LitU64 v
 let u32 (v : int32) : expr = LitU32 v
+let u8 (v : int)     : expr = LitU8 v
 let i32 (v : int)   : expr = LitInt v
 let bool_lit (b : bool) : expr = LitBool b
 let var (s : string) : expr = Var s
+let init_list (es : expr list) : expr = InitList es
 
 let ( $. ) (e : expr) (field : string) : expr = Member (e, field)
 let ( $-> ) (e : expr) (field : string) : expr = PtrMember (e, field)
@@ -50,6 +52,7 @@ let c_cast ty e = CCast (ty, e)
 let ccast ty e = CCast (ty, e)
 let bit_cast ty e = BitCast (ty, e)
 let reinterpret_cast ty e = ReinterpretCast (ty, e)
+let sizeof_expr e = Call ("sizeof", [e])
 let call fn args = Call (fn, args)
 
 let ternary c t f = Ternary (c, t, f)
@@ -125,6 +128,8 @@ let enum_decl ?underlying_ty name items : top_decl = EnumDecl { name; underlying
 let func_decl ?(attrs=[]) ret_type name params body : top_decl = FuncDecl { attrs; ret_type; name; params; body }
 let func_proto ?(attrs=[]) ret_type name params : top_decl = FuncProto { attrs; ret_type; name; params; body = [] }
 let typedef ty name : top_decl = Typedef (ty, name)
+let global_var ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?init ty name : top_decl =
+  GlobalVar { is_static; is_const; is_constexpr; ty; name; init }
 let raw_top s : top_decl = RawTop s
 let comment_top s : top_decl = CommentTop s
 
