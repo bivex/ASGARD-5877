@@ -82,24 +82,26 @@ let zero_inv_sub_not a b =
   (* (a - b) - (a + (~b + 1)) == 0 *)
   Sub (Sub (a, b), Add (a, Add (Not b, Const 1L)))
 
-(* Degree-5 Opaque Polynomial Zero Invariants over Z_{2^64} *)
+(* Non-Linear T-Function & Cross-Term Zero Invariants over Z_{2^64} (P1-01) *)
 let zero_inv5_poly x =
-  (* Degree-5 null polynomial over Z_{2^64}: 2^61 * x * (x-1) * (x-2) * (x-3) * (x-4) == 0 (mod 2^64) *)
-  let c_2_61 = Const 0x2000000000000000L in
-  Mul (c_2_61,
-       Mul (x,
-            Mul (Sub (x, Const 1L),
-                 Mul (Sub (x, Const 2L),
-                      Mul (Sub (x, Const 3L),
-                           Sub (x, Const 4L))))))
+  (* Klimov-Shamir T-function non-linear zero invariant over Z_{2^64}.
+     Unlike 2^61 * x * (x-1)... which collapses under 3-bit slicing,
+     this compares two structurally distinct non-linear evaluations of
+     f(x) = x + (x^2 | C) across all 64 bits with full carry-chain dependency:
+     t_lhs = x + (x^2 | C)
+     t_rhs = (x ^ (x^2 | C)) + 2*(x & (x^2 | C))
+     Sub(t_lhs, t_rhs) == 0 (mod 2^64) *)
+  let c_const = Const 0x5877CAFE13370005L in
+  let x_sq = Mul (x, x) in
+  let sq_or_c = Or (x_sq, c_const) in
+  let t_lhs = Add (x, sq_or_c) in
+  let t_rhs = Add (Xor (x, sq_or_c), Mul (Const 2L, And (x, sq_or_c))) in
+  Sub (t_lhs, t_rhs)
 
 let zero_inv5_nl a b =
-  (* Degree-5 non-linear cross-term invariant: zero_inv1(a, b) * (a & b) * (a | b) * (a ^ b) * (a + b) == 0 *)
-  Mul (zero_inv1 a b,
-       Mul (And (a, b),
-            Mul (Or (a, b),
-                 Mul (Xor (a, b),
-                      Add (a, b)))))
+  (* Non-linear cross-term zero invariant using Klimov-Shamir zero modulated by cross terms *)
+  let z = zero_inv5_poly a in
+  Mul (z, Xor (Add (a, b), Or (a, b)))
 
 (** XOR: diverse forms (Linear + Semi-linear masked + Invariant blended + Degree-5) *)
 let xor_forms ?(order = `Deg5) a b =
