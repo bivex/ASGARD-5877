@@ -110,6 +110,7 @@
   random_visa_c11_emitter
   tech_2603
   gpu_synth
+  c_macro_obf
   alcotest))
 
 (test

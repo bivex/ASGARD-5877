@@ -79,3 +79,5 @@ val transform_file :
   unit ->
   (unit, string) result
 
+module C_nanomites : module type of C_nanomites
+

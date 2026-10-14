@@ -91,6 +91,7 @@ type func_attr =
   | NoExcept
   | ConstexprFn
   | StaticFn
+  | Constructor
 
 type func_decl = {
   attrs      : func_attr list;
@@ -161,6 +162,7 @@ type top_decl =
       is_static    : bool;
       is_const     : bool;
       is_constexpr : bool;
+      is_volatile  : bool;
       ty           : ctype;
       name         : string;
       init         : expr option;

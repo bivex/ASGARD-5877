@@ -165,6 +165,7 @@ let pp_attr fmt = function
   | NoExcept     -> ()
   | ConstexprFn  -> fprintf fmt "constexpr "
   | StaticFn     -> fprintf fmt "static "
+  | Constructor  -> fprintf fmt "__attribute__((constructor)) "
 
 let pp_struct_member fmt = function
   | MemberField { ty; name; init = Some e } ->
@@ -252,9 +253,10 @@ let rec pp_top_decl fmt = function
       fprintf fmt "#include \"%s\"" h
   | ConstexprGlobal (ty, name, e) ->
       fprintf fmt "constexpr %a %s = %a;" pp_ctype ty name pp_expr e
-  | GlobalVar { is_static; is_const; is_constexpr; ty; name; init } ->
+  | GlobalVar { is_static; is_const; is_constexpr; is_volatile; ty; name; init } ->
       let prefix =
         (if is_static then "static " else "")
+        ^ (if is_volatile then "volatile " else "")
         ^ (if is_constexpr then "constexpr "
            else if is_const then "const "
            else "")

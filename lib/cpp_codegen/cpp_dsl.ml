@@ -128,8 +128,8 @@ let enum_decl ?underlying_ty name items : top_decl = EnumDecl { name; underlying
 let func_decl ?(attrs=[]) ret_type name params body : top_decl = FuncDecl { attrs; ret_type; name; params; body }
 let func_proto ?(attrs=[]) ret_type name params : top_decl = FuncProto { attrs; ret_type; name; params; body = [] }
 let typedef ty name : top_decl = Typedef (ty, name)
-let global_var ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?init ty name : top_decl =
-  GlobalVar { is_static; is_const; is_constexpr; ty; name; init }
+let global_var ?(is_static=false) ?(is_const=false) ?(is_constexpr=false) ?(is_volatile=false) ?init ty name : top_decl =
+  GlobalVar { is_static; is_const; is_constexpr; is_volatile; ty; name; init }
 let raw_top s : top_decl = RawTop s
 let comment_top s : top_decl = CommentTop s
 

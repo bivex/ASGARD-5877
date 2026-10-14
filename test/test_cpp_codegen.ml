@@ -343,7 +343,27 @@ let () =
    | Ok () -> ()
    | Error err -> failwith ("GPU MBA Matrix syntax validation failed: " ^ err));
   assert (String.length mat_cpp > 100);
-  Printf.printf "[PASS] Step 19: GPU MBA substitution matrix emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 19: GPU MBA substitution matrix emitted using typed AST.\n";
+
+  (* 20. C Nanomite Branch Functions & Auto-Init Constructor AST *)
+  let nano_site = {
+    C_macro_obf.C_nanomites.ns_id = 1;
+    ns_cond = "x > 0";
+    ns_then_fn = "asgbranch_t_100";
+    ns_else_fn = "asgbranch_f_100";
+    ns_then_src = "printf(\"then\\n\");";
+    ns_else_src = "printf(\"else\\n\");";
+    ns_key = 0x1234;
+    ns_has_return = false;
+  } in
+  let nano_ast_decls = C_macro_obf.C_nanomites.emit_nanomite_preamble_ast [ nano_site ] in
+  let nano_cpp = render_top_decls nano_ast_decls in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax nano_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Nanomite preamble syntax validation failed: " ^ err));
+  assert (String.length nano_cpp > 100);
+  Printf.printf "[PASS] Step 20: C Nanomite branch functions & auto-init constructor emitted using typed AST.\n"
+
 
 
 

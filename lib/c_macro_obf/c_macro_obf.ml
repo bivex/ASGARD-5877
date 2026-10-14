@@ -50,6 +50,7 @@ let obfuscate_constant_i64 ~prefix ~seed n =
 
 let lift_nanomites_in_source = C_nanomites.lift_nanomites_in_source
 let rewrite_arithmetic_in_source = C_arith_rewriter.rewrite_arithmetic_in_source
+module C_nanomites = C_nanomites
 
 (** Transform a complete C source code string *)
 let obfuscate_source ?(config = default_config) src =

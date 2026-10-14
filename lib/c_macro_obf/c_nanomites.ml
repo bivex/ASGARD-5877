@@ -325,34 +325,40 @@ let split_leading_directives src =
   (directives, rest)
 
 (** Given nanomite sites, emit branch functions + __attribute__((constructor))
-    auto-registration block. *)
-let emit_nanomite_preamble ?(config = default_config) sites =
+    auto-registration block as typed EDSL AST declarations. *)
+let emit_nanomite_preamble_ast ?(config = default_config) sites : Cpp_codegen.Cpp_ast.top_decl list =
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
   let p = config.macro_prefix in
-  let buf = Buffer.create 1024 in
-  Buffer.add_string buf "static volatile int _asg_nanomite_returned = 0;\n";
-  Buffer.add_string buf "static volatile uint64_t _asg_nanomite_retval = 0;\n";
-  Buffer.add_string buf "#define ASG_NANOMITE_CHECK_RET() do { if (_asg_nanomite_returned) { int _asg_r = (int)_asg_nanomite_retval; _asg_nanomite_returned = 0; return _asg_r; } } while(0)\n\n";
-  List.iter (fun s ->
-    let then_body = strip_returns_from_body s.ns_then_src in
-    Buffer.add_string buf
-      (Printf.sprintf "static void __attribute__((noinline)) %s(void) {\n%s\n}\n"
-         s.ns_then_fn then_body);
-    let else_raw = if String.trim s.ns_else_src = "" then "    (void)0;" else s.ns_else_src in
-    let else_body = strip_returns_from_body else_raw in
-    Buffer.add_string buf
-      (Printf.sprintf "static void __attribute__((noinline)) %s(void) {\n%s\n}\n"
-         s.ns_else_fn else_body);
-  ) sites;
-  Buffer.add_char buf '\n';
-  Buffer.add_string buf "__attribute__((constructor)) static void _asg_nanomite_auto_init_(void) {\n";
-  Buffer.add_string buf (Printf.sprintf "    %sNANOMITE_INIT();\n" p);
-  List.iter (fun s ->
-    Buffer.add_string buf
-      (Printf.sprintf "    %sNANOMITE_REGISTER(%d, %s, %s, 0x%Xu);\n"
-         p s.ns_id s.ns_then_fn s.ns_else_fn s.ns_key)
-  ) sites;
-  Buffer.add_string buf "}\n\n";
-  Buffer.contents buf
+  let ret_var = global_var ~is_static:true ~is_volatile:true Int32 "_asg_nanomite_returned" ~init:(i32 0) in
+  let val_var = global_var ~is_static:true ~is_volatile:true UInt64 "_asg_nanomite_retval" ~init:(u64 0L) in
+  let check_ret_macro = raw_top "#define ASG_NANOMITE_CHECK_RET() do { if (_asg_nanomite_returned) { int _asg_r = (int)_asg_nanomite_retval; _asg_nanomite_returned = 0; return _asg_r; } } while(0)" in
+  let branch_funcs =
+    List.concat_map (fun s ->
+      let then_body = strip_returns_from_body s.ns_then_src in
+      let then_func = func_decl ~attrs:[StaticFn; NoInline] Void s.ns_then_fn [] [ raw then_body ] in
+      let else_raw = if String.trim s.ns_else_src = "" then "    (void)0;" else s.ns_else_src in
+      let else_body = strip_returns_from_body else_raw in
+      let else_func = func_decl ~attrs:[StaticFn; NoInline] Void s.ns_else_fn [] [ raw else_body ] in
+      [ then_func; else_func ]
+    ) sites
+  in
+  let init_stmts =
+    [ expr_stmt (call (p ^ "NANOMITE_INIT") []) ]
+    @ List.map (fun s ->
+        expr_stmt (call (p ^ "NANOMITE_REGISTER") [
+          i32 s.ns_id;
+          var s.ns_then_fn;
+          var s.ns_else_fn;
+          Var (Printf.sprintf "0x%Xu" s.ns_key);
+        ])
+      ) sites
+  in
+  let auto_init_func = func_decl ~attrs:[Constructor; StaticFn] Void "_asg_nanomite_auto_init_" [] init_stmts in
+  [ ret_var; val_var; check_ret_macro ] @ branch_funcs @ [ auto_init_func ]
+
+let emit_nanomite_preamble ?(config = default_config) sites =
+  (Cpp_codegen.Cpp_printer.render_top_decls (emit_nanomite_preamble_ast ~config sites)) ^ "\n\n"
 
 (** Fully lift a C source string: if/else blocks → nanomites.
     Returns (transformed_body, preamble_to_prepend).
