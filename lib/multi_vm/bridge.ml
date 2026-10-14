@@ -102,22 +102,19 @@ open Cpp_codegen.Cpp_printer
 
 let emit_cpp_bridge_code bridge =
   let dim = bridge.dim in
-  let format_matrix name mat =
-    let buf = Buffer.create 1024 in
-    Buffer.add_string buf (Printf.sprintf "static const uint64_t %s[16][16] = {\n" name);
-    for i = 0 to dim - 1 do
-      Buffer.add_string buf "    { ";
-      for j = 0 to dim - 1 do
-        Buffer.add_string buf (Printf.sprintf "0x%016LXULL%s" mat.(i).(j) (if j = dim - 1 then "" else ", "));
-      done;
-      Buffer.add_string buf " },\n";
-    done;
-    Buffer.add_string buf "};";
-    Buffer.contents buf
+  let format_matrix_decl name mat =
+    let to_init_list =
+      init_list (List.init dim (fun i ->
+        init_list (List.init dim (fun j -> u64 mat.(i).(j)))))
+    in
+    global_var ~is_static:true ~is_const:true
+      (Array (Array (UInt64, dim), dim))
+      name
+      ~init:to_init_list
   in
 
-  let fwd_mat_str = format_matrix "BRIDGE_FWD_MAT" bridge.forward_matrix in
-  let inv_mat_str = format_matrix "BRIDGE_INV_MAT" bridge.inverse_matrix in
+  let fwd_mat_decl = format_matrix_decl "BRIDGE_FWD_MAT" bridge.forward_matrix in
+  let inv_mat_decl = format_matrix_decl "BRIDGE_INV_MAT" bridge.inverse_matrix in
 
   let rol64_fn =
     func_decl
@@ -188,13 +185,20 @@ let emit_cpp_bridge_code bridge =
       ]
   in
 
+  let initial_digest_decl =
+    global_var ~is_static:true ~is_const:true
+      UInt64
+      "ASGARD_INITIAL_DIGEST"
+      ~init:(u64 bridge.initial_digest)
+  in
+
   let decls = [
     comment_top "ASGARD-5877: ZERO-NATIVE IN-PLACE INTER-VM DISPATCH BRIDGE";
     comment_top "Affine GL_16(Z/2^64Z) State Morphing with Dynamic Trace Coupling";
     raw_top (Printf.sprintf "#define ASGARD_MULTI_VM_DIM %d" dim);
-    raw_top (Printf.sprintf "static const uint64_t ASGARD_INITIAL_DIGEST = 0x%016LXULL;" bridge.initial_digest);
-    raw_top fwd_mat_str;
-    raw_top inv_mat_str;
+    initial_digest_decl;
+    fwd_mat_decl;
+    inv_mat_decl;
     rol64_fn;
     update_digest_fn;
     morph_math_to_flow_fn;
