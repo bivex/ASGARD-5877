@@ -443,23 +443,66 @@ func_taint_test:
       match Cff.flatten_func ~options ~rng lifted_func with
       | Error e -> Alcotest.fail e
       | Ok flattened_func ->
-          (* Test input with upper 32 bits non-zero: 0x100000005L (> 10) *)
+          (* Test standard 32-bit input with upper bits zero: 15L (> 10) *)
           let state1 = make_state () in
-          set_reg state1 Register.rdi 0x100000005L;
+          set_reg state1 Register.rdi 15L;
           (match run_func state1 flattened_func with
           | Error e -> Alcotest.fail e
           | Ok () ->
-              (* 0x100000005L + 100 = 0x100000069L *)
-              Alcotest.(check int64) "flattened tainted branch > 10" 0x100000069L (get_reg state1 Register.rax));
+              (* 15L + 100 = 115L *)
+              Alcotest.(check int64) "flattened tainted branch 15 > 10" 115L (get_reg state1 Register.rax));
 
-          (* Test input with upper 32 bits non-zero: 0x200000003L (<= 10) *)
+          (* Test standard 32-bit input with upper bits zero: 3L (<= 10) *)
           let state2 = make_state () in
           set_reg state2 Register.rdi 3L;
           (match run_func state2 flattened_func with
           | Error e -> Alcotest.fail e
           | Ok () ->
               (* 3 - 5 = -2 *)
-              Alcotest.(check int64) "flattened tainted branch <= 10" (-2L) (get_reg state2 Register.rax))
+              Alcotest.(check int64) "flattened tainted branch 3 <= 10" (-2L) (get_reg state2 Register.rax));
+
+          (* Test 64-bit input with upper bits non-zero: 0x100000005L (> 10) *)
+          let state3 = make_state () in
+          set_reg state3 Register.rdi 0x100000005L;
+          (match run_func state3 flattened_func with
+          | Error e -> Alcotest.fail e
+          | Ok () ->
+              Alcotest.(check int64) "flattened tainted branch 64-bit > 10" 0x100000069L (get_reg state3 Register.rax))
+
+let test_cff_tainted_transitions_pinned_clobber () =
+  let rng = Random.State.make [| 12345 |] in
+  let asm = {|
+func_clobber_test:
+    mov rax, rdi
+    xor rdi, rdi
+    cmp rax, 10
+    jle .Lle
+    add rax, 100
+    jmp .Lexit
+.Lle:
+    sub rax, 5
+.Lexit:
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok lifted_func ->
+      let options = { Cff.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
+      match Cff.flatten_func ~options ~rng lifted_func with
+      | Error e -> Alcotest.fail e
+      | Ok flattened_func ->
+          let state1 = make_state () in
+          set_reg state1 Register.rdi 20L;
+          (match run_func state1 flattened_func with
+          | Error e -> Alcotest.fail e
+          | Ok () ->
+              Alcotest.(check int64) "flattened with clobbered rdi > 10" 120L (get_reg state1 Register.rax));
+          let state2 = make_state () in
+          set_reg state2 Register.rdi 4L;
+          (match run_func state2 flattened_func with
+          | Error e -> Alcotest.fail e
+          | Ok () ->
+              Alcotest.(check int64) "flattened with clobbered rdi <= 10" (-1L) (get_reg state2 Register.rax))
 
 let tests = [
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
@@ -473,6 +516,7 @@ let tests = [
   Alcotest.test_case "cff_flatten_lifted_factorial" `Quick test_cff_flatten_lifted_factorial;
   Alcotest.test_case "cff_flatten_lifted_abs" `Quick test_cff_flatten_lifted_abs;
   Alcotest.test_case "cff_tainted_transitions_dynamic_input" `Quick test_cff_tainted_transitions_dynamic_input;
+  Alcotest.test_case "cff_tainted_transitions_pinned_clobber" `Quick test_cff_tainted_transitions_pinned_clobber;
   Alcotest.test_case "cff_ocamlgraph_cfg_metrics" `Quick test_cff_ocamlgraph_cfg_metrics;
   Alcotest.test_case "cff_ocamlgraph_dot_and_reachability" `Quick test_cff_ocamlgraph_dot_and_reachability;
   Alcotest.test_case "cff_opaque_parity_extremes" `Quick test_cff_opaque_parity_extremes;
