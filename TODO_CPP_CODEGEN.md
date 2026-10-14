@@ -19,6 +19,7 @@
 | **Stage 2** | E-graph равенства, ALU и Decoy хендлеры (`egraph_cpp_emitter.ml`, `vm_alu_handlers.ml`, `vm_mem_handlers.ml`) | ✅ Завершен | `62f984a` |
 | **Stage 3** | Control Flow, супер-операторы, VMContext и модульные заголовки Vanguard | ✅ Завершен | `3.1, 3.2, 3.3` |
 | **Stage 4** | Stack-VM хендлеры, Multi-VM контексты и pre-flight синтаксический валидатор | ✅ Завершен | `4.1, 4.2` |
+| **Stage 5** | RD-JIT VM, Vector ISA, Tech-2603/2608, Vanguard 9292 Decoder, Stack-VM Superops & Trampoline | ✅ Завершен | `1c22026` |
 
 ---
 
@@ -109,6 +110,18 @@
   - Проверка отсутствия неразрешенных тегов шаблонизатора (`{{`, `}}`, `{%`, `%}`).
   - Интеграция с компилятором `clang++ -fsyntax-only` для строгой проверки перед записью на диск.
 - [x] Тесты: Step 11 и Step 12 в `test_cpp_codegen.ml` + 8/8 тестов `Multi-VM & Direct Zero-Bridge` (включая E2E сборку Clang и запуск) — 100% PASS.
+
+### Stage 5: Vanguard 9292, Stack-VM Superops, RD-JIT, Vector ISA & Chunks (`1c22026`)
+- [x] Расширение ядра EDSL: добавлена конструкция `MemberConstructor` (`Cpp_ast`, `Cpp_dsl`, `Cpp_printer`, `Cpp_ast_obf`) для типизированного описания C++ конструкторов с explicit, inline, noexcept и списками инициализации полей (`init_list`).
+- [x] Полная миграция Vanguard-9292 Decoder ([`lib/vanguard_9292/vanguard_decoder.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_decoder.ml)):
+  - Структура `RollingKey` переведена на `Cpp_ast.StructDef` с typed конструктором и методами `next()`, `next64()`.
+  - Класс `VanguardDecoder` переведен на типизированный AST с `decode_and_execute`, битовыми масками, заполнением `DecodedInstruction` и switch-инструкциями / ловушками junk-кодов.
+- [x] Завершение миграции Stack-VM супер-операторов ([`lib/stack_vm/stack_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_handlers_emitter.ml)):
+  - Хендлеры `h_cmp`, `h_test`, `h_add_imm`, `h_sub_imm`, `h_add_ii`, `h_sub_ii` переведены на типизированные `FuncDecl`.
+  - Замена строковых определений в [`lib/stack_vm/stack_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_vm_templates.ml) на `{{ stack_superop_handlers }}`.
+- [x] Миграция структур Trampoline Chunk ([`lib/adapters/protect_adapters/c_trampoline_adapter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml)):
+  - Декларация `AsgardBytecodeChunk` переведена на типизированный `Cpp_ast.StructDecl`.
+- [x] Тесты: Steps 13 и 14 в `test_cpp_codegen.ml` + 38/38 тестов `Stack-VM Execution Engine` + `Vanguard Emulator E2E` (Clang++ E2E) — 100% PASS.
 
 ---
 
