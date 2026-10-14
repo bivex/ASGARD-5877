@@ -177,10 +177,44 @@ let evaluate_trace_metrics (trace : memory_event list) : (tech_2608_metrics, tec
         register_entanglement_score = reg_score;
       }
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let emit_chaff_store_method () : struct_member =
+  member_method ~attrs:[AlwaysInline; NoExcept] Void "emit_chaff_store"
+    [(UInt64, "reg_a"); (UInt64, "reg_b"); (UInt64, "k_dyn"); (UInt64, "salt")]
+    [
+      decl_var ~is_const:true SizeT "slot" ~init:(cast SizeT (var "reg_a" ^~ var "salt") &~ var "MASK_WORDS");
+      const_u64 "val" (((var "reg_a" *~ u64 0x9E3779B97F4A7C15L) +~ (var "reg_b" *~ u64 0xBF58476D1CE4E5B9L)) ^~ (var "k_dyn" +~ var "salt"));
+      idx (var "storage") (var "slot") := var "val";
+    ]
+
+let emit_chaff_load_method () : struct_member =
+  member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "emit_chaff_load"
+    [(UInt64, "reg_src"); (UInt64, "salt")]
+    [
+      decl_var ~is_const:true SizeT "slot" ~init:(cast SizeT (var "reg_src" ^~ var "salt") &~ var "MASK_WORDS");
+      ret (idx (var "storage") (var "slot"));
+    ]
+
+let emit_chaff_memory_pool_def () : top_decl =
+  StructDef {
+    align_as = Some 64;
+    name = "ChaffMemoryPool";
+    members = [
+      MemberRaw "static_assert((PoolSize & (PoolSize - 1)) == 0, \"PoolSize must be power-of-two\");";
+      MemberRaw "static_assert(PoolSize >= 64, \"PoolSize must be at least 64 bytes\");";
+      MemberRaw "alignas(64) volatile uint64_t storage[PoolSize / sizeof(uint64_t)]{0};";
+      MemberRaw "static constexpr size_t MASK_WORDS = (PoolSize / sizeof(uint64_t)) - 1;";
+      emit_chaff_store_method ();
+      emit_chaff_load_method ();
+    ];
+  }
+
 (* ── Standalone C++20 Header Emitter ──────────────────────────────────────── *)
 let emit_tech_2608_cpp_header () : string =
-  let b = Buffer.create 4096 in
-  Buffer.add_string b {|#pragma once
+  let prefix = {|#pragma once
 // ============================================================================
 // ASGARD-5877: Tech-2608 (arXiv:2608.20628)
 // Anti-Trace-Synthesis & Memory Chaffing Runtime
@@ -197,25 +231,10 @@ let emit_tech_2608_cpp_header () : string =
 namespace asgard::tech_2608 {
 
 template<size_t PoolSize = 4096>
-struct alignas(64) ChaffMemoryPool {
-    static_assert((PoolSize & (PoolSize - 1)) == 0, "PoolSize must be power-of-two");
-    static_assert(PoolSize >= 64, "PoolSize must be at least 64 bytes");
-
-    alignas(64) volatile uint64_t storage[PoolSize / sizeof(uint64_t)]{0};
-    static constexpr size_t MASK_WORDS = (PoolSize / sizeof(uint64_t)) - 1;
-
-    inline void emit_chaff_store(uint64_t reg_a, uint64_t reg_b, uint64_t k_dyn, uint64_t salt) noexcept {
-        const size_t slot = (static_cast<size_t>(reg_a ^ salt)) & MASK_WORDS;
-        const uint64_t val = (reg_a * 0x9E3779B97F4A7C15ULL) + (reg_b * 0xBF58476D1CE4E5B9ULL) ^ (k_dyn + salt);
-        storage[slot] = val;
-    }
-
-    [[nodiscard]] inline uint64_t emit_chaff_load(uint64_t reg_src, uint64_t salt) const noexcept {
-        const size_t slot = (static_cast<size_t>(reg_src ^ salt)) & MASK_WORDS;
-        return storage[slot];
-    }
-};
-
+|} in
+  let struct_str = render_top_decl (emit_chaff_memory_pool_def ()) in
+  let suffix = {|
 } // namespace asgard::tech_2608
-|};
-  Buffer.contents b
+|} in
+  prefix ^ "\n" ^ struct_str ^ "\n" ^ suffix
+
