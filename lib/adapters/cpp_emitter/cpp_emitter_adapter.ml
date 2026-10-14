@@ -21,131 +21,195 @@ let emit_decoder_hpp = Cpp_header_emitters.emit_decoder_hpp
 let emit_instructions_hpp = Cpp_header_emitters.emit_instructions_hpp
 
 
-let generate_c_op_expr (inst : Vector_instruction.t) =
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let generate_c_op_expr (inst : Vector_instruction.t) : expr =
+  let elem_t = StructType "elem_t" in
   match inst.binary_op with
-  | Some ADD -> if inst.is_widening then "op2 + op1" else "static_cast<elem_t>(static_cast<uint32_t>(op2) + static_cast<uint32_t>(op1))"
-  | Some SUB -> if inst.is_widening then "op2 - op1" else "static_cast<elem_t>(static_cast<uint32_t>(op2) - static_cast<uint32_t>(op1))"
-  | Some MUL -> if inst.is_widening then "op2 * op1" else "static_cast<elem_t>(static_cast<uint32_t>(op2) * static_cast<uint32_t>(op1))"
-  | Some DIV -> "(op1 == 0) ? -1 : ((op2 == INT32_MIN && op1 == -1) ? INT32_MIN : (op2 / op1))"
-  | Some REM -> "(op1 == 0) ? op2 : ((op2 == INT32_MIN && op1 == -1) ? 0 : (op2 % op1))"
-  | Some AND -> "op2 & op1"
-  | Some OR  -> "op2 | op1"
-  | Some XOR -> "op2 ^ op1"
-  | Some SLL -> "static_cast<elem_t>(static_cast<uint32_t>(op2) << (op1 & 31u))"
-  | Some SRL -> "static_cast<elem_t>(static_cast<uint32_t>(op2) >> (op1 & 31u))"
-  | Some SRA -> "static_cast<elem_t>(op2 >> (op1 & 31u))"
-  | Some MIN -> "std::min(op2, op1)"
-  | Some MAX -> "std::max(op2, op1)"
-  | Some SADD -> "static_cast<elem_t>(std::clamp<int64_t>(static_cast<int64_t>(op2) + op1, INT32_MIN, INT32_MAX))"
-  | Some SSUB -> "static_cast<elem_t>(std::clamp<int64_t>(static_cast<int64_t>(op2) - op1, INT32_MIN, INT32_MAX))"
-  | Some CMPEQ -> "(op2 == op1) ? elem_t(1) : elem_t(0)"
-  | Some CMPNE -> "(op2 != op1) ? elem_t(1) : elem_t(0)"
-  | Some CMPLT -> "(op2 < op1) ? elem_t(1) : elem_t(0)"
-  | Some CMPGE -> "(op2 >= op1) ? elem_t(1) : elem_t(0)"
+  | Some ADD ->
+      if inst.is_widening then var "op2" +~ var "op1"
+      else cast elem_t (cast UInt32 (var "op2") +~ cast UInt32 (var "op1"))
+  | Some SUB ->
+      if inst.is_widening then var "op2" -~ var "op1"
+      else cast elem_t (cast UInt32 (var "op2") -~ cast UInt32 (var "op1"))
+  | Some MUL ->
+      if inst.is_widening then var "op2" *~ var "op1"
+      else cast elem_t (cast UInt32 (var "op2") *~ cast UInt32 (var "op1"))
+  | Some DIV ->
+      ternary (var "op1" ==~ i32 0) (i32 (-1))
+        (ternary ((var "op2" ==~ var "INT32_MIN") &&~ (var "op1" ==~ i32 (-1)))
+           (var "INT32_MIN")
+           (var "op2" /~ var "op1"))
+  | Some REM ->
+      ternary (var "op1" ==~ i32 0) (var "op2")
+        (ternary ((var "op2" ==~ var "INT32_MIN") &&~ (var "op1" ==~ i32 (-1)))
+           (i32 0)
+           (var "op2" %~ var "op1"))
+  | Some AND -> var "op2" &~ var "op1"
+  | Some OR  -> var "op2" |~ var "op1"
+  | Some XOR -> var "op2" ^~ var "op1"
+  | Some SLL -> cast elem_t (cast UInt32 (var "op2") <<~ (var "op1" &~ var "31u"))
+  | Some SRL -> cast elem_t (cast UInt32 (var "op2") >>~ (var "op1" &~ var "31u"))
+  | Some SRA -> cast elem_t (var "op2" >>~ (var "op1" &~ var "31u"))
+  | Some MIN -> call "std::min" [var "op2"; var "op1"]
+  | Some MAX -> call "std::max" [var "op2"; var "op1"]
+  | Some SADD -> cast elem_t (call "std::clamp<int64_t>" [cast Int64 (var "op2") +~ var "op1"; var "INT32_MIN"; var "INT32_MAX"])
+  | Some SSUB -> cast elem_t (call "std::clamp<int64_t>" [cast Int64 (var "op2") -~ var "op1"; var "INT32_MIN"; var "INT32_MAX"])
+  | Some CMPEQ -> ternary (var "op2" ==~ var "op1") (call "elem_t" [i32 1]) (call "elem_t" [i32 0])
+  | Some CMPNE -> ternary (ne (var "op2") (var "op1")) (call "elem_t" [i32 1]) (call "elem_t" [i32 0])
+  | Some CMPLT -> ternary (var "op2" <~ var "op1") (call "elem_t" [i32 1]) (call "elem_t" [i32 0])
+  | Some CMPGE -> ternary (var "op2" >=~ var "op1") (call "elem_t" [i32 1]) (call "elem_t" [i32 0])
   | None -> (
       match inst.unary_op with
-      | Some NEG -> "static_cast<elem_t>(0u - static_cast<uint32_t>(op2))"
-      | Some NOT -> "~op2"
-      | Some ABS -> "(op2 == INT32_MIN) ? INT32_MIN : ((op2 < 0) ? -op2 : op2)"
-      | Some CLZ -> "(op2 == 0) ? 32 : __builtin_clz(static_cast<uint32_t>(op2))"
-      | Some CTZ -> "(op2 == 0) ? 32 : __builtin_ctz(static_cast<uint32_t>(op2))"
-      | Some CPOP -> "__builtin_popcount(static_cast<uint32_t>(op2))"
-      | None -> "op2")
+      | Some NEG -> cast elem_t (var "0u" -~ cast UInt32 (var "op2"))
+      | Some NOT -> bit_not (var "op2")
+      | Some ABS -> ternary (var "op2" ==~ var "INT32_MIN") (var "INT32_MIN") (ternary (var "op2" <~ i32 0) (neg (var "op2")) (var "op2"))
+      | Some CLZ -> ternary (var "op2" ==~ i32 0) (i32 32) (call "__builtin_clz" [cast UInt32 (var "op2")])
+      | Some CTZ -> ternary (var "op2" ==~ i32 0) (i32 32) (call "__builtin_ctz" [cast UInt32 (var "op2")])
+      | Some CPOP -> call "__builtin_popcount" [cast UInt32 (var "op2")]
+      | None -> var "op2")
+
+let emit_execute_method_def (spec : Vector_isa_spec.t) : top_decl =
+  FuncDecl {
+    attrs = [NoExcept];
+    ret_type = Bool;
+    name = "InstructionExecutor::execute";
+    params = [(Ref (StructType "EmulatorState"), "state"); (ConstRef (StructType "DecodedInstruction"), "inst")];
+    body = [
+      switch (var "inst.id")
+        (List.map (fun (inst : Vector_instruction.t) ->
+           (var ("InstId::" ^ String.uppercase_ascii inst.mnemonic),
+            [
+              expr_stmt (call ("exec_" ^ inst.mnemonic) [var "state"; var "inst"]);
+              ret (bool_lit true);
+            ])
+         ) spec.instructions)
+        (Some [ret (bool_lit false)]);
+    ];
+  }
+
+let emit_exec_inst_method_def (inst : Vector_instruction.t) : top_decl =
+  let src_elem_t = StructType "src_elem_t" in
+  let elem_t = StructType "elem_t" in
+  let body_header =
+    if inst.is_widening then [
+      raw "using src_elem_t = int32_t;";
+      raw "using elem_t = int64_t;";
+      decl_var ~is_const:true SizeT "vl" ~init:(call "std::min<size_t>" [var "state.csr.vl"; var "VLEN_BYTES" /~ call "sizeof" [var "elem_t"]]);
+    ] else [
+      raw "using src_elem_t = int32_t;";
+      raw "using elem_t = int32_t;";
+      decl_var ~is_const:true SizeT "vl" ~init:(cast SizeT (var "state.csr.vl"));
+    ]
+  in
+  let vd_ptr_decl =
+    decl_var (Ptr elem_t) "vd_ptr" ~init:(reinterpret_cast (Ptr elem_t) (call "state.vregs.get_reg_ptr" [var "inst.vd"]))
+  in
+  let vs2_ptr_decl =
+    decl_var (ConstPtr src_elem_t) "vs2_ptr" ~init:(reinterpret_cast (ConstPtr src_elem_t) (call "state.vregs.get_reg_ptr" [var "inst.vs2"]))
+  in
+  let has_op1_scalar = inst.format = Types.Instruction_format.OP_VX || inst.format = Types.Instruction_format.OP_VI in
+  let op1_setup =
+    if has_op1_scalar then
+      if inst.format = Types.Instruction_format.OP_VX then
+        [decl_var ~is_const:true elem_t "op1_scalar" ~init:(cast elem_t (call "state.get_xreg" [var "inst.rs1"]))]
+      else
+        [decl_var ~is_const:true elem_t "op1_scalar" ~init:(cast elem_t (var "inst.imm"))]
+    else if inst.binary_op <> None then
+      [decl_var (ConstPtr src_elem_t) "vs1_ptr" ~init:(reinterpret_cast (ConstPtr src_elem_t) (call "state.vregs.get_reg_ptr" [var "inst.vs1"]))]
+    else
+      []
+  in
+  let expr = generate_c_op_expr inst in
+  let unmasked_loop_body =
+    [
+      decl_var elem_t "op2" ~init:(Index (var "vs2_ptr", var "i"));
+    ] @ (
+      if inst.binary_op <> None then
+        if has_op1_scalar then
+          [decl_var elem_t "op1" ~init:(var "op1_scalar")]
+        else
+          [decl_var elem_t "op1" ~init:(Index (var "vs1_ptr", var "i"))]
+      else []
+    ) @ [
+      decl_var elem_t "res" ~init:expr;
+      Index (var "vd_ptr", var "i") := var "res";
+    ]
+  in
+  let masked_loop_body =
+    [
+      if_then (log_not (call "state.vregs.is_mask_set" [i32 0; var "i"])) [continue_stmt];
+      decl_var elem_t "op2" ~init:(Index (var "vs2_ptr", var "i"));
+    ] @ (
+      if inst.binary_op <> None then
+        if has_op1_scalar then
+          [decl_var elem_t "op1" ~init:(var "op1_scalar")]
+        else
+          [decl_var elem_t "op1" ~init:(Index (var "vs1_ptr", var "i"))]
+      else []
+    ) @ [
+      decl_var elem_t "res" ~init:expr;
+      Index (var "vd_ptr", var "i") := var "res";
+    ]
+  in
+  let loops =
+    if_then_else
+      (call "__builtin_expect" [var "inst.vm" ==~ i32 1; i32 1])
+      [for_range "i" (i32 0) (var "vl") unmasked_loop_body]
+      [for_range "i" (i32 0) (var "vl") masked_loop_body]
+  in
+  FuncDecl {
+    attrs = [NoExcept];
+    ret_type = Void;
+    name = ("InstructionExecutor::exec_" ^ inst.mnemonic);
+    params = [(Ref (StructType "EmulatorState"), "state"); (ConstRef (StructType "DecodedInstruction"), "inst")];
+    body = body_header @ [vd_ptr_decl; vs2_ptr_decl] @ op1_setup @ [loops];
+  }
 
 let emit_instructions_cpp (spec : Vector_isa_spec.t) =
   let b = Buffer.create 4096 in
   Buffer.add_string b "#include \"instructions.hpp\"\n#include <algorithm>\n\n";
   Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b "bool InstructionExecutor::execute(EmulatorState& state, const DecodedInstruction& inst) noexcept {\n";
-  Buffer.add_string b "    switch (inst.id) {\n";
+  Buffer.add_string b (render_top_decl (emit_execute_method_def spec));
+  Buffer.add_string b "\n\n";
   List.iter
     (fun (inst : Vector_instruction.t) ->
-      Buffer.add_string b (Printf.sprintf "    case InstId::%s:\n        exec_%s(state, inst);\n        return true;\n"
-                             (String.uppercase_ascii inst.mnemonic) inst.mnemonic))
+      Buffer.add_string b (render_top_decl (emit_exec_inst_method_def inst));
+      Buffer.add_string b "\n\n")
     spec.instructions;
-  Buffer.add_string b "    default:\n        return false;\n    }\n}\n\n";
-
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
-      Buffer.add_string b (Printf.sprintf "void InstructionExecutor::exec_%s(EmulatorState& state, const DecodedInstruction& inst) noexcept {\n" inst.mnemonic);
-      if inst.is_widening then begin
-        Buffer.add_string b "    using src_elem_t = int32_t;\n";
-        Buffer.add_string b "    using elem_t = int64_t;\n";
-        Buffer.add_string b "    const size_t vl = std::min<size_t>(state.csr.vl, VLEN_BYTES / sizeof(elem_t));\n";
-      end else begin
-        Buffer.add_string b "    using src_elem_t = int32_t;\n";
-        Buffer.add_string b "    using elem_t = int32_t;\n";
-        Buffer.add_string b "    const size_t vl = static_cast<size_t>(state.csr.vl);\n";
-      end;
-      Buffer.add_string b "    auto* vd_ptr = reinterpret_cast<elem_t*>(state.vregs.get_reg_ptr(inst.vd));\n";
-      Buffer.add_string b "    const auto* vs2_ptr = reinterpret_cast<const src_elem_t*>(state.vregs.get_reg_ptr(inst.vs2));\n";
-
-      let has_op1_scalar = inst.format = Types.Instruction_format.OP_VX || inst.format = Types.Instruction_format.OP_VI in
-      if has_op1_scalar then begin
-        if inst.format = Types.Instruction_format.OP_VX then
-          Buffer.add_string b "    const elem_t op1_scalar = static_cast<elem_t>(state.get_xreg(inst.rs1));\n"
-        else
-          Buffer.add_string b "    const elem_t op1_scalar = static_cast<elem_t>(inst.imm);\n"
-      end else if inst.binary_op <> None then begin
-        Buffer.add_string b "    const auto* vs1_ptr = reinterpret_cast<const src_elem_t*>(state.vregs.get_reg_ptr(inst.vs1));\n"
-      end;
-
-      let expr = generate_c_op_expr inst in
-
-      Buffer.add_string b "    if (__builtin_expect(inst.vm == 1, 1)) {\n";
-      Buffer.add_string b "        for (size_t i = 0; i < vl; ++i) {\n";
-      Buffer.add_string b "            elem_t op2 = vs2_ptr[i];\n";
-      if inst.binary_op <> None then begin
-        if has_op1_scalar then
-          Buffer.add_string b "            elem_t op1 = op1_scalar;\n"
-        else
-          Buffer.add_string b "            elem_t op1 = vs1_ptr[i];\n"
-      end;
-      Buffer.add_string b (Printf.sprintf "            elem_t res = %s;\n" expr);
-      Buffer.add_string b "            vd_ptr[i] = res;\n";
-      Buffer.add_string b "        }\n";
-      Buffer.add_string b "    } else {\n";
-      Buffer.add_string b "        for (size_t i = 0; i < vl; ++i) {\n";
-      Buffer.add_string b "            if (!state.vregs.is_mask_set(0, i)) continue;\n";
-      Buffer.add_string b "            elem_t op2 = vs2_ptr[i];\n";
-      if inst.binary_op <> None then begin
-        if has_op1_scalar then
-          Buffer.add_string b "            elem_t op1 = op1_scalar;\n"
-        else
-          Buffer.add_string b "            elem_t op1 = vs1_ptr[i];\n"
-      end;
-      Buffer.add_string b (Printf.sprintf "            elem_t res = %s;\n" expr);
-      Buffer.add_string b "            vd_ptr[i] = res;\n";
-      Buffer.add_string b "        }\n";
-      Buffer.add_string b "    }\n";
-      Buffer.add_string b "}\n\n")
-    spec.instructions;
-
   Buffer.add_string b "} // namespace visa_emulator\n";
   Buffer.contents b
+
+let emit_vector_emulator_class_def () : top_decl =
+  ClassDef {
+    align_as = None;
+    name = "VectorEmulator";
+    members = [
+      member_public;
+      member_field (StructType "EmulatorState") "state";
+      member_method ~attrs:[InlineFn; NoExcept] Bool "step" [(UInt32, "raw_inst")] [
+        decl_var (StructType "DecodedInstruction") "dec" ~init:(call "Decoder::decode" [var "raw_inst"]);
+        if_then (var "dec.id" ==~ var "InstId::UNKNOWN") [ret (bool_lit false)];
+        decl_var Bool "ok" ~init:(call "InstructionExecutor::execute" [var "state"; var "dec"]);
+        if_then (var "ok") [var "state.csr.pc" += i32 4];
+        ret (var "ok");
+      ];
+      member_method ~attrs:[NoExcept] SizeT "run_program" [(ConstRef (StructType "std::vector<uint32_t>"), "program")] [
+        decl_var SizeT "executed" ~init:(i32 0);
+        raw "for (uint32_t word : program) {\n            if (!step(word)) break;\n            ++executed;\n        }";
+        ret (var "executed");
+      ];
+    ];
+  }
 
 let emit_emulator_hpp () =
   let b = Buffer.create 2048 in
   Buffer.add_string b "#pragma once\n#include \"isa_state.hpp\"\n#include \"decoder.hpp\"\n#include \"instructions.hpp\"\n#include <vector>\n\n";
   Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b "class VectorEmulator {\npublic:\n";
-  Buffer.add_string b "    EmulatorState state;\n\n";
-  Buffer.add_string b "    inline bool step(uint32_t raw_inst) noexcept {\n";
-  Buffer.add_string b "        DecodedInstruction dec = Decoder::decode(raw_inst);\n";
-  Buffer.add_string b "        if (dec.id == InstId::UNKNOWN) return false;\n";
-  Buffer.add_string b "        bool ok = InstructionExecutor::execute(state, dec);\n";
-  Buffer.add_string b "        if (ok) state.csr.pc += 4;\n";
-  Buffer.add_string b "        return ok;\n";
-  Buffer.add_string b "    }\n\n";
-  Buffer.add_string b "    size_t run_program(const std::vector<uint32_t>& program) noexcept {\n";
-  Buffer.add_string b "        size_t executed = 0;\n";
-  Buffer.add_string b "        for (uint32_t word : program) {\n";
-  Buffer.add_string b "            if (!step(word)) break;\n";
-  Buffer.add_string b "            ++executed;\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        return executed;\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "};\n\n";
+  Buffer.add_string b (render_top_decl (emit_vector_emulator_class_def ()));
+  Buffer.add_string b "\n\n";
   Buffer.add_string b "} // namespace visa_emulator\n";
   Buffer.contents b
 

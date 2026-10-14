@@ -302,6 +302,34 @@ let emit_split_vpc_def () : top_decl =
     ];
   }
 
+let emit_nonlinear_vpc_dispatcher_def () : top_decl =
+  template_struct_def ~template_params:["size_t Capacity"] "NonLinearVPCDispatcher" [
+    member_static_assert ((var "Capacity" &~ (var "Capacity" -~ i32 1)) ==~ i32 0) "Capacity must be power-of-two";
+    member_static_constexpr SizeT "MASK" (var "Capacity" -~ i32 1);
+    member_field UInt64 "a_mul" ~init:(i32 1);
+    member_field UInt64 "a_inv" ~init:(i32 1);
+    member_field UInt64 "b_add" ~init:(i32 0);
+    member_field (ConstPtr Int32) "successor_lut" ~init:(var "nullptr");
+    member_method ~attrs:[Nodiscard; ConstexprFn; NoExcept] ~is_const:true SizeT "logical_to_physical"
+      [(SizeT, "logical_idx")] [
+      ret (((var "logical_idx" *~ var "a_mul") +~ var "b_add") &~ var "MASK");
+    ];
+    member_method ~attrs:[Nodiscard; ConstexprFn; NoExcept] ~is_const:true SizeT "physical_to_logical"
+      [(SizeT, "physical_idx")] [
+      ret (((var "physical_idx" -~ var "b_add") *~ var "a_inv") &~ var "MASK");
+    ];
+    member_method ~attrs:[Nodiscard; InlineFn; NoExcept] ~is_const:true SizeT "next_physical"
+      [(SizeT, "current_physical")] [
+      if_then (ne (var "successor_lut") (var "nullptr")) [
+        decl_var Int32 "succ" ~init:(Index (var "successor_lut", var "current_physical" &~ var "MASK"));
+        ret (ternary (var "succ" >=~ i32 0) (cast SizeT (var "succ")) (var "current_physical"));
+      ];
+      comment "Direct affine stepping: i -> i + 1 in logical space";
+      decl_var SizeT "logical" ~init:(call "physical_to_logical" [var "current_physical"]);
+      ret (call "logical_to_physical" [var "logical" +~ i32 1]);
+    ];
+  ]
+
 (* ── Standalone C++20 Header Emitter ──────────────────────────────────────── *)
 let emit_tech_2603_cpp_header () : string =
   let b = Buffer.create 4096 in
@@ -323,35 +351,6 @@ namespace asgard::tech_2603 {
 |};
   Buffer.add_string b (render_top_decl (emit_split_vpc_def ()));
   Buffer.add_string b "\n\n";
-  Buffer.add_string b {|template<size_t Capacity>
-struct NonLinearVPCDispatcher {
-    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power-of-two");
-    static constexpr size_t MASK = Capacity - 1;
-
-    uint64_t a_mul{1};
-    uint64_t a_inv{1};
-    uint64_t b_add{0};
-    const int32_t* successor_lut{nullptr};
-
-    [[nodiscard]] constexpr size_t logical_to_physical(size_t logical_idx) const noexcept {
-        return (logical_idx * a_mul + b_add) & MASK;
-    }
-
-    [[nodiscard]] constexpr size_t physical_to_logical(size_t physical_idx) const noexcept {
-        return ((physical_idx - b_add) * a_inv) & MASK;
-    }
-
-    [[nodiscard]] inline size_t next_physical(size_t current_physical) const noexcept {
-        if (successor_lut != nullptr) {
-            int32_t succ = successor_lut[current_physical & MASK];
-            return succ >= 0 ? static_cast<size_t>(succ) : current_physical;
-        }
-        // Direct affine stepping: i -> i + 1 in logical space
-        size_t logical = physical_to_logical(current_physical);
-        return logical_to_physical(logical + 1);
-    }
-};
-
-} // namespace asgard::tech_2603
-|};
+  Buffer.add_string b (render_top_decl (emit_nonlinear_vpc_dispatcher_def ()));
+  Buffer.add_string b "\n\n} // namespace asgard::tech_2603\n";
   Buffer.contents b

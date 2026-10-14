@@ -51,5 +51,11 @@ val evaluate_trace_metrics : int array -> tech_2603_metrics
 val synthesize_decoy_word : seed:int64 -> slot:int -> int64
 (** Synthesizes an entropy-whitened decoy instruction word for padding slots. *)
 
+val emit_split_vpc_def : unit -> Cpp_codegen.Cpp_ast.top_decl
+(** Emits typed AST for the SplitVPC struct definition. *)
+
+val emit_nonlinear_vpc_dispatcher_def : unit -> Cpp_codegen.Cpp_ast.top_decl
+(** Emits typed AST for NonLinearVPCDispatcher template struct definition. *)
+
 val emit_tech_2603_cpp_header : unit -> string
 (** Emits standalone C++20 header source (<asg_tech_2603.hpp>) for runtime integration. *)

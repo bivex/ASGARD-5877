@@ -146,6 +146,8 @@ and pp_stmt_list fmt stmts =
 let pp_attr fmt = function
   | AlwaysInline -> fprintf fmt "__attribute__((always_inline)) inline "
   | NoInline     -> fprintf fmt "__attribute__((noinline)) "
+  | InlineFn     -> fprintf fmt "inline "
+  | Nodiscard    -> fprintf fmt "[[nodiscard]] "
   | NoExcept     -> ()
   | ConstexprFn  -> fprintf fmt "constexpr "
   | StaticFn     -> fprintf fmt "static "
@@ -161,7 +163,17 @@ let pp_struct_member fmt = function
       fprintf fmt "%a %s;@," pp_ctype ty name
   | MemberStaticConstexpr { ty; name; init } ->
       fprintf fmt "static inline constexpr %a %s = %a;@," pp_ctype ty name pp_expr init
-  | MemberMethod { attrs; is_static; is_const; ret_type; name; params; body } ->
+  | MemberVisibility Public ->
+      fprintf fmt "public:@,"
+  | MemberVisibility Private ->
+      fprintf fmt "private:@,"
+  | MemberVisibility Protected ->
+      fprintf fmt "protected:@,"
+  | MemberStaticAssert (e, msg) ->
+      fprintf fmt "static_assert(%a, \"%s\");@," pp_expr e msg
+  | MemberMethod { attrs; is_static; is_const; template_params; ret_type; name; params; body } ->
+      if template_params <> [] then
+        fprintf fmt "template <%s>@," (String.concat ", " template_params);
       if is_static then fprintf fmt "static ";
       List.iter (pp_attr fmt) attrs;
       let is_noexcept = List.mem NoExcept attrs in
@@ -174,6 +186,20 @@ let pp_struct_member fmt = function
         (if is_const then " const" else "")
         (if is_noexcept then " noexcept" else "")
         pp_stmt_list body
+  | MemberMethodDecl { attrs; is_static; is_const; template_params; ret_type; name; params } ->
+      if template_params <> [] then
+        fprintf fmt "template <%s>@," (String.concat ", " template_params);
+      if is_static then fprintf fmt "static ";
+      List.iter (pp_attr fmt) attrs;
+      let is_noexcept = List.mem NoExcept attrs in
+      fprintf fmt "%a %s(%a)%s%s;@,"
+        pp_ctype ret_type name
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+           (fun fmt (ty, pname) ->
+              if pname = "" then pp_ctype fmt ty
+              else fprintf fmt "%a %s" pp_ctype ty pname)) params
+        (if is_const then " const" else "")
+        (if is_noexcept then " noexcept" else "")
   | MemberConstructor { attrs; is_explicit; name; params; init_list; body } ->
       List.iter (pp_attr fmt) attrs;
       if is_explicit then fprintf fmt "explicit ";
@@ -242,6 +268,32 @@ let rec pp_top_decl fmt = function
         | None -> ""
       in
       fprintf fmt "struct %s%s {@[<v 4>@," align_str name;
+      List.iter (pp_struct_member fmt) members;
+      fprintf fmt "@]@,};"
+  | ClassDef { align_as; name; members } ->
+      let align_str = match align_as with
+        | Some n -> Printf.sprintf "alignas(%d) " n
+        | None -> ""
+      in
+      fprintf fmt "class %s%s {@[<v 4>@," align_str name;
+      List.iter (pp_struct_member fmt) members;
+      fprintf fmt "@]@,};"
+  | TemplateStructDef { template_params; def = { align_as; name; members } } ->
+      let align_str = match align_as with
+        | Some n -> Printf.sprintf "alignas(%d) " n
+        | None -> ""
+      in
+      fprintf fmt "template <%s>@,struct %s%s {@[<v 4>@,"
+        (String.concat ", " template_params) align_str name;
+      List.iter (pp_struct_member fmt) members;
+      fprintf fmt "@]@,};"
+  | TemplateClassDef { template_params; def = { align_as; name; members } } ->
+      let align_str = match align_as with
+        | Some n -> Printf.sprintf "alignas(%d) " n
+        | None -> ""
+      in
+      fprintf fmt "template <%s>@,class %s%s {@[<v 4>@,"
+        (String.concat ", " template_params) align_str name;
       List.iter (pp_struct_member fmt) members;
       fprintf fmt "@]@,};"
   | UnionDef { align_as; name; members } ->

@@ -106,6 +106,8 @@
   random_visa.stack_vm
   rd_jit_vm
   vanguard_9292
+  random_visa_cpp_emitter
+  tech_2603
   alcotest))
 
 (test

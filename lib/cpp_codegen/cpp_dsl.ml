@@ -97,15 +97,26 @@ let fence_seq_cst : stmt = FenceSeqCst
 let comment s : stmt = Comment s
 
 let member_field ?init ty name : struct_member = MemberField { ty; name; init }
-let member_method ?(attrs=[]) ?(is_static=false) ?(is_const=false) ret_type name params body : struct_member =
-  MemberMethod { attrs; is_static; is_const; ret_type; name; params; body }
+let member_method ?(attrs=[]) ?(is_static=false) ?(is_const=false) ?(template_params=[]) ret_type name params body : struct_member =
+  MemberMethod { attrs; is_static; is_const; template_params; ret_type; name; params; body }
+let member_method_decl ?(attrs=[]) ?(is_static=false) ?(is_const=false) ?(template_params=[]) ret_type name params : struct_member =
+  MemberMethodDecl { attrs; is_static; is_const; template_params; ret_type; name; params }
 let member_constructor ?(attrs=[]) ?(is_explicit=false) ?(params=[]) ?(init_list=[]) name body : struct_member =
   MemberConstructor { attrs; is_explicit; name; params; init_list; body }
 let member_static_constexpr ty name init : struct_member = MemberStaticConstexpr { ty; name; init }
+let member_public : struct_member = MemberVisibility Public
+let member_private : struct_member = MemberVisibility Private
+let member_protected : struct_member = MemberVisibility Protected
+let member_static_assert e msg : struct_member = MemberStaticAssert (e, msg)
 let member_raw s : struct_member = MemberRaw s
 let member_comment s : struct_member = MemberComment s
 let struct_decl ?align_as name fields : top_decl = StructDecl { align_as; name; fields }
 let struct_def ?align_as name members : top_decl = StructDef { align_as; name; members }
+let class_def ?align_as name members : top_decl = ClassDef { align_as; name; members }
+let template_struct_def ?align_as ~template_params name members : top_decl =
+  TemplateStructDef { template_params; def = { align_as; name; members } }
+let template_class_def ?align_as ~template_params name members : top_decl =
+  TemplateClassDef { template_params; def = { align_as; name; members } }
 let union_decl ?align_as name fields : top_decl = UnionDecl { align_as; name; fields }
 let union_def ?align_as name members : top_decl = UnionDef { align_as; name; members }
 let enum_decl ?underlying_ty name items : top_decl = EnumDecl { name; underlying_ty; items }

@@ -83,6 +83,8 @@ type stmt =
 type func_attr =
   | AlwaysInline
   | NoInline
+  | InlineFn
+  | Nodiscard
   | NoExcept
   | ConstexprFn
   | StaticFn
@@ -101,16 +103,31 @@ type struct_decl = {
   fields   : (ctype * string) list;
 }
 
+type visibility =
+  | Public
+  | Private
+  | Protected
+
 type struct_member =
   | MemberField of { ty : ctype; name : string; init : expr option }
   | MemberMethod of {
-      attrs      : func_attr list;
-      is_static  : bool;
-      is_const   : bool;
-      ret_type   : ctype;
-      name       : string;
-      params     : (ctype * string) list;
-      body       : stmt list;
+      attrs           : func_attr list;
+      is_static       : bool;
+      is_const        : bool;
+      template_params : string list;
+      ret_type        : ctype;
+      name            : string;
+      params          : (ctype * string) list;
+      body            : stmt list;
+    }
+  | MemberMethodDecl of {
+      attrs           : func_attr list;
+      is_static       : bool;
+      is_const        : bool;
+      template_params : string list;
+      ret_type        : ctype;
+      name            : string;
+      params          : (ctype * string) list;
     }
   | MemberConstructor of {
       attrs       : func_attr list;
@@ -121,6 +138,8 @@ type struct_member =
       body        : stmt list;
     }
   | MemberStaticConstexpr of { ty : ctype; name : string; init : expr }
+  | MemberVisibility of visibility
+  | MemberStaticAssert of expr * string
   | MemberRaw of string
   | MemberComment of string
 
@@ -137,6 +156,9 @@ type top_decl =
   | ConstexprGlobal of ctype * string * expr
   | StructDecl of struct_decl
   | StructDef of struct_def
+  | ClassDef of struct_def
+  | TemplateStructDef of { template_params : string list; def : struct_def }
+  | TemplateClassDef of { template_params : string list; def : struct_def }
   | UnionDecl of struct_decl
   | UnionDef of struct_def
   | EnumDecl of { name : string; underlying_ty : ctype option; items : (string * expr option) list }

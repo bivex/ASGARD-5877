@@ -111,17 +111,37 @@
   - Интеграция с компилятором `clang++ -fsyntax-only` для строгой проверки перед записью на диск.
 - [x] Тесты: Step 11 и Step 12 в `test_cpp_codegen.ml` + 8/8 тестов `Multi-VM & Direct Zero-Bridge` (включая E2E сборку Clang и запуск) — 100% PASS.
 
-### Stage 5: Vanguard 9292, Stack-VM Superops, RD-JIT, Vector ISA & Chunks (`1c22026`)
+### Stage 5.1: Vanguard 9292, Stack-VM Superops, RD-JIT & Chunks (`1c22026`)
 - [x] Расширение ядра EDSL: добавлена конструкция `MemberConstructor` (`Cpp_ast`, `Cpp_dsl`, `Cpp_printer`, `Cpp_ast_obf`) для типизированного описания C++ конструкторов с explicit, inline, noexcept и списками инициализации полей (`init_list`).
 - [x] Полная миграция Vanguard-9292 Decoder ([`lib/vanguard_9292/vanguard_decoder.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vanguard_9292/vanguard_decoder.ml)):
   - Структура `RollingKey` переведена на `Cpp_ast.StructDef` с typed конструктором и методами `next()`, `next64()`.
   - Класс `VanguardDecoder` переведен на типизированный AST с `decode_and_execute`, битовыми масками, заполнением `DecodedInstruction` и switch-инструкциями / ловушками junk-кодов.
-- [x] Завершение миграции Stack-VM супер-операторов ([`lib/stack_vm/stack_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_handlers_emitter.ml)):
+- [x] Миграция Stack-VM супер-операторов ([`lib/stack_vm/stack_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_handlers_emitter.ml)):
   - Хендлеры `h_cmp`, `h_test`, `h_add_imm`, `h_sub_imm`, `h_add_ii`, `h_sub_ii` переведены на типизированные `FuncDecl`.
   - Замена строковых определений в [`lib/stack_vm/stack_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_vm_templates.ml) на `{{ stack_superop_handlers }}`.
 - [x] Миграция структур Trampoline Chunk ([`lib/adapters/protect_adapters/c_trampoline_adapter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/protect_adapters/c_trampoline_adapter.ml)):
   - Декларация `AsgardBytecodeChunk` переведена на типизированный `Cpp_ast.StructDecl`.
 - [x] Тесты: Steps 13 и 14 в `test_cpp_codegen.ml` + 38/38 тестов `Stack-VM Execution Engine` + `Vanguard Emulator E2E` (Clang++ E2E) — 100% PASS.
+
+### Stage 5.2: Завершение миграции всех хендлеров Stack-VM (`e8aacea`)
+- [x] Перевод оставшихся 10 хендлеров Stack-VM в [`lib/stack_vm/stack_handlers_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_handlers_emitter.ml):
+  - Control & Lifecycle: `h_jmp_rel`, `h_jcc_rel` (с поддержкой `layout_jcc_target_first`), `h_key_adjust`, `h_exit`.
+  - Conditionals & Symbols: `h_resolve_sym` (через strict C++20 `reinterpret_cast<uint64_t>`), `h_setcc`, `h_cmov` (с поддержкой `layout_cmov_slot_first`).
+  - Register Immediates & Feedback: `h_set_reg_imm`, `h_add_reg_imm`, `h_key_feedback`.
+- [x] Замена сырых строк в [`lib/stack_vm/stack_vm_templates.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_vm_templates.ml) на `{{ stack_control_handlers }}`, `{{ stack_cond_handlers }}`, `{{ stack_reg_imm_handlers }}`.
+- [x] Тесты: Step 15 в `test_cpp_codegen.ml` + 38/38 тестов `Stack-VM Execution Engine` — 100% PASS.
+
+### Stage 5.3: Vector ISA C++ Emulator и Tech-2603 NonLinearVPCDispatcher
+- [x] Расширение ядра EDSL:
+  - Добавлены атрибуты `InlineFn`, `Nodiscard`.
+  - Добавлены элементы структуры `MemberMethodDecl`, `MemberVisibility (Public | Private | Protected)`, `MemberStaticAssert`.
+  - Добавлены декларации классов и шаблонов `ClassDef`, `TemplateStructDef`, `TemplateClassDef`.
+- [x] Миграция Vector ISA C++ Emulator:
+  - [`lib/adapters/cpp_emitter/cpp_header_emitters.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/cpp_emitter/cpp_header_emitters.ml): классы `VRegFile`, `EmulatorState`, `Decoder` и `InstructionExecutor` переведены на типизированный AST.
+  - [`lib/adapters/cpp_emitter/cpp_emitter_adapter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/adapters/cpp_emitter/cpp_emitter_adapter.ml): генератор бинарных и унарных операций `generate_c_op_expr`, диспетчер `InstructionExecutor::execute`, хендлеры инструкций `exec_<mnemonic>` и класс `VectorEmulator` переведены на типизированные `FuncDecl` и `ClassDef`.
+- [x] Миграция Tech-2603 NonLinearVPCDispatcher ([`lib/tech_2603/tech_2603_engine.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/tech_2603/tech_2603_engine.ml)):
+  - Структура `NonLinearVPCDispatcher` переведена на `TemplateStructDef` с проверкой `static_assert`, методами `logical_to_physical`, `physical_to_logical`, `next_physical`.
+- [x] Тесты: Steps 16 и 17 в `test_cpp_codegen.ml`, `C++ Emulator E2E` (Clang++ E2E компиляция и запуск) и `Tech-2603 Anti-VPC Tracking` (7/7) — 100% PASS.
 
 ---
 

@@ -303,6 +303,25 @@ let () =
   (match Cpp_codegen.Cpp_validator.validate_cpp_syntax (ctrl_handlers ^ "\n" ^ cond_handlers ^ "\n" ^ reg_imm_handlers) with
    | Ok () -> ()
    | Error err -> failwith ("Control/Cond/RegImm handlers syntax validation failed: " ^ err));
-  Printf.printf "[PASS] Step 15: Stack-VM control, cond & reg_imm handlers emitted using typed AST.\n"
+  Printf.printf "[PASS] Step 15: Stack-VM control, cond & reg_imm handlers emitted using typed AST.\n";
+
+  (* 16. Vector ISA C++ Emulator AST (VRegFile, EmulatorState, Decoder, InstructionExecutor) *)
+  let vreg_file_code = render_top_decl (Random_visa_cpp_emitter.Cpp_header_emitters.emit_vreg_file_def ()) in
+  let emu_state_code = render_top_decl (Random_visa_cpp_emitter.Cpp_header_emitters.emit_emulator_state_def ()) in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax (vreg_file_code ^ "\n" ^ emu_state_code) with
+   | Ok () -> ()
+   | Error err -> failwith ("Vector ISA State syntax validation failed: " ^ err));
+  assert (String.length vreg_file_code > 500);
+  assert (String.length emu_state_code > 200);
+  Printf.printf "[PASS] Step 16: Vector ISA C++ Emulator AST (VRegFile & EmulatorState) emitted.\n";
+
+  (* 17. Tech-2603 NonLinearVPCDispatcher template struct AST *)
+  let vpc_dispatcher_code = render_top_decl (Tech_2603.Tech_2603_engine.emit_nonlinear_vpc_dispatcher_def ()) in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax vpc_dispatcher_code with
+   | Ok () -> ()
+   | Error err -> failwith ("NonLinearVPCDispatcher syntax validation failed: " ^ err));
+  assert (String.length vpc_dispatcher_code > 300);
+  Printf.printf "[PASS] Step 17: Tech-2603 NonLinearVPCDispatcher template struct emitted using typed AST.\n"
+
 
 

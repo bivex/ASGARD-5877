@@ -60,6 +60,7 @@ let scramble_struct_member rng = function
       MemberField { f with init = Option.map (scramble_expr rng) f.init }
   | MemberMethod m ->
       MemberMethod { m with body = List.map (scramble_stmt rng) m.body }
+  | MemberMethodDecl _ as m -> m
   | MemberConstructor c ->
       MemberConstructor {
         c with
@@ -68,7 +69,9 @@ let scramble_struct_member rng = function
       }
   | MemberStaticConstexpr c ->
       MemberStaticConstexpr { c with init = scramble_expr rng c.init }
-  | (MemberRaw _ | MemberComment _) as m -> m
+  | MemberStaticAssert (e, msg) ->
+      MemberStaticAssert (scramble_expr rng e, msg)
+  | (MemberVisibility _ | MemberRaw _ | MemberComment _) as m -> m
 
 let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
   match d with
@@ -76,6 +79,12 @@ let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
       FuncDecl { f with body = List.map (scramble_stmt rng) f.body }
   | StructDef s ->
       StructDef { s with members = List.map (scramble_struct_member rng) s.members }
+  | ClassDef s ->
+      ClassDef { s with members = List.map (scramble_struct_member rng) s.members }
+  | TemplateStructDef t ->
+      TemplateStructDef { t with def = { t.def with members = List.map (scramble_struct_member rng) t.def.members } }
+  | TemplateClassDef t ->
+      TemplateClassDef { t with def = { t.def with members = List.map (scramble_struct_member rng) t.def.members } }
   | UnionDef s ->
       UnionDef { s with members = List.map (scramble_struct_member rng) s.members }
   | Namespace (ns, decls) ->
