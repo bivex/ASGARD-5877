@@ -8,52 +8,75 @@ let external_symbols_header symbols =
   ^ String.concat ",\n" entries
   ^ "\n};\n\n"
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let jit_op_kind_decl () : top_decl =
+  EnumDecl {
+    name = "JITOpKind";
+    underlying_ty = Some UInt8;
+    items = [
+      ("JIT_OP_NOP", Some (i32 0));
+      ("JIT_OP_MOV_RR", None);
+      ("JIT_OP_MOV_RI", None);
+      ("JIT_OP_ADD_RR", None);
+      ("JIT_OP_ADD_RI", None);
+      ("JIT_OP_SUB_RR", None);
+      ("JIT_OP_SUB_RI", None);
+      ("JIT_OP_MUL_RR", None);
+      ("JIT_OP_MUL_RI", None);
+      ("JIT_OP_CALL_EXTERN", None);
+      ("JIT_OP_XOR_RR", None);
+      ("JIT_OP_XOR_RI", None);
+      ("JIT_OP_AND_RR", None);
+      ("JIT_OP_AND_RI", None);
+      ("JIT_OP_OR_RR", None);
+      ("JIT_OP_OR_RI", None);
+      ("JIT_OP_SHL_RI", None);
+      ("JIT_OP_SHR_RI", None);
+      ("JIT_OP_SAR_RI", None);
+      ("JIT_OP_NOT_R", None);
+      ("JIT_OP_NEG_R", None);
+      ("JIT_OP_LOAD_64", None);
+      ("JIT_OP_STORE_64", None);
+      ("JIT_OP_RET", None);
+      ("JIT_OP_EXIT", None);
+    ];
+  }
+
+let jit_instr_decl () : top_decl =
+  StructDecl {
+    align_as = None;
+    name = "JITInstr";
+    fields = [
+      (UInt8, "op");
+      (UInt8, "dst");
+      (UInt8, "src");
+      (UInt64, "imm");
+    ];
+  }
+
+let jit_block_decl () : top_decl =
+  StructDecl {
+    align_as = None;
+    name = "JITBlock";
+    fields = [
+      (UInt32, "id");
+      (UInt32, "count");
+      (ConstPtr (StructType "JITInstr"), "instrs");
+    ];
+  }
+
 let header ?(external_symbols = []) () =
   ignore external_symbols;
-  {|
-enum JITOpKind : uint8_t {
-    JIT_OP_NOP = 0,
-    JIT_OP_MOV_RR,
-    JIT_OP_MOV_RI,
-    JIT_OP_ADD_RR,
-    JIT_OP_ADD_RI,
-    JIT_OP_SUB_RR,
-    JIT_OP_SUB_RI,
-    JIT_OP_MUL_RR,
-    JIT_OP_MUL_RI,
-    JIT_OP_CALL_EXTERN,
-    JIT_OP_XOR_RR,
-    JIT_OP_XOR_RI,
-    JIT_OP_AND_RR,
-    JIT_OP_AND_RI,
-    JIT_OP_OR_RR,
-    JIT_OP_OR_RI,
-    JIT_OP_SHL_RI,
-    JIT_OP_SHR_RI,
-    JIT_OP_SAR_RI,
-    JIT_OP_NOT_R,
-    JIT_OP_NEG_R,
-    JIT_OP_LOAD_64,
-    JIT_OP_STORE_64,
-    JIT_OP_RET,
-    JIT_OP_EXIT
-};
-
-struct JITInstr {
-    uint8_t op;
-    uint8_t dst;
-    uint8_t src;
-    uint64_t imm;
-};
-
-struct JITBlock {
-    uint32_t id;
-    uint32_t count;
-    const JITInstr* instrs;
-};
-
-typedef void (*JITBlockFn)(RD_JIT_Context* ctx);
-
+  let types_str = render_top_decls [
+    jit_op_kind_decl ();
+    jit_instr_decl ();
+    jit_block_decl ();
+    raw_top "typedef void (*JITBlockFn)(RD_JIT_Context* ctx);";
+  ] in
+  "\n" ^ types_str ^ "\n" ^ {|
 #include <stdio.h>
 #include <string.h>
 #if !defined(_WIN32) && !defined(_WIN64)

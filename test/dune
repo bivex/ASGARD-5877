@@ -104,6 +104,7 @@
   native_vm
   multi_vm
   random_visa.stack_vm
+  rd_jit_vm
   alcotest))
 
 (test

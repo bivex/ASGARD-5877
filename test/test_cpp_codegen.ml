@@ -160,7 +160,10 @@ let () =
     in
     if not (find 0) then failwith ("Missing Stack-VM handler: " ^ kw)
   ) [ "h_push_imm"; "h_push_imm32"; "h_push_reg"; "h_pop_reg";
-      "h_dup"; "h_dup2"; "h_rot"; "h_swap" ];
+      "h_dup"; "h_dup2"; "h_rot"; "h_swap";
+      "h_read_mem"; "h_write_mem"; "h_add"; "h_sub"; "h_mul"; "h_nor";
+      "h_nand"; "h_shl"; "h_shr"; "h_sar"; "h_div"; "h_idiv";
+      "h_push_flags"; "h_pop_flags" ];
   Printf.printf "[PASS] Step 10: Stack_handlers_emitter emitted %d bytes using typed AST.\n" (String.length stack_code);
 
   (* 11. Test Multi-VM Typed Structures & Bridges AST emission *)
@@ -218,5 +221,30 @@ let () =
    | Ok () -> ()
    | Error err -> failwith ("Compiler syntax check failed: " ^ err));
 
-  Printf.printf "[PASS] Step 12: Pre-flight C++ syntax validation verified (structural & clang++).\n"
+  Printf.printf "[PASS] Step 12: Pre-flight C++ syntax validation verified (structural & clang++).\n";
+
+  (* 13. Test RD-JIT VM typed RNS & Context code generation *)
+  let rd_jit_hdr = Rd_jit_vm.Rd_jit_buffer.header () in
+  assert (String.length rd_jit_hdr > 1000);
+  List.iter (fun kw ->
+    let rec find idx =
+      if idx + String.length kw > String.length rd_jit_hdr then false
+      else if String.sub rd_jit_hdr idx (String.length kw) = kw then true
+      else find (idx + 1)
+    in
+    if not (find 0) then failwith ("Missing RD-JIT keyword in header: " ^ kw)
+  ) [ "struct RNS_Register"; "struct RD_JIT_Context"; "RNS_M1"; "RNS_M2"; "decode_crt"; "DualMappedJITBuffer" ];
+
+  let synth_hdr = Rd_jit_vm.Rd_jit_synth.header () in
+  assert (String.length synth_hdr > 500);
+  List.iter (fun kw ->
+    let rec find idx =
+      if idx + String.length kw > String.length synth_hdr then false
+      else if String.sub synth_hdr idx (String.length kw) = kw then true
+      else find (idx + 1)
+    in
+    if not (find 0) then failwith ("Missing RD-JIT Synth keyword in header: " ^ kw)
+  ) [ "enum JITOpKind : uint8_t"; "struct JITInstr"; "struct JITBlock"; "JITBlockFn" ];
+  Printf.printf "[PASS] Step 13: RD-JIT VM typed RNS & context emitted using typed AST.\n"
+
 

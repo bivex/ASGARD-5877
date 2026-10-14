@@ -1,5 +1,91 @@
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let rns_moduli_decls () : top_decl list = [
+  comment_top "RNS-4 Moduli Definition (Pairwise coprime, Product > 2^64)";
+  raw_top "static const uint64_t RNS_M1 = 4294967291ULL;";
+  raw_top "static const uint64_t RNS_M2 = 4294967279ULL;";
+  raw_top "static const uint64_t RNS_M3 = 4294967231ULL;";
+  raw_top "static const uint64_t RNS_M4 = 4294967197ULL;";
+]
+
+let rns_register_def () : top_decl =
+  StructDef {
+    align_as = None;
+    name = "RNS_Register";
+    members = [
+      member_field UInt64 "r1";
+      member_field UInt64 "r2";
+      member_field UInt64 "r3";
+      member_field UInt64 "r4";
+      member_method ~attrs:[AlwaysInline] Void "set" [(UInt64, "val")] [
+        var "r1" := var "val" %~ var "RNS_M1";
+        var "r2" := var "val" %~ var "RNS_M2";
+        var "r3" := var "val" %~ var "RNS_M3";
+        var "r4" := var "val" %~ var "RNS_M4";
+      ];
+      member_method ~attrs:[AlwaysInline] Void "add" [(ConstRef (StructType "RNS_Register"), "o")] [
+        var "r1" := (var "r1" +~ (var "o" $. "r1")) %~ var "RNS_M1";
+        var "r2" := (var "r2" +~ (var "o" $. "r2")) %~ var "RNS_M2";
+        var "r3" := (var "r3" +~ (var "o" $. "r3")) %~ var "RNS_M3";
+        var "r4" := (var "r4" +~ (var "o" $. "r4")) %~ var "RNS_M4";
+      ];
+      member_method ~attrs:[AlwaysInline] Void "sub" [(ConstRef (StructType "RNS_Register"), "o")] [
+        var "r1" := ((var "r1" +~ var "RNS_M1") -~ ((var "o" $. "r1") %~ var "RNS_M1")) %~ var "RNS_M1";
+        var "r2" := ((var "r2" +~ var "RNS_M2") -~ ((var "o" $. "r2") %~ var "RNS_M2")) %~ var "RNS_M2";
+        var "r3" := ((var "r3" +~ var "RNS_M3") -~ ((var "o" $. "r3") %~ var "RNS_M3")) %~ var "RNS_M3";
+        var "r4" := ((var "r4" +~ var "RNS_M4") -~ ((var "o" $. "r4") %~ var "RNS_M4")) %~ var "RNS_M4";
+      ];
+      member_method ~attrs:[AlwaysInline] Void "mul" [(ConstRef (StructType "RNS_Register"), "o")] [
+        raw "r1 = (uint64_t)((__uint128_t)r1 * o.r1 % RNS_M1);";
+        raw "r2 = (uint64_t)((__uint128_t)r2 * o.r2 % RNS_M2);";
+        raw "r3 = (uint64_t)((__uint128_t)r3 * o.r3 % RNS_M3);";
+        raw "r4 = (uint64_t)((__uint128_t)r4 * o.r4 % RNS_M4);";
+      ];
+      member_method ~attrs:[AlwaysInline] ~is_const:true UInt64 "decode_crt" [] [
+        ret (var "r1");
+      ];
+    ];
+  }
+
+let rd_jit_context_def () : top_decl =
+  StructDef {
+    align_as = None;
+    name = "RD_JIT_Context";
+    members = [
+      member_field (Array (UInt64, 16)) "gprs";
+      member_field (Array (StructType "RNS_Register", 16)) "vregs";
+      member_field UInt64 "rip";
+      member_field UInt64 "flags";
+      member_field UInt64 "trace_digest";
+      member_method ~attrs:[AlwaysInline] Void "init" [] [
+        expr_stmt (call "memset" [var "this"; i32 0; call "sizeof" [deref (var "this")]]);
+        var "trace_digest" := u64 0x13375877AABBCCDDL;
+      ];
+      member_method ~attrs:[AlwaysInline] Void "set_reg" [(SizeT, "idx"); (UInt64, "val")] [
+        if_then (var "idx" <~ i32 16) [
+          idx (var "gprs") (var "idx") := var "val";
+          expr_stmt (call "vregs[idx].set" [var "val"]);
+        ];
+      ];
+      member_method ~attrs:[AlwaysInline] ~is_const:true UInt64 "get_reg" [(SizeT, "idx")] [
+        if_then (var "idx" <~ i32 16) [
+          ret (idx (var "gprs") (var "idx"));
+        ];
+        ret (u64 0L);
+      ];
+      member_method ~attrs:[AlwaysInline] Void "set_rdi" [(UInt64, "val")] [
+        expr_stmt (call "set_reg" [i32 0; var "val"]);
+      ];
+      member_method ~attrs:[AlwaysInline] ~is_const:true UInt64 "get_rax" [] [
+        ret (call "get_reg" [i32 0]);
+      ];
+    ];
+  }
+
 let header () =
-  {|#pragma once
+  let prefix = {|#pragma once
 // =========================================================================
 // ASGARD-5877: REGISTER-DRIVEN JUST-IN-TIME (RD JIT) VIRTUAL MACHINE
 // Dual-Mapping W^X Memory Manager & Ephemeral Native Code Synthesis
@@ -22,77 +108,12 @@ let header () =
 #endif
 
 namespace asgard_rd_jit {
-
-// RNS-4 Moduli Definition (Pairwise coprime, Product > 2^64)
-static const uint64_t RNS_M1 = 4294967291ULL;
-static const uint64_t RNS_M2 = 4294967279ULL;
-static const uint64_t RNS_M3 = 4294967231ULL;
-static const uint64_t RNS_M4 = 4294967197ULL;
-
-struct RNS_Register {
-    uint64_t r1, r2, r3, r4;
-    
-    inline void set(uint64_t val) {
-        r1 = val % RNS_M1;
-        r2 = val % RNS_M2;
-        r3 = val % RNS_M3;
-        r4 = val % RNS_M4;
-    }
-    
-    inline void add(const RNS_Register& o) {
-        r1 = (r1 + o.r1) % RNS_M1;
-        r2 = (r2 + o.r2) % RNS_M2;
-        r3 = (r3 + o.r3) % RNS_M3;
-        r4 = (r4 + o.r4) % RNS_M4;
-    }
-    
-    inline void sub(const RNS_Register& o) {
-        r1 = (r1 + RNS_M1 - (o.r1 % RNS_M1)) % RNS_M1;
-        r2 = (r2 + RNS_M2 - (o.r2 % RNS_M2)) % RNS_M2;
-        r3 = (r3 + RNS_M3 - (o.r3 % RNS_M3)) % RNS_M3;
-        r4 = (r4 + RNS_M4 - (o.r4 % RNS_M4)) % RNS_M4;
-    }
-    
-    inline void mul(const RNS_Register& o) {
-        r1 = (uint64_t)((__uint128_t)r1 * o.r1 % RNS_M1);
-        r2 = (uint64_t)((__uint128_t)r2 * o.r2 % RNS_M2);
-        r3 = (uint64_t)((__uint128_t)r3 * o.r3 % RNS_M3);
-        r4 = (uint64_t)((__uint128_t)r4 * o.r4 % RNS_M4);
-    }
-    
-    inline uint64_t decode_crt() const {
-        return r1;
-    }
-};
-
-struct RD_JIT_Context {
-    uint64_t gprs[16];
-    RNS_Register vregs[16];
-    uint64_t rip;
-    uint64_t flags;
-    uint64_t trace_digest;
-    
-    inline void init() {
-        memset(this, 0, sizeof(*this));
-        trace_digest = 0x13375877AABBCCDDULL;
-    }
-
-    inline void set_reg(size_t idx, uint64_t val) {
-        if (idx < 16) {
-            gprs[idx] = val;
-            vregs[idx].set(val);
-        }
-    }
-
-    inline uint64_t get_reg(size_t idx) const {
-        if (idx < 16) return gprs[idx];
-        return 0;
-    }
-
-    inline void set_rdi(uint64_t val) { set_reg(0, val); }
-    inline uint64_t get_rax() const { return get_reg(0); }
-};
-
+|} in
+  let ast_part = render_top_decls (
+    rns_moduli_decls () @
+    [ rns_register_def (); rd_jit_context_def () ]
+  ) in
+  prefix ^ "\n" ^ ast_part ^ "\n" ^ {|
 // Dual-Mapping W^X JIT Memory Manager
 class DualMappedJITBuffer {
 private:
