@@ -268,9 +268,19 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
 |} chunk_struct_cpp in
 
   let format_fragmented_bytecode name bc =
+    let open Cpp_codegen.Cpp_ast in
+    let open Cpp_codegen.Cpp_dsl in
+    let open Cpp_codegen.Cpp_printer in
     let total_words = List.length bc in
     if total_words = 0 then
-      Printf.sprintf "static uint64_t %s[1] = { 0 };\n__attribute__((unused)) static inline void %s_ensure_assembled(void) {}\n\n" name name
+      let empty_arr =
+        global_var ~is_static:true
+          (Array (UInt64, 1))
+          name
+          ~init:(init_list [ u64 0L ])
+      in
+      render_top_decls [ empty_arr ]
+      ^ Printf.sprintf "\n__attribute__((unused)) static inline void %s_ensure_assembled(void) {}\n\n" name
     else
       let chunk_size = 64 in
       let rec split idx offset acc remaining =
@@ -308,15 +318,13 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
           (idx, chunk_id, next_chunk_id, offset, count, canary, entropy_seed, junk_pad0, junk_pad1, masked_words)
         ) raw_chunks
       in
-      let chunk_arrays =
+      let chunk_array_decls =
         List.map (fun (idx, _, _, _, _, _, _, _, _, masked_words) ->
-          let lines =
-            List.map (fun w -> Printf.sprintf "    0x%016LXULL," w) masked_words
-            |> String.concat "\n"
-          in
-          Printf.sprintf "static const uint64_t %s_chk_%04x[] = {\n%s\n};\n" name idx lines
+          global_var ~is_static:true ~is_const:true
+            (Array (UInt64, 0))
+            (Printf.sprintf "%s_chk_%04x" name idx)
+            ~init:(init_list (List.map u64 masked_words))
         ) chunks_info
-        |> String.concat "\n"
       in
       let permuted_chunks =
         let arr = Array.of_list chunks_info in
@@ -332,17 +340,27 @@ typedef struct AsgardBytecodeChunk AsgardBytecodeChunk;
       in
       let chunk_table_entries =
         List.map (fun (idx, chunk_id, next_chunk_id, offset, count, canary, entropy_seed, junk0, junk1, _) ->
-          Printf.sprintf
-            "    { 0x%08xU, 0x%08xU, %d, %d, 0x%08LXU, 0x%08LXU, { 0x%016LXULL, 0x%016LXULL }, %s_chk_%04x },"
-            chunk_id next_chunk_id offset count canary entropy_seed junk0 junk1 name idx
+          init_list [
+            u32 (Int32.of_int chunk_id);
+            u32 (Int32.of_int next_chunk_id);
+            i32 offset;
+            i32 count;
+            u64 canary;
+            u64 entropy_seed;
+            init_list [ u64 junk0; u64 junk1 ];
+            var (Printf.sprintf "%s_chk_%04x" name idx);
+          ]
         ) permuted_chunks
-        |> String.concat "\n"
       in
+      let chunks_decl =
+        global_var ~is_static:true ~is_const:true
+          (Array (StructType "AsgardBytecodeChunk", num_chunks))
+          (Printf.sprintf "%s_chunks" name)
+          ~init:(init_list chunk_table_entries)
+      in
+      let all_chunks_code = render_top_decls (chunk_array_decls @ [ chunks_decl ]) in
       Printf.sprintf
 {|%s
-static const AsgardBytecodeChunk %s_chunks[%d] = {
-%s
-};
 
 __attribute__((unused)) static uint64_t %s[%d];
 __attribute__((unused)) static volatile int %s_assembled = 0;
@@ -372,8 +390,7 @@ __attribute__((constructor, unused)) static void %s_auto_init(void) {
 #endif
 
 |}
-        chunk_arrays
-        name num_chunks chunk_table_entries
+        all_chunks_code
         name total_words
         name
         name name num_chunks name
