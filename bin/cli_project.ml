@@ -1,6 +1,7 @@
 open Cmdliner
 
-let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth compile_and_run =
+let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth compile_and_run debug_symbols =
+  if debug_symbols then Unix.putenv "ASGARD_DEBUG_SYMBOLS" "1";
   let rng =
     match seed with
     | Some s -> Random.State.make [| s |]
@@ -147,7 +148,8 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
                   close_out oc_v;
 
                   let obj_out = Filename.concat build_dir (base ^ ".o") in
-                  let comp_obj_cmd = Printf.sprintf "clang++ -std=c++20 -O3 -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden %s -c %s -o %s" inc_flags vm_cpp_path obj_out in
+                  let cxx_flags = if debug_symbols then "-std=c++20 -g -O1" else "-std=c++20 -O3 -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden" in
+                  let comp_obj_cmd = Printf.sprintf "clang++ %s %s -c %s -o %s" cxx_flags inc_flags vm_cpp_path obj_out in
                   let st = Sys.command comp_obj_cmd in
                   if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile VM wrapper for %s" in_file)
                   else (
@@ -166,14 +168,16 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
 
           if not !is_virtualized then begin
             let obj_out = Filename.concat build_dir (base ^ ".o") in
-            let comp_obj_cmd = Printf.sprintf "clang -O3 -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden %s -c %s -o %s" inc_flags obf_c_path obj_out in
+            let c_flags = if debug_symbols then "-g -O1 -Wno-format-security" else "-O3 -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden" in
+            let comp_obj_cmd = Printf.sprintf "clang %s %s -c %s -o %s" c_flags inc_flags obf_c_path obj_out in
             let st = Sys.command comp_obj_cmd in
             if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile %s" in_file)
             else obj_files := obj_out :: !obj_files
           end
         end else begin
           let obj_out = Filename.concat build_dir (base ^ ".o") in
-          let comp_obj_cmd = Printf.sprintf "clang -c %s -o %s" in_file obj_out in
+          let c_plain_flags = if debug_symbols then "-g -O1 " else "" in
+          let comp_obj_cmd = Printf.sprintf "clang %s-c %s -o %s" c_plain_flags in_file obj_out in
           let st = Sys.command comp_obj_cmd in
           if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile %s" in_file)
           else obj_files := obj_out :: !obj_files
@@ -181,7 +185,12 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
       all_inputs;
 
     let objs_str = String.concat " " (List.rev !obj_files) in
-    let link_cmd = Printf.sprintf "clang -O3 -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x %s -o %s && strip -x %s" objs_str out_bin out_bin in
+    let link_cmd =
+      if debug_symbols then
+        Printf.sprintf "clang -g -O1 %s -o %s && dsymutil %s" objs_str out_bin out_bin
+      else
+        Printf.sprintf "clang -O3 -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-x %s -o %s && strip -x %s" objs_str out_bin out_bin
+    in
 
     Printf.printf "\n[Linking] Linking %d protected object files into %s...\n" (List.length !obj_files) out_bin;
     let link_st = Sys.command link_cmd in
@@ -192,7 +201,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
       Printf.printf "[SUCCESS] Multi-File Protected Binary created successfully: %s\n" out_bin;
       Printf.printf "  Total Files Virtualized:  %d\n" (List.length all_inputs);
       Printf.printf "  Total Marked Regions:     %d\n" !total_markers;
-      Printf.printf "  Strip Status:             STRIPPED (Zero C++ stdlib / symbol leaks)\n\n";
+      Printf.printf "  Strip Status:             %s\n\n" (if debug_symbols then "DEBUG (DWARF symbols preserved via .dSYM)" else "STRIPPED (Zero C++ stdlib / symbol leaks)");
 
       if compile_and_run then begin
         Printf.printf "[Running] Executing Protected Multi-File Binary:\n";
@@ -239,5 +248,9 @@ let project_cmd =
     let doc = "Compile and execute final linked binary" in
     Arg.(value & opt bool true & info [ "run"; "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_project $ src_dir $ inputs $ out_bin $ seed $ cff $ mba $ mba_depth $ compile)) in
+  let debug_symbols =
+    let doc = "Preserve DWARF debug symbols and generate .dSYM for debugging/auditing in IDA" in
+    Arg.(value & flag & info [ "g"; "debug-symbols" ] ~doc)
+  in
+  let term = Term.(ret (const run_project $ src_dir $ inputs $ out_bin $ seed $ cff $ mba $ mba_depth $ compile $ debug_symbols)) in
   Cmd.v (Cmd.info "project" ~doc) term

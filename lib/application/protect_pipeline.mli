@@ -12,5 +12,6 @@ val run :
   input_file:string ->
   out_dir:string ->
   ?compile_and_run:bool ->
+  ?debug_symbols:bool ->
   unit ->
   (protect_result, error) result

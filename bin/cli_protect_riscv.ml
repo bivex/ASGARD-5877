@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7c. PROTECT-RISCV COMMAND (Automated RISC-V RV64GC Native Lifter & VM Pipeline via Hexagonal Architecture) *)
-let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile_and_run =
+let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile_and_run debug_symbols =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
     else if engine = "stack" then "stack"
@@ -59,6 +59,7 @@ let run_protect_riscv input_file out_dir seed config_file preset enable_cff enab
       ~input_file
       ~out_dir
       ~compile_and_run
+      ~debug_symbols
       ()
   with
   | Error err ->
@@ -130,5 +131,9 @@ let protect_riscv_cmd =
     let doc = "Compile native C++ runner and execute protected RISC-V binary" in
     Arg.(value & opt bool false & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_protect_riscv $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ compile)) in
+  let debug_symbols =
+    let doc = "Preserve DWARF debug symbols and generate .dSYM for debugging/auditing in IDA" in
+    Arg.(value & flag & info [ "g"; "debug-symbols" ] ~doc)
+  in
+  let term = Term.(ret (const run_protect_riscv $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ compile $ debug_symbols)) in
   Cmd.v (Cmd.info "protect-riscv" ~doc) term

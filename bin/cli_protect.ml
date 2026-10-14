@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7. PROTECT COMMAND (Automated x86_64 & C/C++ VM-Protector Pipeline via Hexagonal Architecture) *)
-let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile_and_run =
+let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile_and_run debug_symbols =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
     else if engine = "stack" then "stack"
@@ -59,6 +59,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
       ~input_file
       ~out_dir
       ~compile_and_run
+      ~debug_symbols
       ()
   with
   | Error err ->
@@ -134,7 +135,11 @@ let protect_cmd =
     let doc = "Compile native C++ runner and execute protected binary" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
-  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ engine $ jit $ compile)) in
+  let debug_symbols =
+    let doc = "Preserve DWARF debug symbols and generate .dSYM for debugging/auditing in IDA" in
+    Arg.(value & flag & info [ "g"; "debug-symbols" ] ~doc)
+  in
+  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ engine $ jit $ compile $ debug_symbols)) in
   Cmd.v (Cmd.info "protect" ~doc) term
 
 let run_c_obf input out_file out_header seed strings consts mba_depth compile =

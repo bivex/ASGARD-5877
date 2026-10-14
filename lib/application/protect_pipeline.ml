@@ -12,7 +12,11 @@ let run
     ~(input_file : string)
     ~(out_dir : string)
     ?(compile_and_run = false)
+    ?(debug_symbols = false)
     () : (protect_result, error) result =
+  let () =
+    if debug_symbols then Unix.putenv "ASGARD_DEBUG_SYMBOLS" "1"
+  in
   let module L = (val lifter : Lifter) in
   let module P = (val vm_packager : Vm_packager) in
 
