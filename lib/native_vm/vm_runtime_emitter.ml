@@ -46,61 +46,81 @@ let generate_wbox_seed_derivation ~rng (key_seed : int32) : string =
   in
   t1_3.(k3) <- required_t1_3_k3;
 
-  let format_table name arr =
-    let b = Buffer.create 2048 in
-    Buffer.add_string b (Printf.sprintf "static const uint32_t %s[256] = {\n" name);
-    Array.iteri (fun i v ->
-      if i mod 8 = 0 then Buffer.add_string b "    ";
-      Buffer.add_string b (Printf.sprintf "0x%08lXU" v);
-      if i < 255 then Buffer.add_string b ", ";
-      if i mod 8 = 7 then Buffer.add_string b "\n";
-    ) arr;
-    Buffer.add_string b "};\n\n";
-    Buffer.contents b
+  let open Cpp_codegen.Cpp_ast in
+  let open Cpp_codegen.Cpp_dsl in
+  let open Cpp_codegen.Cpp_printer in
+
+  let format_table_decl name arr =
+    global_var ~is_static:true ~is_const:true
+      (Array (UInt32, 256))
+      name
+      ~init:(init_list (Array.to_list (Array.map (fun v -> u32 v) arr)))
   in
 
-  let b = Buffer.create 8192 in
-  Buffer.add_string b "namespace asgard_whitebox {\n\n";
-  Buffer.add_string b (format_table "T0_0" t0_0);
-  Buffer.add_string b (format_table "T0_1" t0_1);
-  Buffer.add_string b (format_table "T0_2" t0_2);
-  Buffer.add_string b (format_table "T0_3" t0_3);
-  Buffer.add_string b (format_table "T1_0" t1_0);
-  Buffer.add_string b (format_table "T1_1" t1_1);
-  Buffer.add_string b (format_table "T1_2" t1_2);
-  Buffer.add_string b (format_table "T1_3" t1_3);
-  Buffer.add_string b {|static inline __attribute__((always_inline)) uint32_t rotl32(uint32_t x, uint32_t n) noexcept {
-    return (x << n) | (x >> (32 - n));
-}
+  let rotl32_fn =
+    func_decl
+      ~attrs:[StaticFn; InlineFn; AlwaysInline; NoExcept]
+      UInt32
+      "rotl32"
+      [(UInt32, "x"); (UInt32, "n")]
+      [
+        ret ((var "x" <<~ var "n") |~ (var "x" >>~ (u32 32l -~ var "n")));
+      ]
+  in
 
-static inline __attribute__((always_inline)) uint32_t derive_seed() noexcept {
-|};
-  Buffer.add_string b (Printf.sprintf "    const uint32_t s0 = 0x%08lXU;\n" s0);
-  Buffer.add_string b {|    uint32_t x0 = T0_0[s0 & 0xFF];
-    uint32_t x1 = T0_1[(s0 >> 8) & 0xFF];
-    uint32_t x2 = T0_2[(s0 >> 16) & 0xFF];
-    uint32_t x3 = T0_3[(s0 >> 24) & 0xFF];
+  let derive_seed_fn =
+    func_decl
+      ~attrs:[StaticFn; InlineFn; AlwaysInline; NoExcept]
+      UInt32
+      "derive_seed"
+      []
+      [
+        const_u32 "s0" (u32 s0);
+        let_u32 "x0" (idx (var "T0_0") (var "s0" &~ u32 0xFFl));
+        let_u32 "x1" (idx (var "T0_1") ((var "s0" >>~ u32 8l) &~ u32 0xFFl));
+        let_u32 "x2" (idx (var "T0_2") ((var "s0" >>~ u32 16l) &~ u32 0xFFl));
+        let_u32 "x3" (idx (var "T0_3") ((var "s0" >>~ u32 24l) &~ u32 0xFFl));
 
-    uint32_t y0 = rotl32(x0, 7) ^ x1;
-    uint32_t y1 = rotl32(x1, 11) ^ x2;
-    uint32_t y2 = rotl32(x2, 19) ^ x3;
-    uint32_t y3 = rotl32(x3, 23) ^ x0;
+        let_u32 "y0" (call "rotl32" [var "x0"; u32 7l] ^~ var "x1");
+        let_u32 "y1" (call "rotl32" [var "x1"; u32 11l] ^~ var "x2");
+        let_u32 "y2" (call "rotl32" [var "x2"; u32 19l] ^~ var "x3");
+        let_u32 "y3" (call "rotl32" [var "x3"; u32 23l] ^~ var "x0");
 
-    uint32_t z0 = T1_0[y0 & 0xFF];
-    uint32_t z1 = T1_1[y1 & 0xFF];
-    uint32_t z2 = T1_2[y2 & 0xFF];
-    uint32_t z3 = T1_3[y3 & 0xFF];
+        let_u32 "z0" (idx (var "T1_0") (var "y0" &~ u32 0xFFl));
+        let_u32 "z1" (idx (var "T1_1") (var "y1" &~ u32 0xFFl));
+        let_u32 "z2" (idx (var "T1_2") (var "y2" &~ u32 0xFFl));
+        let_u32 "z3" (idx (var "T1_3") (var "y3" &~ u32 0xFFl));
 
-    return z0 ^ z1 ^ z2 ^ z3;
-}
+        ret (((var "z0" ^~ var "z1") ^~ var "z2") ^~ var "z3");
+      ]
+  in
 
-} // namespace asgard_whitebox
+  let asgard_wbox_derive_seed_fn =
+    func_decl
+      ~attrs:[StaticFn; InlineFn; AlwaysInline; NoExcept]
+      UInt32
+      "asgard_wbox_derive_seed"
+      []
+      [
+        ret (call "asgard_whitebox::derive_seed" []);
+      ]
+  in
 
-static inline __attribute__((always_inline)) uint32_t asgard_wbox_derive_seed() noexcept {
-    return asgard_whitebox::derive_seed();
-}
-|};
-  Buffer.contents b
+  render_top_decls [
+    namespace_def "asgard_whitebox" [
+      format_table_decl "T0_0" t0_0;
+      format_table_decl "T0_1" t0_1;
+      format_table_decl "T0_2" t0_2;
+      format_table_decl "T0_3" t0_3;
+      format_table_decl "T1_0" t1_0;
+      format_table_decl "T1_1" t1_1;
+      format_table_decl "T1_2" t1_2;
+      format_table_decl "T1_3" t1_3;
+      rotl32_fn;
+      derive_seed_fn;
+    ];
+    asgard_wbox_derive_seed_fn;
+  ]
 
 module Runtime_policy = struct
   type t = {
