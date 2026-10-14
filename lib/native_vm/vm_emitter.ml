@@ -187,17 +187,17 @@ let compile_and_package_multi
           if enable_mba then
             List.concat_map
               (function
-                | Ir.Alu { op; dst; src1; src2; _ } ->
-                    let is_stack_reg = function
-                      | Register.Gpr (Register.RSP, _) | Register.Vreg (Register.VSP, _) -> true
+                | Ir.Alu { op; dst; src1; src2; set_flags } ->
+                    let is_ineligible_reg = function
+                      | Register.Gpr (Register.RSP, _) | Register.Vreg _ -> true
                       | _ -> false
                     in
-                    let is_stack_op = function
-                      | Ir.Reg r -> is_stack_reg r
+                    let is_ineligible_op = function
+                      | Ir.Reg r -> is_ineligible_reg r
                       | _ -> false
                     in
-                    if is_stack_reg dst || is_stack_op src1 || is_stack_op src2 then
-                      [ Ir.Alu { op; dst; src1; src2; set_flags = false } ]
+                    if set_flags || is_ineligible_reg dst || is_ineligible_op src1 || is_ineligible_op src2 then
+                      [ Ir.Alu { op; dst; src1; src2; set_flags } ]
                     else (
                       try
                         match mba_engine with

@@ -17,11 +17,9 @@ type reg_state =
   | Plain
   | Encoded of Ring_codec.t
 
-let is_special_reg = function
-  | Register.Gpr (Register.RSP, _)
-  | Register.Vreg (Register.VSP, _)
-  | Register.Vreg (Register.VIP, _)
-  | Register.Vreg (Register.VKEY, _) -> true
+let is_eligible_reg = function
+  | Register.Gpr (Register.RSP, _) -> false
+  | Register.Gpr (_, Register.B64) -> true
   | _ -> false
 
 let is_homomorphic_alu = function
@@ -69,7 +67,7 @@ let process_block ~cfg (b : basic_block) : basic_block =
 
   let process_instr acc instr =
     match instr with
-    | Mov { dst = Reg r; src = Imm c } when not (is_special_reg r) ->
+    | Mov { dst = Reg r; src = Imm c } when is_eligible_reg r ->
         let probe = Random.State.int block_rng 100 in
         if probe < cfg.codec_rate then begin
           let enc_c = Ring_codec.encode block_codec c in
@@ -80,9 +78,14 @@ let process_block ~cfg (b : basic_block) : basic_block =
           acc @ [ instr ]
         end
 
-    | Mov { dst = Reg r; src = Reg src_r } when not (is_special_reg r) ->
+    | Mov { dst = Reg r; src = Reg src_r } when is_eligible_reg r ->
         let s = get_state src_r in
         set_state r s;
+        acc @ [ instr ]
+
+    | Mov { dst = Reg r; src = Reg src_r } ->
+        let acc = force_decode src_r acc in
+        set_state r Plain;
         acc @ [ instr ]
 
     | Mov { dst = Reg r; _ } ->
@@ -90,7 +93,7 @@ let process_block ~cfg (b : basic_block) : basic_block =
         acc @ [ instr ]
 
     | Alu { op; dst; src1 = Reg r1; src2 = Reg r2; set_flags = false } when
-        is_homomorphic_alu op && not (is_special_reg dst) ->
+        is_homomorphic_alu op && is_eligible_reg dst && is_eligible_reg r1 && is_eligible_reg r2 ->
         let s1 = get_state r1 in
         let s2 = get_state r2 in
         (match s1, s2 with
@@ -113,7 +116,7 @@ let process_block ~cfg (b : basic_block) : basic_block =
             acc @ [ Alu { op; dst; src1 = Reg r1; src2 = Reg r2; set_flags = false } ])
 
     | Alu { op; dst; src1 = Reg r1; src2 = Imm imm; set_flags = false } when
-        is_homomorphic_alu op && not (is_special_reg dst) ->
+        is_homomorphic_alu op && is_eligible_reg dst && is_eligible_reg r1 ->
         let s1 = get_state r1 in
         (match s1 with
         | Encoded c1 ->

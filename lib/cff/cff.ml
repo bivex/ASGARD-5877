@@ -360,6 +360,10 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
           Ir.Alu { op = Ir.Add; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
           Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Reg Register.vtmp0 };
           Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_bid; target_false = next_disp_target };
+        ] else if Int64.shift_right_logical target_state 32 <> 0L || Int64.logand target_state 0x80000000L <> 0L then [
+          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm target_state };
+          Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Reg Register.vtmp0 };
+          Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_bid; target_false = next_disp_target };
         ] else [
           Ir.Cmp { src1 = Ir.Reg Register.vkey; src2 = Ir.Imm target_state };
           Ir.Jcc { cond = Flags.E; target_true = Ir.BlockId target_bid; target_false = next_disp_target };

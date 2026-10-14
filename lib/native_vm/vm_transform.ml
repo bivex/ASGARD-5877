@@ -404,6 +404,13 @@ let pick_scratch_reg (d : Register.t) (s : Register.t) : Register.t =
 
 let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
   match instr with
+  | Ir.Alu { op; dst; src1; src2 = Ir.Imm imm; set_flags }
+    when not (imm >= -2147483648L && imm <= 2147483647L) ->
+      let scratch = pick_scratch_reg dst (match src1 with Ir.Reg s -> s | _ -> dst) in
+      let load_imm = Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm imm } in
+      let alu = Ir.Alu { op; dst; src1; src2 = Ir.Reg scratch; set_flags } in
+      load_imm :: canonicalize_instr alu
+
   | Ir.Alu { op; dst; src1 = Ir.Reg s1; src2 = Ir.Imm imm; set_flags } ->
       if Register.to_string s1 = Register.to_string dst then
         [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Imm imm; set_flags } ]
@@ -625,6 +632,12 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
   | Ir.Pop (Ir.Mem m) ->
       let scratch = Register.vtmp0 in
       [ Ir.Pop (Ir.Reg scratch) ] @ canonicalize_instr (Ir.Mov { dst = Ir.Mem m; src = Ir.Reg scratch })
+
+  | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm }
+    when not (imm >= -2147483648L && imm <= 2147483647L) ->
+      let scratch = Register.with_width (pick_scratch_reg d d) (Register.get_width d) in
+      [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm imm };
+        Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Reg scratch } ]
 
   | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Mem m } ->
       let scratch = Register.with_width (pick_scratch_reg d d) m.width in
