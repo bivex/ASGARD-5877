@@ -96,76 +96,108 @@ let inverse_morph bridge v trace_digest =
   done;
   matrix_multiply bridge.inverse_matrix unmasked dim
 
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
 let emit_cpp_bridge_code bridge =
-  let buf = Buffer.create 2048 in
   let dim = bridge.dim in
-  Buffer.add_string buf "// =========================================================================\n";
-  Buffer.add_string buf "// ASGARD-5877: ZERO-NATIVE IN-PLACE INTER-VM DISPATCH BRIDGE\n";
-  Buffer.add_string buf "// Affine GL_16(Z/2^64Z) State Morphing with Dynamic Trace Coupling\n";
-  Buffer.add_string buf "// =========================================================================\n\n";
-
-  Buffer.add_string buf (Printf.sprintf "#define ASGARD_MULTI_VM_DIM %d\n" dim);
-  Buffer.add_string buf (Printf.sprintf "static const uint64_t ASGARD_INITIAL_DIGEST = 0x%016LXULL;\n\n" bridge.initial_digest);
-
-  Buffer.add_string buf "static const uint64_t BRIDGE_FWD_MAT[16][16] = {\n";
-  for i = 0 to dim - 1 do
-    Buffer.add_string buf "    { ";
-    for j = 0 to dim - 1 do
-      Buffer.add_string buf (Printf.sprintf "0x%016LXULL%s" bridge.forward_matrix.(i).(j) (if j = dim - 1 then "" else ", "));
+  let format_matrix name mat =
+    let buf = Buffer.create 1024 in
+    Buffer.add_string buf (Printf.sprintf "static const uint64_t %s[16][16] = {\n" name);
+    for i = 0 to dim - 1 do
+      Buffer.add_string buf "    { ";
+      for j = 0 to dim - 1 do
+        Buffer.add_string buf (Printf.sprintf "0x%016LXULL%s" mat.(i).(j) (if j = dim - 1 then "" else ", "));
+      done;
+      Buffer.add_string buf " },\n";
     done;
-    Buffer.add_string buf " },\n";
-  done;
-  Buffer.add_string buf "};\n\n";
+    Buffer.add_string buf "};";
+    Buffer.contents buf
+  in
 
-  Buffer.add_string buf "static const uint64_t BRIDGE_INV_MAT[16][16] = {\n";
-  for i = 0 to dim - 1 do
-    Buffer.add_string buf "    { ";
-    for j = 0 to dim - 1 do
-      Buffer.add_string buf (Printf.sprintf "0x%016LXULL%s" bridge.inverse_matrix.(i).(j) (if j = dim - 1 then "" else ", "));
-    done;
-    Buffer.add_string buf " },\n";
-  done;
-  Buffer.add_string buf "};\n\n";
+  let fwd_mat_str = format_matrix "BRIDGE_FWD_MAT" bridge.forward_matrix in
+  let inv_mat_str = format_matrix "BRIDGE_INV_MAT" bridge.inverse_matrix in
 
-  Buffer.add_string buf {|
-static inline uint64_t bridge_rol64(uint64_t v, int s) {
-    s &= 63;
-    return (v << s) | (v >> (64 - s));
-}
+  let rol64_fn =
+    func_decl
+      ~attrs:[StaticFn; AlwaysInline]
+      UInt64
+      "bridge_rol64"
+      [(UInt64, "v"); (Int32, "s")]
+      [
+        (var "s") &= i32 63;
+        ret ((var "v" <<~ var "s") |~ (var "v" >>~ (i32 64 -~ var "s")));
+      ]
+  in
 
-static inline uint64_t bridge_update_digest(uint64_t prev, uint64_t op, uint64_t vip) {
-    uint64_t k1 = bridge_rol64(prev, 13);
-    uint64_t term = op + (vip * 0x9E3779B97F4A7C15ULL);
-    return k1 ^ term;
-}
+  let update_digest_fn =
+    func_decl
+      ~attrs:[StaticFn; AlwaysInline]
+      UInt64
+      "bridge_update_digest"
+      [(UInt64, "prev"); (UInt64, "op"); (UInt64, "vip")]
+      [
+        let_u64 "k1" (call "bridge_rol64" [var "prev"; i32 13]);
+        let_u64 "term" (var "op" +~ (var "vip" *~ u64 0x9E3779B97F4A7C15L));
+        ret (var "k1" ^~ var "term");
+      ]
+  in
 
-static inline void in_place_morph_math_to_flow(uint64_t* math_regs, uint64_t* flow_stack, uint64_t trace_digest) {
-    uint64_t temp[16];
-    for (int i = 0; i < 16; ++i) {
-        uint64_t sum = 0;
-        for (int j = 0; j < 16; ++j) {
-            sum += BRIDGE_FWD_MAT[i][j] * math_regs[j];
-        }
-        temp[i] = sum ^ bridge_rol64(trace_digest, i * 3 + 7);
-    }
-    // In-place zero-bridge write directly into flow stack slots
-    for (int i = 0; i < 16; ++i) {
-        flow_stack[i] = temp[i];
-    }
-}
+  let morph_math_to_flow_fn =
+    func_decl
+      ~attrs:[StaticFn; AlwaysInline]
+      Void
+      "in_place_morph_math_to_flow"
+      [(Ptr UInt64, "math_regs"); (Ptr UInt64, "flow_stack"); (UInt64, "trace_digest")]
+      [
+        decl_var (Array (UInt64, 16)) "temp";
+        for_range "i" (i32 0) (i32 16) [
+          let_u64 "sum" (u64 0L);
+          for_range "j" (i32 0) (i32 16) [
+            var "sum" += (idx (idx (var "BRIDGE_FWD_MAT") (var "i")) (var "j") *~ idx (var "math_regs") (var "j"));
+          ];
+          idx (var "temp") (var "i") :=
+            (var "sum" ^~ call "bridge_rol64" [var "trace_digest"; (var "i" *~ i32 3) +~ i32 7]);
+        ];
+        for_range "i" (i32 0) (i32 16) [
+          idx (var "flow_stack") (var "i") := idx (var "temp") (var "i");
+        ];
+      ]
+  in
 
-static inline void in_place_morph_flow_to_math(uint64_t* flow_stack, uint64_t* math_regs, uint64_t trace_digest) {
-    uint64_t unmasked[16];
-    for (int i = 0; i < 16; ++i) {
-        unmasked[i] = flow_stack[i] ^ bridge_rol64(trace_digest, i * 3 + 7);
-    }
-    for (int i = 0; i < 16; ++i) {
-        uint64_t sum = 0;
-        for (int j = 0; j < 16; ++j) {
-            sum += BRIDGE_INV_MAT[i][j] * unmasked[j];
-        }
-        math_regs[i] = sum;
-    }
-}
-|};
-  Buffer.contents buf
+  let morph_flow_to_math_fn =
+    func_decl
+      ~attrs:[StaticFn; AlwaysInline]
+      Void
+      "in_place_morph_flow_to_math"
+      [(Ptr UInt64, "flow_stack"); (Ptr UInt64, "math_regs"); (UInt64, "trace_digest")]
+      [
+        decl_var (Array (UInt64, 16)) "unmasked";
+        for_range "i" (i32 0) (i32 16) [
+          idx (var "unmasked") (var "i") :=
+            (idx (var "flow_stack") (var "i") ^~ call "bridge_rol64" [var "trace_digest"; (var "i" *~ i32 3) +~ i32 7]);
+        ];
+        for_range "i" (i32 0) (i32 16) [
+          let_u64 "sum" (u64 0L);
+          for_range "j" (i32 0) (i32 16) [
+            var "sum" += (idx (idx (var "BRIDGE_INV_MAT") (var "i")) (var "j") *~ idx (var "unmasked") (var "j"));
+          ];
+          idx (var "math_regs") (var "i") := var "sum";
+        ];
+      ]
+  in
+
+  let decls = [
+    comment_top "ASGARD-5877: ZERO-NATIVE IN-PLACE INTER-VM DISPATCH BRIDGE";
+    comment_top "Affine GL_16(Z/2^64Z) State Morphing with Dynamic Trace Coupling";
+    raw_top (Printf.sprintf "#define ASGARD_MULTI_VM_DIM %d" dim);
+    raw_top (Printf.sprintf "static const uint64_t ASGARD_INITIAL_DIGEST = 0x%016LXULL;" bridge.initial_digest);
+    raw_top fwd_mat_str;
+    raw_top inv_mat_str;
+    rol64_fn;
+    update_digest_fn;
+    morph_math_to_flow_fn;
+    morph_flow_to_math_fn;
+  ] in
+  render_top_decls decls
