@@ -1,7 +1,7 @@
 # ASGARD-5877: High-Assurance Virtualization-Based Obfuscation (VBO) and ISA Compiler Toolchain in OCaml
 
 [![OCaml 5.4+](https://img.shields.io/badge/OCaml-5.4+-orange.svg)](https://ocaml.org)
-[![Build and Tests](https://img.shields.io/badge/Tests-389%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
+[![Build and Tests](https://img.shields.io/badge/Tests-466%2B%20passing%20(5000%2B%20QCheck)-brightgreen.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Hexagonal%20%2F%20DDD%20(DPX%20Certified)-blue.svg)]()
 [![Targets](https://img.shields.io/badge/ISA-ARM64%20%7C%20x86__64%20%7C%20RISC--V%20Vector%201.0-red.svg)](https://github.com/riscv/riscv-v-spec)
 [![Platforms](https://img.shields.io/badge/Platforms-macOS%20%7C%20Linux%20%7C%20Windows%20PE-blue.svg)]()
@@ -15,14 +15,19 @@ ASGARD-5877 is an industrial-grade, mathematically verified code virtualization 
    - **Anti-LLVM Def-Use Chain Scrambler** (*arXiv:2601.12916*): Breaks compiler data-flow graphs and Tigress VM deobfuscators via non-linear register aliasing and unresolvable side-effects.
    - **NCFG MBA Synthesizer** (*arXiv:2506.23634*): Non-Context-Free Grammar expansions resistant to neural Transformer and LLM-based deobfuscators (gMBA).
    - **ARM64 Literal Stitching** (*arXiv:2407.08924*): `ADR` + `BR` dynamic pool jumping disrupting linear and recursive disassemblers (IDA Pro / Ghidra).
+   - **Tech-2601 ABI Exception Handling Shadowing** (*arXiv:2601.10261*): Cryptographically sealed metadata and rollback arithmetic preserving genuine unwinding while deceiving symbolic tracing.
+   - **Tech-2603 Non-Linear VPC Dispatching** (*arXiv:2603.04811*): Non-linear affine VPC permutation removing linear VPC execution signatures.
+   - **Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pools** (*arXiv:2608.01290*): Chaff allocations and decoy side-effects defeating automated trace synthesis engines.
+   - **Ring Codec & Data-Space Automorphisms**: Invertible endomorphisms over $\mathbb{Z}/2^{64}\mathbb{Z}$ obscuring register values throughout execution.
    - **E-Graph Equality Saturation**: Algebraic term rewriting for MBA rules to synthesize optimal, impenetrable obfuscation expressions.
    - **Anti-Pushan Non-Linear Rolling Keys**: Context-dependent key evolution across loop iterations and conditional branches defeating symbolic state recovery.
    - **Dynamic Anti-Tamper and Self-Modifying Code (SMC)**: Runtime attestation with in-band bytecode mutation and integrity verification trapdoors.
 3. **Hardware and GPU Acceleration**:
    - **Apple Metal 3.0 GPU Engine**: Parallel MBA synthesis (65,536 grid threads) and Strict Avalanche Criterion (SAC) verification ($P \approx 50.00\%$).
    - **Residue Number System (RNS-4) and JIT VM**: Modular arithmetic virtualization across non-trivial coprimes with Garner's Chinese Remainder Theorem reconstruction.
-4. **RISC-V Vector ISA Synthesis**: Deterministic, collision-free vector instruction sets with formal Sail specifications, silicon cost audits, and native C++20 SIMD / C11 emulators.
-5. **Architectural Assurance**: Strict Ports and Adapters (Hexagonal / DDD) structure certified by DPX-OCaml (0 architectural cycles, 0 dead library dependencies, 100% `.mli` encapsulation).
+4. **Type-Safe C++20/C11 EDSL Codegen**: Complete, zero-dependency typed AST generation engine (`lib/cpp_codegen/`). Replaces all string templating engines with verifiable AST expressions, statements, structs, templates, pragmas, and macros. Features pre-flight structural/bracket validation and zero-UB type emission across Clang, GCC 15+, and MSVC.
+5. **RISC-V Vector ISA Synthesis**: Deterministic, collision-free vector instruction sets with formal Sail specifications, silicon cost audits, and native C++20 SIMD / C11 emulators.
+6. **Architectural Assurance**: Strict Ports and Adapters (Hexagonal / DDD) structure certified by DPX-OCaml (0 architectural cycles, 0 dead library dependencies, 100% `.mli` encapsulation).
 
 ---
 
@@ -51,6 +56,11 @@ ASGARD-5877 is an industrial-grade, mathematically verified code virtualization 
 | **19** | **100% Metamorphic VM Handlers** | Signature Matching & BinDiff / Diaphora | 100% ISA coverage across all 131 handlers (51 ALU, 17 Control, 63 Memory/FP/SIMD/Atomics) with 2–3 polymorphic variants per opcode ($3^{131} \approx 2.7 \times 10^{62}$ permutations) across 6 isolated RNG streams. |
 | **20** | **Cross-Platform Dual-Mapping & Section Hash** | Debuggers, Memory Patching & Inline Hooking | W^X dual-mapping on Windows (`CreateFileMappingW`/`MapViewOfFile`), Linux (`memfd_create`), macOS (`mach_vm_remap`) and `.text`/`.rodata` section integrity hashing bound to rolling key. |
 | **21** | **Stack-VM & Keyed Payload Auth** | VMPredator Bytecode Extractors & Tampering | SipHash-1-2 CBC payload authentication, Anti-VMPredator address-bound bytecode keys tied to handler delta hash $D$, universal NOR/NAND logic reduction, and fail-closed memory policy. |
+| **22** | **Tech-2601 ABI Exception Shadowing** | Symbolic EH Tracing & Unwind Hooking | (*arXiv:2601.10261*) Injects dummy ABI-compliant stack unwind codes and cryptographically seals original metadata, executing stack rollback arithmetic upon exception dispatch. |
+| **23** | **Tech-2603 Non-Linear VPC Dispatch** | Linear Disassemblers & VPC Pattern Tracing | (*arXiv:2603.04811*) Affine non-linear permutation over the virtual instruction counter eliminating consecutive monotonic VPC patterns. |
+| **24** | **Tech-2608 Anti-Trace-Synthesis** | Dynamic Binary Instrumentation & Trace Synthesis | (*arXiv:2608.01290*) Emits randomized chaff memory allocation pools and spurious side-effect memory writes to defeat automated synthesis tools. |
+| **25** | **Ring Codec (Data-Space Automorphisms)** | Memory Dump Value Tracking & SMT Equivalence | Invertible ring endomorphisms over $\mathbb{Z}/2^{64}\mathbb{Z}$ preserving algebraic invariants while completely obfuscating data representations in registers. |
+| **26** | **Typed C++20/C11 EDSL Codegen** | Format-String Vulnerabilities & UB Generation | Full AST-driven generation of all C++20 / C11 runtimes (`lib/cpp_codegen/`) with pre-flight structural/compiler syntax validation and 0 template engine dependencies. |
 
 ---
 
@@ -172,11 +182,22 @@ ASGARD-5877/
 │   ├── rd_jit_vm/                # Register-Driven JIT VM and Modular Arithmetic
 │   │   ├── rns.ml{,i}            # RNS-4 Garner CRT modular arithmetic
 │   │   └── rd_jit_vm.ml{,i}      # Register-driven VM execution model
+│   ├── cpp_codegen/              # Type-Safe C++20/C11 EDSL Codegen Subsystem
+│   │   ├── cpp_ast.ml{,i}        # Pure AST (types, expressions, statements, structs, templates)
+│   │   ├── cpp_dsl.ml            # Combinator DSL for constructing type-safe C++ ASTs
+│   │   ├── cpp_printer.ml{,i}    # Pretty-printer with automatic indenting and dialect formatting
+│   │   ├── cpp_ast_obf.ml{,i}    # AST-level statement scrambling & memory barrier injection
+│   │   └── cpp_validator.ml{,i}  # Pre-flight structural and compiler syntax validator
+│   ├── bytecode_crypto/          # Cryptographic primitives for bytecode sealing & authentication
+│   ├── tech_2601/                # Tech-2601 ABI Exception Handling Metadata Shadowing
+│   ├── tech_2603/                # Tech-2603 Anti-VPC Tracking & Non-Linear Dispatch
+│   ├── tech_2608/                # Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pools
 │   ├── gpu_synth/                # GPU Acceleration Subsystem
 │   │   └── metal_synth.ml{,i}    # Apple Metal 3.0 compute pipeline and kernels
 │   ├── c_macro_obf/              # Preprocessor C/C++ Macro Obfuscation Engine
 │   └── vanguard_9292/            # Vanguard Polymorphic VM Codec and Bytecode Engine
 ├── docs/                         # Specifications and Documentation
+│   ├── TODO_CPP_CODEGEN.md       # Typed C++20/C11 EDSL Migration Roadmap and Completion Log
 │   ├── markdown-style-guide.md   # Repository Markdown standards
 │   ├── REAL_WORLD_BENCHMARKS.md  # Production benchmark corpus and DRS profiling
 │   ├── VM_PROTECTOR.md           # VM architecture, handlers, and trampoline design
@@ -197,7 +218,7 @@ ASGARD-5877/
 │   ├── run_benchmark_arm64.sh    # End-to-end security benchmark runner
 │   ├── run_real_world_benchmarks.sh # Real-world production corpus benchmark runner
 │   └── build_corpus_arm64.sh     # Polymorphic corpus compilation script
-└── test/                         # Comprehensive Verification Suite (389 tests, 35 suites)
+└── test/                         # Comprehensive Verification Suite (466+ tests, 43 suites)
 ```
 
 ---
@@ -224,8 +245,11 @@ opam install dune menhir cmdliner alcotest qcheck qcheck-alcotest yojson
 eval $(opam env)
 dune build
 
-# Run all 389 tests across 35 verification suites
-dune test
+# Run all 466+ tests across 43 verification suites
+dune exec test/run_tests.exe
+
+# Run the Typed C++20/C11 EDSL verification suite (40 verification steps)
+dune exec test/test_cpp_codegen.exe
 ```
 
 ---
@@ -395,7 +419,7 @@ The repository includes a standalone ARM64 CrackMe challenge running inside the 
 
 ## Comprehensive Verification Suite
 
-ASGARD-5877 includes **389 tests** across **35 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
+ASGARD-5877 includes **466+ tests** across **43 suites** verified on every build (source of truth: suite registrations in `test/run_tests.ml` and test-case registrations in `test/*.ml`):
 
 1. **Domain Invariants**: Verification of aggregate roots and instruction semantics.
 2. **ISA Grammar**: AST node validation, operand constraints, and type soundness.
@@ -431,8 +455,22 @@ ASGARD-5877 includes **389 tests** across **35 suites** verified on every build 
 32. **Dynamic Anti-Tamper and SMC (Layer 3)**: Self-modifying bytecode runtime attestation, multi-platform section integrity hashing, W^X dual-mapping, and handler metamorphism diversity across 11 instruction categories.
 33. **Protection Config (JSON/Presets)**: Multi-layer configuration parser, validator, junk density & size budget enforcement, and preset generators.
 34. **RISC-V Lifter & CFG**: RV64I, RV64M (including `mulh`, `mulhu`, `mulhsu`), RV64A, Zbb (`clz`, `ctz`, `cpop`, `rev8`, `orc.b`, `sext.b/h`, `zext.h`, `min`, `max`, `minu`, `maxu`, `andn`, `orn`, `xnor`, `rol`, `ror`), Zba address generation (`sh1add`, `sh2add`, `sh3add`), memory fences (`fence`, `fence.i`), scalar FP (`fadd`, `fsub`, `fmul`, `fdiv`, `feq`, `flt`, `fle`, `fmin`, `fmax`, `fmv`, `fcvt`), memory (`flw`/`fld`, `fsw`/`fsd`), and RVV.
-35. **Stack-VM Execution Engine**: 32 verification tests covering address-bound bytecode keys (Anti-VMPredator Phase 6), independent payload/tag key halves, field layout randomization, polymorphic opcodes, and identifier scrambling.
-36. **Real-World Production Corpus**: 100% verification across OpenSSL SHA-256 (FIPS 180-4), GNU Coreutils CRC-32 (IEEE 802.3), SQLite3 Varint64/PageChecksum, WireGuard ChaCha20 (RFC 8439), and Zstandard xxHash64 under ARM64 virtualization (`--flatten --mba`), achieving DRS scores of 83.7–93.7/100.0.
+35. **Stack-VM Execution Engine**: 38 verification tests covering address-bound bytecode keys (Anti-VMPredator Phase 6), independent payload/tag key halves, field layout randomization, polymorphic opcodes, and identifier scrambling.
+36. **Bytecode Cryptography & Integrity**: RFC 6234 SHA-256, HMAC-SHA256, Speck-64/128, block key derivation functions, and authenticated payload sealing.
+37. **Tech-2601 Exception Handling**: (*arXiv:2601.10261*) ABI shadow allocation rules, stack rollback delta computation, and cryptographic metadata container sealing/unsealing.
+38. **Tech-2603 Anti-VPC Tracking**: (*arXiv:2603.04811*) Affine non-linear virtual program counter mapping, modular inverse properties, and NonLinearVPCDispatcher runtime emission.
+39. **Tech-2608 Anti-Trace-Synthesis**: (*arXiv:2608.01290*) Chaff memory allocation pools, trace-synthesis disruption, and anti-analysis memory wrappers.
+40. **Ring Codec (Data-Space Automorphisms)**: Bijective affine mappings over ring $\mathbb{Z}/2^{64}\mathbb{Z}$ preserving algebraic homomorphisms.
+41. **Null-Space MBA Synthesis**: Orthogonal null-space invariant generation and algebraic expression simplification.
+42. **Cross-Seed Metrics**: Cross-seed entropy analysis, semantic divergence, and AST distance metrics.
+43. **Metamorphic ISA & Ring Codec**: Polymorphic opcode synthesis coupled with ring transformations.
+
+### Dedicated Standalone Verification Suites
+
+- **Typed C++20/C11 EDSL & Pre-flight Validator (`test/test_cpp_codegen.exe`)**: 40 verification steps verifying pure AST construction, pretty-printing, clang++ syntax checks, and complete typed runtime emissions for Stack-VM (`stack_vm_runtime.hpp`) and Native Threaded VM (`threaded_vm.hpp`).
+- **Tier 4 Next-Gen Protections (`test/test_tier4_nextgen.exe`)**: Verification of Branchless VIP, 2D Variable Entanglement, Oblivious Memory, VM-to-VM Bridge, and Self-Wiping Nano-JIT.
+- **Real-World Production Corpus (`scripts/run_real_world_benchmarks.sh`)**: 100% verification across OpenSSL SHA-256 (FIPS 180-4), GNU Coreutils CRC-32 (IEEE 802.3), SQLite3 Varint64/PageChecksum, WireGuard ChaCha20 (RFC 8439), and Zstandard xxHash64 under ARM64 virtualization (`--flatten --mba`), achieving DRS scores of 83.7–93.7/100.0.
+
 
 ---
 
