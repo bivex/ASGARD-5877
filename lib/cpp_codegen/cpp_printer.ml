@@ -472,7 +472,10 @@ let rec pp_top_decl fmt = function
   | RawTop s ->
       fprintf fmt "%s" s
   | CommentTop s ->
-      fprintf fmt "// %s" s
+      if String.starts_with ~prefix:"/*" s then
+        fprintf fmt "%s" s
+      else
+        fprintf fmt "// %s" s
 
 let render_header_unit (decls : top_decl list) : string =
   let buf = Buffer.create 4096 in

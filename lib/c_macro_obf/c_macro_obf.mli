@@ -38,6 +38,9 @@ type feature_usage = {
 
 val detect_features : prefix:string -> string -> feature_usage
 
+(** Generate the AST declarations for the polymorphic, standalone C/C++ header. *)
+val generate_header_ast : ?config:config -> ?source:string -> unit -> Cpp_codegen.Cpp_ast.top_decl list
+
 (** Generate a polymorphic, standalone C/C++ header containing all obfuscation macros.
     If [source] is provided, tree-shaking is performed to eliminate uncalled helper functions. *)
 val generate_header : ?config:config -> ?source:string -> unit -> string

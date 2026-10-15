@@ -25,6 +25,7 @@ type feature_usage = C_macro_header.feature_usage = {
   has_nanomites : bool;
 }
 let detect_features = C_macro_header.detect_features
+let generate_header_ast = C_macro_header.emit_header_ast
 let generate_header = C_macro_header.generate_header
 
 let obfuscate_string_literal ~prefix ~seed s =

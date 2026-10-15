@@ -1,200 +1,206 @@
+(* lib/c_macro_obf/c_macro_templates.ml
+   Typed C++20 / C11 EDSL Declarations for Base Obfuscation Macros *)
+
+open Cpp_codegen.Cpp_ast
+open Cpp_codegen.Cpp_dsl
+open Cpp_codegen.Cpp_printer
+
+let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
+  let includes = [
+    include_sys "stdint.h";
+    include_sys "stddef.h";
+    preproc_if "defined(__has_include)"
+      [
+        preproc_if "__has_include(<stdlib.h>)" [ include_sys "stdlib.h" ];
+        preproc_if "__has_include(<string.h>)" [ include_sys "string.h" ];
+      ]
+      ~else_decls:[
+        include_sys "stdlib.h";
+        include_sys "string.h";
+      ];
+    preproc_ifndef "__cplusplus" [ include_sys "stdbool.h" ];
+  ] in
+
+  let inline_macro =
+    preproc_if "defined(__GNUC__) || defined(__clang__)"
+      [ raw_top ("#define " ^ p ^ "INLINE __attribute__((always_inline)) inline") ]
+      ~else_decls:[
+        preproc_if "defined(_MSC_VER)"
+          [ raw_top ("#define " ^ p ^ "INLINE __forceinline") ]
+          ~else_decls:[ raw_top ("#define " ^ p ^ "INLINE inline") ]
+      ]
+  in
+
+  let decrypt_str_func =
+    func_decl ~attrs:[StaticFn; AlwaysInline] (Ptr (StructType "char")) (p ^ "decrypt_str")
+      [ (Ptr (StructType "char"), "buf");
+        (ConstPtr UInt8, "enc");
+        (SizeT, "len");
+        (UInt32, "key") ]
+      [
+        DeclVar { align_as = None; is_static = false; is_thread_local = false; is_const = false;
+                  is_constexpr = false; is_volatile = true; ty = UInt32; name = "vkey"; init = Some (var "key") };
+        DeclVar { align_as = None; is_static = false; is_thread_local = false; is_const = false;
+                  is_constexpr = false; is_volatile = true; ty = ConstPtr UInt8; name = "venc"; init = Some (var "enc") };
+        for_range "i" (i32 0) (var "len") [
+          DeclVar { align_as = None; is_static = false; is_thread_local = false; is_const = false;
+                    is_constexpr = false; is_volatile = false; ty = UInt8; name = "k";
+                    init = Some (c_cast UInt8 ((var "vkey" ^~ (c_cast UInt32 (var "i" *~ var "0x5DU"))) &~ var "0xFFU")) };
+          idx (var "buf") (var "i") := c_cast (StructType "char") (idx (var "venc") (var "i") ^~ var "k");
+        ];
+        idx (var "buf") (var "len") := LitInt 0;
+        ret (var "buf");
+      ]
+  in
+
+  let str_macro =
+    preproc_if "defined(__cplusplus)"
+      [
+        preproc_if "defined(_MSC_VER)"
+          [ raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) \\\n    " ^ p ^ "decrypt_str((char*)_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))") ]
+          ~else_decls:[
+            raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) \\\n    " ^ p ^ "decrypt_str((char*)__builtin_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))")
+          ]
+      ]
+      ~else_decls:[
+        preproc_if "defined(__GNUC__) || defined(__clang__)"
+          [ raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\\n    static const uint8_t _enc[] = enc_bytes; \\\n    char* _buf = (char*)__builtin_alloca((len) + 1); \\\n    volatile uint32_t _vkey = (uint32_t)(key); \\\n    volatile const uint8_t* _venc = _enc; \\\n    for (size_t _i = 0; _i < (size_t)(len); ++_i) { \\\n        uint8_t _k = (uint8_t)((_vkey ^ (uint32_t)(_i * 0x5DU)) & 0xFFU); \\\n        _buf[_i] = (char)(_venc[_i] ^ _k); \\\n    } \\\n    _buf[len] = '\\0'; \\\n    __asm__ volatile(\"\" : \"+r\"(_buf) : : \"memory\"); \\\n    _buf; \\\n})") ]
+          ~else_decls:[
+            raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) \\\n    " ^ p ^ "decrypt_str((char*)alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))")
+          ]
+      ]
+  in
+
+  let mba_macros = [
+    comment_top "/* ------------------------------------------------------------------------- */";
+    comment_top "/* 2. MIXED BOOLEAN-ARITHMETIC (MBA) MACROS (Zhou / Eyrolles Identities)     */";
+    comment_top "/* ------------------------------------------------------------------------- */";
+    comment_top "/* Addition: x + y = (x ^ y) + 2*(x & y) */";
+    raw_top ("#define " ^ p ^ "MBA_ADD(a, b) (((a) ^ (b)) + 2 * ((a) & (b)))");
+    comment_top "/* Subtraction: x - y = (x ^ y) - 2*(~x & y) */";
+    raw_top ("#define " ^ p ^ "MBA_SUB(a, b) (((a) ^ (b)) - 2 * ((~(a)) & (b)))");
+    comment_top "/* Bitwise XOR: x ^ y = (x | y) - (x & y) */";
+    raw_top ("#define " ^ p ^ "MBA_XOR(a, b) (((a) | (b)) - ((a) & (b)))");
+    comment_top "/* Bitwise AND: x y = (x + y) - (x | y) */";
+    raw_top ("#define " ^ p ^ "MBA_AND(a, b) (((a) + (b)) - ((a) | (b)))");
+    comment_top "/* Bitwise OR: x | y = (x ^ y) + (x & y) */";
+    raw_top ("#define " ^ p ^ "MBA_OR(a, b) (((a) ^ (b)) + ((a) & (b)))");
+    comment_top "/* Bitwise NOT: ~x = x ^ 0xFFFFFFFFFFFFFFFFULL */";
+    raw_top ("#define " ^ p ^ "MBA_NOT(a) ((a) ^ 0xFFFFFFFFFFFFFFFFULL)");
+    comment_top "/* Level 2 Nested MBA: x + y expanded through XOR and AND identities */";
+    raw_top ("#define " ^ p ^ "MBA_ADD_L2(a, b) (" ^ p ^ "MBA_XOR((a), (b)) + 2 * " ^ p ^ "MBA_AND((a), (b)))");
+    raw_top ("#define " ^ p ^ "MBA_SUB_L2(a, b) (" ^ p ^ "MBA_XOR((a), (b)) - 2 * " ^ p ^ "MBA_AND(" ^ p ^ "MBA_NOT(a), (b)))");
+    comment_top "/* Non-Linear MBA (NLMBA): Non-linear cross-product expansion resisting 1-bit linear solvers (SiMBA/GAMBA) */";
+    raw_top ("#define " ^ p ^ "NLMBA_MUL(a, b) ((((a) & (b)) * ((a) | (b))) + (((a) & (~(b))) * ((~(a)) & (b))))");
+    raw_top ("#define " ^ p ^ "ZERO_INV1(a, b) ((((a) | (b)) + ((a) & (b))) - ((a) + (b)))");
+    raw_top ("#define " ^ p ^ "ZERO_INV2(a, b) (((a) ^ (b)) - (((a) | (b)) - ((a) & (b))))");
+    raw_top ("#define " ^ p ^ "ZERO_INV3(a, b) ((((a) & (b)) + ((a) & (~(b)))) - (a))");
+  ] in
+
+  let const_blinding = [
+    comment_top "/* ------------------------------------------------------------------------- */";
+    comment_top "/* 3. CONSTANT BLINDING MACROS                                              */";
+    comment_top "/* ------------------------------------------------------------------------- */";
+    raw_top ("#define " ^ p ^ "BLIND_U64(c1, k1, k2) ((((uint64_t)(c1) ^ (uint64_t)(k1)) + (uint64_t)(k2)) - (uint64_t)(k2))");
+    raw_top ("#define " ^ p ^ "BLIND_I64(c1, k1, k2) ((int64_t)" ^ p ^ "BLIND_U64(c1, k1, k2))");
+    raw_top ("#define " ^ p ^ "BLIND_I32(c1, k1, k2) ((int32_t)" ^ p ^ "BLIND_U64(c1, k1, k2))");
+  ] in
+
+  let opaque_predicates = [
+    comment_top "/* ------------------------------------------------------------------------- */";
+    comment_top "/* 4. NUMBER-THEORETIC OPAQUE PREDICATES                                    */";
+    comment_top "/* Invariants: for all x in Z, x*(x+1) % 2 == 0 and x^2 + x + 7 % 2 != 0    */";
+    comment_top "/* ------------------------------------------------------------------------- */";
+    raw_top ("#define " ^ p ^ "OPAQUE_TRUE(x)  (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) == 0ULL)");
+    raw_top ("#define " ^ p ^ "OPAQUE_FALSE(x) (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) != 0ULL)");
+    raw_top ("#define " ^ p ^ "IF_OPAQUE(x, true_body, false_body) do { \\\n    if (" ^ p ^ "OPAQUE_TRUE(x)) { true_body; } else { false_body; } \\\n} while(0)");
+  ] in
+
+  let cff_dsl = [
+    comment_top "/* ------------------------------------------------------------------------- */";
+    comment_top "/* 5. CONTROL-FLOW FLATTENING (CFF) PREPROCESSOR DSL                        */";
+    comment_top "/* ------------------------------------------------------------------------- */";
+    raw_top ("#define " ^ p ^ "CFF_BEGIN(state_var, init_state) \\\n    uint32_t state_var = (init_state); \\\n    while (state_var != 0U) { \\\n        switch (state_var) {");
+    raw_top ("#define " ^ p ^ "CFF_STATE(state_id) case (state_id):");
+    raw_top ("#define " ^ p ^ "CFF_NEXT(state_var, next_state) do { \\\n    state_var = (next_state); \\\n} while(0); break");
+    raw_top ("#define " ^ p ^ "CFF_EXIT(state_var) do { \\\n    state_var = 0U; \\\n} while(0); break");
+    raw_top ("#define " ^ p ^ "CFF_END() \\\n        default: \\\n            state_var = 0U; \\\n            break; \\\n        } \\\n    }");
+  ] in
+
+  let region_protection = [
+    comment_top "/* ------------------------------------------------------------------------- */";
+    comment_top "/* 6. MARKER-BASED REGION PROTECTION (VMProtect Style SDK)                   */";
+    comment_top "/* ------------------------------------------------------------------------- */";
+    preproc_if "defined(__GNUC__) || defined(__clang__)"
+      [
+        preproc_if "defined(__arm64__) || defined(__aarch64__)"
+          [
+            raw_top "#define ASGARD_BEGIN_VIRTUALIZE(tag) \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_V____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_BEGIN_MUTATION(tag) \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_M____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_BEGIN_ULTRA(tag) \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_U____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_END() \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_END______\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
+          ]
+          ~else_decls:[
+            raw_top "#define ASGARD_BEGIN_VIRTUALIZE(tag) \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_V__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_BEGIN_MUTATION(tag) \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_M__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_BEGIN_ULTRA(tag) \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_U__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_END() \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_END____\\\" \\n 1:\\n\\t\" ::: \"memory\")";
+          ]
+      ]
+      ~else_decls:[
+        raw_top "#define ASGARD_BEGIN_VIRTUALIZE(tag)";
+        raw_top "#define ASGARD_BEGIN_MUTATION(tag)";
+        raw_top "#define ASGARD_BEGIN_ULTRA(tag)";
+        raw_top "#define ASGARD_END()";
+      ]
+  ] in
+
+  let api_hash_decls =
+    if emit_api_hash then [
+      comment_top "/* ------------------------------------------------------------------------- */";
+      comment_top "/* 7. COMPILE-TIME API HASHING & DYNAMIC RESOLUTION (IAT Elimination)        */";
+      comment_top "/* ------------------------------------------------------------------------- */";
+      func_decl ~attrs:[StaticFn; InlineFn] UInt32 (p ^ "hash_api_str")
+        [ (ConstPtr (StructType "char"), "str") ]
+        [
+          DeclVar { align_as = None; is_static = false; is_thread_local = false; is_const = false;
+                    is_constexpr = false; is_volatile = false; ty = UInt32; name = "hash"; init = Some (var "0x811C9DC5U") };
+          while_loop (deref (var "str")) [
+            var "hash" := var "hash" ^~ (c_cast UInt8 (deref (var "str++")));
+            var "hash" := var "hash" *~ var "0x01000193U";
+          ];
+          ret (var "hash");
+        ];
+      preproc_if "(defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)"
+        [
+          include_sys "dlfcn.h";
+          func_decl ~attrs:[StaticFn; InlineFn] (Ptr Void) (p ^ "resolve_api_by_hash")
+            [ (ConstPtr (ConstPtr (StructType "char")), "known_symbols");
+              (SizeT, "count");
+              (UInt32, "target_hash") ]
+            [
+              for_range "i" (i32 0) (var "count") [
+                if_then (call (p ^ "hash_api_str") [idx (var "known_symbols") (var "i")] ==~ var "target_hash") [
+                  ret (call "dlsym" [var "RTLD_DEFAULT"; idx (var "known_symbols") (var "i")]);
+                ];
+              ];
+              ret (c_cast (Ptr Void) (i32 0));
+            ]
+        ]
+    ] else []
+  in
+
+  includes
+  @ [ inline_macro ]
+  @ [ comment_top "/* 1. STACK STRING ENCRYPTION (Alloca / Compound Literal Decryption)         */" ]
+  @ [ decrypt_str_func; str_macro ]
+  @ mba_macros
+  @ const_blinding
+  @ opaque_predicates
+  @ cff_dsl
+  @ region_protection
+  @ api_hash_decls
+
 let emit_base_macros ?(emit_api_hash = true) b ~p =
-  let add s = Buffer.add_string b (s ^ "\n") in
-  add "/* ========================================================================= */";
-  add "/*  ASGARD-5877 Polymorphic C/C++ Obfuscation & Hardening Macro Header       */";
-  add "/*  Auto-generated by Random_vISA / ASGARD-5877 Macro Obfuscation Engine     */";
-  add "/* ========================================================================= */";
-  add "#ifndef _ASGARD_OBF_H_";
-  add "#define _ASGARD_OBF_H_";
-  add "";
-  add "#include <stdint.h>";
-  add "#include <stddef.h>";
-  add "#if defined(__has_include)";
-  add "  #if __has_include(<stdlib.h>)";
-  add "    #include <stdlib.h>";
-  add "  #endif";
-  add "  #if __has_include(<string.h>)";
-  add "    #include <string.h>";
-  add "  #endif";
-  add "#else";
-  add "  #include <stdlib.h>";
-  add "  #include <string.h>";
-  add "#endif";
-  add "#ifndef __cplusplus";
-  add "  #include <stdbool.h>";
-  add "#endif";
-  add "";
-  add "#if defined(__GNUC__) || defined(__clang__)";
-  add ("  #define " ^ p ^ "INLINE __attribute__((always_inline)) inline");
-  add "#elif defined(_MSC_VER)";
-  add ("  #define " ^ p ^ "INLINE __forceinline");
-  add "#else";
-  add ("  #define " ^ p ^ "INLINE inline");
-  add "#endif";
-  add "";
-  add "/* 1. STACK STRING ENCRYPTION (Alloca / Compound Literal Decryption)         */";
-  add ("static " ^ p ^ "INLINE char* " ^ p ^ "decrypt_str(char* buf, const uint8_t* enc, size_t len, uint32_t key) {");
-  add "    volatile uint32_t vkey = key;";
-  add "    volatile const uint8_t* venc = enc;";
-  add "    for (size_t i = 0; i < len; ++i) {";
-  add "        uint8_t k = (uint8_t)((vkey ^ (uint32_t)(i * 0x5DU)) & 0xFFU);";
-  add "        buf[i] = (char)(venc[i] ^ k);";
-  add "    }";
-  add "    buf[len] = '\\0';";
-  add "    return buf;";
-  add "}";
-  add "#if defined(__cplusplus)";
-  add "#if defined(_MSC_VER)";
-  add ("#define " ^ p ^ "STR(enc_bytes, len, key) \\");
-  add ("    " ^ p ^ "decrypt_str((char*)_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))");
-  add "#else";
-  add ("#define " ^ p ^ "STR(enc_bytes, len, key) \\");
-  add ("    " ^ p ^ "decrypt_str((char*)__builtin_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))");
-  add "#endif";
-  add "#elif defined(__GNUC__) || defined(__clang__)";
-  add ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\");
-  add "    static const uint8_t _enc[] = enc_bytes; \\";
-  add "    char* _buf = (char*)__builtin_alloca((len) + 1); \\";
-  add "    volatile uint32_t _vkey = (uint32_t)(key); \\";
-  add "    volatile const uint8_t* _venc = _enc; \\";
-  add "    for (size_t _i = 0; _i < (size_t)(len); ++_i) { \\";
-  add "        uint8_t _k = (uint8_t)((_vkey ^ (uint32_t)(_i * 0x5DU)) & 0xFFU); \\";
-  add "        _buf[_i] = (char)(_venc[_i] ^ _k); \\";
-  add "    } \\";
-  add "    _buf[len] = '\\0'; \\";
-  add "    __asm__ volatile(\"\" : \"+r\"(_buf) : : \"memory\"); \\";
-  add "    _buf; \\";
-  add "})";
-  add "#else";
-  add ("#define " ^ p ^ "STR(enc_bytes, len, key) \\");
-  add ("    " ^ p ^ "decrypt_str((char*)alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))");
-  add "#endif";
-  add "";
-  add "/* ------------------------------------------------------------------------- */";
-  add "/* 2. MIXED BOOLEAN-ARITHMETIC (MBA) MACROS (Zhou / Eyrolles Identities)     */";
-  add "/* ------------------------------------------------------------------------- */";
-  add "/* Addition: x + y = (x ^ y) + 2*(x & y) */";
-  add ("#define " ^ p ^ "MBA_ADD(a, b) (((a) ^ (b)) + 2 * ((a) & (b)))");
-  add "";
-  add "/* Subtraction: x - y = (x ^ y) - 2*(~x & y) */";
-  add ("#define " ^ p ^ "MBA_SUB(a, b) (((a) ^ (b)) - 2 * ((~(a)) & (b)))");
-  add "";
-  add "/* Bitwise XOR: x ^ y = (x | y) - (x & y) */";
-  add ("#define " ^ p ^ "MBA_XOR(a, b) (((a) | (b)) - ((a) & (b)))");
-  add "";
-  add "/* Bitwise AND: x y = (x + y) - (x | y) */";
-  add ("#define " ^ p ^ "MBA_AND(a, b) (((a) + (b)) - ((a) | (b)))");
-  add "";
-  add "/* Bitwise OR: x | y = (x ^ y) + (x & y) */";
-  add ("#define " ^ p ^ "MBA_OR(a, b) (((a) ^ (b)) + ((a) & (b)))");
-  add "";
-  add "/* Bitwise NOT: ~x = x ^ 0xFFFFFFFFFFFFFFFFULL */";
-  add ("#define " ^ p ^ "MBA_NOT(a) ((a) ^ 0xFFFFFFFFFFFFFFFFULL)");
-  add "";
-  add "/* Level 2 Nested MBA: x + y expanded through XOR and AND identities */";
-  add ("#define " ^ p ^ "MBA_ADD_L2(a, b) (" ^ p ^ "MBA_XOR((a), (b)) + 2 * " ^ p ^ "MBA_AND((a), (b)))");
-  add ("#define " ^ p ^ "MBA_SUB_L2(a, b) (" ^ p ^ "MBA_XOR((a), (b)) - 2 * " ^ p ^ "MBA_AND(" ^ p ^ "MBA_NOT(a), (b)))");
-  add "";
-  add "/* Non-Linear MBA (NLMBA): Non-linear cross-product expansion resisting 1-bit linear solvers (SiMBA/GAMBA) */";
-  add ("#define " ^ p ^ "NLMBA_MUL(a, b) ((((a) & (b)) * ((a) | (b))) + (((a) & (~(b))) * ((~(a)) & (b))))");
-  add ("#define " ^ p ^ "ZERO_INV1(a, b) ((((a) | (b)) + ((a) & (b))) - ((a) + (b)))");
-  add ("#define " ^ p ^ "ZERO_INV2(a, b) (((a) ^ (b)) - (((a) | (b)) - ((a) & (b))))");
-  add ("#define " ^ p ^ "ZERO_INV3(a, b) ((((a) & (b)) + ((a) & (~(b)))) - (a))");
-  add "";
-  add "/* ------------------------------------------------------------------------- */";
-  add "/* 3. CONSTANT BLINDING MACROS                                              */";
-  add "/* ------------------------------------------------------------------------- */";
-  add ("#define " ^ p ^ "BLIND_U64(c1, k1, k2) ((((uint64_t)(c1) ^ (uint64_t)(k1)) + (uint64_t)(k2)) - (uint64_t)(k2))");
-  add ("#define " ^ p ^ "BLIND_I64(c1, k1, k2) ((int64_t)" ^ p ^ "BLIND_U64(c1, k1, k2))");
-  add ("#define " ^ p ^ "BLIND_I32(c1, k1, k2) ((int32_t)" ^ p ^ "BLIND_U64(c1, k1, k2))");
-  add "";
-  add "/* ------------------------------------------------------------------------- */";
-  add "/* 4. NUMBER-THEORETIC OPAQUE PREDICATES                                    */";
-  add "/* Invariants: for all x in Z, x*(x+1) % 2 == 0 and x^2 + x + 7 % 2 != 0    */";
-  add "/* ------------------------------------------------------------------------- */";
-  add ("#define " ^ p ^ "OPAQUE_TRUE(x)  (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) == 0ULL)");
-  add ("#define " ^ p ^ "OPAQUE_FALSE(x) (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) != 0ULL)");
-  add ("#define " ^ p ^ "IF_OPAQUE(x, true_body, false_body) do { \\");
-  add ("    if (" ^ p ^ "OPAQUE_TRUE(x)) { true_body; } else { false_body; } \\");
-  add "} while(0)";
-  add "";
-  add "/* ------------------------------------------------------------------------- */";
-  add "/* 5. CONTROL-FLOW FLATTENING (CFF) PREPROCESSOR DSL                        */";
-  add "/* ------------------------------------------------------------------------- */";
-  add ("#define " ^ p ^ "CFF_BEGIN(state_var, init_state) \\");
-  add "    uint32_t state_var = (init_state); \\";
-  add "    while (state_var != 0U) { \\";
-  add "        switch (state_var) {";
-  add "";
-  add ("#define " ^ p ^ "CFF_STATE(state_id) case (state_id):");
-  add "";
-  add ("#define " ^ p ^ "CFF_NEXT(state_var, next_state) do { \\");
-  add "    state_var = (next_state); \\";
-  add "} while(0); break";
-  add "";
-  add ("#define " ^ p ^ "CFF_EXIT(state_var) do { \\");
-  add "    state_var = 0U; \\";
-  add "} while(0); break";
-  add "";
-  add ("#define " ^ p ^ "CFF_END() \\");
-  add "        default: \\";
-  add "            state_var = 0U; \\";
-  add "            break; \\";
-  add "        } \\";
-  add "    }";
-  add "";
-  add "/* ------------------------------------------------------------------------- */";
-  add "/* 6. MARKER-BASED REGION PROTECTION (VMProtect Style SDK)                   */";
-  add "/* ------------------------------------------------------------------------- */";
-  add "#if defined(__GNUC__) || defined(__clang__)";
-  add "  #if defined(__arm64__) || defined(__aarch64__)";
-  add "    #define ASGARD_BEGIN_VIRTUALIZE(tag) \\";
-  add "        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_V____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
-  add "    #define ASGARD_BEGIN_MUTATION(tag) \\";
-  add "        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_M____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
-  add "    #define ASGARD_BEGIN_ULTRA(tag) \\";
-  add "        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_U____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
-  add "    #define ASGARD_END() \\";
-  add "        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_END______\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
-  add "  #else";
-  add "    #define ASGARD_BEGIN_VIRTUALIZE(tag) \\";
-  add "        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_V__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
-  add "    #define ASGARD_BEGIN_MUTATION(tag) \\";
-  add "        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_M__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
-  add "    #define ASGARD_BEGIN_ULTRA(tag) \\";
-  add "        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_U__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
-  add "    #define ASGARD_END() \\";
-  add "        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_END____\\\" \\n 1:\\n\\t\" ::: \"memory\")";
-  add "  #endif";
-  add "#else";
-  add "  #define ASGARD_BEGIN_VIRTUALIZE(tag)";
-  add "  #define ASGARD_BEGIN_MUTATION(tag)";
-  add "  #define ASGARD_BEGIN_ULTRA(tag)";
-  add "  #define ASGARD_END()";
-  add "#endif";
-  if emit_api_hash then begin
-    add "";
-    add "/* ------------------------------------------------------------------------- */";
-    add "/* 7. COMPILE-TIME API HASHING & DYNAMIC RESOLUTION (IAT Elimination)        */";
-    add "/* ------------------------------------------------------------------------- */";
-    add ("static inline uint32_t " ^ p ^ "hash_api_str(const char* str) {");
-    add "    uint32_t hash = 0x811C9DC5U;";
-    add "    while (*str) {";
-    add "        hash ^= (uint8_t)(*str++);";
-    add "        hash *= 0x01000193U;";
-    add "    }";
-    add "    return hash;";
-    add "}";
-    add "";
-    add "#if (defined(__APPLE__) || defined(__linux__)) && !defined(_MSC_VER)";
-    add "#include <dlfcn.h>";
-    add ("static inline void* " ^ p ^ "resolve_api_by_hash(const char* const* known_symbols, size_t count, uint32_t target_hash) {");
-    add "    for (size_t i = 0; i < count; ++i) {";
-    add ("        if (" ^ p ^ "hash_api_str(known_symbols[i]) == target_hash) {");
-    add "            return dlsym(RTLD_DEFAULT, known_symbols[i]);";
-    add "        }";
-    add "    }";
-    add "    return (void*)0;";
-    add "}";
-    add "#endif"
-  end
+  let decls = emit_base_macro_decls ~emit_api_hash ~p () in
+  Buffer.add_string b (render_top_decls decls ^ "\n")

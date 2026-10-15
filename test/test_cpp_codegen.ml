@@ -659,7 +659,31 @@ let () =
   (match Cpp_codegen.Cpp_validator.validate_cpp_syntax native_runtime_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Native runtime header syntax validation failed: " ^ err));
-  Printf.printf "[PASS] Step 40: Native Threaded VM pure typed EDSL AST and header emission validated.\n"
+  Printf.printf "[PASS] Step 40: Native Threaded VM pure typed EDSL AST and header emission validated.\n";
+
+  (* 41. C Macro Obfuscation complete typed C++20/C11 EDSL header emission *)
+  let macro_decls = C_macro_obf.generate_header_ast () in
+  assert (List.length macro_decls > 0);
+  let macro_header_str = Cpp_codegen.Cpp_printer.render_top_decls macro_decls in
+  assert (contains_str macro_header_str "ASGARD-5877 Polymorphic C/C++ Obfuscation");
+  assert (contains_str macro_header_str "_ASGARD_OBF_H_");
+  assert (contains_str macro_header_str "ASG_STR");
+  assert (contains_str macro_header_str "ASG_MBA_ADD");
+  assert (contains_str macro_header_str "ASG_hash_api_str");
+  assert (contains_str macro_header_str "ASG_read_cpu_ticks");
+  assert (contains_str macro_header_str "ASG_is_debugger_present");
+  assert (contains_str macro_header_str "ASG_nanomite_table");
+  assert (contains_str macro_header_str "signal_dispatcher_handler");
+  (* Test AST tree-shaking with minimal source *)
+  let minimal_src = {| int main() { const char* s = ASG_STR("abc", 3, 123); return 0; } |} in
+  let shaken_decls = C_macro_obf.generate_header_ast ~source:minimal_src () in
+  let shaken_header_str = Cpp_codegen.Cpp_printer.render_top_decls shaken_decls in
+  assert (contains_str shaken_header_str "ASG_STR");
+  assert (not (contains_str shaken_header_str "ASG_read_cpu_ticks"));
+  assert (not (contains_str shaken_header_str "check_ptrace_sysctl"));
+  assert (not (contains_str shaken_header_str "ASG_nanomite_table"));
+  Printf.printf "[PASS] Step 41: C Macro Obfuscation pure typed EDSL AST and header emission validated.\n"
+
 
 
 
