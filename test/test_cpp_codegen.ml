@@ -698,7 +698,33 @@ let () =
   (match Cpp_codegen.Cpp_validator.validate_cpp_syntax rd_jit_full_cpp with
    | Ok () -> ()
    | Error err -> failwith ("RD-JIT runtime header syntax validation failed: " ^ err));
-  Printf.printf "[PASS] Step 42: RD-JIT VM pure typed EDSL AST and DualMappedJITBuffer ClassDef validated.\n"
+  (* 43. Tech-2601 complete typed C++20 EDSL runtime header emission & AST validation *)
+  let tech_2601_decls = Tech_2601.Tech_2601_emitter.runtime_header_decls () in
+  assert (List.length tech_2601_decls > 0);
+  let tech_2601_header_str = Tech_2601.Tech_2601_emitter.emit_runtime_header () in
+  assert (contains_str tech_2601_header_str "ASGARD_TECH_2601_HPP");
+  assert (contains_str tech_2601_header_str "constant_time_memcmp");
+  assert (contains_str tech_2601_header_str "class Sha256");
+  assert (contains_str tech_2601_header_str "class HmacSha256");
+  assert (contains_str tech_2601_header_str "struct Tech2601TryScope");
+  assert (contains_str tech_2601_header_str "struct Tech2601Destructor");
+  assert (contains_str tech_2601_header_str "struct Tech2601ShadowRecord");
+  assert (contains_str tech_2601_header_str "struct Tech2601OriginalMetadata");
+  assert (contains_str tech_2601_header_str "class ThreadShadowStack");
+  assert (contains_str tech_2601_header_str "get_tls_shadow_stack");
+  assert (contains_str tech_2601_header_str "tech_2601_rollback_stack");
+  assert (contains_str tech_2601_header_str "tech_2601_scrub_stack");
+  assert (contains_str tech_2601_header_str "xor_keystream");
+  assert (contains_str tech_2601_header_str "compute_container_mac");
+  assert (contains_str tech_2601_header_str "tech_2601_unseal");
+  assert (contains_str tech_2601_header_str "tech_2601_resolve_exception");
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax tech_2601_header_str with
+   | Ok () -> ()
+   | Error err -> failwith ("Tech-2601 runtime header syntax validation failed: " ^ err));
+  let oc = open_out "lib/tech_2601/asg_tech_2601.hpp" in
+  output_string oc tech_2601_header_str;
+  close_out oc;
+  Printf.printf "[PASS] Step 43: Tech-2601 pure typed EDSL AST and header emission validated.\n"
 
 
 

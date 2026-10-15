@@ -37,13 +37,18 @@ val unseal_metadata :
 (** Verifies HMAC-SHA256 authentication tag in constant-time and decrypts metadata.
     Fails closed immediately upon bit-flips, corruption, or key mismatches. *)
 
+(** Evaluates the exception-handling FSM:
+    Finds the target landing pad PC and computes the list of active destructor PCs
+    that must be invoked in LIFO (reverse construction) order. *)
 val resolve_exception :
   original_metadata ->
   throwing_pc:int64 ->
   exception_type:int32 ->
   (int64 * int64 list, tech_2601_error) result
-(** Evaluates the exception-handling FSM:
-    Finds the target landing pad PC and computes the list of active destructor PCs
-    that must be invoked in LIFO (reverse construction) order. *)
 
+(** Returns the Tech-2601 runtime header as typed C++20 EDSL AST declarations. *)
+val runtime_header_decls : unit -> Cpp_codegen.Cpp_ast.top_decl list
+
+(** Returns the rendered C++ header string emitted from [runtime_header_decls]. *)
 val runtime_header_source : string
+

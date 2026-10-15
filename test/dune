@@ -106,6 +106,7 @@
   multi_vm
   random_visa.stack_vm
   rd_jit_vm
+  tech_2601
   vanguard_9292
   random_visa_cpp_emitter
   random_visa_c11_emitter
