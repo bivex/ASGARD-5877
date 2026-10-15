@@ -98,37 +98,67 @@ static inline __attribute__((always_inline)) int64_t direct_syscall_6(int64_t sy
 #elif defined(__x86_64__)
 // Direct x86_64 Syscall Stub (syscall instruction)
 static inline __attribute__((always_inline)) int64_t direct_syscall_0(int64_t sys_num) noexcept {
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
+    int64_t num = (sys_num < 0x2000000) ? (0x2000000 | sys_num) : sys_num;
+#else
+    int64_t num = sys_num;
+#endif
     int64_t ret;
-    __asm__ volatile("syscall" : "=a"(ret) : "a"(sys_num) : "rcx", "r11", "memory", "cc");
+    __asm__ volatile("syscall" : "=a"(ret) : "a"(num) : "rcx", "r11", "memory", "cc");
     return ret;
 }
 static inline __attribute__((always_inline)) int64_t direct_syscall_1(int64_t sys_num, int64_t a1) noexcept {
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
+    int64_t num = (sys_num < 0x2000000) ? (0x2000000 | sys_num) : sys_num;
+#else
+    int64_t num = sys_num;
+#endif
     int64_t ret;
-    __asm__ volatile("syscall" : "=a"(ret) : "a"(sys_num), "D"(a1) : "rcx", "r11", "memory", "cc");
+    __asm__ volatile("syscall" : "=a"(ret) : "a"(num), "D"(a1) : "rcx", "r11", "memory", "cc");
     return ret;
 }
 static inline __attribute__((always_inline)) int64_t direct_syscall_2(int64_t sys_num, int64_t a1, int64_t a2) noexcept {
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
+    int64_t num = (sys_num < 0x2000000) ? (0x2000000 | sys_num) : sys_num;
+#else
+    int64_t num = sys_num;
+#endif
     int64_t ret;
-    __asm__ volatile("syscall" : "=a"(ret) : "a"(sys_num), "D"(a1), "S"(a2) : "rcx", "r11", "memory", "cc");
+    __asm__ volatile("syscall" : "=a"(ret) : "a"(num), "D"(a1), "S"(a2) : "rcx", "r11", "memory", "cc");
     return ret;
 }
 static inline __attribute__((always_inline)) int64_t direct_syscall_3(int64_t sys_num, int64_t a1, int64_t a2, int64_t a3) noexcept {
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
+    int64_t num = (sys_num < 0x2000000) ? (0x2000000 | sys_num) : sys_num;
+#else
+    int64_t num = sys_num;
+#endif
     int64_t ret;
-    __asm__ volatile("syscall" : "=a"(ret) : "a"(sys_num), "D"(a1), "S"(a2), "d"(a3) : "rcx", "r11", "memory", "cc");
+    __asm__ volatile("syscall" : "=a"(ret) : "a"(num), "D"(a1), "S"(a2), "d"(a3) : "rcx", "r11", "memory", "cc");
     return ret;
 }
 static inline __attribute__((always_inline)) int64_t direct_syscall_4(int64_t sys_num, int64_t a1, int64_t a2, int64_t a3, int64_t a4) noexcept {
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
+    int64_t num = (sys_num < 0x2000000) ? (0x2000000 | sys_num) : sys_num;
+#else
+    int64_t num = sys_num;
+#endif
     int64_t ret;
     register int64_t r10 __asm__("r10") = a4;
-    __asm__ volatile("syscall" : "=a"(ret) : "a"(sys_num), "D"(a1), "S"(a2), "d"(a3), "r"(r10) : "rcx", "r11", "memory", "cc");
+    __asm__ volatile("syscall" : "=a"(ret) : "a"(num), "D"(a1), "S"(a2), "d"(a3), "r"(r10) : "rcx", "r11", "memory", "cc");
     return ret;
 }
 static inline __attribute__((always_inline)) int64_t direct_syscall_6(int64_t sys_num, int64_t a1, int64_t a2, int64_t a3, int64_t a4, int64_t a5, int64_t a6) noexcept {
+#if defined(__APPLE__) || defined(ASGARD_TARGET_DARWIN)
+    int64_t num = (sys_num < 0x2000000) ? (0x2000000 | sys_num) : sys_num;
+#else
+    int64_t num = sys_num;
+#endif
     int64_t ret;
     register int64_t r10 __asm__("r10") = a4;
     register int64_t r8  __asm__("r8")  = a5;
     register int64_t r9  __asm__("r9")  = a6;
-    __asm__ volatile("syscall" : "=a"(ret) : "a"(sys_num), "D"(a1), "S"(a2), "d"(a3), "r"(r10), "r"(r8), "r"(r9) : "rcx", "r11", "memory", "cc");
+    __asm__ volatile("syscall" : "=a"(ret) : "a"(num), "D"(a1), "S"(a2), "d"(a3), "r"(r10), "r"(r8), "r"(r9) : "rcx", "r11", "memory", "cc");
     return ret;
 }
 #elif defined(__linux__) && (defined(__arm64__) || defined(__aarch64__))

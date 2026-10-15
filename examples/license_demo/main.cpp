@@ -7,33 +7,41 @@
 // ----------------------------------------------------------------------------
 // 1. Embedded Encrypted Bytecode for License Checking Algorithm
 // (Synthesized by ASGARD-5877 VM Protector with MBA + CFF + Positional PRF)
-// ----------------------------------------------------------------------------
-static const uint64_t license_bytecode[] = {
-    0xFFFF0AD840A0A3FCULL,
-    0xFFFFFFFFCC24FA31ULL,
-    0xFFFFFFFFB610C4BFULL,
-    0x000000017C2FDFD4ULL,
-    0x0000000042599923ULL,
-    0x0000000067B3161DULL,
-    0x0000000015262FF3ULL,
-    0x0000CA4BE77E6462ULL,
-    0xFFFE52F6A8BA7317ULL,
-    0x00000000168FB36AULL,
-    0x00000000781D4F56ULL,
-    0xFFFFFFFFA2ACBBD0ULL,
-    0x00000000049C0F11ULL,
-    0x000000007790B663ULL,
-    0xFFFFFFFFAC4939E1ULL,
-    0xFFFFFFFF87038341ULL,
-    0x0000000078859535ULL,
-    0x0000F527FF2ECDC9ULL,
-    0x00000013035A15F1ULL,
-    0xFFFE52F6F4CDCED7ULL,
-    0xFFFFFFEADDFFA874ULL,
-    0xFFFF35B4224529AFULL,
-    0x000000106880A7A3ULL,
-};
+#include <vector>
 
+static std::vector<uint64_t> g_loaded_bytecode;
+
+static const uint64_t* get_license_bytecode(size_t* out_len) {
+    if (!g_loaded_bytecode.empty()) {
+        *out_len = g_loaded_bytecode.size();
+        return g_loaded_bytecode.data();
+    }
+    const char* paths[] = {
+        "examples/license_demo/vm_out/protected.vanguard",
+        "vm_out/protected.vanguard",
+        "protected.vanguard",
+        nullptr
+    };
+    for (int i = 0; paths[i]; ++i) {
+        FILE* f = fopen(paths[i], "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            long sz = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            if (sz > 0 && (sz % 8) == 0) {
+                g_loaded_bytecode.resize(sz / 8);
+                if (fread(g_loaded_bytecode.data(), 8, g_loaded_bytecode.size(), f) == g_loaded_bytecode.size()) {
+                    fclose(f);
+                    *out_len = g_loaded_bytecode.size();
+                    return g_loaded_bytecode.data();
+                }
+            }
+            fclose(f);
+        }
+    }
+    *out_len = 0;
+    return nullptr;
+}
 
 // ----------------------------------------------------------------------------
 // 2. Hardware ID (HWID) Helper
@@ -49,6 +57,13 @@ uint64_t get_machine_hwid() {
 // 3. Virtualized License Verification Routine
 // ----------------------------------------------------------------------------
 bool verify_license_in_vm(uint64_t hwid, uint64_t user_serial) {
+    size_t bc_len = 0;
+    const uint64_t* bc_ptr = get_license_bytecode(&bc_len);
+    if (!bc_ptr || bc_len == 0) {
+        fprintf(stderr, "[-] Failed to load protected.vanguard bytecode\n");
+        return false;
+    }
+
     vanguard_threaded_vm::VMContext ctx = {};
     ctx.init();
 
@@ -63,8 +78,8 @@ bool verify_license_in_vm(uint64_t hwid, uint64_t user_serial) {
     // Execute in Direct Threaded VM with rolling key decryption & blinded context
     bool success = vanguard_threaded_vm::execute_threaded(
         ctx,
-        license_bytecode,
-        sizeof(license_bytecode) / sizeof(license_bytecode[0])
+        bc_ptr,
+        bc_len
     );
 
     // Return true if VM executed successfully and returned RAX == 1

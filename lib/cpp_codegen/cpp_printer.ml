@@ -209,6 +209,15 @@ let pp_attr fmt = function
   | StaticFn     -> fprintf fmt "static "
   | Constructor  -> fprintf fmt "__attribute__((constructor)) "
 
+let pp_attrs fmt attrs =
+  let has_always_inline = List.mem AlwaysInline attrs in
+  let filtered =
+    if has_always_inline then
+      List.filter (fun a -> a <> InlineFn) attrs
+    else attrs
+  in
+  List.iter (pp_attr fmt) filtered
+
 let pp_struct_member fmt = function
   | MemberField { is_volatile; ty; name; init = Some e } ->
       fprintf fmt "%s%a %s = %a;@," (if is_volatile then "volatile " else "") pp_ctype ty name pp_expr e
@@ -232,7 +241,7 @@ let pp_struct_member fmt = function
       if template_params <> [] then
         fprintf fmt "template <%s>@," (String.concat ", " template_params);
       if is_static then fprintf fmt "static ";
-      List.iter (pp_attr fmt) attrs;
+      pp_attrs fmt attrs;
       let is_noexcept = List.mem NoExcept attrs in
       fprintf fmt "%a %s(%a)%s%s {@[<v 4>@,%a@]@,}@,"
         pp_ctype ret_type name
@@ -247,7 +256,7 @@ let pp_struct_member fmt = function
       if template_params <> [] then
         fprintf fmt "template <%s>@," (String.concat ", " template_params);
       if is_static then fprintf fmt "static ";
-      List.iter (pp_attr fmt) attrs;
+      pp_attrs fmt attrs;
       let is_noexcept = List.mem NoExcept attrs in
       fprintf fmt "%a %s(%a)%s%s;@,"
         pp_ctype ret_type name
@@ -258,7 +267,7 @@ let pp_struct_member fmt = function
         (if is_const then " const" else "")
         (if is_noexcept then " noexcept" else "")
   | MemberConstructor { attrs; is_explicit; name; params; init_list; body } ->
-      List.iter (pp_attr fmt) attrs;
+      pp_attrs fmt attrs;
       if is_explicit then fprintf fmt "explicit ";
       let is_noexcept = List.mem NoExcept attrs in
       let init_str =
@@ -284,7 +293,7 @@ let pp_struct_member fmt = function
         init_str
         pp_stmt_list body
   | MemberDestructor { attrs; name; body } ->
-      List.iter (pp_attr fmt) attrs;
+      pp_attrs fmt attrs;
       fprintf fmt "~%s() {@[<v 4>@,%a@]@,}@," name pp_stmt_list body
   | MemberRaw s ->
       fprintf fmt "%s@," s
@@ -449,7 +458,7 @@ let rec pp_top_decl fmt = function
       ) items;
       fprintf fmt "@]@,};"
   | FuncDecl { attrs; ret_type; name; params; body } ->
-      List.iter (pp_attr fmt) attrs;
+      pp_attrs fmt attrs;
       let is_noexcept = List.mem NoExcept attrs in
       fprintf fmt "%a %s(%a)%s {@[<v 4>@,%a@]@,}"
         pp_ctype ret_type name
@@ -458,7 +467,7 @@ let rec pp_top_decl fmt = function
         (if is_noexcept then " noexcept" else "")
         pp_stmt_list body
   | FuncProto { attrs; ret_type; name; params; _ } ->
-      List.iter (pp_attr fmt) attrs;
+      pp_attrs fmt attrs;
       let is_noexcept = List.mem NoExcept attrs in
       fprintf fmt "%a %s(%a)%s;"
         pp_ctype ret_type name

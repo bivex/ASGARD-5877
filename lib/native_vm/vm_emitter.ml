@@ -227,6 +227,7 @@ let compile_and_package_multi
   let block_fused_ops = Hashtbl.create n_blocks in
   Array.iter (fun (id, fused) -> Hashtbl.replace block_fused_ops id fused) results;
 
+  let is_i32 imm = imm >= -2147483648L && imm <= 2147483647L in
   let words_of_fused = function
     | Raw (Ir.Mov { dst = Ir.Reg (Register.Fpr _); src = Ir.Imm imm }) ->
         if Int64.shift_right_logical imm 32 <> 0L then 3 else 2
@@ -234,6 +235,10 @@ let compile_and_package_multi
     | Raw (Ir.Mov { dst = Ir.Mem _; src = Ir.Imm _ }) -> 2
     | Raw (Ir.Load_symbol { addend; _ }) when addend <> 0L -> 2
     | Raw (Ir.Set_flags (Ir.Imm _ | Ir.Mem _)) -> 2
+    | Raw (Ir.Alu { src2 = Ir.Imm imm; _ }) when not (is_i32 imm) ->
+        if Int64.shift_right_logical imm 32 <> 0L then 3 else 2
+    | Raw (Ir.Cmp { src2 = Ir.Imm imm; _ }) when not (is_i32 imm) ->
+        if Int64.shift_right_logical imm 32 <> 0L then 3 else 2
     | _ -> 1
   in
   let block_offsets = Hashtbl.create (List.length sorted_blocks) in
@@ -343,6 +348,20 @@ let compile_and_package_multi
     let w = Int64.logor w (Int64.shift_left (Int64.of_int lane_bits) 18) in
     let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 26) in
     Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 31)
+  in
+
+  let encode_alu_imm op_ri op_rr dst imm =
+    if is_i32 imm then
+      encode_raw_word (get_opcode op_ri) (get_reg_idx dst) 0 imm
+    else begin
+      let temp_reg = if dst = Register.vx23 then Register.vx22 else Register.vx23 in
+      let low = Int64.logand imm 0xFFFFFFFFL in
+      let high = Int64.shift_right_logical imm 32 in
+      encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx temp_reg) 0 low;
+      if high <> 0L then
+        encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx temp_reg) 0 high;
+      encode_raw_word (get_opcode op_rr) (get_reg_idx dst) (get_reg_idx temp_reg) 0L
+    end
   in
 
   (* Encode instructions (both Fused Super-Operators and Standard Raw Ops) *)
@@ -465,31 +484,31 @@ let compile_and_package_multi
                   encode_raw_word (get_opcode OP_ADD_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Add; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Add ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_ADD_RI) (get_reg_idx d) 0 imm
+                  encode_alu_imm OP_ADD_RI OP_ADD_RR d imm
               | Ir.Alu { op = Ir.Adc; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Adc ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ADC_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Adc; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Adc ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_ADC_RI) (get_reg_idx d) 0 imm
+                  encode_alu_imm OP_ADC_RI OP_ADC_RR d imm
               | Ir.Alu { op = Ir.Sub; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sub ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SUB_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Sub; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sub ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_SUB_RI) (get_reg_idx d) 0 imm
+                  encode_alu_imm OP_SUB_RI OP_SUB_RR d imm
               | Ir.Alu { op = Ir.Sbb; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sbb ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SBB_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Sbb; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sbb ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_SBB_RI) (get_reg_idx d) 0 imm
+                  encode_alu_imm OP_SBB_RI OP_SBB_RR d imm
               | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Imul ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_IMUL_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Imul ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_IMUL_RI) (get_reg_idx d) 0 imm
+                  encode_alu_imm OP_IMUL_RI OP_IMUL_RR d imm
               | Ir.Alu { op = Ir.Mulh; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Mulh ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_MULH_RR) (get_reg_idx d) (get_reg_idx s) 0L
@@ -507,19 +526,19 @@ let compile_and_package_multi
                   encode_raw_word (get_opcode OP_XOR_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Xor; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Xor ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_XOR_RI) (get_reg_idx d) 0 imm
+                  encode_alu_imm OP_XOR_RI OP_XOR_RR d imm
               | Ir.Alu { op = Ir.And; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.And ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_AND_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.And; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.And ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_AND_RI) (get_reg_idx d) 0 imm
+                  encode_alu_imm OP_AND_RI OP_AND_RR d imm
               | Ir.Alu { op = Ir.Or; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Or ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_OR_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Or; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Or ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_OR_RI) (get_reg_idx d) 0 imm
+                  encode_alu_imm OP_OR_RI OP_OR_RR d imm
               | Ir.Alu { op = Ir.Rol; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Rol ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_ROL_RI) (get_reg_idx d) 0 imm
@@ -583,7 +602,17 @@ let compile_and_package_multi
                   encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ->
                   let bits = Register.width_to_bits (Register.get_width d) in
-                  encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CMP_RI) (get_reg_idx d) 0 imm
+                  if is_i32 imm then
+                    encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CMP_RI) (get_reg_idx d) 0 imm
+                  else begin
+                    let temp_reg = if d = Register.vx23 then Register.vx22 else Register.vx23 in
+                    let low = Int64.logand imm 0xFFFFFFFFL in
+                    let high = Int64.shift_right_logical imm 32 in
+                    encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx temp_reg) 0 low;
+                    if high <> 0L then
+                      encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx temp_reg) 0 high;
+                    encode_raw_word ~extra_bits:(Int64.of_int bits) (get_opcode OP_CMP_RR) (get_reg_idx d) (get_reg_idx temp_reg) 0L
+                  end
               | Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Reg s; nzcv } ->
                   let bits = Register.width_to_bits (Register.get_width d) in
                   let c = cond_to_code cond in

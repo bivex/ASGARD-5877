@@ -1,5 +1,5 @@
 CC ?= clang
-CFLAGS = -Iinclude -O3
+CFLAGS = -Iinclude -I.. -O3
 ASGARD = ../../random_visa
 
 all: protect

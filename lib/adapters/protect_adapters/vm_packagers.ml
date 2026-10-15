@@ -59,9 +59,10 @@ module Threaded_vm_packager : Vm_packager = struct
 
   let transform_func ~rng (f : Vm_ir.Ir.func) : Vm_ir.Ir.func =
     let seed = Vm_ir.Seed.create ~master_seed:(Random.State.int64 rng Int64.max_int) () in
-    match Vm_ir.Ir_pipeline.compile ~seed ~verify_equivalence:false f with
+    match Vm_ir.Ir_pipeline.compile ~seed ~verify_equivalence:true f with
     | Ok res -> res.diversified_func
-    | Error _ ->
+    | Error err ->
+        Printf.eprintf "[TRANSFORM_FUNC ERROR] %s\n" err;
         let sem_f = Vm_ir.Semantic_transform.transform_func ~seed f in
         let codec_cfg = Vm_ir.Codec_pass.default_config (Vm_ir.Seed.codec_seed seed) in
         Vm_ir.Codec_pass.transform_func ~cfg:codec_cfg sem_f

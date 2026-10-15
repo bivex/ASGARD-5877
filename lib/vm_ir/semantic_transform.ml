@@ -60,7 +60,7 @@ let transform_instr (rng : Random.State.t) (instr : instr) : instr list =
         ]
       else if roll = 4 then
         (* 5. Nilpotent Zero Phantom Dependency: r = c + N(z)^32 *)
-        let scratch = vtmp0 in
+        let scratch = vx21 in
         if r <> scratch then
           make_nilpotent_zero rng scratch @
           [

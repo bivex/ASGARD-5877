@@ -273,7 +273,7 @@ public:
    resolved_target, the keyed nanomite table) is thread-local. This removes the
    inter-thread data race when several threads run virtualized nanomite code
    concurrently without any locking on the hot path. */
-inline thread_local NanomiteDispatcher g_nanomite_dispatcher;
+static thread_local NanomiteDispatcher g_nanomite_dispatcher;
 
 #if defined(__APPLE__)
 static inline void install_nanomite_handlers(uint32_t seed = 0x5877CAFEU) noexcept {
