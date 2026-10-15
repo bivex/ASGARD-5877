@@ -16,8 +16,8 @@ ASGARD-5877 is an industrial-grade, mathematically verified code virtualization 
    - **NCFG MBA Synthesizer** (*arXiv:2506.23634*): Non-Context-Free Grammar expansions resistant to neural Transformer and LLM-based deobfuscators (gMBA).
    - **ARM64 Literal Stitching** (*arXiv:2407.08924*): `ADR` + `BR` dynamic pool jumping disrupting linear and recursive disassemblers (IDA Pro / Ghidra).
    - **Tech-2601 ABI Exception Handling Shadowing** (*arXiv:2601.10261*): Cryptographically sealed metadata and rollback arithmetic preserving genuine unwinding while deceiving symbolic tracing.
-   - **Tech-2603 Non-Linear VPC Dispatching** (*arXiv:2603.04811*): Non-linear affine VPC permutation removing linear VPC execution signatures.
-   - **Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pools** (*arXiv:2608.01290*): Chaff allocations and decoy side-effects defeating automated trace synthesis engines.
+   - **Tech-2603 Non-Linear VPC Dispatching** (*arXiv:2603.18355*): Non-linear affine bijective VPC permutation removing linear VPC execution signatures (anti-PUSHAN).
+   - **Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pools** (*arXiv:2608.20628*): Chaff allocations, SSA superoperator instruction fusion, and decoy side-effects defeating automated trace synthesis engines (BinMirror).
    - **Ring Codec & Data-Space Automorphisms**: Invertible endomorphisms over $\mathbb{Z}/2^{64}\mathbb{Z}$ obscuring register values throughout execution.
    - **E-Graph Equality Saturation**: Algebraic term rewriting for MBA rules to synthesize optimal, impenetrable obfuscation expressions.
    - **Anti-Pushan Non-Linear Rolling Keys**: Context-dependent key evolution across loop iterations and conditional branches defeating symbolic state recovery.
@@ -25,7 +25,7 @@ ASGARD-5877 is an industrial-grade, mathematically verified code virtualization 
 3. **Hardware and GPU Acceleration**:
    - **Apple Metal 3.0 GPU Engine**: Parallel MBA synthesis (65,536 grid threads) and Strict Avalanche Criterion (SAC) verification ($P \approx 50.00\%$).
    - **Residue Number System (RNS-4) and JIT VM**: Modular arithmetic virtualization across non-trivial coprimes with Garner's Chinese Remainder Theorem reconstruction.
-4. **Type-Safe C++20/C11 EDSL Codegen**: Complete, zero-dependency typed AST generation engine (`lib/cpp_codegen/`). Replaces all string templating engines with verifiable AST expressions, statements, structs, templates, pragmas, and macros. Features pre-flight structural/bracket validation and zero-UB type emission across Clang, GCC 15+, and MSVC.
+4. **100% Pure Typed C++20/C11 EDSL Codegen**: Complete, zero-dependency typed AST generation engine (`lib/cpp_codegen/`). 100% of the runtime codebase—including Native Threaded VM, Stack-VM, Register-Driven JIT VM (`DualMappedJITBuffer`), C Macro Obfuscation (`c_macro_obf`), and Tech-2601/2603/2608—is emitted from pure AST trees, completely eliminating string templating engines. Features pre-flight structural/compiler syntax validation and zero-UB type emission across Clang, GCC 15+, and MSVC.
 5. **RISC-V Vector ISA Synthesis**: Deterministic, collision-free vector instruction sets with formal Sail specifications, silicon cost audits, and native C++20 SIMD / C11 emulators.
 6. **Architectural Assurance**: Strict Ports and Adapters (Hexagonal / DDD) structure certified by DPX-OCaml (0 architectural cycles, 0 dead library dependencies, 100% `.mli` encapsulation).
 
@@ -57,10 +57,10 @@ ASGARD-5877 is an industrial-grade, mathematically verified code virtualization 
 | **20** | **Cross-Platform Dual-Mapping & Section Hash** | Debuggers, Memory Patching & Inline Hooking | W^X dual-mapping on Windows (`CreateFileMappingW`/`MapViewOfFile`), Linux (`memfd_create`), macOS (`mach_vm_remap`) and `.text`/`.rodata` section integrity hashing bound to rolling key. |
 | **21** | **Stack-VM & Keyed Payload Auth** | VMPredator Bytecode Extractors & Tampering | SipHash-1-2 CBC payload authentication, Anti-VMPredator address-bound bytecode keys tied to handler delta hash $D$, universal NOR/NAND logic reduction, and fail-closed memory policy. |
 | **22** | **Tech-2601 ABI Exception Shadowing** | Symbolic EH Tracing & Unwind Hooking | (*arXiv:2601.10261*) Injects dummy ABI-compliant stack unwind codes and cryptographically seals original metadata, executing stack rollback arithmetic upon exception dispatch. |
-| **23** | **Tech-2603 Non-Linear VPC Dispatch** | Linear Disassemblers & VPC Pattern Tracing | (*arXiv:2603.04811*) Affine non-linear permutation over the virtual instruction counter eliminating consecutive monotonic VPC patterns. |
-| **24** | **Tech-2608 Anti-Trace-Synthesis** | Dynamic Binary Instrumentation & Trace Synthesis | (*arXiv:2608.01290*) Emits randomized chaff memory allocation pools and spurious side-effect memory writes to defeat automated synthesis tools. |
+| **23** | **Tech-2603 Non-Linear VPC Dispatch** | Linear Disassemblers & VPC Pattern Tracing | (*arXiv:2603.18355*) Affine bijective non-linear permutation over virtual instruction counter and SplitVPC dual-variable masking eliminating consecutive monotonic VPC patterns (anti-PUSHAN). |
+| **24** | **Tech-2608 Anti-Trace-Synthesis** | Dynamic Binary Instrumentation & Trace Synthesis | (*arXiv:2608.20628*) Randomized chaff memory allocation pools, SSA superoperator instruction fusion, and spurious side-effect memory writes to defeat automated synthesis tools (BinMirror). |
 | **25** | **Ring Codec (Data-Space Automorphisms)** | Memory Dump Value Tracking & SMT Equivalence | Invertible ring endomorphisms over $\mathbb{Z}/2^{64}\mathbb{Z}$ preserving algebraic invariants while completely obfuscating data representations in registers. |
-| **26** | **Typed C++20/C11 EDSL Codegen** | Format-String Vulnerabilities & UB Generation | Full AST-driven generation of all C++20 / C11 runtimes (`lib/cpp_codegen/`) with pre-flight structural/compiler syntax validation and 0 template engine dependencies. |
+| **26** | **100% Typed C++20/C11 EDSL Codegen** | Format-String Vulnerabilities & UB Generation | Full AST-driven generation of all C++20 / C11 runtimes (`lib/cpp_codegen/`, `lib/rd_jit_vm/`, `lib/tech_2601/`, `lib/c_macro_obf/`) with pre-flight structural/compiler syntax validation and 0 template engine dependencies. |
 
 ---
 
