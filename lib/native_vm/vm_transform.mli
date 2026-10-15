@@ -54,6 +54,8 @@ type raw_op_kind =
   | OP_FUSED_ADD_XOR_RRI
   | OP_FUSED_SUB_XOR_RRI
   | OP_FUSED_XOR_ADD_RRI
+  | OP_FUSED_AND_OR_RRI
+  | OP_FUSED_SHL_ADD_RRI
   | OP_FUSED_CMP_CMOV
   | OP_BRIDGE_TO_FLOW
   | OP_BRIDGE_TO_MATH
@@ -132,6 +134,8 @@ type fused_op =
   | Fused_Add_Xor of { dst : Register.t; src : Register.t; imm : int64 }
   | Fused_Sub_Xor of { dst : Register.t; src : Register.t; imm : int64 }
   | Fused_Xor_Add of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_And_Or of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_Shl_Add of { dst : Register.t; src : Register.t; imm : int64 }
   | Fused_Cmp_Cmov of {
       cmp_dst : Register.t;
       cmp_imm : int64;

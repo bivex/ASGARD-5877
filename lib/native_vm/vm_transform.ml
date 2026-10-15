@@ -77,6 +77,8 @@ type raw_op_kind =
   | OP_FUSED_ADD_XOR_RRI
   | OP_FUSED_SUB_XOR_RRI
   | OP_FUSED_XOR_ADD_RRI
+  | OP_FUSED_AND_OR_RRI
+  | OP_FUSED_SHL_ADD_RRI
   | OP_FUSED_CMP_CMOV
   | OP_BRIDGE_TO_FLOW
   | OP_BRIDGE_TO_MATH
@@ -154,7 +156,7 @@ let all_op_kinds = [
   OP_CMP_RR; OP_CMP_RI; OP_PUSH_R;
   OP_POP_R; OP_JMP; OP_JCC; OP_CMOV; OP_SETCC; OP_CALL; OP_IJMP_R; OP_ICALL_R; OP_RET; OP_EXIT;
   OP_FUSED_MOV_ADD_RRI; OP_FUSED_ADD_IMUL_RRI; OP_FUSED_ADD_XOR_RRI;
-  OP_FUSED_SUB_XOR_RRI; OP_FUSED_XOR_ADD_RRI; OP_FUSED_CMP_CMOV;
+  OP_FUSED_SUB_XOR_RRI; OP_FUSED_XOR_ADD_RRI; OP_FUSED_AND_OR_RRI; OP_FUSED_SHL_ADD_RRI; OP_FUSED_CMP_CMOV;
   OP_BRIDGE_TO_FLOW; OP_BRIDGE_TO_MATH;
   OP_VADD_VV; OP_VSUB_VV; OP_VMUL_VV; OP_VXOR_VV;
   OP_VEC_MOV; OP_VEC_BINOP; OP_VEC_LOAD; OP_VEC_STORE;
@@ -224,6 +226,8 @@ let op_kind_to_handler_name = function
   | OP_FUSED_ADD_XOR_RRI -> "H_FUSED_ADD_XOR_RRI"
   | OP_FUSED_SUB_XOR_RRI -> "H_FUSED_SUB_XOR_RRI"
   | OP_FUSED_XOR_ADD_RRI -> "H_FUSED_XOR_ADD_RRI"
+  | OP_FUSED_AND_OR_RRI -> "H_FUSED_AND_OR_RRI"
+  | OP_FUSED_SHL_ADD_RRI -> "H_FUSED_SHL_ADD_RRI"
   | OP_FUSED_CMP_CMOV -> "H_FUSED_CMP_CMOV"
   | OP_BRIDGE_TO_FLOW -> "H_BRIDGE_TO_FLOW"
   | OP_BRIDGE_TO_MATH -> "H_BRIDGE_TO_MATH"
@@ -299,6 +303,8 @@ type fused_op =
   | Fused_Add_Xor of { dst : Register.t; src : Register.t; imm : int64 }
   | Fused_Sub_Xor of { dst : Register.t; src : Register.t; imm : int64 }
   | Fused_Xor_Add of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_And_Or of { dst : Register.t; src : Register.t; imm : int64 }
+  | Fused_Shl_Add of { dst : Register.t; src : Register.t; imm : int64 }
   | Fused_Cmp_Cmov of { cmp_dst : Register.t; cmp_imm : int64; cond : Flags.condition; cmov_dst : Register.t; cmov_src : Register.t }
 
 let extract_real_regs instrs =
@@ -712,6 +718,16 @@ let rec fuse_block_instructions instrs =
     Ir.Alu { op = Ir.Add; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
     when d = d1 && d = d2 && d = d3 && fits_i32 imm ->
       Fused_Xor_Add { dst = d; src = s; imm } :: fuse_block_instructions rest
+
+  | Ir.Alu { op = Ir.And; dst = d; src1 = Ir.Reg d1; src2 = Ir.Reg s; _ } ::
+    Ir.Alu { op = Ir.Or; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Imm imm; _ } :: rest
+    when d = d1 && d = d2 && d = d3 && fits_i32 imm ->
+      Fused_And_Or { dst = d; src = s; imm } :: fuse_block_instructions rest
+
+  | Ir.Alu { op = Ir.Shl; dst = d; src1 = Ir.Reg d1; src2 = Ir.Imm imm; _ } ::
+    Ir.Alu { op = Ir.Add; dst = d2; src1 = Ir.Reg d3; src2 = Ir.Reg s; _ } :: rest
+    when d = d1 && d = d2 && d = d3 && fits_i32 imm ->
+      Fused_Shl_Add { dst = d; src = s; imm } :: fuse_block_instructions rest
 
   | Ir.Cmp { src1 = Ir.Reg d; src2 = Ir.Imm imm } ::
     Ir.Cmov { cond; dst = d2; src = Ir.Reg s } :: rest

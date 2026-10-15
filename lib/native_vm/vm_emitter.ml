@@ -367,6 +367,10 @@ let compile_and_package_multi
               encode_raw_word (get_opcode OP_FUSED_SUB_XOR_RRI) (get_reg_idx dst) (get_reg_idx src) imm
           | Fused_Xor_Add { dst; src; imm } ->
               encode_raw_word (get_opcode OP_FUSED_XOR_ADD_RRI) (get_reg_idx dst) (get_reg_idx src) imm
+          | Fused_And_Or { dst; src; imm } ->
+              encode_raw_word (get_opcode OP_FUSED_AND_OR_RRI) (get_reg_idx dst) (get_reg_idx src) imm
+          | Fused_Shl_Add { dst; src; imm } ->
+              encode_raw_word (get_opcode OP_FUSED_SHL_ADD_RRI) (get_reg_idx dst) (get_reg_idx src) imm
           | Fused_Cmp_Cmov { cmp_dst; cmp_imm; cond; cmov_dst; cmov_src } ->
               let bits = Register.width_to_bits (Register.get_width cmp_dst) in
               let c = cond_to_code cond in

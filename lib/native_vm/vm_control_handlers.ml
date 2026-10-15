@@ -480,4 +480,39 @@ let emit_super_operators ?rng b =
     Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
     fetch_next;
   ] in
-  emit_handler_ast b "H_FUSED_CMP_CMOV" fused_cmp_cmov_stmts
+  emit_handler_ast b "H_FUSED_CMP_CMOV" fused_cmp_cmov_stmts;
+
+  (* H_FUSED_AND_OR_RRI *)
+  let fused_and_or_stmts = (match pick_variant 3 with
+    | 0 -> [ set_reg (var "dst") ((reg_dst &~ reg_src) |~ cast UInt64 (var "imm")) ]
+    | 1 -> [
+        let_u64 "_and" (reg_dst &~ reg_src);
+        set_reg (var "dst") (var "_and" |~ cast UInt64 (var "imm"))
+      ]
+    | _ -> [
+        let_u64 "_imm" (cast UInt64 (var "imm"));
+        let_u64 "_a" (reg_dst &~ reg_src);
+        set_reg (var "dst") ((var "_a" +~ var "_imm") -~ (var "_a" &~ var "_imm"))
+      ]) @ [
+    Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_FUSED_AND_OR_RRI" fused_and_or_stmts;
+
+  (* H_FUSED_SHL_ADD_RRI *)
+  let fused_shl_add_stmts = (match pick_variant 3 with
+    | 0 -> [ set_reg (var "dst") ((reg_dst <<~ (cast UInt64 (var "imm") &~ u64 63L)) +~ reg_src) ]
+    | 1 -> [
+        let_u64 "_shl" (reg_dst <<~ (cast UInt64 (var "imm") &~ u64 63L));
+        set_reg (var "dst") (var "_shl" +~ reg_src)
+      ]
+    | _ -> [
+        let_u64 "_shl" (reg_dst <<~ (cast UInt64 (var "imm") &~ u64 63L));
+        let_u64 "_s" reg_src;
+        set_reg (var "dst") ((var "_shl" ^~ var "_s") +~ (u64 2L *~ (var "_shl" &~ var "_s")))
+      ]) @ [
+    Assign (AssignAdd, var "ctx.executed_instructions", i32 2);
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_FUSED_SHL_ADD_RRI" fused_shl_add_stmts
+
