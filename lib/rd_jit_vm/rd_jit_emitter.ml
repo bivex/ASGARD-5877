@@ -4,10 +4,24 @@ open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
 
+let emit_rd_jit_runtime_decls ~external_symbols =
+  let sym_entries =
+    match external_symbols with
+    | [] -> [ str_lit "" ]
+    | xs -> List.map str_lit xs
+  in
+  let sym_decl =
+    global_var ~is_static:true ~is_const:true
+      (Array (Ptr (StructType "char"), 0))
+      "g_rd_jit_external_symbols"
+      ~init:(init_list sym_entries)
+  in
+  Rd_jit_buffer.header_decls ()
+  @ [ sym_decl ]
+  @ Rd_jit_synth.header_decls ~external_symbols ()
+
 let emit_rd_jit_runtime_header ~external_symbols =
-  Rd_jit_buffer.header ()
-  ^ Rd_jit_synth.external_symbols_header external_symbols
-  ^ Rd_jit_synth.header ~external_symbols ()
+  render_top_decls (emit_rd_jit_runtime_decls ~external_symbols)
 
 let emit_rd_jit_main_def () : top_decl =
   func_decl Int32 "main" [(Int32, "argc"); (Ptr (Ptr (StructType "char")), "argv")] [

@@ -283,6 +283,9 @@ let pp_struct_member fmt = function
         (if is_noexcept then " noexcept" else "")
         init_str
         pp_stmt_list body
+  | MemberDestructor { attrs; name; body } ->
+      List.iter (pp_attr fmt) attrs;
+      fprintf fmt "~%s() {@[<v 4>@,%a@]@,}@," name pp_stmt_list body
   | MemberRaw s ->
       fprintf fmt "%s@," s
   | MemberComment s ->

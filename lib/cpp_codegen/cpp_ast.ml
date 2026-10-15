@@ -158,6 +158,11 @@ type struct_member =
       init_list   : (string * expr) list;
       body        : stmt list;
     }
+  | MemberDestructor of {
+      attrs : func_attr list;
+      name  : string;
+      body  : stmt list;
+    }
   | MemberStaticConstexpr of { ty : ctype; name : string; init : expr }
   | MemberVisibility of visibility
   | MemberStaticAssert of expr * string

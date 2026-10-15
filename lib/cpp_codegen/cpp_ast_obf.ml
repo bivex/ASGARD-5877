@@ -77,6 +77,8 @@ let scramble_struct_member rng = function
         init_list = List.map (fun (n, e) -> (n, scramble_expr rng e)) c.init_list;
         body = List.map (scramble_stmt rng) c.body;
       }
+  | MemberDestructor d ->
+      MemberDestructor { d with body = List.map (scramble_stmt rng) d.body }
   | MemberStaticConstexpr c ->
       MemberStaticConstexpr { c with init = scramble_expr rng c.init }
   | MemberStaticAssert (e, msg) ->

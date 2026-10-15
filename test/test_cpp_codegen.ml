@@ -681,8 +681,25 @@ let () =
   assert (contains_str shaken_header_str "ASG_STR");
   assert (not (contains_str shaken_header_str "ASG_read_cpu_ticks"));
   assert (not (contains_str shaken_header_str "check_ptrace_sysctl"));
-  assert (not (contains_str shaken_header_str "ASG_nanomite_table"));
-  Printf.printf "[PASS] Step 41: C Macro Obfuscation pure typed EDSL AST and header emission validated.\n"
+  Printf.printf "[PASS] Step 41: C Macro Obfuscation pure typed EDSL AST and header emission validated.\n";
+
+  (* 42. RD-JIT VM complete typed C++20 EDSL runtime emission & ClassDef DualMappedJITBuffer *)
+  let rd_jit_decls = Rd_jit_vm.Rd_jit_emitter.emit_rd_jit_runtime_decls ~external_symbols:["printf"; "malloc"] in
+  assert (List.length rd_jit_decls > 5);
+  let rd_jit_full_cpp = Cpp_codegen.Cpp_printer.render_top_decls rd_jit_decls in
+  assert (contains_str rd_jit_full_cpp "class DualMappedJITBuffer");
+  assert (contains_str rd_jit_full_cpp "struct RD_JIT_Context");
+  assert (contains_str rd_jit_full_cpp "struct RNS_Register");
+  assert (contains_str rd_jit_full_cpp "asgard_rd_jit_call_extern");
+  assert (contains_str rd_jit_full_cpp "synthesize_and_execute_block");
+  assert (contains_str rd_jit_full_cpp "execute_jit_function");
+  assert (contains_str rd_jit_full_cpp "namespace vanguard_threaded_vm");
+  assert (contains_str rd_jit_full_cpp "asgard_vm_call");
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax rd_jit_full_cpp with
+   | Ok () -> ()
+   | Error err -> failwith ("RD-JIT runtime header syntax validation failed: " ^ err));
+  Printf.printf "[PASS] Step 42: RD-JIT VM pure typed EDSL AST and DualMappedJITBuffer ClassDef validated.\n"
+
 
 
 

@@ -115,6 +115,8 @@ let member_method_decl ?(attrs=[]) ?(is_static=false) ?(is_const=false) ?(templa
   MemberMethodDecl { attrs; is_static; is_const; template_params; ret_type; name; params }
 let member_constructor ?(attrs=[]) ?(is_explicit=false) ?(params=[]) ?(init_list=[]) name body : struct_member =
   MemberConstructor { attrs; is_explicit; name; params; init_list; body }
+let member_destructor ?(attrs=[]) name body : struct_member =
+  MemberDestructor { attrs; name; body }
 let member_static_constexpr ty name init : struct_member = MemberStaticConstexpr { ty; name; init }
 let member_public : struct_member = MemberVisibility Public
 let member_private : struct_member = MemberVisibility Private

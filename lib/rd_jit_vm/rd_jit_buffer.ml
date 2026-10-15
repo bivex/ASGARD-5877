@@ -1,3 +1,7 @@
+(* lib/rd_jit_vm/rd_jit_buffer.ml
+   ASGARD-5877: Register-Driven JIT Buffer & Context
+   Typed C++20 / C11 EDSL Declarations *)
+
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
@@ -84,49 +88,27 @@ let rd_jit_context_def () : top_decl =
     ];
   }
 
-let header () =
-  let prefix = {|#pragma once
-// =========================================================================
-// ASGARD-5877: REGISTER-DRIVEN JUST-IN-TIME (RD JIT) VIRTUAL MACHINE
-// Dual-Mapping W^X Memory Manager & Ephemeral Native Code Synthesis
-// =========================================================================
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
-#include <unistd.h>
-#include <iostream>
-#include <vector>
+let dual_mapped_jit_buffer_def () : top_decl =
+  class_def "DualMappedJITBuffer" [
+    member_private;
+    member_field (Ptr Void) "rw_buf";
+    member_field (ConstPtr Void) "rx_buf";
+    member_field SizeT "capacity";
+    member_field Bool "uses_mach_remap";
 
-#include <sys/mman.h>
-#if defined(__APPLE__)
-#include <mach/mach.h>
-#include <mach/vm_map.h>
-#include <pthread.h>
-#include <libkern/OSCacheControl.h>
-#elif defined(__linux__)
-#include <fcntl.h>
-#endif
-
-namespace asgard_rd_jit {
-|} in
-  let ast_part = render_top_decls (
-    rns_moduli_decls () @
-    [ rns_register_def (); rd_jit_context_def () ]
-  ) in
-  prefix ^ "\n" ^ ast_part ^ "\n" ^ {|
-// Dual-Mapping W^X JIT Memory Manager
-class DualMappedJITBuffer {
-private:
-    void* rw_buf;
-    const void* rx_buf;
-    size_t capacity;
-    bool uses_mach_remap;
-
-public:
-    DualMappedJITBuffer(size_t sz = 4096) : capacity(sz), rw_buf(nullptr), rx_buf(nullptr), uses_mach_remap(false) {
-        size_t page_sz = 4096;
-        capacity = (sz + page_sz - 1) & ~(page_sz - 1);
-#if defined(__APPLE__)
+    member_public;
+    member_constructor ~params:[(SizeT, "sz = 4096")]
+      ~init_list:[
+        ("capacity", var "sz");
+        ("rw_buf", nullptr);
+        ("rx_buf", nullptr);
+        ("uses_mach_remap", bool_lit false);
+      ]
+      "DualMappedJITBuffer"
+      [
+        raw "size_t page_sz = 4096;";
+        raw "capacity = (sz + page_sz - 1) & ~(page_sz - 1);";
+        raw {|#if defined(__APPLE__)
         vm_address_t rw_addr = 0;
         if (vm_allocate(mach_task_self(), &rw_addr, capacity, VM_FLAGS_ANYWHERE) == KERN_SUCCESS) {
             vm_address_t rx_addr = 0;
@@ -164,11 +146,11 @@ public:
 #else
         rw_buf = mmap(NULL, capacity, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
         rx_buf = rw_buf;
-#endif
-    }
+#endif|};
+      ];
 
-    ~DualMappedJITBuffer() {
-#if defined(__APPLE__)
+    member_destructor "DualMappedJITBuffer" [
+      raw {|#if defined(__APPLE__)
         if (uses_mach_remap) {
             if (rw_buf) vm_deallocate(mach_task_self(), (vm_address_t)rw_buf, capacity);
             if (rx_buf) vm_deallocate(mach_task_self(), (vm_address_t)rx_buf, capacity);
@@ -176,25 +158,30 @@ public:
         }
 #endif
         if (rw_buf && rw_buf != MAP_FAILED) munmap(rw_buf, capacity);
-        if (rx_buf && rx_buf != rw_buf && rx_buf != MAP_FAILED) munmap((void*)rx_buf, capacity);
-    }
+        if (rx_buf && rx_buf != rw_buf && rx_buf != MAP_FAILED) munmap((void*)rx_buf, capacity);|};
+    ];
 
-    inline void* get_write_ptr() { return rw_buf; }
-    inline const void* get_exec_ptr() { return rx_buf ? rx_buf : rw_buf; }
+    member_method ~attrs:[InlineFn] (Ptr Void) "get_write_ptr" [] [
+      ret (var "rw_buf");
+    ];
 
-    inline void begin_synthesis() {
-        if (!uses_mach_remap && rw_buf) {
+    member_method ~attrs:[InlineFn] (ConstPtr Void) "get_exec_ptr" [] [
+      ret (ternary (ne (var "rx_buf") nullptr) (var "rx_buf") (var "rw_buf"));
+    ];
+
+    member_method ~attrs:[InlineFn] Void "begin_synthesis" [] [
+      raw {|if (!uses_mach_remap && rw_buf) {
 #if defined(__APPLE__) && defined(__aarch64__)
             if (__builtin_available(macOS 11.0, *)) {
                 pthread_jit_write_protect_np(0);
             }
 #endif
             mprotect(rw_buf, capacity, PROT_READ | PROT_WRITE);
-        }
-    }
+        }|};
+    ];
 
-    inline void commit_and_flush(size_t bytes_written) {
-        if (!uses_mach_remap && rw_buf) {
+    member_method ~attrs:[InlineFn] Void "commit_and_flush" [(SizeT, "bytes_written")] [
+      raw {|if (!uses_mach_remap && rw_buf) {
 #if defined(__APPLE__) && defined(__aarch64__)
             if (__builtin_available(macOS 11.0, *)) {
                 pthread_jit_write_protect_np(1);
@@ -207,11 +194,11 @@ public:
         if (rx_buf && bytes_written > 0) sys_icache_invalidate((void*)rx_buf, bytes_written);
 #else
         if (rw_buf && bytes_written > 0) __builtin___clear_cache((char*)rw_buf, (char*)rw_buf + bytes_written);
-#endif
-    }
+#endif|};
+    ];
 
-    inline void atomic_zeroize(size_t bytes) {
-        if (!uses_mach_remap && rw_buf) {
+    member_method ~attrs:[InlineFn] Void "atomic_zeroize" [(SizeT, "bytes")] [
+      raw {|if (!uses_mach_remap && rw_buf) {
 #if defined(__APPLE__) && defined(__aarch64__)
             if (__builtin_available(macOS 11.0, *)) {
                 pthread_jit_write_protect_np(0);
@@ -229,7 +216,39 @@ public:
                 pthread_jit_write_protect_np(1);
             }
 #endif
-        }
-    }
-};
-|}
+        }|};
+    ];
+  ]
+
+let header_decls () : top_decl list =
+  [
+    pragma "once";
+    comment_top "/* ========================================================================= */";
+    comment_top "/* ASGARD-5877: REGISTER-DRIVEN JUST-IN-TIME (RD JIT) VIRTUAL MACHINE       */";
+    comment_top "/* Dual-Mapping W^X Memory Manager & Ephemeral Native Code Synthesis         */";
+    comment_top "/* ========================================================================= */";
+    include_sys "stdint.h";
+    include_sys "stdbool.h";
+    include_sys "string.h";
+    include_sys "unistd.h";
+    include_sys "iostream";
+    include_sys "vector";
+    include_sys "sys/mman.h";
+    preproc_if "defined(__APPLE__)"
+      [
+        include_sys "mach/mach.h";
+        include_sys "mach/vm_map.h";
+        include_sys "pthread.h";
+        include_sys "libkern/OSCacheControl.h";
+      ]
+      ~else_decls:[
+        preproc_if "defined(__linux__)"
+          [ include_sys "fcntl.h" ]
+      ];
+    raw_top "namespace asgard_rd_jit {";
+  ]
+  @ rns_moduli_decls ()
+  @ [ rns_register_def (); rd_jit_context_def (); dual_mapped_jit_buffer_def () ]
+
+let header () : string =
+  render_top_decls (header_decls ())

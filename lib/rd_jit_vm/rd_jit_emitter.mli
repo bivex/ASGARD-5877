@@ -8,6 +8,7 @@ type rd_jit_package = {
   metrics : Native_vm.Metrics.metrics_report;
 }
 
+val emit_rd_jit_runtime_decls : external_symbols:string list -> Cpp_codegen.Cpp_ast.top_decl list
 val emit_rd_jit_runtime_header : external_symbols:string list -> string
 val emit_rd_jit_main_def : unit -> Cpp_codegen.Cpp_ast.top_decl
 
