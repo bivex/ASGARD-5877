@@ -164,8 +164,13 @@ print(f"seed corpus: {k} files")
 PYEOF
 
 # --------------------------------------------------------------------------
+DICT_FILE="$SCRIPT_DIR/diff_fuzz.dict"
 RUN_ARGS=(-max_len="$MAX_LEN" -rss_limit_mb=4096 -print_final_stats=1
-          -artifact_prefix="$ARTIFACT_DIR/" "$CORPUS_DIR")
+          -artifact_prefix="$ARTIFACT_DIR/")
+if [ -f "$DICT_FILE" ]; then
+    RUN_ARGS+=(-dict="$DICT_FILE")
+fi
+RUN_ARGS+=("$CORPUS_DIR")
 if [ -n "$FUZZ_RUNS" ]; then
     RUN_ARGS=(-runs="$FUZZ_RUNS" "${RUN_ARGS[@]}")
     echo "== Running libFuzzer differential campaign: $FUZZ_RUNS iterations =="
