@@ -118,10 +118,6 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     smc_fn_t fn = (smc_fn_t)buf.rx_alias;
     uint32_t result = fn();
 
-#if defined(__APPLE__)
-    pthread_jit_write_protect_np(0);
-#endif
-
     uint64_t t1;
 #if defined(_MSC_VER)
     t1 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
@@ -129,11 +125,15 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t1));
 #endif
 
+#if defined(__APPLE__)
+    pthread_jit_write_protect_np(0);
+#endif
+
     uint32_t expected = 0x5877 + imm_val;
     if (result != expected) {
         penalty ^= 0xBAD5A5A558771337ULL;
     }
-    if ((t1 - t0) > 100000ULL) {
+    if ((t1 - t0) > 5000000ULL) {
         penalty ^= 0xDEAD1337CAFE5877ULL; // JIT/hypervisor emulation slow-path
     }
 #elif defined(__x86_64__) || defined(_M_X64)
@@ -178,7 +178,7 @@ static inline __attribute__((always_inline)) uint64_t execute_introspective_smc_
     if (result != expected) {
         penalty ^= 0xBAD5A5A558771337ULL;
     }
-    if ((t1 - t0) > 100000ULL) {
+    if ((t1 - t0) > 5000000ULL) {
         penalty ^= 0xDEAD1337CAFE5877ULL;
     }
 #else

@@ -31,59 +31,72 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
     if ((cpuInfo[2] >> 31) & 1) {
         penalty ^= 0x5877CAFEBABE1337ULL; // Hypervisor bit detected
     }
-    uint64_t t0 = __rdtsc();
-    for (int i = 0; i < 64; ++i) { YieldProcessor(); }
-    uint64_t t1 = __rdtsc();
-    if ((t1 - t0) > 25000ULL) {
-        penalty ^= 0xDEADBEEF5A5A1337ULL; // Emulation slow-path detected
-    }
 #else
     uint32_t eax = 1, ebx = 0, ecx = 0, edx = 0;
     __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
     if ((ecx >> 31) & 1) {
         penalty ^= 0x5877CAFEBABE1337ULL; // Hypervisor bit detected
     }
-
-    // 2. TSC vs Execution Latency Ratio (QEMU/Unicorn JIT emulators have >50x jitter)
-    uint64_t t0 = __builtin_ia32_rdtsc();
-    for (int i = 0; i < 64; ++i) { __asm__ volatile("nop"); }
-    uint64_t t1 = __builtin_ia32_rdtsc();
-    if ((t1 - t0) > 25000ULL) {
+#endif
+    uint64_t min_dt = ~0ULL;
+    for (int _trial = 0; _trial < 5; ++_trial) {
+#if defined(_MSC_VER)
+        uint64_t t0 = __rdtsc();
+        for (int i = 0; i < 64; ++i) { YieldProcessor(); }
+        uint64_t t1 = __rdtsc();
+#else
+        uint64_t t0 = __builtin_ia32_rdtsc();
+        for (int i = 0; i < 64; ++i) { __asm__ volatile("nop"); }
+        uint64_t t1 = __builtin_ia32_rdtsc();
+#endif
+        uint64_t dt = t1 - t0;
+        if (dt < min_dt) min_dt = dt;
+    }
+    if (min_dt > 100000ULL) {
         penalty ^= 0xDEADBEEF5A5A1337ULL; // Emulation slow-path detected
     }
-#endif
 #if defined(_WIN32)
-    // Secondary differential via QueryPerformanceCounter
+    // Secondary differential via QueryPerformanceCounter (same interval)
     LARGE_INTEGER q0, q1, freq;
     if (QueryPerformanceFrequency(&freq) && QueryPerformanceCounter(&q0)) {
-        for (int i = 0; i < 32; ++i) { YieldProcessor(); }
+        uint64_t t0 = __rdtsc();
+        for (int i = 0; i < 128; ++i) { YieldProcessor(); }
+        uint64_t t1 = __rdtsc();
         QueryPerformanceCounter(&q1);
-        if (q1.QuadPart == q0.QuadPart && (t1 - t0) > 1000ULL) {
+        if (q1.QuadPart == q0.QuadPart && (t1 - t0) > 100000ULL) {
             penalty ^= 0x5877AABBCCDDEEFFULL;
         }
     }
 #endif
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    // ARM64 Virtual Counter Overhead & Multi-Source Jitter Probe
-    uint64_t t0, t1;
+    // ARM64 Virtual Counter Overhead & Multi-Source Jitter Probe (min over 5 trials to avoid scheduler preemption false positives)
+    uint64_t min_dt = ~0ULL;
+    for (int _trial = 0; _trial < 5; ++_trial) {
+        uint64_t t0, t1;
 #if defined(_MSC_VER)
-    t0 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
-    for (int i = 0; i < 64; ++i) { __nop(); }
-    t1 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
+        t0 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
+        for (int i = 0; i < 64; ++i) { __nop(); }
+        t1 = (uint64_t)_ReadStatusReg(ARM64_CNTVCT);
 #else
-    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t0));
-    for (int i = 0; i < 64; ++i) { __asm__ volatile("nop"); }
-    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t1));
+        __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t0));
+        for (int i = 0; i < 64; ++i) { __asm__ volatile("nop"); }
+        __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t1));
 #endif
-    if ((t1 - t0) > 30000ULL) {
+        uint64_t dt = t1 - t0;
+        if (dt < min_dt) min_dt = dt;
+    }
+    if (min_dt > 100000ULL) {
         penalty ^= 0xFEEDFACE5877CAFEULL;
     }
 #if defined(__APPLE__)
-    // Multi-source differential verification (detecting timer spoofing / freeze)
+    // Multi-source differential verification: sample over the same interval to detect frozen/spoofed timer
+    uint64_t t0_diff, t1_diff;
+    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t0_diff));
     uint64_t m0 = mach_absolute_time();
-    for (int i = 0; i < 32; ++i) { __asm__ volatile("nop"); }
+    for (int i = 0; i < 128; ++i) { __asm__ volatile("nop"); }
+    __asm__ volatile("mrs %0, cntvct_el0" : "=r"(t1_diff));
     uint64_t m1 = mach_absolute_time();
-    if (m1 == m0 && (t1 - t0) > 1000ULL) {
+    if ((t1_diff - t0_diff) > 100000ULL && m1 == m0) {
         penalty ^= 0x5877AABBCCDDEEFFULL;
     }
 #endif

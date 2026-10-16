@@ -551,7 +551,7 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
           let m_no_seg = { m with segment = None } in
           (match m_no_seg.base with
           | Some b ->
-              let scratch = pick_scratch_reg d b in
+              let scratch = pick_distinct_scratch ~width:Register.B64 [ d; b ] in
               [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg seg_base_reg };
                 Ir.Alu { op = Ir.Add; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Reg b; set_flags = false } ]
               @ canonicalize_instr (Ir.Mov { dst = Ir.Reg d; src = Ir.Mem { m_no_seg with base = Some scratch } })
@@ -560,7 +560,8 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       | None ->
           match m.index with
           | Some (idx, scale) ->
-              let scratch = pick_scratch_reg d idx in
+              let used = d :: idx :: (match m.base with Some b -> [b] | None -> []) in
+              let scratch = pick_distinct_scratch ~width:Register.B64 used in
               let term = ref [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg idx } ] in
               if scale = 2 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 1L; set_flags = false } ]
               else if scale = 4 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 2L; set_flags = false } ]
@@ -572,7 +573,7 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
               let m_simple = { m with base = Some scratch; index = None } in
               !term @ [ Ir.Mov { dst = Ir.Reg d; src = Ir.Mem m_simple } ]
           | None ->
-              let scratch = pick_scratch_reg d d in
+              let scratch = pick_distinct_scratch ~width:Register.B64 [ d ] in
               [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm m.disp };
                 Ir.Mov { dst = Ir.Reg d; src = Ir.Mem { m with base = Some scratch; disp = 0L } } ])
 
@@ -583,7 +584,7 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
           let m_no_seg = { m with segment = None } in
           (match m_no_seg.base with
           | Some b ->
-              let scratch = pick_distinct_scratch ~width:(Register.get_width s) [ s; b ] in
+              let scratch = pick_distinct_scratch ~width:Register.B64 [ s; b ] in
               [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg seg_base_reg };
                 Ir.Alu { op = Ir.Add; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Reg b; set_flags = false } ]
               @ canonicalize_instr (Ir.Mov { dst = Ir.Mem { m_no_seg with base = Some scratch }; src = Ir.Reg s })
@@ -593,7 +594,7 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
           match m.index with
           | Some (idx, scale) ->
               let used = s :: idx :: (match m.base with Some b -> [b] | None -> []) in
-              let scratch = pick_distinct_scratch ~width:(Register.get_width s) used in
+              let scratch = pick_distinct_scratch ~width:Register.B64 used in
               let term = ref [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg idx } ] in
               if scale = 2 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 1L; set_flags = false } ]
               else if scale = 4 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 2L; set_flags = false } ]
@@ -605,7 +606,7 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
               let m_simple = { m with base = Some scratch; index = None } in
               !term @ [ Ir.Mov { dst = Ir.Mem m_simple; src = Ir.Reg s } ]
           | None ->
-              let scratch = pick_scratch_reg s s in
+              let scratch = pick_distinct_scratch ~width:Register.B64 [ s ] in
               [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm m.disp };
                 Ir.Mov { dst = Ir.Mem { m with base = Some scratch; disp = 0L }; src = Ir.Reg s } ])
 

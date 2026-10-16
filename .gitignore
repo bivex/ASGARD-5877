@@ -45,3 +45,6 @@ examples/diff_fuzz/corpus/
 examples/diff_fuzz/artifacts/
 examples/cpp_types_demo/vm_out/
 examples/cpp_types_demo/native_app
+crash-*
+leak-*
+timeout-*
