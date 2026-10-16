@@ -95,7 +95,30 @@ extern "C" __attribute__((noinline)) uint64_t evaluate_security_rules(
     return result;
 }
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc > 1 && std::string_view(argv[1]) == "--fuzz") {
+        std::string s_uid, s_lvl, s_quota, s_weight, s_act, s_seed;
+        while (std::cin >> s_uid >> s_lvl >> s_quota >> s_weight >> s_act >> s_seed) {
+            uint64_t uid = std::strtoull(s_uid.c_str(), nullptr, 0);
+            uint32_t lvl = static_cast<uint32_t>(std::strtoul(s_lvl.c_str(), nullptr, 0));
+            double quota = std::strtod(s_quota.c_str(), nullptr);
+            double weight = std::strtod(s_weight.c_str(), nullptr);
+            int act = std::atoi(s_act.c_str());
+            uint64_t seed = std::strtoull(s_seed.c_str(), nullptr, 0);
+
+            TokenPayload token {
+                .user_id = uid,
+                .level = static_cast<SecurityLevel>(lvl),
+                .quota = quota,
+                .extra_weight = weight,
+                .is_active = (act != 0)
+            };
+            uint64_t res = evaluate_security_rules(token, seed);
+            std::cout << "0x" << std::hex << res << "\n";
+        }
+        return 0;
+    }
+
     TokenPayload token {
         .user_id = 12345,
         .level = SecurityLevel::Admin,

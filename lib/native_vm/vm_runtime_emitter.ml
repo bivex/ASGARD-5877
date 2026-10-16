@@ -924,7 +924,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     ctx.set_reg(vanguard_threaded_vm::REG_RCX, a3);
     ctx.set_reg(vanguard_threaded_vm::REG_R8,  a4);
     ctx.set_reg(vanguard_threaded_vm::REG_R9,  a5);
-    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
+    ctx.set_reg(vanguard_threaded_vm::REG_RAX, 0);
 #endif|};
         expr_stmt (call "vanguard_threaded_vm::execute_threaded" [var "ctx"; var "bc"; var "len"; bool_lit false]);
         let_u64 "ret_val" (call "ctx.get_rax" []);

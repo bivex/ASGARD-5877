@@ -37,3 +37,11 @@ backup/
 gemini-code-1791925199080.sh
 .promts/audit.md
 random_visa
+
+# Differential fuzzing example: generated artifacts only
+examples/diff_fuzz/vm_out/
+examples/diff_fuzz/build/
+examples/diff_fuzz/corpus/
+examples/diff_fuzz/artifacts/
+examples/cpp_types_demo/vm_out/
+examples/cpp_types_demo/native_app

@@ -582,15 +582,21 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                           Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
                         ]
                     in
+                    let emit_direct_cmp src1 src2 prev_body_rev =
+                      let prev_body = List.rev prev_body_rev in
+                      prev_body @ setup_states @ [
+                        Ir.Cmp { src1; src2 };
+                        Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
+                        Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
+                        Ir.Jmp (Ir.BlockId disp_base_id);
+                      ]
+                    in
                     (match body_rev with
-                    | Ir.Cmp cmp_args :: prev_body_rev ->
-                        let prev_body = List.rev prev_body_rev in
-                        prev_body @ setup_states @ [
-                          Ir.Cmp cmp_args;
-                          Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                          Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
-                          Ir.Jmp (Ir.BlockId disp_base_id);
-                        ]
+                    | Ir.Cmp { src1 = Ir.Reg _ as src1; src2 = Ir.Reg _ as src2 } :: prev_body_rev ->
+                        emit_direct_cmp src1 src2 prev_body_rev
+                    | Ir.Cmp { src1 = Ir.Reg _ as src1; src2 = Ir.Imm imm as src2 } :: prev_body_rev
+                      when imm >= -2147483648L && imm <= 2147483647L ->
+                        emit_direct_cmp src1 src2 prev_body_rev
                     | _ ->
                         body @ [ Ir.Get_flags Register.vtmp3 ] @ setup_states @ [
                           Ir.Set_flags (Ir.Reg Register.vtmp3);

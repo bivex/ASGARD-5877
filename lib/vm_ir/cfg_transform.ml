@@ -16,8 +16,24 @@ let create_decoy_block (max_id : int ref) (rng : Random.State.t) : basic_block =
     ];
   }
 
+let consumes_flags_before_def instrs =
+  let rec check = function
+    | [] -> false
+    | (Jcc _ | Cmov _ | Setcc _ | Ccmp _ | Ccmn _ | Get_flags _ | Alu { op = (Adc | Sbb); _ }) :: _ ->
+        true
+    | (Cmp _ | Test _ | Alu { set_flags = true; _ } | Unary { set_flags = true; _ } | Set_flags _) :: _ ->
+        false
+    | _ :: rest -> check rest
+  in
+  check instrs
+
+let ends_with_jcc (b : basic_block) =
+  match List.rev b.instrs with
+  | Jcc _ :: _ -> true
+  | _ -> false
+
 let split_block_with_opaque (max_id : int ref) (rng : Random.State.t) (b : basic_block) : basic_block list =
-  if List.length b.instrs <= 2 then [ b ]
+  if ends_with_jcc b || List.length b.instrs <= 3 then [ b ]
   else
     let split_pt = List.length b.instrs / 2 in
     let rec split n acc = function
@@ -26,25 +42,28 @@ let split_block_with_opaque (max_id : int ref) (rng : Random.State.t) (b : basic
       | x :: xs -> split (n - 1) (x :: acc) xs
     in
     let (p1, p2) = split split_pt [] b.instrs in
-    incr max_id;
-    let new_b2_id = !max_id in
-    
-    (* Create a decoy target block for the opaque predicate *)
-    let decoy = create_decoy_block max_id rng in
-    
-    (* Generate invariant zero opaque predicate: true -> new_b2_id, false -> decoy.id *)
-    let opaque_branch =
-      Opaque_predicates.generate_zero_predicate
-        ~rng
-        ~scratch:vtmp3
-        ~target_true:(BlockId new_b2_id)
-        ~target_decoy:(BlockId decoy.id)
-    in
-    
-    let b1_instrs = p1 @ opaque_branch in
-    let b1 = { b with instrs = b1_instrs } in
-    let b2 = { id = new_b2_id; label = Printf.sprintf "%s_s%d" b.label new_b2_id; instrs = p2 } in
-    [ b1; b2; decoy ]
+    if consumes_flags_before_def p2 then [ b ]
+    else begin
+      incr max_id;
+      let new_b2_id = !max_id in
+      
+      (* Create a decoy target block for the opaque predicate *)
+      let decoy = create_decoy_block max_id rng in
+      
+      (* Generate invariant zero opaque predicate: true -> new_b2_id, false -> decoy.id *)
+      let opaque_branch =
+        Opaque_predicates.generate_zero_predicate
+          ~rng
+          ~scratch:vtmp3
+          ~target_true:(BlockId new_b2_id)
+          ~target_decoy:(BlockId decoy.id)
+      in
+      
+      let b1_instrs = p1 @ opaque_branch in
+      let b1 = { b with instrs = b1_instrs } in
+      let b2 = { id = new_b2_id; label = Printf.sprintf "%s_s%d" b.label new_b2_id; instrs = p2 } in
+      [ b1; b2; decoy ]
+    end
 
 let transform ~(seed : Seed.t) (f : func) : func =
   let rng = Seed.make_rng (Seed.cfg_seed seed) in
