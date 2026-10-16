@@ -25,16 +25,25 @@ let get_compiler_for_arch arch is_c =
       if is_c then "clang" else "clang++"
 
 let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir : string) : (unit, error) result =
+  let is_cpp =
+    String.ends_with ~suffix:".cpp" c_source || String.ends_with ~suffix:".cc" c_source || String.ends_with ~suffix:".cxx" c_source
+  in
   let target_args =
     match arch with
     | X86_64 -> Cmd.(v "-target" % "x86_64-apple-darwin" % "-masm=intel")
-    | Arm64 -> Cmd.(v "-target" % "arm64-apple-darwin" % "-fno-inline" % "-fno-stack-check" % "-mno-stack-arg-probe" % "-ffixed-x14" % "-ffixed-x15" % "-ffixed-x24" % "-ffixed-x25" % "-ffixed-x26" % "-ffixed-x27" % "-ffixed-x28")
-    | Riscv64 -> Cmd.(v "-target" % "riscv64-linux-gnu" % "-march=rv64gc" % "-mabi=lp64d" % "-fno-inline")
+    | Arm64 -> Cmd.(v "-target" % "arm64-apple-darwin" % "-fno-stack-check" % "-mno-stack-arg-probe" % "-ffixed-x14" % "-ffixed-x15" % "-ffixed-x24" % "-ffixed-x25" % "-ffixed-x26" % "-ffixed-x27" % "-ffixed-x28")
+    | Riscv64 -> Cmd.(v "-target" % "riscv64-linux-gnu" % "-march=rv64gc" % "-mabi=lp64d")
   in
   let inc_args = get_inc_args include_dir c_source in
-  let compiler = get_compiler_for_arch arch true in
+  let compiler = get_compiler_for_arch arch (not is_cpp) in
+  let extra_flags =
+    if is_cpp then
+      Cmd.(v "-std=c++20" % "-fno-jump-tables" % "-mllvm" % "-switch-to-lookup=false")
+    else
+      Cmd.(v "-fno-jump-tables" % "-mllvm" % "-switch-to-lookup=false")
+  in
   let cmd =
-    Cmd.(v compiler % "-S" %% target_args % "-O1" % "-fno-stack-protector" % "-Wno-format-security"
+    Cmd.(v compiler % "-S" %% extra_flags %% target_args % "-O1" % "-fno-stack-protector" % "-Wno-format-security"
          %% inc_args % "-fno-asynchronous-unwind-tables" % c_source % "-o" % out_asm)
   in
   match OS.Cmd.run_status cmd with

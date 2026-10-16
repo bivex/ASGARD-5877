@@ -1648,15 +1648,33 @@ let is_terminator = function
   | Ir.Jmp _ | Ir.Jcc _ | Ir.Ret | Ir.Vm_exit | Ir.Trap _ -> true
   | _ -> false
 
-let resolve_cfg_labels (cfg : Ir.cfg) =
+let resolve_cfg_labels ?(aliases = Hashtbl.create 0) (cfg : Ir.cfg) =
   let label_to_id = Hashtbl.create 16 in
-  Hashtbl.iter (fun id (b : Ir.basic_block) -> Hashtbl.replace label_to_id b.label id) cfg.blocks;
+  let sorted_blocks =
+    List.sort (fun (id1, _) (id2, _) -> compare id1 id2)
+      (Hashtbl.fold (fun id b acc -> (id, b) :: acc) cfg.blocks [])
+  in
+  List.iter
+    (fun (id, (b : Ir.basic_block)) ->
+      if not (Hashtbl.mem label_to_id b.label) then
+        Hashtbl.add label_to_id b.label id)
+    sorted_blocks;
+
+  let rec canonical_label l =
+    match Hashtbl.find_opt aliases l with
+    | Some target when target <> l -> canonical_label target
+    | _ -> l
+  in
 
   let resolve_target = function
     | Ir.Label lbl -> (
-        match Hashtbl.find_opt label_to_id lbl with
+        let canon = canonical_label lbl in
+        match Hashtbl.find_opt label_to_id canon with
         | Some id -> Ir.BlockId id
-        | None -> Ir.Label lbl)
+        | None -> (
+            match Hashtbl.find_opt label_to_id lbl with
+            | Some id -> Ir.BlockId id
+            | None -> Ir.Label canon))
     | other -> other
   in
 
@@ -1711,6 +1729,7 @@ let lift_lines ?(options = default_options) raw_lines =
   let label_is_new = ref true in
   let current_instrs = ref [] in
   let raw_blocks = ref [] in
+  let label_aliases = Hashtbl.create 16 in
 
   let flush_block () =
     if !current_instrs <> [] || !raw_blocks = [] then begin
@@ -1737,7 +1756,9 @@ let lift_lines ?(options = default_options) raw_lines =
         process rest
     | X86_parser.LineLabel lbl :: rest ->
         if is_func_label lbl then func_name := lbl;
-        if !current_instrs <> [] then flush_block ();
+        if !current_instrs <> [] then flush_block ()
+        else if !label_is_new && !current_label <> "" && !current_label <> lbl && !current_label <> options.function_name then
+          Hashtbl.replace label_aliases !current_label lbl;
         current_label := lbl;
         label_is_new := true;
         process rest
@@ -1839,7 +1860,7 @@ let lift_lines ?(options = default_options) raw_lines =
       | _ -> options.function_name
   in
   let func = Ir.make_func ~name:detected_name ~entry_id:0 ~blocks:final_blocks in
-  resolve_cfg_labels func.cfg
+  resolve_cfg_labels ~aliases:label_aliases func.cfg
   |> Result.map (fun resolved_cfg -> { func with cfg = resolved_cfg })
 
 let extract_marked_regions ?(require_markers = false) raw_lines =
@@ -1856,33 +1877,62 @@ let extract_marked_regions ?(require_markers = false) raw_lines =
   else
     let regions = ref [] in
     let current_mode = ref None in
-    let current_lines = ref [] in
+    let fn_lines = ref [] in
     let last_label = ref "main" in
+    let seen_begin = ref false in
+    let seen_end = ref false in
 
     List.iter
       (function
-        | X86_parser.LineLabel lbl ->
-            if !current_mode = None then (
-              if is_func_label lbl then last_label := lbl
-            ) else (
-              current_lines := X86_parser.LineLabel lbl :: !current_lines
-            )
+        | X86_parser.LineLabel lbl when is_func_label lbl ->
+            (match !current_mode with
+            | Some m when !seen_begin ->
+                regions := (m, X86_parser.LineLabel !last_label :: List.rev !fn_lines) :: !regions;
+                current_mode := None;
+                seen_begin := false;
+                seen_end := false;
+                fn_lines := []
+            | _ ->
+                fn_lines := []);
+            last_label := lbl
 
         | X86_parser.LineMarkerBegin mode ->
-            current_mode := Some (mode, !last_label);
-            current_lines := []
-        | X86_parser.LineMarkerEnd -> (
-            match !current_mode with
-            | Some (m, fn_lbl) ->
-                regions := (m, X86_parser.LineLabel fn_lbl :: List.rev !current_lines) :: !regions;
-                current_mode := None;
-                current_lines := []
-            | None -> ())
-        | line ->
-            if !current_mode <> None then
-              current_lines := line :: !current_lines)
+            current_mode := Some mode;
+            seen_begin := true
 
+        | X86_parser.LineMarkerEnd ->
+            seen_end := true
+
+        | X86_parser.LineInstr (mnem, _) as instr ->
+            if !seen_begin then begin
+              if not !seen_end then
+                fn_lines := instr :: !fn_lines
+              else begin
+                fn_lines := instr :: !fn_lines;
+                if mnem = "ret" then begin
+                  (match !current_mode with
+                  | Some m ->
+                      regions := (m, X86_parser.LineLabel !last_label :: List.rev !fn_lines) :: !regions;
+                      current_mode := None;
+                      seen_begin := false;
+                      seen_end := false;
+                      fn_lines := []
+                  | None -> ())
+                end
+              end
+            end else begin
+              fn_lines := instr :: !fn_lines
+            end
+
+        | (X86_parser.LineLabel _ | X86_parser.LineDirective _) as line ->
+            fn_lines := line :: !fn_lines
+        | X86_parser.LineEmpty -> ())
       raw_lines;
+
+    (match !current_mode with
+    | Some m when !seen_begin ->
+        regions := (m, X86_parser.LineLabel !last_label :: List.rev !fn_lines) :: !regions
+    | _ -> ());
 
     if !regions = [] then
       [ (X86_parser.ModeUltra "main", raw_lines) ]

@@ -394,19 +394,19 @@ let is_commutative_alu_op = function
   | Ir.Add | Ir.Adc | Ir.Imul | Ir.Mul | Ir.Mulh | Ir.Imulh | Ir.Xor | Ir.And | Ir.Or -> true
   | _ -> false
 
-let pick_scratch_reg (d : Register.t) (s : Register.t) : Register.t =
-  let d_str = Register.to_string d in
-  let s_str = Register.to_string s in
-  let w = Register.get_width d in
-  let candidates = [ Register.vtmp0; Register.vtmp1; Register.vtmp2 ] in
+let pick_distinct_scratch ?(width = Register.B64) (used : Register.t list) : Register.t =
+  let candidates = [ Register.vtmp0; Register.vtmp1; Register.vtmp2; Register.vtmp3 ] in
   let chosen =
     List.find
       (fun cand ->
         let c_str = Register.to_string cand in
-        c_str <> d_str && c_str <> s_str)
+        not (List.exists (fun u -> Register.to_string u = c_str) used))
       candidates
   in
-  Register.with_width chosen w
+  Register.with_width chosen width
+
+let pick_scratch_reg (d : Register.t) (s : Register.t) : Register.t =
+  pick_distinct_scratch ~width:(Register.get_width d) [ d; s ]
 
 let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
   match instr with
@@ -492,30 +492,34 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       ]
 
   | Ir.Lea { dst; addr } ->
-      let scratch = pick_scratch_reg dst dst in
+      let used =
+        dst :: (match addr.base with Some b -> [b] | None -> [])
+        @ (match addr.index with Some (i, _) -> [i] | None -> [])
+      in
+      let scratch = pick_distinct_scratch ~width:(Register.get_width dst) used in
       let prep = ref [] in
-      (match addr.base with
-      | Some b -> prep := [ Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg b } ]
-      | None ->
-          match addr.index with
-          | Some (idx, scale) ->
-              prep := [ Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg idx } ];
-              if scale = 2 then prep := !prep @ [ Ir.Alu { op = Ir.Shl; dst; src1 = Ir.Reg dst; src2 = Ir.Imm 1L; set_flags = false } ]
-              else if scale = 4 then prep := !prep @ [ Ir.Alu { op = Ir.Shl; dst; src1 = Ir.Reg dst; src2 = Ir.Imm 2L; set_flags = false } ]
-              else if scale = 8 then prep := !prep @ [ Ir.Alu { op = Ir.Shl; dst; src1 = Ir.Reg dst; src2 = Ir.Imm 3L; set_flags = false } ]
-              else if scale <> 1 then prep := !prep @ [ Ir.Alu { op = Ir.Imul; dst; src1 = Ir.Reg dst; src2 = Ir.Imm (Int64.of_int scale); set_flags = false } ]
-          | None -> prep := [ Ir.Mov { dst = Ir.Reg dst; src = Ir.Imm addr.disp } ]);
-      (if addr.base <> None then
-        match addr.index with
-        | Some (idx, scale) ->
-            let term = ref [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg idx } ] in
-            if scale = 2 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 1L; set_flags = false } ]
-            else if scale = 4 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 2L; set_flags = false } ]
-            else if scale = 8 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 3L; set_flags = false } ]
-            else if scale <> 1 then term := !term @ [ Ir.Alu { op = Ir.Imul; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm (Int64.of_int scale); set_flags = false } ];
-            term := !term @ [ Ir.Alu { op = Ir.Add; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false } ];
-            prep := !prep @ !term
-        | None -> ());
+      (match addr.base, addr.index with
+      | Some b, Some (idx, scale) ->
+          let term = ref [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg idx } ] in
+          if scale = 2 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 1L; set_flags = false } ]
+          else if scale = 4 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 2L; set_flags = false } ]
+          else if scale = 8 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 3L; set_flags = false } ]
+          else if scale <> 1 then term := !term @ [ Ir.Alu { op = Ir.Imul; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm (Int64.of_int scale); set_flags = false } ];
+          prep := !term @ [
+            Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg b };
+            Ir.Alu { op = Ir.Add; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
+          ]
+      | Some b, None ->
+          prep := [ Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg b } ]
+      | None, Some (idx, scale) ->
+          let term = ref [ Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg idx } ] in
+          if scale = 2 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst; src1 = Ir.Reg dst; src2 = Ir.Imm 1L; set_flags = false } ]
+          else if scale = 4 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst; src1 = Ir.Reg dst; src2 = Ir.Imm 2L; set_flags = false } ]
+          else if scale = 8 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst; src1 = Ir.Reg dst; src2 = Ir.Imm 3L; set_flags = false } ]
+          else if scale <> 1 then term := !term @ [ Ir.Alu { op = Ir.Imul; dst; src1 = Ir.Reg dst; src2 = Ir.Imm (Int64.of_int scale); set_flags = false } ];
+          prep := !term
+      | None, None ->
+          prep := [ Ir.Mov { dst = Ir.Reg dst; src = Ir.Imm addr.disp } ]);
       if (addr.base <> None || addr.index <> None) && addr.disp <> 0L then
         prep := !prep @ [ Ir.Alu { op = Ir.Add; dst; src1 = Ir.Reg dst; src2 = Ir.Imm addr.disp; set_flags = false } ];
       (match addr.segment with
@@ -564,7 +568,7 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
           let m_no_seg = { m with segment = None } in
           (match m_no_seg.base with
           | Some b ->
-              let scratch = pick_scratch_reg s b in
+              let scratch = pick_distinct_scratch ~width:(Register.get_width s) [ s; b ] in
               [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg seg_base_reg };
                 Ir.Alu { op = Ir.Add; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Reg b; set_flags = false } ]
               @ canonicalize_instr (Ir.Mov { dst = Ir.Mem { m_no_seg with base = Some scratch }; src = Ir.Reg s })
@@ -573,7 +577,8 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       | None ->
           match m.index with
           | Some (idx, scale) ->
-              let scratch = pick_scratch_reg s idx in
+              let used = s :: idx :: (match m.base with Some b -> [b] | None -> []) in
+              let scratch = pick_distinct_scratch ~width:(Register.get_width s) used in
               let term = ref [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg idx } ] in
               if scale = 2 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 1L; set_flags = false } ]
               else if scale = 4 then term := !term @ [ Ir.Alu { op = Ir.Shl; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 2L; set_flags = false } ]

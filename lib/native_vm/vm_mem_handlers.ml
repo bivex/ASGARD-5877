@@ -462,14 +462,34 @@ let emit_mem_and_ffi_handlers ?rng b =
   Buffer.add_string b "        if (sym_ptr) {\n";
   Buffer.add_string b "            uint32_t sym_h = g_external_symbols[sym_idx].hash;\n";
   Buffer.add_string b "            uint32_t sym_ah = g_external_symbols[sym_idx].alt_hash;\n";
-  Buffer.add_string b "            uint64_t a0 = ctx.get_reg(REG_RAX);\n";
-  Buffer.add_string b "            uint64_t a1 = ctx.get_reg(REG_RCX);\n";
-  Buffer.add_string b "            uint64_t a2 = ctx.get_reg(REG_RDX);\n";
-  Buffer.add_string b "            uint64_t a3 = ctx.get_reg(REG_RBX);\n";
-  Buffer.add_string b "            uint64_t a4 = ctx.get_reg(REG_RSI);\n";
-  Buffer.add_string b "            uint64_t a5 = ctx.get_reg(REG_RDI);\n";
-  Buffer.add_string b "            uint64_t a6 = ctx.get_reg(REG_R8);\n";
-  Buffer.add_string b "            uint64_t a7 = ctx.get_reg(REG_R9);\n";
+  Buffer.add_string b "#if defined(ASGARD_GUEST_ARM64)
+            uint64_t a0 = ctx.get_reg(REG_X0);
+            uint64_t a1 = ctx.get_reg(REG_X1);
+            uint64_t a2 = ctx.get_reg(REG_X2);
+            uint64_t a3 = ctx.get_reg(REG_X3);
+            uint64_t a4 = ctx.get_reg(REG_X4);
+            uint64_t a5 = ctx.get_reg(REG_X5);
+            uint64_t a6 = ctx.get_reg(REG_X6);
+            uint64_t a7 = ctx.get_reg(REG_X7);
+#elif defined(ASGARD_GUEST_RISCV64)
+            uint64_t a0 = ctx.get_reg(REG_A0);
+            uint64_t a1 = ctx.get_reg(REG_A1);
+            uint64_t a2 = ctx.get_reg(REG_A2);
+            uint64_t a3 = ctx.get_reg(REG_A3);
+            uint64_t a4 = ctx.get_reg(REG_A4);
+            uint64_t a5 = ctx.get_reg(REG_A5);
+            uint64_t a6 = ctx.get_reg(REG_A6);
+            uint64_t a7 = ctx.get_reg(REG_A7);
+#else
+            uint64_t a0 = ctx.get_reg(REG_RDI) ? ctx.get_reg(REG_RDI) : ctx.get_reg(REG_RAX);
+            uint64_t a1 = ctx.get_reg(REG_RSI);
+            uint64_t a2 = ctx.get_reg(REG_RDX);
+            uint64_t a3 = ctx.get_reg(REG_RCX);
+            uint64_t a4 = ctx.get_reg(REG_R8);
+            uint64_t a5 = ctx.get_reg(REG_R9);
+            uint64_t a6 = ctx.get_reg(REG_RAX);
+            uint64_t a7 = ctx.get_reg(REG_RBX);
+#endif\n";
   Buffer.add_string b "            const uint64_t* stk = reinterpret_cast<const uint64_t*>(ctx.get_reg(REG_RSP));\n";
   Buffer.add_string b "            uint64_t ret_val = 0;\n";
   Buffer.add_string b "            if (sym_h == 0x42FCF5CFU || sym_ah == 0x42FCF5CFU || sym_h == 0x07554ACDU || sym_ah == 0x07554ACDU || sym_h == 0xE76FB4AAU || sym_ah == 0xE76FB4AAU) {\n";

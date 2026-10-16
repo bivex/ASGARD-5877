@@ -24,8 +24,11 @@ let run
     Error (Printf.sprintf "Input file not found: %s" input_file)
   else
     let () = if not (Sys.file_exists out_dir) then Sys.mkdir out_dir 0o755 in
+    let is_cpp_src =
+      String.ends_with ~suffix:".cpp" input_file || String.ends_with ~suffix:".cc" input_file || String.ends_with ~suffix:".cxx" input_file
+    in
     let is_c_src =
-      String.ends_with ~suffix:".c" input_file || String.ends_with ~suffix:".cpp" input_file
+      String.ends_with ~suffix:".c" input_file || is_cpp_src
     in
 
     (* 1. Optional C/C++ macro pre-transformation and clang frontend *)
@@ -38,7 +41,8 @@ let run
               if is_c_macro_enabled config then
                 match c_macro_obfuscator with
                 | Some (module C : C_macro_obfuscator) ->
-                    let obf_c_path = Filename.concat out_dir "app_obf.c" in
+                    let obf_name = if is_cpp_src then "app_obf.cpp" else "app_obf.c" in
+                    let obf_c_path = Filename.concat out_dir obf_name in
                     (match C.transform_source ~config ~in_file:input_file ~out_c_file:obf_c_path ~out_header_file:hdr_path ~rng with
                     | Ok () -> ()
                     | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
@@ -184,7 +188,8 @@ let run
             if is_c_src then begin
               match trampoline_engine with
               | Some (module TE : Trampoline_engine) ->
-                  let obf_c_path = Filename.concat out_dir "app_obf.c" in
+                  let obf_name = if is_cpp_src then "app_obf.cpp" else "app_obf.c" in
+                  let obf_c_path = Filename.concat out_dir obf_name in
                   let c_src_path = if Sys.file_exists obf_c_path then obf_c_path else input_file in
                   let ic_c = open_in c_src_path in
                   let c_len = in_channel_length ic_c in
@@ -204,7 +209,7 @@ let run
                     let virt_cpp = Filename.concat out_dir "app_virtualized.cpp" in
                     let comp_src =
                       if is_c_src && Sys.file_exists virt_cpp then virt_cpp
-                      else if is_c_src then Filename.concat out_dir "app_obf.c"
+                      else if is_c_src then Filename.concat out_dir (if is_cpp_src then "app_obf.cpp" else "app_obf.c")
                       else runner_path
                     in
                     let is_c_target = is_c_src && not (String.ends_with ~suffix:".cpp" comp_src) in

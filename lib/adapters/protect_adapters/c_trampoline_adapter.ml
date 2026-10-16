@@ -194,7 +194,11 @@ let embed_vm_trampoline
                       let norm = String.map (fun c -> if is_space c then ' ' else c) prefix in
                       let tokens = String.split_on_char ' ' norm |> List.map String.trim |> List.filter (fun s -> s <> "") in
                       let clean_type =
-                        List.filter (fun t -> t <> "static" && t <> "inline" && t <> "__inline__" && t <> "extern" && not (String.starts_with ~prefix:"__" t)) tokens
+                        List.filter (fun t ->
+                          t <> "static" && t <> "inline" && t <> "__inline__" && t <> "extern"
+                          && t <> "\"C\"" && t <> "\"C++\"" && t <> "constexpr" && t <> "consteval"
+                          && not (String.starts_with ~prefix:"__" t)
+                        ) tokens
                         |> String.concat " "
                       in
                       let param_str = String.sub c_src (lparen + 1) (rparen - lparen - 1) |> String.trim in
@@ -206,12 +210,20 @@ let embed_vm_trampoline
                             (fun p ->
                               let p_no_default = match String.index_opt p '=' with Some i -> String.sub p 0 i | None -> p in
                               let p_no_array = match String.index_opt p_no_default '[' with Some i -> String.sub p_no_default 0 i | None -> p_no_default in
+                              let is_ref = String.contains p_no_default '&' in
+                              let is_ptr = String.contains p_no_default '*' in
                               let normalized = String.map (fun c -> if is_space c then ' ' else c) p_no_array in
-                              let tokens = String.split_on_char ' ' normalized |> List.map String.trim |> List.filter (fun s -> s <> "" && s <> "*" && s <> "const" && s <> "volatile") in
+                              let tokens = String.split_on_char ' ' normalized |> List.map String.trim |> List.filter (fun s -> s <> "" && s <> "*" && s <> "&" && s <> "const" && s <> "volatile") in
                               match List.rev tokens with
                               | last :: _ ->
-                                  let clean = String.trim (String.map (function '*' -> ' ' | c -> c) last) in
-                                  if clean = "" then None else Some (Printf.sprintf "(uint64_t)%s" clean)
+                                  let clean = String.trim (String.map (function '*' | '&' -> ' ' | c -> c) last) in
+                                  if clean = "" then None
+                                  else if is_ref then
+                                    Some (Printf.sprintf "(uint64_t)(uintptr_t)&%s" clean)
+                                  else if is_ptr then
+                                    Some (Printf.sprintf "(uint64_t)(uintptr_t)%s" clean)
+                                  else
+                                    Some (Printf.sprintf "(uint64_t)%s" clean)
                               | [] -> None)
                             raw_params
                           in

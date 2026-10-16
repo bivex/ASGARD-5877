@@ -548,7 +548,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     if (sym_ptr) return sym_ptr;
 #endif
 
-    char dec_name[64];
+    char dec_name[512];
     asg_decrypt_sym(sym, dec_name, sizeof(dec_name));
     if (!sym_ptr) sym_ptr = asgard_resolve_constant_name(dec_name);
 
@@ -560,7 +560,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
             sym_ptr = dyn_dlsym((void*)-2, dec_name);
             if (!sym_ptr && dec_name[0] == '_') sym_ptr = dyn_dlsym((void*)-2, dec_name + 1);
             if (!sym_ptr) {
-                char alt[66];
+                char alt[514];
                 alt[0] = '_';
                 memcpy(alt + 1, dec_name, sym->len + 1);
                 sym_ptr = dyn_dlsym((void*)-2, alt);
@@ -573,7 +573,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         sym_ptr = (void*)GetProcAddress(hMain, dec_name);
         if (!sym_ptr && dec_name[0] == '_') sym_ptr = (void*)GetProcAddress(hMain, dec_name + 1);
         if (!sym_ptr) {
-            char alt[66];
+            char alt[514];
             alt[0] = '_';
             memcpy(alt + 1, dec_name, sym->len + 1);
             sym_ptr = (void*)GetProcAddress(hMain, alt);
@@ -584,7 +584,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         sym_ptr = dlsym(RTLD_DEFAULT, dec_name);
         if (!sym_ptr && dec_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, dec_name + 1);
         if (!sym_ptr) {
-            char alt[66];
+            char alt[514];
             alt[0] = '_';
             memcpy(alt + 1, dec_name, sym->len + 1);
             sym_ptr = dlsym(RTLD_DEFAULT, alt);
@@ -896,16 +896,17 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, 1048576)) "host_stack";
         expr_stmt (call "ctx.set_reg" [var "vanguard_threaded_vm::REG_RSP"; c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L)]);
         expr_stmt (call "ctx.set_reg" [var "vanguard_threaded_vm::REG_RBP"; c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L)]);
-        raw {|#if defined(__x86_64__) || defined(_M_X64)
-    // System V / Windows x64 ABI argument registers
-    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a0);
-    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a1);
-    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a2);
-    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a3);
-    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a4);
-    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a5);
+        raw {|#if defined(ASGARD_GUEST_ARM64)
+    // ARM64 guest calling convention mapping (x0->RAX, x1->RCX, x2->RDX, x3->RBX, x4->RSI, x5->RDI, x6->R8, x7->R9)
     ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
-#elif defined(__riscv) || defined(__riscv__)
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a1);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, a2);
+    ctx.set_reg(vanguard_threaded_vm::REG_RBX, a3);
+    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a4);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a5);
+    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a6);
+    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a7);
+#elif defined(ASGARD_GUEST_RISCV64)
     // RISC-V LP64 ABI argument mapping (a0->RAX, a1->RDX, a2->RCX, a3->RSI, a4->RDI, a5->R8, a6->R9, a7->R12)
     ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
     ctx.set_reg(vanguard_threaded_vm::REG_RDX, a1);
@@ -916,15 +917,14 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     ctx.set_reg(vanguard_threaded_vm::REG_R9,  a6);
     ctx.set_reg(vanguard_threaded_vm::REG_R12, a7);
 #else
-    // ARM64 calling convention mapping (x0->RAX, x1->RCX, x2->RDX, x3->RBX, x4->RSI, x5->RDI, x6->R8, x7->R9)
-    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
-    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a1);
+    // x86_64 guest calling convention (System V / Windows x64 ABI argument registers)
+    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a0);
+    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a1);
     ctx.set_reg(vanguard_threaded_vm::REG_RDX, a2);
-    ctx.set_reg(vanguard_threaded_vm::REG_RBX, a3);
-    ctx.set_reg(vanguard_threaded_vm::REG_RSI, a4);
-    ctx.set_reg(vanguard_threaded_vm::REG_RDI, a5);
-    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a6);
-    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a7);
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, a3);
+    ctx.set_reg(vanguard_threaded_vm::REG_R8,  a4);
+    ctx.set_reg(vanguard_threaded_vm::REG_R9,  a5);
+    ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
 #endif|};
         expr_stmt (call "vanguard_threaded_vm::execute_threaded" [var "ctx"; var "bc"; var "len"; bool_lit false]);
         let_u64 "ret_val" (call "ctx.get_rax" []);

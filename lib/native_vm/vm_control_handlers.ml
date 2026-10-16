@@ -217,20 +217,27 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
 
   (* Helper for indirect ABI dispatch on x86_64 vs generic *)
   let indirect_abi_args = [
-    raw "#if defined(__x86_64__) || defined(_M_X64)";
+    raw "#if defined(ASGARD_GUEST_ARM64)";
+    let_u64 "a0" (call "ctx.get_reg" [var "REG_X0"]);
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_X1"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_X2"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_X3"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_X4"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_X5"]);
+    raw "#elif defined(ASGARD_GUEST_RISCV64)";
+    let_u64 "a0" (call "ctx.get_reg" [var "REG_A0"]);
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_A1"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_A2"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_A3"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_A4"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_A5"]);
+    raw "#else";
     let_u64 "a0" (call "ctx.get_reg" [var "REG_RDI"]);
     let_u64 "a1" (call "ctx.get_reg" [var "REG_RSI"]);
     let_u64 "a2" (call "ctx.get_reg" [var "REG_RDX"]);
     let_u64 "a3" (call "ctx.get_reg" [var "REG_RCX"]);
     let_u64 "a4" (call "ctx.get_reg" [var "REG_R8"]);
     let_u64 "a5" (call "ctx.get_reg" [var "REG_R9"]);
-    raw "#else";
-    let_u64 "a0" (call "ctx.get_reg" [var "REG_RAX"]);
-    let_u64 "a1" (call "ctx.get_reg" [var "REG_RCX"]);
-    let_u64 "a2" (call "ctx.get_reg" [var "REG_RDX"]);
-    let_u64 "a3" (call "ctx.get_reg" [var "REG_RBX"]);
-    let_u64 "a4" (call "ctx.get_reg" [var "REG_RSI"]);
-    let_u64 "a5" (call "ctx.get_reg" [var "REG_RDI"]);
     raw "#endif";
   ] in
   let emit_indirect_call_stmts target_e ~is_jump =

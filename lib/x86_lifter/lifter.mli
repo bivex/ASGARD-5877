@@ -22,5 +22,5 @@ val extract_marked_regions :
 
 
 (** Resolve label references in targets to explicit BlockId references. *)
-val resolve_cfg_labels : Ir.cfg -> (Ir.cfg, string) result
+val resolve_cfg_labels : ?aliases:(string, string) Hashtbl.t -> Ir.cfg -> (Ir.cfg, string) result
 

@@ -1,6 +1,28 @@
 open C_expr_lexer
 open C_expr_parser
 
+let can_rewrite_range toks start_idx end_idx n =
+  if start_idx >= end_idx || start_idx >= n then false
+  else
+    let (first_tok, _, _) = toks.(start_idx) in
+    match first_tok with
+    | TLBracket -> false (* C++ lambda introduction [&] or attribute [[...]] *)
+    | _ ->
+        let has_braces = ref false in
+        for i = start_idx to end_idx - 1 do
+          let (t, _, _) = toks.(i) in
+          match t with
+          | TLBrace | TRBrace -> has_braces := true
+          | _ -> ()
+        done;
+        if !has_braces then false
+        else if end_idx < n then
+          let (tok_after, _, _) = toks.(end_idx) in
+          match tok_after with
+          | TSemicolon | TComma | TRParen | TRBracket -> true
+          | _ -> false
+        else true
+
 (** Detect if we're at a position that could start an expression statement.
     Rewrites expressions on the RHS of assignments and in return statements.
     Everything else is copied verbatim. *)
@@ -40,7 +62,7 @@ let rewrite_arithmetic_in_source ~prefix ~depth src =
         let ti_before_expr = !ti in
         let (expr, ti_after) = parse_expr toks !ti in
         let raw_end = tok_start ti_after in
-        if ti_after > ti_before_expr then begin
+        if ti_after > ti_before_expr && can_rewrite_range toks ti_before_expr ti_after n then begin
           let ws = String.sub src te (expr_char_start - te) in
           let ws_trimmed =
             String.concat "" (List.filter_map (fun c ->
@@ -64,7 +86,7 @@ let rewrite_arithmetic_in_source ~prefix ~depth src =
         let ti_before_expr = !ti in
         let (expr, ti_after) = parse_expr toks !ti in
         let raw_end = tok_start ti_after in
-        if ti_after > ti_before_expr then begin
+        if ti_after > ti_before_expr && can_rewrite_range toks ti_before_expr ti_after n then begin
           let ws = String.sub src te (expr_char_start - te) in
           Buffer.add_string out ws;
           emitted_char_pos := expr_char_start;
