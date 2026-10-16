@@ -66,10 +66,41 @@ fi
 "$VM_OUT/protected_proj"
 
 # --------------------------------------------------------------------------
+# Locate a clang++ compiler that has libFuzzer support.
+# Apple Clang in Xcode does not ship libclang_rt.fuzzer_osx.a.
+# Homebrew LLVM (e.g. llvm@21 or llvm) includes it out of the box.
+find_fuzzer_compiler() {
+    if [ -n "${CLANGXX:-}" ] && command -v "$CLANGXX" >/dev/null 2>&1; then
+        echo "$CLANGXX"
+        return 0
+    fi
+    for cand in \
+        "/opt/homebrew/opt/llvm@21/bin/clang++" \
+        "/opt/homebrew/opt/llvm/bin/clang++" \
+        "$(brew --prefix llvm@21 2>/dev/null)/bin/clang++" \
+        "$(brew --prefix llvm 2>/dev/null)/bin/clang++" \
+        "/usr/local/opt/llvm/bin/clang++"; do
+        if [ -x "$cand" ]; then
+            echo "$cand"
+            return 0
+        fi
+    done
+    echo "clang++"
+}
+
+FUZZ_CXX="$(find_fuzzer_compiler)"
+
+if ! echo 'extern "C" int LLVMFuzzerTestOneInput(const unsigned char *d, unsigned long s) { return 0; }' | "$FUZZ_CXX" -fsanitize=fuzzer -x c++ - -o /dev/null 2>/dev/null; then
+    echo "ERROR: $FUZZ_CXX does not have libFuzzer support (libclang_rt.fuzzer_osx.a is missing in Apple Clang)." >&2
+    echo "Please install LLVM via Homebrew: brew install llvm@21" >&2
+    echo "or set CLANGXX=/path/to/clang++" >&2
+    exit 1
+fi
+
 FUZZ_FLAGS=(-fsanitize=fuzzer-no-link -ffp-contract=off -g)
 
-echo "== [2/4] Compiling native golden TU =="
-clang++ -std=c++20 -O1 "${FUZZ_FLAGS[@]}" \
+echo "== [2/4] Compiling native golden TU using $FUZZ_CXX =="
+"$FUZZ_CXX" -std=c++20 -O1 "${FUZZ_FLAGS[@]}" \
     -I"$REPO_ROOT/examples" \
     -Dasgard_fuzz_compute=asgard_fuzz_compute_native \
     -Dasgard_fuzz_mix=asgard_fuzz_mix_native \
@@ -77,18 +108,18 @@ clang++ -std=c++20 -O1 "${FUZZ_FLAGS[@]}" \
     -o "$BUILD_DIR/compute_core_native.o"
 
 echo "== [3/4] Compiling VM trampoline TU + fuzz driver =="
-clang++ -std=c++20 -O1 "${FUZZ_FLAGS[@]}" \
+"$FUZZ_CXX" -std=c++20 -O1 "${FUZZ_FLAGS[@]}" \
     -I"$VM_HDR_DIR" -I"$SCRIPT_DIR/proj_src" \
     -c "$VIRT_TU" \
     -o "$BUILD_DIR/compute_core_vm.o"
 
-clang++ -std=c++20 -O1 "${FUZZ_FLAGS[@]}" \
+"$FUZZ_CXX" -std=c++20 -O1 "${FUZZ_FLAGS[@]}" \
     -I"$SCRIPT_DIR" \
     -c "$SCRIPT_DIR/fuzz_driver.cpp" \
     -o "$BUILD_DIR/fuzz_driver.o"
 
 echo "== [4/4] Linking differential fuzzer =="
-clang++ -fsanitize=fuzzer \
+"$FUZZ_CXX" -fsanitize=fuzzer \
     "$BUILD_DIR/compute_core_native.o" \
     "$BUILD_DIR/compute_core_vm.o" \
     "$BUILD_DIR/fuzz_driver.o" \
@@ -114,7 +145,7 @@ weights = [0.0, 1.0, -1.0, 2.0, 0.5, -2.5, 1e-300, 3.5]
 k = 0
 def emit(a, b, c, d, e, flags, blob):
     global k
-    payload = struct.pack('<QiQddB7x', a, b & 0xFFFFFFFF, c, d, e, flags)
+    payload = struct.pack('<QIIddB7x', a, b & 0xFFFFFFFF, c, d, e, flags)
     with open(os.path.join(out, f"seed_{k:05d}"), "wb") as fh:
         fh.write(payload + blob)
     k += 1
