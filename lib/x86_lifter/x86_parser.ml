@@ -6,6 +6,7 @@ type raw_mem = {
   disp : int64;
   width : Register.width;
   segment : Ir.segment option;
+  symbol : string option;
 }
 
 type raw_op =
@@ -127,6 +128,7 @@ let parse_mem_operand body default_width =
     let base_reg = ref None in
     let index_reg = ref None in
     let total_disp = ref 0L in
+    let symbol_ref = ref None in
     let err = ref None in
 
     List.iter
@@ -164,6 +166,7 @@ let parse_mem_operand body default_width =
                 total_disp := Int64.add !total_disp signed_v
               with _ ->
                 (* Symbolic displacement like [rip + _symbol]: accept as label reference *)
+                symbol_ref := Some (String.lowercase_ascii tok);
                 total_disp := Int64.add !total_disp 0L))
       (List.rev !tokens);
 
@@ -177,6 +180,7 @@ let parse_mem_operand body default_width =
             disp = !total_disp;
             width = default_width;
             segment;
+            symbol = !symbol_ref;
           }
 
 let parse_operand str default_width =
@@ -262,6 +266,9 @@ let is_string_instruction s =
 let parse_line line =
   let clean = strip_comments line in
   if clean = "" then Ok LineEmpty
+  else if String.ends_with ~suffix:":" clean then
+    let lbl = String.lowercase_ascii (String.trim (String.sub clean 0 (String.length clean - 1))) in
+    Ok (LineLabel lbl)
   else if is_asgard_marker clean then begin
     let norm = normalize_alphas clean in
     (* Marker detection *)
@@ -277,11 +284,8 @@ let parse_line line =
     else
       Ok (LineDirective clean)
   end
-  else if String.starts_with ~prefix:"." clean && not (String.contains clean ':') && not (String.starts_with ~prefix:".L" clean) && not (String.starts_with ~prefix:".l" clean) then
+  else if String.starts_with ~prefix:"." clean && not (String.contains clean ':') then
     Ok (LineDirective clean)
-  else if String.ends_with ~suffix:":" clean then
-    let lbl = String.lowercase_ascii (String.trim (String.sub clean 0 (String.length clean - 1))) in
-    Ok (LineLabel lbl)
   else
     (* Instruction line *)
     let rec strip_prefixes s =

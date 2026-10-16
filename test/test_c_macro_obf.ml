@@ -307,6 +307,67 @@ let test_arithmetic_rewriter () =
     Alcotest.(check string) "arith results correct"
       "1379 1295 1299 40 1339" line)
 
+let test_arithmetic_rewriter_fp_taint () =
+  (* MBA identities are integer-only; FP-tainted expressions must be
+     left verbatim or the obfuscated TU does not compile (double ^ double). *)
+  let src_fp = {|
+    #include <stdint.h>
+    struct P { double d; double e; int i; };
+    double kernel(const struct P* p) {
+        double q = p->d * p->e;
+        double q2 = q + p->d;
+        double lit = 1.5 + q2;
+        double casted = (double)(p->i) + q;
+        double via_auto = 0.0;
+        via_auto = lit;
+        double chained = via_auto + 2.5;
+        uint64_t ints = p->i + 3;
+        uint64_t mix = ints ^ (uint64_t)p->i;
+        return chained + casted + (double)mix;
+    }
+  |} in
+  let rewritten = C_macro_obf.rewrite_arithmetic_in_source
+    ~prefix:"ASG_" ~depth:2 src_fp in
+  Alcotest.(check bool) "no MBA on double+double" false (contains_sub rewritten "MBA_ADD(q, p->d)");
+  Alcotest.(check bool) "no MBA on FP literal add" false (contains_sub rewritten "MBA_ADD(1.5");
+  Alcotest.(check bool) "no MBA on FP cast add" false (contains_sub rewritten "MBA_ADD((double)");
+  Alcotest.(check bool) "no MBA on auto-chained FP" false (contains_sub rewritten "MBA_ADD(via_auto");
+  Alcotest.(check bool) "int add still rewritten" true (contains_sub rewritten "MBA_ADD");
+  (* sanity: FP binary ops survive verbatim somewhere *)
+  Alcotest.(check bool) "plain FP add preserved" true (contains_sub rewritten "q + p->d");
+
+  (* E2E: transform + compile + run a C++ TU full of FP arithmetic *)
+  Test_helpers.with_temp_dir (fun tmp_dir ->
+    let in_cpp  = Filename.concat tmp_dir "fp_kernel.cpp" in
+    let out_cpp = Filename.concat tmp_dir "fp_obf.cpp" in
+    let hdr     = Filename.concat tmp_dir "asgard_obf.h" in
+    let bin     = Filename.concat tmp_dir "fp_bin" in
+    let src =
+      "#include <cstdio>\n" ^
+      "#include <cstdint>\n" ^
+      "struct P { double d; double e; int i; };\n" ^
+      "int main() {\n" ^
+      "    P p = { 250.5, 2.0, 7 };\n" ^
+      "    double q  = p.d * p.e;\n" ^
+      "    double q2 = q + p.d;\n" ^
+      "    double q3 = q2 - p.e;\n" ^
+      "    uint64_t m = (uint64_t)(p.i + 3) ^ 0x1337ULL;\n" ^
+      "    printf(\"%.3f %.3f %.3f %llu\\n\", q, q2, q3, (unsigned long long)m);\n" ^
+      "    return 0;\n" ^
+      "}\n"
+    in
+    Test_helpers.write_file_string in_cpp src;
+    let cfg = { C_macro_obf.default_config with obfuscate_arithmetic = true; mba_depth = 2 } in
+    let res = C_macro_obf.transform_file ~config:cfg ~in_file:in_cpp ~out_file:out_cpp
+                ~header_file:(Some hdr) () in
+    Alcotest.(check (result unit string)) "fp transform ok" (Ok ()) res;
+    let comp = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir out_cpp bin in
+    Alcotest.(check int) "fp compile ok (regression: MBA on doubles)" 0 (Sys.command comp);
+    let log = Filename.concat tmp_dir "fp_out.log" in
+    Alcotest.(check int) "fp run ok" 0 (Sys.command (bin ^ " > " ^ log));
+    let line = List.hd (String.split_on_char '\n' (Test_helpers.read_file_string log)) in
+    Alcotest.(check string) "fp results correct" "501.000 751.500 749.500 4925" line)
+
 let test_header_tree_shaking () =
   let src_minimal = {|
     #include "asgard_obf.h"
@@ -489,6 +550,7 @@ let tests = [
   ("nanomites_dispatching_e2e", `Quick, test_nanomites_dispatching_e2e);
   ("nanomite_auto_lift_e2e", `Quick, test_nanomite_auto_lift_e2e);
   ("arithmetic_ast_rewriter_e2e", `Quick, test_arithmetic_rewriter);
+  ("arithmetic_rewriter_fp_taint", `Quick, test_arithmetic_rewriter_fp_taint);
   ("escapes_and_special_chars", `Quick, test_escapes_and_special_chars);
   ("trampoline_signatures_and_braces", `Quick, test_trampoline_signatures_and_braces);
   ("trampoline_multi_functions", `Quick, test_trampoline_multi_functions);

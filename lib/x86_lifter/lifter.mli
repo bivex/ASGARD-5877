@@ -3,9 +3,13 @@ open Vm_ir
 (** Lifter configuration options *)
 type options = {
   function_name : string;
+  const_pool : (string, bytes) Hashtbl.t option;
 }
 
 val default_options : options
+
+(** Extract literal/constant definitions (.quad, .long, etc.) into a byte map *)
+val extract_const_pool : X86_parser.raw_line list -> (string, bytes) Hashtbl.t
 
 (** Lift an Intel-syntax x86_64 assembly string into a Turing-complete VM-IR function. *)
 val lift_function : ?options:options -> string -> (Ir.func, string) result

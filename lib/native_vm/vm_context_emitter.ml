@@ -102,6 +102,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field Bool "zf";
     member_field Bool "sf";
     member_field Bool "of";
+    member_field Bool "pf";
     member_field Bool "trapped";
     member_field SizeT "executed_instructions";
     member_field ~init:(var "CANARY_VAL") UInt64 "canary_tail";
@@ -131,6 +132,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       (var "sp" := u64 0L);
       (var "cf" := bool_lit false); (var "zf" := bool_lit false);
       (var "sf" := bool_lit false); (var "of" := bool_lit false);
+      (var "pf" := bool_lit false);
       (var "trapped" := bool_lit false);
       (var "executed_instructions" := u64 0L);
       (var "canary_head" := var "CANARY_VAL");
@@ -365,7 +367,8 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         (i32 11, [ ret (log_not (var "ctx.zf") &&~ (var "ctx.sf" ==~ var "ctx.of")) ]);
         (i32 12, [ ret (var "ctx.of") ]);
         (i32 13, [ ret (log_not (var "ctx.of")) ]);
-        (i32 14, [ ret (bool_lit true) ]);
+        (i32 14, [ ret (var "ctx.pf") ]);
+        (i32 15, [ ret (log_not (var "ctx.pf")) ]);
       ] (Some [ ret (bool_lit true) ]);
     ];
   } in

@@ -43,6 +43,90 @@ let rec print_expr ~prefix ~depth ~mba expr =
       end else
         sub a ^ " " ^ op ^ " " ^ sub b
 
+(* ─── Floating-point taint analysis ────────────────────────────────────────
+   The MBA identities above are integer-only ((a^b) + 2*(a&b) etc. do not
+   compile for double/float operands), but the token-level rewriter has no
+   type information. expr_may_be_fp is a deliberately conservative predicate:
+   "true" means "some leaf looks floating-point", and the rewriter then skips
+   the MBA substitution for the whole expression. A false positive merely
+   loses obfuscation on that expression; a rewrite of FP operands would not
+   compile at all. Leaves considered FP-tainted:
+     - literals with a '.', an exponent, or an f/F suffix (non-hex)
+     - casts to float/double/long double
+     - identifiers declared with an FP type anywhere in the translation unit
+       (variables, struct/class fields, parameters -- collected by the caller)
+     - field selectors whose member name is FP-declared in the TU
+     - calls to the usual math builtins (fabs, sqrt, pow, ...)              *)
+let is_float_literal (s : string) : bool =
+  let len = String.length s in
+  let is_hex = len > 2 && s.[0] = '0' && (s.[1] = 'x' || s.[1] = 'X') in
+  if is_hex then false
+  else begin
+    let has_dot = try ignore (String.index s '.'); true with Not_found -> false in
+    let has_exp =
+      let rec loop i =
+        if i <= 0 then false
+        else if (s.[i] = 'e' || s.[i] = 'E') && i + 1 < len
+                && (let p = s.[i-1] in p >= '0' && p <= '9')
+                && (let n = s.[i+1] in (n >= '0' && n <= '9') || n = '+' || n = '-')
+        then true
+        else loop (i - 1)
+      in
+      loop (len - 1)
+    in
+    let has_f_suffix = len > 1 && (s.[len-1] = 'f' || s.[len-1] = 'F') in
+    has_dot || has_exp || has_f_suffix
+  end
+
+let contains_substring (hay : string) (needle : string) : bool =
+  let hl = String.length hay and nl = String.length needle in
+  if nl = 0 then true
+  else begin
+    let rec loop i =
+      if i + nl > hl then false
+      else if String.sub hay i nl = needle then true
+      else loop (i + 1)
+    in
+    loop 0
+  end
+
+let math_builtin_returns_fp (name : string) : bool =
+  match name with
+  | "fabs" | "fabsf" | "fabsl" | "sqrt" | "sqrtf" | "sqrtl"
+  | "pow" | "powf" | "powl" | "log" | "logf" | "logl"
+  | "exp" | "expf" | "expl" | "sin" | "sinf" | "sinl"
+  | "cos" | "cosf" | "cosl" | "tan" | "tanf" | "tanl"
+  | "atan" | "atanf" | "atanl" | "atan2" | "atan2f" | "atan2l"
+  | "floor" | "floorf" | "floorl" | "ceil" | "ceilf" | "ceill"
+  | "round" | "roundf" | "roundl" | "fmod" | "fmodf" | "fmodl"
+  | "strtod" | "strtof" | "atof" -> true
+  | _ -> false
+
+let rec expr_may_be_fp (fp_names : (string, unit) Hashtbl.t) (expr : c_expr) : bool =
+  match expr with
+  | ELit s -> is_float_literal s
+  | EIdent s -> Hashtbl.mem fp_names s
+  | EParen e | EPostfix (e, _) | EPrefix (_, e) ->
+      expr_may_be_fp fp_names e
+  | ECast (ty, e) ->
+      let ty_fp = contains_substring ty "float" || contains_substring ty "double" in
+      ty_fp || expr_may_be_fp fp_names e
+  | ECall (f, args) ->
+      (match f with
+       | EIdent name when math_builtin_returns_fp name -> true
+       | EField (_, name, _) when math_builtin_returns_fp name -> true
+       | _ -> expr_may_be_fp fp_names f)
+      || List.exists (expr_may_be_fp fp_names) args
+  | EIndex (e, idx) ->
+      expr_may_be_fp fp_names e || expr_may_be_fp fp_names idx
+  | EField (e, name, _) ->
+      Hashtbl.mem fp_names name || expr_may_be_fp fp_names e
+  | EBinop (_, a, b) ->
+      expr_may_be_fp fp_names a || expr_may_be_fp fp_names b
+  | ETernary (c, t, f) ->
+      expr_may_be_fp fp_names c || expr_may_be_fp fp_names t
+      || expr_may_be_fp fp_names f
+
 (* ─── Recursive-descent parser ──────────────────────────────────────────── *)
 
 (* Returns (expr, next_token_index) *)

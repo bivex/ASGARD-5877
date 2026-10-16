@@ -24,13 +24,14 @@ let lift_source (text : string) : (ir_func * (string * string) list, error) resu
     if raw_lines <> [] then X86_lifter.Lifter.extract_marked_regions raw_lines
     else []
   in
+  let const_pool = X86_lifter.Lifter.extract_const_pool raw_lines in
   let lift_res =
     if has_markers && regions <> [] then
       let lifted_regions =
         List.filter_map
           (fun (_mode, rlines) ->
             let fn_name = extract_fn_name rlines in
-            match X86_lifter.Lifter.lift_lines rlines with
+            match X86_lifter.Lifter.lift_lines ~options:{ X86_lifter.Lifter.default_options with const_pool = Some const_pool } rlines with
             | Ok f -> Some (fn_name, { f with Vm_ir.Ir.name = fn_name })
             | Error _ -> None)
           regions

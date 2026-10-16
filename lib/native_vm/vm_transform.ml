@@ -418,39 +418,45 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       load_imm :: canonicalize_instr alu
 
   | Ir.Alu { op; dst; src1 = Ir.Reg s1; src2 = Ir.Imm imm; set_flags } ->
+      let maybe_flag_cmp instrs =
+        if set_flags then instrs @ [ Ir.Cmp { src1 = Ir.Reg dst; src2 = Ir.Imm 0L } ] else instrs
+      in
       if Register.to_string s1 = Register.to_string dst then
-        [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Imm imm; set_flags } ]
+        maybe_flag_cmp [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Imm imm; set_flags = false } ]
       else
-        [
+        maybe_flag_cmp [
           Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s1 };
-          Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Imm imm; set_flags };
+          Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Imm imm; set_flags = false };
         ]
 
   | Ir.Alu { op; dst; src1 = Ir.Reg s1; src2 = Ir.Reg s2; set_flags } ->
+      let maybe_flag_cmp instrs =
+        if set_flags then instrs @ [ Ir.Cmp { src1 = Ir.Reg dst; src2 = Ir.Imm 0L } ] else instrs
+      in
       let d_str = Register.to_string dst in
       let s1_str = Register.to_string s1 in
       let s2_str = Register.to_string s2 in
       if s1_str = d_str then
         (* Already 2-address: dst = dst OP s2 *)
-        [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s2; set_flags } ]
+        maybe_flag_cmp [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s2; set_flags = false } ]
       else if s2_str = d_str then
         (* Hazard case: dst = s1 OP dst *)
         if is_commutative_alu_op op then
           (* Commutative: s1 OP dst == dst OP s1 *)
-          [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s1; set_flags } ]
+          maybe_flag_cmp [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s1; set_flags = false } ]
         else
           (* Non-commutative: e.g. dst = s1 - dst. Must not clobber dst when loading s1. *)
           let scratch = pick_scratch_reg dst s1 in
-          [
+          maybe_flag_cmp [
             Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
             Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s1 };
-            Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags };
+            Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
           ]
       else
         (* Normal 3-address: dst = s1 OP s2, where dst != s1 and dst != s2 *)
-        [
+        maybe_flag_cmp [
           Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s1 };
-          Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s2; set_flags };
+          Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s2; set_flags = false };
         ]
 
   | Ir.Alu { op; dst; src1 = Ir.Reg s1; src2 = Ir.Mem m; set_flags } ->
@@ -463,32 +469,41 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       if is_commutative_alu_op op then
         canonicalize_instr (Ir.Alu { op; dst; src1 = src2; src2 = Ir.Imm imm; set_flags })
       else
+        let maybe_flag_cmp instrs =
+          if set_flags then instrs @ [ Ir.Cmp { src1 = Ir.Reg dst; src2 = Ir.Imm 0L } ] else instrs
+        in
         (match src2 with
         | Ir.Reg s2 when Register.to_string s2 = Register.to_string dst ->
             let scratch = pick_scratch_reg dst dst in
-            [
+            maybe_flag_cmp [
               Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
               Ir.Mov { dst = Ir.Reg dst; src = Ir.Imm imm };
-              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags };
+              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
             ]
         | _ ->
-            [
+            maybe_flag_cmp [
               Ir.Mov { dst = Ir.Reg dst; src = Ir.Imm imm };
-              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2; set_flags };
+              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2; set_flags = false };
             ])
 
   | Ir.Unary { op; dst; src = Ir.Reg s; set_flags } ->
+      let maybe_flag_cmp instrs =
+        if set_flags then instrs @ [ Ir.Cmp { src1 = Ir.Reg dst; src2 = Ir.Imm 0L } ] else instrs
+      in
       if Register.to_string s = Register.to_string dst then
-        [ Ir.Unary { op; dst; src = Ir.Reg dst; set_flags } ]
+        maybe_flag_cmp [ Ir.Unary { op; dst; src = Ir.Reg dst; set_flags = false } ]
       else
-        [
+        maybe_flag_cmp [
           Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s };
-          Ir.Unary { op; dst; src = Ir.Reg dst; set_flags };
+          Ir.Unary { op; dst; src = Ir.Reg dst; set_flags = false };
         ]
   | Ir.Unary { op; dst; src; set_flags } ->
-      [
+      let maybe_flag_cmp instrs =
+        if set_flags then instrs @ [ Ir.Cmp { src1 = Ir.Reg dst; src2 = Ir.Imm 0L } ] else instrs
+      in
+      maybe_flag_cmp [
         Ir.Mov { dst = Ir.Reg dst; src };
-        Ir.Unary { op; dst; src = Ir.Reg dst; set_flags };
+        Ir.Unary { op; dst; src = Ir.Reg dst; set_flags = false };
       ]
 
   | Ir.Lea { dst; addr } ->

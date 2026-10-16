@@ -3,10 +3,12 @@ open X86_parser
 
 type options = {
   function_name : string;
+  const_pool : (string, bytes) Hashtbl.t option;
 }
 
 let default_options = {
   function_name = "func_virtualized";
+  const_pool = None;
 }
 
 let ( let* ) = Result.bind
@@ -14,10 +16,108 @@ let ( let* ) = Result.bind
 let ir_mem_of_raw ?(is_signed = false) (m : X86_parser.raw_mem) : Ir.mem_ref =
   { base = m.base; index = m.index; disp = m.disp; width = m.width; is_signed; segment = m.segment }
 
-let to_ir_operand = function
+let read_const_int64 (b : bytes) (disp : int64) (w : Register.width) : int64 =
+  let offset = Int64.to_int disp in
+  let len = Bytes.length b in
+  let get_byte i =
+    if offset + i >= 0 && offset + i < len then
+      Int64.of_int (Char.code (Bytes.get b (offset + i)))
+    else 0L
+  in
+  let num_bytes =
+    match w with
+    | Register.B8 -> 1
+    | Register.B16 -> 2
+    | Register.B32 -> 4
+    | _ -> 8
+  in
+  let res = ref 0L in
+  for i = 0 to num_bytes - 1 do
+    res := Int64.logor !res (Int64.shift_left (get_byte i) (i * 8))
+  done;
+  !res
+
+let read_const_vec128 (b : bytes) (disp : int64) : int64 * int64 =
+  let lane0 = read_const_int64 b disp Register.B64 in
+  let lane1 = read_const_int64 b (Int64.add disp 8L) Register.B64 in
+  (lane0, lane1)
+
+let extract_const_pool (lines : X86_parser.raw_line list) : (string, bytes) Hashtbl.t =
+  let pool = Hashtbl.create 32 in
+  let current_lbl = ref None in
+  let current_buf = Buffer.create 64 in
+
+  let flush () =
+    match !current_lbl with
+    | Some lbl when Buffer.length current_buf > 0 ->
+        Hashtbl.replace pool (String.lowercase_ascii lbl) (Buffer.to_bytes current_buf);
+        Buffer.clear current_buf
+    | _ -> ()
+  in
+
+  let append_le_bytes v size =
+    for i = 0 to size - 1 do
+      let byte = Int64.to_int (Int64.logand (Int64.shift_right_logical v (i * 8)) 0xFFL) in
+      Buffer.add_char current_buf (Char.chr byte)
+    done
+  in
+
+  let parse_value s =
+    let s = String.trim s in
+    try Int64.of_string s
+    with _ -> 0L
+  in
+
+  List.iter
+    (function
+      | X86_parser.LineLabel lbl ->
+          flush ();
+          current_lbl := Some lbl
+      | X86_parser.LineDirective d ->
+          let d_trim = String.trim d in
+          if String.starts_with ~prefix:".quad" d_trim then begin
+            let rest = String.trim (String.sub d_trim 5 (String.length d_trim - 5)) in
+            let parts = String.split_on_char ',' rest in
+            List.iter (fun p -> append_le_bytes (parse_value p) 8) parts
+          end else if String.starts_with ~prefix:".long" d_trim then begin
+            let rest = String.trim (String.sub d_trim 5 (String.length d_trim - 5)) in
+            let parts = String.split_on_char ',' rest in
+            List.iter (fun p -> append_le_bytes (parse_value p) 4) parts
+          end else if String.starts_with ~prefix:".short" d_trim || String.starts_with ~prefix:".value" d_trim then begin
+            let rest = String.trim (String.sub d_trim 6 (String.length d_trim - 6)) in
+            let parts = String.split_on_char ',' rest in
+            List.iter (fun p -> append_le_bytes (parse_value p) 2) parts
+          end else if String.starts_with ~prefix:".byte" d_trim then begin
+            let rest = String.trim (String.sub d_trim 5 (String.length d_trim - 5)) in
+            let parts = String.split_on_char ',' rest in
+            List.iter (fun p -> append_le_bytes (parse_value p) 1) parts
+          end else if String.starts_with ~prefix:".zero" d_trim || String.starts_with ~prefix:".space" d_trim then begin
+            let prefix_len = if String.starts_with ~prefix:".zero" d_trim then 5 else 6 in
+            let rest = String.trim (String.sub d_trim prefix_len (String.length d_trim - prefix_len)) in
+            let n = try int_of_string (String.trim rest) with _ -> 0 in
+            for _ = 1 to n do Buffer.add_char current_buf '\000' done
+          end else if String.starts_with ~prefix:".section" d_trim || String.starts_with ~prefix:".globl" d_trim || String.starts_with ~prefix:".text" d_trim then begin
+            flush ();
+            current_lbl := None
+          end
+      | X86_parser.LineInstr _ ->
+          flush ();
+          current_lbl := None
+      | _ -> ())
+    lines;
+  flush ();
+  pool
+
+let to_ir_operand ?const_pool = function
   | X86_parser.OpReg r -> Ok (Ir.Reg r)
   | X86_parser.OpImm i -> Ok (Ir.Imm i)
-  | X86_parser.OpMem m -> Ok (Ir.Mem (ir_mem_of_raw m))
+  | X86_parser.OpMem m -> (
+      match m.symbol, const_pool with
+      | Some sym, Some cp when Hashtbl.mem cp sym ->
+          let b = Hashtbl.find cp sym in
+          let v = read_const_int64 b m.disp m.width in
+          Ok (Ir.Imm v)
+      | _ -> Ok (Ir.Mem (ir_mem_of_raw m)))
   | X86_parser.OpLabel l ->
       Error (Printf.sprintf "Label '%s' cannot be used directly as a value operand" l)
 
@@ -497,10 +597,10 @@ let vector_op_of_mnemonic = function
   | "pmaxub" | "vpmaxub" -> Some (Ir.Vmaxu, Ir.VInt, 8)
   | "pmaxuw" | "vpmaxuw" -> Some (Ir.Vmaxu, Ir.VInt, 16)
   | "pmaxud" | "vpmaxud" -> Some (Ir.Vmaxu, Ir.VInt, 32)
-  | "minps" | "vminps" -> Some (Ir.Vmin, Ir.VF32, 32)
-  | "minpd" | "vminpd" -> Some (Ir.Vmin, Ir.VF64, 64)
-  | "maxps" | "vmaxps" -> Some (Ir.Vmax, Ir.VF32, 32)
-  | "maxpd" | "vmaxpd" -> Some (Ir.Vmax, Ir.VF64, 64)
+  | "minps" | "vminps" | "minss" | "vminss" -> Some (Ir.Vmin, Ir.VF32, 32)
+  | "minpd" | "vminpd" | "minsd" | "vminsd" -> Some (Ir.Vmin, Ir.VF64, 64)
+  | "maxps" | "vmaxps" | "maxss" | "vmaxss" -> Some (Ir.Vmax, Ir.VF32, 32)
+  | "maxpd" | "vmaxpd" | "maxsd" | "vmaxsd" -> Some (Ir.Vmax, Ir.VF64, 64)
   | "pabsb" | "vpabsb" -> Some (Ir.Vabs, Ir.VInt, 8)
   | "pabsw" | "vpabsw" -> Some (Ir.Vabs, Ir.VInt, 16)
   | "pabsd" | "vpabsd" -> Some (Ir.Vabs, Ir.VInt, 32)
@@ -520,7 +620,7 @@ let vector_op_of_mnemonic = function
   | "vpblendw" -> Some (Ir.Vblend, Ir.VInt, 16)
   | _ -> None
 
-let lift_vector_move mnem dst src =
+let lift_vector_move ?const_pool mnem dst src =
   let ops = [dst; src] in
   if List.exists is_zmm_operand ops then
     Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
@@ -538,10 +638,31 @@ let lift_vector_move mnem dst src =
         | _ -> Error "vector move requires vector registers")
     | X86_parser.OpReg _, X86_parser.OpMem m -> (
         match vector_reg_index dst with
-        | Some di ->
-            let instrs = [ Ir.Vec_load { dst = di; addr = ir_mem_of_raw m; bits } ] in
-            let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
-            Ok (instrs @ extra)
+        | Some di -> (
+            match m.symbol, const_pool with
+            | Some sym, Some cp when Hashtbl.mem cp sym ->
+                let b = Hashtbl.find cp sym in
+                let lane0, lane1 = read_const_vec128 b m.disp in
+                if lane0 = lane1 then
+                  let tmp = Register.vtmp0 in
+                  let instrs = [
+                    Ir.Mov { dst = Ir.Reg tmp; src = Ir.Imm lane0 };
+                    Ir.Vec_splat { dst = di; src = tmp; bits = 128; lane_bits = 64 };
+                  ] in
+                  let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                  Ok (instrs @ extra)
+                else
+                  let instrs = [
+                    Ir.Mov { dst = Ir.Reg (Register.Fpr (di, Register.B64)); src = Ir.Imm lane0 };
+                    Ir.Mov { dst = Ir.Reg (Register.Fpr (31, Register.B64)); src = Ir.Imm lane1 };
+                    Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = di; src1 = di; src2 = 31; bits = 128; lane_bits = 64 };
+                  ] in
+                  let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                  Ok (instrs @ extra)
+            | _ ->
+                let instrs = [ Ir.Vec_load { dst = di; addr = ir_mem_of_raw m; bits } ] in
+                let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                Ok (instrs @ extra))
         | None -> Error "vector load destination must be a vector register")
     | X86_parser.OpMem m, X86_parser.OpReg _ -> (
         match vector_reg_index src with
@@ -549,7 +670,7 @@ let lift_vector_move mnem dst src =
         | None -> Error "vector store source must be a vector register")
     | _ -> Error "invalid vector move operands"
 
-let lift_vector_binop mnem ops =
+let lift_vector_binop ?const_pool mnem ops =
   if List.exists is_zmm_operand ops then
     Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
   else
@@ -580,12 +701,36 @@ let lift_vector_binop mnem ops =
                 Ok (instrs @ extra)
             | Some di, None -> (
                 match src with
-                | X86_parser.OpMem m ->
-                    let load = Ir.Vec_load { dst = 31; addr = ir_mem_of_raw m; bits } in
-                    let s1 = if op = Ir.Vabs then 31 else di in
-                    let binop = Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = 31; bits; lane_bits } in
-                    let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
-                    Ok ([ load; binop ] @ extra)
+                | X86_parser.OpMem m -> (
+                    match m.symbol, const_pool with
+                    | Some sym, Some cp when Hashtbl.mem cp sym ->
+                        let b = Hashtbl.find cp sym in
+                        let lane0, lane1 = read_const_vec128 b m.disp in
+                        let tmp_vec = 31 in
+                        let prep =
+                          if lane0 = lane1 then
+                            let tmp = Register.vtmp0 in
+                            [
+                              Ir.Mov { dst = Ir.Reg tmp; src = Ir.Imm lane0 };
+                              Ir.Vec_splat { dst = tmp_vec; src = tmp; bits = 128; lane_bits = 64 };
+                            ]
+                          else
+                            [
+                              Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_vec, Register.B64)); src = Ir.Imm lane0 };
+                              Ir.Mov { dst = Ir.Reg (Register.Fpr (30, Register.B64)); src = Ir.Imm lane1 };
+                              Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = tmp_vec; src1 = tmp_vec; src2 = 30; bits = 128; lane_bits = 64 };
+                            ]
+                        in
+                        let s1 = if op = Ir.Vabs then tmp_vec else di in
+                        let binop = Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = tmp_vec; bits; lane_bits } in
+                        let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                        Ok (prep @ [ binop ] @ extra)
+                    | _ ->
+                        let load = Ir.Vec_load { dst = 31; addr = ir_mem_of_raw m; bits } in
+                        let s1 = if op = Ir.Vabs then 31 else di in
+                        let binop = Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = 31; bits; lane_bits } in
+                        let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                        Ok ([ load; binop ] @ extra))
                 | _ -> Error "vector binary operation requires vector register or memory operand")
             | _ -> Error "vector binary operation requires vector registers")
         | [dst; src; X86_parser.OpImm imm] -> (
@@ -700,7 +845,7 @@ let lift_rc_op mnem dst count_opt =
         Ok (load @ steps @ store)
     | _ -> Error "rcl/rcr destination must be register or memory"
 
-let lift_instr raw_mnem ops =
+let lift_instr ?const_pool raw_mnem ops =
   let is_locked, mnem =
     if String.starts_with ~prefix:"lock " raw_mnem then
       (true, String.trim (String.sub raw_mnem 5 (String.length raw_mnem - 5)))
@@ -723,43 +868,49 @@ let lift_instr raw_mnem ops =
             let bits = determine_vec_bits mnem [ dst; src ] in
             Ok [ Ir.Pmovmskb { dst = gpr; src = si; bits } ]
         | _ -> Error "pmovmskb requires GPR destination and vector source")
-  | mnem, [ dst; src ] when vector_move_mnemonic mnem -> lift_vector_move mnem dst src
+  | mnem, [ dst; src ] when vector_move_mnemonic mnem -> lift_vector_move ?const_pool mnem dst src
   | mnem, ops
     when (List.length ops >= 2 && List.length ops <= 4)
          && (match vector_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
-      lift_vector_binop mnem ops
+      lift_vector_binop ?const_pool mnem ops
 
   | "push", [ op ] ->
-      let* ir_op = to_ir_operand op in
+      let* ir_op = to_ir_operand ?const_pool op in
       Ok [ Ir.Push ir_op ]
   | "pop", [ op ] -> (
       match op with
       | X86_parser.OpReg r when r = Register.vcs ->
           Error "pop cs is an invalid instruction in x86"
       | _ ->
-          let* ir_op = to_ir_operand op in
+          let* ir_op = to_ir_operand ?const_pool op in
           Ok [ Ir.Pop ir_op ])
   | ("rdfsbase" | "rdgsbase"), [ dst ] ->
       let base_reg = if mnem = "rdfsbase" then Register.vfs_base else Register.vgs_base in
-      let* ir_dst = to_ir_operand dst in
+      let* ir_dst = to_ir_operand ?const_pool dst in
       Ok [ Ir.Mov { dst = ir_dst; src = Ir.Reg base_reg } ]
   | ("wrfsbase" | "wrgsbase"), [ src ] ->
       let base_reg = if mnem = "wrfsbase" then Register.vfs_base else Register.vgs_base in
-      let* ir_src = to_ir_operand src in
+      let* ir_src = to_ir_operand ?const_pool src in
       Ok [ Ir.Mov { dst = Ir.Reg base_reg; src = ir_src } ]
   | ("mov" | "movabs"), [ dst; src ] -> (
       match (dst, src) with
-      | (X86_parser.OpReg r, X86_parser.OpMem m) ->
-          let ir_dst = Ir.Reg r in
-          let ir_mem = Ir.Mem (ir_mem_of_raw { m with width = Register.get_width r }) in
-          Ok [ Ir.Mov { dst = ir_dst; src = ir_mem } ]
+      | (X86_parser.OpReg r, X86_parser.OpMem m) -> (
+          match m.symbol, const_pool with
+          | Some sym, Some cp when Hashtbl.mem cp sym ->
+              let b = Hashtbl.find cp sym in
+              let v = read_const_int64 b m.disp (Register.get_width r) in
+              Ok [ Ir.Mov { dst = Ir.Reg r; src = Ir.Imm v } ]
+          | _ ->
+              let ir_dst = Ir.Reg r in
+              let ir_mem = Ir.Mem (ir_mem_of_raw { m with width = Register.get_width r }) in
+              Ok [ Ir.Mov { dst = ir_dst; src = ir_mem } ])
       | (X86_parser.OpMem m, X86_parser.OpReg r) ->
           let ir_dst = Ir.Mem (ir_mem_of_raw { m with width = Register.get_width r }) in
           let ir_src = Ir.Reg r in
           Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
       | _ ->
-          let* ir_dst = to_ir_operand dst in
-          let* ir_src = to_ir_operand src in
+          let* ir_dst = to_ir_operand ?const_pool dst in
+          let* ir_src = to_ir_operand ?const_pool src in
           Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ])
   | ("movzx" | "movzxb" | "movzxw" | "movzbq" | "movzwq"), [ dst; src ] -> (
       let* ir_dst = to_ir_operand dst in
@@ -820,6 +971,54 @@ let lift_instr raw_mnem ops =
         Ir.Unary { op = Ir.Bswap; dst = scratch; src = Ir.Reg scratch; set_flags = false };
         Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg scratch };
       ]
+  | ("movd" | "vmovd"), [ dst; src ] -> (
+      match dst, src with
+      | OpReg (Register.Gpr (d, _)), OpReg (Register.Fpr (s, _)) ->
+          let d64 = Register.Gpr (d, Register.B64) in
+          Ok [
+            Ir.Mov { dst = Ir.Reg d64; src = Ir.Reg (Register.Fpr (s, Register.B64)) };
+            Ir.Alu { op = Ir.And; dst = d64; src1 = Ir.Reg d64; src2 = Ir.Imm 0xFFFFFFFFL; set_flags = false };
+          ]
+      | OpReg (Register.Fpr (d, _)), OpReg (Register.Gpr (s, _)) ->
+          let s64 = Register.Gpr (s, Register.B64) in
+          let tmp = Register.vtmp0 in
+          Ok [
+            Ir.Mov { dst = Ir.Reg tmp; src = Ir.Reg s64 };
+            Ir.Alu { op = Ir.And; dst = tmp; src1 = Ir.Reg tmp; src2 = Ir.Imm 0xFFFFFFFFL; set_flags = false };
+            Ir.Mov { dst = Ir.Reg (Register.Fpr (d, Register.B64)); src = Ir.Reg tmp };
+          ]
+      | OpReg (Register.Fpr (d, _)), OpMem _ ->
+          let* ir_src = to_ir_operand src in
+          Ok [ Ir.Mov { dst = Ir.Reg (Register.Fpr (d, Register.B64)); src = ir_src } ]
+      | OpMem m, OpReg (Register.Fpr (s, _)) ->
+          let mem_ref = ir_mem_of_raw { m with width = Register.B32 } in
+          let tmp = Register.Gpr (Register.RAX, Register.B32) in
+          Ok [
+            Ir.Mov { dst = Ir.Reg tmp; src = Ir.Reg (Register.Fpr (s, Register.B64)) };
+            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp };
+          ]
+      | _ -> Error "Invalid operands for movd")
+  | ("movq" | "vmovq"), [ dst; src ] -> (
+      match dst, src with
+      | OpReg (Register.Gpr (d, _)), OpReg (Register.Fpr (s, _)) ->
+          let d64 = Register.Gpr (d, Register.B64) in
+          Ok [ Ir.Mov { dst = Ir.Reg d64; src = Ir.Reg (Register.Fpr (s, Register.B64)) } ]
+      | OpReg (Register.Fpr (d, _)), OpReg (Register.Gpr (s, _)) ->
+          let s64 = Register.Gpr (s, Register.B64) in
+          Ok [ Ir.Mov { dst = Ir.Reg (Register.Fpr (d, Register.B64)); src = Ir.Reg s64 } ]
+      | OpReg (Register.Fpr (d, _)), OpReg (Register.Fpr (s, _)) ->
+          Ok [ Ir.Mov { dst = Ir.Reg (Register.Fpr (d, Register.B64)); src = Ir.Reg (Register.Fpr (s, Register.B64)) } ]
+      | OpReg (Register.Fpr (d, _)), OpMem _ ->
+          let* ir_src = to_ir_operand src in
+          Ok [ Ir.Mov { dst = Ir.Reg (Register.Fpr (d, Register.B64)); src = ir_src } ]
+      | OpMem m, OpReg (Register.Fpr (s, _)) ->
+          let mem_ref = ir_mem_of_raw { m with width = Register.B64 } in
+          let tmp = Register.Gpr (Register.RAX, Register.B64) in
+          Ok [
+            Ir.Mov { dst = Ir.Reg tmp; src = Ir.Reg (Register.Fpr (s, Register.B64)) };
+            Ir.Mov { dst = Ir.Mem mem_ref; src = Ir.Reg tmp };
+          ]
+      | _ -> Error "Invalid operands for movq")
 
   | "lea", [ dst; OpMem addr ] -> (
       match dst with
@@ -1460,8 +1659,8 @@ let lift_instr raw_mnem ops =
       ]
 
   | ("movss" | "movsd" | "movaps" | "movapd" | "movups" | "movupd"), [ dst; src ] ->
-      let* ir_src = to_ir_operand src in
-      let* ir_dst = to_ir_operand dst in
+      let* ir_src = to_ir_operand ?const_pool src in
+      let* ir_dst = to_ir_operand ?const_pool dst in
       Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]
   | ("addss" | "addsd" | "subss" | "subsd" | "mulss" | "mulsd" | "divss" | "divsd" | "sqrtss" | "sqrtsd"), [ OpReg dst; src ] ->
       let fp_op = match mnem with
@@ -1480,12 +1679,21 @@ let lift_instr raw_mnem ops =
               Ok [ Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = s1; src2 = s_idx } ]
           | OpMem m ->
               let tmp_fpr = 31 in
-              let mem_ref = ir_mem_of_raw m in
               let s1 = if fp_op = Ir.Fsqrt then tmp_fpr else d_idx in
-              Ok [
-                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
-                Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = s1; src2 = tmp_fpr };
-              ]
+              (match m.symbol, const_pool with
+              | Some sym, Some cp when Hashtbl.mem cp sym ->
+                  let b = Hashtbl.find cp sym in
+                  let v = read_const_int64 b m.disp m.width in
+                  Ok [
+                    Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm v };
+                    Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = s1; src2 = tmp_fpr };
+                  ]
+              | _ ->
+                  let mem_ref = ir_mem_of_raw m in
+                  Ok [
+                    Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
+                    Ir.Fp_binop { op = fp_op; dst = d_idx; src1 = s1; src2 = tmp_fpr };
+                  ])
           | _ -> Error "Invalid source operand for scalar FP arithmetic")
       | _ -> Error "Invalid destination register for scalar FP arithmetic")
   | ("ucomiss" | "ucomisd" | "comiss" | "comisd"), [ OpReg dst; src ] ->
@@ -1496,11 +1704,20 @@ let lift_instr raw_mnem ops =
               Ok [ Ir.Fp_cmp { src1 = d_idx; src2 = s_idx } ]
           | OpMem m ->
               let tmp_fpr = 31 in
-              let mem_ref = ir_mem_of_raw m in
-              Ok [
-                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
-                Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr };
-              ]
+              (match m.symbol, const_pool with
+              | Some sym, Some cp when Hashtbl.mem cp sym ->
+                  let b = Hashtbl.find cp sym in
+                  let v = read_const_int64 b m.disp m.width in
+                  Ok [
+                    Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm v };
+                    Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr };
+                  ]
+              | _ ->
+                  let mem_ref = ir_mem_of_raw m in
+                  Ok [
+                    Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
+                    Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr };
+                  ])
           | _ -> Error "Invalid source operand for scalar FP compare")
       | _ -> Error "Invalid destination register for scalar FP compare")
   | ("cvtsi2ss" | "cvtsi2sd"), [ OpReg (Register.Fpr (d, _)); src ] ->
@@ -1508,11 +1725,20 @@ let lift_instr raw_mnem ops =
       | OpReg s -> Ok [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = s } ]
       | OpMem m ->
           let tmp_gpr = Register.vtmp0 in
-          let mem_ref = ir_mem_of_raw m in
-          Ok [
-            Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Mem mem_ref };
-            Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = tmp_gpr };
-          ]
+          (match m.symbol, const_pool with
+          | Some sym, Some cp when Hashtbl.mem cp sym ->
+              let b = Hashtbl.find cp sym in
+              let v = read_const_int64 b m.disp m.width in
+              Ok [
+                Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Imm v };
+                Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = tmp_gpr };
+              ]
+          | _ ->
+              let mem_ref = ir_mem_of_raw m in
+              Ok [
+                Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Mem mem_ref };
+                Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = tmp_gpr };
+              ])
       | _ -> Error "Invalid operands for cvtsi2ss/sd")
   | ("cvttss2si" | "cvttsd2si" | "cvtss2si" | "cvtsd2si"), [ OpReg dst; src ] ->
       (match src with
@@ -1520,15 +1746,63 @@ let lift_instr raw_mnem ops =
           Ok [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, Register.B64) } ]
       | OpMem m ->
           let tmp_fpr = 31 in
-          let mem_ref = ir_mem_of_raw m in
-          Ok [
-            Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
-            Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, Register.B64) };
-          ]
+          (match m.symbol, const_pool with
+          | Some sym, Some cp when Hashtbl.mem cp sym ->
+              let b = Hashtbl.find cp sym in
+              let v = read_const_int64 b m.disp m.width in
+              Ok [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm v };
+                Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, Register.B64) };
+              ]
+          | _ ->
+              let mem_ref = ir_mem_of_raw m in
+              Ok [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
+                Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, Register.B64) };
+              ])
       | _ -> Error "Invalid operands for cvttss/sd2si")
-  | ("cvtsd2ss" | "cvtss2sd"), [ OpReg (Register.Fpr (d, _)); src ] ->
-      let* ir_src = to_ir_operand src in
-      Ok [ Ir.Mov { dst = Ir.Reg (Register.Fpr (d, Register.B64)); src = ir_src } ]
+  | "cvtsd2ss", [ OpReg (Register.Fpr (d, _)); src ] -> (
+      match src with
+      | OpReg (Register.Fpr (s, _)) ->
+          Ok [ Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B32); src = Register.Fpr (s, Register.B64) } ]
+      | OpMem m ->
+          let tmp_fpr = 31 in
+          (match m.symbol, const_pool with
+          | Some sym, Some cp when Hashtbl.mem cp sym ->
+              let b = Hashtbl.find cp sym in
+              let v = read_const_int64 b m.disp m.width in
+              Ok [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm v };
+                Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B32); src = Register.Fpr (tmp_fpr, Register.B64) };
+              ]
+          | _ ->
+              let mem_ref = ir_mem_of_raw m in
+              Ok [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
+                Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B32); src = Register.Fpr (tmp_fpr, Register.B64) };
+              ])
+      | _ -> Error "Invalid operands for cvtsd2ss")
+  | "cvtss2sd", [ OpReg (Register.Fpr (d, _)); src ] -> (
+      match src with
+      | OpReg (Register.Fpr (s, _)) ->
+          Ok [ Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B64); src = Register.Fpr (s, Register.B32) } ]
+      | OpMem m ->
+          let tmp_fpr = 31 in
+          (match m.symbol, const_pool with
+          | Some sym, Some cp when Hashtbl.mem cp sym ->
+              let b = Hashtbl.find cp sym in
+              let v = read_const_int64 b m.disp m.width in
+              Ok [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B32)); src = Ir.Imm v };
+                Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B64); src = Register.Fpr (tmp_fpr, Register.B32) };
+              ]
+          | _ ->
+              let mem_ref = ir_mem_of_raw m in
+              Ok [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B32)); src = Ir.Mem mem_ref };
+                Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B64); src = Register.Fpr (tmp_fpr, Register.B32) };
+              ])
+      | _ -> Error "Invalid operands for cvtss2sd")
 
   | ("inc" | "dec" | "not" | "neg"), [ dst ] ->
       let un_op = match mnem with
@@ -1705,7 +1979,8 @@ let is_func_label lbl =
   let s = String.lowercase_ascii lbl in
   not (String.starts_with ~prefix:"ltmp" s
        || String.starts_with ~prefix:"lbb" s
-       || String.starts_with ~prefix:"." s)
+       || String.starts_with ~prefix:"." s
+       || String.starts_with ~prefix:"lcpi" s)
 
 
 let split_rep_mnemonic mnem =
@@ -1723,6 +1998,11 @@ let split_rep_mnemonic mnem =
     None
 
 let lift_lines ?(options = default_options) raw_lines =
+  let const_pool =
+    match options.const_pool with
+    | Some cp -> Some cp
+    | None -> Some (extract_const_pool raw_lines)
+  in
   let block_id = ref 0 in
   let func_name = ref options.function_name in
   let current_label = ref options.function_name in
@@ -1779,7 +2059,7 @@ let lift_lines ?(options = default_options) raw_lines =
             raw_blocks := chk_block :: !raw_blocks;
             incr block_id;
 
-            (match lift_instr base_mnem ops with
+            (match lift_instr ?const_pool base_mnem ops with
             | Error e -> Error e
             | Ok step_instrs ->
                 let dec_rcx = Ir.Alu { op = Ir.Sub; dst = rcx; src1 = Ir.Reg rcx; src2 = Ir.Imm 1L; set_flags = false } in
@@ -1806,7 +2086,7 @@ let lift_lines ?(options = default_options) raw_lines =
                 current_instrs := [];
                 process rest)
         | None -> (
-            match lift_instr mnem ops with
+            match lift_instr ?const_pool mnem ops with
             | Error e -> Error e
             | Ok lifted ->
                 List.iter (fun i -> current_instrs := i :: !current_instrs) lifted;
@@ -1920,12 +2200,11 @@ let extract_marked_regions ?(require_markers = false) raw_lines =
                   | None -> ())
                 end
               end
-            end else begin
-              fn_lines := instr :: !fn_lines
             end
 
         | (X86_parser.LineLabel _ | X86_parser.LineDirective _) as line ->
-            fn_lines := line :: !fn_lines
+            if !seen_begin then
+              fn_lines := line :: !fn_lines
         | X86_parser.LineEmpty -> ())
       raw_lines;
 

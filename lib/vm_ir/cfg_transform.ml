@@ -1,4 +1,5 @@
 open Ir
+[@@@warning "-33"]
 open Register
 
 let create_decoy_block (max_id : int ref) (rng : Random.State.t) : basic_block =
@@ -46,11 +47,7 @@ let split_block_with_opaque (max_id : int ref) (rng : Random.State.t) (b : basic
     else begin
       incr max_id;
       let new_b2_id = !max_id in
-      
-      (* Create a decoy target block for the opaque predicate *)
       let decoy = create_decoy_block max_id rng in
-      
-      (* Generate invariant zero opaque predicate: true -> new_b2_id, false -> decoy.id *)
       let opaque_branch =
         Opaque_predicates.generate_zero_predicate
           ~rng
@@ -58,7 +55,6 @@ let split_block_with_opaque (max_id : int ref) (rng : Random.State.t) (b : basic
           ~target_true:(BlockId new_b2_id)
           ~target_decoy:(BlockId decoy.id)
       in
-      
       let b1_instrs = p1 @ opaque_branch in
       let b1 = { b with instrs = b1_instrs } in
       let b2 = { id = new_b2_id; label = Printf.sprintf "%s_s%d" b.label new_b2_id; instrs = p2 } in

@@ -796,22 +796,26 @@ let emit_mem_and_ffi_handlers ?rng b =
    | 0 ->
        Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
        Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-       Buffer.add_string b "        ctx.zf = (a == b);\n";
-       Buffer.add_string b "        ctx.cf = (a >= b);\n";
-       Buffer.add_string b "        ctx.sf = (a < b);\n";
+       Buffer.add_string b "        bool is_nan = std::isnan(a) || std::isnan(b);\n";
+       Buffer.add_string b "        ctx.zf = is_nan || (a == b);\n";
+       Buffer.add_string b "        ctx.cf = is_nan || (a < b);\n";
+       Buffer.add_string b "        ctx.pf = is_nan;\n";
+       Buffer.add_string b "        ctx.sf = false;\n";
        Buffer.add_string b "        ctx.of = false;\n"
    | 1 ->
        Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
        Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
+       Buffer.add_string b "        bool _nan = std::isnan(_a) || std::isnan(_b);\n";
        Buffer.add_string b "        ctx.of = false;\n";
-       Buffer.add_string b "        ctx.sf = (_a < _b);\n";
-       Buffer.add_string b "        ctx.cf = (_a >= _b);\n";
-       Buffer.add_string b "        ctx.zf = (_a == _b);\n"
+       Buffer.add_string b "        ctx.sf = false;\n";
+       Buffer.add_string b "        ctx.cf = _nan || (_a < _b);\n";
+       Buffer.add_string b "        ctx.zf = _nan || (_a == _b);\n";
+       Buffer.add_string b "        ctx.pf = _nan;\n"
    | _ ->
        Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
        Buffer.add_string b "        double a = std::bit_cast<double>(_s), b = std::bit_cast<double>(_i);\n";
-       Buffer.add_string b "        bool _eq = (a == b), _ge = (a >= b), _lt = (a < b);\n";
-       Buffer.add_string b "        ctx.zf = _eq; ctx.cf = _ge; ctx.sf = _lt; ctx.of = false;\n");
+       Buffer.add_string b "        bool _nan = std::isnan(a) || std::isnan(b), _eq = (a == b), _lt = (a < b);\n";
+       Buffer.add_string b "        ctx.zf = _nan || _eq; ctx.cf = _nan || _lt; ctx.pf = _nan; ctx.sf = false; ctx.of = false;\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_FCVTZS: {\n";
@@ -872,17 +876,41 @@ let emit_mem_and_ffi_handlers ?rng b =
   Buffer.add_string b "    H_FCVT: {\n";
   (match pick_variant 3 with
    | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "        float f32 = std::bit_cast<float>((uint32_t)a_raw);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n"
+       Buffer.add_string b "        if ((uint32_t)imm == 1) {\n";
+       Buffer.add_string b "            uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "            double d64 = std::bit_cast<double>(a_raw);\n";
+       Buffer.add_string b "            float f32 = static_cast<float>(d64);\n";
+       Buffer.add_string b "            uint32_t u32 = std::bit_cast<uint32_t>(f32);\n";
+       Buffer.add_string b "            uint64_t old_val = ctx.get_vreg_lane(dst, 0);\n";
+       Buffer.add_string b "            ctx.set_vreg(dst, (old_val & 0xFFFFFFFF00000000ULL) | (uint64_t)u32, 0);\n";
+       Buffer.add_string b "        } else {\n";
+       Buffer.add_string b "            uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
+       Buffer.add_string b "            float f32 = std::bit_cast<float>((uint32_t)a_raw);\n";
+       Buffer.add_string b "            ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n";
+       Buffer.add_string b "        }\n"
    | 1 ->
-       Buffer.add_string b "        uint32_t _raw32 = static_cast<uint32_t>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        float _f = std::bit_cast<float>(_raw32);\n";
-       Buffer.add_string b "        double _d = static_cast<double>(_f);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_d), 0);\n"
+       Buffer.add_string b "        if (static_cast<uint32_t>(imm) == 1) {\n";
+       Buffer.add_string b "            double _d = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "            float _f = static_cast<float>(_d);\n";
+       Buffer.add_string b "            uint32_t _u = std::bit_cast<uint32_t>(_f);\n";
+       Buffer.add_string b "            uint64_t _prev = ctx.get_vreg_lane(dst, 0);\n";
+       Buffer.add_string b "            ctx.set_vreg(dst, (_prev & 0xFFFFFFFF00000000ULL) | static_cast<uint64_t>(_u), 0);\n";
+       Buffer.add_string b "        } else {\n";
+       Buffer.add_string b "            uint32_t _raw32 = static_cast<uint32_t>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "            float _f = std::bit_cast<float>(_raw32);\n";
+       Buffer.add_string b "            double _d = static_cast<double>(_f);\n";
+       Buffer.add_string b "            ctx.set_vreg(dst, std::bit_cast<uint64_t>(_d), 0);\n";
+       Buffer.add_string b "        }\n"
    | _ ->
-       Buffer.add_string b "        float f32 = std::bit_cast<float>((uint32_t)ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n");
+       Buffer.add_string b "        if ((uint32_t)imm == 1) {\n";
+       Buffer.add_string b "            double d64 = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "            float f32 = (float)d64;\n";
+       Buffer.add_string b "            uint32_t u32 = std::bit_cast<uint32_t>(f32);\n";
+       Buffer.add_string b "            ctx.set_vreg(dst, (ctx.get_vreg_lane(dst, 0) & 0xFFFFFFFF00000000ULL) | (uint64_t)u32, 0);\n";
+       Buffer.add_string b "        } else {\n";
+       Buffer.add_string b "            float f32 = std::bit_cast<float>((uint32_t)ctx.get_vreg_lane(src, 0));\n";
+       Buffer.add_string b "            ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n";
+       Buffer.add_string b "        }\n");
   Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
   Buffer.add_string b "    }\n";
   Buffer.add_string b "    H_ATOMIC_LOAD: {\n";

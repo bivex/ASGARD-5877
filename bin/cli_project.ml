@@ -93,12 +93,16 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
           let gen_asm_cmd = Printf.sprintf "%s -S -target x86_64-apple-darwin -masm=intel -O1 -fno-jump-tables -mllvm -switch-to-lookup=false -fno-stack-protector -Wno-format-security %s -fno-asynchronous-unwind-tables %s -o %s" compiler inc_flags obf_c_path asm_out in
           let _ = Sys.command gen_asm_cmd in
 
+          let is_virtualized = ref false in
+          if not (Sys.file_exists asm_out) then
+            prerr_endline (Printf.sprintf "  [ERROR] Assembly generation failed for %s (obfuscated source did not compile; see diagnostics above)" in_file)
+          else begin
+
           let ic = open_in asm_out in
           let len = in_channel_length ic in
           let text = really_input_string ic len in
           close_in ic;
 
-          let is_virtualized = ref false in
           (match X86_lifter.X86_parser.parse_lines text with
           | Ok lines ->
               let regions = X86_lifter.Lifter.extract_marked_regions ~require_markers:true lines in
@@ -124,10 +128,11 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
                   close_out oc_chaff
                 end;
 
+                let const_pool = X86_lifter.Lifter.extract_const_pool lines in
                 let lifted_funcs =
                   List.filter_map
                     (fun (_mode, rlines) ->
-                      match X86_lifter.Lifter.lift_lines rlines with
+                      match X86_lifter.Lifter.lift_lines ~options:{ X86_lifter.Lifter.default_options with const_pool = Some const_pool } rlines with
                       | Ok func ->
                           let clean_name =
                             let n = func.name in
@@ -185,6 +190,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
                 end
               end
           | Error _ -> ());
+          end;
 
           if not !is_virtualized then begin
             let obj_out = Filename.concat build_dir (base ^ ".o") in

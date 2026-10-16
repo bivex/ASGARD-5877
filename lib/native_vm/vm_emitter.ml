@@ -704,7 +704,8 @@ let compile_and_package_multi
               | Ir.Fp_conv { op = Fcvt; dst; src } ->
                   let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
-                  encode_raw_word (get_opcode OP_FCVT) d_idx s_idx 0L
+                  let mode = if Register.get_width dst = Register.B32 then 1L else 0L in
+                  encode_raw_word (get_opcode OP_FCVT) d_idx s_idx mode
               | Ir.Vec_mov { dst; src; bits } ->
                   encode_raw_word (get_opcode OP_VEC_MOV) (vector_index dst) (vector_index src) (Int64.of_int bits)
               | Ir.Vec_splat { dst; src; bits; lane_bits } ->
