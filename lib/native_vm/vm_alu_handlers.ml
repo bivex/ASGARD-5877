@@ -293,155 +293,232 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   ];
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
-  Buffer.add_string b "    H_BSWAP_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t res;\n";
-       Buffer.add_string b "        if (bits == 16) { res = (uint64_t)__builtin_bswap16((uint16_t)val); }\n";
-       Buffer.add_string b "        else if (bits == 32) { res = (uint64_t)__builtin_bswap32((uint32_t)val); }\n";
-       Buffer.add_string b "        else { res = __builtin_bswap64(val); }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t _b = static_cast<uint32_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _r = (_b == 16) ? static_cast<uint64_t>(__builtin_bswap16(static_cast<uint16_t>(_val)))\n";
-       Buffer.add_string b "                     : ((_b == 32) ? static_cast<uint64_t>(__builtin_bswap32(static_cast<uint32_t>(_val)))\n";
-       Buffer.add_string b "                                   : __builtin_bswap64(_val));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _r);\n"
-   | _ ->
-       Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        if (bits == 16) ctx.set_reg(dst, (uint64_t)__builtin_bswap16((uint16_t)ctx.get_reg(src)));\n";
-       Buffer.add_string b "        else if (bits == 32) ctx.set_reg(dst, (uint64_t)__builtin_bswap32((uint32_t)ctx.get_reg(src)));\n";
-       Buffer.add_string b "        else ctx.set_reg(dst, __builtin_bswap64(ctx.get_reg(src)));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CLZ_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t mval = val & mask;\n";
-       Buffer.add_string b "        uint64_t res;\n";
-       Buffer.add_string b "        if (bits <= 32) {\n";
-       Buffer.add_string b "            uint32_t v32 = (uint32_t)mval;\n";
-       Buffer.add_string b "            res = (v32 == 0) ? (uint64_t)bits : (uint64_t)(__builtin_clz(v32) - (32 - bits));\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            res = (mval == 0) ? 64ULL : (uint64_t)__builtin_clzll(mval);\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t _bits = static_cast<uint32_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _mask = (_bits >= 64) ? ~0ULL : ((1ULL << _bits) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t _ms = _s & _mask;\n";
-       Buffer.add_string b "        if (_bits <= 32) {\n";
-       Buffer.add_string b "            uint32_t _v32 = static_cast<uint32_t>(_ms);\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (_v32 == 0) ? static_cast<uint64_t>(_bits) : static_cast<uint64_t>(__builtin_clz(_v32) - (32 - _bits)));\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (_ms == 0) ? 64ULL : static_cast<uint64_t>(__builtin_clzll(_ms)));\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(src); uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t mval = val & mask;\n";
-       Buffer.add_string b "        uint64_t _clz = (bits <= 32) ? (((uint32_t)mval == 0) ? (uint64_t)bits : (uint64_t)(__builtin_clz((uint32_t)mval) - (32 - bits)))\n";
-       Buffer.add_string b "                                     : ((mval == 0) ? 64ULL : (uint64_t)__builtin_clzll(mval));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _clz);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CTZ_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t mval = val & mask;\n";
-       Buffer.add_string b "        uint64_t res;\n";
-       Buffer.add_string b "        if (bits <= 32) {\n";
-       Buffer.add_string b "            uint32_t v32 = (uint32_t)mval;\n";
-       Buffer.add_string b "            res = (v32 == 0) ? (uint64_t)bits : (uint64_t)__builtin_ctz(v32);\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            res = (mval == 0) ? 64ULL : (uint64_t)__builtin_ctzll(mval);\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t _bits = static_cast<uint32_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _mask = (_bits >= 64) ? ~0ULL : ((1ULL << _bits) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t _ms = _s & _mask;\n";
-       Buffer.add_string b "        if (_bits <= 32) {\n";
-       Buffer.add_string b "            uint32_t _v32 = static_cast<uint32_t>(_ms);\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (_v32 == 0) ? static_cast<uint64_t>(_bits) : static_cast<uint64_t>(__builtin_ctz(_v32)));\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (_ms == 0) ? 64ULL : static_cast<uint64_t>(__builtin_ctzll(_ms)));\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(src); uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t mval = val & mask;\n";
-       Buffer.add_string b "        uint64_t _ctz = (bits <= 32) ? (((uint32_t)mval == 0) ? (uint64_t)bits : (uint64_t)__builtin_ctz((uint32_t)mval))\n";
-       Buffer.add_string b "                                     : ((mval == 0) ? 64ULL : (uint64_t)__builtin_ctzll(mval));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _ctz);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_POPCNT_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t mval = val & mask;\n";
-       Buffer.add_string b "        uint64_t res = (bits <= 32) ? (uint64_t)__builtin_popcount((uint32_t)mval) : (uint64_t)__builtin_popcountll(mval);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t _b = static_cast<uint32_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _mask = (_b >= 64) ? ~0ULL : ((1ULL << _b) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t _ms = _s & _mask;\n";
-       Buffer.add_string b "        uint64_t _res = (_b <= 32) ? static_cast<uint64_t>(__builtin_popcount(static_cast<uint32_t>(_ms))) : static_cast<uint64_t>(__builtin_popcountll(_ms));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n"
-   | _ ->
-       Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t mask = (bits >= 64) ? ~0ULL : ((1ULL << bits) - 1ULL);\n";
-       Buffer.add_string b "        uint64_t mval = ctx.get_reg(src) & mask;\n";
-       Buffer.add_string b "        if (bits <= 32) {\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (uint64_t)__builtin_popcount((uint32_t)mval));\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.set_reg(dst, (uint64_t)__builtin_popcountll(mval));\n";
-       Buffer.add_string b "        }\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_RBIT_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t res = 0;\n";
-       Buffer.add_string b "        for (uint32_t i = 0; i < bits; ++i) {\n";
-       Buffer.add_string b "            if ((val >> i) & 1ULL) { res |= (1ULL << (bits - 1 - i)); }\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _val = ctx.get_reg(src); uint32_t _bits = static_cast<uint32_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _res = 0; uint32_t _i = 0;\n";
-       Buffer.add_string b "        while (_i < _bits) {\n";
-       Buffer.add_string b "            if ((_val >> _i) & 1ULL) _res |= (1ULL << (_bits - 1 - _i));\n";
-       Buffer.add_string b "            _i++;\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(src); uint32_t bits = (uint32_t)imm;\n";
-       Buffer.add_string b "        uint64_t res = 0;\n";
-       Buffer.add_string b "        for (uint32_t i = 0; i < bits; ++i) {\n";
-       Buffer.add_string b "            uint64_t _b = (val >> i) & 1ULL;\n";
-       Buffer.add_string b "            res ^= (_b << (bits - 1 - i));\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let bswap_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_src;
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        decl_var UInt64 "res";
+        if_then_else (var "bits" ==~ i32 16) [
+          var "res" := cast UInt64 (call "__builtin_bswap16" [cast UInt16 (var "val")])
+        ] [
+          if_then_else (var "bits" ==~ i32 32) [
+            var "res" := cast UInt64 (call "__builtin_bswap32" [cast UInt32 (var "val")])
+          ] [
+            var "res" := call "__builtin_bswap64" [var "val"]
+          ]
+        ];
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "_val" reg_src;
+        let_u32 "_b" (cast UInt32 (var "imm"));
+        let_u64 "_r" (
+          ternary (var "_b" ==~ i32 16)
+            (cast UInt64 (call "__builtin_bswap16" [cast UInt16 (var "_val")]))
+            (ternary (var "_b" ==~ i32 32)
+               (cast UInt64 (call "__builtin_bswap32" [cast UInt32 (var "_val")]))
+               (call "__builtin_bswap64" [var "_val"]))
+        );
+        set_reg (var "dst") (var "_r");
+      ]
+    | _ -> [
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        if_then_else (var "bits" ==~ i32 16) [
+          set_reg (var "dst") (cast UInt64 (call "__builtin_bswap16" [cast UInt16 reg_src]))
+        ] [
+          if_then_else (var "bits" ==~ i32 32) [
+            set_reg (var "dst") (cast UInt64 (call "__builtin_bswap32" [cast UInt32 reg_src]))
+          ] [
+            set_reg (var "dst") (call "__builtin_bswap64" [reg_src])
+          ]
+        ]
+      ]
+  in
+  emit_handler_ast b "H_BSWAP_RR" (bswap_stmts @ [ inc_instrs; fetch_next ]);
+
+  let clz_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_src;
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        let_u64 "mask" (ternary (var "bits" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "bits") -~ u64 1L));
+        let_u64 "mval" (var "val" &~ var "mask");
+        decl_var UInt64 "res";
+        if_then_else (var "bits" <=~ i32 32) [
+          let_u32 "v32" (cast UInt32 (var "mval"));
+          var "res" := ternary (var "v32" ==~ i32 0)
+            (cast UInt64 (var "bits"))
+            (cast UInt64 (call "__builtin_clz" [var "v32"] -~ (i32 32 -~ var "bits")))
+        ] [
+          var "res" := ternary (var "mval" ==~ u64 0L)
+            (u64 64L)
+            (cast UInt64 (call "__builtin_clzll" [var "mval"]))
+        ];
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "_s" reg_src;
+        let_u32 "_bits" (cast UInt32 (var "imm"));
+        let_u64 "_mask" (ternary (var "_bits" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "_bits") -~ u64 1L));
+        let_u64 "_ms" (var "_s" &~ var "_mask");
+        if_then_else (var "_bits" <=~ i32 32) [
+          let_u32 "_v32" (cast UInt32 (var "_ms"));
+          set_reg (var "dst") (ternary (var "_v32" ==~ i32 0)
+            (cast UInt64 (var "_bits"))
+            (cast UInt64 (call "__builtin_clz" [var "_v32"] -~ (i32 32 -~ var "_bits"))))
+        ] [
+          set_reg (var "dst") (ternary (var "_ms" ==~ u64 0L)
+            (u64 64L)
+            (cast UInt64 (call "__builtin_clzll" [var "_ms"])))
+        ]
+      ]
+    | _ -> [
+        let_u64 "val" reg_src;
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        let_u64 "mask" (ternary (var "bits" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "bits") -~ u64 1L));
+        let_u64 "mval" (var "val" &~ var "mask");
+        let_u64 "_clz" (
+          ternary (var "bits" <=~ i32 32)
+            (ternary (cast UInt32 (var "mval") ==~ i32 0)
+               (cast UInt64 (var "bits"))
+               (cast UInt64 (call "__builtin_clz" [cast UInt32 (var "mval")] -~ (i32 32 -~ var "bits"))))
+            (ternary (var "mval" ==~ u64 0L)
+               (u64 64L)
+               (cast UInt64 (call "__builtin_clzll" [var "mval"])))
+        );
+        set_reg (var "dst") (var "_clz");
+      ]
+  in
+  emit_handler_ast b "H_CLZ_RR" (clz_stmts @ [ inc_instrs; fetch_next ]);
+
+  let ctz_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_src;
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        let_u64 "mask" (ternary (var "bits" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "bits") -~ u64 1L));
+        let_u64 "mval" (var "val" &~ var "mask");
+        decl_var UInt64 "res";
+        if_then_else (var "bits" <=~ i32 32) [
+          let_u32 "v32" (cast UInt32 (var "mval"));
+          var "res" := ternary (var "v32" ==~ i32 0)
+            (cast UInt64 (var "bits"))
+            (cast UInt64 (call "__builtin_ctz" [var "v32"]))
+        ] [
+          var "res" := ternary (var "mval" ==~ u64 0L)
+            (u64 64L)
+            (cast UInt64 (call "__builtin_ctzll" [var "mval"]))
+        ];
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "_s" reg_src;
+        let_u32 "_bits" (cast UInt32 (var "imm"));
+        let_u64 "_mask" (ternary (var "_bits" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "_bits") -~ u64 1L));
+        let_u64 "_ms" (var "_s" &~ var "_mask");
+        if_then_else (var "_bits" <=~ i32 32) [
+          let_u32 "_v32" (cast UInt32 (var "_ms"));
+          set_reg (var "dst") (ternary (var "_v32" ==~ i32 0)
+            (cast UInt64 (var "_bits"))
+            (cast UInt64 (call "__builtin_ctz" [var "_v32"])))
+        ] [
+          set_reg (var "dst") (ternary (var "_ms" ==~ u64 0L)
+            (u64 64L)
+            (cast UInt64 (call "__builtin_ctzll" [var "_ms"])))
+        ]
+      ]
+    | _ -> [
+        let_u64 "val" reg_src;
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        let_u64 "mask" (ternary (var "bits" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "bits") -~ u64 1L));
+        let_u64 "mval" (var "val" &~ var "mask");
+        let_u64 "_ctz" (
+          ternary (var "bits" <=~ i32 32)
+            (ternary (cast UInt32 (var "mval") ==~ i32 0)
+               (cast UInt64 (var "bits"))
+               (cast UInt64 (call "__builtin_ctz" [cast UInt32 (var "mval")])))
+            (ternary (var "mval" ==~ u64 0L)
+               (u64 64L)
+               (cast UInt64 (call "__builtin_ctzll" [var "mval"])))
+        );
+        set_reg (var "dst") (var "_ctz");
+      ]
+  in
+  emit_handler_ast b "H_CTZ_RR" (ctz_stmts @ [ inc_instrs; fetch_next ]);
+
+  let popcnt_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_src;
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        let_u64 "mask" (ternary (var "bits" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "bits") -~ u64 1L));
+        let_u64 "mval" (var "val" &~ var "mask");
+        let_u64 "res" (
+          ternary (var "bits" <=~ i32 32)
+            (cast UInt64 (call "__builtin_popcount" [cast UInt32 (var "mval")]))
+            (cast UInt64 (call "__builtin_popcountll" [var "mval"]))
+        );
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "_s" reg_src;
+        let_u32 "_b" (cast UInt32 (var "imm"));
+        let_u64 "_mask" (ternary (var "_b" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "_b") -~ u64 1L));
+        let_u64 "_ms" (var "_s" &~ var "_mask");
+        let_u64 "_res" (
+          ternary (var "_b" <=~ i32 32)
+            (cast UInt64 (call "__builtin_popcount" [cast UInt32 (var "_ms")]))
+            (cast UInt64 (call "__builtin_popcountll" [var "_ms"]))
+        );
+        set_reg (var "dst") (var "_res");
+      ]
+    | _ -> [
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        let_u64 "mask" (ternary (var "bits" >=~ i32 64) (bit_not (u64 0L)) ((u64 1L <<~ var "bits") -~ u64 1L));
+        let_u64 "mval" (reg_src &~ var "mask");
+        if_then_else (var "bits" <=~ i32 32) [
+          set_reg (var "dst") (cast UInt64 (call "__builtin_popcount" [cast UInt32 (var "mval")]))
+        ] [
+          set_reg (var "dst") (cast UInt64 (call "__builtin_popcountll" [var "mval"]))
+        ]
+      ]
+  in
+  emit_handler_ast b "H_POPCNT_RR" (popcnt_stmts @ [ inc_instrs; fetch_next ]);
+
+  let rbit_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_src;
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        let_u64 "res" (u64 0L);
+        for_range "i" (i32 0) (var "bits") [
+          if_then (((var "val" >>~ var "i") &~ u64 1L) <>~ u64 0L) [
+            var "res" |= (u64 1L <<~ ((var "bits" -~ i32 1) -~ var "i"))
+          ]
+        ];
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "_val" reg_src;
+        let_u32 "_bits" (cast UInt32 (var "imm"));
+        let_u64 "_res" (u64 0L);
+        let_u32 "_i" (i32 0);
+        while_loop (var "_i" <~ var "_bits") [
+          if_then (((var "_val" >>~ var "_i") &~ u64 1L) <>~ u64 0L) [
+            var "_res" |= (u64 1L <<~ ((var "_bits" -~ i32 1) -~ var "_i"))
+          ];
+          (var "_i" += i32 1)
+        ];
+        set_reg (var "dst") (var "_res");
+      ]
+    | _ -> [
+        let_u64 "val" reg_src;
+        let_u32 "bits" (cast UInt32 (var "imm"));
+        let_u64 "res" (u64 0L);
+        for_range "i" (i32 0) (var "bits") [
+          let_u64 "_b" ((var "val" >>~ var "i") &~ u64 1L);
+          (var "res" ^= (var "_b" <<~ ((var "bits" -~ i32 1) -~ var "i")))
+        ];
+        set_reg (var "dst") (var "res");
+      ]
+  in
+  emit_handler_ast b "H_RBIT_RR" (rbit_stmts @ [ inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then begin
     Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
     emit_handler_inline_ast b "H_ADD_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
