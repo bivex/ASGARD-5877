@@ -13,11 +13,18 @@ val advance_key_step : int64 -> int -> int -> int64 -> int64
 (** One step of the in-block key chain, mirroring C++ advance_key_step bit-for-bit.
     [imm] is the 64-bit two's-complement value the runtime sees. *)
 
-val decode_fields : int64 -> int * int * int * int64
-(** Decode (op, dst, src, imm) from a packed plaintext word exactly as the C++
-    FETCH_NEXT macro does.  [imm] is the sign-extended 32-bit slice of bits 18..49 —
-    the runtime never sees the full 46-bit immediate, so chain simulation must use
-    this truncated view, never the source immediate. *)
+type word_layout = {
+  op_shift : int;
+  dst_shift : int;
+  src_shift : int;
+}
+
+val default_word_layout : word_layout
+val layout_of_seed : int32 -> word_layout
+
+val decode_fields : ?layout:word_layout -> int64 -> int * int * int * int64
+(** Decode (op, dst, src, imm) from a packed plaintext word according to the
+    per-seed word_layout exactly as the C++ FETCH_NEXT macro does. *)
 
 val poly_multiplier_of_seed : int32 -> int64
 val poly_init_of_seed : int32 -> int64

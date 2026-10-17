@@ -100,6 +100,7 @@ let compile_and_package_multi
   in
 
   let key_seed = Random.State.int32 rng Int32.max_int in
+  let word_layout = Rolling_key.layout_of_seed key_seed in
   let enable_rolling = Protection_config.rolling_key_enabled config in
   let enable_address_bound = Protection_config.address_bound_enabled config in
 
@@ -161,6 +162,11 @@ let compile_and_package_multi
     in
 
     (* Linearize blocks and calculate block start offsets in bytecode with Super-Operator fusion and Junk insertion *)
+    let is_block_terminated (b : Ir.basic_block) =
+      match List.rev b.instrs with
+      | (Ir.Jmp _ | Ir.Jcc _ | Ir.Ret | Ir.Vm_exit | Ir.Trap _) :: _ -> true
+      | _ -> false
+    in
     let entry_block = Hashtbl.find target_func.cfg.blocks target_func.cfg.entry_id in
     let other_blocks =
       Hashtbl.fold
@@ -168,7 +174,22 @@ let compile_and_package_multi
         target_func.cfg.blocks []
     in
     let sorted_other = List.sort (fun (a : Ir.basic_block) (b : Ir.basic_block) -> Int.compare a.id b.id) other_blocks in
-    let sorted_blocks = entry_block :: sorted_other in
+    let rec canonicalize_fallthrough = function
+      | [] -> []
+      | [last] -> [last]
+      | curr :: (next :: _ as rest) ->
+          let curr' =
+            if is_block_terminated curr then curr
+            else { curr with instrs = curr.instrs @ [ Ir.Jmp (Ir.BlockId next.id) ] }
+          in
+          curr' :: canonicalize_fallthrough rest
+    in
+    let canonical_blocks = canonicalize_fallthrough (entry_block :: sorted_other) in
+    let entry_block_canon = List.hd canonical_blocks in
+    let other_canon = List.tl canonical_blocks in
+    let other_arr = Array.of_list other_canon in
+    shuffle_array rng other_arr;
+    let sorted_blocks = entry_block_canon :: (Array.to_list other_arr) in
 
     (* -----------------------------------------------------------------------
        Parallel MBA via domainslib Task pool.
@@ -300,9 +321,9 @@ let compile_and_package_multi
   in
   let encode_raw_word ?(extra_bits = 0L) op dst src imm =
     let w = ref 0L in
-    w := Int64.logor !w (Int64.of_int op);
-    w := Int64.logor !w (Int64.shift_left (Int64.of_int dst) 8);
-    w := Int64.logor !w (Int64.shift_left (Int64.of_int src) 13);
+    w := Int64.logor !w (Int64.shift_left (Int64.of_int op) word_layout.op_shift);
+    w := Int64.logor !w (Int64.shift_left (Int64.of_int dst) word_layout.dst_shift);
+    w := Int64.logor !w (Int64.shift_left (Int64.of_int src) word_layout.src_shift);
     let imm_masked =
       if extra_bits <> 0L then
         Int64.logand imm 0xFFFFFFFFL
@@ -320,7 +341,7 @@ let compile_and_package_multi
       (* Advance exactly like FETCH_NEXT does: op is the randomized opcode byte,
          imm is re-read from the packed word (32-bit sign-extended window), never
          from the source immediate — the 46→32 bit truncation must match. *)
-      let (dop, ddst, _, dimm) = Rolling_key.decode_fields !w in
+      let (dop, ddst, _, dimm) = Rolling_key.decode_fields ~layout:word_layout !w in
       cur_key := Rolling_key.advance_key_step !cur_key dop ddst dimm
     end;
     bytecode := masked_w :: !bytecode

@@ -34,14 +34,39 @@ let advance_key_step (k : int64) (op : int) (dst : int) (imm : int64) : int64 =
 let sign_extend_32 (v : int64) : int64 =
   if Int64.logand v 0x80000000L <> 0L then Int64.logor v 0xFFFFFFFF00000000L else v
 
+type word_layout = {
+  op_shift : int;
+  dst_shift : int;
+  src_shift : int;
+}
+
+let default_word_layout = {
+  op_shift = 0;
+  dst_shift = 8;
+  src_shift = 13;
+}
+
+let layouts = [|
+  { op_shift = 0; dst_shift = 8; src_shift = 13 };
+  { op_shift = 0; dst_shift = 13; src_shift = 8 };
+  { op_shift = 5; dst_shift = 0; src_shift = 13 };
+  { op_shift = 5; dst_shift = 13; src_shift = 0 };
+  { op_shift = 10; dst_shift = 0; src_shift = 5 };
+  { op_shift = 10; dst_shift = 5; src_shift = 0 };
+|]
+
+let layout_of_seed (seed : int32) : word_layout =
+  let idx = (Int32.to_int (Int32.logand seed 0x7FFFFFFFl)) mod 6 in
+  layouts.(idx)
+
 (* Field extraction from a packed plaintext word, exactly as the C++ FETCH_NEXT
    macro does it.  The runtime immediate is the SIGN-EXTENDED 32-bit slice of
    bits 18..49, not the 46-bit immediate the encoder packed — chain simulation
    must use this truncated view, never the source immediate. *)
-let decode_fields (w : int64) : int * int * int * int64 =
-  let op = Int64.to_int (Int64.logand w 0xFFL) in
-  let dst = Int64.to_int (Int64.logand (Int64.shift_right_logical w 8) 0x1FL) in
-  let src = Int64.to_int (Int64.logand (Int64.shift_right_logical w 13) 0x1FL) in
+let decode_fields ?(layout = default_word_layout) (w : int64) : int * int * int * int64 =
+  let op = Int64.to_int (Int64.logand (Int64.shift_right_logical w layout.op_shift) 0xFFL) in
+  let dst = Int64.to_int (Int64.logand (Int64.shift_right_logical w layout.dst_shift) 0x1FL) in
+  let src = Int64.to_int (Int64.logand (Int64.shift_right_logical w layout.src_shift) 0x1FL) in
   let imm = sign_extend_32 (Int64.logand (Int64.shift_right_logical w 18) 0xFFFFFFFFL) in
   (op, dst, src, imm)
 

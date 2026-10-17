@@ -32,6 +32,11 @@ let emit_handler_inline_ast b label (stmts : stmt list) =
 
 let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = false) () =
   let pick_variant n = Random.State.int rng n in
+  let rand_u64 () =
+    let lo = Random.State.int64 rng 0x100000000L in
+    let hi = Random.State.int64 rng 0x100000000L in
+    Int64.logor (Int64.shift_left hi 32) lo
+  in
   let wrap_metamorphic_involution_ast expr =
     let c_odd = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
     let shifted e = ((e &~ u64 0x7FFFFFFFL) *~ u64 c_odd) <<~ u64 33L in
@@ -167,14 +172,39 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     Buffer.add_string b "    H_MOV_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_MOV_RI, dst, 0, (uint64_t)(uint32_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
     Buffer.add_string b "#else\n"
   end;
-  (match Random.State.int rng 3 with
+  (match Random.State.int rng 6 with
    | 0 -> Buffer.add_string b "    H_MOV_RR: ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT();\n"
-   | 1 -> Buffer.add_string b "    H_MOV_RR: { uint64_t _v = ctx.get_reg(src); ctx.set_reg(dst, _v); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_MOV_RR: { if (dst != src) ctx.set_reg(dst, ctx.get_reg(src)); ctx.executed_instructions++; FETCH_NEXT(); }\n");
-  (match Random.State.int rng 3 with
+   | 1 ->
+       let k = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RR: { volatile uint64_t _k = 0x%016LXULL; uint64_t _s = ctx.get_reg(src); ctx.set_reg(dst, (_s ^ _k) ^ _k); ctx.executed_instructions++; FETCH_NEXT(); }\n" k)
+   | 2 ->
+       let c = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RR: { volatile uint64_t _c = 0x%016LXULL; uint64_t _s = ctx.get_reg(src); ctx.set_reg(dst, (_s + _c) - _c); ctx.executed_instructions++; FETCH_NEXT(); }\n" c)
+   | 3 ->
+       let c = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RR: { volatile uint64_t _c = 0x%016LXULL; uint64_t _s = ctx.get_reg(src); ctx.set_reg(dst, (_s - _c) + _c); ctx.executed_instructions++; FETCH_NEXT(); }\n" c)
+   | 4 ->
+       let m = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RR: { volatile uint64_t _m = 0x%016LXULL; uint64_t _s = ctx.get_reg(src); ctx.set_reg(dst, (_s & _m) | (_s & ~_m)); ctx.executed_instructions++; FETCH_NEXT(); }\n" m)
+   | _ ->
+       Buffer.add_string b "    H_MOV_RR: { if (dst != src) { ctx.set_reg(dst, ctx.get_reg(src)); } ctx.executed_instructions++; FETCH_NEXT(); }\n");
+  (match Random.State.int rng 6 with
    | 0 -> Buffer.add_string b "    H_MOV_RI: ctx.set_reg(dst, (uint64_t)(uint32_t)imm); ctx.executed_instructions++; FETCH_NEXT();\n"
-   | 1 -> Buffer.add_string b "    H_MOV_RI: { uint64_t _imm_u64 = static_cast<uint64_t>(static_cast<uint32_t>(imm)); ctx.set_reg(dst, _imm_u64); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_MOV_RI: { uint32_t _u32 = (uint32_t)imm; ctx.set_reg(dst, (uint64_t)_u32); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 1 ->
+       let k = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RI: { volatile uint64_t _k = 0x%016LXULL; uint64_t _imm = (uint64_t)(uint32_t)imm; ctx.set_reg(dst, (_imm ^ _k) ^ _k); ctx.executed_instructions++; FETCH_NEXT(); }\n" k)
+   | 2 ->
+       let c = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RI: { volatile uint64_t _c = 0x%016LXULL; uint64_t _imm = (uint64_t)(uint32_t)imm; ctx.set_reg(dst, (_imm + _c) - _c); ctx.executed_instructions++; FETCH_NEXT(); }\n" c)
+   | 3 ->
+       let c = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RI: { volatile uint64_t _c = 0x%016LXULL; uint64_t _imm = (uint64_t)(uint32_t)imm; ctx.set_reg(dst, (_imm - _c) + _c); ctx.executed_instructions++; FETCH_NEXT(); }\n" c)
+   | 4 ->
+       let m = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RI: { volatile uint64_t _m = 0x%016LXULL; uint64_t _imm = (uint64_t)(uint32_t)imm; ctx.set_reg(dst, (_imm & _m) | (_imm & ~_m)); ctx.executed_instructions++; FETCH_NEXT(); }\n" m)
+   | _ ->
+       let k = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_MOV_RI: { uint32_t _u32 = (uint32_t)imm; volatile uint32_t _k = 0x%08lXU; ctx.set_reg(dst, (uint64_t)((_u32 ^ _k) ^ _k)); ctx.executed_instructions++; FETCH_NEXT(); }\n" (Int64.to_int32 k)));
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
   Buffer.add_string b "    H_MOV_HIGH: {\n";
@@ -197,14 +227,32 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     Buffer.add_string b "    H_NOT_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_NOT_R, dst, dst, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
     Buffer.add_string b "#else\n"
   end;
-  (match pick_variant 3 with
+  (match Random.State.int rng 6 with
    | 0 -> Buffer.add_string b "    H_NEG_RR: { PROBE_START(); ctx.set_reg(dst, 0ULL - ctx.get_reg(dst)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
    | 1 -> Buffer.add_string b "    H_NEG_RR: { PROBE_START(); uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, (~_v) + 1ULL); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_NEG_RR: { PROBE_START(); ctx.set_reg(dst, static_cast<uint64_t>(-static_cast<int64_t>(ctx.get_reg(dst)))); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
-  (match pick_variant 3 with
+   | 2 -> Buffer.add_string b "    H_NEG_RR: { PROBE_START(); ctx.set_reg(dst, static_cast<uint64_t>(-static_cast<int64_t>(ctx.get_reg(dst)))); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 3 ->
+       let c = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_NEG_RR: { PROBE_START(); volatile uint64_t _c = 0x%016LXULL; uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, _c - (_v + _c)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" c)
+   | 4 ->
+       let k = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_NEG_RR: { PROBE_START(); volatile uint64_t _k = 0x%016LXULL; uint64_t _neg = 0ULL - ctx.get_reg(dst); ctx.set_reg(dst, (_neg ^ _k) ^ _k); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" k)
+   | _ ->
+       let c = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_NEG_RR: { PROBE_START(); volatile uint64_t _c = 0x%016LXULL; uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, ((~_v) - _c) + (_c + 1ULL)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" c));
+  (match Random.State.int rng 6 with
    | 0 -> Buffer.add_string b "    H_NOT_RR: { PROBE_START(); ctx.set_reg(dst, ~ctx.get_reg(dst)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
    | 1 -> Buffer.add_string b "    H_NOT_RR: { PROBE_START(); uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, _v ^ ~0ULL); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_NOT_RR: { PROBE_START(); ctx.set_reg(dst, 0xFFFFFFFFFFFFFFFFULL - ctx.get_reg(dst)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 2 -> Buffer.add_string b "    H_NOT_RR: { PROBE_START(); ctx.set_reg(dst, 0xFFFFFFFFFFFFFFFFULL - ctx.get_reg(dst)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n"
+   | 3 ->
+       let k = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_NOT_RR: { PROBE_START(); volatile uint64_t _k = 0x%016LXULL; uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, ((_v ^ ~0ULL) ^ _k) ^ _k); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" k)
+   | 4 ->
+       let c = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_NOT_RR: { PROBE_START(); volatile uint64_t _c = 0x%016LXULL; uint64_t _not_v = ~ctx.get_reg(dst); ctx.set_reg(dst, (_not_v + _c) - _c); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" c)
+   | _ ->
+       let c = rand_u64 () in
+       Buffer.add_string b (Printf.sprintf "    H_NOT_RR: { PROBE_START(); volatile uint64_t _c = 0x%016LXULL; uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, (_c - _v) - (_c + 1ULL)); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" c));
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
   Buffer.add_string b "    H_BSWAP_RR: {\n";

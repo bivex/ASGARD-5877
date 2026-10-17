@@ -372,6 +372,7 @@ let emit_native_runtime_hpp_decls
   let offset = profile.dispatch.context_layout.affine_b in
   let policy = Runtime_policy.of_config ?runtime_profile config in
   let num_domains = policy.num_domains in
+  let word_layout = Vm_ir.Rolling_key.layout_of_seed key_seed in
 
   let rns_header = Vm_ir.Rns.emit_cpp_rns_header () in
   let branchless_vip_header = Vm_ir.Branchless_vip.emit_branchless_vip_cpp_header () in
@@ -789,7 +790,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         let_u64 "g_handlers_hash" (call "compute_handlers_hash" [c_cast (ConstPtr (StructType "uintptr_t")) (var "all_dispatch_domains"); i32 num_domains]);
       ]
       @ (if policy.enable_address_bound then [
-          raw {|    uint64_t bound_buf[256];
+          raw (Printf.sprintf {|    uint64_t bound_buf[256];
     uint64_t* heap_bound_bc = (count <= 256) ? nullptr : (uint64_t*)malloc(count * sizeof(uint64_t));
     uint64_t* bound_bc = (count <= 256) ? bound_buf : heap_bound_bc;
     if (__builtin_expect(!bound_bc, 0)) {
@@ -806,12 +807,12 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
             uint64_t k_pos = key64_for_offset(seed, idx);
             uint64_t plain = bytecode[idx] ^ k_pos;
             bound_bc[idx] = plain ^ k_pos ^ rk;
-            uint8_t b_op = (uint8_t)(((plain + 0xFFULL) - (plain | 0xFFULL)));
-            uint8_t b_dst = (uint8_t)((((plain >> 8) + 0x1FULL) - ((plain >> 8) | 0x1FULL)));
+            uint8_t b_op = (uint8_t)((((plain >> %d) + 0xFFULL) - ((plain >> %d) | 0xFFULL)));
+            uint8_t b_dst = (uint8_t)((((plain >> %d) + 0x1FULL) - ((plain >> %d) | 0x1FULL)));
             int64_t b_imm = (int64_t)((int32_t)((((plain >> 18) + 0xFFFFFFFFULL) - ((plain >> 18) | 0xFFFFFFFFULL))));
             rk = VMContext::advance_key_step(rk, b_op, b_dst, b_imm);
         }
-    }|};
+    }|} word_layout.op_shift word_layout.op_shift word_layout.dst_shift word_layout.dst_shift);
         ] else [])
       @ [
         raw (Printf.sprintf {|    uint64_t word = 0;
@@ -854,9 +855,9 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         word = work_bc[vIP_idx] ^ k_dyn; \
         %s \
         vIP_idx++; \
-        op = (uint8_t)(((word + 0xFFULL) - (word | 0xFFULL))); \
-        dst = (uint8_t)((((word >> 8) + 0x1FULL) - ((word >> 8) | 0x1FULL))); \
-        src = (uint8_t)((((word >> 13) + 0x1FULL) - ((word >> 13) | 0x1FULL))); \
+        op = (uint8_t)((((word >> %d) + 0xFFULL) - ((word >> %d) | 0xFFULL))); \
+        dst = (uint8_t)((((word >> %d) + 0x1FULL) - ((word >> %d) | 0x1FULL))); \
+        src = (uint8_t)((((word >> %d) + 0x1FULL) - ((word >> %d) | 0x1FULL))); \
         imm = (int64_t)((int32_t)((((word >> 18) + 0xFFFFFFFFULL) - ((word >> 18) | 0xFFFFFFFFULL)))); \
         ctx.evolve_mask((uint32_t)k_dyn); \
         ctx.evolve_slot_mask(dst, (uint32_t)k_dyn); \
@@ -868,6 +869,9 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
           (if policy.enable_running_key then "k_dyn = k_pos ^ ctx.running_key;" else "k_dyn = k_pos;")
           (if policy.enable_address_bound then "work_bc[vIP_idx] = bound_bc[vIP_idx];" else "work_bc[vIP_idx] = bytecode[vIP_idx];")
           (if policy.enable_mem_sanitize then "SCRUB_WORD(&work_bc[vIP_idx], (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL);" else "")
+          word_layout.op_shift word_layout.op_shift
+          word_layout.dst_shift word_layout.dst_shift
+          word_layout.src_shift word_layout.src_shift
           (if policy.enable_running_key then "ctx.advance_running_key(op, dst, imm);" else "")
           num_domains
         );
