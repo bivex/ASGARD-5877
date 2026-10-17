@@ -105,31 +105,31 @@ let emit_c11_prototypes () : top_decl list =
   ]
 
 let emit_header (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 2048 in
   let vlen = spec.config.vlen in
   let num_vregs = spec.config.num_vregs in
-  Buffer.add_string b "#ifndef VISA_EMULATOR_H\n#define VISA_EMULATOR_H\n\n";
-  Buffer.add_string b "#include <stdint.h>\n#include <stddef.h>\n#include <stdbool.h>\n#include <string.h>\n#include <stdio.h>\n\n";
-  Buffer.add_string b (Printf.sprintf "#define VISA_VLEN %d\n" vlen);
-  Buffer.add_string b "#define VISA_VLEN_BYTES (VISA_VLEN / 8)\n";
-  Buffer.add_string b (Printf.sprintf "#define VISA_NUM_VREGS %d\n" num_vregs);
-  Buffer.add_string b "#define VISA_NUM_XREGS 32\n\n";
-  Buffer.add_string b (render_top_decls (emit_csr_state_c11_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decls (emit_vreg_file_c11_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decls (emit_emulator_state_c11_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decls (emit_decoded_inst_c11_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decls (emit_c11_prototypes ()));
-  Buffer.add_string b "\n\n#endif // VISA_EMULATOR_H\n";
-  Buffer.contents b
+  let header_decls : top_decl list = [
+    macro_def "VISA_EMULATOR_H";
+    include_sys "stdint.h";
+    include_sys "stddef.h";
+    include_sys "stdbool.h";
+    include_sys "string.h";
+    include_sys "stdio.h";
+    macro_def ~value:(i32 vlen) "VISA_VLEN";
+    macro_def ~value:(var "VISA_VLEN" /~ i32 8) "VISA_VLEN_BYTES";
+    macro_def ~value:(i32 num_vregs) "VISA_NUM_VREGS";
+    macro_def ~value:(i32 32) "VISA_NUM_XREGS";
+  ]
+  @ emit_csr_state_c11_def ()
+  @ emit_vreg_file_c11_def ()
+  @ emit_emulator_state_c11_def ()
+  @ emit_decoded_inst_c11_def ()
+  @ emit_c11_prototypes ()
+  in
+  render_top_decls [ preproc_ifndef "VISA_EMULATOR_H" header_decls ]
 
 let cast = c_cast
 
 let emit_emulator_c (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 2048 in
   let sew = Types.Sew.to_bits spec.config.default_sew in
   let default_vl = spec.config.vlen / sew in
   let groups = group_by_funct6 spec.instructions in
@@ -218,9 +218,7 @@ let emit_emulator_c (spec : Vector_isa_spec.t) =
       ret (var "executed");
     ];
   ] in
-  Buffer.add_string b "#include \"visa_emulator.h\"\n\n";
-  Buffer.add_string b (render_top_decls funcs);
-  Buffer.contents b
+  render_top_decls (include_local "visa_emulator.h" :: funcs)
 
 let generate_c11_op_expr (inst : Vector_instruction.t) : expr =
   match inst.binary_op with
@@ -324,7 +322,6 @@ let emit_exec_c11_inst (inst : Vector_instruction.t) : top_decl =
     (body_header @ op1_setup @ [loops; ret (bool_lit true)])
 
 let emit_instructions_c (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 4096 in
   let clamp_func =
     func_decl ~attrs:[StaticFn; InlineFn] Int32 "clamp_i32" [(Int64, "val")] [
       if_then (var "val" <~ cast Int64 (var "INT32_MIN")) [ret (var "INT32_MIN")];
@@ -342,12 +339,14 @@ let emit_instructions_c (spec : Vector_isa_spec.t) =
          ]
        ) spec.instructions @ [ret (bool_lit false)])
   in
-  Buffer.add_string b "#include \"visa_emulator.h\"\n#include <limits.h>\n\n";
-  Buffer.add_string b (render_top_decls ([clamp_func] @ exec_funcs @ [visa_execute_func]));
-  Buffer.contents b
+  let top_decls =
+    [ include_local "visa_emulator.h"; include_sys "limits.h"; clamp_func ]
+    @ exec_funcs
+    @ [ visa_execute_func ]
+  in
+  render_top_decls top_decls
 
 let emit_main_c (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 4096 in
   let setup_test_state =
     func_decl ~attrs:[StaticFn] Void "setup_test_state" [(Ptr (StructType "EmulatorState"), "state")] [
       for_range "i" (i32 0) (var "state" $-> "csr.vl") [
@@ -406,19 +405,25 @@ let emit_main_c (spec : Vector_isa_spec.t) =
       ret (call "run_self_tests" [addr_of (var "state")]);
     ]
   in
-  Buffer.add_string b "#include \"visa_emulator.h\"\n#include <stdlib.h>\n\n";
-  Buffer.add_string b (render_top_decls [setup_test_state; run_self_tests; main_func]);
-  Buffer.contents b
+  let top_decls =
+    [ include_local "visa_emulator.h"; include_sys "stdlib.h";
+      setup_test_state; run_self_tests; main_func ]
+  in
+  render_top_decls top_decls
 
 let emit_makefile () =
-  let b = Buffer.create 512 in
-  Buffer.add_string b "CC ?= clang\nCFLAGS ?= -std=c11 -O2 -Wall -Wextra -I.\nOBJS = visa_emulator.o visa_instructions.o main.o\nTARGET = visa_c11_test_runner\n\n";
-  Buffer.add_string b "all: $(TARGET)\n\n";
-  Buffer.add_string b "$(TARGET): $(OBJS)\n\t$(CC) $(CFLAGS) -o $@ $^\n\n";
-  Buffer.add_string b "%.o: %.c visa_emulator.h\n\t$(CC) $(CFLAGS) -c $< -o $@\n\n";
-  Buffer.add_string b "clean:\n\trm -f $(OBJS) $(TARGET)\n\n";
-  Buffer.add_string b ".PHONY: all clean\n";
-  Buffer.contents b
+  "CC ?= clang\n\
+   CFLAGS ?= -std=c11 -O2 -Wall -Wextra -I.\n\
+   OBJS = visa_emulator.o visa_instructions.o main.o\n\
+   TARGET = visa_c11_test_runner\n\n\
+   all: $(TARGET)\n\n\
+   $(TARGET): $(OBJS)\n\
+   \t$(CC) $(CFLAGS) -o $@ $^\n\n\
+   %.o: %.c visa_emulator.h\n\
+   \t$(CC) $(CFLAGS) -c $< -o $@\n\n\
+   clean:\n\
+   \trm -f $(OBJS) $(TARGET)\n\n\
+   .PHONY: all clean\n"
 
 let emit_c_project ?(allow_widening = false) (spec : Vector_isa_spec.t) ~output_dir =
   let has_widening = List.exists (fun (i : Vector_instruction.t) -> i.is_widening) spec.instructions in
