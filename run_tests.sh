@@ -1,1 +1,2 @@
-eval $(opam env) && dune runtest
+#!/usr/bin/env bash
+eval "$(opam env)" && dune runtest
