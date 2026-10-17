@@ -48,3 +48,4 @@ examples/cpp_types_demo/native_app
 crash-*
 leak-*
 timeout-*
+examples/nn_metamorph/results/results.jsonl
