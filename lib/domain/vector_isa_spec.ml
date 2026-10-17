@@ -68,55 +68,55 @@ let decode t word =
     t.instructions
 
 let to_sail_specification t =
-  let b = Buffer.create 2048 in
-  Buffer.add_string b "/* ========================================================================= */\n";
-  Buffer.add_string b (Printf.sprintf "/* Sail Formal Specification for %s (V-ISA)                         */\n" t.name);
-  Buffer.add_string b (Printf.sprintf "/* Version: %s                                                   */\n" t.version);
-  Buffer.add_string b "/* Generated via Hexagonal DDD random_vISA Synthesizer                       */\n";
-  Buffer.add_string b "/* ========================================================================= */\n\n";
-
-  Buffer.add_string b "default Order dec\n";
-  Buffer.add_string b "$include <prelude.sail>\n\n";
-
-  Buffer.add_string b (Printf.sprintf "let VLEN : int = %d\n" t.config.vlen);
-  Buffer.add_string b (Printf.sprintf "let ELEN : int = %d\n" t.config.elen);
-  Buffer.add_string b (Printf.sprintf "let NUM_VREGS : int = %d\n\n" t.config.num_vregs);
-
-  Buffer.add_string b "type vreg_idx = range(0, 31)\n";
-  Buffer.add_string b "type vreg_t = bits(VLEN)\n\n";
-
-  Buffer.add_string b "register v0  : vreg_t\n";
-  Buffer.add_string b "register v1  : vreg_t\n";
-  Buffer.add_string b "register v2  : vreg_t\n";
-  Buffer.add_string b "register v3  : vreg_t\n";
-  Buffer.add_string b "register vl  : bits(64)\n";
-  Buffer.add_string b "register vtype : bits(64)\n\n";
-
-  Buffer.add_string b "val get_velem : (vreg_t, int, int) -> bits(32)\n";
-  Buffer.add_string b "val set_velem : (vreg_t, int, int, bits(32)) -> unit\n";
-  Buffer.add_string b "val get_vmask_bit : (vreg_t, int) -> bits(1)\n\n";
-
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
-      Buffer.add_string b
-        (Printf.sprintf "/* Instruction: %s (%s) encoding: funct6=%d, funct3=%d */\n"
-           inst.mnemonic
-           (Types.Instruction_format.to_string inst.format)
-           inst.funct6
-           inst.funct3);
-      let clause = {
-        Sail_ast.mnemonic = inst.mnemonic;
-        funct6 = inst.funct6;
-        funct3 = inst.funct3;
-        format_name = Types.Instruction_format.to_string inst.format;
-      } in
-      Buffer.add_string b (Sail_ast.encoding_clause_to_sail clause);
-      Buffer.add_char b '\n';
-      if inst.description <> "" then begin
-        Buffer.add_string b (Printf.sprintf "/* %s */\n" inst.description);
-      end;
-      Buffer.add_string b (Sail_ast.function_to_sail inst.sail_function);
-      Buffer.add_string b "\n\n")
-    t.instructions;
-
-  Buffer.contents b
+  let header =
+    Printf.sprintf
+      "/* ========================================================================= */\n\
+       /* Sail Formal Specification for %s (V-ISA)                         */\n\
+       /* Version: %s                                                   */\n\
+       /* Generated via Hexagonal DDD random_vISA Synthesizer                       */\n\
+       /* ========================================================================= */\n\n\
+       default Order dec\n\
+       $include <prelude.sail>\n\n\
+       let VLEN : int = %d\n\
+       let ELEN : int = %d\n\
+       let NUM_VREGS : int = %d\n\n\
+       type vreg_idx = range(0, 31)\n\
+       type vreg_t = bits(VLEN)\n\n\
+       register v0  : vreg_t\n\
+       register v1  : vreg_t\n\
+       register v2  : vreg_t\n\
+       register v3  : vreg_t\n\
+       register vl  : bits(64)\n\
+       register vtype : bits(64)\n\n\
+       val get_velem : (vreg_t, int, int) -> bits(32)\n\
+       val set_velem : (vreg_t, int, int, bits(32)) -> unit\n\
+       val get_vmask_bit : (vreg_t, int) -> bits(1)\n\n"
+      t.name t.version t.config.vlen t.config.elen t.config.num_vregs
+  in
+  let inst_chunks =
+    List.map
+      (fun (inst : Vector_instruction.t) ->
+        let comment =
+          Printf.sprintf "/* Instruction: %s (%s) encoding: funct6=%d, funct3=%d */\n"
+            inst.mnemonic
+            (Types.Instruction_format.to_string inst.format)
+            inst.funct6
+            inst.funct3
+        in
+        let clause = {
+          Sail_ast.mnemonic = inst.mnemonic;
+          funct6 = inst.funct6;
+          funct3 = inst.funct3;
+          format_name = Types.Instruction_format.to_string inst.format;
+        } in
+        let enc = Sail_ast.encoding_clause_to_sail clause ^ "\n" in
+        let desc =
+          if inst.description <> "" then
+            Printf.sprintf "/* %s */\n" inst.description
+          else ""
+        in
+        let fn = Sail_ast.function_to_sail inst.sail_function ^ "\n\n" in
+        comment ^ enc ^ desc ^ fn)
+      t.instructions
+  in
+  header ^ String.concat "" inst_chunks
