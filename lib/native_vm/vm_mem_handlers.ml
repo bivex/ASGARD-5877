@@ -235,300 +235,442 @@ let emit_simd_handlers ?rng b =
       ]
   in
   emit_handler_ast b "H_VEC_MOV" (vec_mov_stmts @ [ inc_instrs; fetch_next ]);
-  Buffer.add_string b "    H_VEC_BINOP: {\n";
-  Buffer.add_string b "        uint32_t src2 = (uint32_t)(imm & 31);\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((imm >> 5) & 0x3ff);\n";
-  Buffer.add_string b "        uint32_t lane_bits = (uint32_t)((imm >> 15) & 0xff);\n";
-  Buffer.add_string b "        if (lane_bits == 0) lane_bits = 64;\n";
-  Buffer.add_string b "        uint32_t vop = (uint32_t)((imm >> 23) & 0x1f);\n";
-  Buffer.add_string b "        uint32_t elem = (uint32_t)((imm >> 28) & 0x3);\n";
-  Buffer.add_string b "        uint64_t mask = lane_bits == 8 ? 0xffULL : (lane_bits == 16 ? 0xffffULL : (lane_bits == 32 ? 0xffffffffULL : ~0ULL));\n";
-  Buffer.add_string b "        for (size_t bit = 0; bit < bits; bit += lane_bits) {\n";
-  Buffer.add_string b "            size_t chunk = bit / 64; unsigned shift = (unsigned)(bit % 64);\n";
-  Buffer.add_string b "            uint64_t a = (ctx.get_vreg_lane(src, chunk) >> shift) & mask;\n";
-  Buffer.add_string b "            uint64_t b = (ctx.get_vreg_lane(src2, chunk) >> shift) & mask;\n";
-  Buffer.add_string b "            uint64_t value = 0;\n";
-  Buffer.add_string b "            if (elem == 1 && vop <= 2) {\n";
-  Buffer.add_string b "                float fa = std::bit_cast<float>(static_cast<uint32_t>(a));\n";
-  Buffer.add_string b "                float fb = std::bit_cast<float>(static_cast<uint32_t>(b));\n";
-  Buffer.add_string b "                float fr = vop == 0 ? fa + fb : (vop == 1 ? fa - fb : fa * fb);\n";
-  Buffer.add_string b "                value = std::bit_cast<uint32_t>(fr);\n";
-  Buffer.add_string b "            } else if (elem == 1 && vop == 11) {\n";
-  Buffer.add_string b "                float fa = std::bit_cast<float>(static_cast<uint32_t>(a));\n";
-  Buffer.add_string b "                float fb = std::bit_cast<float>(static_cast<uint32_t>(b));\n";
-  Buffer.add_string b "                value = std::bit_cast<uint32_t>(std::fmin(fa, fb));\n";
-  Buffer.add_string b "            } else if (elem == 1 && vop == 12) {\n";
-  Buffer.add_string b "                float fa = std::bit_cast<float>(static_cast<uint32_t>(a));\n";
-  Buffer.add_string b "                float fb = std::bit_cast<float>(static_cast<uint32_t>(b));\n";
-  Buffer.add_string b "                value = std::bit_cast<uint32_t>(std::fmax(fa, fb));\n";
-  Buffer.add_string b "            } else if (elem == 2 && vop <= 2) {\n";
-  Buffer.add_string b "                double fa = std::bit_cast<double>(a);\n";
-  Buffer.add_string b "                double fb = std::bit_cast<double>(b);\n";
-  Buffer.add_string b "                double fr = vop == 0 ? fa + fb : (vop == 1 ? fa - fb : fa * fb);\n";
-  Buffer.add_string b "                value = std::bit_cast<uint64_t>(fr);\n";
-  Buffer.add_string b "            } else if (elem == 2 && vop == 11) {\n";
-  Buffer.add_string b "                double fa = std::bit_cast<double>(a);\n";
-  Buffer.add_string b "                double fb = std::bit_cast<double>(b);\n";
-  Buffer.add_string b "                value = std::bit_cast<uint64_t>(std::fmin(fa, fb));\n";
-  Buffer.add_string b "            } else if (elem == 2 && vop == 12) {\n";
-  Buffer.add_string b "                double fa = std::bit_cast<double>(a);\n";
-  Buffer.add_string b "                double fb = std::bit_cast<double>(b);\n";
-  Buffer.add_string b "                value = std::bit_cast<uint64_t>(std::fmax(fa, fb));\n";
-  Buffer.add_string b "            } else {\n";
-  Buffer.add_string b "                int64_t sa = lane_bits == 8 ? (int64_t)(int8_t)a : (lane_bits == 16 ? (int64_t)(int16_t)a : (lane_bits == 32 ? (int64_t)(int32_t)a : (int64_t)a));\n";
-  Buffer.add_string b "                int64_t sb = lane_bits == 8 ? (int64_t)(int8_t)b : (lane_bits == 16 ? (int64_t)(int16_t)b : (lane_bits == 32 ? (int64_t)(int32_t)b : (int64_t)b));\n";
-  Buffer.add_string b "                switch (vop) {\n";
-  Buffer.add_string b "                    case 0: value = a + b; break;\n";
-  Buffer.add_string b "                    case 1: value = a - b; break;\n";
-  Buffer.add_string b "                    case 2: value = a * b; break;\n";
-  Buffer.add_string b "                    case 3: value = a & b; break;\n";
-  Buffer.add_string b "                    case 4: value = a | b; break;\n";
-  Buffer.add_string b "                    case 5: value = a ^ b; break;\n";
-  Buffer.add_string b "                    case 6: { uint32_t cnt = (uint32_t)(ctx.get_vreg_lane(src2, 0) & 0xff); value = (cnt >= lane_bits) ? 0 : (a << cnt); break; }\n";
-  Buffer.add_string b "                    case 7: { uint32_t cnt = (uint32_t)(ctx.get_vreg_lane(src2, 0) & 0xff); value = (cnt >= lane_bits) ? 0 : (a >> cnt); break; }\n";
-  Buffer.add_string b "                    case 8: { uint32_t cnt = (uint32_t)(ctx.get_vreg_lane(src2, 0) & 0xff); value = (cnt >= lane_bits) ? (sa < 0 ? mask : 0) : ((uint64_t)(sa >> cnt) & mask); break; }\n";
-  Buffer.add_string b "                    case 9: value = (a == b) ? mask : 0; break;\n";
-  Buffer.add_string b "                    case 10: value = (sa > sb) ? mask : 0; break;\n";
-  Buffer.add_string b "                    case 11: value = (sa < sb) ? a : b; break;\n";
-  Buffer.add_string b "                    case 12: value = (sa > sb) ? a : b; break;\n";
-  Buffer.add_string b "                    case 13: value = (a < b) ? a : b; break;\n";
-  Buffer.add_string b "                    case 14: value = (a > b) ? a : b; break;\n";
-  Buffer.add_string b "                    case 15: value = (uint64_t)(sa < 0 ? -sa : sa) & mask; break;\n";
-  Buffer.add_string b "                    case 16: value = (~a) & b; break;\n";
-  Buffer.add_string b "                    case 17: {\n";
-  Buffer.add_string b "                        size_t block_lane = (bit / lane_bits) % (128 / lane_bits);\n";
-  Buffer.add_string b "                        size_t half_idx = block_lane / 2;\n";
-  Buffer.add_string b "                        size_t src_reg = (block_lane % 2 == 0) ? src : src2;\n";
-  Buffer.add_string b "                        size_t src_bit = ((bit / 128) * 128) + (half_idx * lane_bits);\n";
-  Buffer.add_string b "                        value = (ctx.get_vreg_lane(src_reg, src_bit / 64) >> (src_bit % 64)) & mask;\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 18: {\n";
-  Buffer.add_string b "                        size_t num_lanes = 128 / lane_bits;\n";
-  Buffer.add_string b "                        size_t block_lane = (bit / lane_bits) % num_lanes;\n";
-  Buffer.add_string b "                        size_t half_idx = (num_lanes / 2) + (block_lane / 2);\n";
-  Buffer.add_string b "                        size_t src_reg = (block_lane % 2 == 0) ? src : src2;\n";
-  Buffer.add_string b "                        size_t src_bit = ((bit / 128) * 128) + (half_idx * lane_bits);\n";
-  Buffer.add_string b "                        value = (ctx.get_vreg_lane(src_reg, src_bit / 64) >> (src_bit % 64)) & mask;\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 21: {\n";
-  Buffer.add_string b "                        uint8_t ctrl = (uint8_t)(b & 0xff);\n";
-  Buffer.add_string b "                        if (ctrl & 0x80) value = 0;\n";
-  Buffer.add_string b "                        else {\n";
-  Buffer.add_string b "                            size_t src_bit = ((bit / 128) * 128) + ((ctrl & 0xf) * 8);\n";
-  Buffer.add_string b "                            value = (ctx.get_vreg_lane(src, src_bit / 64) >> (src_bit % 64)) & 0xff;\n";
-  Buffer.add_string b "                        }\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 23: {\n";
-  Buffer.add_string b "                        size_t num_lanes = 128 / lane_bits;\n";
-  Buffer.add_string b "                        size_t block_lane = (bit / lane_bits) % num_lanes;\n";
-  Buffer.add_string b "                        size_t half_len = num_lanes / 2;\n";
-  Buffer.add_string b "                        size_t src_reg = (block_lane < half_len) ? src : src2;\n";
-  Buffer.add_string b "                        size_t sel_elem = (block_lane < half_len) ? (block_lane * 2) : ((block_lane - half_len) * 2);\n";
-  Buffer.add_string b "                        size_t src_bit = ((bit / 128) * 128) + (sel_elem * lane_bits);\n";
-  Buffer.add_string b "                        value = (ctx.get_vreg_lane(src_reg, src_bit / 64) >> (src_bit % 64)) & mask;\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 24: {\n";
-  Buffer.add_string b "                        size_t num_lanes = 128 / lane_bits;\n";
-  Buffer.add_string b "                        size_t block_lane = (bit / lane_bits) % num_lanes;\n";
-  Buffer.add_string b "                        size_t half_len = num_lanes / 2;\n";
-  Buffer.add_string b "                        size_t src_reg = (block_lane < half_len) ? src : src2;\n";
-  Buffer.add_string b "                        size_t sel_elem = (block_lane < half_len) ? (block_lane * 2 + 1) : ((block_lane - half_len) * 2 + 1);\n";
-  Buffer.add_string b "                        size_t src_bit = ((bit / 128) * 128) + (sel_elem * lane_bits);\n";
-  Buffer.add_string b "                        value = (ctx.get_vreg_lane(src_reg, src_bit / 64) >> (src_bit % 64)) & mask;\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 25: {\n";
-  Buffer.add_string b "                        size_t num_lanes = 128 / lane_bits;\n";
-  Buffer.add_string b "                        size_t block_lane = (bit / lane_bits) % num_lanes;\n";
-  Buffer.add_string b "                        size_t k = block_lane / 2;\n";
-  Buffer.add_string b "                        size_t src_reg = (block_lane % 2 == 0) ? src : src2;\n";
-  Buffer.add_string b "                        size_t sel_elem = k * 2;\n";
-  Buffer.add_string b "                        size_t src_bit = ((bit / 128) * 128) + (sel_elem * lane_bits);\n";
-  Buffer.add_string b "                        value = (ctx.get_vreg_lane(src_reg, src_bit / 64) >> (src_bit % 64)) & mask;\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 26: {\n";
-  Buffer.add_string b "                        size_t num_lanes = 128 / lane_bits;\n";
-  Buffer.add_string b "                        size_t block_lane = (bit / lane_bits) % num_lanes;\n";
-  Buffer.add_string b "                        size_t k = block_lane / 2;\n";
-  Buffer.add_string b "                        size_t src_reg = (block_lane % 2 == 0) ? src : src2;\n";
-  Buffer.add_string b "                        size_t sel_elem = k * 2 + 1;\n";
-  Buffer.add_string b "                        size_t src_bit = ((bit / 128) * 128) + (sel_elem * lane_bits);\n";
-  Buffer.add_string b "                        value = (ctx.get_vreg_lane(src_reg, src_bit / 64) >> (src_bit % 64)) & mask;\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 28: {\n";
-  Buffer.add_string b "                        uint8_t idx = (uint8_t)(b & 0xff);\n";
-  Buffer.add_string b "                        if (idx < 16) {\n";
-  Buffer.add_string b "                            size_t src_bit = ((bit / 128) * 128) + (idx * 8);\n";
-  Buffer.add_string b "                            value = (ctx.get_vreg_lane(src, src_bit / 64) >> (src_bit % 64)) & 0xff;\n";
-  Buffer.add_string b "                        } else {\n";
-  Buffer.add_string b "                            value = 0;\n";
-  Buffer.add_string b "                        }\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 29: {\n";
-  Buffer.add_string b "                        uint8_t idx = (uint8_t)(b & 0xff);\n";
-  Buffer.add_string b "                        if (idx < 16) {\n";
-  Buffer.add_string b "                            size_t src_bit = ((bit / 128) * 128) + (idx * 8);\n";
-  Buffer.add_string b "                            value = (ctx.get_vreg_lane(src, src_bit / 64) >> (src_bit % 64)) & 0xff;\n";
-  Buffer.add_string b "                        } else {\n";
-  Buffer.add_string b "                            value = (ctx.get_vreg_lane(dst, chunk) >> shift) & 0xff;\n";
-  Buffer.add_string b "                        }\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 30: {\n";
-  Buffer.add_string b "                        int64_t min_val = (lane_bits == 64) ? (int64_t)0x8000000000000000ULL : (lane_bits == 32) ? (int64_t)(int32_t)0x80000000 : (lane_bits == 16) ? (int64_t)(int16_t)0x8000 : (int64_t)(int8_t)0x80;\n";
-  Buffer.add_string b "                        if (sb == 0) value = ~0ULL;\n";
-  Buffer.add_string b "                        else if (sb == -1 && sa == min_val) value = (uint64_t)sa;\n";
-  Buffer.add_string b "                        else value = (uint64_t)(sa / sb);\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 31: {\n";
-  Buffer.add_string b "                        value = (b != 0) ? (a / b) : mask;\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 32: {\n";
-  Buffer.add_string b "                        int64_t min_val = (lane_bits == 64) ? (int64_t)0x8000000000000000ULL : (lane_bits == 32) ? (int64_t)(int32_t)0x80000000 : (lane_bits == 16) ? (int64_t)(int16_t)0x8000 : (int64_t)(int8_t)0x80;\n";
-  Buffer.add_string b "                        if (sb == 0) value = a;\n";
-  Buffer.add_string b "                        else if (sb == -1 && sa == min_val) value = 0;\n";
-  Buffer.add_string b "                        else value = (uint64_t)(sa % sb);\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 33: {\n";
-  Buffer.add_string b "                        value = (b != 0) ? (a % b) : a;\n";
-  Buffer.add_string b "                        break;\n";
-  Buffer.add_string b "                    }\n";
-  Buffer.add_string b "                    case 34: value = (a != b) ? mask : 0; break;\n";
-  Buffer.add_string b "                    case 35: value = (sa <= sb) ? mask : 0; break;\n";
-  Buffer.add_string b "                    case 36: value = (a < b) ? mask : 0; break;\n";
-  Buffer.add_string b "                    case 37: value = (a <= b) ? mask : 0; break;\n";
-  Buffer.add_string b "                    default: value = a ^ b; break;\n";
-  Buffer.add_string b "                }\n";
-  Buffer.add_string b "            }\n";
-  Buffer.add_string b "            uint64_t old_value = ctx.get_vreg_lane(dst, chunk);\n";
-  Buffer.add_string b "            uint64_t packed_mask = mask << shift;\n";
-  Buffer.add_string b "            ctx.set_vreg_lane(dst, chunk, (old_value & ~packed_mask) | ((value & mask) << shift));\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_VEC_IMM: {\n";
-  Buffer.add_string b "        uint64_t imm_val = imm & 0xffULL;\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((imm >> 8) & 0x3ff);\n";
-  Buffer.add_string b "        uint32_t lane_bits = (uint32_t)((imm >> 18) & 0xff);\n";
-  Buffer.add_string b "        if (lane_bits == 0) lane_bits = 64;\n";
-  Buffer.add_string b "        uint32_t vop = (uint32_t)((imm >> 26) & 0x1f);\n";
-  Buffer.add_string b "        uint64_t mask = lane_bits == 8 ? 0xffULL : (lane_bits == 16 ? 0xffffULL : (lane_bits == 32 ? 0xffffffffULL : ~0ULL));\n";
-  Buffer.add_string b "        for (size_t bit = 0; bit < bits; bit += lane_bits) {\n";
-  Buffer.add_string b "            size_t chunk = bit / 64; unsigned shift = (unsigned)(bit % 64);\n";
-  Buffer.add_string b "            uint64_t a = (ctx.get_vreg_lane(src, chunk) >> shift) & mask;\n";
-  Buffer.add_string b "            int64_t sa = lane_bits == 8 ? (int64_t)(int8_t)a : (lane_bits == 16 ? (int64_t)(int16_t)a : (lane_bits == 32 ? (int64_t)(int32_t)a : (int64_t)a));\n";
-  Buffer.add_string b "            uint64_t value = 0;\n";
-  Buffer.add_string b "            switch (vop) {\n";
-  Buffer.add_string b "                case 6: { uint32_t cnt = (uint32_t)imm_val; value = (cnt >= lane_bits) ? 0 : (a << cnt); break; }\n";
-  Buffer.add_string b "                case 7: { uint32_t cnt = (uint32_t)imm_val; value = (cnt >= lane_bits) ? 0 : (a >> cnt); break; }\n";
-  Buffer.add_string b "                case 8: { uint32_t cnt = (uint32_t)imm_val; value = (cnt >= lane_bits) ? (sa < 0 ? mask : 0) : ((uint64_t)(sa >> cnt) & mask); break; }\n";
-  Buffer.add_string b "                case 21: {\n";
-  Buffer.add_string b "                    size_t lane_in_128 = (bit / 32) % 4;\n";
-  Buffer.add_string b "                    size_t sel = (imm_val >> (lane_in_128 * 2)) & 3;\n";
-  Buffer.add_string b "                    size_t src_bit = ((bit / 128) * 128) + (sel * 32);\n";
-  Buffer.add_string b "                    value = (ctx.get_vreg_lane(src, src_bit / 64) >> (src_bit % 64)) & 0xffffffffULL;\n";
-  Buffer.add_string b "                    break;\n";
-  Buffer.add_string b "                }\n";
-  Buffer.add_string b "                case 22: {\n";
-  Buffer.add_string b "                    size_t lane_idx = bit / lane_bits;\n";
-  Buffer.add_string b "                    size_t sel = (imm_val >> (lane_idx % 8)) & 1;\n";
-  Buffer.add_string b "                    value = (sel == 0) ? a : ((ctx.get_vreg_lane(dst, chunk) >> shift) & mask);\n";
-  Buffer.add_string b "                    break;\n";
-  Buffer.add_string b "                }\n";
-  Buffer.add_string b "                default: value = a; break;\n";
-  Buffer.add_string b "            }\n";
-  Buffer.add_string b "            uint64_t old_value = ctx.get_vreg_lane(dst, chunk);\n";
-  Buffer.add_string b "            uint64_t packed_mask = mask << shift;\n";
-  Buffer.add_string b "            ctx.set_vreg_lane(dst, chunk, (old_value & ~packed_mask) | ((value & mask) << shift));\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_VEC_CLEAR_UPPER: {\n";
-  Buffer.add_string b "        ctx.set_vreg_lane(dst, 2, 0ULL);\n";
-  Buffer.add_string b "        ctx.set_vreg_lane(dst, 3, 0ULL);\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_VEC_ZERO_UPPER: {\n";
-  Buffer.add_string b "        for (size_t i = 0; i < 16; ++i) {\n";
-  Buffer.add_string b "            ctx.set_vreg_lane(i, 2, 0ULL);\n";
-  Buffer.add_string b "            ctx.set_vreg_lane(i, 3, 0ULL);\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_PMOVMSKB: {\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)(imm & 0x3ff);\n";
-  Buffer.add_string b "        uint32_t num_bytes = bits / 8;\n";
-  Buffer.add_string b "        uint64_t mask = 0;\n";
-  Buffer.add_string b "        for (uint32_t b = 0; b < num_bytes; ++b) {\n";
-  Buffer.add_string b "            uint64_t byte_val = (ctx.get_vreg_lane(src, b / 8) >> ((b % 8) * 8)) & 0xff;\n";
-  Buffer.add_string b "            if (byte_val & 0x80) mask |= (1ULL << b);\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.set_reg(dst, mask);\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_VEC_LOAD: {\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x3ff);\n";
-  Buffer.add_string b "        uint64_t address = ctx.get_reg(src) + (uint64_t)imm;\n";
-  Buffer.add_string b "        for (size_t i = 0; i < (bits + 63) / 64; ++i) { uint64_t value = 0; std::memcpy(&value, reinterpret_cast<const void*>(address + i * 8), sizeof(value)); ctx.set_vreg_lane(dst, i, value); }\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_VEC_STORE: {\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x3ff);\n";
-  Buffer.add_string b "        uint64_t address = ctx.get_reg(dst) + (uint64_t)imm;\n";
-  Buffer.add_string b "        for (size_t i = 0; i < (bits + 63) / 64; ++i) std::memcpy(reinterpret_cast<void*>(address + i * 8), &ctx.vregs[src & 31][i & 7], sizeof(uint64_t));\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_VEC_SPLAT: {\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)(imm & 0xffff);\n";
-  Buffer.add_string b "        uint32_t lane_bits = (uint32_t)((imm >> 16) & 0xffff);\n";
-  Buffer.add_string b "        uint64_t val = ctx.get_reg(src);\n";
-  Buffer.add_string b "        uint64_t mask = (lane_bits >= 64) ? ~0ULL : ((1ULL << lane_bits) - 1ULL);\n";
-  Buffer.add_string b "        uint64_t val_masked = val & mask;\n";
-  Buffer.add_string b "        uint32_t num_lanes = (lane_bits > 0) ? (bits / lane_bits) : 0;\n";
-  Buffer.add_string b "        for (uint32_t l = 0; l < num_lanes; ++l) {\n";
-  Buffer.add_string b "            uint32_t pos = l * lane_bits;\n";
-  Buffer.add_string b "            uint32_t chunk = pos / 64;\n";
-  Buffer.add_string b "            uint32_t shift = pos % 64;\n";
-  Buffer.add_string b "            uint64_t packed_mask = (lane_bits >= 64) ? ~0ULL : (mask << shift);\n";
-  Buffer.add_string b "            uint64_t cur = ctx.get_vreg_lane(dst, chunk);\n";
-  Buffer.add_string b "            cur = (cur & ~packed_mask) | (val_masked << shift);\n";
-  Buffer.add_string b "            ctx.set_vreg_lane(dst, chunk, cur);\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_VEC_EXT: {\n";
-  Buffer.add_string b "        uint32_t src2 = (uint32_t)(imm & 31);\n";
-  Buffer.add_string b "        uint32_t shift_bytes = (uint32_t)((imm >> 5) & 15);\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((imm >> 9) & 0x3ff);\n";
-  Buffer.add_string b "        if (bits == 0) bits = 128;\n";
-  Buffer.add_string b "        for (size_t byte_idx = 0; byte_idx < (bits / 8); ++byte_idx) {\n";
-  Buffer.add_string b "            size_t total_idx = (byte_idx % 16) + shift_bytes;\n";
-  Buffer.add_string b "            uint64_t val = 0;\n";
-  Buffer.add_string b "            if (total_idx < 16) {\n";
-  Buffer.add_string b "                size_t bit_pos = ((byte_idx / 16) * 128) + (total_idx * 8);\n";
-  Buffer.add_string b "                val = (ctx.get_vreg_lane(src, bit_pos / 64) >> (bit_pos % 64)) & 0xff;\n";
-  Buffer.add_string b "            } else {\n";
-  Buffer.add_string b "                size_t m_idx = total_idx - 16;\n";
-  Buffer.add_string b "                size_t bit_pos = ((byte_idx / 16) * 128) + (m_idx * 8);\n";
-  Buffer.add_string b "                val = (ctx.get_vreg_lane(src2, bit_pos / 64) >> (bit_pos % 64)) & 0xff;\n";
-  Buffer.add_string b "            }\n";
-  Buffer.add_string b "            size_t chunk = (byte_idx * 8) / 64; unsigned shift = (unsigned)((byte_idx * 8) % 64);\n";
-  Buffer.add_string b "            uint64_t old_v = ctx.get_vreg_lane(dst, chunk);\n";
-  Buffer.add_string b "            uint64_t clr = old_v & ~(0xffULL << shift);\n";
-  Buffer.add_string b "            ctx.set_vreg_lane(dst, chunk, clr | (val << shift));\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n\n"
+  let vec_binop_stmts = [
+    let_u32 "src2" (cast UInt32 (var "imm" &~ u64 31L));
+    let_u32 "bits" (cast UInt32 ((var "imm" >>~ i32 5) &~ u64 0x3FFL));
+    decl_var UInt32 "lane_bits" ~init:(cast UInt32 ((var "imm" >>~ i32 15) &~ u64 0xFFL));
+    if_then (var "lane_bits" ==~ i32 0) [ var "lane_bits" := i32 64 ];
+    let_u32 "vop" (cast UInt32 ((var "imm" >>~ i32 23) &~ u64 0x1FL));
+    let_u32 "elem" (cast UInt32 ((var "imm" >>~ i32 28) &~ u64 0x3L));
+    let_u64 "mask" (ternary (var "lane_bits" ==~ i32 8) (u64 0xFFL)
+      (ternary (var "lane_bits" ==~ i32 16) (u64 0xFFFFL)
+        (ternary (var "lane_bits" ==~ i32 32) (u64 0xFFFFFFFFL) (u64 (-1L)))));
+    decl_var SizeT "bit" ~init:(i32 0);
+    while_loop (var "bit" <~ var "bits") [
+      let_size_t "chunk" (var "bit" /~ i32 64);
+      decl_var UInt32 "shift" ~init:(cast UInt32 (var "bit" %~ i32 64));
+      let_u64 "a" ((get_vreg_lane (var "src") (var "chunk") >>~ var "shift") &~ var "mask");
+      let_u64 "b" ((get_vreg_lane (var "src2") (var "chunk") >>~ var "shift") &~ var "mask");
+      decl_var UInt64 "value" ~init:(u64 0L);
+      if_then_else ((var "elem" ==~ i32 1) &&~ (var "vop" <=~ i32 2)) [
+        decl_var Float "fa" ~init:(bit_cast Float (cast UInt32 (var "a")));
+        decl_var Float "fb" ~init:(bit_cast Float (cast UInt32 (var "b")));
+        decl_var Float "fr" ~init:(ternary (var "vop" ==~ i32 0) (var "fa" +~ var "fb")
+          (ternary (var "vop" ==~ i32 1) (var "fa" -~ var "fb") (var "fa" *~ var "fb")));
+        var "value" := bit_cast UInt32 (var "fr");
+      ] [
+        if_then_else ((var "elem" ==~ i32 1) &&~ (var "vop" ==~ i32 11)) [
+          decl_var Float "fa" ~init:(bit_cast Float (cast UInt32 (var "a")));
+          decl_var Float "fb" ~init:(bit_cast Float (cast UInt32 (var "b")));
+          var "value" := bit_cast UInt32 (call "std::fmin" [var "fa"; var "fb"]);
+        ] [
+          if_then_else ((var "elem" ==~ i32 1) &&~ (var "vop" ==~ i32 12)) [
+            decl_var Float "fa" ~init:(bit_cast Float (cast UInt32 (var "a")));
+            decl_var Float "fb" ~init:(bit_cast Float (cast UInt32 (var "b")));
+            var "value" := bit_cast UInt32 (call "std::fmax" [var "fa"; var "fb"]);
+          ] [
+            if_then_else ((var "elem" ==~ i32 2) &&~ (var "vop" <=~ i32 2)) [
+              decl_var Double "fa" ~init:(bit_cast Double (var "a"));
+              decl_var Double "fb" ~init:(bit_cast Double (var "b"));
+              decl_var Double "fr" ~init:(ternary (var "vop" ==~ i32 0) (var "fa" +~ var "fb")
+                (ternary (var "vop" ==~ i32 1) (var "fa" -~ var "fb") (var "fa" *~ var "fb")));
+              var "value" := bit_cast UInt64 (var "fr");
+            ] [
+              if_then_else ((var "elem" ==~ i32 2) &&~ (var "vop" ==~ i32 11)) [
+                decl_var Double "fa" ~init:(bit_cast Double (var "a"));
+                decl_var Double "fb" ~init:(bit_cast Double (var "b"));
+                var "value" := bit_cast UInt64 (call "std::fmin" [var "fa"; var "fb"]);
+              ] [
+                if_then_else ((var "elem" ==~ i32 2) &&~ (var "vop" ==~ i32 12)) [
+                  decl_var Double "fa" ~init:(bit_cast Double (var "a"));
+                  decl_var Double "fb" ~init:(bit_cast Double (var "b"));
+                  var "value" := bit_cast UInt64 (call "std::fmax" [var "fa"; var "fb"]);
+                ] [
+                  let_i64 "sa" (ternary (var "lane_bits" ==~ i32 8) (cast Int64 (c_cast Int8 (var "a")))
+                    (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (var "a")))
+                      (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (var "a"))) (cast Int64 (var "a")))));
+                  let_i64 "sb" (ternary (var "lane_bits" ==~ i32 8) (cast Int64 (c_cast Int8 (var "b")))
+                    (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (var "b")))
+                      (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (var "b"))) (cast Int64 (var "b")))));
+                  switch_annotated (var "vop") [
+                    case (i32 0) [ var "value" := var "a" +~ var "b"; break_stmt ];
+                    case (i32 1) [ var "value" := var "a" -~ var "b"; break_stmt ];
+                    case (i32 2) [ var "value" := var "a" *~ var "b"; break_stmt ];
+                    case (i32 3) [ var "value" := var "a" &~ var "b"; break_stmt ];
+                    case (i32 4) [ var "value" := var "a" |~ var "b"; break_stmt ];
+                    case (i32 5) [ var "value" := var "a" ^~ var "b"; break_stmt ];
+                    case (i32 6) [
+                      block [
+                        let_u32 "cnt" (cast UInt32 (get_vreg_lane (var "src2") (i32 0) &~ u64 0xFFL));
+                        var "value" := ternary (var "cnt" >=~ var "lane_bits") (u64 0L) (var "a" <<~ var "cnt");
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 7) [
+                      block [
+                        let_u32 "cnt" (cast UInt32 (get_vreg_lane (var "src2") (i32 0) &~ u64 0xFFL));
+                        var "value" := ternary (var "cnt" >=~ var "lane_bits") (u64 0L) (var "a" >>~ var "cnt");
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 8) [
+                      block [
+                        let_u32 "cnt" (cast UInt32 (get_vreg_lane (var "src2") (i32 0) &~ u64 0xFFL));
+                        var "value" := ternary (var "cnt" >=~ var "lane_bits")
+                          (ternary (var "sa" <~ i32 0) (var "mask") (u64 0L))
+                          ((cast UInt64 (var "sa" >>~ var "cnt")) &~ var "mask");
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 9) [ var "value" := ternary (var "a" ==~ var "b") (var "mask") (u64 0L); break_stmt ];
+                    case (i32 10) [ var "value" := ternary (var "sa" >~ var "sb") (var "mask") (u64 0L); break_stmt ];
+                    case (i32 11) [ var "value" := ternary (var "sa" <~ var "sb") (var "a") (var "b"); break_stmt ];
+                    case (i32 12) [ var "value" := ternary (var "sa" >~ var "sb") (var "a") (var "b"); break_stmt ];
+                    case (i32 13) [ var "value" := ternary (var "a" <~ var "b") (var "a") (var "b"); break_stmt ];
+                    case (i32 14) [ var "value" := ternary (var "a" >~ var "b") (var "a") (var "b"); break_stmt ];
+                    case (i32 15) [
+                      var "value" := (cast UInt64 (ternary (var "sa" <~ i32 0) (neg (var "sa")) (var "sa"))) &~ var "mask";
+                      break_stmt;
+                    ];
+                    case (i32 16) [ var "value" := (bit_not (var "a")) &~ var "b"; break_stmt ];
+                    case (i32 17) [
+                      block [
+                        let_size_t "block_lane" ((var "bit" /~ var "lane_bits") %~ (i32 128 /~ var "lane_bits"));
+                        let_size_t "half_idx" (var "block_lane" /~ i32 2);
+                        let_size_t "src_reg" (ternary ((var "block_lane" %~ i32 2) ==~ i32 0) (var "src") (var "src2"));
+                        let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "half_idx" *~ var "lane_bits"));
+                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 18) [
+                      block [
+                        let_size_t "num_lanes" (i32 128 /~ var "lane_bits");
+                        let_size_t "block_lane" ((var "bit" /~ var "lane_bits") %~ var "num_lanes");
+                        let_size_t "half_idx" ((var "num_lanes" /~ i32 2) +~ (var "block_lane" /~ i32 2));
+                        let_size_t "src_reg" (ternary ((var "block_lane" %~ i32 2) ==~ i32 0) (var "src") (var "src2"));
+                        let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "half_idx" *~ var "lane_bits"));
+                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 21) [
+                      block [
+                        let_u8 "ctrl" (cast UInt8 (var "b" &~ u64 0xFFL));
+                        if_then_else ((var "ctrl" &~ i32 0x80) <>~ i32 0) [
+                          var "value" := u64 0L;
+                        ] [
+                          let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ ((var "ctrl" &~ i32 0xF) *~ i32 8));
+                          var "value" := (get_vreg_lane (var "src") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
+                        ];
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 23) [
+                      block [
+                        let_size_t "num_lanes" (i32 128 /~ var "lane_bits");
+                        let_size_t "block_lane" ((var "bit" /~ var "lane_bits") %~ var "num_lanes");
+                        let_size_t "half_len" (var "num_lanes" /~ i32 2);
+                        let_size_t "src_reg" (ternary (var "block_lane" <~ var "half_len") (var "src") (var "src2"));
+                        let_size_t "sel_elem" (ternary (var "block_lane" <~ var "half_len") (var "block_lane" *~ i32 2) ((var "block_lane" -~ var "half_len") *~ i32 2));
+                        let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel_elem" *~ var "lane_bits"));
+                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 24) [
+                      block [
+                        let_size_t "num_lanes" (i32 128 /~ var "lane_bits");
+                        let_size_t "block_lane" ((var "bit" /~ var "lane_bits") %~ var "num_lanes");
+                        let_size_t "half_len" (var "num_lanes" /~ i32 2);
+                        let_size_t "src_reg" (ternary (var "block_lane" <~ var "half_len") (var "src") (var "src2"));
+                        let_size_t "sel_elem" (ternary (var "block_lane" <~ var "half_len") ((var "block_lane" *~ i32 2) +~ i32 1) (((var "block_lane" -~ var "half_len") *~ i32 2) +~ i32 1));
+                        let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel_elem" *~ var "lane_bits"));
+                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 25) [
+                      block [
+                        let_size_t "num_lanes" (i32 128 /~ var "lane_bits");
+                        let_size_t "block_lane" ((var "bit" /~ var "lane_bits") %~ var "num_lanes");
+                        let_size_t "k" (var "block_lane" /~ i32 2);
+                        let_size_t "src_reg" (ternary ((var "block_lane" %~ i32 2) ==~ i32 0) (var "src") (var "src2"));
+                        let_size_t "sel_elem" (var "k" *~ i32 2);
+                        let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel_elem" *~ var "lane_bits"));
+                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 26) [
+                      block [
+                        let_size_t "num_lanes" (i32 128 /~ var "lane_bits");
+                        let_size_t "block_lane" ((var "bit" /~ var "lane_bits") %~ var "num_lanes");
+                        let_size_t "k" (var "block_lane" /~ i32 2);
+                        let_size_t "src_reg" (ternary ((var "block_lane" %~ i32 2) ==~ i32 0) (var "src") (var "src2"));
+                        let_size_t "sel_elem" ((var "k" *~ i32 2) +~ i32 1);
+                        let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel_elem" *~ var "lane_bits"));
+                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 28) [
+                      block [
+                        let_u8 "idx" (cast UInt8 (var "b" &~ u64 0xFFL));
+                        if_then_else (var "idx" <~ i32 16) [
+                          let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "idx" *~ i32 8));
+                          var "value" := (get_vreg_lane (var "src") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
+                        ] [
+                          var "value" := u64 0L;
+                        ];
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 29) [
+                      block [
+                        let_u8 "idx" (cast UInt8 (var "b" &~ u64 0xFFL));
+                        if_then_else (var "idx" <~ i32 16) [
+                          let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "idx" *~ i32 8));
+                          var "value" := (get_vreg_lane (var "src") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
+                        ] [
+                          var "value" := (get_vreg_lane (var "dst") (var "chunk") >>~ var "shift") &~ u64 0xFFL;
+                        ];
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 30) [
+                      block [
+                        let_i64 "min_val" (ternary (var "lane_bits" ==~ i32 64) (cast Int64 (u64 0x8000000000000000L))
+                          (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (u64 0x80000000L)))
+                            (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (i32 0x8000)))
+                              (cast Int64 (c_cast Int8 (i32 0x80))))));
+                        if_then_else (var "sb" ==~ i32 0) [
+                          var "value" := u64 (-1L);
+                        ] [
+                          if_then_else ((var "sb" ==~ i32 (-1)) &&~ (var "sa" ==~ var "min_val")) [
+                            var "value" := cast UInt64 (var "sa");
+                          ] [
+                            var "value" := cast UInt64 (var "sa" /~ var "sb");
+                          ];
+                        ];
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 31) [
+                      var "value" := ternary (var "b" <>~ i32 0) (var "a" /~ var "b") (var "mask");
+                      break_stmt;
+                    ];
+                    case (i32 32) [
+                      block [
+                        let_i64 "min_val" (ternary (var "lane_bits" ==~ i32 64) (cast Int64 (u64 0x8000000000000000L))
+                          (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (u64 0x80000000L)))
+                            (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (i32 0x8000)))
+                              (cast Int64 (c_cast Int8 (i32 0x80))))));
+                        if_then_else (var "sb" ==~ i32 0) [
+                          var "value" := var "a";
+                        ] [
+                          if_then_else ((var "sb" ==~ i32 (-1)) &&~ (var "sa" ==~ var "min_val")) [
+                            var "value" := u64 0L;
+                          ] [
+                            var "value" := cast UInt64 (var "sa" %~ var "sb");
+                          ];
+                        ];
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 33) [
+                      var "value" := ternary (var "b" <>~ i32 0) (var "a" %~ var "b") (var "a");
+                      break_stmt;
+                    ];
+                    case (i32 34) [ var "value" := ternary (var "a" <>~ var "b") (var "mask") (u64 0L); break_stmt ];
+                    case (i32 35) [ var "value" := ternary (var "sa" <=~ var "sb") (var "mask") (u64 0L); break_stmt ];
+                    case (i32 36) [ var "value" := ternary (var "a" <~ var "b") (var "mask") (u64 0L); break_stmt ];
+                    case (i32 37) [ var "value" := ternary (var "a" <=~ var "b") (var "mask") (u64 0L); break_stmt ];
+                  ] (Some [ var "value" := var "a" ^~ var "b"; break_stmt ])
+                ]
+              ]
+            ]
+          ]
+        ]
+      ];
+      let_u64 "old_value" (get_vreg_lane (var "dst") (var "chunk"));
+      let_u64 "packed_mask" (var "mask" <<~ var "shift");
+      set_vreg_lane (var "dst") (var "chunk")
+        ((var "old_value" &~ bit_not (var "packed_mask")) |~ ((var "value" &~ var "mask") <<~ var "shift"));
+      (var "bit" += var "lane_bits");
+    ];
+  ] in
+  emit_handler_ast b "H_VEC_BINOP" (vec_binop_stmts @ [ inc_instrs; fetch_next ]);
+
+  let vec_imm_stmts = [
+    let_u64 "imm_val" (var "imm" &~ u64 0xFFL);
+    let_u32 "bits" (cast UInt32 ((var "imm" >>~ i32 8) &~ u64 0x3FFL));
+    decl_var UInt32 "lane_bits" ~init:(cast UInt32 ((var "imm" >>~ i32 18) &~ u64 0xFFL));
+    if_then (var "lane_bits" ==~ i32 0) [ var "lane_bits" := i32 64 ];
+    let_u32 "vop" (cast UInt32 ((var "imm" >>~ i32 26) &~ u64 0x1FL));
+    let_u64 "mask" (ternary (var "lane_bits" ==~ i32 8) (u64 0xFFL)
+      (ternary (var "lane_bits" ==~ i32 16) (u64 0xFFFFL)
+        (ternary (var "lane_bits" ==~ i32 32) (u64 0xFFFFFFFFL) (u64 (-1L)))));
+    decl_var SizeT "bit" ~init:(i32 0);
+    while_loop (var "bit" <~ var "bits") [
+      let_size_t "chunk" (var "bit" /~ i32 64);
+      decl_var UInt32 "shift" ~init:(cast UInt32 (var "bit" %~ i32 64));
+      let_u64 "a" ((get_vreg_lane (var "src") (var "chunk") >>~ var "shift") &~ var "mask");
+      let_i64 "sa" (ternary (var "lane_bits" ==~ i32 8) (cast Int64 (c_cast Int8 (var "a")))
+        (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (var "a")))
+          (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (var "a"))) (cast Int64 (var "a")))));
+      decl_var UInt64 "value" ~init:(u64 0L);
+      switch_annotated (var "vop") [
+        case (i32 6) [
+          block [
+            let_u32 "cnt" (cast UInt32 (var "imm_val"));
+            var "value" := ternary (var "cnt" >=~ var "lane_bits") (u64 0L) (var "a" <<~ var "cnt");
+            break_stmt;
+          ]
+        ];
+        case (i32 7) [
+          block [
+            let_u32 "cnt" (cast UInt32 (var "imm_val"));
+            var "value" := ternary (var "cnt" >=~ var "lane_bits") (u64 0L) (var "a" >>~ var "cnt");
+            break_stmt;
+          ]
+        ];
+        case (i32 8) [
+          block [
+            let_u32 "cnt" (cast UInt32 (var "imm_val"));
+            var "value" := ternary (var "cnt" >=~ var "lane_bits")
+              (ternary (var "sa" <~ i32 0) (var "mask") (u64 0L))
+              ((cast UInt64 (var "sa" >>~ var "cnt")) &~ var "mask");
+            break_stmt;
+          ]
+        ];
+        case (i32 21) [
+          block [
+            let_size_t "lane_in_128" ((var "bit" /~ i32 32) %~ i32 4);
+            let_size_t "sel" ((var "imm_val" >>~ (var "lane_in_128" *~ i32 2)) &~ u64 3L);
+            let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel" *~ i32 32));
+            var "value" := (get_vreg_lane (var "src") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFFFFFFFL;
+            break_stmt;
+          ]
+        ];
+        case (i32 22) [
+          block [
+            let_size_t "lane_idx" (var "bit" /~ var "lane_bits");
+            let_size_t "sel" ((var "imm_val" >>~ (var "lane_idx" %~ i32 8)) &~ u64 1L);
+            var "value" := ternary (var "sel" ==~ i32 0) (var "a")
+              ((get_vreg_lane (var "dst") (var "chunk") >>~ var "shift") &~ var "mask");
+            break_stmt;
+          ]
+        ];
+      ] (Some [ var "value" := var "a"; break_stmt ]);
+      let_u64 "old_value" (get_vreg_lane (var "dst") (var "chunk"));
+      let_u64 "packed_mask" (var "mask" <<~ var "shift");
+      set_vreg_lane (var "dst") (var "chunk")
+        ((var "old_value" &~ bit_not (var "packed_mask")) |~ ((var "value" &~ var "mask") <<~ var "shift"));
+      (var "bit" += var "lane_bits");
+    ];
+  ] in
+  emit_handler_ast b "H_VEC_IMM" (vec_imm_stmts @ [ inc_instrs; fetch_next ]);
+
+  emit_handler_ast b "H_VEC_CLEAR_UPPER" [
+    set_vreg_lane (var "dst") (i32 2) (u64 0L);
+    set_vreg_lane (var "dst") (i32 3) (u64 0L);
+    inc_instrs; fetch_next;
+  ];
+
+  emit_handler_ast b "H_VEC_ZERO_UPPER" [
+    for_range "i" (i32 0) (i32 16) [
+      set_vreg_lane (var "i") (i32 2) (u64 0L);
+      set_vreg_lane (var "i") (i32 3) (u64 0L);
+    ];
+    inc_instrs; fetch_next;
+  ];
+
+  let pmovmskb_stmts = [
+    let_u32 "bits" (cast UInt32 (var "imm" &~ u64 0x3FFL));
+    let_u32 "num_bytes" (var "bits" /~ i32 8);
+    decl_var UInt64 "mask" ~init:(u64 0L);
+    for_range "b_idx" (i32 0) (var "num_bytes") [
+      let_u64 "byte_val" ((get_vreg_lane (var "src") (var "b_idx" /~ i32 8) >>~ ((var "b_idx" %~ i32 8) *~ i32 8)) &~ u64 0xFFL);
+      if_then ((var "byte_val" &~ u64 0x80L) <>~ u64 0L) [
+        (var "mask" |= (u64 1L <<~ var "b_idx"));
+      ];
+    ];
+    set_reg (var "dst") (var "mask");
+  ] in
+  emit_handler_ast b "H_PMOVMSKB" (pmovmskb_stmts @ [ inc_instrs; fetch_next ]);
+
+  let vec_load_stmts = [
+    let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x3FFL));
+    let_u64 "address" (reg_src +~ cast UInt64 (var "imm"));
+    for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
+      decl_var UInt64 "value" ~init:(u64 0L);
+      expr_stmt (call "std::memcpy" [
+        addr_of (var "value");
+        reinterpret_cast (ConstPtr Void) (var "address" +~ (var "i" *~ i32 8));
+        sizeof_expr (var "value")
+      ]);
+      set_vreg_lane (var "dst") (var "i") (var "value");
+    ];
+  ] in
+  emit_handler_ast b "H_VEC_LOAD" (vec_load_stmts @ [ inc_instrs; fetch_next ]);
+
+  let vec_store_stmts = [
+    let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x3FFL));
+    let_u64 "address" (reg_dst +~ cast UInt64 (var "imm"));
+    for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
+      expr_stmt (call "std::memcpy" [
+        reinterpret_cast (Ptr Void) (var "address" +~ (var "i" *~ i32 8));
+        addr_of (idx (idx (var "ctx.vregs") (var "src" &~ i32 31)) (var "i" &~ i32 7));
+        sizeof_ty UInt64
+      ]);
+    ];
+  ] in
+  emit_handler_ast b "H_VEC_STORE" (vec_store_stmts @ [ inc_instrs; fetch_next ]);
+
+  let vec_splat_stmts = [
+    let_u32 "bits" (cast UInt32 (var "imm" &~ u64 0xFFFFL));
+    let_u32 "lane_bits" (cast UInt32 ((var "imm" >>~ i32 16) &~ u64 0xFFFFL));
+    let_u64 "val" reg_src;
+    let_u64 "mask" (ternary (var "lane_bits" >=~ i32 64) (u64 (-1L)) ((u64 1L <<~ var "lane_bits") -~ u64 1L));
+    let_u64 "val_masked" (var "val" &~ var "mask");
+    let_u32 "num_lanes" (ternary (var "lane_bits" >~ i32 0) (var "bits" /~ var "lane_bits") (i32 0));
+    for_range "l" (i32 0) (var "num_lanes") [
+      let_u32 "pos" (var "l" *~ var "lane_bits");
+      let_u32 "chunk" (var "pos" /~ i32 64);
+      let_u32 "shift" (var "pos" %~ i32 64);
+      let_u64 "packed_mask" (ternary (var "lane_bits" >=~ i32 64) (u64 (-1L)) (var "mask" <<~ var "shift"));
+      decl_var UInt64 "cur" ~init:(get_vreg_lane (var "dst") (var "chunk"));
+      var "cur" := (var "cur" &~ bit_not (var "packed_mask")) |~ (var "val_masked" <<~ var "shift");
+      set_vreg_lane (var "dst") (var "chunk") (var "cur");
+    ];
+  ] in
+  emit_handler_ast b "H_VEC_SPLAT" (vec_splat_stmts @ [ inc_instrs; fetch_next ]);
+
+  let vec_ext_stmts = [
+    let_u32 "src2" (cast UInt32 (var "imm" &~ u64 31L));
+    let_u32 "shift_bytes" (cast UInt32 ((var "imm" >>~ i32 5) &~ u64 15L));
+    decl_var UInt32 "bits" ~init:(cast UInt32 ((var "imm" >>~ i32 9) &~ u64 0x3FFL));
+    if_then (var "bits" ==~ i32 0) [ var "bits" := i32 128 ];
+    for_range "byte_idx" (i32 0) (var "bits" /~ i32 8) [
+      let_size_t "total_idx" ((var "byte_idx" %~ i32 16) +~ var "shift_bytes");
+      decl_var UInt64 "val" ~init:(u64 0L);
+      if_then_else (var "total_idx" <~ i32 16) [
+        let_size_t "bit_pos" (((var "byte_idx" /~ i32 16) *~ i32 128) +~ (var "total_idx" *~ i32 8));
+        var "val" := (get_vreg_lane (var "src") (var "bit_pos" /~ i32 64) >>~ (var "bit_pos" %~ i32 64)) &~ u64 0xFFL;
+      ] [
+        let_size_t "m_idx" (var "total_idx" -~ i32 16);
+        let_size_t "bit_pos" (((var "byte_idx" /~ i32 16) *~ i32 128) +~ (var "m_idx" *~ i32 8));
+        var "val" := (get_vreg_lane (var "src2") (var "bit_pos" /~ i32 64) >>~ (var "bit_pos" %~ i32 64)) &~ u64 0xFFL;
+      ];
+      let_size_t "chunk" ((var "byte_idx" *~ i32 8) /~ i32 64);
+      decl_var UInt32 "shift" ~init:(cast UInt32 ((var "byte_idx" *~ i32 8) %~ i32 64));
+      let_u64 "old_v" (get_vreg_lane (var "dst") (var "chunk"));
+      let_u64 "clr" (var "old_v" &~ bit_not (u64 0xFFL <<~ var "shift"));
+      set_vreg_lane (var "dst") (var "chunk") (var "clr" |~ (var "val" <<~ var "shift"));
+    ];
+  ] in
+  emit_handler_ast b "H_VEC_EXT" (vec_ext_stmts @ [ inc_instrs; fetch_next ])
 
 let emit_mem_and_ffi_handlers ?rng b =
   let pick_variant n =
