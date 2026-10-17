@@ -130,11 +130,6 @@ let compile_and_package_multi
 
   let compile_one_func (func : Ir.func) =
     let func =
-      if enable_mba then
-        Dynamic_mba.transform ~rng func
-      else func
-    in
-    let func =
       if enable_junk then
         Data_keyed_decoy.transform ~rng func
       else func
@@ -215,6 +210,10 @@ let compile_and_package_multi
       ~body:(fun i ->
         let b    = blocks_arr.(i) in
         let brng = block_rngs.(i) in
+        let block_mba_depth =
+          let jitter = Random.State.int brng 3 - 1 in (* -1, 0, +1 *)
+          max 1 (min 4 (mba_depth + jitter))
+        in
         let instrs =
           if enable_mba then
             List.concat_map
@@ -234,10 +233,10 @@ let compile_and_package_multi
                       try
                         match mba_engine with
                         | `Egraph ->
-                            let eg_cfg = { Mba_engine.Egraph.default_op_config with iter_limit = max 1 (min 4 mba_depth) } in
+                            let eg_cfg = { Mba_engine.Egraph.default_op_config with iter_limit = block_mba_depth } in
                             Mba_engine.Egraph.obfuscate_alu ~config:eg_cfg ~rng:brng ~dst ~src1 ~src2 op
-                        | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
-                        | `Ncfg   -> Mba_engine.Ncfg_synth.obfuscate_alu ~rng:brng ~depth:mba_depth ~dst ~src1 ~src2 op
+                        | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:block_mba_depth ~dst ~src1 ~src2 op
+                        | `Ncfg   -> Mba_engine.Ncfg_synth.obfuscate_alu ~rng:brng ~depth:block_mba_depth ~dst ~src1 ~src2 op
                         | `Nullspace -> Mba_engine.Nullspace_synth.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
                         | `Gpu_metal -> (
                             match gpu_mba_pool with
