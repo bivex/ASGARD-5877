@@ -429,6 +429,61 @@ let emit_native_runtime_hpp_decls
     emit_native_msvc_switch_cases_source raw_dispatch_domains
   in
 
+  (* --- ASG_VM_TRACE: handler classes canonical across builds ---------------
+     The nn_metamorph trace bench needs a token stream that is comparable
+     between builds: raw opcode bytes are re-randomized per seed, so we map
+     every slot to the *semantic* handler class (name with decoy index and
+     domain suffix stripped). ASG_VM_TRACE=1 at runtime makes the VM emit
+     one "%u" line per dispatched handler plus "# B"/"# E" invocation
+     markers to stderr. *)
+  let canonical_handler_name (h : string) : string =
+    let h =
+      if String.starts_with ~prefix:"H_DECOY_" h then "H_DECOY" else h
+    in
+    let n = String.length h in
+    if n >= 3 then
+      let suffix = String.sub h (n - 3) 3 in
+      if suffix = "_D1" || suffix = "_D2" then String.sub h 0 (n - 3) else h
+    else h
+  in
+  let trace_class_names =
+    List.sort_uniq compare
+      (List.concat_map
+         (fun (_, handlers) -> List.map canonical_handler_name handlers)
+         raw_dispatch_domains)
+  in
+  assert (List.length trace_class_names <= 255);
+  let trace_class_id = Hashtbl.create 256 in
+  List.iteri
+    (fun i name -> Hashtbl.replace trace_class_id name i)
+    trace_class_names;
+  let trace_tables_source =
+    Printf.sprintf
+      {|    /* ASG_VM_TRACE: semantic handler classes, stable across builds. */
+    static const char* ASG_TRC_NAMES[%d] = { %s };
+    static const uint8_t ASG_TRC_CLASS[%d][256] = {
+%s
+    };
+    /* Function-local static: legal at this (function) scope, initialized once. */
+    static const bool asg_vm_trace_on = (getenv("ASG_VM_TRACE") != nullptr);|}
+      (List.length trace_class_names)
+      (String.concat ", " (List.map (fun s -> "\"" ^ s ^ "\"") trace_class_names))
+      num_domains
+      (String.concat "\n"
+         (List.map
+            (fun (d, handlers) ->
+              Printf.sprintf "    { /* domain %d */ %s },"
+                d
+                (String.concat ", "
+                   (List.map
+                      (fun h ->
+                        string_of_int
+                          (Hashtbl.find trace_class_id
+                             (canonical_handler_name h)))
+                      handlers)))
+            raw_dispatch_domains))
+  in
+
   let handlers_buf = Buffer.create 4096 in
   Vm_handlers_emitter.emit_handlers_hpp handlers_buf ~rng
     ~enable_running_key:policy.enable_running_key
@@ -708,6 +763,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
           raw "#if defined(ASGARD_EPHEMERAL_JIT)\n    static thread_local asgard_memory::DualMappedBuffer g_ephemeral_jit_buf = asgard_memory::DualMappedBuffer::allocate(16384);\n#endif";
         ] else [])
       @ [
+        raw trace_tables_source;
         emit_native_domain_salt_ast domain_salts;
         raw (Printf.sprintf "static uintptr_t all_dispatch_domains[%d][256];\n    static bool dispatch_domains_ready = false;\n    if (__builtin_expect(!dispatch_domains_ready, 0)) {\n#if !defined(_MSC_VER) || defined(__clang__)" num_domains);
       ]
@@ -805,6 +861,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         ctx.evolve_mask((uint32_t)k_dyn); \
         ctx.evolve_slot_mask(dst, (uint32_t)k_dyn); \
         %s \
+        if (__builtin_expect(asg_vm_trace_on, 0)) { uint8_t t_dom = (uint8_t)((k_dyn >> 32) %% %d); fprintf(stderr, "%%u\n", (unsigned)ASG_TRC_CLASS[t_dom][(uint8_t)(op ^ domain_salt[t_dom])]); } \
         DISPATCH_OPCODE(); \
     } while(0)|}
           num_domains
@@ -812,6 +869,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
           (if policy.enable_address_bound then "work_bc[vIP_idx] = bound_bc[vIP_idx];" else "work_bc[vIP_idx] = bytecode[vIP_idx];")
           (if policy.enable_mem_sanitize then "SCRUB_WORD(&work_bc[vIP_idx], (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL);" else "")
           (if policy.enable_running_key then "ctx.advance_running_key(op, dst, imm);" else "")
+          num_domains
         );
       ]
       @ (if policy.enable_running_key then [
@@ -826,6 +884,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     DISPATCH_MSVC: {
         uint8_t d_idx = (uint8_t)((k_dyn >> 32) %% %d);
         uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[d_idx]);
+        if (__builtin_expect(asg_vm_trace_on, 0)) { fprintf(stderr, "%%u\n", (unsigned)ASG_TRC_CLASS[d_idx][permuted_slot]); }
         switch ((uint32_t)d_idx * 256U + (uint32_t)permuted_slot) {
 %s
         default: goto EXIT_VM;
@@ -833,9 +892,11 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     }
     START_VM_MSVC:
 #endif|} num_domains msvc_switch_cases_source);
+        raw "if (__builtin_expect(asg_vm_trace_on, 0)) { fputs(\"# B\\n\", stderr); }";
         raw "FETCH_NEXT();";
         raw handlers_source;
         label "EXIT_VM";
+        raw "if (__builtin_expect(asg_vm_trace_on, 0)) { fputs(\"# E\\n\", stderr); }";
       ]
       @ (if policy.enable_mem_sanitize then [
           raw {|    for (size_t i = 0; i < count; ++i) {
