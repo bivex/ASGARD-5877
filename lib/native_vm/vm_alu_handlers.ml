@@ -1193,282 +1193,308 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
       ]
   in
   emit_handler_ast b "H_POP_R" (pop_stmts @ [ inc_instrs; fetch_next ]);
-  Buffer.add_string b "    H_ADC_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t c = ctx.cf ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        uint64_t res = a + b + c;\n";
-       Buffer.add_string b "        ctx.cf = (res < a) || (c && res == a);\n";
-       Buffer.add_string b "        ctx.of = ((((a ^ res) & (b ^ res)) >> 63) != 0);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t c = static_cast<uint64_t>(ctx.cf);\n";
-       Buffer.add_string b "        uint64_t res = (a + b) + c;\n";
-       Buffer.add_string b "        ctx.cf = (res < a) || (c && res == a);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = (res >> 63) != 0;\n";
-       Buffer.add_string b "        ctx.of = (((a ^ res) & (b ^ res)) >> 63) != 0;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t c = ctx.cf ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        uint64_t ab = a + b;\n";
-       Buffer.add_string b "        uint64_t res = ab + c;\n";
-       Buffer.add_string b "        ctx.cf = (ab < a) || (res < ab);\n";
-       Buffer.add_string b "        ctx.of = ((((a ^ res) & (b ^ res)) >> 63) != 0);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ADC_RI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t c = ctx.cf ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        uint64_t res = a + b + c;\n";
-       Buffer.add_string b "        ctx.cf = (res < a) || (c && res == a);\n";
-       Buffer.add_string b "        ctx.of = ((((a ^ res) & (b ^ res)) >> 63) != 0);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t c = static_cast<uint64_t>(ctx.cf);\n";
-       Buffer.add_string b "        uint64_t res = (a + b) + c;\n";
-       Buffer.add_string b "        ctx.cf = (res < a) || (c && res == a);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = (res >> 63) != 0;\n";
-       Buffer.add_string b "        ctx.of = (((a ^ res) & (b ^ res)) >> 63) != 0;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t c = ctx.cf ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        uint64_t ab = a + b;\n";
-       Buffer.add_string b "        uint64_t res = ab + c;\n";
-       Buffer.add_string b "        ctx.cf = (ab < a) || (res < ab);\n";
-       Buffer.add_string b "        ctx.of = ((((a ^ res) & (b ^ res)) >> 63) != 0);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SBB_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t borrow = ctx.cf ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        uint64_t res = a - b - borrow;\n";
-       Buffer.add_string b "        ctx.cf = (a < b) || (borrow && a == b);\n";
-       Buffer.add_string b "        ctx.of = ((((a ^ b) & (a ^ res)) >> 63) != 0);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t borrow = static_cast<uint64_t>(ctx.cf);\n";
-       Buffer.add_string b "        uint64_t res = (a - b) - borrow;\n";
-       Buffer.add_string b "        ctx.cf = (a < b) || (borrow && a == b);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = (res >> 63) != 0;\n";
-       Buffer.add_string b "        ctx.of = (((a ^ b) & (a ^ res)) >> 63) != 0;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t borrow = ctx.cf ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        uint64_t res = a - (b + borrow);\n";
-       Buffer.add_string b "        ctx.cf = (a < b) || (borrow && a == b);\n";
-       Buffer.add_string b "        ctx.of = ((((a ^ b) & (a ^ res)) >> 63) != 0);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SBB_RI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t borrow = ctx.cf ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        uint64_t res = a - b - borrow;\n";
-       Buffer.add_string b "        ctx.cf = (a < b) || (borrow && a == b);\n";
-       Buffer.add_string b "        ctx.of = ((((a ^ b) & (a ^ res)) >> 63) != 0);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t borrow = static_cast<uint64_t>(ctx.cf);\n";
-       Buffer.add_string b "        uint64_t res = (a - b) - borrow;\n";
-       Buffer.add_string b "        ctx.cf = (a < b) || (borrow && a == b);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = (res >> 63) != 0;\n";
-       Buffer.add_string b "        ctx.of = (((a ^ b) & (a ^ res)) >> 63) != 0;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint64_t borrow = ctx.cf ? 1ULL : 0ULL;\n";
-       Buffer.add_string b "        uint64_t res = a - (b + borrow);\n";
-       Buffer.add_string b "        ctx.cf = (a < b) || (borrow && a == b);\n";
-       Buffer.add_string b "        ctx.of = ((((a ^ b) & (a ^ res)) >> 63) != 0);\n";
-       Buffer.add_string b "        ctx.zf = (res == 0);\n";
-       Buffer.add_string b "        ctx.sf = ((int64_t)res < 0);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CCMP_RR: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((((word >> 22) + 0x0FULL) - ((word >> 22) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((((word >> 50) + 0x7FULL) - ((word >> 50) | 0x7FULL)));\n";
-  (match pick_variant 2 with
-   | 0 ->
-       Buffer.add_string b "        if (eval_condition(ctx, cond)) {\n";
-       Buffer.add_string b "            uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "            compute_sub_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.sf = (nzcv & 8) != 0;\n";
-       Buffer.add_string b "            ctx.zf = (nzcv & 4) != 0;\n";
-       Buffer.add_string b "            ctx.cf = (nzcv & 2) != 0;\n";
-       Buffer.add_string b "            ctx.of = (nzcv & 1) != 0;\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        if (!eval_condition(ctx, cond)) {\n";
-       Buffer.add_string b "            ctx.sf = (nzcv & 8) != 0;\n";
-       Buffer.add_string b "            ctx.zf = (nzcv & 4) != 0;\n";
-       Buffer.add_string b "            ctx.cf = (nzcv & 2) != 0;\n";
-       Buffer.add_string b "            ctx.of = (nzcv & 1) != 0;\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "            compute_sub_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        }\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CCMP_RI: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((((word >> 22) + 0x0FULL) - ((word >> 22) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint64_t b = (uint64_t)((((word >> 26) + 0x1FULL) - ((word >> 26) | 0x1FULL)));\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((((word >> 50) + 0x7FULL) - ((word >> 50) | 0x7FULL)));\n";
-  (match pick_variant 2 with
-   | 0 ->
-       Buffer.add_string b "        if (eval_condition(ctx, cond)) {\n";
-       Buffer.add_string b "            uint64_t a = ctx.get_reg(dst);\n";
-       Buffer.add_string b "            compute_sub_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.sf = (nzcv & 8) != 0;\n";
-       Buffer.add_string b "            ctx.zf = (nzcv & 4) != 0;\n";
-       Buffer.add_string b "            ctx.cf = (nzcv & 2) != 0;\n";
-       Buffer.add_string b "            ctx.of = (nzcv & 1) != 0;\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        if (!eval_condition(ctx, cond)) {\n";
-       Buffer.add_string b "            ctx.sf = (nzcv & 8) != 0;\n";
-       Buffer.add_string b "            ctx.zf = (nzcv & 4) != 0;\n";
-       Buffer.add_string b "            ctx.cf = (nzcv & 2) != 0;\n";
-       Buffer.add_string b "            ctx.of = (nzcv & 1) != 0;\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            uint64_t a = ctx.get_reg(dst);\n";
-       Buffer.add_string b "            compute_sub_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        }\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CCMN_RR: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((((word >> 22) + 0x0FULL) - ((word >> 22) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((((word >> 50) + 0x7FULL) - ((word >> 50) | 0x7FULL)));\n";
-  (match pick_variant 2 with
-   | 0 ->
-       Buffer.add_string b "        if (eval_condition(ctx, cond)) {\n";
-       Buffer.add_string b "            uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "            compute_add_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.sf = (nzcv & 8) != 0;\n";
-       Buffer.add_string b "            ctx.zf = (nzcv & 4) != 0;\n";
-       Buffer.add_string b "            ctx.cf = (nzcv & 2) != 0;\n";
-       Buffer.add_string b "            ctx.of = (nzcv & 1) != 0;\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        if (!eval_condition(ctx, cond)) {\n";
-       Buffer.add_string b "            ctx.sf = (nzcv & 8) != 0;\n";
-       Buffer.add_string b "            ctx.zf = (nzcv & 4) != 0;\n";
-       Buffer.add_string b "            ctx.cf = (nzcv & 2) != 0;\n";
-       Buffer.add_string b "            ctx.of = (nzcv & 1) != 0;\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "            compute_add_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        }\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CCMN_RI: {\n";
-  Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint8_t nzcv = (uint8_t)((((word >> 22) + 0x0FULL) - ((word >> 22) | 0x0FULL)));\n";
-  Buffer.add_string b "        uint64_t b = (uint64_t)((((word >> 26) + 0x1FULL) - ((word >> 26) | 0x1FULL)));\n";
-  Buffer.add_string b "        uint32_t bits = (uint32_t)((((word >> 50) + 0x7FULL) - ((word >> 50) | 0x7FULL)));\n";
-  (match pick_variant 2 with
-   | 0 ->
-       Buffer.add_string b "        if (eval_condition(ctx, cond)) {\n";
-       Buffer.add_string b "            uint64_t a = ctx.get_reg(dst);\n";
-       Buffer.add_string b "            compute_add_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            ctx.sf = (nzcv & 8) != 0;\n";
-       Buffer.add_string b "            ctx.zf = (nzcv & 4) != 0;\n";
-       Buffer.add_string b "            ctx.cf = (nzcv & 2) != 0;\n";
-       Buffer.add_string b "            ctx.of = (nzcv & 1) != 0;\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        if (!eval_condition(ctx, cond)) {\n";
-       Buffer.add_string b "            ctx.sf = (nzcv & 8) != 0;\n";
-       Buffer.add_string b "            ctx.zf = (nzcv & 4) != 0;\n";
-       Buffer.add_string b "            ctx.cf = (nzcv & 2) != 0;\n";
-       Buffer.add_string b "            ctx.of = (nzcv & 1) != 0;\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            uint64_t a = ctx.get_reg(dst);\n";
-       Buffer.add_string b "            compute_add_flags(ctx, a, b, bits);\n";
-       Buffer.add_string b "        }\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_GET_FLAGS_R: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t f = 2ULL;\n";
-       Buffer.add_string b "        if (ctx.cf) f |= 1ULL;\n";
-       Buffer.add_string b "        if (ctx.zf) f |= 0x40ULL;\n";
-       Buffer.add_string b "        if (ctx.sf) f |= 0x80ULL;\n";
-       Buffer.add_string b "        if (ctx.of) f |= 0x800ULL;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, f);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t f = 2ULL | (ctx.cf ? 1ULL : 0ULL) | (ctx.zf ? 0x40ULL : 0ULL) | (ctx.sf ? 0x80ULL : 0ULL) | (ctx.of ? 0x800ULL : 0ULL);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, f);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t f = 2ULL;\n";
-       Buffer.add_string b "        f |= (uint64_t)ctx.cf;\n";
-       Buffer.add_string b "        f |= ((uint64_t)ctx.zf << 6);\n";
-       Buffer.add_string b "        f |= ((uint64_t)ctx.sf << 7);\n";
-       Buffer.add_string b "        f |= ((uint64_t)ctx.of << 11);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, f);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SET_FLAGS_R: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t f = ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.cf = (f & 1ULL) != 0;\n";
-       Buffer.add_string b "        ctx.zf = (f & 0x40ULL) != 0;\n";
-       Buffer.add_string b "        ctx.sf = (f & 0x80ULL) != 0;\n";
-       Buffer.add_string b "        ctx.of = (f & 0x800ULL) != 0;\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t f = ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.cf = static_cast<bool>(f & 1ULL);\n";
-       Buffer.add_string b "        ctx.zf = static_cast<bool>(f & 0x40ULL);\n";
-       Buffer.add_string b "        ctx.sf = static_cast<bool>(f & 0x80ULL);\n";
-       Buffer.add_string b "        ctx.of = static_cast<bool>(f & 0x800ULL);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t mask = ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.cf = ((mask >> 0) & 1) != 0;\n";
-       Buffer.add_string b "        ctx.zf = ((mask >> 6) & 1) != 0;\n";
-       Buffer.add_string b "        ctx.sf = ((mask >> 7) & 1) != 0;\n";
-       Buffer.add_string b "        ctx.of = ((mask >> 11) & 1) != 0;\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n"
+  let adc_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        let_u64 "c" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "res" (var "a" +~ var "b" +~ var "c");
+        var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
+        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        let_u64 "c" (cast UInt64 (var "ctx.cf"));
+        let_u64 "res" ((var "a" +~ var "b") +~ var "c");
+        var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
+        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        set_reg (var "dst") (var "res");
+      ]
+    | _ -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        let_u64 "c" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "ab" (var "a" +~ var "b");
+        let_u64 "res" (var "ab" +~ var "c");
+        var "ctx.cf" := ((var "ab" <~ var "a") ||~ (var "res" <~ var "ab"));
+        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        set_reg (var "dst") (var "res");
+      ]
+  in
+  emit_handler_ast b "H_ADC_RR" (adc_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let adc_ri_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" imm_u64;
+        let_u64 "c" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "res" (var "a" +~ var "b" +~ var "c");
+        var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
+        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" imm_u64;
+        let_u64 "c" (cast UInt64 (var "ctx.cf"));
+        let_u64 "res" ((var "a" +~ var "b") +~ var "c");
+        var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
+        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        set_reg (var "dst") (var "res");
+      ]
+    | _ -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" imm_u64;
+        let_u64 "c" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "ab" (var "a" +~ var "b");
+        let_u64 "res" (var "ab" +~ var "c");
+        var "ctx.cf" := ((var "ab" <~ var "a") ||~ (var "res" <~ var "ab"));
+        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        set_reg (var "dst") (var "res");
+      ]
+  in
+  emit_handler_ast b "H_ADC_RI" (adc_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let sbb_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        let_u64 "borrow" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "res" (var "a" -~ var "b" -~ var "borrow");
+        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        let_u64 "borrow" (cast UInt64 (var "ctx.cf"));
+        let_u64 "res" ((var "a" -~ var "b") -~ var "borrow");
+        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
+        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        set_reg (var "dst") (var "res");
+      ]
+    | _ -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        let_u64 "borrow" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "res" (var "a" -~ (var "b" +~ var "borrow"));
+        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        set_reg (var "dst") (var "res");
+      ]
+  in
+  emit_handler_ast b "H_SBB_RR" (sbb_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let sbb_ri_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" imm_u64;
+        let_u64 "borrow" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "res" (var "a" -~ var "b" -~ var "borrow");
+        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        set_reg (var "dst") (var "res");
+      ]
+    | 1 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" imm_u64;
+        let_u64 "borrow" (cast UInt64 (var "ctx.cf"));
+        let_u64 "res" ((var "a" -~ var "b") -~ var "borrow");
+        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
+        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        set_reg (var "dst") (var "res");
+      ]
+    | _ -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" imm_u64;
+        let_u64 "borrow" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "res" (var "a" -~ (var "b" +~ var "borrow"));
+        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        var "ctx.zf" := (var "res" ==~ u64 0L);
+        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        set_reg (var "dst") (var "res");
+      ]
+  in
+  emit_handler_ast b "H_SBB_RI" (sbb_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let ccmp_cond = cast UInt8 (((var "word" >>~ i32 18) +~ u64 0x0FL) -~ ((var "word" >>~ i32 18) |~ u64 0x0FL)) in
+  let ccmp_nzcv = cast UInt8 (((var "word" >>~ i32 22) +~ u64 0x0FL) -~ ((var "word" >>~ i32 22) |~ u64 0x0FL)) in
+  let ccmp_imm_b = cast UInt64 (((var "word" >>~ i32 26) +~ u64 0x1FL) -~ ((var "word" >>~ i32 26) |~ u64 0x1FL)) in
+  let ccmp_bits = cast UInt32 (((var "word" >>~ i32 50) +~ u64 0x7FL) -~ ((var "word" >>~ i32 50) |~ u64 0x7FL)) in
+  let nzcv_fallback = [
+    var "ctx.sf" := ((var "nzcv" &~ i32 8) <>~ i32 0);
+    var "ctx.zf" := ((var "nzcv" &~ i32 4) <>~ i32 0);
+    var "ctx.cf" := ((var "nzcv" &~ i32 2) <>~ i32 0);
+    var "ctx.of" := ((var "nzcv" &~ i32 1) <>~ i32 0);
+  ] in
+
+  let ccmp_rr_eval = [
+    let_u64 "a" reg_dst;
+    let_u64 "b" reg_src;
+    expr_stmt (call "compute_sub_flags" [var "ctx"; var "a"; var "b"; var "bits"]);
+  ] in
+  let ccmp_rr_stmts =
+    decl_var UInt8 "cond" ~init:ccmp_cond ::
+    decl_var UInt8 "nzcv" ~init:ccmp_nzcv ::
+    decl_var UInt32 "bits" ~init:ccmp_bits ::
+    (match pick_variant 2 with
+     | 0 -> [
+         if_then_else (call "eval_condition" [var "ctx"; var "cond"])
+           ccmp_rr_eval
+           nzcv_fallback
+       ]
+     | _ -> [
+         if_then_else (log_not (call "eval_condition" [var "ctx"; var "cond"]))
+           nzcv_fallback
+           ccmp_rr_eval
+       ])
+  in
+  emit_handler_ast b "H_CCMP_RR" (ccmp_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let ccmp_ri_eval = [
+    let_u64 "a" reg_dst;
+    expr_stmt (call "compute_sub_flags" [var "ctx"; var "a"; var "b"; var "bits"]);
+  ] in
+  let ccmp_ri_stmts =
+    decl_var UInt8 "cond" ~init:ccmp_cond ::
+    decl_var UInt8 "nzcv" ~init:ccmp_nzcv ::
+    decl_var UInt64 "b" ~init:ccmp_imm_b ::
+    decl_var UInt32 "bits" ~init:ccmp_bits ::
+    (match pick_variant 2 with
+     | 0 -> [
+         if_then_else (call "eval_condition" [var "ctx"; var "cond"])
+           ccmp_ri_eval
+           nzcv_fallback
+       ]
+     | _ -> [
+         if_then_else (log_not (call "eval_condition" [var "ctx"; var "cond"]))
+           nzcv_fallback
+           ccmp_ri_eval
+       ])
+  in
+  emit_handler_ast b "H_CCMP_RI" (ccmp_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let ccmn_rr_eval = [
+    let_u64 "a" reg_dst;
+    let_u64 "b" reg_src;
+    expr_stmt (call "compute_add_flags" [var "ctx"; var "a"; var "b"; var "bits"]);
+  ] in
+  let ccmn_rr_stmts =
+    decl_var UInt8 "cond" ~init:ccmp_cond ::
+    decl_var UInt8 "nzcv" ~init:ccmp_nzcv ::
+    decl_var UInt32 "bits" ~init:ccmp_bits ::
+    (match pick_variant 2 with
+     | 0 -> [
+         if_then_else (call "eval_condition" [var "ctx"; var "cond"])
+           ccmn_rr_eval
+           nzcv_fallback
+       ]
+     | _ -> [
+         if_then_else (log_not (call "eval_condition" [var "ctx"; var "cond"]))
+           nzcv_fallback
+           ccmn_rr_eval
+       ])
+  in
+  emit_handler_ast b "H_CCMN_RR" (ccmn_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let ccmn_ri_eval = [
+    let_u64 "a" reg_dst;
+    expr_stmt (call "compute_add_flags" [var "ctx"; var "a"; var "b"; var "bits"]);
+  ] in
+  let ccmn_ri_stmts =
+    decl_var UInt8 "cond" ~init:ccmp_cond ::
+    decl_var UInt8 "nzcv" ~init:ccmp_nzcv ::
+    decl_var UInt64 "b" ~init:ccmp_imm_b ::
+    decl_var UInt32 "bits" ~init:ccmp_bits ::
+    (match pick_variant 2 with
+     | 0 -> [
+         if_then_else (call "eval_condition" [var "ctx"; var "cond"])
+           ccmn_ri_eval
+           nzcv_fallback
+       ]
+     | _ -> [
+         if_then_else (log_not (call "eval_condition" [var "ctx"; var "cond"]))
+           nzcv_fallback
+           ccmn_ri_eval
+       ])
+  in
+  emit_handler_ast b "H_CCMN_RI" (ccmn_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let get_flags_stmts = match pick_variant 3 with
+    | 0 -> [
+        decl_var UInt64 "f" ~init:(u64 2L);
+        if_then (var "ctx.cf") [ var "f" |= u64 1L ];
+        if_then (var "ctx.zf") [ var "f" |= u64 0x40L ];
+        if_then (var "ctx.sf") [ var "f" |= u64 0x80L ];
+        if_then (var "ctx.of") [ var "f" |= u64 0x800L ];
+        set_reg (var "dst") (var "f");
+      ]
+    | 1 -> [
+        let_u64 "f" (u64 2L |~
+          ternary (var "ctx.cf") (u64 1L) (u64 0L) |~
+          ternary (var "ctx.zf") (u64 0x40L) (u64 0L) |~
+          ternary (var "ctx.sf") (u64 0x80L) (u64 0L) |~
+          ternary (var "ctx.of") (u64 0x800L) (u64 0L));
+        set_reg (var "dst") (var "f");
+      ]
+    | _ -> [
+        decl_var UInt64 "f" ~init:(u64 2L);
+        var "f" |= cast UInt64 (var "ctx.cf");
+        var "f" |= (cast UInt64 (var "ctx.zf") <<~ i32 6);
+        var "f" |= (cast UInt64 (var "ctx.sf") <<~ i32 7);
+        var "f" |= (cast UInt64 (var "ctx.of") <<~ i32 11);
+        set_reg (var "dst") (var "f");
+      ]
+  in
+  emit_handler_ast b "H_GET_FLAGS_R" (get_flags_stmts @ [ inc_instrs; fetch_next ]);
+
+  let set_flags_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "f" reg_src;
+        var "ctx.cf" := ((var "f" &~ u64 1L) <>~ u64 0L);
+        var "ctx.zf" := ((var "f" &~ u64 0x40L) <>~ u64 0L);
+        var "ctx.sf" := ((var "f" &~ u64 0x80L) <>~ u64 0L);
+        var "ctx.of" := ((var "f" &~ u64 0x800L) <>~ u64 0L);
+      ]
+    | 1 -> [
+        let_u64 "f" reg_src;
+        var "ctx.cf" := cast Bool (var "f" &~ u64 1L);
+        var "ctx.zf" := cast Bool (var "f" &~ u64 0x40L);
+        var "ctx.sf" := cast Bool (var "f" &~ u64 0x80L);
+        var "ctx.of" := cast Bool (var "f" &~ u64 0x800L);
+      ]
+    | _ -> [
+        let_u64 "mask" reg_src;
+        var "ctx.cf" := (((var "mask" >>~ i32 0) &~ u64 1L) <>~ u64 0L);
+        var "ctx.zf" := (((var "mask" >>~ i32 6) &~ u64 1L) <>~ u64 0L);
+        var "ctx.sf" := (((var "mask" >>~ i32 7) &~ u64 1L) <>~ u64 0L);
+        var "ctx.of" := (((var "mask" >>~ i32 11) &~ u64 1L) <>~ u64 0L);
+      ]
+  in
+  emit_handler_ast b "H_SET_FLAGS_R" (set_flags_stmts @ [ inc_instrs; fetch_next ])
