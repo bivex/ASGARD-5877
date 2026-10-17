@@ -24,6 +24,8 @@ kill_running_tests() {
 
   # 4. Kill any running test-generated runner binaries
   pkill -9 -f "asgard_test_" 2>/dev/null || true
+  pkill -9 -f "tech_2601_test" 2>/dev/null || true
+  pkill -9 -f "ocamlopt.*asgard" 2>/dev/null || true
 
   # 5. Remove stale dune lock file if left over from forcefully killed dune
   if [ -f "_build/.lock" ]; then
@@ -54,6 +56,44 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   exit 0
 fi
 
+DUNE_PID=""
+
+cleanup_on_interrupt() {
+  local sig="${1:-INT}"
+  trap - INT TERM EXIT TSTP QUIT HUP
+  echo ""
+  echo "[run_tests.sh] Stopped by ${sig}! Terminating all spawned test processes..."
+  if [ -n "$DUNE_PID" ] && kill -0 "$DUNE_PID" 2>/dev/null; then
+    kill -TERM "$DUNE_PID" 2>/dev/null || true
+    sleep 0.1
+    kill -9 "$DUNE_PID" 2>/dev/null || true
+  fi
+  kill_running_tests "false"
+  [ -t 0 ] && stty sane 2>/dev/null || true
+  case "$sig" in
+    SIGINT)  exit 130 ;;
+    SIGQUIT) exit 131 ;;
+    SIGTERM) exit 143 ;;
+    SIGTSTP) exit 148 ;;
+    SIGHUP)  exit 129 ;;
+    *)       exit 130 ;;
+  esac
+}
+
+cleanup_on_exit() {
+  local exit_code=$?
+  if [ $exit_code -ne 0 ]; then
+    kill_running_tests "false"
+  fi
+}
+
+trap 'cleanup_on_interrupt SIGINT' INT
+trap 'cleanup_on_interrupt SIGTERM' TERM
+trap 'cleanup_on_interrupt SIGTSTP' TSTP
+trap 'cleanup_on_interrupt SIGQUIT' QUIT
+trap 'cleanup_on_interrupt SIGHUP' HUP
+trap cleanup_on_exit EXIT
+
 # Set up opam env if available
 if command -v opam >/dev/null 2>&1; then
   eval "$(opam env)"
@@ -75,31 +115,6 @@ done
 if [ "$HAS_BUFFER_ARG" = "false" ]; then
   ARGS+=("--no-buffer")
 fi
-
-DUNE_PID=""
-
-cleanup_on_interrupt() {
-  trap - INT TERM EXIT
-  echo ""
-  echo "[run_tests.sh] Interrupted! Terminating all spawned test processes..."
-  if [ -n "$DUNE_PID" ] && kill -0 "$DUNE_PID" 2>/dev/null; then
-    kill -TERM "$DUNE_PID" 2>/dev/null || true
-    sleep 0.1
-    kill -9 "$DUNE_PID" 2>/dev/null || true
-  fi
-  kill_running_tests "false"
-  exit 130
-}
-
-cleanup_on_exit() {
-  local exit_code=$?
-  if [ $exit_code -ne 0 ]; then
-    kill_running_tests "false"
-  fi
-}
-
-trap cleanup_on_interrupt INT TERM
-trap cleanup_on_exit EXIT
 
 # Run dune runtest in background so trap can catch signals immediately
 dune runtest "${ARGS[@]}" &
