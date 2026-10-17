@@ -514,9 +514,43 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         let right_target = build_tree (mid + 1) high in
         let node_id = !next_fresh_id in
         incr next_fresh_id;
-        let instrs = [
-          Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int mid) };
-          Ir.Jcc { cond = Flags.LE; target_true = left_target; target_false = right_target };
+        let jitter =
+          match Random.State.int rng 6 with
+          | 0 -> []
+          | 1 -> [
+              Ir.Alu { op = Ir.Xor; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Reg Register.vtmp0; set_flags = false };
+            ]
+          | 2 -> [
+              Ir.Alu { op = Ir.Add; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 0x1337L; set_flags = false };
+            ]
+          | 3 -> [
+              Ir.Unary { op = Ir.Not; dst = Register.vx26; src = Ir.Reg Register.vx26; set_flags = false };
+            ]
+          | 4 -> [
+              Ir.Alu { op = Ir.Rol; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 7L; set_flags = false };
+            ]
+          | _ -> [
+              Ir.Alu { op = Ir.Or; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 0x5877L; set_flags = false };
+            ]
+        in
+        let cmp_instr, cond, target_true, target_false =
+          match Random.State.int rng 4 with
+          | 0 ->
+              (Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int mid) },
+               Flags.LE, left_target, right_target)
+          | 1 ->
+              (Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int mid) },
+               Flags.G, right_target, left_target)
+          | 2 ->
+              (Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int (mid + 1)) },
+               Flags.L, left_target, right_target)
+          | _ ->
+              (Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int (mid + 1)) },
+               Flags.GE, right_target, left_target)
+        in
+        let instrs = jitter @ [
+          cmp_instr;
+          Ir.Jcc { cond; target_true; target_false };
         ] in
         let blk = Ir.make_block ~id:node_id ~label:(Printf.sprintf "%s_cff_tree_%d" func.name node_id) ~instrs in
         tree_blocks := blk :: !tree_blocks;
@@ -524,18 +558,37 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     in
     let tree_root_target = build_tree 0 (total_disp - 1) in
 
+    let entry_jitter =
+      match Random.State.int rng 3 with
+      | 0 -> []
+      | 1 -> [
+          Ir.Alu { op = Ir.Xor; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Reg Register.vkey; set_flags = false };
+        ]
+      | _ -> [
+          Ir.Alu { op = Ir.Add; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Reg Register.vkey; set_flags = false };
+          Ir.Alu { op = Ir.Rol; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 13L; set_flags = false };
+        ]
+    in
+
     (* Dispatcher Entry Block: unmasks dynamic taint, computes poly_hash64, decodes slot *)
+    let bound_cond, bound_t, bound_f =
+      if Random.State.bool rng then
+        (Flags.AE, Ir.BlockId trap_block_id, tree_root_target)
+      else
+        (Flags.B, tree_root_target, Ir.BlockId trap_block_id)
+    in
     let disp_entry_instrs =
-      (if is_tainted then
-         (emit_poly_hash64 ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3)
-         @ [
-           Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
-           Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-         ]
-       else
-         [
-           Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
-         ])
+      entry_jitter
+      @ (if is_tainted then
+           (emit_poly_hash64 ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3)
+           @ [
+             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
+             Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+           ]
+         else
+           [
+             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
+           ])
       @ (emit_poly_hash64 ~dst:Register.vtmp0 ~src:Register.vtmp0 ~scratch:Register.vtmp1)
       @ [
         Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm secret_salt };
@@ -543,7 +596,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm stride_inv };
         Ir.Alu { op = Ir.Mul; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
         Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int total_disp) };
-        Ir.Jcc { cond = Flags.AE; target_true = Ir.BlockId trap_block_id; target_false = tree_root_target };
+        Ir.Jcc { cond = bound_cond; target_true = bound_t; target_false = bound_f };
       ]
     in
     let disp_entry_block = Ir.make_block ~id:disp_base_id ~label:(func.name ^ "_disp_entry") ~instrs:disp_entry_instrs in
