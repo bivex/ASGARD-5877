@@ -8,8 +8,21 @@ let is_transformable_gpr = function
 let make_variants op dst in_a in_b tmp =
   match op with
   | Add ->
-      (* Variant 1: (a ^ b) + 2*(a & b) *)
+      (* v0: direct add *)
+      let v0 = [
+        Mov { dst = Reg dst; src = Reg in_a };
+        Alu { op = Add; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+      ] in
+      (* v1: (a | b) + (a & b) *)
       let v1 = [
+        Mov { dst = Reg tmp; src = Reg in_a };
+        Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
+        Mov { dst = Reg dst; src = Reg in_a };
+        Alu { op = Or; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+        Alu { op = Add; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
+      ] in
+      (* v2: (a ^ b) + 2*(a & b) *)
+      let v2 = [
         Mov { dst = Reg tmp; src = Reg in_a };
         Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
         Alu { op = Shl; dst = tmp; src1 = Reg tmp; src2 = Imm 1L; set_flags = false };
@@ -17,18 +30,24 @@ let make_variants op dst in_a in_b tmp =
         Alu { op = Xor; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
         Alu { op = Add; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      (* Variant 2: (a | b) + (a & b) *)
-      let v2 = [
+      (* v3: 2*(a | b) - (a ^ b) *)
+      let v3 = [
         Mov { dst = Reg tmp; src = Reg in_a };
-        Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
+        Alu { op = Xor; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
         Mov { dst = Reg dst; src = Reg in_a };
         Alu { op = Or; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
-        Alu { op = Add; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
+        Alu { op = Shl; dst; src1 = Reg dst; src2 = Imm 1L; set_flags = false };
+        Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      Some (v1, v2)
+      Some (v0, v1, v2, v3)
 
   | Sub ->
-      (* Variant 1: (a ^ b) - 2*(~a & b) *)
+      (* v0: direct sub *)
+      let v0 = [
+        Mov { dst = Reg dst; src = Reg in_a };
+        Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+      ] in
+      (* v1: (a ^ b) - 2*(~a & b) *)
       let v1 = [
         Unary { op = Not; dst = tmp; src = Reg in_a; set_flags = false };
         Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
@@ -37,7 +56,7 @@ let make_variants op dst in_a in_b tmp =
         Alu { op = Xor; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
         Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      (* Variant 2: (a & ~b) - (~a & b) *)
+      (* v2: (a & ~b) - (~a & b) *)
       let v2 = [
         Unary { op = Not; dst = tmp; src = Reg in_a; set_flags = false };
         Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
@@ -45,10 +64,24 @@ let make_variants op dst in_a in_b tmp =
         Alu { op = And; dst; src1 = Reg dst; src2 = Reg in_a; set_flags = false };
         Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      Some (v1, v2)
+      (* v3: 2*(a & ~b) - (a ^ b) *)
+      let v3 = [
+        Mov { dst = Reg tmp; src = Reg in_a };
+        Alu { op = Xor; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
+        Unary { op = Not; dst; src = Reg in_b; set_flags = false };
+        Alu { op = And; dst; src1 = Reg dst; src2 = Reg in_a; set_flags = false };
+        Alu { op = Shl; dst; src1 = Reg dst; src2 = Imm 1L; set_flags = false };
+        Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
+      ] in
+      Some (v0, v1, v2, v3)
 
   | Xor ->
-      (* Variant 1: (a | b) - (a & b) *)
+      (* v0: direct xor *)
+      let v0 = [
+        Mov { dst = Reg dst; src = Reg in_a };
+        Alu { op = Xor; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+      ] in
+      (* v1: (a | b) - (a & b) *)
       let v1 = [
         Mov { dst = Reg tmp; src = Reg in_a };
         Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
@@ -56,7 +89,7 @@ let make_variants op dst in_a in_b tmp =
         Alu { op = Or; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
         Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      (* Variant 2: ~(a & b) & (a | b) *)
+      (* v2: ~(a & b) & (a | b) *)
       let v2 = [
         Mov { dst = Reg tmp; src = Reg in_a };
         Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
@@ -65,10 +98,23 @@ let make_variants op dst in_a in_b tmp =
         Alu { op = Or; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
         Alu { op = And; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      Some (v1, v2)
+      (* v3: (a & ~b) | (~a & b) *)
+      let v3 = [
+        Unary { op = Not; dst = tmp; src = Reg in_a; set_flags = false };
+        Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
+        Unary { op = Not; dst; src = Reg in_b; set_flags = false };
+        Alu { op = And; dst; src1 = Reg dst; src2 = Reg in_a; set_flags = false };
+        Alu { op = Or; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
+      ] in
+      Some (v0, v1, v2, v3)
 
   | And ->
-      (* Variant 1: (a | b) - (a ^ b) *)
+      (* v0: direct and *)
+      let v0 = [
+        Mov { dst = Reg dst; src = Reg in_a };
+        Alu { op = And; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+      ] in
+      (* v1: (a | b) - (a ^ b) *)
       let v1 = [
         Mov { dst = Reg tmp; src = Reg in_a };
         Alu { op = Xor; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
@@ -76,15 +122,30 @@ let make_variants op dst in_a in_b tmp =
         Alu { op = Or; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
         Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      (* Variant 2: direct a & b *)
+      (* v2: (a + b) - (a | b) *)
       let v2 = [
+        Mov { dst = Reg tmp; src = Reg in_a };
+        Alu { op = Or; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
         Mov { dst = Reg dst; src = Reg in_a };
-        Alu { op = And; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+        Alu { op = Add; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+        Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      Some (v1, v2)
+      (* v3: ~(~a | ~b) *)
+      let v3 = [
+        Unary { op = Not; dst = tmp; src = Reg in_a; set_flags = false };
+        Unary { op = Not; dst; src = Reg in_b; set_flags = false };
+        Alu { op = Or; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
+        Unary { op = Not; dst; src = Reg dst; set_flags = false };
+      ] in
+      Some (v0, v1, v2, v3)
 
   | Or ->
-      (* Variant 1: (a ^ b) + (a & b) *)
+      (* v0: direct or *)
+      let v0 = [
+        Mov { dst = Reg dst; src = Reg in_a };
+        Alu { op = Or; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+      ] in
+      (* v1: (a ^ b) + (a & b) *)
       let v1 = [
         Mov { dst = Reg tmp; src = Reg in_a };
         Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
@@ -92,12 +153,22 @@ let make_variants op dst in_a in_b tmp =
         Alu { op = Xor; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
         Alu { op = Add; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      (* Variant 2: direct a | b *)
+      (* v2: (a + b) - (a & b) *)
       let v2 = [
+        Mov { dst = Reg tmp; src = Reg in_a };
+        Alu { op = And; dst = tmp; src1 = Reg tmp; src2 = Reg in_b; set_flags = false };
         Mov { dst = Reg dst; src = Reg in_a };
-        Alu { op = Or; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+        Alu { op = Add; dst; src1 = Reg dst; src2 = Reg in_b; set_flags = false };
+        Alu { op = Sub; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
       ] in
-      Some (v1, v2)
+      (* v3: ~(~a & ~b) *)
+      let v3 = [
+        Unary { op = Not; dst = tmp; src = Reg in_a; set_flags = false };
+        Unary { op = Not; dst; src = Reg in_b; set_flags = false };
+        Alu { op = And; dst; src1 = Reg dst; src2 = Reg tmp; set_flags = false };
+        Unary { op = Not; dst; src = Reg dst; set_flags = false };
+      ] in
+      Some (v0, v1, v2, v3)
 
   | _ -> None
 
@@ -115,7 +186,7 @@ let rec has_later_flag_consumer = function
       check_consumed rest
   | _ :: rest -> has_later_flag_consumer rest
 
-let transform ?(density = 0.5) ~rng (f : func) : func =
+let transform ?(density = 0.6) ~rng (f : func) : func =
   let max_id = ref 0 in
   Hashtbl.iter (fun id _ -> if id > !max_id then max_id := id) f.cfg.blocks;
   let threshold = int_of_float (density *. 100.0) in
@@ -155,11 +226,19 @@ let transform ?(density = 0.5) ~rng (f : func) : func =
             process_instrs cur_id cur_label (alu_instr :: instrs_acc) rest
           else
             (match make_variants op dst in_a in_b tmp with
-            | Some (v1_ops, v2_ops) ->
+            | Some (v0_ops, v1_ops, v2_ops, v3_ops) ->
+                incr max_id;
+                let low_id = !max_id in
+                incr max_id;
+                let high_id = !max_id in
+                incr max_id;
+                let v0_id = !max_id in
                 incr max_id;
                 let v1_id = !max_id in
                 incr max_id;
                 let v2_id = !max_id in
+                incr max_id;
+                let v3_id = !max_id in
                 incr max_id;
                 let merge_id = !max_id in
 
@@ -167,15 +246,39 @@ let transform ?(density = 0.5) ~rng (f : func) : func =
                 let selector = setup @ [
                   Mov { dst = Reg sel; src = Reg in_a };
                   Alu { op = Shr; dst = sel; src1 = Reg sel; src2 = Imm (Int64.of_int shift); set_flags = false };
-                  Alu { op = And; dst = sel; src1 = Reg sel; src2 = Imm 1L; set_flags = false };
-                  Cmp { src1 = Reg sel; src2 = Imm 0L };
-                  Jcc { cond = Flags.E; target_true = BlockId v1_id; target_false = BlockId v2_id };
+                  Alu { op = And; dst = sel; src1 = Reg sel; src2 = Imm 3L; set_flags = false };
+                  Cmp { src1 = Reg sel; src2 = Imm 1L };
+                  Jcc { cond = Flags.BE; target_true = BlockId low_id; target_false = BlockId high_id };
                 ] in
 
                 let cur_blk = {
                   id = cur_id;
                   label = cur_label;
                   instrs = List.rev instrs_acc @ selector;
+                } in
+
+                let low_blk = {
+                  id = low_id;
+                  label = Printf.sprintf "%s_dmba_low_%d" f.name low_id;
+                  instrs = [
+                    Cmp { src1 = Reg sel; src2 = Imm 0L };
+                    Jcc { cond = Flags.E; target_true = BlockId v0_id; target_false = BlockId v1_id };
+                  ];
+                } in
+
+                let high_blk = {
+                  id = high_id;
+                  label = Printf.sprintf "%s_dmba_high_%d" f.name high_id;
+                  instrs = [
+                    Cmp { src1 = Reg sel; src2 = Imm 2L };
+                    Jcc { cond = Flags.E; target_true = BlockId v2_id; target_false = BlockId v3_id };
+                  ];
+                } in
+
+                let v0_blk = {
+                  id = v0_id;
+                  label = Printf.sprintf "%s_dmba0_%d" f.name v0_id;
+                  instrs = v0_ops @ [ Jmp (BlockId merge_id) ];
                 } in
                 let v1_blk = {
                   id = v1_id;
@@ -187,7 +290,13 @@ let transform ?(density = 0.5) ~rng (f : func) : func =
                   label = Printf.sprintf "%s_dmba2_%d" f.name v2_id;
                   instrs = v2_ops @ [ Jmp (BlockId merge_id) ];
                 } in
-                all_blocks := cur_blk :: v1_blk :: v2_blk :: !all_blocks;
+                let v3_blk = {
+                  id = v3_id;
+                  label = Printf.sprintf "%s_dmba3_%d" f.name v3_id;
+                  instrs = v3_ops @ [ Jmp (BlockId merge_id) ];
+                } in
+
+                all_blocks := cur_blk :: low_blk :: high_blk :: v0_blk :: v1_blk :: v2_blk :: v3_blk :: !all_blocks;
                 let next_label = Printf.sprintf "%s_mrg_%d" cur_label merge_id in
                 process_instrs merge_id next_label [] rest
             | None ->

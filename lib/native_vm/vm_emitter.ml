@@ -138,6 +138,7 @@ let compile_and_package_multi
         Data_keyed_decoy.transform ~rng func
       else func
     in
+    let func = Dag_scheduler.transform ~rng func in
     let target_func =
       if enable_cff then
         let cff_opts =
