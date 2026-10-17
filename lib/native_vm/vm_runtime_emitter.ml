@@ -975,7 +975,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, 1048576)) "host_stack";
         expr_stmt (call "ctx.set_reg" [var "vanguard_threaded_vm::REG_RSP"; c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L)]);
         expr_stmt (call "ctx.set_reg" [var "vanguard_threaded_vm::REG_RBP"; c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L)]);
-        raw {|#if defined(ASGARD_GUEST_ARM64)
+        raw {|#if defined(ASGARD_GUEST_ARM64) || (!defined(ASGARD_GUEST_X86_64) && !defined(ASGARD_GUEST_RISCV64) && (defined(__aarch64__) || defined(_M_ARM64)))
     // ARM64 guest calling convention mapping (x0->RAX, x1->RCX, x2->RDX, x3->RBX, x4->RSI, x5->RDI, x6->R8, x7->R9)
     ctx.set_reg(vanguard_threaded_vm::REG_RAX, a0);
     ctx.set_reg(vanguard_threaded_vm::REG_RCX, a1);

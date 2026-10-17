@@ -43,7 +43,7 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
       Cmd.(v "-fno-jump-tables" % "-mllvm" % "-switch-to-lookup=false")
   in
   let cmd =
-    Cmd.(v compiler % "-S" %% extra_flags %% target_args % "-O1" % "-fno-stack-protector" % "-Wno-format-security"
+    Cmd.(v compiler % "-S" %% extra_flags %% target_args % "-O1" % "-fno-inline" % "-fno-stack-protector" % "-Wno-format-security"
          %% inc_args % "-fno-asynchronous-unwind-tables" % c_source % "-o" % out_asm)
   in
   match OS.Cmd.run_status cmd with

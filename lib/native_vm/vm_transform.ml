@@ -25,7 +25,7 @@ let cond_to_code = function
   | Flags.E -> 0 | Flags.NE -> 1 | Flags.B -> 2 | Flags.AE -> 3
   | Flags.BE -> 4 | Flags.A -> 5 | Flags.S -> 6 | Flags.NS -> 7
   | Flags.L -> 8 | Flags.GE -> 9 | Flags.LE -> 10 | Flags.G -> 11
-  | Flags.O -> 12 | Flags.NO -> 13 | Flags.P -> 14 | Flags.NP -> 15
+  | Flags.O -> 12 | Flags.NO -> 13 | Flags.P -> 15 | Flags.NP -> 15
   | Flags.ALWAYS -> 14
 
 type raw_op_kind =

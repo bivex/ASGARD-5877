@@ -401,8 +401,8 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         (i32 11, [ ret (log_not (var "ctx.zf") &&~ (var "ctx.sf" ==~ var "ctx.of")) ]);
         (i32 12, [ ret (var "ctx.of") ]);
         (i32 13, [ ret (log_not (var "ctx.of")) ]);
-        (i32 14, [ ret (var "ctx.pf") ]);
-        (i32 15, [ ret (log_not (var "ctx.pf")) ]);
+        (i32 14, [ ret (bool_lit true) ]);
+        (i32 15, [ ret (var "ctx.pf") ]);
       ] (Some [ ret (bool_lit true) ]);
     ];
   } in

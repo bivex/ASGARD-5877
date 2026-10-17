@@ -692,24 +692,24 @@ let emit_mem_and_ffi_handlers ?rng b =
     List.fold_left (fun acc c -> acc ||~ c) (List.hd conds) (List.tl conds)
   in
   let arm64_args = [
-    let_u64 "a0" (call "ctx.get_reg" [var "REG_X0"]);
-    let_u64 "a1" (call "ctx.get_reg" [var "REG_X1"]);
-    let_u64 "a2" (call "ctx.get_reg" [var "REG_X2"]);
-    let_u64 "a3" (call "ctx.get_reg" [var "REG_X3"]);
-    let_u64 "a4" (call "ctx.get_reg" [var "REG_X4"]);
-    let_u64 "a5" (call "ctx.get_reg" [var "REG_X5"]);
-    let_u64 "a6" (call "ctx.get_reg" [var "REG_X6"]);
-    let_u64 "a7" (call "ctx.get_reg" [var "REG_X7"]);
+    let_u64 "a0" (call "ctx.get_reg" [var "REG_RAX"]);
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_RCX"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_RDX"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_RBX"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_RSI"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_RDI"]);
+    let_u64 "a6" (call "ctx.get_reg" [var "REG_R8"]);
+    let_u64 "a7" (call "ctx.get_reg" [var "REG_R9"]);
   ] in
   let riscv64_args = [
-    let_u64 "a0" (call "ctx.get_reg" [var "REG_A0"]);
-    let_u64 "a1" (call "ctx.get_reg" [var "REG_A1"]);
-    let_u64 "a2" (call "ctx.get_reg" [var "REG_A2"]);
-    let_u64 "a3" (call "ctx.get_reg" [var "REG_A3"]);
-    let_u64 "a4" (call "ctx.get_reg" [var "REG_A4"]);
-    let_u64 "a5" (call "ctx.get_reg" [var "REG_A5"]);
-    let_u64 "a6" (call "ctx.get_reg" [var "REG_A6"]);
-    let_u64 "a7" (call "ctx.get_reg" [var "REG_A7"]);
+    let_u64 "a0" (call "ctx.get_reg" [var "REG_RAX"]);
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_RDX"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_RCX"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_RSI"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_RDI"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_R8"]);
+    let_u64 "a6" (call "ctx.get_reg" [var "REG_R9"]);
+    let_u64 "a7" (call "ctx.get_reg" [var "REG_R12"]);
   ] in
   let x86_args = [
     let_u64 "a0" (ternary (call "ctx.get_reg" [var "REG_RDI"]) (call "ctx.get_reg" [var "REG_RDI"]) (call "ctx.get_reg" [var "REG_RAX"]));
@@ -722,7 +722,7 @@ let emit_mem_and_ffi_handlers ?rng b =
     let_u64 "a7" (call "ctx.get_reg" [var "REG_RBX"]);
   ] in
   let reg_args_stmt =
-    preproc_if_stmt "defined(ASGARD_GUEST_ARM64)" arm64_args
+    preproc_if_stmt "defined(ASGARD_GUEST_ARM64) || (!defined(ASGARD_GUEST_X86_64) && !defined(ASGARD_GUEST_RISCV64) && (defined(__aarch64__) || defined(_M_ARM64)))" arm64_args
       ~else_stmts:[
         preproc_if_stmt "defined(ASGARD_GUEST_RISCV64)" riscv64_args
           ~else_stmts:x86_args

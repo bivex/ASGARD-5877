@@ -14,7 +14,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Some [ Ir.Load_symbol { dst; sym = clean_sym; addend = 0L } ]
 
   (* Memory Load with Pre/Post-Indexed Writeback *)
-  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw"
+  | (("ldr" | "ldrb" | "ldrh" | "ldur" | "ldurb" | "ldurh" | "ldrsb" | "ldrsh" | "ldrsw" | "ldursb" | "ldursh" | "ldursw"
      | "ldar" | "ldarb" | "ldarh" | "ldapr" | "ldaprb" | "ldaprh"
      | "ldtr" | "ldtrb" | "ldtrh" | "ldtrsw"), [ OpReg dst; OpMem m ]) ->
       let is_signed =
@@ -53,7 +53,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       )
 
   (* Memory Store with Pre/Post-Indexed Writeback *)
-  | (("str" | "strb" | "strh" | "stur" | "sturb" | "stlr" | "stlrb" | "stlrh"
+  | (("str" | "strb" | "strh" | "stur" | "sturb" | "sturh" | "stlr" | "stlrb" | "stlrh"
      | "sttr" | "sttrb" | "sttrh"), [ (OpReg _ | OpImm _) as src; OpMem m ]) ->
       let addr_scratch = Register.vtmp0 in
       let val_scratch = Register.vtmp1 in

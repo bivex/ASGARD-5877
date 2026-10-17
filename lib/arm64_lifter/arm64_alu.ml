@@ -8,59 +8,72 @@ let shift_op_of_label = function
   | "ror" | "ROR" -> Ir.Ror
   | _ -> Ir.Shr
 
-let emit_shifted_operand ~src ~shift_op ~shift =
+let emit_shifted_operand_to ~target ~src ~shift_op ~shift =
   if Register.get_width src = Register.B32 then
     match shift_op with
     | Ir.Ror ->
         let s = (Int64.to_int shift) land 31 in
         if s = 0 then
-          [ Ir.Mov { dst = Reg Register.vtmp1; src = Reg src } ]
+          [ Ir.Mov { dst = Reg target; src = Reg src } ]
         else
           let s_hi = 32 - s in
           [
-            Ir.Mov { dst = Reg Register.vtmp1; src = Reg (Register.with_width src Register.B64) };
-            Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm (Int64.of_int s); set_flags = false };
+            Ir.Mov { dst = Reg target; src = Reg (Register.with_width src Register.B64) };
+            Ir.Alu { op = Shr; dst = target; src1 = Reg target; src2 = Imm (Int64.of_int s); set_flags = false };
             Ir.Mov { dst = Reg Register.vtmp0; src = Reg (Register.with_width src Register.B64) };
             Ir.Alu { op = Shl; dst = Register.vtmp0; src1 = Reg Register.vtmp0; src2 = Imm (Int64.of_int s_hi); set_flags = false };
-            Ir.Alu { op = Or; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Reg Register.vtmp0; set_flags = false };
-            Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+            Ir.Alu { op = Or; dst = target; src1 = Reg target; src2 = Reg Register.vtmp0; set_flags = false };
+            Ir.Alu { op = And; dst = target; src1 = Reg target; src2 = Imm 0xFFFFFFFFL; set_flags = false };
           ]
     | Ir.Shl ->
         [
-          Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
-          Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
-          Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          Ir.Mov { dst = Reg target; src = Reg src };
+          Ir.Alu { op = Shl; dst = target; src1 = Reg target; src2 = Imm shift; set_flags = false };
+          Ir.Alu { op = And; dst = target; src1 = Reg target; src2 = Imm 0xFFFFFFFFL; set_flags = false };
         ]
     | Ir.Shr ->
         [
-          Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
-          Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
-          Ir.Alu { op = Shr; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
+          Ir.Mov { dst = Reg target; src = Reg src };
+          Ir.Alu { op = And; dst = target; src1 = Reg target; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          Ir.Alu { op = Shr; dst = target; src1 = Reg target; src2 = Imm shift; set_flags = false };
         ]
     | Ir.Sar ->
         [
-          Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
-          Ir.Alu { op = Shl; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 32L; set_flags = false };
-          Ir.Alu { op = Sar; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm (Int64.add 32L shift); set_flags = false };
-          Ir.Alu { op = And; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm 0xFFFFFFFFL; set_flags = false };
+          Ir.Mov { dst = Reg target; src = Reg src };
+          Ir.Alu { op = Shl; dst = target; src1 = Reg target; src2 = Imm 32L; set_flags = false };
+          Ir.Alu { op = Sar; dst = target; src1 = Reg target; src2 = Imm (Int64.add 32L shift); set_flags = false };
+          Ir.Alu { op = And; dst = target; src1 = Reg target; src2 = Imm 0xFFFFFFFFL; set_flags = false };
         ]
     | op ->
         [
-          Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
-          Ir.Alu { op; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
+          Ir.Mov { dst = Reg target; src = Reg src };
+          Ir.Alu { op; dst = target; src1 = Reg target; src2 = Imm shift; set_flags = false };
         ]
   else
     [
-      Ir.Mov { dst = Reg Register.vtmp1; src = Reg src };
-      Ir.Alu { op = shift_op; dst = Register.vtmp1; src1 = Reg Register.vtmp1; src2 = Imm shift; set_flags = false };
+      Ir.Mov { dst = Reg target; src = Reg src };
+      Ir.Alu { op = shift_op; dst = target; src1 = Reg target; src2 = Imm shift; set_flags = false };
     ]
 
+let emit_shifted_operand ~src ~shift_op ~shift =
+  emit_shifted_operand_to ~target:Register.vtmp1 ~src ~shift_op ~shift
+
 (* Shifted-register ALU operand (e.g. `add w8, w8, w0, lsr #16`): materialise the
-   shifted source into vtmp1, then apply the op through [emit_3addr_alu] so the
+   shifted source into target, then apply the op through [emit_3addr_alu] so the
    src1 = dst emitter convention holds even for 3-operand forms. *)
 let emit_shifted_alu ~op ~dst ~src1 ~src2 ~shift_op ~shift =
-  emit_shifted_operand ~src:src2 ~shift_op ~shift
-  @ emit_3addr_alu ~op ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false
+  let same_reg a b = Register.to_string a = Register.to_string b in
+  if not (same_reg dst src1) && not (same_reg dst src2) then
+    match op with
+    | Ir.Add | Ir.Imul | Ir.Mul | Ir.Xor | Ir.And | Ir.Or ->
+        emit_shifted_operand_to ~target:dst ~src:src2 ~shift_op ~shift
+        @ [ Ir.Alu { op; dst; src1 = Reg dst; src2 = Reg src1; set_flags = false } ]
+    | _ ->
+        emit_shifted_operand_to ~target:Register.vtmp1 ~src:src2 ~shift_op ~shift
+        @ emit_3addr_alu ~op ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false
+  else
+    emit_shifted_operand_to ~target:Register.vtmp1 ~src:src2 ~shift_op ~shift
+    @ emit_3addr_alu ~op ~dst ~src1 ~src2:(OpReg Register.vtmp1) ~set_flags:false
 
 let is_vzero = function
   | Register.Vreg (Register.VZERO, _) -> true
@@ -686,28 +699,48 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       if is_vzero dst then Some [ Ir.Nop ]
       else
         let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
+        let cond = map_cond_str c_str in
         let is_zero = function
           | OpReg (Register.Vreg (Register.VZERO, _)) -> true
           | OpImm 0L -> true
           | _ -> false
         in
-        if is_zero src2_op && (match src1_op with OpReg r -> r = dst | _ -> false) then
-          Some [
-            Ir.Mov { dst = Reg Register.vtmp1; src = Imm 0L };
-            Ir.Cmov { cond = Flags.condition_negate (map_cond_str c_str); dst; src = Reg Register.vtmp1 };
-          ]
-        else if is_zero src1_op && (match src2_op with OpReg r -> r = dst | _ -> false) then
-          Some [
-            Ir.Mov { dst = Reg Register.vtmp1; src = Imm 0L };
-            Ir.Cmov { cond = map_cond_str c_str; dst; src = Reg Register.vtmp1 };
-          ]
+        let same_reg r = function
+          | OpReg r' -> Register.to_string r = Register.to_string r'
+          | _ -> false
+        in
+        if same_reg dst src1_op then
+          if is_zero src2_op then
+            Some [
+              Ir.Mov { dst = Reg Register.vtmp1; src = Imm 0L };
+              Ir.Cmov { cond = Flags.condition_negate cond; dst; src = Reg Register.vtmp1 };
+            ]
+          else
+            Some [
+              Ir.Cmov { cond = Flags.condition_negate cond; dst; src = raw_to_ir_operand src2_op };
+            ]
+        else if same_reg dst src2_op then
+          if is_zero src1_op then
+            Some [
+              Ir.Mov { dst = Reg Register.vtmp1; src = Imm 0L };
+              Ir.Cmov { cond; dst; src = Reg Register.vtmp1 };
+            ]
+          else
+            Some [
+              Ir.Cmov { cond; dst; src = raw_to_ir_operand src1_op };
+            ]
         else
-          Some [
-            Ir.Mov { dst = Reg Register.vtmp1; src = raw_to_ir_operand src1_op };
-            Ir.Mov { dst = Reg Register.vtmp0; src = raw_to_ir_operand src2_op };
-            Ir.Cmov { cond = map_cond_str c_str; dst = Register.vtmp0; src = Reg Register.vtmp1 };
-            Ir.Mov { dst = Reg dst; src = Reg (Register.with_width Register.vtmp0 (Register.get_width dst)) };
-          ]
+          if is_zero src1_op then
+            Some [
+              Ir.Mov { dst = Reg dst; src = raw_to_ir_operand src2_op };
+              Ir.Mov { dst = Reg Register.vtmp1; src = Imm 0L };
+              Ir.Cmov { cond; dst; src = Reg Register.vtmp1 };
+            ]
+          else
+            Some [
+              Ir.Mov { dst = Reg dst; src = raw_to_ir_operand src2_op };
+              Ir.Cmov { cond; dst; src = raw_to_ir_operand src1_op };
+            ]
   | ("cinc", (OpReg dst :: OpReg src :: cond_op :: _)) ->
       if is_vzero dst then Some [ Ir.Nop ]
       else
