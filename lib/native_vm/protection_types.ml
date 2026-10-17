@@ -105,6 +105,7 @@ type vm_runtime_config = {
   egraph_expansion : bool [@default true];
   ephemeral_jit : bool [@default false];
   chameleon_handlers : bool [@default true];
+  oblivious_memory : bool [@default true];
 } [@@deriving yojson]
 
 type c_macro_config = {
@@ -148,6 +149,7 @@ let default_vm_runtime = {
   memory_sanitization = true; vector_isa = true;
   egraph_expansion = true; ephemeral_jit = false;
   chameleon_handlers = true;
+  oblivious_memory = true;
 }
 let default_c_macro = {
   enabled = true; macro_prefix = "ASG_"; obfuscate_strings = true;
@@ -255,5 +257,10 @@ let anti_vpc_enabled (config : t option) : bool =
 let memory_chaffing_enabled (config : t option) : bool =
   match config with
   | Some c -> c.memory_chaffing.enabled
+  | None -> true
+
+let oblivious_memory_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.vm_runtime.oblivious_memory
   | None -> true
 

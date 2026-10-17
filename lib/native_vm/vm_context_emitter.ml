@@ -106,6 +106,8 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field Bool "trapped";
     member_field SizeT "executed_instructions";
     member_field ~init:(var "CANARY_VAL") UInt64 "canary_tail";
+    member_field ~init:(u64 0L) UInt64 "decoy_sink";
+    member_field (Array (UInt64, 64)) "oblivious_frame";
 
     (* Affine Register Mapping Constants & Helper *)
     member_static_constexpr SizeT "REG_AFFINE_A" (i32 affine_a);
@@ -137,6 +139,10 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       (var "executed_instructions" := u64 0L);
       (var "canary_head" := var "CANARY_VAL");
       (var "canary_tail" := var "CANARY_VAL");
+      (var "decoy_sink" := u64 0L);
+      for_range "i" (u64 0L) (u64 64L) [
+        (idx (var "oblivious_frame") (var "i") := u64 0L);
+      ];
     ];
 
     (* Rolling Key Derivations *)
@@ -313,6 +319,26 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       ]);
       ret (u64 0L);
     ]);
+
+    (* Oblivious Frame Scratchpad Engine *)
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "oblivious_frame_store" [(SizeT, "logical_idx"); (UInt64, "v")] [
+      decl_var SizeT "p_idx" ~init:(call "asgard::oblivious_mem::logical_to_physical_slot" [var "logical_idx" &~ i32 63; i32 37; i32 17; i32 64]);
+      let_u64 "mask" (call "asgard::oblivious_mem::slot_tweak_mask" [var "running_key"; var "logical_idx" &~ i32 63]);
+      (idx (var "oblivious_frame") (var "p_idx") := (var "v" ^~ var "mask"));
+      (var "decoy_sink" := (var "v" ^~ u64 0x5877CAFE1337BEEFL));
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "oblivious_frame_load" [(SizeT, "logical_idx")] [
+      decl_var SizeT "p_idx" ~init:(call "asgard::oblivious_mem::logical_to_physical_slot" [var "logical_idx" &~ i32 63; i32 37; i32 17; i32 64]);
+      decl_var SizeT "quad_base_idx" ~init:(var "p_idx" &~ bit_not (cast SizeT (i32 3)));
+      decl_var SizeT "target_slot" ~init:(var "p_idx" &~ i32 3);
+      let_u64 "raw_val" (call "asgard::oblivious_mem::oblivious_read_quad" [
+        addr_of (idx (var "oblivious_frame") (var "quad_base_idx"));
+        var "target_slot";
+      ]);
+      let_u64 "mask" (call "asgard::oblivious_mem::slot_tweak_mask" [var "running_key"; var "logical_idx" &~ i32 63]);
+      ret (var "raw_val" ^~ var "mask");
+    ];
 
     (* Multi-VM Domain morphing *)
     member_field ~init:(u64 0x53B7D9F7A1B4283EL) UInt64 "trace_digest";

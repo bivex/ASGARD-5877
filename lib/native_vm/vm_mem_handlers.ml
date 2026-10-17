@@ -835,209 +835,348 @@ let emit_mem_and_ffi_handlers ?rng b =
   ] in
   emit_handler_ast b "H_CALL_EXTERN" call_extern_stmts;
 
-  let load_64_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
-        set_reg (var "dst") (deref (reinterpret_cast (ConstPtr UInt64) (var "addr")));
-      ]
-    | 1 -> [
-        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
-        set_reg (var "dst") (deref (reinterpret_cast (ConstPtr UInt64) (var "_base" +~ var "imm")));
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
-        let_u64 "_v" (u64 0L);
-        expr_stmt (call "std::memcpy" [addr_of (var "_v"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt64]);
-        set_reg (var "dst") (var "_v");
-      ]
-  in
+  let load_64_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (call "asgard::oblivious_mem::oblivious_load_u64" [cast UIntPtr (var "addr")]);
+        ]
+      | _ -> [
+          decl_var UIntPtr "_addr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_u64 "_val" (call "asgard::oblivious_mem::oblivious_load_u64" [var "_addr"]);
+          set_reg (var "dst") (var "_val");
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (deref (reinterpret_cast (ConstPtr UInt64) (var "addr")));
+        ]
+      | 1 -> [
+          decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+          set_reg (var "dst") (deref (reinterpret_cast (ConstPtr UInt64) (var "_base" +~ var "imm")));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_u64 "_v" (u64 0L);
+          expr_stmt (call "std::memcpy" [addr_of (var "_v"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt64]);
+          set_reg (var "dst") (var "_v");
+        ]
+    )
+  ] in
   emit_handler_ast b "H_LOAD_64" (load_64_stmts @ [ inc_instrs; fetch_next ]);
 
-  let load_32_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
-        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt32) (var "addr"))));
-      ]
-    | 1 -> [
-        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
-        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt32) (var "_base" +~ var "imm"))));
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
-        let_u32 "_v32" (u32 0l);
-        expr_stmt (call "std::memcpy" [addr_of (var "_v32"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt32]);
-        set_reg (var "dst") (c_cast UInt64 (var "_v32"));
-      ]
-  in
+  let load_32_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (call "asgard::oblivious_mem::oblivious_load_u32" [cast UIntPtr (var "addr")]));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_addr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_u32 "_v32" (call "asgard::oblivious_mem::oblivious_load_u32" [var "_addr"]);
+          set_reg (var "dst") (c_cast UInt64 (var "_v32"));
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt32) (var "addr"))));
+        ]
+      | 1 -> [
+          decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+          set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt32) (var "_base" +~ var "imm"))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_u32 "_v32" (u32 0l);
+          expr_stmt (call "std::memcpy" [addr_of (var "_v32"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt32]);
+          set_reg (var "dst") (c_cast UInt64 (var "_v32"));
+        ]
+    )
+  ] in
   emit_handler_ast b "H_LOAD_32" (load_32_stmts @ [ inc_instrs; fetch_next ]);
 
-  let load_16_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
-        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt16) (var "addr"))));
-      ]
-    | 1 -> [
-        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
-        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt16) (var "_base" +~ var "imm"))));
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
-        let_u16 "_v16" (c_cast UInt16 (u32 0l));
-        expr_stmt (call "std::memcpy" [addr_of (var "_v16"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt16]);
-        set_reg (var "dst") (c_cast UInt64 (var "_v16"));
-      ]
-  in
+  let load_16_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (call "asgard::oblivious_mem::oblivious_load_u16" [cast UIntPtr (var "addr")]));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_addr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_u16 "_v16" (call "asgard::oblivious_mem::oblivious_load_u16" [var "_addr"]);
+          set_reg (var "dst") (c_cast UInt64 (var "_v16"));
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt16) (var "addr"))));
+        ]
+      | 1 -> [
+          decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+          set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt16) (var "_base" +~ var "imm"))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_u16 "_v16" (c_cast UInt16 (u32 0l));
+          expr_stmt (call "std::memcpy" [addr_of (var "_v16"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt16]);
+          set_reg (var "dst") (c_cast UInt64 (var "_v16"));
+        ]
+    )
+  ] in
   emit_handler_ast b "H_LOAD_16" (load_16_stmts @ [ inc_instrs; fetch_next ]);
 
-  let load_8_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
-        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt8) (var "addr"))));
-      ]
-    | 1 -> [
-        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
-        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt8) (var "_base" +~ var "imm"))));
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
-        let_u8 "_v8" (u8 0);
-        expr_stmt (call "std::memcpy" [addr_of (var "_v8"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt8]);
-        set_reg (var "dst") (c_cast UInt64 (var "_v8"));
-      ]
-  in
+  let load_8_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (call "asgard::oblivious_mem::oblivious_load_u8" [cast UIntPtr (var "addr")]));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_addr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_u8 "_v8" (call "asgard::oblivious_mem::oblivious_load_u8" [var "_addr"]);
+          set_reg (var "dst") (c_cast UInt64 (var "_v8"));
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt8) (var "addr"))));
+        ]
+      | 1 -> [
+          decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+          set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt8) (var "_base" +~ var "imm"))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_u8 "_v8" (u8 0);
+          expr_stmt (call "std::memcpy" [addr_of (var "_v8"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt8]);
+          set_reg (var "dst") (c_cast UInt64 (var "_v8"));
+        ]
+    )
+  ] in
   emit_handler_ast b "H_LOAD_8" (load_8_stmts @ [ inc_instrs; fetch_next ]);
 
-  let load_s32_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int32) (var "addr")))));
-      ]
-    | 1 -> [
-        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int32) (var "_base" +~ var "imm")))));
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
-        let_i32 "_s32" (i32 0);
-        expr_stmt (call "std::memcpy" [addr_of (var "_s32"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int32]);
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s32")));
-      ]
-  in
+  let load_s32_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (c_cast Int32 (call "asgard::oblivious_mem::oblivious_load_u32" [cast UIntPtr (var "addr")]))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_addr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_i32 "_s32" (c_cast Int32 (call "asgard::oblivious_mem::oblivious_load_u32" [var "_addr"]));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s32")));
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int32) (var "addr")))));
+        ]
+      | 1 -> [
+          decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int32) (var "_base" +~ var "imm")))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_i32 "_s32" (i32 0);
+          expr_stmt (call "std::memcpy" [addr_of (var "_s32"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int32]);
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s32")));
+        ]
+    )
+  ] in
   emit_handler_ast b "H_LOAD_S32" (load_s32_stmts @ [ inc_instrs; fetch_next ]);
 
-  let load_s16_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int16) (var "addr")))));
-      ]
-    | 1 -> [
-        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int16) (var "_base" +~ var "imm")))));
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
-        let_i16 "_s16" (c_cast Int16 (i32 0));
-        expr_stmt (call "std::memcpy" [addr_of (var "_s16"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int16]);
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s16")));
-      ]
-  in
+  let load_s16_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (c_cast Int16 (call "asgard::oblivious_mem::oblivious_load_u16" [cast UIntPtr (var "addr")]))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_addr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_i16 "_s16" (c_cast Int16 (call "asgard::oblivious_mem::oblivious_load_u16" [var "_addr"]));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s16")));
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int16) (var "addr")))));
+        ]
+      | 1 -> [
+          decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int16) (var "_base" +~ var "imm")))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_i16 "_s16" (c_cast Int16 (i32 0));
+          expr_stmt (call "std::memcpy" [addr_of (var "_s16"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int16]);
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s16")));
+        ]
+    )
+  ] in
   emit_handler_ast b "H_LOAD_S16" (load_s16_stmts @ [ inc_instrs; fetch_next ]);
 
-  let load_s8_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int8) (var "addr")))));
-      ]
-    | 1 -> [
-        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int8) (var "_base" +~ var "imm")))));
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
-        let_i8 "_s8" (c_cast Int8 (i32 0));
-        expr_stmt (call "std::memcpy" [addr_of (var "_s8"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int8]);
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s8")));
-      ]
-  in
+  let load_s8_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (c_cast Int8 (call "asgard::oblivious_mem::oblivious_load_u8" [cast UIntPtr (var "addr")]))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_addr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_i8 "_s8" (c_cast Int8 (call "asgard::oblivious_mem::oblivious_load_u8" [var "_addr"]));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s8")));
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int8) (var "addr")))));
+        ]
+      | 1 -> [
+          decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int8) (var "_base" +~ var "imm")))));
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+          let_i8 "_s8" (c_cast Int8 (i32 0));
+          expr_stmt (call "std::memcpy" [addr_of (var "_s8"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int8]);
+          set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s8")));
+        ]
+    )
+  ] in
   emit_handler_ast b "H_LOAD_S8" (load_s8_stmts @ [ inc_instrs; fetch_next ]);
 
-  let store_64_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
-        deref (reinterpret_cast (Ptr UInt64) (var "addr")) := reg_src;
-      ]
-    | 1 -> [
-        decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
-        deref (reinterpret_cast (Ptr UInt64) (var "_target")) := reg_src;
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
-        let_u64 "_src_v" reg_src;
-        expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_src_v"); sizeof_ty UInt64]);
-      ]
-  in
+  let store_64_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+          expr_stmt (call "asgard::oblivious_mem::oblivious_store_u64" [cast UIntPtr (var "addr"); reg_src; addr_of (var "ctx.decoy_sink")]);
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+          expr_stmt (call "asgard::oblivious_mem::oblivious_store_u64" [var "_ptr"; reg_src; addr_of (var "ctx.decoy_sink")]);
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+          deref (reinterpret_cast (Ptr UInt64) (var "addr")) := reg_src;
+        ]
+      | 1 -> [
+          decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
+          deref (reinterpret_cast (Ptr UInt64) (var "_target")) := reg_src;
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+          let_u64 "_src_v" reg_src;
+          expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_src_v"); sizeof_ty UInt64]);
+        ]
+    )
+  ] in
   emit_handler_ast b "H_STORE_64" (store_64_stmts @ [ inc_instrs; fetch_next ]);
 
-  let store_32_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
-        deref (reinterpret_cast (Ptr UInt32) (var "addr")) := c_cast UInt32 reg_src;
-      ]
-    | 1 -> [
-        decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
-        deref (reinterpret_cast (Ptr UInt32) (var "_target")) := c_cast UInt32 reg_src;
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
-        let_u32 "_v32" (c_cast UInt32 reg_src);
-        expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v32"); sizeof_ty UInt32]);
-      ]
-  in
+  let store_32_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+          expr_stmt (call "asgard::oblivious_mem::oblivious_store_u32" [cast UIntPtr (var "addr"); c_cast UInt32 reg_src; addr_of (var "ctx.decoy_sink")]);
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+          expr_stmt (call "asgard::oblivious_mem::oblivious_store_u32" [var "_ptr"; c_cast UInt32 reg_src; addr_of (var "ctx.decoy_sink")]);
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+          deref (reinterpret_cast (Ptr UInt32) (var "addr")) := c_cast UInt32 reg_src;
+        ]
+      | 1 -> [
+          decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
+          deref (reinterpret_cast (Ptr UInt32) (var "_target")) := c_cast UInt32 reg_src;
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+          let_u32 "_v32" (c_cast UInt32 reg_src);
+          expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v32"); sizeof_ty UInt32]);
+        ]
+    )
+  ] in
   emit_handler_ast b "H_STORE_32" (store_32_stmts @ [ inc_instrs; fetch_next ]);
 
-  let store_16_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
-        deref (reinterpret_cast (Ptr UInt16) (var "addr")) := c_cast UInt16 reg_src;
-      ]
-    | 1 -> [
-        decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
-        deref (reinterpret_cast (Ptr UInt16) (var "_target")) := c_cast UInt16 reg_src;
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
-        let_u16 "_v16" (c_cast UInt16 reg_src);
-        expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v16"); sizeof_ty UInt16]);
-      ]
-  in
+  let store_16_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+          expr_stmt (call "asgard::oblivious_mem::oblivious_store_u16" [cast UIntPtr (var "addr"); c_cast UInt16 reg_src; addr_of (var "ctx.decoy_sink")]);
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+          expr_stmt (call "asgard::oblivious_mem::oblivious_store_u16" [var "_ptr"; c_cast UInt16 reg_src; addr_of (var "ctx.decoy_sink")]);
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+          deref (reinterpret_cast (Ptr UInt16) (var "addr")) := c_cast UInt16 reg_src;
+        ]
+      | 1 -> [
+          decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
+          deref (reinterpret_cast (Ptr UInt16) (var "_target")) := c_cast UInt16 reg_src;
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+          let_u16 "_v16" (c_cast UInt16 reg_src);
+          expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v16"); sizeof_ty UInt16]);
+        ]
+    )
+  ] in
   emit_handler_ast b "H_STORE_16" (store_16_stmts @ [ inc_instrs; fetch_next ]);
 
-  let store_8_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
-        deref (reinterpret_cast (Ptr UInt8) (var "addr")) := c_cast UInt8 reg_src;
-      ]
-    | 1 -> [
-        decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
-        deref (reinterpret_cast (Ptr UInt8) (var "_target")) := c_cast UInt8 reg_src;
-      ]
-    | _ -> [
-        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
-        let_u8 "_v8" (c_cast UInt8 reg_src);
-        expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v8"); sizeof_ty UInt8]);
-      ]
-  in
+  let store_8_stmts = [
+    preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" (
+      match pick_variant 2 with
+      | 0 -> [
+          let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+          expr_stmt (call "asgard::oblivious_mem::oblivious_store_u8" [cast UIntPtr (var "addr"); c_cast UInt8 reg_src; addr_of (var "ctx.decoy_sink")]);
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+          expr_stmt (call "asgard::oblivious_mem::oblivious_store_u8" [var "_ptr"; c_cast UInt8 reg_src; addr_of (var "ctx.decoy_sink")]);
+        ]
+    ) ~else_stmts:(
+      match pick_variant 3 with
+      | 0 -> [
+          let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+          deref (reinterpret_cast (Ptr UInt8) (var "addr")) := c_cast UInt8 reg_src;
+        ]
+      | 1 -> [
+          decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
+          deref (reinterpret_cast (Ptr UInt8) (var "_target")) := c_cast UInt8 reg_src;
+        ]
+      | _ -> [
+          decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+          let_u8 "_v8" (c_cast UInt8 reg_src);
+          expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v8"); sizeof_ty UInt8]);
+        ]
+    )
+  ] in
   emit_handler_ast b "H_STORE_8" (store_8_stmts @ [ inc_instrs; fetch_next ]);
 
   let resolve_sym_stmts =

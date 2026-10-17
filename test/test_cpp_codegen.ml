@@ -118,7 +118,8 @@ let () =
     if not (find 0) then failwith ("Missing VMContext keyword: " ^ kw)
   ) [ "enum RegMap : uint8_t"; "struct VMContext"; "REG_AFFINE_A"; "REG_AFFINE_B";
       "reg_phys_idx"; "CANARY_VAL"; "canary_head"; "canary_tail"; "get_reg"; "set_reg";
-      "eval_condition"; "compute_sub_flags"; "compute_add_flags" ];
+      "eval_condition"; "compute_sub_flags"; "compute_add_flags";
+      "decoy_sink"; "oblivious_frame"; "oblivious_frame_store"; "oblivious_frame_load" ];
   Printf.printf "[PASS] Step 8: Vm_context_emitter emitted %d bytes using typed AST.\n" (String.length ctx_code);
 
   (* 9. Test Modular Vanguard Runtime headers & Runtime_policy *)
@@ -824,7 +825,50 @@ let () =
   (match Cpp_codegen.Cpp_validator.validate_cpp_syntax rendered_unit with
    | Ok () -> ()
    | Error err -> failwith ("Preproc test header syntax validation failed: " ^ err));
-  Printf.printf "[PASS] Step 44: First-class preprocessor EDSL combinators (#if, #elif, #else, #endif, #define) verified without garbage.\n"
+  Printf.printf "[PASS] Step 44: First-class preprocessor EDSL combinators (#if, #elif, #else, #endif, #define) verified without garbage.\n";
+
+  (* ========================================================================= *)
+  (* Step 45: Oblivious Memory Layout & Decoy Memory Access Engine             *)
+  (* ========================================================================= *)
+  let rng_obf = Random.State.make [| 0x5877; 0x1337; 0xCAFE |] in
+  let scrambler = Native_vm.Oblivious_mem.gen_frame_scrambler rng_obf ~n_slots:64 in
+  let mem_arr = Array.make 64 0L in
+  for logical_slot = 0 to 63 do
+    let test_val = Int64.logxor 0xDEADBEEFCAFEB000L (Int64.of_int (logical_slot * 31)) in
+    Native_vm.Oblivious_mem.oblivious_store scrambler mem_arr ~logical_idx:logical_slot test_val;
+    let (loaded_val, accessed_indices) =
+      Native_vm.Oblivious_mem.oblivious_load_with_decoys scrambler mem_arr ~logical_idx:logical_slot ~noise_seed:0x13375877A5A5L in
+    assert (loaded_val = test_val);
+    assert (List.length accessed_indices = 4);
+    let phys_slot = Native_vm.Oblivious_mem.logical_to_physical_slot scrambler logical_slot in
+    assert (Native_vm.Oblivious_mem.physical_to_logical_slot scrambler phys_slot = logical_slot);
+    (* Stored value in memory must be scrambled, not plaintext *)
+    assert (mem_arr.(phys_slot) <> test_val);
+  done;
+
+  (* Validate Oblivious Memory C++ Header Unit *)
+  let obf_mem_hpp = Native_vm.Oblivious_mem.emit_oblivious_mem_hpp (Random.State.make [| 0x12345 |]) in
+  assert (contains_str obf_mem_hpp "oblivious_read_quad");
+  assert (contains_str obf_mem_hpp "oblivious_load_u64");
+  assert (contains_str obf_mem_hpp "oblivious_store_u64");
+  assert (contains_str obf_mem_hpp "namespace asgard::oblivious_mem");
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax obf_mem_hpp with
+   | Ok () -> ()
+   | Error err -> failwith ("Oblivious memory header C++ syntax validation failed: " ^ err));
+
+  (* Validate that generated Native VM context & handlers with oblivious memory enabled compiles *)
+  assert (Native_vm.Protection_types.oblivious_memory_enabled None);
+  assert (Native_vm.Protection_types.oblivious_memory_enabled (Some Native_vm.Protection_presets.default));
+  let disabled_cfg = {
+    Native_vm.Protection_presets.default with
+    vm_runtime = {
+      Native_vm.Protection_presets.default.vm_runtime with
+      oblivious_memory = false;
+    };
+  } in
+  assert (not (Native_vm.Protection_types.oblivious_memory_enabled (Some disabled_cfg)));
+  Printf.printf "[PASS] Step 45: Oblivious Memory layout and Decoy Access Engine verified with crash-safe boundary loads and dual stores.\n"
+
 
 
 

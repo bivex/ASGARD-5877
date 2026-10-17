@@ -31,3 +31,9 @@ val oblivious_store : frame_scrambler -> int64 array -> logical_idx:int -> int64
     и выбором истинного значения без ветвлений. Возвращает (значение, список 4 физических адресов трассы) *)
 val oblivious_load_with_decoys :
   frame_scrambler -> int64 array -> logical_idx:int -> noise_seed:int64 -> int64 * int list
+
+(** Генерация C++ EDSL AST для asgard::oblivious_mem *)
+val emit_oblivious_mem_decls : Random.State.t -> Cpp_codegen.Cpp_ast.top_decl list
+
+(** Генерация заголовочного файла C++ asgard::oblivious_mem *)
+val emit_oblivious_mem_hpp : Random.State.t -> string

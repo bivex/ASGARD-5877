@@ -60,6 +60,7 @@ type vm_runtime_config = {
   egraph_expansion : bool;
   ephemeral_jit : bool;
   chameleon_handlers : bool;
+  oblivious_memory : bool;
 }
 
 type c_macro_config = {
@@ -166,6 +167,9 @@ val anti_vpc_enabled : t option -> bool
 
 val memory_chaffing_enabled : t option -> bool
 (** Tech-2608 Anti-Trace-Synthesis gate: [true] when enabled in memory_chaffing config. *)
+
+val oblivious_memory_enabled : t option -> bool
+(** Oblivious Memory & Decoy Access gate: [true] when enabled in vm_runtime. *)
 
 type builder
 (** Mutable builder for [Protection_config.t]. *)

@@ -139,6 +139,7 @@ module Runtime_policy = struct
     enable_vector_isa : bool;
     enable_egraph_expansion : bool;
     enable_ephemeral_jit : bool;
+    enable_oblivious_mem : bool;
   }
 
   let of_config ?runtime_profile (config : Protection_config.t option) : t =
@@ -166,6 +167,7 @@ module Runtime_policy = struct
       enable_vector_isa = (match config with Some c -> c.vm_runtime.vector_isa | None -> true);
       enable_egraph_expansion = (match config with Some c -> c.vm_runtime.egraph_expansion | None -> true);
       enable_ephemeral_jit = Protection_config.ephemeral_jit_enabled config;
+      enable_oblivious_mem = Protection_config.oblivious_memory_enabled config;
     }
 end
 
@@ -384,6 +386,7 @@ let emit_native_runtime_hpp_decls
   let nanomite_header = if policy.enable_nanomites then Hardened_runtime.emit_nanomite_engine_header () else "" in
   let ephemeral_jit_header = if policy.enable_ephemeral_jit then Hardened_runtime.emit_ephemeral_jit_header () else "" in
   let chameleon_header = Chameleon_handlers.emit_chameleon_handlers_hpp rng in
+  let oblivious_mem_header = if policy.enable_oblivious_mem then Oblivious_mem.emit_oblivious_mem_hpp rng else "" in
 
   let (has_gpu_constants, gpu_constants) = match gpu_matrix with
     | Some mat -> (true, Gpu_synth.Gpu_matrix.emit_cpp_constants mat)
@@ -529,7 +532,11 @@ let emit_native_runtime_hpp_decls
     raw_top rns_header;
     raw_top branchless_vip_header;
     raw_top chameleon_header;
+    raw_top oblivious_mem_header;
   ]
+  @ (if policy.enable_oblivious_mem then [
+      macro_def ~value:(i32 1) "ASGARD_OBLIVIOUS_MEM";
+    ] else [])
   @ (if policy.enable_direct_syscalls then [ raw_top direct_syscalls_header ] else [])
   @ (if policy.enable_anti_emu then [ raw_top anti_emulation_header ] else [])
   @ [ raw_top dual_mapping_header ]

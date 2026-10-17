@@ -17,6 +17,7 @@ module Runtime_policy : sig
     enable_vector_isa : bool;
     enable_egraph_expansion : bool;
     enable_ephemeral_jit : bool;
+    enable_oblivious_mem : bool;
   }
 
   val of_config : ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t -> Protection_config.t option -> t
