@@ -639,152 +639,205 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
 
   if enable_ephemeral_jit then begin
     Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
-    Buffer.add_string b "    H_ROL_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_ROL_RI, dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_ROR_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_ROR_RI, dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_SHL_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SHL_RI, dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_SHR_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SHR_RI, dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_SAR_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SAR_RI, dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_ROL_RR: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_ROL_RR, dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_ROR_RR: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_ROR_RR, dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_SHL_RR: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SHL_RR, dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_SHR_RR: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SHR_RR, dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_SAR_RR: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SAR_RR, dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    emit_handler_inline_ast b "H_ROL_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_ROL_RI" (var "dst") (i32 0) (cast UInt64 (var "imm")); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_ROR_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_ROR_RI" (var "dst") (i32 0) (cast UInt64 (var "imm")); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SHL_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_SHL_RI" (var "dst") (i32 0) (cast UInt64 (var "imm")); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SHR_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_SHR_RI" (var "dst") (i32 0) (cast UInt64 (var "imm")); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SAR_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_SAR_RI" (var "dst") (i32 0) (cast UInt64 (var "imm")); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_ROL_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_ROL_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_ROR_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_ROR_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SHL_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_SHL_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SHR_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_SHR_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SAR_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_SAR_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
     Buffer.add_string b "#else\n"
   end;
-  Buffer.add_string b "    H_ROL_RI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (val << shift) | (val >> ((64 - shift) & 63)));\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(dst); uint32_t s = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (v << s) | (v >> ((64 - s) & 63)));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        uint64_t _res = (val << shift) | (val >> ((64 - shift) & 63));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ROR_RI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (val >> shift) | (val << ((64 - shift) & 63)));\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(dst); uint32_t s = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (v >> s) | (v << ((64 - s) & 63)));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        uint64_t _res = (val >> shift) | (val << ((64 - shift) & 63));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SHL_RI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, val << shift);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _res = ctx.get_reg(dst) << (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(dst); uint32_t s = static_cast<uint32_t>(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, v << s);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SHR_RI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, val >> shift);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _res = ctx.get_reg(dst) >> (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(dst); uint32_t s = static_cast<uint32_t>(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, v >> s);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SAR_RI: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)((int64_t)val >> shift));\n"
-   | 1 ->
-       Buffer.add_string b "        int64_t sval = (int64_t)ctx.get_reg(dst); uint32_t shift = (uint32_t)(imm & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(sval >> shift));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _res = (uint64_t)((int64_t)ctx.get_reg(dst) >> (uint32_t)(imm & 63));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ROL_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (val << shift) | (val >> ((64 - shift) & 63)));\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(dst); uint32_t s = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (v << s) | (v >> ((64 - s) & 63)));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        uint64_t _res = (val << shift) | (val >> ((64 - shift) & 63));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ROR_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (val >> shift) | (val << ((64 - shift) & 63)));\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(dst); uint32_t s = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (v >> s) | (v << ((64 - s) & 63)));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        uint64_t _res = (val >> shift) | (val << ((64 - shift) & 63));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SHL_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, val << shift);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _res = ctx.get_reg(dst) << (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(dst); uint32_t s = static_cast<uint32_t>(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, v << s);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SHR_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, val >> shift);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _res = ctx.get_reg(dst) >> (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(dst); uint32_t s = static_cast<uint32_t>(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, v >> s);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SAR_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst); uint32_t shift = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)((int64_t)val >> shift));\n"
-   | 1 ->
-       Buffer.add_string b "        int64_t sval = (int64_t)ctx.get_reg(dst); uint32_t shift = (uint32_t)(ctx.get_reg(src) & 63);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(sval >> shift));\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _res = (uint64_t)((int64_t)ctx.get_reg(dst) >> (uint32_t)(ctx.get_reg(src) & 63));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let rol_ri_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") ((var "val" <<~ var "shift") |~ (var "val" >>~ ((i32 64 -~ var "shift") &~ i32 63)))
+      ]
+    | 1 -> [
+        let_u64 "v" reg_dst;
+        let_u32 "s" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") ((var "v" <<~ var "s") |~ (var "v" >>~ ((i32 64 -~ var "s") &~ i32 63)))
+      ]
+    | _ -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (var "imm" &~ i32 63));
+        let_u64 "_res" ((var "val" <<~ var "shift") |~ (var "val" >>~ ((i32 64 -~ var "shift") &~ i32 63)));
+        set_reg (var "dst") (var "_res")
+      ]
+  in
+  emit_handler_ast b "H_ROL_RI" (rol_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let ror_ri_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") ((var "val" >>~ var "shift") |~ (var "val" <<~ ((i32 64 -~ var "shift") &~ i32 63)))
+      ]
+    | 1 -> [
+        let_u64 "v" reg_dst;
+        let_u32 "s" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") ((var "v" >>~ var "s") |~ (var "v" <<~ ((i32 64 -~ var "s") &~ i32 63)))
+      ]
+    | _ -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (var "imm" &~ i32 63));
+        let_u64 "_res" ((var "val" >>~ var "shift") |~ (var "val" <<~ ((i32 64 -~ var "shift") &~ i32 63)));
+        set_reg (var "dst") (var "_res")
+      ]
+  in
+  emit_handler_ast b "H_ROR_RI" (ror_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let shl_ri_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") (var "val" <<~ var "shift")
+      ]
+    | 1 -> [
+        let_u64 "_res" (reg_dst <<~ cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") (var "_res")
+      ]
+    | _ -> [
+        let_u64 "v" reg_dst;
+        let_u32 "s" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") (var "v" <<~ var "s")
+      ]
+  in
+  emit_handler_ast b "H_SHL_RI" (shl_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let shr_ri_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") (var "val" >>~ var "shift")
+      ]
+    | 1 -> [
+        let_u64 "_res" (reg_dst >>~ cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") (var "_res")
+      ]
+    | _ -> [
+        let_u64 "v" reg_dst;
+        let_u32 "s" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") (var "v" >>~ var "s")
+      ]
+  in
+  emit_handler_ast b "H_SHR_RI" (shr_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let sar_ri_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") (cast UInt64 (cast Int64 (var "val") >>~ var "shift"))
+      ]
+    | 1 -> [
+        decl_var Int64 "sval" ~init:(cast Int64 reg_dst);
+        let_u32 "shift" (cast UInt32 (var "imm" &~ i32 63));
+        set_reg (var "dst") (cast UInt64 (var "sval" >>~ var "shift"))
+      ]
+    | _ -> [
+        let_u64 "_res" (cast UInt64 (cast Int64 reg_dst >>~ cast UInt32 (var "imm" &~ i32 63)));
+        set_reg (var "dst") (var "_res")
+      ]
+  in
+  emit_handler_ast b "H_SAR_RI" (sar_ri_stmts @ [ inc_instrs; fetch_next ]);
+
+  let rol_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") ((var "val" <<~ var "shift") |~ (var "val" >>~ ((i32 64 -~ var "shift") &~ i32 63)))
+      ]
+    | 1 -> [
+        let_u64 "v" reg_dst;
+        let_u32 "s" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") ((var "v" <<~ var "s") |~ (var "v" >>~ ((i32 64 -~ var "s") &~ i32 63)))
+      ]
+    | _ -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (reg_src &~ u64 63L));
+        let_u64 "_res" ((var "val" <<~ var "shift") |~ (var "val" >>~ ((i32 64 -~ var "shift") &~ i32 63)));
+        set_reg (var "dst") (var "_res")
+      ]
+  in
+  emit_handler_ast b "H_ROL_RR" (rol_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let ror_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") ((var "val" >>~ var "shift") |~ (var "val" <<~ ((i32 64 -~ var "shift") &~ i32 63)))
+      ]
+    | 1 -> [
+        let_u64 "v" reg_dst;
+        let_u32 "s" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") ((var "v" >>~ var "s") |~ (var "v" <<~ ((i32 64 -~ var "s") &~ i32 63)))
+      ]
+    | _ -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (reg_src &~ u64 63L));
+        let_u64 "_res" ((var "val" >>~ var "shift") |~ (var "val" <<~ ((i32 64 -~ var "shift") &~ i32 63)));
+        set_reg (var "dst") (var "_res")
+      ]
+  in
+  emit_handler_ast b "H_ROR_RR" (ror_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let shl_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") (var "val" <<~ var "shift")
+      ]
+    | 1 -> [
+        let_u64 "_res" (reg_dst <<~ cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") (var "_res")
+      ]
+    | _ -> [
+        let_u64 "v" reg_dst;
+        let_u32 "s" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") (var "v" <<~ var "s")
+      ]
+  in
+  emit_handler_ast b "H_SHL_RR" (shl_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let shr_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") (var "val" >>~ var "shift")
+      ]
+    | 1 -> [
+        let_u64 "_res" (reg_dst >>~ cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") (var "_res")
+      ]
+    | _ -> [
+        let_u64 "v" reg_dst;
+        let_u32 "s" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") (var "v" >>~ var "s")
+      ]
+  in
+  emit_handler_ast b "H_SHR_RR" (shr_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let sar_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        let_u32 "shift" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") (cast UInt64 (cast Int64 (var "val") >>~ var "shift"))
+      ]
+    | 1 -> [
+        decl_var Int64 "sval" ~init:(cast Int64 reg_dst);
+        let_u32 "shift" (cast UInt32 (reg_src &~ u64 63L));
+        set_reg (var "dst") (cast UInt64 (var "sval" >>~ var "shift"))
+      ]
+    | _ -> [
+        let_u64 "_res" (cast UInt64 (cast Int64 reg_dst >>~ cast UInt32 (reg_src &~ u64 63L)));
+        set_reg (var "dst") (var "_res")
+      ]
+  in
+  emit_handler_ast b "H_SAR_RR" (sar_rr_stmts @ [ inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
   Buffer.add_string b "    H_DIV_RR: {\n";
