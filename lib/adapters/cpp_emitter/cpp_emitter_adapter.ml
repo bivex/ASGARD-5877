@@ -169,18 +169,15 @@ let emit_exec_inst_method_def (inst : Vector_instruction.t) : top_decl =
   }
 
 let emit_instructions_cpp (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 4096 in
-  Buffer.add_string b "#include \"instructions.hpp\"\n#include <algorithm>\n\n";
-  Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b (render_top_decl (emit_execute_method_def spec));
-  Buffer.add_string b "\n\n";
-  List.iter
-    (fun (inst : Vector_instruction.t) ->
-      Buffer.add_string b (render_top_decl (emit_exec_inst_method_def inst));
-      Buffer.add_string b "\n\n")
-    spec.instructions;
-  Buffer.add_string b "} // namespace visa_emulator\n";
-  Buffer.contents b
+  let ns_decls =
+    emit_execute_method_def spec :: List.map emit_exec_inst_method_def spec.instructions
+  in
+  let top_decls = [
+    include_local "instructions.hpp";
+    include_sys "algorithm";
+    namespace_def "visa_emulator" ns_decls;
+  ] in
+  render_top_decls top_decls
 
 let emit_vector_emulator_class_def () : top_decl =
   ClassDef {
@@ -205,13 +202,15 @@ let emit_vector_emulator_class_def () : top_decl =
   }
 
 let emit_emulator_hpp () =
-  let b = Buffer.create 2048 in
-  Buffer.add_string b "#pragma once\n#include \"isa_state.hpp\"\n#include \"decoder.hpp\"\n#include \"instructions.hpp\"\n#include <vector>\n\n";
-  Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b (render_top_decl (emit_vector_emulator_class_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b "} // namespace visa_emulator\n";
-  Buffer.contents b
+  let top_decls = [
+    pragma "once";
+    include_local "isa_state.hpp";
+    include_local "decoder.hpp";
+    include_local "instructions.hpp";
+    include_sys "vector";
+    namespace_def "visa_emulator" [ emit_vector_emulator_class_def () ];
+  ] in
+  render_top_decls top_decls
 
 let emit_setup_test_state_def () : top_decl =
   FuncDecl {
@@ -300,29 +299,33 @@ let emit_main_def () : top_decl =
   }
 
 let emit_main_cpp (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 4096 in
-  Buffer.add_string b "#include \"emulator.hpp\"\n#include \"decoder.hpp\"\n#include \"instructions.hpp\"\n";
-  Buffer.add_string b "#include <iostream>\n#include <fstream>\n#include <vector>\n#include <iomanip>\n#include <string>\n\n";
-  Buffer.add_string b (render_top_decls [
+  let top_decls = [
+    include_local "emulator.hpp";
+    include_local "decoder.hpp";
+    include_local "instructions.hpp";
+    include_sys "iostream";
+    include_sys "fstream";
+    include_sys "vector";
+    include_sys "iomanip";
+    include_sys "string";
     emit_setup_test_state_def ();
     emit_run_self_tests_def spec;
     emit_main_def ();
-  ]);
-  Buffer.add_string b "\n";
-  Buffer.contents b
+  ] in
+  render_top_decls top_decls
 
 let emit_cmakelists (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 512 in
-  Buffer.add_string b "cmake_minimum_required(VERSION 3.20)\n";
-  Buffer.add_string b (Printf.sprintf "project(%s_emulator LANGUAGES CXX)\n\n" spec.name);
-  Buffer.add_string b "set(CMAKE_CXX_STANDARD 20)\n";
-  Buffer.add_string b "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
-  Buffer.add_string b "add_compile_options(-Wall -Wextra -O3)\n\n";
-  Buffer.add_string b "add_executable(visa_test_runner\n";
-  Buffer.add_string b "    main.cpp\n";
-  Buffer.add_string b "    instructions.cpp\n";
-  Buffer.add_string b ")\n";
-  Buffer.contents b
+  Printf.sprintf
+    "cmake_minimum_required(VERSION 3.20)\n\
+     project(%s_emulator LANGUAGES CXX)\n\n\
+     set(CMAKE_CXX_STANDARD 20)\n\
+     set(CMAKE_CXX_STANDARD_REQUIRED ON)\n\
+     add_compile_options(-Wall -Wextra -O3)\n\n\
+     add_executable(visa_test_runner\n\
+     \    main.cpp\n\
+     \    instructions.cpp\n\
+     )\n"
+    spec.name
 
 let emit_to_files (spec : Vector_isa_spec.t) ~output_dir =
   try

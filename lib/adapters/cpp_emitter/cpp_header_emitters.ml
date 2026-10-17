@@ -147,23 +147,30 @@ let emit_isa_constants_defs (spec : Vector_isa_spec.t) : top_decl list =
   ]
 
 let emit_isa_state_hpp (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 2048 in
   let vlen = spec.config.vlen in
   let sew = Types.Sew.to_bits spec.config.default_sew in
   let default_vl = vlen / sew in
-  Buffer.add_string b "#pragma once\n";
-  Buffer.add_string b "#include <cstdint>\n#include <cstddef>\n#include <array>\n#include <vector>\n#include <cstring>\n#include <iostream>\n#include <iomanip>\n#include <algorithm>\n\n";
-  Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b (render_top_decls (emit_isa_constants_defs spec));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decl (emit_csr_state_def default_vl));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decl (emit_vreg_file_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decl (emit_emulator_state_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b "} // namespace visa_emulator\n";
-  Buffer.contents b
+  let ns_decls =
+    emit_isa_constants_defs spec
+    @ [
+      emit_csr_state_def default_vl;
+      emit_vreg_file_def ();
+      emit_emulator_state_def ();
+    ]
+  in
+  let top_decls = [
+    pragma "once";
+    include_sys "cstdint";
+    include_sys "cstddef";
+    include_sys "array";
+    include_sys "vector";
+    include_sys "cstring";
+    include_sys "iostream";
+    include_sys "iomanip";
+    include_sys "algorithm";
+    namespace_def "visa_emulator" ns_decls;
+  ] in
+  render_top_decls top_decls
 
 let emit_decoder_class_def (instructions : Vector_instruction.t list) : top_decl =
   let groups = group_by_funct6 instructions in
@@ -214,17 +221,19 @@ let emit_decoder_class_def (instructions : Vector_instruction.t list) : top_decl
   }
 
 let emit_decoder_hpp (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 2048 in
-  Buffer.add_string b "#pragma once\n#include <cstdint>\n#include <string_view>\n#include <optional>\n\n";
-  Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b (render_top_decl (emit_inst_id_enum spec.instructions));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decl (emit_decoded_instruction_def ()));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b (render_top_decl (emit_decoder_class_def spec.instructions));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b "} // namespace visa_emulator\n";
-  Buffer.contents b
+  let ns_decls = [
+    emit_inst_id_enum spec.instructions;
+    emit_decoded_instruction_def ();
+    emit_decoder_class_def spec.instructions;
+  ] in
+  let top_decls = [
+    pragma "once";
+    include_sys "cstdint";
+    include_sys "string_view";
+    include_sys "optional";
+    namespace_def "visa_emulator" ns_decls;
+  ] in
+  render_top_decls top_decls
 
 let emit_instruction_executor_class_def (instructions : Vector_instruction.t list) : top_decl =
   ClassDef {
@@ -242,10 +251,10 @@ let emit_instruction_executor_class_def (instructions : Vector_instruction.t lis
   }
 
 let emit_instructions_hpp (spec : Vector_isa_spec.t) =
-  let b = Buffer.create 2048 in
-  Buffer.add_string b "#pragma once\n#include \"isa_state.hpp\"\n#include \"decoder.hpp\"\n\n";
-  Buffer.add_string b "namespace visa_emulator {\n\n";
-  Buffer.add_string b (render_top_decl (emit_instruction_executor_class_def spec.instructions));
-  Buffer.add_string b "\n\n";
-  Buffer.add_string b "} // namespace visa_emulator\n";
-  Buffer.contents b
+  let top_decls = [
+    pragma "once";
+    include_local "isa_state.hpp";
+    include_local "decoder.hpp";
+    namespace_def "visa_emulator" [ emit_instruction_executor_class_def spec.instructions ];
+  ] in
+  render_top_decls top_decls
