@@ -128,6 +128,16 @@ let compile_and_package_multi
   in
 
   let compile_one_func (func : Ir.func) =
+    let func =
+      if enable_mba then
+        Dynamic_mba.transform ~rng func
+      else func
+    in
+    let func =
+      if enable_junk then
+        Data_keyed_decoy.transform ~rng func
+      else func
+    in
     let target_func =
       if enable_cff then
         let cff_opts =
