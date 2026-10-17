@@ -726,7 +726,106 @@ let () =
      output_string oc tech_2601_header_str;
      close_out oc
    end);
-  Printf.printf "[PASS] Step 43: Tech-2601 pure typed EDSL AST and header emission validated.\n"
+  Printf.printf "[PASS] Step 43: Tech-2601 pure typed EDSL AST and header emission validated.\n";
+
+  (* 44. First-class preprocessor EDSL combinators (#if / #elif / #else / #endif / #ifdef / #ifndef / #define) *)
+  let elif_stmt = preproc_if_stmt
+    ~elifs:[
+      ("defined(__aarch64__)", [ let_u64 "arch_id" (u64 2L) ]);
+      ("defined(__riscv)", [ let_u64 "arch_id" (u64 3L) ]);
+    ]
+    ~else_stmts:[ let_u64 "arch_id" (u64 0L) ]
+    "defined(__x86_64__)"
+    [ let_u64 "arch_id" (u64 1L) ]
+  in
+  let elif_stmt_str = string_of_stmt elif_stmt in
+  assert (contains_str elif_stmt_str "#if defined(__x86_64__)");
+  assert (contains_str elif_stmt_str "#elif defined(__aarch64__)");
+  assert (contains_str elif_stmt_str "#elif defined(__riscv)");
+  assert (contains_str elif_stmt_str "#else");
+  assert (contains_str elif_stmt_str "#endif");
+  let count_sub str sub =
+    let rec aux idx count =
+      if idx + String.length sub > String.length str then count
+      else if String.sub str idx (String.length sub) = sub then aux (idx + 1) (count + 1)
+      else aux (idx + 1) count
+    in
+    aux 0 0
+  in
+  assert (count_sub elif_stmt_str "#endif" = 1);
+
+  (* Test top_decl preproc_if with elifs *)
+  let top_elif = preproc_if
+    ~elifs:[
+      ("defined(TARGET_ARM)", [ raw_top "constexpr const char* ARCH = \"arm\";" ]);
+    ]
+    ~else_decls:[ raw_top "constexpr const char* ARCH = \"unknown\";" ]
+    "defined(TARGET_X86)"
+    [ raw_top "constexpr const char* ARCH = \"x86\";" ]
+  in
+  let top_elif_str = render_top_decls [top_elif] in
+  assert (contains_str top_elif_str "#if defined(TARGET_X86)");
+  assert (contains_str top_elif_str "#elif defined(TARGET_ARM)");
+  assert (contains_str top_elif_str "#else");
+  assert (count_sub top_elif_str "#endif" = 1);
+
+  (* Test ifdef / ifndef / macro_def_stmt / macro_def_raw_stmt *)
+  let ifdef_s = preproc_ifdef_stmt ~else_stmts:[ (var "x" := u64 0L) ] "DEBUG" [ (var "x" := u64 1L) ] in
+  let ifdef_str = string_of_stmt ifdef_s in
+  assert (contains_str ifdef_str "#ifdef DEBUG");
+  assert (contains_str ifdef_str "#else");
+  assert (contains_str ifdef_str "#endif");
+
+  let ifndef_s = preproc_ifndef_stmt "RELEASE" [ (var "y" := u64 42L) ] in
+  let ifndef_str = string_of_stmt ifndef_s in
+  assert (contains_str ifndef_str "#ifndef RELEASE");
+  assert (contains_str ifndef_str "#endif");
+
+  let mdef_s = macro_def_stmt "FLAG_ACTIVE" ~value:(i32 1) in
+  assert (contains_str (string_of_stmt mdef_s) "#define FLAG_ACTIVE 1");
+
+  let mraw_s = macro_def_raw_stmt "CUSTOM_FN(x)" ~value:"((x) * 2)" in
+  assert (contains_str (string_of_stmt mraw_s) "#define CUSTOM_FN(x) ((x) * 2)");
+
+  (* Test buffer-level preproc emitters *)
+  let pp_buf = Buffer.create 256 in
+  emit_preproc_if ~indent:"  " pp_buf
+    ~elifs:[ ("FEATURE_B", (fun () -> Buffer.add_string pp_buf "  int b = 2;\n")) ]
+    ~else_fn:(fun () -> Buffer.add_string pp_buf "  int c = 3;\n")
+    "FEATURE_A"
+    (fun () -> Buffer.add_string pp_buf "  int a = 1;\n");
+  let pp_buf_str = Buffer.contents pp_buf in
+  assert (contains_str pp_buf_str "  #if FEATURE_A");
+  assert (contains_str pp_buf_str "  #elif FEATURE_B");
+  assert (contains_str pp_buf_str "  #else");
+  assert (contains_str pp_buf_str "  #endif");
+  assert (count_sub pp_buf_str "#endif" = 1);
+
+  (* Validate complete synthetic header containing new directives *)
+  let full_unit = [
+    IncludeSys "cstdint";
+    top_elif;
+    macro_def_raw "SAFE_ADD(a,b)" ~value:"((a) + (b))";
+    FuncDecl {
+      attrs = [AlwaysInline];
+      ret_type = UInt64;
+      name = "test_preproc_eval";
+      params = [(UInt64, "v")];
+      body = [
+        decl_var UInt64 "arch_id";
+        elif_stmt;
+        mdef_s;
+        mraw_s;
+        ret (var "arch_id");
+      ]
+    }
+  ] in
+  let rendered_unit = render_header_unit full_unit in
+  (match Cpp_codegen.Cpp_validator.validate_cpp_syntax rendered_unit with
+   | Ok () -> ()
+   | Error err -> failwith ("Preproc test header syntax validation failed: " ^ err));
+  Printf.printf "[PASS] Step 44: First-class preprocessor EDSL combinators (#if, #elif, #else, #endif, #define) verified without garbage.\n"
+
 
 
 

@@ -182,11 +182,27 @@ let rec pp_stmt fmt = function
   | Label s ->
       fprintf fmt "%s:" s
   | PreprocIfStmt (cond, then_b, else_b) ->
-      fprintf fmt "@\n#if %s@\n@[<v 0>%a@]" cond pp_stmt_list then_b;
+      pp_preproc_if_stmt fmt cond then_b else_b
+  | PreprocIfdefStmt (macro, then_b, else_b) ->
+      fprintf fmt "@\n#ifdef %s@\n@[<v 0>%a@]" macro pp_stmt_list then_b;
       (match else_b with
        | [] -> ()
        | _ -> fprintf fmt "@\n#else@\n@[<v 0>%a@]" pp_stmt_list else_b);
       fprintf fmt "@\n#endif@\n"
+  | PreprocIfndefStmt (macro, then_b, else_b) ->
+      fprintf fmt "@\n#ifndef %s@\n@[<v 0>%a@]" macro pp_stmt_list then_b;
+      (match else_b with
+       | [] -> ()
+       | _ -> fprintf fmt "@\n#else@\n@[<v 0>%a@]" pp_stmt_list else_b);
+      fprintf fmt "@\n#endif@\n"
+  | MacroDefStmt (name, Some v) ->
+      fprintf fmt "@\n#define %s %a@\n" name pp_expr v
+  | MacroDefStmt (name, None) ->
+      fprintf fmt "@\n#define %s@\n" name
+  | MacroDefRawStmt (name, Some s) ->
+      fprintf fmt "@\n#define %s %s@\n" name s
+  | MacroDefRawStmt (name, None) ->
+      fprintf fmt "@\n#define %s@\n" name
   | MacroUndefStmt name ->
       fprintf fmt "@\n#undef %s@\n" name
   | Raw s ->
@@ -195,6 +211,19 @@ let rec pp_stmt fmt = function
       fprintf fmt "std::atomic_signal_fence(std::memory_order_seq_cst);"
   | Comment s ->
       fprintf fmt "// %s" s
+
+and pp_preproc_if_stmt fmt cond then_b else_b =
+  fprintf fmt "@\n#if %s@\n@[<v 0>%a@]" cond pp_stmt_list then_b;
+  pp_preproc_if_stmt_tail fmt else_b
+
+and pp_preproc_if_stmt_tail fmt = function
+  | [PreprocIfStmt (cond, then_b, else_b)] ->
+      fprintf fmt "@\n#elif %s@\n@[<v 0>%a@]" cond pp_stmt_list then_b;
+      pp_preproc_if_stmt_tail fmt else_b
+  | [] ->
+      fprintf fmt "@\n#endif@\n"
+  | else_b ->
+      fprintf fmt "@\n#else@\n@[<v 0>%a@]@\n#endif@\n" pp_stmt_list else_b
 
 and pp_stmt_list fmt stmts =
   pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n") pp_stmt fmt stmts
@@ -307,17 +336,14 @@ let rec pp_top_decl fmt = function
       fprintf fmt "#define %s %a" name pp_expr v
   | MacroDef (name, None) ->
       fprintf fmt "#define %s" name
+  | MacroDefRaw (name, Some s) ->
+      fprintf fmt "#define %s %s" name s
+  | MacroDefRaw (name, None) ->
+      fprintf fmt "#define %s" name
   | MacroUndef name ->
       fprintf fmt "#undef %s" name
   | PreprocIf (cond, then_decls, else_decls) ->
-      fprintf fmt "@\n#if %s@\n@[<v 0>%a@]" cond
-        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) then_decls;
-      (match else_decls with
-       | [] -> ()
-       | _ ->
-           fprintf fmt "@\n#else@\n@[<v 0>%a@]"
-             (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) else_decls);
-      fprintf fmt "@\n#endif@\n"
+      pp_preproc_if_decl fmt cond then_decls else_decls
   | PreprocIfdef (macro, then_decls, else_decls) ->
       fprintf fmt "@\n#ifdef %s@\n@[<v 0>%a@]" macro
         (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) then_decls;
@@ -488,6 +514,22 @@ let rec pp_top_decl fmt = function
         fprintf fmt "%s" s
       else
         fprintf fmt "// %s" s
+
+and pp_preproc_if_decl fmt cond then_decls else_decls =
+  fprintf fmt "@\n#if %s@\n@[<v 0>%a@]" cond
+    (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) then_decls;
+  pp_preproc_if_decl_tail fmt else_decls
+
+and pp_preproc_if_decl_tail fmt = function
+  | [PreprocIf (cond, then_decls, else_decls)] ->
+      fprintf fmt "@\n#elif %s@\n@[<v 0>%a@]" cond
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) then_decls;
+      pp_preproc_if_decl_tail fmt else_decls
+  | [] ->
+      fprintf fmt "@\n#endif@\n"
+  | else_decls ->
+      fprintf fmt "@\n#else@\n@[<v 0>%a@]@\n#endif@\n"
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n@\n") pp_top_decl) else_decls
 
 let render_header_unit (decls : top_decl list) : string =
   let buf = Buffer.create 4096 in

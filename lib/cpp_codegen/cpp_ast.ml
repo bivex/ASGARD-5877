@@ -90,6 +90,10 @@ type stmt =
   | ComputedGoto of expr               (* goto *target; (computed goto) *)
   | Label of string                    (* label: *)
   | PreprocIfStmt of string * stmt list * stmt list (* #if cond ... #else ... #endif *)
+  | PreprocIfdefStmt of string * stmt list * stmt list (* #ifdef MACRO ... #else ... #endif *)
+  | PreprocIfndefStmt of string * stmt list * stmt list (* #ifndef MACRO ... #else ... #endif *)
+  | MacroDefStmt of string * expr option (* #define NAME [VALUE] *)
+  | MacroDefRawStmt of string * string option (* #define NAME [RAW_STR] *)
   | MacroUndefStmt of string           (* #undef NAME *)
   | Raw of string                      (* raw C++ line *)
   | FenceSeqCst                        (* std::atomic_signal_fence(std::memory_order_seq_cst); *)
@@ -178,6 +182,7 @@ type struct_def = {
 type top_decl =
   | Pragma of string                   (* #pragma once *)
   | MacroDef of string * expr option   (* #define NAME [VALUE] *)
+  | MacroDefRaw of string * string option (* #define NAME [RAW_STR] *)
   | MacroUndef of string               (* #undef NAME *)
   | PreprocIf of string * top_decl list * top_decl list (* #if cond ... #else ... #endif *)
   | PreprocIfdef of string * top_decl list * top_decl list (* #ifdef MACRO ... #else ... #endif *)

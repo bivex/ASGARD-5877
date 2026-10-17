@@ -1,26 +1,31 @@
-let emit_probes b ~enable_timing_probes =
-  if enable_timing_probes then begin
-    Buffer.add_string b "    #if defined(__x86_64__)\n";
-    Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = __builtin_ia32_rdtsc()\n";
-    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1 = __builtin_ia32_rdtsc(); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
-    Buffer.add_string b "    #elif defined(__aarch64__)\n";
-    Buffer.add_string b "    #define PROBE_START() uint64_t _t0; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t0))\n";
-    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
-    Buffer.add_string b "    #elif defined(__riscv) || defined(__riscv__)\n";
-    Buffer.add_string b "    #define PROBE_START() uint64_t _t0; __asm__ volatile(\"rdtime %0\" : \"=r\"(_t0))\n";
-    Buffer.add_string b "    #define PROBE_CHECK() do { uint64_t _t1; __asm__ volatile(\"rdtime %0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)\n";
-    Buffer.add_string b "    #else\n";
-    Buffer.add_string b "    #define PROBE_START() uint64_t _t0 = 0\n";
-    Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n";
-    Buffer.add_string b "    #endif\n\n";
-  end else begin
-    Buffer.add_string b "    #define PROBE_START() do {} while(0)\n";
-    Buffer.add_string b "    #define PROBE_CHECK() do {} while(0)\n\n";
-  end
-
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
+
+let emit_probes b ~enable_timing_probes =
+  if enable_timing_probes then begin
+    emit_preproc_if ~indent:"    " b
+      ~elifs:[
+        ("defined(__aarch64__)", (fun () ->
+           emit_macro_def ~indent:"    " b "PROBE_START()" ~value:"uint64_t _t0; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t0))";
+           emit_macro_def ~indent:"    " b "PROBE_CHECK()" ~value:"do { uint64_t _t1; __asm__ volatile(\"mrs %0, cntvct_el0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)"));
+        ("defined(__riscv) || defined(__riscv__)", (fun () ->
+           emit_macro_def ~indent:"    " b "PROBE_START()" ~value:"uint64_t _t0; __asm__ volatile(\"rdtime %0\" : \"=r\"(_t0))";
+           emit_macro_def ~indent:"    " b "PROBE_CHECK()" ~value:"do { uint64_t _t1; __asm__ volatile(\"rdtime %0\" : \"=r\"(_t1)); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)"));
+      ]
+      ~else_fn:(fun () ->
+         emit_macro_def ~indent:"    " b "PROBE_START()" ~value:"uint64_t _t0 = 0";
+         emit_macro_def ~indent:"    " b "PROBE_CHECK()" ~value:"do {} while(0)")
+      "defined(__x86_64__)"
+      (fun () ->
+         emit_macro_def ~indent:"    " b "PROBE_START()" ~value:"uint64_t _t0 = __builtin_ia32_rdtsc()";
+         emit_macro_def ~indent:"    " b "PROBE_CHECK()" ~value:"do { uint64_t _t1 = __builtin_ia32_rdtsc(); if ((_t1 - _t0) > 50000000ULL) { ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL; } } while(0)");
+    Buffer.add_char b '\n';
+  end else begin
+    emit_macro_def ~indent:"    " b "PROBE_START()" ~value:"do {} while(0)";
+    emit_macro_def ~indent:"    " b "PROBE_CHECK()" ~value:"do {} while(0)";
+    Buffer.add_char b '\n';
+  end
 
 let emit_handler_inline_ast b label (stmts : stmt list) =
   Buffer.add_string b (Printf.sprintf "    %s: { " label);
@@ -186,7 +191,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
    | 1 -> emit_handler_inline_ast b "H_NOP" [ (var "ctx.executed_instructions" += i32 1); fetch_next ]
    | _ -> emit_handler_inline_ast b "H_NOP" [ expr_stmt (c_cast Void (var "dst")); inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then begin
-    Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
+    emit_pp_if b "defined(ASGARD_EPHEMERAL_JIT)";
     emit_handler_inline_ast b "H_MOV_RR" [
       eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RR" (var "dst") (var "src") (i32 0);
       inc_instrs; fetch_next
@@ -195,7 +200,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
       eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RI" (var "dst") (i32 0) (cast UInt64 (cast UInt32 (var "imm")));
       inc_instrs; fetch_next
     ];
-    Buffer.add_string b "#else\n"
+    emit_pp_else b
   end;
   let k_mov = rand_u64 () in
   let c_mov = rand_u64 () in
@@ -246,7 +251,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     inc_instrs; fetch_next
   ];
   if enable_ephemeral_jit then
-    Buffer.add_string b "#endif\n";
+    emit_pp_endif b;
   let mov_high_stmts = match pick_variant 3 with
     | 0 -> [
         let_u64 "high_val" (cast UInt64 (cast UInt32 (var "imm")) <<~ i32 32);
@@ -264,7 +269,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   in
   emit_handler_ast b "H_MOV_HIGH" (mov_high_stmts @ [ inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then begin
-    Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
+    emit_pp_if b "defined(ASGARD_EPHEMERAL_JIT)";
     emit_handler_inline_ast b "H_NEG_RR" [
       probe_start;
       eph_call "asgard_ephemeral_jit::EPH_OP_NEG_R" (var "dst") (var "dst") (i32 0);
@@ -275,7 +280,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
       eph_call "asgard_ephemeral_jit::EPH_OP_NOT_R" (var "dst") (var "dst") (i32 0);
       probe_check; inc_instrs; fetch_next
     ];
-    Buffer.add_string b "#else\n"
+    emit_pp_else b
   end;
   let neg_expr = dynamic_runtime_variant (bit_not (var "_v") +~ u64 1L) (u64 0L -~ var "_v") in
   emit_handler_inline_ast b "H_NEG_RR" [
@@ -292,7 +297,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     probe_check; inc_instrs; fetch_next
   ];
   if enable_ephemeral_jit then
-    Buffer.add_string b "#endif\n";
+    emit_pp_endif b;
   let bswap_stmts = match pick_variant 3 with
     | 0 -> [
         let_u64 "val" reg_src;
@@ -520,7 +525,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   in
   emit_handler_ast b "H_RBIT_RR" (rbit_stmts @ [ inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then begin
-    Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
+    emit_pp_if b "defined(ASGARD_EPHEMERAL_JIT)";
     emit_handler_inline_ast b "H_ADD_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_ADD_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_SUB_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_SUB_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
@@ -533,7 +538,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     emit_handler_inline_ast b "H_AND_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_AND_RI" (var "dst") (i32 0) imm_u64; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_OR_RR"  [ eph_call "asgard_ephemeral_jit::EPH_OP_OR_RR"  (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_OR_RI"  [ eph_call "asgard_ephemeral_jit::EPH_OP_OR_RI"  (var "dst") (i32 0) imm_u64; inc_instrs; fetch_next ];
-    Buffer.add_string b "#else\n"
+    emit_pp_else b
   end;
     emit_handler_inline_ast b "H_ADD_RR" [
       probe_start;
@@ -635,10 +640,10 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
       probe_check; inc_instrs; fetch_next
     ];
   if enable_ephemeral_jit then
-    Buffer.add_string b "#endif\n";
+    emit_pp_endif b;
 
   if enable_ephemeral_jit then begin
-    Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
+    emit_pp_if b "defined(ASGARD_EPHEMERAL_JIT)";
     emit_handler_inline_ast b "H_ROL_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_ROL_RI" (var "dst") (i32 0) (cast UInt64 (var "imm")); inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_ROR_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_ROR_RI" (var "dst") (i32 0) (cast UInt64 (var "imm")); inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_SHL_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_SHL_RI" (var "dst") (i32 0) (cast UInt64 (var "imm")); inc_instrs; fetch_next ];
@@ -649,7 +654,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     emit_handler_inline_ast b "H_SHL_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_SHL_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_SHR_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_SHR_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_SAR_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_SAR_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
-    Buffer.add_string b "#else\n"
+    emit_pp_else b
   end;
   let rol_ri_stmts = match pick_variant 3 with
     | 0 -> [
@@ -839,7 +844,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   in
   emit_handler_ast b "H_SAR_RR" (sar_rr_stmts @ [ inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then
-    Buffer.add_string b "#endif\n";
+    emit_pp_endif b;
   let div_rr_stmts = match pick_variant 3 with
     | 0 -> [
         let_u64 "a" reg_dst;

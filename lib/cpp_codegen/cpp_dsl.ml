@@ -102,7 +102,16 @@ let continue_stmt : stmt = Continue
 let goto (s : string) : stmt = Goto s
 let computed_goto (e : expr) : stmt = ComputedGoto e
 let label (s : string) : stmt = Label s
-let preproc_if_stmt ?(else_stmts=[]) cond then_b : stmt = PreprocIfStmt (cond, then_b, else_stmts)
+let preproc_if_stmt ?(elifs=[]) ?(else_stmts=[]) cond then_b : stmt =
+  let rec build = function
+    | [] -> else_stmts
+    | (c, b) :: rest -> [PreprocIfStmt (c, b, build rest)]
+  in
+  PreprocIfStmt (cond, then_b, build elifs)
+let preproc_ifdef_stmt ?(else_stmts=[]) macro then_b : stmt = PreprocIfdefStmt (macro, then_b, else_stmts)
+let preproc_ifndef_stmt ?(else_stmts=[]) macro then_b : stmt = PreprocIfndefStmt (macro, then_b, else_stmts)
+let macro_def_stmt ?value name : stmt = MacroDefStmt (name, value)
+let macro_def_raw_stmt ?value name : stmt = MacroDefRawStmt (name, value)
 let macro_undef_stmt (s : string) : stmt = MacroUndefStmt s
 let raw (s : string) : stmt = Raw s
 let fence_seq_cst : stmt = FenceSeqCst
@@ -139,8 +148,14 @@ let func_proto ?(attrs=[]) ret_type name params : top_decl = FuncProto { attrs; 
 let typedef ty name : top_decl = Typedef (ty, name)
 let pragma s : top_decl = Pragma s
 let macro_def ?value name : top_decl = MacroDef (name, value)
+let macro_def_raw ?value name : top_decl = MacroDefRaw (name, value)
 let macro_undef name : top_decl = MacroUndef name
-let preproc_if ?(else_decls=[]) cond then_decls : top_decl = PreprocIf (cond, then_decls, else_decls)
+let preproc_if ?(elifs=[]) ?(else_decls=[]) cond then_decls : top_decl =
+  let rec build = function
+    | [] -> else_decls
+    | (c, d) :: rest -> [PreprocIf (c, d, build rest)]
+  in
+  PreprocIf (cond, then_decls, build elifs)
 let preproc_ifdef ?(else_decls=[]) macro then_decls : top_decl = PreprocIfdef (macro, then_decls, else_decls)
 let preproc_ifndef ?(else_decls=[]) macro then_decls : top_decl = PreprocIfndef (macro, then_decls, else_decls)
 let include_sys s : top_decl = IncludeSys s
@@ -159,3 +174,23 @@ let fetch_next : stmt = expr_stmt (call "FETCH_NEXT" [])
 let probe_start : stmt = expr_stmt (call "PROBE_START" [])
 let probe_check : stmt = expr_stmt (call "PROBE_CHECK" [])
 let inc_instrs : stmt = raw "ctx.executed_instructions++;"
+
+(* EDSL Buffer-level preprocessor emitters (for emission into existing Buffer.t streams) *)
+let emit_pp_if ?(indent="") b cond = Buffer.add_string b (Printf.sprintf "%s#if %s\n" indent cond)
+let emit_pp_elif ?(indent="") b cond = Buffer.add_string b (Printf.sprintf "%s#elif %s\n" indent cond)
+let emit_pp_else ?(indent="") b = Buffer.add_string b (Printf.sprintf "%s#else\n" indent)
+let emit_pp_endif ?(indent="") b = Buffer.add_string b (Printf.sprintf "%s#endif\n" indent)
+let emit_pp_ifdef ?(indent="") b m = Buffer.add_string b (Printf.sprintf "%s#ifdef %s\n" indent m)
+let emit_pp_ifndef ?(indent="") b m = Buffer.add_string b (Printf.sprintf "%s#ifndef %s\n" indent m)
+let emit_macro_def ?(indent="") b ?value name =
+  match value with
+  | Some v -> Buffer.add_string b (Printf.sprintf "%s#define %s %s\n" indent name v)
+  | None -> Buffer.add_string b (Printf.sprintf "%s#define %s\n" indent name)
+let emit_macro_undef ?(indent="") b name = Buffer.add_string b (Printf.sprintf "%s#undef %s\n" indent name)
+
+let emit_preproc_if ?(indent="") b ?(elifs=[]) ?else_fn cond then_fn =
+  emit_pp_if ~indent b cond;
+  then_fn ();
+  List.iter (fun (c, f) -> emit_pp_elif ~indent b c; f ()) elifs;
+  (match else_fn with Some f -> emit_pp_else ~indent b; f () | None -> ());
+  emit_pp_endif ~indent b
