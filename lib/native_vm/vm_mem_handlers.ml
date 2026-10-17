@@ -25,7 +25,12 @@ let let_u16 name expr = decl_var UInt16 name ~init:expr
 let let_u8 name expr = decl_var UInt8 name ~init:expr
 let let_i64 name expr = decl_var Int64 name ~init:expr
 let let_i32 name expr = decl_var Int32 name ~init:expr
+let let_i16 name expr = decl_var Int16 name ~init:expr
+let let_i8 name expr = decl_var Int8 name ~init:expr
 let let_size_t name expr = decl_var SizeT name ~init:expr
+let let_double name expr = decl_var Double name ~init:expr
+let let_float name expr = decl_var Float name ~init:expr
+let let_bool name expr = decl_var Bool name ~init:expr
 let get_vreg_lane r lane = call "ctx.get_vreg_lane" [r; lane]
 let set_vreg_lane r lane val_e = expr_stmt (call "ctx.set_vreg_lane" [r; lane; val_e])
 let set_vreg dst_e l0 l1 = expr_stmt (call "ctx.set_vreg" [dst_e; l0; l1])
@@ -679,261 +684,376 @@ let emit_mem_and_ffi_handlers ?rng b =
     | None -> 0
   in
 
-  Buffer.add_string b "    H_CALL_EXTERN: {\n";
-  Buffer.add_string b "        size_t sym_idx = (size_t)imm;\n";
-  Buffer.add_string b "        void* sym_ptr = asgard_resolve_sym_idx((int32_t)sym_idx);\n";
-  Buffer.add_string b "        if (sym_ptr) {\n";
-  Buffer.add_string b "            uint32_t sym_h = g_external_symbols[sym_idx].hash;\n";
-  Buffer.add_string b "            uint32_t sym_ah = g_external_symbols[sym_idx].alt_hash;\n";
-  Buffer.add_string b "#if defined(ASGARD_GUEST_ARM64)
-            uint64_t a0 = ctx.get_reg(REG_X0);
-            uint64_t a1 = ctx.get_reg(REG_X1);
-            uint64_t a2 = ctx.get_reg(REG_X2);
-            uint64_t a3 = ctx.get_reg(REG_X3);
-            uint64_t a4 = ctx.get_reg(REG_X4);
-            uint64_t a5 = ctx.get_reg(REG_X5);
-            uint64_t a6 = ctx.get_reg(REG_X6);
-            uint64_t a7 = ctx.get_reg(REG_X7);
-#elif defined(ASGARD_GUEST_RISCV64)
-            uint64_t a0 = ctx.get_reg(REG_A0);
-            uint64_t a1 = ctx.get_reg(REG_A1);
-            uint64_t a2 = ctx.get_reg(REG_A2);
-            uint64_t a3 = ctx.get_reg(REG_A3);
-            uint64_t a4 = ctx.get_reg(REG_A4);
-            uint64_t a5 = ctx.get_reg(REG_A5);
-            uint64_t a6 = ctx.get_reg(REG_A6);
-            uint64_t a7 = ctx.get_reg(REG_A7);
-#else
-            uint64_t a0 = ctx.get_reg(REG_RDI) ? ctx.get_reg(REG_RDI) : ctx.get_reg(REG_RAX);
-            uint64_t a1 = ctx.get_reg(REG_RSI);
-            uint64_t a2 = ctx.get_reg(REG_RDX);
-            uint64_t a3 = ctx.get_reg(REG_RCX);
-            uint64_t a4 = ctx.get_reg(REG_R8);
-            uint64_t a5 = ctx.get_reg(REG_R9);
-            uint64_t a6 = ctx.get_reg(REG_RAX);
-            uint64_t a7 = ctx.get_reg(REG_RBX);
-#endif\n";
-  Buffer.add_string b "            const uint64_t* stk = reinterpret_cast<const uint64_t*>(ctx.get_reg(REG_RSP));\n";
-  Buffer.add_string b "            uint64_t ret_val = 0;\n";
-  Buffer.add_string b "            if (sym_h == 0x42FCF5CFU || sym_ah == 0x42FCF5CFU || sym_h == 0x07554ACDU || sym_ah == 0x07554ACDU || sym_h == 0xE76FB4AAU || sym_ah == 0xE76FB4AAU) {\n";
-  Buffer.add_string b "                typedef int (*printf_fn_t)(const char*, ...);\n";
-  Buffer.add_string b "                printf_fn_t pfn = reinterpret_cast<printf_fn_t>(sym_ptr);\n";
-  Buffer.add_string b "#if defined(__APPLE__) && defined(__aarch64__)\n";
-  Buffer.add_string b "                ret_val = (uint64_t)pfn((const char*)a0, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "                ret_val = (uint64_t)pfn((const char*)a0, a1, a2, a3, a4, a5, a6, a7);\n";
-  Buffer.add_string b "#endif\n";
-  Buffer.add_string b "            } else if (sym_h == 0xFCB512E2U || sym_ah == 0xFCB512E2U || sym_h == 0x4B3C5330U || sym_ah == 0x4B3C5330U || sym_h == 0x937D1EF6U || sym_ah == 0x937D1EF6U || sym_h == 0xCB76D42BU || sym_ah == 0xCB76D42BU || sym_h == 0xD54CE817U || sym_ah == 0xD54CE817U || sym_h == 0xBBED3905U || sym_ah == 0xBBED3905U || sym_h == 0x42C07C7CU || sym_ah == 0x42C07C7CU || sym_h == 0x24559DBDU || sym_ah == 0x24559DBDU) {\n";
-  Buffer.add_string b "                typedef int (*fprintf_fn_t)(void*, const char*, ...);\n";
-  Buffer.add_string b "                fprintf_fn_t fpfn = reinterpret_cast<fprintf_fn_t>(sym_ptr);\n";
-  Buffer.add_string b "#if defined(__APPLE__) && defined(__aarch64__)\n";
-  Buffer.add_string b "                ret_val = (uint64_t)fpfn((void*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "                ret_val = (uint64_t)fpfn((void*)a0, (const char*)a1, a2, a3, a4, a5, a6, a7);\n";
-  Buffer.add_string b "#endif\n";
-  Buffer.add_string b "            } else if (sym_h == 0x7FE32B00U || sym_ah == 0x7FE32B00U || sym_h == 0xBCBF60EEU || sym_ah == 0xBCBF60EEU || sym_h == 0x70E2D349U || sym_ah == 0x70E2D349U || sym_h == 0x44FA3468U || sym_ah == 0x44FA3468U) {\n";
-  Buffer.add_string b "                typedef int (*sprintf_fn_t)(char*, const char*, ...);\n";
-  Buffer.add_string b "                sprintf_fn_t spfn = reinterpret_cast<sprintf_fn_t>(sym_ptr);\n";
-  Buffer.add_string b "#if defined(__APPLE__) && defined(__aarch64__)\n";
-  Buffer.add_string b "                ret_val = (uint64_t)spfn((char*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "                ret_val = (uint64_t)spfn((char*)a0, (const char*)a1, a2, a3, a4, a5, a6, a7);\n";
-  Buffer.add_string b "#endif\n";
-  Buffer.add_string b "            } else if (sym_h == 0x54EE11FAU || sym_ah == 0x54EE11FAU || sym_h == 0x933075F4U || sym_ah == 0x933075F4U || sym_h == 0x3FD5EB6FU || sym_ah == 0x3FD5EB6FU || sym_h == 0x5B3553B4U || sym_ah == 0x5B3553B4U) {\n";
-  Buffer.add_string b "                typedef int (*snprintf_fn_t)(char*, size_t, const char*, ...);\n";
-  Buffer.add_string b "                snprintf_fn_t snpfn = reinterpret_cast<snprintf_fn_t>(sym_ptr);\n";
-  Buffer.add_string b "#if defined(__APPLE__) && defined(__aarch64__)\n";
-  Buffer.add_string b "                ret_val = (uint64_t)snpfn((char*)a0, (size_t)a1, (const char*)a2, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);\n";
-  Buffer.add_string b "#else\n";
-  Buffer.add_string b "                ret_val = (uint64_t)snpfn((char*)a0, (size_t)a1, (const char*)a2, a3, a4, a5, a6, a7);\n";
-  Buffer.add_string b "#endif\n";
-  Buffer.add_string b "            } else {\n";
-  Buffer.add_string b "                typedef uint64_t (*extern_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);\n";
-  Buffer.add_string b "                extern_fn_t fn = reinterpret_cast<extern_fn_t>(sym_ptr);\n";
-  Buffer.add_string b "                ret_val = fn(a0, a1, a2, a3, a4, a5, a6, a7);\n";
-  Buffer.add_string b "            }\n";
-  Buffer.add_string b "            ctx.set_reg(REG_RAX, ret_val);\n";
-  Buffer.add_string b "        }\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n\n";
+  let check_sym hashes =
+    let conds = List.concat_map (fun h -> [
+      var "sym_h" ==~ LitU32 (Int64.to_int32 h);
+      var "sym_ah" ==~ LitU32 (Int64.to_int32 h);
+    ]) hashes in
+    List.fold_left (fun acc c -> acc ||~ c) (List.hd conds) (List.tl conds)
+  in
+  let arm64_args = [
+    let_u64 "a0" (call "ctx.get_reg" [var "REG_X0"]);
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_X1"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_X2"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_X3"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_X4"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_X5"]);
+    let_u64 "a6" (call "ctx.get_reg" [var "REG_X6"]);
+    let_u64 "a7" (call "ctx.get_reg" [var "REG_X7"]);
+  ] in
+  let riscv64_args = [
+    let_u64 "a0" (call "ctx.get_reg" [var "REG_A0"]);
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_A1"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_A2"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_A3"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_A4"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_A5"]);
+    let_u64 "a6" (call "ctx.get_reg" [var "REG_A6"]);
+    let_u64 "a7" (call "ctx.get_reg" [var "REG_A7"]);
+  ] in
+  let x86_args = [
+    let_u64 "a0" (ternary (call "ctx.get_reg" [var "REG_RDI"]) (call "ctx.get_reg" [var "REG_RDI"]) (call "ctx.get_reg" [var "REG_RAX"]));
+    let_u64 "a1" (call "ctx.get_reg" [var "REG_RSI"]);
+    let_u64 "a2" (call "ctx.get_reg" [var "REG_RDX"]);
+    let_u64 "a3" (call "ctx.get_reg" [var "REG_RCX"]);
+    let_u64 "a4" (call "ctx.get_reg" [var "REG_R8"]);
+    let_u64 "a5" (call "ctx.get_reg" [var "REG_R9"]);
+    let_u64 "a6" (call "ctx.get_reg" [var "REG_RAX"]);
+    let_u64 "a7" (call "ctx.get_reg" [var "REG_RBX"]);
+  ] in
+  let reg_args_stmt =
+    preproc_if_stmt "defined(ASGARD_GUEST_ARM64)" arm64_args
+      ~else_stmts:[
+        preproc_if_stmt "defined(ASGARD_GUEST_RISCV64)" riscv64_args
+          ~else_stmts:x86_args
+      ]
+  in
+  let printf_branch = [
+    raw "typedef int (*printf_fn_t)(const char*, ...);";
+    decl_var (StructType "printf_fn_t") "pfn" ~init:(reinterpret_cast (StructType "printf_fn_t") (var "sym_ptr"));
+    preproc_if_stmt "defined(__APPLE__) && defined(__aarch64__)" [
+      var "ret_val" := c_cast UInt64 (call "pfn" [
+        c_cast (ConstPtr (StructType "char")) (var "a0");
+        (var "stk").%[i32 0]; (var "stk").%[i32 1]; (var "stk").%[i32 2]; (var "stk").%[i32 3];
+        (var "stk").%[i32 4]; (var "stk").%[i32 5]; (var "stk").%[i32 6]; (var "stk").%[i32 7];
+      ]);
+    ] ~else_stmts:[
+      var "ret_val" := c_cast UInt64 (call "pfn" [
+        c_cast (ConstPtr (StructType "char")) (var "a0");
+        var "a1"; var "a2"; var "a3"; var "a4"; var "a5"; var "a6"; var "a7";
+      ]);
+    ];
+  ] in
+  let fprintf_branch = [
+    raw "typedef int (*fprintf_fn_t)(void*, const char*, ...);";
+    decl_var (StructType "fprintf_fn_t") "fpfn" ~init:(reinterpret_cast (StructType "fprintf_fn_t") (var "sym_ptr"));
+    preproc_if_stmt "defined(__APPLE__) && defined(__aarch64__)" [
+      var "ret_val" := c_cast UInt64 (call "fpfn" [
+        c_cast (Ptr Void) (var "a0");
+        c_cast (ConstPtr (StructType "char")) (var "a1");
+        (var "stk").%[i32 0]; (var "stk").%[i32 1]; (var "stk").%[i32 2]; (var "stk").%[i32 3];
+        (var "stk").%[i32 4]; (var "stk").%[i32 5]; (var "stk").%[i32 6]; (var "stk").%[i32 7];
+      ]);
+    ] ~else_stmts:[
+      var "ret_val" := c_cast UInt64 (call "fpfn" [
+        c_cast (Ptr Void) (var "a0");
+        c_cast (ConstPtr (StructType "char")) (var "a1");
+        var "a2"; var "a3"; var "a4"; var "a5"; var "a6"; var "a7";
+      ]);
+    ];
+  ] in
+  let sprintf_branch = [
+    raw "typedef int (*sprintf_fn_t)(char*, const char*, ...);";
+    decl_var (StructType "sprintf_fn_t") "spfn" ~init:(reinterpret_cast (StructType "sprintf_fn_t") (var "sym_ptr"));
+    preproc_if_stmt "defined(__APPLE__) && defined(__aarch64__)" [
+      var "ret_val" := c_cast UInt64 (call "spfn" [
+        c_cast (Ptr (StructType "char")) (var "a0");
+        c_cast (ConstPtr (StructType "char")) (var "a1");
+        (var "stk").%[i32 0]; (var "stk").%[i32 1]; (var "stk").%[i32 2]; (var "stk").%[i32 3];
+        (var "stk").%[i32 4]; (var "stk").%[i32 5]; (var "stk").%[i32 6]; (var "stk").%[i32 7];
+      ]);
+    ] ~else_stmts:[
+      var "ret_val" := c_cast UInt64 (call "spfn" [
+        c_cast (Ptr (StructType "char")) (var "a0");
+        c_cast (ConstPtr (StructType "char")) (var "a1");
+        var "a2"; var "a3"; var "a4"; var "a5"; var "a6"; var "a7";
+      ]);
+    ];
+  ] in
+  let snprintf_branch = [
+    raw "typedef int (*snprintf_fn_t)(char*, size_t, const char*, ...);";
+    decl_var (StructType "snprintf_fn_t") "snpfn" ~init:(reinterpret_cast (StructType "snprintf_fn_t") (var "sym_ptr"));
+    preproc_if_stmt "defined(__APPLE__) && defined(__aarch64__)" [
+      var "ret_val" := c_cast UInt64 (call "snpfn" [
+        c_cast (Ptr (StructType "char")) (var "a0");
+        c_cast SizeT (var "a1");
+        c_cast (ConstPtr (StructType "char")) (var "a2");
+        (var "stk").%[i32 0]; (var "stk").%[i32 1]; (var "stk").%[i32 2]; (var "stk").%[i32 3];
+        (var "stk").%[i32 4]; (var "stk").%[i32 5]; (var "stk").%[i32 6]; (var "stk").%[i32 7];
+      ]);
+    ] ~else_stmts:[
+      var "ret_val" := c_cast UInt64 (call "snpfn" [
+        c_cast (Ptr (StructType "char")) (var "a0");
+        c_cast SizeT (var "a1");
+        c_cast (ConstPtr (StructType "char")) (var "a2");
+        var "a3"; var "a4"; var "a5"; var "a6"; var "a7";
+      ]);
+    ];
+  ] in
+  let fallback_branch = [
+    raw "typedef uint64_t (*extern_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);";
+    decl_var (StructType "extern_fn_t") "fn" ~init:(reinterpret_cast (StructType "extern_fn_t") (var "sym_ptr"));
+    var "ret_val" := call "fn" [var "a0"; var "a1"; var "a2"; var "a3"; var "a4"; var "a5"; var "a6"; var "a7"];
+  ] in
+  let if_chain =
+    if_then_else (check_sym [0x42FCF5CFL; 0x07554ACDL; 0xE76FB4AAL]) printf_branch
+      [
+        if_then_else (check_sym [0xFCB512E2L; 0x4B3C5330L; 0x937D1EF6L; 0xCB76D42BL; 0xD54CE817L; 0xBBED3905L; 0x42C07C7CL; 0x24559DBDL]) fprintf_branch
+          [
+            if_then_else (check_sym [0x7FE32B00L; 0xBCBF60EEL; 0x70E2D349L; 0x44FA3468L]) sprintf_branch
+              [
+                if_then_else (check_sym [0x54EE11FAL; 0x933075F4L; 0x3FD5EB6FL; 0x5B3553B4L]) snprintf_branch
+                  fallback_branch
+              ]
+          ]
+      ]
+  in
+  let call_extern_stmts = [
+    let_size_t "sym_idx" (c_cast SizeT (var "imm"));
+    decl_var (Ptr Void) "sym_ptr" ~init:(call "asgard_resolve_sym_idx" [c_cast Int32 (var "sym_idx")]);
+    if_then (var "sym_ptr") [
+      let_u32 "sym_h" ((var "g_external_symbols").%[var "sym_idx"] $. "hash");
+      let_u32 "sym_ah" ((var "g_external_symbols").%[var "sym_idx"] $. "alt_hash");
+      reg_args_stmt;
+      decl_var (ConstPtr UInt64) "stk" ~init:(reinterpret_cast (ConstPtr UInt64) (call "ctx.get_reg" [var "REG_RSP"]));
+      let_u64 "ret_val" (u64 0L);
+      if_chain;
+      set_reg (var "REG_RAX") (var "ret_val");
+    ];
+    inc_instrs;
+    fetch_next;
+  ] in
+  emit_handler_ast b "H_CALL_EXTERN" call_extern_stmts;
 
-  Buffer.add_string b "    H_LOAD_64: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, *reinterpret_cast<const uint64_t*>(addr));\n"
-   | 1 ->
-       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, *reinterpret_cast<const uint64_t*>(_base + imm));\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _v = 0;\n";
-       Buffer.add_string b "        std::memcpy(&_v, reinterpret_cast<const void*>(_ptr), sizeof(uint64_t));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _v);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_LOAD_32: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint32_t*>(addr)));\n"
-   | 1 ->
-       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint32_t*>(_base + imm)));\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        uint32_t _v32 = 0;\n";
-       Buffer.add_string b "        std::memcpy(&_v32, reinterpret_cast<const void*>(_ptr), sizeof(uint32_t));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)_v32);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_LOAD_16: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint16_t*>(addr)));\n"
-   | 1 ->
-       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint16_t*>(_base + imm)));\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        uint16_t _v16 = 0;\n";
-       Buffer.add_string b "        std::memcpy(&_v16, reinterpret_cast<const void*>(_ptr), sizeof(uint16_t));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)_v16);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_LOAD_8: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint8_t*>(addr)));\n"
-   | 1 ->
-       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(*reinterpret_cast<const uint8_t*>(_base + imm)));\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        uint8_t _v8 = 0;\n";
-       Buffer.add_string b "        std::memcpy(&_v8, reinterpret_cast<const void*>(_ptr), sizeof(uint8_t));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)_v8);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_LOAD_S32: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int32_t*>(addr)));\n"
-   | 1 ->
-       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int32_t*>(_base + imm)));\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        int32_t _s32 = 0;\n";
-       Buffer.add_string b "        std::memcpy(&_s32, reinterpret_cast<const void*>(_ptr), sizeof(int32_t));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)_s32);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_LOAD_S16: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int16_t*>(addr)));\n"
-   | 1 ->
-       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int16_t*>(_base + imm)));\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        int16_t _s16 = 0;\n";
-       Buffer.add_string b "        std::memcpy(&_s16, reinterpret_cast<const void*>(_ptr), sizeof(int16_t));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)_s16);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_LOAD_S8: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int8_t*>(addr)));\n"
-   | 1 ->
-       Buffer.add_string b "        const char* _base = reinterpret_cast<const char*>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)(*reinterpret_cast<const int8_t*>(_base + imm)));\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(src)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        int8_t _s8 = 0;\n";
-       Buffer.add_string b "        std::memcpy(&_s8, reinterpret_cast<const void*>(_ptr), sizeof(int8_t));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)_s8);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_STORE_64: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        *reinterpret_cast<uint64_t*>(addr) = ctx.get_reg(src);\n"
-   | 1 ->
-       Buffer.add_string b "        char* _target = reinterpret_cast<char*>(ctx.get_reg(dst)) + imm;\n";
-       Buffer.add_string b "        *reinterpret_cast<uint64_t*>(_target) = ctx.get_reg(src);\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _src_v = ctx.get_reg(src);\n";
-       Buffer.add_string b "        std::memcpy(reinterpret_cast<void*>(_ptr), &_src_v, sizeof(uint64_t));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_STORE_32: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        *reinterpret_cast<uint32_t*>(addr) = (uint32_t)ctx.get_reg(src);\n"
-   | 1 ->
-       Buffer.add_string b "        char* _target = reinterpret_cast<char*>(ctx.get_reg(dst)) + imm;\n";
-       Buffer.add_string b "        *reinterpret_cast<uint32_t*>(_target) = (uint32_t)ctx.get_reg(src);\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        uint32_t _v32 = (uint32_t)ctx.get_reg(src);\n";
-       Buffer.add_string b "        std::memcpy(reinterpret_cast<void*>(_ptr), &_v32, sizeof(uint32_t));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_STORE_16: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        *reinterpret_cast<uint16_t*>(addr) = (uint16_t)ctx.get_reg(src);\n"
-   | 1 ->
-       Buffer.add_string b "        char* _target = reinterpret_cast<char*>(ctx.get_reg(dst)) + imm;\n";
-       Buffer.add_string b "        *reinterpret_cast<uint16_t*>(_target) = (uint16_t)ctx.get_reg(src);\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        uint16_t _v16 = (uint16_t)ctx.get_reg(src);\n";
-       Buffer.add_string b "        std::memcpy(reinterpret_cast<void*>(_ptr), &_v16, sizeof(uint16_t));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_STORE_8: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        *reinterpret_cast<uint8_t*>(addr) = (uint8_t)ctx.get_reg(src);\n"
-   | 1 ->
-       Buffer.add_string b "        char* _target = reinterpret_cast<char*>(ctx.get_reg(dst)) + imm;\n";
-       Buffer.add_string b "        *reinterpret_cast<uint8_t*>(_target) = (uint8_t)ctx.get_reg(src);\n"
-   | _ ->
-       Buffer.add_string b "        uintptr_t _ptr = static_cast<uintptr_t>(ctx.get_reg(dst)) + static_cast<uintptr_t>(imm);\n";
-       Buffer.add_string b "        uint8_t _v8 = (uint8_t)ctx.get_reg(src);\n";
-       Buffer.add_string b "        std::memcpy(reinterpret_cast<void*>(_ptr), &_v8, sizeof(uint8_t));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_RESOLVE_SYM: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        size_t sym_idx = (size_t)imm;\n";
-       Buffer.add_string b "        void* sym_ptr = asgard_resolve_sym_idx((int32_t)sym_idx);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)sym_ptr);\n"
-   | 1 ->
-       Buffer.add_string b "        size_t _idx = static_cast<size_t>(imm);\n";
-       Buffer.add_string b "        void* _p = asgard_resolve_sym_idx((int32_t)_idx);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(_p)));\n"
-   | _ ->
-       Buffer.add_string b "        size_t sym_idx = (size_t)imm;\n";
-       Buffer.add_string b "        void* sym_ptr = asgard_resolve_sym_idx((int32_t)sym_idx);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)sym_ptr);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let load_64_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        set_reg (var "dst") (deref (reinterpret_cast (ConstPtr UInt64) (var "addr")));
+      ]
+    | 1 -> [
+        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+        set_reg (var "dst") (deref (reinterpret_cast (ConstPtr UInt64) (var "_base" +~ var "imm")));
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+        let_u64 "_v" (u64 0L);
+        expr_stmt (call "std::memcpy" [addr_of (var "_v"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt64]);
+        set_reg (var "dst") (var "_v");
+      ]
+  in
+  emit_handler_ast b "H_LOAD_64" (load_64_stmts @ [ inc_instrs; fetch_next ]);
+
+  let load_32_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt32) (var "addr"))));
+      ]
+    | 1 -> [
+        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt32) (var "_base" +~ var "imm"))));
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+        let_u32 "_v32" (u32 0l);
+        expr_stmt (call "std::memcpy" [addr_of (var "_v32"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt32]);
+        set_reg (var "dst") (c_cast UInt64 (var "_v32"));
+      ]
+  in
+  emit_handler_ast b "H_LOAD_32" (load_32_stmts @ [ inc_instrs; fetch_next ]);
+
+  let load_16_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt16) (var "addr"))));
+      ]
+    | 1 -> [
+        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt16) (var "_base" +~ var "imm"))));
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+        let_u16 "_v16" (c_cast UInt16 (u32 0l));
+        expr_stmt (call "std::memcpy" [addr_of (var "_v16"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt16]);
+        set_reg (var "dst") (c_cast UInt64 (var "_v16"));
+      ]
+  in
+  emit_handler_ast b "H_LOAD_16" (load_16_stmts @ [ inc_instrs; fetch_next ]);
+
+  let load_8_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt8) (var "addr"))));
+      ]
+    | 1 -> [
+        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+        set_reg (var "dst") (c_cast UInt64 (deref (reinterpret_cast (ConstPtr UInt8) (var "_base" +~ var "imm"))));
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+        let_u8 "_v8" (u8 0);
+        expr_stmt (call "std::memcpy" [addr_of (var "_v8"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty UInt8]);
+        set_reg (var "dst") (c_cast UInt64 (var "_v8"));
+      ]
+  in
+  emit_handler_ast b "H_LOAD_8" (load_8_stmts @ [ inc_instrs; fetch_next ]);
+
+  let load_s32_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int32) (var "addr")))));
+      ]
+    | 1 -> [
+        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int32) (var "_base" +~ var "imm")))));
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+        let_i32 "_s32" (i32 0);
+        expr_stmt (call "std::memcpy" [addr_of (var "_s32"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int32]);
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s32")));
+      ]
+  in
+  emit_handler_ast b "H_LOAD_S32" (load_s32_stmts @ [ inc_instrs; fetch_next ]);
+
+  let load_s16_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int16) (var "addr")))));
+      ]
+    | 1 -> [
+        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int16) (var "_base" +~ var "imm")))));
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+        let_i16 "_s16" (c_cast Int16 (i32 0));
+        expr_stmt (call "std::memcpy" [addr_of (var "_s16"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int16]);
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s16")));
+      ]
+  in
+  emit_handler_ast b "H_LOAD_S16" (load_s16_stmts @ [ inc_instrs; fetch_next ]);
+
+  let load_s8_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int8) (var "addr")))));
+      ]
+    | 1 -> [
+        decl_var (ConstPtr (StructType "char")) "_base" ~init:(reinterpret_cast (ConstPtr (StructType "char")) reg_src);
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (deref (reinterpret_cast (ConstPtr Int8) (var "_base" +~ var "imm")))));
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_src +~ cast UIntPtr (var "imm"));
+        let_i8 "_s8" (c_cast Int8 (i32 0));
+        expr_stmt (call "std::memcpy" [addr_of (var "_s8"); reinterpret_cast (ConstPtr Void) (var "_ptr"); sizeof_ty Int8]);
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "_s8")));
+      ]
+  in
+  emit_handler_ast b "H_LOAD_S8" (load_s8_stmts @ [ inc_instrs; fetch_next ]);
+
+  let store_64_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        deref (reinterpret_cast (Ptr UInt64) (var "addr")) := reg_src;
+      ]
+    | 1 -> [
+        decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
+        deref (reinterpret_cast (Ptr UInt64) (var "_target")) := reg_src;
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+        let_u64 "_src_v" reg_src;
+        expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_src_v"); sizeof_ty UInt64]);
+      ]
+  in
+  emit_handler_ast b "H_STORE_64" (store_64_stmts @ [ inc_instrs; fetch_next ]);
+
+  let store_32_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        deref (reinterpret_cast (Ptr UInt32) (var "addr")) := c_cast UInt32 reg_src;
+      ]
+    | 1 -> [
+        decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
+        deref (reinterpret_cast (Ptr UInt32) (var "_target")) := c_cast UInt32 reg_src;
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+        let_u32 "_v32" (c_cast UInt32 reg_src);
+        expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v32"); sizeof_ty UInt32]);
+      ]
+  in
+  emit_handler_ast b "H_STORE_32" (store_32_stmts @ [ inc_instrs; fetch_next ]);
+
+  let store_16_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        deref (reinterpret_cast (Ptr UInt16) (var "addr")) := c_cast UInt16 reg_src;
+      ]
+    | 1 -> [
+        decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
+        deref (reinterpret_cast (Ptr UInt16) (var "_target")) := c_cast UInt16 reg_src;
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+        let_u16 "_v16" (c_cast UInt16 reg_src);
+        expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v16"); sizeof_ty UInt16]);
+      ]
+  in
+  emit_handler_ast b "H_STORE_16" (store_16_stmts @ [ inc_instrs; fetch_next ]);
+
+  let store_8_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        deref (reinterpret_cast (Ptr UInt8) (var "addr")) := c_cast UInt8 reg_src;
+      ]
+    | 1 -> [
+        decl_var (Ptr (StructType "char")) "_target" ~init:(reinterpret_cast (Ptr (StructType "char")) reg_dst +~ var "imm");
+        deref (reinterpret_cast (Ptr UInt8) (var "_target")) := c_cast UInt8 reg_src;
+      ]
+    | _ -> [
+        decl_var UIntPtr "_ptr" ~init:(cast UIntPtr reg_dst +~ cast UIntPtr (var "imm"));
+        let_u8 "_v8" (c_cast UInt8 reg_src);
+        expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "_ptr"); addr_of (var "_v8"); sizeof_ty UInt8]);
+      ]
+  in
+  emit_handler_ast b "H_STORE_8" (store_8_stmts @ [ inc_instrs; fetch_next ]);
+
+  let resolve_sym_stmts =
+    match pick_variant 3 with
+    | 1 -> [
+        decl_var SizeT "_idx" ~init:(cast SizeT (var "imm"));
+        decl_var (Ptr Void) "_p" ~init:(call "asgard_resolve_sym_idx" [c_cast Int32 (var "_idx")]);
+        set_reg (var "dst") (cast UInt64 (reinterpret_cast UIntPtr (var "_p")));
+      ]
+    | _ -> [
+        let_size_t "sym_idx" (c_cast SizeT (var "imm"));
+        decl_var (Ptr Void) "sym_ptr" ~init:(call "asgard_resolve_sym_idx" [c_cast Int32 (var "sym_idx")]);
+        set_reg (var "dst") (c_cast UInt64 (var "sym_ptr"));
+      ]
+  in
+  emit_handler_ast b "H_RESOLVE_SYM" (resolve_sym_stmts @ [ inc_instrs; fetch_next ]);
   Buffer.add_string b "    H_FADD_DD: {\n";
   (match pick_variant 3 with
    | 0 ->
