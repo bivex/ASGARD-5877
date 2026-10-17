@@ -196,7 +196,23 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
       eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RR" (var "dst") (var "src") (i32 0);
       inc_instrs; fetch_next
     ];
+    emit_handler_inline_ast b "H_MOV_RR_A1" [
+      eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RR" (var "dst") (var "src") (i32 0);
+      inc_instrs; fetch_next
+    ];
+    emit_handler_inline_ast b "H_MOV_RR_A2" [
+      eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RR" (var "dst") (var "src") (i32 0);
+      inc_instrs; fetch_next
+    ];
     emit_handler_inline_ast b "H_MOV_RI" [
+      eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RI" (var "dst") (i32 0) (cast UInt64 (cast UInt32 (var "imm")));
+      inc_instrs; fetch_next
+    ];
+    emit_handler_inline_ast b "H_MOV_RI_A1" [
+      eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RI" (var "dst") (i32 0) (cast UInt64 (cast UInt32 (var "imm")));
+      inc_instrs; fetch_next
+    ];
+    emit_handler_inline_ast b "H_MOV_RI_A2" [
       eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RI" (var "dst") (i32 0) (cast UInt64 (cast UInt32 (var "imm")));
       inc_instrs; fetch_next
     ];
@@ -527,16 +543,22 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   if enable_ephemeral_jit then begin
     emit_pp_if b "defined(ASGARD_EPHEMERAL_JIT)";
     emit_handler_inline_ast b "H_ADD_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_ADD_RR_A1" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_ADD_RR_A2" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_ADD_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_SUB_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_SUB_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SUB_RR_A1" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_SUB_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_SUB_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_SUB_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_IMUL_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_MUL_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_IMUL_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_MUL_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_XOR_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_XOR_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_XOR_RR_A1" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_XOR_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_XOR_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_XOR_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_AND_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_AND_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_AND_RR_A1" [ eph_call "asgard_ephemeral_jit::EPH_OP_AND_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_AND_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_AND_RI" (var "dst") (i32 0) imm_u64; inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_OR_RR"  [ eph_call "asgard_ephemeral_jit::EPH_OP_OR_RR"  (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_OR_RR_A1"  [ eph_call "asgard_ephemeral_jit::EPH_OP_OR_RR"  (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
     emit_handler_inline_ast b "H_OR_RI"  [ eph_call "asgard_ephemeral_jit::EPH_OP_OR_RI"  (var "dst") (i32 0) imm_u64; inc_instrs; fetch_next ];
     emit_pp_else b
   end;

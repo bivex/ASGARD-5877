@@ -708,8 +708,49 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
 
   | other -> [ other ]
 
+let eliminate_dead_flag_cmps (instrs : Ir.instr list) : Ir.instr list =
+  let is_flag_consumer = function
+    | Ir.Jcc _ | Ir.Cmov _ | Ir.Setcc _ | Ir.Ccmp _ | Ir.Ccmn _ -> true
+    | Ir.Alu { op = (Ir.Adc | Ir.Sbb); _ } -> true
+    | _ -> false
+  in
+  let is_flag_producer = function
+    | Ir.Cmp _ | Ir.Test _ | Ir.Ccmp _ | Ir.Ccmn _ -> true
+    | Ir.Alu { set_flags = true; _ } | Ir.Unary { set_flags = true; _ } -> true
+    | _ -> false
+  in
+  let is_candidate_cmp = function
+    | Ir.Cmp { src1 = Ir.Reg _; src2 = Ir.Imm 0L } -> true
+    | _ -> false
+  in
+  let initial_flags_needed =
+    match List.rev instrs with
+    | (Ir.Ret | Ir.Vm_exit) :: _ -> false
+    | _ -> true
+  in
+  let flags_needed = ref initial_flags_needed in
+  let rec process rev_acc = function
+    | [] -> rev_acc
+    | instr :: rest ->
+        if is_flag_consumer instr then begin
+          flags_needed := true;
+          process (instr :: rev_acc) rest
+        end else if is_candidate_cmp instr then begin
+          if !flags_needed then begin
+            flags_needed := false;
+            process (instr :: rev_acc) rest
+          end else
+            process rev_acc rest
+        end else if is_flag_producer instr then begin
+          flags_needed := false;
+          process (instr :: rev_acc) rest
+        end else
+          process (instr :: rev_acc) rest
+  in
+  process [] (List.rev instrs)
+
 let canonicalize_3addr_alu (instrs : Ir.instr list) : Ir.instr list =
-  List.concat_map canonicalize_instr instrs
+  List.concat_map canonicalize_instr instrs |> eliminate_dead_flag_cmps
 
 let rec fuse_block_instructions instrs =
   let fits_i32 v = v >= -2147483648L && v <= 2147483647L in

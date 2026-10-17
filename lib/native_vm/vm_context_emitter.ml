@@ -322,22 +322,30 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
 
     (* Oblivious Frame Scratchpad Engine *)
     member_method ~attrs:[AlwaysInline; NoExcept] Void "oblivious_frame_store" [(SizeT, "logical_idx"); (UInt64, "v")] [
-      decl_var SizeT "p_idx" ~init:(call "asgard::oblivious_mem::logical_to_physical_slot" [var "logical_idx" &~ i32 63; i32 37; i32 17; i32 64]);
-      let_u64 "mask" (call "asgard::oblivious_mem::slot_tweak_mask" [var "running_key"; var "logical_idx" &~ i32 63]);
-      (idx (var "oblivious_frame") (var "p_idx") := (var "v" ^~ var "mask"));
-      (var "decoy_sink" := (var "v" ^~ u64 0x5877CAFE1337BEEFL));
+      preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" [
+        decl_var SizeT "p_idx" ~init:(call "asgard::oblivious_mem::logical_to_physical_slot" [var "logical_idx" &~ i32 63; i32 37; i32 17; i32 64]);
+        let_u64 "mask" (call "asgard::oblivious_mem::slot_tweak_mask" [var "running_key"; var "logical_idx" &~ i32 63]);
+        (idx (var "oblivious_frame") (var "p_idx") := (var "v" ^~ var "mask"));
+        (var "decoy_sink" := (var "v" ^~ u64 0x5877CAFE1337BEEFL));
+      ] ~else_stmts:[
+        (idx (var "oblivious_frame") (var "logical_idx" &~ i32 63) := var "v");
+      ]
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "oblivious_frame_load" [(SizeT, "logical_idx")] [
-      decl_var SizeT "p_idx" ~init:(call "asgard::oblivious_mem::logical_to_physical_slot" [var "logical_idx" &~ i32 63; i32 37; i32 17; i32 64]);
-      decl_var SizeT "quad_base_idx" ~init:(var "p_idx" &~ bit_not (cast SizeT (i32 3)));
-      decl_var SizeT "target_slot" ~init:(var "p_idx" &~ i32 3);
-      let_u64 "raw_val" (call "asgard::oblivious_mem::oblivious_read_quad" [
-        addr_of (idx (var "oblivious_frame") (var "quad_base_idx"));
-        var "target_slot";
-      ]);
-      let_u64 "mask" (call "asgard::oblivious_mem::slot_tweak_mask" [var "running_key"; var "logical_idx" &~ i32 63]);
-      ret (var "raw_val" ^~ var "mask");
+      preproc_if_stmt "defined(ASGARD_OBLIVIOUS_MEM)" [
+        decl_var SizeT "p_idx" ~init:(call "asgard::oblivious_mem::logical_to_physical_slot" [var "logical_idx" &~ i32 63; i32 37; i32 17; i32 64]);
+        decl_var SizeT "quad_base_idx" ~init:(var "p_idx" &~ bit_not (cast SizeT (i32 3)));
+        decl_var SizeT "target_slot" ~init:(var "p_idx" &~ i32 3);
+        let_u64 "raw_val" (call "asgard::oblivious_mem::oblivious_read_quad" [
+          addr_of (idx (var "oblivious_frame") (var "quad_base_idx"));
+          var "target_slot";
+        ]);
+        let_u64 "mask" (call "asgard::oblivious_mem::slot_tweak_mask" [var "running_key"; var "logical_idx" &~ i32 63]);
+        ret (var "raw_val" ^~ var "mask");
+      ] ~else_stmts:[
+        ret (idx (var "oblivious_frame") (var "logical_idx" &~ i32 63));
+      ]
     ];
 
     (* Multi-VM Domain morphing *)

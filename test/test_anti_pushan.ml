@@ -67,11 +67,16 @@ let test_rolling_key_derivation_vectors () =
   Alcotest.(check int64) "advance_key_step golden (negative imm)" gold_advance_k0123_op3_dst31_negimm
     (Vm_ir.Rolling_key.advance_key_step 0x0123456789ABCDEFL 3 31 (-0x5A5A5A5AL))
 
-let pack_word op dst src imm64 =
+let pack_word ?layout op dst src imm64 =
+  let (op_shift, dst_shift, src_shift) =
+    match layout with
+    | Some (l : Vm_ir.Rolling_key.word_layout) -> (l.op_shift, l.dst_shift, l.src_shift)
+    | None -> (0, 8, 13)
+  in
   let imm_masked = Int64.logand imm64 0x3FFFFFFFFFFL in
-  Int64.logor (Int64.of_int op)
-    (Int64.logor (Int64.shift_left (Int64.of_int dst) 8)
-       (Int64.logor (Int64.shift_left (Int64.of_int src) 13)
+  Int64.logor (Int64.shift_left (Int64.of_int op) op_shift)
+    (Int64.logor (Int64.shift_left (Int64.of_int dst) dst_shift)
+       (Int64.logor (Int64.shift_left (Int64.of_int src) src_shift)
           (Int64.shift_left imm_masked 18)))
 
 let test_decode_fields_truncation () =
@@ -146,6 +151,7 @@ func_rk_mirror:
       (match extract_key_seed pkg_off.cpp_runtime_source with
        | Some s -> Alcotest.(check int32) "same key seed on both sides" s seed32
        | None -> Alcotest.fail "key seed not found in emitted runtime");
+      let layout = Vm_ir.Rolling_key.layout_of_seed seed32 in
       let k = ref (Vm_ir.Rolling_key.anchor_key seed32 0) in
       let differs = ref false in
       Array.iteri
@@ -157,7 +163,7 @@ func_rk_mirror:
           let expected_plain = Int64.logxor bc_off.(i) k_pos in
           Alcotest.(check int64) (Printf.sprintf "mirror plaintext word %d" i) expected_plain w;
           if Int64.compare w_on bc_off.(i) <> 0 then differs := true;
-          let (op, dst, _, imm) = Vm_ir.Rolling_key.decode_fields w in
+          let (op, dst, _, imm) = Vm_ir.Rolling_key.decode_fields ~layout w in
           k := Vm_ir.Rolling_key.advance_key_step !k op dst imm)
         bc_on;
       Alcotest.(check bool) "rolling ciphertext differs from legacy" true !differs
@@ -188,6 +194,7 @@ func_rk_legacy:
         | Some s -> s
         | None -> Alcotest.fail "key seed not found in emitted runtime"
       in
+      let layout = Vm_ir.Rolling_key.layout_of_seed seed32 in
       (* Legacy proof: every OFF word unmasks by pure k_pos to a well-formed
          packed word — decode and re-pack reproduce it bit-for-bit (the asm uses
          small positive imms, so the 46-bit imm field round-trips through the
@@ -196,10 +203,10 @@ func_rk_legacy:
       Array.iteri
         (fun i w ->
           let plaintext = Int64.logxor w (Vm_ir.Rolling_key.key64_for_offset seed32 i) in
-          let (op, dst, src, imm) = Vm_ir.Rolling_key.decode_fields plaintext in
+          let (op, dst, src, imm) = Vm_ir.Rolling_key.decode_fields ~layout plaintext in
           Alcotest.(check int64)
             (Printf.sprintf "legacy word %d is pure positional masking" i)
-            plaintext (pack_word op dst src imm))
+            plaintext (pack_word ~layout op dst src imm))
         bc_off;
       Alcotest.(check int) "same length across flag states" (Array.length bc_off) (Array.length bc_on);
       let same = ref true in
@@ -342,10 +349,22 @@ func_tamper:
       in
       let pkg = Vm_emitter.compile_and_package ~rng ~config:addr_cfg func in
       (* Simulate an emulator or hook tampering with handler address binding on branch *)
+      let pattern =
+        if string_contains pkg.cpp_runtime_source "static_cast<uint64_t>(vIP_idx)" then
+          "ctx.reanchor_running_key(static_cast<uint64_t>(vIP_idx), g_handlers_hash);"
+        else
+          "ctx.reanchor_running_key((uint64_t)vIP_idx, g_handlers_hash);"
+      in
+      let with_str =
+        if string_contains pkg.cpp_runtime_source "static_cast<uint64_t>(vIP_idx)" then
+          "ctx.reanchor_running_key(static_cast<uint64_t>(vIP_idx), 0ULL);"
+        else
+          "ctx.reanchor_running_key((uint64_t)vIP_idx, 0ULL);"
+      in
       let tampered_src =
         replace_all
-          ~pattern:"ctx.reanchor_running_key((uint64_t)vIP_idx, g_handlers_hash);"
-          ~with_str:"ctx.reanchor_running_key((uint64_t)vIP_idx, 0ULL);"
+          ~pattern
+          ~with_str
           pkg.cpp_runtime_source
       in
       Alcotest.(check bool) "tampered replacement applied" true (tampered_src <> pkg.cpp_runtime_source);

@@ -36,7 +36,7 @@ let test_rule_verification () =
   let rng = Random.State.make [| 0xC0FFEE |] in
   Alcotest.(check bool) "all rules are identities over Z_2^64"
     true (Egraph.verify_rules ~rng ~trials:240);
-  Alcotest.(check int) "rule corpus size" 31 Egraph.rule_count
+  Alcotest.(check int) "rule corpus size" 41 Egraph.rule_count
 
 let test_expansion_equivalence () =
   List.iter
@@ -259,7 +259,7 @@ let test_mba_deg5_polynomial_invariants () =
   Alcotest.(check bool) "verify_all_rules including degree 5" true
     (Egraph.verify_all_rules ~rng ~trials:200);
   Alcotest.(check int) "rules_deg5 count is 4" 4 (List.length Egraph.rules_deg5);
-  Alcotest.(check int) "all_rules count is 35" 35 (List.length Egraph.all_rules);
+  Alcotest.(check int) "all_rules count is 45" 45 (List.length Egraph.all_rules);
 
   (* Edge vectors for zero_inv5_poly *)
   let edge = [| 0L; 1L; -1L; 2L; 3L; 4L; 5L; 10L; 100L; Int64.min_int; Int64.max_int;
