@@ -2,6 +2,8 @@ open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
 
+[@@@warning "-32"]
+
 let emit_handler_inline_ast b label (stmts : stmt list) =
   Buffer.add_string b (Printf.sprintf "    %s: { " label);
   List.iter (fun s ->
@@ -19,6 +21,15 @@ let emit_handler_ast b label (stmts : stmt list) =
   ) stmts;
   Buffer.add_string b "    }\n"
 
+let let_u16 name expr = decl_var UInt16 name ~init:expr
+let let_u8 name expr = decl_var UInt8 name ~init:expr
+let let_i64 name expr = decl_var Int64 name ~init:expr
+let let_i32 name expr = decl_var Int32 name ~init:expr
+let let_size_t name expr = decl_var SizeT name ~init:expr
+let get_vreg_lane r lane = call "ctx.get_vreg_lane" [r; lane]
+let set_vreg_lane r lane val_e = expr_stmt (call "ctx.set_vreg_lane" [r; lane; val_e])
+let set_vreg dst_e l0 l1 = expr_stmt (call "ctx.set_vreg" [dst_e; l0; l1])
+
 let emit_simd_handlers ?rng b =
   let pick_variant n =
     match rng with
@@ -26,134 +37,204 @@ let emit_simd_handlers ?rng b =
     | None -> 0
   in
 
-  Buffer.add_string b "    H_VADD_VV: {\n";
-  Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
-  Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-       Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
-       Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
-       Buffer.add_string b "        uint64x2_t vr = vaddq_u64(vd, vs);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-       Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
-       Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
-       Buffer.add_string b "        __m128i vr = _mm_add_epi64(vd, vs);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
-       Buffer.add_string b "#else\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, d0 + s0, d1 + s1);\n";
-       Buffer.add_string b "#endif\n"
-   | 1 ->
-       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-       Buffer.add_string b "        uint64x2_t vr = vaddq_u64(vcombine_u64(vcreate_u64(d0), vcreate_u64(d1)), vcombine_u64(vcreate_u64(s0), vcreate_u64(s1)));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-       Buffer.add_string b "        __m128i vr = _mm_add_epi64(_mm_set_epi64x((int64_t)d1, (int64_t)d0), _mm_set_epi64x((int64_t)s1, (int64_t)s0));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, static_cast<uint64_t>(_mm_extract_epi64(vr, 0)), static_cast<uint64_t>(_mm_extract_epi64(vr, 1)));\n";
-       Buffer.add_string b "#else\n";
-       Buffer.add_string b "        uint64_t _r0 = d0 + s0, _r1 = d1 + s1; ctx.set_vreg(dst, _r0, _r1);\n";
-       Buffer.add_string b "#endif\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _res0 = d0 + s0; uint64_t _res1 = d1 + s1;\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, _res0, _res1);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let vadd_vv_stmts =
+    let_u64 "d0" (get_vreg_lane (var "dst") (i32 0)) ::
+    let_u64 "d1" (get_vreg_lane (var "dst") (i32 1)) ::
+    let_u64 "s0" (get_vreg_lane (var "src") (i32 0)) ::
+    let_u64 "s1" (get_vreg_lane (var "src") (i32 1)) ::
+    (match pick_variant 3 with
+     | 0 -> [
+         preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)" [
+           decl_var (StructType "uint64x2_t") "vd" ~init:(call "vcombine_u64" [call "vcreate_u64" [var "d0"]; call "vcreate_u64" [var "d1"]]);
+           decl_var (StructType "uint64x2_t") "vs" ~init:(call "vcombine_u64" [call "vcreate_u64" [var "s0"]; call "vcreate_u64" [var "s1"]]);
+           decl_var (StructType "uint64x2_t") "vr" ~init:(call "vaddq_u64" [var "vd"; var "vs"]);
+           set_vreg (var "dst") (call "vgetq_lane_u64" [var "vr"; i32 0]) (call "vgetq_lane_u64" [var "vr"; i32 1]);
+         ] ~else_stmts:[
+           preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)" [
+             decl_var (StructType "__m128i") "vd" ~init:(call "_mm_set_epi64x" [cast Int64 (var "d1"); cast Int64 (var "d0")]);
+             decl_var (StructType "__m128i") "vs" ~init:(call "_mm_set_epi64x" [cast Int64 (var "s1"); cast Int64 (var "s0")]);
+             decl_var (StructType "__m128i") "vr" ~init:(call "_mm_add_epi64" [var "vd"; var "vs"]);
+             set_vreg (var "dst") (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 0])) (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 1]));
+           ] ~else_stmts:[
+             set_vreg (var "dst") (var "d0" +~ var "s0") (var "d1" +~ var "s1");
+           ]
+         ]
+       ]
+     | 1 -> [
+         preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)" [
+           decl_var (StructType "uint64x2_t") "vr" ~init:(call "vaddq_u64" [
+             call "vcombine_u64" [call "vcreate_u64" [var "d0"]; call "vcreate_u64" [var "d1"]];
+             call "vcombine_u64" [call "vcreate_u64" [var "s0"]; call "vcreate_u64" [var "s1"]];
+           ]);
+           set_vreg (var "dst") (call "vgetq_lane_u64" [var "vr"; i32 0]) (call "vgetq_lane_u64" [var "vr"; i32 1]);
+         ] ~else_stmts:[
+           preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)" [
+             decl_var (StructType "__m128i") "vr" ~init:(call "_mm_add_epi64" [
+               call "_mm_set_epi64x" [cast Int64 (var "d1"); cast Int64 (var "d0")];
+               call "_mm_set_epi64x" [cast Int64 (var "s1"); cast Int64 (var "s0")];
+             ]);
+             set_vreg (var "dst") (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 0])) (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 1]));
+           ] ~else_stmts:[
+             let_u64 "_r0" (var "d0" +~ var "s0");
+             let_u64 "_r1" (var "d1" +~ var "s1");
+             set_vreg (var "dst") (var "_r0") (var "_r1");
+           ]
+         ]
+       ]
+     | _ -> [
+         let_u64 "_res0" (var "d0" +~ var "s0");
+         let_u64 "_res1" (var "d1" +~ var "s1");
+         set_vreg (var "dst") (var "_res0") (var "_res1");
+       ])
+  in
+  emit_handler_ast b "H_VADD_VV" (vadd_vv_stmts @ [ inc_instrs; fetch_next ]);
 
-  Buffer.add_string b "    H_VSUB_VV: {\n";
-  Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
-  Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-       Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
-       Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
-       Buffer.add_string b "        uint64x2_t vr = vsubq_u64(vd, vs);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-       Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
-       Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
-       Buffer.add_string b "        __m128i vr = _mm_sub_epi64(vd, vs);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
-       Buffer.add_string b "#else\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, d0 - s0, d1 - s1);\n";
-       Buffer.add_string b "#endif\n"
-   | 1 ->
-       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-       Buffer.add_string b "        uint64x2_t vr = vsubq_u64(vcombine_u64(vcreate_u64(d0), vcreate_u64(d1)), vcombine_u64(vcreate_u64(s0), vcreate_u64(s1)));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-       Buffer.add_string b "        __m128i vr = _mm_sub_epi64(_mm_set_epi64x((int64_t)d1, (int64_t)d0), _mm_set_epi64x((int64_t)s1, (int64_t)s0));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, static_cast<uint64_t>(_mm_extract_epi64(vr, 0)), static_cast<uint64_t>(_mm_extract_epi64(vr, 1)));\n";
-       Buffer.add_string b "#else\n";
-       Buffer.add_string b "        uint64_t _r0 = d0 - s0, _r1 = d1 - s1; ctx.set_vreg(dst, _r0, _r1);\n";
-       Buffer.add_string b "#endif\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _res0 = d0 - s0; uint64_t _res1 = d1 - s1;\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, _res0, _res1);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let vsub_vv_stmts =
+    let_u64 "d0" (get_vreg_lane (var "dst") (i32 0)) ::
+    let_u64 "d1" (get_vreg_lane (var "dst") (i32 1)) ::
+    let_u64 "s0" (get_vreg_lane (var "src") (i32 0)) ::
+    let_u64 "s1" (get_vreg_lane (var "src") (i32 1)) ::
+    (match pick_variant 3 with
+     | 0 -> [
+         preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)" [
+           decl_var (StructType "uint64x2_t") "vd" ~init:(call "vcombine_u64" [call "vcreate_u64" [var "d0"]; call "vcreate_u64" [var "d1"]]);
+           decl_var (StructType "uint64x2_t") "vs" ~init:(call "vcombine_u64" [call "vcreate_u64" [var "s0"]; call "vcreate_u64" [var "s1"]]);
+           decl_var (StructType "uint64x2_t") "vr" ~init:(call "vsubq_u64" [var "vd"; var "vs"]);
+           set_vreg (var "dst") (call "vgetq_lane_u64" [var "vr"; i32 0]) (call "vgetq_lane_u64" [var "vr"; i32 1]);
+         ] ~else_stmts:[
+           preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)" [
+             decl_var (StructType "__m128i") "vd" ~init:(call "_mm_set_epi64x" [cast Int64 (var "d1"); cast Int64 (var "d0")]);
+             decl_var (StructType "__m128i") "vs" ~init:(call "_mm_set_epi64x" [cast Int64 (var "s1"); cast Int64 (var "s0")]);
+             decl_var (StructType "__m128i") "vr" ~init:(call "_mm_sub_epi64" [var "vd"; var "vs"]);
+             set_vreg (var "dst") (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 0])) (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 1]));
+           ] ~else_stmts:[
+             set_vreg (var "dst") (var "d0" -~ var "s0") (var "d1" -~ var "s1");
+           ]
+         ]
+       ]
+     | 1 -> [
+         preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)" [
+           decl_var (StructType "uint64x2_t") "vr" ~init:(call "vsubq_u64" [
+             call "vcombine_u64" [call "vcreate_u64" [var "d0"]; call "vcreate_u64" [var "d1"]];
+             call "vcombine_u64" [call "vcreate_u64" [var "s0"]; call "vcreate_u64" [var "s1"]];
+           ]);
+           set_vreg (var "dst") (call "vgetq_lane_u64" [var "vr"; i32 0]) (call "vgetq_lane_u64" [var "vr"; i32 1]);
+         ] ~else_stmts:[
+           preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)" [
+             decl_var (StructType "__m128i") "vr" ~init:(call "_mm_sub_epi64" [
+               call "_mm_set_epi64x" [cast Int64 (var "d1"); cast Int64 (var "d0")];
+               call "_mm_set_epi64x" [cast Int64 (var "s1"); cast Int64 (var "s0")];
+             ]);
+             set_vreg (var "dst") (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 0])) (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 1]));
+           ] ~else_stmts:[
+             let_u64 "_r0" (var "d0" -~ var "s0");
+             let_u64 "_r1" (var "d1" -~ var "s1");
+             set_vreg (var "dst") (var "_r0") (var "_r1");
+           ]
+         ]
+       ]
+     | _ -> [
+         let_u64 "_res0" (var "d0" -~ var "s0");
+         let_u64 "_res1" (var "d1" -~ var "s1");
+         set_vreg (var "dst") (var "_res0") (var "_res1");
+       ])
+  in
+  emit_handler_ast b "H_VSUB_VV" (vsub_vv_stmts @ [ inc_instrs; fetch_next ]);
 
-  Buffer.add_string b "    H_VMUL_VV: {\n";
-  Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
-  Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        ctx.set_vreg(dst, d0 * s0, d1 * s1);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _m0 = d0 * s0, _m1 = d1 * s1; ctx.set_vreg(dst, _m0, _m1);\n"
-   | _ ->
-       Buffer.add_string b "        ctx.set_vreg(dst, static_cast<uint64_t>(d0 * s0), static_cast<uint64_t>(d1 * s1));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let vmul_vv_stmts =
+    let_u64 "d0" (get_vreg_lane (var "dst") (i32 0)) ::
+    let_u64 "d1" (get_vreg_lane (var "dst") (i32 1)) ::
+    let_u64 "s0" (get_vreg_lane (var "src") (i32 0)) ::
+    let_u64 "s1" (get_vreg_lane (var "src") (i32 1)) ::
+    (match pick_variant 3 with
+     | 0 -> [ set_vreg (var "dst") (var "d0" *~ var "s0") (var "d1" *~ var "s1") ]
+     | 1 -> [
+         let_u64 "_m0" (var "d0" *~ var "s0");
+         let_u64 "_m1" (var "d1" *~ var "s1");
+         set_vreg (var "dst") (var "_m0") (var "_m1");
+       ]
+     | _ -> [
+         set_vreg (var "dst") (cast UInt64 (var "d0" *~ var "s0")) (cast UInt64 (var "d1" *~ var "s1"));
+       ])
+  in
+  emit_handler_ast b "H_VMUL_VV" (vmul_vv_stmts @ [ inc_instrs; fetch_next ]);
 
-  Buffer.add_string b "    H_VXOR_VV: {\n";
-  Buffer.add_string b "        uint64_t d0 = ctx.get_vreg_lane(dst, 0), d1 = ctx.get_vreg_lane(dst, 1);\n";
-  Buffer.add_string b "        uint64_t s0 = ctx.get_vreg_lane(src, 0), s1 = ctx.get_vreg_lane(src, 1);\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-       Buffer.add_string b "        uint64x2_t vd = vcombine_u64(vcreate_u64(d0), vcreate_u64(d1));\n";
-       Buffer.add_string b "        uint64x2_t vs = vcombine_u64(vcreate_u64(s0), vcreate_u64(s1));\n";
-       Buffer.add_string b "        uint64x2_t vr = veorq_u64(vd, vs);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-       Buffer.add_string b "        __m128i vd = _mm_set_epi64x((int64_t)d1, (int64_t)d0);\n";
-       Buffer.add_string b "        __m128i vs = _mm_set_epi64x((int64_t)s1, (int64_t)s0);\n";
-       Buffer.add_string b "        __m128i vr = _mm_xor_si128(vd, vs);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, (uint64_t)_mm_extract_epi64(vr, 0), (uint64_t)_mm_extract_epi64(vr, 1));\n";
-       Buffer.add_string b "#else\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, d0 ^ s0, d1 ^ s1);\n";
-       Buffer.add_string b "#endif\n"
-   | 1 ->
-       Buffer.add_string b "#if defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)\n";
-       Buffer.add_string b "        uint64x2_t vr = veorq_u64(vcombine_u64(vcreate_u64(d0), vcreate_u64(d1)), vcombine_u64(vcreate_u64(s0), vcreate_u64(s1)));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, vgetq_lane_u64(vr, 0), vgetq_lane_u64(vr, 1));\n";
-       Buffer.add_string b "#elif defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)\n";
-       Buffer.add_string b "        __m128i vr = _mm_xor_si128(_mm_set_epi64x((int64_t)d1, (int64_t)d0), _mm_set_epi64x((int64_t)s1, (int64_t)s0));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, static_cast<uint64_t>(_mm_extract_epi64(vr, 0)), static_cast<uint64_t>(_mm_extract_epi64(vr, 1)));\n";
-       Buffer.add_string b "#else\n";
-       Buffer.add_string b "        uint64_t _r0 = d0 ^ s0, _r1 = d1 ^ s1; ctx.set_vreg(dst, _r0, _r1);\n";
-       Buffer.add_string b "#endif\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _res0 = d0 ^ s0; uint64_t _res1 = d1 ^ s1;\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, _res0, _res1);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n\n";
+  let vxor_vv_stmts =
+    let_u64 "d0" (get_vreg_lane (var "dst") (i32 0)) ::
+    let_u64 "d1" (get_vreg_lane (var "dst") (i32 1)) ::
+    let_u64 "s0" (get_vreg_lane (var "src") (i32 0)) ::
+    let_u64 "s1" (get_vreg_lane (var "src") (i32 1)) ::
+    (match pick_variant 3 with
+     | 0 -> [
+         preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)" [
+           decl_var (StructType "uint64x2_t") "vd" ~init:(call "vcombine_u64" [call "vcreate_u64" [var "d0"]; call "vcreate_u64" [var "d1"]]);
+           decl_var (StructType "uint64x2_t") "vs" ~init:(call "vcombine_u64" [call "vcreate_u64" [var "s0"]; call "vcreate_u64" [var "s1"]]);
+           decl_var (StructType "uint64x2_t") "vr" ~init:(call "veorq_u64" [var "vd"; var "vs"]);
+           set_vreg (var "dst") (call "vgetq_lane_u64" [var "vr"; i32 0]) (call "vgetq_lane_u64" [var "vr"; i32 1]);
+         ] ~else_stmts:[
+           preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)" [
+             decl_var (StructType "__m128i") "vd" ~init:(call "_mm_set_epi64x" [cast Int64 (var "d1"); cast Int64 (var "d0")]);
+             decl_var (StructType "__m128i") "vs" ~init:(call "_mm_set_epi64x" [cast Int64 (var "s1"); cast Int64 (var "s0")]);
+             decl_var (StructType "__m128i") "vr" ~init:(call "_mm_xor_si128" [var "vd"; var "vs"]);
+             set_vreg (var "dst") (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 0])) (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 1]));
+           ] ~else_stmts:[
+             set_vreg (var "dst") (var "d0" ^~ var "s0") (var "d1" ^~ var "s1");
+           ]
+         ]
+       ]
+     | 1 -> [
+         preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__aarch64__)" [
+           decl_var (StructType "uint64x2_t") "vr" ~init:(call "veorq_u64" [
+             call "vcombine_u64" [call "vcreate_u64" [var "d0"]; call "vcreate_u64" [var "d1"]];
+             call "vcombine_u64" [call "vcreate_u64" [var "s0"]; call "vcreate_u64" [var "s1"]];
+           ]);
+           set_vreg (var "dst") (call "vgetq_lane_u64" [var "vr"; i32 0]) (call "vgetq_lane_u64" [var "vr"; i32 1]);
+         ] ~else_stmts:[
+           preproc_if_stmt "defined(ASGARD_VECTOR_ISA) && defined(__x86_64__)" [
+             decl_var (StructType "__m128i") "vr" ~init:(call "_mm_xor_si128" [
+               call "_mm_set_epi64x" [cast Int64 (var "d1"); cast Int64 (var "d0")];
+               call "_mm_set_epi64x" [cast Int64 (var "s1"); cast Int64 (var "s0")];
+             ]);
+             set_vreg (var "dst") (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 0])) (cast UInt64 (call "_mm_extract_epi64" [var "vr"; i32 1]));
+           ] ~else_stmts:[
+             let_u64 "_r0" (var "d0" ^~ var "s0");
+             let_u64 "_r1" (var "d1" ^~ var "s1");
+             set_vreg (var "dst") (var "_r0") (var "_r1");
+           ]
+         ]
+       ]
+     | _ -> [
+         let_u64 "_res0" (var "d0" ^~ var "s0");
+         let_u64 "_res1" (var "d1" ^~ var "s1");
+         set_vreg (var "dst") (var "_res0") (var "_res1");
+       ])
+  in
+  emit_handler_ast b "H_VXOR_VV" (vxor_vv_stmts @ [ inc_instrs; fetch_next ]);
 
-  Buffer.add_string b "    H_VEC_MOV: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint32_t bits = (uint32_t)(imm & 0x3ff);\n";
-       Buffer.add_string b "        for (size_t i = 0; i < (bits + 63) / 64; ++i) ctx.set_vreg_lane(dst, i, ctx.get_vreg_lane(src, i));\n"
-   | 1 ->
-       Buffer.add_string b "        size_t _words = ((static_cast<uint32_t>(imm & 0x3ff)) + 63) / 64;\n";
-       Buffer.add_string b "        for (size_t i = 0; i < _words; ++i) { uint64_t _v = ctx.get_vreg_lane(src, i); ctx.set_vreg_lane(dst, i, _v); }\n"
-   | _ ->
-       Buffer.add_string b "        uint32_t bits = (uint32_t)(imm & 0x3ff); size_t i = 0;\n";
-       Buffer.add_string b "        while (i < (bits + 63) / 64) { ctx.set_vreg_lane(dst, i, ctx.get_vreg_lane(src, i)); ++i; }\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let vec_mov_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u32 "bits" (cast UInt32 (var "imm" &~ u64 0x3FFL));
+        for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
+          set_vreg_lane (var "dst") (var "i") (get_vreg_lane (var "src") (var "i"));
+        ];
+      ]
+    | 1 -> [
+        let_size_t "_words" (cast SizeT ((cast UInt32 (var "imm" &~ u64 0x3FFL) +~ i32 63) /~ i32 64));
+        for_range "i" (i32 0) (var "_words") [
+          let_u64 "_v" (get_vreg_lane (var "src") (var "i"));
+          set_vreg_lane (var "dst") (var "i") (var "_v");
+        ];
+      ]
+    | _ -> [
+        let_u32 "bits" (cast UInt32 (var "imm" &~ u64 0x3FFL));
+        decl_var SizeT "i" ~init:(i32 0);
+        while_loop (var "i" <~ ((var "bits" +~ i32 63) /~ i32 64)) [
+          set_vreg_lane (var "dst") (var "i") (get_vreg_lane (var "src") (var "i"));
+          (var "i" += i32 1);
+        ];
+      ]
+  in
+  emit_handler_ast b "H_VEC_MOV" (vec_mov_stmts @ [ inc_instrs; fetch_next ]);
   Buffer.add_string b "    H_VEC_BINOP: {\n";
   Buffer.add_string b "        uint32_t src2 = (uint32_t)(imm & 31);\n";
   Buffer.add_string b "        uint32_t bits = (uint32_t)((imm >> 5) & 0x3ff);\n";
