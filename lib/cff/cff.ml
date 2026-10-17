@@ -241,23 +241,75 @@ let split_hot_states ~(sorted_orig : Ir.basic_block list) ~(split_rate : int) ~r
       sorted_orig;
   (clone_map, !clone_entries)
 
-let emit_poly_hash64 ~dst ~src ~scratch =
+type hash_params = {
+  m1 : int64;
+  m2 : int64;
+  s1 : int;
+  s2 : int;
+  s3 : int;
+}
+
+let gen_hash_params rng =
+  let m1 = Int64.logor (Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL) 1L in
+  let m2 = Int64.logor (Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL) 1L in
+  let s1 = 20 + Random.State.int rng 12 in
+  let s2 = 20 + Random.State.int rng 12 in
+  let s3 = 20 + Random.State.int rng 12 in
+  { m1; m2; s1; s2; s3 }
+
+let unshift_xor_right (y : int64) (shift : int) : int64 =
+  let rec loop acc s =
+    if s >= 64 then acc
+    else loop (Int64.logxor acc (Int64.shift_right_logical y s)) (s + shift)
+  in
+  loop y shift
+
+let poly_unhash64_dyn hparams y =
+  let x2 = unshift_xor_right y hparams.s3 in
+  let inv2 = Rolling_key.mod_inverse_64 hparams.m2 in
+  let w1 = Int64.mul x2 inv2 in
+  let x1 = unshift_xor_right w1 hparams.s2 in
+  let inv1 = Rolling_key.mod_inverse_64 hparams.m1 in
+  let w0 = Int64.mul x1 inv1 in
+  unshift_xor_right w0 hparams.s1
+
+let emit_poly_hash64 ?(rng = None) ~hparams ~dst ~src ~scratch () =
+  let jitter () =
+    match rng with
+    | None -> []
+    | Some r ->
+        match Random.State.int r 4 with
+        | 0 -> []
+        | 1 -> [
+            Ir.Alu { op = Ir.Xor; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Reg scratch; set_flags = false }
+          ]
+        | 2 -> [
+            Ir.Alu { op = Ir.Rol; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 7L; set_flags = false }
+          ]
+        | _ -> [
+            Ir.Alu { op = Ir.Add; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 0x1337L; set_flags = false }
+          ]
+  in
   [
     Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg src };
     Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
-    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 30L; set_flags = false };
+    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm (Int64.of_int hparams.s1); set_flags = false };
     Ir.Alu { op = Ir.Xor; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
-    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm 0xBF58476D1CE4E5B9L };
+    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm hparams.m1 };
     Ir.Alu { op = Ir.Mul; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
-
+  ]
+  @ jitter ()
+  @ [
     Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
-    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 27L; set_flags = false };
+    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm (Int64.of_int hparams.s2); set_flags = false };
     Ir.Alu { op = Ir.Xor; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
-    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm 0x94D049BB133111EBL };
+    Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm hparams.m2 };
     Ir.Alu { op = Ir.Mul; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
-
+  ]
+  @ jitter ()
+  @ [
     Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
-    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 31L; set_flags = false };
+    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm (Int64.of_int hparams.s3); set_flags = false };
     Ir.Alu { op = Ir.Xor; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags = false };
   ]
 
@@ -429,6 +481,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
       if s = 0L then 0x9E3779B97F4A7C15L else s
     in
     let stride_inv = Rolling_key.mod_inverse_64 stride in
+    let hparams = gen_hash_params rng in
 
     (* Gather all target block IDs (primary blocks + alias clones) *)
     let (_, clone_entries_list) =
@@ -452,13 +505,13 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
 
     (* Assign secret 64-bit state tokens to each slot:
        coded_i = secret_salt + i * stride
-       state_i = poly_unhash64 coded_i
+       state_i = poly_unhash64_dyn hparams coded_i
        And populate state_pool mapping bid -> state list *)
     let state_pool = Hashtbl.create n in
     for slot_idx = 0 to total_disp - 1 do
       let bid = targets_array.(slot_idx) in
       let coded = Int64.add secret_salt (Int64.mul (Int64.of_int slot_idx) stride) in
-      let state = Rolling_key.poly_unhash64 coded in
+      let state = poly_unhash64_dyn hparams coded in
       let cur = match Hashtbl.find_opt state_pool bid with Some l -> l | None -> [] in
       Hashtbl.replace state_pool bid (state :: cur)
     done;
@@ -470,12 +523,12 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
           List.nth pool (Random.State.int rng (List.length pool))
       | _ ->
           let coded = secret_salt in
-          Rolling_key.poly_unhash64 coded
+          poly_unhash64_dyn hparams coded
     in
 
     let emit_set_state_tainted dst_reg target_state =
       if is_tainted then
-        (emit_poly_hash64 ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3)
+        (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3 ())
         @ [
           Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm target_state };
           Ir.Alu { op = Ir.Xor; dst = dst_reg; src1 = Ir.Reg dst_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
@@ -580,7 +633,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     let disp_entry_instrs =
       entry_jitter
       @ (if is_tainted then
-           (emit_poly_hash64 ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3)
+           (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3 ())
            @ [
              Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
              Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
@@ -589,7 +642,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
            [
              Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
            ])
-      @ (emit_poly_hash64 ~dst:Register.vtmp0 ~src:Register.vtmp0 ~scratch:Register.vtmp1)
+      @ (emit_poly_hash64 ~rng:(Some rng) ~hparams ~dst:Register.vtmp0 ~src:Register.vtmp0 ~scratch:Register.vtmp1 ())
       @ [
         Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm secret_salt };
         Ir.Alu { op = Ir.Sub; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
@@ -622,7 +675,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                     let state_false = get_target_state f_id in
                     let setup_states =
                       if is_tainted then
-                        (emit_poly_hash64 ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp0)
+                        (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp0 ())
                         @ [
                           Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
                           Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
