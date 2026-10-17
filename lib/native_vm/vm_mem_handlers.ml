@@ -1054,301 +1054,407 @@ let emit_mem_and_ffi_handlers ?rng b =
       ]
   in
   emit_handler_ast b "H_RESOLVE_SYM" (resolve_sym_stmts @ [ inc_instrs; fetch_next ]);
-  Buffer.add_string b "    H_FADD_DD: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a + b), 0);\n"
-   | 1 ->
-       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_a + _b), 0);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(std::bit_cast<double>(_s) + std::bit_cast<double>(_i)), 0);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_FSUB_DD: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a - b), 0);\n"
-   | 1 ->
-       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_a - _b), 0);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(std::bit_cast<double>(_s) - std::bit_cast<double>(_i)), 0);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_FMUL_DD: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(a * b), 0);\n"
-   | 1 ->
-       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_a * _b), 0);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(std::bit_cast<double>(_s) * std::bit_cast<double>(_i)), 0);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_FDIV_DD: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-       Buffer.add_string b "        double r = a / b;\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n"
-   | 1 ->
-       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
-       Buffer.add_string b "        double _q = (_b == 0.0) ? ((_a == 0.0) ? NAN : (std::signbit(_a) ^ std::signbit(_b) ? -INFINITY : INFINITY)) : (_a / _b);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_q), 0);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(_s), b = std::bit_cast<double>(_i);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((b != 0.0) ? (a / b) : 0.0), 0);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_FSQRT_D: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
-       Buffer.add_string b "        double r = std::sqrt(a);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(r), 0);\n"
-   | 1 ->
-       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        double _root = (_a < 0.0) ? NAN : std::sqrt(_a);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_root), 0);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(_s);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((a >= 0.0) ? std::sqrt(a) : 0.0), 0);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_FCMP_DD: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0), b_raw = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw), b = std::bit_cast<double>(b_raw);\n";
-       Buffer.add_string b "        bool is_nan = std::isnan(a) || std::isnan(b);\n";
-       Buffer.add_string b "        ctx.zf = is_nan || (a == b);\n";
-       Buffer.add_string b "        ctx.cf = is_nan || (a < b);\n";
-       Buffer.add_string b "        ctx.pf = is_nan;\n";
-       Buffer.add_string b "        ctx.sf = false;\n";
-       Buffer.add_string b "        ctx.of = false;\n"
-   | 1 ->
-       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        double _b = std::bit_cast<double>(ctx.get_vreg_lane(static_cast<uint8_t>(imm), 0));\n";
-       Buffer.add_string b "        bool _nan = std::isnan(_a) || std::isnan(_b);\n";
-       Buffer.add_string b "        ctx.of = false;\n";
-       Buffer.add_string b "        ctx.sf = false;\n";
-       Buffer.add_string b "        ctx.cf = _nan || (_a < _b);\n";
-       Buffer.add_string b "        ctx.zf = _nan || (_a == _b);\n";
-       Buffer.add_string b "        ctx.pf = _nan;\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0), _i = ctx.get_vreg_lane((uint8_t)imm, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(_s), b = std::bit_cast<double>(_i);\n";
-       Buffer.add_string b "        bool _nan = std::isnan(a) || std::isnan(b), _eq = (a == b), _lt = (a < b);\n";
-       Buffer.add_string b "        ctx.zf = _nan || _eq; ctx.cf = _nan || _lt; ctx.pf = _nan; ctx.sf = false; ctx.of = false;\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_FCVTZS: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)((int64_t)a));\n"
-   | 1 ->
-       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        int64_t _s64 = static_cast<int64_t>(_a);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(_s64));\n"
-   | _ ->
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)(int64_t)std::bit_cast<double>(ctx.get_vreg_lane(src, 0)));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_SCVTF: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        int64_t v = (int64_t)ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)v), 0);\n"
-   | 1 ->
-       Buffer.add_string b "        int64_t _s = static_cast<int64_t>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        double _d = static_cast<double>(_s);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_d), 0);\n"
-   | _ ->
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)(int64_t)ctx.get_reg(src)), 0);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_FCVTZU: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "        double a = std::bit_cast<double>(a_raw);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (a < 0.0) ? 0ULL : (uint64_t)a);\n"
-   | 1 ->
-       Buffer.add_string b "        double _a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        uint64_t _u64 = (_a < 0.0) ? 0ULL : static_cast<uint64_t>(_a);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _u64);\n"
-   | _ ->
-       Buffer.add_string b "        double a = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "        if (a < 0.0) ctx.set_reg(dst, 0ULL); else ctx.set_reg(dst, (uint64_t)a);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_UCVTF: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t v = ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)v), 0);\n"
-   | 1 ->
-       Buffer.add_string b "        double _d = static_cast<double>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>(_d), 0);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _v = ctx.get_reg(src);\n";
-       Buffer.add_string b "        ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)_v), 0);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_FCVT: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        if ((uint32_t)imm == 1) {\n";
-       Buffer.add_string b "            uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "            double d64 = std::bit_cast<double>(a_raw);\n";
-       Buffer.add_string b "            float f32 = static_cast<float>(d64);\n";
-       Buffer.add_string b "            uint32_t u32 = std::bit_cast<uint32_t>(f32);\n";
-       Buffer.add_string b "            uint64_t old_val = ctx.get_vreg_lane(dst, 0);\n";
-       Buffer.add_string b "            ctx.set_vreg(dst, (old_val & 0xFFFFFFFF00000000ULL) | (uint64_t)u32, 0);\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            uint64_t a_raw = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "            float f32 = std::bit_cast<float>((uint32_t)a_raw);\n";
-       Buffer.add_string b "            ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n";
-       Buffer.add_string b "        }\n"
-   | 1 ->
-       Buffer.add_string b "        if (static_cast<uint32_t>(imm) == 1) {\n";
-       Buffer.add_string b "            double _d = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "            float _f = static_cast<float>(_d);\n";
-       Buffer.add_string b "            uint32_t _u = std::bit_cast<uint32_t>(_f);\n";
-       Buffer.add_string b "            uint64_t _prev = ctx.get_vreg_lane(dst, 0);\n";
-       Buffer.add_string b "            ctx.set_vreg(dst, (_prev & 0xFFFFFFFF00000000ULL) | static_cast<uint64_t>(_u), 0);\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            uint32_t _raw32 = static_cast<uint32_t>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "            float _f = std::bit_cast<float>(_raw32);\n";
-       Buffer.add_string b "            double _d = static_cast<double>(_f);\n";
-       Buffer.add_string b "            ctx.set_vreg(dst, std::bit_cast<uint64_t>(_d), 0);\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        if ((uint32_t)imm == 1) {\n";
-       Buffer.add_string b "            double d64 = std::bit_cast<double>(ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "            float f32 = (float)d64;\n";
-       Buffer.add_string b "            uint32_t u32 = std::bit_cast<uint32_t>(f32);\n";
-       Buffer.add_string b "            ctx.set_vreg(dst, (ctx.get_vreg_lane(dst, 0) & 0xFFFFFFFF00000000ULL) | (uint64_t)u32, 0);\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            float f32 = std::bit_cast<float>((uint32_t)ctx.get_vreg_lane(src, 0));\n";
-       Buffer.add_string b "            ctx.set_vreg(dst, std::bit_cast<uint64_t>((double)f32), 0);\n";
-       Buffer.add_string b "        }\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ATOMIC_LOAD: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, ptr->load(std::memory_order_seq_cst));\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(src) + static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _val = __atomic_load_n(reinterpret_cast<uint64_t*>(_addr), __ATOMIC_SEQ_CST);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _val);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(src) + (uint64_t)imm;\n";
-       Buffer.add_string b "        std::atomic_thread_fence(std::memory_order_seq_cst);\n";
-       Buffer.add_string b "        uint64_t _loaded = *reinterpret_cast<volatile uint64_t*>(_addr);\n";
-       Buffer.add_string b "        std::atomic_thread_fence(std::memory_order_seq_cst);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _loaded);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ATOMIC_STORE: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-       Buffer.add_string b "        ptr->store(ctx.get_reg(src), std::memory_order_seq_cst);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        __atomic_store_n(reinterpret_cast<uint64_t*>(_addr), ctx.get_reg(src), __ATOMIC_SEQ_CST);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        (void)__atomic_exchange_n(reinterpret_cast<uint64_t*>(_addr), ctx.get_reg(src), __ATOMIC_SEQ_CST);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ATOMIC_CAS: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-       Buffer.add_string b "        uint64_t expected = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t desired = ctx.get_reg(REG_RAX);\n";
-       Buffer.add_string b "        ptr->compare_exchange_strong(expected, desired, std::memory_order_seq_cst);\n";
-       Buffer.add_string b "        ctx.set_reg(src, expected);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _exp = ctx.get_reg(src), _des = ctx.get_reg(REG_RAX);\n";
-       Buffer.add_string b "        __atomic_compare_exchange_n(reinterpret_cast<uint64_t*>(_addr), &_exp, _des, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);\n";
-       Buffer.add_string b "        ctx.set_reg(src, _exp);\n"
-   | _ ->
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
-       Buffer.add_string b "        uint64_t expected = ctx.get_reg(src);\n";
-       Buffer.add_string b "        while (!ptr->compare_exchange_weak(expected, ctx.get_reg(REG_RAX), std::memory_order_seq_cst, std::memory_order_seq_cst)) {\n";
-       Buffer.add_string b "            if (expected != ctx.get_reg(src)) break;\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(src, expected);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ATOMIC_ADD: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-       Buffer.add_string b "        uint64_t old = ptr->fetch_add(ctx.get_reg(src), std::memory_order_seq_cst);\n";
-       Buffer.add_string b "        ctx.set_reg(src, old);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _old = __atomic_fetch_add(reinterpret_cast<uint64_t*>(_addr), ctx.get_reg(src), __ATOMIC_SEQ_CST);\n";
-       Buffer.add_string b "        ctx.set_reg(src, _old);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t* ptr = reinterpret_cast<uint64_t*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
-       Buffer.add_string b "        uint64_t old = __atomic_load_n(ptr, __ATOMIC_RELAXED);\n";
-       Buffer.add_string b "        uint64_t add_val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        while (!__atomic_compare_exchange_n(ptr, &old, old + add_val, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {}\n";
-       Buffer.add_string b "        ctx.set_reg(src, old);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_ATOMIC_SWP: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t addr = ctx.get_reg(dst) + (uint64_t)imm;\n";
-       Buffer.add_string b "        auto* ptr = reinterpret_cast<std::atomic<uint64_t>*>(addr);\n";
-       Buffer.add_string b "        uint64_t old = ptr->exchange(ctx.get_reg(src), std::memory_order_seq_cst);\n";
-       Buffer.add_string b "        ctx.set_reg(src, old);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _addr = ctx.get_reg(dst) + static_cast<uint64_t>(imm);\n";
-       Buffer.add_string b "        uint64_t _old = __atomic_exchange_n(reinterpret_cast<uint64_t*>(_addr), ctx.get_reg(src), __ATOMIC_SEQ_CST);\n";
-       Buffer.add_string b "        ctx.set_reg(src, _old);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t* ptr = reinterpret_cast<uint64_t*>(ctx.get_reg(dst) + (uint64_t)imm);\n";
-       Buffer.add_string b "        uint64_t old = __atomic_load_n(ptr, __ATOMIC_RELAXED);\n";
-       Buffer.add_string b "        uint64_t new_val = ctx.get_reg(src);\n";
-       Buffer.add_string b "        while (!__atomic_compare_exchange_n(ptr, &old, new_val, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {}\n";
-       Buffer.add_string b "        ctx.set_reg(src, old);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let fadd_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "b_raw" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        let_double "a" (bit_cast Double (var "a_raw"));
+        let_double "b" (bit_cast Double (var "b_raw"));
+        set_vreg (var "dst") (bit_cast UInt64 (var "a" +~ var "b")) (u64 0L);
+      ]
+    | 1 -> [
+        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        let_double "_b" (bit_cast Double (get_vreg_lane (cast UInt8 (var "imm")) (i32 0)));
+        set_vreg (var "dst") (bit_cast UInt64 (var "_a" +~ var "_b")) (u64 0L);
+      ]
+    | _ -> [
+        let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "_i" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        set_vreg (var "dst") (bit_cast UInt64 (bit_cast Double (var "_s") +~ bit_cast Double (var "_i"))) (u64 0L);
+      ]
+  in
+  emit_handler_ast b "H_FADD_DD" (fadd_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fsub_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "b_raw" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        let_double "a" (bit_cast Double (var "a_raw"));
+        let_double "b" (bit_cast Double (var "b_raw"));
+        set_vreg (var "dst") (bit_cast UInt64 (var "a" -~ var "b")) (u64 0L);
+      ]
+    | 1 -> [
+        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        let_double "_b" (bit_cast Double (get_vreg_lane (cast UInt8 (var "imm")) (i32 0)));
+        set_vreg (var "dst") (bit_cast UInt64 (var "_a" -~ var "_b")) (u64 0L);
+      ]
+    | _ -> [
+        let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "_i" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        set_vreg (var "dst") (bit_cast UInt64 (bit_cast Double (var "_s") -~ bit_cast Double (var "_i"))) (u64 0L);
+      ]
+  in
+  emit_handler_ast b "H_FSUB_DD" (fsub_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fmul_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "b_raw" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        let_double "a" (bit_cast Double (var "a_raw"));
+        let_double "b" (bit_cast Double (var "b_raw"));
+        set_vreg (var "dst") (bit_cast UInt64 (var "a" *~ var "b")) (u64 0L);
+      ]
+    | 1 -> [
+        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        let_double "_b" (bit_cast Double (get_vreg_lane (cast UInt8 (var "imm")) (i32 0)));
+        set_vreg (var "dst") (bit_cast UInt64 (var "_a" *~ var "_b")) (u64 0L);
+      ]
+    | _ -> [
+        let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "_i" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        set_vreg (var "dst") (bit_cast UInt64 (bit_cast Double (var "_s") *~ bit_cast Double (var "_i"))) (u64 0L);
+      ]
+  in
+  emit_handler_ast b "H_FMUL_DD" (fmul_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fdiv_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "b_raw" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        let_double "a" (bit_cast Double (var "a_raw"));
+        let_double "b" (bit_cast Double (var "b_raw"));
+        let_double "r" (var "a" /~ var "b");
+        set_vreg (var "dst") (bit_cast UInt64 (var "r")) (u64 0L);
+      ]
+    | 1 -> [
+        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        let_double "_b" (bit_cast Double (get_vreg_lane (cast UInt8 (var "imm")) (i32 0)));
+        let_double "_q" (ternary (var "_b" ==~ var "0.0")
+          (ternary (var "_a" ==~ var "0.0")
+            (var "NAN")
+            (ternary (call "std::signbit" [var "_a"] ^~ call "std::signbit" [var "_b"]) (neg (var "INFINITY")) (var "INFINITY")))
+          (var "_a" /~ var "_b"));
+        set_vreg (var "dst") (bit_cast UInt64 (var "_q")) (u64 0L);
+      ]
+    | _ -> [
+        let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "_i" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        let_double "a" (bit_cast Double (var "_s"));
+        let_double "b" (bit_cast Double (var "_i"));
+        set_vreg (var "dst") (bit_cast UInt64 (ternary (var "b" <>~ var "0.0") (var "a" /~ var "b") (var "0.0"))) (u64 0L);
+      ]
+  in
+  emit_handler_ast b "H_FDIV_DD" (fdiv_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fsqrt_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+        let_double "a" (bit_cast Double (var "a_raw"));
+        let_double "r" (call "std::sqrt" [var "a"]);
+        set_vreg (var "dst") (bit_cast UInt64 (var "r")) (u64 0L);
+      ]
+    | 1 -> [
+        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        let_double "_root" (ternary (var "_a" <~ var "0.0") (var "NAN") (call "std::sqrt" [var "_a"]));
+        set_vreg (var "dst") (bit_cast UInt64 (var "_root")) (u64 0L);
+      ]
+    | _ -> [
+        let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
+        let_double "a" (bit_cast Double (var "_s"));
+        set_vreg (var "dst") (bit_cast UInt64 (ternary (var "a" >=~ var "0.0") (call "std::sqrt" [var "a"]) (var "0.0"))) (u64 0L);
+      ]
+  in
+  emit_handler_ast b "H_FSQRT_D" (fsqrt_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fcmp_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "b_raw" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        let_double "a" (bit_cast Double (var "a_raw"));
+        let_double "b" (bit_cast Double (var "b_raw"));
+        let_bool "is_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
+        var "ctx.zf" := (var "is_nan" ||~ (var "a" ==~ var "b"));
+        var "ctx.cf" := (var "is_nan" ||~ (var "a" <~ var "b"));
+        var "ctx.pf" := var "is_nan";
+        var "ctx.sf" := bool_lit false;
+        var "ctx.of" := bool_lit false;
+      ]
+    | 1 -> [
+        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        let_double "_b" (bit_cast Double (get_vreg_lane (cast UInt8 (var "imm")) (i32 0)));
+        let_bool "_nan" (call "std::isnan" [var "_a"] ||~ call "std::isnan" [var "_b"]);
+        var "ctx.of" := bool_lit false;
+        var "ctx.sf" := bool_lit false;
+        var "ctx.cf" := (var "_nan" ||~ (var "_a" <~ var "_b"));
+        var "ctx.zf" := (var "_nan" ||~ (var "_a" ==~ var "_b"));
+        var "ctx.pf" := var "_nan";
+      ]
+    | _ -> [
+        let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
+        let_u64 "_i" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+        let_double "a" (bit_cast Double (var "_s"));
+        let_double "b" (bit_cast Double (var "_i"));
+        let_bool "_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
+        let_bool "_eq" (var "a" ==~ var "b");
+        let_bool "_lt" (var "a" <~ var "b");
+        var "ctx.zf" := (var "_nan" ||~ var "_eq");
+        var "ctx.cf" := (var "_nan" ||~ var "_lt");
+        var "ctx.pf" := var "_nan";
+        var "ctx.sf" := bool_lit false;
+        var "ctx.of" := bool_lit false;
+      ]
+  in
+  emit_handler_ast b "H_FCMP_DD" (fcmp_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fcvtzs_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+        let_double "a" (bit_cast Double (var "a_raw"));
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "a")));
+      ]
+    | 1 -> [
+        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        let_i64 "_s64" (cast Int64 (var "_a"));
+        set_reg (var "dst") (cast UInt64 (var "_s64"));
+      ]
+    | _ -> [
+        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (bit_cast Double (get_vreg_lane (var "src") (i32 0)))));
+      ]
+  in
+  emit_handler_ast b "H_FCVTZS" (fcvtzs_stmts @ [ inc_instrs; fetch_next ]);
+
+  let scvtf_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_i64 "v" (c_cast Int64 reg_src);
+        set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "v"))) (u64 0L);
+      ]
+    | 1 -> [
+        let_i64 "_s" (cast Int64 reg_src);
+        let_double "_d" (cast Double (var "_s"));
+        set_vreg (var "dst") (bit_cast UInt64 (var "_d")) (u64 0L);
+      ]
+    | _ -> [
+        set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (c_cast Int64 reg_src))) (u64 0L);
+      ]
+  in
+  emit_handler_ast b "H_SCVTF" (scvtf_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fcvtzu_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+        let_double "a" (bit_cast Double (var "a_raw"));
+        set_reg (var "dst") (ternary (var "a" <~ var "0.0") (u64 0L) (c_cast UInt64 (var "a")));
+      ]
+    | 1 -> [
+        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        let_u64 "_u64" (ternary (var "_a" <~ var "0.0") (u64 0L) (cast UInt64 (var "_a")));
+        set_reg (var "dst") (var "_u64");
+      ]
+    | _ -> [
+        let_double "a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+        if_then_else (var "a" <~ var "0.0")
+          [ set_reg (var "dst") (u64 0L) ]
+          [ set_reg (var "dst") (c_cast UInt64 (var "a")) ];
+      ]
+  in
+  emit_handler_ast b "H_FCVTZU" (fcvtzu_stmts @ [ inc_instrs; fetch_next ]);
+
+  let ucvtf_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "v" reg_src;
+        set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "v"))) (u64 0L);
+      ]
+    | 1 -> [
+        let_double "_d" (cast Double reg_src);
+        set_vreg (var "dst") (bit_cast UInt64 (var "_d")) (u64 0L);
+      ]
+    | _ -> [
+        let_u64 "_v" reg_src;
+        set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "_v"))) (u64 0L);
+      ]
+  in
+  emit_handler_ast b "H_UCVTF" (ucvtf_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fcvt_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        if_then_else (c_cast UInt32 (var "imm") ==~ i32 1)
+          [
+            let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+            let_double "d64" (bit_cast Double (var "a_raw"));
+            let_float "f32" (cast Float (var "d64"));
+            decl_var UInt32 "u32" ~init:(bit_cast UInt32 (var "f32"));
+            let_u64 "old_val" (get_vreg_lane (var "dst") (i32 0));
+            set_vreg (var "dst") ((var "old_val" &~ u64 0xFFFFFFFF00000000L) |~ c_cast UInt64 (var "u32")) (u64 0L);
+          ]
+          [
+            let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+            let_float "f32" (bit_cast Float (c_cast UInt32 (var "a_raw")));
+            set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "f32"))) (u64 0L);
+          ];
+      ]
+    | 1 -> [
+        if_then_else (cast UInt32 (var "imm") ==~ i32 1)
+          [
+            let_double "_d" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+            let_float "_f" (cast Float (var "_d"));
+            decl_var UInt32 "_u" ~init:(bit_cast UInt32 (var "_f"));
+            let_u64 "_prev" (get_vreg_lane (var "dst") (i32 0));
+            set_vreg (var "dst") ((var "_prev" &~ u64 0xFFFFFFFF00000000L) |~ cast UInt64 (var "_u")) (u64 0L);
+          ]
+          [
+            decl_var UInt32 "_raw32" ~init:(cast UInt32 (get_vreg_lane (var "src") (i32 0)));
+            let_float "_f" (bit_cast Float (var "_raw32"));
+            let_double "_d" (cast Double (var "_f"));
+            set_vreg (var "dst") (bit_cast UInt64 (var "_d")) (u64 0L);
+          ];
+      ]
+    | _ -> [
+        if_then_else (c_cast UInt32 (var "imm") ==~ i32 1)
+          [
+            let_double "d64" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+            let_float "f32" (c_cast Float (var "d64"));
+            decl_var UInt32 "u32" ~init:(bit_cast UInt32 (var "f32"));
+            set_vreg (var "dst") ((get_vreg_lane (var "dst") (i32 0) &~ u64 0xFFFFFFFF00000000L) |~ c_cast UInt64 (var "u32")) (u64 0L);
+          ]
+          [
+            let_float "f32" (bit_cast Float (c_cast UInt32 (get_vreg_lane (var "src") (i32 0))));
+            set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "f32"))) (u64 0L);
+          ];
+      ]
+  in
+  emit_handler_ast b "H_FCVT" (fcvt_stmts @ [ inc_instrs; fetch_next ]);
+
+  let atomic_load_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        decl_var (Ptr (StructType "std::atomic<uint64_t>")) "ptr" ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "addr"));
+        set_reg (var "dst") (call "ptr->load" [var "std::memory_order_seq_cst"]);
+      ]
+    | 1 -> [
+        let_u64 "_addr" (reg_src +~ cast UInt64 (var "imm"));
+        let_u64 "_val" (call "__atomic_load_n" [reinterpret_cast (Ptr UInt64) (var "_addr"); var "__ATOMIC_SEQ_CST"]);
+        set_reg (var "dst") (var "_val");
+      ]
+    | _ -> [
+        let_u64 "_addr" (reg_src +~ c_cast UInt64 (var "imm"));
+        expr_stmt (call "std::atomic_thread_fence" [var "std::memory_order_seq_cst"]);
+        let_u64 "_loaded" (deref (reinterpret_cast (VolatilePtr UInt64) (var "_addr")));
+        expr_stmt (call "std::atomic_thread_fence" [var "std::memory_order_seq_cst"]);
+        set_reg (var "dst") (var "_loaded");
+      ]
+  in
+  emit_handler_ast b "H_ATOMIC_LOAD" (atomic_load_stmts @ [ inc_instrs; fetch_next ]);
+
+  let atomic_store_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        decl_var (Ptr (StructType "std::atomic<uint64_t>")) "ptr" ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "addr"));
+        expr_stmt (call "ptr->store" [reg_src; var "std::memory_order_seq_cst"]);
+      ]
+    | 1 -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        expr_stmt (call "__atomic_store_n" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
+      ]
+    | _ -> [
+        let_u64 "_addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        expr_stmt (c_cast Void (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]));
+      ]
+  in
+  emit_handler_ast b "H_ATOMIC_STORE" (atomic_store_stmts @ [ inc_instrs; fetch_next ]);
+
+  let atomic_cas_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        decl_var (Ptr (StructType "std::atomic<uint64_t>")) "ptr" ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "addr"));
+        let_u64 "expected" reg_src;
+        let_u64 "desired" (call "ctx.get_reg" [var "REG_RAX"]);
+        expr_stmt (call "ptr->compare_exchange_strong" [var "expected"; var "desired"; var "std::memory_order_seq_cst"]);
+        set_reg (var "src") (var "expected");
+      ]
+    | 1 -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u64 "_exp" reg_src;
+        let_u64 "_des" (call "ctx.get_reg" [var "REG_RAX"]);
+        expr_stmt (call "__atomic_compare_exchange_n" [
+          reinterpret_cast (Ptr UInt64) (var "_addr");
+          addr_of (var "_exp");
+          var "_des";
+          bool_lit false;
+          var "__ATOMIC_SEQ_CST";
+          var "__ATOMIC_SEQ_CST";
+        ]);
+        set_reg (var "src") (var "_exp");
+      ]
+    | _ -> [
+        decl_var (Ptr (StructType "std::atomic<uint64_t>")) "ptr" ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (reg_dst +~ c_cast UInt64 (var "imm")));
+        let_u64 "expected" reg_src;
+        while_loop (log_not (call "ptr->compare_exchange_weak" [var "expected"; call "ctx.get_reg" [var "REG_RAX"]; var "std::memory_order_seq_cst"; var "std::memory_order_seq_cst"])) [
+          if_then (var "expected" <>~ reg_src) [ break_stmt ];
+        ];
+        set_reg (var "src") (var "expected");
+      ]
+  in
+  emit_handler_ast b "H_ATOMIC_CAS" (atomic_cas_stmts @ [ inc_instrs; fetch_next ]);
+
+  let atomic_add_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        decl_var (Ptr (StructType "std::atomic<uint64_t>")) "ptr" ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "addr"));
+        let_u64 "old" (call "ptr->fetch_add" [reg_src; var "std::memory_order_seq_cst"]);
+        set_reg (var "src") (var "old");
+      ]
+    | 1 -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u64 "_old" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
+        set_reg (var "src") (var "_old");
+      ]
+    | _ -> [
+        decl_var (Ptr UInt64) "ptr" ~init:(reinterpret_cast (Ptr UInt64) (reg_dst +~ c_cast UInt64 (var "imm")));
+        let_u64 "old" (call "__atomic_load_n" [var "ptr"; var "__ATOMIC_RELAXED"]);
+        let_u64 "add_val" reg_src;
+        while_loop (log_not (call "__atomic_compare_exchange_n" [var "ptr"; addr_of (var "old"); var "old" +~ var "add_val"; bool_lit false; var "__ATOMIC_SEQ_CST"; var "__ATOMIC_SEQ_CST"])) [];
+        set_reg (var "src") (var "old");
+      ]
+  in
+  emit_handler_ast b "H_ATOMIC_ADD" (atomic_add_stmts @ [ inc_instrs; fetch_next ]);
+
+  let atomic_swp_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
+        decl_var (Ptr (StructType "std::atomic<uint64_t>")) "ptr" ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "addr"));
+        let_u64 "old" (call "ptr->exchange" [reg_src; var "std::memory_order_seq_cst"]);
+        set_reg (var "src") (var "old");
+      ]
+    | 1 -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u64 "_old" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
+        set_reg (var "src") (var "_old");
+      ]
+    | _ -> [
+        decl_var (Ptr UInt64) "ptr" ~init:(reinterpret_cast (Ptr UInt64) (reg_dst +~ c_cast UInt64 (var "imm")));
+        let_u64 "old" (call "__atomic_load_n" [var "ptr"; var "__ATOMIC_RELAXED"]);
+        let_u64 "new_val" reg_src;
+        while_loop (log_not (call "__atomic_compare_exchange_n" [var "ptr"; addr_of (var "old"); var "new_val"; bool_lit false; var "__ATOMIC_SEQ_CST"; var "__ATOMIC_SEQ_CST"])) [];
+        set_reg (var "src") (var "old");
+      ]
+  in
+  emit_handler_ast b "H_ATOMIC_SWP" (atomic_swp_stmts @ [ inc_instrs; fetch_next ]);
   emit_handler_inline_ast b "H_FENCE" [
     expr_stmt (call "std::atomic_thread_fence" [var "std::memory_order_seq_cst"]);
     inc_instrs; fetch_next;
@@ -1387,22 +1493,30 @@ let emit_mem_and_ffi_handlers ?rng b =
        set_reg (var "dst") (var "_val" ^~ u64 0x5A5A5A5AA5A5A5A5L);
        inc_instrs; fetch_next;
      ]);
-  Buffer.add_string b "    H_FCSEL_VV: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint8_t cond = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-       Buffer.add_string b "        if (eval_condition(ctx, cond)) ctx.set_vreg_lane(dst, 0, ctx.get_vreg_lane(src, 0));\n"
-   | 1 ->
-       Buffer.add_string b "        if (eval_condition(ctx, static_cast<uint8_t>((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL))))) {\n";
-       Buffer.add_string b "            uint64_t _v = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "            ctx.set_vreg_lane(dst, 0, _v);\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        uint8_t _c = (uint8_t)((((word >> 18) + 0x0FULL) - ((word >> 18) | 0x0FULL)));\n";
-       Buffer.add_string b "        uint64_t _s = ctx.get_vreg_lane(src, 0);\n";
-       Buffer.add_string b "        if (eval_condition(ctx, _c)) ctx.set_vreg_lane(dst, 0, _s);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n\n"
+  let fcsel_stmts =
+    let mba_cond = (((var "word" >>~ i32 18) +~ u64 0x0FL) -~ ((var "word" >>~ i32 18) |~ u64 0x0FL)) in
+    match pick_variant 3 with
+    | 0 -> [
+        let_u8 "cond" (c_cast UInt8 mba_cond);
+        if_then (call "eval_condition" [var "ctx"; var "cond"]) [
+          set_vreg_lane (var "dst") (i32 0) (get_vreg_lane (var "src") (i32 0));
+        ];
+      ]
+    | 1 -> [
+        if_then (call "eval_condition" [var "ctx"; cast UInt8 mba_cond]) [
+          let_u64 "_v" (get_vreg_lane (var "src") (i32 0));
+          set_vreg_lane (var "dst") (i32 0) (var "_v");
+        ];
+      ]
+    | _ -> [
+        let_u8 "_c" (c_cast UInt8 mba_cond);
+        let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
+        if_then (call "eval_condition" [var "ctx"; var "_c"]) [
+          set_vreg_lane (var "dst") (i32 0) (var "_s");
+        ];
+      ]
+  in
+  emit_handler_ast b "H_FCSEL_VV" (fcsel_stmts @ [ inc_instrs; fetch_next ])
 
 let emit_decoy_handlers ?rng b =
   let pick_variant n =
