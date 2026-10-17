@@ -30,6 +30,15 @@ let emit_handler_inline_ast b label (stmts : stmt list) =
   ) stmts;
   Buffer.add_string b "}\n"
 
+let emit_handler_ast b label (stmts : stmt list) =
+  Buffer.add_string b (Printf.sprintf "    %s: {\n" label);
+  List.iter (fun s ->
+    Buffer.add_string b "        ";
+    Buffer.add_string b (string_of_stmt s);
+    Buffer.add_char b '\n';
+  ) stmts;
+  Buffer.add_string b "    }\n"
+
 let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = false) () =
   let pick_variant n = Random.State.int rng n in
   let rand_u64 () =
@@ -42,6 +51,12 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     let shifted e = ((e &~ u64 0x7FFFFFFFL) *~ u64 c_odd) <<~ u64 33L in
     let e_once = expr ^~ (shifted expr) in
     e_once ^~ (shifted e_once)
+  in
+  let imm_u64 = cast UInt64 (var "imm") in
+  let eph_call op d s imm_e =
+    expr_stmt (call "asgard_ephemeral_jit::execute_ephemeral_vm_op" [
+      var "g_ephemeral_jit_buf"; var "ctx"; var op; d; s; imm_e
+    ])
   in
 
   let synth_basis_add () =
@@ -167,59 +182,115 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   in
 
   (match pick_variant 3 with
-   | 0 -> Buffer.add_string b "    H_NOP: ctx.executed_instructions++; FETCH_NEXT();\n"
-   | 1 -> Buffer.add_string b "    H_NOP: { ctx.executed_instructions += 1; FETCH_NEXT(); }\n"
-   | _ -> Buffer.add_string b "    H_NOP: { (void)dst; ctx.executed_instructions++; FETCH_NEXT(); }\n");
+   | 0 -> emit_handler_inline_ast b "H_NOP" [ inc_instrs; fetch_next ]
+   | 1 -> emit_handler_inline_ast b "H_NOP" [ (var "ctx.executed_instructions" += i32 1); fetch_next ]
+   | _ -> emit_handler_inline_ast b "H_NOP" [ expr_stmt (c_cast Void (var "dst")); inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then begin
     Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
-    Buffer.add_string b "    H_MOV_RR: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_MOV_RR, dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_MOV_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_MOV_RI, dst, 0, (uint64_t)(uint32_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    emit_handler_inline_ast b "H_MOV_RR" [
+      eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RR" (var "dst") (var "src") (i32 0);
+      inc_instrs; fetch_next
+    ];
+    emit_handler_inline_ast b "H_MOV_RI" [
+      eph_call "asgard_ephemeral_jit::EPH_OP_MOV_RI" (var "dst") (i32 0) (cast UInt64 (cast UInt32 (var "imm")));
+      inc_instrs; fetch_next
+    ];
     Buffer.add_string b "#else\n"
   end;
-  let bit_mov = Random.State.int rng 32 in
   let k_mov = rand_u64 () in
   let c_mov = rand_u64 () in
-  Buffer.add_string b (Printf.sprintf "    H_MOV_RR: { uint64_t _s = ctx.get_reg(src); uint64_t _v = (((k_dyn >> %d) & 1ULL) ? ((_s ^ 0x%016LXULL) ^ 0x%016LXULL) : ((_s + 0x%016LXULL) - 0x%016LXULL)); ctx.set_reg(dst, _v); ctx.executed_instructions++; FETCH_NEXT(); }\n" bit_mov k_mov k_mov c_mov c_mov);
-  let bit_movi = Random.State.int rng 32 in
+  let mov_expr = dynamic_runtime_variant ((var "_s" ^~ u64 k_mov) ^~ u64 k_mov) ((var "_s" +~ u64 c_mov) -~ u64 c_mov) in
+  emit_handler_inline_ast b "H_MOV_RR" [
+    let_u64 "_s" reg_src;
+    let_u64 "_v" mov_expr;
+    set_reg (var "dst") (var "_v");
+    inc_instrs; fetch_next
+  ];
   let k_movi = rand_u64 () in
   let c_movi = rand_u64 () in
-  Buffer.add_string b (Printf.sprintf "    H_MOV_RI: { uint64_t _imm = (uint64_t)(uint32_t)imm; uint64_t _v = (((k_dyn >> %d) & 1ULL) ? ((_imm ^ 0x%016LXULL) ^ 0x%016LXULL) : ((_imm + 0x%016LXULL) - 0x%016LXULL)); ctx.set_reg(dst, _v); ctx.executed_instructions++; FETCH_NEXT(); }\n" bit_movi k_movi k_movi c_movi c_movi);
-  let bit_mov1 = Random.State.int rng 32 in
+  let movi_expr = dynamic_runtime_variant ((var "_imm" ^~ u64 k_movi) ^~ u64 k_movi) ((var "_imm" +~ u64 c_movi) -~ u64 c_movi) in
+  emit_handler_inline_ast b "H_MOV_RI" [
+    let_u64 "_imm" (cast UInt64 (cast UInt32 (var "imm")));
+    let_u64 "_v" movi_expr;
+    set_reg (var "dst") (var "_v");
+    inc_instrs; fetch_next
+  ];
   let k_mov1 = rand_u64 () in
-  Buffer.add_string b (Printf.sprintf "    H_MOV_RR_A1: { uint64_t _s = ctx.get_reg(src); uint64_t _v = (((k_dyn >> %d) & 1ULL) ? ((_s + 0x13375877ULL) - 0x13375877ULL) : ((_s ^ 0x%016LXULL) ^ 0x%016LXULL)); ctx.set_reg(dst, _v); ctx.executed_instructions++; FETCH_NEXT(); }\n" bit_mov1 k_mov1 k_mov1);
-  let bit_mov2 = Random.State.int rng 32 in
-  Buffer.add_string b (Printf.sprintf "    H_MOV_RR_A2: { uint64_t _s = ctx.get_reg(src); uint64_t _v = (((k_dyn >> %d) & 1ULL) ? ~((~_s)) : (_s ^ 0ULL)); ctx.set_reg(dst, _v); ctx.executed_instructions++; FETCH_NEXT(); }\n" bit_mov2);
-  let bit_movi1 = Random.State.int rng 32 in
+  let mov1_expr = dynamic_runtime_variant ((var "_s" +~ u64 0x13375877L) -~ u64 0x13375877L) ((var "_s" ^~ u64 k_mov1) ^~ u64 k_mov1) in
+  emit_handler_inline_ast b "H_MOV_RR_A1" [
+    let_u64 "_s" reg_src;
+    let_u64 "_v" mov1_expr;
+    set_reg (var "dst") (var "_v");
+    inc_instrs; fetch_next
+  ];
+  let mov2_expr = dynamic_runtime_variant (bit_not (bit_not (var "_s"))) (var "_s" ^~ u64 0L) in
+  emit_handler_inline_ast b "H_MOV_RR_A2" [
+    let_u64 "_s" reg_src;
+    let_u64 "_v" mov2_expr;
+    set_reg (var "dst") (var "_v");
+    inc_instrs; fetch_next
+  ];
   let k_movi1 = rand_u64 () in
-  Buffer.add_string b (Printf.sprintf "    H_MOV_RI_A1: { uint64_t _imm = (uint64_t)(uint32_t)imm; uint64_t _v = (((k_dyn >> %d) & 1ULL) ? ((_imm ^ 0x%016LXULL) ^ 0x%016LXULL) : ((_imm + 0x58771337ULL) - 0x58771337ULL)); ctx.set_reg(dst, _v); ctx.executed_instructions++; FETCH_NEXT(); }\n" bit_movi1 k_movi1 k_movi1);
-  let bit_movi2 = Random.State.int rng 32 in
-  Buffer.add_string b (Printf.sprintf "    H_MOV_RI_A2: { uint64_t _imm = (uint64_t)(uint32_t)imm; uint64_t _v = (((k_dyn >> %d) & 1ULL) ? ~((~_imm)) : ((_imm + 0xDEADBEEFULL) - 0xDEADBEEFULL)); ctx.set_reg(dst, _v); ctx.executed_instructions++; FETCH_NEXT(); }\n" bit_movi2);
+  let movi1_expr = dynamic_runtime_variant ((var "_imm" ^~ u64 k_movi1) ^~ u64 k_movi1) ((var "_imm" +~ u64 0x58771337L) -~ u64 0x58771337L) in
+  emit_handler_inline_ast b "H_MOV_RI_A1" [
+    let_u64 "_imm" (cast UInt64 (cast UInt32 (var "imm")));
+    let_u64 "_v" movi1_expr;
+    set_reg (var "dst") (var "_v");
+    inc_instrs; fetch_next
+  ];
+  let movi2_expr = dynamic_runtime_variant (bit_not (bit_not (var "_imm"))) ((var "_imm" +~ u64 0xDEADBEEFL) -~ u64 0xDEADBEEFL) in
+  emit_handler_inline_ast b "H_MOV_RI_A2" [
+    let_u64 "_imm" (cast UInt64 (cast UInt32 (var "imm")));
+    let_u64 "_v" movi2_expr;
+    set_reg (var "dst") (var "_v");
+    inc_instrs; fetch_next
+  ];
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
-  Buffer.add_string b "    H_MOV_HIGH: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t high_val = (uint64_t)(uint32_t)imm << 32;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (ctx.get_reg(dst) & 0xFFFFFFFFULL) | high_val);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _d = ctx.get_reg(dst);\n";
-       Buffer.add_string b "        uint64_t _hi = static_cast<uint64_t>(static_cast<uint32_t>(imm)) << 32;\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (_d & 0xFFFFFFFFULL) ^ _hi);\n"
-   | _ ->
-       Buffer.add_string b "        uint32_t _low32 = static_cast<uint32_t>(ctx.get_reg(dst));\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (static_cast<uint64_t>(static_cast<uint32_t>(imm)) << 32) | static_cast<uint64_t>(_low32));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let mov_high_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "high_val" (cast UInt64 (cast UInt32 (var "imm")) <<~ i32 32);
+        set_reg (var "dst") ((reg_dst &~ u64 0xFFFFFFFFL) |~ var "high_val");
+      ]
+    | 1 -> [
+        let_u64 "_d" reg_dst;
+        let_u64 "_hi" (cast UInt64 (cast UInt32 (var "imm")) <<~ i32 32);
+        set_reg (var "dst") ((var "_d" &~ u64 0xFFFFFFFFL) ^~ var "_hi");
+      ]
+    | _ -> [
+        let_u32 "_low32" (cast UInt32 reg_dst);
+        set_reg (var "dst") ((cast UInt64 (cast UInt32 (var "imm")) <<~ i32 32) |~ cast UInt64 (var "_low32"));
+      ]
+  in
+  emit_handler_ast b "H_MOV_HIGH" (mov_high_stmts @ [ inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then begin
     Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
-    Buffer.add_string b "    H_NEG_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_NEG_R, dst, dst, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_NOT_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_NOT_R, dst, dst, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    emit_handler_inline_ast b "H_NEG_RR" [
+      probe_start;
+      eph_call "asgard_ephemeral_jit::EPH_OP_NEG_R" (var "dst") (var "dst") (i32 0);
+      probe_check; inc_instrs; fetch_next
+    ];
+    emit_handler_inline_ast b "H_NOT_RR" [
+      probe_start;
+      eph_call "asgard_ephemeral_jit::EPH_OP_NOT_R" (var "dst") (var "dst") (i32 0);
+      probe_check; inc_instrs; fetch_next
+    ];
     Buffer.add_string b "#else\n"
   end;
-  let bit_neg = Random.State.int rng 32 in
-  Buffer.add_string b (Printf.sprintf "    H_NEG_RR: { PROBE_START(); uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, (((k_dyn >> %d) & 1ULL) ? ((~_v) + 1ULL) : (0ULL - _v))); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" bit_neg);
-  let bit_not_r = Random.State.int rng 32 in
-  Buffer.add_string b (Printf.sprintf "    H_NOT_RR: { PROBE_START(); uint64_t _v = ctx.get_reg(dst); ctx.set_reg(dst, (((k_dyn >> %d) & 1ULL) ? (~_v) : (_v ^ ~0ULL))); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n" bit_not_r);
+  let neg_expr = dynamic_runtime_variant (bit_not (var "_v") +~ u64 1L) (u64 0L -~ var "_v") in
+  emit_handler_inline_ast b "H_NEG_RR" [
+    probe_start;
+    let_u64 "_v" reg_dst;
+    set_reg (var "dst") neg_expr;
+    probe_check; inc_instrs; fetch_next
+  ];
+  let not_expr = dynamic_runtime_variant (bit_not (var "_v")) (var "_v" ^~ bit_not (u64 0L)) in
+  emit_handler_inline_ast b "H_NOT_RR" [
+    probe_start;
+    let_u64 "_v" reg_dst;
+    set_reg (var "dst") not_expr;
+    probe_check; inc_instrs; fetch_next
+  ];
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
   Buffer.add_string b "    H_BSWAP_RR: {\n";
@@ -373,21 +444,20 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   Buffer.add_string b "    }\n";
   if enable_ephemeral_jit then begin
     Buffer.add_string b "#if defined(ASGARD_EPHEMERAL_JIT)\n";
-    Buffer.add_string b "    H_ADD_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_ADD_RR, dst, src, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_ADD_RI: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_ADD_RI, dst, 0, (uint64_t)imm); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_SUB_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SUB_RR, dst, src, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_SUB_RI: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_SUB_RI, dst, 0, (uint64_t)imm); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_IMUL_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_MUL_RR, dst, src, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_IMUL_RI: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_MUL_RI, dst, 0, (uint64_t)imm); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_XOR_RR: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_XOR_RR, dst, src, 0); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_XOR_RI: { PROBE_START(); asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_XOR_RI, dst, 0, (uint64_t)imm); PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_AND_RR: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_AND_RR, dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_AND_RI: { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_AND_RI, dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_OR_RR:  { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_OR_RR,  dst, src, 0); ctx.executed_instructions++; FETCH_NEXT(); }\n";
-    Buffer.add_string b "    H_OR_RI:  { asgard_ephemeral_jit::execute_ephemeral_vm_op(g_ephemeral_jit_buf, ctx, asgard_ephemeral_jit::EPH_OP_OR_RI,  dst, 0, (uint64_t)imm); ctx.executed_instructions++; FETCH_NEXT(); }\n";
+    emit_handler_inline_ast b "H_ADD_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_ADD_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_ADD_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SUB_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_SUB_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_SUB_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_SUB_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_IMUL_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_MUL_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_IMUL_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_MUL_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_XOR_RR" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_XOR_RR" (var "dst") (var "src") (i32 0); probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_XOR_RI" [ probe_start; eph_call "asgard_ephemeral_jit::EPH_OP_XOR_RI" (var "dst") (i32 0) imm_u64; probe_check; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_AND_RR" [ eph_call "asgard_ephemeral_jit::EPH_OP_AND_RR" (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_AND_RI" [ eph_call "asgard_ephemeral_jit::EPH_OP_AND_RI" (var "dst") (i32 0) imm_u64; inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_OR_RR"  [ eph_call "asgard_ephemeral_jit::EPH_OP_OR_RR"  (var "dst") (var "src") (i32 0); inc_instrs; fetch_next ];
+    emit_handler_inline_ast b "H_OR_RI"  [ eph_call "asgard_ephemeral_jit::EPH_OP_OR_RI"  (var "dst") (i32 0) imm_u64; inc_instrs; fetch_next ];
     Buffer.add_string b "#else\n"
   end;
-    let imm_u64 = cast UInt64 (var "imm") in
     emit_handler_inline_ast b "H_ADD_RR" [
       probe_start;
       set_reg (var "dst") (dynamic_runtime_variant (h_add_rr_expr_ast ()) ((reg_dst ^~ reg_src) +~ (u64 2L *~ (reg_dst &~ reg_src))));
@@ -423,10 +493,25 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
       set_reg (var "dst") (dynamic_runtime_variant (reg_dst -~ imm_u64) ((reg_dst ^~ imm_u64) -~ (u64 2L *~ (bit_not reg_dst &~ imm_u64))));
       probe_check; inc_instrs; fetch_next
     ];
-    let bit_mul = Random.State.int rng 32 in
-    Buffer.add_string b (Printf.sprintf "    H_IMUL_RR: {\n        PROBE_START();\n        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n        uint64_t res = (((k_dyn >> %d) & 1ULL) ? (a * b) : (((a & b) * (a | b)) + ((a & (~b)) * ((~a) & b))));\n        ctx.set_reg(dst, res);\n        PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT();\n    }\n" bit_mul);
-    let bit_muli = Random.State.int rng 32 in
-    Buffer.add_string b (Printf.sprintf "    H_IMUL_RI: {\n        PROBE_START();\n        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n        uint64_t res = (((k_dyn >> %d) & 1ULL) ? (a * b) : (((a & b) * (a | b)) + ((a & (~b)) * ((~a) & b))));\n        ctx.set_reg(dst, res);\n        PROBE_CHECK(); ctx.executed_instructions++; FETCH_NEXT();\n    }\n" bit_muli);
+    let imul_mba a b =
+      dynamic_runtime_variant (a *~ b) (((a &~ b) *~ (a |~ b)) +~ ((a &~ bit_not b) *~ (bit_not a &~ b)))
+    in
+    emit_handler_inline_ast b "H_IMUL_RR" [
+      probe_start;
+      let_u64 "a" reg_dst;
+      let_u64 "b" reg_src;
+      let_u64 "res" (imul_mba (var "a") (var "b"));
+      set_reg (var "dst") (var "res");
+      probe_check; inc_instrs; fetch_next
+    ];
+    emit_handler_inline_ast b "H_IMUL_RI" [
+      probe_start;
+      let_u64 "a" reg_dst;
+      let_u64 "b" imm_u64;
+      let_u64 "res" (imul_mba (var "a") (var "b"));
+      set_reg (var "dst") (var "res");
+      probe_check; inc_instrs; fetch_next
+    ];
     emit_handler_inline_ast b "H_XOR_RR" [
       probe_start;
       set_reg (var "dst") (dynamic_runtime_variant (h_xor_rr_expr_ast ()) ((reg_dst |~ reg_src) -~ (reg_dst &~ reg_src)));
