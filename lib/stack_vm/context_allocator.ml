@@ -75,6 +75,9 @@ let alloc_scratch ctx =
 let total_slots ctx =
   ctx.next_slot
 
+let reserve_slots ctx min_slots =
+  if ctx.next_slot < min_slots then ctx.next_slot <- min_slots
+
 let dump_mapping ctx =
   let list = ref [] in
   Hashtbl.iter (fun slot reg ->

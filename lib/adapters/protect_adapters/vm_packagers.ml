@@ -300,9 +300,10 @@ module Stack_vm_packager : Vm_packager = struct
        We also use adaptive_profile to automatically scale Horner degree (2..6) based on block size. *)
     let max_block_size = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> max acc (List.length b.ops)) prog.blocks 0 in
     let amp_profile = Stack_vm.Bytecode_amplifier.adaptive_profile ~block_size:max_block_size () in
-    let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~profile:amp_profile prog in
+    let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~ctx ~profile:amp_profile prog in
     let amplifier_info = Stack_vm.Bytecode_amplifier.amplifier_stats prog prog_amplified in
     let prog = prog_amplified in
+    Stack_vm.Context_allocator.reserve_slots ctx prog.context_slots;
 
     (* Phase 2a (Post-amplification): Superoperator Fusion on synthesized constants *)
     let prog, superop_info =

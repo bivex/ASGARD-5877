@@ -1574,7 +1574,7 @@ let test_real_license_check_macro_stack_vm_e2e () =
         let status_wrong, out_wrong = Test_helpers.run_command_capture run_wrong_cmd in
         Alcotest.(check bool) "wrong key exits 1" true (status_wrong = Unix.WEXITED 1);
         Alcotest.(check bool) "output contains ACCESS DENIED" true
-          (String.contains out_wrong 'D' && String.contains out_wrong 'E' && String.contains out_wrong 'N');
+          (Test_helpers.string_contains out_wrong "ACCESS DENIED");
 
         (* Test 2: Valid Key -> ACCESS GRANTED, exit code 0 *)
         let run_valid_cmd = Printf.sprintf "printf 'ASGARD-5877-GOLD\\n' | %s" bin_path in
@@ -1635,7 +1635,8 @@ let test_real_license_check_macro_stack_vm_e2e () =
           (status_t = Unix.WEXITED 1);
         Alcotest.(check bool) "tampered image grants nothing" true
           (not (String.contains out_t 'F' && String.contains out_t 'L'
-                && String.contains out_t 'A' && String.contains out_t 'G')))
+                && String.contains out_t 'A' && String.contains out_t 'G'))
+      )
 
 (* ── Payload integrity tag: the property the rolling key does not have ── *)
 let test_payload_tag_unit () =

@@ -57,7 +57,7 @@ val amplify_block :
 (** Трансформация программы Stack_ir:
     увеличивает объем и вычислительную сложность байткода в 10..35 раз без мертвого кода (0% DCE loss) *)
 val amplify_stack_program :
-  Random.State.t -> profile:amplification_profile -> program -> program
+  Random.State.t -> ?ctx:Context_allocator.t -> profile:amplification_profile -> program -> program
 
 (** Статистика усиления (before vs after) *)
 val amplifier_stats : program -> program -> string

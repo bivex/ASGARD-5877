@@ -12,6 +12,8 @@ val alloc_scratch : t -> int
 
 val total_slots : t -> int
 
+val reserve_slots : t -> int -> unit
+
 val dump_mapping : t -> (int * string) list
 
 val permute_epoch : ?seed:int -> t -> epoch:int -> t

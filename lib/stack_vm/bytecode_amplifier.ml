@@ -253,10 +253,26 @@ let amplify_block
 
 let amplify_stack_program
     (rng : Random.State.t)
+    ?ctx
     ~(profile : amplification_profile)
     (prog : program) : program =
-  let scratch_base = max 64 prog.context_slots in
-  let new_context_slots = scratch_base + 8 in
+  let scratch_base =
+    match ctx with
+    | Some c ->
+        let s = Context_allocator.alloc_scratch c in
+        for _ = 2 to 8 do
+          ignore (Context_allocator.alloc_scratch c)
+        done;
+        s
+    | None -> max 64 prog.context_slots
+  in
+  let new_context_slots =
+    match ctx with
+    | Some c ->
+        Context_allocator.reserve_slots c (scratch_base + 8);
+        max (scratch_base + 8) (Context_allocator.total_slots c)
+    | None -> scratch_base + 8
+  in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
   Hashtbl.iter (fun id b ->
     let block_rng = Random.State.make [|
