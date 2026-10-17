@@ -148,7 +148,7 @@ module Runtime_policy = struct
       | None ->
           (match runtime_profile with
            | Some (p : Random_visa_domain.Vm_runtime_profile.t) -> p.dispatch.num_domains
-           | None -> 1)
+           | None -> 4)
     in
     {
       num_domains;
@@ -420,7 +420,7 @@ let emit_native_runtime_hpp_decls
             let diversified = (base_idx + (d * 7) + (i * 3)) mod 16 in
             Printf.sprintf "H_DECOY_%d" diversified
           else if d = 0 then h
-          else Printf.sprintf "%s_D%d" h ((d - 1) mod 2 + 1)
+          else Printf.sprintf "%s_D%d" h d
         )
       in
       (d, handlers)
@@ -441,11 +441,18 @@ let emit_native_runtime_hpp_decls
     let h =
       if String.starts_with ~prefix:"H_DECOY_" h then "H_DECOY" else h
     in
-    let n = String.length h in
-    if n >= 3 then
-      let suffix = String.sub h (n - 3) 3 in
-      if suffix = "_D1" || suffix = "_D2" then String.sub h 0 (n - 3) else h
-    else h
+    match String.rindex_opt h '_' with
+    | Some idx when idx + 2 < String.length h && h.[idx + 1] = 'D' ->
+        let is_digits =
+          let rec check i =
+            if i >= String.length h then true
+            else if h.[i] >= '0' && h.[i] <= '9' then check (i + 1)
+            else false
+          in
+          check (idx + 2)
+        in
+        if is_digits then String.sub h 0 idx else h
+    | _ -> h
   in
   let trace_class_names =
     List.sort_uniq compare

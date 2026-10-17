@@ -45,27 +45,58 @@ let compile_and_package_multi
   shuffle_array rng reg_perm;
   let get_reg_idx r = reg_perm.(reg_to_index r) in
 
-  (* Set up opcode bijection and junk decoys with 100% table saturation *)
+  (* Set up opcode bijection, polymorphic opcode aliases, and junk decoys with 100% table saturation *)
   let slots = Array.init 256 (fun i -> i) in
   shuffle_array rng slots;
-  let kind_to_code = Hashtbl.create 32 in
+  let kind_to_codes = Hashtbl.create 32 in
   let opcode_to_handler = Array.make 256 "H_DECOY" in
   List.iteri
     (fun i kind ->
       let code = slots.(i) in
-      Hashtbl.replace kind_to_code kind code;
+      Hashtbl.replace kind_to_codes kind [code];
       opcode_to_handler.(code) <- op_kind_to_handler_name kind)
     all_op_kinds;
 
+  let curr_slot = ref (List.length all_op_kinds) in
+  let alias_specs = [
+    (OP_ADD_RR, [ "H_ADD_RR_A1"; "H_ADD_RR_A2" ]);
+    (OP_MOV_RR, [ "H_MOV_RR_A1"; "H_MOV_RR_A2" ]);
+    (OP_MOV_RI, [ "H_MOV_RI_A1"; "H_MOV_RI_A2" ]);
+    (OP_JMP,    [ "H_JMP_A1";    "H_JMP_A2" ]);
+    (OP_CMP_RI, [ "H_CMP_RI_A1"; "H_CMP_RI_A2" ]);
+    (OP_CMP_RR, [ "H_CMP_RR_A1" ]);
+    (OP_SUB_RR, [ "H_SUB_RR_A1" ]);
+    (OP_XOR_RR, [ "H_XOR_RR_A1" ]);
+    (OP_AND_RR, [ "H_AND_RR_A1" ]);
+    (OP_OR_RR,  [ "H_OR_RR_A1" ]);
+    (OP_JCC,    [ "H_JCC_A1" ]);
+  ] in
+  List.iter (fun (kind, handlers) ->
+    List.iter (fun h ->
+      if !curr_slot < 256 then begin
+        let code = slots.(!curr_slot) in
+        incr curr_slot;
+        opcode_to_handler.(code) <- h;
+        let prev = match Hashtbl.find_opt kind_to_codes kind with Some l -> l | None -> [] in
+        Hashtbl.replace kind_to_codes kind (code :: prev)
+      end
+    ) handlers
+  ) alias_specs;
+
   (* Saturate all remaining opcode slots with polymorphic decoy handlers *)
-  for i = List.length all_op_kinds to 255 do
+  for i = !curr_slot to 255 do
     let code = slots.(i) in
     let decoy_idx = i mod 16 in
     opcode_to_handler.(code) <- Printf.sprintf "H_DECOY_%d" decoy_idx
   done;
 
   let get_opcode kind =
-    Hashtbl.find kind_to_code kind
+    match Hashtbl.find_opt kind_to_codes kind with
+    | Some [code] -> code
+    | Some codes ->
+        let idx = Random.State.int rng (List.length codes) in
+        List.nth codes idx
+    | None -> failwith ("Unknown opcode kind: " ^ op_kind_to_handler_name kind)
   in
 
   let enable_super_ops =
@@ -129,6 +160,11 @@ let compile_and_package_multi
   in
 
   let compile_one_func (func : Ir.func) =
+    let func =
+      if enable_mba then
+        Dynamic_mba.transform ~density:0.4 ~rng func
+      else func
+    in
     let func =
       if enable_junk then
         Data_keyed_decoy.transform ~rng func
@@ -842,7 +878,9 @@ let compile_and_package_multi
   in
   let runner_src = Vm_runtime_emitter.emit_runner_cpp ~key_seed:(Int64.of_int32 key_seed) ~reg_perm primary_bc in
 
-  let decoy_count = 256 - List.length all_op_kinds in
+  let decoy_count =
+    Array.fold_left (fun acc h -> if String.starts_with ~prefix:"H_DECOY" h then acc + 1 else acc) 0 opcode_to_handler
+  in
   let mba_nodes = if enable_mba then mba_depth * 15 else 0 in
   let metrics = Metrics.calculate_metrics
     ~bytecode:primary_bc

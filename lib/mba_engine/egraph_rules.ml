@@ -79,6 +79,18 @@ let pXor a b = PXor (a, b)
 let pNot a = PNot a
 let pNeg a = PNeg a
 
+let pMlo = pC 0x00000000FFFFFFFFL
+let pMhi = pC 0xFFFFFFFF00000000L
+let pMbe = pC 0x00FF00FF00FF00FFL
+let pMbo = pC 0xFF00FF00FF00FF00L
+let p_c_2_63 = pC (-0x8000000000000000L)
+let p_c_2_61 = pC 0x2000000000000000L
+let p3 = pC 3L
+let p4 = pC 4L
+
+let zero_poly_deg2 a = pMul p_c_2_63 (pMul a (pAdd a p1c))
+let zero_poly_deg4 a = pMul p_c_2_61 (pMul a (pMul (pAdd a p1c) (pMul (pAdd a p2) (pAdd a p3))))
+
 let rules : (string * pattern * pattern) list =
   let x = pX and y = pY in
   let zero1 a b = pSub (pAdd (pOr a b) (pAnd a b)) (pAdd a b) in
@@ -92,32 +104,44 @@ let rules : (string * pattern * pattern) list =
   let zero_sub_not a b = pSub (pSub a b) (pAdd a (pAdd (pNot b) p1c)) in
   (* (a-b)-(a+(~b+1)) = 0 *)
   let slice op a b = pAdd (op (pAnd a pMe) (pAnd b pMe)) (op (pAnd a pMo) (pAnd b pMo)) in
+  let slice_halves op a b = pAdd (op (pAnd a pMlo) (pAnd b pMlo)) (op (pAnd a pMhi) (pAnd b pMhi)) in
+  let slice_bytes op a b = pAdd (op (pAnd a pMbe) (pAnd b pMbe)) (op (pAnd a pMbo) (pAnd b pMbo)) in
   [ ("xor_or_minus_and", pXor x y, pSub (pOr x y) (pAnd x y));
     ("xor_add_minus_two_and", pXor x y, pSub (pAdd x y) (pMul p2 (pAnd x y)));
     ("xor_mask_sliced", pXor x y, slice pXor x y);
+    ("xor_halves_sliced", pXor x y, slice_halves pXor x y);
+    ("xor_bytes_sliced", pXor x y, slice_bytes pXor x y);
     ("xor_opaque_zero", pXor x y, pAdd (pSub (pOr x y) (pAnd x y)) (zero1 x y));
+    ("xor_semi_poly_zero", pXor x y, pAdd (pSub (pOr x y) (pAnd x y)) (zero_poly_deg2 x));
     ("xor_inverted", pXor x y, pXor (pNot x) (pNot y));
     ("add_xor_plus_two_and", pAdd x y, pAdd (pXor x y) (pMul p2 (pAnd x y)));
     ("add_or_plus_and", pAdd x y, pAdd (pOr x y) (pAnd x y));
     ("add_mask_sliced", pAdd x y, slice pAdd x y);
     ("add_two_or_minus_xor_opaque", pAdd x y, pAdd (pSub (pMul p2 (pOr x y)) (pXor x y)) (zero1 x y));
     ("add_zero4_opaque", pAdd x y, pAdd (pAdd (pXor x y) (pMul p2 (pAnd x y))) (zero4 x y));
+    ("add_semi_poly_zero", pAdd x y, pAdd (pAdd (pXor x y) (pMul p2 (pAnd x y))) (zero_poly_deg4 y));
     ("sub_xor_minus_two_notand", pSub x y, pSub (pXor x y) (pMul p2 (pAnd (pNot x) y)));
     ("sub_two_andnot_minus_xor", pSub x y, pSub (pMul p2 (pAnd x (pNot y))) (pXor x y));
     ("sub_mask_sliced", pSub x y, slice pSub x y);
     ("sub_bitsdiff_opaque", pSub x y, pAdd (pSub (pAnd x (pNot y)) (pAnd (pNot x) y)) (zero2 x y));
+    ("sub_semi_poly_zero", pSub x y, pAdd (pSub (pXor x y) (pMul p2 (pAnd (pNot x) y))) (zero_poly_deg2 y));
     ("sub_twos_complement", pSub x y, pAdd x (pAdd (pNot y) p1c));
     ("sub_twos_opaque", pSub x y, pAdd (pAdd x (pAdd (pNot y) p1c)) (zero_sub_not x y));
     ("and_add_minus_or", pAnd x y, pSub (pAdd x y) (pOr x y));
     ("and_mask_sliced", pAnd x y, pAdd (pAnd (pAnd x y) pMe) (pAnd (pAnd x y) pMo));
+    ("and_halves_sliced", pAnd x y, pAdd (pAnd (pAnd x y) pMlo) (pAnd (pAnd x y) pMhi));
+    ("and_bytes_sliced", pAnd x y, pAdd (pAnd (pAnd x y) pMbe) (pAnd (pAnd x y) pMbo));
     ("and_keep_opaque", pAnd x y, pAdd (pSub x (pAnd x (pNot y))) (zero2 x y));
     ("and_demorgan", pAnd x y, pNot (pOr (pNot x) (pNot y)));
     ("or_xor_plus_and", pOr x y, pAdd (pXor x y) (pAnd x y));
     ("or_add_minus_and", pOr x y, pSub (pAdd x y) (pAnd x y));
     ("or_mask_sliced", pOr x y, slice pOr x y);
+    ("or_halves_sliced", pOr x y, slice_halves pOr x y);
+    ("or_bytes_sliced", pOr x y, slice_bytes pOr x y);
     ("or_sum_minus_and_opaque", pOr x y, pAdd (pSub (pAdd x y) (pAnd x y)) (zero3 x y));
     ("or_demorgan", pOr x y, pNot (pAnd (pNot x) (pNot y)));
     ("mul_nl_partition", pMul x y, pAdd (pMul (pAnd x y) (pOr x y)) (pMul (pAnd x (pNot y)) (pAnd (pNot x) y)));
+    ("mul_nl_cross_poly", pMul x y, pAdd (pAdd (pMul (pAnd x y) (pXor x y)) (pMul (pAnd x y) (pAnd x y))) (pMul (pAnd x (pNot y)) (pAnd (pNot x) y)));
     ("mul_nl_sum_form", pMul x y, pSub (pAdd (pMul (pAnd x y) (pAdd x y)) (pMul (pAnd x (pNot y)) (pAnd (pNot x) y))) (pMul (pAnd x y) (pAnd x y)));
     ("not_xor_all_ones", pNot x, pXor x pm1);
     ("not_sub_minus_one", pNot x, pSub pm1 x);
@@ -125,10 +149,6 @@ let rules : (string * pattern * pattern) list =
     ("neg_not_plus_one", pNeg x, pAdd (pNot x) p1c) ]
 
 let rule_count = List.length rules
-
-let p_c_2_61 = pC 0x2000000000000000L
-let p3 = pC 3L
-let p4 = pC 4L
 
 let zero5_poly a =
   pMul p_c_2_61

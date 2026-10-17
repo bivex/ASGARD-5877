@@ -33,7 +33,7 @@ let emit_handlers_hpp b ~rng ~enable_running_key ~enable_address_bound ~enable_t
   Vm_mem_handlers.emit_simd_handlers ~rng:(split_rng rng 106) b;
   Vm_mem_handlers.emit_mem_and_ffi_handlers ~rng:(split_rng rng 104) b;
   Vm_mem_handlers.emit_decoy_handlers ~rng:(split_rng rng 105) b;
-  let max_extra_domains = min 2 (max 0 (num_domains - 1)) in
+  let max_extra_domains = max 0 (num_domains - 1) in
   for d = 1 to max_extra_domains do
     let b_d = Buffer.create 4096 in
     Vm_alu_handlers.emit_alu_handlers b_d ~rng:(split_rng rng (201 + d * 10)) ~enable_egraph_expansion ~enable_ephemeral_jit ();

@@ -67,6 +67,15 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
       | _ -> [ (var "vIP_idx" := cast SizeT (cast UInt64 (var "imm") &~ bit_not (u64 0L))) ]
   in
   emit_handler_ast b "H_JMP" (jmp_stmts @ maybe_reanchor () @ [ inc_instrs; fetch_next ]);
+  let jmp_stmts_a1 = [
+    decl_var ~init:(cast SizeT (var "imm")) SizeT "_target";
+    (var "vIP_idx" := var "_target")
+  ] in
+  emit_handler_ast b "H_JMP_A1" (jmp_stmts_a1 @ maybe_reanchor () @ [ inc_instrs; fetch_next ]);
+  let jmp_stmts_a2 = [
+    (var "vIP_idx" := cast SizeT ((cast UInt64 (var "imm") ^~ u64 0x5877L) ^~ u64 0x5877L));
+  ] in
+  emit_handler_ast b "H_JMP_A2" (jmp_stmts_a2 @ maybe_reanchor () @ [ inc_instrs; fetch_next ]);
 
   (* H_JCC: Conditional branch with branchless evaluation *)
   let cond_decode_stmts = [
@@ -126,6 +135,7 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
         ]
   in
   emit_handler_ast b "H_JCC" (cond_decode_stmts @ branch_stmts @ maybe_reanchor () @ [ probe_check; inc_instrs; fetch_next ]);
+  emit_handler_ast b "H_JCC_A1" (cond_decode_stmts @ branch_stmts @ maybe_reanchor () @ [ probe_check; inc_instrs; fetch_next ]);
 
   (* H_CMOV: Conditional move *)
   let cmov_stmts = [
