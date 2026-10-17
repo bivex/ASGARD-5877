@@ -49,13 +49,21 @@ from models import build_model, n_params
 
 # --------------------------------------------------------------------------
 # Architecture ladder -- edit this list to iterate on architectures.
+#
+# Empirically (first campaign): the learnable structure is a shallow 2-layer
+# function. Depth is the dominant factor: depth-2 MLPs hit the ceiling
+# (256x2 -> 0.648, 1024x2 -> 0.647), depth 3-6 degrades monotonically
+# (512x3 -> 0.618, 256x4 -> 0.591, 1024x6 -> 0.573), excess width past ~1M
+# params also hurts (2048x2 -> 0.620), and lower lr / more epochs do not
+# recover it (512x4 @ 1e-4, 16 ep -> 0.614). The mlp-d rung keeps a
+# depth-stress probe so the cliff stays visible in every sweep.
 # Epochs on the big transformer rungs are capped: d256/L4 measures ~56 s
 # per 200k-sample epoch on an M-series laptop.
 # --------------------------------------------------------------------------
 LADDER = [
     dict(name="mlp-s", arch="mlp",         width=256,  depth=2, epochs=12, lr=1e-3, batch=4096),
-    dict(name="mlp-m", arch="mlp",         width=512,  depth=4, epochs=12, lr=1e-3, batch=4096),
-    dict(name="mlp-l", arch="mlp",         width=1024, depth=6, epochs=8,  lr=1e-3, batch=4096),
+    dict(name="mlp-w", arch="mlp",         width=1024, depth=2, epochs=12, lr=1e-3, batch=4096),
+    dict(name="mlp-d", arch="mlp",         width=256,  depth=4, epochs=12, lr=1e-3, batch=4096),
     dict(name="xf-s",  arch="transformer", dims=128, heads=4, layers=2,   epochs=8,  lr=3e-4, batch=1024),
     dict(name="xf-m",  arch="transformer", dims=192, heads=6, layers=3,   epochs=6,  lr=3e-4, batch=1024),
     dict(name="xf-l",  arch="transformer", dims=256, heads=8, layers=4,   epochs=4,  lr=3e-4, batch=512),

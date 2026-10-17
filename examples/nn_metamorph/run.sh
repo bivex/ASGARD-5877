@@ -14,4 +14,4 @@ cd "$(dirname "$0")"
 
 python3 validate_ref.py -n 30000
 python3 train.py --kernel compute --sweep
-python3 train.py --kernel mix --sweep --rung 'mlp-s|mlp-m|xf-s'
+python3 train.py --kernel mix --sweep --rung 'mlp-s|mlp-w|xf-s'
