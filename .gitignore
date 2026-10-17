@@ -49,3 +49,4 @@ crash-*
 leak-*
 timeout-*
 examples/nn_metamorph/results/results.jsonl
+examples/nn_metamorph/traces/
