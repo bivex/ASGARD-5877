@@ -60,6 +60,11 @@ ASG_FUZZ_NO_CFF=1 ASG_FUZZ_NO_MBA=1 ...        # изоляция: только 
 ./build/diff_fuzzer -minimize_crash=1 -runs=100000 ./artifacts/crash-*
 ```
 
+Словарь `diff_fuzz.dict` (граничные константы, маски и битовые паттерны,
+собранные из прошлых кампаний) подхватывается автоматически через `-dict`
+и направляет мутации к осмысленным токенам. Seed-корпус в `corpus/`
+генерируется заново при каждом запуске.
+
 ## Вариант 2 — Python differential runner (весь пайплайн, наглядный)
 
 ```bash
@@ -104,6 +109,7 @@ proj_src/compute_core.cpp   2 маркированных ядра (канони�
 proj_src/main_driver.cpp    streaming-main (--fuzz протокол)
 fuzz_driver.cpp        LLVMFuzzerTestOneInput + дамп расхождений
 run_libfuzzer.sh       вариант 1: сборка + кампания libFuzzer
+diff_fuzz.dict         словарь libFuzzer (автозагрузка через -dict)
 run_diff_project.py    вариант 2: python-раннер полного пайплайна
 corpus/                seed-корпус (генерируется скриптом)
 vm_out/, build/, artifacts/   генерируемые артефакты

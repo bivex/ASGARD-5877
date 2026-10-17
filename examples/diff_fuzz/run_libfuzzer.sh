@@ -165,8 +165,10 @@ PYEOF
 
 # --------------------------------------------------------------------------
 DICT_FILE="$SCRIPT_DIR/diff_fuzz.dict"
-RUN_ARGS=(-max_len="$MAX_LEN" -rss_limit_mb=4096 -print_final_stats=1
-          -artifact_prefix="$ARTIFACT_DIR/")
+# -len_control=0: the driver rejects inputs < 41 bytes (payload + blob), so
+# libFuzzer's default slow length ramp only burns cycles on dead short inputs.
+RUN_ARGS=(-max_len="$MAX_LEN" -len_control=0 -rss_limit_mb=4096
+          -print_final_stats=1 -artifact_prefix="$ARTIFACT_DIR/")
 if [ -f "$DICT_FILE" ]; then
     RUN_ARGS+=(-dict="$DICT_FILE")
 fi
