@@ -840,242 +840,359 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   emit_handler_ast b "H_SAR_RR" (sar_rr_stmts @ [ inc_instrs; fetch_next ]);
   if enable_ephemeral_jit then
     Buffer.add_string b "#endif\n";
-  Buffer.add_string b "    H_DIV_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        if (b == 0) { ctx.trapped = true; goto EXIT_VM; }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, a / b);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        if (__builtin_expect(!b, 0)) { ctx.trapped = true; goto EXIT_VM; }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, ctx.get_reg(dst) / b);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t _divisor = ctx.get_reg(src);\n";
-       Buffer.add_string b "        if (_divisor == 0ULL) { ctx.trapped = true; goto EXIT_VM; }\n";
-       Buffer.add_string b "        uint64_t _dividend = ctx.get_reg(dst);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, _dividend / _divisor);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_IDIV_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        int64_t a = (int64_t)ctx.get_reg(dst); int64_t b = (int64_t)ctx.get_reg(src);\n";
-       Buffer.add_string b "        if (b == 0 || (b == -1 && a == INT64_MIN)) { ctx.trapped = true; goto EXIT_VM; }\n";
-       Buffer.add_string b "        int64_t q = (b == -1) ? (int64_t)(0 - (uint64_t)a) : (a / b);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, (uint64_t)q);\n"
-   | 1 ->
-       Buffer.add_string b "        int64_t b = (int64_t)ctx.get_reg(src); int64_t a = (int64_t)ctx.get_reg(dst);\n";
-       Buffer.add_string b "        if (__builtin_expect(b == 0 || (b == -1 && a == INT64_MIN), 0)) { ctx.trapped = true; goto EXIT_VM; }\n";
-       Buffer.add_string b "        int64_t q = (b == -1) ? (int64_t)(0ULL - (uint64_t)a) : (a / b);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(q));\n"
-   | _ ->
-       Buffer.add_string b "        int64_t _d = static_cast<int64_t>(ctx.get_reg(dst)), _s = static_cast<int64_t>(ctx.get_reg(src));\n";
-       Buffer.add_string b "        if (_s == 0 || (_s == -1 && _d == INT64_MIN)) { ctx.trapped = true; goto EXIT_VM; }\n";
-       Buffer.add_string b "        int64_t _quot = (_s == -1) ? (-_d) : (_d / _s);\n";
-       Buffer.add_string b "        ctx.set_reg(dst, static_cast<uint64_t>(_quot));\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_MULH_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        #if defined(__SIZEOF_INT128__)\n";
-       Buffer.add_string b "        uint64_t res = (uint64_t)(((unsigned __int128)a * (unsigned __int128)b) >> 64);\n";
-       Buffer.add_string b "        #else\n";
-       Buffer.add_string b "        uint64_t a_lo = (uint32_t)a, a_hi = a >> 32;\n";
-       Buffer.add_string b "        uint64_t b_lo = (uint32_t)b, b_hi = b >> 32;\n";
-       Buffer.add_string b "        uint64_t p0 = a_lo * b_lo;\n";
-       Buffer.add_string b "        uint64_t p1 = a_lo * b_hi;\n";
-       Buffer.add_string b "        uint64_t p2 = a_hi * b_lo;\n";
-       Buffer.add_string b "        uint64_t p3 = a_hi * b_hi;\n";
-       Buffer.add_string b "        uint64_t cy = ((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32;\n";
-       Buffer.add_string b "        uint64_t res = p3 + (p1 >> 32) + (p2 >> 32) + cy;\n";
-       Buffer.add_string b "        #endif\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        #if defined(__SIZEOF_INT128__)\n";
-       Buffer.add_string b "        unsigned __int128 _prod = (unsigned __int128)a * (unsigned __int128)b;\n";
-       Buffer.add_string b "        uint64_t res = static_cast<uint64_t>(_prod >> 64);\n";
-       Buffer.add_string b "        #else\n";
-       Buffer.add_string b "        uint64_t a_lo = (uint32_t)a, a_hi = a >> 32;\n";
-       Buffer.add_string b "        uint64_t b_lo = (uint32_t)b, b_hi = b >> 32;\n";
-       Buffer.add_string b "        uint64_t p0 = a_lo * b_lo, p1 = a_lo * b_hi, p2 = a_hi * b_lo, p3 = a_hi * b_hi;\n";
-       Buffer.add_string b "        uint64_t cy = ((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32;\n";
-       Buffer.add_string b "        uint64_t res = p3 + (p1 >> 32) + (p2 >> 32) + cy;\n";
-       Buffer.add_string b "        #endif\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | _ ->
-       Buffer.add_string b "        #if defined(__SIZEOF_INT128__)\n";
-       Buffer.add_string b "        uint64_t res = (uint64_t)(((unsigned __int128)ctx.get_reg(dst) * (unsigned __int128)ctx.get_reg(src)) >> 64);\n";
-       Buffer.add_string b "        #else\n";
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t a_lo = (uint32_t)a, a_hi = a >> 32;\n";
-       Buffer.add_string b "        uint64_t b_lo = (uint32_t)b, b_hi = b >> 32;\n";
-       Buffer.add_string b "        uint64_t cy = (((a_lo * b_lo) >> 32) + (uint32_t)(a_lo * b_hi) + (uint32_t)(a_hi * b_lo)) >> 32;\n";
-       Buffer.add_string b "        uint64_t res = (a_hi * b_hi) + ((a_lo * b_hi) >> 32) + ((a_hi * b_lo) >> 32) + cy;\n";
-       Buffer.add_string b "        #endif\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_IMULH_RR: {\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        int64_t a = (int64_t)ctx.get_reg(dst); int64_t b = (int64_t)ctx.get_reg(src);\n";
-       Buffer.add_string b "        #if defined(__SIZEOF_INT128__)\n";
-       Buffer.add_string b "        uint64_t res = (uint64_t)(((signed __int128)a * (signed __int128)b) >> 64);\n";
-       Buffer.add_string b "        #else\n";
-       Buffer.add_string b "        uint64_t ua = (uint64_t)a, ub = (uint64_t)b;\n";
-       Buffer.add_string b "        uint64_t a_lo = (uint32_t)ua, a_hi = ua >> 32;\n";
-       Buffer.add_string b "        uint64_t b_lo = (uint32_t)ub, b_hi = ub >> 32;\n";
-       Buffer.add_string b "        uint64_t p0 = a_lo * b_lo;\n";
-       Buffer.add_string b "        uint64_t p1 = a_lo * b_hi;\n";
-       Buffer.add_string b "        uint64_t p2 = a_hi * b_lo;\n";
-       Buffer.add_string b "        uint64_t p3 = a_hi * b_hi;\n";
-       Buffer.add_string b "        uint64_t cy = ((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32;\n";
-       Buffer.add_string b "        uint64_t res = p3 + (p1 >> 32) + (p2 >> 32) + cy;\n";
-       Buffer.add_string b "        if (a < 0) res -= ub;\n";
-       Buffer.add_string b "        if (b < 0) res -= ua;\n";
-       Buffer.add_string b "        #endif\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | 1 ->
-       Buffer.add_string b "        int64_t a = (int64_t)ctx.get_reg(dst); int64_t b = (int64_t)ctx.get_reg(src);\n";
-       Buffer.add_string b "        #if defined(__SIZEOF_INT128__)\n";
-       Buffer.add_string b "        signed __int128 _prod = (signed __int128)a * (signed __int128)b;\n";
-       Buffer.add_string b "        uint64_t res = static_cast<uint64_t>(_prod >> 64);\n";
-       Buffer.add_string b "        #else\n";
-       Buffer.add_string b "        uint64_t ua = (uint64_t)a, ub = (uint64_t)b;\n";
-       Buffer.add_string b "        uint64_t a_lo = (uint32_t)ua, a_hi = ua >> 32;\n";
-       Buffer.add_string b "        uint64_t b_lo = (uint32_t)ub, b_hi = ub >> 32;\n";
-       Buffer.add_string b "        uint64_t p0 = a_lo * b_lo, p1 = a_lo * b_hi, p2 = a_hi * b_lo, p3 = a_hi * b_hi;\n";
-       Buffer.add_string b "        uint64_t cy = ((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32;\n";
-       Buffer.add_string b "        uint64_t res = p3 + (p1 >> 32) + (p2 >> 32) + cy;\n";
-       Buffer.add_string b "        if (a < 0) res -= ub;\n";
-       Buffer.add_string b "        if (b < 0) res -= ua;\n";
-       Buffer.add_string b "        #endif\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n"
-   | _ ->
-       Buffer.add_string b "        #if defined(__SIZEOF_INT128__)\n";
-       Buffer.add_string b "        uint64_t res = (uint64_t)(((signed __int128)(int64_t)ctx.get_reg(dst) * (signed __int128)(int64_t)ctx.get_reg(src)) >> 64);\n";
-       Buffer.add_string b "        #else\n";
-       Buffer.add_string b "        int64_t a = (int64_t)ctx.get_reg(dst); int64_t b = (int64_t)ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint64_t ua = (uint64_t)a, ub = (uint64_t)b;\n";
-       Buffer.add_string b "        uint64_t a_lo = (uint32_t)ua, a_hi = ua >> 32;\n";
-       Buffer.add_string b "        uint64_t b_lo = (uint32_t)ub, b_hi = ub >> 32;\n";
-       Buffer.add_string b "        uint64_t cy = (((a_lo * b_lo) >> 32) + (uint32_t)(a_lo * b_hi) + (uint32_t)(a_hi * b_lo)) >> 32;\n";
-       Buffer.add_string b "        uint64_t res = (a_hi * b_hi) + ((a_lo * b_hi) >> 32) + ((a_hi * b_lo) >> 32) + cy;\n";
-       Buffer.add_string b "        if (a < 0) res -= ub;\n";
-       Buffer.add_string b "        if (b < 0) res -= ua;\n";
-       Buffer.add_string b "        #endif\n";
-       Buffer.add_string b "        ctx.set_reg(dst, res);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CMP_RI: {\n";
-  Buffer.add_string b "        PROBE_START();\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = (uint64_t)imm;\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x7F);\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, a, b, bits);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _d = ctx.get_reg(dst);\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, _d, static_cast<uint64_t>(imm), static_cast<uint32_t>((word >> 50) & 0x7F));\n"
-   | _ ->
-       Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x7F);\n";
-       Buffer.add_string b "        uint64_t _imm = (uint64_t)imm;\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, ctx.get_reg(dst), _imm, bits);\n");
-  Buffer.add_string b "        PROBE_CHECK();\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CMP_RR: {\n";
-  Buffer.add_string b "        PROBE_START();\n";
-  (match pick_variant 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t a = ctx.get_reg(dst); uint64_t b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        uint32_t bits = (uint32_t)((word >> 50) & 0x7F);\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, a, b, bits);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src);\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, _a, _b, static_cast<uint32_t>((word >> 50) & 0x7F));\n"
-   | _ ->
-       Buffer.add_string b "        uint32_t bits = static_cast<uint32_t>((word >> 50) & 0x7F);\n";
-       Buffer.add_string b "        compute_sub_flags(ctx, ctx.get_reg(dst), ctx.get_reg(src), bits);\n");
-  Buffer.add_string b "        PROBE_CHECK();\n";
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_CMP_RI_A1: {\n        PROBE_START();\n        uint64_t _d = ctx.get_reg(dst);\n        compute_sub_flags(ctx, _d, static_cast<uint64_t>(imm), static_cast<uint32_t>((word >> 50) & 0x7F));\n        PROBE_CHECK();\n        ctx.executed_instructions++; FETCH_NEXT();\n    }\n";
-  Buffer.add_string b "    H_CMP_RI_A2: {\n        PROBE_START();\n        uint32_t bits = (uint32_t)((word >> 50) & 0x7F);\n        uint64_t _imm = (uint64_t)imm;\n        compute_sub_flags(ctx, ctx.get_reg(dst), _imm, bits);\n        PROBE_CHECK();\n        ctx.executed_instructions++; FETCH_NEXT();\n    }\n";
-  Buffer.add_string b "    H_CMP_RR_A1: {\n        PROBE_START();\n        uint64_t _a = ctx.get_reg(dst), _b = ctx.get_reg(src);\n        compute_sub_flags(ctx, _a, _b, static_cast<uint32_t>((word >> 50) & 0x7F));\n        PROBE_CHECK();\n        ctx.executed_instructions++; FETCH_NEXT();\n    }\n";
-  Buffer.add_string b "    H_PUSH_R: {\n";
-  (match Random.State.int rng 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst);\n";
-       Buffer.add_string b "        ctx.push(val);\n";
-       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
-       Buffer.add_string b "        if (cur_sp >= 0x10008ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
-       Buffer.add_string b "            uint64_t sp_val = cur_sp - 8ULL;\n";
-       Buffer.add_string b "            ctx.set_reg(REG_RSP, sp_val);\n";
-       Buffer.add_string b "            *reinterpret_cast<uint64_t*>(sp_val) = val;\n";
-       Buffer.add_string b "        }\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst);\n";
-       Buffer.add_string b "        ctx.push(val);\n";
-       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
-       Buffer.add_string b "        if (cur_sp >= 0x10008ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
-       Buffer.add_string b "            uint64_t* sp_ptr = reinterpret_cast<uint64_t*>(cur_sp - 8ULL);\n";
-       Buffer.add_string b "            ctx.set_reg(REG_RSP, reinterpret_cast<uint64_t>(sp_ptr));\n";
-       Buffer.add_string b "            *sp_ptr = val;\n";
-       Buffer.add_string b "        }\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t val = ctx.get_reg(dst);\n";
-       Buffer.add_string b "        ctx.push(val);\n";
-       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
-       Buffer.add_string b "        if (cur_sp >= 0x10008ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
-       Buffer.add_string b "            uint64_t sp_val = cur_sp - 8ULL;\n";
-       Buffer.add_string b "            ctx.set_reg(REG_RSP, sp_val);\n";
-       Buffer.add_string b "            std::memcpy(reinterpret_cast<void*>(sp_val), &val, sizeof(uint64_t));\n";
-       Buffer.add_string b "        }\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
-  Buffer.add_string b "    H_POP_R: {\n";
-  (match Random.State.int rng 3 with
-   | 0 ->
-       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
-       Buffer.add_string b "        uint64_t val = 0;\n";
-       Buffer.add_string b "        if (cur_sp >= 0x10000ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
-       Buffer.add_string b "            val = *reinterpret_cast<const uint64_t*>(cur_sp);\n";
-       Buffer.add_string b "            ctx.set_reg(REG_RSP, cur_sp + 8ULL);\n";
-       Buffer.add_string b "            ctx.pop();\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            val = ctx.pop();\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, val);\n"
-   | 1 ->
-       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
-       Buffer.add_string b "        uint64_t val = 0;\n";
-       Buffer.add_string b "        if (cur_sp >= 0x10000ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
-       Buffer.add_string b "            std::memcpy(&val, reinterpret_cast<const void*>(cur_sp), sizeof(uint64_t));\n";
-       Buffer.add_string b "            ctx.set_reg(REG_RSP, cur_sp + 8ULL);\n";
-       Buffer.add_string b "            ctx.pop();\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            val = ctx.pop();\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, val);\n"
-   | _ ->
-       Buffer.add_string b "        uint64_t cur_sp = ctx.get_reg(REG_RSP);\n";
-       Buffer.add_string b "        uint64_t val = 0;\n";
-       Buffer.add_string b "        if (cur_sp >= 0x10000ULL && cur_sp <= 0x7FFFFFFFFFFFULL) {\n";
-       Buffer.add_string b "            const uint64_t* sp_ptr = reinterpret_cast<const uint64_t*>(cur_sp);\n";
-       Buffer.add_string b "            val = *sp_ptr;\n";
-       Buffer.add_string b "            ctx.set_reg(REG_RSP, cur_sp + sizeof(uint64_t));\n";
-       Buffer.add_string b "            ctx.pop();\n";
-       Buffer.add_string b "        } else {\n";
-       Buffer.add_string b "            val = ctx.pop();\n";
-       Buffer.add_string b "        }\n";
-       Buffer.add_string b "        ctx.set_reg(dst, val);\n");
-  Buffer.add_string b "        ctx.executed_instructions++; FETCH_NEXT();\n";
-  Buffer.add_string b "    }\n";
+  let div_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        if_then (var "b" ==~ u64 0L) [
+          var "ctx.trapped" := bool_lit true;
+          goto "EXIT_VM";
+        ];
+        set_reg (var "dst") (var "a" /~ var "b");
+      ]
+    | 1 -> [
+        let_u64 "b" reg_src;
+        if_then (call "__builtin_expect" [log_not (var "b"); i32 0] <>~ i32 0) [
+          var "ctx.trapped" := bool_lit true;
+          goto "EXIT_VM";
+        ];
+        set_reg (var "dst") (reg_dst /~ var "b");
+      ]
+    | _ -> [
+        let_u64 "_divisor" reg_src;
+        if_then (var "_divisor" ==~ u64 0L) [
+          var "ctx.trapped" := bool_lit true;
+          goto "EXIT_VM";
+        ];
+        let_u64 "_dividend" reg_dst;
+        set_reg (var "dst") (var "_dividend" /~ var "_divisor");
+      ]
+  in
+  emit_handler_ast b "H_DIV_RR" (div_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let idiv_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        decl_var Int64 "a" ~init:(cast Int64 reg_dst);
+        decl_var Int64 "b" ~init:(cast Int64 reg_src);
+        if_then ((var "b" ==~ i32 0) ||~ ((var "b" ==~ i32 (-1)) &&~ (var "a" ==~ var "INT64_MIN"))) [
+          var "ctx.trapped" := bool_lit true;
+          goto "EXIT_VM";
+        ];
+        decl_var Int64 "q" ~init:(ternary (var "b" ==~ i32 (-1))
+          (cast Int64 (u64 0L -~ cast UInt64 (var "a")))
+          (var "a" /~ var "b"));
+        set_reg (var "dst") (cast UInt64 (var "q"));
+      ]
+    | 1 ->
+        let idiv_overflow_cond = (var "b" ==~ i32 0) ||~ ((var "b" ==~ i32 (-1)) &&~ (var "a" ==~ var "INT64_MIN")) in
+        [
+          decl_var Int64 "b" ~init:(cast Int64 reg_src);
+          decl_var Int64 "a" ~init:(cast Int64 reg_dst);
+          if_then (call "__builtin_expect" [idiv_overflow_cond; i32 0] <>~ i32 0) [
+            var "ctx.trapped" := bool_lit true;
+            goto "EXIT_VM";
+          ];
+          decl_var Int64 "q" ~init:(ternary (var "b" ==~ i32 (-1))
+            (cast Int64 (u64 0L -~ cast UInt64 (var "a")))
+            (var "a" /~ var "b"));
+          set_reg (var "dst") (cast UInt64 (var "q"));
+        ]
+    | _ -> [
+        decl_var Int64 "_d" ~init:(cast Int64 reg_dst);
+        decl_var Int64 "_s" ~init:(cast Int64 reg_src);
+        if_then ((var "_s" ==~ i32 0) ||~ ((var "_s" ==~ i32 (-1)) &&~ (var "_d" ==~ var "INT64_MIN"))) [
+          var "ctx.trapped" := bool_lit true;
+          goto "EXIT_VM";
+        ];
+        decl_var Int64 "_quot" ~init:(ternary (var "_s" ==~ i32 (-1)) (neg (var "_d")) (var "_d" /~ var "_s"));
+        set_reg (var "dst") (cast UInt64 (var "_quot"));
+      ]
+  in
+  emit_handler_ast b "H_IDIV_RR" (idiv_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let mulh_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        preproc_if_stmt "defined(__SIZEOF_INT128__)" [
+          let_u64 "res" (cast UInt64 ((c_cast (StructType "unsigned __int128") (var "a") *~ c_cast (StructType "unsigned __int128") (var "b")) >>~ i32 64));
+          set_reg (var "dst") (var "res");
+        ] ~else_stmts:[
+          let_u64 "a_lo" (cast UInt32 (var "a"));
+          let_u64 "a_hi" (var "a" >>~ i32 32);
+          let_u64 "b_lo" (cast UInt32 (var "b"));
+          let_u64 "b_hi" (var "b" >>~ i32 32);
+          let_u64 "p0" (var "a_lo" *~ var "b_lo");
+          let_u64 "p1" (var "a_lo" *~ var "b_hi");
+          let_u64 "p2" (var "a_hi" *~ var "b_lo");
+          let_u64 "p3" (var "a_hi" *~ var "b_hi");
+          let_u64 "cy" (((var "p0" >>~ i32 32) +~ cast UInt32 (var "p1") +~ cast UInt32 (var "p2")) >>~ i32 32);
+          let_u64 "res" (var "p3" +~ (var "p1" >>~ i32 32) +~ (var "p2" >>~ i32 32) +~ var "cy");
+          set_reg (var "dst") (var "res");
+        ]
+      ]
+    | 1 -> [
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        preproc_if_stmt "defined(__SIZEOF_INT128__)" [
+          decl_var (StructType "unsigned __int128") "_prod" ~init:(c_cast (StructType "unsigned __int128") (var "a") *~ c_cast (StructType "unsigned __int128") (var "b"));
+          let_u64 "res" (cast UInt64 (var "_prod" >>~ i32 64));
+          set_reg (var "dst") (var "res");
+        ] ~else_stmts:[
+          let_u64 "a_lo" (cast UInt32 (var "a"));
+          let_u64 "a_hi" (var "a" >>~ i32 32);
+          let_u64 "b_lo" (cast UInt32 (var "b"));
+          let_u64 "b_hi" (var "b" >>~ i32 32);
+          let_u64 "p0" (var "a_lo" *~ var "b_lo");
+          let_u64 "p1" (var "a_lo" *~ var "b_hi");
+          let_u64 "p2" (var "a_hi" *~ var "b_lo");
+          let_u64 "p3" (var "a_hi" *~ var "b_hi");
+          let_u64 "cy" (((var "p0" >>~ i32 32) +~ cast UInt32 (var "p1") +~ cast UInt32 (var "p2")) >>~ i32 32);
+          let_u64 "res" (var "p3" +~ (var "p1" >>~ i32 32) +~ (var "p2" >>~ i32 32) +~ var "cy");
+          set_reg (var "dst") (var "res");
+        ]
+      ]
+    | _ -> [
+        preproc_if_stmt "defined(__SIZEOF_INT128__)" [
+          let_u64 "res" (cast UInt64 ((c_cast (StructType "unsigned __int128") reg_dst *~ c_cast (StructType "unsigned __int128") reg_src) >>~ i32 64));
+          set_reg (var "dst") (var "res");
+        ] ~else_stmts:[
+          let_u64 "a" reg_dst;
+          let_u64 "b" reg_src;
+          let_u64 "a_lo" (cast UInt32 (var "a"));
+          let_u64 "a_hi" (var "a" >>~ i32 32);
+          let_u64 "b_lo" (cast UInt32 (var "b"));
+          let_u64 "b_hi" (var "b" >>~ i32 32);
+          let_u64 "cy" (((var "a_lo" *~ var "b_lo" >>~ i32 32) +~ cast UInt32 (var "a_lo" *~ var "b_hi") +~ cast UInt32 (var "a_hi" *~ var "b_lo")) >>~ i32 32);
+          let_u64 "res" ((var "a_hi" *~ var "b_hi") +~ ((var "a_lo" *~ var "b_hi") >>~ i32 32) +~ ((var "a_hi" *~ var "b_lo") >>~ i32 32) +~ var "cy");
+          set_reg (var "dst") (var "res");
+        ]
+      ]
+  in
+  emit_handler_ast b "H_MULH_RR" (mulh_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let imulh_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        decl_var Int64 "a" ~init:(cast Int64 reg_dst);
+        decl_var Int64 "b" ~init:(cast Int64 reg_src);
+        preproc_if_stmt "defined(__SIZEOF_INT128__)" [
+          let_u64 "res" (cast UInt64 ((c_cast (StructType "signed __int128") (var "a") *~ c_cast (StructType "signed __int128") (var "b")) >>~ i32 64));
+          set_reg (var "dst") (var "res");
+        ] ~else_stmts:[
+          let_u64 "ua" (cast UInt64 (var "a"));
+          let_u64 "ub" (cast UInt64 (var "b"));
+          let_u64 "a_lo" (cast UInt32 (var "ua"));
+          let_u64 "a_hi" (var "ua" >>~ i32 32);
+          let_u64 "b_lo" (cast UInt32 (var "ub"));
+          let_u64 "b_hi" (var "ub" >>~ i32 32);
+          let_u64 "p0" (var "a_lo" *~ var "b_lo");
+          let_u64 "p1" (var "a_lo" *~ var "b_hi");
+          let_u64 "p2" (var "a_hi" *~ var "b_lo");
+          let_u64 "p3" (var "a_hi" *~ var "b_hi");
+          let_u64 "cy" (((var "p0" >>~ i32 32) +~ cast UInt32 (var "p1") +~ cast UInt32 (var "p2")) >>~ i32 32);
+          decl_var UInt64 "res" ~init:(var "p3" +~ (var "p1" >>~ i32 32) +~ (var "p2" >>~ i32 32) +~ var "cy");
+          if_then (var "a" <~ i32 0) [ var "res" -= var "ub" ];
+          if_then (var "b" <~ i32 0) [ var "res" -= var "ua" ];
+          set_reg (var "dst") (var "res");
+        ]
+      ]
+    | 1 -> [
+        decl_var Int64 "a" ~init:(cast Int64 reg_dst);
+        decl_var Int64 "b" ~init:(cast Int64 reg_src);
+        preproc_if_stmt "defined(__SIZEOF_INT128__)" [
+          decl_var (StructType "signed __int128") "_prod" ~init:(c_cast (StructType "signed __int128") (var "a") *~ c_cast (StructType "signed __int128") (var "b"));
+          let_u64 "res" (cast UInt64 (var "_prod" >>~ i32 64));
+          set_reg (var "dst") (var "res");
+        ] ~else_stmts:[
+          let_u64 "ua" (cast UInt64 (var "a"));
+          let_u64 "ub" (cast UInt64 (var "b"));
+          let_u64 "a_lo" (cast UInt32 (var "ua"));
+          let_u64 "a_hi" (var "ua" >>~ i32 32);
+          let_u64 "b_lo" (cast UInt32 (var "ub"));
+          let_u64 "b_hi" (var "ub" >>~ i32 32);
+          let_u64 "p0" (var "a_lo" *~ var "b_lo");
+          let_u64 "p1" (var "a_lo" *~ var "b_hi");
+          let_u64 "p2" (var "a_hi" *~ var "b_lo");
+          let_u64 "p3" (var "a_hi" *~ var "b_hi");
+          let_u64 "cy" (((var "p0" >>~ i32 32) +~ cast UInt32 (var "p1") +~ cast UInt32 (var "p2")) >>~ i32 32);
+          decl_var UInt64 "res" ~init:(var "p3" +~ (var "p1" >>~ i32 32) +~ (var "p2" >>~ i32 32) +~ var "cy");
+          if_then (var "a" <~ i32 0) [ var "res" -= var "ub" ];
+          if_then (var "b" <~ i32 0) [ var "res" -= var "ua" ];
+          set_reg (var "dst") (var "res");
+        ]
+      ]
+    | _ -> [
+        preproc_if_stmt "defined(__SIZEOF_INT128__)" [
+          let_u64 "res" (cast UInt64 ((c_cast (StructType "signed __int128") (cast Int64 reg_dst) *~ c_cast (StructType "signed __int128") (cast Int64 reg_src)) >>~ i32 64));
+          set_reg (var "dst") (var "res");
+        ] ~else_stmts:[
+          decl_var Int64 "a" ~init:(cast Int64 reg_dst);
+          decl_var Int64 "b" ~init:(cast Int64 reg_src);
+          let_u64 "ua" (cast UInt64 (var "a"));
+          let_u64 "ub" (cast UInt64 (var "b"));
+          let_u64 "a_lo" (cast UInt32 (var "ua"));
+          let_u64 "a_hi" (var "ua" >>~ i32 32);
+          let_u64 "b_lo" (cast UInt32 (var "ub"));
+          let_u64 "b_hi" (var "ub" >>~ i32 32);
+          let_u64 "cy" (((var "a_lo" *~ var "b_lo" >>~ i32 32) +~ cast UInt32 (var "a_lo" *~ var "b_hi") +~ cast UInt32 (var "a_hi" *~ var "b_lo")) >>~ i32 32);
+          decl_var UInt64 "res" ~init:((var "a_hi" *~ var "b_hi") +~ ((var "a_lo" *~ var "b_hi") >>~ i32 32) +~ ((var "a_hi" *~ var "b_lo") >>~ i32 32) +~ var "cy");
+          if_then (var "a" <~ i32 0) [ var "res" -= var "ub" ];
+          if_then (var "b" <~ i32 0) [ var "res" -= var "ua" ];
+          set_reg (var "dst") (var "res");
+        ]
+      ]
+  in
+  emit_handler_ast b "H_IMULH_RR" (imulh_rr_stmts @ [ inc_instrs; fetch_next ]);
+
+  let cmp_ri_stmts = match pick_variant 3 with
+    | 0 -> [
+        probe_start;
+        let_u64 "a" reg_dst;
+        let_u64 "b" imm_u64;
+        let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL));
+        expr_stmt (call "compute_sub_flags" [var "ctx"; var "a"; var "b"; var "bits"]);
+        probe_check; inc_instrs; fetch_next
+      ]
+    | 1 -> [
+        probe_start;
+        let_u64 "_d" reg_dst;
+        expr_stmt (call "compute_sub_flags" [var "ctx"; var "_d"; imm_u64; cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL)]);
+        probe_check; inc_instrs; fetch_next
+      ]
+    | _ -> [
+        probe_start;
+        let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL));
+        let_u64 "_imm" imm_u64;
+        expr_stmt (call "compute_sub_flags" [var "ctx"; reg_dst; var "_imm"; var "bits"]);
+        probe_check; inc_instrs; fetch_next
+      ]
+  in
+  emit_handler_ast b "H_CMP_RI" cmp_ri_stmts;
+
+  let cmp_rr_stmts = match pick_variant 3 with
+    | 0 -> [
+        probe_start;
+        let_u64 "a" reg_dst;
+        let_u64 "b" reg_src;
+        let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL));
+        expr_stmt (call "compute_sub_flags" [var "ctx"; var "a"; var "b"; var "bits"]);
+        probe_check; inc_instrs; fetch_next
+      ]
+    | 1 -> [
+        probe_start;
+        let_u64 "_a" reg_dst;
+        let_u64 "_b" reg_src;
+        expr_stmt (call "compute_sub_flags" [var "ctx"; var "_a"; var "_b"; cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL)]);
+        probe_check; inc_instrs; fetch_next
+      ]
+    | _ -> [
+        probe_start;
+        let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL));
+        expr_stmt (call "compute_sub_flags" [var "ctx"; reg_dst; reg_src; var "bits"]);
+        probe_check; inc_instrs; fetch_next
+      ]
+  in
+  emit_handler_ast b "H_CMP_RR" cmp_rr_stmts;
+
+  emit_handler_ast b "H_CMP_RI_A1" [
+    probe_start;
+    let_u64 "_d" reg_dst;
+    expr_stmt (call "compute_sub_flags" [var "ctx"; var "_d"; imm_u64; cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL)]);
+    probe_check; inc_instrs; fetch_next
+  ];
+
+  emit_handler_ast b "H_CMP_RI_A2" [
+    probe_start;
+    let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL));
+    let_u64 "_imm" imm_u64;
+    expr_stmt (call "compute_sub_flags" [var "ctx"; reg_dst; var "_imm"; var "bits"]);
+    probe_check; inc_instrs; fetch_next
+  ];
+
+  emit_handler_ast b "H_CMP_RR_A1" [
+    probe_start;
+    let_u64 "_a" reg_dst;
+    let_u64 "_b" reg_src;
+    expr_stmt (call "compute_sub_flags" [var "ctx"; var "_a"; var "_b"; cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x7FL)]);
+    probe_check; inc_instrs; fetch_next
+  ];
+
+  let push_sp_bound = (var "cur_sp" >=~ u64 0x10008L) &&~ (var "cur_sp" <=~ u64 0x7FFFFFFFFFFFL) in
+  let push_stmts = match Random.State.int rng 3 with
+    | 0 -> [
+        let_u64 "val" reg_dst;
+        expr_stmt (call "ctx.push" [var "val"]);
+        let_u64 "cur_sp" (call "ctx.get_reg" [var "REG_RSP"]);
+        if_then push_sp_bound [
+          let_u64 "sp_val" (var "cur_sp" -~ u64 8L);
+          expr_stmt (call "ctx.set_reg" [var "REG_RSP"; var "sp_val"]);
+          deref (reinterpret_cast (Ptr UInt64) (var "sp_val")) := var "val";
+        ];
+      ]
+    | 1 -> [
+        let_u64 "val" reg_dst;
+        expr_stmt (call "ctx.push" [var "val"]);
+        let_u64 "cur_sp" (call "ctx.get_reg" [var "REG_RSP"]);
+        if_then push_sp_bound [
+          decl_var (Ptr UInt64) "sp_ptr" ~init:(reinterpret_cast (Ptr UInt64) (var "cur_sp" -~ u64 8L));
+          expr_stmt (call "ctx.set_reg" [var "REG_RSP"; reinterpret_cast UInt64 (var "sp_ptr")]);
+          deref (var "sp_ptr") := var "val";
+        ];
+      ]
+    | _ -> [
+        let_u64 "val" reg_dst;
+        expr_stmt (call "ctx.push" [var "val"]);
+        let_u64 "cur_sp" (call "ctx.get_reg" [var "REG_RSP"]);
+        if_then push_sp_bound [
+          let_u64 "sp_val" (var "cur_sp" -~ u64 8L);
+          expr_stmt (call "ctx.set_reg" [var "REG_RSP"; var "sp_val"]);
+          expr_stmt (call "std::memcpy" [reinterpret_cast (Ptr Void) (var "sp_val"); addr_of (var "val"); sizeof_ty UInt64]);
+        ];
+      ]
+  in
+  emit_handler_ast b "H_PUSH_R" (push_stmts @ [ inc_instrs; fetch_next ]);
+
+  let pop_sp_bound = (var "cur_sp" >=~ u64 0x10000L) &&~ (var "cur_sp" <=~ u64 0x7FFFFFFFFFFFL) in
+  let pop_stmts = match Random.State.int rng 3 with
+    | 0 -> [
+        let_u64 "cur_sp" (call "ctx.get_reg" [var "REG_RSP"]);
+        let_u64 "val" (u64 0L);
+        if_then_else pop_sp_bound [
+          var "val" := deref (reinterpret_cast (ConstPtr UInt64) (var "cur_sp"));
+          expr_stmt (call "ctx.set_reg" [var "REG_RSP"; var "cur_sp" +~ u64 8L]);
+          expr_stmt (call "ctx.pop" []);
+        ] [
+          var "val" := call "ctx.pop" [];
+        ];
+        set_reg (var "dst") (var "val");
+      ]
+    | 1 -> [
+        let_u64 "cur_sp" (call "ctx.get_reg" [var "REG_RSP"]);
+        let_u64 "val" (u64 0L);
+        if_then_else pop_sp_bound [
+          expr_stmt (call "std::memcpy" [addr_of (var "val"); reinterpret_cast (ConstPtr Void) (var "cur_sp"); sizeof_ty UInt64]);
+          expr_stmt (call "ctx.set_reg" [var "REG_RSP"; var "cur_sp" +~ u64 8L]);
+          expr_stmt (call "ctx.pop" []);
+        ] [
+          var "val" := call "ctx.pop" [];
+        ];
+        set_reg (var "dst") (var "val");
+      ]
+    | _ -> [
+        let_u64 "cur_sp" (call "ctx.get_reg" [var "REG_RSP"]);
+        let_u64 "val" (u64 0L);
+        if_then_else pop_sp_bound [
+          decl_var (ConstPtr UInt64) "sp_ptr" ~init:(reinterpret_cast (ConstPtr UInt64) (var "cur_sp"));
+          var "val" := deref (var "sp_ptr");
+          expr_stmt (call "ctx.set_reg" [var "REG_RSP"; var "cur_sp" +~ sizeof_ty UInt64]);
+          expr_stmt (call "ctx.pop" []);
+        ] [
+          var "val" := call "ctx.pop" [];
+        ];
+        set_reg (var "dst") (var "val");
+      ]
+  in
+  emit_handler_ast b "H_POP_R" (pop_stmts @ [ inc_instrs; fetch_next ]);
   Buffer.add_string b "    H_ADC_RR: {\n";
   (match pick_variant 3 with
    | 0 ->
