@@ -1,1 +1,3 @@
-eval $(opam env) && dune build
+#!/usr/bin/env bash
+eval "$(opam env)" && dune build
+

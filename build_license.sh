@@ -1,1 +1,2 @@
+#!/usr/bin/env bash
 _build/default/bin/main.exe protect-arm64 -i examples/license_check.c --engine=stack --compile=true
