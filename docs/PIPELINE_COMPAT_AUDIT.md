@@ -99,6 +99,22 @@ ASGARD_DUMP_BYTECODE=1 dune exec bin/main.exe -- protect-arm64 --input ./app.s -
 
 Both views describe the same program state: the JSON dump is written next to the listing at each phase boundary.
 
+The audit on a real protected binary (14 961 operations, 141 blocks) reports what each pass actually contributes:
+
+| Transition | Operations | Blocks | Context slots | Pass |
+|---|---|---|---|---|
+| `1-lowered -> 2a-pre-superop` | -267 | 0 | 0 | superoperator fusion |
+| `2a-pre-superop -> 2-amplified` | +13 303 | 0 | +16 | mathematical amplification |
+| `2-amplified -> 2a-post-superop` | -2 653 | 0 | 0 | superoperator fusion |
+| `2a-post-superop -> 2b-mba` | +2 896 | 0 | 0 | MBA constant synthesis |
+| `2b-mba -> 3-cff` | +1 064 | +142 | +1 | control-flow flattening |
+| `3-cff -> 4-spaghetti` | +70 | +70 | 0 | spaghetti splitting |
+| `4-spaghetti -> 5-ghost` | +27 660 | 0 | +3 978 | ghost padding |
+| `5-ghost -> 6-feedback` | +458 | 0 | 0 | state feedback |
+| `6-feedback -> 7-balance (final)` | 0 | 0 | 0 | stack balance repair (no-op) |
+
+Two observations follow from the numbers. The balance pass changes nothing, because the lowering already emits every block with a zero stack effect, so the pass is a safety net rather than a phase. The feedback pass reaches about one percent of the program, because it can only couple registers that are written right before the coupling. The ghost pass grows the declared context by an order of magnitude, since it allocates scratch slots per block.
+
 ## Negative controls
 
 The audit is only meaningful if it can fail. The harness provides two adversarial modes.
@@ -149,6 +165,10 @@ A disagreement in the `agree` column means the model and the runtime disagree ab
 
 One row per pass. `d_ops`, `d_blocks` and `d_slots` are the shape deltas, `invariants` names the invariants that the transition breaks or repairs, and `semantics` reports the semantic comparison.
 
+The semantic comparison is structural: the final stack depth of every block group, the set of context slots it writes and the outcome observed by every flag consumer. It is grouped by block ID, because labels are not unique in a lowered program, and a block produced by a splitting pass is matched to its origin by the ops it holds.
+
+A transition that introduces blocks which are neither inherited nor split parts of an existing block (the CFF dispatcher) redistributes the computation between blocks, so the block-level comparison does not apply to it; such a transition is reported as `n/a (CFG restructured)` and the invariants carry the verdict.
+
 ```text
   from               -> to                    d_ops d_blocks d_slots | invariants semantics
   2a-pre-superop     -> 2-amplified            +436      +0    +16 | unchanged  3 blk, OK
@@ -158,6 +178,8 @@ One row per pass. `d_ops`, `d_blocks` and `d_slots` are the shape deltas, `invar
 ### Section 3: compatibility matrix
 
 Rows are invariants, columns are transitions. `H` means the invariant holds, `X` means the transition breaks it, `F` means the transition repairs it, `.` means it was already broken.
+
+The matrix is the answer to "which pass breaks which invariant of the previous phase": a non-empty column marks the pass that introduced the incompatibility.
 
 ```text
   invariant              1    2    3    4    5    6    7    8    9
@@ -249,7 +271,8 @@ To add an invariant, implement the check in `analyse_phase` inside `scripts/pipe
 
 ## Limitations
 
-- The model evaluates each block sequence with a zeroed register file and a zeroed memory. It therefore verifies the value semantics of the straight-line block sequences, not the full path-sensitive semantics of the program.
+- The model evaluates each block sequence with a zeroed register file and a zeroed memory. It verifies the structure of the program, not the values: the values are covered by the runtime's own end-to-end tests.
+- The final phase is named `7-balance (final)` by the packager and `7-balance` by the dump harness; both are recognized. It therefore verifies the value semantics of the straight-line block sequences, not the full path-sensitive semantics of the program.
 - Flags are compared by the outcome observed at each consumer, not by their representation. A pass that re-encodes the flags as raw RFLAGS is not reported.
 - The audit covers the Stack-VM pipeline only. The native VM path (C and C++ emitters, SMC, anti-emulation, memory protection) is not modelled.
 - The phase order in the analyzer is a fixed list. A pass that runs twice, or a pipeline variant with a different order, needs an update there.
