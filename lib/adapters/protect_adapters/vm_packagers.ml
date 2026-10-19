@@ -7,15 +7,15 @@ open Native_vm
    Output goes to stderr so it never contaminates generated files / stdout.
    Format: phase separator + Stack_ir.program_to_string.
    Called at each pipeline phase boundary in Stack_vm_packager. *)
-let _asg_dump_enabled =
+let is_dump_enabled () =
   match Sys.getenv_opt "ASGARD_DUMP_BYTECODE" with
   | Some s when s <> "" && s <> "0" -> true
   | _ -> false
 
 let dump_bytecode_trace ~phase (prog : Stack_vm.Stack_ir.program) =
-  if _asg_dump_enabled then begin
+  if is_dump_enabled () then begin
     let sep = String.make 72 '=' in
-    Printf.eprintf "\n%s\n[ASGARD BYTECODE TRACE] phase: %s\n%s\n%s\n"
+    Printf.eprintf "\n%s\n[ASGARD BYTECODE TRACE] phase: %s\n%s\n%s\n%!"
       sep phase sep
       (Stack_vm.Stack_ir.program_to_string prog)
   end
