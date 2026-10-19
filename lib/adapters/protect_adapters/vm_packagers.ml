@@ -231,6 +231,7 @@ let make_stack_metrics
     ?(cff_info       = "CFG flattening: N/A")
     ?(real_ops       = 0)
     ?(real_blocks    = 0)
+    ?(pass_params    = [])
     ?(compact_imm    = true)
     ?(runtime_hardening = true)
     (prog : Stack_vm.Stack_ir.program)
@@ -292,11 +293,16 @@ let make_stack_metrics
           "disabled in configuration";
       ]
   in
+  let pass_parameters =
+    if pass_params = [] then ""
+    else Printf.sprintf "- Pass Parameters:\n%s\n" (String.concat "\n" pass_params)
+  in
   let summary =
     Printf.sprintf
       "=== ASGARD-5877 Stack-VM Protection Report ===\n\
        - Protection Passes (ON/OFF):\n\
        %s\n\
+       %s\
        - Architecture: Stack-VM Execution Engine (Universal Logic + Rolling Key)\n\
        - Opcode Mapping: Dynamic Polymorphic ISA (Unique Build Permutation)\n\
        - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
@@ -317,7 +323,7 @@ let make_stack_metrics
        - Devirtualization Resistance Score (DRS): %.2f / 100.0\n\
        - Rolling Key Seed: 0x%016LX\n\
        ==============================================="
-      pass_board imm_width_info
+      pass_board pass_parameters imm_width_info
       amplifier_info
       superop_info
       spaghetti_info ghost_info feedback_info
@@ -342,6 +348,11 @@ module Stack_vm_packager : Vm_packager = struct
   let package ~rng ~config ?constants (func : ir_func) : package_result =
     let ir : Vm_ir.Ir.func = unwrap_ir func in
     let native_cfg : Protection_config.t = unwrap_config config in
+    (* The effective parameters of every pass, collected while the phases
+       run, so the report states the settings that were actually used
+       (and the seeds, which make the build reproducible). *)
+    let pass_params = ref [] in
+    let note line = pass_params := line :: !pass_params in
     let target_func =
       if native_cfg.cff.enabled then
         let cff_opts = {
@@ -373,6 +384,10 @@ module Stack_vm_packager : Vm_packager = struct
             (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
         in
         let superop_cfg = Stack_vm.Stack_superop_pass.default_superop_config superop_seed in
+        note
+          (Printf.sprintf
+             "    Superoperator Fusion       fusion=%d%% rules=[AddImm SubImm AddII SubII SetRegImm AddRegImm] seed=0x%016LX"
+             superop_cfg.fusion_rate superop_cfg.seed);
         let prog_superop = Stack_vm.Stack_superop_pass.apply_program superop_cfg prog in
         let stats = Stack_vm.Stack_superop_pass.superop_stats prog prog_superop in
         (prog_superop, Some (superop_cfg, stats))
@@ -390,6 +405,11 @@ module Stack_vm_packager : Vm_packager = struct
        We also use adaptive_profile to automatically scale Horner degree (2..6) based on block size. *)
     let max_block_size = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> max acc (List.length b.ops)) prog.blocks 0 in
     let amp_profile = Stack_vm.Bytecode_amplifier.adaptive_profile ~block_size:max_block_size () in
+    note
+      (Printf.sprintf
+         "    Bytecode Amplification    horner_degree=%d bit_slice_lanes=%d expander_chord_len=%d expander_chord_rate=%d%% (adaptive, max block %d ops)"
+         amp_profile.horner_degree amp_profile.bit_slice_lanes amp_profile.expander_chord_len
+         amp_profile.expander_chord_rate max_block_size);
     let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~ctx ~profile:amp_profile prog in
     let amplifier_info = Stack_vm.Bytecode_amplifier.amplifier_stats prog prog_amplified in
     let prog = prog_amplified in
@@ -431,6 +451,9 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 19)
     in
     let mba_cfg = Stack_vm.Stack_mba_pass.default_mba_config mba_seed in
+    note
+      (Printf.sprintf "    MBA Constant Synthesis     rate=%d%% seed=0x%016LX" mba_cfg.mba_rate
+         mba_cfg.seed);
     let prog_mba = Stack_vm.Stack_mba_pass.apply_program mba_cfg prog in
     let mba_info = Stack_vm.Stack_mba_pass.mba_stats prog prog_mba in
     let prog = prog_mba in
@@ -448,6 +471,12 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 11)
     in
     let cff_cfg = Stack_vm.Stack_cff_pass.default_cff_config cff_seed in
+    note
+      (Printf.sprintf
+         "    Virtual CFG Flattening     hubs=%d split_rate=%d opaque_predicates=%s seed=0x%016LX"
+         native_cfg.cff.hub_count native_cfg.cff.split_rate
+         (if native_cfg.cff.inject_opaque_predicates then "on" else "off")
+         cff_cfg.seed);
     let prog_cff, cff_dispatcher = Stack_vm.Stack_cff_pass.apply_program_with_info cff_cfg ctx prog in
     let cff_info = Stack_vm.Stack_cff_pass.cff_stats prog prog_cff in
     let prog = prog_cff in
@@ -467,6 +496,9 @@ module Stack_vm_packager : Vm_packager = struct
       (Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed) with
       max_blocks = cur_b + max_splits;
     } in
+    note
+      (Printf.sprintf "    Spaghetti CFG Splitting    split_rate=%d max_blocks=%d seed=0x%016LX"
+         spaghetti_cfg.split_rate spaghetti_cfg.max_blocks spaghetti_cfg.seed);
     let prog_spaghetti = Stack_vm.Stack_spaghetti_pass.apply_program spaghetti_cfg prog in
     let spaghetti_info = Stack_vm.Stack_spaghetti_pass.spaghetti_stats prog prog_spaghetti in
     let prog = prog_spaghetti in
@@ -481,6 +513,13 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 17)
     in
     let ghost_cfg = Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed in
+    note
+      (Printf.sprintf
+         "    Ghost Stack Padding        rate=%d%% max_ghosts=%s entanglement=%s seed=0x%016LX"
+         ghost_cfg.ghost_rate
+         (if ghost_cfg.max_ghosts <= 0 then "unlimited" else string_of_int ghost_cfg.max_ghosts)
+         (if ghost_cfg.entangle then "on" else "off")
+         ghost_cfg.seed);
     let prog_ghost = Stack_vm.Stack_ghost_pass.apply_program ghost_cfg ctx prog in
     let ghost_info = Stack_vm.Stack_ghost_pass.ghost_stats prog prog_ghost in
     let prog = prog_ghost in
@@ -497,6 +536,9 @@ module Stack_vm_packager : Vm_packager = struct
             (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
         in
         let feedback_cfg = Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed in
+        note
+          (Printf.sprintf "    State-Feedback Rolling Key rate=%d%% seed=0x%016LX"
+             feedback_cfg.feedback_rate feedback_cfg.seed);
         (* The VPC coupling: the state-feedback pass couples the rolling
            key to the VPC at the entry of every CFF block, where the VPC
            provably holds the token of that block.  The encryptor needs
@@ -585,9 +627,25 @@ module Stack_vm_packager : Vm_packager = struct
         prog
     in
     let runner_source = Stack_vm.Stack_runtime.emit_runner_cpp bc_words in
+    note "    Stack Balance Repair       underflow=PushImm 0 pads, exit-delta=PopReg scratch drain";
+    note
+      (Printf.sprintf
+         "    Bloat / Crypto             mode=%s budget=%dKB density=%.2f  rounds=%d key_bits=%d"
+         (match native_cfg.bloat.mode with
+          | `Compact -> "compact"
+          | `Balanced -> "balanced"
+          | `Heavy -> "heavy"
+          | `Insane -> "insane")
+         (match native_cfg.bloat.target_size_budget_kb with Some k -> k | None -> 0)
+         native_cfg.bloat.junk_density native_cfg.crypto.rounds native_cfg.crypto.key_bits);
+    note
+      (Printf.sprintf "    Dispatch / Chaffing        domains=%d  chaff pool=%d ratio=%.1f"
+         native_cfg.vm_runtime.num_dispatch_domains native_cfg.memory_chaffing.pool_size
+         native_cfg.memory_chaffing.chaff_ratio);
     let metrics =
       make_stack_metrics
         native_cfg
+        ~pass_params:(List.rev !pass_params)
         ~compact_imm
         ~runtime_hardening:obfuscate_runtime
         ~amplifier_info
