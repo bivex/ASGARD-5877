@@ -1321,6 +1321,14 @@ let emit_stack_runner_main_def () : Cpp_codegen.Cpp_ast.top_decl =
       ];
     ];
     let_u64 "ret" (call "vanguard_threaded_vm::asgard_vm_call" [var "bc_ptr"; var "bc_len"]);
+    (* A tampered payload aborts the run: the result value alone does not
+       say so (the failure sentinel is 1, a legitimate result can be 1
+       too), so the authentication failure is reported explicitly. *)
+    if_then ((var "asgard_stack_vm::g_last_auth_failed") <>~ i32 0) [
+      expr_stmt (call "printf" [
+        str_lit "[Stack-VM] Execution ABORTED: payload authentication FAILED (the protected image was modified)\n";
+      ]);
+    ];
     expr_stmt (call "printf" [
       str_lit "[Stack-VM] Execution SUCCESS! Result: %llu\n";
       c_cast (StructType "unsigned long long") (var "ret");
