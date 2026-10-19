@@ -1,0 +1,9 @@
+(executable
+ (name dump_pipeline)
+ (modules dump_pipeline)
+ (libraries
+  vm_ir
+  mba_engine
+  stack_vm
+  yojson
+  unix))

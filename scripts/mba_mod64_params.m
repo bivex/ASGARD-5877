@@ -55,6 +55,8 @@ function mba_mod64_params()
 %   accepted by OCaml's Int64.of_string, and the convention already used
 %   by lib/native_vm/protection_types.ml) plus an unsigned hex mirror.
 
+  % the shared Z_{2^64} primitives live next to this file
+  addpath(fileparts(mfilename('fullpath')));
   root = fileparts(fileparts(mfilename('fullpath')));
   bench_dir = fullfile(root, "scripts", "bench_data");
   test_data_dir = fullfile(root, "test", "data");
@@ -75,13 +77,13 @@ function mba_mod64_params()
   % ---------------------------------------------------------------------
   disp("\n[0] INTEGER-OVERFLOW SEMANTICS OF THE HOST ENGINE (MEASURED)");
   disp("-------------------------------------------------------------------------");
-  a_max = u64_from_hex("FFFFFFFFFFFFFFFF");
+  a_max = asgard_mod64('from_hex', "FFFFFFFFFFFFFFFF");
   five = uint64(5);
   naive_sum = a_max + five;
-  exact_sum = u64_add(a_max, five);
-  fprintf("  uint64(2^64-1) + uint64(5)  naive : %s\n", u64_to_hex(naive_sum));
+  exact_sum = asgard_mod64('add', a_max, five);
+  fprintf("  uint64(2^64-1) + uint64(5)  naive : %s\n", asgard_mod64('to_hex', naive_sum));
   fprintf("  uint64(2^64-1) + uint64(5)  exact : %s   (expected 0000000000000004)\n", ...
-          u64_to_hex(exact_sum));
+          asgard_mod64('to_hex', exact_sum));
   if naive_sum == exact_sum
     disp("  [!] Host integer arithmetic WRAPS: naive uint64 + is already exact.");
   else
@@ -99,30 +101,30 @@ function mba_mod64_params()
   n_failed = 0;
 
   % 1.1 carry chain vs. independent 16-bit limb reference
-  seed_v = u64_from_hex("9E3779B97F4A7C15");
+  seed_v = asgard_mod64('from_hex', "9E3779B97F4A7C15");
   for i = 0:299
     x = rand_u64_at(seed_v, i);
     y = rand_u64_at(seed_v, i + 1000);
     n_checks += 1;
-    if u64_add(x, y) ~= ref_add64(x, y), n_failed += 1; end
+    if asgard_mod64('add', x, y) ~= asgard_mod64('ref_add', x, y), n_failed += 1; end
     n_checks += 1;
-    if u64_mul(x, y) ~= ref_mul64(x, y), n_failed += 1; end
+    if asgard_mod64('mul', x, y) ~= asgard_mod64('ref_mul', x, y), n_failed += 1; end
     n_checks += 1;
-    if u64_sub(x, y) ~= ref_sub64(x, y), n_failed += 1; end
+    if asgard_mod64('sub', x, y) ~= asgard_mod64('ref_sub', x, y), n_failed += 1; end
   end
 
   % 1.2 boundary cases of the carry chain
   boundary = {uint64(0), uint64(1), uint64(4294967295), uint64(4294967296), ...
-              u64_from_hex("7FFFFFFFFFFFFFFF"), u64_from_hex("8000000000000000"), ...
-              u64_from_hex("FFFFFFFFFFFFFFFF")};
+              asgard_mod64('from_hex', "7FFFFFFFFFFFFFFF"), asgard_mod64('from_hex', "8000000000000000"), ...
+              asgard_mod64('from_hex', "FFFFFFFFFFFFFFFF")};
   for i = 1:numel(boundary)
     for j = 1:numel(boundary)
       x = boundary{i};
       y = boundary{j};
       n_checks += 1;
-      if u64_add(x, y) ~= ref_add64(x, y), n_failed += 1; end
+      if asgard_mod64('add', x, y) ~= asgard_mod64('ref_add', x, y), n_failed += 1; end
       n_checks += 1;
-      if u64_mul(x, y) ~= ref_mul64(x, y), n_failed += 1; end
+      if asgard_mod64('mul', x, y) ~= asgard_mod64('ref_mul', x, y), n_failed += 1; end
     end
   end
 
@@ -135,27 +137,27 @@ function mba_mod64_params()
     if eval_horner(t0, coeffs) ~= target, n_failed += 1; end
     % a_0 must equal C - P_high(t_0), the very scheme of the OCaml side
     n_checks += 1;
-    if coeffs(end) ~= u64_sub(target, horner_high_partial(t0, coeffs)), n_failed += 1; end
+    if coeffs(end) ~= asgard_mod64('sub', target, horner_high_partial(t0, coeffs)), n_failed += 1; end
   end
 
   % 1.4 modular inverse and ring twist identity
   for i = 0:399
-    k = u64_or(rand_u64_at(seed_v, 20000 + i), uint64(1));
+    k = asgard_mod64('or', rand_u64_at(seed_v, 20000 + i), uint64(1));
     kinv = inv_mod_2_64(k);
     n_checks += 1;
-    if u64_mul(k, kinv) ~= uint64(1), n_failed += 1; end
+    if asgard_mod64('mul', k, kinv) ~= uint64(1), n_failed += 1; end
     n_checks += 1;
     if bitand(kinv, uint64(1)) ~= uint64(1), n_failed += 1; end
     x = rand_u64_at(seed_v, 21000 + i);
     n_checks += 1;
-    if u64_mul(u64_mul(x, k), kinv) ~= x, n_failed += 1; end
+    if asgard_mod64('mul', asgard_mod64('mul', x, k), kinv) ~= x, n_failed += 1; end
   end
 
   % 1.5 t_0 masking identity: (t_0 ^ m) + 2*(t_0 & m) - m == t_0
   for i = 0:199
-    t0 = u64_or(rand_u64_at(seed_v, 30000 + i), uint64(1));
+    t0 = asgard_mod64('or', rand_u64_at(seed_v, 30000 + i), uint64(1));
     m = rand_u64_at(seed_v, 31000 + i);
-    lhs = u64_sub(u64_add(bitxor(t0, m), u64_add(u64_and(t0, m), u64_and(t0, m))), m);
+    lhs = asgard_mod64('sub', asgard_mod64('add', bitxor(t0, m), asgard_mod64('add', asgard_mod64('and', t0, m), asgard_mod64('and', t0, m))), m);
     n_checks += 1;
     if lhs ~= t0, n_failed += 1; end
   end
@@ -244,7 +246,7 @@ function mba_mod64_params()
   n_keys = 64;
   keys = struct("k_odd", {}, "k_inv", {});
   for i = 1:n_keys
-    k = u64_or(rand_u64_at(seed_v, 70000 + i), uint64(1));
+    k = asgard_mod64('or', rand_u64_at(seed_v, 70000 + i), uint64(1));
     keys(i).k_odd = k;
     keys(i).k_inv = inv_mod_2_64(k);
   end
@@ -330,220 +332,19 @@ end
 %  Z_{2^64} RING PRIMITIVES  (pure bit operations, no saturation)
 % =========================================================================
 
-function r = u64_add(a, b)
-  % Exact addition mod 2^64 via an explicit carry chain over 32-bit halves.
-  mask32 = uint64(4294967295);
-  lo_a = bitand(a, mask32);
-  lo_b = bitand(b, mask32);
-  hi_a = bitshift(a, -32);
-  hi_b = bitshift(b, -32);
-  lo_sum = lo_a + lo_b;               % < 2^33, far below intmax('uint64')
-  carry = bitshift(lo_sum, -32);     % 0 or 1
-  lo = bitand(lo_sum, mask32);
-  hi_sum = hi_a + hi_b + carry;      % < 2^33
-  hi = bitand(hi_sum, mask32);
-  r = bitor(bitshift(hi, 32), lo);
-end
-
-function r = u64_mul(a, b)
-  % Exact multiplication mod 2^64 (schoolbook over 32-bit halves).
-  % (a_hi*2^32 + a_lo)(b_hi*2^32 + b_lo) = a_lo*b_lo
-  %   + (a_lo*b_hi + a_hi*b_lo)*2^32 + a_hi*b_hi*2^64, and the last term
-  %   vanishes mod 2^64 by construction.
-  mask32 = uint64(4294967295);
-  lo_a = bitand(a, mask32);
-  lo_b = bitand(b, mask32);
-  hi_a = bitshift(a, -32);
-  hi_b = bitshift(b, -32);
-  t = lo_a * lo_b;                   % < 2^64
-  c1 = hi_a * lo_b;                  % < 2^64
-  c2 = lo_a * hi_b;                  % < 2^64
-  cross = bitand(u64_add(c1, c2), mask32);
-  r = u64_add(t, bitshift(cross, 32));
-end
-
-function r = u64_neg(a)
-  % Two's complement negation mod 2^64.
-  r = u64_add(bitxor(a, u64_mask()), uint64(1));
-end
-
-function r = u64_sub(a, b)
-  r = u64_add(a, u64_neg(b));
-end
-
-function r = u64_or(a, b)
-  r = bitor(a, b);
-end
-
-function r = u64_and(a, b)
-  r = bitand(a, b);
-end
-
-function m = u64_mask()
-  m = uint64(18446744073709551615);
-end
-
-function v = u64_from_hex(s)
-  % 64-bit constant from a hex string (exact: hex2dec is exact for 8 digits).
-  s = upper(strtrim(s));
-  if numel(s) > 16
-    error("u64_from_hex: more than 16 hex digits");
-  end
-  s = [repmat('0', 1, 16 - numel(s)) s];
-  hi = hex2dec(s(1:8));
-  lo = hex2dec(s(9:16));
-  v = bitor(bitshift(uint64(hi), 32), uint64(lo));
-end
-
-function s = u64_to_hex(v)
-  % Exact hexadecimal rendering (dec2hex is avoided: it is lossy for
-  % values above 2^53 and refuses uint64 on some engines).
-  hi = double(bitshift(v, -32));
-  lo = double(bitand(v, uint64(4294967295)));
-  s = sprintf("%08x%08x", hi, lo);
-end
-
-function s = u64_to_i64_dec(v)
-  % Signed decimal rendering of a 64-bit pattern, exactly as OCaml's
-  % Int64.to_string would print it (so Int64.of_string parses it back).
-  % Implemented with exact 32-bit limb arithmetic - no double rounding.
-  hi = bitshift(v, -32);
-  lo = bitand(v, uint64(4294967295));
-  if hi < uint64(2147483648)
-    s = u64_dec_magnitude(hi, lo);
-  else
-    % negative: magnitude = 2^64 - v
-    [mhi, mlo] = u64_dec_complement(hi, lo);
-    s = ["-" u64_dec_magnitude(mhi, mlo)];
-  end
-end
-
-function [chi, clo] = u64_dec_complement(hi, lo)
-  % two's complement of the limb pair (hi:lo) -> (2^64 - value)
-  chi = bitxor(uint64(hi), uint64(4294967295));
-  clo = bitxor(uint64(lo), uint64(4294967295));
-  [chi, clo] = u64_add_limbs(chi, clo, uint64(0), uint64(1));
-end
-
-function [chi, clo] = u64_add_limbs(hi, lo, ahi, alo)
-  % add two 32-bit limb pairs, keep the low 64 bits
-  lo_sum = double(lo) + double(alo);
-  carry = floor(lo_sum / 4294967296);
-  clo = uint64(mod(lo_sum, 4294967296));
-  hi_sum = double(hi) + double(ahi) + carry;
-  chi = uint64(mod(hi_sum, 4294967296));
-end
-
-function s = u64_dec_magnitude(hi, lo)
-  % Exact decimal rendering of a 64-bit magnitude given as 32-bit limbs.
-  % Chunks of 10^6 keep every intermediate below 2^53 (exactly
-  % representable as a double), so no rounding can occur.
-  chunks = {};
-  h = double(hi);
-  l = double(lo);
-  while h > 0 || l > 0
-    q_hi = floor(h / 1000000);
-    r_hi = h - q_hi * 1000000;
-    x = r_hi * 4294967296 + l;        % < 1e6 * 2^32 < 2^53
-    q_lo = floor(x / 1000000);
-    r_lo = x - q_lo * 1000000;
-    chunks{end + 1} = r_lo;
-    h = q_hi;
-    l = q_lo;
-  end
-  if isempty(chunks)
-    s = "0";
-    return;
-  end
-  s = sprintf("%d", chunks{end});
-  for i = numel(chunks) - 1:-1:1
-    s = [s sprintf("%06d", chunks{i})];
-  end
-end
-
-function v = ref_add64(a, b)
-  % Independent reference: 16-bit limbs with exact double arithmetic.
-  % Limbs are ordered most-significant first, therefore the carry is
-  % propagated from the least significant limb (index 4) upwards.
-  ah = u64_limbs16(a);
-  bh = u64_limbs16(b);
-  r = zeros(1, 4);
-  carry = 0;
-  for i = 4:-1:1
-    t = ah(i) + bh(i) + carry;
-    r(i) = mod(t, 65536);
-    carry = floor(t / 65536);
-  end
-  v = u64_from_limbs16(r);
-end
-
-function v = ref_sub64(a, b)
-  % Independent reference: 16-bit limbs with borrow propagation
-  % (least significant limb first).
-  ah = u64_limbs16(a);
-  bh = u64_limbs16(b);
-  r = zeros(1, 4);
-  borrow = 0;
-  for i = 4:-1:1
-    t = ah(i) - bh(i) - borrow;
-    if t < 0
-      t = t + 65536;
-      borrow = 1;
-    else
-      borrow = 0;
-    end
-    r(i) = t;
-  end
-  v = u64_from_limbs16(r);
-end
-
-function v = ref_mul64(a, b)
-  % Independent reference: schoolbook product over 16-bit limbs.
-  % Limbs are ordered most-significant first, so the product of limb i and
-  % limb j lands at limb position i+j of the 128-bit intermediate.
-  ah = u64_limbs16(a);
-  bh = u64_limbs16(b);
-  r = zeros(1, 8);
-  for i = 1:4
-    for j = 1:4
-      r(i + j) += ah(i) * bh(j);
-    end
-  end
-  carry = 0;
-  for i = 8:-1:1
-    t = r(i) + carry;
-    r(i) = mod(t, 65536);
-    carry = floor(t / 65536);
-  end
-  % the low 64 bits are limbs 5..8 of the 128-bit product
-  v = u64_from_limbs16(r(5:8));
-end
-
-function limbs = u64_limbs16(v)
-  limbs = [mod(double(bitand(bitshift(v, -48), uint64(65535))), 65536), ...
-           mod(double(bitand(bitshift(v, -32), uint64(65535))), 65536), ...
-           mod(double(bitand(bitshift(v, -16), uint64(65535))), 65536), ...
-           mod(double(bitand(v, uint64(65535))), 65536)];
-end
-
-function v = u64_from_limbs16(limbs)
-  v = bitor(bitor(bitshift(uint64(limbs(1)), 48), bitshift(uint64(limbs(2)), 32)), ...
-            bitor(bitshift(uint64(limbs(3)), 16), uint64(limbs(4))));
-end
-
 % =========================================================================
 %  MIRRORS OF THE OCAML PRIMITIVES
 % =========================================================================
 
 function v = sm64_at(seed, idx)
   % SplitMix64: the idx-th output of the stream identified by seed.
-  golden = u64_from_hex("9E3779B97F4A7C15");
-  mix1 = u64_from_hex("BF58476D1CE4E5B9");
-  mix2 = u64_from_hex("94D049BB133111EB");
-  st = u64_add(seed, u64_mul(uint64(idx), golden));
+  golden = asgard_mod64('from_hex', "9E3779B97F4A7C15");
+  mix1 = asgard_mod64('from_hex', "BF58476D1CE4E5B9");
+  mix2 = asgard_mod64('from_hex', "94D049BB133111EB");
+  st = asgard_mod64('add', seed, asgard_mod64('mul', uint64(idx), golden));
   z = st;
-  z = u64_mul(bitxor(z, bitshift(z, -30)), mix1);
-  z = u64_mul(bitxor(z, bitshift(z, -27)), mix2);
+  z = asgard_mod64('mul', bitxor(z, bitshift(z, -30)), mix1);
+  z = asgard_mod64('mul', bitxor(z, bitshift(z, -27)), mix2);
   v = bitxor(z, bitshift(z, -31));
 end
 
@@ -569,12 +370,12 @@ function [t0, coeffs] = synth_horner(target, degree, seed, idx)
   %   t_0 odd, a_d..a_1 random, a_0 = C - P_high(t_0) (mod 2^64),
   %   P_high built by the fold  acc <- (acc + a_k) * t_0.
   d = max(1, degree);
-  t0 = u64_or(rand_u64_at(seed, idx), uint64(1));
+  t0 = asgard_mod64('or', rand_u64_at(seed, idx), uint64(1));
   coeffs = zeros(1, d + 1, "uint64");
   for k = 1:d
     coeffs(k) = rand_u64_at(seed, idx + 100 * k);
   end
-  coeffs(d + 1) = u64_sub(target, horner_high_partial(t0, coeffs));
+  coeffs(d + 1) = asgard_mod64('sub', target, horner_high_partial(t0, coeffs));
 end
 
 function p = horner_high_partial(t0, coeffs)
@@ -582,14 +383,14 @@ function p = horner_high_partial(t0, coeffs)
   d = numel(coeffs) - 1;
   p = uint64(0);
   for k = 1:d
-    p = u64_mul(u64_add(p, coeffs(k)), t0);
+    p = asgard_mod64('mul', asgard_mod64('add', p, coeffs(k)), t0);
   end
 end
 
 function v = eval_horner(t0, coeffs)
   v = coeffs(1);
   for k = 2:numel(coeffs)
-    v = u64_add(u64_mul(v, t0), coeffs(k));
+    v = asgard_mod64('add', asgard_mod64('mul', v, t0), coeffs(k));
   end
 end
 
@@ -601,7 +402,7 @@ function inv = inv_mod_2_64(a)
   end
   x = a;
   for _ = 1:5
-    x = u64_mul(x, u64_sub(uint64(2), u64_mul(a, x)));
+    x = asgard_mod64('mul', x, asgard_mod64('sub', uint64(2), asgard_mod64('mul', a, x)));
   end
   inv = x;
 end
@@ -628,8 +429,8 @@ function write_params_json(path, schema, seed, profiles, ref_profiles, horner, k
   fprintf(fid, "{\n");
   fprintf(fid, "  \"schema\": \"%s\",\n", schema);
   fprintf(fid, "  \"generator\": \"scripts/mba_mod64_params.m\",\n");
-  fprintf(fid, "  \"seed_hex\": \"%s\",\n", u64_to_hex(seed));
-  fprintf(fid, "  \"seed_dec\": \"%s\",\n", u64_to_i64_dec(seed));
+  fprintf(fid, "  \"seed_hex\": \"%s\",\n", asgard_mod64('to_hex', seed));
+  fprintf(fid, "  \"seed_dec\": \"%s\",\n", asgard_mod64('to_dec', seed));
   fprintf(fid, "  \"modulus\": \"2^64\",\n");
   fprintf(fid, "  \"modulus_decimal\": \"18446744073709551616\",\n");
   fprintf(fid, "  \"int64_encoding\": \"signed-decimal-string\",\n");
@@ -668,19 +469,19 @@ function write_params_json(path, schema, seed, profiles, ref_profiles, horner, k
   for i = 1:numel(horner)
     v = horner(i);
     fprintf(fid, "    {\"target\": \"%s\", \"target_hex\": \"%s\", ", ...
-            u64_to_i64_dec(v.target), u64_to_hex(v.target));
+            asgard_mod64('to_dec', v.target), asgard_mod64('to_hex', v.target));
     fprintf(fid, "\"t0\": \"%s\", \"t0_hex\": \"%s\", ", ...
-            u64_to_i64_dec(v.t0), u64_to_hex(v.t0));
+            asgard_mod64('to_dec', v.t0), asgard_mod64('to_hex', v.t0));
     fprintf(fid, "\"coeffs\": [");
     for k = 1:numel(v.coeffs)
-      fprintf(fid, "\"%s\"", u64_to_i64_dec(v.coeffs(k)));
+      fprintf(fid, "\"%s\"", asgard_mod64('to_dec', v.coeffs(k)));
       if k < numel(v.coeffs)
         fprintf(fid, ", ");
       end
     end
     fprintf(fid, "], \"coeffs_hex\": [");
     for k = 1:numel(v.coeffs)
-      fprintf(fid, "\"%s\"", u64_to_hex(v.coeffs(k)));
+      fprintf(fid, "\"%s\"", asgard_mod64('to_hex', v.coeffs(k)));
       if k < numel(v.coeffs)
         fprintf(fid, ", ");
       end
@@ -693,16 +494,16 @@ function write_params_json(path, schema, seed, profiles, ref_profiles, horner, k
   for i = 1:numel(keys)
     k = keys(i);
     fprintf(fid, "    {\"k_odd\": \"%s\", \"k_odd_hex\": \"%s\", ", ...
-            u64_to_i64_dec(k.k_odd), u64_to_hex(k.k_odd));
+            asgard_mod64('to_dec', k.k_odd), asgard_mod64('to_hex', k.k_odd));
     fprintf(fid, "\"k_inv\": \"%s\", \"k_inv_hex\": \"%s\"}%s\n", ...
-            u64_to_i64_dec(k.k_inv), u64_to_hex(k.k_inv), ...
+            asgard_mod64('to_dec', k.k_inv), asgard_mod64('to_hex', k.k_inv), ...
             ternary(i < numel(keys), ",", ""));
   end
   fprintf(fid, "  ],\n");
 
   fprintf(fid, "  \"mask_pool\": [");
   for i = 1:numel(masks)
-    fprintf(fid, "\"%s\"", u64_to_i64_dec(masks(i)));
+    fprintf(fid, "\"%s\"", asgard_mod64('to_dec', masks(i)));
     if i < numel(masks)
       fprintf(fid, ", ");
     end
@@ -721,12 +522,12 @@ function write_params_csv(path, horner, keys)
   for i = 1:numel(horner)
     v = horner(i);
     fprintf(fid, "horner,%d,%s,%s,%s,%s,\n", i, ...
-            u64_to_i64_dec(v.target), u64_to_i64_dec(v.t0), ...
-            u64_to_i64_dec(v.coeffs(1)), u64_to_i64_dec(v.coeffs(end)));
+            asgard_mod64('to_dec', v.target), asgard_mod64('to_dec', v.t0), ...
+            asgard_mod64('to_dec', v.coeffs(1)), asgard_mod64('to_dec', v.coeffs(end)));
   end
   for i = 1:numel(keys)
     k = keys(i);
-    fprintf(fid, "ring_key,%d,%s,%s,,,\n", i, u64_to_i64_dec(k.k_odd), u64_to_i64_dec(k.k_inv));
+    fprintf(fid, "ring_key,%d,%s,%s,,,\n", i, asgard_mod64('to_dec', k.k_odd), asgard_mod64('to_dec', k.k_inv));
   end
   fclose(fid);
 end

@@ -17,5 +17,6 @@
   tech_2603
   tech_2608
   cpp_codegen
+  yojson
   bos
   unix))
