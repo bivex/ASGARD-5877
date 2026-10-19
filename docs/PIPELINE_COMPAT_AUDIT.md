@@ -69,6 +69,8 @@ The command prints the shape of the program at every phase and writes one JSON f
   7-balance          blocks=9    ops=1104   ctx_slots=147   invariants: OK
 ```
 
+This table is the reference for a reproduction check: the harness is deterministic (a counter-based SplitMix64 stream, not the host RNG), so the same checkout produces exactly these numbers. The audit must report ten phases, all invariants holding, and no semantic change between consecutive phases.
+
 Run the audit:
 
 ```bash
@@ -88,8 +90,13 @@ The protector writes the same JSON dumps when `ASGARD_DUMP_JSON_DIR` is set:
 ```bash
 eval "$(opam env)"
 ASGARD_DUMP_JSON_DIR=binaries/protected_dump \
-  dune exec bin/main.exe -- protect-arm64 --input ./app.s --output-dir ./out --seed 1337
+  dune exec bin/main.exe -- protect-arm64 --input ./app.s --output-dir ./out \
+    --engine stack --compile false --seed 1337
 ```
+
+The seed is part of the recipe: the protection passes derive their own seeds from it, so without a fixed seed the phase shapes differ between runs.
+
+The input has to be a program the ARM64 lifter accepts. The assembly corpus under `examples/corpus/` does not lift with the current lifter (`Unsupported or invalid ARM64 instruction: mov`), so it cannot be used as protection input as-is; a generated `.s` (the output of an earlier protection run) or a compiler-produced ARM64 object works.
 
 The human-readable listing of the same phases is available through the `--dump-bytecode` flag or the `ASGARD_DUMP_BYTECODE=1` environment variable:
 
@@ -99,7 +106,7 @@ ASGARD_DUMP_BYTECODE=1 dune exec bin/main.exe -- protect-arm64 --input ./app.s -
 
 Both views describe the same program state: the JSON dump is written next to the listing at each phase boundary.
 
-The audit on a real protected binary (14 961 operations, 141 blocks) reports what each pass actually contributes:
+The audit on a real protected binary (14 961 operations, 141 blocks, seed 1337) reports what each pass actually contributes. The numbers scale with the input, so they are an illustration of the method rather than a fixed expectation:
 
 | Transition | Operations | Blocks | Context slots | Pass |
 |---|---|---|---|---|
@@ -268,6 +275,15 @@ Check the `agree` column of section 1. A disagreement means the model and the ru
 To audit a new pass, add it to the harness `examples/pipeline_dump/dump_pipeline.ml` in the same order as `Stack_vm_packager`, and add its phase name to the canonical order list in `scripts/pipeline_compat.m`.
 
 To add an invariant, implement the check in `analyse_phase` inside `scripts/pipeline_compat.m`, extend `invariant_vector` with the new column, and add the name to `invariant_names`. The order of the entries in `invariant_vector` and `invariant_names` must match.
+
+## Known gaps in the model
+
+The MATLAB model is an independent re-implementation, not a copy of the runtime, and the following parts are known to be incomplete. They are the natural next work items.
+
+- The comparison of register *values* is advisory. The model reproduces the ring arithmetic exactly (the carry chain is checked against an independent 16-bit-limb reference), but not every op kind of the runtime bit for bit: signed division, the materialization of the architectural flags and the stack manipulations of the passes themselves can differ. The values are covered by the runtime's end-to-end tests instead.
+- The flag comparison looks at the outcome observed by each consumer. A pass that re-encodes the flags as raw RFLAGS is therefore not reported, but a pass that changes the outcome of a consumer is.
+- A transition that introduces dispatcher blocks is reported as not applicable. A comparison at the level of the whole CFG (the incoming stack of every block) would cover those transitions as well.
+- The model evaluates each block group with a zeroed register file and a zeroed memory, so a pass that depends on the values reaching a block is not covered.
 
 ## Limitations
 
