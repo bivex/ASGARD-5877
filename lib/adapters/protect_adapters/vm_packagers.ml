@@ -2,6 +2,24 @@ open Random_visa_ports
 open Protect_ports
 open Native_vm
 
+(* Bytecode trace utility.
+   Activated by env ASGARD_DUMP_BYTECODE=1 (or any non-empty value).
+   Output goes to stderr so it never contaminates generated files / stdout.
+   Format: phase separator + Stack_ir.program_to_string.
+   Called at each pipeline phase boundary in Stack_vm_packager. *)
+let _asg_dump_enabled =
+  match Sys.getenv_opt "ASGARD_DUMP_BYTECODE" with
+  | Some s when s <> "" && s <> "0" -> true
+  | _ -> false
+
+let dump_bytecode_trace ~phase (prog : Stack_vm.Stack_ir.program) =
+  if _asg_dump_enabled then begin
+    let sep = String.make 72 '=' in
+    Printf.eprintf "\n%s\n[ASGARD BYTECODE TRACE] phase: %s\n%s\n%s\n"
+      sep phase sep
+      (Stack_vm.Stack_ir.program_to_string prog)
+  end
+
 let convert_metrics (m : Native_vm.Metrics.metrics_report) : Protect_ports.metrics_report =
   {
     cyclomatic_complexity = Native_vm.Metrics.cyclomatic_complexity m;
@@ -276,6 +294,7 @@ module Stack_vm_packager : Vm_packager = struct
     let ext_syms = Hashtbl.create 16 in
     let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
+    dump_bytecode_trace ~phase:"1-lowered" prog;
 
     (* Phase 2a (Pre-amplification): Superoperator Fusion on original lowered program instructions *)
     let prog, pre_superop_stats =
@@ -292,6 +311,7 @@ module Stack_vm_packager : Vm_packager = struct
       else
         (prog, None)
     in
+    dump_bytecode_trace ~phase:"2a-pre-superop" prog;
 
     (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing)
        Pass Order Architecture: Bytecode_amplifier runs BEFORE Phase 2b (Stack_mba_pass) so that
@@ -304,6 +324,7 @@ module Stack_vm_packager : Vm_packager = struct
     let amplifier_info = Stack_vm.Bytecode_amplifier.amplifier_stats prog prog_amplified in
     let prog = prog_amplified in
     Stack_vm.Context_allocator.reserve_slots ctx prog.context_slots;
+    dump_bytecode_trace ~phase:"2-amplified" prog;
 
     (* Phase 2a (Post-amplification): Superoperator Fusion on synthesized constants *)
     let prog, superop_info =
@@ -327,6 +348,7 @@ module Stack_vm_packager : Vm_packager = struct
       | None ->
           (prog, "Disabled (Plain ISA)")
     in
+    dump_bytecode_trace ~phase:"2a-post-superop" prog;
 
     (* Phase 2b: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
     let mba_seed =
@@ -338,6 +360,7 @@ module Stack_vm_packager : Vm_packager = struct
     let prog_mba = Stack_vm.Stack_mba_pass.apply_program mba_cfg prog in
     let mba_info = Stack_vm.Stack_mba_pass.mba_stats prog prog_mba in
     let prog = prog_mba in
+    dump_bytecode_trace ~phase:"2b-mba" prog;
 
     let real_blocks = Hashtbl.length prog.blocks in
     let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
@@ -352,6 +375,7 @@ module Stack_vm_packager : Vm_packager = struct
     let prog_cff = Stack_vm.Stack_cff_pass.apply_program cff_cfg ctx prog in
     let cff_info = Stack_vm.Stack_cff_pass.cff_stats prog prog_cff in
     let prog = prog_cff in
+    dump_bytecode_trace ~phase:"3-cff" prog;
 
     (* Phase 4: Spaghetti Control-Flow Splitting — split blocks after CFF *)
     let spaghetti_seed =
@@ -368,6 +392,7 @@ module Stack_vm_packager : Vm_packager = struct
     let prog_spaghetti = Stack_vm.Stack_spaghetti_pass.apply_program spaghetti_cfg prog in
     let spaghetti_info = Stack_vm.Stack_spaghetti_pass.spaghetti_stats prog prog_spaghetti in
     let prog = prog_spaghetti in
+    dump_bytecode_trace ~phase:"4-spaghetti" prog;
 
     (* Phase 5: Ghost Stack Padding — inject neutral junk ops per block *)
     let ghost_seed =
@@ -379,6 +404,7 @@ module Stack_vm_packager : Vm_packager = struct
     let prog_ghost = Stack_vm.Stack_ghost_pass.apply_program ghost_cfg ctx prog in
     let ghost_info = Stack_vm.Stack_ghost_pass.ghost_stats prog prog_ghost in
     let prog = prog_ghost in
+    dump_bytecode_trace ~phase:"5-ghost" prog;
 
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
@@ -399,9 +425,12 @@ module Stack_vm_packager : Vm_packager = struct
       else
         (prog, "Disabled (Static Cipher Stream)")
     in
+    dump_bytecode_trace ~phase:"6-feedback" prog;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
+    dump_bytecode_trace ~phase:"7-balance (final)" prog;
+
 
     let seed_key =
       Int64.logxor

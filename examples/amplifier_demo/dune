@@ -1,0 +1,7 @@
+(executable
+ (name demo_amplifier)
+ (modules demo_amplifier)
+ (libraries
+  vm_ir
+  mba_engine
+  stack_vm))

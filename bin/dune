@@ -27,7 +27,8 @@
   c_macro_obf
   protect_adapters
   bos
-  fpath))
+  fpath
+  unix))
 
 (executable
  (name profile_bottlenecks)

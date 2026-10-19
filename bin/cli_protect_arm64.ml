@@ -4,7 +4,8 @@ open Protect_ports
 open Random_visa_application
 
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline via Hexagonal Architecture) *)
-let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit enable_ephemeral_jit compile_and_run debug_symbols =
+let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit enable_ephemeral_jit compile_and_run debug_symbols dump_bytecode =
+  if dump_bytecode then Unix.putenv "ASGARD_DUMP_BYTECODE" "1";
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
     else if engine = "stack" then "stack"
@@ -148,5 +149,9 @@ let protect_arm64_cmd =
     let doc = "Preserve DWARF debug symbols and generate .dSYM for debugging/auditing in IDA" in
     Arg.(value & flag & info [ "g"; "debug-symbols" ] ~doc)
   in
-  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ ephemeral_jit $ compile $ debug_symbols)) in
+  let dump_bytecode =
+    let doc = "Print Stack-IR bytecode listing to stderr after each pipeline phase (env: ASGARD_DUMP_BYTECODE=1)" in
+    Arg.(value & flag & info [ "dump-bytecode" ] ~doc)
+  in
+  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ ephemeral_jit $ compile $ debug_symbols $ dump_bytecode)) in
   Cmd.v (Cmd.info "protect-arm64" ~doc) term
