@@ -91,6 +91,16 @@ let split_terminators ops =
 let transform_block vpc_slot dispatcher_0_id tokens block =
   let (body, term) = split_terminators block.ops in
   (* Helper: write token to VPC — delta 0 *)
+  (* Every CFF edge writes the token of the target block into the VPC
+     before jumping.  Coupling the rolling key to that write makes the
+     key depend on the path the program took: a block harvested in
+     isolation carries no key of its own any more, because the coupling
+     that unlocks the next block is missing.
+
+     The coupled value is the token itself, and the VPC provably holds
+     it at that point (the write is the immediately preceding op), so
+     the encryptor can reproduce the key schedule - the encoder rejects
+     a KeyFeedback whose value is not statically known. *)
   let set_vpc token = [ PushImm token; PopReg vpc_slot ] in
   let go_disp = [ JmpRel dispatcher_0_id ] in
   let new_ops = match term with
@@ -154,9 +164,12 @@ let build_dispatcher_chain vpc_slot tokens real_ids base_id =
 
 type cff_config = {
   seed : int64;
+  (* Couple the rolling key to the VPC write on every CFF edge, so the
+     key depends on the path the program took.  See [set_vpc]. *)
+  couple_key : bool;
 }
 
-let default_cff_config seed = { seed }
+let default_cff_config seed = { seed; couple_key = true }
 
 (** [apply_program_with_info cfg ctx prog] applies virtual CFG flattening.
     Mutates [ctx] to allocate a VPC slot. Returns the new program with
@@ -185,6 +198,22 @@ let apply_program_with_info cfg ctx prog =
   let new_real_blocks = Hashtbl.create n_real in
   Hashtbl.iter (fun id b ->
     let b' = transform_block vpc_slot dispatcher_0_id tokens b in
+    (* 4b. Couple the rolling key to the VPC at the entry of every block
+       the dispatcher can reach.  There the VPC provably holds that
+       block's token, so the coupled value is statically known and the
+       encryptor can reproduce the key schedule.  The coupling therefore
+       makes the key depend on the path the program took: a block
+       harvested in isolation carries no key of its own.
+
+       The coupling is the FIRST operation of the block, so a later
+       splitting pass cannot separate it from the state it relies on. *)
+    let b' =
+      if cfg.couple_key && id <> prog.entry_id then
+        match Hashtbl.find_opt tokens id with
+        | Some token -> { b' with ops = KeyFeedback (vpc_slot, token) :: b'.ops }
+        | None -> b'
+      else b'
+    in
     Hashtbl.replace new_real_blocks id b'
   ) prog.blocks;
 

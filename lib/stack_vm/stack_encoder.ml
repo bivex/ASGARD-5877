@@ -205,56 +205,85 @@ let feedback_hash v =
    Any other arrangement makes the encryptor's key schedule diverge from
    the one the runtime reproduces, and the encrypted bytecode decrypts
    into garbage.  Fail loudly at encode time instead of shipping it. *)
+(* The encryptor may only hash a value it can prove: the runtime hashes
+   the LIVE register on a KeyFeedback.  A small abstract interpreter over
+   the block tracks the statically known value of the context slots and
+   of the stack - a dataflow, not an adjacency heuristic: a pass may
+   insert stack-neutral padding between the write and the coupling (the
+   ghost pass does), and a splitting pass may move the coupling into the
+   next block - the value still holds.
+
+   The CFF dispatcher writes the token of the target block into the VPC
+   before jumping to it, so on entry to that block the VPC provably holds
+   the token; the caller declares that state. *)
 let check_key_feedback_static ?(initial_ctx = []) ?(dispatcher_tokens = Hashtbl.create 0)
     (b : Stack_ir.block) =
   let ops = Array.of_list b.ops in
-  let n = Array.length ops in
-  let entry_ctx = Hashtbl.create 8 in
-  List.iter (fun (slot, v) -> Hashtbl.replace entry_ctx slot v) initial_ctx;
-  (* The value of [slot] at position [i], if it is statically known. *)
-  let static_value_at slot i =
-    if i <= 0 then None
-    else
-      match ops.(i - 1) with
-      | Stack_ir.SetRegImm (s, v) when s = slot -> Some v
-      | Stack_ir.PopReg s when s = slot ->
-          if i < 2 then None
-          else (match ops.(i - 2) with Stack_ir.PushImm v -> Some v | _ -> None)
-      | _ -> None
+  let slots : (int, int64 option) Hashtbl.t = Hashtbl.create 16 in
+  let slot_value s =
+    match Hashtbl.find_opt slots s with Some v -> v | None -> None
   in
-  (* The CFF dispatcher writes the token of the target block into the
-     VPC before jumping to it, so at the entry of that block the VPC
-     provably holds the token.  The caller declares that state. *)
-  let dispatcher_value slot =
-    match Hashtbl.find_opt dispatcher_tokens b.id with
-    | Some (vpc, token) when vpc = slot -> Some token
-    | _ -> None
+  let set_slot s v = Hashtbl.replace slots s v in
+  List.iter (fun (s, v) -> set_slot s (Some v)) initial_ctx;
+  (match Hashtbl.find_opt dispatcher_tokens b.id with
+   | Some (vpc, token) -> set_slot vpc (Some token)
+   | None -> ());
+  (* the abstract stack, top first: [Some v] = known, None = unknown *)
+  let st : (int64 option) list ref = ref [] in
+  let push v = st := v :: !st in
+  let pop () =
+    match !st with [] -> None | v :: rest -> st := rest; v
   in
-  for i = 0 to n - 1 do
-    match ops.(i) with
-    | Stack_ir.KeyFeedback (slot, exp) ->
-        let known =
-          match static_value_at slot i with
-          | Some v -> v = exp
-          | None ->
-              (match Hashtbl.find_opt entry_ctx slot with
-               | Some v -> v = exp
-               | None ->
-                   (match dispatcher_value slot with
-                    | Some v -> v = exp
-                    | None -> false))
-        in
-        if not known then
-          invalid_arg
-            (Printf.sprintf
-               "block %d: KeyFeedback expects ctx[%d] = 0x%Lx, but that value is \
-                not statically known at this point (the runtime hashes the live \
-                register, the encryptor can only hash a static constant; write \
-                the value into the slot right before the feedback, or declare \
-                the entry context with ~initial_ctx)"
-               b.id slot exp)
-    | _ -> ()
-  done
+  Array.iter
+    (fun op ->
+      match op with
+      | Stack_ir.KeyFeedback (slot, exp) ->
+          let known =
+            match slot_value slot with Some v -> v = exp | None -> false
+          in
+          if not known then
+            invalid_arg
+              (Printf.sprintf
+                 "block %d: KeyFeedback expects ctx[%d] = 0x%Lx, but that value is \
+                  not statically known at this point (the runtime hashes the live \
+                  register, the encryptor can only hash a static constant; write \
+                  the value into the slot right before the feedback, or declare \
+                  the entry context with ~initial_ctx)"
+                 b.id slot exp)
+      | Stack_ir.PushImm v -> push (Some v)
+      | Stack_ir.PushReg s -> push (slot_value s)
+      | Stack_ir.PopReg s -> set_slot s (pop ())
+      | Stack_ir.SetRegImm (s, v) -> set_slot s (Some v)
+      | Stack_ir.Cmov (_, s) -> set_slot s None
+      | Stack_ir.AddRegImm _ -> push None
+      | Stack_ir.AddImm _ | Stack_ir.SubImm _ ->
+          ignore (pop ());
+          push None
+      | Stack_ir.Add | Stack_ir.Sub | Stack_ir.Mul | Stack_ir.Nor | Stack_ir.Nand
+      | Stack_ir.Shl | Stack_ir.Shr | Stack_ir.Sar | Stack_ir.Div | Stack_ir.Idiv ->
+          ignore (pop ());
+          ignore (pop ());
+          push None
+      | Stack_ir.Dup ->
+          (match !st with v :: _ -> push v | [] -> push None)
+      | Stack_ir.Dup2 ->
+          (match !st with v1 :: v2 :: _ -> push v1; push v2 | _ -> push None; push None)
+      | Stack_ir.Rot | Stack_ir.Swap ->
+          let a = pop () and b = pop () in
+          push a;
+          push b
+      | Stack_ir.PushFlags -> push None
+      | Stack_ir.PopFlags -> ignore (pop ())
+      | Stack_ir.Cmp | Stack_ir.Test ->
+          ignore (pop ());
+          ignore (pop ())
+      | Stack_ir.Setcc _ -> push None
+      | Stack_ir.ReadMem _ -> (match !st with _ :: rest -> st := None :: rest | [] -> ())
+      | Stack_ir.WriteMem _ -> ignore (pop ()); ignore (pop ())
+      | Stack_ir.AddImmImm _ | Stack_ir.SubImmImm _ -> push None
+      | Stack_ir.KeyAdjust _ | Stack_ir.Exit | Stack_ir.JmpRel _
+      | Stack_ir.JccRel _ | Stack_ir.CallExtern _ | Stack_ir.ResolveSym _ -> ())
+    ops
 
 type encrypted_bytecode = {
   bytes : bytes;
@@ -277,9 +306,6 @@ type encrypted_bytecode = {
   tag_keys : (int, int64) Hashtbl.t;
 }
 
-(* Effective (unmasked) rolling seed: what the runtime reconstructs at entry
-   after folding in the address key. This is the value decode_all and the
-   OCaml evaluator must start from. *)
 let effective_seed_key enc = Int64.logxor enc.seed_key enc.addr_mask
 
 (* Re-bind (or un-bind) the stored literals to a new address mask. Delta-based

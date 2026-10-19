@@ -4,6 +4,11 @@ open Stack_ir
 
 type cff_config = {
   seed : int64;
+  (** [couple_key] couples the rolling key to the VPC write on every CFF
+      edge, so the key depends on the path the program took.  The coupled
+      value is the block token, which the VPC provably holds at that
+      point, so the encryptor can reproduce the key schedule. *)
+  couple_key : bool;
 }
 
 val default_cff_config : int64 -> cff_config

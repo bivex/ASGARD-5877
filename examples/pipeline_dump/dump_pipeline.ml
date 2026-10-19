@@ -90,7 +90,9 @@ let make_input_program ~(ctx : Context_allocator.t) : program =
     ; PushImm 1L
     ; Cmp                       (* flags: 0 != 1 -> NE               *)
     ; JccRel (1, Vm_ir.Flags.NE)
-    ; Exit
+    ; JmpRel 2            (* a real edge: the CFF has to route it
+                                  through the VPC dispatcher, and the
+                                  routing becomes a key coupling      *)
     ] in
   (* The unbalanced variant drops the PopRegs that drain the stack, so the
      entry block exits with a non-zero delta. *)
@@ -102,11 +104,13 @@ let make_input_program ~(ctx : Context_allocator.t) : program =
     else entry_ops
   in
   let then_ops = [ PushImm 0xDEADL; PopReg 4; Exit ] in
-  let else_ops = [ PushImm 0xBEEFL; PopReg 5; Exit ] in
+  (* the loop target: a backward edge, so the CFG has a cycle and the
+     dispatcher really routes between blocks *)
+  let loop_ops = [ PushReg 0; PushImm 1L; Add; PopReg 2; JmpRel 0 ] in
   let blocks = Hashtbl.create 3 in
   Hashtbl.replace blocks 0 { id = 0; label = "entry"; ops = entry_ops };
   Hashtbl.replace blocks 1 { id = 1; label = "then"; ops = then_ops };
-  Hashtbl.replace blocks 2 { id = 2; label = "else"; ops = else_ops };
+  Hashtbl.replace blocks 2 { id = 2; label = "loop"; ops = loop_ops };
   (* Faithful to Ir_to_stack.lower_func: the declared context size is the
      allocator's slot count.  The adversarial mode inflates it to expose
      the amplifier's assumption. *)

@@ -145,6 +145,13 @@
   alcotest))
 
 (test
+ (name test_cff_key_coupling)
+ (modules test_cff_key_coupling)
+ (libraries
+  random_visa.stack_vm
+  alcotest))
+
+(test
  (name test_mba_noise)
  (modules test_mba_noise)
  (libraries
