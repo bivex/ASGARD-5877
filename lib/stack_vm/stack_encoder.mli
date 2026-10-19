@@ -138,8 +138,10 @@ val encode_op_into :
     static constant: the value in the slot must be statically known at
     that point, either because the feedback immediately follows the write
     of that value, or because the entry context is declared through
-    [~initial_ctx].  A program that violates this is rejected with
-    [Invalid_argument] instead of being encrypted into garbage. *)
+    [~initial_ctx], or the value comes from the CFF dispatcher and the
+    block's token is declared through [~dispatcher_tokens].  A program
+    that violates this is rejected with [Invalid_argument] instead of
+    being encrypted into garbage. *)
 val encode_program :
   ?seed_key:int64 ->
   ?op_map:opcode_map ->
@@ -148,6 +150,7 @@ val encode_program :
   ?addr_mask:int64 ->
   ?compact_imm:bool ->
   ?initial_ctx:(int * int64) list ->
+  ?dispatcher_tokens:(int, int * int64) Hashtbl.t ->
   program ->
   encrypted_bytecode
 

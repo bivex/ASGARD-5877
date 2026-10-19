@@ -48,6 +48,16 @@ let test_feedback_accepted () =
   expect_accepted ~name:"SetRegImm + KeyFeedback" p1;
   let p2 = make_prog [ PushImm 0x2233L; PopReg 2; KeyFeedback (2, 0x2233L); Exit ] in
   expect_accepted ~name:"PushImm + PopReg + KeyFeedback" p2;
+  (* the value comes from the CFF dispatcher: accepted when the block's
+     token is declared, because the VPC provably holds it on entry *)
+  let p4 = make_prog [ KeyFeedback (7, 0x5566L); Exit ] in
+  let tokens = Hashtbl.create 1 in
+  Hashtbl.replace tokens 0 (7, 0x5566L);
+  (match Encoder.encode_program ~seed_key ~dispatcher_tokens:tokens p4 with
+   | _ -> Alcotest.(check bool) "a declared dispatcher token is accepted" true true
+   | exception Invalid_argument msg ->
+       Alcotest.fail (Printf.sprintf "declared dispatcher token rejected: %s" msg));
+  expect_rejected ~name:"an undeclared dispatcher token" p4;
   (* the value comes from the entry context: accepted when declared *)
   let p3 = make_prog [ KeyFeedback (1, 0x3344L); Exit ] in
   (match Encoder.encode_program ~seed_key ~initial_ctx:[1, 0x3344L] p3 with

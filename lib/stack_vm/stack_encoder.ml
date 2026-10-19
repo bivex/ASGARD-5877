@@ -205,7 +205,8 @@ let feedback_hash v =
    Any other arrangement makes the encryptor's key schedule diverge from
    the one the runtime reproduces, and the encrypted bytecode decrypts
    into garbage.  Fail loudly at encode time instead of shipping it. *)
-let check_key_feedback_static ?(initial_ctx = []) (b : Stack_ir.block) =
+let check_key_feedback_static ?(initial_ctx = []) ?(dispatcher_tokens = Hashtbl.create 0)
+    (b : Stack_ir.block) =
   let ops = Array.of_list b.ops in
   let n = Array.length ops in
   let entry_ctx = Hashtbl.create 8 in
@@ -221,6 +222,14 @@ let check_key_feedback_static ?(initial_ctx = []) (b : Stack_ir.block) =
           else (match ops.(i - 2) with Stack_ir.PushImm v -> Some v | _ -> None)
       | _ -> None
   in
+  (* The CFF dispatcher writes the token of the target block into the
+     VPC before jumping to it, so at the entry of that block the VPC
+     provably holds the token.  The caller declares that state. *)
+  let dispatcher_value slot =
+    match Hashtbl.find_opt dispatcher_tokens b.id with
+    | Some (vpc, token) when vpc = slot -> Some token
+    | _ -> None
+  in
   for i = 0 to n - 1 do
     match ops.(i) with
     | Stack_ir.KeyFeedback (slot, exp) ->
@@ -230,7 +239,10 @@ let check_key_feedback_static ?(initial_ctx = []) (b : Stack_ir.block) =
           | None ->
               (match Hashtbl.find_opt entry_ctx slot with
                | Some v -> v = exp
-               | None -> false)
+               | None ->
+                   (match dispatcher_value slot with
+                    | Some v -> v = exp
+                    | None -> false))
         in
         if not known then
           invalid_arg
@@ -559,7 +571,8 @@ let encode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?(
   Buffer.to_bytes buf
 
 let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?layout ?(polymorphic = true)
-    ?(addr_mask = 0L) ?(compact_imm = false) ?(initial_ctx = []) prog =
+    ?(addr_mask = 0L) ?(compact_imm = false) ?(initial_ctx = [])
+    ?(dispatcher_tokens = Hashtbl.create 0) prog =
   let resolved_op_map = match op_map with
     | Some m -> m
     | None -> if polymorphic then generate_opcode_map seed_key else default_opcode_map
@@ -583,7 +596,7 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?layout ?(polymorphic =
                       |> List.sort (fun a b -> compare a.id b.id) in
   List.iter (fun b ->
     Hashtbl.replace block_offsets b.id (Buffer.length plain_buf);
-    check_key_feedback_static ~initial_ctx b;
+    check_key_feedback_static ~initial_ctx ~dispatcher_tokens b;
     List.iter (fun op ->
       let op_pos = Buffer.length plain_buf in
       encode_op_into ~compact_imm ~layout:resolved_layout resolved_op_map plain_buf op;

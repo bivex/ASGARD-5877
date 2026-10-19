@@ -53,6 +53,17 @@ let block_token seed id =
   let _, z = splitmix64 (Int64.logxor seed (Int64.of_int (id lxor 0xDEAD_C0DE))) in
   if z = 0L then 0xC0FFEE_0000_0001L else z
 
+(* The dispatcher state the state-feedback pass needs: the VPC context
+   slot and the token every real block is addressed by.  On entry to a
+   real block the VPC provably holds that block's token: the predecessor
+   writes it before jumping to the dispatcher, and the dispatcher only
+   compares it.  The value is therefore statically known, which is what
+   the encryptor needs to reproduce the rolling key schedule. *)
+type dispatcher_info = {
+  vpc_slot : int;
+  block_tokens : (int, int64) Hashtbl.t;  (** real block id -> VPC token *)
+}
+
 (* ── Terminator classification ────────────────────────────────────────── *)
 type term_kind =
   | Exit_term
@@ -147,10 +158,11 @@ type cff_config = {
 
 let default_cff_config seed = { seed }
 
-(** [apply_program cfg ctx prog] applies virtual CFG flattening.
-    Mutates [ctx] to allocate a VPC slot. Returns the new program
-    with added dispatcher chain blocks. *)
-let apply_program cfg ctx prog =
+(** [apply_program_with_info cfg ctx prog] applies virtual CFG flattening.
+    Mutates [ctx] to allocate a VPC slot. Returns the new program with
+    added dispatcher chain blocks, together with the dispatcher state
+    (the VPC slot and the token of every real block). *)
+let apply_program_with_info cfg ctx prog =
   let n_real = Hashtbl.length prog.blocks in
 
   (* 1. Assign tokens to every real block *)
@@ -188,10 +200,15 @@ let apply_program cfg ctx prog =
   (* 7. Update context_slots to cover the newly allocated VPC slot *)
   let new_ctx_slots = max prog.context_slots (vpc_slot + 1) in
 
-  { prog with
-    blocks        = all_blocks;
-    context_slots = new_ctx_slots;
-  }
+  ( { prog with
+      blocks        = all_blocks;
+      context_slots = new_ctx_slots;
+    },
+    { vpc_slot; block_tokens = tokens } )
+
+(** [apply_program cfg ctx prog] is [apply_program_with_info] without the
+    dispatcher state. *)
+let apply_program cfg ctx prog = fst (apply_program_with_info cfg ctx prog)
 
 (** [cff_stats before after] returns a human-readable summary. *)
 let cff_stats prog_before prog_after =

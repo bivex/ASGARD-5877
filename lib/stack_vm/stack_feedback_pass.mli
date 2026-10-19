@@ -32,7 +32,15 @@ type feedback_stats = {
   feedback_injected : int;
 }
 
+(** [apply_program ?vpc_slot ?block_tokens cfg prog] injects the state
+    feedback couplings.  When [vpc_slot] and [block_tokens] are given
+    (the state of the CFF dispatcher), the rolling key is additionally
+    coupled to the VPC at the entry of every CFF block: there the VPC
+    provably holds the token of that block, so the coupled value is
+    statically known and the encryptor can reproduce the key schedule. *)
 val apply_program :
+  ?vpc_slot:int ->
+  ?block_tokens:(int, int64) Hashtbl.t ->
   feedback_config ->
   program ->
   program

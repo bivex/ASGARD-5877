@@ -86,11 +86,29 @@ let apply_block cfg ~rng block =
   in
   { block with ops = aux block.ops }
 
-let apply_program cfg prog =
+(* Couple the rolling key to the VPC at the entry of a CFF block.
+   The dispatcher guarantees that ctx[vpc] holds the token of the block
+   it jumps to: the predecessor writes that token into the VPC before
+   jumping to the dispatcher, and the dispatcher only compares it.  The
+   coupled value is therefore statically known, which is what the
+   encryptor needs to reproduce the key schedule (see
+   Stack_encoder.check_key_feedback_static).
+
+   The entry block of the program is excluded: it is not reached through
+   the dispatcher, so its VPC holds no token. *)
+let apply_program ?(vpc_slot = -1) ?(block_tokens = Hashtbl.create 0) cfg prog =
   let rng = make_rng cfg.seed in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
   Hashtbl.iter (fun id b ->
-    Hashtbl.replace new_blocks id (apply_block cfg ~rng b)
+    let b' = apply_block cfg ~rng b in
+    let b' =
+      if vpc_slot >= 0 && id <> prog.entry_id then
+        match Hashtbl.find_opt block_tokens id with
+        | Some token -> { b' with ops = KeyFeedback (vpc_slot, token) :: b'.ops }
+        | None -> b'
+      else b'
+    in
+    Hashtbl.replace new_blocks id b'
   ) prog.blocks;
   { prog with blocks = new_blocks }
 

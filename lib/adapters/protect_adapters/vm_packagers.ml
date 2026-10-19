@@ -401,7 +401,7 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 11)
     in
     let cff_cfg = Stack_vm.Stack_cff_pass.default_cff_config cff_seed in
-    let prog_cff = Stack_vm.Stack_cff_pass.apply_program cff_cfg ctx prog in
+    let prog_cff, cff_dispatcher = Stack_vm.Stack_cff_pass.apply_program_with_info cff_cfg ctx prog in
     let cff_info = Stack_vm.Stack_cff_pass.cff_stats prog prog_cff in
     let prog = prog_cff in
     dump_bytecode_trace ~phase:"3-cff" prog;
@@ -450,7 +450,16 @@ module Stack_vm_packager : Vm_packager = struct
             (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
         in
         let feedback_cfg = Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed in
-        let prog_feedback = Stack_vm.Stack_feedback_pass.apply_program feedback_cfg prog in
+        (* The VPC coupling: the state-feedback pass couples the rolling
+           key to the VPC at the entry of every CFF block, where the VPC
+           provably holds the token of that block.  The encryptor needs
+           the same state to reproduce the key schedule. *)
+        let prog_feedback =
+          Stack_vm.Stack_feedback_pass.apply_program
+            ~vpc_slot:cff_dispatcher.vpc_slot
+            ~block_tokens:cff_dispatcher.block_tokens
+            feedback_cfg prog
+        in
         let feedback_stat = Stack_vm.Stack_feedback_pass.feedback_stats prog prog_feedback in
         let info =
           Printf.sprintf "%d dynamic checkpoints injected (register-coupled cipher stream)"
@@ -481,7 +490,17 @@ module Stack_vm_packager : Vm_packager = struct
       if native_cfg.stack_vm.layout_randomization then None
       else Some Stack_vm.Stack_encoder.default_field_layout
     in
-    let enc = Stack_vm.Stack_encoder.encode_program ~seed_key ?layout ~compact_imm prog in
+    (* The encryptor has to know the dispatcher state to accept the VPC
+       couplings: the token of every CFF block, and the VPC slot. *)
+    let dispatcher_tokens = Hashtbl.create (Hashtbl.length cff_dispatcher.block_tokens) in
+    Hashtbl.iter
+      (fun id token ->
+        Hashtbl.replace dispatcher_tokens id (cff_dispatcher.vpc_slot, token))
+      cff_dispatcher.block_tokens;
+    let enc =
+      Stack_vm.Stack_encoder.encode_program ~seed_key ?layout ~compact_imm
+        ~dispatcher_tokens prog
+    in
     let bc_words = bytes_to_words enc.bytes in
 
     let is_internal_sym name =

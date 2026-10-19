@@ -145,7 +145,7 @@ The audit on a real protected binary (14 961 operations, 141 blocks, seed 1337) 
 | `5-ghost -> 6-feedback` | +458 | 0 | 0 | state feedback |
 | `6-feedback -> 7-balance (final)` | 0 | 0 | 0 | stack balance repair (no-op) |
 
-Two observations follow from the numbers. The balance pass changes nothing, because the lowering already emits every block with a zero stack effect, so the pass is a safety net rather than a phase. The feedback pass reaches about one percent of the program, because it can only couple registers that are written right before the coupling. The ghost pass grows the declared context by an order of magnitude, since it allocates scratch slots per block.
+Two observations follow from the numbers. The balance pass changes nothing, because the lowering already emits every block with a zero stack effect, so the pass is a safety net rather than a phase. The feedback pass reaches the registers that are written right before a coupling, and additionally the VPC at the entry of every CFF block, where the dispatcher guarantees the token of that block. The ghost pass allocates one scratch slot per block and reuses it for all of that block's ghosts, so the declared context grows with the number of blocks rather than with the number of ghost operations.
 
 ## Negative controls
 
