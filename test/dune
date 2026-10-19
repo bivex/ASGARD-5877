@@ -145,6 +145,13 @@
   alcotest))
 
 (test
+ (name test_hw_binding)
+ (modules test_hw_binding)
+ (libraries
+  random_visa.stack_vm
+  alcotest))
+
+(test
  (name test_key_feedback_consistency)
  (modules test_key_feedback_consistency)
  (libraries

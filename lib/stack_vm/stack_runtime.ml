@@ -9,6 +9,14 @@ type runtime_config = {
   crypt_reg : string;   (* VKEY *)
   disp_reg : string;    (* VDISP *)
   ctx_reg : string;     (* VCTX *)
+  (* Bind the decryption key to the machine: the emulation differential
+     (CPUID/timer consistency) is mixed into the rolling key.  On real
+     hardware the penalty is zero and the decryption is unaffected; in a
+     slow emulator the key becomes wrong and the bytecode decrypts into
+     garbage, so the protected program fails closed.  Patching the probe
+     out therefore also breaks the decryption - the check cannot simply
+     be removed. *)
+  enable_hw_binding : bool;
 }
 
 let default_config = function
@@ -19,6 +27,7 @@ let default_config = function
       crypt_reg = "r12";
       disp_reg = "r13";
       ctx_reg = "r14";
+      enable_hw_binding = true;
     }
   | AArch64 -> {
       arch = AArch64;
@@ -27,6 +36,7 @@ let default_config = function
       crypt_reg = "x21";
       disp_reg = "x22";
       ctx_reg = "x23";
+      enable_hw_binding = true;
     }
   | RV64 -> {
       arch = RV64;
@@ -35,6 +45,7 @@ let default_config = function
       crypt_reg = "s3";
       disp_reg = "s4";
       ctx_reg = "s5";
+      enable_hw_binding = true;
     }
 
 let emit_entry_stub cfg total_slots =
@@ -987,6 +998,10 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
            block [
              (var "vm" $. "vkey") := call "ASG_UNMASK_KEY" [ i32 prog.entry_id ];
            ]);
+        (if cfg.enable_hw_binding then
+           raw
+             "vm.vkey ^= asgard_anti_emulation::evaluate_emulation_differential();"
+         else raw "");
         raw "vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);";
         decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, 1048576)) "host_stack";
         let_u64 "sp_val" (c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L));
@@ -1264,7 +1279,19 @@ let generate_c_runtime
     | None -> Stack_encoder.encode_program prog
   in
   let decls = emit_stack_runtime_hpp_decls ~external_symbols ~constants ~enc cfg prog in
-  let raw = Cpp_codegen.Cpp_printer.render_top_decls decls in
+  (* The emulation differential probe (CPUID / timer consistency).  It is
+     mixed into the decryption key, so the header has to carry it. *)
+  let hw_binding_header =
+    if cfg.enable_hw_binding then
+      Cpp_codegen.Runtime_probes.emit_anti_emulation_probes ()
+    else ""
+  in
+  (* The probe namespace has to come FIRST: the runtime body calls
+     evaluate_emulation_differential() while initialising the key. *)
+  let raw =
+    (if hw_binding_header = "" then "" else hw_binding_header ^ "\n")
+    ^ Cpp_codegen.Cpp_printer.render_top_decls decls
+  in
   if obfuscate_runtime then
     scramble_c_runtime ~seed:enc.seed_key ~strip_comments:true raw
   else

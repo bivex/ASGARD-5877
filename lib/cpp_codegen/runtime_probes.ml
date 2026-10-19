@@ -24,20 +24,10 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
     uint64_t penalty = 0;
 
 #if defined(__x86_64__) || defined(_M_X64)
-    // 1. CPUID Hypervisor Discovery & Cycle Ratio Probe
-#if defined(_MSC_VER)
-    int cpuInfo[4] = { 0 };
-    __cpuid(cpuInfo, 1);
-    if ((cpuInfo[2] >> 31) & 1) {
-        penalty ^= 0x5877CAFEBABE1337ULL; // Hypervisor bit detected
-    }
-#else
-    uint32_t eax = 1, ebx = 0, ecx = 0, edx = 0;
-    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
-    if ((ecx >> 31) & 1) {
-        penalty ^= 0x5877CAFEBABE1337ULL; // Hypervisor bit detected
-    }
-#endif
+    // 1. Cycle Ratio Probe (the hypervisor bit moved to
+    // evaluate_hypervisor_bit(): a virtual machine is a legitimate
+    // deployment target, so it must not be treated as an emulator by
+    // default).
     uint64_t min_dt = ~0ULL;
     for (int _trial = 0; _trial < 5; ++_trial) {
 #if defined(_MSC_VER)
@@ -144,6 +134,32 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
     }
 #endif
 
+    return penalty;
+}
+
+// The hypervisor-present bit of CPUID leaf 1.  A virtual machine is a
+// legitimate deployment target for a license, so this probe is OPT-IN:
+// the caller decides whether a hypervisor is acceptable.  It is kept
+// separate from evaluate_emulation_differential() because a penalty
+// there is mixed into the decryption key, and a hypervisor would then
+// break every licensed VM.
+static inline __attribute__((always_inline)) uint64_t evaluate_hypervisor_bit() noexcept {
+    uint64_t penalty = 0;
+#if defined(__x86_64__) || defined(_M_X64)
+#if defined(_MSC_VER)
+    int cpuInfo[4] = { 0 };
+    __cpuid(cpuInfo, 1);
+    if ((cpuInfo[2] >> 31) & 1) {
+        penalty ^= 0x5877CAFEBABE1337ULL; // Hypervisor bit detected
+    }
+#else
+    uint32_t eax = 1, ebx = 0, ecx = 0, edx = 0;
+    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    if ((ecx >> 31) & 1) {
+        penalty ^= 0x5877CAFEBABE1337ULL; // Hypervisor bit detected
+    }
+#endif
+#endif
     return penalty;
 }
 

@@ -9,6 +9,12 @@ type runtime_config = {
   crypt_reg : string;   (* VKEY *)
   disp_reg : string;    (* VDISP *)
   ctx_reg : string;     (* VCTX *)
+  (** [enable_hw_binding] mixes the emulation differential (CPUID/timer
+      consistency) into the rolling key: zero on real hardware, so the
+      decryption is unaffected, but non-zero in a slow emulator, where
+      the bytecode then decrypts into garbage.  Patching the probe out
+      breaks the decryption as well. *)
+  enable_hw_binding : bool;
 }
 
 val default_config : target_arch -> runtime_config

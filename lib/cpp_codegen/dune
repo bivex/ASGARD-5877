@@ -1,5 +1,5 @@
 (library
  (name cpp_codegen)
  (public_name random_visa.cpp_codegen)
- (modules cpp_ast cpp_dsl cpp_ast_obf cpp_printer cpp_validator)
+ (modules cpp_ast cpp_dsl cpp_ast_obf cpp_printer cpp_validator runtime_probes)
  (libraries unix))

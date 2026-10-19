@@ -4,11 +4,11 @@ let emit_direct_syscalls_header = Runtime_syscalls.emit_direct_syscalls_header
 
 let emit_dual_mapping_header = Runtime_dual_map.emit_dual_mapping_header
 
-let emit_anti_emulation_probes = Runtime_probes.emit_anti_emulation_probes
+let emit_anti_emulation_probes = Cpp_codegen.Runtime_probes.emit_anti_emulation_probes
 
 let emit_introspective_smc_header = Runtime_smc.emit_introspective_smc_header
 
-let emit_memory_integrity_scanner_header = Runtime_probes.emit_memory_integrity_scanner_header
+let emit_memory_integrity_scanner_header = Cpp_codegen.Runtime_probes.emit_memory_integrity_scanner_header
 
 let emit_nanomite_engine_header = Runtime_smc.emit_nanomite_engine_header
 
