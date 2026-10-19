@@ -96,7 +96,32 @@ ASGARD_DUMP_JSON_DIR=binaries/protected_dump \
 
 The seed is part of the recipe: the protection passes derive their own seeds from it, so without a fixed seed the phase shapes differ between runs.
 
-The input has to be a program the ARM64 lifter accepts. The assembly corpus under `examples/corpus/` does not lift with the current lifter (`Unsupported or invalid ARM64 instruction: mov`), so it cannot be used as protection input as-is; a generated `.s` (the output of an earlier protection run) or a compiler-produced ARM64 object works.
+For a fully reproducible run, use the tracked assembly corpus under `examples/corpus/`. It is x86-64 in Intel syntax, so it goes through the `protect` command, not `protect-arm64`:
+
+```bash
+eval "$(opam env)"
+ASGARD_DUMP_JSON_DIR=binaries/x86_dump \
+  dune exec bin/main.exe -- protect --input examples/corpus/fn01_murmur_hash.s \
+    --output-dir ./out --engine stack --compile false --seed 1337
+octave --no-gui -q scripts/run_pipeline_compat.m binaries/x86_dump
+```
+
+The input is tracked, the seed is fixed and the harness is deterministic, so this run reproduces exactly:
+
+```text
+  1-lowered          blocks=1   ops=67     ctx_slots=38
+  2a-pre-superop     blocks=1   ops=63     ctx_slots=38
+  2-amplified        blocks=1   ops=403    ctx_slots=54
+  2a-post-superop    blocks=1   ops=353    ctx_slots=54
+  2b-mba             blocks=1   ops=429    ctx_slots=54
+  3-cff              blocks=3   ops=435    ctx_slots=55
+  4-spaghetti        blocks=4   ops=436    ctx_slots=55
+  5-ghost            blocks=4   ops=1008   ctx_slots=136
+  6-feedback         blocks=4   ops=1012   ctx_slots=136
+  7-balance (final)  blocks=4   ops=1012   ctx_slots=136
+```
+
+The ARM64 path needs a program the ARM64 lifter accepts: a generated `.s` (the output of an earlier protection run) or a compiler-produced ARM64 object. The x86 corpus is rejected there by design, not by a defect (`Unsupported or invalid ARM64 instruction: mov`).
 
 The human-readable listing of the same phases is available through the `--dump-bytecode` flag or the `ASGARD_DUMP_BYTECODE=1` environment variable:
 
