@@ -85,8 +85,7 @@ let entangle_with_accumulator ?(flags_live = false) ~(acc_slot : int) (delta : i
     on whether architectural flags are live: GhostArith contains [Add], which
     overwrites the flags, so it is banned while a produced flag value is
     still needed by a later Jcc/Setcc/Cmov/PushFlags. *)
-let emit_ghost ?(entangle = true) rng ctx entangle_slot stack_depth flags_live =
-  let scratch () = Context_allocator.alloc_scratch ctx in
+let emit_ghost ?(entangle = true) rng ~scratch_slot ctx entangle_slot stack_depth flags_live =
   let kinds =
     match (stack_depth >= 1, flags_live) with
     | true,  false -> [| GhostPushPop; GhostDupDrop; GhostArith; GhostKeyAdj; GhostFlags; GhostMemRead |]
@@ -101,24 +100,24 @@ let emit_ghost ?(entangle = true) rng ctx entangle_slot stack_depth flags_live =
     (entangle_with_accumulator ~flags_live ~acc_slot:entangle_slot imm, imm)
   | GhostPushPop ->
     let imm = next_int64 rng in
-    ([ PushImm imm; PopReg (scratch ()) ], 0L)
+    ([ PushImm imm; PopReg scratch_slot ], 0L)
   | GhostDupDrop ->
-    ([ Dup; PopReg (scratch ()) ], 0L)
+    ([ Dup; PopReg scratch_slot ], 0L)
   | GhostArith when entangle ->
     let a = next_int64 rng in
     let b = next_int64 rng in
     let sum = Int64.add a b in
     let ghost_core =
       if flags_live then
-        [ PushFlags; PushImm a; PushImm b; Add; PopReg (scratch ()); PopFlags ]
+        [ PushFlags; PushImm a; PushImm b; Add; PopReg scratch_slot; PopFlags ]
       else
-        [ PushImm a; PushImm b; Add; PopReg (scratch ()) ]
+        [ PushImm a; PushImm b; Add; PopReg scratch_slot ]
     in
     (ghost_core @ entangle_with_accumulator ~flags_live ~acc_slot:entangle_slot sum, sum)
   | GhostArith ->
     let a = next_int64 rng in
     let b = next_int64 rng in
-    ([ PushImm a; PushImm b; Add; PopReg (scratch ()) ], 0L)
+    ([ PushImm a; PushImm b; Add; PopReg scratch_slot ], 0L)
   | GhostKeyAdj ->
     let d = ref (next_int64 rng) in
     while Int64.equal !d 0L do d := next_int64 rng done;
@@ -127,7 +126,7 @@ let emit_ghost ?(entangle = true) rng ctx entangle_slot stack_depth flags_live =
     ([ PushFlags; PopFlags ], 0L)
   | GhostMemRead ->
     let sp_slot = Context_allocator.slot_of_reg ctx Register.rsp in
-    ([ PushReg sp_slot; ReadMem 8; PopReg (scratch ()) ], 0L)
+    ([ PushReg sp_slot; ReadMem 8; PopReg scratch_slot ], 0L)
 
 (** [insert_ghosts_into_ops rng ctx ops ghost_rate] walks through [ops]
     and inserts ghost sequences at each non-terminator gap with probability
@@ -136,7 +135,7 @@ let emit_ghost ?(entangle = true) rng ctx entangle_slot stack_depth flags_live =
     a gap where produced flags are still live.
     Data-Flow Entanglement (P1-02): chains ghost computations into execution
     checksum Sigma_{exec} bound to effective memory addresses. *)
-let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot rng ctx ops ghost_rate =
+let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_slot rng ctx ops ghost_rate =
   let checksum = ref 0L in
   let depth = ref 0 in
   let result = ref [] in
@@ -144,7 +143,9 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot rng ctx ops ghost_r
   let live = Stack_flag_liveness.analyze_list ops in
   let idx = ref 0 in
   let emit_ghost_here flags_live =
-    let ghost_ops, delta = emit_ghost ~entangle rng ctx entangle_slot !depth flags_live in
+    let ghost_ops, delta =
+      emit_ghost ~entangle ~scratch_slot rng ctx entangle_slot !depth flags_live
+    in
     checksum := Int64.add !checksum delta;
     List.iter (fun gop ->
       emit gop;
@@ -235,7 +236,9 @@ let default_ghost_config seed = {
   entangle = true;
 }
 
-(** [apply_block ?entangle_slot cfg ctx block] applies ghost padding to a single block. *)
+(** [apply_block ?entangle_slot cfg ctx block] applies ghost padding to a
+    single block.  The scratch slot the ghost sequences pop into is
+    allocated once per block and reused by every ghost of that block. *)
 let apply_block ?entangle_slot cfg ctx block =
   let entangle_slot =
     match entangle_slot with
@@ -243,7 +246,16 @@ let apply_block ?entangle_slot cfg ctx block =
     | None -> if cfg.entangle then Context_allocator.alloc_scratch ctx else 0
   in
   let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * 0x6B7))) in
-  let new_ops = insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot rng ctx block.ops cfg.ghost_rate in
+  (* One scratch slot per block, reused by every ghost of that block: a
+     ghost sequence is self-contained (it pushes and pops within the
+     sequence), so the value is dead when the sequence ends.  Allocating
+     a fresh slot per ghost grew the declared context by an order of
+     magnitude - the same order as the number of ghost sequences. *)
+  let scratch_slot = Context_allocator.alloc_scratch ctx in
+  let new_ops =
+    insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot ~scratch_slot rng ctx
+      block.ops cfg.ghost_rate
+  in
   (* If max_ghosts is set, trim ghost ops beyond the limit *)
   let new_ops =
     if cfg.max_ghosts <= 0 then new_ops
@@ -256,7 +268,8 @@ let apply_block ?entangle_slot cfg ctx block =
         (* Keep real ops and first max_ghosts ghost ops; rebuild *)
         let rng2 = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * 0x6B7))) in
         let capped_rate = cfg.ghost_rate * cfg.max_ghosts / (max 1 ghost_count) in
-        insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot rng2 ctx block.ops capped_rate
+        insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot ~scratch_slot rng2 ctx
+          block.ops capped_rate
       end
     end
   in
