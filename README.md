@@ -202,7 +202,9 @@ ASGARD-5877/
 │   ├── REAL_WORLD_BENCHMARKS.md  # Production benchmark corpus and DRS profiling
 │   ├── VM_PROTECTOR.md           # VM architecture, handlers, and trampoline design
 │   ├── ENTROPY_MODEL.md          # Information-theoretic entropy models
-│   └── FORMAL_VERIFICATION.md    # Formal verification and Sail specifications
+│   ├── FORMAL_VERIFICATION.md    # Formal verification and Sail specifications
+│   └── threats/                  # Academic threat analyses mapped to the engine
+│       └── 2608.26651.md         # Shared-mask leakage and lattice recovery
 ├── examples/                     # Practical Protection Examples
 │   ├── license_check.c           # Boundary marker protection demo
 │   ├── demo_c_app.c              # Whole-application protection demo
@@ -483,6 +485,7 @@ ASGARD-5877 includes **466+ tests** across **43 suites** verified on every build
 - [`docs/PIPELINE_COMPAT_AUDIT.md`](docs/PIPELINE_COMPAT_AUDIT.md): Phase-by-phase compatibility audit of the ten Stack-VM protection passes (JSON phase dumps plus an independent MATLAB/Octave model of the runtime invariants).
 - [`docs/ENTROPY_MODEL.md`](docs/ENTROPY_MODEL.md): Information-theoretic entropy verification and Shannon metric models.
 - [`docs/FORMAL_VERIFICATION.md`](docs/FORMAL_VERIFICATION.md): Formal Sail ISA verification and property testing proofs.
+- [`docs/threats/2608.26651.md`](docs/threats/2608.26651.md): Threat analysis of shared-secret reuse and lattice recovery (LatticeLeak), plus the transfer rules for per-site independent masking in this repository.
 - [`docs/archive/`](docs/archive/): Archived specifications and completed roadmaps ([`AUDIT_TODO.md`](docs/archive/AUDIT_TODO.md), [`CPP_TODO.md`](docs/archive/CPP_TODO.md), [`Stack-VM.md`](docs/archive/Stack-VM.md), [`idasql.md`](docs/archive/idasql.md), [`ARCHITECTURE.md`](docs/archive/ARCHITECTURE.md)).
 
 ---
