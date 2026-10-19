@@ -52,3 +52,4 @@ examples/nn_metamorph/results/results.jsonl
 examples/nn_metamorph/traces/
 /binaries/pipeline_dump
 /binaries/pipeline_dump_adv
+octave-workspace

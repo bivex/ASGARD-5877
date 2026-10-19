@@ -480,6 +480,7 @@ ASGARD-5877 includes **466+ tests** across **43 suites** verified on every build
 - [`docs/PARALLELS_WINDOWS_DEBUGGING.md`](docs/PARALLELS_WINDOWS_DEBUGGING.md): Running and debugging ASGARD-5877 on Windows ARM64 via Parallels Desktop from macOS (MSVC `cl.exe`, WinDbg/CDB automation, nanomite VEH, tripwire diagnostics).
 - [`docs/REAL_WORLD_BENCHMARKS.md`](docs/REAL_WORLD_BENCHMARKS.md): Real-world C production benchmark corpus (OpenSSL, Coreutils, SQLite, WireGuard, Zstandard), DRS profiling, overhead analysis, and ARM64 NEON lifter integration.
 - [`docs/VM_PROTECTOR.md`](docs/VM_PROTECTOR.md): In-depth guide to VM architecture, handlers, CFF, and trampoline generation.
+- [`docs/PIPELINE_COMPAT_AUDIT.md`](docs/PIPELINE_COMPAT_AUDIT.md): Phase-by-phase compatibility audit of the ten Stack-VM protection passes (JSON phase dumps plus an independent MATLAB/Octave model of the runtime invariants).
 - [`docs/ENTROPY_MODEL.md`](docs/ENTROPY_MODEL.md): Information-theoretic entropy verification and Shannon metric models.
 - [`docs/FORMAL_VERIFICATION.md`](docs/FORMAL_VERIFICATION.md): Formal Sail ISA verification and property testing proofs.
 - [`docs/archive/`](docs/archive/): Archived specifications and completed roadmaps ([`AUDIT_TODO.md`](docs/archive/AUDIT_TODO.md), [`CPP_TODO.md`](docs/archive/CPP_TODO.md), [`Stack-VM.md`](docs/archive/Stack-VM.md), [`idasql.md`](docs/archive/idasql.md), [`ARCHITECTURE.md`](docs/archive/ARCHITECTURE.md)).
