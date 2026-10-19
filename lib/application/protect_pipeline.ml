@@ -113,6 +113,7 @@ let run
             close_out oc_chaff;
 
             (* 4b. Optional address binding probe (Anti-VMPredator Phase 6) *)
+            let resolved_addr_key = ref None in
             (match pkg.rebind_address with
             | Some f when compile_and_run ->
                 (match toolchain with
@@ -151,6 +152,7 @@ let run
                                    let oc_h2 = open_out hdr_path in
                                    output_string oc_h2 hpp2;
                                    close_out oc_h2;
+                                   resolved_addr_key := Some hex;
                                    print_endline (Printf.sprintf "address binding active, D=0x%s" hex)
                                  with Failure err ->
                                    prerr_endline (Printf.sprintf "address binding probe parse warning: %s (fallback to mask 0)" err))
@@ -228,12 +230,33 @@ let run
               else (None, None)
             in
 
+            (* The address binding key is only known here: the probe
+               resolves it from the load address of the built binary.  Put
+               it into the protection report, so the report states the
+               value that was actually bound. *)
+            let metrics =
+              match !resolved_addr_key with
+              | None -> pkg.metrics
+              | Some hex ->
+                  (* insert before the closing separator, not after it *)
+                  let sep = "===============================================" in
+                  let summary = pkg.metrics.formatted_summary in
+                  let n = String.length summary in
+                  let sep_len = String.length sep in
+                  let body =
+                    if n > sep_len then String.sub summary 0 (n - sep_len) else summary
+                  in
+                  { pkg.metrics with
+                    formatted_summary =
+                      body
+                      ^ Printf.sprintf "- Address Binding: Active (D=0x%s)\n%s" hex sep }
+            in
             Ok {
               header_path = hdr_path;
               runner_path;
               bytecode_path = bc_path;
               bytecode_length_bytes = List.length pkg.bytecode * 8;
-              metrics = pkg.metrics;
+              metrics;
               binary_path = bin_artifact;
               execution_output = exec_result;
             }

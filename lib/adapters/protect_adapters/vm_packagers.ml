@@ -221,6 +221,7 @@ let compute_shannon_entropy (b : bytes) : float =
     !entropy
 
 let make_stack_metrics
+    (native_cfg : Protection_config.t)
     ?(amplifier_info = "Bytecode amplification: N/A")
     ?(superop_info   = "Superoperator fusion: N/A")
     ?(spaghetti_info = "Spaghetti splitting: N/A")
@@ -247,9 +248,55 @@ let make_stack_metrics
     if compact_imm then "Hybrid {i32, i64} (Compact Polymorphic)"
     else "Fixed i64 (Uniform 8-byte)"
   in
+  (* Switch board: every protection pass and runtime feature with the
+     state it was configured in, so a report states what was actually
+     enabled instead of leaving it to the reader to infer. *)
+  let pass_switch name enabled note =
+    Printf.sprintf "    [%s] %s%s" (if enabled then "ON " else "OFF") name
+      (if enabled || note = "" then "" else " (" ^ note ^ ")")
+  in
+  let pass_board =
+    String.concat "\n"
+      [
+        pass_switch "Superoperator Fusion" native_cfg.stack_vm.superoperators
+          "disabled in configuration";
+        pass_switch "Bytecode Amplification" true "";
+        pass_switch "MBA Constant Synthesis" true "";
+        pass_switch "Virtual CFG Flattening" true "";
+        pass_switch "Spaghetti CFG Splitting" true "";
+        pass_switch "Ghost Stack Padding" true "";
+        pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
+          "disabled in configuration";
+        pass_switch "Stack Balance Repair" true "";
+        pass_switch "VSP Stack Value Whitening" true "";
+        pass_switch "Opcode Polymorphism" true "";
+        pass_switch "Compact Immediate Encoding" native_cfg.stack_vm.compact_imm
+          "disabled in configuration";
+        pass_switch "Field Layout Randomization" native_cfg.stack_vm.layout_randomization
+          "disabled in configuration";
+        pass_switch "C++ Runtime Hardening" native_cfg.stack_vm.runtime_hardening
+          "disabled in configuration";
+        pass_switch "Address Binding" native_cfg.anti_pushan.address_bound
+          "disabled in configuration";
+        pass_switch "Anti-Pushan Rolling Key" native_cfg.anti_pushan.running_key
+          "disabled in configuration";
+        pass_switch "Anti-Tamper (SMC + probes)" native_cfg.anti_tamper.enabled
+          "disabled in configuration";
+        pass_switch "C-Macro Obfuscation" native_cfg.c_macro.enabled
+          "disabled in configuration";
+        pass_switch "EH Shadowing" native_cfg.eh_shadowing.enabled
+          "disabled in configuration";
+        pass_switch "Anti-VPC Tracking" native_cfg.anti_vpc.enabled
+          "disabled in configuration";
+        pass_switch "Memory Chaffing" native_cfg.memory_chaffing.enabled
+          "disabled in configuration";
+      ]
+  in
   let summary =
     Printf.sprintf
       "=== ASGARD-5877 Stack-VM Protection Report ===\n\
+       - Protection Passes (ON/OFF):\n\
+       %s\n\
        - Architecture: Stack-VM Execution Engine (Universal Logic + Rolling Key)\n\
        - Opcode Mapping: Dynamic Polymorphic ISA (Unique Build Permutation)\n\
        - VSP Stack Value Whitening: Enabled (Slot-Keyed XOR, Fibonacci-Prime Stride)\n\
@@ -270,7 +317,7 @@ let make_stack_metrics
        - Devirtualization Resistance Score (DRS): %.2f / 100.0\n\
        - Rolling Key Seed: 0x%016LX\n\
        ==============================================="
-      imm_width_info
+      pass_board imm_width_info
       amplifier_info
       superop_info
       spaghetti_info ghost_info feedback_info
@@ -540,6 +587,7 @@ module Stack_vm_packager : Vm_packager = struct
     let runner_source = Stack_vm.Stack_runtime.emit_runner_cpp bc_words in
     let metrics =
       make_stack_metrics
+        native_cfg
         ~compact_imm
         ~runtime_hardening:obfuscate_runtime
         ~amplifier_info
