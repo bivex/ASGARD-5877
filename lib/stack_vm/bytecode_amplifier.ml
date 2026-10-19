@@ -342,8 +342,17 @@ let amplify_stack_program
     match ctx with
     | Some c ->
         Context_allocator.reserve_slots c (scratch_base + 16);
-        max (scratch_base + 16) (Context_allocator.total_slots c)
-    | None -> scratch_base + 16
+        (* The declared context must never shrink below what the input
+           program already used: prog.context_slots is the size the
+           program was built for, while total_slots c is the allocator's
+           own counter.  They coincide after Ir_to_stack.lower_func, but
+           relying on that coupling would silently produce out-of-range
+           register accesses for any caller that does not keep them in
+           sync (the Stack_ir.InvalidContextSlot invariant would fire
+           and the emitted handlers would read past the context). *)
+        max (scratch_base + 16)
+          (max (Context_allocator.total_slots c) prog.context_slots)
+    | None -> max (scratch_base + 16) prog.context_slots
   in
   (* Детерминизм: порядок блоков фиксирован сортировкой id, иначе посев
      block_rng зависел бы от недетерминированного порядка Hashtbl.iter. *)

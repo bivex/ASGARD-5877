@@ -10,14 +10,18 @@
       • Path-forcing / NOP patching: forcing branches in a debugger or patching
         condition flags leaves the feedback registers desynchronized, causing
         all subsequent bytecode to decrypt into invalid opcodes and halt.
-*)
+
+    Every injected KeyFeedback immediately follows the write of the coupled
+    value into the coupled slot: the runtime hashes the live register while
+    the encryptor can only hash a static constant, so the two must agree
+    (see Stack_encoder.check_key_feedback_static).
+ *)
 
 open Stack_ir
 
 type feedback_config = {
   seed                : int64;
   feedback_rate       : int;   (** Probability (0–100) of injecting feedback on known registers *)
-  enable_cff_feedback : bool;  (** Inject VPC token feedback at CFF block entries *)
 }
 
 val default_feedback_config : int64 -> feedback_config
@@ -29,8 +33,6 @@ type feedback_stats = {
 }
 
 val apply_program :
-  ?vpc_slot:int ->
-  ?block_tokens:(int, int64) Hashtbl.t ->
   feedback_config ->
   program ->
   program

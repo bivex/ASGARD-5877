@@ -20,13 +20,19 @@ open Stack_vm.Stack_ir
 let out_dir =
   if Array.length Sys.argv > 1 then Sys.argv.(1) else "binaries/pipeline_dump"
 
-(* Adversarial mode: declare a context LARGER than the allocator knows
-   about (ctx.next_slot).  Ir_to_stack.lower_func keeps both in sync, so
-   the real pipeline never hits this - but the amplifier derives its
-   scratch base from the allocator while it derives the declared context
-   size from the allocator too, silently dropping prog.context_slots. *)
+(* Two adversarial modes for the analyzer:
+   - "--unbalanced": the input block leaves two values on the stack, so
+     every phase inherits a non-zero exit delta and only the balance pass
+     (phase 7) can repair it.  The compatibility matrix must show the
+     violation and the repair.
+   - "--adversarial-context": the declared context is larger than the
+     slot count the allocator knows about.  The amplifier must NOT shrink
+     the declared context (it used to, which turned the program's high
+     register slots into out-of-range accesses). *)
 let adversarial =
   Array.exists (fun a -> a = "--adversarial-context") Sys.argv
+let unbalanced =
+  Array.exists (fun a -> a = "--unbalanced") Sys.argv
 
 let block_count (prog : program) =
   Hashtbl.fold (fun _ _ acc -> acc + 1) prog.blocks 0
@@ -85,7 +91,15 @@ let make_input_program ~(ctx : Context_allocator.t) : program =
     ; Cmp                       (* flags: 0 != 1 -> NE               *)
     ; JccRel (1, Vm_ir.Flags.NE)
     ; Exit
-    ]
+    ] in
+  (* The unbalanced variant drops the PopRegs that drain the stack, so the
+     entry block exits with a non-zero delta. *)
+  let entry_ops =
+    if unbalanced then
+      List.filter
+        (fun op -> match op with PopReg _ -> false | _ -> true)
+        entry_ops
+    else entry_ops
   in
   let then_ops = [ PushImm 0xDEADL; PopReg 4; Exit ] in
   let else_ops = [ PushImm 0xBEEFL; PopReg 5; Exit ] in

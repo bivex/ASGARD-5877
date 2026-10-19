@@ -99,16 +99,34 @@ ASGARD_DUMP_BYTECODE=1 dune exec bin/main.exe -- protect-arm64 --input ./app.s -
 
 Both views describe the same program state: the JSON dump is written next to the listing at each phase boundary.
 
-## Negative control
+## Negative controls
 
-The audit is only meaningful if it can fail. The harness provides an adversarial mode in which the declared context size is larger than the slot count the allocator knows about:
+The audit is only meaningful if it can fail. The harness provides two adversarial modes.
+
+### Unbalanced input
+
+```bash
+dune exec examples/pipeline_dump/dump_pipeline.exe -- binaries/pipeline_dump_unbal --unbalanced
+octave --no-gui -q scripts/run_pipeline_compat.m binaries/pipeline_dump_unbal
+```
+
+The input block leaves values on the stack, so every phase inherits a non-zero exit delta. The matrix shows the violation from the first phase and the repair:
+
+```text
+  invariant              1    2    3    4    5    6    7    8    9
+  exit_delta_zero        .    .    .    .    .    .    .    .    F
+```
+
+`F` marks the transition that repairs the invariant: only the balance pass (phase 7) inserts the `PopReg` dummies that drain the stack.
+
+### Declared context larger than the allocator
 
 ```bash
 dune exec examples/pipeline_dump/dump_pipeline.exe -- binaries/pipeline_dump_adv --adversarial-context
 octave --no-gui -q scripts/run_pipeline_compat.m binaries/pipeline_dump_adv
 ```
 
-The amplifier derives its scratch base from the allocator but computes the new `context_slots` from the allocator only, so the declared context shrinks and register slots fall out of range. The matrix localizes the break to the transition `2a-pre-superop -> 2-amplified` and shows that a later pass grows the context again, which masks the violation from the invariant checker.
+The program declares a context larger than the slot count the allocator knows about, and uses register slots in the gap. The amplifier must not shrink the declared context, otherwise those accesses fall out of range; the matrix must show `slots_in_range` holding in every phase.
 
 ## Reading the report
 
@@ -139,7 +157,7 @@ One row per pass. `d_ops`, `d_blocks` and `d_slots` are the shape deltas, `invar
 
 ### Section 3: compatibility matrix
 
-Rows are invariants, columns are transitions. `H` means the invariant holds, `X` means the transition breaks it, `.` means it was already broken.
+Rows are invariants, columns are transitions. `H` means the invariant holds, `X` means the transition breaks it, `F` means the transition repairs it, `.` means it was already broken.
 
 ```text
   invariant              1    2    3    4    5    6    7    8    9
@@ -214,6 +232,10 @@ octave --no-gui -q scripts/run_mba_mod64_params.m
 ### `pipeline_compat: no phase dumps found`
 
 The audit was pointed at a directory without `phase_*.json` files. Generate the dumps first, or pass the correct directory as the first argument.
+
+### `Invalid_argument: block N: KeyFeedback expects ctx[M] = 0x...`
+
+The encoder refuses to encrypt a program whose state-feedback coupling is not reproducible. The runtime hashes the live register on a `KeyFeedback`, while the encryptor can only hash a static constant, so the coupled value must be statically known: either the feedback immediately follows the write of that value into the slot, or the entry context is declared with `~initial_ctx`. See the module documentation of `lib/stack_vm/stack_encoder.ml`.
 
 ### The audit reports a violation that the runtime does not report
 

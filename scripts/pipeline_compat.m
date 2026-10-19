@@ -1172,7 +1172,7 @@ end
 function report_matrix(phases, tr)
   disp('');
   disp('[3] COMPATIBILITY MATRIX: invariant x transition');
-  disp('    (H = holds, . = not applicable / already broken, X = broken here)');
+  disp('    (H = holds, X = broken here, F = repaired here, . = already broken)');
   disp('-------------------------------------------------------------------------');
   names = invariant_names(1:8);
   fprintf('  %-22s', 'invariant');
@@ -1185,6 +1185,8 @@ function report_matrix(phases, tr)
     for i = 1:numel(tr)
       if tr(i).broken(r)
         fprintf(' %-4s', 'X');
+      elseif tr(i).fixed(r)
+        fprintf(' %-4s', 'F');
       elseif tr(i).before(r)
         fprintf(' %-4s', 'H');
       else

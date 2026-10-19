@@ -191,6 +191,59 @@ let feedback_hash v =
   let v = v lxor (v lsr 33) in
   v
 
+(* Consistency check for KeyFeedback.
+   The runtime and the decoder hash the LIVE register value
+   (stack_handlers_emitter.ml: `val = vm->ctx[slot]`, and decode_all
+   below), while the encryptor can only hash a statically known constant
+   (the [exp] field of the op).  The two agree only if the slot provably
+   holds [exp] at that point.  Two ways to establish that:
+     (a) the feedback immediately follows a write of that value into the
+         coupled slot — SetRegImm (slot, exp) ; KeyFeedback (slot, exp)
+         or PushImm exp ; PopReg slot ; KeyFeedback (slot, exp);
+     (b) the value comes from the entry context, which the caller must
+         declare with [~initial_ctx] so the assumption is explicit.
+   Any other arrangement makes the encryptor's key schedule diverge from
+   the one the runtime reproduces, and the encrypted bytecode decrypts
+   into garbage.  Fail loudly at encode time instead of shipping it. *)
+let check_key_feedback_static ?(initial_ctx = []) (b : Stack_ir.block) =
+  let ops = Array.of_list b.ops in
+  let n = Array.length ops in
+  let entry_ctx = Hashtbl.create 8 in
+  List.iter (fun (slot, v) -> Hashtbl.replace entry_ctx slot v) initial_ctx;
+  (* The value of [slot] at position [i], if it is statically known. *)
+  let static_value_at slot i =
+    if i <= 0 then None
+    else
+      match ops.(i - 1) with
+      | Stack_ir.SetRegImm (s, v) when s = slot -> Some v
+      | Stack_ir.PopReg s when s = slot ->
+          if i < 2 then None
+          else (match ops.(i - 2) with Stack_ir.PushImm v -> Some v | _ -> None)
+      | _ -> None
+  in
+  for i = 0 to n - 1 do
+    match ops.(i) with
+    | Stack_ir.KeyFeedback (slot, exp) ->
+        let known =
+          match static_value_at slot i with
+          | Some v -> v = exp
+          | None ->
+              (match Hashtbl.find_opt entry_ctx slot with
+               | Some v -> v = exp
+               | None -> false)
+        in
+        if not known then
+          invalid_arg
+            (Printf.sprintf
+               "block %d: KeyFeedback expects ctx[%d] = 0x%Lx, but that value is \
+                not statically known at this point (the runtime hashes the live \
+                register, the encryptor can only hash a static constant; write \
+                the value into the slot right before the feedback, or declare \
+                the entry context with ~initial_ctx)"
+               b.id slot exp)
+    | _ -> ()
+  done
+
 type encrypted_bytecode = {
   bytes : bytes;
   block_offsets : (int, int) Hashtbl.t;
@@ -506,7 +559,7 @@ let encode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?(
   Buffer.to_bytes buf
 
 let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?layout ?(polymorphic = true)
-    ?(addr_mask = 0L) ?(compact_imm = false) prog =
+    ?(addr_mask = 0L) ?(compact_imm = false) ?(initial_ctx = []) prog =
   let resolved_op_map = match op_map with
     | Some m -> m
     | None -> if polymorphic then generate_opcode_map seed_key else default_opcode_map
@@ -530,6 +583,7 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?layout ?(polymorphic =
                       |> List.sort (fun a b -> compare a.id b.id) in
   List.iter (fun b ->
     Hashtbl.replace block_offsets b.id (Buffer.length plain_buf);
+    check_key_feedback_static ~initial_ctx b;
     List.iter (fun op ->
       let op_pos = Buffer.length plain_buf in
       encode_op_into ~compact_imm ~layout:resolved_layout resolved_op_map plain_buf op;

@@ -132,6 +132,14 @@ val encode_op_into :
   stack_op ->
   unit
 
+(** [encode_program] encrypts the program under a rolling key whose
+    evolution must match the one the runtime reproduces.  A KeyFeedback
+    hashes the LIVE register at runtime, so the encryptor can only hash a
+    static constant: the value in the slot must be statically known at
+    that point, either because the feedback immediately follows the write
+    of that value, or because the entry context is declared through
+    [~initial_ctx].  A program that violates this is rejected with
+    [Invalid_argument] instead of being encrypted into garbage. *)
 val encode_program :
   ?seed_key:int64 ->
   ?op_map:opcode_map ->
@@ -139,6 +147,7 @@ val encode_program :
   ?polymorphic:bool ->
   ?addr_mask:int64 ->
   ?compact_imm:bool ->
+  ?initial_ctx:(int * int64) list ->
   program ->
   encrypted_bytecode
 

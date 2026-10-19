@@ -2,7 +2,23 @@
     ───────────────────────────────────────────────────────
     Couples bytecode rolling key decryption with dynamic VM execution state,
     defeating static and isolated-block dynamic tracing attacks.
-*)
+
+    A KeyFeedback op makes the runtime hash the LIVE register value into
+    the rolling key.  The encryptor (Stack_encoder) can only hash a static
+    constant, so the two agree only when the feedback immediately follows
+    the write of that value into the coupled slot.  This pass therefore
+    only couples slots whose value it writes itself, right before the
+    feedback op.
+
+    The former "CFF block entry" coupling (coupling the key to the VPC
+    token on entry) was removed: the VPC holds the token of the
+    *previous* block at that point, which is not statically known, so the
+    encrypted key schedule could never match the one the runtime
+    reproduces - and the packager never supplied the token map anyway,
+    which made the feature dead code.  Re-enabling it requires the CFF
+    pass to export its token map and the coupling to be placed where the
+    VPC provably holds the current block's token.
+ *)
 
 open Stack_ir
 
@@ -39,13 +55,11 @@ let maybe rng prob = next_int rng 100 < prob
 type feedback_config = {
   seed                : int64;
   feedback_rate       : int;   (** Probability (0–100) of injecting feedback on known registers *)
-  enable_cff_feedback : bool;  (** Inject VPC token feedback at CFF block entries *)
 }
 
 let default_feedback_config seed = {
   seed;
   feedback_rate = 80;
-  enable_cff_feedback = true;
 }
 
 type feedback_stats = {
@@ -54,7 +68,7 @@ type feedback_stats = {
   feedback_injected : int;
 }
 
-let apply_block cfg ~rng ?entry_feedback block =
+let apply_block cfg ~rng block =
   let rec aux = function
     | [] -> []
     | SetRegImm (slot, imm) :: rest ->
@@ -70,29 +84,13 @@ let apply_block cfg ~rng ?entry_feedback block =
     | op :: rest ->
         op :: aux rest
   in
-  let ops = aux block.ops in
-  let ops_with_head =
-    match entry_feedback with
-    | Some (slot, token) -> KeyFeedback (slot, token) :: ops
-    | None -> ops
-  in
-  { block with ops = ops_with_head }
+  { block with ops = aux block.ops }
 
-let apply_program ?vpc_slot ?block_tokens cfg prog =
+let apply_program cfg prog =
   let rng = make_rng cfg.seed in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
   Hashtbl.iter (fun id b ->
-    let entry_feedback =
-      if cfg.enable_cff_feedback && id <> prog.entry_id then
-        match vpc_slot, block_tokens with
-        | Some vpc, Some tokens ->
-            (match Hashtbl.find_opt tokens id with
-             | Some t -> Some (vpc, t)
-             | None -> None)
-        | _ -> None
-      else None
-    in
-    Hashtbl.replace new_blocks id (apply_block cfg ~rng ?entry_feedback b)
+    Hashtbl.replace new_blocks id (apply_block cfg ~rng b)
   ) prog.blocks;
   { prog with blocks = new_blocks }
 

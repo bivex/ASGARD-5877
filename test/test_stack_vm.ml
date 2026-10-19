@@ -1952,7 +1952,10 @@ let test_state_feedback_rolling_key () =
     Exit;
   ] in
   let prog_tamper = make_program 0 [b_tamper] 8 in
-  let enc_tamper = Stack_encoder.encode_program ~seed_key prog_tamper in
+  (* The coupled value comes from the entry context here, so it has to be
+     declared: the encryptor can only hash a statically known constant. *)
+  let enc_tamper =
+    Stack_encoder.encode_program ~seed_key ~initial_ctx:[1, 0x1122334455667788L] prog_tamper in
 
   (* When slot 1 matches expected, executes cleanly and sets reg 0 to 42 *)
   let state_valid = run_bytecode ~initial_ctx:[1, 0x1122334455667788L] enc_tamper in
