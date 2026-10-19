@@ -383,7 +383,10 @@ module Stack_vm_packager : Vm_packager = struct
             (Int64.of_int (Random.State.bits rng))
             (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
         in
-        let superop_cfg = Stack_vm.Stack_superop_pass.default_superop_config superop_seed in
+        let superop_cfg =
+          { (Stack_vm.Stack_superop_pass.default_superop_config superop_seed) with
+            fusion_rate = 100 }
+        in
         note
           (Printf.sprintf
              "    Superoperator Fusion       fusion=%d%% rules=[AddImm SubImm AddII SubII SetRegImm AddRegImm] seed=0x%016LX"
@@ -404,10 +407,16 @@ module Stack_vm_packager : Vm_packager = struct
        Running amplifier after MBA would cause multiplicative explosion O(MBA * Amplifier) ~ 1000x.
        We also use adaptive_profile to automatically scale Horner degree (2..6) based on block size. *)
     let max_block_size = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> max acc (List.length b.ops)) prog.blocks 0 in
-    let amp_profile = Stack_vm.Bytecode_amplifier.adaptive_profile ~block_size:max_block_size () in
+    (* Strong setting: the heavy amplification profile for every block.
+       The stack pipeline amplifies BEFORE the MBA pass, so the
+       multiplicative explosion the adaptive profile guards against
+       (MBA * Amplifier) cannot happen here; the adaptive downgrade to
+       the light profile (Horner degree 2) only made the constant
+       synthesis cheap to recognise. *)
+    let amp_profile = Stack_vm.Bytecode_amplifier.default_heavy_profile in
     note
       (Printf.sprintf
-         "    Bytecode Amplification    horner_degree=%d bit_slice_lanes=%d expander_chord_len=%d expander_chord_rate=%d%% (adaptive, max block %d ops)"
+         "    Bytecode Amplification    horner_degree=%d bit_slice_lanes=%d expander_chord_len=%d expander_chord_rate=%d%% (heavy profile, max block %d ops)"
          amp_profile.horner_degree amp_profile.bit_slice_lanes amp_profile.expander_chord_len
          amp_profile.expander_chord_rate max_block_size);
     let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~ctx ~profile:amp_profile prog in
@@ -450,7 +459,7 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 19)
     in
-    let mba_cfg = Stack_vm.Stack_mba_pass.default_mba_config mba_seed in
+    let mba_cfg = { (Stack_vm.Stack_mba_pass.default_mba_config mba_seed) with mba_rate = 100 } in
     note
       (Printf.sprintf "    MBA Constant Synthesis     rate=%d%% seed=0x%016LX" mba_cfg.mba_rate
          mba_cfg.seed);
@@ -491,9 +500,10 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
     in
     let cur_b = Hashtbl.length prog.blocks in
-    let max_splits = max 16 (min 128 (cur_b / 4)) in
+    let max_splits = max 64 (min 512 (cur_b / 2)) in
     let spaghetti_cfg = {
       (Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed) with
+      split_rate = 100;
       max_blocks = cur_b + max_splits;
     } in
     note
@@ -512,7 +522,7 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 17)
     in
-    let ghost_cfg = Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed in
+    let ghost_cfg = { (Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed) with ghost_rate = 80 } in
     note
       (Printf.sprintf
          "    Ghost Stack Padding        rate=%d%% max_ghosts=%s entanglement=%s seed=0x%016LX"
@@ -535,7 +545,10 @@ module Stack_vm_packager : Vm_packager = struct
             (Int64.of_int (Random.State.bits rng))
             (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
         in
-        let feedback_cfg = Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed in
+        let feedback_cfg =
+          { (Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed) with
+            feedback_rate = 100 }
+        in
         note
           (Printf.sprintf "    State-Feedback Rolling Key rate=%d%% seed=0x%016LX"
              feedback_cfg.feedback_rate feedback_cfg.seed);

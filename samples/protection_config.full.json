@@ -1,21 +1,21 @@
 {
   "seed": 1337,
   "crypto": {
-    "rounds": 16,
+    "rounds": 32,
     "key_bits": 128
   },
   "bloat": {
-    "mode": "heavy",
-    "target_size_budget_kb": 1000,
-    "junk_density": 0.5
+    "mode": "insane",
+    "target_size_budget_kb": 2000,
+    "junk_density": 0.7
   },
   "cff": {
     "enabled": true,
     "obfuscate_states": true,
     "inject_opaque_predicates": true,
     "input_tainted_transitions": true,
-    "split_rate": 30,
-    "hub_count": 1
+    "split_rate": 100,
+    "hub_count": 4
   },
   "mba": {
     "enabled": true,
@@ -38,7 +38,7 @@
     "direct_syscalls": true
   },
   "vm_runtime": {
-    "num_dispatch_domains": 8,
+    "num_dispatch_domains": 16,
     "enable_junk_instructions": true,
     "enable_super_operators": true,
     "stack_scrambling": true,
@@ -73,7 +73,7 @@
   },
   "eh_shadowing": {
     "enabled": true,
-    "shadow_alloc_size": 32,
+    "shadow_alloc_size": 64,
     "interceptor_symbol": "tech_2601_interceptor"
   },
   "anti_vpc": {
@@ -84,7 +84,7 @@
   },
   "memory_chaffing": {
     "enabled": true,
-    "pool_size": 4096,
-    "chaff_ratio": 2.0
+    "pool_size": 16384,
+    "chaff_ratio": 4.0
   }
 }
