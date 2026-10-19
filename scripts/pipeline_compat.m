@@ -649,20 +649,21 @@ function ids = block_ids(phase)
 end
 
 function yes = is_split_part_of(a, b, cand, origin)
-  % A split part holds the TAIL of the block it was split from: the
-  % counterpart of the origin in the later phase ends with exactly these
-  % ops.
+  % A split part holds the TAIL of the block it was split from.  The
+  % block is still WHOLE in the earlier phase, so the tail has to be
+  % looked for there - in the later phase the origin block already
+  % contains only its first half.
   yes = false;
-  counter = find_block(b, origin);
-  if isempty(counter)
+  whole = find_block(a, origin);
+  if isempty(whole)
     return;
   end
   n = numel(cand.ops);
-  if n == 0 || numel(counter.ops) < n
+  if n == 0 || numel(whole.ops) < n
     return;
   end
   for k = 1:n
-    if ~strcmp(cand.ops{k}.name, counter.ops{numel(counter.ops) - n + k}.name)
+    if ~strcmp(cand.ops{k}.name, whole.ops{numel(whole.ops) - n + k}.name)
       return;
     end
   end

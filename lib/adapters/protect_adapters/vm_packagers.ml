@@ -463,7 +463,7 @@ module Stack_vm_packager : Vm_packager = struct
     note
       (Printf.sprintf "    MBA Constant Synthesis     rate=%d%% seed=0x%016LX" mba_cfg.mba_rate
          mba_cfg.seed);
-    let prog_mba = Stack_vm.Stack_mba_pass.apply_program mba_cfg prog in
+    let prog_mba = Stack_vm.Stack_mba_pass.apply_program ~ctx mba_cfg prog in
     let mba_info = Stack_vm.Stack_mba_pass.mba_stats prog prog_mba in
     let prog = prog_mba in
     dump_bytecode_trace ~phase:"2b-mba" prog;

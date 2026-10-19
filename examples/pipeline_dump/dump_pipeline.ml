@@ -148,7 +148,7 @@ let () =
 
   (* Phase 2b: MBA constant synthesis *)
   let mba_cfg = Stack_mba_pass.default_mba_config 0x2BL in
-  prog := Stack_mba_pass.apply_program mba_cfg !prog;
+  prog := Stack_mba_pass.apply_program ~ctx mba_cfg !prog;
   dump ~phase:"2b-mba" !prog;
 
   (* Phase 3: virtual CFG flattening *)

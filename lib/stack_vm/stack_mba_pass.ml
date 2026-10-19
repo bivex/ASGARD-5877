@@ -183,17 +183,42 @@ let synthesize_const rng c =
        let not_c = Int64.lognot c in
        [ PushImm not_c; PushImm 0L; Nor ])
 
+(* ── State-dependent noise around a synthesized constant ────────────────── *)
+(** A synthesized constant must not be distinguishable from the padding
+    the ghost pass injects: without a trace, an analyst has to be able
+    to take any "PushImm k" pair for noise.  We therefore prefix the
+    synthesis with exactly the shape the ghost pass uses
+    ([PushImm k; PopReg scratch]).
+
+    The value is unchanged: the pair is stack neutral (it pushes k and
+    writes it into a scratch slot) and it touches no flag, so the
+    constant, the flags and the key schedule are all unaffected.  What
+    changes is that a "mathematical" PushImm is no longer identifiable
+    by its surroundings. *)
+let noise_prefix rng scratch_slot =
+  let k = next_int64 rng in
+  [ PushImm k; PopReg scratch_slot ]
+
 (* ── Per-block rewriter ──────────────────────────────────────────────── *)
 (** Rewrites PushImm instructions with probability [mba_rate].
     Flag-liveness aware: synthesis is skipped when flags are live after
     the PushImm (every strategy ends with an instruction that sets flags). *)
-let rewrite_block rng mba_rate block =
+let rewrite_block ~rng ~scratch_slot mba_rate block =
   let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
   let new_ops =
     List.concat_map (fun (i, op) ->
       match op with
       | PushImm c when (not live.(i + 1)) && maybe rng mba_rate ->
-          synthesize_const rng c
+          (* The synthesis is prefixed with the same shape of padding the
+             ghost pass injects (a PushImm/PopReg pair into a scratch
+             slot).  The value is unchanged and no flag is touched, but a
+             "mathematical" PushImm is no longer identifiable by its
+             surroundings: without a trace it cannot be told apart from
+             stack padding. *)
+          (match scratch_slot with
+           | Some slot -> noise_prefix rng slot
+           | None -> [])
+          @ synthesize_const rng c
       | _ -> [ op ]
     ) (List.mapi (fun i op -> (i, op)) block.ops)
   in
@@ -211,16 +236,31 @@ let default_mba_config seed = {
   mba_rate = 75;    (* 75% of PushImm instructions get synthesized *)
 }
 
-let apply_block cfg block =
+let apply_block ?ctx cfg block =
   let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * 0xB7E1_5163))) in
-  rewrite_block rng cfg.mba_rate block
+  (* Without a context allocator there is no safe scratch slot: slot 0
+     is a program register, so the noise is omitted rather than
+     corrupting the program. *)
+  let scratch_slot =
+    match ctx with
+    | Some c -> Some (Context_allocator.alloc_scratch c)
+    | None -> None
+  in
+  rewrite_block ~rng ~scratch_slot cfg.mba_rate block
 
-let apply_program cfg prog =
+let apply_program ?ctx cfg prog =
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
   Hashtbl.iter (fun id b ->
-    Hashtbl.replace new_blocks id (apply_block cfg b)
+    Hashtbl.replace new_blocks id (apply_block ?ctx cfg b)
   ) prog.blocks;
-  { prog with blocks = new_blocks }
+  (* The noise writes into a scratch slot, so the declared context has to
+     grow with it - otherwise the slot access would be out of range. *)
+  let context_slots =
+    match ctx with
+    | Some c -> max prog.context_slots (Context_allocator.total_slots c)
+    | None -> prog.context_slots
+  in
+  { prog with blocks = new_blocks; context_slots }
 
 let mba_stats prog_before prog_after =
   let count_push_imm prog =

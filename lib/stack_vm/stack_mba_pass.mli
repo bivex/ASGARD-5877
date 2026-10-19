@@ -9,7 +9,7 @@ type mba_config = {
 
 val default_mba_config : int64 -> mba_config
 
-val apply_block   : mba_config -> block   -> block
-val apply_program : mba_config -> program -> program
+val apply_block   : ?ctx:Context_allocator.t -> mba_config -> block   -> block
+val apply_program : ?ctx:Context_allocator.t -> mba_config -> program -> program
 
 val mba_stats : program -> program -> string
