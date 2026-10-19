@@ -27,7 +27,7 @@ let test_horner_stack_eval () =
 
 let test_carry_chain_add () =
   let rng = Random.State.make [| 0x5877; 0x42 |] in
-  let s1 = 10 and s2 = 11 in
+  let s1 = 10 and s2 = 11 and sx = 12 and sy = 13 in
   let test_cases = [
     (100L, 250L);
     (0x123456789ABCDEF0L, 0xFEDCBA9876543210L);
@@ -36,7 +36,7 @@ let test_carry_chain_add () =
     (0L, 0L);
   ] in
   List.iter (fun (x, y) ->
-    let ops = Amp.emit_carry_chain_add rng ~s1 ~s2 in
+    let ops = Amp.emit_carry_chain_add rng ~s1 ~s2 ~sx ~sy in
     let st = create_state () in
     st.vstack <- [y; x];
     List.iter (step_op st) ops;
@@ -49,7 +49,7 @@ let test_carry_chain_add () =
 
 let test_carry_chain_sub () =
   let rng = Random.State.make [| 0x5877; 0x84 |] in
-  let s1 = 10 and s2 = 11 in
+  let s1 = 10 and s2 = 11 and sx = 12 and sy = 13 in
   let test_cases = [
     (250L, 100L);
     (100L, 250L);
@@ -58,7 +58,7 @@ let test_carry_chain_sub () =
     (0xFFFFFFFFFFFFFFFFL, 0xFFFFFFFFFFFFFFFFL);
   ] in
   List.iter (fun (x, y) ->
-    let ops = Amp.emit_carry_chain_sub rng ~s1 ~s2 in
+    let ops = Amp.emit_carry_chain_sub rng ~s1 ~s2 ~sx ~sy in
     let st = create_state () in
     st.vstack <- [y; x];
     List.iter (step_op st) ops;
@@ -165,6 +165,182 @@ let test_profiles_and_invariants () =
   let inv_res = Stack_vm.Stack_invariants.check_stack_invariants amplified in
   Alcotest.(check bool) "Amplified program satisfies stack invariants" true (Result.is_ok inv_res)
 
+(* ------------------------------------------------------------------ *)
+(* Differential property test (QCheck): amplified program must compute
+   the exact same final stack and context as the original, across all
+   three profiles. The generator is depth-tracked (no underflow) and
+   deliberately includes Setcc flag consumers right after flag-defining
+   ops — this is what catches flag-unfaithful replacements (a naive
+   PushFlags wrapper around a rewritten Add would restore STALE flags
+   and fail here). *)
+let conds = [| Vm_ir.Flags.E; Vm_ir.Flags.NE; Vm_ir.Flags.B; Vm_ir.Flags.AE;
+               Vm_ir.Flags.S; Vm_ir.Flags.NS; Vm_ir.Flags.L; Vm_ir.Flags.GE;
+               Vm_ir.Flags.LE; Vm_ir.Flags.G |]
+
+let build_random_program (seed : int) : program * (int * int64) list =
+  let rng = Random.State.make [| seed land 0x3FFFFFFF; 0xA0F5; 0x5EED |] in
+  let init_ctx = List.init 16 (fun i -> (i, Amp.rand_u64 rng)) in
+  let pick_int lo hi = lo + Random.State.int rng (hi - lo + 1) in
+  let rec loop depth n acc =
+    if n = 0 then acc
+    else
+      let p = Random.State.int rng 100 in
+      let next =
+        if p < 18 then
+          let c = Amp.rand_u64 rng in
+          loop (depth + 1) (n - 1) (PushImm c :: acc)
+        else if p < 28 then
+          loop (depth + 1) (n - 1) (PushReg (pick_int 0 15) :: acc)
+        else if p < 46 && depth >= 2 then
+          let op = match pick_int 0 4 with
+            | 0 -> Add | 1 -> Sub | 2 -> Mul | 3 -> Nor | _ -> Nand
+          in
+          loop (depth - 1) (n - 1) (op :: acc)
+        else if p < 56 && depth >= 2 then
+          let sh = match pick_int 0 2 with
+            | 0 -> Shl | 1 -> Shr | _ -> Sar
+          in
+          (* count на стеке: value ниже, count сверху *)
+          loop (depth - 1) (n - 1) (sh :: PushImm (Int64.of_int (pick_int 0 63)) :: acc)
+        else if p < 66 then
+          let c = conds.(pick_int 0 (Array.length conds - 1)) in
+          loop (depth + 1) (n - 1) (Setcc c :: acc)
+        else if p < 76 && depth >= 1 then
+          loop (depth - 1) (n - 1) (PopReg (pick_int 8 15) :: acc)
+        else if p < 84 && depth >= 1 then
+          loop (depth + 1) (n - 1) (Dup :: acc)
+        else if p < 92 && depth >= 2 then
+          loop depth (n - 1) (Swap :: acc)
+        else if p < 96 && depth >= 1 then
+          let c = Amp.rand_u64 rng in
+          let op = if pick_int 0 1 = 0 then AddImm c else SubImm c in
+          loop depth (n - 1) (op :: acc)
+        else
+          loop (depth + 1) (n - 1) (PushImm (Amp.rand_u64 rng) :: acc)
+      in
+      next
+  in
+  let n_ops = 20 + pick_int 0 20 in
+  let body = loop 0 n_ops [] in
+  (* drain: сбросить остаток стека в слоты 8..15, чтобы финальное
+     состояние стека было [] и сравнение было строгим *)
+  let rec drain depth acc =
+    if depth = 0 then acc
+    else drain (depth - 1) (PopReg (8 + (depth mod 8)) :: acc)
+  in
+  let ops = List.rev body @ drain (List.fold_left (fun d op -> d + stack_delta op) 0 body) [ Exit ] in
+  let blocks = Hashtbl.create 1 in
+  Hashtbl.replace blocks 0 { id = 0; label = "entry"; ops };
+  ({ entry_id = 0; blocks; context_slots = 16 }, init_ctx)
+
+let run_block ?initial_ctx ops =
+  let st = match initial_ctx with
+    | Some ctx -> create_state ~initial_ctx:ctx ()
+    | None -> create_state ()
+  in
+  List.iter (fun op -> if not st.halted then step_op st op) ops;
+  st
+
+let prop_amplify_semantics seed =
+  let prog, init_ctx = build_random_program seed in
+  let orig_block = Hashtbl.find prog.blocks 0 in
+  let orig_st = run_block ~initial_ctx:init_ctx orig_block.ops in
+  if orig_st.halted then
+    Printf.eprintf "generator produced a halting program (seed %d)\n" seed;
+  let orig_regs = List.init 16 (fun i -> get_reg orig_st i) in
+  let profiles : (string * Amp.amplification_profile) list = [
+    ("heavy", Amp.default_heavy_profile);
+    ("balanced", Amp.balanced_profile);
+    ("light", Amp.light_profile);
+  ] in
+  List.for_all
+    (fun (name, profile) ->
+      let rng = Random.State.make [| seed land 0x3FFFFFFF; (profile : Amp.amplification_profile).horner_degree; 0xA0F1 |] in
+      let amplified = Amp.amplify_stack_program rng ~profile prog in
+      let amp_block = Hashtbl.find amplified.blocks 0 in
+      let amp_st = run_block ~initial_ctx:init_ctx amp_block.ops in
+      let ok_stack = (amp_st.vstack = orig_st.vstack) in
+      let ok_regs =
+        List.for_all2 ( = ) orig_regs (List.init 16 (fun i -> get_reg amp_st i))
+      in
+      if not (ok_stack && ok_regs) then begin
+        Printf.eprintf "profile %s diverged on seed %d: stack_ok=%b regs_ok=%b\n"
+          name seed ok_stack ok_regs
+      end;
+      ok_stack && ok_regs)
+    profiles
+
+let prop_amplify_determinism seed =
+  (* один и тот же seed => побитово одинаковый амплифицированный байткод
+     (регрессия на недетерминизм Hashtbl.iter) *)
+  let prog, _ = build_random_program seed in
+  let build () =
+    let rng = Random.State.make [| seed land 0x3FFFFFFF; 6; 0xDE7E0 |] in
+    let amplified = Amp.amplify_stack_program rng ~profile:Amp.default_heavy_profile prog in
+    Stack_vm.Stack_ir.program_to_string amplified
+  in
+  build () = build ()
+
+let qcheck_amplify =
+  QCheck.(
+    Test.make ~count:150 ~name:"amplifier preserves exact semantics (all profiles)"
+      QCheck.int prop_amplify_semantics)
+
+let qcheck_determinism =
+  QCheck.(
+    Test.make ~count:20 ~name:"amplifier is seed-deterministic"
+      QCheck.int prop_amplify_determinism)
+
+(* Пин flag-unsafe пути: Setcc сразу за Add/Sub => флаги живы после
+   команды, замена обязана ре-дефайнить CC_OP_ADD/SUB (скрытый ре-экзек),
+   иначе Setcc увидит чужие флаги. Дифф-тест покрывает это вероятностно,
+   здесь — гарантированно. *)
+let test_flag_unsafe_add_sub () =
+  let rng = Random.State.make [| 0x5877; 0xF1A6 |] in
+  let run ops =
+    let st = create_state ~initial_ctx:[ (0, 0x123456789ABCDEF0L ) ] () in
+    List.iter (fun op -> if not st.halted then step_op st op) ops;
+    st
+  in
+  let cases = [
+    (0x7FFFFFFFFFFFFFFFL, 1L);   (* OF/ZF/CF-край *)
+    (0xFFFFFFFFFFFFFFFFL, 1L);   (* перенос через 2^64 *)
+    (0L, 0L);
+    (0x123456789ABCDEF0L, 0xFEDCBA9876543210L);
+  ] in
+  List.iter (fun (x, y) ->
+    let mk op =
+      let blocks = Hashtbl.create 1 in
+      Hashtbl.replace blocks 0
+        { id = 0; label = "entry";
+          ops = [ PushImm x; PushImm y; op; Setcc Vm_ir.Flags.G; PopReg 1;
+                  Setcc Vm_ir.Flags.B; PopReg 2; Exit ] };
+      ({ entry_id = 0; blocks; context_slots = 16 } : program)
+    in
+    let orig = mk Add in
+    let amp =
+      Amp.amplify_stack_program rng ~profile:Amp.default_heavy_profile orig in
+    (* замена действительно произошла (не fallback) *)
+    let amp_ops = (Hashtbl.find amp.blocks 0).ops in
+    Alcotest.(check bool) "flag-unsafe Add must be amplified (ops grow)"
+      true (List.length amp_ops > List.length (Hashtbl.find orig.blocks 0).ops * 4);
+    let st1 = run (Hashtbl.find orig.blocks 0).ops in
+    let st2 = run amp_ops in
+    Alcotest.(check int64) "flag-unsafe Add: Setcc B must match"
+      (get_reg st1 1) (get_reg st2 1);
+    Alcotest.(check int64) "flag-unsafe Add: Setcc B(2) must match"
+      (get_reg st1 2) (get_reg st2 2);
+    let orig_sub = mk Sub in
+    let amp_sub =
+      Amp.amplify_stack_program rng ~profile:Amp.default_heavy_profile orig_sub in
+    let st3 = run (Hashtbl.find orig_sub.blocks 0).ops in
+    let st4 = run (Hashtbl.find amp_sub.blocks 0).ops in
+    Alcotest.(check int64) "flag-unsafe Sub: Setcc G must match"
+      (get_reg st3 1) (get_reg st4 1);
+    Alcotest.(check int64) "flag-unsafe Sub: Setcc B(2) must match"
+      (get_reg st3 2) (get_reg st4 2)
+  ) cases
+
 let () =
   let open Alcotest in
   run "Bytecode Amplifier & Treewidth Expander" [
@@ -186,5 +362,11 @@ let () =
       [
         test_case "Program expansion >= 10x and semantic equivalence" `Quick test_program_amplification;
         test_case "Profiles and stack invariants preservation" `Quick test_profiles_and_invariants;
+      ] );
+    ( "differential_qcheck",
+      List.map QCheck_alcotest.to_alcotest [ qcheck_amplify; qcheck_determinism ] );
+    ( "flag_faithfulness",
+      [
+        test_case "flag-unsafe Add/Sub re-defines flags exactly" `Quick test_flag_unsafe_add_sub;
       ] );
   ]

@@ -1,16 +1,36 @@
-(** Mathematical Bytecode Amplifier & Treewidth Expander for ASGARD-5877:
-    Превращает компактный байткод базовых блоков в плотный несократимый граф
-    высокой алгебраической степени и большой древесной ширины (treewidth):
-    1. Horner Polynomial Constant Synthesis (уничтожение открытых констант над Z_{2^64})
-    2. Bit-Sliced Ripple/Lookahead Carry-Chain Adder/Sub Expansion
-    3. Long-Range Expander Def-Use Webbing (неразделимые связи против оконного анализа) *)
+(** Mathematical Bytecode Amplifier for ASGARD-5877:
+    уплотняет def-use граф базовых блоков стека-VM без изменения семантики.
+    Реализованные механизмы (все — тождества над Z_{2^64}):
+    1. Horner Polynomial Constant Synthesis (уничтожение открытых констант):
+       PushImm C → полином степени horner_degree с маскированием t_0.
+    2. Carry-Chain Add/Sub: двухстадийный ripple через минтерм-базис
+       NOR/NAND (мост к Mba_engine.Nullspace_mba) + кольцевой твист
+       k_odd * k_inv (Mba_engine.Metamorphic_ring). При живых флагах
+       замена завершается скрытым ре-дефайном CC_OP_ADD/SUB на
+       сохранённых операндах (sx, sy) — PushFlags-обёртка здесь
+       некорректна (восстановила бы до-командные флаги).
+    3. Def-Use Webbing: тождественный нуль Nor(r, Nor(r, r)), сцепляемый
+       со случайным якорем из кольцевого буфера последних K записей
+       (K = clamp expander_chord_len 1..6) — хорды дальнодействуют до
+       K записей назад, а не только к последней.
+    4. Ring twist после Mul/Nor/Nand/Shl/Shr/Sar/Div/Idiv: исходная
+       команда остаётся, поверх — нейтральный к флагам обратимый
+       скейлинг (x * k) * k^{-1} = x.
+
+    Что пока НЕ реализлено (заявлено в road-map, не здесь):
+    - bit_slice_lanes используется только как вкл/выкл carry-chain
+      (число полос не параметризует разложение);
+    - хорды внутриблочные (межблочных якорей через Context_allocator нет);
+    - treewidth-оценки в amplifier_stats нет (только op-count ratio);
+    - Div/Idiv/сдвиги переменной величины не пере-кодируются алгебраически
+      (только ring twist поверх). *)
 
 open Stack_ir
 
 type amplification_profile = {
-  horner_degree       : int;   (** Степень интерполяционного полинома констант (например, 4..8) *)
-  bit_slice_lanes     : int;   (** Декомпозиция сложения на полосы переносов (0 = отключено, 2 или 4) *)
-  expander_chord_len  : int;   (** Длина хорды дальнодействующего сцепления в графе (5..15) *)
+  horner_degree       : int;   (** Степень интерполяционного полинома констант (например, 2..8) *)
+  bit_slice_lanes     : int;   (** 0 = carry-chain выключен; > 0 = вкл (полосность пока не параметризует разложение) *)
+  expander_chord_len  : int;   (** Периодичность хорд (шаг) и размер кольца якорей K = clamp 1..6 *)
   expander_chord_rate : int;   (** Вероятность вставки expander knots (0..100) *)
 }
 
@@ -35,18 +55,35 @@ val eval_horner_polynomial : t0:int64 -> coeffs:int64 list -> int64
 val emit_horner_stack_insns :
   Random.State.t -> target_const:int64 -> degree:int -> stack_op list
 
-(** Генерация сети переносов для Add над Z_{2^64}.
-    Стековый дельта = -1 (эквивалентно Add). *)
+(** Кольцевой твист [PushImm k_odd; Mul; PushImm k_inv; Mul]:
+    значение- и флаго-сохраняющий (Mul нейтрален к флагам).
+    Стековый дельта = 0. *)
+val emit_ring_twist : Random.State.t -> stack_op list
+
+(** Минтерм-представления над парой регистров (мост к Nullspace_mba),
+    каждое оставляет одно значение на стеке. *)
+val push_or_regs : int -> int -> stack_op list
+val push_and_regs : int -> int -> stack_op list
+val push_xor_regs : int -> int -> stack_op list
+
+(** Скрытый ре-дефайн флагов CC_OP_ADD/SUB{src1=sx; src2=sy} после
+    carry-chain замены при живых флагах. Дельта = 0. *)
+val emit_flag_redef_add : int -> int -> stack_op list
+val emit_flag_redef_sub : int -> int -> stack_op list
+
+(** Сеть переносов для Add над Z_{2^64} (итог = s1 + s2, дельта = +1
+    от пустого стека; операнды считываются из s1/s2).
+    Исходные операнды сохраняются в sx/sy. *)
 val emit_carry_chain_add :
-  Random.State.t -> s1:int -> s2:int -> stack_op list
+  Random.State.t -> s1:int -> s2:int -> sx:int -> sy:int -> stack_op list
 
-(** Генерация сети переносов для Sub над Z_{2^64}.
-    Стековый дельта = -1 (эквивалентно Sub). *)
+(** Сеть переносов для Sub над Z_{2^64} (итог = s1 - s2).
+    Исходный y сохраняется в sy для ре-дефайна флагов. *)
 val emit_carry_chain_sub :
-  Random.State.t -> s1:int -> s2:int -> stack_op list
+  Random.State.t -> s1:int -> s2:int -> sx:int -> sy:int -> stack_op list
 
-(** Генерация алгебраического expander knot на вершине стека.
-    Стековый дельта = 0 (сохраняет значение, уплотняет граф Def-Use). *)
+(** Тождественный нуль Nor(r, Nor(r, r)) ≡ 0, сцепляемый с регистром-якорем
+    (дальнодействующая хорда def-use) или с вершиной стека. Дельта = 0. *)
 val emit_expander_web_knot :
   Random.State.t -> ?s_reg:int option -> unit -> stack_op list
 
@@ -54,10 +91,10 @@ val emit_expander_web_knot :
 val amplify_block :
   Random.State.t -> profile:amplification_profile -> scratch_base:int -> block -> block
 
-(** Трансформация программы Stack_ir:
-    увеличивает объем и вычислительную сложность байткода в 10..35 раз без мертвого кода (0% DCE loss) *)
+(** Трансформация программы Stack_ir (детерминизм: блоки обрабатываются
+    в порядке возрастания id). Увеличивает объем байткода без мертвого кода. *)
 val amplify_stack_program :
   Random.State.t -> ?ctx:Context_allocator.t -> profile:amplification_profile -> program -> program
 
-(** Статистика усиления (before vs after) *)
+(** Статистика усиления (before vs after; пока только op-count ratio) *)
 val amplifier_stats : program -> program -> string

@@ -39,6 +39,16 @@ let rand_u64 (rng : Random.State.t) : int64 =
   let lo = Int64.of_int (Random.State.bits rng) in
   Int64.logor (Int64.shift_left hi 34) (Int64.logor (Int64.shift_left mid 4) (Int64.logand lo 0xFL))
 
+(* Scratch-slot budget reserved by amplify_stack_program: 16 slots past
+   scratch_base.
+     base+0  s1      carry-chain work vector 1
+     base+1  s2      carry-chain work vector 2
+     base+2  sx      original x operand (flag re-definition)
+     base+3  sy      original y operand (flag re-definition)
+     base+4..base+9  anchor ring (K <= 6 write anchors for expander knots) *)
+let n_anchor_slots (profile : amplification_profile) : int =
+  max 1 (min 6 profile.expander_chord_len)
+
 (** 1. ПОЛИНОМИАЛЬНЫЙ СИНТЕЗ КОНСТАНТ ПО СХЕМЕ ГОРНЕРА НАД Z_{2^64}
     Пусть мы хотим получить константу C в точке t_0.
     Выбираем случайные старшие коэффициенты a_d, a_{d-1}, ..., a_1 \in Z_{2^64}.
@@ -94,6 +104,37 @@ let emit_horner_stack_insns (rng : Random.State.t) ~(target_const : int64) ~(deg
       in
       init_insns @ step_insns
 
+(* ------------------------------------------------------------------ *)
+(* Кольцевой твист (мост к Metamorphic_ring из mba_engine):
+   x * k_odd * k_inv == x в Z_{2^64}, k_odd нечетно, k_inv = k_odd^{-1}.
+   Mul в этой VM нейтрален к флагам (см. stack_flag_liveness), поэтому
+   твист после ЛЮБОЙ операции сохраняет и значение, и флаги. Стековый
+   дельта = 0. *)
+let emit_ring_twist (rng : Random.State.t) : stack_op list =
+  let k_odd = Int64.logor (rand_u64 rng) 1L in
+  let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
+  [ PushImm k_odd; Mul; PushImm k_inv; Mul ]
+
+(* ------------------------------------------------------------------ *)
+(* Минтерм-базис (мост к Nullspace_mba): NOR/NAND-представления
+   дизъюнктных минтермов над парой регистров. Каждый push оставляет
+   ровно одно значение на стеке. *)
+let push_or_regs (s1 : int) (s2 : int) : stack_op list =
+  (* s1 | s2 = Nand(Nor(s1, s1), Nor(s2, s2)) *)
+  [ PushReg s1; PushReg s1; Nor;
+    PushReg s2; PushReg s2; Nor;
+    Nand ]
+
+let push_and_regs (s1 : int) (s2 : int) : stack_op list =
+  (* s1 & s2 = Nor(Nor(s1, s1), Nor(s2, s2)) *)
+  [ PushReg s1; PushReg s1; Nor;
+    PushReg s2; PushReg s2; Nor;
+    Nor ]
+
+let push_xor_regs (s1 : int) (s2 : int) : stack_op list =
+  (* s1 ^ s2 = (s1 | s2) - (s1 & s2)  — числовое тождество над Z_{2^64} *)
+  push_or_regs s1 s2 @ push_and_regs s1 s2 @ [ Sub ]
+
 (** Вспомогательный генератор каскада переносов из регистров s1 и s2:
     Считает u_1 = s1 ^ s2, c_1 = 2*(s1 & s2), затем u_2 = u_1 ^ c_1, c_2 = 2*(u_1 & c_1),
     складывает их u_2 + c_2 и применяет обратимый кольцевой скейлинг k_odd * k_inv = 1. *)
@@ -101,12 +142,10 @@ let emit_carry_stages (rng : Random.State.t) ~(s1 : int) ~(s2 : int) : stack_op 
   let k_odd = Int64.logor (rand_u64 rng) 1L in
   let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
   [
-    (* u1 = (s1 | s2) - (s1 & s2) *)
-    (* (s1 | s2) = Nand(Nor(s1, s1), Nor(s2, s2)) *)
+    (* u1 = (s1 ^ s2), минтерм-разложение *)
     PushReg s1; PushReg s1; Nor;
     PushReg s2; PushReg s2; Nor;
     Nand;
-    (* (s1 & s2) = Nor(Nor(s1, s1), Nor(s2, s2)) *)
     PushReg s1; PushReg s1; Nor;
     PushReg s2; PushReg s2; Nor;
     Nor;
@@ -149,31 +188,49 @@ let emit_carry_stages (rng : Random.State.t) ~(s1 : int) ~(s2 : int) : stack_op 
     Mul;
   ]
 
+(** Скрытое переопределение флагов после замены Add/Sub на carry-chain.
+    Add/Sub в этой VM ДЕФАЙНЯТ флаги (CC_OP_ADD/SUB {src1; src2; dst}), и
+    если флаги живы после команды (flag liveness), замена обязана
+    воспроизвести этот дефайт побитово. PushFlags-обёртка здесь НЕ годится:
+    она восстановила бы ДОкомандные флаги. Вместо этого выполняем
+    настоящую команду на сохранённых копиях операндов (sx, sy) и
+    сбрасываем дубликат результата в scratch. Стековый дельта = 0. *)
+let emit_flag_redef_add (sx : int) (sy : int) : stack_op list =
+  [ PushReg sx; PushReg sy; Add; PopReg sx ]
+
+let emit_flag_redef_sub (sx : int) (sy : int) : stack_op list =
+  [ PushReg sx; PushReg sy; Sub; PopReg sx ]
+
 (** 2. НЕЛИНЕЙНАЯ ДЕКОМПОЗИЦИЯ СЛОЖЕНИЯ ЧЕРЕЗ КАСКАД ПЕРЕНОСОВ (Carry-Chain Expansion)
-    Стековый дельта = -1 (снимает 2 операнда, оставляет сумму). *)
-let emit_carry_chain_add (rng : Random.State.t) ~(s1 : int) ~(s2 : int) : stack_op list =
+    Стековый дельта = -1 (снимает 2 операнда, оставляет сумму).
+    Исходные операнды дополнительно сохраняются в sx/sy для переопределения флагов. *)
+let emit_carry_chain_add (rng : Random.State.t) ~(s1 : int) ~(s2 : int) ~(sx : int) ~(sy : int)
+    : stack_op list =
   [
-    PopReg s2; (* y *)
-    PopReg s1; (* x *)
+    PopReg s2; PushReg s2; PopReg sy;   (* сохранить y *)
+    PopReg s1; PushReg s1; PopReg sx;   (* сохранить x *)
   ] @ emit_carry_stages rng ~s1 ~s2
 
 (** 3. ДЕКОМПОЗИЦИЯ ВЫЧИТАНИЯ ЧЕРЕЗ ДОПОЛНЕНИЕ И КАСКАД ПЕРЕНОСОВ
     x - y = x + (~y + 1) в Z_{2^64}.
     Стековый дельта = -1. *)
-let emit_carry_chain_sub (rng : Random.State.t) ~(s1 : int) ~(s2 : int) : stack_op list =
+let emit_carry_chain_sub (rng : Random.State.t) ~(s1 : int) ~(s2 : int) ~(sx : int) ~(sy : int)
+    : stack_op list =
   [
-    PopReg s2; (* y *)
-    PopReg s1; (* x *)
+    PopReg s2; PushReg s2; PopReg sy;   (* сохранить y *)
+    PopReg s1; PushReg s1; PopReg sx;   (* сохранить x *)
     (* neg_y = Nor(y, y) + 1 *)
-    PushReg s2; PushReg s2; Nor;
+    PushReg sy; PushReg sy; Nor;
     PushImm 1L; Add;
     PopReg s2;
   ] @ emit_carry_stages rng ~s1 ~s2
 
-(** 4. ДАЛЬНОДЕЙСТВУЮЩЕЕ СЦЕПЛЕНИЕ ИНСТРУКЦИЙ (Expander Graph Def-Use Webbing)
-    Вплетает в вершину стека тождественный нуль:
-    Nor(w, Nor(w, w)) == 0L для любого w.
-    Стековый дельта = 0 (значение v на вершине стека сохраняется, но граф уплотняется). *)
+(** 4. СЦЕПЛЕНИЕ С ЯКОРЕМ ЗАПИСИ (Def-Use Webbing)
+    Вплетает в вершину стека тождественный нуль из дальнего якоря:
+    Nor(r, Nor(r, r)) == 0L для любого r. Стековый дельта = 0.
+    Якорь — один из K последних записанных регистров (кольцевой буфер
+    в amplify_block), поэтому хорда в графе def-use тянется назад до K
+    записей, а не только к последней. *)
 let emit_expander_web_knot (rng : Random.State.t) ?(s_reg : int option = None) () : stack_op list =
   match s_reg with
   | Some reg ->
@@ -207,43 +264,58 @@ let amplify_block
   let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
   let s1 = scratch_base in
   let s2 = scratch_base + 1 in
-  let s_reg = scratch_base + 2 in
+  let sx = scratch_base + 2 in
+  let sy = scratch_base + 3 in
+  let k_anchors = n_anchor_slots profile in
+  let anchors = Array.init k_anchors (fun i -> scratch_base + 4 + i) in
+  let anchor_j = ref 0 in
+  let pick_anchor () = anchors.(Random.State.int rng k_anchors) in
+  let maybe_knot phase =
+    if !anchor_j > 0
+       && phase mod max 1 profile.expander_chord_len = 0
+       && Random.State.int rng 100 < profile.expander_chord_rate
+    then emit_expander_web_knot rng ~s_reg:(Some (pick_anchor ())) ()
+    else []
+  in
   let new_ops =
     List.concat_map (fun (i, op) ->
       let flag_safe = not live.(i + 1) in
       match op with
       | PushImm c when flag_safe ->
           let horner = emit_horner_stack_insns rng ~target_const:c ~degree:profile.horner_degree in
-          if i mod profile.expander_chord_len = 0 && Random.State.int rng 100 < profile.expander_chord_rate then
-            horner @ emit_expander_web_knot rng ~s_reg:(Some s_reg) ()
-          else
-            horner
+          horner @ maybe_knot i
 
       | PushImm c ->
-          (* Флаги активны: безопасно оборачиваем через PushFlags/PopFlags *)
+          (* Флаги активны: безопасно оборачиваем через PushFlags/PopFlags
+             (PushImm не дефайнит флаги, поэтому восстановление до-командного
+             состояния корректно). *)
           [PushFlags] @
           emit_horner_stack_insns rng ~target_const:c ~degree:profile.horner_degree @
           [Swap; PopFlags]
 
-      | Add when flag_safe && profile.bit_slice_lanes > 0 ->
-          let carry = emit_carry_chain_add rng ~s1 ~s2 in
-          if i mod profile.expander_chord_len = 1 && Random.State.int rng 100 < profile.expander_chord_rate then
-            carry @ emit_expander_web_knot rng ()
-          else
-            carry
+      | Add when profile.bit_slice_lanes > 0 ->
+          let carry = emit_carry_chain_add rng ~s1 ~s2 ~sx ~sy in
+          if flag_safe then carry @ maybe_knot (i + 1)
+          else carry @ emit_flag_redef_add sx sy
 
-      | Sub when flag_safe && profile.bit_slice_lanes > 0 ->
-          let carry = emit_carry_chain_sub rng ~s1 ~s2 in
-          if i mod profile.expander_chord_len = 2 && Random.State.int rng 100 < profile.expander_chord_rate then
-            carry @ emit_expander_web_knot rng ()
-          else
-            carry
+      | Sub when profile.bit_slice_lanes > 0 ->
+          let carry = emit_carry_chain_sub rng ~s1 ~s2 ~sx ~sy in
+          if flag_safe then carry @ maybe_knot (i + 2)
+          else carry @ emit_flag_redef_sub sx sy
+
+      (* Мост к Metamorphic_ring: исходная команда остаётся, поверх —
+         нейтральный к флагам кольцевой твист. Применимо всегда. *)
+      | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv ->
+          [ op ] @ emit_ring_twist rng
 
       | PopReg r ->
-          (* Запоминаем последний записанный регистр как якорь для дальних хорд *)
-          [ PopReg r;
-            PushReg r;
-            PopReg s_reg ]
+          (* Кольцевой буфер якорей: каждая запись регистрируется в
+             anchors[j++ mod K] — хорды получают дальнодействие.
+             Программные слоты не пересекаются со scratch (scratch_base
+             >= context_slots исходной программы). *)
+          let ops = [ PopReg r; PushReg r; PopReg anchors.(!anchor_j mod k_anchors) ] in
+          incr anchor_j;
+          ops
 
       | other ->
           [other]
@@ -260,7 +332,7 @@ let amplify_stack_program
     match ctx with
     | Some c ->
         let s = Context_allocator.alloc_scratch c in
-        for _ = 2 to 8 do
+        for _ = 2 to 16 do
           ignore (Context_allocator.alloc_scratch c)
         done;
         s
@@ -269,19 +341,25 @@ let amplify_stack_program
   let new_context_slots =
     match ctx with
     | Some c ->
-        Context_allocator.reserve_slots c (scratch_base + 8);
-        max (scratch_base + 8) (Context_allocator.total_slots c)
-    | None -> scratch_base + 8
+        Context_allocator.reserve_slots c (scratch_base + 16);
+        max (scratch_base + 16) (Context_allocator.total_slots c)
+    | None -> scratch_base + 16
+  in
+  (* Детерминизм: порядок блоков фиксирован сортировкой id, иначе посев
+     block_rng зависел бы от недетерминированного порядка Hashtbl.iter. *)
+  let sorted_blocks =
+    Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
+    |> List.sort (fun (a, _) (b, _) -> compare a b)
   in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-  Hashtbl.iter (fun id b ->
+  List.iter (fun (id, b) ->
     let block_rng = Random.State.make [|
       Random.State.bits rng;
       id * 0x5877;
       0xDEADBEEF;
     |] in
     Hashtbl.replace new_blocks id (amplify_block block_rng ~profile ~scratch_base b)
-  ) prog.blocks;
+  ) sorted_blocks;
   { prog with blocks = new_blocks; context_slots = new_context_slots }
 
 let amplifier_stats (prog_before : program) (prog_after : program) : string =

@@ -123,7 +123,9 @@
   random_visa.stack_vm
   mba_engine
   vm_ir
-  alcotest))
+  alcotest
+  qcheck
+  qcheck-alcotest))
 
 (test
  (name test_chameleon_handlers)
