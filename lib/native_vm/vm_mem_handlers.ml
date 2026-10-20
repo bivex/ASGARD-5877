@@ -1949,40 +1949,80 @@ let emit_mem_and_ffi_handlers ?rng b =
   let fcmp_stmts =
     match pick_variant 3 with
     | 0 -> [
-        let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
-        let_u64 "b_raw" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
-        let_double "a" (bit_cast Double (var "a_raw"));
-        let_double "b" (bit_cast Double (var "b_raw"));
-        let_bool "is_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
-        var "ctx.zf" := (var "is_nan" ||~ (var "a" ==~ var "b"));
-        var "ctx.cf" := (var "is_nan" ||~ (var "a" <~ var "b"));
-        var "ctx.pf" := var "is_nan";
-        var "ctx.sf" := bool_lit false;
-        var "ctx.of" := bool_lit false;
+        let_u32 "is_32" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 1L));
+        if_then_else (var "is_32" ==~ i32 1) [
+          let_u32 "a_raw" (c_cast UInt32 (get_vreg_lane (var "src") (i32 0)));
+          let_u32 "b_raw" (c_cast UInt32 (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0)));
+          let_float "a" (bit_cast Float (var "a_raw"));
+          let_float "b" (bit_cast Float (var "b_raw"));
+          let_bool "is_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
+          var "ctx.zf" := (var "is_nan" ||~ (var "a" ==~ var "b"));
+          var "ctx.cf" := (var "is_nan" ||~ (var "a" <~ var "b"));
+          var "ctx.pf" := var "is_nan";
+          var "ctx.sf" := bool_lit false;
+          var "ctx.of" := bool_lit false;
+        ] [
+          let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+          let_u64 "b_raw" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+          let_double "a" (bit_cast Double (var "a_raw"));
+          let_double "b" (bit_cast Double (var "b_raw"));
+          let_bool "is_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
+          var "ctx.zf" := (var "is_nan" ||~ (var "a" ==~ var "b"));
+          var "ctx.cf" := (var "is_nan" ||~ (var "a" <~ var "b"));
+          var "ctx.pf" := var "is_nan";
+          var "ctx.sf" := bool_lit false;
+          var "ctx.of" := bool_lit false;
+        ];
       ]
     | 1 -> [
-        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
-        let_double "_b" (bit_cast Double (get_vreg_lane (cast UInt8 (var "imm")) (i32 0)));
-        let_bool "_nan" (call "std::isnan" [var "_a"] ||~ call "std::isnan" [var "_b"]);
-        var "ctx.of" := bool_lit false;
-        var "ctx.sf" := bool_lit false;
-        var "ctx.cf" := (var "_nan" ||~ (var "_a" <~ var "_b"));
-        var "ctx.zf" := (var "_nan" ||~ (var "_a" ==~ var "_b"));
-        var "ctx.pf" := var "_nan";
+        let_u32 "is_32" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 1L));
+        if_then_else (var "is_32" ==~ i32 1) [
+          let_float "_a" (bit_cast Float (cast UInt32 (get_vreg_lane (var "src") (i32 0))));
+          let_float "_b" (bit_cast Float (cast UInt32 (get_vreg_lane (cast UInt8 (var "imm")) (i32 0))));
+          let_bool "_nan" (call "std::isnan" [var "_a"] ||~ call "std::isnan" [var "_b"]);
+          var "ctx.of" := bool_lit false;
+          var "ctx.sf" := bool_lit false;
+          var "ctx.cf" := (var "_nan" ||~ (var "_a" <~ var "_b"));
+          var "ctx.zf" := (var "_nan" ||~ (var "_a" ==~ var "_b"));
+          var "ctx.pf" := var "_nan";
+        ] [
+          let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
+          let_double "_b" (bit_cast Double (get_vreg_lane (cast UInt8 (var "imm")) (i32 0)));
+          let_bool "_nan" (call "std::isnan" [var "_a"] ||~ call "std::isnan" [var "_b"]);
+          var "ctx.of" := bool_lit false;
+          var "ctx.sf" := bool_lit false;
+          var "ctx.cf" := (var "_nan" ||~ (var "_a" <~ var "_b"));
+          var "ctx.zf" := (var "_nan" ||~ (var "_a" ==~ var "_b"));
+          var "ctx.pf" := var "_nan";
+        ];
       ]
     | _ -> [
-        let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
-        let_u64 "_i" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
-        let_double "a" (bit_cast Double (var "_s"));
-        let_double "b" (bit_cast Double (var "_i"));
-        let_bool "_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
-        let_bool "_eq" (var "a" ==~ var "b");
-        let_bool "_lt" (var "a" <~ var "b");
-        var "ctx.zf" := (var "_nan" ||~ var "_eq");
-        var "ctx.cf" := (var "_nan" ||~ var "_lt");
-        var "ctx.pf" := var "_nan";
-        var "ctx.sf" := bool_lit false;
-        var "ctx.of" := bool_lit false;
+        let_u32 "is_32" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 1L));
+        if_then_else (var "is_32" ==~ i32 1) [
+          let_float "a" (bit_cast Float (c_cast UInt32 (get_vreg_lane (var "src") (i32 0))));
+          let_float "b" (bit_cast Float (c_cast UInt32 (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0))));
+          let_bool "_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
+          let_bool "_eq" (var "a" ==~ var "b");
+          let_bool "_lt" (var "a" <~ var "b");
+          var "ctx.zf" := (var "_nan" ||~ var "_eq");
+          var "ctx.cf" := (var "_nan" ||~ var "_lt");
+          var "ctx.pf" := var "_nan";
+          var "ctx.sf" := bool_lit false;
+          var "ctx.of" := bool_lit false;
+        ] [
+          let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
+          let_u64 "_i" (get_vreg_lane (c_cast UInt8 (var "imm")) (i32 0));
+          let_double "a" (bit_cast Double (var "_s"));
+          let_double "b" (bit_cast Double (var "_i"));
+          let_bool "_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
+          let_bool "_eq" (var "a" ==~ var "b");
+          let_bool "_lt" (var "a" <~ var "b");
+          var "ctx.zf" := (var "_nan" ||~ var "_eq");
+          var "ctx.cf" := (var "_nan" ||~ var "_lt");
+          var "ctx.pf" := var "_nan";
+          var "ctx.sf" := bool_lit false;
+          var "ctx.of" := bool_lit false;
+        ];
       ]
   in
   emit_handler_ast b "H_FCMP_DD" (fcmp_stmts @ [ inc_instrs; fetch_next ]);

@@ -2141,27 +2141,33 @@ let lift_instr ?const_pool raw_mnem ops =
                   ])
           | _ -> Error "Invalid source operand for scalar FP arithmetic")
       | _ -> Error "Invalid destination register for scalar FP arithmetic")
-  | ("ucomiss" | "ucomisd" | "comiss" | "comisd"), [ OpReg dst; src ] ->
+  | ("ucomiss" | "ucomisd" | "comiss" | "comisd" | "vucomiss" | "vucomisd" | "vcomiss" | "vcomisd"), [ OpReg dst; src ] ->
+      let is_32 = String.contains mnem 's' && (String.sub mnem (String.index mnem 's') 2 = "ss" || String.ends_with ~suffix:"ss" mnem) in
       (match dst with
       | Register.Fpr (d_idx, _) ->
           (match src with
           | OpReg (Register.Fpr (s_idx, _)) ->
-              Ok [ Ir.Fp_cmp { src1 = d_idx; src2 = s_idx } ]
+              Ok [ Ir.Fp_cmp { src1 = d_idx; src2 = s_idx; is_32 } ]
           | OpMem m ->
               let tmp_fpr = 31 in
+              let bits = if is_32 then 32 else 64 in
               (match m.symbol, const_pool with
               | Some sym, Some cp when Hashtbl.mem cp sym ->
                   let b = Hashtbl.find cp sym in
-                  let v = read_const_int64 b m.disp m.width in
+                  let w = if is_32 then Register.B32 else Register.B64 in
+                  let v = read_const_int64 b m.disp w in
+                  let lane0 = if is_32 then Int64.logand v 0xFFFFFFFFL else v in
                   Ok [
-                    Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm v };
-                    Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr };
+                    Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm lane0 };
+                    Ir.Mov { dst = Ir.Reg (Register.Fpr (30, Register.B64)); src = Ir.Imm 0L };
+                    Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = tmp_fpr; src1 = tmp_fpr; src2 = 30; bits = 128; lane_bits = 64 };
+                    Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr; is_32 };
                   ]
               | _ ->
                   let mem_ref = ir_mem_of_raw m in
                   Ok [
-                    Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
-                    Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr };
+                    Ir.Vec_load { dst = tmp_fpr; addr = mem_ref; bits };
+                    Ir.Fp_cmp { src1 = d_idx; src2 = tmp_fpr; is_32 };
                   ])
           | _ -> Error "Invalid source operand for scalar FP compare")
       | _ -> Error "Invalid destination register for scalar FP compare")

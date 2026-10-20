@@ -185,7 +185,7 @@ type instr =
   | Bridge_to_math of int64
   | Load_symbol of { dst : Register.t; sym : string; addend : int64 }
   | Fp_binop of { op : fp_binop; dst : int; src1 : int; src2 : int }
-  | Fp_cmp of { src1 : int; src2 : int }
+  | Fp_cmp of { src1 : int; src2 : int; is_32 : bool }
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }

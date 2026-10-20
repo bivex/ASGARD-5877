@@ -1439,6 +1439,57 @@ func_native_conv:
     if ((ctx.get_reg(vanguard_threaded_vm::REG_R10) & 0xFFFFFFFFULL) != 12ULL) return 15;
 |})
 
+let test_native_x86_float_comparisons () =
+  let pkg =
+    mk_pkg ~seed:20261024 {|
+func_native_fcmp:
+    mov rax, 0
+    ucomiss xmm0, xmm1
+    jbe .L_native_skip1
+    mov rax, 1
+.L_native_skip1:
+    mov rbx, 0
+    comiss xmm2, xmm3
+    jae .L_native_skip2
+    mov rbx, 1
+.L_native_skip2:
+    mov rcx, 0
+    ucomisd xmm4, xmm5
+    jne .L_native_skip3
+    mov rcx, 1
+.L_native_skip3:
+    mov rdx, 0
+    comisd xmm6, xmm7
+    jnp .L_native_skip4
+    mov rdx, 1
+.L_native_skip4:
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_fcmp" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    auto fbits = [](float f) { return static_cast<uint64_t>(std::bit_cast<uint32_t>(f)); };
+    auto dbits = [](double d) { return std::bit_cast<uint64_t>(d); };
+
+    ctx.vregs[0][0] = fbits(10.0f);
+    ctx.vregs[1][0] = fbits(2.5f);
+    ctx.vregs[2][0] = fbits(1.0f);
+    ctx.vregs[3][0] = fbits(5.0f);
+    ctx.vregs[4][0] = dbits(7.5);
+    ctx.vregs[5][0] = dbits(7.5);
+    ctx.vregs[6][0] = dbits(std::numeric_limits<double>::quiet_NaN());
+    ctx.vregs[7][0] = dbits(1.0);
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if (ctx.get_rax() != 1ULL) return 2;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RBX) != 1ULL) return 3;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RCX) != 1ULL) return 4;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 1ULL) return 5;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1468,4 +1519,5 @@ let tests = [
   Alcotest.test_case "native_x86_scalar_and_vector_moves" `Slow test_native_x86_scalar_and_vector_moves;
   Alcotest.test_case "native_x86_scalar_and_packed_fp_arithmetic" `Slow test_native_x86_scalar_and_packed_fp_arithmetic;
   Alcotest.test_case "native_x86_conversions" `Slow test_native_x86_conversions;
+  Alcotest.test_case "native_x86_float_comparisons" `Slow test_native_x86_float_comparisons;
 ]

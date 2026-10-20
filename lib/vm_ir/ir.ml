@@ -184,7 +184,7 @@ type instr =
   | Bridge_to_math of int64
   | Load_symbol of { dst : Register.t; sym : string; addend : int64 }
   | Fp_binop of { op : fp_binop; dst : int; src1 : int; src2 : int }
-  | Fp_cmp of { src1 : int; src2 : int }
+  | Fp_cmp of { src1 : int; src2 : int; is_32 : bool }
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
@@ -328,8 +328,8 @@ let instr_to_string = function
   | Fp_binop { op; dst; src1; src2 } ->
       let op_s = match op with Fadd -> "fadd" | Fsub -> "fsub" | Fmul -> "fmul" | Fdiv -> "fdiv" | Fsqrt -> "fsqrt" in
       Printf.sprintf "%s d%d, d%d, d%d" op_s dst src1 src2
-  | Fp_cmp { src1; src2 } ->
-      Printf.sprintf "fcmp d%d, d%d" src1 src2
+  | Fp_cmp { src1; src2; is_32 } ->
+      Printf.sprintf "fcmp%s d%d, d%d" (if is_32 then "s" else "d") src1 src2
   | Fp_conv { op; dst; src } ->
       let op_s = match op with Fcvtzs -> "fcvtzs" | Scvtf -> "scvtf" | Fcvtzu -> "fcvtzu" | Ucvtf -> "ucvtf" | Fcvt -> "fcvt" in
       Printf.sprintf "%s %s, %s" op_s (Register.to_string dst) (Register.to_string src)

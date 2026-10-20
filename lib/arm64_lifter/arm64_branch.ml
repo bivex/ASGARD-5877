@@ -137,51 +137,53 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Mov { dst = Reg (Register.Fpr (d, Register.B64)); src = Reg Register.vtmp0 };
       ]
   | ("fmin", [ OpReg (Register.Fpr (d, dw)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
+      let is_32 = dw = Register.B32 in
       let instrs =
         if d = s2 then
           [
-            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Fp_cmp { src1 = s1; src2 = s2; is_32 };
             Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
           ]
         else if d = s1 then
           [
-            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Fp_cmp { src1 = s1; src2 = s2; is_32 };
             Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s2, dw)) };
           ]
         else
           [
-            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Fp_cmp { src1 = s1; src2 = s2; is_32 };
             Ir.Mov { dst = Reg (Register.Fpr (d, dw)); src = Reg (Register.Fpr (s2, dw)) };
             Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
           ]
       in
       Some instrs
   | ("fmax", [ OpReg (Register.Fpr (d, dw)); OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
+      let is_32 = dw = Register.B32 in
       let instrs =
         if d = s2 then
           [
-            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Fp_cmp { src1 = s1; src2 = s2; is_32 };
             Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
           ]
         else if d = s1 then
           [
-            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Fp_cmp { src1 = s1; src2 = s2; is_32 };
             Ir.Cmov { cond = Flags.L; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s2, dw)) };
           ]
         else
           [
-            Ir.Fp_cmp { src1 = s1; src2 = s2 };
+            Ir.Fp_cmp { src1 = s1; src2 = s2; is_32 };
             Ir.Mov { dst = Reg (Register.Fpr (d, dw)); src = Reg (Register.Fpr (s2, dw)) };
             Ir.Cmov { cond = Flags.G; dst = Register.Fpr (d, dw); src = Reg (Register.Fpr (s1, dw)) };
           ]
       in
       Some instrs
-  | ("fcmp", [ OpReg (Register.Fpr (s1, _)); OpReg (Register.Fpr (s2, _)) ]) ->
-      Some [ Ir.Fp_cmp { src1 = s1; src2 = s2 } ]
-  | ("fcmp", [ OpReg (Register.Fpr (s1, _)); OpImm 0L ]) ->
+  | ("fcmp", [ OpReg (Register.Fpr (s1, w1)); OpReg (Register.Fpr (s2, _)) ]) ->
+      Some [ Ir.Fp_cmp { src1 = s1; src2 = s2; is_32 = (w1 = Register.B32) } ]
+  | ("fcmp", [ OpReg (Register.Fpr (s1, w1)); OpImm 0L ]) ->
       Some [
-        Ir.Mov { dst = Reg (Register.Fpr (31, Register.B64)); src = Imm 0L };
-        Ir.Fp_cmp { src1 = s1; src2 = 31 };
+        Ir.Mov { dst = Reg (Register.Fpr (31, w1)); src = Imm 0L };
+        Ir.Fp_cmp { src1 = s1; src2 = 31; is_32 = (w1 = Register.B32) };
       ]
   | ("fmov", [ OpReg dst; OpReg src ]) ->
       Some [ Ir.Mov { dst = Reg dst; src = Reg src } ]

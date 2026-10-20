@@ -1298,6 +1298,61 @@ func_conversions:
           Alcotest.(check int64) "cvtsi2sd mem signed" (dbits (-5.0)) v5.(0);
           Alcotest.(check int64) "cvttss2si mem" 12L (get_reg state (Register.Gpr (Register.R10, Register.B32))))
 
+let test_x86_float_comparisons () =
+  let asm = {|
+func_comi:
+    mov rax, 0
+    ucomiss xmm0, xmm1
+    jbe .L_skip1
+    mov rax, 1
+.L_skip1:
+    mov rbx, 0
+    comiss xmm2, xmm3
+    jae .L_skip2
+    mov rbx, 1
+.L_skip2:
+    mov rcx, 0
+    ucomisd xmm4, xmm5
+    jne .L_skip3
+    mov rcx, 1
+.L_skip3:
+    mov rdx, 0
+    comisd xmm6, xmm7
+    jnp .L_skip4
+    mov rdx, 1
+.L_skip4:
+    mov rsi, 0
+    comiss xmm0, dword ptr [rsp + 16]
+    jne .L_skip5
+    mov rsi, 1
+.L_skip5:
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let fbits v = Int64.logand (Int64.of_int32 (Int32.bits_of_float v)) 0xFFFFFFFFL in
+      let dbits v = Int64.bits_of_float v in
+      let state = make_state () in
+      state.vsp <- 0x1000L;
+      write_mem state 0x1010L B32 (fbits 10.0);
+      Hashtbl.replace state.vectors 0 [| fbits 10.0; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1 [| fbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2 [| fbits 1.0; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 3 [| fbits 5.0; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 4 [| dbits 7.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5 [| dbits 7.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 6 [| dbits Float.nan; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| dbits 1.0; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "greater: ja taken" 1L (get_reg state Register.rax);
+          Alcotest.(check int64) "less: jb taken" 1L (get_reg state Register.rbx);
+          Alcotest.(check int64) "equal: je taken" 1L (get_reg state Register.rcx);
+          Alcotest.(check int64) "nan: jp taken" 1L (get_reg state Register.rdx);
+          Alcotest.(check int64) "mem equal: je taken" 1L (get_reg state Register.rsi))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -2630,5 +2685,6 @@ let tests = [
   Alcotest.test_case "lift_x86_movss_movsd_vector_moves" `Quick test_x86_movss_movsd_vector_moves;
   Alcotest.test_case "lift_x86_scalar_and_packed_fp_arithmetic" `Quick test_x86_scalar_and_packed_fp_arithmetic;
   Alcotest.test_case "lift_x86_int_float_conversions" `Quick test_x86_int_float_conversions;
+  Alcotest.test_case "lift_x86_float_comparisons" `Quick test_x86_float_comparisons;
 ]
 

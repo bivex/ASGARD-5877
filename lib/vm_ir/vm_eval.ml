@@ -1318,18 +1318,26 @@ let step state = function
       in
       set_vector_lane state dst 0 (Int64.bits_of_float res);
       Ok None
-  | Fp_cmp { src1; src2 } ->
+  | Fp_cmp { src1; src2; is_32 } ->
       let a_bits = get_vector_lane state src1 0 in
       let b_bits = get_vector_lane state src2 0 in
-      let a = Int64.float_of_bits a_bits in
-      let b = Int64.float_of_bits b_bits in
-      let zf = (a = b) in
-      let cf = (a >= b) in
-      let sf = (a < b) in
+      let is_nan, eq, lt =
+        if is_32 then
+          let a = Int32.float_of_bits (Int64.to_int32 a_bits) in
+          let b = Int32.float_of_bits (Int64.to_int32 b_bits) in
+          (Float.is_nan a || Float.is_nan b, a = b, a < b)
+        else
+          let a = Int64.float_of_bits a_bits in
+          let b = Int64.float_of_bits b_bits in
+          (Float.is_nan a || Float.is_nan b, a = b, a < b)
+      in
+      let zf = is_nan || eq in
+      let cf = is_nan || lt in
+      let pf = is_nan in
       let cf_val = if cf then 1L else 0L in
+      let pf_val = if pf then 4L else 0L in
       let zf_val = if zf then 64L else 0L in
-      let sf_val = if sf then 128L else 0L in
-      state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf_val (Int64.logor zf_val sf_val)));
+      state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf_val (Int64.logor pf_val zf_val)));
       Ok None
   | Fp_conv { op = Fcvtzs; dst; src } ->
       let a_bits = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in

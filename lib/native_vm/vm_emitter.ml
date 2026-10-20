@@ -759,6 +759,12 @@ let compile_and_package_multi
               | Ir.Jmp target ->
                   encode_raw_word (get_opcode OP_JMP) 0 0 (resolve_target target)
               | Ir.Jcc { cond; target_true; target_false } ->
+                  let (cond, target_true, target_false) =
+                    if cond = Flags.NP then
+                      (Flags.P, target_false, target_true)
+                    else
+                      (cond, target_true, target_false)
+                  in
                   let c = cond_to_code cond in
                   let t_off = resolve_target target_true in
                   let f_off = resolve_target target_false in
@@ -802,8 +808,9 @@ let compile_and_package_multi
               | Ir.Fp_binop { op; dst; src1; src2 } ->
                   let op_kind = match op with Fadd -> OP_FADD_DD | Fsub -> OP_FSUB_DD | Fmul -> OP_FMUL_DD | Fdiv -> OP_FDIV_DD | Fsqrt -> OP_FSQRT_D in
                   encode_raw_word (get_opcode op_kind) (dst mod 32) (src1 mod 32) (Int64.of_int (src2 mod 32))
-              | Ir.Fp_cmp { src1; src2 } ->
-                  encode_raw_word (get_opcode OP_FCMP_DD) 0 (src1 mod 32) (Int64.of_int (src2 mod 32))
+              | Ir.Fp_cmp { src1; src2; is_32 } ->
+                  let mode = if is_32 then 1L else 0L in
+                  encode_raw_word ~extra_bits:mode (get_opcode OP_FCMP_DD) 0 (src1 mod 32) (Int64.of_int (src2 mod 32))
               | Ir.Fp_conv { op = Fcvtzs; dst; src } ->
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
                   let src_is_32 = if Register.get_width src = Register.B32 then 1L else 0L in
