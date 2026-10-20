@@ -868,6 +868,108 @@ let lift_sha_ni mnem ops =
             in
             Ok (preload @ [ instr ]))
 
+
+let aes_op_of_mnemonic = function
+  | "aesenc" | "vaesenc" -> Some Ir.Aesenc
+  | "aesenclast" | "vaesenclast" -> Some Ir.Aesenclast
+  | "aesdec" | "vaesdec" -> Some Ir.Aesdec
+  | "aesdeclast" | "vaesdeclast" -> Some Ir.Aesdeclast
+  | "aesimc" | "vaesimc" -> Some Ir.Aesimc
+  | "aeskeygenassist" | "vaeskeygenassist" -> Some Ir.Aeskeygenassist
+  | _ -> None
+
+let lift_aes_ni ?const_pool mnem ops =
+  if List.exists is_zmm_operand ops then
+    Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+  else
+    match aes_op_of_mnemonic mnem with
+    | None -> Error "unsupported AES operation"
+    | Some op ->
+        let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+        let get_index = function
+          | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+          | _ -> None
+        in
+        let get_mem_load m tmp =
+          match m.X86_parser.symbol, const_pool with
+          | Some sym, Some cp when Hashtbl.mem cp sym ->
+              let b = Hashtbl.find cp sym in
+              let lane0, lane1 = read_const_vec128 b m.disp in
+              if lane0 = lane1 then
+                let tmp_gpr = Register.vtmp0 in
+                [
+                  Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Imm lane0 };
+                  Ir.Vec_splat { dst = tmp; src = tmp_gpr; bits = 128; lane_bits = 64 };
+                ]
+              else
+                [
+                  Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp, Register.B64)); src = Ir.Imm lane0 };
+                  Ir.Mov { dst = Ir.Reg (Register.Fpr (30, Register.B64)); src = Ir.Imm lane1 };
+                  Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = tmp; src1 = tmp; src2 = 30; bits = 128; lane_bits = 64 };
+                ]
+          | _ ->
+              [ Ir.Vec_load { dst = tmp; addr = ir_mem_of_raw m; bits = 128 } ]
+        in
+        match op with
+        | Aesimc -> (
+            match ops with
+            | [ dst; src ] -> (
+                match get_index dst with
+                | Some di ->
+                    let preload, si =
+                      match src with
+                      | X86_parser.OpMem m -> (get_mem_load m 31, 31)
+                      | _ -> ([], (match get_index src with Some s -> s | None -> 0))
+                    in
+                    let instr = Ir.Vec_aes { op; dst = di; src1 = si; src2 = si; imm = 0L; bits = 128 } in
+                    let extra = if is_vex then [ Ir.Vec_clear_upper di ] else [] in
+                    Ok (preload @ [ instr ] @ extra)
+                | None -> Error "AESIMC requires vector register destination")
+            | _ -> Error "invalid operands for AESIMC")
+        | Aeskeygenassist -> (
+            let dst_op = match ops with d :: _ -> d | _ -> X86_parser.OpReg Register.rax in
+            let src_op = match ops with _ :: s :: _ -> s | _ -> X86_parser.OpReg Register.rax in
+            let imm = match ops with
+              | _ :: _ :: X86_parser.OpImm i :: _ -> i
+              | _ -> 0L
+            in
+            match get_index dst_op with
+            | Some di ->
+                let preload, si =
+                  match src_op with
+                  | X86_parser.OpMem m -> (get_mem_load m 31, 31)
+                  | _ -> ([], (match get_index src_op with Some s -> s | None -> 0))
+                in
+                let instr = Ir.Vec_aes { op; dst = di; src1 = si; src2 = si; imm; bits = 128 } in
+                let extra = if is_vex then [ Ir.Vec_clear_upper di ] else [] in
+                Ok (preload @ [ instr ] @ extra)
+            | None -> Error "AESKEYGENASSIST requires vector register destination")
+        | Aesenc | Aesenclast | Aesdec | Aesdeclast -> (
+            match ops with
+            | [ dst; src ] -> (
+                match get_index dst with
+                | Some di ->
+                    let preload, si =
+                      match src with
+                      | X86_parser.OpMem m -> (get_mem_load m 31, 31)
+                      | _ -> ([], (match get_index src with Some s -> s | None -> 0))
+                    in
+                    let instr = Ir.Vec_aes { op; dst = di; src1 = di; src2 = si; imm = 0L; bits = 128 } in
+                    let extra = if is_vex then [ Ir.Vec_clear_upper di ] else [] in
+                    Ok (preload @ [ instr ] @ extra)
+                | None -> Error (Printf.sprintf "%s requires vector register destination" mnem))
+            | [ dst; src1; src2 ] when is_vex -> (
+                match get_index dst, get_index src1 with
+                | Some di, Some s1 ->
+                    let preload, s2 =
+                      match src2 with
+                      | X86_parser.OpMem m -> (get_mem_load m 31, 31)
+                      | _ -> ([], (match get_index src2 with Some s -> s | None -> 0))
+                    in
+                    let instr = Ir.Vec_aes { op; dst = di; src1 = s1; src2 = s2; imm = 0L; bits = 128 } in
+                    Ok (preload @ [ instr; Ir.Vec_clear_upper di ])
+                | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
+            | _ -> Error (Printf.sprintf "invalid operand count for %s" mnem))
 (* PCLMULQDQ: the carry-less product of two 64-bit halves of a 128-bit vector
    register.  The immediate picks the half of the source (bit 0) and the half
    of the destination that receives the high product (bit 4). *)
@@ -1259,15 +1361,20 @@ let lift_instr ?const_pool raw_mnem ops =
   | "vm_enter", [] -> Ok [ Ir.Vm_enter ]
   | "vm_exit", [] -> Ok [ Ir.Vm_exit ]
   | ("vzeroupper" | "vzeroall"), [] -> Ok [ Ir.Vec_zero_upper ]
-  | ("pmovmskb" | "vpmovmskb"), [ dst; src ] -> (
+  | (("pmovmskb" | "vpmovmskb" | "movmskps" | "vmovmskps" | "movmskpd" | "vmovmskpd") as mnem), [ dst; src ] -> (
       if is_zmm_operand src then
         Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
       else
         match dst, vector_reg_index src with
         | X86_parser.OpReg gpr, Some si ->
             let bits = determine_vec_bits mnem [ dst; src ] in
-            Ok [ Ir.Pmovmskb { dst = gpr; src = si; bits } ]
-        | _ -> Error "pmovmskb requires GPR destination and vector source")
+            let lane_bits =
+              if String.ends_with ~suffix:"mskpd" mnem then 64
+              else if String.ends_with ~suffix:"mskps" mnem then 32
+              else 8
+            in
+            Ok [ Ir.Pmovmskb { dst = gpr; src = si; bits; lane_bits } ]
+        | _ -> Error (mnem ^ " requires GPR destination and vector source"))
   | mnem, [ dst; src ] when vector_move_mnemonic mnem -> lift_vector_move ?const_pool mnem dst src
   | mnem, ops when is_scalar_fp_move mnem ops -> lift_scalar_fp_move ?const_pool mnem ops
   | mnem, ops when (match scalar_fp_arith_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
@@ -1276,6 +1383,9 @@ let lift_instr ?const_pool raw_mnem ops =
     when (List.length ops >= 2 && List.length ops <= 3)
          && (match sha_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
       lift_sha_ni mnem ops
+  | mnem, ops
+    when (match aes_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
+      lift_aes_ni ?const_pool mnem ops
 
   | "pclmulqdq", _ -> lift_pclmulqdq mnem ops
 

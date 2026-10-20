@@ -106,6 +106,15 @@ type sha_op =
   | Sha256rnds2
   | Sha256msg1
   | Sha256msg2
+
+(** The x86 AES extensions (AES-NI). *)
+type aes_op =
+  | Aesenc
+  | Aesenclast
+  | Aesdec
+  | Aesdeclast
+  | Aesimc
+  | Aeskeygenassist
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
 type mem_order = SeqCst | Acquire | Release | AcqRel | Relaxed
@@ -191,6 +200,7 @@ type instr =
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
   | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
   | Vec_pclmul of { dst : int; src1 : int; src2 : int; imm : int64; bits : int }
+  | Vec_aes of { op : aes_op; dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Read_ssp of { dst : Register.t }
   | Inc_ssp of { width : width }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
@@ -200,7 +210,7 @@ type instr =
   | Vec_zero_upper
   | Vec_splat of { dst : int; src : Register.t; bits : int; lane_bits : int }
   | Vec_ext of { dst : int; src1 : int; src2 : int; imm : int; bits : int }
-  | Pmovmskb of { dst : Register.t; src : int; bits : int }
+  | Pmovmskb of { dst : Register.t; src : int; bits : int; lane_bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
   | Fence of mem_order
   | Get_flags of Register.t

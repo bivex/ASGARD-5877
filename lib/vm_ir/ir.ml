@@ -106,6 +106,15 @@ type sha_op =
   | Sha256rnds2
   | Sha256msg1
   | Sha256msg2
+
+(** The x86 AES extensions (AES-NI). *)
+type aes_op =
+  | Aesenc
+  | Aesenclast
+  | Aesdec
+  | Aesdeclast
+  | Aesimc
+  | Aeskeygenassist
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 type mem_order = SeqCst | Acquire | Release | AcqRel | Relaxed
 
@@ -190,6 +199,7 @@ type instr =
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
   | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
   | Vec_pclmul of { dst : int; src1 : int; src2 : int; imm : int64; bits : int }
+  | Vec_aes of { op : aes_op; dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Read_ssp of { dst : Register.t }
   | Inc_ssp of { width : width }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
@@ -199,7 +209,7 @@ type instr =
   | Vec_zero_upper
   | Vec_splat of { dst : int; src : Register.t; bits : int; lane_bits : int }
   | Vec_ext of { dst : int; src1 : int; src2 : int; imm : int; bits : int }
-  | Pmovmskb of { dst : Register.t; src : int; bits : int }
+  | Pmovmskb of { dst : Register.t; src : int; bits : int; lane_bits : int }
   | Atomic_mem of { op : atomic_op; dst : Register.t; addr : Register.t; src : Register.t; imm : int64 }
   | Fence of mem_order
   | Get_flags of Register.t
@@ -360,6 +370,13 @@ let instr_to_string = function
       Printf.sprintf "%s.%d v%d, v%d, v%d, v%d, 0x%LX" op_s bits dst src1 src2 src3 imm
   | Vec_pclmul { dst; src1; src2; imm; bits } ->
       Printf.sprintf "vec_pclmul.%d v%d, v%d, v%d, 0x%LX" bits dst src1 src2 imm
+  | Vec_aes { op; dst; src1; src2; imm; bits } ->
+      let op_s = match op with
+        | Aesenc -> "aesenc" | Aesenclast -> "aesenclast"
+        | Aesdec -> "aesdec" | Aesdeclast -> "aesdeclast"
+        | Aesimc -> "aesimc" | Aeskeygenassist -> "aeskeygenassist"
+      in
+      Printf.sprintf "vec_%s.%d v%d, v%d, v%d, 0x%LX" op_s bits dst src1 src2 imm
   | Read_ssp { dst } -> Printf.sprintf "read_ssp %s" (Register.to_string dst)
   | Inc_ssp { width } -> Printf.sprintf "inc_ssp %d" (Register.width_to_bits width)
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
@@ -387,7 +404,8 @@ let instr_to_string = function
       Printf.sprintf "vsplat.%d.%d v%d, %s" bits lane_bits dst (Register.to_string src)
   | Vec_ext { dst; src1; src2; imm; bits } ->
       Printf.sprintf "vext.%d v%d, v%d, v%d, #%d" bits dst src1 src2 imm
-  | Pmovmskb { dst; src; bits } -> Printf.sprintf "pmovmskb.%d %s, v%d" bits (Register.to_string dst) src
+  | Pmovmskb { dst; src; bits; lane_bits } ->
+      Printf.sprintf "pmovmskb.%d.%d %s, v%d" bits lane_bits (Register.to_string dst) src
   | Atomic_mem { op; dst; addr; src; imm } ->
       let op_s = match op with AtLoad -> "at_load" | AtStore -> "at_store" | AtCas -> "at_cas" | AtAdd -> "at_add" | AtSwp -> "at_swp" in
       Printf.sprintf "%s %s, [%s + 0x%LX], %s" op_s (Register.to_string dst) (Register.to_string addr) imm (Register.to_string src)

@@ -1420,6 +1420,56 @@ func_bitwise:
           Alcotest.(check int64) "vpxor 2" (-1L) v13.(2);
           Alcotest.(check int64) "vpxor 3" (-1L) v13.(3))
 
+let test_x86_aes_ni () =
+  let asm = {|
+func_aes:
+    aesenc xmm0, xmm1
+    aesimc xmm2, xmm1
+    aeskeygenassist xmm3, xmm4, 0x01
+    aesenclast xmm5, xmm6
+    aesdec xmm7, xmm8
+    aesdeclast xmm9, xmm10
+    vaesenc xmm11, xmm0, xmm1
+    aesenc xmm12, xmmword ptr [rsp + 16]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      state.vsp <- 0x1000L;
+      write_mem state 0x1010L B64 0xB12C548817FEFAA0L;
+      write_mem state 0x1018L B64 0x05766C2A3939A323L;
+      Hashtbl.replace state.vectors 0 [| 0x2BE2F4A0BEE33D19L; 0x0848F8E92A8DC69AL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1 [| 0xB12C548817FEFAA0L; 0x05766C2A3939A323L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 4 [| 0xA6D2AE2816157E2BL; 0x3C4FCF098815F7ABL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5 [| 0x1111111122222222L; 0x3333333344444444L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 6 [| 0x5555555566666666L; 0x7777777788888888L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| 0x2B359F68F27F9CA4L; 0x49506A0243EA5B6BL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 8 [| 0x05D462F2A708372BL; 0x627D614BBFBD3EBCL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 9 [| 0xAAAABBBBCCCCDDDDL; 0xEEEEFFFF00001111L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 10 [| 0x123456789ABCDEF0L; 0x0102030405060708L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 11 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 12 [| 0x2BE2F4A0BEE33D19L; 0x0848F8E92A8DC69AL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v3 = Hashtbl.find state.vectors 3 in
+          let v11 = Hashtbl.find state.vectors 11 in
+          let v12 = Hashtbl.find state.vectors 12 in
+          Alcotest.(check int64) "aesenc lane0" 0x2B359F68F27F9CA4L v0.(0);
+          Alcotest.(check int64) "aesenc lane1" 0x49506A0243EA5B6BL v0.(1);
+          Alcotest.(check int64) "aesimc lane0" 0x05D462F2A708372BL v2.(0);
+          Alcotest.(check int64) "aesimc lane1" 0x627D614BBFBD3EBCL v2.(1);
+          Alcotest.(check int64) "aeskeygenassist lane0" 0x3424B5E524B5E434L v3.(0);
+          Alcotest.(check int64) "aeskeygenassist lane1" 0x01EB848BEB848A01L v3.(1);
+          Alcotest.(check int64) "vaesenc lane2 zeroed" 0L v11.(2);
+          Alcotest.(check int64) "vaesenc lane3 zeroed" 0L v11.(3);
+          Alcotest.(check int64) "aesenc mem lane0" 0x2B359F68F27F9CA4L v12.(0);
+          Alcotest.(check int64) "aesenc mem lane1" 0x49506A0243EA5B6BL v12.(1))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -2381,6 +2431,10 @@ let test_x86_pmovmskb () =
 func_pmov:
     pmovmskb eax, xmm1
     vpmovmskb ebx, ymm2
+    movmskps ecx, xmm3
+    vmovmskps r8d, ymm4
+    movmskpd edx, xmm5
+    vmovmskpd r9d, ymm6
     ret
 |} in
   match Lifter.lift_function asm with
@@ -2389,11 +2443,23 @@ func_pmov:
       let state = make_state () in
       Hashtbl.replace state.vectors 1 [| 0x8000000000000080L; 0x8000000000000000L; 0L; 0L; 0L; 0L; 0L; 0L |];
       Hashtbl.replace state.vectors 2 [| 0x80L; 0L; 0L; 0x8000000000000000L; 0L; 0L; 0L; 0L |];
+      (* lane0 sign at bit31 = 0, lane1 sign at bit63 = 1, lane2/3 = 0 *)
+      Hashtbl.replace state.vectors 3 [| 0x8000000000000000L; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* 256-bit, 32-bit lanes: lane1 (bit 63 of chunk 0) and lane5 (bit 63 of chunk 2) signed *)
+      Hashtbl.replace state.vectors 4 [| 0x8000000000000000L; 0L; 0x8000000000000000L; 0L; 0L; 0L; 0L; 0L |];
+      (* 64-bit lanes: lane0 sign=1, lane1 sign=0 *)
+      Hashtbl.replace state.vectors 5 [| 0x8000000000000000L; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* 256-bit, 64-bit lanes: lane1 and lane3 signed *)
+      Hashtbl.replace state.vectors 6 [| 0L; 0x8000000000000000L; 0L; 0x8000000000000000L; 0L; 0L; 0L; 0L |];
       (match run_func state func with
       | Error e -> Alcotest.fail e
       | Ok () ->
           Alcotest.(check int64) "pmovmskb eax" 0x8081L (get_reg state (Register.Gpr (Register.RAX, Register.B32)));
-          Alcotest.(check int64) "vpmovmskb ebx" 0x80000001L (get_reg state (Register.Gpr (Register.RBX, Register.B32))))
+          Alcotest.(check int64) "vpmovmskb ebx" 0x80000001L (get_reg state (Register.Gpr (Register.RBX, Register.B32)));
+          Alcotest.(check int64) "movmskps ecx" 0x2L (get_reg state (Register.Gpr (Register.RCX, Register.B32)));
+          Alcotest.(check int64) "vmovmskps r8d" 0x22L (get_reg state (Register.Gpr (Register.R8, Register.B32)));
+          Alcotest.(check int64) "movmskpd edx" 0x1L (get_reg state (Register.Gpr (Register.RDX, Register.B32)));
+          Alcotest.(check int64) "vmovmskpd r9d" 0xAL (get_reg state (Register.Gpr (Register.R9, Register.B32))))
 
 let test_x86_evex_zmm_trap () =
   let asm = {|
@@ -2754,5 +2820,6 @@ let tests = [
   Alcotest.test_case "lift_x86_int_float_conversions" `Quick test_x86_int_float_conversions;
   Alcotest.test_case "lift_x86_float_comparisons" `Quick test_x86_float_comparisons;
   Alcotest.test_case "lift_x86_pand_por_pxor_pandn" `Quick test_x86_pand_por_pxor_pandn;
+  Alcotest.test_case "lift_x86_aes_ni" `Quick test_x86_aes_ni;
 ]
 

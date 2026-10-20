@@ -1050,6 +1050,22 @@ let step state = function
       set_vector_lane state dst 0 !lo;
       set_vector_lane state dst 1 dst_hi;
       Ok None
+  | Vec_aes { op; dst; src1; src2; imm; bits = _ } ->
+      let lanes reg = (get_vector_lane state reg 0, get_vector_lane state reg 1) in
+      let bytes reg = Aes_ni.bytes_of_lanes (lanes reg) in
+      let result =
+        match op with
+        | Ir.Aesenc -> Aes_ni.aesenc (bytes src1) (bytes src2)
+        | Ir.Aesenclast -> Aes_ni.aesenclast (bytes src1) (bytes src2)
+        | Ir.Aesdec -> Aes_ni.aesdec (bytes src1) (bytes src2)
+        | Ir.Aesdeclast -> Aes_ni.aesdeclast (bytes src1) (bytes src2)
+        | Ir.Aesimc -> Aes_ni.aesimc (bytes src2)
+        | Ir.Aeskeygenassist -> Aes_ni.aeskeygenassist (bytes src2) (Int64.to_int imm)
+      in
+      let l0, l1 = Aes_ni.lanes_of_bytes result in
+      set_vector_lane state dst 0 l0;
+      set_vector_lane state dst 1 l1;
+      Ok None
   | Read_ssp { dst } ->
       (* RDSSPD / RDSSPQ: the shadow stack pointer. *)
       let w = Register.get_width dst in
@@ -1291,15 +1307,19 @@ let step state = function
           let new_rax = Int64.logor (Int64.logand rax_val (Int64.lognot 0xFFFFL)) fsw in
           set_reg state Register.rax new_rax;
           Ok None)
-  | Pmovmskb { dst; src; bits } ->
-      let num_bytes = bits / 8 in
+  | Pmovmskb { dst; src; bits; lane_bits } ->
+      (* Sign-bit extraction (pmovmskb / movmskps / movmskpd): bit i of the
+         destination holds the top bit of element i, where elements are
+         [lane_bits]-wide (8 for pmovmskb, 32 for movmskps, 64 for movmskpd). *)
+      let num_elems = bits / lane_bits in
       let mask = ref 0L in
-      for b = 0 to num_bytes - 1 do
-        let chunk = b / 8 in
-        let byte_pos = (b mod 8) * 8 in
-        let byte_val = Int64.logand (Int64.shift_right_logical (get_vector_lane state src chunk) byte_pos) 0xFFL in
-        if Int64.logand byte_val 0x80L <> 0L then
-          mask := Int64.logor !mask (Int64.shift_left 1L b)
+      for e = 0 to num_elems - 1 do
+        let bit_offset = e * lane_bits in
+        let chunk = bit_offset / 64 in
+        let pos = bit_offset mod 64 in
+        let sign_bit = Int64.shift_right_logical (get_vector_lane state src chunk) (pos + lane_bits - 1) in
+        if Int64.logand sign_bit 1L <> 0L then
+          mask := Int64.logor !mask (Int64.shift_left 1L e)
       done;
       set_reg state dst !mask;
       Ok None

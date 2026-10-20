@@ -1546,6 +1546,85 @@ func_native_xmm_bitwise:
     if (ctx.vregs[9][2] != 0ULL || ctx.vregs[9][3] != 0ULL) return 13;
 |})
 
+let test_native_x86_movmskps_movmskpd () =
+  let pkg =
+    mk_pkg ~seed:20261020 {|
+func_native_movmsk:
+    movmskps eax, xmm1
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      Test_helpers.write_file_string "/tmp/movmsk_vm.hpp" pkg.cpp_runtime_source;
+      run_custom_vm ~name:"native_movmsk" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* xmm1: 32-bit lanes 0 and 1 signed -> movmskps = 0b0011 */
+    ctx.vregs[1][0] = 0x8000000000000000ULL; ctx.vregs[1][1] = 0ULL;
+
+    /* ymm2: 32-bit lanes 1 and 5 signed -> vmovmskps = 0b100010 */
+    ctx.vregs[2][0] = 0x8000000000000000ULL; ctx.vregs[2][1] = 0ULL;
+    ctx.vregs[2][2] = 0x8000000000000000ULL; ctx.vregs[2][3] = 0ULL;
+
+    /* xmm3: 64-bit lane 0 signed -> movmskpd = 0b01 */
+    ctx.vregs[3][0] = 0x8000000000000000ULL; ctx.vregs[3][1] = 0ULL;
+
+    /* ymm4: 64-bit lanes 0 and 2 signed -> vmovmskpd = 0b0101 */
+    ctx.vregs[4][0] = 0x8000000000000000ULL; ctx.vregs[4][1] = 0ULL;
+    ctx.vregs[4][2] = 0x8000000000000000ULL; ctx.vregs[4][3] = 0ULL;
+
+    bool ok = vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count);
+    for (size_t i = 0; i < 6 && i < count; i++) printf("word%zu = 0x%016llx\n", i, (unsigned long long)embedded_bytecode[i]);
+    printf("movmsk: ok=%d rax=%llx rbx=%llx rcx=%llx rdx=%llx v1_0=%llx\n",
+           (int)ok,
+           (unsigned long long)ctx.get_rax(),
+           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RBX),
+           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RCX),
+           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RDX),
+           (unsigned long long)ctx.vregs[1][0]);
+    if (!ok) return 1;
+    if (ctx.get_rax() != 0x3ULL) return 2;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RBX) != 0x22ULL) return 3;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RCX) != 0x1ULL) return 4;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 0x5ULL) return 5;
+|})
+
+let test_native_x86_aes_ni () =
+  let pkg =
+    mk_pkg ~seed:20261026 {|
+func_native_aes:
+    aesenc xmm0, xmm1
+    aesimc xmm2, xmm1
+    aeskeygenassist xmm3, xmm4, 0x01
+    vaesenc xmm5, xmm0, xmm1
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_aes" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    ctx.vregs[0][0] = 0x2BE2F4A0BEE33D19ULL; ctx.vregs[0][1] = 0x0848F8E92A8DC69AULL;
+    ctx.vregs[1][0] = 0xB12C548817FEFAA0ULL; ctx.vregs[1][1] = 0x05766C2A3939A323ULL;
+    ctx.vregs[4][0] = 0xA6D2AE2816157E2BULL; ctx.vregs[4][1] = 0x3C4FCF098815F7ABULL;
+    ctx.vregs[5][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[5][3] = 0xDEADBEEFCAFEBA00ULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if (ctx.vregs[0][0] != 0x2B359F68F27F9CA4ULL) return 2;
+    if (ctx.vregs[0][1] != 0x49506A0243EA5B6BULL) return 3;
+
+    if (ctx.vregs[2][0] != 0x05D462F2A708372BULL) return 4;
+    if (ctx.vregs[2][1] != 0x627D614BBFBD3EBCULL) return 5;
+
+    if (ctx.vregs[3][0] != 0x3424B5E524B5E434ULL) return 6;
+    if (ctx.vregs[3][1] != 0x01EB848BEB848A01ULL) return 7;
+
+    if (ctx.vregs[5][2] != 0ULL || ctx.vregs[5][3] != 0ULL) return 8;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1577,4 +1656,6 @@ let tests = [
   Alcotest.test_case "native_x86_conversions" `Slow test_native_x86_conversions;
   Alcotest.test_case "native_x86_float_comparisons" `Slow test_native_x86_float_comparisons;
   Alcotest.test_case "native_x86_pand_por_pxor_pandn" `Slow test_native_x86_pand_por_pxor_pandn;
+  Alcotest.test_case "native_x86_movmskps_movmskpd" `Slow test_native_x86_movmskps_movmskpd;
+  Alcotest.test_case "native_x86_aes_ni" `Slow test_native_x86_aes_ni;
 ]

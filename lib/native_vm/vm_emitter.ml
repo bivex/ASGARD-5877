@@ -449,6 +449,20 @@ let compile_and_package_multi
     Int64.logor w (Int64.shift_left (Int64.of_int bits) 18)
   in
 
+  let aes_op_code = function
+    | Ir.Aesenc -> 0
+    | Ir.Aesenclast -> 1
+    | Ir.Aesdec -> 2
+    | Ir.Aesdeclast -> 3
+    | Ir.Aesimc -> 4
+    | Ir.Aeskeygenassist -> 5
+  in
+  let aes_imm ~src2 ~imm ~bits =
+    let p = Int64.of_int (src2 land 31) in
+    let p = Int64.logor p (Int64.shift_left (Int64.logand imm 0xFFL) 5) in
+    Int64.logor p (Int64.shift_left (Int64.of_int bits) 13)
+  in
+
   let encode_alu_imm ?(extra_bits = 0L) op_ri op_rr dst imm =
     if is_i32 imm then
       encode_raw_word ~extra_bits (get_opcode op_ri) (get_reg_idx dst) 0 imm
@@ -855,6 +869,10 @@ let compile_and_package_multi
                          (Int64.shift_left (Int64.of_int bits) 13))
                   in
                   encode_raw_word (get_opcode OP_VEC_PCLMUL) (vector_index dst) (vector_index src1) payload
+              | Ir.Vec_aes { op; dst; src1; src2; imm; bits } ->
+                  encode_raw_word ~extra_bits:(Int64.of_int (aes_op_code op)) (get_opcode OP_VEC_AES)
+                    (vector_index dst) (vector_index src1)
+                    (aes_imm ~src2:(vector_index src2) ~imm ~bits)
               | Ir.Read_ssp { dst } ->
                   encode_raw_word (get_opcode OP_READ_SSP) (get_reg_idx dst) 0
                     (if Register.get_width dst = Register.B32 then 32L else 64L)
@@ -883,8 +901,9 @@ let compile_and_package_multi
                          (Int64.shift_left (Int64.of_int bits) 9))
                   in
                   encode_raw_word (get_opcode OP_VEC_EXT) (vector_index dst) (vector_index src1) imm_payload
-              | Ir.Pmovmskb { dst; src; bits } ->
-                  encode_raw_word (get_opcode OP_PMOVMSKB) (get_reg_idx dst) (vector_index src) (Int64.of_int bits)
+              | Ir.Pmovmskb { dst; src; bits; lane_bits } ->
+                  let imm = Int64.logor (Int64.of_int bits) (Int64.shift_left (Int64.of_int lane_bits) 16) in
+                  encode_raw_word (get_opcode OP_PMOVMSKB) (get_reg_idx dst) (vector_index src) imm
               | Ir.Atomic_mem { op; dst; addr; src; imm } -> (
                   match op with
                   | AtLoad ->
