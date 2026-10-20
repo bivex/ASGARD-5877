@@ -424,6 +424,34 @@ movzx_forms:
           Alcotest.(check int64) "movzx r64, r/m16 (mem)" 0xBEEFL (get_reg state Register.r14);
           Alcotest.(check int64) "movzx r32, r/m16 (mem)" 0xBEEFL (get_reg state Register.r15)
 
+let test_lift_and_eval_rol_ror () =
+  let asm = {|
+rol_ror_test:
+    rol rax, 4
+    ror rbx, 4
+    rol edx, 8
+    ror ecx, 1
+    rol r8
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rax 0x123456789ABCDEF0L;
+      set_reg state Register.rbx 0x123456789ABCDEF0L;
+      set_reg state Register.rdx 0x1122334412345678L;
+      set_reg state Register.rcx 0x0000000000000001L;
+      set_reg state Register.r8  0x8000000000000001L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "rol rax, 4" 0x23456789ABCDEF01L (get_reg state Register.rax);
+          Alcotest.(check int64) "ror rbx, 4" 0x0123456789ABCDEFL (get_reg state Register.rbx);
+          Alcotest.(check int64) "rol edx, 8 zeroes upper 32" 0x34567812L (get_reg state Register.rdx);
+          Alcotest.(check int64) "ror ecx, 1 zeroes upper 32" 0x80000000L (get_reg state Register.rcx);
+          Alcotest.(check int64) "rol r8 (implicit 1)" 0x0000000000000003L (get_reg state Register.r8)
+
 let test_lift_one_operand_mul () =
   let asm = {|
 mul8:
@@ -2170,6 +2198,7 @@ let tests = [
   Alcotest.test_case "lift_and_eval_movsx_reg" `Quick test_lift_and_eval_movsx_reg;
   Alcotest.test_case "lift_and_eval_movzx_reg" `Quick test_lift_and_eval_movzx_reg;
   Alcotest.test_case "lift_and_eval_movzx_forms" `Quick test_lift_and_eval_movzx_forms;
+  Alcotest.test_case "lift_and_eval_rol_ror" `Quick test_lift_and_eval_rol_ror;
   Alcotest.test_case "lift_one_operand_mul_b8" `Quick test_lift_one_operand_mul;
   Alcotest.test_case "lift_one_operand_mul_b8_signed" `Quick test_lift_one_operand_mul_signed;
   Alcotest.test_case "lift_one_operand_mul_b64" `Quick test_lift_one_operand_mul64;

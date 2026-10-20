@@ -15,6 +15,7 @@ Usage:
 """
 
 import sys
+import os
 import re
 import argparse
 import urllib.request
@@ -240,27 +241,134 @@ func_{mnem_lower}:
     return code
 
 
-def audit_instruction_in_codebase(mnemonic: str):
-    mnem_lower = mnemonic.lower()
-    print(f"\n[+] Auditing {mnemonic.upper()} in ASGARD-5877 Codebase:")
-    
-    # Check x86 lifter
-    try:
-        with open("lib/x86_lifter/lifter.ml", "r") as f:
-            lifter_src = f.read()
-        has_lifter = f'"{mnem_lower}"' in lifter_src.lower()
-        print(f"  * x86 Lifter (`lib/x86_lifter/lifter.ml`): {'[FOUND]' if has_lifter else '[MISSING]'}")
-    except Exception as e:
-        print(f"  * x86 Lifter: check error ({e})")
+CATEGORIES = {
+    "Арифметика целых": ["ADD", "SUB", "INC", "DEC", "NEG", "IMUL", "MUL"],
+    "Логика/биты": ["AND", "OR", "XOR", "NOT", "SHL", "SHR", "SAR", "ROL", "ROR"],
+    "Сравнение/флаги": ["CMP", "TEST"],
+    "Управление потоком": ["JMP", "Jcc", "CALL", "RET"],
+    "Условные пересылки": ["CMOVcc", "SETcc"],
+}
 
-    # Check tests
-    try:
-        with open("test/test_x86_lifter.ml", "r") as f:
-            test_src = f.read()
-        has_test = mnem_lower in test_src.lower()
-        print(f"  * x86 Lifter Tests (`test/test_x86_lifter.ml`): {'[FOUND]' if has_test else '[MISSING]'}")
-    except Exception as e:
-        print(f"  * Tests: check error ({e})")
+
+def audit_instructions_in_codebase(mnemonics: list[str]):
+    # Flatten any category names or comma-separated inputs
+    target_mnems = []
+    for item in mnemonics:
+        cleaned = item.strip().strip(",")
+        if cleaned.lower() in [k.lower() for k in CATEGORIES]:
+            cat_key = next(k for k in CATEGORIES if k.lower() == cleaned.lower())
+            target_mnems.extend(CATEGORIES[cat_key])
+        elif cleaned.lower() in ("all", "all-categories"):
+            for v in CATEGORIES.values():
+                target_mnems.extend(v)
+        else:
+            # could be comma-separated like "ADD,SUB"
+            for sub_m in cleaned.split(","):
+                sub_m = sub_m.strip()
+                if sub_m:
+                    target_mnems.append(sub_m)
+
+    # De-duplicate while preserving order
+    seen = set()
+    unique_mnems = []
+    for m in target_mnems:
+        if m.upper() not in seen:
+            seen.add(m.upper())
+            unique_mnems.append(m)
+
+    # Read codebase sources
+    def read_file_safe(path):
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+        except Exception:
+            return ""
+
+    lifter_src = read_file_safe("lib/x86_lifter/lifter.ml").lower()
+    ir_src = read_file_safe("lib/vm_ir/ir.ml").lower()
+    eval_src = read_file_safe("lib/vm_ir/vm_eval.ml").lower()
+
+    native_src = (
+        read_file_safe("lib/native_vm/vm_alu_handlers.ml") + "\n" +
+        read_file_safe("lib/native_vm/vm_control_handlers.ml") + "\n" +
+        read_file_safe("lib/native_vm/vm_mem_handlers.ml") + "\n" +
+        read_file_safe("lib/native_vm/vm_transform.ml") + "\n" +
+        read_file_safe("lib/native_vm/vm_emitter.ml")
+    ).lower()
+
+    tests_src = ""
+    for root, _, files in os.walk("test"):
+        for file in files:
+            if file.endswith(".ml"):
+                tests_src += read_file_safe(os.path.join(root, file)) + "\n"
+    tests_src = tests_src.lower()
+
+    print("\n" + "=" * 78)
+    print(f" {'ASGARD-5877 Instruction Implementation Audit':^76} ")
+    print("=" * 78)
+    fmt = "%-12s | %-10s | %-10s | %-10s | %-11s | %-10s"
+    print(fmt % ("Mnemonic", "Lifter", "VM IR", "VM Eval", "Native VM", "Tests"))
+    print("-" * 78)
+
+    summary = []
+    for m in unique_mnems:
+        m_lower = m.lower()
+
+        # Lifter pattern
+        if m_lower == "jcc":
+            l_pat = r"(jcc|parse_jcc|jz|jnz|je|jne|jg|jge|jl|jle|ja|jae|jb|jbe)"
+            ir_pat = r"\bjcc\b"
+            ev_pat = r"\bjcc\b"
+            nat_pat = r"(h_jcc|op_jcc)"
+            t_pat = r"(jcc|test_.*_jcc|jnz|jz|jne|je)"
+        elif m_lower == "cmovcc":
+            l_pat = r"(cmovcc|parse_cmovcc|cmov)"
+            ir_pat = r"\bcmov\b"
+            ev_pat = r"\bcmov\b"
+            nat_pat = r"(h_cmov|op_cmov)"
+            t_pat = r"(cmov|cmovz|cmovne|cmove)"
+        elif m_lower == "setcc":
+            l_pat = r"(setcc|parse_setcc|setz|setne|sete|seta|setb|setg|setl)"
+            ir_pat = r"\bsetcc\b"
+            ev_pat = r"\bsetcc\b"
+            nat_pat = r"(h_setcc|op_setcc)"
+            t_pat = r"(setcc|setz|setne|sete|seta|setb)"
+        else:
+            l_pat = rf'("{m_lower}"|\b{m_lower}\b)'
+            ir_pat = rf"\b{m_lower}\b"
+            ev_pat = rf"\b{m_lower}\b"
+            nat_pat = rf"(h_{m_lower}|op_{m_lower}|\b{m_lower}\b)"
+            t_pat = rf"\b{m_lower}\b"
+
+        has_lifter = bool(re.search(l_pat, lifter_src))
+        has_ir = bool(re.search(ir_pat, ir_src))
+        has_eval = bool(re.search(ev_pat, eval_src))
+        has_native = bool(re.search(nat_pat, native_src))
+        has_tests = bool(re.search(t_pat, tests_src))
+
+        status_str = lambda b: "[OK]" if b else "[MISSING]"
+        print(fmt % (
+            m.upper(),
+            status_str(has_lifter),
+            status_str(has_ir),
+            status_str(has_eval),
+            status_str(has_native),
+            status_str(has_tests),
+        ))
+        summary.append((m.upper(), has_lifter, has_ir, has_eval, has_native, has_tests))
+
+    print("-" * 78)
+    all_ok = all(all(row[1:]) for row in summary)
+    if all_ok:
+        print(f"[+] All {len(summary)} audited instructions are fully implemented and verified across all layers!")
+    else:
+        missing_count = sum(1 for row in summary if not all(row[1:]))
+        print(f"[-] {missing_count} instruction(s) have missing layers or coverage.")
+    print("=" * 78 + "\n")
+
+
+def audit_instruction_in_codebase(mnemonic: str):
+    audit_instructions_in_codebase([mnemonic])
 
 
 def main():
@@ -284,7 +392,7 @@ def main():
 
     # audit
     audit_parser = subparsers.add_parser("audit", help="Audit implementation status in ASGARD-5877")
-    audit_parser.add_argument("mnemonic", help="Instruction mnemonic")
+    audit_parser.add_argument("mnemonics", nargs="+", help="Instruction mnemonic(s) or category (e.g. ADD SUB, 'all')")
 
     args = parser.parse_args()
 
@@ -326,7 +434,7 @@ def main():
         print(generate_ocaml_test(spec))
 
     elif args.cmd == "audit":
-        audit_instruction_in_codebase(args.mnemonic)
+        audit_instructions_in_codebase(args.mnemonics)
     else:
         parser.print_help()
 
