@@ -130,6 +130,55 @@ func_native_b16_word:
     if (ctx.get_rax() != 0x00CACAFEULL) return 2;
 |})
 
+(* MOVZX acceptance in the threaded native VM: all five encodings
+   (0F B6 / 0F B7 with 32- and 64-bit destinations, register and memory
+   sources) must zero-extend, a 32-bit destination must end up with the
+   upper half of its parent register cleared, and MOVZX must leave the flags
+   alone ("Flags Affected: None").  The leading [cmp] makes ZF true; every
+   MOVZX below runs between that compare and the end of the function, so a
+   flag-clobbering lowering shows up as a cleared ZF. *)
+let test_native_movzx_zero_extend () =
+  let pkg =
+    mk_pkg ~seed:20261020 {|
+func_native_movzx:
+    cmp rsi, rdi
+    movzx r8, cl
+    movzx r9d, dl
+    movzx r10, cx
+    movzx r11d, dx
+    movzx r12, byte ptr [rdi]
+    movzx r13d, byte ptr [rdi]
+    movzx r14, word ptr [rdi + 2]
+    movzx r15d, word ptr [rdi + 2]
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"movzx" tmp_dir pkg {|
+    static unsigned char scratch[16];
+    for (int i = 0; i < 16; i++) scratch[i] = (unsigned char)(i + 1);
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    ctx.set_rdi((uint64_t)(scratch + 4));
+    ctx.set_rsi((uint64_t)(scratch + 4));
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, 0x1234A5ULL);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, 0xBEEF5CULL);
+    ctx.set_reg(vanguard_threaded_vm::REG_RSP, (uint64_t)(scratch + 12));
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    // cl = 0xA5, cx = 0x34A5, dl = 0x5C, dx = 0xEF5C
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R8) != 0xA5ULL) return 2;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R9) != 0x5CULL) return 3;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R10) != 0x34A5ULL) return 4;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R11) != 0xEF5CULL) return 5;
+    // the byte at [rdi] is 0x05, the word at [rdi + 2] is 0x0807
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R12) != 0x05ULL) return 6;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R13) != 0x05ULL) return 7;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R14) != 0x0807ULL) return 8;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R15) != 0x0807ULL) return 9;
+    // MOVZX affects no flags: the compare above set ZF and it must still hold
+    if (!ctx.zf) return 10;
+|})
+
 (* TODO item 1 acceptance, part 1: full C pipeline — a uint16_t computation
    inside ASGARD_BEGIN_VIRTUALIZE goes through macro obfuscation, the clang
    frontend, the ARM64 lifter, the threaded-VM packager and the C trampoline;
@@ -1140,6 +1189,7 @@ let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
   Alcotest.test_case "native_b16_word_memory" `Slow test_native_b16_word_memory;
+  Alcotest.test_case "native_movzx_zero_extend" `Slow test_native_movzx_zero_extend;
   Alcotest.test_case "native_signed_loads" `Slow test_native_signed_loads;
   Alcotest.test_case "e2e_uint16_pipeline" `Slow test_e2e_uint16_pipeline;
   Alcotest.test_case "e2e_multi_function_pipeline" `Slow test_e2e_multi_function_pipeline;
