@@ -1540,62 +1540,252 @@ let emit_mem_and_ffi_handlers ?rng b =
   in
   emit_handler_ast b "H_ATOMIC_CAS" (atomic_cas_stmts @ [ inc_instrs; fetch_next ]);
 
-  let atomic_add_stmts = [
-    let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
-    let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
-    if_then_else (var "wcode" ==~ i32 1)
-      [
-        let_u32 "_old32" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt32) (var "_addr"); cast UInt32 reg_src; var "__ATOMIC_SEQ_CST"]);
-        set_reg (var "src") (cast UInt64 (var "_old32"));
-      ]
-      [
-        if_then_else (var "wcode" ==~ i32 2)
+  (* The atomic add has three metamorphic variants: the __atomic builtin, the
+     C++ atomic member and a load/compare-exchange loop.  All of them honour
+     the width code in the word's extra bits (1 = 32-bit, 2 = 16-bit,
+     3 = 8-bit, anything else = 64-bit). *)
+  let atomic_add_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
+        if_then_else (var "wcode" ==~ i32 1)
           [
-            let_u16 "_old16" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt16) (var "_addr"); cast UInt16 reg_src; var "__ATOMIC_SEQ_CST"]);
-            set_reg (var "src") (cast UInt64 (var "_old16"));
+            let_u32 "_old32" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt32) (var "_addr"); cast UInt32 reg_src; var "__ATOMIC_SEQ_CST"]);
+            set_reg (var "src") (cast UInt64 (var "_old32"));
           ]
           [
-            if_then_else (var "wcode" ==~ i32 3)
+            if_then_else (var "wcode" ==~ i32 2)
               [
-                let_u8 "_old8" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt8) (var "_addr"); cast UInt8 reg_src; var "__ATOMIC_SEQ_CST"]);
-                set_reg (var "src") (cast UInt64 (var "_old8"));
+                let_u16 "_old16" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt16) (var "_addr"); cast UInt16 reg_src; var "__ATOMIC_SEQ_CST"]);
+                set_reg (var "src") (cast UInt64 (var "_old16"));
               ]
               [
-                let_u64 "_old64" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
-                set_reg (var "src") (var "_old64");
+                if_then_else (var "wcode" ==~ i32 3)
+                  [
+                    let_u8 "_old8" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt8) (var "_addr"); cast UInt8 reg_src; var "__ATOMIC_SEQ_CST"]);
+                    set_reg (var "src") (cast UInt64 (var "_old8"));
+                  ]
+                  [
+                    let_u64 "_old64" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
+                    set_reg (var "src") (var "_old64");
+                  ];
               ];
           ];
-      ];
-  ] in
+      ]
+    | 1 -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
+        if_then_else (var "wcode" ==~ i32 1)
+          [
+            decl_var (Ptr (StructType "std::atomic<uint32_t>")) "_p32"
+              ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint32_t>")) (var "_addr"));
+            let_u32 "_old32" (call "_p32->fetch_add" [cast UInt32 reg_src; var "std::memory_order_seq_cst"]);
+            set_reg (var "src") (cast UInt64 (var "_old32"));
+          ]
+          [
+            if_then_else (var "wcode" ==~ i32 2)
+              [
+                decl_var (Ptr (StructType "std::atomic<uint16_t>")) "_p16"
+                  ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint16_t>")) (var "_addr"));
+                let_u16 "_old16" (call "_p16->fetch_add" [cast UInt16 reg_src; var "std::memory_order_seq_cst"]);
+                set_reg (var "src") (cast UInt64 (var "_old16"));
+              ]
+              [
+                if_then_else (var "wcode" ==~ i32 3)
+                  [
+                    decl_var (Ptr (StructType "std::atomic<uint8_t>")) "_p8"
+                      ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint8_t>")) (var "_addr"));
+                    let_u8 "_old8" (call "_p8->fetch_add" [cast UInt8 reg_src; var "std::memory_order_seq_cst"]);
+                    set_reg (var "src") (cast UInt64 (var "_old8"));
+                  ]
+                  [
+                    decl_var (Ptr (StructType "std::atomic<uint64_t>")) "_p64"
+                      ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "_addr"));
+                    let_u64 "_old64" (call "_p64->fetch_add" [reg_src; var "std::memory_order_seq_cst"]);
+                    set_reg (var "src") (var "_old64");
+                  ];
+              ];
+          ];
+      ]
+    | _ -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
+        let_u64 "_add" reg_src;
+        if_then_else (var "wcode" ==~ i32 1)
+          [
+            decl_var (Ptr UInt32) "_p32" ~init:(reinterpret_cast (Ptr UInt32) (var "_addr"));
+            let_u32 "_old32" (call "__atomic_load_n" [var "_p32"; var "__ATOMIC_RELAXED"]);
+            while_loop
+              (log_not (call "__atomic_compare_exchange_n" [ var "_p32"; addr_of (var "_old32");
+                                                           var "_old32" +~ cast UInt32 (var "_add");
+                                                           bool_lit false; var "__ATOMIC_SEQ_CST";
+                                                           var "__ATOMIC_SEQ_CST" ]))
+              [];
+            set_reg (var "src") (cast UInt64 (var "_old32"));
+          ]
+          [
+            if_then_else (var "wcode" ==~ i32 2)
+              [
+                decl_var (Ptr UInt16) "_p16" ~init:(reinterpret_cast (Ptr UInt16) (var "_addr"));
+                let_u16 "_old16" (call "__atomic_load_n" [var "_p16"; var "__ATOMIC_RELAXED"]);
+                while_loop
+                  (log_not (call "__atomic_compare_exchange_n" [ var "_p16"; addr_of (var "_old16");
+                                                               var "_old16" +~ cast UInt16 (var "_add");
+                                                               bool_lit false; var "__ATOMIC_SEQ_CST";
+                                                               var "__ATOMIC_SEQ_CST" ]))
+                  [];
+                set_reg (var "src") (cast UInt64 (var "_old16"));
+              ]
+              [
+                if_then_else (var "wcode" ==~ i32 3)
+                  [
+                    decl_var (Ptr UInt8) "_p8" ~init:(reinterpret_cast (Ptr UInt8) (var "_addr"));
+                    let_u8 "_old8" (call "__atomic_load_n" [var "_p8"; var "__ATOMIC_RELAXED"]);
+                    while_loop
+                      (log_not (call "__atomic_compare_exchange_n" [ var "_p8"; addr_of (var "_old8");
+                                                                   var "_old8" +~ cast UInt8 (var "_add");
+                                                                   bool_lit false; var "__ATOMIC_SEQ_CST";
+                                                                   var "__ATOMIC_SEQ_CST" ]))
+                      [];
+                    set_reg (var "src") (cast UInt64 (var "_old8"));
+                  ]
+                  [
+                    decl_var (Ptr UInt64) "_p64" ~init:(reinterpret_cast (Ptr UInt64) (var "_addr"));
+                    let_u64 "_old64" (call "__atomic_load_n" [var "_p64"; var "__ATOMIC_RELAXED"]);
+                    while_loop
+                      (log_not (call "__atomic_compare_exchange_n" [ var "_p64"; addr_of (var "_old64");
+                                                                   var "_old64" +~ var "_add";
+                                                                   bool_lit false; var "__ATOMIC_SEQ_CST";
+                                                                   var "__ATOMIC_SEQ_CST" ]))
+                      [];
+                    set_reg (var "src") (var "_old64");
+                  ];
+              ];
+          ];
+      ]
+  in
   emit_handler_ast b "H_ATOMIC_ADD" (atomic_add_stmts @ [ inc_instrs; fetch_next ]);
 
-  let atomic_swp_stmts = [
-    let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
-    let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
-    if_then_else (var "wcode" ==~ i32 1)
-      [
-        let_u32 "_old32" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt32) (var "_addr"); cast UInt32 reg_src; var "__ATOMIC_SEQ_CST"]);
-        set_reg (var "src") (cast UInt64 (var "_old32"));
-      ]
-      [
-        if_then_else (var "wcode" ==~ i32 2)
+  (* The atomic swap has the same three metamorphic variants as the atomic
+     add: the __atomic builtin, the C++ atomic member and a
+     load/compare-exchange loop. *)
+  let atomic_swp_stmts =
+    match pick_variant 3 with
+    | 0 -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
+        if_then_else (var "wcode" ==~ i32 1)
           [
-            let_u16 "_old16" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt16) (var "_addr"); cast UInt16 reg_src; var "__ATOMIC_SEQ_CST"]);
-            set_reg (var "src") (cast UInt64 (var "_old16"));
+            let_u32 "_old32" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt32) (var "_addr"); cast UInt32 reg_src; var "__ATOMIC_SEQ_CST"]);
+            set_reg (var "src") (cast UInt64 (var "_old32"));
           ]
           [
-            if_then_else (var "wcode" ==~ i32 3)
+            if_then_else (var "wcode" ==~ i32 2)
               [
-                let_u8 "_old8" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt8) (var "_addr"); cast UInt8 reg_src; var "__ATOMIC_SEQ_CST"]);
-                set_reg (var "src") (cast UInt64 (var "_old8"));
+                let_u16 "_old16" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt16) (var "_addr"); cast UInt16 reg_src; var "__ATOMIC_SEQ_CST"]);
+                set_reg (var "src") (cast UInt64 (var "_old16"));
               ]
               [
-                let_u64 "_old64" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
-                set_reg (var "src") (var "_old64");
+                if_then_else (var "wcode" ==~ i32 3)
+                  [
+                    let_u8 "_old8" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt8) (var "_addr"); cast UInt8 reg_src; var "__ATOMIC_SEQ_CST"]);
+                    set_reg (var "src") (cast UInt64 (var "_old8"));
+                  ]
+                  [
+                    let_u64 "_old64" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
+                    set_reg (var "src") (var "_old64");
+                  ];
               ];
           ];
-      ];
-  ] in
+      ]
+    | 1 -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
+        if_then_else (var "wcode" ==~ i32 1)
+          [
+            decl_var (Ptr (StructType "std::atomic<uint32_t>")) "_p32"
+              ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint32_t>")) (var "_addr"));
+            let_u32 "_old32" (call "_p32->exchange" [cast UInt32 reg_src; var "std::memory_order_seq_cst"]);
+            set_reg (var "src") (cast UInt64 (var "_old32"));
+          ]
+          [
+            if_then_else (var "wcode" ==~ i32 2)
+              [
+                decl_var (Ptr (StructType "std::atomic<uint16_t>")) "_p16"
+                  ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint16_t>")) (var "_addr"));
+                let_u16 "_old16" (call "_p16->exchange" [cast UInt16 reg_src; var "std::memory_order_seq_cst"]);
+                set_reg (var "src") (cast UInt64 (var "_old16"));
+              ]
+              [
+                if_then_else (var "wcode" ==~ i32 3)
+                  [
+                    decl_var (Ptr (StructType "std::atomic<uint8_t>")) "_p8"
+                      ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint8_t>")) (var "_addr"));
+                    let_u8 "_old8" (call "_p8->exchange" [cast UInt8 reg_src; var "std::memory_order_seq_cst"]);
+                    set_reg (var "src") (cast UInt64 (var "_old8"));
+                  ]
+                  [
+                    decl_var (Ptr (StructType "std::atomic<uint64_t>")) "_p64"
+                      ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "_addr"));
+                    let_u64 "_old64" (call "_p64->exchange" [reg_src; var "std::memory_order_seq_cst"]);
+                    set_reg (var "src") (var "_old64");
+                  ];
+              ];
+          ];
+      ]
+    | _ -> [
+        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+        let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
+        if_then_else (var "wcode" ==~ i32 1)
+          [
+            decl_var (Ptr UInt32) "_p32" ~init:(reinterpret_cast (Ptr UInt32) (var "_addr"));
+            let_u32 "_old32" (call "__atomic_load_n" [var "_p32"; var "__ATOMIC_RELAXED"]);
+            while_loop
+              (log_not (call "__atomic_compare_exchange_n" [ var "_p32"; addr_of (var "_old32");
+                                                           cast UInt32 reg_src; bool_lit false;
+                                                           var "__ATOMIC_SEQ_CST"; var "__ATOMIC_SEQ_CST" ]))
+              [];
+            set_reg (var "src") (cast UInt64 (var "_old32"));
+          ]
+          [
+            if_then_else (var "wcode" ==~ i32 2)
+              [
+                decl_var (Ptr UInt16) "_p16" ~init:(reinterpret_cast (Ptr UInt16) (var "_addr"));
+                let_u16 "_old16" (call "__atomic_load_n" [var "_p16"; var "__ATOMIC_RELAXED"]);
+                while_loop
+                  (log_not (call "__atomic_compare_exchange_n" [ var "_p16"; addr_of (var "_old16");
+                                                               cast UInt16 reg_src; bool_lit false;
+                                                               var "__ATOMIC_SEQ_CST"; var "__ATOMIC_SEQ_CST" ]))
+                  [];
+                set_reg (var "src") (cast UInt64 (var "_old16"));
+              ]
+              [
+                if_then_else (var "wcode" ==~ i32 3)
+                  [
+                    decl_var (Ptr UInt8) "_p8" ~init:(reinterpret_cast (Ptr UInt8) (var "_addr"));
+                    let_u8 "_old8" (call "__atomic_load_n" [var "_p8"; var "__ATOMIC_RELAXED"]);
+                    while_loop
+                      (log_not (call "__atomic_compare_exchange_n" [ var "_p8"; addr_of (var "_old8");
+                                                                   cast UInt8 reg_src; bool_lit false;
+                                                                   var "__ATOMIC_SEQ_CST"; var "__ATOMIC_SEQ_CST" ]))
+                      [];
+                    set_reg (var "src") (cast UInt64 (var "_old8"));
+                  ]
+                  [
+                    decl_var (Ptr UInt64) "_p64" ~init:(reinterpret_cast (Ptr UInt64) (var "_addr"));
+                    let_u64 "_old64" (call "__atomic_load_n" [var "_p64"; var "__ATOMIC_RELAXED"]);
+                    while_loop
+                      (log_not (call "__atomic_compare_exchange_n" [ var "_p64"; addr_of (var "_old64");
+                                                                   reg_src; bool_lit false;
+                                                                   var "__ATOMIC_SEQ_CST"; var "__ATOMIC_SEQ_CST" ]))
+                      [];
+                    set_reg (var "src") (var "_old64");
+                  ];
+              ];
+          ];
+      ]
+  in
   emit_handler_ast b "H_ATOMIC_SWP" (atomic_swp_stmts @ [ inc_instrs; fetch_next ]);
   emit_handler_inline_ast b "H_FENCE" [
     expr_stmt (call "std::atomic_thread_fence" [var "std::memory_order_seq_cst"]);
