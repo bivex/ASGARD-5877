@@ -56,3 +56,4 @@ octave-workspace
 /binaries/pipeline_dump_unbal
 /examples/x87_fuzz/artifacts
 /scripts/artifacts
+/dist_arm64
