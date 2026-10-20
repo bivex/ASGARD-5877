@@ -1,21 +1,21 @@
 (**
-  Codec_Verified.fst — Формальная верификация кодека инструкций Vanguard-9292 в F*.
+  Codec_Verified.fst — Formal Verification of Vanguard-9292 Instruction Codec in F*.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Доказывает:
-  1. Корректность упаковки и распаковки битовых срезов (Bitfield Slice Packing Roundtrip).
-  2. Инволютивность шифрования скользящим ключом XOR над 64-битными последовательностями.
-  3. Полную обратимость кодека инструкций (End-to-End Encrypted Codec Roundtrip):
+  Proves:
+  1. Correctness of bitfield slice packing and unpacking (Bitfield Slice Packing Roundtrip).
+  2. Involution of rolling XOR key encryption over 64-bit sequences.
+  3. Total reversibility of instruction codec (End-to-End Encrypted Codec Roundtrip):
      decode (encode insn key) key == insn.
-  4. Тотальную безопасность парсера (Parser Total Safety / Crash Freedom):
-     Для ЛЮБОГО 64-битного потока бит декодер тотален, детерминирован и не падает.
+  4. Total parser safety (Parser Total Safety / Crash Freedom):
+     For ANY 64-bit bitstream, the decoder is total, deterministic, and non-crashing.
 *)
 module Codec_Verified
 
 open FStar.Seq
 
 (* ------------------------------------------------------------------ *)
-(* 1. Базовые типы битовых последовательностей                         *)
+(* 1. Basic Bit Sequence Types                                       *)
 (* ------------------------------------------------------------------ *)
 
 type bit = bool
@@ -34,7 +34,7 @@ type v_instr = {
 }
 
 (* ------------------------------------------------------------------ *)
-(* 2. Леммы декомпозиции срезов последовательностей                   *)
+(* 2. Sequence Slice Decomposition Lemmas                             *)
 (* ------------------------------------------------------------------ *)
 
 val lemma_slice_prefix : #a:Type -> s1:seq a -> s2:seq a ->
@@ -53,7 +53,7 @@ let lemma_slice_nested #a s1 s2 i j =
   lemma_eq_intro (slice (append s1 s2) (length s1 + i) (length s1 + j)) (slice s2 i j)
 
 (* ------------------------------------------------------------------ *)
-(* 3. Упаковка и распаковка инструкции Vanguard-9292                  *)
+(* 3. Vanguard-9292 Instruction Packing and Unpacking                 *)
 (* ------------------------------------------------------------------ *)
 
 let pack (i:v_instr) : word64 =
@@ -73,7 +73,7 @@ let unpack (w:word64) : v_instr = {
   v_junk = slice w 56 64;
 }
 
-(** Теорема 1: Упаковка и последующая распаковка сохраняют инструкцию идентично *)
+(** Theorem 1: Packing followed by unpacking preserves instruction identically *)
 val theorem_pack_unpack_roundtrip : i:v_instr ->
   Lemma (unpack (pack i) == i)
 let theorem_pack_unpack_roundtrip i =
@@ -82,32 +82,32 @@ let theorem_pack_unpack_roundtrip i =
   let w_tail7 = append i.v_src1 w_tail6 in
   let w_tail8 = append i.v_dst w_tail7 in
   let w = append i.v_op w_tail8 in
-  (* Поле op: [0..8) *)
+  (* Field op: [0..8) *)
   lemma_slice_prefix i.v_op w_tail8;
   lemma_eq_elim (slice w 0 8) i.v_op;
-  (* Поле dst: [8..16) *)
+  (* Field dst: [8..16) *)
   lemma_slice_nested i.v_op w_tail8 0 8;
   lemma_slice_prefix i.v_dst w_tail7;
   lemma_eq_elim (slice w 8 16) i.v_dst;
-  (* Поле src1: [16..24) *)
+  (* Field src1: [16..24) *)
   lemma_slice_nested i.v_op w_tail8 8 16;
   lemma_slice_nested i.v_dst w_tail7 0 8;
   lemma_slice_prefix i.v_src1 w_tail6;
   lemma_eq_elim (slice w 16 24) i.v_src1;
-  (* Поле src2: [24..32) *)
+  (* Field src2: [24..32) *)
   lemma_slice_nested i.v_op w_tail8 16 24;
   lemma_slice_nested i.v_dst w_tail7 8 16;
   lemma_slice_nested i.v_src1 w_tail6 0 8;
   lemma_slice_prefix i.v_src2 w_tail5;
   lemma_eq_elim (slice w 24 32) i.v_src2;
-  (* Поле imm: [32..48) *)
+  (* Field imm: [32..48) *)
   lemma_slice_nested i.v_op w_tail8 24 40;
   lemma_slice_nested i.v_dst w_tail7 16 32;
   lemma_slice_nested i.v_src1 w_tail6 8 24;
   lemma_slice_nested i.v_src2 w_tail5 0 16;
   lemma_slice_prefix i.v_imm (append i.v_mask i.v_junk);
   lemma_eq_elim (slice w 32 48) i.v_imm;
-  (* Поле mask: [48..56) *)
+  (* Field mask: [48..56) *)
   lemma_slice_nested i.v_op w_tail8 40 48;
   lemma_slice_nested i.v_dst w_tail7 32 40;
   lemma_slice_nested i.v_src1 w_tail6 24 32;
@@ -115,7 +115,7 @@ let theorem_pack_unpack_roundtrip i =
   lemma_slice_nested i.v_imm (append i.v_mask i.v_junk) 0 8;
   lemma_slice_prefix i.v_mask i.v_junk;
   lemma_eq_elim (slice w 48 56) i.v_mask;
-  (* Поле junk: [56..64) *)
+  (* Field junk: [56..64) *)
   lemma_slice_nested i.v_op w_tail8 48 56;
   lemma_slice_nested i.v_dst w_tail7 40 48;
   lemma_slice_nested i.v_src1 w_tail6 32 40;
@@ -125,20 +125,20 @@ let theorem_pack_unpack_roundtrip i =
   lemma_eq_elim (slice w 56 64) i.v_junk
 
 (* ------------------------------------------------------------------ *)
-(* 4. Шифрование скользящим ключом XOR                                *)
+(* 4. Rolling XOR Key Encryption                                      *)
 (* ------------------------------------------------------------------ *)
 
 let xor_words (w1:word64) (w2:word64) : word64 =
   init 64 (fun idx -> index w1 idx <> index w2 idx)
 
-(** Теорема 2: Скользящий ключ инволютивен *)
+(** Theorem 2: Rolling key is an involution *)
 val theorem_key_involution : w:word64 -> k:word64 ->
   Lemma (equal (xor_words (xor_words w k) k) w)
 let theorem_key_involution w k =
   lemma_eq_intro (xor_words (xor_words w k) k) w
 
 (* ------------------------------------------------------------------ *)
-(* 5. Главная теорема 3: Полная обратимость зашифрованного кодека     *)
+(* 5. Primary Theorem 3: Complete Reversibility of Encrypted Codec    *)
 (* ------------------------------------------------------------------ *)
 
 let encode (i:v_instr) (key:word64) : word64 =
@@ -156,7 +156,7 @@ let theorem_codec_roundtrip i key =
   theorem_pack_unpack_roundtrip i
 
 (* ------------------------------------------------------------------ *)
-(* 6. Главная теорема 4: Тотальная безопасность парсера (No Panics)   *)
+(* 6. Primary Theorem 4: Total Parser Safety (No Panics)              *)
 (* ------------------------------------------------------------------ *)
 
 type parse_result =
@@ -170,7 +170,7 @@ let parse_word (raw:word64) (key:word64) (is_junk:byte8 -> bool) (is_valid:byte8
   else if is_valid insn.v_op then Parse_Success insn
   else Parse_Invalid insn.v_op
 
-(** Теорема: Парсер тотален и никогда не падает при любых 64-битных данных *)
+(** Theorem: Parser is total and never panics on any 64-bit input *)
 val theorem_parser_total_safety :
   raw:word64 -> key:word64 -> is_junk:(byte8 -> bool) -> is_valid:(byte8 -> bool) ->
   Lemma (ensures (

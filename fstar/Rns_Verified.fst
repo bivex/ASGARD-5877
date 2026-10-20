@@ -1,36 +1,36 @@
 (**
-  Rns_Verified.fst — Верификация системы остаточных классов (RNS-4) и алгоритма Гарнера (CRT) ASGARD-5877.
+  Rns_Verified.fst — Residue Number System (RNS-4) and Garner Algorithm (CRT) Verification for ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Доказывает:
-  1. Корректность мультипликативных обратных элементов (Bezout inverses).
-  2. Достаточность динамического диапазона M > 2^63.
-  3. Корректность смешанного базиса Гарнера (Garner Mixed-Radix Conversion):
-     восстановленное число X строго удовлетворяет сравнениям и диапазону X < M.
-  4. Гомоморфизм модулярных каналов сложения.
+  Proves:
+  1. Correctness of multiplicative modular inverses (Bezout inverses).
+  2. Dynamic range sufficiency M > 2^63.
+  3. Garner Mixed-Radix Conversion correctness:
+     reconstructed integer X strictly satisfies modular congruences and range X < M.
+  4. Addition channel homomorphism.
 *)
 module Rns_Verified
 
 module M = FStar.Math.Lemmas
 
 (* ------------------------------------------------------------------ *)
-(* 1. Базовые модули и динамический диапазон M                         *)
+(* 1. Base Moduli and Dynamic Range M                                 *)
 (* ------------------------------------------------------------------ *)
 
 let m1 : pos = 65537 (* 2^16 + 1 *)
-let m2 : pos = 65521 (* Наибольшее простое < 2^16 *)
-let m3 : pos = 65519 (* Второе наибольшее простое < 2^16 *)
-let m4 : pos = 65497 (* Третье наибольшее простое < 2^16 *)
+let m2 : pos = 65521 (* Largest prime < 2^16 *)
+let m3 : pos = 65519 (* Second largest prime < 2^16 *)
+let m4 : pos = 65497 (* Third largest prime < 2^16 *)
 
 let dynamic_range_M : pos = m1 * m2 * m3 * m4
 
-(** Доказательство, что динамический диапазон достаточен для положительных 63-битных целых *)
+(** Proof that dynamic range is sufficient for positive 63-bit integers *)
 val theorem_dynamic_range : unit ->
   Lemma (dynamic_range_M > 0x7FFFFFFFFFFFFFFF)
 let theorem_dynamic_range () = ()
 
 (* ------------------------------------------------------------------ *)
-(* 2. Модулярные обратные элементы (Garner Precomputed Inverses)        *)
+(* 2. Garner Precomputed Modular Inverses                             *)
 (* ------------------------------------------------------------------ *)
 
 let inv_m1_m2 : pos = 61426
@@ -40,7 +40,7 @@ let inv_m2_m3 : pos = 32760
 let inv_m2_m4 : pos = 62768
 let inv_m3_m4 : pos = 20840
 
-(** Формальное доказательство обратных элементов Безу *)
+(** Formal proof of Bezout modular inverses *)
 val theorem_inverses : unit ->
   Lemma ((m1 * inv_m1_m2) % m2 == 1 /\
          (m1 * inv_m1_m3) % m3 == 1 /\
@@ -51,7 +51,7 @@ val theorem_inverses : unit ->
 let theorem_inverses () = ()
 
 (* ------------------------------------------------------------------ *)
-(* 3. Тип RNS-значения и операции                                      *)
+(* 3. RNS Value Type and Operations                                   *)
 (* ------------------------------------------------------------------ *)
 
 type rns_val = {
@@ -93,7 +93,7 @@ let mul (a:rns_val) (b:rns_val) : rns_val = {
 }
 
 (* ------------------------------------------------------------------ *)
-(* 4. Восстановление Гарнера (Garner Mixed-Radix Reconstruction)       *)
+(* 4. Garner Mixed-Radix Reconstruction                               *)
 (* ------------------------------------------------------------------ *)
 
 let garner_v1 (r:rns_val) : nat =
@@ -123,7 +123,7 @@ let garner_v4 (r:rns_val) : nat =
   let diff3 = mod_pos (term2 - v3) m4 in
   (diff3 * inv_m3_m4) % m4
 
-(** Декодирование Гарнера в схеме Горнера *)
+(** Garner decoding via Horner scheme *)
 let decode (r:rns_val) : nat =
   let v1 = garner_v1 r in
   let v2 = garner_v2 r in
@@ -132,10 +132,10 @@ let decode (r:rns_val) : nat =
   v1 + m1 * (v2 + m2 * (v3 + m3 * v4))
 
 (* ------------------------------------------------------------------ *)
-(* 5. Теоремы сравнений                                               *)
+(* 5. Congruence Theorems                                             *)
 (* ------------------------------------------------------------------ *)
 
-(** Теорема 1: Восстановленное число X сравнимо с r1 по модулю m1 *)
+(** Theorem 1: Reconstructed integer X is congruent to r1 modulo m1 *)
 val theorem_garner_m1 : r:rns_val ->
   Lemma ((decode r) % m1 == r.r1 % m1)
 let theorem_garner_m1 r =
@@ -146,7 +146,7 @@ let theorem_garner_m1 r =
   let rest = v2 + m2 * (v3 + m3 * v4) in
   M.lemma_mod_plus v1 rest m1
 
-(** Теорема 2: Декодированное значение строго меньше dynamic_range_M *)
+(** Theorem 2: Decoded value is strictly less than dynamic_range_M *)
 val theorem_garner_range : r:rns_val ->
   Lemma (decode r < dynamic_range_M)
 let theorem_garner_range r =
@@ -159,7 +159,7 @@ let theorem_garner_range r =
   assert (v2 + m2 * (v3 + m3 * v4) <= m2 * m3 * m4 - 1);
   assert (v1 + m1 * (v2 + m2 * (v3 + m3 * v4)) <= dynamic_range_M - 1)
 
-(** Теорема 3: Восстановленное число X сравнимо с r2 по модулю m2 *)
+(** Theorem 3: Reconstructed integer X is congruent to r2 modulo m2 *)
 val theorem_garner_m2 : r:rns_val ->
   Lemma ((decode r) % m2 == r.r2 % m2)
 let theorem_garner_m2 r =
@@ -180,7 +180,7 @@ let theorem_garner_m2 r =
   assert ((v1 + diff) % m2 == r.r2 % m2)
 
 (* ------------------------------------------------------------------ *)
-(* 6. Гомоморфизм каналов сложения                                    *)
+(* 6. Addition Channel Homomorphism                                   *)
 (* ------------------------------------------------------------------ *)
 
 val lemma_add_channel : a:nat -> b:nat -> m:pos ->
