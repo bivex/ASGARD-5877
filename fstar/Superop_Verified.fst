@@ -1,21 +1,21 @@
 (**
-  Superop_Verified.fst — Формальная верификация Superoperator Fusion Pass в Stack-VM ASGARD-5877.
+  Superop_Verified.fst — Formal verification of Superoperator Fusion Pass in Stack-VM ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Доказывает:
-  1. Инвариант сохранения стековой дельты (Stack Delta Conservation):
-     Net stack delta для всех 6 шаблонов супер-операторов идентична исходным последовательностям:
+  Proves:
+  1. Stack Delta Conservation invariant:
+     The net stack delta for all 6 superoperator patterns is identical to the source sequences:
      - delta([PushImm a; PushImm b; Add]) == delta([AddImmImm (a, b)]) == +1
      - delta([PushImm a; PushImm b; Sub]) == delta([SubImmImm (a, b)]) == +1
      - delta([PushReg r; PushImm c; Add]) == delta([AddRegImm (r, c)]) == +1
      - delta([PushImm c; PopReg r])       == delta([SetRegImm (r, c)]) == 0
      - delta([PushImm c; Add])            == delta([AddImm c])        == 0
      - delta([PushImm c; Sub])            == delta([SubImm c])        == 0
-  2. Семантическую эквивалентность вычислений (Operational Trace Equivalence):
-     Выполнение объединенного супер-оператора дает строго одинаковый стек,
-     регистровый контекст и арифметические флаги по сравнению с цепочкой опкодов.
-  3. Общую теорему слияния (Superoperator Fusion Soundness):
-     Для произвольной последовательности опкодов шаг слияния aux сохраняет эквивалентность.
+  2. Computational semantic equivalence (Operational Trace Equivalence):
+     Executing the fused superoperator yields strictly identical stack,
+     register context, and arithmetic flags compared to the opcode sequence.
+  3. General fusion theorem (Superoperator Fusion Soundness):
+     For an arbitrary opcode sequence, the fusion step aux preserves equivalence.
 *)
 module Superop_Verified
 
@@ -67,7 +67,7 @@ noeq type vm_state = {
 }
 
 (* ------------------------------------------------------------------ *)
-(* 1. Язык инструкций Stack-VM (базовые опкоды и супер-операторы)    *)
+(* 1. Stack-VM instruction language (base opcodes and superoperators)*)
 (* ------------------------------------------------------------------ *)
 
 type stack_op =
@@ -76,7 +76,7 @@ type stack_op =
   | PopReg    : r:reg_id -> stack_op
   | Add       : stack_op
   | Sub       : stack_op
-  (* Супер-операторы фазы Phase 2a *)
+  (* Phase 2a superoperators *)
   | AddImmImm : a:u64 -> b:u64 -> stack_op
   | SubImmImm : a:u64 -> b:u64 -> stack_op
   | AddRegImm : r:reg_id -> c:u64 -> stack_op
@@ -104,41 +104,41 @@ let rec seq_delta (ops:list stack_op) : int =
   | op :: rest -> op_delta op + seq_delta rest
 
 (* ------------------------------------------------------------------ *)
-(* 2. Теоремы сохранения стековой дельты супер-операторов              *)
+(* 2. Superoperator stack delta conservation theorems                 *)
 (* ------------------------------------------------------------------ *)
 
-(** Теорема 1: Сохранение дельты для AddImmImm *)
+(** Theorem 1: Delta conservation for AddImmImm *)
 val theorem_delta_add_imm_imm : a:u64 -> b:u64 ->
   Lemma (seq_delta [PushImm a; PushImm b; Add] == seq_delta [AddImmImm a b])
 let theorem_delta_add_imm_imm a b = ()
 
-(** Теорема 2: Сохранение дельты для SubImmImm *)
+(** Theorem 2: Delta conservation for SubImmImm *)
 val theorem_delta_sub_imm_imm : a:u64 -> b:u64 ->
   Lemma (seq_delta [PushImm a; PushImm b; Sub] == seq_delta [SubImmImm a b])
 let theorem_delta_sub_imm_imm a b = ()
 
-(** Теорема 3: Сохранение дельты для AddRegImm *)
+(** Theorem 3: Delta conservation for AddRegImm *)
 val theorem_delta_add_reg_imm : r:reg_id -> c:u64 ->
   Lemma (seq_delta [PushReg r; PushImm c; Add] == seq_delta [AddRegImm r c])
 let theorem_delta_add_reg_imm r c = ()
 
-(** Теорема 4: Сохранение дельты для SetRegImm *)
+(** Theorem 4: Delta conservation for SetRegImm *)
 val theorem_delta_set_reg_imm : r:reg_id -> c:u64 ->
   Lemma (seq_delta [PushImm c; PopReg r] == seq_delta [SetRegImm r c])
 let theorem_delta_set_reg_imm r c = ()
 
-(** Теорема 5: Сохранение дельты для AddImm *)
+(** Theorem 5: Delta conservation for AddImm *)
 val theorem_delta_add_imm : c:u64 ->
   Lemma (seq_delta [PushImm c; Add] == seq_delta [AddImm c])
 let theorem_delta_add_imm c = ()
 
-(** Теорема 6: Сохранение дельты для SubImm *)
+(** Theorem 6: Delta conservation for SubImm *)
 val theorem_delta_sub_imm : c:u64 ->
   Lemma (seq_delta [PushImm c; Sub] == seq_delta [SubImm c])
 let theorem_delta_sub_imm c = ()
 
 (* ------------------------------------------------------------------ *)
-(* 3. Операционная семантика выполнения (Eval Semantics)              *)
+(* 3. Operational execution semantics (Eval Semantics)                *)
 (* ------------------------------------------------------------------ *)
 
 let step_eval (st:vm_state) (op:stack_op) : vm_state =
@@ -212,45 +212,45 @@ let state_equiv (s1:vm_state) (s2:vm_state) : prop =
   s1.fault == s2.fault
 
 (* ------------------------------------------------------------------ *)
-(* 4. Главные теоремы семантической эквивалентности слияния          *)
+(* 4. Main semantic equivalence theorems of fusion                   *)
 (* ------------------------------------------------------------------ *)
 
-(** Главная теорема 7: Эквивалентность слияния AddImmImm *)
+(** Main Theorem 7: Equivalence of AddImmImm fusion *)
 val theorem_eval_equiv_add_imm_imm : st:vm_state -> a:u64 -> b:u64 ->
   Lemma (requires (not st.fault))
         (ensures (state_equiv (eval_trace st [PushImm a; PushImm b; Add])
                               (eval_trace st [AddImmImm a b])))
 let theorem_eval_equiv_add_imm_imm st a b = ()
 
-(** Главная теорема 8: Эквивалентность слияния SubImmImm *)
+(** Main Theorem 8: Equivalence of SubImmImm fusion *)
 val theorem_eval_equiv_sub_imm_imm : st:vm_state -> a:u64 -> b:u64 ->
   Lemma (requires (not st.fault))
         (ensures (state_equiv (eval_trace st [PushImm a; PushImm b; Sub])
                               (eval_trace st [SubImmImm a b])))
 let theorem_eval_equiv_sub_imm_imm st a b = ()
 
-(** Главная теорема 9: Эквивалентность слияния AddRegImm *)
+(** Main Theorem 9: Equivalence of AddRegImm fusion *)
 val theorem_eval_equiv_add_reg_imm : st:vm_state -> r:reg_id -> c:u64 ->
   Lemma (requires (not st.fault))
         (ensures (state_equiv (eval_trace st [PushReg r; PushImm c; Add])
                               (eval_trace st [AddRegImm r c])))
 let theorem_eval_equiv_add_reg_imm st r c = ()
 
-(** Главная теорема 10: Эквивалентность слияния SetRegImm *)
+(** Main Theorem 10: Equivalence of SetRegImm fusion *)
 val theorem_eval_equiv_set_reg_imm : st:vm_state -> r:reg_id -> c:u64 ->
   Lemma (requires (not st.fault))
         (ensures (state_equiv (eval_trace st [PushImm c; PopReg r])
                               (eval_trace st [SetRegImm r c])))
 let theorem_eval_equiv_set_reg_imm st r c = ()
 
-(** Главная теорема 11: Эквивалентность слияния AddImm *)
+(** Main Theorem 11: Equivalence of AddImm fusion *)
 val theorem_eval_equiv_add_imm : st:vm_state -> c:u64 ->
   Lemma (requires (not st.fault /\ Cons? st.vstack))
         (ensures (state_equiv (eval_trace st [PushImm c; Add])
                               (eval_trace st [AddImm c])))
 let theorem_eval_equiv_add_imm st c = ()
 
-(** Главная теорема 12: Эквивалентность слияния SubImm *)
+(** Main Theorem 12: Equivalence of SubImm fusion *)
 val theorem_eval_equiv_sub_imm : st:vm_state -> c:u64 ->
   Lemma (requires (not st.fault /\ Cons? st.vstack))
         (ensures (state_equiv (eval_trace st [PushImm c; Sub])

@@ -1,19 +1,19 @@
 (**
-  Lifter_Verified.fst — Формальная верификация Instruction Lifter и семантической эквивалентности в ASGARD-5877.
+  Lifter_Verified.fst — Formal verification of Instruction Lifter and semantic equivalence in ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Доказывает:
-  1. Семантическую эквивалентность понижения x86 ALU операций (Add, Sub, Xor, And, Or, Shl, Shr, Rol, Ror).
-  2. Семантическую эквивалентность унарных инструкций (Inc, Dec, Not, Neg).
-  3. Семантическую эквивалентность операций флагов (Cmp, Test).
-  4. Семантическую эквивалентность условной пересылки (Cmov).
-  5. Корректность понижения составных x86 инструкций:
-     - Xchg r1 r2 (обмен без потерь)
-     - Xadd dst src (атомарное сложение и сохранение старого значения)
-     - Andn dst s1 s2 (композиция Not и And)
-  6. Главная теорема трансляции (Lifter Simulation Soundness):
-     Для любой архитектурной инструкции последовательность инструкций VM-IR
-     сохраняет точное архитектурное состояние регистров и флагов.
+  Proves:
+  1. Semantic equivalence of lowering x86 ALU operations (Add, Sub, Xor, And, Or, Shl, Shr, Rol, Ror).
+  2. Semantic equivalence of unary instructions (Inc, Dec, Not, Neg).
+  3. Semantic equivalence of flag operations (Cmp, Test).
+  4. Semantic equivalence of conditional moves (Cmov).
+  5. Correctness of lowering compound x86 instructions:
+     - Xchg r1 r2 (lossless swap)
+     - Xadd dst src (atomic addition and preservation of old value)
+     - Andn dst s1 s2 (composition of Not and And)
+  6. Main translation theorem (Lifter Simulation Soundness):
+     For any architectural instruction, the VM-IR instruction sequence
+     preserves the exact architectural state of registers and flags.
 *)
 module Lifter_Verified
 
@@ -53,7 +53,7 @@ let set_flags (st:machine_state) (fl:flag_state) : machine_state =
   { st with flags = fl }
 
 (* ------------------------------------------------------------------ *)
-(* 1. Арифметико-логические операции и флаги                          *)
+(* 1. Arithmetic-logic operations and flags                          *)
 (* ------------------------------------------------------------------ *)
 
 type alu_op =
@@ -118,7 +118,7 @@ let eval_cond (cond:cond_code) (fl:flag_state) : bool =
   | CondGE -> fl.sf = fl.of_flag
 
 (* ------------------------------------------------------------------ *)
-(* 2. Архитектурный AST и семантика (x86_64)                         *)
+(* 2. Architectural AST and semantics (x86_64)                        *)
 (* ------------------------------------------------------------------ *)
 
 type operand =
@@ -196,7 +196,7 @@ let step_arch (st:machine_state) (instr:arch_instr) : machine_state =
     set_flags (set_reg st dst res) fl
 
 (* ------------------------------------------------------------------ *)
-(* 3. Промежуточный язык VM-IR и его семантика                        *)
+(* 3. Intermediate language VM-IR and its semantics                  *)
 (* ------------------------------------------------------------------ *)
 
 type vm_instr =
@@ -245,7 +245,7 @@ let rec step_vm_seq (st:machine_state) (instrs:list vm_instr) : Tot machine_stat
     step_vm_seq (step_vm st head) rest
 
 (* ------------------------------------------------------------------ *)
-(* 4. Реализация транслятора Instruction Lifter                      *)
+(* 4. Implementation of the Instruction Lifter translator            *)
 (* ------------------------------------------------------------------ *)
 
 let lift_instr (instr:arch_instr) : list vm_instr =
@@ -286,35 +286,35 @@ let lift_instr (instr:arch_instr) : list vm_instr =
     ]
 
 (* ------------------------------------------------------------------ *)
-(* 5. Теоремы семантической эквивалентности                           *)
+(* 5. Semantic equivalence theorems                                   *)
 (* ------------------------------------------------------------------ *)
 
 let state_equiv_on_arch (s1:machine_state) (s2:machine_state) : prop =
   (forall (r:reg_id). is_arch_reg r ==> get_reg s1 r == get_reg s2 r) /\
   s1.flags == s2.flags
 
-(** Теорема 1: Эквивалентность понижения Mov *)
+(** Theorem 1: Equivalence of Mov lowering *)
 val theorem_lift_mov_equiv : st:machine_state -> dst:reg_id -> src:operand ->
   Lemma (requires (is_arch_reg dst))
         (ensures (state_equiv_on_arch (step_vm_seq st (lift_instr (Arch_Mov dst src)))
                                       (step_arch st (Arch_Mov dst src))))
 let theorem_lift_mov_equiv st dst src = ()
 
-(** Теорема 2: Эквивалентность понижения ALU *)
+(** Theorem 2: Equivalence of ALU lowering *)
 val theorem_lift_alu_equiv : st:machine_state -> op:alu_op -> dst:reg_id -> src:operand ->
   Lemma (requires (is_arch_reg dst))
         (ensures (state_equiv_on_arch (step_vm_seq st (lift_instr (Arch_Alu op dst src)))
                                       (step_arch st (Arch_Alu op dst src))))
 let theorem_lift_alu_equiv st op dst src = ()
 
-(** Теорема 3: Эквивалентность понижения Unary *)
+(** Theorem 3: Equivalence of Unary lowering *)
 val theorem_lift_unary_equiv : st:machine_state -> op:unary_op -> dst:reg_id ->
   Lemma (requires (is_arch_reg dst))
         (ensures (state_equiv_on_arch (step_vm_seq st (lift_instr (Arch_Unary op dst)))
                                       (step_arch st (Arch_Unary op dst))))
 let theorem_lift_unary_equiv st op dst = ()
 
-(** Теорема 4: Эквивалентность понижения Cmp и Test *)
+(** Theorem 4: Equivalence of Cmp and Test lowering *)
 val theorem_lift_cmp_equiv : st:machine_state -> s1:operand -> s2:operand ->
   Lemma (state_equiv_on_arch (step_vm_seq st (lift_instr (Arch_Cmp s1 s2)))
                              (step_arch st (Arch_Cmp s1 s2)))
@@ -325,35 +325,35 @@ val theorem_lift_test_equiv : st:machine_state -> s1:operand -> s2:operand ->
                              (step_arch st (Arch_Test s1 s2)))
 let theorem_lift_test_equiv st s1 s2 = ()
 
-(** Теорема 5: Эквивалентность понижения Cmov *)
+(** Theorem 5: Equivalence of Cmov lowering *)
 val theorem_lift_cmov_equiv : st:machine_state -> cond:cond_code -> dst:reg_id -> src:operand ->
   Lemma (requires (is_arch_reg dst))
         (ensures (state_equiv_on_arch (step_vm_seq st (lift_instr (Arch_Cmov cond dst src)))
                                       (step_arch st (Arch_Cmov cond dst src))))
 let theorem_lift_cmov_equiv st cond dst src = ()
 
-(** Теорема 6: Эквивалентность понижения составного Xchg *)
+(** Theorem 6: Equivalence of compound Xchg lowering *)
 val theorem_lift_xchg_equiv : st:machine_state -> r1:reg_id -> r2:reg_id ->
   Lemma (requires (is_arch_reg r1 /\ is_arch_reg r2))
         (ensures (state_equiv_on_arch (step_vm_seq st (lift_instr (Arch_Xchg r1 r2)))
                                       (step_arch st (Arch_Xchg r1 r2))))
 let theorem_lift_xchg_equiv st r1 r2 = ()
 
-(** Теорема 7: Эквивалентность понижения составного Xadd *)
+(** Theorem 7: Equivalence of compound Xadd lowering *)
 val theorem_lift_xadd_equiv : st:machine_state -> dst:reg_id -> src:reg_id ->
   Lemma (requires (is_arch_reg dst /\ is_arch_reg src))
         (ensures (state_equiv_on_arch (step_vm_seq st (lift_instr (Arch_Xadd dst src)))
                                       (step_arch st (Arch_Xadd dst src))))
 let theorem_lift_xadd_equiv st dst src = ()
 
-(** Теорема 8: Эквивалентность понижения составного Andn *)
+(** Theorem 8: Equivalence of compound Andn lowering *)
 val theorem_lift_andn_equiv : st:machine_state -> dst:reg_id -> s1:reg_id -> s2:operand ->
   Lemma (requires (is_arch_reg dst /\ is_arch_reg s1 /\ is_arch_operand s2))
         (ensures (state_equiv_on_arch (step_vm_seq st (lift_instr (Arch_Andn dst s1 s2)))
                                       (step_arch st (Arch_Andn dst s1 s2))))
 let theorem_lift_andn_equiv st dst s1 s2 = ()
 
-(** Главная теорема 9: Общая корректность Instruction Lifter (Simulation Soundness) *)
+(** Main Theorem 9: Overall soundness of Instruction Lifter (Simulation Soundness) *)
 val theorem_lifter_soundness : st:machine_state -> instr:arch_instr ->
   Lemma (requires (
     match instr with

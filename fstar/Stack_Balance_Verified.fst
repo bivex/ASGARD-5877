@@ -1,24 +1,24 @@
 (**
-  Stack_Balance_Verified.fst — Формальная верификация стекового баланса и защиты от Underflow в ASGARD-5877.
+  Stack_Balance_Verified.fst — Formal verification of stack balance and Underflow protection in ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Доказывает:
-  1. Аддитивный гомоморфизм дельты стека: delta(L1 @ L2) = delta(L1) + delta(L2).
-  2. Корректность восстановления баланса (Repair Soundness):
-     Для ЛЮБОГО блока ops после repair_ops суммарная дельта строго равна 0.
-  3. Инвариант путей CFG (Path Invariance):
-     Любой путь через сбалансированные блоки сохраняет высоту стека неизменной (delta = 0).
-  4. Сохранение дельты при динамическом выполнении без underflow:
+  Proves:
+  1. Additive homomorphism of stack delta: delta(L1 @ L2) = delta(L1) + delta(L2).
+  2. Balance restoration correctness (Repair Soundness):
+     For ANY block ops after repair_ops, the total delta is strictly 0.
+  3. CFG path invariant (Path Invariance):
+     Any path traversing balanced blocks preserves stack height invariant (delta = 0).
+  4. Delta preservation during dynamic execution without underflow:
      eval_depth d ops = Some (d + sum_delta ops).
-  5. Корректность минимальной безопасной глубины (Min Required Depth / Underflow Freedom):
-     Если начальная глубина >= min_req ops, стек гарантированно не опустошается ниже 0.
+  5. Correctness of minimum safe depth (Min Required Depth / Underflow Freedom):
+     If initial depth >= min_req ops, the stack is guaranteed never to drop below 0.
 *)
 module Stack_Balance_Verified
 
 open FStar.List.Tot
 
 (* ------------------------------------------------------------------ *)
-(* 1. Определение системы команд Stack-VM                             *)
+(* 1. Stack-VM instruction set definition                             *)
 (* ------------------------------------------------------------------ *)
 
 type condition =
@@ -102,11 +102,11 @@ let pop_weight (op:stack_op) : nat =
 let stack_delta (op:stack_op) : int =
   push_weight op - pop_weight op
 
-(** Лемма: Дельта Dup2 строго равна +2 *)
+(** Lemma: Dup2 delta is strictly +2 *)
 val lemma_dup2_delta : unit -> Lemma (stack_delta Dup2 == 2)
 let lemma_dup2_delta () = ()
 
-(** Лемма: Дельта Rot строго равна 0 *)
+(** Lemma: Rot delta is strictly 0 *)
 val lemma_rot_delta : unit -> Lemma (stack_delta Rot == 0)
 let lemma_rot_delta () = ()
 
@@ -116,7 +116,7 @@ let is_terminator (op:stack_op) : bool =
   | _ -> false
 
 (* ------------------------------------------------------------------ *)
-(* 2. Суммарная дельта последовательности операций                     *)
+(* 2. Cumulative delta of operation sequences                         *)
 (* ------------------------------------------------------------------ *)
 
 let rec sum_delta (ops:list stack_op) : int =
@@ -124,7 +124,7 @@ let rec sum_delta (ops:list stack_op) : int =
   | [] -> 0
   | op :: rest -> stack_delta op + sum_delta rest
 
-(** Лемма: Дельта конкатенации равна сумме дельт *)
+(** Lemma: Delta of concatenation equals sum of deltas *)
 val lemma_sum_delta_append : l1:list stack_op -> l2:list stack_op ->
   Lemma (sum_delta (l1 @ l2) == sum_delta l1 + sum_delta l2)
 let rec lemma_sum_delta_append l1 l2 =
@@ -136,7 +136,7 @@ let rec repeat_op (n:nat) (op:stack_op) : list stack_op =
   if n = 0 then []
   else op :: repeat_op (n - 1) op
 
-(** Лемма: Дельта повторения операции равна n * delta(op) *)
+(** Lemma: Delta of repeated operation equals n * delta(op) *)
 val lemma_sum_delta_repeat : n:nat -> op:stack_op ->
   Lemma (sum_delta (repeat_op n op) == n * stack_delta op)
 let rec lemma_sum_delta_repeat n op =
@@ -144,7 +144,7 @@ let rec lemma_sum_delta_repeat n op =
   else lemma_sum_delta_repeat (n - 1) op
 
 (* ------------------------------------------------------------------ *)
-(* 3. Алгоритм разделения у первого терминатора и Repair               *)
+(* 3. First terminator splitting algorithm and Repair                *)
 (* ------------------------------------------------------------------ *)
 
 let rec split_at_first_term (ops:list stack_op) : (list stack_op & list stack_op) =
@@ -156,7 +156,7 @@ let rec split_at_first_term (ops:list stack_op) : (list stack_op & list stack_op
       let (pre, suf) = split_at_first_term rest in
       (op :: pre, suf)
 
-(** Лемма: Разделение сохраняет список в точности *)
+(** Lemma: Splitting preserves list exactly *)
 val lemma_split_append : ops:list stack_op ->
   Lemma (let (pre, suf) = split_at_first_term ops in pre @ suf == ops)
 let rec lemma_split_append ops =
@@ -166,7 +166,7 @@ let rec lemma_split_append ops =
     if is_terminator op then ()
     else lemma_split_append rest
 
-(** Восстановление блока *)
+(** Block repair *)
 let repair_ops (ops:list stack_op) (dummy_reg:int) : list stack_op =
   let d = sum_delta ops in
   if d = 0 then ops
@@ -179,7 +179,7 @@ let repair_ops (ops:list stack_op) (dummy_reg:int) : list stack_op =
     pads @ ops
 
 (* ------------------------------------------------------------------ *)
-(* 4. Главная теорема 1: Восстановленный блок строго сбалансирован     *)
+(* 4. Main Theorem 1: Repaired block is strictly balanced             *)
 (* ------------------------------------------------------------------ *)
 
 val theorem_repair_balanced : ops:list stack_op -> dummy_reg:int ->
@@ -210,7 +210,7 @@ let theorem_repair_balanced ops dummy_reg =
   end
 
 (* ------------------------------------------------------------------ *)
-(* 5. Главная теорема 2: Инвариант путей CFG (Path Stack Invariance)   *)
+(* 5. Main Theorem 2: CFG path invariant (Path Stack Invariance)      *)
 (* ------------------------------------------------------------------ *)
 
 let rec sum_path_delta (path:list (list stack_op)) : int =
@@ -227,7 +227,7 @@ let rec theorem_path_balance path =
   | blk :: rest -> theorem_path_balance rest
 
 (* ------------------------------------------------------------------ *)
-(* 6. Модель динамического выполнения стека и Underflow-безопасность   *)
+(* 6. Dynamic stack execution model and Underflow safety              *)
 (* ------------------------------------------------------------------ *)
 
 let step_depth (cur:nat) (op:stack_op) : option nat =
@@ -242,7 +242,7 @@ let rec eval_depth (cur:nat) (ops:list stack_op) : Tot (option nat) (decreases o
     | None -> None
     | Some next_d -> eval_depth next_d rest
 
-(** Теорема 3: Успешное выполнение точно сохраняет связь с sum_delta *)
+(** Theorem 3: Successful execution precisely preserves relationship with sum_delta *)
 val theorem_eval_depth_delta : cur:nat -> ops:list stack_op -> final_d:nat ->
   Lemma (requires (eval_depth cur ops == Some final_d))
         (ensures (final_d == cur + sum_delta ops))
@@ -255,7 +255,7 @@ let rec theorem_eval_depth_delta cur ops final_d =
     theorem_eval_depth_delta next_d rest final_d
 
 (* ------------------------------------------------------------------ *)
-(* 7. Минимальная безопасная глубина (Underflow Freedom)               *)
+(* 7. Minimum safe depth (Underflow Freedom)                          *)
 (* ------------------------------------------------------------------ *)
 
 let rec min_req (ops:list stack_op) : nat =
@@ -268,7 +268,7 @@ let rec min_req (ops:list stack_op) : nat =
     if uw >= r then pw
     else pw + (r - uw)
 
-(** Теорема 4: При начальной глубине >= min_req ops стек никогда не опустошается *)
+(** Theorem 4: With initial depth >= min_req ops, the stack never underflows *)
 val theorem_min_req_safe : cur:nat -> ops:list stack_op ->
   Lemma (requires (cur >= min_req ops))
         (ensures (Some? (eval_depth cur ops)))
@@ -285,13 +285,13 @@ let rec theorem_min_req_safe cur ops =
     assert (next_d >= r);
     theorem_min_req_safe next_d rest
 
-(** Теорема 5: Паддинг в виде (min_req ops) PushImm гарантирует отсутствие underflow *)
+(** Theorem 5: Padding of (min_req ops) PushImm guarantees underflow freedom *)
 val theorem_padded_never_underflows : ops:list stack_op ->
   Lemma (Some? (eval_depth 0 (repeat_op (min_req ops) (PushImm 0) @ ops)))
 let theorem_padded_never_underflows ops =
   let k = min_req ops in
   let pads = repeat_op k (PushImm 0) in
-  (* Доказываем, что k PushImm от 0 дают в точности глубину k *)
+  (* Prove that k PushImm from 0 yield exact depth k *)
   let rec lemma_pads_reach (n:nat) (cur:nat) :
     Lemma (ensures (eval_depth cur (repeat_op n (PushImm 0)) == Some (cur + n)))
           (decreases n) =
@@ -299,7 +299,7 @@ let theorem_padded_never_underflows ops =
     else lemma_pads_reach (n - 1) (cur + 1)
   in
   lemma_pads_reach k 0;
-  (* Доказываем композицию eval_depth *)
+  (* Prove composition of eval_depth *)
   let rec lemma_eval_depth_append (c:nat) (l1:list stack_op) (l2:list stack_op) :
     Lemma (requires (Some? (eval_depth c l1)))
           (ensures (eval_depth c (l1 @ l2) == eval_depth (Some?.v (eval_depth c l1)) l2))
