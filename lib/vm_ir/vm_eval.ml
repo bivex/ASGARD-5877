@@ -1487,13 +1487,16 @@ let step state = function
       (* Intel SDM PTEST: ZF = ((SRC1 AND SRC2) = 0), CF = ((SRC2 ANDNOT SRC1) = 0).
          Only ZF and CF are modified; the other flags keep their value. *)
       let chunks = bits / 64 in
-      let and_acc = ref (-1L) in
-      let andnot_acc = ref (-1L) in
+      (* The flags are set when the whole masked value is zero, so the chunk
+         results are combined with OR: the accumulator is zero exactly when
+         every chunk contributed zero. *)
+      let and_acc = ref 0L in
+      let andnot_acc = ref 0L in
       for c = 0 to chunks - 1 do
         let a = get_vector_lane state src1 c in
         let b = get_vector_lane state src2 c in
-        and_acc := Int64.logand !and_acc (Int64.logand a b);
-        andnot_acc := Int64.logand !andnot_acc (Int64.logand b (Int64.lognot a))
+        and_acc := Int64.logor !and_acc (Int64.logand a b);
+        andnot_acc := Int64.logor !andnot_acc (Int64.logand b (Int64.lognot a))
       done;
       let raw = Flags.materialize_rflags state.flags in
       let cleared = Int64.logand raw (Int64.lognot 0x41L) in

@@ -1583,6 +1583,58 @@ func_native_movmsk:
     if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 0x5ULL) return 5;
 |})
 
+(* PTEST and VPTEST set ZF when (SRC1 AND SRC2) is zero and CF when
+   (SRC2 ANDNOT SRC1) is zero, and leave every other flag alone.  The
+   expected values come from a real x86-64 machine. *)
+let test_native_x86_ptest () =
+  let pkg_128 =
+    mk_pkg ~seed:20261022 {|
+func_native_ptest:
+    ptest xmm1, xmm2
+    ret
+|}
+  in
+  let pkg_256 =
+    mk_pkg ~seed:20261023 {|
+func_native_vptest:
+    vptest ymm1, ymm2
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_ptest" tmp_dir pkg_128 {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* SRC1 = 0xF0, SRC2 = 0x0F: the AND is zero (ZF = 1) and SRC2 has a bit
+       SRC1 lacks (CF = 0). */
+    ctx.vregs[1][0] = 0x00000000000000F0ULL; ctx.vregs[1][1] = 0ULL;
+    ctx.vregs[2][0] = 0x000000000000000FULL; ctx.vregs[2][1] = 0ULL;
+    ctx.sf = true;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if (!ctx.zf) return 2;
+    if (ctx.cf) return 3;
+    if (!ctx.sf) return 4;
+|};
+      run_custom_vm ~name:"native_vptest" tmp_dir pkg_256 {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* SRC1 = all ones, SRC2 = 0x0F per lane: the AND is not zero (ZF = 0)
+       and SRC2 has no bit SRC1 lacks (CF = 1). */
+    ctx.vregs[1][0] = 0xFFFFFFFFFFFFFFFFULL; ctx.vregs[1][1] = 0xFFFFFFFFFFFFFFFFULL;
+    ctx.vregs[1][2] = 0ULL; ctx.vregs[1][3] = 0ULL;
+    ctx.vregs[2][0] = 0x000000000000000FULL; ctx.vregs[2][1] = 0x000000000000000FULL;
+    ctx.vregs[2][2] = 0ULL; ctx.vregs[2][3] = 0ULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if (ctx.zf) return 2;
+    if (!ctx.cf) return 3;
+|})
+
 let test_native_x86_unpck_fp () =
   let pkg =
     mk_pkg ~seed:20261021 {|
@@ -1919,6 +1971,7 @@ let tests = [
   Alcotest.test_case "native_x86_float_comparisons" `Slow test_native_x86_float_comparisons;
   Alcotest.test_case "native_x86_pand_por_pxor_pandn" `Slow test_native_x86_pand_por_pxor_pandn;
   Alcotest.test_case "native_x86_unpck_fp" `Slow test_native_x86_unpck_fp;
+  Alcotest.test_case "native_x86_ptest" `Slow test_native_x86_ptest;
   Alcotest.test_case "native_x86_aes_ni" `Slow test_native_x86_aes_ni;
   Alcotest.test_case "native_x86_aes_ni_fips197_full_cycle" `Slow test_native_x86_aes_ni_fips197_full_cycle;
   Alcotest.test_case "native_x86_shufps_shufpd" `Slow test_native_x86_shufps_shufpd;

@@ -519,13 +519,13 @@ let emit_ptest_handler b =
     H_PTEST: {
         const uint32_t ptest_bits = static_cast<uint32_t>(imm & 0x3FFULL);
         const size_t ptest_chunks = (ptest_bits + 63) / 64;
-        uint64_t and_acc = ~0ULL;
-        uint64_t andnot_acc = ~0ULL;
+        uint64_t and_acc = 0ULL;
+        uint64_t andnot_acc = 0ULL;
         for (size_t c = 0; c < ptest_chunks; c++) {
             const uint64_t a = ctx.get_vreg_lane(static_cast<uint8_t>(dst), c);
             const uint64_t b = ctx.get_vreg_lane(static_cast<uint8_t>(src), c);
-            and_acc &= (a & b);
-            andnot_acc &= (b & ~a);
+            and_acc |= (a & b);
+            andnot_acc |= (b & ~a);
         }
         ctx.zf = (and_acc == 0ULL);
         ctx.cf = (andnot_acc == 0ULL);

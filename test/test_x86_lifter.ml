@@ -2792,9 +2792,9 @@ func_vptest:
   Alcotest.(check bool) "ptest xmm ignores the upper half (ZF)" true (zf s);
   Alcotest.(check bool) "ptest xmm ignores the upper half (CF)" true (cf s);
   (* the 256-bit form looks at all 256 bits: the same vectors now give
-     ZF = 0 and CF = 0 *)
+     ZF = 1 and CF = 0 *)
   let s = run vptest_asm [| all; 0L; 0L; 0L |] [| 0L; 0L; all; all |] in
-  Alcotest.(check bool) "vptest sees the upper half (ZF)" false (zf s);
+  Alcotest.(check bool) "vptest sees the upper half (ZF)" true (zf s);
   Alcotest.(check bool) "vptest sees the upper half (CF)" false (cf s);
   let s = run vptest_asm [| 0xFFFFFFFFL; 0L; all; all |] [| 0L; 0L; all; all |] in
   Alcotest.(check bool) "vptest common bits only in the upper half clears ZF" false (zf s);
