@@ -1,5 +1,5 @@
 (* lib/cpp_codegen/cpp_dsl.ml
-   Комбинаторы для лаконичного построения C++20 AST в стиле функционального EDSL *)
+   Combinators for concise construction of a C++20 AST in the style of a functional EDSL *)
 
 open Cpp_ast
 
@@ -166,7 +166,7 @@ let raw_top s : top_decl = RawTop s
 let comment_top s : top_decl = CommentTop s
 let namespace_def name decls : top_decl = Namespace (name, decls)
 
-(* Удобные VM-шорткаты для генерации хендлеров *)
+(* Convenient VM shortcuts for generating handlers *)
 let reg_dst : expr = call "ctx.get_reg" [var "dst"]
 let reg_src : expr = call "ctx.get_reg" [var "src"]
 let set_reg dst_e val_e : stmt = expr_stmt (call "ctx.set_reg" [dst_e; val_e])

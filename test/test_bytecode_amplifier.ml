@@ -200,7 +200,7 @@ let build_random_program (seed : int) : program * (int * int64) list =
           let sh = match pick_int 0 2 with
             | 0 -> Shl | 1 -> Shr | _ -> Sar
           in
-          (* count на стеке: value ниже, count сверху *)
+          (* count on the stack: value below, count on top *)
           loop (depth - 1) (n - 1) (sh :: PushImm (Int64.of_int (pick_int 0 63)) :: acc)
         else if p < 66 then
           let c = conds.(pick_int 0 (Array.length conds - 1)) in
@@ -222,8 +222,8 @@ let build_random_program (seed : int) : program * (int * int64) list =
   in
   let n_ops = 20 + pick_int 0 20 in
   let body = loop 0 n_ops [] in
-  (* drain: сбросить остаток стека в слоты 8..15, чтобы финальное
-     состояние стека было [] и сравнение было строгим *)
+  (* drain: flush the remaining stack into slots 8..15 so that the final
+     stack state is [] and the comparison is strict *)
   let rec drain depth acc =
     if depth = 0 then acc
     else drain (depth - 1) (PopReg (8 + (depth mod 8)) :: acc)
@@ -271,8 +271,8 @@ let prop_amplify_semantics seed =
     profiles
 
 let prop_amplify_determinism seed =
-  (* один и тот же seed => побитово одинаковый амплифицированный байткод
-     (регрессия на недетерминизм Hashtbl.iter) *)
+  (* the same seed => bit-for-bit identical amplified bytecode
+     (regression test for Hashtbl.iter non-determinism) *)
   let prog, _ = build_random_program seed in
   let build () =
     let rng = Random.State.make [| seed land 0x3FFFFFFF; 6; 0xDE7E0 |] in
@@ -291,10 +291,10 @@ let qcheck_determinism =
     Test.make ~count:20 ~name:"amplifier is seed-deterministic"
       QCheck.int prop_amplify_determinism)
 
-(* Пин flag-unsafe пути: Setcc сразу за Add/Sub => флаги живы после
-   команды, замена обязана ре-дефайнить CC_OP_ADD/SUB (скрытый ре-экзек),
-   иначе Setcc увидит чужие флаги. Дифф-тест покрывает это вероятностно,
-   здесь — гарантированно. *)
+(* Pin the flag-unsafe path: Setcc immediately after Add/Sub => the flags are
+   still live after the instruction, so the replacement must redefine
+   CC_OP_ADD/SUB (hidden re-execution), otherwise Setcc will see foreign
+   flags. The diff-test covers this probabilistically, here it is guaranteed. *)
 let test_flag_unsafe_add_sub () =
   let rng = Random.State.make [| 0x5877; 0xF1A6 |] in
   let run ops =
@@ -303,8 +303,8 @@ let test_flag_unsafe_add_sub () =
     st
   in
   let cases = [
-    (0x7FFFFFFFFFFFFFFFL, 1L);   (* OF/ZF/CF-край *)
-    (0xFFFFFFFFFFFFFFFFL, 1L);   (* перенос через 2^64 *)
+    (0x7FFFFFFFFFFFFFFFL, 1L);   (* OF/ZF/CF edge *)
+    (0xFFFFFFFFFFFFFFFFL, 1L);   (* carry across 2^64 *)
     (0L, 0L);
     (0x123456789ABCDEF0L, 0xFEDCBA9876543210L);
   ] in
@@ -320,7 +320,7 @@ let test_flag_unsafe_add_sub () =
     let orig = mk Add in
     let amp =
       Amp.amplify_stack_program rng ~profile:Amp.default_heavy_profile orig in
-    (* замена действительно произошла (не fallback) *)
+    (* the replacement really happened (not a fallback) *)
     let amp_ops = (Hashtbl.find amp.blocks 0).ops in
     Alcotest.(check bool) "flag-unsafe Add must be amplified (ops grow)"
       true (List.length amp_ops > List.length (Hashtbl.find orig.blocks 0).ops * 4);

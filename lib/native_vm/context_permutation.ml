@@ -45,11 +45,11 @@ let physical_slot (sched : epoch_schedule) ~(epoch : int) ~(reg_id : int) : int 
   let ep = epoch mod (Array.length sched.epoch_perms) in
   sched.epoch_perms.(ep).(reg_id)
 
-(** ИСПРАВЛЕНИЕ P0-BUG-01:
-    Пусть массив A должен перейти в состояние B, где для каждого старого индекса i
-    значение перемещается в целевой слот target.(i): B.(target.(i)) = A.(i).
-    Любой цикл (i_0 -> i_1 -> ... -> i_{k-1} -> i_0) реализуется ровно (k - 1)
-    последовательными транспозициями:
+(** P0-BUG-01 FIX:
+    Let the array A have to transition to state B, where for every old index i
+    the value moves to the target slot target.(i): B.(target.(i)) = A.(i).
+    Any cycle (i_0 -> i_1 -> ... -> i_{k-1} -> i_0) is realized by exactly (k - 1)
+    consecutive transpositions:
     swap(i_0, i_1); swap(i_0, i_2); ...; swap(i_0, i_{k-1}). *)
 let decompose_into_swaps (target : int array) : (int * int) list =
   let n = Array.length target in

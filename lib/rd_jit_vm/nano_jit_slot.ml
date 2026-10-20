@@ -35,16 +35,16 @@ let seal_nano_block ~(block_id : int) ~(raw_code : bytes) ~(master_key : int64) 
 
 let simulate_nano_slot_lifecycle (ticket : nano_block_ticket) ~(master_key : int64)
     : bytes * bytes =
-  (* 1. Материализация в 128-байтный слот *)
+  (* 1. Materialization into the 128-byte slot *)
   let active_slot =
     xor_bytes_with_stream ticket.encrypted_bytes ~key:master_key ~nonce:ticket.stream_nonce
   in
   let materialized_snapshot = Bytes.copy active_slot in
-  (* 2. Эпилог блока: принудительная перезапись слота криптографической гаммой (Self-Wipe) *)
+  (* 2. Block epilogue: forced overwrite of the slot with a cryptographic keystream (Self-Wipe) *)
   let wiped_slot =
     xor_bytes_with_stream active_slot ~key:ticket.wipe_gamma ~nonce:(neg ticket.stream_nonce)
   in
-  (* Гарантируем, что исходный буфер затерт и не совпадает с открытым кодом *)
+  (* Ensure that the original buffer is wiped and does not match the plaintext code *)
   Bytes.blit wiped_slot 0 active_slot 0 (Bytes.length active_slot);
   (materialized_snapshot, active_slot)
 

@@ -1,5 +1,5 @@
 (* lib/cpp_codegen/cpp_ast_obf.ml
-   Автоматический рандомизатор и обфускатор дерева C++ выражений и идентификаторов *)
+   Automatic randomizer and obfuscator of the C++ expression and identifier tree *)
 
 open Cpp_ast
 
@@ -7,7 +7,7 @@ let is_commutative = function
   | Add | Mul | BitXor | BitAnd | BitOr | Eq | Ne -> true
   | _ -> false
 
-(** Рекурсивно меняет местами ветви коммутативных операций по крипто-зерну *)
+(** Recursively swaps the branches of commutative operations based on the crypto seed *)
 let rec scramble_expr (rng : Random.State.t) (e : expr) : expr =
   match e with
   | Binary (op, a, b) ->

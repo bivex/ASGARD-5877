@@ -1,5 +1,5 @@
 (* lib/cpp_codegen/cpp_printer.ml
-   Генератор текста C++20/C11 на базе структурного форматирования Stdlib.Format *)
+   C++20/C11 text generator based on the structured formatting of Stdlib.Format *)
 
 open Cpp_ast
 open Format

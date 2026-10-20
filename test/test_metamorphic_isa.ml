@@ -1,7 +1,7 @@
 open Int64
 open Random_visa_domain
 
-(* Тест-сьют для проверки метаморфной ISA, гомоморфного кольца и харденинга *)
+(* Test suite for the metamorphic ISA, the homomorphic ring and hardening *)
 module Isa = Isa_metamorphic_synth
 module Ring = Mba_engine.Metamorphic_ring
 module Nullspace = Mba_engine.Nullspace_mba
@@ -62,12 +62,12 @@ let test_homomorphic_ring () =
     let x_hat = Ring.encode_val cx x in
     let y_hat = Ring.encode_val cy y in
 
-    (* 1. Проверка гомоморфного сложения *)
+    (* 1. Verification of homomorphic addition *)
     let (c1, c2, c3) = Ring.compile_homomorphic_add cx cy cz in
     let z_add_hat = add (add (mul c1 x_hat) (mul c2 y_hat)) c3 in
     Alcotest.(check int64) "homomorphic add" (add x y) (Ring.decode_val cz z_add_hat);
 
-    (* 2. Проверка гомоморфного умножения *)
+    (* 2. Verification of homomorphic multiplication *)
     let (k_xy, k_x, k_y, k_0) = Ring.compile_homomorphic_mul cx cy cz in
     let z_mul_hat =
       add
@@ -76,7 +76,7 @@ let test_homomorphic_ring () =
     in
     Alcotest.(check int64) "homomorphic mul" (mul x y) (Ring.decode_val cz z_mul_hat);
 
-    (* 3. Проверка нелинейной инволюции XorShift33 *)
+    (* 3. Verification of the nonlinear XorShift33 involution *)
     let c_odd = logor (Random.State.int64 rng max_int) 1L in
     let inv1 = Ring.eval_xorshift33_involution ~c_odd x in
     let inv2 = Ring.eval_xorshift33_involution ~c_odd inv1 in

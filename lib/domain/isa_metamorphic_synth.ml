@@ -77,7 +77,7 @@ let synth_orthogonal_alu_basis (rng : Random.State.t) ~(op1_id : int) ~(op2_id :
   let bias1 = rand_bits64 rng in
   let bias2 = rand_bits64 rng in
 
-  (* det = a*d - b*c (нечетное * нечетное - четное * четное = нечетное, обратимо в Z_{2^64}) *)
+  (* det = a*d - b*c (odd * odd - even * even = odd, invertible in Z_{2^64}) *)
   let det = sub (mul a d) (mul b c) in
   let det_inv = inv_odd_64 det in
 
@@ -138,7 +138,7 @@ let encode_mixed_radix_insn (spec : isa_radix_spec) (insn : raw_instruction) : i
   let nrt = of_int spec.n_routes in
   let imm = logand (of_int insn.imm16) 0xFFFFL in
 
-  (* Схема Горнера в беззнаковой арифметике:
+  (* Horner scheme in unsigned arithmetic:
      U = opcode + nop * (rd + nr * (rs1 + nr * (rs2 + nr * (route_id + nrt * imm)))) *)
   let u = add (of_int insn.route_id) (mul nrt imm) in
   let u = add (of_int insn.rs2)      (mul nr u) in
@@ -174,7 +174,7 @@ let decode_mixed_radix_insn (spec : isa_radix_spec) (word : int64) : raw_instruc
   { opcode; rd; rs1; rs2; route_id; imm16 }
 
 let step_mealy_grammar_state ~(state : int64) ~(insn_word : int64) ~(data_invariant : int64) : int64 =
-  (* SplitMix64 / Stafford Mix13 нелинейная биекция состояния автомата декодера *)
+  (* SplitMix64 / Stafford Mix13 nonlinear bijection of the decoder automaton state *)
   let z = add state 0x9E3779B97F4A7C15L in
   let z = logxor z ( add insn_word (mul data_invariant 0xBF58476D1CE4E5B9L) ) in
   let z = mul (logxor z (shift_right_logical z 30)) 0xBF58476D1CE4E5B9L in
@@ -183,9 +183,9 @@ let step_mealy_grammar_state ~(state : int64) ~(insn_word : int64) ~(data_invari
 
 let next_insn_byte_width ~(state : int64) : int =
   match to_int (logand state 3L) with
-  | 0 -> 3  (* Компактный стековый архетип *)
-  | 1 -> 5  (* Двухоперандный гибридный архетип *)
-  | _ -> 8  (* Полноразмерный Mixed-Radix архетип *)
+  | 0 -> 3  (* Compact stack archetype *)
+  | 1 -> 5  (* Two-operand hybrid archetype *)
+  | _ -> 8  (* Full-size Mixed-Radix archetype *)
 
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl

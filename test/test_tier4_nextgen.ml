@@ -8,27 +8,27 @@ module Hbridge = Multi_vm.Homomorphic_bridge
 module Njit = Rd_jit_vm.Nano_jit_slot
 module Ring = Mba_engine.Metamorphic_ring
 
-(* Тест 0: Проверка хотфикса P0-01 (Cycle Decomposition для циклов длины >= 3) *)
+(* Test 0: Verification of the P0-01 hotfix (Cycle Decomposition for cycles of length >= 3) *)
 let test_p0_cycle_permutation_fix () =
   let rng = Random.State.make [| 0x5877; 0xF001 |] in
   for _ = 1 to 100 do
     let n = 16 in
     let sched = Cperm.gen_epoch_schedule rng ~n_regs:n ~n_epochs:4 in
-    (* Исходный вектор значений виртуальных регистров r = 0..15 *)
+    (* Initial vector of virtual register values r = 0..15 *)
     let logical_vals = Array.init n (fun r -> of_int (r * 1000 + 7)) in
-    (* Раскладываем в физические слоты эпохи 0 *)
+    (* Distribute them into the physical slots of epoch 0 *)
     let phys_regs = Array.make n 0L in
     for r = 0 to n - 1 do
       phys_regs.(Cperm.physical_slot sched ~epoch:0 ~reg_id:r) <- logical_vals.(r)
     done;
-    (* Вычисляем целевую перестановку для перехода из эпохи 0 в эпоху 1 *)
+    (* Compute the target permutation for the transition from epoch 0 to epoch 1 *)
     let target = Array.init n (fun s ->
       let r = sched.inv_perms.(0).(s) in
       sched.epoch_perms.(1).(r)
     ) in
     let swaps = Cperm.decompose_into_swaps target in
     Cperm.apply_swaps_in_place phys_regs swaps;
-    (* Проверяем, что каждый регистр r теперь лежит строго в своем слоте эпохи 1! *)
+    (* Verify that each register r now lies strictly in its own epoch 1 slot! *)
     for r = 0 to n - 1 do
       let slot_ep1 = Cperm.physical_slot sched ~epoch:1 ~reg_id:r in
       assert (phys_regs.(slot_ep1) = logical_vals.(r))
@@ -36,7 +36,7 @@ let test_p0_cycle_permutation_fix () =
   done;
   Printf.printf "[PASS] P0-01 Hotfix: Cycle-Decomposed Context Permutation exact across 100 random 16-reg schedules.\n"
 
-(* Тест 1: Шаг 1 — Branchless VIP Arithmetic & Flag Elimination *)
+(* Test 1: Step 1 — Branchless VIP Arithmetic & Flag Elimination *)
 let test_step1_branchless_vip () =
   let rng = Random.State.make [| 0x1111; 0x2222 |] in
   let target = 0x401000L in
@@ -59,7 +59,7 @@ let test_step1_branchless_vip () =
   done;
   Printf.printf "[PASS] Step 1 (Branchless VIP): EQ/NE/ULT/SLT branchless transitions verified (0 JCC instructions).\n"
 
-(* Тест 2: Шаг 2 — 2D Variable Entanglement в GL(2, Z_{2^64}) против Syntia *)
+(* Test 2: Step 2 — 2D Variable Entanglement in GL(2, Z_{2^64}) vs Syntia *)
 let test_step2_variable_entangler () =
   let rng = Random.State.make [| 0x3333; 0x4444 |] in
   for _ = 1 to 200 do
@@ -73,19 +73,19 @@ let test_step2_variable_entangler () =
     let (x_dec, y_dec) = Ent.disentangle_pair mat u v in
     assert (x_dec = x && y_dec = y);
 
-    (* Гомоморфный сдвиг прямо в сшитом состоянии *)
+    (* Homomorphic shift directly in the entangled state *)
     let (u2, v2) = Ent.homomorphic_entangled_add_const mat ~u ~v ~dx ~dy in
     let (x2, y2) = Ent.disentangle_pair mat u2 v2 in
     assert (x2 = add x dx && y2 = add y dy);
 
-    (* Гомоморфная бабочка (x+y, x-y) *)
+    (* Homomorphic butterfly (x+y, x-y) *)
     let (ub, vb) = Ent.homomorphic_coupled_butterfly mat ~u ~v in
     let (xb, yb) = Ent.disentangle_pair mat ub vb in
     assert (xb = add x y && yb = sub x y)
   done;
   Printf.printf "[PASS] Step 2 (2D Variable Entanglement): GL(2, Z_{2^64}) coupled homomorphic ops exact.\n"
 
-(* Тест 3: Шаг 3 — Oblivious Memory Layout & Decoy Loads против Tenet *)
+(* Test 3: Step 3 — Oblivious Memory Layout & Decoy Loads vs Tenet *)
 let test_step3_oblivious_mem () =
   let rng = Random.State.make [| 0x5555; 0x6666 |] in
   let n_slots = 32 in
@@ -95,7 +95,7 @@ let test_step3_oblivious_mem () =
 
   for i = 0 to n_slots - 1 do
     Omem.oblivious_store scrambler mem ~logical_idx:i expected.(i);
-    (* Проверяем, что в физической памяти значение замаскировано *)
+    (* Verify that the value in physical memory is masked *)
     let p_idx = Omem.logical_to_physical_slot scrambler i in
     assert (mem.(p_idx) <> expected.(i));
     assert (Omem.physical_to_logical_slot scrambler p_idx = i)
@@ -109,7 +109,7 @@ let test_step3_oblivious_mem () =
   done;
   Printf.printf "[PASS] Step 3 (Oblivious Memory): PRF slot permutation & 4-way branchless decoy loads verified.\n"
 
-(* Тест 4: Шаг 4 — Inter-Procedural Homomorphic Bridge (VM-to-VM Call Fusion) *)
+(* Test 4: Step 4 — Inter-Procedural Homomorphic Bridge (VM-to-VM Call Fusion) *)
 let test_step4_homomorphic_bridge () =
   let rng = Random.State.make [| 0x7777; 0x8888 |] in
   for _ = 1 to 200 do
@@ -131,7 +131,7 @@ let test_step4_homomorphic_bridge () =
   done;
   Printf.printf "[PASS] Step 4 (Homomorphic VM-to-VM Bridge): Zero-ABI-exposure state transfer & composition exact.\n"
 
-(* Тест 5: Шаг 5 — Single-Block Self-Wiping Nano-JIT *)
+(* Test 5: Step 5 — Single-Block Self-Wiping Nano-JIT *)
 let test_step5_self_wiping_nano_jit () =
   let raw_insns = Bytes.of_string "\x48\x31\xc0\x48\xff\xc0\xc3\x90\x48\x89\xe5\x48\x83\xec\x20\xc3" in
   let master_key = 0x587726019292CAFEL in

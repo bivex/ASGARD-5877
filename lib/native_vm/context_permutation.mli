@@ -1,6 +1,6 @@
-(** Динамическая перестановка раскладки VMContext на границах эпох (P0-Fixed).
-    Включает Cycle Decomposition для точного разложения перестановок на транспозиции
-    без коллизий циклов и порчи контекста. *)
+(** Dynamic permutation of the VMContext layout at epoch boundaries (P0-Fixed).
+    Includes Cycle Decomposition for the exact decomposition of permutations into transpositions
+    without cycle collisions and context corruption. *)
 
 type t = {
   perm     : int array;
@@ -14,25 +14,25 @@ type epoch_schedule = {
   n_regs       : int;
   epoch_perms  : int array array;  (** epoch_id -> reg_id -> physical_slot *)
   inv_perms    : int array array;  (** epoch_id -> physical_slot -> reg_id *)
-  epoch_masks  : int64 array;      (** Ключи маскирования индексов эпохи *)
+  epoch_masks  : int64 array;      (** Epoch index masking keys *)
 }
 
-(** Генерация расписания перестановок контекста для заданного числа эпох *)
+(** Generation of the context permutation schedule for a given number of epochs *)
 val gen_epoch_schedule : Random.State.t -> n_regs:int -> n_epochs:int -> epoch_schedule
 
-(** Получение физического слота для виртуального регистра в заданной эпохе *)
+(** Obtaining the physical slot for a virtual register in a given epoch *)
 val physical_slot : epoch_schedule -> epoch:int -> reg_id:int -> int
 
-(** Разложение произвольной перестановки target (где new_arr[target[i]] = old_arr[i])
-    в точную последовательность пар индексов (u, v) для in-place swap *)
+(** Decomposition of an arbitrary permutation target (where new_arr[target[i]] = old_arr[i])
+    into an exact sequence of index pairs (u, v) for in-place swap *)
 val decompose_into_swaps : int array -> (int * int) list
 
-(** Симуляция ротации массива регистров между эпохами в OCaml (для верификации) *)
+(** Simulation of the register array rotation between epochs in OCaml (for verification) *)
 val apply_swaps_in_place : int64 array -> (int * int) list -> unit
 
-(** Построение C++20 AST функции ротации регистров между эпохами по расписанию *)
+(** Construction of the C++20 AST of the epoch-to-epoch register rotation function according to the schedule *)
 val build_schedule_epoch_rotation_ast :
   epoch_schedule -> from_epoch:int -> to_epoch:int -> Cpp_codegen.Cpp_ast.top_decl
 
-(** Генерация C++20 функции in-place ротации регистров между эпохами по расписанию *)
+(** Generation of the C++20 in-place epoch-to-epoch register rotation function according to the schedule *)
 val emit_schedule_epoch_rotation_cpp : epoch_schedule -> from_epoch:int -> to_epoch:int -> string

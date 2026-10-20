@@ -20,7 +20,7 @@ let rand_u64 (rng : Random.State.t) : int64 =
   logor (shift_left hi 34) (logor (shift_left mid 4) (logand lo 0xFL))
 
 let gen_entanglement_matrix (rng : Random.State.t) : entanglement_matrix =
-  (* Главная диагональ нечетная, побочная четная (но ненулевая!) -> det всегда нечетен *)
+  (* Main diagonal odd, off-diagonal even (but nonzero!) -> det is always odd *)
   let a11 = logor (rand_u64 rng) 1L in
   let a22 = logor (rand_u64 rng) 1L in
   let a12 = logor (logand (rand_u64 rng) (lognot 1L)) 2L in
@@ -58,7 +58,7 @@ let homomorphic_entangled_add_const (m : entanglement_matrix)
   (add u shift_u, add v shift_v)
 
 let homomorphic_coupled_butterfly (m : entanglement_matrix) ~(u : int64) ~(v : int64) : int64 * int64 =
-  (* Пусть T = [1, 1; 1, -1] (преобразование (x+y, x-y)).
-     В сшитых координатах матрица оператора имеет вид M_op = A * T * A^{-1} mod 2^64 *)
+  (* Let T = [1, 1; 1, -1] (the transformation (x+y, x-y)).
+     In entangled coordinates the operator matrix has the form M_op = A * T * A^{-1} mod 2^64 *)
   let (x, y) = disentangle_pair m u v in
   entangle_pair m (add x y) (sub x y)

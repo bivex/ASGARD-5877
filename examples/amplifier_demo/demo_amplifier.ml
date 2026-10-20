@@ -1,33 +1,33 @@
 (** examples/amplifier_demo/demo_amplifier.ml
     Standalone smoke-demo for Bytecode_amplifier.
-    Собирается через build_amplifier.sh; никаких зависимостей от
-    тестового фреймворка — только Stack_vm + Mba_engine.
+    Built via build_amplifier.sh; no dependencies on the
+    test framework — only Stack_vm + Mba_engine.
 
-    Программа:
+    Program:
       ┌──────────────────────────────────────────────────────────┐
       │  ctx[0] = 0xDEAD_BEEF__CAFE_BABEn                        │
       │  ctx[1] = 0x0102_0304_0506_0708n                         │
       │                                                          │
       │  entry:                                                   │
-      │    PushImm 0xCAFE_0000n        ; скрытая константа        │
+      │    PushImm 0xCAFE_0000n        ; hidden constant          │
       │    PushReg 0                   ; ctx[0]                   │
       │    PushReg 1                   ; ctx[1]                   │
       │    Add                         ; ctx[0] + ctx[1]          │
       │    Sub                         ; PushImm - (sum)          │
-      │    Mul                         ; * ctx[0] -- нужен Mul→tw │
+      │    Mul                         ; * ctx[0] -- needs Mul→tw │
       │    PopReg 2                    ; ctx[2] = result          │
-      │    PushReg 0                   ; флаги живут после Add→Sub│
+      │    PushReg 0                   ; flags live after Add→Sub │
       │    PushReg 1                   ;                          │
-      │    Add                         ; ← flag-unsafe: Setcc за  │
-      │    Setcc Vm_ir.Flags.G         ; ← ним                    │
+      │    Add                         ; ← flag-unsafe: Setcc     │
+      │    Setcc Vm_ir.Flags.G         ; ← right after it         │
       │    PopReg 3                    ; ctx[3] = G-flag result    │
       │    Exit                                                   │
       └──────────────────────────────────────────────────────────┘
 
-    После амплификации:
-      • ctx[2] и ctx[3] должны совпасть с оригиналом.
-      • Число опкодов вырастает (expansion ratio печатается).
-      • Детерминизм: два прогона с одним seed дают одинаковый листинг.
+    After amplification:
+      • ctx[2] and ctx[3] must match the original.
+      • The number of opcodes grows (the expansion ratio is printed).
+      • Determinism: two runs with the same seed give the same listing.
 *)
 
 open Stack_vm.Stack_ir
@@ -35,7 +35,7 @@ open Stack_vm.Stack_eval
 module Amp = Stack_vm.Bytecode_amplifier
 
 (* ------------------------------------------------------------------ *)
-(* Построение demo-программы                                           *)
+(* Demo program construction                                            *)
 (* ------------------------------------------------------------------ *)
 
 let ctx0 = 0xDEADBEEFCAFEBABEL
@@ -53,7 +53,7 @@ let make_demo_program () : program =
     ; PopReg 2          (* ctx[2] = result *)
     ; PushReg 0
     ; PushReg 1
-    ; Add               (* флаги живы: Setcc сразу после *)
+    ; Add               (* flags live: Setcc immediately after *)
     ; Setcc Vm_ir.Flags.G
     ; PopReg 3          (* ctx[3] = G-flag *)
     ; Exit
@@ -64,7 +64,7 @@ let make_demo_program () : program =
   { entry_id = 0; blocks; context_slots = 16 }
 
 (* ------------------------------------------------------------------ *)
-(* Вспомогательные функции                                             *)
+(* Helper functions                                                     *)
 (* ------------------------------------------------------------------ *)
 
 let run_prog prog =
@@ -77,7 +77,7 @@ let print_prog label prog =
   print_endline (program_to_string prog)
 
 (* ------------------------------------------------------------------ *)
-(* Сценарии                                                            *)
+(* Scenarios                                                            *)
 (* ------------------------------------------------------------------ *)
 
 let scenario_correctness () =

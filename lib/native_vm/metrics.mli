@@ -36,12 +36,12 @@ type drs_v2_metrics = {
 }
 
 type drs_v2_report = {
-  shannon_entropy : float;          (** Информационная плотность байткода [0..8] *)
-  aig_clause_estimate : int;        (** Оценка числа клозов Tseitin CNF для Z3 bit-blasting *)
-  nonlinear_mix_depth : int;        (** Глубина чередования несовместимых колец (GF(2)^64 <-> Z/2^64Z + Perm) *)
-  dse_coupled_branches_ratio : float; (** Доля переходов со скрытыми целями, зависящими от POP/running_key *)
-  dce_immune_instr_ratio : float;   (** Доля инструкций, связанных с сайд-эффектами памяти и выходом (защита от LLVM DCE) *)
-  drs_v2_score : float;             (** Итоговый индекс [0.0 .. 100.0] с логарифмическим масштабированием *)
+  shannon_entropy : float;          (** Bytecode information density [0..8] *)
+  aig_clause_estimate : int;        (** Estimate of the number of Tseitin CNF clauses for Z3 bit-blasting *)
+  nonlinear_mix_depth : int;        (** Depth of interleaving of incompatible rings (GF(2)^64 <-> Z/2^64Z + Perm) *)
+  dse_coupled_branches_ratio : float; (** Ratio of transitions with hidden targets depending on POP/running_key *)
+  dce_immune_instr_ratio : float;   (** Ratio of instructions tied to memory side effects and exit (protection against LLVM DCE) *)
+  drs_v2_score : float;             (** Final index [0.0 .. 100.0] with logarithmic scaling *)
 }
 
 type metrics_report = {

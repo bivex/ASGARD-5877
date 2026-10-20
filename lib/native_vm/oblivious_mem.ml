@@ -55,18 +55,18 @@ let oblivious_load_with_decoys (s : frame_scrambler) (mem : int64 array)
     ~(logical_idx : int) ~(noise_seed : int64) : int64 * int list =
   let real_phys = logical_to_physical_slot s logical_idx in
   let base_rot  = (to_int (logand noise_seed 3L)) in
-  (* Строим 4 физических индекса: 1 настоящий (в позиции base_rot) и 3 ложных *)
+  (* We build 4 physical indices: 1 real one (at position base_rot) and 3 false ones *)
   let accessed_indices = List.init 4 (fun k ->
     if k = base_rot then real_phys
     else
       let fake_step = ((k * 7 + to_int (logand (shift_right_logical noise_seed (k * 5)) 0xFL)) mod (s.n_slots - 1)) + 1 in
       (real_phys + fake_step) mod s.n_slots
   ) in
-  (* Арифметический выбор без ветвлений из 4 прочитанных ячеек *)
+  (* Branchless arithmetic selection from the 4 read cells *)
   let acc = ref 0L in
   List.iteri (fun k p_idx ->
     let raw_val = mem.(p_idx) in
-    (* is_target = 1L если k == base_rot, иначе 0L *)
+    (* is_target = 1L if k == base_rot, otherwise 0L *)
     let d = of_int (k lxor base_rot) in
     let is_target = sub 1L (shift_right_logical (logor d (neg d)) 63) in
     let bit_mask = neg is_target in

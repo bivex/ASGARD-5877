@@ -49,7 +49,7 @@ let compile_homomorphic_mul (cx : ring_codec) (cy : ring_codec) (cz : ring_codec
 
 let eval_xorshift33_involution ~(c_odd : int64) (x : int64) : int64 =
   let c = logor c_odd 1L in
-  (* Так как сдвиг влево 33 >= 32 (половины разрядности), младшие 33 бита x
-     не изменяются при первом применении и дают идентичный сдвинутый паттерн при втором! *)
+  (* Since the left shift by 33 >= 32 (half the bit width), the low 33 bits of x
+     are unchanged on the first application and yield an identical shifted pattern on the second! *)
   let shifted = shift_left (mul (logand x 0x7FFFFFFFL) c) 33 in
   logxor x shifted

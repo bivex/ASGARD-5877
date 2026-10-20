@@ -1,7 +1,7 @@
 open X86_lifter
 open Native_vm
 
-(** Tests for Layer 3 (Звено 3): Dynamic Anti-Tamper & Memory Integrity.
+(** Tests for Layer 3 (Link 3): Dynamic Anti-Tamper & Memory Integrity.
     Verifies:
     1. Dual-Mapping W^X memory aliasing (RW for mutation, RX for execution).
     2. Introspective Self-Modifying Code (SMC) + Hardware Timing Predicates (RDTSC / CNTVCT_EL0).

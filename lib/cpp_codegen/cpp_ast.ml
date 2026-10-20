@@ -1,5 +1,5 @@
 (* lib/cpp_codegen/cpp_ast.ml
-   Типизированное представление подмножества C++20/C11 для генерации рантаймов VM *)
+   Typed representation of a subset of C++20/C11 for generating VM runtimes *)
 
 type ctype =
   | Void

@@ -9,21 +9,21 @@ type branch_cond =
   | CondSge
 
 let eval_is_zero_branchless (d : int64) : int64 =
-  (* В 2-дополнительном коде (d | -d) имеет старший бит 63 равным 0 ТОЛЬКО при d = 0L *)
+  (* In two's complement (d | -d) has bit 63 equal to 0 ONLY when d = 0L *)
   let non_zero_bit = shift_right_logical (logor d (neg d)) 63 in
   sub 1L non_zero_bit
 
 let eval_ult_branchless (x : int64) (y : int64) : int64 =
-  (* Беззнаковый заем (borrow / Carry Flag при x - y):
-     Формула Уоррена (Hacker's Delight): borrow = (~x & y) | ((~x | y) & (x - y))
-     Старший бит 63 равен 1 тогда и только тогда, когда x <u y *)
+  (* Unsigned borrow (borrow / Carry Flag for x - y):
+     Warren's formula (Hacker's Delight): borrow = (~x & y) | ((~x | y) & (x - y))
+     Bit 63 equals 1 if and only if x <u y *)
   let diff = sub x y in
   let not_x = lognot x in
   let borrow = logor (logand not_x y) (logand (logor not_x y) diff) in
   shift_right_logical borrow 63
 
 let eval_slt_branchless (x : int64) (y : int64) : int64 =
-  (* Знаковое сравнение x <s y сводится к беззнаковому переворотом знакового бита 2^63 *)
+  (* Signed comparison x <s y reduces to an unsigned one by flipping the sign bit 2^63 *)
   let sign_flip = 0x8000000000000000L in
   eval_ult_branchless (logxor x sign_flip) (logxor y sign_flip)
 
@@ -51,7 +51,7 @@ let compute_vip_and_key_branchless
   let b = eval_cond_branchless cond lhs rhs in
   let not_b = sub 1L b in
   let next_vip = add fallthrough_vip (mul b (sub target_vip fallthrough_vip)) in
-  (* Выбираем дельту ключа арифметическим мультиплексором без ветвлений *)
+  (* We select the key delta with a branchless arithmetic multiplexer *)
   let active_delta = add (mul b key_delta_taken) (mul not_b key_delta_fallthrough) in
   let next_key = mul (logxor base_key active_delta) 0x9E3779B97F4A7C15L in
   (next_vip, next_key)

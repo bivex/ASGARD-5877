@@ -27,16 +27,16 @@ let test_delayed_commit_pipeline () =
   let pipe = Cham.create_pipeline_state () in
   let regs = Array.make 8 0L in
 
-  (* Шаг 1: вычисляем для R1 значение 0x1111, но в R1 оно ЕЩЕ НЕ ДОЛЖНО появиться! *)
+  (* Step 1: we compute the value 0x1111 for R1, but it must NOT appear in R1 yet! *)
   Cham.step_delayed_commit_handler pipe regs ~dst_reg:1 ~new_result:0x1111L ~next_mask:0xAAAA5555L;
   Alcotest.(check int64) "R1 should be 0 on step 1 (oracle blinded)" 0L regs.(1);
 
-  (* Шаг 2: вычисляем для R2 значение 0x2222 -> теперь в R1 автоматически коммитится 0x1111! *)
+  (* Step 2: we compute the value 0x2222 for R2 -> now 0x1111 is automatically committed into R1! *)
   Cham.step_delayed_commit_handler pipe regs ~dst_reg:2 ~new_result:0x2222L ~next_mask:0x12345678L;
   Alcotest.(check int64) "R1 should be committed on step 2" 0x1111L regs.(1);
   Alcotest.(check int64) "R2 should still be 0 on step 2 (delayed)" 0L regs.(2);
 
-  (* Финальный Flush перед выходом из VM *)
+  (* Final Flush before exiting the VM *)
   Cham.flush_delayed_commit pipe regs;
   Alcotest.(check int64) "R2 should be committed on flush" 0x2222L regs.(2)
 

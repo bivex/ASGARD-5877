@@ -34,20 +34,20 @@ let rand_u64 (rng : Random.State.t) : int64 =
   let lo = Random.State.bits rng |> of_int in
   logor (shift_left hi 34) (logor (shift_left mid 4) (logand lo 0xFL))
 
-(** Математическая основа Хамелеон-Хендлера:
-    В кольце Z_{2^64} всегда выполняется фундаментальное линейное тождество:
+(** Mathematical foundation of the Chameleon Handler:
+    In the ring Z_{2^64} the fundamental linear identity always holds:
     (x | y) = (x ^ y) + (x & y)  <==>  (x ^ y) + (x & y) - (x | y) == 0!
-    Поэтому если базовое представление операции имеет вид:
+    Therefore, if the base representation of the operation has the form:
       Op(x, y) = base_xor * (x ^ y) + base_and * (x & y)
-    мы можем выбрать ЛЮБОЕ случайное 64-битное число r \in Z_{2^64} и положить:
+    we can choose ANY random 64-bit number r \in Z_{2^64} and set:
       w_or  = r
       w_xor = base_xor - r
       w_and = base_and - r
-    Тогда:
+    Then:
       w_xor*(x^y) + w_and*(x&y) + w_or*(x|y)
       = (base_xor - r)*(x^y) + (base_and - r)*(x&y) + r*((x^y) + (x&y))
       == base_xor*(x^y) + base_and*(x&y) (mod 2^64)!
-    Это дает 2^64 различных представлений для ОДНОЙ И ТОЙ ЖЕ инструкции в одном хендлере! *)
+    This gives 2^64 distinct representations for THE VERY SAME instruction within a single handler! *)
 let synth_chameleon_weights (rng : Random.State.t) (sem : target_alu_sem) : chameleon_weights =
   let (base_xor, base_and) = match sem with
     | SemAdd -> (1L, 2L) (* x + y = 1*(x^y) + 2*(x&y) *)
@@ -55,8 +55,8 @@ let synth_chameleon_weights (rng : Random.State.t) (sem : target_alu_sem) : cham
     | SemAnd -> (0L, 1L) (* x & y = 0*(x^y) + 1*(x&y) *)
     | SemOr  -> (1L, 1L) (* x | y = 1*(x^y) + 1*(x&y) *)
     | SemSub ->
-      (* Для вычитания x - y в хендлер подается инвертированный y' = ~y,
-         а смещение +1 закладывается в bias: x - y = x + (~y) + 1 *)
+      (* For the subtraction x - y the handler receives the inverted y' = ~y,
+         while the +1 offset is folded into bias: x - y = x + (~y) + 1 *)
       (1L, 2L)
   in
   let r_free = rand_u64 rng in
@@ -79,12 +79,12 @@ let step_delayed_commit_handler
     ~(dst_reg : int)
     ~(new_result : int64)
     ~(next_mask : int64) : unit =
-  (* 1. Сначала коммитим отложенный результат ПРЕДЫДУЩЕЙ виртуальной инструкции (шаг T-1) *)
+  (* 1. First commit the deferred result of the PREVIOUS virtual instruction (step T-1) *)
   if st.has_pending then begin
     let committed_val = logxor st.pending_val st.pending_mask in
     regs.(st.pending_reg) <- committed_val
   end;
-  (* 2. Защелкиваем результат ТЕКУЩЕЙ инструкции (шаг T) в замаскированном виде в буфер *)
+  (* 2. Latch the result of the CURRENT instruction (step T) in masked form into the buffer *)
   st.pending_reg  <- dst_reg;
   st.pending_mask <- next_mask;
   st.pending_val  <- logxor new_result next_mask;
@@ -112,7 +112,7 @@ let emit_chameleon_handlers_hpp (rng : Random.State.t) : string =
     ];
   } in
 
-  (* Универсальное ядро хамелеона, вычисляющее любую булево-арифметическую операцию *)
+  (* Universal chameleon core computing any boolean-arithmetic operation *)
   let chameleon_exec_fn = FuncDecl {
     attrs    = [AlwaysInline; NoExcept];
     ret_type = Void;
