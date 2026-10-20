@@ -1012,8 +1012,12 @@ let lift_instr ?const_pool raw_mnem ops =
       let* ir_src = to_ir_operand ?const_pool src in
       Ok [ Ir.Mov { dst = Ir.Reg base_reg; src = ir_src } ]
   | ("mov" | "movabs"), [ dst; src ] -> (
-      match (dst, src) with
-      | (X86_parser.OpReg r, X86_parser.OpMem m) -> (
+      match dst with
+      | X86_parser.OpReg r when r = Register.vcs ->
+          Error "mov cs is an invalid instruction in x86 (#UD)"
+      | _ -> (
+          match (dst, src) with
+          | (X86_parser.OpReg r, X86_parser.OpMem m) -> (
           match m.symbol, const_pool with
           | Some sym, Some cp when Hashtbl.mem cp sym ->
               let b = Hashtbl.find cp sym in
@@ -1030,7 +1034,7 @@ let lift_instr ?const_pool raw_mnem ops =
       | _ ->
           let* ir_dst = to_ir_operand ?const_pool dst in
           let* ir_src = to_ir_operand ?const_pool src in
-          Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ])
+          Ok [ Ir.Mov { dst = ir_dst; src = ir_src } ]))
   | ("movzx" | "movzxb" | "movzxw" | "movzbq" | "movzwq"), [ dst; src ] -> (
       let* ir_dst = to_ir_operand dst in
       match (dst, src) with

@@ -1954,10 +1954,19 @@ bad_cs:
     pop cs
     ret
 |} in
-          match Lifter.lift_function invalid_asm with
+          (match Lifter.lift_function invalid_asm with
           | Error msg ->
               Alcotest.(check bool) "pop cs rejected" true (contains_sub msg "pop cs is an invalid")
-          | Ok _ -> Alcotest.fail "Expected pop cs to be rejected"
+          | Ok _ -> Alcotest.fail "Expected pop cs to be rejected");
+          let invalid_mov_cs = {|
+bad_mov_cs:
+    mov cs, ax
+    ret
+|} in
+          (match Lifter.lift_function invalid_mov_cs with
+          | Error msg ->
+              Alcotest.(check bool) "mov cs rejected" true (contains_sub msg "mov cs is an invalid")
+          | Ok _ -> Alcotest.fail "Expected mov cs to be rejected")
 
 let test_x86_fsbase_gsbase_rdfsbase_wrfsbase () =
   let asm = {|
