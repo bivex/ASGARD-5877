@@ -1,0 +1,10 @@
+(executable
+ (name demo_arm64)
+ (modules demo_arm64)
+ (libraries
+  arm64_lifter
+  vm_ir
+  native_vm
+  random_visa.protect_adapters
+  random_visa_ports
+  unix))

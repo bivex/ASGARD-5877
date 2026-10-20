@@ -16,11 +16,42 @@ let get_vec_info = function
       in
       Some (reg, bits, lane_bits, None)
   | _ -> None
+let normalize_mnemonic m =
+  let m_low = String.lowercase_ascii m in
+  match String.split_on_char '.' m_low with
+  | [ base; suf ] -> (base, Some suf)
+  | _ -> (m_low, None)
+
+let vec_dims_of_suffix = function
+  | "16b" -> Some (128, 8)
+  | "8b"  -> Some (64, 8)
+  | "8h"  -> Some (128, 16)
+  | "4h"  -> Some (64, 16)
+  | "4s"  -> Some (128, 32)
+  | "2s"  -> Some (64, 32)
+  | "2d"  -> Some (128, 64)
+  | "1d" | "d" -> Some (64, 64)
+  | "s"   -> Some (32, 32)
+  | "h"   -> Some (16, 16)
+  | "b"   -> Some (8, 8)
+  | "q"   -> Some (128, 128)
+  | _ -> None
+
+let apply_suffix_to_ops suf ops =
+  match vec_dims_of_suffix suf with
+  | None -> ops
+  | Some (s_bits, s_lane_bits) ->
+      List.map (function
+        | OpVec v -> OpVec { v with bits = s_bits; lane_bits = s_lane_bits }
+        | other -> other
+      ) ops
+
 
 let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
-  let mnem = String.lowercase_ascii mnemonic in
+  let (base_mnem, suf_opt) = normalize_mnemonic mnemonic in
+  let ops = match suf_opt with Some s -> apply_suffix_to_ops s ops | None -> ops in
+  let mnem = base_mnem in
   match (mnem, ops) with
-  (* Basic arithmetic vector binops: add, sub, mul *)
   | (("add" | "sub" | "mul" | "sqadd" | "sqsub" | "sqrdmulh"), [ op_dst; op_s1; op_s2 ]) -> (
       match get_vec_info op_dst, get_vec_info op_s1, get_vec_info op_s2 with
       | Some (dst, bits, lane_bits, _), Some (s1, _, _, _), Some (s2, _, _, _) ->

@@ -95,19 +95,33 @@ let parse_vec_operand str =
   in
   let s_low = String.lowercase_ascii s in
   if String.length s_low >= 2 && s_low.[0] = 'v' then
-    let (reg_part, suffix_part) =
-      match String.index_opt s_low '.' with
-      | Some dot ->
-          let r = String.sub s_low 0 dot in
-          let suf = String.sub s_low (dot + 1) (String.length s_low - dot - 1) in
-          (r, Some suf)
-      | None -> (s_low, None)
+    let (reg_part, suffix_part, direct_bracket) =
+      match String.index_opt s_low '[' with
+      | Some b_open when not (String.contains s_low '.') ->
+          let r = String.sub s_low 0 b_open in
+          let rest = String.sub s_low (b_open + 1) (String.length s_low - b_open - 1) in
+          let idx = match String.index_opt rest ']' with
+            | Some b_close -> int_of_string_opt (String.trim (String.sub rest 0 b_close))
+            | None -> None
+          in
+          (r, None, idx)
+      | _ ->
+          match String.index_opt s_low '.' with
+          | Some dot ->
+              let r = String.sub s_low 0 dot in
+              let suf = String.sub s_low (dot + 1) (String.length s_low - dot - 1) in
+              (r, Some suf, None)
+          | None -> (s_low, None, None)
     in
     match int_of_string_opt (String.sub reg_part 1 (String.length reg_part - 1)) with
     | Some reg when reg >= 0 && reg < 32 -> (
-        match suffix_part with
-        | None -> Some (OpVec { reg; bits = 128; lane_bits = 64; lane_idx = None })
-        | Some suf ->
+        match direct_bracket with
+        | Some idx ->
+            Some (OpVec { reg; bits = 128; lane_bits = 64; lane_idx = Some idx })
+        | None ->
+            match suffix_part with
+            | None -> Some (OpVec { reg; bits = 128; lane_bits = 64; lane_idx = None })
+            | Some suf ->
             let (arr, lane_idx) =
               match String.index_opt suf '[' with
               | Some b_open ->
