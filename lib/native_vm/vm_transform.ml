@@ -761,6 +761,26 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
       let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
       load_m @ [ Ir.Cmov { cond; dst; src = Ir.Reg scratch } ]
 
+  | Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Imm imm; nzcv } when imm < 0L || imm > 31L ->
+      let scratch = Register.with_width (pick_scratch_reg d d) (Register.get_width d) in
+      [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm imm };
+        Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Reg scratch; nzcv } ]
+
+  | Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Mem m; nzcv } ->
+      let scratch = Register.with_width (pick_scratch_reg d d) m.width in
+      let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
+      load_m @ [ Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Reg scratch; nzcv } ]
+
+  | Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Imm imm; nzcv } when imm < 0L || imm > 31L ->
+      let scratch = Register.with_width (pick_scratch_reg d d) (Register.get_width d) in
+      [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm imm };
+        Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Reg scratch; nzcv } ]
+
+  | Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Mem m; nzcv } ->
+      let scratch = Register.with_width (pick_scratch_reg d d) m.width in
+      let load_m = canonicalize_instr (Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m }) in
+      load_m @ [ Ir.Ccmp { cond; src1 = Ir.Reg d; src2 = Ir.Reg scratch; nzcv } ]
+
   | other -> [ other ]
 
 let eliminate_dead_flag_cmps (instrs : Ir.instr list) : Ir.instr list =
