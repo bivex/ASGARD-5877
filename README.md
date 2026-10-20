@@ -36,7 +36,7 @@ make test        # dune runtest
 ./run_tests.sh   # same, plus stale-process cleanup and signal handling
 ```
 
-`test/run_tests.exe` aggregates 43 suites. Ten standalone executables cover the parts that need a separate process:
+`test/run_tests.exe` aggregates 44 suites. Ten standalone executables cover the parts that need a separate process:
 
 ```bash
 dune exec test/test_cpp_codegen.exe            # typed C++20/C11 EDSL and pre-flight validator
@@ -69,6 +69,7 @@ dune exec test/test_tier4_nextgen.exe
 | `project` | Protect a multi-file C/C++ project under one runtime |
 | `vanguard` | Generate Vanguard-9292 polymorphic bytecode and run it |
 | `init-config` | Write an annotated JSON protection configuration |
+| `macho-unwind` | Inspect and repair the compact unwind information of a Mach-O image |
 
 `dune exec random_visa -- <command> --help=plain` lists every flag.
 
@@ -204,6 +205,7 @@ Presets: `min`, `light`, `default`, `high`, `max`, `stealth`. The JSON file over
 | `lib/cpp_codegen/` | Typed C++20/C11 AST, printer, pre-flight validator |
 | `lib/bytecode_crypto/` | SHA-256, HMAC-SHA256, Speck, block key derivation |
 | `lib/tech_2601/`, `lib/tech_2603/`, `lib/tech_2608/` | Runtime headers for the three research passes |
+| `lib/macho/` | Mach-O reader with `LC_ROUTINES` / `LC_ROUTINES64` support and compact unwind checks |
 | `lib/c_macro_obf/`, `lib/gpu_synth/`, `lib/vanguard_9292/` | Macro obfuscator, Metal synthesis, polymorphic bytecode codec |
 | `bin/` | CLI drivers and auxiliary executables |
 | `test/` | Test suites and golden fixtures |
@@ -224,9 +226,17 @@ make diff-fuzz-libfuzzer               # differential fuzzing against the native
 
 `scripts/audit_protected_binary.sh` checks a built binary for leftover strings and symbols, parasitic imports and decompiler resilience, and exits non-zero when an assertion fails.
 
+The compact unwind information of a Mach-O image is audited separately:
+
+```bash
+dune exec random_visa -- macho-unwind --input ./protected_app
+```
+
+The command reads the `LC_ROUTINES` and `LC_ROUTINES64` load commands, checks the routine table against `__TEXT,__text` and `__TEXT,__unwind_info`, and exits non-zero when the two disagree. The protection pipeline runs the same check on the binary it produced and reports it in the protection summary.
+
 ## Documentation
 
-- [VM Protector architecture](docs/VM_PROTECTOR.md): VM design, handler set, trampolines.
+- [VM Protector architecture](docs/VM_PROTECTOR.md): VM design, handler set, trampolines, Mach-O compact unwind support.
 - [Devirtualization resistance and entropy model](docs/ENTROPY_MODEL.md): threat model, DRS scoring.
 - [Real-world benchmarks](docs/REAL_WORLD_BENCHMARKS.md): production corpus results.
 - [Pipeline compatibility audit](docs/PIPELINE_COMPAT_AUDIT.md): per-phase invariant audit.
