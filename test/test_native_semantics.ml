@@ -957,6 +957,31 @@ func_native_vector_fp:
     if (std::bit_cast<float>(lane3) != 44.0f) return 5;
 |})
 
+(* The FSGSBASE family (RDFSBASE, RDGSBASE, WRFSBASE, WRGSBASE) reaches the
+   segment base registers of the VM context: the base is written into the
+   context slot and read back through the same slot. *)
+let test_native_x86_fsgsbase () =
+  let pkg =
+    mk_pkg ~seed:20260942 {|
+func_native_fsgsbase:
+    mov r10, 0x1122334455667788
+    wrfsbase r10
+    mov r11, 0x8877665544332211
+    wrgsbase r11
+    rdfsbase r8
+    rdgsbase r9
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_x86_fsgsbase" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R8) != 0x1122334455667788ULL) return 2;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R9) != 0x8877665544332211ULL) return 3;
+|})
+
 let test_native_x86_shld_shrd_mem_and_cdq () =
   let pkg =
     mk_pkg ~seed:20260940 {|
@@ -1021,4 +1046,5 @@ let tests = [
   Alcotest.test_case "native_b8_b16_merge" `Slow test_native_b8_b16_merge;
   Alcotest.test_case "native_vector_fp" `Slow test_native_vector_fp;
   Alcotest.test_case "native_x86_shld_shrd_mem_and_cdq" `Slow test_native_x86_shld_shrd_mem_and_cdq;
+  Alcotest.test_case "native_x86_fsgsbase" `Slow test_native_x86_fsgsbase;
 ]

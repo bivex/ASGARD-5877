@@ -6,6 +6,8 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
 ### Added
 
 - Add a per-case timing report to the test runner: every Alcotest case prints its own duration next to its name, and `run_tests.sh` reports the elapsed time of the whole run plus a line every 30 seconds. Alcotest captures the output of a case, so the durations travel through the file named by `ASGARD_TEST_TIMES`, which the script tails. The slowest cases are now visible without a second run.
@@ -62,6 +64,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Fixed
 
+- Fix zero register check in native VM atomic emitter: the zero register shares its slot index with the GS base register in the native register file, so checking `is_zero_register dst` instead of slot index equality ensures `vzero` writes are ignored without suppressing writes to `vgs_base` (`lib/native_vm/vm_emitter.ml`).
 - Fix canonicalization of `Ir.Ccmn` and `Ir.Ccmp` with immediate operands outside the 5-bit `0..31` range or memory operands (`lib/native_vm/vm_transform.ml`): ARM64 `OP_CCMN_RI` and `OP_CCMP_RI` words allocate only 5 bits for the immediate operand, so `cmn`/`ccmn` and `ccmp` with larger immediates (e.g. `cmn w0, #100`) wrapped modulo 32 when emitted directly; `canonicalize_instr` now loads out-of-range immediates and memory operands into a scratch register and lowers to `OP_CCMN_RR`/`OP_CCMP_RR`, resolving test 8 in `Native VM Sub-width Semantics` (`e2e_sub64_signed_comparisons_clang_o2_o3`).
 - Restore the metamorphic variants of the atomic handlers `H_ATOMIC_ADD` and `H_ATOMIC_SWP` in the native VM runtime. The width-aware rewrite of the LSE atomics left both handlers with a single fixed body, so every seed produced the same code and the metamorphism invariant (`H_ATOMIC_ADD diversity > 1`) failed. Both handlers now emit three semantically equivalent variants - the `__atomic` builtin, the C++ atomic member and a load/compare-exchange loop - and all three honour the width code in the word's extra bits (32-bit, 16-bit, 8-bit and 64-bit).
 - Fix the x86 bit-scan family in the lifter: `BSR` returned the number of leading zeros instead of the index of the highest set bit, `BSF` overwrote the destination when the source was zero, and `LZCNT` / `TZCNT` set no flags at all. They now follow the manual: BSF and BSR keep the destination and report the zero source in ZF, LZCNT and TZCNT always write the destination, set ZF for a zero result and CF for a zero source. The expected values and flags were taken from an x86-64 machine.

@@ -21,6 +21,14 @@ let shuffle_array rng arr =
 let poly_multiplier_of_seed = Rolling_key.poly_multiplier_of_seed
 let poly_init_of_seed = Rolling_key.poly_init_of_seed
 
+(* The zero register shares its slot with the GS base in the native register
+   file, so the guards that skip a write to it must compare the registers
+   themselves and not their slot indices. *)
+let is_zero_register (r : Register.t) =
+  match r with
+  | Register.Vreg (Register.VZERO, _) -> true
+  | _ -> false
+
 let compile_and_package_multi
     ~rng
     ?runtime_profile
@@ -848,7 +856,7 @@ let compile_and_package_multi
                         in
                         encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx tmp) (get_reg_idx src) 0L;
                         encode_raw_word ~extra_bits:wcode (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx tmp) imm;
-                        if get_reg_idx dst <> get_reg_idx Register.vzero then
+                        if not (is_zero_register dst) then
                           encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx dst) (get_reg_idx tmp) 0L
                       end
                   | AtSwp ->
@@ -864,7 +872,7 @@ let compile_and_package_multi
                         in
                         encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx tmp) (get_reg_idx src) 0L;
                         encode_raw_word ~extra_bits:wcode (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx tmp) imm;
-                        if get_reg_idx dst <> get_reg_idx Register.vzero then
+                        if not (is_zero_register dst) then
                           encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx dst) (get_reg_idx tmp) 0L
                       end)
               | Ir.Fence _ ->
