@@ -139,7 +139,7 @@ let process_block ~cfg (b : basic_block) : basic_block =
         set_state dst Plain;
         acc @ [ Unary { op; dst; src; set_flags } ]
 
-    | Cmp _ | Ccmp _ | Ccmn _ | Test _ ->
+    | Cmp _ | Ccmp _ | Ccmn _ | Test _ | Fp_ccmp _ ->
         let acc = decode_all acc in
         acc @ [ instr ]
 

@@ -1312,6 +1312,112 @@ let test_arm64_lift_conditional_zero_reg () =
       | Ok snap -> check int64 "cset x0, eq = 1" 1L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_movn () =
+  let asm = {|
+    movn x1, #0
+    movn w2, #0x1f
+    movn x3, #0xFF, lsl #16
+    mov x0, #0
+    cmp x1, #-1
+    b.ne 1f
+    mov x4, #0xFFFFFFE0
+    cmp x2, x4
+    b.ne 1f
+    mov x4, #0xFFFFFFFFFF00FFFF
+    cmp x3, x4
+    b.ne 1f
+    mov x0, #42
+1:
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_movn" } asm with
+  | Error err -> fail ("Failed to lift ARM64 movn: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 movn verified = 42" 42L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_exclusive_pairs () =
+  let asm = {|
+    mov x1, #0x5000
+    mov x2, #100
+    mov x3, #200
+    str x2, [x1]
+    str x3, [x1, #8]
+    ldxp x4, x5, [x1]
+    mov x6, #300
+    mov x7, #400
+    stlxp w8, x6, x7, [x1]
+    ldaxp x9, x10, [x1]
+    add x0, x4, x5
+    add x0, x0, x9
+    add x0, x0, x10
+    add x0, x0, x8
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_excl_pairs" } asm with
+  | Error err -> fail ("Failed to lift ARM64 exclusive pairs: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ldxp + stlxp + ldaxp = 1000" 1000L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_fcvt_rounding () =
+  let asm = {|
+    fmov d0, #1.5
+    fcvtas x1, d0
+    fcvtms x2, d0
+    fcvtns x3, d0
+    fcvtps x4, d0
+    fmov d1, #2.5
+    fcvtas x5, d1
+    fcvtns x6, d1
+    fmov d2, #-1.5
+    fcvtas x7, d2
+    fcvtps x8, d2
+    fcvtau x9, d2
+    add x0, x1, x2
+    add x0, x0, x3
+    add x0, x0, x4
+    add x0, x0, x5
+    add x0, x0, x6
+    add x0, x0, x7
+    add x0, x0, x8
+    add x0, x0, x9
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_fcvt_rounding" } asm with
+  | Error err -> fail ("Failed to lift ARM64 fcvt rounding: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "fcvt rounding variants total = 9" 9L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_fccmp () =
+  let asm = {|
+    mov x1, #1
+    cmp x1, #1
+    fmov d0, #1.0
+    fmov d1, #2.0
+    fccmp d0, d1, #4, eq
+    cset w0, lt
+    cmp x1, #2
+    fccmp d0, d1, #4, eq
+    cset w2, eq
+    add x0, x0, x2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_fccmp" } asm with
+  | Error err -> fail ("Failed to lift ARM64 fccmp: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "fccmp true and false paths = 2" 2L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -1376,6 +1482,10 @@ let tests = [
   ("ARM64 Lift conditional family (cset/cinc/csel/csinc/csinv/cinv/cneg/csneg/csetm)", `Quick,
     test_arm64_lift_conditional_family);
   ("ARM64 Lift conditional family (32-bit)", `Quick, test_arm64_lift_conditional_family_32bit);
+  ("ARM64 Lift movn", `Quick, test_arm64_lift_movn);
+  ("ARM64 Lift Exclusive Pairs (ldxp/stxp/ldaxp/stlxp)", `Quick, test_arm64_lift_exclusive_pairs);
+  ("ARM64 Lift FCVT Rounding (fcvtas/ms/ns/ps/au)", `Quick, test_arm64_lift_fcvt_rounding);
+  ("ARM64 Lift FCCMP (fccmp/fccmpe)", `Quick, test_arm64_lift_fccmp);
 ]
 
 

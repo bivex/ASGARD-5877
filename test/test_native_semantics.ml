@@ -2210,6 +2210,60 @@ func_native_pack_shuf_pinsr:
     if (ctx.vregs[8][1] != 0xDDDDDDDDDDDDDDDDULL) return 16;
 |})
 
+let test_native_arm64_movn_excl_fcvt_fccmp () =
+  let asm = {|
+    movn x1, #0
+    mov x2, #0x5000
+    mov x3, #111
+    mov x4, #222
+    stlxp w5, x3, x4, [x2]
+    ldaxp x6, x7, [x2]
+    fmov d0, #1.5
+    fcvtas x8, d0
+    fcvtms x9, d0
+    fcvtns x10, d0
+    fcvtps x11, d0
+    fmov d1, #-1.5
+    fcvtau x12, d1
+    mov x13, #1
+    cmp x13, #1
+    fmov d2, #1.0
+    fmov d3, #2.0
+    fccmp d2, d3, #4, eq
+    cset w14, lt
+    cmp x13, #2
+    fccmp d2, d3, #4, eq
+    cset w15, eq
+    add x0, x1, #1
+    add x0, x0, x5
+    add x0, x0, x6
+    add x0, x0, x7
+    add x0, x0, x8
+    add x0, x0, x9
+    add x0, x0, x10
+    add x0, x0, x11
+    add x0, x0, x12
+    add x0, x0, x14
+    add x0, x0, x15
+    ret
+  |} in
+  let lifted = Arm64_lifter_adapter.lift_source asm in
+  let func =
+    match lifted with
+    | Error err -> Alcotest.fail ("lift failed: " ^ err)
+    | Ok (f, _) -> f
+  in
+  let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+  let rng = Random.State.make [| 20261103 |] in
+  let pkg = Vm_emitter.compile_and_package ~rng unwrapped in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"arm64_movn_excl_fcvt_fccmp" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    if (ctx.get_rax() != 342) return 2;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -2252,4 +2306,5 @@ let tests = [
   Alcotest.test_case "native_x86_palignr" `Slow test_native_x86_palignr;
   Alcotest.test_case "native_x86_pmaddwd_psadbw" `Slow test_native_x86_pmaddwd_psadbw;
   Alcotest.test_case "native_x86_pack_shufw_pinsr_pextr" `Slow test_native_x86_pack_shufw_pinsr_pextr;
+  Alcotest.test_case "native_arm64_movn_excl_fcvt_fccmp" `Slow test_native_arm64_movn_excl_fcvt_fccmp;
 ]

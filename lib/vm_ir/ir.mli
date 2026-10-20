@@ -55,7 +55,12 @@ type target =
   | TargetReg of Register.t
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
-type fp_conv = Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
+type fp_conv =
+  | Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
+  | Fcvtas | Fcvtau
+  | Fcvtms | Fcvtmu
+  | Fcvtns | Fcvtnu
+  | Fcvtps | Fcvtpu
 type vec_conv_op =
   | Vcvtps2pd
   | Vcvtpd2ps
@@ -208,6 +213,7 @@ type instr =
   | Load_symbol of { dst : Register.t; sym : string; addend : int64 }
   | Fp_binop of { op : fp_binop; dst : int; src1 : int; src2 : int }
   | Fp_cmp of { src1 : int; src2 : int; is_32 : bool }
+  | Fp_ccmp of { cond : condition; src1 : int; src2 : int; nzcv : int; is_32 : bool }
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }

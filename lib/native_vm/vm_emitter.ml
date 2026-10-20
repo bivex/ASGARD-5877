@@ -837,14 +837,40 @@ let compile_and_package_multi
               | Ir.Fp_cmp { src1; src2; is_32 } ->
                   let mode = if is_32 then 1L else 0L in
                   encode_raw_word ~extra_bits:mode (get_opcode OP_FCMP_DD) 0 (src1 mod 32) (Int64.of_int (src2 mod 32))
-              | Ir.Fp_conv { op = Fcvtzs; dst; src } ->
+              | Ir.Fp_ccmp { cond; src1; src2; nzcv; is_32 } ->
+                  let mode = if is_32 then 1L else 0L in
+                  let c = cond_to_code cond in
+                  let imm = Int64.logor (Int64.of_int c)
+                    (Int64.logor (Int64.shift_left (Int64.of_int (nzcv land 0xF)) 4)
+                                 (Int64.shift_left (Int64.of_int (src2 mod 32)) 8))
+                  in
+                  encode_raw_word ~extra_bits:mode (get_opcode OP_FCCMP_DD) 0 (src1 mod 32) imm
+              | Ir.Fp_conv { op = (Fcvtzs | Fcvtas | Fcvtms | Fcvtns | Fcvtps) as fop; dst; src } ->
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
                   let src_is_32 = if Register.get_width src = Register.B32 then 1L else 0L in
-                  encode_raw_word (get_opcode OP_FCVTZS) (get_reg_idx dst) s_idx src_is_32
-              | Ir.Fp_conv { op = Fcvtzu; dst; src } ->
+                  let rmode = match fop with
+                    | Fcvtzs -> 0L
+                    | Fcvtas -> 1L
+                    | Fcvtms -> 2L
+                    | Fcvtns -> 3L
+                    | Fcvtps -> 4L
+                    | _ -> 0L
+                  in
+                  let imm = Int64.logor src_is_32 (Int64.shift_left rmode 1) in
+                  encode_raw_word (get_opcode OP_FCVTZS) (get_reg_idx dst) s_idx imm
+              | Ir.Fp_conv { op = (Fcvtzu | Fcvtau | Fcvtmu | Fcvtnu | Fcvtpu) as fop; dst; src } ->
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
                   let src_is_32 = if Register.get_width src = Register.B32 then 1L else 0L in
-                  encode_raw_word (get_opcode OP_FCVTZU) (get_reg_idx dst) s_idx src_is_32
+                  let rmode = match fop with
+                    | Fcvtzu -> 0L
+                    | Fcvtau -> 1L
+                    | Fcvtmu -> 2L
+                    | Fcvtnu -> 3L
+                    | Fcvtpu -> 4L
+                    | _ -> 0L
+                  in
+                  let imm = Int64.logor src_is_32 (Int64.shift_left rmode 1) in
+                  encode_raw_word (get_opcode OP_FCVTZU) (get_reg_idx dst) s_idx imm
               | Ir.Fp_conv { op = Scvtf; dst; src } ->
                   let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
                   let src_is_32 = if Register.get_width src = Register.B32 then 1L else 0L in

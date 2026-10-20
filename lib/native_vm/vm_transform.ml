@@ -120,6 +120,7 @@ type raw_op_kind =
   | OP_FDIV_DD
   | OP_FSQRT_D
   | OP_FCMP_DD
+  | OP_FCCMP_DD
   | OP_FCVTZS
   | OP_SCVTF
   | OP_ATOMIC_LOAD
@@ -193,6 +194,7 @@ let all_op_kinds = [
   OP_STORE_64; OP_STORE_32; OP_STORE_16; OP_STORE_8;
   OP_RESOLVE_SYM;
   OP_FADD_DD; OP_FSUB_DD; OP_FMUL_DD; OP_FDIV_DD; OP_FSQRT_D; OP_FCMP_DD;
+  OP_FCCMP_DD;
   OP_FCVTZS; OP_SCVTF;
   OP_ATOMIC_LOAD; OP_ATOMIC_STORE; OP_ATOMIC_CAS; OP_ATOMIC_ADD; OP_ATOMIC_SWP; OP_FENCE;
   OP_BSWAP_RR; OP_CLZ_RR; OP_CTZ_RR; OP_POPCNT_RR; OP_RBIT_RR;
@@ -301,6 +303,7 @@ let op_kind_to_handler_name = function
   | OP_FDIV_DD -> "H_FDIV_DD"
   | OP_FSQRT_D -> "H_FSQRT_D"
   | OP_FCMP_DD -> "H_FCMP_DD"
+  | OP_FCCMP_DD -> "H_FCCMP_DD"
   | OP_FCVTZS -> "H_FCVTZS"
   | OP_SCVTF -> "H_SCVTF"
   | OP_ATOMIC_LOAD -> "H_ATOMIC_LOAD"
@@ -844,12 +847,12 @@ let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
 
 let eliminate_dead_flag_cmps (instrs : Ir.instr list) : Ir.instr list =
   let is_flag_consumer = function
-    | Ir.Jcc _ | Ir.Cmov _ | Ir.Setcc _ | Ir.Ccmp _ | Ir.Ccmn _ -> true
+    | Ir.Jcc _ | Ir.Cmov _ | Ir.Setcc _ | Ir.Ccmp _ | Ir.Ccmn _ | Ir.Fp_ccmp _ -> true
     | Ir.Alu { op = (Ir.Adc | Ir.Sbb); _ } -> true
     | _ -> false
   in
   let is_flag_producer = function
-    | Ir.Cmp _ | Ir.Test _ | Ir.Ccmp _ | Ir.Ccmn _ -> true
+    | Ir.Cmp _ | Ir.Test _ | Ir.Ccmp _ | Ir.Ccmn _ | Ir.Fp_cmp _ | Ir.Fp_ccmp _ -> true
     | Ir.Alu { set_flags = true; _ } | Ir.Unary { set_flags = true; _ } -> true
     | _ -> false
   in

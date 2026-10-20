@@ -1631,12 +1631,45 @@ let step state = function
       let zf = is_nan || eq in
       let cf = is_nan || lt in
       let pf = is_nan in
+      let sf = if is_nan then false else lt in
       let cf_val = if cf then 1L else 0L in
       let pf_val = if pf then 4L else 0L in
       let zf_val = if zf then 64L else 0L in
-      state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf_val (Int64.logor pf_val zf_val)));
+      let sf_val = if sf then 128L else 0L in
+      state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf_val (Int64.logor pf_val (Int64.logor zf_val sf_val))));
       Ok None
-  | Fp_conv { op = Fcvtzs; dst; src } ->
+  | Fp_ccmp { cond; src1; src2; nzcv; is_32 } ->
+      if evaluate_condition state.flags cond then begin
+        let a_bits = get_vector_lane state src1 0 in
+        let b_bits = get_vector_lane state src2 0 in
+        let is_nan, eq, lt =
+          if is_32 then
+            let a = Int32.float_of_bits (Int64.to_int32 a_bits) in
+            let b = Int32.float_of_bits (Int64.to_int32 b_bits) in
+            (Float.is_nan a || Float.is_nan b, a = b, a < b)
+          else
+            let a = Int64.float_of_bits a_bits in
+            let b = Int64.float_of_bits b_bits in
+            (Float.is_nan a || Float.is_nan b, a = b, a < b)
+        in
+        let zf = is_nan || eq in
+        let cf = is_nan || lt in
+        let pf = is_nan in
+        let sf = if is_nan then false else lt in
+        let cf_val = if cf then 1L else 0L in
+        let pf_val = if pf then 4L else 0L in
+        let zf_val = if zf then 64L else 0L in
+        let sf_val = if sf then 128L else 0L in
+        state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf_val (Int64.logor pf_val (Int64.logor zf_val sf_val))));
+      end else begin
+        let sf = if (nzcv land 8) <> 0 then 128L else 0L in
+        let zf = if (nzcv land 4) <> 0 then 64L else 0L in
+        let cf = if (nzcv land 2) <> 0 then 1L else 0L in
+        let of_ = if (nzcv land 1) <> 0 then 2048L else 0L in
+        state.flags <- CC_OP_RAW (Int64.logor 2L (Int64.logor cf (Int64.logor zf (Int64.logor sf of_))));
+      end;
+      Ok None
+  | Fp_conv { op = (Fcvtzs | Fcvtas | Fcvtms | Fcvtns | Fcvtps) as fop; dst; src } ->
       let a_bits = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
       let a =
         if Register.get_width src = B32 then
@@ -1644,10 +1677,24 @@ let step state = function
           float_of_string (string_of_float f32)
         else Int64.float_of_bits a_bits
       in
-      let v = Int64.of_float a in
+      let rounded = match fop with
+        | Fcvtzs -> Float.trunc a
+        | Fcvtas -> if a >= 0.0 then Float.floor (a +. 0.5) else Float.ceil (a -. 0.5)
+        | Fcvtms -> Float.floor a
+        | Fcvtps -> Float.ceil a
+        | Fcvtns ->
+            let fl = Float.floor a in
+            let diff = a -. fl in
+            if diff < 0.5 then fl
+            else if diff > 0.5 then Float.ceil a
+            else if (int_of_float (Float.abs fl)) mod 2 = 0 then fl
+            else Float.ceil a
+        | _ -> Float.trunc a
+      in
+      let v = Int64.of_float rounded in
       set_reg state dst v;
       Ok None
-  | Fp_conv { op = Fcvtzu; dst; src } ->
+  | Fp_conv { op = (Fcvtzu | Fcvtau | Fcvtmu | Fcvtnu | Fcvtpu) as fop; dst; src } ->
       let a_bits = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
       let a =
         if Register.get_width src = B32 then
@@ -1655,7 +1702,21 @@ let step state = function
           float_of_string (string_of_float f32)
         else Int64.float_of_bits a_bits
       in
-      let v = if a < 0.0 then 0L else (try Int64.of_float a with _ -> -1L) in
+      let rounded = match fop with
+        | Fcvtzu -> Float.trunc a
+        | Fcvtau -> if a >= 0.0 then Float.floor (a +. 0.5) else Float.ceil (a -. 0.5)
+        | Fcvtmu -> Float.floor a
+        | Fcvtpu -> Float.ceil a
+        | Fcvtnu ->
+            let fl = Float.floor a in
+            let diff = a -. fl in
+            if diff < 0.5 then fl
+            else if diff > 0.5 then Float.ceil a
+            else if (int_of_float (Float.abs fl)) mod 2 = 0 then fl
+            else Float.ceil a
+        | _ -> Float.trunc a
+      in
+      let v = if rounded < 0.0 then 0L else (try Int64.of_float rounded with _ -> -1L) in
       set_reg state dst v;
       Ok None
   | Fp_conv { op = Scvtf; dst; src } ->

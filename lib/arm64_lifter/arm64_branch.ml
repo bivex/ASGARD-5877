@@ -185,6 +185,9 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Mov { dst = Reg (Register.Fpr (31, w1)); src = Imm 0L };
         Ir.Fp_cmp { src1 = s1; src2 = 31; is_32 = (w1 = Register.B32) };
       ]
+  | (("fccmp" | "fccmpe"), (OpReg (Register.Fpr (s1, w1)) :: OpReg (Register.Fpr (s2, _)) :: OpImm nzcv :: cond_op :: _)) ->
+      let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "al" in
+      Some [ Ir.Fp_ccmp { cond = map_cond_str c_str; src1 = s1; src2 = s2; nzcv = Int64.to_int nzcv; is_32 = (w1 = Register.B32) } ]
   | ("fmov", [ OpReg dst; OpReg src ]) ->
       Some [ Ir.Mov { dst = Reg dst; src = Reg src } ]
   | ("fmov", [ OpReg dst; OpImm imm ]) ->
@@ -193,6 +196,19 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, w) } ]
   | ("fcvtzu", [ OpReg dst; OpReg (Register.Fpr (s, w)) ]) ->
       Some [ Ir.Fp_conv { op = Fcvtzu; dst; src = Register.Fpr (s, w) } ]
+  | (("fcvtas" | "fcvtau" | "fcvtms" | "fcvtmu" | "fcvtns" | "fcvtnu" | "fcvtps" | "fcvtpu"), [ OpReg dst; OpReg (Register.Fpr (s, w)) ]) ->
+      let op = match mnemonic with
+        | "fcvtas" -> Ir.Fcvtas
+        | "fcvtau" -> Ir.Fcvtau
+        | "fcvtms" -> Ir.Fcvtms
+        | "fcvtmu" -> Ir.Fcvtmu
+        | "fcvtns" -> Ir.Fcvtns
+        | "fcvtnu" -> Ir.Fcvtnu
+        | "fcvtps" -> Ir.Fcvtps
+        | "fcvtpu" -> Ir.Fcvtpu
+        | _ -> assert false
+      in
+      Some [ Ir.Fp_conv { op; dst; src = Register.Fpr (s, w) } ]
   | ("scvtf", [ OpReg (Register.Fpr (d, w)); OpReg src ]) ->
       Some [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, w); src } ]
   | ("ucvtf", [ OpReg (Register.Fpr (d, w)); OpReg src ]) ->

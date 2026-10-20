@@ -2498,7 +2498,7 @@ let emit_mem_and_ffi_handlers ?rng b =
           var "ctx.zf" := (var "is_nan" ||~ (var "a" ==~ var "b"));
           var "ctx.cf" := (var "is_nan" ||~ (var "a" <~ var "b"));
           var "ctx.pf" := var "is_nan";
-          var "ctx.sf" := bool_lit false;
+          var "ctx.sf" := ((log_not (var "is_nan")) &&~ (var "a" <~ var "b"));
           var "ctx.of" := bool_lit false;
         ] [
           let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
@@ -2509,7 +2509,7 @@ let emit_mem_and_ffi_handlers ?rng b =
           var "ctx.zf" := (var "is_nan" ||~ (var "a" ==~ var "b"));
           var "ctx.cf" := (var "is_nan" ||~ (var "a" <~ var "b"));
           var "ctx.pf" := var "is_nan";
-          var "ctx.sf" := bool_lit false;
+          var "ctx.sf" := ((log_not (var "is_nan")) &&~ (var "a" <~ var "b"));
           var "ctx.of" := bool_lit false;
         ];
       ]
@@ -2520,7 +2520,7 @@ let emit_mem_and_ffi_handlers ?rng b =
           let_float "_b" (bit_cast Float (cast UInt32 (get_vreg_lane (cast UInt8 (var "imm")) (i32 0))));
           let_bool "_nan" (call "std::isnan" [var "_a"] ||~ call "std::isnan" [var "_b"]);
           var "ctx.of" := bool_lit false;
-          var "ctx.sf" := bool_lit false;
+          var "ctx.sf" := ((log_not (var "_nan")) &&~ (var "_a" <~ var "_b"));
           var "ctx.cf" := (var "_nan" ||~ (var "_a" <~ var "_b"));
           var "ctx.zf" := (var "_nan" ||~ (var "_a" ==~ var "_b"));
           var "ctx.pf" := var "_nan";
@@ -2529,7 +2529,7 @@ let emit_mem_and_ffi_handlers ?rng b =
           let_double "_b" (bit_cast Double (get_vreg_lane (cast UInt8 (var "imm")) (i32 0)));
           let_bool "_nan" (call "std::isnan" [var "_a"] ||~ call "std::isnan" [var "_b"]);
           var "ctx.of" := bool_lit false;
-          var "ctx.sf" := bool_lit false;
+          var "ctx.sf" := ((log_not (var "_nan")) &&~ (var "_a" <~ var "_b"));
           var "ctx.cf" := (var "_nan" ||~ (var "_a" <~ var "_b"));
           var "ctx.zf" := (var "_nan" ||~ (var "_a" ==~ var "_b"));
           var "ctx.pf" := var "_nan";
@@ -2546,7 +2546,7 @@ let emit_mem_and_ffi_handlers ?rng b =
           var "ctx.zf" := (var "_nan" ||~ var "_eq");
           var "ctx.cf" := (var "_nan" ||~ var "_lt");
           var "ctx.pf" := var "_nan";
-          var "ctx.sf" := bool_lit false;
+          var "ctx.sf" := ((log_not (var "_nan")) &&~ (var "a" <~ var "b"));
           var "ctx.of" := bool_lit false;
         ] [
           let_u64 "_s" (get_vreg_lane (var "src") (i32 0));
@@ -2559,12 +2559,55 @@ let emit_mem_and_ffi_handlers ?rng b =
           var "ctx.zf" := (var "_nan" ||~ var "_eq");
           var "ctx.cf" := (var "_nan" ||~ var "_lt");
           var "ctx.pf" := var "_nan";
-          var "ctx.sf" := bool_lit false;
+          var "ctx.sf" := ((log_not (var "_nan")) &&~ (var "a" <~ var "b"));
           var "ctx.of" := bool_lit false;
         ];
       ]
   in
   emit_handler_ast b "H_FCMP_DD" (fcmp_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fccmp_eval = [
+    if_then_else (var "is_32" ==~ i32 1) [
+      let_u32 "a_raw" (c_cast UInt32 (get_vreg_lane (var "src") (i32 0)));
+      let_u32 "b_raw" (c_cast UInt32 (get_vreg_lane (c_cast UInt8 (var "src2")) (i32 0)));
+      let_float "a" (bit_cast Float (var "a_raw"));
+      let_float "b" (bit_cast Float (var "b_raw"));
+      let_bool "is_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
+      var "ctx.zf" := (var "is_nan" ||~ (var "a" ==~ var "b"));
+      var "ctx.cf" := (var "is_nan" ||~ (var "a" <~ var "b"));
+      var "ctx.pf" := var "is_nan";
+      var "ctx.sf" := ((log_not (var "is_nan")) &&~ (var "a" <~ var "b"));
+      var "ctx.of" := bool_lit false;
+    ] [
+      let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
+      let_u64 "b_raw" (get_vreg_lane (c_cast UInt8 (var "src2")) (i32 0));
+      let_double "a" (bit_cast Double (var "a_raw"));
+      let_double "b" (bit_cast Double (var "b_raw"));
+      let_bool "is_nan" (call "std::isnan" [var "a"] ||~ call "std::isnan" [var "b"]);
+      var "ctx.zf" := (var "is_nan" ||~ (var "a" ==~ var "b"));
+      var "ctx.cf" := (var "is_nan" ||~ (var "a" <~ var "b"));
+      var "ctx.pf" := var "is_nan";
+      var "ctx.sf" := ((log_not (var "is_nan")) &&~ (var "a" <~ var "b"));
+      var "ctx.of" := bool_lit false;
+    ];
+  ] in
+  let fccmp_fallback = [
+    var "ctx.sf" := ((var "nzcv" &~ u8 8) <>~ u8 0);
+    var "ctx.zf" := ((var "nzcv" &~ u8 4) <>~ u8 0);
+    var "ctx.cf" := ((var "nzcv" &~ u8 2) ==~ u8 0);
+    var "ctx.of" := ((var "nzcv" &~ u8 1) <>~ u8 0);
+    var "ctx.pf" := ((var "nzcv" &~ u8 1) <>~ u8 0);
+  ] in
+  let fccmp_stmts = [
+    let_u32 "is_32" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 1L));
+    let_u8 "cond" (cast UInt8 (var "imm" &~ u64 0xFL));
+    let_u8 "nzcv" (cast UInt8 ((var "imm" >>~ i32 4) &~ u64 0xFL));
+    let_u8 "src2" (cast UInt8 ((var "imm" >>~ i32 8) &~ u64 0x1FL));
+    if_then_else (call "eval_condition" [var "ctx"; var "cond"])
+      fccmp_eval
+      fccmp_fallback;
+  ] in
+  emit_handler_ast b "H_FCCMP_DD" (fccmp_stmts @ [ inc_instrs; fetch_next ]);
 
   let fcvtzs_stmts = [
     decl_var Double "a";
@@ -2578,7 +2621,15 @@ let emit_mem_and_ffi_handlers ?rng b =
         let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
         (var "a" := bit_cast Double (var "a_raw"));
       ];
-    set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "a")));
+    decl_var Double "res_f";
+    let_u32 "rmode" (c_cast UInt32 ((var "imm" >>~ i32 1) &~ u64 7L));
+    switch (var "rmode") [
+      (i32 1, [ (var "res_f" := call "std::round" [var "a"]); break_stmt ]);
+      (i32 2, [ (var "res_f" := call "std::floor" [var "a"]); break_stmt ]);
+      (i32 3, [ (var "res_f" := call "std::nearbyint" [var "a"]); break_stmt ]);
+      (i32 4, [ (var "res_f" := call "std::ceil" [var "a"]); break_stmt ]);
+    ] (Some [ (var "res_f" := call "std::trunc" [var "a"]) ]);
+    set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "res_f")));
   ] in
   emit_handler_ast b "H_FCVTZS" (fcvtzs_stmts @ [ inc_instrs; fetch_next ]);
 
@@ -2612,7 +2663,15 @@ let emit_mem_and_ffi_handlers ?rng b =
         let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
         (var "a" := bit_cast Double (var "a_raw"));
       ];
-    set_reg (var "dst") (ternary (var "a" <~ var "0.0") (u64 0L) (c_cast UInt64 (var "a")));
+    decl_var Double "res_f";
+    let_u32 "rmode" (c_cast UInt32 ((var "imm" >>~ i32 1) &~ u64 7L));
+    switch (var "rmode") [
+      (i32 1, [ (var "res_f" := call "std::round" [var "a"]); break_stmt ]);
+      (i32 2, [ (var "res_f" := call "std::floor" [var "a"]); break_stmt ]);
+      (i32 3, [ (var "res_f" := call "std::nearbyint" [var "a"]); break_stmt ]);
+      (i32 4, [ (var "res_f" := call "std::ceil" [var "a"]); break_stmt ]);
+    ] (Some [ (var "res_f" := call "std::trunc" [var "a"]) ]);
+    set_reg (var "dst") (ternary (var "res_f" <~ var "0.0") (u64 0L) (c_cast UInt64 (var "res_f")));
   ] in
   emit_handler_ast b "H_FCVTZU" (fcvtzu_stmts @ [ inc_instrs; fetch_next ]);
 

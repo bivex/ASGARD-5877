@@ -96,6 +96,26 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       in
       let full_imm = Int64.shift_left (Int64.logand imm 0xFFFFL) shift in
       Some [ Ir.Mov { dst = Reg dst; src = Imm full_imm } ]
+  | ("movn", (OpReg dst :: OpImm imm :: rest)) ->
+      if is_vzero dst then Some [ Ir.Nop ]
+      else
+        let shift = match rest with
+          | (OpLabel ("lsl" | "LSL") :: OpImm s :: _) -> Int64.to_int s
+          | [ OpLabel shift_s ] when String.contains shift_s '#' ->
+              (match String.split_on_char '#' shift_s with
+              | [ _; sh ] -> (match int_of_string_opt (String.trim sh) with Some s -> s | None -> 0)
+              | _ -> 0)
+          | _ -> 0
+        in
+        let shifted = Int64.shift_left (Int64.logand imm 0xFFFFL) shift in
+        let not_imm = Int64.lognot shifted in
+        let full_imm =
+          if Register.get_width dst = Register.B32 then
+            Int64.logand not_imm 0xFFFFFFFFL
+          else
+            not_imm
+        in
+        Some [ Ir.Mov { dst = Reg dst; src = Imm full_imm } ]
   | ("movk", (OpReg dst :: OpImm imm :: rest)) ->
       let shift = match rest with
         | (OpLabel ("lsl" | "LSL") :: OpImm s :: _) -> Int64.to_int s

@@ -55,7 +55,12 @@ type target =
   | TargetReg of Register.t
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
-type fp_conv = Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
+type fp_conv =
+  | Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
+  | Fcvtas | Fcvtau
+  | Fcvtms | Fcvtmu
+  | Fcvtns | Fcvtnu
+  | Fcvtps | Fcvtpu
 type vec_conv_op =
   | Vcvtps2pd
   | Vcvtpd2ps
@@ -207,6 +212,7 @@ type instr =
   | Load_symbol of { dst : Register.t; sym : string; addend : int64 }
   | Fp_binop of { op : fp_binop; dst : int; src1 : int; src2 : int }
   | Fp_cmp of { src1 : int; src2 : int; is_32 : bool }
+  | Fp_ccmp of { cond : condition; src1 : int; src2 : int; nzcv : int; is_32 : bool }
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
@@ -358,8 +364,16 @@ let instr_to_string = function
       Printf.sprintf "%s d%d, d%d, d%d" op_s dst src1 src2
   | Fp_cmp { src1; src2; is_32 } ->
       Printf.sprintf "fcmp%s d%d, d%d" (if is_32 then "s" else "d") src1 src2
+  | Fp_ccmp { cond; src1; src2; nzcv; is_32 } ->
+      Printf.sprintf "fccmp.%s %s%d, %s%d, #%d" (condition_to_string cond) (if is_32 then "s" else "d") src1 (if is_32 then "s" else "d") src2 nzcv
   | Fp_conv { op; dst; src } ->
-      let op_s = match op with Fcvtzs -> "fcvtzs" | Scvtf -> "scvtf" | Fcvtzu -> "fcvtzu" | Ucvtf -> "ucvtf" | Fcvt -> "fcvt" in
+      let op_s = match op with
+        | Fcvtzs -> "fcvtzs" | Scvtf -> "scvtf" | Fcvtzu -> "fcvtzu" | Ucvtf -> "ucvtf" | Fcvt -> "fcvt"
+        | Fcvtas -> "fcvtas" | Fcvtau -> "fcvtau"
+        | Fcvtms -> "fcvtms" | Fcvtmu -> "fcvtmu"
+        | Fcvtns -> "fcvtns" | Fcvtnu -> "fcvtnu"
+        | Fcvtps -> "fcvtps" | Fcvtpu -> "fcvtpu"
+      in
       Printf.sprintf "%s %s, %s" op_s (Register.to_string dst) (Register.to_string src)
   | Vec_mov { dst; src; bits } -> Printf.sprintf "vec_mov.%d v%d, v%d" bits dst src
   | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->

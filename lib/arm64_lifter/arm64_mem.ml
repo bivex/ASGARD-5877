@@ -214,6 +214,21 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
         Ir.Atomic_mem { op = AtStore; dst = res; addr = base; src; imm = m.disp };
         Ir.Mov { dst = Reg res; src = Imm 0L };
       ]
+  | (("ldxp" | "ldaxp"), [ OpReg dst1; OpReg dst2; OpMem m ]) ->
+      let base = match m.base with Some b -> b | None -> Register.rsp in
+      let stride = Int64.of_int (Register.width_to_bytes (Register.get_width dst1)) in
+      Some [
+        Ir.Atomic_mem { op = AtLoad; dst = dst1; addr = base; src = dst1; imm = m.disp };
+        Ir.Atomic_mem { op = AtLoad; dst = dst2; addr = base; src = dst2; imm = Int64.add m.disp stride };
+      ]
+  | (("stxp" | "stlxp"), [ OpReg res; OpReg src1; OpReg src2; OpMem m ]) ->
+      let base = match m.base with Some b -> b | None -> Register.rsp in
+      let stride = Int64.of_int (Register.width_to_bytes (Register.get_width src1)) in
+      Some [
+        Ir.Atomic_mem { op = AtStore; dst = res; addr = base; src = src1; imm = m.disp };
+        Ir.Atomic_mem { op = AtStore; dst = res; addr = base; src = src2; imm = Int64.add m.disp stride };
+        Ir.Mov { dst = Reg res; src = Imm 0L };
+      ]
   | (("cas" | "casa" | "casl" | "casal"
      | "casb" | "casab" | "caslb" | "casalb"
      | "cash" | "casah" | "caslh" | "casalh"), [ OpReg expected; OpReg desired; OpMem m ]) ->

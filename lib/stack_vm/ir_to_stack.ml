@@ -241,7 +241,7 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         [PopReg (Context_allocator.slot_of_reg ctx dst)]
       in
       load_ops
-  | Fp_binop _ | Fp_cmp _ -> []
+  | Fp_binop _ | Fp_cmp _ | Fp_ccmp _ -> []
   | Fp_conv { dst; src; _ } ->
       [PushReg (Context_allocator.slot_of_reg ctx src);
        PopReg (Context_allocator.slot_of_reg ctx dst)]
