@@ -1622,7 +1622,7 @@ func_native_unpck:
     if (ctx.vregs[7][0] != 0x4444444433333333ULL) return 8;
     if (ctx.vregs[7][1] != 0x8888888877777777ULL) return 9;
     if (ctx.vregs[9][0] != 0x5555555511111111ULL) return 10;
-    if (ctx.vregs[9][1] != 0x6666666622222222ULL) return 11;
+    if (ctx.vregs[9][1] != 0x6666666655555555ULL) return 11;
     if (ctx.vregs[9][2] != 0xCCCCCCCCBBBBBBBBULL) return 12;
     if (ctx.vregs[9][3] != 0xDDDDDDDDAAAAAAAAULL) return 13;
 |})
