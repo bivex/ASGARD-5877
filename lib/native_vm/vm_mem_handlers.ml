@@ -1215,8 +1215,8 @@ let emit_simd_handlers ?rng b =
     let_u32 "bits" (cast UInt32 ((var "imm" >>~ i32 5) &~ u64 0x3FFL));
     decl_var UInt32 "lane_bits" ~init:(cast UInt32 ((var "imm" >>~ i32 15) &~ u64 0xFFL));
     if_then (var "lane_bits" ==~ i32 0) [ var "lane_bits" := i32 64 ];
-    let_u32 "vop" (cast UInt32 ((var "imm" >>~ i32 23) &~ u64 0x1FL));
-    let_u32 "elem" (cast UInt32 ((var "imm" >>~ i32 28) &~ u64 0x3L));
+    let_u32 "vop" (cast UInt32 ((var "imm" >>~ i32 23) &~ u64 0x3FL));
+    let_u32 "elem" (cast UInt32 ((var "imm" >>~ i32 29) &~ u64 0x3L));
     let_u64 "mask" (ternary (var "lane_bits" ==~ i32 8) (u64 0xFFL)
       (ternary (var "lane_bits" ==~ i32 16) (u64 0xFFFFL)
         (ternary (var "lane_bits" ==~ i32 32) (u64 0xFFFFFFFFL) (u64 (-1L)))));
@@ -1472,6 +1472,40 @@ let emit_simd_handlers ?rng b =
                     case (i32 35) [ var "value" := ternary (var "sa" <=~ var "sb") (var "mask") (u64 0L); break_stmt ];
                     case (i32 36) [ var "value" := ternary (var "a" <~ var "b") (var "mask") (u64 0L); break_stmt ];
                     case (i32 37) [ var "value" := ternary (var "a" <=~ var "b") (var "mask") (u64 0L); break_stmt ];
+                    case (i32 38) [
+                      block [
+                        let_size_t "cur_lane" (var "bit" /~ var "lane_bits");
+                        let_size_t "w0_idx" (var "cur_lane" *~ i32 2);
+                        let_size_t "w1_idx" (var "w0_idx" +~ i32 1);
+                        let_size_t "q0" (var "w0_idx" /~ i32 4);
+                        let_size_t "q1" (var "w1_idx" /~ i32 4);
+                        let_u32 "s0" (cast UInt32 ((var "w0_idx" %~ i32 4) *~ i32 16));
+                        let_u32 "s1" (cast UInt32 ((var "w1_idx" %~ i32 4) *~ i32 16));
+                        let_i32 "w0_1" (cast Int32 (c_cast Int16 ((idx (var "snap_a") (var "q0") >>~ var "s0") &~ u64 0xFFFFL)));
+                        let_i32 "w0_2" (cast Int32 (c_cast Int16 ((idx (var "snap_b") (var "q0") >>~ var "s0") &~ u64 0xFFFFL)));
+                        let_i32 "w1_1" (cast Int32 (c_cast Int16 ((idx (var "snap_a") (var "q1") >>~ var "s1") &~ u64 0xFFFFL)));
+                        let_i32 "w1_2" (cast Int32 (c_cast Int16 ((idx (var "snap_b") (var "q1") >>~ var "s1") &~ u64 0xFFFFL)));
+                        let_i32 "prod0" (var "w0_1" *~ var "w0_2");
+                        let_i32 "prod1" (var "w1_1" *~ var "w1_2");
+                        var "value" := cast UInt64 (c_cast UInt32 (var "prod0" +~ var "prod1"));
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 39) [
+                      block [
+                        decl_var UInt32 "sum" ~init:(i32 0);
+                        let_size_t "cur_q" (var "bit" /~ var "lane_bits");
+                        for_range "j" (i32 0) (i32 8) [
+                          let_u32 "s" (cast UInt32 (var "j" *~ i32 8));
+                          let_i32 "b1" (cast Int32 ((idx (var "snap_a") (var "cur_q") >>~ var "s") &~ u64 0xFFL));
+                          let_i32 "b2" (cast Int32 ((idx (var "snap_b") (var "cur_q") >>~ var "s") &~ u64 0xFFL));
+                          let_i32 "diff" (var "b1" -~ var "b2");
+                          (var "sum" += (ternary (var "diff" <~ i32 0) (i32 0 -~ var "diff") (var "diff")));
+                        ];
+                        var "value" := cast UInt64 (var "sum");
+                        break_stmt;
+                      ]
+                    ];
                   ] (Some [ var "value" := var "a" ^~ var "b"; break_stmt ])
                 ]
               ]

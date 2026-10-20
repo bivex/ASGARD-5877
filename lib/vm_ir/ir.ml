@@ -103,6 +103,8 @@ type vec_op =
   | Vcmple
   | Vcmpltu
   | Vcmpleu
+  | Vmaddwd
+  | Vsadbw
 type vec_elem = VInt | VF32 | VF64
 
 (* The x86 SHA extensions (SHA-NI).  Every instruction works on the four
@@ -371,6 +373,7 @@ let instr_to_string = function
         | Vtbl -> "vec_tbl" | Vtbx -> "vec_tbx"
         | Vdiv -> "vec_div" | Vrem -> "vec_rem" | Vdivu -> "vec_divu" | Vremu -> "vec_remu"
         | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
+        | Vmaddwd -> "vec_maddwd" | Vsadbw -> "vec_sadbw"
       in
       Printf.sprintf "%s.%d.%d.%s v%d, v%d, v%d" op_s bits lane_bits (vec_elem_to_string elem) dst src1 src2
   | Vec_sha { op; dst; src1; src2; src3; imm; bits } ->
@@ -417,6 +420,7 @@ let instr_to_string = function
         | Vtbl -> "vec_tbl" | Vtbx -> "vec_tbx"
         | Vdiv -> "vec_div" | Vrem -> "vec_rem" | Vdivu -> "vec_divu" | Vremu -> "vec_remu"
         | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
+        | Vmaddwd -> "vec_maddwd" | Vsadbw -> "vec_sadbw"
       in
       Printf.sprintf "%s_imm.%d.%d.%s v%d, v%d, 0x%LX" op_s bits lane_bits (vec_elem_to_string elem) dst src imm
   | Vec_load { dst; addr; bits } -> Printf.sprintf "vec_load.%d v%d, %s" bits dst (mem_ref_to_string addr)

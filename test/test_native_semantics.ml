@@ -2077,6 +2077,57 @@ func_native_palignr:
     if (ctx.vregs[4][3] != 0x333231302F2E2D2CULL) return 10;
 |})
 
+let test_native_x86_pmaddwd_psadbw () =
+  let pkg =
+    mk_pkg ~seed:20261101 {|
+func_native_madd_sad:
+    vpmaddwd xmm4, xmm0, xmm1
+    vpsadbw xmm5, xmm2, xmm3
+    pmaddwd xmm0, xmm1
+    psadbw xmm2, xmm3
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_madd_sad" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* xmm0: words [1, 2, 3, 4, -5, 6, -100, -200] */
+    ctx.vregs[0][0] = 0x0004000300020001ULL; ctx.vregs[0][1] = 0xFF38FF9C0006FFFBULL;
+    /* xmm1: words [10, 20, 30, 40, 50, -60, 300, -400] */
+    ctx.vregs[1][0] = 0x0028001E0014000AULL; ctx.vregs[1][1] = 0xFE70012CFFC40032ULL;
+
+    /* xmm2: bytes [10, 20, 30, 40, 50, 60, 70, 80, 100, 100, 100, 100, 0, 0, 0, 0] */
+    ctx.vregs[2][0] = 0x50463C32281E140AULL; ctx.vregs[2][1] = 0x0000000064646464ULL;
+    /* xmm3: bytes [15, 25, 35, 45, 55, 65, 75, 85, 90, 90, 90, 90, 10, 10, 10, 10] */
+    ctx.vregs[3][0] = 0x554B41372D23190FULL; ctx.vregs[3][1] = 0x0A0A0A0A5A5A5A5AULL;
+
+    /* xmm4, xmm5: upper junk */
+    ctx.vregs[4][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[4][3] = 0xDEADBEEFCAFEBA00ULL;
+    ctx.vregs[5][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[5][3] = 0xDEADBEEFCAFEBA00ULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    /* pmaddwd: [50, 250, -610, 50000] */
+    if (ctx.vregs[0][0] != 0x000000FA00000032ULL) return 2;
+    if (ctx.vregs[0][1] != 0x0000C350FFFFFD9EULL) return 3;
+
+    /* psadbw: [40, 80] */
+    if (ctx.vregs[2][0] != 40ULL) return 4;
+    if (ctx.vregs[2][1] != 80ULL) return 5;
+
+    /* vpmaddwd xmm4 */
+    if (ctx.vregs[4][0] != 0x000000FA00000032ULL) return 6;
+    if (ctx.vregs[4][1] != 0x0000C350FFFFFD9EULL) return 7;
+    if (ctx.vregs[4][2] != 0ULL || ctx.vregs[4][3] != 0ULL) return 8;
+
+    /* vpsadbw xmm5 */
+    if (ctx.vregs[5][0] != 40ULL) return 9;
+    if (ctx.vregs[5][1] != 80ULL) return 10;
+    if (ctx.vregs[5][2] != 0ULL || ctx.vregs[5][3] != 0ULL) return 11;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -2117,4 +2168,5 @@ let tests = [
   Alcotest.test_case "native_x86_movlhps_movhlps_movlps_movhps" `Slow test_native_x86_movlhps_movhlps_movlps_movhps;
   Alcotest.test_case "native_x86_system_and_compiler_traps" `Slow test_native_x86_system_and_compiler_traps;
   Alcotest.test_case "native_x86_palignr" `Slow test_native_x86_palignr;
+  Alcotest.test_case "native_x86_pmaddwd_psadbw" `Slow test_native_x86_pmaddwd_psadbw;
 ]

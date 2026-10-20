@@ -386,7 +386,7 @@ let vector_binary_value ~lane_bits ~elem ~op ~a ~b =
       let ua = Int64.logand a mask in
       let ub = Int64.logand b mask in
       if Int64.unsigned_compare ua ub <= 0 then mask else 0L
-  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend | Vuzp1 | Vuzp2 | Vtrn1 | Vtrn2 | Vtbl | Vtbx | Vrem | Vdivu | Vremu), _ -> 0L
+  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend | Vuzp1 | Vuzp2 | Vtrn1 | Vtrn2 | Vtbl | Vtbx | Vrem | Vdivu | Vremu | Vmaddwd | Vsadbw), _ -> 0L
 
 let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
   let mask = vector_lane_mask lane_bits in
@@ -484,6 +484,32 @@ let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
             let src_bit = ((pos / 128) * 128) + (sel * 8) in
             let s_val = lane_of src1 (src_bit / 64) in
             Int64.logand (Int64.shift_right_logical s_val (src_bit mod 64)) 0xFFL
+      | Vmaddwd ->
+          let get_w reg w_idx =
+            let q = lane_of reg (w_idx / 4) in
+            let sh = (w_idx mod 4) * 16 in
+            let raw = Int64.to_int (Int64.logand (Int64.shift_right_logical q sh) 0xFFFFL) in
+            if raw >= 0x8000 then raw - 0x10000 else raw
+          in
+          let w0_1 = get_w src1 (lane * 2) in
+          let w0_2 = get_w src2 (lane * 2) in
+          let w1_1 = get_w src1 (lane * 2 + 1) in
+          let w1_2 = get_w src2 (lane * 2 + 1) in
+          let prod0 = w0_1 * w0_2 in
+          let prod1 = w1_1 * w1_2 in
+          let sum = prod0 + prod1 in
+          Int64.logand (Int64.of_int32 (Int32.of_int sum)) 0xFFFFFFFFL
+      | Vsadbw ->
+          let sum = ref 0 in
+          for j = 0 to 7 do
+            let b_idx = (lane * 8) + j in
+            let q1 = lane_of src1 (b_idx / 8) in
+            let q2 = lane_of src2 (b_idx / 8) in
+            let b1 = Int64.to_int (Int64.logand (Int64.shift_right_logical q1 (j * 8)) 0xFFL) in
+            let b2 = Int64.to_int (Int64.logand (Int64.shift_right_logical q2 (j * 8)) 0xFFL) in
+            sum := !sum + abs (b1 - b2)
+          done;
+          Int64.of_int !sum
       | _ ->
           vector_binary_value ~lane_bits ~elem ~op ~a ~b
     in

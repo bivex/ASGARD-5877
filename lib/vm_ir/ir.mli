@@ -103,6 +103,8 @@ type vec_op =
   | Vcmple
   | Vcmpltu
   | Vcmpleu
+  | Vmaddwd
+  | Vsadbw
 type vec_elem = VInt | VF32 | VF64
 
 (** The x86 SHA extensions (SHA-NI).  Every instruction works on the four

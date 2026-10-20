@@ -633,6 +633,8 @@ let vector_op_of_mnemonic = function
   | "blendpd" | "vblendpd" -> Some (Ir.Vblend, Ir.VF64, 64)
   | "vpblendd" -> Some (Ir.Vblend, Ir.VInt, 32)
   | "vpblendw" -> Some (Ir.Vblend, Ir.VInt, 16)
+  | "pmaddwd" | "vpmaddwd" -> Some (Ir.Vmaddwd, Ir.VInt, 32)
+  | "psadbw" | "vpsadbw" -> Some (Ir.Vsadbw, Ir.VInt, 64)
   | _ -> None
 
 let lift_vector_move ?const_pool mnem dst src =

@@ -412,6 +412,7 @@ let compile_and_package_multi
     | Ir.Vtbl -> 28 | Ir.Vtbx -> 29
     | Ir.Vdiv -> 30 | Ir.Vdivu -> 31 | Ir.Vrem -> 32 | Ir.Vremu -> 33
     | Ir.Vcmpne -> 34 | Ir.Vcmple -> 35 | Ir.Vcmpltu -> 36 | Ir.Vcmpleu -> 37
+    | Ir.Vmaddwd -> 38 | Ir.Vsadbw -> 39
   in
   let vector_elem_code = function
     | Ir.VInt -> 0 | Ir.VF32 -> 1 | Ir.VF64 -> 2
@@ -421,7 +422,7 @@ let compile_and_package_multi
     let w = Int64.logor w (Int64.shift_left (Int64.of_int bits) 5) in
     let w = Int64.logor w (Int64.shift_left (Int64.of_int lane_bits) 15) in
     let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 23) in
-    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 28)
+    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 29)
   in
   let vector_imm_val ~imm_val ~bits ~lane_bits ~elem op =
     let w = Int64.logand imm_val 0xFFL in

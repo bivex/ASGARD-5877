@@ -1897,6 +1897,64 @@ func_palignr:
           Alcotest.(check int64) "vpalignr 256 lane2" 0x2B2A292827262524L v4.(2);
           Alcotest.(check int64) "vpalignr 256 lane3" 0x333231302F2E2D2CL v4.(3))
 
+let test_x86_lift_pmaddwd_psadbw () =
+  let asm = {|
+func_madd_sad:
+    vpmaddwd xmm4, xmm0, xmm1
+    vpsadbw xmm5, xmm2, xmm3
+    pmaddwd xmm0, xmm1
+    psadbw xmm2, xmm3
+    pmaddwd xmm6, xmmword ptr [rsp + 16]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      state.vsp <- 0x1000L;
+      write_mem state 0x1010L B64 0x0028001E0014000AL;
+      write_mem state 0x1018L B64 0xFE70012CFFC40032L;
+      (* xmm0: words [1; 2; 3; 4; -5; 6; -100; -200] *)
+      Hashtbl.replace state.vectors 0 [| 0x0004000300020001L; 0xFF38FF9C0006FFFBL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm1: words [10; 20; 30; 40; 50; -60; 300; -400] *)
+      Hashtbl.replace state.vectors 1 [| 0x0028001E0014000AL; 0xFE70012CFFC40032L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm2: bytes [10; 20; 30; 40; 50; 60; 70; 80; 100; 100; 100; 100; 0; 0; 0; 0] *)
+      Hashtbl.replace state.vectors 2 [| 0x50463C32281E140AL; 0x0000000064646464L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm3: bytes [15; 25; 35; 45; 55; 65; 75; 85; 90; 90; 90; 90; 10; 10; 10; 10] *)
+      Hashtbl.replace state.vectors 3 [| 0x554B41372D23190FL; 0x0A0A0A0A5A5A5A5AL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm4, xmm5: upper junk *)
+      Hashtbl.replace state.vectors 4 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      (* xmm6 for mem madd *)
+      Hashtbl.replace state.vectors 6 [| 0x0004000300020001L; 0xFF38FF9C0006FFFBL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v4 = Hashtbl.find state.vectors 4 in
+          let v5 = Hashtbl.find state.vectors 5 in
+          let v6 = Hashtbl.find state.vectors 6 in
+          (* pmaddwd xmm0 -> dwords: 50, 250, -610, 50000 *)
+          Alcotest.(check int64) "pmaddwd lane0" 0x000000FA00000032L v0.(0);
+          Alcotest.(check int64) "pmaddwd lane1" 0x0000C350FFFFFD9EL v0.(1);
+          (* psadbw xmm2 -> qwords: 40, 80 *)
+          Alcotest.(check int64) "psadbw lane0" 40L v2.(0);
+          Alcotest.(check int64) "psadbw lane1" 80L v2.(1);
+          (* vpmaddwd xmm4 *)
+          Alcotest.(check int64) "vpmaddwd lane0" 0x000000FA00000032L v4.(0);
+          Alcotest.(check int64) "vpmaddwd lane1" 0x0000C350FFFFFD9EL v4.(1);
+          Alcotest.(check int64) "vpmaddwd lane2 zero" 0L v4.(2);
+          Alcotest.(check int64) "vpmaddwd lane3 zero" 0L v4.(3);
+          (* vpsadbw xmm5 *)
+          Alcotest.(check int64) "vpsadbw lane0" 40L v5.(0);
+          Alcotest.(check int64) "vpsadbw lane1" 80L v5.(1);
+          Alcotest.(check int64) "vpsadbw lane2 zero" 0L v5.(2);
+          Alcotest.(check int64) "vpsadbw lane3 zero" 0L v5.(3);
+          (* pmaddwd mem xmm6 *)
+          Alcotest.(check int64) "pmaddwd mem lane0" 0x000000FA00000032L v6.(0);
+          Alcotest.(check int64) "pmaddwd mem lane1" 0x0000C350FFFFFD9EL v6.(1))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -3377,5 +3435,6 @@ let tests = [
   Alcotest.test_case "lift_x86_movlhps_movhlps_movlps_movhps" `Quick test_x86_lift_movlhps_movhlps_movlps_movhps;
   Alcotest.test_case "lift_x86_system_and_compiler_traps" `Quick test_x86_lift_system_and_compiler_traps;
   Alcotest.test_case "lift_x86_palignr" `Quick test_x86_lift_palignr;
+  Alcotest.test_case "lift_x86_pmaddwd_psadbw" `Quick test_x86_lift_pmaddwd_psadbw;
 ]
 
