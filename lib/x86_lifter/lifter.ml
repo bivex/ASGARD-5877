@@ -2165,89 +2165,118 @@ let lift_instr ?const_pool raw_mnem ops =
                   ])
           | _ -> Error "Invalid source operand for scalar FP compare")
       | _ -> Error "Invalid destination register for scalar FP compare")
-  | ("cvtsi2ss" | "cvtsi2sd"), [ OpReg (Register.Fpr (d, _)); src ] ->
+  | ("cvtsi2ss" | "cvtsi2sd" | "vcvtsi2ss" | "vcvtsi2sd"), ops -> (
+      let is_32 = String.ends_with ~suffix:"ss" mnem in
+      let dst_w = if is_32 then Register.B32 else Register.B64 in
+      let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+      let lower_conv di src_op =
+        match src_op with
+        | OpReg s -> Ok [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (di, dst_w); src = s } ]
+        | OpMem m ->
+            let src_w = m.width in
+            let tmp_gpr = Register.with_width Register.vtmp0 src_w in
+            (match m.symbol, const_pool with
+            | Some sym, Some cp when Hashtbl.mem cp sym ->
+                let b = Hashtbl.find cp sym in
+                let v = read_const_int64 b m.disp src_w in
+                Ok [
+                  Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Imm v };
+                  Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (di, dst_w); src = tmp_gpr };
+                ]
+            | _ ->
+                let mem_ref = ir_mem_of_raw m in
+                Ok [
+                  Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Mem mem_ref };
+                  Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (di, dst_w); src = tmp_gpr };
+                ])
+        | _ -> Error (Printf.sprintf "Invalid source operand for %s" mnem)
+      in
+      match ops with
+      | [ OpReg (Register.Fpr (d, _)); src ] ->
+          let* conv = lower_conv d src in
+          let extra = if is_vex then [ Ir.Vec_clear_upper d ] else [] in
+          Ok (conv @ extra)
+      | [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); src2 ] when is_vex ->
+          let mov = if d = s1 then [] else [ Ir.Vec_mov { dst = d; src = s1; bits = 128 } ] in
+          let* conv = lower_conv d src2 in
+          Ok (mov @ conv @ [ Ir.Vec_clear_upper d ])
+      | _ -> Error (Printf.sprintf "Invalid operands for %s" mnem))
+
+  | ("cvttss2si" | "cvttsd2si" | "cvtss2si" | "cvtsd2si" | "vcvttss2si" | "vcvttsd2si" | "vcvtss2si" | "vcvtsd2si"), [ OpReg dst; src ] ->
+      let is_32 = String.contains mnem 's' && (String.sub mnem (String.index mnem 's') 2 = "ss" || String.ends_with ~suffix:"ss2si" mnem) in
+      let src_w = if is_32 then Register.B32 else Register.B64 in
       (match src with
-      | OpReg s -> Ok [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = s } ]
-      | OpMem m ->
-          let tmp_gpr = Register.vtmp0 in
-          (match m.symbol, const_pool with
-          | Some sym, Some cp when Hashtbl.mem cp sym ->
-              let b = Hashtbl.find cp sym in
-              let v = read_const_int64 b m.disp m.width in
-              Ok [
-                Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Imm v };
-                Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = tmp_gpr };
-              ]
-          | _ ->
-              let mem_ref = ir_mem_of_raw m in
-              Ok [
-                Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Mem mem_ref };
-                Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src = tmp_gpr };
-              ])
-      | _ -> Error "Invalid operands for cvtsi2ss/sd")
-  | ("cvttss2si" | "cvttsd2si" | "cvtss2si" | "cvtsd2si"), [ OpReg dst; src ] ->
-      (match src with
       | OpReg (Register.Fpr (s, _)) ->
-          Ok [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, Register.B64) } ]
+          Ok [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, src_w) } ]
       | OpMem m ->
           let tmp_fpr = 31 in
+          let bits = if src_w = Register.B32 then 32 else 64 in
           (match m.symbol, const_pool with
           | Some sym, Some cp when Hashtbl.mem cp sym ->
               let b = Hashtbl.find cp sym in
-              let v = read_const_int64 b m.disp m.width in
+              let v = read_const_int64 b m.disp src_w in
+              let lane0 = if src_w = Register.B32 then Int64.logand v 0xFFFFFFFFL else v in
               Ok [
-                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm v };
-                Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, Register.B64) };
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm lane0 };
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (30, Register.B64)); src = Ir.Imm 0L };
+                Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = tmp_fpr; src1 = tmp_fpr; src2 = 30; bits = 128; lane_bits = 64 };
+                Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, src_w) };
               ]
           | _ ->
               let mem_ref = ir_mem_of_raw m in
               Ok [
-                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
-                Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, Register.B64) };
+                Ir.Vec_load { dst = tmp_fpr; addr = mem_ref; bits };
+                Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (tmp_fpr, src_w) };
               ])
-      | _ -> Error "Invalid operands for cvttss/sd2si")
-  | "cvtsd2ss", [ OpReg (Register.Fpr (d, _)); src ] -> (
-      match src with
-      | OpReg (Register.Fpr (s, _)) ->
-          Ok [ Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B32); src = Register.Fpr (s, Register.B64) } ]
-      | OpMem m ->
-          let tmp_fpr = 31 in
-          (match m.symbol, const_pool with
-          | Some sym, Some cp when Hashtbl.mem cp sym ->
-              let b = Hashtbl.find cp sym in
-              let v = read_const_int64 b m.disp m.width in
-              Ok [
-                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Imm v };
-                Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B32); src = Register.Fpr (tmp_fpr, Register.B64) };
-              ]
-          | _ ->
-              let mem_ref = ir_mem_of_raw m in
-              Ok [
-                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B64)); src = Ir.Mem mem_ref };
-                Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B32); src = Register.Fpr (tmp_fpr, Register.B64) };
-              ])
-      | _ -> Error "Invalid operands for cvtsd2ss")
-  | "cvtss2sd", [ OpReg (Register.Fpr (d, _)); src ] -> (
-      match src with
-      | OpReg (Register.Fpr (s, _)) ->
-          Ok [ Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B64); src = Register.Fpr (s, Register.B32) } ]
-      | OpMem m ->
-          let tmp_fpr = 31 in
-          (match m.symbol, const_pool with
-          | Some sym, Some cp when Hashtbl.mem cp sym ->
-              let b = Hashtbl.find cp sym in
-              let v = read_const_int64 b m.disp m.width in
-              Ok [
-                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B32)); src = Ir.Imm v };
-                Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B64); src = Register.Fpr (tmp_fpr, Register.B32) };
-              ]
-          | _ ->
-              let mem_ref = ir_mem_of_raw m in
-              Ok [
-                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_fpr, Register.B32)); src = Ir.Mem mem_ref };
-                Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (d, Register.B64); src = Register.Fpr (tmp_fpr, Register.B32) };
-              ])
-      | _ -> Error "Invalid operands for cvtss2sd")
+      | _ -> Error (Printf.sprintf "Invalid operands for %s" mnem))
+
+  | ("cvtsd2ss" | "vcvtsd2ss"), ops -> (
+      let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+      let lower_conv di src_op =
+        match src_op with
+        | OpReg (Register.Fpr (s, _)) ->
+            Ok [ Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (di, Register.B32); src = Register.Fpr (s, Register.B64) } ]
+        | OpMem m ->
+            let tmp_fpr = 31 in
+            let load = [ Ir.Vec_load { dst = tmp_fpr; addr = ir_mem_of_raw m; bits = 64 } ] in
+            let conv = [ Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (di, Register.B32); src = Register.Fpr (tmp_fpr, Register.B64) } ] in
+            Ok (load @ conv)
+        | _ -> Error (Printf.sprintf "Invalid source operand for %s" mnem)
+      in
+      match ops with
+      | [ OpReg (Register.Fpr (d, _)); src ] ->
+          let* conv = lower_conv d src in
+          let extra = if is_vex then [ Ir.Vec_clear_upper d ] else [] in
+          Ok (conv @ extra)
+      | [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); src2 ] when is_vex ->
+          let mov = if d = s1 then [] else [ Ir.Vec_mov { dst = d; src = s1; bits = 128 } ] in
+          let* conv = lower_conv d src2 in
+          Ok (mov @ conv @ [ Ir.Vec_clear_upper d ])
+      | _ -> Error (Printf.sprintf "Invalid operands for %s" mnem))
+
+  | ("cvtss2sd" | "vcvtss2sd"), ops -> (
+      let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+      let lower_conv di src_op =
+        match src_op with
+        | OpReg (Register.Fpr (s, _)) ->
+            Ok [ Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (di, Register.B64); src = Register.Fpr (s, Register.B32) } ]
+        | OpMem m ->
+            let tmp_fpr = 31 in
+            let load = [ Ir.Vec_load { dst = tmp_fpr; addr = ir_mem_of_raw m; bits = 32 } ] in
+            let conv = [ Ir.Fp_conv { op = Fcvt; dst = Register.Fpr (di, Register.B64); src = Register.Fpr (tmp_fpr, Register.B32) } ] in
+            Ok (load @ conv)
+        | _ -> Error (Printf.sprintf "Invalid source operand for %s" mnem)
+      in
+      match ops with
+      | [ OpReg (Register.Fpr (d, _)); src ] ->
+          let* conv = lower_conv d src in
+          let extra = if is_vex then [ Ir.Vec_clear_upper d ] else [] in
+          Ok (conv @ extra)
+      | [ OpReg (Register.Fpr (d, _)); OpReg (Register.Fpr (s1, _)); src2 ] when is_vex ->
+          let mov = if d = s1 then [] else [ Ir.Vec_mov { dst = d; src = s1; bits = 128 } ] in
+          let* conv = lower_conv d src2 in
+          Ok (mov @ conv @ [ Ir.Vec_clear_upper d ])
+      | _ -> Error (Printf.sprintf "Invalid operands for %s" mnem))
 
   | ("inc" | "dec" | "not" | "neg"), [ dst ] ->
       let un_op = match mnem with

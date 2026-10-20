@@ -1240,6 +1240,64 @@ func_fpscalar:
       | Ok () ->
           Alcotest.(check int64) "fp 10 + 4 = 14" 14L (get_reg state Register.rax)
 
+let test_x86_int_float_conversions () =
+  let asm = {|
+func_conversions:
+    cvtsi2ss xmm0, edi
+    cvtsi2sd xmm1, rsi
+    cvttss2si r8d, xmm0
+    cvttsd2si r9, xmm1
+    cvtsd2ss xmm2, xmm1
+    cvtss2sd xmm3, xmm0
+    vcvtsi2sd xmm4, xmm1, edx
+    cvtsi2sd xmm5, dword ptr [rsp + 16]
+    cvttss2si r10d, dword ptr [rsp + 24]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let fbits v = Int64.logand (Int64.of_int32 (Int32.bits_of_float v)) 0xFFFFFFFFL in
+      let dbits v = Int64.bits_of_float v in
+      let state = make_state () in
+      state.vsp <- 0x2000L;
+      set_reg state Register.rdi 42L;
+      set_reg state Register.rsi (-100L);
+      set_reg state Register.rdx 77L;
+      write_mem state 0x2010L B32 0xFFFFFFFBL;
+      write_mem state 0x2018L B32 (fbits 12.5);
+      Hashtbl.replace state.vectors 0 [| 0x1111111100000000L; 0x2222222233333333L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1 [| 0L; 0x4444444455555555L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2 [| 0x6666666600000000L; 0x7777777788888888L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 3 [| 0L; 0x99999999AAAAAAAAL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 4 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v1 = Hashtbl.find state.vectors 1 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v3 = Hashtbl.find state.vectors 3 in
+          let v4 = Hashtbl.find state.vectors 4 in
+          let v5 = Hashtbl.find state.vectors 5 in
+          Alcotest.(check int64) "cvtsi2ss val" (fbits 42.0) (Int64.logand v0.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "cvtsi2ss upper32" 0x1111111100000000L (Int64.logand v0.(0) 0xFFFFFFFF00000000L);
+          Alcotest.(check int64) "cvtsi2ss lane1" 0x2222222233333333L v0.(1);
+          Alcotest.(check int64) "cvtsi2sd val" (dbits (-100.0)) v1.(0);
+          Alcotest.(check int64) "cvtsi2sd lane1" 0x4444444455555555L v1.(1);
+          Alcotest.(check int64) "cvttss2si" 42L (get_reg state (Register.Gpr (Register.R8, Register.B32)));
+          Alcotest.(check int64) "cvttsd2si" (-100L) (get_reg state (Register.Gpr (Register.R9, Register.B64)));
+          Alcotest.(check int64) "cvtsd2ss val" (fbits (-100.0)) (Int64.logand v2.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "cvtsd2ss upper32" 0x6666666600000000L (Int64.logand v2.(0) 0xFFFFFFFF00000000L);
+          Alcotest.(check int64) "cvtsd2ss lane1" 0x7777777788888888L v2.(1);
+          Alcotest.(check int64) "cvtss2sd val" (dbits 42.0) v3.(0);
+          Alcotest.(check int64) "cvtss2sd lane1" 0x99999999AAAAAAAAL v3.(1);
+          Alcotest.(check int64) "vcvtsi2sd val" (dbits 77.0) v4.(0);
+          Alcotest.(check int64) "vcvtsi2sd lane1" 0x4444444455555555L v4.(1);
+          Alcotest.(check int64) "vcvtsi2sd lane2 zeroed" 0L v4.(2);
+          Alcotest.(check int64) "cvtsi2sd mem signed" (dbits (-5.0)) v5.(0);
+          Alcotest.(check int64) "cvttss2si mem" 12L (get_reg state (Register.Gpr (Register.R10, Register.B32))))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -2571,5 +2629,6 @@ let tests = [
   Alcotest.test_case "lift_x86_cpuid" `Quick test_x86_cpuid;
   Alcotest.test_case "lift_x86_movss_movsd_vector_moves" `Quick test_x86_movss_movsd_vector_moves;
   Alcotest.test_case "lift_x86_scalar_and_packed_fp_arithmetic" `Quick test_x86_scalar_and_packed_fp_arithmetic;
+  Alcotest.test_case "lift_x86_int_float_conversions" `Quick test_x86_int_float_conversions;
 ]
 

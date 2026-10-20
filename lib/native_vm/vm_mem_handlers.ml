@@ -2011,10 +2011,12 @@ let emit_mem_and_ffi_handlers ?rng b =
     if_then_else ((var "imm" &~ u64 2L) <>~ u64 0L)
       [
         decl_var Float "f" ~init:(cast Float (var "d"));
-        set_vreg (var "dst") (cast UInt64 (bit_cast UInt32 (var "f"))) (u64 0L);
+        let_u64 "old_val" (get_vreg_lane (var "dst") (i32 0));
+        decl_var UInt32 "u" ~init:(bit_cast UInt32 (var "f"));
+        set_vreg_lane (var "dst") (i32 0) ((var "old_val" &~ u64 0xFFFFFFFF00000000L) |~ cast UInt64 (var "u"));
       ]
       [
-        set_vreg (var "dst") (bit_cast UInt64 (var "d")) (u64 0L);
+        set_vreg_lane (var "dst") (i32 0) (bit_cast UInt64 (var "d"));
       ];
   ] in
   emit_handler_ast b "H_SCVTF" (scvtf_stmts @ [ inc_instrs; fetch_next ]);
@@ -2061,12 +2063,12 @@ let emit_mem_and_ffi_handlers ?rng b =
             let_float "f32" (cast Float (var "d64"));
             decl_var UInt32 "u32" ~init:(bit_cast UInt32 (var "f32"));
             let_u64 "old_val" (get_vreg_lane (var "dst") (i32 0));
-            set_vreg (var "dst") ((var "old_val" &~ u64 0xFFFFFFFF00000000L) |~ c_cast UInt64 (var "u32")) (u64 0L);
+            set_vreg_lane (var "dst") (i32 0) ((var "old_val" &~ u64 0xFFFFFFFF00000000L) |~ c_cast UInt64 (var "u32"));
           ]
           [
             let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
             let_float "f32" (bit_cast Float (c_cast UInt32 (var "a_raw")));
-            set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "f32"))) (u64 0L);
+            set_vreg_lane (var "dst") (i32 0) (bit_cast UInt64 (c_cast Double (var "f32")));
           ];
       ]
     | 1 -> [
@@ -2076,13 +2078,13 @@ let emit_mem_and_ffi_handlers ?rng b =
             let_float "_f" (cast Float (var "_d"));
             decl_var UInt32 "_u" ~init:(bit_cast UInt32 (var "_f"));
             let_u64 "_prev" (get_vreg_lane (var "dst") (i32 0));
-            set_vreg (var "dst") ((var "_prev" &~ u64 0xFFFFFFFF00000000L) |~ cast UInt64 (var "_u")) (u64 0L);
+            set_vreg_lane (var "dst") (i32 0) ((var "_prev" &~ u64 0xFFFFFFFF00000000L) |~ cast UInt64 (var "_u"));
           ]
           [
             decl_var UInt32 "_raw32" ~init:(cast UInt32 (get_vreg_lane (var "src") (i32 0)));
             let_float "_f" (bit_cast Float (var "_raw32"));
             let_double "_d" (cast Double (var "_f"));
-            set_vreg (var "dst") (bit_cast UInt64 (var "_d")) (u64 0L);
+            set_vreg_lane (var "dst") (i32 0) (bit_cast UInt64 (var "_d"));
           ];
       ]
     | _ -> [
@@ -2091,11 +2093,11 @@ let emit_mem_and_ffi_handlers ?rng b =
             let_double "d64" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
             let_float "f32" (c_cast Float (var "d64"));
             decl_var UInt32 "u32" ~init:(bit_cast UInt32 (var "f32"));
-            set_vreg (var "dst") ((get_vreg_lane (var "dst") (i32 0) &~ u64 0xFFFFFFFF00000000L) |~ c_cast UInt64 (var "u32")) (u64 0L);
+            set_vreg_lane (var "dst") (i32 0) ((get_vreg_lane (var "dst") (i32 0) &~ u64 0xFFFFFFFF00000000L) |~ c_cast UInt64 (var "u32"));
           ]
           [
             let_float "f32" (bit_cast Float (c_cast UInt32 (get_vreg_lane (var "src") (i32 0))));
-            set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "f32"))) (u64 0L);
+            set_vreg_lane (var "dst") (i32 0) (bit_cast UInt64 (c_cast Double (var "f32")));
           ];
       ]
   in

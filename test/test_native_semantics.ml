@@ -1377,6 +1377,68 @@ func_native_fp_arith:
     if (ctx.vregs[22][0] != dbits(5.0) || ctx.vregs[22][1] != dbits(5.0)) return 22;
 |})
 
+let test_native_x86_conversions () =
+  let pkg =
+    mk_pkg ~seed:20261023 {|
+func_native_conv:
+    cvtsi2ss xmm0, edi
+    cvtsi2sd xmm1, rsi
+    cvttss2si r8d, xmm0
+    cvttsd2si r9, xmm1
+    cvtsd2ss xmm2, xmm1
+    cvtss2sd xmm3, xmm0
+    cvtsi2sd xmm4, dword ptr [rsp + 16]
+    cvttss2si r10d, dword ptr [rsp + 24]
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_conv" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    auto fbits = [](float f) { return static_cast<uint64_t>(std::bit_cast<uint32_t>(f)); };
+    auto dbits = [](double d) { return std::bit_cast<uint64_t>(d); };
+
+    ctx.set_rdi(42ULL);
+    ctx.set_rsi(static_cast<uint64_t>(-100LL));
+
+    alignas(16) uint8_t stack_mem[64] = {};
+    *reinterpret_cast<int32_t*>(&stack_mem[16]) = -5;
+    *reinterpret_cast<float*>(&stack_mem[24]) = 12.5f;
+    ctx.set_reg(vanguard_threaded_vm::REG_RSP, reinterpret_cast<uint64_t>(stack_mem));
+
+    ctx.vregs[0][0] = 0x1111111100000000ULL;
+    ctx.vregs[0][1] = 0x2222222233333333ULL;
+    ctx.vregs[1][1] = 0x4444444455555555ULL;
+    ctx.vregs[2][0] = 0x6666666600000000ULL;
+    ctx.vregs[2][1] = 0x7777777788888888ULL;
+    ctx.vregs[3][1] = 0x99999999AAAAAAAAULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if ((ctx.vregs[0][0] & 0xFFFFFFFFULL) != fbits(42.0f)) return 2;
+    if ((ctx.vregs[0][0] & 0xFFFFFFFF00000000ULL) != 0x1111111100000000ULL) return 3;
+    if (ctx.vregs[0][1] != 0x2222222233333333ULL) return 4;
+
+    if (ctx.vregs[1][0] != dbits(-100.0)) return 5;
+    if (ctx.vregs[1][1] != 0x4444444455555555ULL) return 6;
+
+    if ((ctx.get_reg(vanguard_threaded_vm::REG_R8) & 0xFFFFFFFFULL) != 42ULL) return 7;
+
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R9) != static_cast<uint64_t>(-100LL)) return 8;
+
+    if ((ctx.vregs[2][0] & 0xFFFFFFFFULL) != fbits(-100.0f)) return 9;
+    if ((ctx.vregs[2][0] & 0xFFFFFFFF00000000ULL) != 0x6666666600000000ULL) return 10;
+    if (ctx.vregs[2][1] != 0x7777777788888888ULL) return 11;
+
+    if (ctx.vregs[3][0] != dbits(42.0)) return 12;
+    if (ctx.vregs[3][1] != 0x99999999AAAAAAAAULL) return 13;
+
+    if (ctx.vregs[4][0] != dbits(-5.0)) return 14;
+
+    if ((ctx.get_reg(vanguard_threaded_vm::REG_R10) & 0xFFFFFFFFULL) != 12ULL) return 15;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1405,4 +1467,5 @@ let tests = [
   Alcotest.test_case "native_x86_fpu" `Slow test_native_x86_fpu;
   Alcotest.test_case "native_x86_scalar_and_vector_moves" `Slow test_native_x86_scalar_and_vector_moves;
   Alcotest.test_case "native_x86_scalar_and_packed_fp_arithmetic" `Slow test_native_x86_scalar_and_packed_fp_arithmetic;
+  Alcotest.test_case "native_x86_conversions" `Slow test_native_x86_conversions;
 ]

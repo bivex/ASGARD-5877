@@ -1359,12 +1359,16 @@ let step state = function
       let f = Int64.to_float v_signed in
       let f_bits =
         if Register.get_width dst = B32 then
-          let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
-          Int64.logand (Int64.of_int32 (Int32.bits_of_float f32)) 0xFFFFFFFFL
+          let f32 = Int32.bits_of_float f in
+          Int64.logand (Int64.of_int32 f32) 0xFFFFFFFFL
         else
           Int64.bits_of_float f
       in
       (match dst with
+       | Fpr (i, B32) ->
+           let cur = get_vector_lane state i 0 in
+           let high32 = Int64.logand cur (Int64.lognot 0xFFFFFFFFL) in
+           set_vector_lane state i 0 (Int64.logor high32 f_bits)
        | Fpr (i, _) -> set_vector_lane state i 0 f_bits
        | _ -> set_reg state dst f_bits);
       Ok None
@@ -1377,12 +1381,16 @@ let step state = function
       in
       let f_bits =
         if Register.get_width dst = B32 then
-          let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
-          Int64.logand (Int64.of_int32 (Int32.bits_of_float f32)) 0xFFFFFFFFL
+          let f32 = Int32.bits_of_float f in
+          Int64.logand (Int64.of_int32 f32) 0xFFFFFFFFL
         else
           Int64.bits_of_float f
       in
       (match dst with
+       | Fpr (i, B32) ->
+           let cur = get_vector_lane state i 0 in
+           let high32 = Int64.logand cur (Int64.lognot 0xFFFFFFFFL) in
+           set_vector_lane state i 0 (Int64.logor high32 f_bits)
        | Fpr (i, _) -> set_vector_lane state i 0 f_bits
        | _ -> set_reg state dst f_bits);
       Ok None
@@ -1397,10 +1405,15 @@ let step state = function
             Int64.bits_of_float (float_of_string (string_of_float f32))
         | B64, B32 ->
             let f64 = Int64.float_of_bits raw in
-            Int64.of_int32 (Int32.bits_of_float f64)
+            let f32 = Int32.bits_of_float f64 in
+            Int64.logand (Int64.of_int32 f32) 0xFFFFFFFFL
         | _ -> raw
       in
       (match dst with
+       | Fpr (i, B32) ->
+           let cur = get_vector_lane state i 0 in
+           let high32 = Int64.logand cur (Int64.lognot 0xFFFFFFFFL) in
+           set_vector_lane state i 0 (Int64.logor high32 out_val)
        | Fpr (i, _) -> set_vector_lane state i 0 out_val
        | _ -> set_reg state dst out_val);
       Ok None
