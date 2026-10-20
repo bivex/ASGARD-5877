@@ -1,54 +1,53 @@
-# Добавление новых инструкций в движок ASGARD-5877
+# Adding New Instructions to the ASGARD-5877 VM Engine
 
-Руководство для разработчиков по сквозному добавлению новых процессорных инструкций (x86_64, ARM64, RISC-V) в систему виртуализации ASGARD-5877.
-
----
-
-## 1. Архитектурный обзор
-
-Процесс добавления инструкции охватывает путь от ассемблерного текста до прямого резьбового исполнения (Direct Threaded Code) в защищенном C++ рантайме:
-
-```
-┌──────────────────────────────┐
-│ 1. Lifter                    │  lib/<arch>_lifter/
-│    Ассемблер -> Micro-IR     │
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│ 2. Micro-IR & Pipeline Passes│  lib/vm_ir/
-│    ir.mli, allocator, eval   │
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│ 3. Canonicalization          │  lib/native_vm/vm_transform.ml
-│    Форма 2-address, scratch  │
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│ 4. Bytecode Encoding         │  lib/native_vm/vm_emitter.ml
-│    Упаковка в 64-битное слово│
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│ 5. Runtime Handler           │  lib/native_vm/vm_*_handlers.ml
-│    C++20 Direct Threaded     │
-└──────────────┬───────────────┘
-               │
-┌──────────────▼───────────────┐
-│ 6. Verification & Tests      │  test/
-│    Reference VM + Native E2E │
-└──────────────────────────────┘
-```
+Developer guide for adding native processor instructions (x86_64, ARM64, RISC-V) across all layers of the ASGARD-5877 virtualization pipeline.
 
 ---
 
-## 2. Пошаговый процесс реализации
+## 1. Architectural Overview
 
-### Шаг 1: Определение инструкции в Micro-IR (`lib/vm_ir/`)
+The lifecycle of an instruction spans six distinct stages, from raw assembly parsing to direct-threaded execution in the hardened C++ runtime:
 
-1. **`lib/vm_ir/ir.mli` и `lib/vm_ir/ir.ml`**:
-   - Добавьте конструктор в тип `Ir.instr` (и при необходимости вспомогательный тип операции).
-   - Если инструкция специализированная (как `Vec_sha`, `Atomic_mem`, `Fp_conv`), выделите параметры операндов:
+```
+┌─────────────────────────────────────────┐
+│ 1. Frontend Lifter                      │  lib/<arch>_lifter/
+│    Assembly text -> Micro-IR            │
+└────────────────────┬────────────────────┘
+                     │
+┌────────────────────▼────────────────────┐
+│ 2. Micro-IR & Pipeline Passes           │  lib/vm_ir/
+│    ir.mli, allocator, evaluator         │
+└────────────────────┬────────────────────┘
+                     │
+┌────────────────────▼────────────────────┐
+│ 3. Canonicalization                     │  lib/native_vm/vm_transform.ml
+│    2-address forms, scratch registers   │
+└────────────────────┬────────────────────┘
+                     │
+┌────────────────────▼────────────────────┐
+│ 4. Bytecode Word Encoding               │  lib/native_vm/vm_emitter.ml
+│    64-bit instruction word packaging    │
+└────────────────────┬────────────────────┘
+                     │
+┌────────────────────▼────────────────────┐
+│ 5. Runtime Handler                      │  lib/native_vm/vm_*_handlers.ml
+│    C++20 Direct Threaded Code (&&label) │
+└────────────────────┬────────────────────┘
+                     │
+┌────────────────────▼────────────────────┐
+│ 6. Verification & Test Suite            │  test/
+│    Reference VM Oracle + Native E2E     │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## 2. Step-by-Step Implementation Guide
+
+### Step 1: Micro-IR Definition (`lib/vm_ir/`)
+
+1. **`lib/vm_ir/ir.mli` and `lib/vm_ir/ir.ml`**:
+   - Add a new variant to `Ir.instr` (and any auxiliary opcode types if grouping instructions like `sha_op`, `atomic_op`, or `fp_conv_op`):
 
      ```ocaml
      (* lib/vm_ir/ir.mli *)
@@ -63,168 +62,171 @@
          }
      ```
 
-2. **Обновление трансформаций IR (Exhaustive Pattern Matching)**:
-   При добавлении нового конструктора компилятор OCaml требует закрыть сопоставление с образцом во всех проходах:
-   - `lib/vm_ir/register_allocator.ml` (`remap_instr`): переназначение виртуальных регистров в аллоцированные слоты.
-   - `lib/vm_ir/superoperator.ml` (`of_instr` / `reads_flags` / `writes_flags`): учет используемых регистров и флагов при слиянии операторов.
-   - `lib/vm_ir/subreg_write.ml`: если операция затрагивает суб-регистры (`B32`, `B16`, `B8`), обнуление или сохранение верхних бит.
-   - `lib/cff/cff.ml` (`is_reg_read_in_op`): учет регистров в алгоритме уплощения графа потока управления.
+2. **Exhaustive Pattern Matching Across IR Passes**:
+   OCaml compiler warning 8 (partial-match) enforces that all transformation passes handle the new instruction:
+   - `lib/vm_ir/register_allocator.ml` (`remap_instr`): remap all input and output registers so allocated context slots remain coherent across basic blocks.
+   - `lib/vm_ir/superoperator.ml` (`of_instr` / `reads_flags` / `writes_flags`): track register dependencies and flag consumption to prevent illegal superoperator fusion across barrier boundaries.
+   - `lib/vm_ir/subreg_write.ml`: handle sub-register truncation or zero-extension semantics for narrow writes (`B32`, `B16`, `B8`).
+   - `lib/cff/cff.ml` (`is_reg_read_in_op`): track register reads for Control-Flow Flattening state dispatchers.
 
-3. **Эталонная модель в Reference VM (`lib/vm_ir/vm_eval.ml`)**:
-   - Реализуйте поведение инструкции в функции `eval_instr`.
-   - Если логика объемная (например, раунды хэширования или криптографические преобразования), вынесите чистые функции в отдельный модуль (пример: `lib/vm_ir/sha_ni.ml`).
-   - *Важно*: Reference VM служит математическим оракулом при эквивалентностном тестировании (Equivalence Check).
+3. **Software Oracle in the Reference VM (`lib/vm_ir/vm_eval.ml`)**:
+   - Implement the instruction's exact mathematical semantics in `eval_instr`.
+   - For complex round algorithms (e.g. SHA-NI hashing, AES rounds), isolate the pure logic into a dedicated submodule (e.g. `lib/vm_ir/sha_ni.ml`).
+   - *Requirement*: The Reference VM serves as the authoritative mathematical oracle for differential fuzzing and Stage-7 Equivalence Verification.
 
 ---
 
-### Шаг 2: Реализация в фронтенд-лифтере (`lib/<arch>_lifter/`)
+### Step 2: Frontend Lifter Integration (`lib/<arch>_lifter/`)
 
-В зависимости от архитектуры добавьте распознавание мнемоники в соответствующий модуль:
+Implement mnemonic recognition and operand parsing in the corresponding architecture lifter:
 - **x86-64**: `lib/x86_lifter/lifter.ml`
 - **ARM64**: `lib/arm64_lifter/arm64_alu.ml`, `arm64_mem.ml`, `arm64_branch.ml`
 - **RISC-V**: `lib/riscv_lifter/riscv_lifter.ml`
 
-#### Правила лифтинга:
-1. **Неявные операнды (Implicit Registers)**:
-   Если архитектурная инструкция неявно читает или пишет регистры (например, `SHA256RNDS2` использует `xmm0`, `MUL` использует `rax:rdx`), передавайте их явно в поля конструктора IR (`src3 = Register.xmm0`).
-2. **Нулевой регистр**:
-   В ARM64 (`xzr`/`wzr`) и RISC-V (`x0`) запись в нулевой регистр должна отбрасываться или не портить состояние. Чтение должно возвращать `0`.
-3. **Ширина операндов**:
-   Всегда сохраняйте точную ширину регистров (`Register.get_width`). Помните, что запись в 32-битный регистр x86/ARM64 всегда обнуляет верхние 32 бита 64-битного родителя.
+#### Lifter Rules:
+1. **Implicit Registers**:
+   If the instruction reads or writes implicit architectural registers (e.g. `SHA256RNDS2` implicitly reading `XMM0`, or `MUL` using `RDX:RAX`), expose them explicitly in the IR constructor (`src3 = Register.xmm0`).
+2. **Zero Registers**:
+   ARM64 zero registers (`xzr`/`wzr`) and RISC-V `x0` must discard writes without altering context state, and reads must return `0ULL`.
+3. **Register Widths**:
+   Always retain operand bit widths (`Register.get_width`). In x86_64 and ARM64, 32-bit writes strictly zero-extend into the upper 32 bits of the 64-bit parent register.
 
 ---
 
-### Шаг 3: Канонизация и устранение конфликтов (`lib/native_vm/vm_transform.ml`)
+### Step 3: Canonicalization & Hazard Prevention (`lib/native_vm/vm_transform.ml`)
 
-Перед эмиссией байткода каждый базовый блок проходит функцию `canonicalize_instr`.
+Before bytecode packaging, every basic block passes through `canonicalize_instr`.
 
-Обязательно добавьте обработку для новой инструкции, если:
-1. **Immediate не помещается в битовое поле опкода**:
-   Например, в ARM64 `CCMP`/`CCMN` поле immediate занимает всего 5 бит (`0..31`). Если лифтер получил `cmn w0, #100`, канонизатор обязан загрузить константу в scratch-регистр:
+Handle the instruction in `canonicalize_instr` if:
+1. **Immediate operand exceeds word bitfield capacity**:
+   For example, ARM64 `CCMP`/`CCMN` encodes only a 5-bit unsigned immediate (`0..31`). If the lifter emits `cmn w0, #100`, canonicalization must load the immediate into a temporary scratch register:
    ```ocaml
    | Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Imm imm; nzcv } when imm < 0L || imm > 31L ->
        let scratch = Register.with_width (pick_scratch_reg d d) (Register.get_width d) in
        [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm imm };
          Ir.Ccmn { cond; src1 = Ir.Reg d; src2 = Ir.Reg scratch; nzcv } ]
    ```
-2. **Память в качестве операнда**:
-   Если формат инструкции виртуальной машины принимает только регистры, операнд `Ir.Mem` загружается во временный регистр.
-3. **Конфликт адресации (Hazard: `dst = src1 OP dst`)**:
-   Для некоммутативных операций старое значение `dst` должно быть предварительно скопировано в scratch-регистр, чтобы не перетереть аргумент при подготовке.
+2. **Memory operands requiring register-only form**:
+   If the opcode format only admits register operands, lower memory accesses (`Ir.Mem`) into scratch loads via `pick_scratch_reg`.
+3. **Addressing Hazard (`dst = src1 OP dst`)**:
+   For non-commutative operations, save the old `dst` value into a scratch register to prevent clobbering input operands during operand setup.
 
 ---
 
-### Шаг 4: Регистрация опкода и кодирование (`lib/native_vm/`)
+### Step 4: Opcode Registration & Bytecode Packaging (`lib/native_vm/`)
 
-1. **`lib/native_vm/vm_transform.mli` и `lib/native_vm/vm_transform.ml`**:
-   - Добавьте опкод в тип `opcode`:
+1. **`lib/native_vm/vm_transform.mli` and `lib/native_vm/vm_transform.ml`**:
+   - Register the opcode in the `opcode` variant:
      ```ocaml
      | OP_MY_OP
      ```
-   - Зарегистрируйте строковое имя обработчика:
+   - Map the opcode to its handler label string:
      ```ocaml
      | OP_MY_OP -> "H_MY_OP"
      ```
-   - Добавьте опкод в список `all_opcodes`.
+   - Append `OP_MY_OP` to `all_opcodes`.
 
-2. **Эмиссия байткода (`lib/native_vm/vm_emitter.ml`)**:
-   В функции `compile_and_package_multi` в секции кодирования инструкций базового блока добавьте ветку для вашей инструкции:
+2. **Bytecode Emission (`lib/native_vm/vm_emitter.ml`)**:
+   In `compile_and_package_multi`, add an emission rule:
    ```ocaml
    | Ir.My_instr { op; dst; src } ->
        encode_raw_word ~extra_bits:(Int64.of_int (my_op_code op))
          (get_opcode OP_MY_OP) (get_reg_idx dst) (get_reg_idx src) imm
    ```
 
-#### Структура 64-битного слова Native VM:
-* Биты `0..7`: Опкод инструкции (8 бит).
-* Биты `8..12`: Индекс регистра назначения `dst` (5 бит).
-* Биты `13..17`: Индекс регистра источника `src` (5 бит).
-* Биты `18..56`: Непосредственное значение / упакованные поля (39 бит).
-* Биты `57..63`: `extra_bits` (флаги диалекта, ширина, подкоды операций).
+#### 64-Bit Native VM Instruction Word Layout:
+* Bits `0..7`: Opcode (8 bits).
+* Bits `8..12`: Destination register index `dst` (5 bits).
+* Bits `13..17`: Source register index `src` (5 bits).
+* Bits `18..56`: Immediate / packed secondary operands (39 bits).
+* Bits `57..63`: `extra_bits` (dialect tags, width codes, sub-opcodes).
 
 ---
 
-### Шаг 5: Реализация обработчика в C++ рантайме (`lib/native_vm/vm_*_handlers.ml`)
+### Step 5: Direct-Threaded C++ Runtime Handler (`lib/native_vm/vm_*_handlers.ml`)
 
-В зависимости от назначения инструкции добавьте C++ обработчик в один из модулей:
-- `vm_alu_handlers.ml` — арифметика, логика, битовые сдвиги, флаги.
-- `vm_mem_handlers.ml` — память, векторы, атомики, системные вызовы.
-- `vm_control_handlers.ml` — переходы, вызовы, ветвления.
+Implement the runtime handler in the appropriate category module:
+- `vm_alu_handlers.ml` — Arithmetic, logic, bit manipulations, flags.
+- `vm_mem_handlers.ml` — Memory loads/stores, SIMD vector registers, atomics, system calls.
+- `vm_control_handlers.ml` — Branches, calls, returns, dispatcher bridges.
 
-#### Главное требование: Портируемость
-> Обработчик должен быть написан на **чистом платформонезависимом C++20**, а не через архитектурные интринсики компилятора (`__builtin_ia32_*` или ARM NEON intrinsics).
+#### Core Principle: Cross-Platform Portability
+> Handlers must be written in **portable C++20**, avoiding host-locked intrinsics (e.g. `__builtin_ia32_*` or ARM NEON intrinsics).
 >
-> Это гарантирует, что виртуализированный бинарник x86_64 сможет выполняться под эмулятором на Apple Silicon (ARM64), и наоборот.
+> This guarantees that a protected binary virtualizing x86-64 code can execute cleanly on Apple Silicon (ARM64), and vice versa.
 
-Пример шаблона обработчика:
+Handler Template:
 ```cpp
 H_MY_OP: {
     const uint64_t a = ctx.get_reg(dst);
     const uint64_t b = ctx.get_reg(src);
-    const uint64_t res = (a ^ b); // вычисление результата
+    const uint64_t res = (a ^ b); // execution logic
     ctx.set_reg(dst, res);
-    // Обновление флагов при необходимости:
+    
+    // Flag computation if applicable:
     ctx.zf = (res == 0);
     ctx.sf = (static_cast<int64_t>(res) < 0);
-    // Переход к следующей инструкции:
+    
+    // Advance virtual instruction pointer to next handler:
     NEXT_INSTR;
 }
 ```
 
-*Для генерации кода через типизированный AST используйте DSL `emit_handler_ast` или прямую вставку через буфер `Buffer.add_string`.*
+*For emission via typed AST, use `emit_handler_ast` or string buffers via `Buffer.add_string`.*
 
 ---
 
-### Шаг 6: Поддержка в Stack-VM (`lib/stack_vm/ir_to_stack.ml`)
+### Step 6: Stack-VM Engine Lowering (`lib/stack_vm/ir_to_stack.ml`)
 
-Если ваша инструкция поддерживается стековой виртуальной машиной:
-- Реализуйте трансляцию `Ir.instr -> stack_op list` в `lib/stack_vm/ir_to_stack.ml`.
-- Если инструкция не поддерживается движком Stack-VM (например, 128-битные векторы SIMD или SHA-NI), явно завершайте исполнение:
+If the instruction is supported by the universal logic Stack-VM:
+- Map `Ir.instr -> stack_op list` in `lib/stack_vm/ir_to_stack.ml`.
+- If unsupported (e.g. 128-bit SIMD or SHA-NI extensions), terminate execution explicitly:
   ```ocaml
   | Vec_sha _ -> [Exit]
   ```
 
 ---
 
-## 3. Верификация и тестирование
+## 3. Verification & Testing
 
-Согласно правилам `AGENTS.md`, изменение считается проверенным только после выполнения тестов.
+Under `AGENTS.md`, every code modification must be verified against target test suites before committing.
 
-### 1. Модульный тест лифтера и Reference VM
-Создайте тест в `test/test_<arch>_lifter.ml`:
-- Напишите ассемблерный фрагмент.
-- Прогоните лифтер `Lifter.lift_function`.
-- Инициализируйте начальное состояние `make_state ()`.
-- Запустите функцию через `run_func state func`.
-- Сверьте значения регистров и флагов с эталонными значениями из официального руководства архитектуры (Intel SDM / ARM ARM).
+### 1. Lifter Unit & Reference VM Test
+Add a test case in `test/test_<arch>_lifter.ml`:
+- Provide an assembly snippet.
+- Lift using `Lifter.lift_function`.
+- Set up initial state with `make_state ()`.
+- Evaluate using `run_func state func`.
+- Assert register values and flags against the hardware specification (Intel SDM / ARM ARM).
 
-### 2. Сквозной тест натив-рантайма (E2E)
-Создайте тест в `test/test_native_semantics.ml`:
-- Скомпилируйте тестовый C++ раннер с байткодом через `run_custom_vm`.
-- Проверьте реальное исполнение Native Threaded VM.
+### 2. End-to-End Native Execution Test
+Add an E2E test in `test/test_native_semantics.ml`:
+- Package bytecode with `Vm_emitter.compile_and_package`.
+- Compile and execute the direct-threaded C++ runtime via `run_custom_vm`.
+- Check exit codes and register file outputs.
 
-### 3. Запуск точечного набора тестов
+### 3. Targeted Suite Execution
 ```bash
-# Сборка раннера
+# Build test runner
 dune build test/run_tests.exe
 
-# Запуск одного конкретного теста
-_build/default/test/run_tests.exe test "x86_64 Lifter & CFG" <номер>
+# Run individual test by index
+_build/default/test/run_tests.exe test "x86_64 Lifter & CFG" 33
 
-# Запуск сьюта
+# Run targeted suite
 _build/default/test/run_tests.exe test "x86_64 Lifter & CFG"
 ```
 
 ---
 
-## 4. Чеклист перед коммитом
+## 4. Pre-Commit Checklist
 
-- [ ] В `Ir.instr` добавлен конструктор, типы экспортированы в `.mli`.
-- [ ] Во всех файлах `lib/vm_ir/` закрыт pattern matching (нет предупреждений warning 8).
-- [ ] Reference VM (`vm_eval.ml`) корректно симулирует семантику.
-- [ ] Опкод зарегистрирован в `vm_transform.ml` и добавлен в `all_opcodes`.
-- [ ] Обработчик написан на портируемом C++ без platform-locked интринсиков.
-- [ ] Добавлены тесты в `test_lifter.ml` и `test_native_semantics.ml`.
-- [ ] Запущены и пройдены затронутые тесты.
-- [ ] Обновлен `CHANGELOG.md` под `## [Unreleased]`.
-- [ ] Коммит оформлен по Conventional Commits (`feat(x86): ...`, `feat(arm64): ...`).
+- [ ] New `Ir.instr` variant declared; `.mli` interfaces updated.
+- [ ] Pattern matching covered across all passes in `lib/vm_ir/` (zero compiler warnings).
+- [ ] Reference VM (`vm_eval.ml`) implements correct mathematical semantics.
+- [ ] Opcode registered in `vm_transform.ml` and included in `all_opcodes`.
+- [ ] Canonicalization handles oversized immediates and register hazards.
+- [ ] C++ handler written in portable C++ without platform-locked intrinsics.
+- [ ] Unit and E2E tests added and passing.
+- [ ] `CHANGELOG.md` updated under `## [Unreleased]`.
+- [ ] Conventional Commit format applied (`feat(x86): ...`, `feat(arm64): ...`).
