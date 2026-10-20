@@ -1939,6 +1939,80 @@ func_native_packed_conv:
     if (ctx.vregs[14][1] != 0xC004000000000000ULL) return 19;
 |})
 
+let test_native_x86_movlhps_movhlps_movlps_movhps () =
+  let pkg =
+    mk_pkg ~seed:20261030 {|
+func_native_subvec:
+    vmovlhps xmm4, xmm0, xmm1
+    vmovhlps xmm5, xmm2, xmm3
+    movlhps xmm0, xmm1
+    movhlps xmm2, xmm3
+    movlps xmm6, qword ptr [rsp + 16]
+    movhps xmm7, qword ptr [rsp + 16]
+    vmovlps xmm8, xmm0, qword ptr [rsp + 16]
+    vmovhps xmm9, xmm0, qword ptr [rsp + 16]
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_subvec" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* rsp + 16 = 0x1234567890ABCDEF */
+    uint64_t vsp = ctx.get_vsp();
+    ctx.write_mem_u64(vsp + 16, 0x1234567890ABCDEFULL);
+
+    ctx.vregs[0][0] = 0x1111111111111111ULL; ctx.vregs[0][1] = 0x2222222222222222ULL;
+    ctx.vregs[1][0] = 0x3333333333333333ULL; ctx.vregs[1][1] = 0x4444444444444444ULL;
+    ctx.vregs[2][0] = 0x5555555555555555ULL; ctx.vregs[2][1] = 0x6666666666666666ULL;
+    ctx.vregs[3][0] = 0x7777777777777777ULL; ctx.vregs[3][1] = 0x8888888888888888ULL;
+
+    ctx.vregs[4][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[4][3] = 0xDEADBEEFCAFEBA00ULL;
+    ctx.vregs[5][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[5][3] = 0xDEADBEEFCAFEBA00ULL;
+
+    ctx.vregs[6][0] = 0xAAAAAAAAAAAAAAAAULL; ctx.vregs[6][1] = 0xBBBBBBBBBBBBBBBBULL;
+    ctx.vregs[7][0] = 0xAAAAAAAAAAAAAAAAULL; ctx.vregs[7][1] = 0xBBBBBBBBBBBBBBBBULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    /* movlhps xmm0, xmm1 */
+    if (ctx.vregs[0][0] != 0x1111111111111111ULL) return 2;
+    if (ctx.vregs[0][1] != 0x3333333333333333ULL) return 3;
+
+    /* movhlps xmm2, xmm3 */
+    if (ctx.vregs[2][0] != 0x8888888888888888ULL) return 4;
+    if (ctx.vregs[2][1] != 0x6666666666666666ULL) return 5;
+
+    /* vmovlhps xmm4 */
+    if (ctx.vregs[4][0] != 0x1111111111111111ULL) return 6;
+    if (ctx.vregs[4][1] != 0x3333333333333333ULL) return 7;
+    if (ctx.vregs[4][2] != 0ULL || ctx.vregs[4][3] != 0ULL) return 8;
+
+    /* vmovhlps xmm5 */
+    if (ctx.vregs[5][0] != 0x8888888888888888ULL) return 9;
+    if (ctx.vregs[5][1] != 0x6666666666666666ULL) return 10;
+    if (ctx.vregs[5][2] != 0ULL || ctx.vregs[5][3] != 0ULL) return 11;
+
+    /* movlps xmm6, m64 */
+    if (ctx.vregs[6][0] != 0x1234567890ABCDEFULL) return 12;
+    if (ctx.vregs[6][1] != 0xBBBBBBBBBBBBBBBBULL) return 13;
+
+    /* movhps xmm7, m64 */
+    if (ctx.vregs[7][0] != 0xAAAAAAAAAAAAAAAAULL) return 14;
+    if (ctx.vregs[7][1] != 0x1234567890ABCDEFULL) return 15;
+
+    /* vmovlps xmm8 */
+    if (ctx.vregs[8][0] != 0x1234567890ABCDEFULL) return 16;
+    if (ctx.vregs[8][1] != 0x3333333333333333ULL) return 17;
+    if (ctx.vregs[8][2] != 0ULL) return 18;
+
+    /* vmovhps xmm9 */
+    if (ctx.vregs[9][0] != 0x1111111111111111ULL) return 19;
+    if (ctx.vregs[9][1] != 0x1234567890ABCDEFULL) return 20;
+    if (ctx.vregs[9][2] != 0ULL) return 21;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1976,4 +2050,5 @@ let tests = [
   Alcotest.test_case "native_x86_aes_ni_fips197_full_cycle" `Slow test_native_x86_aes_ni_fips197_full_cycle;
   Alcotest.test_case "native_x86_shufps_shufpd" `Slow test_native_x86_shufps_shufpd;
   Alcotest.test_case "native_x86_packed_conversions" `Slow test_native_x86_packed_conversions;
+  Alcotest.test_case "native_x86_movlhps_movhlps_movlps_movhps" `Slow test_native_x86_movlhps_movhlps_movlps_movhps;
 ]

@@ -1691,6 +1691,87 @@ func_packed_conv:
           Alcotest.(check int64) "vcvtps2pd d0" 0x3FF8000000000000L v14.(0);
           Alcotest.(check int64) "vcvtps2pd d1" 0xC004000000000000L v14.(1))
 
+let test_x86_lift_movlhps_movhlps_movlps_movhps () =
+  let asm = {|
+func_subvector_moves:
+    vmovlhps xmm4, xmm0, xmm1
+    vmovhlps xmm5, xmm2, xmm3
+    movlhps xmm0, xmm1
+    movhlps xmm2, xmm3
+    movlps xmm6, qword ptr [rsp + 16]
+    movlps qword ptr [rsp + 24], xmm6
+    movhps xmm7, qword ptr [rsp + 16]
+    movhps qword ptr [rsp + 32], xmm7
+    vmovlps xmm8, xmm0, qword ptr [rsp + 16]
+    vmovhps xmm9, xmm0, qword ptr [rsp + 16]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      state.vsp <- 0x1000L;
+      write_mem state 0x1010L B64 0x1234567890ABCDEFL;
+      (* xmm0: [0x1111..., 0x2222...] *)
+      Hashtbl.replace state.vectors 0 [| 0x1111111111111111L; 0x2222222222222222L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm1: [0x3333..., 0x4444...] *)
+      Hashtbl.replace state.vectors 1 [| 0x3333333333333333L; 0x4444444444444444L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm2: [0x5555..., 0x6666...] *)
+      Hashtbl.replace state.vectors 2 [| 0x5555555555555555L; 0x6666666666666666L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm3: [0x7777..., 0x8888...] *)
+      Hashtbl.replace state.vectors 3 [| 0x7777777777777777L; 0x8888888888888888L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm4, xmm5: upper junk *)
+      Hashtbl.replace state.vectors 4 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      (* xmm6, xmm7: [0xAAAA..., 0xBBBB...] *)
+      Hashtbl.replace state.vectors 6 [| 0xAAAAAAAAAAAAAAAA_L; 0xBBBBBBBBBBBBBBBB_L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| 0xAAAAAAAAAAAAAAAA_L; 0xBBBBBBBBBBBBBBBB_L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v4 = Hashtbl.find state.vectors 4 in
+          let v5 = Hashtbl.find state.vectors 5 in
+          let v6 = Hashtbl.find state.vectors 6 in
+          let v7 = Hashtbl.find state.vectors 7 in
+          let v8 = Hashtbl.find state.vectors 8 in
+          let v9 = Hashtbl.find state.vectors 9 in
+          (* movlhps xmm0, xmm1 -> [xmm0[0], xmm1[0]] *)
+          Alcotest.(check int64) "movlhps l0" 0x1111111111111111L v0.(0);
+          Alcotest.(check int64) "movlhps l1" 0x3333333333333333L v0.(1);
+          (* movhlps xmm2, xmm3 -> [xmm3[1], xmm2[1]] *)
+          Alcotest.(check int64) "movhlps l0" 0x8888888888888888L v2.(0);
+          Alcotest.(check int64) "movhlps l1" 0x6666666666666666L v2.(1);
+          (* vmovlhps xmm4 *)
+          Alcotest.(check int64) "vmovlhps l0" 0x1111111111111111L v4.(0);
+          Alcotest.(check int64) "vmovlhps l1" 0x3333333333333333L v4.(1);
+          Alcotest.(check int64) "vmovlhps l2 zero" 0L v4.(2);
+          Alcotest.(check int64) "vmovlhps l3 zero" 0L v4.(3);
+          (* vmovhlps xmm5 *)
+          Alcotest.(check int64) "vmovhlps l0" 0x8888888888888888L v5.(0);
+          Alcotest.(check int64) "vmovhlps l1" 0x6666666666666666L v5.(1);
+          Alcotest.(check int64) "vmovhlps l2 zero" 0L v5.(2);
+          Alcotest.(check int64) "vmovhlps l3 zero" 0L v5.(3);
+          (* movlps load xmm6 -> [mem, xmm6[1]] *)
+          Alcotest.(check int64) "movlps load l0" 0x1234567890ABCDEFL v6.(0);
+          Alcotest.(check int64) "movlps load l1" 0xBBBBBBBBBBBBBBBB_L v6.(1);
+          (* movlps store to rsp + 24 *)
+          Alcotest.(check int64) "movlps store mem" 0x1234567890ABCDEFL (read_mem state 0x1018L B64);
+          (* movhps load xmm7 -> [xmm7[0], mem] *)
+          Alcotest.(check int64) "movhps load l0" 0xAAAAAAAAAAAAAAAA_L v7.(0);
+          Alcotest.(check int64) "movhps load l1" 0x1234567890ABCDEFL v7.(1);
+          (* movhps store to rsp + 32 *)
+          Alcotest.(check int64) "movhps store mem" 0x1234567890ABCDEFL (read_mem state 0x1020L B64);
+          (* vmovlps xmm8 *)
+          Alcotest.(check int64) "vmovlps l0" 0x1234567890ABCDEFL v8.(0);
+          Alcotest.(check int64) "vmovlps l1" 0x3333333333333333L v8.(1);
+          Alcotest.(check int64) "vmovlps l2 zero" 0L v8.(2);
+          (* vmovhps xmm9 *)
+          Alcotest.(check int64) "vmovhps l0" 0x1111111111111111L v9.(0);
+          Alcotest.(check int64) "vmovhps l1" 0x1234567890ABCDEFL v9.(1);
+          Alcotest.(check int64) "vmovhps l2 zero" 0L v9.(2))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -3168,5 +3249,6 @@ let tests = [
   Alcotest.test_case "lift_x86_aes_ni_fips197_full_cycle" `Quick test_x86_lift_aes_ni_fips197_full_cycle;
   Alcotest.test_case "lift_x86_shufps_shufpd" `Quick test_x86_lift_shufps_shufpd;
   Alcotest.test_case "lift_x86_packed_conversions" `Quick test_x86_lift_packed_conversions;
+  Alcotest.test_case "lift_x86_movlhps_movhlps_movlps_movhps" `Quick test_x86_lift_movlhps_movhlps_movlps_movhps;
 ]
 
