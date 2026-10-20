@@ -71,6 +71,8 @@ type raw_op_kind =
   | OP_VEC_SHUF2
   | OP_VEC_CONV
   | OP_PTEST
+  | OP_PINSR
+  | OP_PEXTR
   | OP_READ_SSP
   | OP_INC_SSP
   | OP_VEC_LOAD

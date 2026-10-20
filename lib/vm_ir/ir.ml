@@ -105,6 +105,8 @@ type vec_op =
   | Vcmpleu
   | Vmaddwd
   | Vsadbw
+  | Vshuflw
+  | Vshufhw
 type vec_elem = VInt | VF32 | VF64
 
 (* The x86 SHA extensions (SHA-NI).  Every instruction works on the four
@@ -213,6 +215,8 @@ type instr =
   | Vec_aes of { op : aes_op; dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Vec_shuf2 of { dst : int; src1 : int; src2 : int; imm : int64; bits : int; lane_bits : int }
   | Vec_conv of { op : vec_conv_op; dst : int; src : int; bits : int }
+  | Pinsr of { dst : int; src1 : int; src2 : operand; imm : int; width : width }
+  | Pextr of { dst : operand; src : int; imm : int; width : width }
   | Ptest of { src1 : int; src2 : int; bits : int }
   | Read_ssp of { dst : Register.t }
   | Inc_ssp of { width : width }
@@ -374,6 +378,7 @@ let instr_to_string = function
         | Vdiv -> "vec_div" | Vrem -> "vec_rem" | Vdivu -> "vec_divu" | Vremu -> "vec_remu"
         | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
         | Vmaddwd -> "vec_maddwd" | Vsadbw -> "vec_sadbw"
+        | Vshuflw -> "vec_shuflw" | Vshufhw -> "vec_shufhw"
       in
       Printf.sprintf "%s.%d.%d.%s v%d, v%d, v%d" op_s bits lane_bits (vec_elem_to_string elem) dst src1 src2
   | Vec_sha { op; dst; src1; src2; src3; imm; bits } ->
@@ -403,6 +408,10 @@ let instr_to_string = function
         | Vcvtdq2pd -> "cvtdq2pd" | Vcvtpd2dq -> "cvtpd2dq" | Vcvttpd2dq -> "cvttpd2dq"
       in
       Printf.sprintf "vec_%s.%d v%d, v%d" op_s bits dst src
+  | Pinsr { dst; src1; src2; imm; width } ->
+      Printf.sprintf "pinsr.%d v%d, v%d, %s, %d" (Register.width_to_bits width) dst src1 (operand_to_string src2) imm
+  | Pextr { dst; src; imm; width } ->
+      Printf.sprintf "pextr.%d %s, v%d, %d" (Register.width_to_bits width) (operand_to_string dst) src imm
   | Read_ssp { dst } -> Printf.sprintf "read_ssp %s" (Register.to_string dst)
   | Inc_ssp { width } -> Printf.sprintf "inc_ssp %d" (Register.width_to_bits width)
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
@@ -421,6 +430,7 @@ let instr_to_string = function
         | Vdiv -> "vec_div" | Vrem -> "vec_rem" | Vdivu -> "vec_divu" | Vremu -> "vec_remu"
         | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
         | Vmaddwd -> "vec_maddwd" | Vsadbw -> "vec_sadbw"
+        | Vshuflw -> "vec_shuflw" | Vshufhw -> "vec_shufhw"
       in
       Printf.sprintf "%s_imm.%d.%d.%s v%d, v%d, 0x%LX" op_s bits lane_bits (vec_elem_to_string elem) dst src imm
   | Vec_load { dst; addr; bits } -> Printf.sprintf "vec_load.%d v%d, %s" bits dst (mem_ref_to_string addr)

@@ -83,6 +83,10 @@ let remap_instr (map : (int, int) Hashtbl.t) (instr : instr) : instr =
   | Set_flags src -> Set_flags (remap_operand map src)
   | Vec_splat { dst; src; bits; lane_bits } -> Vec_splat { dst; src = remap_register map src; bits; lane_bits }
   | Pmovmskb { dst; src; bits; lane_bits } -> Pmovmskb { dst = remap_register map dst; src; bits; lane_bits }
+  | Pinsr { dst; src1; src2; imm; width } ->
+      Pinsr { dst; src1; src2 = remap_operand map src2; imm; width }
+  | Pextr { dst; src; imm; width } ->
+      Pextr { dst = remap_operand map dst; src; imm; width }
   | Atomic_mem { op; dst; addr; src; imm } ->
       Atomic_mem {
         op;

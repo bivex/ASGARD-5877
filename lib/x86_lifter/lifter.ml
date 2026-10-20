@@ -635,6 +635,12 @@ let vector_op_of_mnemonic = function
   | "vpblendw" -> Some (Ir.Vblend, Ir.VInt, 16)
   | "pmaddwd" | "vpmaddwd" -> Some (Ir.Vmaddwd, Ir.VInt, 32)
   | "psadbw" | "vpsadbw" -> Some (Ir.Vsadbw, Ir.VInt, 64)
+  | "pshuflw" | "vpshuflw" -> Some (Ir.Vshuflw, Ir.VInt, 16)
+  | "pshufhw" | "vpshufhw" -> Some (Ir.Vshufhw, Ir.VInt, 16)
+  | "packsswb" | "vpacksswb" -> Some (Ir.Vpackss, Ir.VInt, 8)
+  | "packssdw" | "vpackssdw" -> Some (Ir.Vpackss, Ir.VInt, 16)
+  | "packuswb" | "vpackuswb" -> Some (Ir.Vpackus, Ir.VInt, 8)
+  | "packusdw" | "vpackusdw" -> Some (Ir.Vpackus, Ir.VInt, 16)
   | _ -> None
 
 let lift_vector_move ?const_pool mnem dst src =
@@ -1340,6 +1346,79 @@ let lift_palignr ?const_pool mnem ops =
         | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
     | _ -> Error (Printf.sprintf "invalid operand count for %s" mnem)
 
+let pinsr_width_of_mnemonic = function
+  | "pinsrb" | "vpinsrb" -> Some Register.B8
+  | "pinsrw" | "vpinsrw" -> Some Register.B16
+  | "pinsrd" | "vpinsrd" -> Some Register.B32
+  | "pinsrq" | "vpinsrq" -> Some Register.B64
+  | _ -> None
+
+let pextr_width_of_mnemonic = function
+  | "pextrb" | "vpextrb" -> Some Register.B8
+  | "pextrw" | "vpextrw" -> Some Register.B16
+  | "pextrd" | "vpextrd" -> Some Register.B32
+  | "pextrq" | "vpextrq" -> Some Register.B64
+  | _ -> None
+
+let lift_pinsr ?const_pool:_ mnem ops =
+  match pinsr_width_of_mnemonic mnem with
+  | None -> Error "not a pinsr instruction"
+  | Some width ->
+      let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+      let get_index = function
+        | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+        | _ -> None
+      in
+      let prep_src = function
+        | X86_parser.OpReg r -> ([], Ir.Reg r)
+        | X86_parser.OpImm imm -> ([], Ir.Imm imm)
+        | X86_parser.OpMem m ->
+            let tmp = Register.with_width Register.vtmp0 width in
+            ([ Ir.Mov { dst = Ir.Reg tmp; src = Ir.Mem (ir_mem_of_raw m) } ], Ir.Reg tmp)
+        | _ -> ([], Ir.Imm 0L)
+      in
+      match ops with
+      | [ dst; src; X86_parser.OpImm imm ] -> (
+          match get_index dst with
+          | Some di ->
+              let preload, src_op = prep_src src in
+              let instr = Ir.Pinsr { dst = di; src1 = di; src2 = src_op; imm = Int64.to_int imm; width } in
+              let extra = if is_vex then [ Ir.Vec_clear_upper di ] else [] in
+              Ok (preload @ [ instr ] @ extra)
+          | None -> Error (Printf.sprintf "%s requires a vector register destination" mnem))
+      | [ dst; src1; src2; X86_parser.OpImm imm ] when is_vex -> (
+          match get_index dst, get_index src1 with
+          | Some di, Some s1 ->
+              let preload, src_op = prep_src src2 in
+              let instr = Ir.Pinsr { dst = di; src1 = s1; src2 = src_op; imm = Int64.to_int imm; width } in
+              Ok (preload @ [ instr; Ir.Vec_clear_upper di ])
+          | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
+      | _ -> Error (Printf.sprintf "invalid operands for %s" mnem)
+
+let lift_pextr ?const_pool:_ mnem ops =
+  match pextr_width_of_mnemonic mnem with
+  | None -> Error "not a pextr instruction"
+  | Some width ->
+      let get_index = function
+        | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+        | _ -> None
+      in
+      match ops with
+      | [ dst; src; X86_parser.OpImm imm ] -> (
+          match get_index src with
+          | Some si -> (
+              match dst with
+              | X86_parser.OpReg r ->
+                  Ok [ Ir.Pextr { dst = Ir.Reg r; src = si; imm = Int64.to_int imm; width } ]
+              | X86_parser.OpMem m ->
+                  let tmp = Register.with_width Register.vtmp0 width in
+                  let pext = Ir.Pextr { dst = Ir.Reg tmp; src = si; imm = Int64.to_int imm; width } in
+                  let store = Ir.Mov { dst = Ir.Mem (ir_mem_of_raw m); src = Ir.Reg tmp } in
+                  Ok [ pext; store ]
+              | _ -> Error (Printf.sprintf "%s destination must be GPR or memory" mnem))
+          | None -> Error (Printf.sprintf "%s requires a vector register source" mnem))
+      | _ -> Error (Printf.sprintf "invalid operands for %s" mnem)
+
 let lift_vector_binop ?const_pool mnem ops =
   if List.exists is_zmm_operand ops then
     Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
@@ -1752,6 +1831,10 @@ let lift_instr ?const_pool raw_mnem ops =
   | ("movlps" | "vmovlps" | "movlpd" | "vmovlpd"), _ -> lift_movlps ?const_pool mnem ops
   | ("movhps" | "vmovhps" | "movhpd" | "vmovhpd"), _ -> lift_movhps ?const_pool mnem ops
   | ("palignr" | "vpalignr"), _ -> lift_palignr ?const_pool mnem ops
+  | mnem, ops when (match pinsr_width_of_mnemonic mnem with Some _ -> true | None -> false) ->
+      lift_pinsr mnem ops
+  | mnem, ops when (match pextr_width_of_mnemonic mnem with Some _ -> true | None -> false) ->
+      lift_pextr mnem ops
 
 
   | mnem, ops

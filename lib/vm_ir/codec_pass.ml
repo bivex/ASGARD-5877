@@ -180,6 +180,14 @@ let process_block ~cfg (b : basic_block) : basic_block =
         let acc = force_decode src acc in
         set_state dst Plain;
         acc @ [ instr ]
+    | Pinsr { src2; _ } ->
+        let acc = force_decode_operand src2 acc in
+        acc @ [ instr ]
+
+    | Pextr { dst; _ } ->
+        let acc = match dst with Reg r -> set_state r Plain; acc | _ -> acc in
+        acc @ [ instr ]
+
 
     (* Atomic_mem: addr and src are GPR inputs; dst receives the old memory
        value (GPR output).  Decode all three live inputs before use. *)

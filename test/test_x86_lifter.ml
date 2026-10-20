@@ -1955,6 +1955,85 @@ func_madd_sad:
           Alcotest.(check int64) "pmaddwd mem lane0" 0x000000FA00000032L v6.(0);
           Alcotest.(check int64) "pmaddwd mem lane1" 0x0000C350FFFFFD9EL v6.(1))
 
+let test_x86_lift_pack_shufw_pinsr_pextr () =
+  let asm = {|
+func_pack_shuf_pinsr:
+    packsswb xmm0, xmm1
+    packuswb xmm2, xmm1
+    packssdw xmm3, xmm4
+    packusdw xmm5, xmm4
+    pshuflw xmm6, xmm6, 0x1B
+    pshufhw xmm7, xmm7, 0x1B
+    pinsrb xmm8, eax, 2
+    pextrb r8d, xmm8, 2
+    pinsrw xmm8, ebx, 3
+    pextrw r9d, xmm8, 3
+    pinsrd xmm8, ecx, 2
+    pextrd r10d, xmm8, 2
+    pinsrq xmm8, rdx, 1
+    pextrq r11, xmm8, 1
+    vpinsrd xmm9, xmm8, eax, 0
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (* xmm0, xmm2: 16-bit words [10; 200; -200; -50; 0; 127; 128; -129] *)
+      let s1 = [| 0xFFCEFF3800C8000AL; 0xFF7F0080007F0000L; 0L; 0L; 0L; 0L; 0L; 0L |] in
+      Hashtbl.replace state.vectors 0 (Array.copy s1);
+      Hashtbl.replace state.vectors 2 (Array.copy s1);
+      (* xmm1: 16-bit words [1; 2; 3; 4; 5; 6; 7; 8] *)
+      Hashtbl.replace state.vectors 1 [| 0x0004000300020001L; 0x0008000700060005L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm3, xmm5: 32-bit dwords [10; 40000; -40000; -50] *)
+      let s3 = [| 0x00009C400000000AL; 0xFFFFFFCEFFFF63C0L; 0L; 0L; 0L; 0L; 0L; 0L |] in
+      Hashtbl.replace state.vectors 3 (Array.copy s3);
+      Hashtbl.replace state.vectors 5 (Array.copy s3);
+      (* xmm4: 32-bit dwords [1; 2; 3; 4] *)
+      Hashtbl.replace state.vectors 4 [| 0x0000000200000001L; 0x0000000400000003L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm6, xmm7: 16-bit words [0; 1; 2; 3; 4; 5; 6; 7] *)
+      Hashtbl.replace state.vectors 6 [| 0x0003000200010000L; 0x0007000600050004L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| 0x0003000200010000L; 0x0007000600050004L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm8: all zero initially *)
+      Hashtbl.replace state.vectors 8 (Array.make 8 0L);
+      (* GPRs: eax=0xAA, ebx=0xBBBB, ecx=0xCCCCCCCC, rdx=0xDDDDDDDDDDDDDDDD *)
+      set_reg state Register.rax 0xAAL;
+      set_reg state Register.rbx 0xBBBBL;
+      set_reg state Register.rcx 0xCCCCCCCCL;
+      set_reg state Register.rdx 0xDDDDDDDDDDDDDDDDL;
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v3 = Hashtbl.find state.vectors 3 in
+          let v5 = Hashtbl.find state.vectors 5 in
+          let v6 = Hashtbl.find state.vectors 6 in
+          let v7 = Hashtbl.find state.vectors 7 in
+          let v8 = Hashtbl.find state.vectors 8 in
+          (* packsswb: clamped bytes [10, 127, -128, -50, 0, 127, 127, -128, 1, 2, 3, 4, 5, 6, 7, 8] *)
+          Alcotest.(check int64) "packsswb lane0" 0x807F7F00CE807F0AL v0.(0);
+          Alcotest.(check int64) "packsswb lane1" 0x0807060504030201L v0.(1);
+          (* packuswb: clamped bytes [10, 200, 0, 0, 0, 127, 128, 0, 1, 2, 3, 4, 5, 6, 7, 8] *)
+          Alcotest.(check int64) "packuswb lane0" 0x00807F000000C80AL v2.(0);
+          Alcotest.(check int64) "packuswb lane1" 0x0807060504030201L v2.(1);
+          (* packssdw: clamped words [10, 32767, -32768, -50, 1, 2, 3, 4] *)
+          Alcotest.(check int64) "packssdw lane0" 0xFFCE80007FFF000AL v3.(0);
+          Alcotest.(check int64) "packssdw lane1" 0x0004000300020001L v3.(1);
+          (* packusdw: clamped words [10, 40000, 0, 0, 1, 2, 3, 4] *)
+          Alcotest.(check int64) "packusdw lane0" 0x000000009C40000AL v5.(0);
+          Alcotest.(check int64) "packusdw lane1" 0x0004000300020001L v5.(1);
+          (* pshuflw / pshufhw *)
+          Alcotest.(check int64) "pshuflw lane1 unchanged" 0x0007000600050004L v6.(1);
+          Alcotest.(check int64) "pshufhw lane0 unchanged" 0x0003000200010000L v7.(0);
+          (* pextr results *)
+          Alcotest.(check int64) "pextrb r8" 0xAAL (get_reg state Register.r8);
+          Alcotest.(check int64) "pextrw r9" 0xBBBBL (get_reg state Register.r9);
+          Alcotest.(check int64) "pextrd r10" 0xCCCCCCCCL (get_reg state Register.r10);
+          Alcotest.(check int64) "pextrq r11" 0xDDDDDDDDDDDDDDDDL (get_reg state Register.r11);
+          (* pinsrq into lane 1 *)
+          Alcotest.(check int64) "pinsrq lane1" 0xDDDDDDDDDDDDDDDDL v8.(1))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -3436,5 +3515,6 @@ let tests = [
   Alcotest.test_case "lift_x86_system_and_compiler_traps" `Quick test_x86_lift_system_and_compiler_traps;
   Alcotest.test_case "lift_x86_palignr" `Quick test_x86_lift_palignr;
   Alcotest.test_case "lift_x86_pmaddwd_psadbw" `Quick test_x86_lift_pmaddwd_psadbw;
+  Alcotest.test_case "lift_x86_pack_shufw_pinsr_pextr" `Quick test_x86_lift_pack_shufw_pinsr_pextr;
 ]
 

@@ -105,6 +105,8 @@ type vec_op =
   | Vcmpleu
   | Vmaddwd
   | Vsadbw
+  | Vshuflw
+  | Vshufhw
 type vec_elem = VInt | VF32 | VF64
 
 (** The x86 SHA extensions (SHA-NI).  Every instruction works on the four
@@ -214,6 +216,8 @@ type instr =
   | Vec_aes of { op : aes_op; dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Vec_shuf2 of { dst : int; src1 : int; src2 : int; imm : int64; bits : int; lane_bits : int }
   | Vec_conv of { op : vec_conv_op; dst : int; src : int; bits : int }
+  | Pinsr of { dst : int; src1 : int; src2 : operand; imm : int; width : width }
+  | Pextr of { dst : operand; src : int; imm : int; width : width }
   | Ptest of { src1 : int; src2 : int; bits : int }
   | Read_ssp of { dst : Register.t }
   | Inc_ssp of { width : width }

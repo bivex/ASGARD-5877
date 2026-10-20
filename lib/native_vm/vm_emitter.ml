@@ -413,6 +413,7 @@ let compile_and_package_multi
     | Ir.Vdiv -> 30 | Ir.Vdivu -> 31 | Ir.Vrem -> 32 | Ir.Vremu -> 33
     | Ir.Vcmpne -> 34 | Ir.Vcmple -> 35 | Ir.Vcmpltu -> 36 | Ir.Vcmpleu -> 37
     | Ir.Vmaddwd -> 38 | Ir.Vsadbw -> 39
+    | Ir.Vshuflw -> 40 | Ir.Vshufhw -> 41
   in
   let vector_elem_code = function
     | Ir.VInt -> 0 | Ir.VF32 -> 1 | Ir.VF64 -> 2
@@ -424,12 +425,11 @@ let compile_and_package_multi
     let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 23) in
     Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 29)
   in
-  let vector_imm_val ~imm_val ~bits ~lane_bits ~elem op =
+  let vector_imm_val ~imm_val ~bits ~lane_bits ~elem:_ op =
     let w = Int64.logand imm_val 0xFFL in
     let w = Int64.logor w (Int64.shift_left (Int64.of_int bits) 8) in
     let w = Int64.logor w (Int64.shift_left (Int64.of_int lane_bits) 18) in
-    let w = Int64.logor w (Int64.shift_left (Int64.of_int (vector_op_code op)) 26) in
-    Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 31)
+    Int64.logor w (Int64.shift_left (Int64.of_int ((vector_op_code op) land 0x3F)) 26)
   in
 
   let sha_op_code = function
@@ -901,6 +901,23 @@ let compile_and_package_multi
                       (Int64.shift_left (Int64.of_int bits) 4)
                   in
                   encode_raw_word (get_opcode OP_VEC_CONV) (vector_index dst) (vector_index src) payload
+              | Ir.Pinsr { dst; src1; src2; imm; width } ->
+                  let s2_idx = match src2 with Ir.Reg r -> get_reg_idx r | _ -> 0 in
+                  let w_code = match width with Register.B8 -> 0 | Register.B16 -> 1 | Register.B32 -> 2 | _ -> 3 in
+                  let payload =
+                    Int64.logor (Int64.of_int (s2_idx land 31))
+                      (Int64.logor (Int64.shift_left (Int64.of_int (imm land 15)) 5)
+                        (Int64.shift_left (Int64.of_int w_code) 9))
+                  in
+                  encode_raw_word (get_opcode OP_PINSR) (vector_index dst) (vector_index src1) payload
+              | Ir.Pextr { dst; src; imm; width } ->
+                  let d_idx = match dst with Ir.Reg r -> get_reg_idx r | _ -> 0 in
+                  let w_code = match width with Register.B8 -> 0 | Register.B16 -> 1 | Register.B32 -> 2 | _ -> 3 in
+                  let payload =
+                    Int64.logor (Int64.of_int (imm land 15))
+                      (Int64.shift_left (Int64.of_int w_code) 4)
+                  in
+                  encode_raw_word (get_opcode OP_PEXTR) d_idx (vector_index src) payload
               | Ir.Read_ssp { dst } ->
                   encode_raw_word (get_opcode OP_READ_SSP) (get_reg_idx dst) 0
                     (if Register.get_width dst = Register.B32 then 32L else 64L)

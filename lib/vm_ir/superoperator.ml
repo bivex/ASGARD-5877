@@ -60,6 +60,8 @@ let vtmps_in_instr (i : instr) : Register.t list =
   | Vec_shuf2 _ -> []
   | Vec_conv _ -> []
   | Ptest _ -> []
+  | Pinsr { src2; _ } -> of_op src2
+  | Pextr { dst; _ } -> of_op dst
   | Read_ssp { dst } -> of_reg dst
   | Inc_ssp _ -> []
   | Atomic_mem { dst; addr; src; _ } -> of_reg dst @ of_reg addr @ of_reg src

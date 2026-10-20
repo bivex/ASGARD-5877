@@ -2128,6 +2128,88 @@ func_native_madd_sad:
     if (ctx.vregs[5][2] != 0ULL || ctx.vregs[5][3] != 0ULL) return 11;
 |})
 
+let test_native_x86_pack_shufw_pinsr_pextr () =
+  let pkg =
+    mk_pkg ~seed:20261102 {|
+func_native_pack_shuf_pinsr:
+    packsswb xmm0, xmm1
+    packuswb xmm2, xmm1
+    packssdw xmm3, xmm4
+    packusdw xmm5, xmm4
+    pshuflw xmm6, xmm6, 0x1B
+    pshufhw xmm7, xmm7, 0x1B
+    pinsrb xmm8, eax, 2
+    pextrb r8d, xmm8, 2
+    pinsrw xmm8, ebx, 3
+    pextrw r9d, xmm8, 3
+    pinsrd xmm8, ecx, 2
+    pextrd r10d, xmm8, 2
+    pinsrq xmm8, rdx, 1
+    pextrq r11, xmm8, 1
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_pack_pinsr" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* xmm0, xmm2: words [10, 200, -200, -50, 0, 127, 128, -129] */
+    ctx.vregs[0][0] = 0xFFCEFF3800C8000AULL; ctx.vregs[0][1] = 0xFF7F0080007F0000ULL;
+    ctx.vregs[2][0] = 0xFFCEFF3800C8000AULL; ctx.vregs[2][1] = 0xFF7F0080007F0000ULL;
+
+    /* xmm1: words [1, 2, 3, 4, 5, 6, 7, 8] */
+    ctx.vregs[1][0] = 0x0004000300020001ULL; ctx.vregs[1][1] = 0x0008000700060005ULL;
+
+    /* xmm3, xmm5: dwords [10, 40000, -40000, -50] */
+    ctx.vregs[3][0] = 0x00009C400000000AULL; ctx.vregs[3][1] = 0xFFFFFFCEFFFF63C0ULL;
+    ctx.vregs[5][0] = 0x00009C400000000AULL; ctx.vregs[5][1] = 0xFFFFFFCEFFFF63C0ULL;
+
+    /* xmm4: dwords [1, 2, 3, 4] */
+    ctx.vregs[4][0] = 0x0000000200000001ULL; ctx.vregs[4][1] = 0x0000000400000003ULL;
+
+    /* xmm6, xmm7: words [0, 1, 2, 3, 4, 5, 6, 7] */
+    ctx.vregs[6][0] = 0x0003000200010000ULL; ctx.vregs[6][1] = 0x0007000600050004ULL;
+    ctx.vregs[7][0] = 0x0003000200010000ULL; ctx.vregs[7][1] = 0x0007000600050004ULL;
+
+    /* GPRs */
+    ctx.set_rax(0xAAULL);
+    ctx.set_reg(vanguard_threaded_vm::REG_RBX, 0xBBBBULL);
+    ctx.set_reg(vanguard_threaded_vm::REG_RCX, 0xCCCCCCCCULL);
+    ctx.set_reg(vanguard_threaded_vm::REG_RDX, 0xDDDDDDDDDDDDDDDDULL);
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    /* packsswb: [10, 127, -128, -50, 0, 127, 127, -128, 1, 2, 3, 4, 5, 6, 7, 8] */
+    if (ctx.vregs[0][0] != 0x807F7F00CE807F0AULL) return 2;
+    if (ctx.vregs[0][1] != 0x0807060504030201ULL) return 3;
+
+    /* packuswb: [10, 200, 0, 0, 0, 127, 128, 0, 1, 2, 3, 4, 5, 6, 7, 8] */
+    if (ctx.vregs[2][0] != 0x00807F000000C80AULL) return 4;
+    if (ctx.vregs[2][1] != 0x0807060504030201ULL) return 5;
+
+    /* packssdw: [10, 32767, -32768, -50, 1, 2, 3, 4] */
+    if (ctx.vregs[3][0] != 0xFFCE80007FFF000AULL) return 6;
+    if (ctx.vregs[3][1] != 0x0004000300020001ULL) return 7;
+
+    /* packusdw: [10, 40000, 0, 0, 1, 2, 3, 4] */
+    if (ctx.vregs[5][0] != 0x000000009C40000AULL) return 8;
+    if (ctx.vregs[5][1] != 0x0004000300020001ULL) return 9;
+
+    /* pshuflw / pshufhw */
+    if (ctx.vregs[6][1] != 0x0007000600050004ULL) return 10;
+    if (ctx.vregs[7][0] != 0x0003000200010000ULL) return 11;
+
+    /* pextr */
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R8) != 0xAAULL) return 12;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R9) != 0xBBBBULL) return 13;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R10) != 0xCCCCCCCCULL) return 14;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_R11) != 0xDDDDDDDDDDDDDDDDULL) return 15;
+
+    /* pinsrq lane1 */
+    if (ctx.vregs[8][1] != 0xDDDDDDDDDDDDDDDDULL) return 16;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -2169,4 +2251,5 @@ let tests = [
   Alcotest.test_case "native_x86_system_and_compiler_traps" `Slow test_native_x86_system_and_compiler_traps;
   Alcotest.test_case "native_x86_palignr" `Slow test_native_x86_palignr;
   Alcotest.test_case "native_x86_pmaddwd_psadbw" `Slow test_native_x86_pmaddwd_psadbw;
+  Alcotest.test_case "native_x86_pack_shufw_pinsr_pextr" `Slow test_native_x86_pack_shufw_pinsr_pextr;
 ]
