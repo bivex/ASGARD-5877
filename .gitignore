@@ -55,3 +55,4 @@ examples/nn_metamorph/traces/
 octave-workspace
 /binaries/pipeline_dump_unbal
 /examples/x87_fuzz/artifacts
+/scripts/artifacts
