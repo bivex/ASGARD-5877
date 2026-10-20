@@ -275,6 +275,174 @@ CATEGORIES = {
 }
 
 
+def get_native_audit_patterns(m: str):
+    m_lower = m.lower()
+
+    # Defaults
+    l_pat = rf'("{m_lower}"|\b{m_lower}\b)'
+    ir_pat = rf"\b{m_lower}\b"
+    ev_pat = rf"\b{m_lower}\b"
+    ctx_pat = r"(get_reg|set_reg|gprs)"
+    emit_pat = rf"(op_{m_lower}|h_{m_lower}|\b{m_lower}\b)"
+    hndl_pat = rf"(h_{m_lower}|op_{m_lower}|\b{m_lower}\b)"
+    xform_pat = rf"(op_{m_lower}|h_{m_lower}|\b{m_lower}\b)"
+    t_pat = rf"\b{m_lower}\b"
+
+    if m_lower == "jcc":
+        l_pat = r"(jcc|parse_jcc|jz|jnz|je|jne|jg|jge|jl|jle|ja|jae|jb|jbe)"
+        ir_pat = r"\bjcc\b"
+        ev_pat = r"\bjcc\b"
+        ctx_pat = r"(cf|zf|sf|of|pf)"
+        emit_pat = r"op_jcc"
+        hndl_pat = r"(h_jcc|op_jcc)"
+        xform_pat = r"op_jcc"
+        t_pat = r"(jcc|test_.*_jcc|jnz|jz|jne|je)"
+    elif m_lower == "cmovcc":
+        l_pat = r"(cmovcc|parse_cmovcc|cmov)"
+        ir_pat = r"\bcmov\b"
+        ev_pat = r"\bcmov\b"
+        ctx_pat = r"(get_reg|set_reg|cf|zf|sf|of)"
+        emit_pat = r"op_cmov"
+        hndl_pat = r"(h_cmov|op_cmov)"
+        xform_pat = r"op_cmov"
+        t_pat = r"(cmov|cmovz|cmovne|cmove)"
+    elif m_lower == "setcc":
+        l_pat = r"(setcc|parse_setcc|setz|setne|sete|seta|setb|setg|setl)"
+        ir_pat = r"\bsetcc\b"
+        ev_pat = r"\bsetcc\b"
+        ctx_pat = r"(get_reg|set_reg|cf|zf|sf|of|pf)"
+        emit_pat = r"op_setcc"
+        hndl_pat = r"(h_setcc|op_setcc)"
+        xform_pat = r"op_setcc"
+        t_pat = r"(setcc|setz|setne|sete|seta|setb)"
+    elif m_lower in ("movs", "stos", "cmps", "scas", "lods"):
+        l_pat = rf'("{m_lower}b"|"{m_lower}w"|"{m_lower}d"|"{m_lower}q"|\b{m_lower}\b)'
+        ir_pat = r"(mem|atomic_mem|\balu\b)"
+        ev_pat = r"(mem|\balu\b|eval_mem)"
+        ctx_pat = r"(reg_rdi|reg_rsi|reg_rcx|get_reg)"
+        emit_pat = r"(op_load_|op_store_|op_add_)"
+        hndl_pat = r"(h_load_|h_store_|h_add_)"
+        xform_pat = r"(op_load_|op_store_)"
+        t_pat = rf"({m_lower}b|{m_lower}w|{m_lower}d|{m_lower}q|test_x86_.*string)"
+    elif m_lower in ("movsb", "movsw", "movsd", "movsq",
+                     "stosb", "stosw", "stosd", "stosq",
+                     "cmpsb", "cmpsw", "cmpsd", "cmpsq",
+                     "scasb", "scasw", "scasd", "scasq",
+                     "lodsb", "lodsw", "lodsd", "lodsq"):
+        l_pat = rf'"{m_lower}"'
+        ir_pat = r"(mem|atomic_mem|\balu\b)"
+        ev_pat = r"(mem|\balu\b|eval_mem)"
+        ctx_pat = r"(reg_rdi|reg_rsi|reg_rcx|get_reg)"
+        emit_pat = r"(op_load_|op_store_|op_add_)"
+        hndl_pat = r"(h_load_|h_store_|h_add_)"
+        xform_pat = r"(op_load_|op_store_)"
+        base_str = m_lower[:-1]
+        t_pat = rf"({m_lower}|test_x86_.*string|test_x86_rep.*{base_str})"
+    elif m_lower in ("rep", "repe", "repne", "repz", "repnz"):
+        l_pat = rf'("{m_lower}"|"{m_lower} "|\b{m_lower}\b)'
+        ir_pat = r"(jcc|jmp|alu)"
+        ev_pat = r"(jcc|jmp|eval)"
+        ctx_pat = r"(reg_rcx|get_reg|set_reg|zf)"
+        emit_pat = r"(op_jcc|op_jmp|op_sub)"
+        hndl_pat = r"(h_jcc|h_jmp|h_sub)"
+        xform_pat = r"(op_jcc|op_jmp)"
+        t_pat = rf"({m_lower}|test_x86_rep)"
+    elif m_lower in ("cbw", "cbtw", "cwd", "cwde", "cwtl", "cdq", "cltd", "cwtd", "cqo", "cqto", "cdqe", "cltq"):
+        l_pat = rf'("{m_lower}"|\b{m_lower}\b)'
+        ir_pat = r"(alu|shl|sar|mov)"
+        ev_pat = r"(alu|shl|sar|mov)"
+        ctx_pat = r"(reg_rax|reg_rdx|get_reg|set_reg)"
+        emit_pat = r"(op_sar_|op_shl_|op_mov_)"
+        hndl_pat = r"(h_sar_|h_shl_|h_mov_)"
+        xform_pat = r"(op_sar_|op_shl_|op_mov_)"
+        t_pat = rf"({m_lower}|sign_extension)"
+    elif m_lower in ("movzx", "movzxb", "movzxw", "movzbq", "movzwq"):
+        l_pat = r'"movzx"|"movzxb"|"movzxw"|"movzbq"|"movzwq"'
+        ir_pat = r"(mov|and)"
+        ev_pat = r"(mov|and)"
+        ctx_pat = r"(get_reg|set_reg)"
+        emit_pat = r"(op_mov_|op_and_|op_load_)"
+        hndl_pat = r"(h_mov_|h_and_|h_load_8|h_load_16)"
+        xform_pat = r"(op_mov_|op_and_|op_load_)"
+        t_pat = r"(movzx|zero_extend)"
+    elif m_lower in ("movsx", "movsxd", "movsxb", "movsxw", "movsbq", "movswq", "movslq"):
+        l_pat = r'"movsx"|"movsxd"|"movsxb"|"movsxw"|"movsbq"|"movswq"|"movslq"'
+        ir_pat = r"(mov|shl|sar)"
+        ev_pat = r"(mov|shl|sar)"
+        ctx_pat = r"(get_reg|set_reg)"
+        emit_pat = r"(op_mov_|op_shl_|op_sar_|op_load_s)"
+        hndl_pat = r"(h_mov_|h_shl_|h_sar_|h_load_s8|h_load_s16|h_load_s32)"
+        xform_pat = r"(op_mov_|op_shl_|op_load_s)"
+        t_pat = r"(movsx|sign_extension)"
+    elif m_lower in ("bt", "btc", "btr", "bts"):
+        l_pat = rf'"{m_lower}"'
+        ir_pat = r"(alu|cmp|not)"
+        ev_pat = r"(alu|cmp)"
+        ctx_pat = r"(cf|get_reg|set_reg)"
+        emit_pat = r"(op_and|op_shr|op_shl|op_cmp)"
+        hndl_pat = r"(h_and|h_or|h_xor|h_shr|h_shl|h_cmp)"
+        xform_pat = r"(op_and|op_or|op_xor|op_cmp)"
+        t_pat = rf"({m_lower}|bit_test)"
+    elif m_lower in ("xchg", "xadd", "cmpxchg", "cmpxchg8b", "cmpxchg16b"):
+        l_pat = rf'"{m_lower}"'
+        ir_pat = rf"(atomic_mem|xchg|cmov|\b{m_lower}\b)"
+        ev_pat = rf"(atomic_mem|xchg|cmov|eval_atomic)"
+        ctx_pat = r"(reg_rax|get_reg|set_reg)"
+        emit_pat = r"(op_atomic_cas|op_atomic_swp|op_atomic_add|op_cmov)"
+        hndl_pat = r"(atomic_cas|atomic_swp|atomic_add|h_cmov|atomic_mem)"
+        xform_pat = r"(op_atomic_cas|op_atomic_swp|op_atomic_add)"
+        t_pat = rf"({m_lower}|test_x86_cmpxchg)"
+    elif m_lower in ("shld", "shrd"):
+        l_pat = rf'"{m_lower}"'
+        ir_pat = r"(alu|shl|shr|or)"
+        ev_pat = r"(alu|shl|shr|or)"
+        ctx_pat = r"(get_reg|set_reg)"
+        emit_pat = r"(op_shl_|op_shr_|op_or_)"
+        hndl_pat = r"(h_shl_|h_shr_|h_or_)"
+        xform_pat = r"(op_shl_|op_shr_|op_or_)"
+        t_pat = rf"({m_lower}|test_x86_shld_shrd)"
+    elif m_lower in ("rcl", "rcr"):
+        l_pat = rf'"{m_lower}"'
+        ir_pat = r"(get_flags|set_flags|alu)"
+        ev_pat = r"(get_flags|set_flags|alu)"
+        ctx_pat = r"(cf|get_reg|set_reg)"
+        emit_pat = r"(op_get_flags|op_set_flags|op_rol|op_ror)"
+        hndl_pat = r"(h_get_flags|h_set_flags|h_alu|h_rol|h_ror)"
+        xform_pat = r"(op_get_flags|op_set_flags)"
+        t_pat = rf"({m_lower}|test_x86_rcl_rcr_cmc)"
+    elif m_lower == "cpuid":
+        l_pat = r'"cpuid"|\bcpuid\b'
+        ir_pat = r"cpuid"
+        ev_pat = r"cpuid"
+        ctx_pat = r"(reg_rax|reg_rbx|reg_rcx|reg_rdx)"
+        emit_pat = r"op_cpuid"
+        hndl_pat = r"h_cpuid"
+        xform_pat = r"op_cpuid"
+        t_pat = r"(cpuid|test_native_x86_cpuid)"
+    elif m_lower.startswith("f") and (
+        m_lower in (
+            "fld", "fst", "fstp", "fild", "fist", "fistp",
+            "fadd", "faddp", "fsub", "fsubp", "fsubr", "fsubrp",
+            "fmul", "fmulp", "fdiv", "fdivp", "fdivr", "fdivrp",
+            "fcom", "fcomp", "fcompp", "fcomi", "fcomip",
+            "fchs", "fabs", "fsqrt",
+            "fld1", "fldz", "fldpi", "fldl2e", "fldl2t", "fldlg2", "fldln2",
+            "fsin", "fcos", "fsincos", "fptan", "fpatan", "fyl2x", "fyl2xp1", "f2xm1",
+            "fstsw", "fnstsw",
+        )
+    ):
+        l_pat = rf'"{m_lower}"'
+        ir_pat = r"(fpu|fp_)"
+        ev_pat = r"(fpu|fp_)"
+        ctx_pat = r"(fpu_stack|fpu_top|fpu_status|get_st|set_st|fpu_push|fpu_pop|get_fsw)"
+        emit_pat = r"(op_fpu_|fppush_|fpstore_|fpbinop|fpcompare|fpunary|fpconst|fptrans|fpstatus)"
+        hndl_pat = r"(h_fpu_|fpu_push|fpu_pop|fpu_binop|fpu_compare|fpu_trans)"
+        xform_pat = r"(op_fpu_|h_fpu_)"
+        t_pat = r"(native_x86_fpu|test_x86_lifter|lift_and_eval_fpu)"
+
+    return l_pat, ir_pat, ev_pat, ctx_pat, emit_pat, hndl_pat, xform_pat, t_pat
+
+
 def audit_instructions_in_codebase(mnemonics: list[str]):
     # Flatten any category names or comma-separated inputs
     target_mnems = []
@@ -313,13 +481,15 @@ def audit_instructions_in_codebase(mnemonics: list[str]):
     ir_src = read_file_safe("lib/vm_ir/ir.ml").lower()
     eval_src = read_file_safe("lib/vm_ir/vm_eval.ml").lower()
 
-    native_src = (
-        read_file_safe("lib/native_vm/vm_alu_handlers.ml") + "\n" +
-        read_file_safe("lib/native_vm/vm_control_handlers.ml") + "\n" +
+    # C++ Native VM (vanguard_threaded_vm) files
+    ctx_src = read_file_safe("lib/native_vm/vm_context_emitter.ml").lower()
+    emit_src = read_file_safe("lib/native_vm/vm_emitter.ml").lower()
+    hndl_src = (
         read_file_safe("lib/native_vm/vm_mem_handlers.ml") + "\n" +
-        read_file_safe("lib/native_vm/vm_transform.ml") + "\n" +
-        read_file_safe("lib/native_vm/vm_emitter.ml")
+        read_file_safe("lib/native_vm/vm_alu_handlers.ml") + "\n" +
+        read_file_safe("lib/native_vm/vm_control_handlers.ml")
     ).lower()
+    xform_src = read_file_safe("lib/native_vm/vm_transform.ml").lower()
 
     tests_src = ""
     for root, _, files in os.walk("test"):
@@ -328,157 +498,24 @@ def audit_instructions_in_codebase(mnemonics: list[str]):
                 tests_src += read_file_safe(os.path.join(root, file)) + "\n"
     tests_src = tests_src.lower()
 
-    print("\n" + "=" * 78)
-    print(f" {'ASGARD-5877 Instruction Implementation Audit':^76} ")
-    print("=" * 78)
-    fmt = "%-12s | %-10s | %-10s | %-10s | %-11s | %-10s"
-    print(fmt % ("Mnemonic", "Lifter", "VM IR", "VM Eval", "Native VM", "Tests"))
-    print("-" * 78)
+    print("\n" + "=" * 94)
+    print(f" {'ASGARD-5877 Instruction Implementation Audit':^92} ")
+    print("=" * 94)
+    fmt = "%-10s | %-6s | %-5s | %-7s | %-8s | %-8s | %-8s | %-7s | %-6s"
+    print(fmt % ("Mnemonic", "Lifter", "VM IR", "VM Eval", "Context", "Emitter", "Handlers", "Xform", "Tests"))
+    print("-" * 94)
 
     summary = []
     for m in unique_mnems:
-        m_lower = m.lower()
-
-        # Lifter pattern
-        if m_lower == "jcc":
-            l_pat = r"(jcc|parse_jcc|jz|jnz|je|jne|jg|jge|jl|jle|ja|jae|jb|jbe)"
-            ir_pat = r"\bjcc\b"
-            ev_pat = r"\bjcc\b"
-            nat_pat = r"(h_jcc|op_jcc)"
-            t_pat = r"(jcc|test_.*_jcc|jnz|jz|jne|je)"
-        elif m_lower == "cmovcc":
-            l_pat = r"(cmovcc|parse_cmovcc|cmov)"
-            ir_pat = r"\bcmov\b"
-            ev_pat = r"\bcmov\b"
-            nat_pat = r"(h_cmov|op_cmov)"
-            t_pat = r"(cmov|cmovz|cmovne|cmove)"
-        elif m_lower == "setcc":
-            l_pat = r"(setcc|parse_setcc|setz|setne|sete|seta|setb|setg|setl)"
-            ir_pat = r"\bsetcc\b"
-            ev_pat = r"\bsetcc\b"
-            nat_pat = r"(h_setcc|op_setcc)"
-            t_pat = r"(setcc|setz|setne|sete|seta|setb)"
-        elif m_lower in ("movs", "stos", "cmps", "scas", "lods"):
-            l_pat = rf'("{m_lower}b"|"{m_lower}w"|"{m_lower}d"|"{m_lower}q"|\b{m_lower}\b)'
-            ir_pat = r"(mem|atomic_mem|\balu\b)"
-            ev_pat = r"(mem|\balu\b|eval_mem)"
-            nat_pat = r"(load_|store_|h_add)"
-            t_pat = rf"({m_lower}b|{m_lower}w|{m_lower}d|{m_lower}q|test_x86_.*string)"
-        elif m_lower in ("movsb", "movsw", "movsd", "movsq",
-                         "stosb", "stosw", "stosd", "stosq",
-                         "cmpsb", "cmpsw", "cmpsd", "cmpsq",
-                         "scasb", "scasw", "scasd", "scasq",
-                         "lodsb", "lodsw", "lodsd", "lodsq"):
-            l_pat = rf'"{m_lower}"'
-            ir_pat = r"(mem|atomic_mem|\balu\b)"
-            ev_pat = r"(mem|\balu\b|eval_mem)"
-            nat_pat = r"(load_|store_|h_add)"
-            base_str = m_lower[:-1]
-            t_pat = rf"({m_lower}|test_x86_.*string|test_x86_rep.*{base_str})"
-        elif m_lower in ("rep", "repe", "repne", "repz", "repnz"):
-            l_pat = rf'("{m_lower}"|"{m_lower} "|\b{m_lower}\b)'
-            ir_pat = r"(jcc|jmp|alu)"
-            ev_pat = r"(jcc|jmp|eval)"
-            nat_pat = r"(h_jcc|h_jmp|h_sub)"
-            t_pat = rf"({m_lower}|test_x86_rep)"
-        elif m_lower in ("cbw", "cbtw", "cwd"):
-            l_pat = r'("cbw"|"cbtw"|"cwd")'
-            ir_pat = r"(alu|shl|sar|mov)"
-            ev_pat = r"(alu|shl|sar|mov)"
-            nat_pat = r"(h_shl|h_sar|h_and|h_or|h_mov)"
-            t_pat = r"(cbw|cbtw|cwd|sign_extension)"
-        elif m_lower in ("cwde", "cwtl"):
-            l_pat = r'("cwde"|"cwtl")'
-            ir_pat = r"(alu|shl|sar)"
-            ev_pat = r"(alu|shl|sar)"
-            nat_pat = r"(h_shl|h_sar|h_and)"
-            t_pat = r"(cwde|cwtl|sign_extension)"
-        elif m_lower in ("cdq", "cltd", "cwtd"):
-            l_pat = r'("cdq"|"cltd"|"cwtd")'
-            ir_pat = r"(alu|shl|sar)"
-            ev_pat = r"(alu|shl|sar)"
-            nat_pat = r"(h_shl|h_sar)"
-            t_pat = r"(cdq|cltd|cwtd|sign_extension)"
-        elif m_lower in ("cqo", "cqto"):
-            l_pat = r'("cqo"|"cqto")'
-            ir_pat = r"(alu|sar)"
-            ev_pat = r"(alu|sar)"
-            nat_pat = r"(h_sar)"
-            t_pat = r"(cqo|cqto|sign_extension)"
-        elif m_lower in ("cdqe", "cltq"):
-            l_pat = r'("cdqe"|"cltq")'
-            ir_pat = r"(alu|shl|sar)"
-            ev_pat = r"(alu|shl|sar)"
-            nat_pat = r"(h_shl|h_sar)"
-            t_pat = r"(cdqe|cltq|sign_extension)"
-        elif m_lower in ("movzx", "movzxb", "movzxw", "movzbq", "movzwq"):
-            # MOVZX has no dedicated micro-IR node: the lifter lowers it to a
-            # masked move (Ir.Mov + Ir.Alu And) over an r/m8 or r/m16 source.
-            l_pat = r'"movzx"|"movzxb"|"movzxw"|"movzbq"|"movzwq"'
-            ir_pat = r"(mov|and)"
-            ev_pat = r"(mov|and)"
-            nat_pat = r"(h_mov|h_and|h_load_8|h_load_16)"
-            t_pat = r"(movzx|zero_extend)"
-        elif m_lower in ("movsx", "movsxd", "movsxb", "movsxw", "movsbq", "movswq", "movslq"):
-            # MOVSX/MOVSXD are lowered to a move plus a sign-extension pair
-            # (Ir.Alu Shl followed by Ir.Alu Sar).
-            l_pat = r'"movsx"|"movsxd"|"movsxb"|"movsxw"|"movsbq"|"movswq"|"movslq"'
-            ir_pat = r"(mov|shl|sar)"
-            ev_pat = r"(mov|shl|sar)"
-            nat_pat = r"(h_mov|h_shl|h_sar|h_load_s8|h_load_s16|h_load_s32)"
-            t_pat = r"(movsx|sign_extension)"
-        elif m_lower in ("bt", "btc", "btr", "bts"):
-            l_pat = rf'"{m_lower}"'
-            ir_pat = r"(alu|cmp|not)"
-            ev_pat = r"(alu|cmp)"
-            nat_pat = r"(h_and|h_or|h_xor|h_shr|h_shl|h_cmp)"
-            t_pat = rf"({m_lower}|bit_test)"
-        elif m_lower in ("xchg", "xadd", "cmpxchg", "cmpxchg8b", "cmpxchg16b"):
-            l_pat = rf'"{m_lower}"'
-            ir_pat = rf"(atomic_mem|xchg|cmov|\b{m_lower}\b)"
-            ev_pat = rf"(atomic_mem|xchg|cmov|eval_atomic)"
-            nat_pat = r"(atomic_cas|atomic_swp|atomic_add|h_cmov|atomic_mem)"
-            t_pat = rf"({m_lower}|test_x86_cmpxchg)"
-        elif m_lower in ("shld", "shrd"):
-            l_pat = rf'"{m_lower}"'
-            ir_pat = r"(alu|shl|shr|or)"
-            ev_pat = r"(alu|shl|shr|or)"
-            nat_pat = r"(h_shl|h_shr|h_or)"
-            t_pat = rf"({m_lower}|test_x86_shld_shrd)"
-        elif m_lower in ("rcl", "rcr"):
-            l_pat = rf'"{m_lower}"'
-            ir_pat = r"(get_flags|set_flags|alu)"
-            ev_pat = r"(get_flags|set_flags|alu)"
-            nat_pat = r"(h_get_flags|h_set_flags|h_alu)"
-            t_pat = rf"({m_lower}|test_x86_rcl_rcr_cmc)"
-        elif m_lower.startswith("f") and (
-            m_lower in (
-                "fld", "fst", "fstp", "fild", "fist", "fistp",
-                "fadd", "faddp", "fsub", "fsubp", "fsubr", "fsubrp",
-                "fmul", "fmulp", "fdiv", "fdivp", "fdivr", "fdivrp",
-                "fcom", "fcomp", "fcompp", "fcomi", "fcomip",
-                "fchs", "fabs", "fsqrt",
-                "fld1", "fldz", "fldpi", "fldl2e", "fldl2t", "fldlg2", "fldln2",
-                "fsin", "fcos", "fsincos", "fptan", "fpatan", "fyl2x", "fyl2xp1", "f2xm1",
-                "fstsw", "fnstsw",
-            )
-        ):
-            l_pat = rf'"{m_lower}"'
-            ir_pat = r"(fpu|fp_)"
-            ev_pat = r"(fpu|fp_)"
-            nat_pat = r"(h_fpu_|fpu_stack|op_fpu_)"
-            t_pat = r"(native_x86_fpu|test_x86_lifter|lift_and_eval_fpu)"
-        else:
-            l_pat = rf'("{m_lower}"|\b{m_lower}\b)'
-            ir_pat = rf"\b{m_lower}\b"
-            ev_pat = rf"\b{m_lower}\b"
-            nat_pat = rf"(h_{m_lower}|op_{m_lower}|\b{m_lower}\b)"
-            t_pat = rf"\b{m_lower}\b"
+        l_pat, ir_pat, ev_pat, ctx_pat, emit_pat, hndl_pat, xform_pat, t_pat = get_native_audit_patterns(m)
 
         has_lifter = bool(re.search(l_pat, lifter_src))
         has_ir = bool(re.search(ir_pat, ir_src))
         has_eval = bool(re.search(ev_pat, eval_src))
-        has_native = bool(re.search(nat_pat, native_src))
+        has_ctx = bool(re.search(ctx_pat, ctx_src))
+        has_emit = bool(re.search(emit_pat, emit_src))
+        has_hndl = bool(re.search(hndl_pat, hndl_src))
+        has_xform = bool(re.search(xform_pat, xform_src))
         has_tests = bool(re.search(t_pat, tests_src))
 
         status_str = lambda b: "[OK]" if b else "[MISSING]"
@@ -487,19 +524,84 @@ def audit_instructions_in_codebase(mnemonics: list[str]):
             status_str(has_lifter),
             status_str(has_ir),
             status_str(has_eval),
-            status_str(has_native),
+            status_str(has_ctx),
+            status_str(has_emit),
+            status_str(has_hndl),
+            status_str(has_xform),
             status_str(has_tests),
         ))
-        summary.append((m.upper(), has_lifter, has_ir, has_eval, has_native, has_tests))
+        summary.append((m.upper(), has_lifter, has_ir, has_eval, has_ctx, has_emit, has_hndl, has_xform, has_tests))
 
-    print("-" * 78)
+    print("-" * 94)
     all_ok = all(all(row[1:]) for row in summary)
     if all_ok:
-        print(f"[+] All {len(summary)} audited instructions are fully implemented and verified across all layers!")
+        print(f"[+] All {len(summary)} audited instructions are fully implemented and verified across all layers (including C++ Native VM bindings & runtime handlers)!")
     else:
         missing_count = sum(1 for row in summary if not all(row[1:]))
         print(f"[-] {missing_count} instruction(s) have missing layers or coverage.")
-    print("=" * 78 + "\n")
+    print("=" * 94 + "\n")
+
+
+def search_native_mnemonic(mnemonic: str):
+    target_mnems = []
+    cleaned = mnemonic.strip().strip(",")
+    if cleaned.lower() in [k.lower() for k in CATEGORIES]:
+        cat_key = next(k for k in CATEGORIES if k.lower() == cleaned.lower())
+        target_mnems.extend(CATEGORIES[cat_key])
+    elif cleaned.lower() in ("all", "all-categories"):
+        for v in CATEGORIES.values():
+            target_mnems.extend(v)
+    else:
+        for sub_m in cleaned.split(","):
+            sub_m = sub_m.strip()
+            if sub_m:
+                target_mnems.append(sub_m)
+
+    for m in target_mnems:
+        m_upper = m.upper()
+        l_pat, ir_pat, ev_pat, ctx_pat, emit_pat, hndl_pat, xform_pat, t_pat = get_native_audit_patterns(m_upper)
+
+        target_files = [
+            ("lib/native_vm/vm_context_emitter.ml", "C++ VMContext Bindings", ctx_pat),
+            ("lib/native_vm/vm_emitter.ml", "Bytecode Emitter", emit_pat),
+            ("lib/native_vm/vm_mem_handlers.ml", "C++ Runtime Handlers (Memory / FPU / SIMD)", hndl_pat),
+            ("lib/native_vm/vm_transform.ml", "Opcode & Handler Mapping", xform_pat),
+        ]
+
+        print("\n" + "=" * 90)
+        print(f" C++ Native VM (vanguard_threaded_vm) Search: {m_upper} ")
+        print("=" * 90)
+
+        all_matched = True
+        for file_path, desc, pattern in target_files:
+            print(f"\n[*] {file_path} ({desc}):")
+            if not os.path.exists(file_path):
+                print(f"    [-] File not found: {file_path}")
+                all_matched = False
+                continue
+
+            matched_lines = []
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                for idx, line in enumerate(f, 1):
+                    if re.search(pattern, line, re.IGNORECASE):
+                        matched_lines.append((idx, line.rstrip()))
+
+            if matched_lines:
+                for line_no, content in matched_lines[:6]:
+                    print(f"    L{line_no:<4} | {content}")
+                if len(matched_lines) > 6:
+                    print(f"    ... ({len(matched_lines) - 6} more matching line(s))")
+                print(f"    [+] Match Status: [OK] ({len(matched_lines)} match(es))")
+            else:
+                print(f"    [-] Match Status: [MISSING] (searched pattern: {pattern})")
+                all_matched = False
+
+        print("\n" + "-" * 90)
+        if all_matched:
+            print(f"[+] '{m_upper}' is fully bound in C++ Native VM across all 4 core files!")
+        else:
+            print(f"[-] '{m_upper}' has missing Native VM layers or patterns.")
+        print("=" * 90 + "\n")
 
 
 def audit_instruction_in_codebase(mnemonic: str):
@@ -528,6 +630,13 @@ def main():
     # audit
     audit_parser = subparsers.add_parser("audit", help="Audit implementation status in ASGARD-5877")
     audit_parser.add_argument("mnemonics", nargs="+", help="Instruction mnemonic(s) or category (e.g. ADD SUB, 'all')")
+
+    # search-native
+    search_native_parser = subparsers.add_parser(
+        "search-native",
+        help="Search C++ Native VM (vanguard_threaded_vm) bindings and runtime handlers in vm_context_emitter, vm_emitter, vm_mem_handlers, vm_transform",
+    )
+    search_native_parser.add_argument("mnemonic", help="Instruction mnemonic or category (e.g. FLD, FADD, CPUID, 'FPU (x87)')")
 
     args = parser.parse_args()
 
@@ -570,6 +679,8 @@ def main():
 
     elif args.cmd == "audit":
         audit_instructions_in_codebase(args.mnemonics)
+    elif args.cmd == "search-native":
+        search_native_mnemonic(args.mnemonic)
     else:
         parser.print_help()
 
