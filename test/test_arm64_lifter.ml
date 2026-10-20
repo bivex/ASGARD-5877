@@ -531,6 +531,97 @@ let test_arm64_lift_lse_atomics () =
       | Ok snap -> check int64 "LSE final mem = 131" 131L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_swp () =
+  let asm = {|
+    mov x1, #0x5000
+    mov x2, #42
+    str x2, [x1]
+    mov x3, #100
+    swp x3, x0, [x1]
+    ldr x4, [x1]
+    add x0, x0, x4
+    add x0, x0, x3
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_swp" } asm with
+  | Error err -> fail ("Failed to lift ARM64 swp: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ARM64 swp: dst 42 + mem 100 + src 100 = 242" 242L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_swpa () =
+  let asm = {|
+    mov x1, #0x5010
+    mov x2, #77
+    str x2, [x1]
+    mov x3, #88
+    swpa x3, x0, [x1]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_swpa" } asm with
+  | Error err -> fail ("Failed to lift ARM64 swpa: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ARM64 swpa loads 77" 77L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_swpal () =
+  let asm = {|
+    mov x1, #0x5020
+    mov x2, #111
+    str x2, [x1]
+    mov x3, #222
+    swpal x3, x0, [x1]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_swpal" } asm with
+  | Error err -> fail ("Failed to lift ARM64 swpal: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ARM64 swpal loads 111" 111L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_swpl () =
+  let asm = {|
+    mov x1, #0x5030
+    mov x2, #333
+    str x2, [x1]
+    mov x3, #444
+    swpl x3, x0, [x1]
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_swpl" } asm with
+  | Error err -> fail ("Failed to lift ARM64 swpl: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "ARM64 swpl loads 333" 333L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_swp_32bit_and_zero_reg () =
+  let asm = {|
+    mov x1, #0x5040
+    mov w2, #0x55
+    str w2, [x1]
+    mov w3, #0xAA
+    swp w3, w0, [x1]
+    ldr w4, [x1]
+    add x0, x0, x4
+    swp wzr, w5, [x1]
+    add x0, x0, x5
+    swp w3, wzr, [x1]
+    ldr w6, [x1]
+    add x0, x0, x6
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_swp_32" } asm with
+  | Error err -> fail ("Failed to lift ARM64 swp 32-bit: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ARM64 swp 32-bit & zero reg = 595" 595L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let test_arm64_lift_exclusive () =
   let asm = {|
     mov x1, #0x4000
@@ -1013,6 +1104,11 @@ let tests = [
   ("ARM64 Lift Ccmp/Ccmn", `Quick, test_arm64_lift_ccmp_ccmn);
   ("ARM64 Lift Atomics (ldar/stlr)", `Quick, test_arm64_lift_atomics);
   ("ARM64 Lift LSE (ldset/ldclr/ldeor)", `Quick, test_arm64_lift_lse_atomics);
+  ("ARM64 Lift SWP", `Quick, test_arm64_lift_swp);
+  ("ARM64 Lift SWPA", `Quick, test_arm64_lift_swpa);
+  ("ARM64 Lift SWPAL", `Quick, test_arm64_lift_swpal);
+  ("ARM64 Lift SWPL", `Quick, test_arm64_lift_swpl);
+  ("ARM64 Lift SWP (32-bit & zero reg)", `Quick, test_arm64_lift_swp_32bit_and_zero_reg);
   ("ARM64 Lift Exclusive (ldxr/stxr)", `Quick, test_arm64_lift_exclusive);
   ("ARM64 Lift Non-Temporal Pair (ldnp/stnp)", `Quick, test_arm64_lift_ldnp_stnp);
   ("ARM64 Lift Unprivileged Mem (ldtr/sttr)", `Quick, test_arm64_lift_unprivileged_ldtr_sttr);

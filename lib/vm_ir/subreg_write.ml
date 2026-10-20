@@ -16,6 +16,7 @@ let written_gprs : instr -> Register.t list = function
   | Setcc _ -> []
   | Load_symbol { dst; _ } -> [ dst ]
   | Get_flags d -> [ d ]
+  | Atomic_mem { dst; _ } -> [ dst ]
   | _ -> []
 
 let same_reg a b = Register.to_string a = Register.to_string b
@@ -69,6 +70,7 @@ let instr_regs i =
   | Load_symbol { dst; _ } -> [ dst ]
   | Get_flags d -> [ d ]
   | Set_flags src -> operand_regs src
+  | Atomic_mem { dst; addr; src; _ } -> [ dst; addr; src ]
   | _ -> []
 
 let pick_scratch used =

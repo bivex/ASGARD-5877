@@ -81,24 +81,32 @@ let set_vector_lane state idx lane value =
   if lane >= 0 && lane < Array.length lanes then lanes.(lane) <- value;
   Hashtbl.replace state.vectors key lanes
 
+let is_zero_reg = function
+  | Register.Vreg (Register.VZERO, _) -> true
+  | _ -> false
+
 let get_reg state reg =
-  match reg with
-  | Fpr (i, _) -> get_vector_lane state i 0
-  | _ ->
-      let w = Register.get_width reg in
-      let r64 = Register.with_width reg B64 in
-      let raw =
-        if is_sp_reg reg then state.vsp
-        else Option.value ~default:0L (Hashtbl.find_opt state.vregs r64)
-      in
-      truncate_val w raw
+  if is_zero_reg reg then 0L
+  else
+    match reg with
+    | Fpr (i, _) -> get_vector_lane state i 0
+    | _ ->
+        let w = Register.get_width reg in
+        let r64 = Register.with_width reg B64 in
+        let raw =
+          if is_sp_reg reg then state.vsp
+          else Option.value ~default:0L (Hashtbl.find_opt state.vregs r64)
+        in
+        truncate_val w raw
 
 let set_reg state reg value =
-  match reg with
-  | Fpr (i, _) -> set_vector_lane state i 0 value
-  | _ ->
-      let w = Register.get_width reg in
-      let r64 = Register.with_width reg B64 in
+  if is_zero_reg reg then ()
+  else
+    match reg with
+    | Fpr (i, _) -> set_vector_lane state i 0 value
+    | _ ->
+        let w = Register.get_width reg in
+        let r64 = Register.with_width reg B64 in
       let cur =
         if is_sp_reg reg then state.vsp
         else Option.value ~default:0L (Hashtbl.find_opt state.vregs r64)
@@ -997,15 +1005,17 @@ let step state = function
              state.flags <- CC_OP_RAW 0x0L
            )
        | AtAdd ->
-           let old = read_mem state a B64 in
+           let width = if is_zero_reg dst then Register.get_width src else Register.get_width dst in
+           let old = read_mem state a width in
            let v = get_reg state src in
-           write_mem state a B64 (Int64.add old v);
-           set_reg state src old
+           write_mem state a width (Int64.add old v);
+           set_reg state dst old
        | AtSwp ->
-           let old = read_mem state a B64 in
+           let width = if is_zero_reg dst then Register.get_width src else Register.get_width dst in
+           let old = read_mem state a width in
            let v = get_reg state src in
-           write_mem state a B64 v;
-           set_reg state src old);
+           write_mem state a width v;
+           set_reg state dst old);
       Ok None
   | Fence _ ->
       Ok None

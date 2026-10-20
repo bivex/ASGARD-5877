@@ -218,11 +218,12 @@ let parse_line raw =
         scan 0 0 false []
       in
 
+      let args_str_low = String.lowercase_ascii args_str in
       let def_width =
         if String.ends_with ~suffix:"b" mnemonic || mnemonic = "ldrsb" || mnemonic = "ldursb" then Register.B8
         else if String.ends_with ~suffix:"h" mnemonic || mnemonic = "ldrsh" || mnemonic = "ldursh" then Register.B16
         else if mnemonic = "ldrsw" || mnemonic = "ldursw" || mnemonic = "ldtrsw" then Register.B32
-        else if String.starts_with ~prefix:"w" args_str then Register.B32
+        else if String.starts_with ~prefix:"w" args_str_low then Register.B32
         else Register.B64
       in
 

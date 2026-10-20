@@ -812,9 +812,33 @@ let compile_and_package_multi
                   | AtCas ->
                       encode_raw_word (get_opcode OP_ATOMIC_CAS) (get_reg_idx addr) (get_reg_idx src) imm
                   | AtAdd ->
-                      encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx src) imm
+                      if get_reg_idx dst = get_reg_idx src then
+                        encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx src) imm
+                      else begin
+                        let tmp =
+                          if get_reg_idx addr = get_reg_idx Register.vtmp0 || get_reg_idx src = get_reg_idx Register.vtmp0 then
+                            Register.vtmp1
+                          else Register.vtmp0
+                        in
+                        encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx tmp) (get_reg_idx src) 0L;
+                        encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx tmp) imm;
+                        if get_reg_idx dst <> get_reg_idx Register.vzero then
+                          encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx dst) (get_reg_idx tmp) 0L
+                      end
                   | AtSwp ->
-                      encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx src) imm)
+                      if get_reg_idx dst = get_reg_idx src then
+                        encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx src) imm
+                      else begin
+                        let tmp =
+                          if get_reg_idx addr = get_reg_idx Register.vtmp0 || get_reg_idx src = get_reg_idx Register.vtmp0 then
+                            Register.vtmp1
+                          else Register.vtmp0
+                        in
+                        encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx tmp) (get_reg_idx src) 0L;
+                        encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx tmp) imm;
+                        if get_reg_idx dst <> get_reg_idx Register.vzero then
+                          encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx dst) (get_reg_idx tmp) 0L
+                      end)
               | Ir.Fence _ ->
                   encode_raw_word (get_opcode OP_FENCE) 0 0 0L
               | Ir.Get_flags d ->

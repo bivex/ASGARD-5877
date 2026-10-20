@@ -78,6 +78,7 @@ val vtmp0 : t
 val vtmp1 : t
 val vtmp2 : t
 val vtmp3 : t
+val vzero : t
 val vx18 : t
 val vx19 : t
 val vx20 : t
