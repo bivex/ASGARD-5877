@@ -386,6 +386,44 @@ movzx_reg:
           Alcotest.(check int64) "movzx eax, cl zeroes upper bits" 0xFBL (get_reg state Register.rax);
           Alcotest.(check int64) "movzx rdx, cx zeroes upper bits" 0xDEFBL (get_reg state Register.rdx)
 
+(* MOVZX covers five encodings: 0F B6 (r/m8) and 0F B7 (r/m16) with a
+   16/32/64-bit destination.  Every destination width must end up with the
+   source zero-extended and, for 32-bit destinations, with the upper 32 bits
+   of the parent register cleared. *)
+let test_lift_and_eval_movzx_forms () =
+  let asm = {|
+movzx_forms:
+    movzx r8, cl
+    movzx r9d, dl
+    movzx r10, cx
+    movzx r11d, dx
+    movzx r12, byte ptr [rdi]
+    movzx r13d, byte ptr [rdi]
+    movzx r14, word ptr [rdi + 2]
+    movzx r15d, word ptr [rdi + 2]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rdi 0x1000L;
+      set_reg state Register.rcx 0x1234L;
+      set_reg state Register.rdx 0xA5L;
+      write_mem state 0x1000L Register.B8 0x5AL;
+      write_mem state 0x1002L Register.B16 0xBEEFL;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "movzx r64, r/m8 (reg)" 0x34L (get_reg state Register.r8);
+          Alcotest.(check int64) "movzx r32, r/m8 (reg)" 0xA5L (get_reg state Register.r9);
+          Alcotest.(check int64) "movzx r64, r/m16 (reg)" 0x1234L (get_reg state Register.r10);
+          Alcotest.(check int64) "movzx r32, r/m16 (reg)" 0xA5L (get_reg state Register.r11);
+          Alcotest.(check int64) "movzx r64, r/m8 (mem)" 0x5AL (get_reg state Register.r12);
+          Alcotest.(check int64) "movzx r32, r/m8 (mem)" 0x5AL (get_reg state Register.r13);
+          Alcotest.(check int64) "movzx r64, r/m16 (mem)" 0xBEEFL (get_reg state Register.r14);
+          Alcotest.(check int64) "movzx r32, r/m16 (mem)" 0xBEEFL (get_reg state Register.r15)
+
 let test_lift_one_operand_mul () =
   let asm = {|
 mul8:
@@ -2131,6 +2169,7 @@ let tests = [
   Alcotest.test_case "lift_and_eval_movsx_mem" `Quick test_lift_and_eval_movsx_mem;
   Alcotest.test_case "lift_and_eval_movsx_reg" `Quick test_lift_and_eval_movsx_reg;
   Alcotest.test_case "lift_and_eval_movzx_reg" `Quick test_lift_and_eval_movzx_reg;
+  Alcotest.test_case "lift_and_eval_movzx_forms" `Quick test_lift_and_eval_movzx_forms;
   Alcotest.test_case "lift_one_operand_mul_b8" `Quick test_lift_one_operand_mul;
   Alcotest.test_case "lift_one_operand_mul_b8_signed" `Quick test_lift_one_operand_mul_signed;
   Alcotest.test_case "lift_one_operand_mul_b64" `Quick test_lift_one_operand_mul64;
