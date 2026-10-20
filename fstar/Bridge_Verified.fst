@@ -1,17 +1,17 @@
 (**
-  Bridge_Verified.fst — Формальная верификация Multi-VM Invertible Affine Bridge в ASGARD-5877.
+  Bridge_Verified.fst — Formal Verification of Multi-VM Invertible Affine Bridge in ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Доказывает:
-  1. Корректность квадратичной сходимости метода Ньютона-Рафсона (Hensel lifting)
-     для вычисления модульного обратного по модулю 2^64:
-     квадрат погрешности (1 - a * x') = (1 - a * x)^2 mod 2^64.
-  2. Инволюцию маскировки дескриптора трассировки (Trace Digest XOR Involution):
+  Proves:
+  1. Correctness of quadratic convergence of Newton-Raphson method (Hensel lifting)
+     for modular inverse calculation modulo 2^64:
+     error square (1 - a * x') = (1 - a * x)^2 mod 2^64.
+  2. Trace digest XOR involution:
      (X ^ Mask) ^ Mask == X.
-  3. Биективность и обратимость обновления хэша трассировки (Trace Digest Bijectivity):
+  3. Bijectivity and invertibility of trace digest update:
      invert_trace_digest (update_trace_digest prev op vip) op vip == prev.
-  4. Точную обратимость аффинного моста (Affine Bridge Roundtrip Fidelity):
-     Для обратимой матрицы M и маски D:
+  4. Exact invertibility of affine bridge roundtrip fidelity:
+     For invertible matrix M and mask D:
      inverse_morph M_inv (forward_morph M_fwd V D) D == V.
 *)
 module Bridge_Verified
@@ -30,13 +30,13 @@ let rol64 (a:u64) (s:nat{s <= 64}) : u64 = rotate_left #64 a s
 let ror64 (a:u64) (s:nat{s <= 64}) : u64 = rotate_right #64 a s
 
 (* ------------------------------------------------------------------ *)
-(* 1. Ньютон-Рафсон модульного обратного в Z/(2^64)Z                 *)
+(* 1. Newton-Raphson Modular Inverse in Z/(2^64)Z                     *)
 (* ------------------------------------------------------------------ *)
 
 let nr_step (a:u64) (x:u64) : u64 =
   mul64 x (sub64 2 (mul64 a x))
 
-(** Главная алгебраическая лемма: Квадратичное сжатие ошибки y * (2 - y) *)
+(** Primary algebraic lemma: Quadratic error compression y * (2 - y) *)
 val lemma_nr_formula : y:u64 ->
   Lemma (sub64 1 (mul64 y (sub64 2 y)) == mul64 (sub64 1 y) (sub64 1 y))
 let lemma_nr_formula y = ()
@@ -51,7 +51,7 @@ let mod_inverse_64_iter (a:u64) : u64 =
   let x6 = nr_step a x5 in
   x6
 
-(** Теорема 1: Конкретная корректность обратного элемента для нечетных констант *)
+(** Theorem 1: Concrete modular inverse correctness for odd constants *)
 val theorem_mod_inv_odd_constant : a:u64 ->
   Lemma (requires (a == 0xBF58476D1CE4E5B9 \/ a == 0x9E3779B97F4A7C15 \/ a == 0x94D049BB133111EB))
         (ensures (mul64 a (mod_inverse_64_iter a) == 1))
@@ -64,7 +64,7 @@ let theorem_mod_inv_odd_constant a =
     assert_norm (mul64 0x94D049BB133111EB (mod_inverse_64_iter 0x94D049BB133111EB) == 1)
 
 (* ------------------------------------------------------------------ *)
-(* 2. Инволюция маскировки Cross-VM Trace Digest                      *)
+(* 2. Cross-VM Trace Digest Masking Involution                        *)
 (* ------------------------------------------------------------------ *)
 
 let golden_ratio : u64 = 0x9E3779B97F4A7C15
@@ -85,7 +85,7 @@ let lemma_xor_involution a b =
   let nth_check (i:nat{i < 64}) : Lemma (nth (xor64 (xor64 a b) b) i == nth a i) = () in
   nth_lemma (xor64 (xor64 a b) b) a
 
-(** Теорема 2: Обратимость и биективность шага обновления хэша трассировки *)
+(** Theorem 2: Invertibility and bijectivity of trace digest update step *)
 val theorem_trace_digest_invertible : prev:u64 -> opcode:u64 -> vip:u64 ->
   Lemma (invert_trace_digest (update_trace_digest prev opcode vip) opcode vip == prev)
 let theorem_trace_digest_invertible prev opcode vip =
@@ -95,7 +95,7 @@ let theorem_trace_digest_invertible prev opcode vip =
   rotate_left_right_inverse #64 prev 13
 
 (* ------------------------------------------------------------------ *)
-(* 3. Преобразование Аффинного моста (Affine Bridge Morphing)        *)
+(* 3. Affine Bridge Morphing                                          *)
 (* ------------------------------------------------------------------ *)
 
 type vec4 = {
@@ -117,7 +117,7 @@ let apply_mask (v:vec4) (digest:u64) : vec4 =
     v3 = xor64 v.v3 (mask_for_channel digest 3);
   }
 
-(** Теорема 3: Инволюция маскировки каналов регистра *)
+(** Theorem 3: Register channel masking involution *)
 val theorem_apply_mask_involution : v:vec4 -> digest:u64 ->
   Lemma (apply_mask (apply_mask v digest) digest == v)
 let theorem_apply_mask_involution v digest =
@@ -157,7 +157,7 @@ let inverse_morph (b:affine_bridge) (v_morph:vec4) (digest:u64) : vec4 =
   let unmasked = apply_mask v_morph digest in
   mat4_mul_vec b.inv_mat unmasked
 
-(** Главная теорема 4: Полный раундтрип Аффинного Моста Multi-VM *)
+(** Primary Theorem 4: Full Multi-VM Affine Bridge Roundtrip *)
 val theorem_affine_bridge_roundtrip : b:affine_bridge -> v:vec4 -> digest:u64 ->
   Lemma (requires (is_valid_inverse_pair b.fwd_mat b.inv_mat))
         (ensures (inverse_morph b (forward_morph b v digest) digest == v))

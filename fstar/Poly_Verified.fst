@@ -1,22 +1,22 @@
 (**
-  Poly_Verified.fst — Формальная верификация непрозрачных нуль-полиномов степени 5 над Z_{2^64} в ASGARD-5877.
+  Poly_Verified.fst — Formal Verification of Degree-5 Opaque Null Polynomials over Z_{2^64} for ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Доказывает:
-  1. Произведение двух последовательных чисел k*(k-1) всегда четно: k*(k-1) = 2*m.
-  2. Для любого x произведение x*(x-2) или (x-1)*(x-3) делится на 8.
-  3. Произведение 5 последовательных чисел poly5(x) делится на 8 для ВСЕХ x.
-  4. Симметричный полином poly5_sym(x) делится на 8 для ВСЕХ x.
-  5. Главная теорема 1: 2^61 * poly5(x) == 0 mod 2^64 (Opaque Polynomial Invariant).
-  6. Главная теорема 2: 2^61 * poly5_sym(x) == 0 mod 2^64 (Symmetric Opaque Polynomial Invariant).
-  7. Главная теорема 3: Нелинейный инвариант zero_inv5_nl(a, b) == 0 mod 2^64.
+  Proves:
+  1. Product of two consecutive numbers k*(k-1) is always even: k*(k-1) = 2*m.
+  2. For any x, x*(x-2) or (x-1)*(x-3) is divisible by 8.
+  3. Product of 5 consecutive numbers poly5(x) is divisible by 8 for ALL x.
+  4. Symmetric polynomial poly5_sym(x) is divisible by 8 for ALL x.
+  5. Primary Theorem 1: 2^61 * poly5(x) == 0 mod 2^64 (Opaque Polynomial Invariant).
+  6. Primary Theorem 2: 2^61 * poly5_sym(x) == 0 mod 2^64 (Symmetric Opaque Polynomial Invariant).
+  7. Primary Theorem 3: Nonlinear invariant zero_inv5_nl(a, b) == 0 mod 2^64.
 *)
 module Poly_Verified
 
 module M = FStar.Math.Lemmas
 
 (* ------------------------------------------------------------------ *)
-(* 1. Базовые леммы четности и делимости на 8                         *)
+(* 1. Basic Parity and Divisibility by 8 Lemmas                       *)
 (* ------------------------------------------------------------------ *)
 
 val lemma_consecutive_even : k:int ->
@@ -32,7 +32,7 @@ val lemma_consecutive_plus_even : k:int ->
 let lemma_consecutive_plus_even k =
   lemma_consecutive_even (k + 1)
 
-(** Лемма: Если x четный, то x*(x-2) делится на 8 *)
+(** Lemma: If x is even, then x*(x-2) is divisible by 8 *)
 val lemma_even_step2_div8 : x:int ->
   Lemma (requires (x % 2 == 0))
         (ensures ((x * (x - 2)) % 8 == 0))
@@ -46,7 +46,7 @@ let lemma_even_step2_div8 x =
   assert (k * (k - 1) == 2 * m);
   assert (x * (x - 2) == 8 * m)
 
-(** Лемма: Если x нечетный, то (x-1)*(x-3) делится на 8 *)
+(** Lemma: If x is odd, then (x-1)*(x-3) is divisible by 8 *)
 val lemma_odd_step2_div8 : x:int ->
   Lemma (requires (x % 2 <> 0))
         (ensures (((x - 1) * (x - 3)) % 8 == 0))
@@ -61,7 +61,7 @@ let lemma_odd_step2_div8 x =
   assert ((x - 1) * (x - 3) == 8 * m)
 
 (* ------------------------------------------------------------------ *)
-(* 2. Полиномы 5-й степени                                            *)
+(* 2. Degree-5 Polynomials                                            *)
 (* ------------------------------------------------------------------ *)
 
 let poly5 (x:int) : int =
@@ -70,7 +70,7 @@ let poly5 (x:int) : int =
 let poly5_sym (x:int) : int =
   (x - 2) * (x - 1) * x * (x + 1) * (x + 2)
 
-(** Теорема 1: poly5(x) делится на 8 для любого целого x *)
+(** Theorem 1: poly5(x) is divisible by 8 for any integer x *)
 val theorem_poly5_divisible_by_8 : x:int ->
   Lemma ((poly5 x) % 8 == 0)
 let theorem_poly5_divisible_by_8 x =
@@ -90,7 +90,7 @@ let theorem_poly5_divisible_by_8 x =
     assert (poly5 x == 8 * (m * other))
   end
 
-(** Теорема 2: Симметричный poly5_sym(x) делится на 8 для любого x *)
+(** Theorem 2: Symmetric poly5_sym(x) is divisible by 8 for any x *)
 val theorem_poly5_sym_divisible_by_8 : x:int ->
   Lemma ((poly5_sym x) % 8 == 0)
 let theorem_poly5_sym_divisible_by_8 x =
@@ -116,13 +116,13 @@ let theorem_poly5_sym_divisible_by_8 x =
   end
 
 (* ------------------------------------------------------------------ *)
-(* 3. Главные теоремы в кольце Z_{2^64}                                *)
+(* 3. Primary Theorems in Ring Z_{2^64}                               *)
 (* ------------------------------------------------------------------ *)
 
 let two_61 : pos = 0x2000000000000000 (* 2^61 *)
 let two_64 : pos = 0x10000000000000000 (* 2^64 *)
 
-(** Главная теорема 3: 2^61 * poly5(x) тождественно равен 0 mod 2^64 *)
+(** Primary Theorem 3: 2^61 * poly5(x) identically equals 0 mod 2^64 *)
 val theorem_zero_inv5_poly : x:int ->
   Lemma ((two_61 * poly5 x) % two_64 == 0)
 let theorem_zero_inv5_poly x =
@@ -137,7 +137,7 @@ let theorem_zero_inv5_poly x =
   M.lemma_mod_mul_distr_l two_64 k two_64;
   assert ((two_64 * k) % two_64 == 0)
 
-(** Главная теорема 4: Симметричный 2^61 * poly5_sym(x) == 0 mod 2^64 *)
+(** Primary Theorem 4: Symmetric 2^61 * poly5_sym(x) == 0 mod 2^64 *)
 val theorem_zero_inv5_sym_poly : x:int ->
   Lemma ((two_61 * poly5_sym x) % two_64 == 0)
 let theorem_zero_inv5_sym_poly x =
@@ -151,7 +151,7 @@ let theorem_zero_inv5_sym_poly x =
   M.lemma_mod_mul_distr_l two_64 k two_64;
   assert ((two_64 * k) % two_64 == 0)
 
-(** Главная теорема 5: Нелинейный перекрестный инвариант zero_inv5_nl *)
+(** Primary Theorem 5: Nonlinear cross-invariant zero_inv5_nl *)
 val theorem_zero_inv5_nl : zero_factor:int -> other_factors:int ->
   Lemma (requires (zero_factor % two_64 == 0))
         (ensures ((zero_factor * other_factors) % two_64 == 0))
