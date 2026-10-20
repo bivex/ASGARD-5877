@@ -622,6 +622,110 @@ let test_arm64_lift_swp_32bit_and_zero_reg () =
           check int64 "ARM64 swp 32-bit & zero reg = 595" 595L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_paci_auti_sp () =
+  let asm = {|
+    paciasp
+    mov x0, #42
+    autiasp
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_paci_sp" } asm with
+  | Error err -> fail ("Failed to lift ARM64 paciasp/autiasp: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "paciasp / autiasp preserves return 42" 42L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_reta () =
+  let asm = {|
+    paciasp
+    mov x0, #100
+    retaa
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_retaa" } asm with
+  | Error err -> fail ("Failed to lift ARM64 retaa: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "retaa returns 100" 100L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_retab () =
+  let asm = {|
+    pacibsp
+    mov x0, #200
+    retab
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_retab" } asm with
+  | Error err -> fail ("Failed to lift ARM64 retab: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "retab returns 200" 200L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_paci_auti_reg_and_zero () =
+  let asm = {|
+    mov x1, #0x1234
+    mov x2, sp
+    pacia x1, x2
+    autia x1, x2
+    mov x3, #0x5678
+    paciza x3
+    autiza x3
+    mov x4, #0x9ABC
+    pacib x4, x2
+    autib x4, x2
+    mov x5, #0xDEF0
+    pacizb x5
+    autizb x5
+    add x0, x1, x3
+    add x0, x0, x4
+    add x0, x0, x5
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_paci_reg" } asm with
+  | Error err -> fail ("Failed to lift ARM64 pacia/autia: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "paci/auti reg/zero sum = 123480" 123480L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_paci_auti_1716_and_hints () =
+  let asm = {|
+    hint #25
+    mov x17, #500
+    pacia1716
+    autia1716
+    pacib1716
+    autib1716
+    mov x0, x17
+    hint #29
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_paci_1716" } asm with
+  | Error err -> fail ("Failed to lift ARM64 pacia1716/hints: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "paci/auti 1716 and hints = 500" 500L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_pac_braa_blraa () =
+  let asm = {|
+    mov x1, #1
+    cmp x1, #1
+    b.eq .Ltarget
+    braaz x1
+.Ltarget:
+    mov x0, #888
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_braaz" } asm with
+  | Error err -> fail ("Failed to lift ARM64 braaz: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap -> check int64 "braaz in CFG returns 888" 888L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let test_arm64_lift_exclusive () =
   let asm = {|
     mov x1, #0x4000
@@ -1109,6 +1213,12 @@ let tests = [
   ("ARM64 Lift SWPAL", `Quick, test_arm64_lift_swpal);
   ("ARM64 Lift SWPL", `Quick, test_arm64_lift_swpl);
   ("ARM64 Lift SWP (32-bit & zero reg)", `Quick, test_arm64_lift_swp_32bit_and_zero_reg);
+  ("ARM64 Lift PACI/AUTI (paciasp/autiasp)", `Quick, test_arm64_lift_paci_auti_sp);
+  ("ARM64 Lift RETAA", `Quick, test_arm64_lift_reta);
+  ("ARM64 Lift RETAB", `Quick, test_arm64_lift_retab);
+  ("ARM64 Lift PACI/AUTI (register & zero modifier)", `Quick, test_arm64_lift_paci_auti_reg_and_zero);
+  ("ARM64 Lift PACI/AUTI (1716 & hints)", `Quick, test_arm64_lift_paci_auti_1716_and_hints);
+  ("ARM64 Lift PAC branch (braaz/blraaz)", `Quick, test_arm64_lift_pac_braa_blraa);
   ("ARM64 Lift Exclusive (ldxr/stxr)", `Quick, test_arm64_lift_exclusive);
   ("ARM64 Lift Non-Temporal Pair (ldnp/stnp)", `Quick, test_arm64_lift_ldnp_stnp);
   ("ARM64 Lift Unprivileged Mem (ldtr/sttr)", `Quick, test_arm64_lift_unprivileged_ldtr_sttr);

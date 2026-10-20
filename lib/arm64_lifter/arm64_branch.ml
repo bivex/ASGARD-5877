@@ -5,8 +5,22 @@ open Arm64_common
 
 let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   match (mnemonic, ops) with
-  | ("nop", []) -> Some [ Ir.Nop ]
-  | ("ret", _) -> Some [ Ir.Ret ]
+  | ("nop", _) -> Some [ Ir.Nop ]
+  | (("ret" | "retaa" | "retab"), _) -> Some [ Ir.Ret ]
+
+  (* Pointer Authentication Sign & Authenticate (PACI*, AUTI* families, PACD*, AUTD*, PACGA, HINT) *)
+  | (mnemonic, _)
+      when String.starts_with ~prefix:"paci" mnemonic
+        || String.starts_with ~prefix:"auti" mnemonic
+        || String.starts_with ~prefix:"pacd" mnemonic
+        || String.starts_with ~prefix:"autd" mnemonic
+        || mnemonic = "paciza" || mnemonic = "pacizb"
+        || mnemonic = "autiza" || mnemonic = "autizb"
+        || mnemonic = "paciaz" || mnemonic = "pacibz"
+        || mnemonic = "autiaz" || mnemonic = "autibz"
+        || mnemonic = "pacga"
+        || mnemonic = "hint" ->
+      Some [ Ir.Nop ]
 
   (* Branches & Calls *)
   | ("b", [ target ]) ->
@@ -67,13 +81,13 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       ]
   | ("bl", [ target ]) ->
       Some [ Ir.Call (target_of_op target) ]
-  | ("blr", [ OpReg r ]) ->
+  | (("blr" | "blraa" | "blrab" | "blraaz" | "blrabz"), (OpReg r :: _)) ->
       Some [ Ir.Call (TargetReg r) ]
-  | ("blr", _) ->
+  | (("blr" | "blraa" | "blrab" | "blraaz" | "blrabz"), _) ->
       Some [ Ir.Call (TargetImm 0L) ]
-  | ("br", [ OpReg r ]) ->
+  | (("br" | "braa" | "brab" | "braaz" | "brabz"), (OpReg r :: _)) ->
       Some [ Ir.Jmp (TargetReg r) ]
-  | ("br", _) ->
+  | (("br" | "braa" | "brab" | "braaz" | "brabz"), _) ->
       Some [ Ir.Jmp (TargetImm 0L) ]
   | ("eret", _) ->
       Some [ Ir.Trap "eret" ]
