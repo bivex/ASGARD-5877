@@ -7,6 +7,9 @@ type state = {
   vectors : (int, int64 array) Hashtbl.t;
   memory : (int64, int) Hashtbl.t;
   mutable flags : cc_op;
+  (* ADC/SBC carry dialect (todo item 8): true reads the ARM64-view carry
+     (C = NOT borrow after SUB-family flag writers). *)
+  arm64_carry : bool;
   mutable vsp : int64;
   mutable vip : int64;
   mutable fs_base : int64;
@@ -24,12 +27,19 @@ let sync_sp state value =
   Hashtbl.replace state.vregs (Register.with_width Register.rsp Register.B64) value;
   Hashtbl.replace state.vregs (Register.with_width Register.vsp Register.B64) value
 
-let make_state ?(stack_base = 0x7FFFFFFF0000L) ?(fs_base = 0x60000000L) ?(gs_base = 0x70000000L) () =
+let make_state
+    ?(stack_base = 0x7FFFFFFF0000L)
+    ?(fs_base = 0x60000000L)
+    ?(gs_base = 0x70000000L)
+    ?(arm64_carry = false)
+    ()
+  =
   let s = {
     vregs = Hashtbl.create 32;
     vectors = Hashtbl.create 32;
     memory = Hashtbl.create 1024;
     flags = empty_flags;
+    arm64_carry;
     vsp = stack_base;
     vip = 0x80000000L;
     fs_base;
@@ -577,7 +587,12 @@ let step state = function
             if set_flags then state.flags <- CC_OP_ADD { src1 = v1; src2 = v2; dst = res; width = w };
             res
         | Adc ->
-            let c_in = compute_cf state.flags in
+            (* ARM64 dialect: ADC adds the ARM64-view carry (C = NOT borrow
+               after SUB-family flag writers); x86 adds the borrow-view CF. *)
+            let c_in =
+              if state.arm64_carry then compute_cf_arm state.flags
+              else compute_cf state.flags
+            in
             let c_add = if c_in then 1L else 0L in
             let res = Int64.add (Int64.add v1 v2) c_add in
             if set_flags then state.flags <- CC_OP_ADC { src1 = v1; src2 = v2; carry_in = c_in; dst = res; width = w };
@@ -587,7 +602,13 @@ let step state = function
             if set_flags then state.flags <- CC_OP_SUB { src1 = v1; src2 = v2; dst = res; width = w };
             res
         | Sbb ->
-            let b_in = compute_cf state.flags in
+            (* ARM64 SBC computes Xn - Xm - NOT C; x86 SBB subtracts the
+               borrow-view CF.  The stored CC_OP_SBB keeps the x86 borrow
+               view so conditions evaluate uniformly. *)
+            let b_in =
+              if state.arm64_carry then not (compute_cf_arm state.flags)
+              else compute_cf state.flags
+            in
             let b_sub = if b_in then 1L else 0L in
             let res = Int64.sub (Int64.sub v1 v2) b_sub in
             if set_flags then state.flags <- CC_OP_SBB { src1 = v1; src2 = v2; borrow_in = b_in; dst = res; width = w };
@@ -937,28 +958,55 @@ let step state = function
       Ok None
   | Fp_conv { op = Fcvtzs; dst; src } ->
       let a_bits = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
-      let a = Int64.float_of_bits a_bits in
+      let a =
+        if Register.get_width src = B32 then
+          let f32 = Int32.float_of_bits (Int64.to_int32 a_bits) in
+          float_of_string (string_of_float f32)
+        else Int64.float_of_bits a_bits
+      in
       let v = Int64.of_float a in
       set_reg state dst v;
       Ok None
   | Fp_conv { op = Fcvtzu; dst; src } ->
       let a_bits = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
-      let a = Int64.float_of_bits a_bits in
+      let a =
+        if Register.get_width src = B32 then
+          let f32 = Int32.float_of_bits (Int64.to_int32 a_bits) in
+          float_of_string (string_of_float f32)
+        else Int64.float_of_bits a_bits
+      in
       let v = if a < 0.0 then 0L else (try Int64.of_float a with _ -> -1L) in
       set_reg state dst v;
       Ok None
   | Fp_conv { op = Scvtf; dst; src } ->
       let v = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
-      let f = Int64.to_float v in
-      let f_bits = Int64.bits_of_float f in
+      let v_signed = if Register.get_width src = B32 then Int64.of_int32 (Int64.to_int32 v) else v in
+      let f = Int64.to_float v_signed in
+      let f_bits =
+        if Register.get_width dst = B32 then
+          let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
+          Int64.logand (Int64.of_int32 (Int32.bits_of_float f32)) 0xFFFFFFFFL
+        else
+          Int64.bits_of_float f
+      in
       (match dst with
        | Fpr (i, _) -> set_vector_lane state i 0 f_bits
        | _ -> set_reg state dst f_bits);
       Ok None
   | Fp_conv { op = Ucvtf; dst; src } ->
       let v = match src with Fpr (i, _) -> get_vector_lane state i 0 | _ -> get_reg state src in
-      let f = if v >= 0L then Int64.to_float v else (Int64.to_float (Int64.shift_right_logical v 1) *. 2.0 +. (if Int64.logand v 1L <> 0L then 1.0 else 0.0)) in
-      let f_bits = Int64.bits_of_float f in
+      let v_unsigned = if Register.get_width src = B32 then Int64.logand v 0xFFFFFFFFL else v in
+      let f =
+        if v_unsigned >= 0L then Int64.to_float v_unsigned
+        else (Int64.to_float (Int64.shift_right_logical v_unsigned 1) *. 2.0 +. (if Int64.logand v_unsigned 1L <> 0L then 1.0 else 0.0))
+      in
+      let f_bits =
+        if Register.get_width dst = B32 then
+          let f32 = Int32.float_of_bits (Int32.bits_of_float f) in
+          Int64.logand (Int64.of_int32 (Int32.bits_of_float f32)) 0xFFFFFFFFL
+        else
+          Int64.bits_of_float f
+      in
       (match dst with
        | Fpr (i, _) -> set_vector_lane state i 0 f_bits
        | _ -> set_reg state dst f_bits);

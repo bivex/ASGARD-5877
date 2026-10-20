@@ -40,6 +40,25 @@ type mba_config = {
   engine : (mba_engine [@of_yojson mba_engine_of_yojson] [@to_yojson mba_engine_to_yojson]) [@default `Egraph];
 } [@@deriving yojson]
 
+(* Target architecture of the lifted program.  The VM stores flags in the
+   x86 convention (CF = borrow after SUB); ARM64 ADC/SBC read a carry in the
+   ARM64 convention (C = NOT borrow), so the emitter tags those words with
+   the architecture's carry dialect.  See todo item 8. *)
+type arch = [ `X86_64 | `AArch64 | `RISCV ]
+
+let arch_of_yojson = function
+  | `String s -> (
+      match String.lowercase_ascii (String.trim s) with
+      | "arm64" | "aarch64" | "a64" -> Ok `AArch64
+      | "riscv" | "risc-v" | "rv64" -> Ok `RISCV
+      | _ -> Ok `X86_64)
+  | _ -> Error "Expected string for arch"
+
+let arch_to_yojson = function
+  | `AArch64 -> `String "aarch64"
+  | `RISCV -> `String "riscv"
+  | `X86_64 -> `String "x86_64"
+
 type crypto_config = {
   rounds : int [@default 16];
   key_bits : int [@default 128];
@@ -206,6 +225,7 @@ let default_stack_vm = {
 }
 
 type t = {
+  arch : (arch [@of_yojson arch_of_yojson] [@to_yojson arch_to_yojson]) [@default `X86_64];
   seed : int option [@default None];
   crypto : crypto_config [@default default_crypto];
   bloat : bloat_config [@default default_bloat];
@@ -220,6 +240,13 @@ type t = {
   anti_vpc : anti_vpc_config [@default default_anti_vpc];
   memory_chaffing : memory_chaffing_config [@default default_memory_chaffing];
 } [@@deriving yojson]
+
+(* ADC/SBC carry dialect: true when the lifted program reads the carry in the
+   ARM64 convention (C = NOT borrow after SUB-family flag writers). *)
+let arm64_carry_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.arch = `AArch64
+  | None -> false
 
 (* Single source of truth for the Anti-Pushan rolling-key gate: the encoder
    (vm_emitter) and the C++ runtime emitter (vm_runtime_emitter) must agree on

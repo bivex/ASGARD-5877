@@ -7,6 +7,7 @@ type state = {
   vectors : (int, int64 array) Hashtbl.t;
   memory : (int64, int) Hashtbl.t;
   mutable flags : cc_op;
+  arm64_carry : bool;
   mutable vsp : int64;
   mutable vip : int64;
   mutable fs_base : int64;
@@ -15,7 +16,7 @@ type state = {
   mutable trapped : string option;
 }
 
-val make_state : ?stack_base:int64 -> ?fs_base:int64 -> ?gs_base:int64 -> unit -> state
+val make_state : ?stack_base:int64 -> ?fs_base:int64 -> ?gs_base:int64 -> ?arm64_carry:bool -> unit -> state
 
 val get_reg : state -> Register.t -> int64
 val set_reg : state -> Register.t -> int64 -> unit

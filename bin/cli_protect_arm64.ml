@@ -22,13 +22,16 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
         ~mba_depth
         ~seed
     in
+    let raw = Protect_adapters.Config_adapter.unwrap resolved in
+    (* Tag the program with the ARM64 carry dialect: ADC/SBC read the
+       ARM64-view carry (C = NOT borrow), encoded per-word in the bytecode. *)
+    let raw = { raw with arch = `AArch64 } in
     if enable_ephemeral_jit then
-      let raw = Protect_adapters.Config_adapter.unwrap resolved in
       Protect_adapters.Config_adapter.wrap {
         raw with
         vm_runtime = { raw.vm_runtime with ephemeral_jit = true };
       }
-    else resolved
+    else Protect_adapters.Config_adapter.wrap raw
   in
   let rng =
     match Protect_ports.seed effective_cfg with

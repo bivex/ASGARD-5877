@@ -40,6 +40,11 @@ let compile_and_package_multi
         (enable_cff, enable_mba, enable_junk, mba_depth, `Egraph)
   in
 
+  (* ADC/SBC carry dialect (todo item 8): ARM64 reads C = NOT borrow after
+     SUB-family flag writers, x86 reads CF = borrow.  The tag bit travels in
+     the word's extra_bits area alongside set_flags. *)
+  let arm64_carry = Protection_config.arm64_carry_enabled config in
+
   (* Generate randomized bijective register permutation π ∈ S_32 *)
   let reg_perm = Array.init 32 (fun i -> i) in
   shuffle_array rng reg_perm;
@@ -263,7 +268,8 @@ let compile_and_package_multi
                       | Ir.Reg r -> is_ineligible_reg r
                       | _ -> false
                     in
-                    if set_flags || is_ineligible_reg dst || is_ineligible_op src1 || is_ineligible_op src2 then
+                    if set_flags || op = Ir.Adc || op = Ir.Sbb
+                       || is_ineligible_reg dst || is_ineligible_op src1 || is_ineligible_op src2 then
                       [ Ir.Alu { op; dst; src1; src2; set_flags } ]
                     else (
                       try
@@ -417,9 +423,9 @@ let compile_and_package_multi
     Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 31)
   in
 
-  let encode_alu_imm op_ri op_rr dst imm =
+  let encode_alu_imm ?(extra_bits = 0L) op_ri op_rr dst imm =
     if is_i32 imm then
-      encode_raw_word (get_opcode op_ri) (get_reg_idx dst) 0 imm
+      encode_raw_word ~extra_bits (get_opcode op_ri) (get_reg_idx dst) 0 imm
     else begin
       let temp_reg = if dst = Register.vx23 then Register.vx22 else Register.vx23 in
       let low = Int64.logand imm 0xFFFFFFFFL in
@@ -427,8 +433,18 @@ let compile_and_package_multi
       encode_raw_word (get_opcode OP_MOV_RI) (get_reg_idx temp_reg) 0 low;
       if high <> 0L then
         encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx temp_reg) 0 high;
-      encode_raw_word (get_opcode op_rr) (get_reg_idx dst) (get_reg_idx temp_reg) 0L
+      encode_raw_word ~extra_bits (get_opcode op_rr) (get_reg_idx dst) (get_reg_idx temp_reg) 0L
     end
+  in
+
+  (* ADC/SBC word tags in the extra_bits area (bits 50..51): bit 0 =
+     set_flags (handler writes NZCV), bit 1 = ARM64 carry dialect (handler
+     reads ctx.cf_arm64, the ARM64-view carry, instead of ctx.cf).  Words
+     without the tags keep the legacy x86 behaviour. *)
+  let carry_tags set_flags =
+    Int64.logor
+      (if set_flags then 1L else 0L)
+      (if arm64_carry then 2L else 0L)
   in
 
   (* Encode instructions (both Fused Super-Operators and Standard Raw Ops) *)
@@ -552,24 +568,26 @@ let compile_and_package_multi
               | Ir.Alu { op = Ir.Add; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Add ~dst:d ~src1;
                   encode_alu_imm OP_ADD_RI OP_ADD_RR d imm
-              | Ir.Alu { op = Ir.Adc; dst = d; src1; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.Adc; dst = d; src1; src2 = Ir.Reg s; set_flags } ->
                   assert_src1_eq_dst ~op:Ir.Adc ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_ADC_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Adc; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word ~extra_bits:(carry_tags set_flags)
+                    (get_opcode OP_ADC_RR) (get_reg_idx d) (get_reg_idx s) 0L
+              | Ir.Alu { op = Ir.Adc; dst = d; src1; src2 = Ir.Imm imm; set_flags } ->
                   assert_src1_eq_dst ~op:Ir.Adc ~dst:d ~src1;
-                  encode_alu_imm OP_ADC_RI OP_ADC_RR d imm
+                  encode_alu_imm ~extra_bits:(carry_tags set_flags) OP_ADC_RI OP_ADC_RR d imm
               | Ir.Alu { op = Ir.Sub; dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sub ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_SUB_RR) (get_reg_idx d) (get_reg_idx s) 0L
               | Ir.Alu { op = Ir.Sub; dst = d; src1; src2 = Ir.Imm imm; _ } ->
                   assert_src1_eq_dst ~op:Ir.Sub ~dst:d ~src1;
                   encode_alu_imm OP_SUB_RI OP_SUB_RR d imm
-              | Ir.Alu { op = Ir.Sbb; dst = d; src1; src2 = Ir.Reg s; _ } ->
+              | Ir.Alu { op = Ir.Sbb; dst = d; src1; src2 = Ir.Reg s; set_flags } ->
                   assert_src1_eq_dst ~op:Ir.Sbb ~dst:d ~src1;
-                  encode_raw_word (get_opcode OP_SBB_RR) (get_reg_idx d) (get_reg_idx s) 0L
-              | Ir.Alu { op = Ir.Sbb; dst = d; src1; src2 = Ir.Imm imm; _ } ->
+                  encode_raw_word ~extra_bits:(carry_tags set_flags)
+                    (get_opcode OP_SBB_RR) (get_reg_idx d) (get_reg_idx s) 0L
+              | Ir.Alu { op = Ir.Sbb; dst = d; src1; src2 = Ir.Imm imm; set_flags } ->
                   assert_src1_eq_dst ~op:Ir.Sbb ~dst:d ~src1;
-                  encode_alu_imm OP_SBB_RI OP_SBB_RR d imm
+                  encode_alu_imm ~extra_bits:(carry_tags set_flags) OP_SBB_RI OP_SBB_RR d imm
               | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst = d; src1; src2 = Ir.Reg s; _ } ->
                   assert_src1_eq_dst ~op:Ir.Imul ~dst:d ~src1;
                   encode_raw_word (get_opcode OP_IMUL_RR) (get_reg_idx d) (get_reg_idx s) 0L
@@ -758,16 +776,22 @@ let compile_and_package_multi
                   encode_raw_word (get_opcode OP_FCMP_DD) 0 (src1 mod 32) (Int64.of_int (src2 mod 32))
               | Ir.Fp_conv { op = Fcvtzs; dst; src } ->
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
-                  encode_raw_word (get_opcode OP_FCVTZS) (get_reg_idx dst) s_idx 0L
+                  let src_is_32 = if Register.get_width src = Register.B32 then 1L else 0L in
+                  encode_raw_word (get_opcode OP_FCVTZS) (get_reg_idx dst) s_idx src_is_32
               | Ir.Fp_conv { op = Fcvtzu; dst; src } ->
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
-                  encode_raw_word (get_opcode OP_FCVTZU) (get_reg_idx dst) s_idx 0L
+                  let src_is_32 = if Register.get_width src = Register.B32 then 1L else 0L in
+                  encode_raw_word (get_opcode OP_FCVTZU) (get_reg_idx dst) s_idx src_is_32
               | Ir.Fp_conv { op = Scvtf; dst; src } ->
                   let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
-                  encode_raw_word (get_opcode OP_SCVTF) d_idx (get_reg_idx src) 0L
+                  let src_is_32 = if Register.get_width src = Register.B32 then 1L else 0L in
+                  let dst_is_32 = if Register.get_width dst = Register.B32 then 2L else 0L in
+                  encode_raw_word (get_opcode OP_SCVTF) d_idx (get_reg_idx src) (Int64.logor src_is_32 dst_is_32)
               | Ir.Fp_conv { op = Ucvtf; dst; src } ->
                   let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
-                  encode_raw_word (get_opcode OP_UCVTF) d_idx (get_reg_idx src) 0L
+                  let src_is_32 = if Register.get_width src = Register.B32 then 1L else 0L in
+                  let dst_is_32 = if Register.get_width dst = Register.B32 then 2L else 0L in
+                  encode_raw_word (get_opcode OP_UCVTF) d_idx (get_reg_idx src) (Int64.logor src_is_32 dst_is_32)
               | Ir.Fp_conv { op = Fcvt; dst; src } ->
                   let d_idx = match dst with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx dst in
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
@@ -812,8 +836,10 @@ let compile_and_package_multi
                   | AtCas ->
                       encode_raw_word (get_opcode OP_ATOMIC_CAS) (get_reg_idx addr) (get_reg_idx src) imm
                   | AtAdd ->
+                      let w = if Register.get_width dst = Register.B64 then Register.get_width src else Register.get_width dst in
+                      let wcode = match w with Register.B8 -> 3L | Register.B16 -> 2L | Register.B32 -> 1L | _ -> 0L in
                       if get_reg_idx dst = get_reg_idx src then
-                        encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx src) imm
+                        encode_raw_word ~extra_bits:wcode (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx src) imm
                       else begin
                         let tmp =
                           if get_reg_idx addr = get_reg_idx Register.vtmp0 || get_reg_idx src = get_reg_idx Register.vtmp0 then
@@ -821,13 +847,15 @@ let compile_and_package_multi
                           else Register.vtmp0
                         in
                         encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx tmp) (get_reg_idx src) 0L;
-                        encode_raw_word (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx tmp) imm;
+                        encode_raw_word ~extra_bits:wcode (get_opcode OP_ATOMIC_ADD) (get_reg_idx addr) (get_reg_idx tmp) imm;
                         if get_reg_idx dst <> get_reg_idx Register.vzero then
                           encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx dst) (get_reg_idx tmp) 0L
                       end
                   | AtSwp ->
+                      let w = if Register.get_width dst = Register.B64 then Register.get_width src else Register.get_width dst in
+                      let wcode = match w with Register.B8 -> 3L | Register.B16 -> 2L | Register.B32 -> 1L | _ -> 0L in
                       if get_reg_idx dst = get_reg_idx src then
-                        encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx src) imm
+                        encode_raw_word ~extra_bits:wcode (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx src) imm
                       else begin
                         let tmp =
                           if get_reg_idx addr = get_reg_idx Register.vtmp0 || get_reg_idx src = get_reg_idx Register.vtmp0 then
@@ -835,7 +863,7 @@ let compile_and_package_multi
                           else Register.vtmp0
                         in
                         encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx tmp) (get_reg_idx src) 0L;
-                        encode_raw_word (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx tmp) imm;
+                        encode_raw_word ~extra_bits:wcode (get_opcode OP_ATOMIC_SWP) (get_reg_idx addr) (get_reg_idx tmp) imm;
                         if get_reg_idx dst <> get_reg_idx Register.vzero then
                           encode_raw_word (get_opcode OP_MOV_RR) (get_reg_idx dst) (get_reg_idx tmp) 0L
                       end)

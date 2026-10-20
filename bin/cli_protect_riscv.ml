@@ -12,13 +12,17 @@ let run_protect_riscv input_file out_dir seed config_file preset enable_cff enab
     else "threaded"
   in
   let effective_cfg =
-    Protect_adapters.Config_adapter.resolve
-      ~config_file
-      ~preset
-      ~enable_cff
-      ~enable_mba
-      ~mba_depth
-      ~seed
+    let resolved =
+      Protect_adapters.Config_adapter.resolve
+        ~config_file
+        ~preset
+        ~enable_cff
+        ~enable_mba
+        ~mba_depth
+        ~seed
+    in
+    let raw = Protect_adapters.Config_adapter.unwrap resolved in
+    Protect_adapters.Config_adapter.wrap { raw with arch = `RISCV }
   in
   let rng =
     match Protect_ports.seed effective_cfg with

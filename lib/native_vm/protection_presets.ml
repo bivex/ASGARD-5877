@@ -1,6 +1,7 @@
 open Protection_types
 
 let default : t = {
+  arch = `X86_64;
   seed = None;
   crypto = { rounds = 16; key_bits = 128 };
   bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5 };
@@ -65,6 +66,7 @@ let default : t = {
 }
 
 let max_security : t = {
+  arch = `X86_64;
   seed = None;
   crypto = { rounds = 64; key_bits = 128 };
   bloat = { mode = `Insane; target_size_budget_kb = Some 5000; junk_density = 2.0 };
@@ -149,6 +151,7 @@ let max_security : t = {
 }
 
 let lightweight : t = {
+  arch = `X86_64;
   seed = None;
   crypto = { rounds = 16; key_bits = 128 };
   bloat = { mode = `Compact; target_size_budget_kb = Some 250; junk_density = 0.2 };
@@ -233,6 +236,7 @@ let lightweight : t = {
 }
 
 let stealth : t = {
+  arch = `X86_64;
   seed = None;
   crypto = { rounds = 16; key_bits = 128 };
   bloat = { mode = `Balanced; target_size_budget_kb = Some 500; junk_density = 0.3 };
@@ -312,6 +316,7 @@ let stealth : t = {
 }
 
 let minimal : t = {
+  arch = `X86_64;
   seed = None;
   crypto = { rounds = 8; key_bits = 128 };
   bloat = { mode = `Compact; target_size_budget_kb = Some 100; junk_density = 0.0 };
@@ -396,6 +401,7 @@ let minimal : t = {
 }
 
 let high : t = {
+  arch = `X86_64;
   seed = None;
   crypto = { rounds = 32; key_bits = 128 };
   bloat = { mode = `Heavy; target_size_budget_kb = Some 2500; junk_density = 1.0 };

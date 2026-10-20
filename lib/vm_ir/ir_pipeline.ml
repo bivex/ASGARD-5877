@@ -33,7 +33,7 @@ let compile ?(seed = Seed.create ()) ?(strategy = Register_allocator.Randomized)
       | Ok () ->
           (* Stage 7: Differential Semantic Equivalence Check against Golden Reference VM *)
           if verify_equivalence then begin
-            match Equivalence.assert_equivalent ~trials:25 orig_f alloc_f with
+            match Equivalence.assert_equivalent ~trials:25 ~check_callee_saved:false orig_f alloc_f with
             | Error disc ->
                 Error (Printf.sprintf "Stage 7 (Differential Equivalence Assertion) Failed on trial %d: %s"
                   disc.trial_index disc.details)

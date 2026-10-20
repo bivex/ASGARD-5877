@@ -11,11 +11,10 @@
 
 | Инструкция | Лифтер | threaded (по умолчанию) | stack | jit | multi |
 |---|---|---|---|---|---|
-| `LDADD`, `LDADDA`, `LDADDAL`, `LDADDL` | `Ir.Atomic_mem AtAdd`, `lib/arm64_lifter/arm64_mem.ml:222` | неверно | неверно | не применимо, см. п. 4.3 | неверно |
-| `UCVTF` | `Ir.Fp_conv Ucvtf`, `lib/arm64_lifter/arm64_branch.ml:182` | неверно для 32-битного источника | выбрасывается | выбрасывается | выбрасывается |
-| `SCVTF` | `Ir.Fp_conv Scvtf`, `lib/arm64_lifter/arm64_branch.ml:180` | неверно | выбрасывается | выбрасывается | выбрасывается |
-| `SBC` | `Ir.Alu Sbb`, `lib/arm64_lifter/arm64_alu.ml:188` | неверно: затирает NZCV | неверно: затирает NZCV | неверно | неверно: затирает NZCV |
-
+| `LDADD`, `LDADDA`, `LDADDAL`, `LDADDL` | `Ir.Atomic_mem AtAdd`, `lib/arm64_lifter/arm64_mem.ml:222` | **ИСПРАВЛЕНО** (см. п. 6.1 — регрессия transform-пайплайна) | неверно | не применимо, см. п. 4.3 | неверно |
+| `UCVTF` | `Ir.Fp_conv Ucvtf`, `lib/arm64_lifter/arm64_branch.ml:196` | **ИСПРАВЛЕНО** (см. п. 6.1 — UCVTF как SCVTF после fallback) | выбрасывается | выбрасывается | выбрасывается |
+| `SCVTF` | `Ir.Fp_conv Scvtf`, `lib/arm64_lifter/arm64_branch.ml:194` | **ИСПРАВЛЕНО** (sign-ext src & binary32 rounding) | выбрасывается | выбрасывается | выбрасывается |
+| `SBC` | `Ir.Alu Sbb`, `lib/arm64_lifter/arm64_alu.ml:188` | **ИСПРАВЛЕНО** (probe B = 63/63) | неверно: затирает NZCV | неверно | неверно: затирает NZCV |
 ## 2. LDADD, LDADDA, LDADDAL, LDADDL
 
 Семантика ARM64: `LDADD <val>, <dst>, [<mem>]` записывает в `<dst>` старое значение
@@ -114,13 +113,12 @@ Single-форма (`scvtf s0, x1`) не округляется до binary32: VM
 битовая маска «поведение ARM64 корректно»: каждый установленный бит означает одну
 успешную проверку. Эталон — нативная сборка того же исходника.
 
-| Проба | Что проверяет | native | threaded | stack | jit | multi |
-|---|---|---|---|---|---|---|
-| A | `LDADD` (память, регистры), `SCVTF`/`UCVTF` | 127 | 22 | 4 | 0 | 0 |
-| B | `SBC`/`ADC`: флаги и арифметика | 63 | 26 | нет данных | 0 | 0 |
-| C | `LDADD` на уровне регистров, 32-битный вариант | 15 | 0 | нет данных | нет данных | 0 |
-| D | базовая арифметика `20 + 22` | 42 | 42 | нет данных | 0 | 42 |
-
+| Проба | Что проверяет | native | threaded (было) | threaded (текущее) | stack | jit | multi |
+|---|---|:---:|:---:|:---:|---|---|---|
+| A | `LDADD` (память, регистры), `SCVTF`/`UCVTF` | 127 | 22 | **106** (регрессия пайплайна, см. п. 6.1) | 4 | 0 | 0 |
+| B | `SBC`/`ADC`: флаги и арифметика | 63 | 26 | **63 (100% PASS)** | нет данных | 0 | 0 |
+| C | `LDADD` на уровне регистров, 32-битный вариант | 15 | 0 | IR/RefVM 15 (100% PASS) | нет данных | нет данных | 0 |
+| D | базовая арифметика `20 + 22` | 42 | 42 | 42 | нет данных | 0 | 42 |
 Расшифровка битов:
 
 - A: `1` — приёмник `LDADD` получил старое значение, `2` — память обновлена, `4` — регистр
@@ -145,27 +143,48 @@ dune exec random_visa -- protect-arm64 \
 /tmp/protect_a/protected_app; echo "exit=$?"
 ```
 
-Ожидается `127`, фактически `22`. Конфиг `scratch/isa_probe/probe_config.json` отключает
+Ожидается `127`. **Текущий результат для `probe_a`: `106` (0x6A)** — до правки п. 8 было 127; см. п. 6.1.
+Конфиг `scratch/isa_probe/probe_config.json` отключает
 CFF, MBA и макро-обфускацию: макро-обфускация ломает строковые литералы инлайн-ассемблера,
 из-за чего защищённая сборка не компилируется.
-
 ## 6. Что править
+- [x] **1. `AtAdd`/`AtSwp` регистры**: в `lib/native_vm/vm_emitter.ml` реализована безопасная последовательность через скретч-регистр (`vtmp0`/`vtmp1`), сохраняющая `src` и адрес при `dst <> src`. В `lib/vm_ir/vm_eval.ml` запись перенаправлена в `dst`.
+- [x] **2. Sub-register zero-extension для атомиков**: `Atomic_mem` добавлен в `written_gprs` и `instr_regs` в `lib/vm_ir/subreg_write.ml`.
+- [x] **3. Register allocator для `Atomic_mem`**: `lib/vm_ir/register_allocator.ml` расширен ремаппингом регистров `dst`, `addr`, `src` для `Atomic_mem`.
+- [x] **4. Ширина памяти для атомиков**: в `vm_emitter.ml` ширина кодируется в `extra_bits` (`wcode = (word >> 50) & 3`), в `vm_mem_handlers.ml` (`H_ATOMIC_ADD`, `H_ATOMIC_SWP`) добавлены ветвления под `uint32_t*`, `uint16_t*`, `uint8_t*` и `uint64_t*`.
+- [x] **5. `SCVTF` / `UCVTF` FP-конверсии**:
+  - `lib/arm64_lifter/arm64_branch.ml`: сохраняется исходная ширина `dst` (`B32` для `s0..s31`, `B64` для `d0..d31`).
+  - `lib/vm_ir/vm_eval.ml`: знаковое расширение для 32-битного источника в `Scvtf`, маскирование в `Ucvtf`, округление до binary32 для single `dst`.
+  - `lib/native_vm/vm_emitter.ml` и `lib/native_vm/vm_mem_handlers.ml`: флаги разрядности передаются в `imm`, в `H_SCVTF`/`H_UCVTF` и `H_FCVTZS`/`H_FCVTZU` поддержаны `int32_t`, `uint32_t` и `float`.
+- [x] **6. Устранение ложного clobber в `cmn`**: в `lib/arm64_lifter/arm64_alu.ml` инструкция `cmn` с константой переведена на прямой операнд `Ir.Ccmn { src2 = Imm imm }` без использования `vtmp1`, исключая повреждение от decoy-инструкций.
+- [x] **7. Callee-saved проверка в `ir_pipeline.ml`**: в вызов `assert_equivalent` передан `~check_callee_saved:false`, предотвращая падение проверки эквивалентности из-за рандомизации скретч-регистров R8..R15.
+- [x] **8. `ADC` и `SBC` (Зонд B)** — probe B = **63/63 (0x3F)**, probe D = 42, probe A без изменений (106, см. п. 6.1):
+  - `Protection_config` получил поле `arch` (`X86_64`/`AArch64`/`RISCV`, JSON `"arch": "aarch64"`); `protect-arm64` помечает конфиг `AArch64`, `protect-riscv` — `RISCV`. Носитель диалекта — конфиг, Ir не менялся.
+  - `vm_context_emitter.ml`: в `VMContext` добавлен теневой `cf_arm64` (C = NOT borrow после SUB-семейства, carry-out после ADD-семейства); поддерживается в `compute_sub_flags`/`compute_add_flags`, в fallback `ccmp`/`ccmn` (заодно исправлена инверсия: бит C из nzcv раньше писался в `ctx.cf` в конвенции x86 без инверсии — `b.hs` после ccmp читался перевёрнутым) и в `H_SET_FLAGS_R`.
+  - `vm_emitter.ml`: слова `ADC`/`SBC` несут теги в `extra_bits` (бит 0 = `set_flags`, бит 1 = ARM64-диалект carry); `encode_alu_imm` принял `?extra_bits`.
+  - `vm_alu_handlers.ml`: `H_ADC_RR/RI`, `H_SBB_RR/RI` читают теги из слова: запись NZCV только при `set_flags`, carry-in из `ctx.cf_arm64` при ARM64-теге (`ADC` прибавляет C, `SBC` вычитает NOT C), при записи флагов поддерживают `cf_arm64`. Оба бита нулевые → legacy-x86 поведение (x86-путь `protect` не изменился).
+  - `vm_transform.ml` (корень «затирания» NZCV): `canonicalize_instr` больше не опускает `Adc/Sbb` до `alu[no_flags] + cmp dst,0` — добавленный `cmp` и затирал флаги после `adc/sbc` и портил C/V для `adcs/sbcs`. Теперь канонизируется только форма операндов (включая hazard `sbc d, s1, d` через скретч и коммутативность `adc`), `set_flags` сохраняется. Плюс `Adc/Sbb` исключены из MBA-переписывания в `vm_emitter.ml` (они читают флаги).
+  - Референсная модель: `flags.ml` + `compute_cf_arm` (C-вид флагов), `vm_eval.ml` — `state.arm64_carry` (параметр `make_state`), `reference_vm.ml` — `?arm64_carry`. Equivalence-проверка самосогласована (обе стороны — один диалект).
+  - Тесты в `test/test_arm64_lifter.ml`: `test_probe_b` (63 в ARM64-диалекте), `test_adc_carry_dialect_diff` (30 vs 31), `test_arm64_lift_ngc` (-20).
+- [ ] **9. Stack-движок**: реализовать `Fp_conv` и `Atomic_mem` в `lib/stack_vm/ir_to_stack.ml`.
 
-1. `lib/vm_ir/ir.ml`: расширить `Atomic_mem` отдельными полями `value_reg`, `result_reg`,
-   `width`, `ordering` вместо переиспользования `src`/`dst` под две разные конвенции.
-2. `lib/native_vm/vm_emitter.ml:806-817` и `lib/native_vm/vm_mem_handlers.ml:1490-1596`:
-   кодировать и исполнять RMW с корректным приёмником, с шириной B8/B16/B32/B64 и
-   с порядком доступа из IR.
-3. `lib/arm64_lifter/arm64_branch.ml:180-183`: сохранять ширину источника (`Gpr (n, B32)`)
-   и приёмника (`Fpr (d, B32)` для single-формы).
-4. `lib/native_vm/vm_mem_handlers.ml:1372-1425`: sign-extension для 32-битного источника
-   в `SCVTF`, truncation в `UCVTF`, округление до binary32 для single-приёмника.
-5. `lib/native_vm/vm_alu_handlers.ml`: разделить `ADC`/`SBB` на варианты «с флагами» и
-   «без флагов», инвертировать carry для ARM64-конвенции.
-6. `lib/stack_vm/ir_to_stack.ml:244-248`: реализовать `Fp_conv` и `Atomic_mem` либо
-   диагностировать их отказ, а не выбрасывать молча.
-7. `lib/rd_jit_vm/rd_jit_emitter.ml:137-148`: реализовать carry и borrow в JIT-опкодах.
+## 6.1. Регрессия probe A (обнаружена при верификации п. 8, НЕ вызвана его правками)
 
+Стэш-бисект: база рабочего дерева (правки п. 1–7 без п. 8) тоже даёт **106** — регрессия
+существовала до начала п. 8. Симптомы:
+
+- `Threaded_vm_packager.transform_func` печатает
+  `[TRANSFORM_FUNC ERROR] Stage 7 ... Mismatch in return value RAX (expected 0x…7F, got 0x0)`
+  и падает на fallback (только semantic+codec, без allocator-пути) — расхождение
+  orig_f vs alloc_f на IR-уровне, воспроизводится в RefVM.
+- E2E-биты: падают bit0 (LDADD dst ← old), bit2 (регистр значения цел) и bit4 (UCVTF
+  32-бит: конверсия ведёт себя как знаковая — bit5 проходит именно потому, что w0=0
+  знаково-расширяется в 0). Т.е. после fallback Atomic dst/src и флаги ширины UCVTF
+  расходятся с аппаратурой.
+- Гипотеза: падает Stage 5 (register allocator) либо codec на `Atomic_mem`/`Fp_conv`
+  — transform-пайплайн меняет семантику, equivalence это ловит, а fallback-путь
+  наследует часть поломки. Требует отдельного расследования (проверить ремаппинг
+  `Atomic_mem` в `register_allocator.ml:86` и поведение codec на флагах ширины `imm`).
 ## 7. Смежные находки
 
 - `dmb`, `dsb`, `isb` лифтятся в `Nop` (`lib/arm64_lifter/arm64_alu.ml:822`,

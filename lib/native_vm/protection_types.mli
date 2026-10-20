@@ -104,7 +104,10 @@ type memory_chaffing_config = {
   chaff_ratio : float;
 }
 
+type arch = [ `X86_64 | `AArch64 | `RISCV ]
+
 type t = {
+  arch : arch;
   seed : int option;
   crypto : crypto_config;
   bloat : bloat_config;
@@ -132,6 +135,11 @@ val rolling_key_enabled : t option -> bool
 (** Anti-Pushan block-chained rolling key gate: [true] unless a config explicitly
     disables it.  Shared by the encoder and the C++ runtime emitter so both sides
     derive the same keystream. *)
+
+val arm64_carry_enabled : t option -> bool
+(** ADC/SBC carry dialect: [true] when the lifted program reads the carry in
+    the ARM64 convention (C = NOT borrow after SUB-family flag writers).
+    Selects the ARM64-view carry for ADC/SBC words in the emitted bytecode. *)
 
 val address_bound_enabled : t option -> bool
 (** Anti-VMPredator address-bound bytecode gate: [true] when running_key and address_bound

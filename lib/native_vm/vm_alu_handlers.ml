@@ -1220,39 +1220,70 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
       ]
   in
   emit_handler_ast b "H_POP_R" (pop_stmts @ [ inc_instrs; fetch_next ]);
+
+  (* ADC/SBC word tags (bits 50..51, the same per-word tag area CMP uses for
+     width): bit 0 = set_flags (write NZCV), bit 1 = ARM64 carry dialect.
+     ctx.cf keeps the x86 convention (CF = borrow after SUB); the ARM64 view
+     C = NOT borrow lives in ctx.cf_arm64, maintained by every flag writer.
+     ARM64: ADC adds C, SBC subtracts NOT C.  With both bits clear the words
+     reproduce the legacy x86 behaviour (read ctx.cf, write flags). *)
+  let carry_tags_decl = let_u32 "carry_tags" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L)) in
+  let carry_is_arm64 = (var "carry_tags" &~ u64 2L) <>~ u64 0L in
+  let carry_write_flags = (var "carry_tags" &~ u64 1L) <>~ u64 0L in
+  let adc_carry_cond =
+    (carry_is_arm64 &&~ var "ctx.cf_arm64")
+    ||~ ((log_not carry_is_arm64) &&~ var "ctx.cf")
+  in
+  let sbb_borrow_cond =
+    (carry_is_arm64 &&~ log_not (var "ctx.cf_arm64"))
+    ||~ ((log_not carry_is_arm64) &&~ var "ctx.cf")
+  in
+
   let adc_rr_stmts = match pick_variant 3 with
     | 0 -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" reg_src;
-        let_u64 "c" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "c" (ternary adc_carry_cond (u64 1L) (u64 0L));
         let_u64 "res" (var "a" +~ var "b" +~ var "c");
-        var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
-        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
+          var "ctx.cf_arm64" := var "ctx.cf";
+          var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        ];
         set_reg (var "dst") (var "res");
       ]
     | 1 -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" reg_src;
-        let_u64 "c" (cast UInt64 (var "ctx.cf"));
+        let_u64 "c" (cast UInt64 (ternary adc_carry_cond (u64 1L) (u64 0L)));
         let_u64 "res" ((var "a" +~ var "b") +~ var "c");
-        var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
-        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
+          var "ctx.cf_arm64" := var "ctx.cf";
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
+          var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        ];
         set_reg (var "dst") (var "res");
       ]
     | _ -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" reg_src;
-        let_u64 "c" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "c" (ternary adc_carry_cond (u64 1L) (u64 0L));
         let_u64 "ab" (var "a" +~ var "b");
         let_u64 "res" (var "ab" +~ var "c");
-        var "ctx.cf" := ((var "ab" <~ var "a") ||~ (var "res" <~ var "ab"));
-        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "ab" <~ var "a") ||~ (var "res" <~ var "ab"));
+          var "ctx.cf_arm64" := var "ctx.cf";
+          var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        ];
         set_reg (var "dst") (var "res");
       ]
   in
@@ -1260,37 +1291,49 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
 
   let adc_ri_stmts = match pick_variant 3 with
     | 0 -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" imm_u64;
-        let_u64 "c" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "c" (ternary adc_carry_cond (u64 1L) (u64 0L));
         let_u64 "res" (var "a" +~ var "b" +~ var "c");
-        var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
-        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
+          var "ctx.cf_arm64" := var "ctx.cf";
+          var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        ];
         set_reg (var "dst") (var "res");
       ]
     | 1 -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" imm_u64;
-        let_u64 "c" (cast UInt64 (var "ctx.cf"));
+        let_u64 "c" (cast UInt64 (ternary adc_carry_cond (u64 1L) (u64 0L)));
         let_u64 "res" ((var "a" +~ var "b") +~ var "c");
-        var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
-        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "res" <~ var "a") ||~ ((var "c" <>~ u64 0L) &&~ (var "res" ==~ var "a")));
+          var "ctx.cf_arm64" := var "ctx.cf";
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
+          var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        ];
         set_reg (var "dst") (var "res");
       ]
     | _ -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" imm_u64;
-        let_u64 "c" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "c" (ternary adc_carry_cond (u64 1L) (u64 0L));
         let_u64 "ab" (var "a" +~ var "b");
         let_u64 "res" (var "ab" +~ var "c");
-        var "ctx.cf" := ((var "ab" <~ var "a") ||~ (var "res" <~ var "ab"));
-        var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "ab" <~ var "a") ||~ (var "res" <~ var "ab"));
+          var "ctx.cf_arm64" := var "ctx.cf";
+          var "ctx.of" := ((((var "a" ^~ var "res") &~ (var "b" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        ];
         set_reg (var "dst") (var "res");
       ]
   in
@@ -1298,36 +1341,48 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
 
   let sbb_rr_stmts = match pick_variant 3 with
     | 0 -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" reg_src;
-        let_u64 "borrow" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "borrow" (ternary sbb_borrow_cond (u64 1L) (u64 0L));
         let_u64 "res" (var "a" -~ var "b" -~ var "borrow");
-        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
-        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+          var "ctx.cf_arm64" := log_not (var "ctx.cf");
+          var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        ];
         set_reg (var "dst") (var "res");
       ]
     | 1 -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" reg_src;
-        let_u64 "borrow" (cast UInt64 (var "ctx.cf"));
+        let_u64 "borrow" (cast UInt64 (ternary sbb_borrow_cond (u64 1L) (u64 0L)));
         let_u64 "res" ((var "a" -~ var "b") -~ var "borrow");
-        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
-        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+          var "ctx.cf_arm64" := log_not (var "ctx.cf");
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
+          var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        ];
         set_reg (var "dst") (var "res");
       ]
     | _ -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" reg_src;
-        let_u64 "borrow" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "borrow" (ternary sbb_borrow_cond (u64 1L) (u64 0L));
         let_u64 "res" (var "a" -~ (var "b" +~ var "borrow"));
-        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
-        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+          var "ctx.cf_arm64" := log_not (var "ctx.cf");
+          var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        ];
         set_reg (var "dst") (var "res");
       ]
   in
@@ -1335,36 +1390,48 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
 
   let sbb_ri_stmts = match pick_variant 3 with
     | 0 -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" imm_u64;
-        let_u64 "borrow" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "borrow" (ternary sbb_borrow_cond (u64 1L) (u64 0L));
         let_u64 "res" (var "a" -~ var "b" -~ var "borrow");
-        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
-        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+          var "ctx.cf_arm64" := log_not (var "ctx.cf");
+          var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        ];
         set_reg (var "dst") (var "res");
       ]
     | 1 -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" imm_u64;
-        let_u64 "borrow" (cast UInt64 (var "ctx.cf"));
+        let_u64 "borrow" (cast UInt64 (ternary sbb_borrow_cond (u64 1L) (u64 0L)));
         let_u64 "res" ((var "a" -~ var "b") -~ var "borrow");
-        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
-        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+          var "ctx.cf_arm64" := log_not (var "ctx.cf");
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := ((var "res" >>~ i32 63) <>~ u64 0L);
+          var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+        ];
         set_reg (var "dst") (var "res");
       ]
     | _ -> [
+        carry_tags_decl;
         let_u64 "a" reg_dst;
         let_u64 "b" imm_u64;
-        let_u64 "borrow" (ternary (var "ctx.cf") (u64 1L) (u64 0L));
+        let_u64 "borrow" (ternary sbb_borrow_cond (u64 1L) (u64 0L));
         let_u64 "res" (var "a" -~ (var "b" +~ var "borrow"));
-        var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
-        var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
-        var "ctx.zf" := (var "res" ==~ u64 0L);
-        var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        if_then carry_write_flags [
+          var "ctx.cf" := ((var "a" <~ var "b") ||~ ((var "borrow" <>~ u64 0L) &&~ (var "a" ==~ var "b")));
+          var "ctx.cf_arm64" := log_not (var "ctx.cf");
+          var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) <>~ u64 0L);
+          var "ctx.zf" := (var "res" ==~ u64 0L);
+          var "ctx.sf" := (cast Int64 (var "res") <~ i32 0);
+        ];
         set_reg (var "dst") (var "res");
       ]
   in
@@ -1374,10 +1441,15 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   let ccmp_nzcv = cast UInt8 (((var "word" >>~ i32 22) +~ u64 0x0FL) -~ ((var "word" >>~ i32 22) |~ u64 0x0FL)) in
   let ccmp_imm_b = cast UInt64 (((var "word" >>~ i32 26) +~ u64 0x1FL) -~ ((var "word" >>~ i32 26) |~ u64 0x1FL)) in
   let ccmp_bits = cast UInt32 (((var "word" >>~ i32 50) +~ u64 0x7FL) -~ ((var "word" >>~ i32 50) |~ u64 0x7FL)) in
+  (* The nzcv immediate is in ARM64 layout (N=8 Z=4 C=2 V=1): bit 1 is the
+     ARM64-view carry.  ctx.cf stores the x86 view (CF = borrow), so invert
+     it for the branch conditions; the ARM64 view goes to the shadow so a
+     following ADC/SBC reads the right carry. *)
   let nzcv_fallback = [
     var "ctx.sf" := ((var "nzcv" &~ i32 8) <>~ i32 0);
     var "ctx.zf" := ((var "nzcv" &~ i32 4) <>~ i32 0);
-    var "ctx.cf" := ((var "nzcv" &~ i32 2) <>~ i32 0);
+    var "ctx.cf_arm64" := ((var "nzcv" &~ i32 2) <>~ i32 0);
+    var "ctx.cf" := ((var "nzcv" &~ i32 2) ==~ i32 0);
     var "ctx.of" := ((var "nzcv" &~ i32 1) <>~ i32 0);
   ] in
 
@@ -1505,6 +1577,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     | 0 -> [
         let_u64 "f" reg_src;
         var "ctx.cf" := ((var "f" &~ u64 1L) <>~ u64 0L);
+        var "ctx.cf_arm64" := var "ctx.cf";
         var "ctx.zf" := ((var "f" &~ u64 0x40L) <>~ u64 0L);
         var "ctx.sf" := ((var "f" &~ u64 0x80L) <>~ u64 0L);
         var "ctx.of" := ((var "f" &~ u64 0x800L) <>~ u64 0L);
@@ -1512,6 +1585,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     | 1 -> [
         let_u64 "f" reg_src;
         var "ctx.cf" := cast Bool (var "f" &~ u64 1L);
+        var "ctx.cf_arm64" := var "ctx.cf";
         var "ctx.zf" := cast Bool (var "f" &~ u64 0x40L);
         var "ctx.sf" := cast Bool (var "f" &~ u64 0x80L);
         var "ctx.of" := cast Bool (var "f" &~ u64 0x800L);
@@ -1519,6 +1593,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     | _ -> [
         let_u64 "mask" reg_src;
         var "ctx.cf" := (((var "mask" >>~ i32 0) &~ u64 1L) <>~ u64 0L);
+        var "ctx.cf_arm64" := var "ctx.cf";
         var "ctx.zf" := (((var "mask" >>~ i32 6) &~ u64 1L) <>~ u64 0L);
         var "ctx.sf" := (((var "mask" >>~ i32 7) &~ u64 1L) <>~ u64 0L);
         var "ctx.of" := (((var "mask" >>~ i32 11) &~ u64 1L) <>~ u64 0L);

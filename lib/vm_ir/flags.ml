@@ -95,6 +95,13 @@ let compute_cf = function
   | CC_OP_LOGIC _ -> false
   | CC_OP_INC { prev_cf; _ } | CC_OP_DEC { prev_cf; _ } -> prev_cf
 
+(* ARM64-view carry: C = NOT borrow after SUB-family ops, carry-out after
+   ADD-family ops.  ADC/SBC in the ARM64 dialect read this view of the flags
+   instead of the x86-style CF (todo item 8). *)
+let compute_cf_arm = function
+  | CC_OP_SUB _ | CC_OP_SBB _ as op -> not (compute_cf op)
+  | op -> compute_cf op
+
 let compute_zf = function
   | CC_OP_RAW raw -> Int64.logand raw 0x40L <> 0L
   | CC_OP_ADD { dst; width; _ }

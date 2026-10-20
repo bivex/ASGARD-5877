@@ -646,11 +646,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | ("cmn", (OpReg src1 :: OpReg src2 :: _)) ->
       Some [ Ir.Ccmn { cond = Flags.ALWAYS; src1 = Reg src1; src2 = Reg src2; nzcv = 0 } ]
   | ("cmn", (OpReg src1 :: OpImm imm :: _)) ->
-      let tmp1 = Register.with_width Register.vtmp1 (Register.get_width src1) in
-      Some [
-        Ir.Mov { dst = Reg tmp1; src = Imm imm };
-        Ir.Ccmn { cond = Flags.ALWAYS; src1 = Reg src1; src2 = Reg tmp1; nzcv = 0 };
-      ]
+      Some [ Ir.Ccmn { cond = Flags.ALWAYS; src1 = Reg src1; src2 = Imm imm; nzcv = 0 } ]
   | ("tst", (OpReg src1 :: ((OpReg _ | OpImm _) as src2) :: _)) ->
       Some [ Ir.Test { src1 = Reg src1; src2 = raw_to_ir_operand src2 } ]
   | ("ccmp", (OpReg src1 :: OpReg src2 :: OpImm nzcv :: cond_op :: _)) ->

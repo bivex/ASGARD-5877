@@ -16,5 +16,6 @@ val evaluate :
   ?initial_regs:(Register.t * int64) list ->
   ?initial_mem:(int64 * int) list ->
   ?max_steps:int ->
+  ?arm64_carry:bool ->
   Ir.func ->
   (execution_snapshot, string) result

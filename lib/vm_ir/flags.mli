@@ -40,6 +40,9 @@ type cc_op =
 val empty_flags : cc_op
 
 val compute_cf : cc_op -> bool
+(* ARM64-view carry: [not] the x86 CF after SUB/SBB (C = NOT borrow), equal
+    to CF otherwise.  Read by ADC/SBC in the ARM64 carry dialect. *)
+val compute_cf_arm : cc_op -> bool
 val compute_zf : cc_op -> bool
 val compute_sf : cc_op -> bool
 val compute_of : cc_op -> bool

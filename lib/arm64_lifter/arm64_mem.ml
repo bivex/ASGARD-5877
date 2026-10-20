@@ -222,8 +222,15 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   | (("ldadd" | "ldadda" | "ldaddl" | "ldaddal"
      | "ldaddb" | "ldaddab" | "ldaddlb" | "ldaddalb"
      | "ldaddh" | "ldaddah" | "ldaddlh" | "ldaddalh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->
+      let scratch =
+        if Register.to_string val_reg = Register.to_string Register.vtmp0
+           || Register.to_string res_reg = Register.to_string Register.vtmp0 then
+          Register.vtmp1
+        else Register.vtmp0
+      in
+      let (m, addr_prep) = lower_mem_operand ~scratch_reg:scratch m in
       let base = match m.base with Some b -> b | None -> Register.rsp in
-      Some [ Ir.Atomic_mem { op = AtAdd; dst = res_reg; addr = base; src = val_reg; imm = m.disp } ]
+      Some (addr_prep @ [ Ir.Atomic_mem { op = AtAdd; dst = res_reg; addr = base; src = val_reg; imm = m.disp } ])
   | (("swp" | "swpa" | "swpl" | "swpal"
      | "swpb" | "swpab" | "swplb" | "swpalb"
      | "swph" | "swpah" | "swplh" | "swpalh"), [ OpReg val_reg; OpReg res_reg; OpMem m ]) ->

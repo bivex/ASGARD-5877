@@ -99,6 +99,11 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field UInt64 "poison_penalty";
     member_field UInt64 "running_key";
     member_field Bool "cf";
+    (* ARM64-view carry: C = NOT borrow after SUB-family flag writers,
+       carry-out after ADD-family.  ctx.cf stays in the x86 convention
+       (CF = borrow) for eval_condition; ADC/SBC words tagged with the
+       ARM64 dialect read this shadow instead (todo item 8). *)
+    member_field Bool "cf_arm64";
     member_field Bool "zf";
     member_field Bool "sf";
     member_field Bool "of";
@@ -133,6 +138,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       ];
       (var "sp" := u64 0L);
       (var "cf" := bool_lit false); (var "zf" := bool_lit false);
+      (var "cf_arm64" := bool_lit false);
       (var "sf" := bool_lit false); (var "of" := bool_lit false);
       (var "pf" := bool_lit false);
       (var "trapped" := bool_lit false);
@@ -423,6 +429,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         (var "ctx.zf" := (var "res" ==~ u64 0L));
         (var "ctx.sf" := (cast Int64 (var "res") <~ i64 0L));
         (var "ctx.cf" := (var "a" <~ var "b"));
+        (var "ctx.cf_arm64" := (var "a" >=~ var "b"));
         (var "ctx.of" := ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ u64 63L) <>~ u64 0L));
       ] [
         let_u64 "mask" ((u64 1L <<~ var "bits") -~ u64 1L);
@@ -433,6 +440,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         (var "ctx.zf" := (var "res" ==~ u64 0L));
         (var "ctx.sf" := ((var "res" &~ var "sign_bit") <>~ u64 0L));
         (var "ctx.cf" := (var "a_val" <~ var "b_val"));
+        (var "ctx.cf_arm64" := (var "a_val" >=~ var "b_val"));
         (var "ctx.of" := ((((var "a_val" ^~ var "b_val") &~ (var "a_val" ^~ var "res")) &~ var "sign_bit") <>~ u64 0L));
       ];
     ];
@@ -454,6 +462,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         (var "ctx.zf" := (var "res" ==~ u64 0L));
         (var "ctx.sf" := (cast Int64 (var "res") <~ i64 0L));
         (var "ctx.cf" := (var "res" <~ var "a"));
+        (var "ctx.cf_arm64" := (var "res" <~ var "a"));
         (var "ctx.of" := (((bit_not (var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ u64 63L) <>~ u64 0L));
       ] [
         let_u64 "mask" ((u64 1L <<~ var "bits") -~ u64 1L);
@@ -464,6 +473,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         (var "ctx.zf" := (var "res" ==~ u64 0L));
         (var "ctx.sf" := ((var "res" &~ var "sign_bit") <>~ u64 0L));
         (var "ctx.cf" := (var "res" <~ var "a_val"));
+        (var "ctx.cf_arm64" := (var "res" <~ var "a_val"));
         (var "ctx.of" := (((bit_not (var "a_val" ^~ var "b_val") &~ (var "a_val" ^~ var "res")) &~ var "sign_bit") <>~ u64 0L));
       ];
     ];

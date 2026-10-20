@@ -1351,77 +1351,68 @@ let emit_mem_and_ffi_handlers ?rng b =
   in
   emit_handler_ast b "H_FCMP_DD" (fcmp_stmts @ [ inc_instrs; fetch_next ]);
 
-  let fcvtzs_stmts =
-    match pick_variant 3 with
-    | 0 -> [
+  let fcvtzs_stmts = [
+    decl_var Double "a";
+    if_then_else ((var "imm" &~ u64 1L) <>~ u64 0L)
+      [
+        let_u32 "f_raw" (c_cast UInt32 (get_vreg_lane (var "src") (i32 0)));
+        let_float "f" (bit_cast Float (var "f_raw"));
+        (var "a" := cast Double (var "f"));
+      ]
+      [
         let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
-        let_double "a" (bit_cast Double (var "a_raw"));
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "a")));
-      ]
-    | 1 -> [
-        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
-        let_i64 "_s64" (cast Int64 (var "_a"));
-        set_reg (var "dst") (cast UInt64 (var "_s64"));
-      ]
-    | _ -> [
-        set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (bit_cast Double (get_vreg_lane (var "src") (i32 0)))));
-      ]
-  in
+        (var "a" := bit_cast Double (var "a_raw"));
+      ];
+    set_reg (var "dst") (c_cast UInt64 (c_cast Int64 (var "a")));
+  ] in
   emit_handler_ast b "H_FCVTZS" (fcvtzs_stmts @ [ inc_instrs; fetch_next ]);
 
-  let scvtf_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_i64 "v" (c_cast Int64 reg_src);
-        set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "v"))) (u64 0L);
+  let scvtf_stmts = [
+    decl_var Double "d";
+    if_then_else ((var "imm" &~ u64 1L) <>~ u64 0L)
+      [ (var "d" := cast Double (cast Int32 reg_src)) ]
+      [ (var "d" := cast Double (cast Int64 reg_src)) ];
+    if_then_else ((var "imm" &~ u64 2L) <>~ u64 0L)
+      [
+        decl_var Float "f" ~init:(cast Float (var "d"));
+        set_vreg (var "dst") (cast UInt64 (bit_cast UInt32 (var "f"))) (u64 0L);
       ]
-    | 1 -> [
-        let_i64 "_s" (cast Int64 reg_src);
-        let_double "_d" (cast Double (var "_s"));
-        set_vreg (var "dst") (bit_cast UInt64 (var "_d")) (u64 0L);
-      ]
-    | _ -> [
-        set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (c_cast Int64 reg_src))) (u64 0L);
-      ]
-  in
+      [
+        set_vreg (var "dst") (bit_cast UInt64 (var "d")) (u64 0L);
+      ];
+  ] in
   emit_handler_ast b "H_SCVTF" (scvtf_stmts @ [ inc_instrs; fetch_next ]);
 
-  let fcvtzu_stmts =
-    match pick_variant 3 with
-    | 0 -> [
+  let fcvtzu_stmts = [
+    decl_var Double "a";
+    if_then_else ((var "imm" &~ u64 1L) <>~ u64 0L)
+      [
+        let_u32 "f_raw" (c_cast UInt32 (get_vreg_lane (var "src") (i32 0)));
+        let_float "f" (bit_cast Float (var "f_raw"));
+        (var "a" := cast Double (var "f"));
+      ]
+      [
         let_u64 "a_raw" (get_vreg_lane (var "src") (i32 0));
-        let_double "a" (bit_cast Double (var "a_raw"));
-        set_reg (var "dst") (ternary (var "a" <~ var "0.0") (u64 0L) (c_cast UInt64 (var "a")));
-      ]
-    | 1 -> [
-        let_double "_a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
-        let_u64 "_u64" (ternary (var "_a" <~ var "0.0") (u64 0L) (cast UInt64 (var "_a")));
-        set_reg (var "dst") (var "_u64");
-      ]
-    | _ -> [
-        let_double "a" (bit_cast Double (get_vreg_lane (var "src") (i32 0)));
-        if_then_else (var "a" <~ var "0.0")
-          [ set_reg (var "dst") (u64 0L) ]
-          [ set_reg (var "dst") (c_cast UInt64 (var "a")) ];
-      ]
-  in
+        (var "a" := bit_cast Double (var "a_raw"));
+      ];
+    set_reg (var "dst") (ternary (var "a" <~ var "0.0") (u64 0L) (c_cast UInt64 (var "a")));
+  ] in
   emit_handler_ast b "H_FCVTZU" (fcvtzu_stmts @ [ inc_instrs; fetch_next ]);
 
-  let ucvtf_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "v" reg_src;
-        set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "v"))) (u64 0L);
+  let ucvtf_stmts = [
+    decl_var Double "d";
+    if_then_else ((var "imm" &~ u64 1L) <>~ u64 0L)
+      [ (var "d" := cast Double (cast UInt32 reg_src)) ]
+      [ (var "d" := cast Double reg_src) ];
+    if_then_else ((var "imm" &~ u64 2L) <>~ u64 0L)
+      [
+        decl_var Float "f" ~init:(cast Float (var "d"));
+        set_vreg (var "dst") (cast UInt64 (bit_cast UInt32 (var "f"))) (u64 0L);
       ]
-    | 1 -> [
-        let_double "_d" (cast Double reg_src);
-        set_vreg (var "dst") (bit_cast UInt64 (var "_d")) (u64 0L);
-      ]
-    | _ -> [
-        let_u64 "_v" reg_src;
-        set_vreg (var "dst") (bit_cast UInt64 (c_cast Double (var "_v"))) (u64 0L);
-      ]
-  in
+      [
+        set_vreg (var "dst") (bit_cast UInt64 (var "d")) (u64 0L);
+      ];
+  ] in
   emit_handler_ast b "H_UCVTF" (ucvtf_stmts @ [ inc_instrs; fetch_next ]);
 
   let fcvt_stmts =
@@ -1549,50 +1540,62 @@ let emit_mem_and_ffi_handlers ?rng b =
   in
   emit_handler_ast b "H_ATOMIC_CAS" (atomic_cas_stmts @ [ inc_instrs; fetch_next ]);
 
-  let atomic_add_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
-        decl_var (Ptr (StructType "std::atomic<uint64_t>")) "ptr" ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "addr"));
-        let_u64 "old" (call "ptr->fetch_add" [reg_src; var "std::memory_order_seq_cst"]);
-        set_reg (var "src") (var "old");
+  let atomic_add_stmts = [
+    let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+    let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
+    if_then_else (var "wcode" ==~ i32 1)
+      [
+        let_u32 "_old32" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt32) (var "_addr"); cast UInt32 reg_src; var "__ATOMIC_SEQ_CST"]);
+        set_reg (var "src") (cast UInt64 (var "_old32"));
       ]
-    | 1 -> [
-        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
-        let_u64 "_old" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
-        set_reg (var "src") (var "_old");
-      ]
-    | _ -> [
-        decl_var (Ptr UInt64) "ptr" ~init:(reinterpret_cast (Ptr UInt64) (reg_dst +~ c_cast UInt64 (var "imm")));
-        let_u64 "old" (call "__atomic_load_n" [var "ptr"; var "__ATOMIC_RELAXED"]);
-        let_u64 "add_val" reg_src;
-        while_loop (log_not (call "__atomic_compare_exchange_n" [var "ptr"; addr_of (var "old"); var "old" +~ var "add_val"; bool_lit false; var "__ATOMIC_SEQ_CST"; var "__ATOMIC_SEQ_CST"])) [];
-        set_reg (var "src") (var "old");
-      ]
-  in
+      [
+        if_then_else (var "wcode" ==~ i32 2)
+          [
+            let_u16 "_old16" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt16) (var "_addr"); cast UInt16 reg_src; var "__ATOMIC_SEQ_CST"]);
+            set_reg (var "src") (cast UInt64 (var "_old16"));
+          ]
+          [
+            if_then_else (var "wcode" ==~ i32 3)
+              [
+                let_u8 "_old8" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt8) (var "_addr"); cast UInt8 reg_src; var "__ATOMIC_SEQ_CST"]);
+                set_reg (var "src") (cast UInt64 (var "_old8"));
+              ]
+              [
+                let_u64 "_old64" (call "__atomic_fetch_add" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
+                set_reg (var "src") (var "_old64");
+              ];
+          ];
+      ];
+  ] in
   emit_handler_ast b "H_ATOMIC_ADD" (atomic_add_stmts @ [ inc_instrs; fetch_next ]);
 
-  let atomic_swp_stmts =
-    match pick_variant 3 with
-    | 0 -> [
-        let_u64 "addr" (reg_dst +~ c_cast UInt64 (var "imm"));
-        decl_var (Ptr (StructType "std::atomic<uint64_t>")) "ptr" ~init:(reinterpret_cast (Ptr (StructType "std::atomic<uint64_t>")) (var "addr"));
-        let_u64 "old" (call "ptr->exchange" [reg_src; var "std::memory_order_seq_cst"]);
-        set_reg (var "src") (var "old");
+  let atomic_swp_stmts = [
+    let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
+    let_u32 "wcode" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 3L));
+    if_then_else (var "wcode" ==~ i32 1)
+      [
+        let_u32 "_old32" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt32) (var "_addr"); cast UInt32 reg_src; var "__ATOMIC_SEQ_CST"]);
+        set_reg (var "src") (cast UInt64 (var "_old32"));
       ]
-    | 1 -> [
-        let_u64 "_addr" (reg_dst +~ cast UInt64 (var "imm"));
-        let_u64 "_old" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
-        set_reg (var "src") (var "_old");
-      ]
-    | _ -> [
-        decl_var (Ptr UInt64) "ptr" ~init:(reinterpret_cast (Ptr UInt64) (reg_dst +~ c_cast UInt64 (var "imm")));
-        let_u64 "old" (call "__atomic_load_n" [var "ptr"; var "__ATOMIC_RELAXED"]);
-        let_u64 "new_val" reg_src;
-        while_loop (log_not (call "__atomic_compare_exchange_n" [var "ptr"; addr_of (var "old"); var "new_val"; bool_lit false; var "__ATOMIC_SEQ_CST"; var "__ATOMIC_SEQ_CST"])) [];
-        set_reg (var "src") (var "old");
-      ]
-  in
+      [
+        if_then_else (var "wcode" ==~ i32 2)
+          [
+            let_u16 "_old16" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt16) (var "_addr"); cast UInt16 reg_src; var "__ATOMIC_SEQ_CST"]);
+            set_reg (var "src") (cast UInt64 (var "_old16"));
+          ]
+          [
+            if_then_else (var "wcode" ==~ i32 3)
+              [
+                let_u8 "_old8" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt8) (var "_addr"); cast UInt8 reg_src; var "__ATOMIC_SEQ_CST"]);
+                set_reg (var "src") (cast UInt64 (var "_old8"));
+              ]
+              [
+                let_u64 "_old64" (call "__atomic_exchange_n" [reinterpret_cast (Ptr UInt64) (var "_addr"); reg_src; var "__ATOMIC_SEQ_CST"]);
+                set_reg (var "src") (var "_old64");
+              ];
+          ];
+      ];
+  ] in
   emit_handler_ast b "H_ATOMIC_SWP" (atomic_swp_stmts @ [ inc_instrs; fetch_next ]);
   emit_handler_inline_ast b "H_FENCE" [
     expr_stmt (call "std::atomic_thread_fence" [var "std::memory_order_seq_cst"]);

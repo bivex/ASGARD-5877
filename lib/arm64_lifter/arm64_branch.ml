@@ -187,14 +187,14 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Mov { dst = Reg dst; src = Reg src } ]
   | ("fmov", [ OpReg dst; OpImm imm ]) ->
       Some [ Ir.Mov { dst = Reg dst; src = Imm imm } ]
-  | ("fcvtzs", [ OpReg dst; OpReg (Register.Fpr (s, _)) ]) ->
-      Some [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, Register.B64) } ]
-  | ("fcvtzu", [ OpReg dst; OpReg (Register.Fpr (s, _)) ]) ->
-      Some [ Ir.Fp_conv { op = Fcvtzu; dst; src = Register.Fpr (s, Register.B64) } ]
-  | ("scvtf", [ OpReg (Register.Fpr (d, _)); OpReg src ]) ->
-      Some [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, Register.B64); src } ]
-  | ("ucvtf", [ OpReg (Register.Fpr (d, _)); OpReg src ]) ->
-      Some [ Ir.Fp_conv { op = Ucvtf; dst = Register.Fpr (d, Register.B64); src } ]
+  | ("fcvtzs", [ OpReg dst; OpReg (Register.Fpr (s, w)) ]) ->
+      Some [ Ir.Fp_conv { op = Fcvtzs; dst; src = Register.Fpr (s, w) } ]
+  | ("fcvtzu", [ OpReg dst; OpReg (Register.Fpr (s, w)) ]) ->
+      Some [ Ir.Fp_conv { op = Fcvtzu; dst; src = Register.Fpr (s, w) } ]
+  | ("scvtf", [ OpReg (Register.Fpr (d, w)); OpReg src ]) ->
+      Some [ Ir.Fp_conv { op = Scvtf; dst = Register.Fpr (d, w); src } ]
+  | ("ucvtf", [ OpReg (Register.Fpr (d, w)); OpReg src ]) ->
+      Some [ Ir.Fp_conv { op = Ucvtf; dst = Register.Fpr (d, w); src } ]
   | ("fcvt", [ OpReg dst; OpReg src ]) ->
       Some [ Ir.Fp_conv { op = Fcvt; dst; src } ]
 

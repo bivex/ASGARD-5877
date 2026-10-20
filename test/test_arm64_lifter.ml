@@ -621,7 +621,129 @@ let test_arm64_lift_swp_32bit_and_zero_reg () =
       | Ok snap ->
           check int64 "ARM64 swp 32-bit & zero reg = 595" 595L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+let test_probe_b () =
+  (* Probe B (todo item 8): carry arithmetic and flag side effects, evaluated
+     in the ARM64 carry dialect (C = NOT borrow after SUB-family writers).
+     bit0 sbc keeps NZCV, bit1 sbcs updates NZCV, bit2 adc keeps NZCV,
+     bit3 adcs updates NZCV, bit4 sbc == 10 - 20 + C - 1, bit5 adc == 31. *)
+  let asm = {|
+    mov x0, #0
+    mov x1, #10
+    mov x2, #20
+    mov x3, #10
+    cmp x1, x3
+    sbc x4, x1, x2
+    cset x5, eq
+    cmp x5, #1
+    cinc x0, x0, eq
+    cmp x1, x3
+    sbcs x4, x1, x2
+    cset x5, eq
+    cmp x5, #0
+    cinc x0, x0, eq
+    cmp x1, x3
+    adc x4, x1, x2
+    cset x5, eq
+    cmp x5, #1
+    cinc x0, x0, eq
+    cmp x1, x3
+    adcs x4, x1, x2
+    cset x5, eq
+    cmp x5, #0
+    cinc x0, x0, eq
+    cmp x1, x3
+    sbc x4, x1, x2
+    cmn x4, #10
+    cset x5, eq
+    cmp x5, #1
+    cinc x0, x0, eq
+    cmp x1, x3
+    adc x4, x1, x2
+    cmp x4, #31
+    cset x5, eq
+    cmp x5, #1
+    cinc x0, x0, eq
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "probe_b" } asm with
+  | Error err -> fail ("lift: " ^ err)
+  | Ok f ->
+      let res = Reference_vm.evaluate ~arm64_carry:true f |> Result.get_ok in
+      check int64 "probe_b 63 (ARM64 carry dialect)" 63L res.final_rax
 
+let test_adc_carry_dialect_diff () =
+  (* Same cmp/adc shape, x86 dialect default: cmp 10,10 leaves CF = 0 (no
+     borrow), so adc = 10 + 20 + 0 = 30 instead of the ARM64 31. *)
+  let asm = {|
+    mov x1, #10
+    mov x2, #20
+    mov x3, #10
+    cmp x1, x3
+    adc x0, x1, x2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "adc_dialect" } asm with
+  | Error err -> fail ("lift: " ^ err)
+  | Ok f ->
+      let res = Reference_vm.evaluate f |> Result.get_ok in
+      check int64 "adc after cmp, x86 dialect = 30" 30L res.final_rax;
+      let res64 = Reference_vm.evaluate ~arm64_carry:true f |> Result.get_ok in
+      check int64 "adc after cmp, ARM64 dialect = 31" 31L res64.final_rax
+
+let test_arm64_lift_ngc () =
+  (* ngc = 0 - src - NOT C; after cmp 10,10 (C = 1): 0 - 20 - 0 = -20. *)
+  let asm = {|
+    mov x1, #10
+    mov x2, #20
+    cmp x1, x1
+    ngc x0, x2
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_ngc" } asm with
+  | Error err -> fail ("Failed to lift ARM64 ngc: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate ~arm64_carry:true f with
+      | Ok snap -> check int64 "ARM64 ngc = -20" (-20L) snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_probe_c () =
+  let asm = {|
+	sub	sp, sp, #16
+	mov	w8, #100
+	str	x8, [sp, #8]
+	mov	w8, #7
+	add	x9, sp, #8
+	ldadd	x8, x10, [x9]
+	mov	x11, x10
+	mov	x12, x8
+	cmp	x11, #100
+	cset	w8, eq
+	mov	w9, #2
+	cinc	w9, w9, eq
+	cmp	x12, #7
+	csel	w8, w9, w8, eq
+	mov	x9, #8589934591
+	str	x9, [sp, #8]
+	mov	w9, #1
+	add	x10, sp, #8
+	ldadd	w9, w11, [x10]
+	mov	w12, w11
+	ldr	x9, [sp, #8]
+	orr	w10, w8, #0x4
+	mov	x11, #4294967296
+	cmp	x9, x11
+	csel	w8, w10, w8, eq
+	orr	w9, w8, #0x8
+	cmn	w12, #1
+	csel	w0, w9, w8, eq
+	add	sp, sp, #16
+	ret
+  |} in
+  match lift_function ~options:{ function_name = "probe_c" } asm with
+  | Error err -> fail ("lift: " ^ err)
+  | Ok orig_f ->
+      let res0 = Reference_vm.evaluate orig_f |> Result.get_ok in
+      check int64 "probe_c 15" 15L res0.final_rax
 let test_arm64_lift_paci_auti_sp () =
   let asm = {|
     paciasp
@@ -1213,6 +1335,10 @@ let tests = [
   ("ARM64 Lift SWPAL", `Quick, test_arm64_lift_swpal);
   ("ARM64 Lift SWPL", `Quick, test_arm64_lift_swpl);
   ("ARM64 Lift SWP (32-bit & zero reg)", `Quick, test_arm64_lift_swp_32bit_and_zero_reg);
+  ("ARM64 Probe C", `Quick, test_probe_c);
+  ("ARM64 Probe B (adc/sbc carry dialect)", `Quick, test_probe_b);
+  ("ARM64 Adc carry dialect differential", `Quick, test_adc_carry_dialect_diff);
+  ("ARM64 Lift ngc (negate with carry)", `Quick, test_arm64_lift_ngc);
   ("ARM64 Lift PACI/AUTI (paciasp/autiasp)", `Quick, test_arm64_lift_paci_auti_sp);
   ("ARM64 Lift RETAA", `Quick, test_arm64_lift_reta);
   ("ARM64 Lift RETAB", `Quick, test_arm64_lift_retab);

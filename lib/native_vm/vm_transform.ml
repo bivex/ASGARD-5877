@@ -410,6 +410,61 @@ let pick_scratch_reg (d : Register.t) (s : Register.t) : Register.t =
 
 let rec canonicalize_instr (instr : Ir.instr) : Ir.instr list =
   match instr with
+  (* Adc/Sbb consume the carry flag.  The generic lowering below rewrites
+     flag-setting ALU ops to (alu [no_flags] + cmp dst,0), which both
+     desynchronizes NZCV after the non-S forms and destroys the CF/OF the S
+     forms must produce.  Canonicalize only the operand shape and pass the
+     flag semantics through: the VM encodes set_flags in the ADC/SBC word
+     and the handlers write proper ADC/SBC flags natively. *)
+  | Ir.Alu { op = (Ir.Adc | Ir.Sbb) as op; dst; src1; src2; set_flags } ->
+      let canon_src2 =
+        match src2 with
+        | Ir.Imm imm when not (imm >= -2147483648L && imm <= 2147483647L) ->
+            let scratch = pick_scratch_reg dst (match src1 with Ir.Reg s -> s | _ -> dst) in
+            let src1_is_dst = (match src1 with Ir.Reg s -> Register.to_string s = Register.to_string dst | _ -> false) in
+            let scratch = if src1_is_dst then pick_scratch_reg dst dst else scratch in
+            (true, [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Imm imm } ], Ir.Reg scratch)
+        | Ir.Mem m ->
+            let scratch = pick_scratch_reg dst (match src1 with Ir.Reg s -> s | _ -> dst) in
+            (true, [ Ir.Mov { dst = Ir.Reg scratch; src = Ir.Mem m } ], Ir.Reg scratch)
+        | other -> (false, [], other)
+      in
+      let (src2_needs_prep, src2_prep, src2') = canon_src2 in
+      let body =
+        match src1, src2' with
+        | Ir.Reg s1, (Ir.Reg _ as keep_s2)
+          when Register.to_string s1 = Register.to_string dst ->
+            [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = keep_s2; set_flags } ]
+        | Ir.Reg s1, Ir.Reg s2
+          when Register.to_string s2 = Register.to_string dst
+               && Register.to_string s1 <> Register.to_string dst
+               && op = Ir.Adc ->
+            (* Adc commutes: dst = s1 + dst + C == dst + s1 + C; the 2-address
+               form reads the old dst before writing it. *)
+            [ Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg s1; set_flags } ]
+        | Ir.Reg s1, Ir.Reg s2
+          when Register.to_string s2 = Register.to_string dst
+               && Register.to_string s1 <> Register.to_string dst ->
+            (* Sbb hazard: dst = s1 - dst.  Preserve the old dst in scratch. *)
+            let scratch = pick_scratch_reg dst s1 in
+            [
+              Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
+              Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s1 };
+              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = Ir.Reg scratch; set_flags };
+            ]
+        | Ir.Reg s1, s2 ->
+            [
+              Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg s1 };
+              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = s2; set_flags };
+            ]
+        | nonreg, s2 ->
+            [
+              Ir.Mov { dst = Ir.Reg dst; src = nonreg };
+              Ir.Alu { op; dst; src1 = Ir.Reg dst; src2 = s2; set_flags };
+            ]
+      in
+      if src2_needs_prep then src2_prep @ body else body
+
   | Ir.Alu { op; dst; src1; src2 = Ir.Imm imm; set_flags }
     when not (imm >= -2147483648L && imm <= 2147483647L) ->
       let scratch = pick_scratch_reg dst (match src1 with Ir.Reg s -> s | _ -> dst) in

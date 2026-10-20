@@ -11,8 +11,8 @@ type execution_snapshot = {
   halted_cleanly : bool;
 }
 
-let evaluate ?(initial_regs = []) ?(initial_mem = []) ?(max_steps = 50000) (f : func) =
-  let state = Vm_eval.make_state () in
+let evaluate ?(initial_regs = []) ?(initial_mem = []) ?(max_steps = 50000) ?(arm64_carry = false) (f : func) =
+  let state = Vm_eval.make_state ~arm64_carry () in
   List.iter (fun (r, v) -> Vm_eval.set_reg state r v) initial_regs;
   List.iter (fun (addr, b) -> Vm_eval.write_mem state addr Register.B8 (Int64.of_int b)) initial_mem;
   
