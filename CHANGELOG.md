@@ -10,6 +10,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 
+- Add a native-execution test for the x86 FSGSBASE family (`RDFSBASE`, `RDGSBASE`, `WRFSBASE`, `WRGSBASE`): the segment base is written into the VM context slot and read back through the same slot, which the lifter test alone did not cover.
 - Add a per-case timing report to the test runner: every Alcotest case prints its own duration next to its name, and `run_tests.sh` reports the elapsed time of the whole run plus a line every 30 seconds. Alcotest captures the output of a case, so the durations travel through the file named by `ASGARD_TEST_TIMES`, which the script tails. The slowest cases are now visible without a second run.
 - Add the missing x86 sign-extension forms to the lifter: `cbw` (AX becomes the sign-extended AL, the upper half of RAX is kept) and `cwde` (EAX becomes the sign-extended AX, the upper half of RAX is zeroed), plus the AT&T spellings `cbtw`, `cwtl` and `cwtd`. `cqo` and `cqto` were already supported; the whole family is now pinned by a test against the values an x86-64 machine produces.
 - Add x86 BMI1 `BLSR` (reset lowest set bit) to the lifter: the result is `(SRC - 1) & SRC`, so the lowest set bit of the source is cleared, ZF and SF come from the result, CF is set when the source is zero and OF is cleared. The `blsr`, `blsrq` and `blsrl` spellings are accepted.
