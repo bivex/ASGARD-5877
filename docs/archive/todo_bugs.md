@@ -1,43 +1,30 @@
-# TODO: известные баги / падения тестов
+# TODO: Known Bugs and Test Regressions
 
-Дата: 2026-10-16. Обнаружено при верификации differential fuzzing
-(`dune runtest`, 467 тестов, 8 падений). Обе группы не связаны с
-FP-taint фиксом рерайтера (`c_arith_rewriter.ml`) — задокументировано
-для последующего разбора.
+Date: 2026-10-16. Discovered during differential fuzzing verification (`dune runtest`, 467 tests, 8 failures). Neither group is related to the FP-taint rewriter fix (`c_arith_rewriter.ml`) — documented for subsequent resolution.
 
-## 1. Native VM Sub-width Semantics — 7 падений (arm64 lifter)
+## 1. Native VM Sub-width Semantics — 7 Failures (ARM64 Lifter)
 
 ```
 ASSERT uint16_pipeline failed: Lifter failed (arm64): Unsupported or invalid ARM64 instruction: sturh
 ```
 
-- Suite: `Native VM Sub-width Semantics`, тесты `e2e_uint16_pipeline` и соседние
-  (кэш прогонов: `_build/default/test/_build/_tests/Random_vISA_Tests/Native VM Sub-width Semantics.00{4,5,8,9}.output`, `.01{0,1,2}.output`).
-- Причина: arm64-лифтер не поддерживает инструкцию `sturh`
-  (unscaled store halfword, `lib/arm64_lifter/`).
-- Файл для правки: парсер/таблица инструкций arm64-лифтера — добавить
-  декодирование `sturh` (и, вероятно, соседних unscaled load/store:
-  `ldurh`, `ldurb`, `sturb`, `ldursb`, `ldursh` — стоит проверить сразу).
-- Semantics: `sturh Wt, [Xn, #imm9]` — запись младших 16 бит регистра
-  по невыровненному адресу; не должна модифицировать флаги.
+- Suite: `Native VM Sub-width Semantics`, test cases `e2e_uint16_pipeline` and adjacent tests (run cache: `_build/default/test/_build/_tests/Random_vISA_Tests/Native VM Sub-width Semantics.00{4,5,8,9}.output`, `.01{0,1,2}.output`).
+- Root Cause: The ARM64 lifter lacks support for the `sturh` instruction (unscaled store halfword, `lib/arm64_lifter/`).
+- File to update: Instruction parser and dispatch table in the ARM64 lifter — add decoding for `sturh` (and consider neighboring unscaled load/store instructions: `ldurh`, `ldurb`, `sturb`, `ldursb`, `ldursh`).
+- Semantics: `sturh Wt, [Xn, #imm9]` — store lower 16 bits of the register to an unaligned memory address; does not modify condition flags.
 
-## 2. Anti-Pushan Rolling Key — 1 падение
+## 2. Anti-Pushan Rolling Key — 1 Failure
 
 ```
-Кэш: `_build/default/test/_build/_tests/Random_vISA_Tests/Anti-Pushan Rolling Key.009.output`
+Cache: `_build/default/test/_build/_tests/Random_vISA_Tests/Anti-Pushan Rolling Key.009.output`
 ```
 
-- Тест `anti_vmpredator_ta...` (индекс 9 в suite).
-- Требует воспроизведения: `_build/default/test/run_tests.exe test 'Anti-Pushan Rolling Key'`.
-- Статус: не разбирался, причина неизвестна.
+- Test: `anti_vmpredator_ta...` (index 9 in suite).
+- Reproduction command: `_build/default/test/run_tests.exe test 'Anti-Pushan Rolling Key'`.
+- Status: Under investigation, root cause pending analysis.
 
-## 3. (исправлено в рабочем дереве) MBA-рерайтер ломал FP-код
+## 3. (Resolved in Tree) MBA Rewriter Breaking FP Code
 
-`double q2 = q + p.d;` → `ASG_MBA_ADD(q, p.d)` → `double ^ double` —
-невалидный C++, obf-TU не компилировался. Найдено differential-раннером
-(`examples/diff_fuzz/`) на первом же прогоне project-пайплайна.
+`double q2 = q + p.d;` -> `ASG_MBA_ADD(q, p.d)` -> `double ^ double` — invalid C++, causing compilation failure in obfuscated translation units. Discovered by the differential runner (`examples/diff_fuzz/`) during the initial project pipeline run.
 
-Фикс: FP-taint анализ в `lib/c_macro_obf/c_arith_rewriter.ml` +
-`c_expr_parser.ml` (сбор FP-деклараций TU, авто-цепочки, FP-литералы/
-касты/math-builtins; tainted выражения не переписываются). Регрессионный
-тест: `arithmetic_rewriter_fp_taint` в `test/test_c_macro_obf.ml` (проходит).
+Fix: Added FP-taint analysis in `lib/c_macro_obf/c_arith_rewriter.ml` and `c_expr_parser.ml` (gathers FP declarations across the TU, tracks dependency chains, filters FP literals, casts, and math built-ins; tainted expressions bypass MBA rewriting). Regression test: `arithmetic_rewriter_fp_taint` in `test/test_c_macro_obf.ml` (passing).
