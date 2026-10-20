@@ -1,58 +1,57 @@
-# Руководство по аудиту виртуализированных бинарников ASGARD-5877 через idasql
+# Guide to Auditing ASGARD-5877 Virtualized Binaries via idasql
 
-Настоящий документ описывает методику применения утилиты `idasql` для автоматизированного анализа, аудита безопасности, проверки стойкости и отладки бинарных файлов, защищенных виртуальной машиной ASGARD-5877 (включая Stack-VM и Register-VM).
-
----
-
-## 1. Назначение и цели аудита
-
-При защите бинарных файлов виртуализацией кода (Stack-VM / Register-VM) и макро-обфускацией (`asgard_obf.h`) необходимо объективно верифицировать результат защиты против профессиональных инструментов реверс-инжиниринга (IDA Pro, Hex-Rays Decompiler).
-
-Утилита `idasql` предоставляет декларативный SQL-интерфейс (на базе SQLite) к внутренней базе данных IDA Pro (`.i64`/`.idb`). Это позволяет автоматизировать:
-- Проверку сокрытия строк и удаления символов;
-- Аудит декомпилированного псевдокода Hex-Rays;
-- Инспекцию низкоуровневых структур данных виртуальной машины и их выравнивания в памяти;
-- Поиск скрытых багов и краевых условий в сгенерированном рантайме ВМ.
-
-### Проверяемые свойства защиты
-
-1. **Сокрытие строковых литералов (Data Hiding):** Отсутствие в открытом виде служебных строк, сообщений валидации, ключей и маркеров в таблице `strings`.
-2. **Разрушение сигнатур функций (Symbol Elimination):** Полное удаление имен и тел целевых функций из таблиц `funcs` и `names`.
-3. **Ослепление декомпилятора (Decompiler Resilience):** Невозможность восстановления бизнес-логики и графа потока данных декомпилятором Hex-Rays (таблица `pseudocode`).
-4. **Безопасность байткода:** Наличие шифрования байткода с динамическим rolling-ключом и отсутствие статических цепочек операндов.
-5. **Fail-Closed безопасность рантайма:** Защита от выхода за границы стека операндов (`vsp`), контроль контекстных слотов и отсутствие паразитных системных вызовов.
+This document describes the methodology for using `idasql` to perform automated analysis, security audits, resilience verification, and runtime debugging on binary executables protected by the ASGARD-5877 virtual machines (including Stack-VM and Register-VM).
 
 ---
 
-## 2. Предварительные требования
+## 1. Purpose and Audit Objectives
 
-Для выполнения аудита требуются:
+When protecting binaries via code virtualization (Stack-VM / Register-VM) and C-macro obfuscation (`asgard_obf.h`), the protection must be objectively verified against industry-standard reverse engineering tools (IDA Pro, Hex-Rays Decompiler).
 
-1. **IDA Pro 9.x / 8.x** с поддержкой пакетного консольного режима:
+The `idasql` tool provides a declarative SQLite interface to the internal IDA Pro database (`.i64` / `.idb`). This enables automated testing of:
+- String encryption and symbol stripping;
+- Hex-Rays decompiled pseudocode resilience;
+- Inspection of low-level virtual machine state structures and memory alignment;
+- Detection of subtle runtime flaws and edge cases in emitted VM C++ source code.
+
+### Verified Protection Properties
+
+1. **Data Hiding**: Absence of cleartext internal strings, validation messages, cryptographic keys, and marker signatures in the `strings` table.
+2. **Symbol Elimination**: Complete removal of target function names and bodies from `funcs` and `names` tables.
+3. **Decompiler Resilience**: Disruption of business logic and data-flow graphs in Hex-Rays (`pseudocode` table).
+4. **Bytecode Security**: Verification of dynamic rolling-key bytecode encryption and absence of static instruction-operand chains.
+5. **Fail-Closed Runtime Safety**: Bound checks on the operand stack pointer (`vsp`), context slot validation, and elimination of spurious system imports.
+
+---
+
+## 2. Prerequisites
+
+1. **IDA Pro 9.x / 8.x** with batch console mode support:
    - macOS: `/Applications/IDA Professional 9.2.app/Contents/MacOS/idat`
    - Linux: `/opt/idapro/idat64`
-2. **Утилита `idasql`**:
-   - Расположение в SDK: `/Users/password9090/Desktop/test/ida-sdk/src/bin/idasql`
-3. **Защищенный бинарник**, собранный через ASGARD-5877:
-   - Например: `_build/clean_test_stack/protected_app`
+2. **`idasql` CLI utility**:
+   - SDK binary location: `idasql`
+3. **Protected Binary** compiled by ASGARD-5877:
+   - For example: `_build/clean_test_stack/protected_app`
 
 ---
 
-## 3. Режимы сборки бинарника
+## 3. Binary Compilation Modes
 
-### 3.1 Продакшн-режим (Black-box аудит)
-По умолчанию сборка выполняется с максимальной оптимизацией и агрессивным стриппингом всех таблиц символов и секций отладки (`strip -x`, `-Wl,-dead_strip`, `-Wl,-x`):
+### 3.1 Production Mode (Black-Box Audit)
+By default, binaries are compiled with maximum optimizations and aggressive symbol and debug section stripping (`strip -x`, `-Wl,-dead_strip`, `-Wl,-x`):
+
 ```bash
 ./_build/default/bin/main.exe protect-arm64 -i app.c -o _build/out --engine=stack
 ```
 
-### 3.2 Отладочный режим с сохранением DWARF-символов (White-box аудит)
-Для детального аудита структуры самой виртуальной машины, проверки типов данных и поиска ошибок в рантайме компилятор поддерживает флаг переменной окружения `ASGARD_DEBUG_SYMBOLS=1`.
+### 3.2 Debug Mode with DWARF Preservation (White-Box Audit)
+For in-depth analysis of virtual machine internals, struct layouts, and runtime debugging, the toolchain supports the environment variable `ASGARD_DEBUG_SYMBOLS=1`.
 
-При его установке:
-- Включается генерация DWARF-информации (`-g -O1 -Wno-format-security`);
-- Отключается удаление символов (`strip -x`);
-- В базу IDA попадают определения структур C++ (`local_types`, `types_members`), имена аргументов и манглированные имена функций.
+When set:
+- DWARF debug information is retained (`-g -O1 -Wno-format-security`);
+- Symbol stripping is disabled;
+- C++ structure layouts (`local_types`, `types_members`), argument names, and mangled symbols are preserved in the IDA database.
 
 ```bash
 ASGARD_DEBUG_SYMBOLS=1 ./_build/default/bin/main.exe protect-arm64 -i app.c -o _build/out --engine=stack
@@ -60,11 +59,11 @@ ASGARD_DEBUG_SYMBOLS=1 ./_build/default/bin/main.exe protect-arm64 -i app.c -o _
 
 ---
 
-## 4. Конвейер аудита бинарника
+## 4. Audit Pipeline
 
-### Шаг 1. Генерация базы данных IDA в пакетном режиме
+### Step 1: Batch Database Generation
 
-IDA Pro запускается в автономном пакетном режиме без графического интерфейса:
+Run IDA Pro in headless batch mode:
 
 ```bash
 # macOS
@@ -74,53 +73,53 @@ IDA Pro запускается в автономном пакетном режи
 idat64 -A -B path/to/protected_app
 ```
 
-Флаги:
-- `-A`: Автономный режим (Autonomous mode), подавляет модальные диалоги.
-- `-B`: Пакетный режим (Batch mode), автоматически создает файл базы данных `.i64` и листинг `.asm`.
+Flags:
+- `-A`: Autonomous mode, suppresses modal dialogues.
+- `-B`: Batch mode, generates `.i64` database and `.asm` listing.
 
-В каталоге с бинарником будет создан файл `protected_app.i64`.
+This creates `protected_app.i64` in the target directory.
 
-### Шаг 2. Запуск `idasql`
+### Step 2: Querying with `idasql`
 
-#### Выполнение одиночного запроса:
+#### Single Query Execution:
 ```bash
 idasql -s protected_app.i64 -q "SELECT name, size FROM funcs;"
 ```
 
-#### Интерактивный режим (REPL):
+#### Interactive REPL:
 ```bash
 idasql -s protected_app.i64 -i
 ```
 
-#### Выполнение SQL-скрипта из файла:
+#### SQL Script File Execution:
 ```bash
 idasql -s protected_app.i64 -f audit_queries.sql
 ```
 
 ---
 
-## 5. Схема таблиц базы данных `idasql`
+## 5. `idasql` Schema Overview
 
-Инструмент `idasql` открывает доступ к более чем 40 виртуальным таблицам. Для аудита виртуализированных бинарников ключевыми являются следующие:
+The `idasql` tool exposes over 40 virtual tables. The primary tables for virtualized binary auditing include:
 
-| Таблица | Назначение | Ключевые колонки |
+| Table | Description | Key Columns |
 | :--- | :--- | :--- |
-| `strings` | Строковые литералы, обнаруженные IDA | `address`, `length`, `type_name`, `content` |
-| `funcs` | Таблица распознанных функций | `address`, `name`, `size`, `prototype`, `flags` |
-| `names` | Символы, метки и имена в сегментах | `address`, `name` |
-| `pseudocode` | Декомпилированный C-код (Hex-Rays) | `func_addr`, `line_num`, `line` |
-| `local_types` | Зарегистрированные типы и структуры данных | `ordinal`, `name`, `is_struct`, `is_enum` |
-| `types_members` | Поля структур, оффсеты и типы полей | `type_name`, `member_name`, `offset`, `size`, `member_type` |
-| `xrefs` | Перекрестные ссылки кода и данных | `from_ea`, `to_ea`, `type`, `type_name` |
-| `segments` | Карта секций бинарника | `name`, `start_ea`, `end_ea`, `bitness` |
+| `strings` | String literals discovered by IDA | `address`, `length`, `type_name`, `content` |
+| `funcs` | Recognized function entry points | `address`, `name`, `size`, `prototype`, `flags` |
+| `names` | Symbols, labels, and segment identifiers | `address`, `name` |
+| `pseudocode` | Decompiled C pseudocode (Hex-Rays) | `func_addr`, `line_num`, `line` |
+| `local_types` | Registered type definitions and structures | `ordinal`, `name`, `is_struct`, `is_enum` |
+| `types_members` | Structure field offsets, sizes, and types | `type_name`, `member_name`, `offset`, `size`, `member_type` |
+| `xrefs` | Code and data cross-references | `from_ea`, `to_ea`, `type`, `type_name` |
+| `segments` | Binary section map | `name`, `start_ea`, `end_ea`, `bitness` |
 
 ---
 
-## 6. Набор тестовых запросов для валидации защиты
+## 6. Protection Validation Query Suite
 
-### 6.1 Проверка сокрытия строковых литералов
+### 6.1 String Literal Hiding Verification
 
-**Цель:** Убедиться, что чувствительные строки приложения зашифрованы и отсутствуют в открытом виде.
+**Goal**: Verify that sensitive strings are encrypted and do not appear in cleartext.
 
 ```sql
 SELECT printf('0x%X', address) AS addr, length, content
@@ -132,12 +131,12 @@ WHERE content LIKE '%license%'
    OR content LIKE '%Testing%';
 ```
 
-- **Ожидаемый результат:** `0 row(s)`.
-- **Если строки найдены:** Строки не были обернуты в `ASG_STR` или макро-обфускатор был отключен.
+- **Expected Result**: `0 row(s)`.
+- **Finding Interpretation**: Leaked strings indicate missing `ASG_STR` macro wrappers or disabled macro obfuscation.
 
-### 6.2 Проверка элиминации защищенных функций
+### 6.2 Protected Function Symbol Elimination
 
-**Цель:** Убедиться, что исходная функция полностью виртуализирована, а её нативное имя и тело удалены.
+**Goal**: Confirm that the target function is fully virtualized, with original symbol names and bodies removed.
 
 ```sql
 SELECT printf('0x%X', address) AS addr, name, size
@@ -147,12 +146,12 @@ WHERE name LIKE '%verify%'
    OR name LIKE '%serial%';
 ```
 
-- **Ожидаемый результат:** `0 row(s)`.
-- **Интерпретация:** Символ и тело функции отсутствуют. Вместо них управление передается через трамплин в универсальный диспетчер ВМ.
+- **Expected Result**: `0 row(s)`.
+- **Finding Interpretation**: The original native body is removed. Execution flows through a trampoline directly into the VM dispatcher.
 
-### 6.3 Инвентаризация оставшихся функций
+### 6.3 Residual Function Inventory
 
-**Цель:** Проверить общее количество функций, видимых статическому анализатору.
+**Goal**: Audit all functions visible to static disassembly.
 
 ```sql
 SELECT printf('0x%X', address) AS addr, name, size
@@ -160,12 +159,12 @@ FROM funcs
 ORDER BY size DESC;
 ```
 
-В продакшн-сборке виртуализированного приложения должны присутствовать только:
-1. Системные стабы динамического связывания (`_printf` и др.).
-2. Точка входа / функция `main` (`start`).
-3. Диспетчер виртуальной машины (`sub_...` или `asgard_vm_call`).
+A production virtualized build should only contain:
+1. Dynamic linker stubs (`_printf`, etc.).
+2. Entry point / `main` (`start`).
+3. Virtual machine dispatch loop (`sub_...` or `asgard_vm_call`).
 
-### 6.4 Проверка отсутствия служебных меток в таблице имен
+### 6.4 Verification of Marker Symbol Elimination
 
 ```sql
 SELECT printf('0x%X', address) AS addr, name
@@ -175,11 +174,11 @@ WHERE name LIKE '%ASGARD%'
    OR name LIKE '%Ultra%';
 ```
 
-- **Ожидаемый результат:** `0 row(s)`. Маркерные разделители (`ASGARD_BEGIN_ULTRA`, `ASGARD_END`) не должны оставлять следов в бинарнике.
+- **Expected Result**: `0 row(s)`. Demarcation delimiters (`ASGARD_BEGIN_ULTRA`, `ASGARD_END`) must leave zero symbol traces in binary metadata.
 
-### 6.5 Аудит низкоуровневых структур данных (`types_members`)
+### 6.5 Low-Level Memory Layout Audit (`types_members`)
 
-При сборке с `ASGARD_DEBUG_SYMBOLS=1` можно верифицировать правильность раскладки структуры состояния ВМ в памяти:
+When built with `ASGARD_DEBUG_SYMBOLS=1`, inspect the VM state struct:
 
 ```sql
 SELECT member_name, offset, size, member_type
@@ -188,8 +187,8 @@ WHERE type_name LIKE '%stack_vm%'
 ORDER BY member_index;
 ```
 
-**Эталонный вывод для `asgard_stack_vm::stack_vm_t`:**
-```
+**Reference layout for `asgard_stack_vm::stack_vm_t`:**
+```text
 +-------------+--------+-------+----------------+
 | member_name | offset | size  | member_type    | 
 +-------------+--------+-------+----------------+
@@ -204,17 +203,19 @@ ORDER BY member_index;
 | halted      | 33300  | 4     | int            | 
 +-------------+--------+-------+----------------+
 ```
-Критерии корректности:
-- Стек вычислений `vsp` занимает ровно 32 КБ (4096 слотов по 8 байт);
-- Контекстный фрейм регистров `ctx` выровнен по 8-байтовой границе (оффсет 32776);
-- Динамический rolling-ключ `vkey` расположен сразу за контекстным массивом;
-- Флаги `zf`, `sf`, `cf`, `of` упакованы в байтовые слоты.
 
-### 6.6 Аудит декомпилятора Hex-Rays (`pseudocode`)
+Validation criteria:
+- Computation stack `vsp` occupies exactly 32 KB (4096 8-byte slots);
+- Register context `ctx` is aligned to an 8-byte boundary (offset 32776);
+- Dynamic rolling key `vkey` immediately follows the context array;
+- Condition flags `zf`, `sf`, `cf`, `of` are packed into individual byte slots.
 
-**Внимание:** Обращение к таблице `pseudocode` требует обязательной фильтрации `WHERE func_addr = <addr>` во избежание полной декомпиляции всех функций бинарника.
+### 6.6 Hex-Rays Decompiler Audit (`pseudocode`)
 
-#### Анализ точки вызова виртуализированной функции:
+> [!IMPORTANT]
+> Always filter `pseudocode` queries with `WHERE func_addr = <addr>` to prevent triggering decompilation of every function in the binary.
+
+#### Analysis of Virtualized Function Call Site:
 ```sql
 SELECT line_num, line
 FROM pseudocode
@@ -222,13 +223,13 @@ WHERE func_addr = (SELECT address FROM funcs WHERE name = 'start' OR name = 'mai
 ORDER BY line_num;
 ```
 
-- **Критерий успешности:** В псевдокоде видны стековые циклы деобфускации строк (XOR-лупы) и непрозрачный вызов вида:
+- **Validation Criteria**: Pseudocode displays stack-based string deobfuscation loops (XOR loops) and an opaque invocation:
   ```c
   v2 = sub_100000580(arg1, arg2);
   ```
-  Декомпилятор не может восстановить соответствие между аргументами и проверкой серийного номера.
+  The decompiler cannot link caller arguments to internal verification logic.
 
-#### Анализ внутренностей диспетчера ВМ:
+#### Analysis of VM Dispatcher Internals:
 ```sql
 SELECT line_num, line
 FROM pseudocode
@@ -237,9 +238,9 @@ WHERE func_addr = (SELECT address FROM funcs WHERE size > 2000 LIMIT 1)
 ORDER BY line_num;
 ```
 
-- **Критерий успешности:** Декомпилятор восстанавливает только алгоритм пошаговой расшифровки байткода (`__ROR8__`, мутация rolling-ключа и диспетчеризация опкодов). Сами инструкции защищаемой логики остаются в зашифрованном массиве и не декомпилируются.
+- **Validation Criteria**: The decompiler only recovers bytecode decryption logic (`__ROR8__`, rolling-key mutation, and opcode dispatch). Protected instructions remain encrypted in ciphertext arrays and are not decompiled.
 
-#### Поиск разрывов графа потока управления (`JUMPOUT`):
+#### Detection of Control-Flow Disruptions (`JUMPOUT`):
 ```sql
 SELECT line_num, line
 FROM pseudocode
@@ -248,16 +249,16 @@ WHERE func_addr = (SELECT address FROM funcs WHERE size > 2000 LIMIT 1)
 ORDER BY line_num;
 ```
 
-- **Критерий успешности:** Наличие директив `JUMPOUT(...)` свидетельствует о том, что Hex-Rays не смог структурировать переходы (CFG breakdown) из-за Control-Flow Flattening, Spaghetti-диспетчеризации или прыжков в изолированные fail-closed ловушки. Data-flow анализ декомпилятора на этих участках полностью прерывается.
+- **Validation Criteria**: Presence of `JUMPOUT(...)` confirms that Hex-Rays failed to structure control-flow transitions (CFG breakdown) due to Control-Flow Flattening, spaghetti dispatch, or fail-closed trap jumps. Data-flow analysis across these points is halted.
 
 ---
 
-## 7. Практический кейс: выявление и исправление багов через idasql
+## 7. Practical Case Studies: Bug Detection and Fixes via idasql
 
-В ходе реального аудита Stack-VM с помощью `idasql` были обнаружены и устранены следующие проблемы в сгенерированном C++ рантайме:
+During Stack-VM audits using `idasql`, several runtime defects were identified and resolved in the emitted C++ code:
 
-### Кейс 1: Холостые вызовы `dlsym(RTLD_DEFAULT, "")` и паразитный импорт
-- **Симптом в `pseudocode`:** Декомпилятор показал ветку:
+### Case 1: Spurious `dlsym(RTLD_DEFAULT, "")` Calls and Extraneous Imports
+- **Symptom in `pseudocode`**:
   ```c
   v76 = dlsym((void *)0xFFFFFFFFFFFFFFFELL, "");
   if (!v76) {
@@ -265,20 +266,20 @@ ORDER BY line_num;
       v76 = dlsym(..., alt);
   }
   ```
-- **Причина:** Если защищаемая функция не использует внешних вызовов, массив `g_external_symbols` генерировался со значением `{ "" }`. При опкодах `CALL_EXTERN` / `RESOLVE_SYM` рантайм пытался выполнить `dlsym` для пустой строки, что загрязняло таблицу импортов библиотеками `_dlsym` и `_snprintf`.
-- **Решение:** В [`stack_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_runtime.ml) добавлена проверка `if (sym_name && sym_name[0] != '\0')`. В результате ненужные импорты полностью исчезли из бинарника (`funcs` сократился с 7 до 5 функций).
+- **Cause**: When a protected function used no external APIs, `g_external_symbols` was emitted as `{ "" }`. The `CALL_EXTERN` / `RESOLVE_SYM` handlers invoked `dlsym` on an empty string, polluting the import table with `_dlsym` and `_snprintf`.
+- **Fix**: In [`lib/stack_vm/stack_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/stack_vm/stack_runtime.ml), added the guard `if (sym_name && sym_name[0] != '\0')`. Extraneous imports were completely eliminated (`funcs` count dropped from 7 to 5).
 
-### Кейс 2: Stack Underflow / Overflow и безопасность памяти (Fail-Closed)
-- **Симптом в `pseudocode`:** Операции со стеком `vm->vsp[vm->vsp_idx++]` и `vm->vsp[--vm->vsp_idx]` выполнялись без контроля границ. При повреждении или мутации байткода возникал риск порчи контекста `ctx` и флагов.
-- **Решение:** Внедрены строгие защитные гарды Fail-Closed:
+### Case 2: Stack Underflow / Overflow and Memory Safety (Fail-Closed)
+- **Symptom in `pseudocode`**: Stack access `vm->vsp[vm->vsp_idx++]` and `vm->vsp[--vm->vsp_idx]` lacked boundary checks. Malformed or mutated bytecode could corrupt `ctx` and condition flags.
+- **Fix**: Introduced strict fail-closed boundary guards:
   ```cpp
-  /* PUSH: защита от переполнения */
+  /* PUSH: Overflow guard */
   if (vm->vsp_idx < 4096) vm->vsp[vm->vsp_idx++] = val;
 
-  /* POP: защита от опустошения */
+  /* POP: Underflow guard */
   if (vm->vsp_idx > 0) vm->ctx[idx] = vm->vsp[--vm->vsp_idx];
 
-  /* БИНАРНЫЕ ОПЕРАЦИИ (ADD, SUB, NOR, CMP, ...): проверка наличия 2 операндов */
+  /* BINARY OPS (ADD, SUB, NOR, CMP, ...): Require 2 operands */
   if (vm->vsp_idx >= 2) {
       uint64_t b = vm->vsp[--vm->vsp_idx];
       uint64_t a = vm->vsp[--vm->vsp_idx];
@@ -286,78 +287,75 @@ ORDER BY line_num;
   }
   ```
 
-### Кейс 3: Защита слотов контекстного массива
-- **Симптом:** Индекс `idx` в `PUSH_REG` / `POP_REG` / `CMOV` считывался из байткода как `int16_t` без проверки верхней границы.
-- **Решение:** Добавлен динамический лимит `idx >= 0 && idx < max_ctx`, где `max_ctx = sizeof(vm->ctx) / sizeof(vm->ctx[0])`.
+### Case 3: Register Context Slot Bounds Checking
+- **Symptom**: The register slot `idx` in `PUSH_REG` / `POP_REG` / `CMOV` was read as `int16_t` without upper bound enforcement.
+- **Fix**: Added dynamic validation `idx >= 0 && idx < max_ctx`, where `max_ctx = sizeof(vm->ctx) / sizeof(vm->ctx[0])`.
 
-### Кейс 4: Верификация VSP Whitening в декомпиляторе (`pseudocode`)
-- **Проверка через idasql:**
+### Case 4: Verifying VSP Whitening in Decompiler Output (`pseudocode`)
+- **Query via idasql**:
   ```sql
   SELECT line_num, line FROM pseudocode 
   WHERE func_addr = (SELECT address FROM funcs WHERE size > 2000 LIMIT 1)
     AND (line LIKE '%9E3779B97F4A7C15%' OR line LIKE '%61C8864680B583EB%');
   ```
-- **Результат из реальной базы IDA:**
+- **Observed Result**:
   ```c
   v126[(unsigned int)v89] = (0x9E3779B97F4A7C15LL * v88 + v9) ^ v126[(unsigned int)v88] ^ v91;
   v128[v125] = v126[(unsigned int)v98] ^ (v97 - 0x61C8864680B583EBLL * v98);
   ```
-- **Интерпретация:** Декомпилятор Hex-Rays зафиксировал формулу шифрования VSP:
-  `vkey + slot * 0x9E3779B97F4A7C15ULL` (в дополнительном коде `vkey - slot * 0x61C8864680B583EBLL`). Стек операндов полностью зашифрован в памяти, сырые значения аргументов и результатов промежуточных операций недоступны для статического дампа памяти.
+- **Interpretation**: Confirms VSP whitening: `vkey + slot * 0x9E3779B97F4A7C15ULL` (represented in two's complement as `vkey - slot * 0x61C8864680B583EBLL`). The operand stack is fully whitened in memory, preventing static inspection of intermediate values.
 
-### Кейс 5: Устранение plain strings и dlsym через Runtime API Hashing (Mach-O Export Trie)
-- **Симптом в `strings` и `funcs`:** В бинарнике присутствовала открытая строка `_printf` в `__cstring`, а в таблице импортов — служебные функции `_dlsym` и `_snprintf`.
-- **Решение:**
-  1. Массив `g_external_symbols` переведен со строк на структуры `asgard_ext_sym_t`, хранящие 32-битные FNV-1a хеши (`hash`, `alt_hash`) и XOR-зашифрованные байты (`enc_bytes`).
-  2. Внедрен безимпортный резолвер `asgard_resolve_by_api_hash`, парсящий структуры `LC_DYLD_EXPORTS_TRIE` загруженных образов dyld непосредственно в памяти процесса.
-  3. Устранен `snprintf` в пользу конкатенации в стековом буфере.
-- **Проверка через idasql:**
+### Case 5: Eliminating Plain Strings and dlsym via Runtime API Hashing
+- **Symptom in `strings` and `funcs`**: Cleartext `_printf` was present in `__cstring`, along with imported references to `_dlsym` and `_snprintf`.
+- **Fix**:
+  1. Converted `g_external_symbols` to `asgard_ext_sym_t` structs storing 32-bit FNV-1a hashes (`hash`, `alt_hash`) and XOR-encrypted byte literals (`enc_bytes`).
+  2. Implemented importless resolver `asgard_resolve_by_api_hash`, parsing `LC_DYLD_EXPORTS_TRIE` of loaded dyld images directly in memory.
+  3. Replaced `snprintf` with stack buffer concatenation.
+- **Verification via idasql**:
   ```sql
   SELECT * FROM strings WHERE content LIKE '%printf%';
   -- 0 row(s)
   SELECT address, name, size FROM funcs WHERE name LIKE '%dlsym%' OR name LIKE '%snprintf%';
   -- 0 row(s)
   ```
-- **Интерпретация:** Открытые имена вызываемых библиотечных функций полностью отсутствуют в `.rodata` / `__cstring`. Статический импорт `_dlsym` устранен, анализ кросс-референсов к динамическому резолверу заблокирован.
+- **Interpretation**: Function names are absent from `.rodata` / `__cstring`. Static import of `_dlsym` is eliminated, blocking cross-reference analysis to dynamic resolution logic.
 
-### Кейс 6: Ослепление декомпилятора и семантика `JUMPOUT` (CFG Disruption & Blind Spots)
-- **Симптом в `pseudocode`:** Декомпилятор Hex-Rays генерирует макрос `JUMPOUT(...)` вместо стандартных операторов управления:
+### Case 6: Decompiler CFG Disruption and `JUMPOUT` Semantics
+- **Symptom in `pseudocode`**: Hex-Rays emits `JUMPOUT(...)` macros instead of standard control-flow constructs:
   ```c
   if ( *(_DWORD *)(v11 + 40) || a10 > 0x97E7 )
   LABEL_8:
     JUMPOUT(0x100000B04LL);
   ```
-- **Что означает `JUMPOUT` в Hex-Rays:**
-  1. **Разрыв графа потока управления (CFG breakdown):** Декомпилятор не может выразить переход через синтаксические конструкции C (`if/while/switch/goto`). Это происходит, когда переход выполняется за пределы границ функции `[start_ea, end_ea)` или в несвязный фрагмент кода (function chunk).
-  2. **Следствие CFF и Spaghetti-диспетчеризации:** В ASGARD-5877 переходы между VPC-диспетчером, рабочими хендлерами и decoy-ловушками разорваны. Переход на `0x100000B04` уводит поток в изолированный обработчик аварийного зануления контекста (fail-closed trap).
-  3. **Ослепление анализатора данных (Data-Flow Blinding):** Hex-Rays не может пробросить типы аргументов и распространить значения переменных через точку `JUMPOUT`. Аналитическое дерево AST (c-tree) обрывается, делая невозможным применение автоматических плагинов деобфускации.
-- **Проверка через idasql:**
+- **Significance of `JUMPOUT` in Hex-Rays**:
+  1. **Control-Flow Graph Breakdown**: Hex-Rays cannot map execution transitions to standard C constructs (`if/while/switch/goto`), typically occurring when branching across function bounds `[start_ea, end_ea)` or into disconnected chunks.
+  2. **CFF and Spaghetti Dispatch**: Transitions between the VPC dispatcher, operational handlers, and decoy traps are fragmented. The branch to `0x100000B04` routes execution to an isolated fail-closed trap handler.
+  3. **Data-Flow Blinding**: Hex-Rays cannot propagate types or variables through `JUMPOUT`. The AST (c-tree) terminates, neutralizing automated deobfuscation scripts.
+- **Verification via idasql**:
   ```sql
   SELECT line_num, line FROM pseudocode 
   WHERE func_addr = (SELECT address FROM funcs WHERE size > 2000 LIMIT 1)
     AND line LIKE '%JUMPOUT%';
   ```
 
-### Кейс 7: Устранение утечек имен констант `asg_c_*` и шифрование данных констант в памяти
-- **Симптом в `strings` и `names`:** Ранее в таблице `strings` присутствовали строки вида `asg_c_340df373`, `asg_c_26c6128d`, а байты констант находились в открытом виде в секции `__const`. Кроме того, импортировались функции `_strcmp` и `_strlen`.
-- **Решение:**
-  1. Структура `AsgardConstantEntry` в рантайме Stack-VM и Native VM переведена на 32-битные FNV-1a хеши (`hash`, `alt_hash`).
-  2. Данные констант шифруются динамическим XOR rolling-ключом `(xor_key >> ((j & 3) * 8)) ^ (j * 0x5D + 0x33)` с ленивой расшифровкой в буфер `dec_data` при первом обращении.
-  3. Вызовы `strcmp` и `strlen` заменены на инлайновую `asg_strcmp` и побайтовое хеширование при обходе dyld trie.
-- **Проверка через idasql:**
+### Case 7: Constant Name Masking and In-Memory Constant Encryption
+- **Symptom in `strings` and `names`**: Strings matching `asg_c_340df373` and `asg_c_26c6128d` were visible, and constant bytes were exposed in `__const`. Furthermore, `_strcmp` and `_strlen` were imported.
+- **Fix**:
+  1. Converted `AsgardConstantEntry` in Stack-VM and Native VM to 32-bit FNV-1a hashes (`hash`, `alt_hash`).
+  2. Encrypted constant payloads using rolling XOR keys `(xor_key >> ((j & 3) * 8)) ^ (j * 0x5D + 0x33)` with lazy decryption into `dec_data` on first access.
+  3. Replaced `strcmp` and `strlen` with inline `asg_strcmp` and byte-by-byte trie hashing.
+- **Verification via idasql**:
   ```sql
   SELECT count(*) FROM strings WHERE content LIKE 'asg_c_%';
   -- 0 row(s)
   SELECT count(*) FROM funcs WHERE name = '_strcmp' OR name = '_strlen';
   -- 0 row(s)
   ```
-- **Интерпретация:** 100% имен констант удалены из таблицы строк. Данные констант полностью зашифрованы в памяти. Библиотечные строковые функции исключены из таблицы импорта Mach-O.
+- **Interpretation**: 100% of constant identifier strings are eliminated. Constant bodies are fully encrypted in memory, and standard string APIs are stripped from Mach-O imports.
 
 ---
 
-## 8. Скрипт автоматизированного регрессионного аудита
-
-Для интеграции аудита в CI/CD пайплайн ASGARD-5877 используется bash-скрипт:
+## 8. Automated CI/CD Regression Audit Script
 
 ```bash
 #!/usr/bin/env bash
@@ -365,7 +363,7 @@ set -euo pipefail
 
 BINARY_PATH="${1:-_build/clean_test_stack/protected_app}"
 IDAT_PATH="${IDAT_PATH:-/Applications/IDA Professional 9.2.app/Contents/MacOS/idat}"
-IDASQL_PATH="${IDASQL_PATH:-/Users/password9090/Desktop/test/ida-sdk/src/bin/idasql}"
+IDASQL_PATH="${IDASQL_PATH:-idasql}"
 
 echo "[*] Generating IDA database for ${BINARY_PATH}..."
 "${IDAT_PATH}" -A -B "${BINARY_PATH}"
@@ -377,7 +375,7 @@ fi
 
 echo "[*] Running idasql security audit on ${DB_PATH}..."
 
-# 1. Проверка отсутствия открытых строк
+# 1. Verify absence of cleartext strings
 STR_COUNT=$("${IDASQL_PATH}" -s "${DB_PATH}" -q "SELECT count(*) FROM strings WHERE content LIKE '%license%' OR content LIKE '%serial%' OR content LIKE '%valid%';" | tail -n 1 | tr -d ' ')
 if [[ "${STR_COUNT}" != "0" ]]; then
     echo "[-] FAILED: Sensitive strings leaked in binary (${STR_COUNT} found)!"
@@ -385,7 +383,7 @@ if [[ "${STR_COUNT}" != "0" ]]; then
 fi
 echo "[+] PASSED: No sensitive strings leaked."
 
-# 2. Проверка элиминации защищенных функций
+# 2. Verify elimination of protected function symbols
 FN_COUNT=$("${IDASQL_PATH}" -s "${DB_PATH}" -q "SELECT count(*) FROM funcs WHERE name LIKE '%verify_serial%' OR name LIKE '%license%';" | tail -n 1 | tr -d ' ')
 if [[ "${FN_COUNT}" != "0" ]]; then
     echo "[-] FAILED: Protected function names exposed in symbol table (${FN_COUNT} found)!"
@@ -393,7 +391,7 @@ if [[ "${FN_COUNT}" != "0" ]]; then
 fi
 echo "[+] PASSED: Protected symbols successfully eliminated."
 
-# 3. Проверка отсутствия паразитных импортов (dlsym не должен вызываться без нужды)
+# 3. Verify absence of extraneous imports
 DLSYM_COUNT=$("${IDASQL_PATH}" -s "${DB_PATH}" -q "SELECT count(*) FROM funcs WHERE name = '_dlsym';" | tail -n 1 | tr -d ' ')
 if [[ "${DLSYM_COUNT}" != "0" ]]; then
     echo "[-] WARNING: Unnecessary _dlsym import present in binary!"
@@ -404,15 +402,15 @@ echo "[+] All idasql security assertions verified successfully."
 
 ---
 
-## 9. Ограничения
+## 9. Limitations
 
-1. Для работы `idasql` требуется предварительно созданная база `.i64` или `.idb`. Напрямую анализировать бинарник без базы инструмент не предназначен.
-2. Декомпиляционные запросы к `pseudocode` и `ctree` выполняются через Hex-Rays API и требуют наличия соответствующей декомпиляторной лицензии в окружении IDA Pro.
+1. `idasql` requires a pre-generated `.i64` or `.idb` database. It does not perform direct binary disassembly without an existing IDA database.
+2. Decompilation queries targeting `pseudocode` and `ctree` rely on the Hex-Rays API and require an active decompiler license within the IDA environment.
 
 ---
 
-## 10. Связанные документы
+## 10. Related Documents
 
-- [`Stack-VM.md`](Stack-VM.md) — Спецификация виртуальной машины исполнения ASGARD-5877.
-- [`../VM_PROTECTOR.md`](../VM_PROTECTOR.md) — Описание архитектуры виртуализации и рандомизации опкодов.
-- [`../C_MACRO_OBF.md`](../C_MACRO_OBF.md) — Документация по макро-обфускации строк и констант.
+- [`Stack-VM.md`](Stack-VM.md) — ASGARD-5877 Stack-VM Execution Engine Specification.
+- [`../VM_PROTECTOR.md`](../VM_PROTECTOR.md) — Architecture of Virtualization and Opcode Randomization.
+- [`../C_MACRO_OBF.md`](../C_MACRO_OBF.md) — Documentation on String and Constant Macro Obfuscation.
