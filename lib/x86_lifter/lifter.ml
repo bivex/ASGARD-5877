@@ -845,6 +845,35 @@ let lift_rc_op mnem dst count_opt =
         Ok (load @ steps @ store)
     | _ -> Error "rcl/rcr destination must be register or memory"
 
+(* The bit-scan family (BSF, BSR, BLSR, LZCNT, TZCNT) reports the zero case
+   of its source operand in the flags.  BSF and BSR leave the destination
+   untouched when the source is zero, LZCNT and TZCNT always write it and set
+   CF when the source is zero, and BLSR (BMI1) computes (SRC - 1) & SRC, sets
+   CF when the source is zero and clears OF.  The flags that the manual
+   leaves undefined are rebuilt from scratch. *)
+let zero_test ~scratch (src : Ir.operand) (dst : Register.t) =
+  (* [dst] becomes 1 when [src] is zero and 0 otherwise. *)
+  [
+    Ir.Cmp { src1 = src; src2 = Ir.Imm 0L };
+    Ir.Get_flags scratch;
+    Ir.Alu { op = Ir.Shr; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 6L; set_flags = false };
+    Ir.Alu { op = Ir.And; dst = scratch; src1 = Ir.Reg scratch; src2 = Ir.Imm 1L; set_flags = false };
+    Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg scratch };
+  ]
+
+let bit_scan_flag_word ~zf ~cf =
+  (* Rebuild the flag word: bit 6 is ZF, bit 0 is CF, and bit 1 of RFLAGS
+     always reads as one.  [zf] and [cf] hold the 0/1 values of the two
+     flags. *)
+  let word = Register.vtmp3 in
+  [
+    Ir.Mov { dst = Ir.Reg word; src = Ir.Imm 2L };
+    Ir.Alu { op = Ir.Shl; dst = zf; src1 = Ir.Reg zf; src2 = Ir.Imm 6L; set_flags = false };
+    Ir.Alu { op = Ir.Or; dst = word; src1 = Ir.Reg word; src2 = Ir.Reg zf; set_flags = false };
+    Ir.Alu { op = Ir.Or; dst = word; src1 = Ir.Reg word; src2 = Ir.Reg cf; set_flags = false };
+    Ir.Set_flags (Ir.Reg word);
+  ]
+
 let lift_instr ?const_pool raw_mnem ops =
   let is_locked, mnem =
     if String.starts_with ~prefix:"lock " raw_mnem then
@@ -1359,12 +1388,80 @@ let lift_instr ?const_pool raw_mnem ops =
   | "popcnt", [ OpReg dst; src ] ->
       let* ir_src = to_ir_operand src in
       Ok [ Ir.Unary { op = Ir.Popcnt; dst; src = ir_src; set_flags = true } ]
-  | ("lzcnt" | "bsr"), [ OpReg dst; src ] ->
+  | ("lzcnt" | "lzcntq" | "lzcntl"), [ OpReg dst; src ] ->
+      (* LZCNT: the number of leading zeros.  The destination is always
+         written, ZF reports a zero result and CF a zero source. *)
       let* ir_src = to_ir_operand src in
-      Ok [ Ir.Unary { op = Ir.Clz; dst; src = ir_src; set_flags = true } ]
-  | ("tzcnt" | "bsf"), [ OpReg dst; src ] ->
+      let w = Register.get_width dst in
+      let tmp_src = Register.with_width Register.vtmp0 w in
+      Ok ([ Ir.Mov { dst = Ir.Reg tmp_src; src = ir_src };
+            Ir.Unary { op = Ir.Clz; dst; src = Ir.Reg tmp_src; set_flags = false } ]
+          @ zero_test ~scratch:Register.vtmp3 (Ir.Reg tmp_src) Register.vtmp1
+          @ zero_test ~scratch:Register.vtmp3 (Ir.Reg dst) Register.vtmp2
+          @ bit_scan_flag_word ~zf:Register.vtmp2 ~cf:Register.vtmp1)
+  | ("tzcnt" | "tzcntq" | "tzcntl"), [ OpReg dst; src ] ->
+      (* TZCNT: the number of trailing zeros.  The destination is always
+         written, ZF reports a zero result and CF a zero source. *)
       let* ir_src = to_ir_operand src in
-      Ok [ Ir.Unary { op = Ir.Ctz; dst; src = ir_src; set_flags = true } ]
+      let w = Register.get_width dst in
+      let tmp_src = Register.with_width Register.vtmp0 w in
+      Ok ([ Ir.Mov { dst = Ir.Reg tmp_src; src = ir_src };
+            Ir.Unary { op = Ir.Ctz; dst; src = Ir.Reg tmp_src; set_flags = false } ]
+          @ zero_test ~scratch:Register.vtmp3 (Ir.Reg tmp_src) Register.vtmp1
+          @ zero_test ~scratch:Register.vtmp3 (Ir.Reg dst) Register.vtmp2
+          @ bit_scan_flag_word ~zf:Register.vtmp2 ~cf:Register.vtmp1)
+  | ("bsr" | "bsrq" | "bsrl"), [ OpReg dst; src ] ->
+      (* BSR: the index of the highest set bit of the source.  The
+         destination keeps its value when the source is zero, and ZF
+         reports that case. *)
+      let* ir_src = to_ir_operand src in
+      let w = Register.get_width dst in
+      let bits = Register.width_to_bits w in
+      let tmp_src = Register.with_width Register.vtmp0 w in
+      let tmp_idx = Register.with_width Register.vtmp1 w in
+      Ok [
+        Ir.Mov { dst = Ir.Reg tmp_src; src = ir_src };
+        Ir.Unary { op = Ir.Clz; dst = tmp_idx; src = Ir.Reg tmp_src; set_flags = false };
+        Ir.Alu { op = Ir.Sub; dst = tmp_idx; src1 = Ir.Imm (Int64.of_int (bits - 1)); src2 = Ir.Reg tmp_idx; set_flags = false };
+        Ir.Cmp { src1 = Ir.Reg tmp_src; src2 = Ir.Imm 0L };
+        Ir.Cmov { cond = Flags.NE; dst; src = Ir.Reg tmp_idx };
+      ]
+  | ("bsf" | "bsfq" | "bsfl"), [ OpReg dst; src ] ->
+      (* BSF: the index of the lowest set bit of the source.  The
+         destination keeps its value when the source is zero, and ZF
+         reports that case. *)
+      let* ir_src = to_ir_operand src in
+      let w = Register.get_width dst in
+      let tmp_src = Register.with_width Register.vtmp0 w in
+      let tmp_idx = Register.with_width Register.vtmp1 w in
+      Ok [
+        Ir.Mov { dst = Ir.Reg tmp_src; src = ir_src };
+        Ir.Unary { op = Ir.Ctz; dst = tmp_idx; src = Ir.Reg tmp_src; set_flags = false };
+        Ir.Cmp { src1 = Ir.Reg tmp_src; src2 = Ir.Imm 0L };
+        Ir.Cmov { cond = Flags.NE; dst; src = Ir.Reg tmp_idx };
+      ]
+  | ("blsr" | "blsrq" | "blsrl"), [ OpReg dst; src ] ->
+      (* BMI1 BLSR: the result is (SRC - 1) & SRC, so the lowest set bit of
+         the source is cleared.  SF and ZF come from the result, CF is set
+         when the source is zero and OF is cleared. *)
+      let* ir_src = to_ir_operand src in
+      let w = Register.get_width dst in
+      let tmp_src = Register.with_width Register.vtmp0 w in
+      let tmp_dec = Register.with_width Register.vtmp1 w in
+      let flags_tmp = Register.with_width Register.vtmp2 Register.B64 in
+      let cf_tmp = Register.with_width Register.vtmp3 Register.B64 in
+      Ok [
+        Ir.Mov { dst = Ir.Reg tmp_src; src = ir_src };
+        Ir.Mov { dst = Ir.Reg tmp_dec; src = ir_src };
+        Ir.Alu { op = Ir.Sub; dst = tmp_dec; src1 = Ir.Reg tmp_dec; src2 = Ir.Imm 1L; set_flags = false };
+        Ir.Alu { op = Ir.And; dst; src1 = Ir.Reg tmp_dec; src2 = Ir.Reg tmp_src; set_flags = true };
+        Ir.Get_flags flags_tmp;
+        Ir.Alu { op = Ir.Sub; dst = tmp_dec; src1 = Ir.Reg tmp_src; src2 = Ir.Imm 1L; set_flags = true };
+        Ir.Get_flags cf_tmp;
+        Ir.Alu { op = Ir.And; dst = cf_tmp; src1 = Ir.Reg cf_tmp; src2 = Ir.Imm 1L; set_flags = false };
+        Ir.Alu { op = Ir.Or; dst = flags_tmp; src1 = Ir.Reg flags_tmp; src2 = Ir.Reg cf_tmp; set_flags = false };
+        Ir.Set_flags (Ir.Reg flags_tmp);
+      ]
   | "bt", [ base; offset ] ->
       let* ir_base = to_ir_operand base in
       let* ir_off = to_ir_operand offset in

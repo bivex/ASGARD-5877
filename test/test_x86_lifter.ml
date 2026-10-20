@@ -982,6 +982,124 @@ func_movbe:
       | Ok () ->
           Alcotest.(check int64) "movbe byteswapped" (-1090226688147180526L) (get_reg state Register.rax)
 
+(* The bit-scan family: BLSR (BMI1) computes (SRC - 1) & SRC and so clears
+   the lowest set bit of the source, BSF and BSR return the index of the
+   lowest and the highest set bit, LZCNT and TZCNT count the leading and the
+   trailing zeros.  BSF and BSR keep the destination when the source is
+   zero.  The expected values and flags are the ones the hardware produces:
+   the same programs were assembled and executed on an x86-64 machine. *)
+let test_x86_lift_bit_scan_family () =
+  let run asm src =
+    match Lifter.lift_function asm with
+    | Error e -> Alcotest.fail e
+    | Ok func ->
+        let state = make_state () in
+        set_reg state Register.rax src;
+        (match run_func state func with
+        | Error e -> Alcotest.fail e
+        | Ok () -> state)
+  in
+  let zf state = Flags.compute_zf state.flags in
+  let cf state = Flags.compute_cf state.flags in
+  (* BLSR: the lowest set bit of the source is cleared *)
+  let s = run {|
+func_blsr:
+    blsr rbx, rax
+    ret
+|} 0xDEADBEEFDEADBEEFL in
+  Alcotest.(check int64) "blsr clears the lowest set bit" 0xDEADBEEFDEADBEEEL (get_reg s Register.rbx);
+  Alcotest.(check bool) "blsr ZF = 0" false (zf s);
+  Alcotest.(check bool) "blsr CF = 0" false (cf s);
+  let s = run {|
+func_blsr_zero:
+    blsr rbx, rax
+    ret
+|} 0L in
+  Alcotest.(check int64) "blsr of zero is zero" 0L (get_reg s Register.rbx);
+  Alcotest.(check bool) "blsr of zero sets ZF" true (zf s);
+  Alcotest.(check bool) "blsr of zero sets CF" true (cf s);
+  (* BLSR of a single bit gives zero *)
+  let s = run {|
+func_blsr_one:
+    blsr rbx, rax
+    ret
+|} 0x8000000000000000L in
+  Alcotest.(check int64) "blsr of a single high bit is zero" 0L (get_reg s Register.rbx);
+  Alcotest.(check bool) "blsr of a single high bit sets ZF" true (zf s);
+  Alcotest.(check bool) "blsr of a single high bit clears CF" false (cf s);
+  (* BSR: the index of the highest set bit *)
+  let s = run {|
+func_bsr:
+    bsr rcx, rax
+    ret
+|} 0x100000000L in
+  Alcotest.(check int64) "bsr of 1<<32 is 32" 32L (get_reg s Register.rcx);
+  Alcotest.(check bool) "bsr ZF = 0" false (zf s);
+  let s = run {|
+func_bsr_high:
+    bsr rcx, rax
+    ret
+|} 0xDEADBEEFDEADBEEFL in
+  Alcotest.(check int64) "bsr of 0xDEADBEEFDEADBEEF is 63" 63L (get_reg s Register.rcx);
+  (* BSF: the index of the lowest set bit *)
+  let s = run {|
+func_bsf:
+    bsf rdx, rax
+    ret
+|} 0x100000000L in
+  Alcotest.(check int64) "bsf of 1<<32 is 32" 32L (get_reg s Register.rdx);
+  Alcotest.(check bool) "bsf ZF = 0" false (zf s);
+  (* BSF and BSR keep the destination when the source is zero *)
+  let s = run {|
+func_bsf_zero:
+    mov rdx, 0x1122334455667788
+    bsf rdx, rax
+    ret
+|} 0L in
+  Alcotest.(check int64) "bsf of zero keeps the destination" 0x1122334455667788L (get_reg s Register.rdx);
+  Alcotest.(check bool) "bsf of zero sets ZF" true (zf s);
+  let s = run {|
+func_bsr_zero:
+    mov rcx, 0x1122334455667788
+    bsr rcx, rax
+    ret
+|} 0L in
+  Alcotest.(check int64) "bsr of zero keeps the destination" 0x1122334455667788L (get_reg s Register.rcx);
+  Alcotest.(check bool) "bsr of zero sets ZF" true (zf s);
+  (* LZCNT and TZCNT always write the destination *)
+  let s = run {|
+func_lzcnt:
+    lzcnt rsi, rax
+    ret
+|} 0L in
+  Alcotest.(check int64) "lzcnt of zero is 64" 64L (get_reg s Register.rsi);
+  Alcotest.(check bool) "lzcnt of zero clears ZF" false (zf s);
+  Alcotest.(check bool) "lzcnt of zero sets CF" true (cf s);
+  let s = run {|
+func_lzcnt_top:
+    lzcnt rsi, rax
+    ret
+|} 0x8000000000000000L in
+  Alcotest.(check int64) "lzcnt of 1<<63 is 0" 0L (get_reg s Register.rsi);
+  Alcotest.(check bool) "lzcnt of 1<<63 sets ZF" true (zf s);
+  Alcotest.(check bool) "lzcnt of 1<<63 clears CF" false (cf s);
+  let s = run {|
+func_tzcnt:
+    tzcnt rdi, rax
+    ret
+|} 0L in
+  Alcotest.(check int64) "tzcnt of zero is 64" 64L (get_reg s Register.rdi);
+  Alcotest.(check bool) "tzcnt of zero clears ZF" false (zf s);
+  Alcotest.(check bool) "tzcnt of zero sets CF" true (cf s);
+  let s = run {|
+func_tzcnt_bit:
+    tzcnt rdi, rax
+    ret
+|} 0x100000000L in
+  Alcotest.(check int64) "tzcnt of 1<<32 is 32" 32L (get_reg s Register.rdi);
+  Alcotest.(check bool) "tzcnt of 1<<32 clears ZF" false (zf s);
+  Alcotest.(check bool) "tzcnt of 1<<32 clears CF" false (cf s)
+
 let test_x86_lift_adc_sbb () =
   let asm = {|
 func_adc_sbb:
@@ -1790,6 +1908,7 @@ let tests = [
   Alcotest.test_case "b8_b16_merge_semantics" `Quick test_b8_b16_merge_semantics;
   Alcotest.test_case "lift_sse_avx" `Quick test_lift_sse_avx;
   Alcotest.test_case "lift_orps_orpd" `Quick test_x86_lift_orps_orpd;
+  Alcotest.test_case "lift_bit_scan_family" `Quick test_x86_lift_bit_scan_family;
   Alcotest.test_case "lift_vorps_vorpd" `Quick test_x86_lift_vorps_vorpd;
   Alcotest.test_case "lift_x86_bitmanip" `Quick test_x86_bitmanip;
   Alcotest.test_case "lift_x86_fp_scalar" `Quick test_x86_fp_scalar;
