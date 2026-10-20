@@ -44,6 +44,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Changed
 
+- Compile the generated VM runtime in the tests with `-O0` instead of `-O2`. The runtime is about a megabyte of C++ and `clang++ -O2` spent twelve seconds per test in the compiler alone while `-O0` needs one and a half; the tests only look at what the VM computes, not at how fast it runs.
 - Treat a Mach-O image without compact unwind information as a state, not an inconsistency. `Macho_unwind.check` no longer reports `Missing_unwind_info_section`; the absence is carried by the `No_unwind_info` layout and the report prints `__TEXT,__unwind_info: absent`. The protector compiles the protected binary with `-fno-unwind-tables -fno-asynchronous-unwind-tables`, so every protected binary used to fail the audit with a single issue and made `macho-unwind` exit non-zero, which failed the release gate in `scripts/audit_protected_binary.sh` for the wrong reason. The gate now measures the consistency of the unwind information the image does carry. The protection summary reads `Mach-O Compact Unwind: not emitted (no __TEXT,__unwind_info section), 0 routine(s), no inconsistency`.
 - Update test suite registry to 255 tests across 35 suites (including Stack-VM primitives, logic reduction, rolling keys, and branch extensions).
 - Harden Stack-VM C++ runtime with Fail-Closed stack underflow/overflow bounds checks (`4096`), context slot bounds checks, and sanitization against empty symbol `dlsym` calls.

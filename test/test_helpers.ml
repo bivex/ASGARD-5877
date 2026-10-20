@@ -77,7 +77,11 @@ let compile_and_prepare_vm tmp_dir (pkg : Native_vm.Vm_emitter.vm_package) =
   let runner_path = Filename.concat tmp_dir "runner.cpp" in
   write_file_string runner_path pkg.runner_source;
   let bin_path = Filename.concat tmp_dir "runner" in
-  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+  (* The generated runtime is about a megabyte of C++ (every handler comes in
+     several metamorphic variants), so -O2 spends twelve seconds per test in
+     the compiler alone while -O0 needs one and a half.  The tests only look
+     at what the VM computes, not at how fast it runs. *)
+  let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir runner_path bin_path in
   let comp_status = Sys.command comp_cmd in
   Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
   bin_path
@@ -113,7 +117,7 @@ int main() {
   write_file_string runner_path custom_runner;
   let bin_path = Filename.concat tmp_dir name in
   let comp_status =
-    Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path)
+    Sys.command (Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir runner_path bin_path)
   in
   Alcotest.(check int) (name ^ ": clang++ compilation succeeds") 0 comp_status;
   let status, out = run_command_capture bin_path in

@@ -97,7 +97,7 @@ let test_multi_vm_compilation_e2e () =
         close_out oc_b;
 
         let bin_file = Filename.concat temp_dir "multi_vm_app" in
-        let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s %s -o %s" temp_dir runner_file bc_file bin_file in
+        let cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s %s -o %s" temp_dir runner_file bc_file bin_file in
         let status = Sys.command cmd in
         check int "Compilation status == 0" 0 status;
         let run_st, _ = Test_helpers.run_command_capture bin_file in
@@ -132,7 +132,7 @@ let test_multi_vm_branch_transitions_e2e () =
         close_out oc_r;
 
         let bin_file = Filename.concat temp_dir "multi_vm_branch_app" in
-        let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
+        let cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" temp_dir runner_file bin_file in
         let status = Sys.command cmd in
         check int "Compilation status == 0" 0 status;
         let run_st, _ = Test_helpers.run_command_capture bin_file in

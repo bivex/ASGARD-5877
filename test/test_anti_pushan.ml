@@ -23,7 +23,7 @@ let compile_and_run ~tmp_prefix:_ pkg =
     Test_helpers.write_file_string runner_path pkg.Vm_emitter.runner_source;
 
     let bin_path = Filename.concat tmp_dir "runner" in
-    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir runner_path bin_path in
     let comp_status = Sys.command comp_cmd in
     if comp_status <> 0 then Alcotest.fail "clang++ compilation failed";
 
