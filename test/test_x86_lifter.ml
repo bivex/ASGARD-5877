@@ -1470,6 +1470,80 @@ func_aes:
           Alcotest.(check int64) "aesenc mem lane0" 0x2B359F68F27F9CA4L v12.(0);
           Alcotest.(check int64) "aesenc mem lane1" 0x49506A0243EA5B6BL v12.(1))
 
+let test_x86_lift_aes_ni_fips197_full_cycle () =
+  let asm = {|
+func_aes_full_cycle:
+    pxor xmm0, xmm1
+    aesenc xmm0, xmm2
+    aesenc xmm0, xmm3
+    aesenc xmm0, xmm4
+    aesenc xmm0, xmm5
+    aesenc xmm0, xmm6
+    aesenc xmm0, xmm7
+    aesenc xmm0, xmm8
+    aesenc xmm0, xmm9
+    aesenc xmm0, xmm10
+    aesenclast xmm0, xmm11
+    movaps xmm12, xmm0
+    aesimc xmm2, xmm2
+    aesimc xmm3, xmm3
+    aesimc xmm4, xmm4
+    aesimc xmm5, xmm5
+    aesimc xmm6, xmm6
+    aesimc xmm7, xmm7
+    aesimc xmm8, xmm8
+    aesimc xmm9, xmm9
+    aesimc xmm10, xmm10
+    pxor xmm12, xmm11
+    aesdec xmm12, xmm10
+    aesdec xmm12, xmm9
+    aesdec xmm12, xmm8
+    aesdec xmm12, xmm7
+    aesdec xmm12, xmm6
+    aesdec xmm12, xmm5
+    aesdec xmm12, xmm4
+    aesdec xmm12, xmm3
+    aesdec xmm12, xmm2
+    aesdeclast xmm12, xmm1
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (* Plaintext *)
+      Hashtbl.replace state.vectors 0 [| 0x8D305A88A8F64332L; 0x340737E0A2983131L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* Round keys 0..10 *)
+      Hashtbl.replace state.vectors 1 [| 0xA6D2AE2816157E2BL; 0x3C4FCF098815F7ABL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2 [| 0xB12C548817FEFAA0L; 0x05766C2A3939A323L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 3 [| 0x43B9967AF295C2F2L; 0x7FF659737A803559L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 4 [| 0x3EFE16477D47803DL; 0x3B887A6D447E231EL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5 [| 0x7F5B52A841A544EFL; 0x00AD0BDB3B2571B6L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 6 [| 0x879D837CF8C6D1D4L; 0xBC15F911BCB8F2CAL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| 0xFD3E0B117AA3886DL; 0xFD9300CA4186F9DBL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 8 [| 0xF3C95F5F0EF7544EL; 0x4FDCA64EB24FA684L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 9 [| 0xD2BA8DB52173D2EAL; 0x2F298D7F60F52B31L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 10 [| 0x21DCFA19F36677ACL; 0x6E005C574129D128L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 11 [| 0x8925EEC9A8F914D0L; 0xA60C63B6C80C3FE1L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v12 = Hashtbl.find state.vectors 12 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v10 = Hashtbl.find state.vectors 10 in
+          (* Encrypted ciphertext must match NIST FIPS-197 *)
+          Alcotest.(check int64) "full cipher ct lane0" 0xFB09DC021D842539L v0.(0);
+          Alcotest.(check int64) "full cipher ct lane1" 0x320B6A19978511DCL v0.(1);
+          (* Decrypted plaintext must match original plaintext *)
+          Alcotest.(check int64) "full cipher pt lane0" 0x8D305A88A8F64332L v12.(0);
+          Alcotest.(check int64) "full cipher pt lane1" 0x340737E0A2983131L v12.(1);
+          (* Inverted round keys *)
+          Alcotest.(check int64) "dec key 1 lane0" 0x05D462F2A708372BL v2.(0);
+          Alcotest.(check int64) "dec key 1 lane1" 0x627D614BBFBD3EBCL v2.(1);
+          Alcotest.(check int64) "dec key 9 lane0" 0xFEEA1913635A7B0CL v10.(0);
+          Alcotest.(check int64) "dec key 9 lane1" 0xB4FB4C66908839B0L v10.(1))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -2821,5 +2895,6 @@ let tests = [
   Alcotest.test_case "lift_x86_float_comparisons" `Quick test_x86_float_comparisons;
   Alcotest.test_case "lift_x86_pand_por_pxor_pandn" `Quick test_x86_pand_por_pxor_pandn;
   Alcotest.test_case "lift_x86_aes_ni" `Quick test_x86_aes_ni;
+  Alcotest.test_case "lift_x86_aes_ni_fips197_full_cycle" `Quick test_x86_lift_aes_ni_fips197_full_cycle;
 ]
 

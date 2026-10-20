@@ -1551,17 +1551,19 @@ let test_native_x86_movmskps_movmskpd () =
     mk_pkg ~seed:20261020 {|
 func_native_movmsk:
     movmskps eax, xmm1
+    vmovmskps ebx, ymm2
+    movmskpd ecx, xmm3
+    vmovmskpd edx, ymm4
     ret
 |}
   in
   with_temp_dir (fun tmp_dir ->
-      Test_helpers.write_file_string "/tmp/movmsk_vm.hpp" pkg.cpp_runtime_source;
       run_custom_vm ~name:"native_movmsk" tmp_dir pkg {|
     vanguard_threaded_vm::VMContext ctx = {};
     ctx.init();
 
     /* xmm1: 32-bit lanes 0 and 1 signed -> movmskps = 0b0011 */
-    ctx.vregs[1][0] = 0x8000000000000000ULL; ctx.vregs[1][1] = 0ULL;
+    ctx.vregs[1][0] = 0x8000000080000000ULL; ctx.vregs[1][1] = 0ULL;
 
     /* ymm2: 32-bit lanes 1 and 5 signed -> vmovmskps = 0b100010 */
     ctx.vregs[2][0] = 0x8000000000000000ULL; ctx.vregs[2][1] = 0ULL;
@@ -1574,16 +1576,7 @@ func_native_movmsk:
     ctx.vregs[4][0] = 0x8000000000000000ULL; ctx.vregs[4][1] = 0ULL;
     ctx.vregs[4][2] = 0x8000000000000000ULL; ctx.vregs[4][3] = 0ULL;
 
-    bool ok = vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count);
-    for (size_t i = 0; i < 6 && i < count; i++) printf("word%zu = 0x%016llx\n", i, (unsigned long long)embedded_bytecode[i]);
-    printf("movmsk: ok=%d rax=%llx rbx=%llx rcx=%llx rdx=%llx v1_0=%llx\n",
-           (int)ok,
-           (unsigned long long)ctx.get_rax(),
-           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RBX),
-           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RCX),
-           (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RDX),
-           (unsigned long long)ctx.vregs[1][0]);
-    if (!ok) return 1;
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
     if (ctx.get_rax() != 0x3ULL) return 2;
     if (ctx.get_reg(vanguard_threaded_vm::REG_RBX) != 0x22ULL) return 3;
     if (ctx.get_reg(vanguard_threaded_vm::REG_RCX) != 0x1ULL) return 4;
@@ -1625,6 +1618,82 @@ func_native_aes:
     if (ctx.vregs[5][2] != 0ULL || ctx.vregs[5][3] != 0ULL) return 8;
 |})
 
+let test_native_x86_aes_ni_fips197_full_cycle () =
+  let pkg =
+    mk_pkg ~seed:20261027 {|
+func_native_aes_full_cycle:
+    pxor xmm0, xmm1
+    aesenc xmm0, xmm2
+    aesenc xmm0, xmm3
+    aesenc xmm0, xmm4
+    aesenc xmm0, xmm5
+    aesenc xmm0, xmm6
+    aesenc xmm0, xmm7
+    aesenc xmm0, xmm8
+    aesenc xmm0, xmm9
+    aesenc xmm0, xmm10
+    aesenclast xmm0, xmm11
+    movaps xmm12, xmm0
+    aesimc xmm2, xmm2
+    aesimc xmm3, xmm3
+    aesimc xmm4, xmm4
+    aesimc xmm5, xmm5
+    aesimc xmm6, xmm6
+    aesimc xmm7, xmm7
+    aesimc xmm8, xmm8
+    aesimc xmm9, xmm9
+    aesimc xmm10, xmm10
+    pxor xmm12, xmm11
+    aesdec xmm12, xmm10
+    aesdec xmm12, xmm9
+    aesdec xmm12, xmm8
+    aesdec xmm12, xmm7
+    aesdec xmm12, xmm6
+    aesdec xmm12, xmm5
+    aesdec xmm12, xmm4
+    aesdec xmm12, xmm3
+    aesdec xmm12, xmm2
+    aesdeclast xmm12, xmm1
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_aes_full_cycle" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* Plaintext */
+    ctx.vregs[0][0] = 0x8D305A88A8F64332ULL; ctx.vregs[0][1] = 0x340737E0A2983131ULL;
+    /* Round keys 0..10 */
+    ctx.vregs[1][0] = 0xA6D2AE2816157E2BULL; ctx.vregs[1][1] = 0x3C4FCF098815F7ABULL;
+    ctx.vregs[2][0] = 0xB12C548817FEFAA0ULL; ctx.vregs[2][1] = 0x05766C2A3939A323ULL;
+    ctx.vregs[3][0] = 0x43B9967AF295C2F2ULL; ctx.vregs[3][1] = 0x7FF659737A803559ULL;
+    ctx.vregs[4][0] = 0x3EFE16477D47803DULL; ctx.vregs[4][1] = 0x3B887A6D447E231EULL;
+    ctx.vregs[5][0] = 0x7F5B52A841A544EFULL; ctx.vregs[5][1] = 0x00AD0BDB3B2571B6ULL;
+    ctx.vregs[6][0] = 0x879D837CF8C6D1D4ULL; ctx.vregs[6][1] = 0xBC15F911BCB8F2CAULL;
+    ctx.vregs[7][0] = 0xFD3E0B117AA3886DULL; ctx.vregs[7][1] = 0xFD9300CA4186F9DBULL;
+    ctx.vregs[8][0] = 0xF3C95F5F0EF7544EULL; ctx.vregs[8][1] = 0x4FDCA64EB24FA684ULL;
+    ctx.vregs[9][0] = 0xD2BA8DB52173D2EAULL; ctx.vregs[9][1] = 0x2F298D7F60F52B31ULL;
+    ctx.vregs[10][0] = 0x21DCFA19F36677ACULL; ctx.vregs[10][1] = 0x6E005C574129D128ULL;
+    ctx.vregs[11][0] = 0x8925EEC9A8F914D0ULL; ctx.vregs[11][1] = 0xA60C63B6C80C3FE1ULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    /* Encrypted ciphertext must match NIST FIPS-197 */
+    if (ctx.vregs[0][0] != 0xFB09DC021D842539ULL) return 2;
+    if (ctx.vregs[0][1] != 0x320B6A19978511DCULL) return 3;
+
+    /* Decrypted plaintext must match original plaintext */
+    if (ctx.vregs[12][0] != 0x8D305A88A8F64332ULL) return 4;
+    if (ctx.vregs[12][1] != 0x340737E0A2983131ULL) return 5;
+
+    /* Decryption keys */
+    if (ctx.vregs[2][0] != 0x05D462F2A708372BULL) return 6;
+    if (ctx.vregs[2][1] != 0x627D614BBFBD3EBCULL) return 7;
+    if (ctx.vregs[10][0] != 0xFEEA1913635A7B0CULL) return 8;
+    if (ctx.vregs[10][1] != 0xB4FB4C66908839B0ULL) return 9;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1658,4 +1727,5 @@ let tests = [
   Alcotest.test_case "native_x86_pand_por_pxor_pandn" `Slow test_native_x86_pand_por_pxor_pandn;
   Alcotest.test_case "native_x86_movmskps_movmskpd" `Slow test_native_x86_movmskps_movmskpd;
   Alcotest.test_case "native_x86_aes_ni" `Slow test_native_x86_aes_ni;
+  Alcotest.test_case "native_x86_aes_ni_fips197_full_cycle" `Slow test_native_x86_aes_ni_fips197_full_cycle;
 ]
