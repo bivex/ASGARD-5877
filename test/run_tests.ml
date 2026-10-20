@@ -1,5 +1,39 @@
+(* Every case reports how long it took.  Alcotest captures the output of a
+   case, so the line goes to the file named by [ASGARD_TEST_TIMES] (the test
+   runner script tails it); without that variable the timing is only kept in
+   the file-less default of no output. *)
+let timings_path = Sys.getenv_opt "ASGARD_TEST_TIMES"
+
+let record_timing line =
+  match timings_path with
+  | None -> ()
+  | Some path ->
+      let oc = open_out_gen [ Open_append; Open_creat; Open_wronly ] 0o644 path in
+      output_string oc line;
+      output_char oc '\n';
+      close_out oc
+
+let timed_case suite_name (case_name, speed, f) =
+  let wrapped () =
+    let t0 = Unix.gettimeofday () in
+    match f () with
+    | () ->
+        record_timing
+          (Printf.sprintf "[time] %-42s %-46s %7.3fs" suite_name case_name
+             (Unix.gettimeofday () -. t0));
+        ()
+    | exception e ->
+        record_timing
+          (Printf.sprintf "[time] %-42s %-46s %7.3fs (failed)" suite_name case_name
+             (Unix.gettimeofday () -. t0));
+        raise e
+  in
+  (case_name, speed, wrapped)
+
+let timed_suite (suite_name, cases) = (suite_name, List.map (timed_case suite_name) cases)
+
 let () =
-  Alcotest.run "Random_vISA_Tests" [
+  Alcotest.run "Random_vISA_Tests" (List.map timed_suite [
     ("Domain Invariants", Test_domain_invariants.tests);
     ("ISA Grammar", Test_isa_grammar.tests);
     ("HW Cost", Test_hw_cost.tests);
@@ -44,6 +78,6 @@ let () =
     ("Cross-Seed Metrics", Test_cross_seed_metrics.tests);
     ("Metamorphic ISA & Ring Codec", Test_metamorphic_isa.tests);
     ("Mach-O Compact Unwind (LC_ROUTINES)", Test_macho.tests);
-  ]
+  ])
 
 
