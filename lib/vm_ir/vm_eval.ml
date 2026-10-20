@@ -14,6 +14,8 @@ type state = {
   mutable vip : int64;
   mutable fs_base : int64;
   mutable gs_base : int64;
+  (* The shadow stack pointer of the CET extensions (RDSSP, INCSSP). *)
+  mutable ssp : int64;
   mutable halted : bool;
   mutable trapped : string option;
 }
@@ -31,6 +33,7 @@ let make_state
     ?(stack_base = 0x7FFFFFFF0000L)
     ?(fs_base = 0x60000000L)
     ?(gs_base = 0x70000000L)
+    ?(ssp = 0x50000000L)
     ?(arm64_carry = false)
     ()
   =
@@ -44,6 +47,7 @@ let make_state
     vip = 0x80000000L;
     fs_base;
     gs_base;
+    ssp;
     halted = false;
     trapped = None;
   } in
@@ -913,6 +917,43 @@ let step state = function
       let l0, l1 = Sha_ni.lanes_of_words result in
       set_vector_lane state dst 0 l0;
       set_vector_lane state dst 1 l1;
+      Ok None
+  | Vec_pclmul { dst; src1; src2; imm; bits = _ } ->
+      (* PCLMULQDQ: the carry-less product of two 64-bit halves.  The
+         immediate picks the half of each source (bit 0) and the half of the
+         destination that receives the high product (bit 4). *)
+      let lanes reg = (get_vector_lane state reg 0, get_vector_lane state reg 1) in
+      let src1_l0, src1_l1 = lanes src1 in
+      let src2_l0, src2_l1 = lanes src2 in
+      let imm_i = Int64.to_int imm in
+      let temp1 = if imm_i land 1 <> 0 then src1_l1 else src1_l0 in
+      let temp2 = if imm_i land 16 <> 0 then src2_l1 else src2_l0 in
+      let lo = ref 0L and hi = ref 0L in
+      for i = 0 to 63 do
+        if Int64.logand (Int64.shift_right_logical temp1 i) 1L <> 0L then
+          if i = 0 then lo := Int64.logxor !lo temp2
+          else begin
+            lo := Int64.logxor !lo (Int64.shift_left temp2 i);
+            hi := Int64.logxor !hi (Int64.shift_right_logical temp2 (64 - i))
+          end
+      done;
+      let dst_hi = if imm_i land 16 <> 0 then src1_l1 else !hi in
+      set_vector_lane state dst 0 !lo;
+      set_vector_lane state dst 1 dst_hi;
+      Ok None
+  | Read_ssp { dst } ->
+      (* RDSSPD / RDSSPQ: the shadow stack pointer. *)
+      let w = Register.get_width dst in
+      let v = if w = Register.B32 then Int64.logand state.ssp 0xFFFFFFFFL else state.ssp in
+      set_reg state dst v;
+      Ok None
+  | Inc_ssp { width } ->
+      (* INCSSPD / INCSSPQ: the shadow stack pointer grows by 16 or 64 and the
+         regular stack pointer drops by the same amount. *)
+      let step = if width = Register.B32 then 16L else 64L in
+      state.ssp <- Int64.add state.ssp step;
+      let sp = Int64.sub state.vsp step in
+      sync_sp state sp;
       Ok None
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
       apply_vector_imm state ~dst_bits:bits ~lane_bits ~elem ~src ~imm ~dst op;

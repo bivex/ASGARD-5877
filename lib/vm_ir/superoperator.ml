@@ -55,6 +55,9 @@ let vtmps_in_instr (i : instr) : Register.t list =
   | Vec_store _ | Vec_clear_upper _ | Vec_zero_upper | Vec_splat _ | Vec_ext _
   | Pmovmskb _ -> []
   | Vec_sha _ -> []
+  | Vec_pclmul _ -> []
+  | Read_ssp { dst } -> of_reg dst
+  | Inc_ssp _ -> []
   | Atomic_mem { dst; addr; src; _ } -> of_reg dst @ of_reg addr @ of_reg src
   | Get_flags r -> of_reg r
   | Set_flags op -> of_op op

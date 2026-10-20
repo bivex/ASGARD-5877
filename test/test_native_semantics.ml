@@ -1010,6 +1010,42 @@ func_native_sha:
     }
 |})
 
+(* PCLMULQDQ and the CET shadow stack instructions in the native runtime: the
+   same values as the reference VM produces. *)
+let test_native_x86_pclmul_cet () =
+  let pkg =
+    mk_pkg ~seed:20260944 {|
+func_native_pclmul_cet:
+    pclmulqdq xmm3, xmm4, 0x00
+    pclmulqdq xmm5, xmm6, 0x11
+    rdsspq rax
+    rdsspd ecx
+    incsspq
+    incsspd
+    rdsspq rdx
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_x86_pclmul_cet" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    ctx.vregs[3][0] = 0x0123456789ABCDEFULL; ctx.vregs[3][1] = 0xFEDCBA9876543210ULL;
+    ctx.vregs[4][0] = 0x1111111111111111ULL; ctx.vregs[4][1] = 0x2222222222222222ULL;
+    ctx.vregs[5][0] = 0x0123456789ABCDEFULL; ctx.vregs[5][1] = 0xFEDCBA9876543210ULL;
+    ctx.vregs[6][0] = 0x1111111111111111ULL; ctx.vregs[6][1] = 0x2222222222222222ULL;
+    const uint64_t rsp_before = ctx.get_reg(vanguard_threaded_vm::REG_RSP);
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    if (ctx.vregs[3][0] != 0x00130417081B0C1FULL) return 2;
+    if (ctx.vregs[3][1] != 0x00130417081B0C1FULL) return 3;
+    if (ctx.vregs[5][0] != 0x1E3816300E280620ULL) return 4;
+    if (ctx.vregs[5][1] != 0xFEDCBA9876543210ULL) return 5;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RAX) != 0x50000000ULL) return 6;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RCX) != 0x50000000ULL) return 7;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 0x50000050ULL) return 8;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RSP) != rsp_before - 80ULL) return 9;
+|})
+
 (* The FSGSBASE family (RDFSBASE, RDGSBASE, WRFSBASE, WRGSBASE) reaches the
    segment base registers of the VM context: the base is written into the
    context slot and read back through the same slot. *)
@@ -1101,4 +1137,5 @@ let tests = [
   Alcotest.test_case "native_x86_shld_shrd_mem_and_cdq" `Slow test_native_x86_shld_shrd_mem_and_cdq;
   Alcotest.test_case "native_x86_fsgsbase" `Slow test_native_x86_fsgsbase;
   Alcotest.test_case "native_x86_sha_ni" `Slow test_native_x86_sha_ni;
+  Alcotest.test_case "native_x86_pclmul_cet" `Slow test_native_x86_pclmul_cet;
 ]

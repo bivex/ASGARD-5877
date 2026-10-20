@@ -1211,6 +1211,45 @@ func_sha_ni:
           check "sha256msg1" 13 [| 0x0FEEEDC8L; 0x20FDBA9BL; 0xF0111236L; 0x89ABCDEFL |];
           check "sha256msg2" 15 [| 0x54320FEDL; 0xEDCBA986L; 0xDBA986C3L; 0xCFE19A0CL |])
 
+(* PCLMULQDQ computes the carry-less product of two 64-bit halves of a
+   128-bit vector register, and the CET instructions RDSSP and INCSSP move
+   the shadow stack pointer. *)
+let test_x86_lift_pclmul_cet () =
+  let asm = {|
+func_pclmul_cet:
+    pclmulqdq xmm3, xmm4, 0x00
+    pclmulqdq xmm5, xmm6, 0x11
+    rdsspq rax
+    rdsspd ecx
+    incsspq
+    incsspd
+    rdsspq rdx
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      let set_lanes reg l0 l1 = Hashtbl.replace state.vectors reg [| l0; l1 |] in
+      set_lanes 3 0x0123456789ABCDEFL 0xFEDCBA9876543210L;
+      set_lanes 4 0x1111111111111111L 0x2222222222222222L;
+      set_lanes 5 0x0123456789ABCDEFL 0xFEDCBA9876543210L;
+      set_lanes 6 0x1111111111111111L 0x2222222222222222L;
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let lanes reg = Hashtbl.find state.vectors reg in
+          Alcotest.(check int64) "pclmulqdq 0x00 low half" 0x00130417081B0C1FL (lanes 3).(0);
+          Alcotest.(check int64) "pclmulqdq 0x00 high half" 0x00130417081B0C1FL (lanes 3).(1);
+          Alcotest.(check int64) "pclmulqdq 0x11 low half" 0x1E3816300E280620L (lanes 5).(0);
+          Alcotest.(check int64) "pclmulqdq 0x11 keeps the high half" 0xFEDCBA9876543210L (lanes 5).(1);
+          Alcotest.(check int64) "rdsspq reads the shadow stack pointer" 0x50000000L
+            (get_reg state Register.rax);
+          Alcotest.(check int64) "rdsspd reads the low half" 0x50000000L
+            (get_reg state Register.rcx);
+          Alcotest.(check int64) "incsspq and incsspd grow the shadow stack" 0x50000050L
+            (get_reg state Register.rdx))
+
 let test_x86_lift_adc_sbb () =
   let asm = {|
 func_adc_sbb:
@@ -2022,6 +2061,7 @@ let tests = [
   Alcotest.test_case "lift_bit_scan_family" `Quick test_x86_lift_bit_scan_family;
   Alcotest.test_case "lift_sign_extension_family" `Quick test_x86_lift_sign_extension_family;
   Alcotest.test_case "lift_sha_ni" `Quick test_x86_lift_sha_ni;
+  Alcotest.test_case "lift_pclmul_cet" `Quick test_x86_lift_pclmul_cet;
   Alcotest.test_case "lift_vorps_vorpd" `Quick test_x86_lift_vorps_vorpd;
   Alcotest.test_case "lift_x86_bitmanip" `Quick test_x86_bitmanip;
   Alcotest.test_case "lift_x86_fp_scalar" `Quick test_x86_fp_scalar;

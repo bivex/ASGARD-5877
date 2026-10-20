@@ -12,11 +12,13 @@ type state = {
   mutable vip : int64;
   mutable fs_base : int64;
   mutable gs_base : int64;
+  (* The shadow stack pointer of the CET extensions (RDSSP, INCSSP). *)
+  mutable ssp : int64;
   mutable halted : bool;
   mutable trapped : string option;
 }
 
-val make_state : ?stack_base:int64 -> ?fs_base:int64 -> ?gs_base:int64 -> ?arm64_carry:bool -> unit -> state
+val make_state : ?stack_base:int64 -> ?fs_base:int64 -> ?gs_base:int64 -> ?ssp:int64 -> ?arm64_carry:bool -> unit -> state
 
 val get_reg : state -> Register.t -> int64
 val set_reg : state -> Register.t -> int64 -> unit

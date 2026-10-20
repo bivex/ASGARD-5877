@@ -141,6 +141,9 @@ type instr =
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
   | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
+  | Vec_pclmul of { dst : int; src1 : int; src2 : int; imm : int64; bits : int }
+  | Read_ssp of { dst : Register.t }
+  | Inc_ssp of { width : width }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
   | Vec_load of { dst : int; addr : mem_ref; bits : int }
   | Vec_store of { src : int; addr : mem_ref; bits : int }

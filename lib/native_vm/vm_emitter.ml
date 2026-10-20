@@ -835,6 +835,21 @@ let compile_and_package_multi
                   encode_raw_word ~extra_bits:(Int64.of_int (sha_op_code op)) (get_opcode OP_VEC_SHA)
                     (vector_index dst) (vector_index src1)
                     (sha_imm ~src2:(vector_index src2) ~src3:(vector_index src3) ~imm ~bits)
+              | Ir.Vec_pclmul { dst; src1; src2; imm; bits } ->
+                  (* The immediate field carries the second source register,
+                     the eight-bit immediate and the width of the vector. *)
+                  let payload =
+                    Int64.logor (Int64.of_int (vector_index src2))
+                      (Int64.logor (Int64.shift_left (Int64.logand imm 0xFFL) 5)
+                         (Int64.shift_left (Int64.of_int bits) 13))
+                  in
+                  encode_raw_word (get_opcode OP_VEC_PCLMUL) (vector_index dst) (vector_index src1) payload
+              | Ir.Read_ssp { dst } ->
+                  encode_raw_word (get_opcode OP_READ_SSP) (get_reg_idx dst) 0
+                    (if Register.get_width dst = Register.B32 then 32L else 64L)
+              | Ir.Inc_ssp { width } ->
+                  encode_raw_word (get_opcode OP_INC_SSP) 0 0
+                    (if width = Register.B32 then 32L else 64L)
               | Ir.Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
                   encode_raw_word (get_opcode OP_VEC_IMM) (vector_index dst) (vector_index src)
                     (vector_imm_val ~imm_val:imm ~bits ~lane_bits ~elem op)

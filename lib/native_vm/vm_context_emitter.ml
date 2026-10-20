@@ -98,6 +98,8 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field UInt32 "init_seed";
     member_field UInt64 "poison_penalty";
     member_field UInt64 "running_key";
+    (* The shadow stack pointer of the CET extensions (RDSSP, INCSSP). *)
+    member_field ~init:(u64 0x50000000L) UInt64 "ssp";
     member_field Bool "cf";
     (* ARM64-view carry: C = NOT borrow after SUB-family flag writers,
        carry-out after ADD-family.  ctx.cf stays in the x86 convention
@@ -254,6 +256,8 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_method ~attrs:[AlwaysInline; NoExcept] Void "set_fs_base" [(UInt64, "v")] [ expr_stmt (call "set_reg" [var "REG_VX25"; var "v"]) ];
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_gs_base" [] [ ret (call "get_reg" [var "REG_VX26"]) ];
     member_method ~attrs:[AlwaysInline; NoExcept] Void "set_gs_base" [(UInt64, "v")] [ expr_stmt (call "set_reg" [var "REG_VX26"; var "v"]) ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_ssp" [] [ ret (var "ssp") ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_ssp" [(UInt64, "v")] [ var "ssp" := var "v" ];
 
     (* RNS-4 Residue Arithmetic Engine *)
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "rns_add" [(UInt64, "a"); (UInt64, "b")] [

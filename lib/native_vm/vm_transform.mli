@@ -66,6 +66,9 @@ type raw_op_kind =
   | OP_VEC_MOV
   | OP_VEC_BINOP
   | OP_VEC_SHA
+  | OP_VEC_PCLMUL
+  | OP_READ_SSP
+  | OP_INC_SSP
   | OP_VEC_LOAD
   | OP_VEC_STORE
   | OP_CALL_EXTERN

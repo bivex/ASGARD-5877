@@ -140,6 +140,9 @@ type instr =
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
   | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
+  | Vec_pclmul of { dst : int; src1 : int; src2 : int; imm : int64; bits : int }
+  | Read_ssp of { dst : Register.t }
+  | Inc_ssp of { width : width }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
   | Vec_load of { dst : int; addr : mem_ref; bits : int }
   | Vec_store of { src : int; addr : mem_ref; bits : int }
@@ -304,6 +307,10 @@ let instr_to_string = function
         | Sha256rnds2 -> "sha256rnds2" | Sha256msg1 -> "sha256msg1" | Sha256msg2 -> "sha256msg2"
       in
       Printf.sprintf "%s.%d v%d, v%d, v%d, v%d, 0x%LX" op_s bits dst src1 src2 src3 imm
+  | Vec_pclmul { dst; src1; src2; imm; bits } ->
+      Printf.sprintf "vec_pclmul.%d v%d, v%d, v%d, 0x%LX" bits dst src1 src2 imm
+  | Read_ssp { dst } -> Printf.sprintf "read_ssp %s" (Register.to_string dst)
+  | Inc_ssp { width } -> Printf.sprintf "inc_ssp %d" (Register.width_to_bits width)
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
       let op_s = match op with
         | Vadd -> "vec_add" | Vsub -> "vec_sub" | Vmul -> "vec_mul" | Vand -> "vec_and" | Vor -> "vec_or" | Vxor -> "vec_xor"

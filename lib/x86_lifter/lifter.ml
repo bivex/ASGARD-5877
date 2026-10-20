@@ -717,6 +717,40 @@ let lift_sha_ni mnem ops =
             in
             Ok (preload @ [ instr ]))
 
+(* PCLMULQDQ: the carry-less product of two 64-bit halves of a 128-bit vector
+   register.  The immediate picks the half of the source (bit 0) and the half
+   of the destination that receives the high product (bit 4). *)
+let lift_pclmulqdq mnem ops =
+  let get_index = function
+    | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+    | _ -> None
+  in
+  match mnem, ops with
+  | "pclmulqdq", [ dst; src; X86_parser.OpImm imm ] -> (
+      match get_index dst with
+      | None -> Error "pclmulqdq requires a vector register destination"
+      | Some di ->
+          let preload, si =
+            match src with
+            | X86_parser.OpMem m ->
+                let mem_ref = ir_mem_of_raw m in
+                ([ Ir.Vec_load { dst = 31; addr = mem_ref; bits = 128 }], 31)
+            | _ -> ([], (match get_index src with Some s -> s | None -> 0))
+          in
+          Ok (preload @ [ Ir.Vec_pclmul { dst = di; src1 = di; src2 = si; imm; bits = 128 } ]))
+  | _ -> Error "pclmulqdq requires a vector register, a source and an immediate"
+
+(* The CET shadow stack instructions: RDSSPD and RDSSPQ read the shadow
+   stack pointer, INCSSPD and INCSSPQ move it up and the regular stack
+   pointer down. *)
+let lift_shadow_stack mnem ops =
+  match mnem, ops with
+  | "rdsspd", [ OpReg dst ] -> Ok [ Ir.Read_ssp { dst } ]
+  | "rdsspq", [ OpReg dst ] -> Ok [ Ir.Read_ssp { dst } ]
+  | "incsspd", [] -> Ok [ Ir.Inc_ssp { width = Register.B32 } ]
+  | "incsspq", [] -> Ok [ Ir.Inc_ssp { width = Register.B64 } ]
+  | _ -> Error "unsupported shadow stack instruction"
+
 let lift_vector_binop ?const_pool mnem ops =
   if List.exists is_zmm_operand ops then
     Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
@@ -949,6 +983,10 @@ let lift_instr ?const_pool raw_mnem ops =
     when (List.length ops >= 2 && List.length ops <= 3)
          && (match sha_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
       lift_sha_ni mnem ops
+
+  | "pclmulqdq", _ -> lift_pclmulqdq mnem ops
+
+  | ("rdsspd" | "rdsspq" | "incsspd" | "incsspq"), _ -> lift_shadow_stack mnem ops
 
   | mnem, ops
     when (List.length ops >= 2 && List.length ops <= 4)

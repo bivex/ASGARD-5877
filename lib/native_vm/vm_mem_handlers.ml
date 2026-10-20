@@ -172,6 +172,51 @@ let emit_sha_handler b =
     }
 |}
 
+(* PCLMULQDQ and the CET shadow stack instructions (RDSSP, INCSSP). *)
+let emit_pclmul_ssp_handlers b =
+  Buffer.add_string b
+    {|
+    H_VEC_PCLMUL: {
+        const uint64_t pclmul_src1_l0 = ctx.get_vreg_lane(static_cast<uint8_t>(src), 0);
+        const uint64_t pclmul_src1_l1 = ctx.get_vreg_lane(static_cast<uint8_t>(src), 1);
+        const uint32_t pclmul_src2 = static_cast<uint32_t>(imm & 31ULL);
+        const uint64_t pclmul_src2_l0 = ctx.get_vreg_lane(static_cast<uint8_t>(pclmul_src2), 0);
+        const uint64_t pclmul_src2_l1 = ctx.get_vreg_lane(static_cast<uint8_t>(pclmul_src2), 1);
+        const uint32_t pclmul_op = static_cast<uint32_t>((imm >> 5) & 0xFFULL);
+        const uint64_t pclmul_t1 = (pclmul_op & 1u) ? pclmul_src1_l1 : pclmul_src1_l0;
+        const uint64_t pclmul_t2 = (pclmul_op & 16u) ? pclmul_src2_l1 : pclmul_src2_l0;
+        uint64_t pclmul_lo = 0, pclmul_hi = 0;
+        for (int i = 0; i < 64; i++) {
+            if ((pclmul_t1 >> i) & 1ULL) {
+                if (i == 0) {
+                    pclmul_lo ^= pclmul_t2;
+                } else {
+                    pclmul_lo ^= (pclmul_t2 << i);
+                    pclmul_hi ^= (pclmul_t2 >> (64 - i));
+                }
+            }
+        }
+        const uint64_t pclmul_dst_hi = (pclmul_op & 16u) ? pclmul_src1_l1 : pclmul_hi;
+        ctx.set_vreg_lane(static_cast<uint8_t>(dst), 0, pclmul_lo);
+        ctx.set_vreg_lane(static_cast<uint8_t>(dst), 1, pclmul_dst_hi);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_READ_SSP: {
+        const uint64_t ssp_value = ctx.get_ssp();
+        ctx.set_reg(dst, (imm == 32ULL) ? (ssp_value & 0xFFFFFFFFULL) : ssp_value);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_INC_SSP: {
+        const uint64_t ssp_step = (imm == 32ULL) ? 16ULL : 64ULL;
+        ctx.set_ssp(ctx.get_ssp() + ssp_step);
+        ctx.set_reg(REG_RSP, ctx.get_reg(REG_RSP) - ssp_step);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+|}
+
 let emit_simd_handlers ?rng b =
   let pick_variant n =
     match rng with
@@ -644,6 +689,7 @@ let emit_simd_handlers ?rng b =
   ] in
   emit_handler_ast b "H_VEC_BINOP" (vec_binop_stmts @ [ inc_instrs; fetch_next ]);
   emit_sha_handler b;
+  emit_pclmul_ssp_handlers b;
 
   let vec_imm_stmts = [
     let_u64 "imm_val" (var "imm" &~ u64 0xFFL);
