@@ -1846,6 +1846,57 @@ func_hlt:
       | Error msg -> Alcotest.(check string) "hlt trapped" "VM Trapped: hlt" msg
       | Ok () -> Alcotest.fail "hlt should have trapped"))
 
+let test_x86_lift_palignr () =
+  let asm = {|
+func_palignr:
+    vpalignr xmm2, xmm0, xmm1, 4
+    palignr xmm0, xmm1, 4
+    palignr xmm3, xmmword ptr [rsp + 16], 4
+    vpalignr ymm4, ymm5, ymm6, 4
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      state.vsp <- 0x1000L;
+      write_mem state 0x1010L B64 0x0706050403020100L;
+      write_mem state 0x1018L B64 0x0F0E0D0C0B0A0908L;
+      (* xmm0 (dst): 16..31 *)
+      Hashtbl.replace state.vectors 0 [| 0x1716151413121110L; 0x1F1E1D1C1B1A1918L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm1 (src): 0..15 *)
+      Hashtbl.replace state.vectors 1 [| 0x0706050403020100L; 0x0F0E0D0C0B0A0908L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm2: upper junk to verify zeroing *)
+      Hashtbl.replace state.vectors 2 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      (* xmm3 for mem palignr *)
+      Hashtbl.replace state.vectors 3 [| 0x1716151413121110L; 0x1F1E1D1C1B1A1918L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* ymm5, ymm6 for 256-bit vpalignr *)
+      Hashtbl.replace state.vectors 5 [| 0x1716151413121110L; 0x1F1E1D1C1B1A1918L; 0x3736353433323130L; 0x3F3E3D3C3B3A3938L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 6 [| 0x0706050403020100L; 0x0F0E0D0C0B0A0908L; 0x2726252423222120L; 0x2F2E2D2C2B2A2928L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v3 = Hashtbl.find state.vectors 3 in
+          let v4 = Hashtbl.find state.vectors 4 in
+          (* palignr xmm0, xmm1, 4 -> bytes 4..19 *)
+          Alcotest.(check int64) "palignr lane0" 0x0B0A090807060504L v0.(0);
+          Alcotest.(check int64) "palignr lane1" 0x131211100F0E0D0CL v0.(1);
+          (* vpalignr xmm2 *)
+          Alcotest.(check int64) "vpalignr lane0" 0x0B0A090807060504L v2.(0);
+          Alcotest.(check int64) "vpalignr lane1" 0x131211100F0E0D0CL v2.(1);
+          Alcotest.(check int64) "vpalignr lane2 zero" 0L v2.(2);
+          Alcotest.(check int64) "vpalignr lane3 zero" 0L v2.(3);
+          (* palignr mem *)
+          Alcotest.(check int64) "palignr mem lane0" 0x0B0A090807060504L v3.(0);
+          Alcotest.(check int64) "palignr mem lane1" 0x131211100F0E0D0CL v3.(1);
+          (* 256-bit vpalignr *)
+          Alcotest.(check int64) "vpalignr 256 lane0" 0x0B0A090807060504L v4.(0);
+          Alcotest.(check int64) "vpalignr 256 lane1" 0x131211100F0E0D0CL v4.(1);
+          Alcotest.(check int64) "vpalignr 256 lane2" 0x2B2A292827262524L v4.(2);
+          Alcotest.(check int64) "vpalignr 256 lane3" 0x333231302F2E2D2CL v4.(3))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -3325,5 +3376,6 @@ let tests = [
   Alcotest.test_case "lift_x86_packed_conversions" `Quick test_x86_lift_packed_conversions;
   Alcotest.test_case "lift_x86_movlhps_movhlps_movlps_movhps" `Quick test_x86_lift_movlhps_movhlps_movlps_movhps;
   Alcotest.test_case "lift_x86_system_and_compiler_traps" `Quick test_x86_lift_system_and_compiler_traps;
+  Alcotest.test_case "lift_x86_palignr" `Quick test_x86_lift_palignr;
 ]
 

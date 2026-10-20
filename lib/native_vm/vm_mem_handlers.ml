@@ -1668,30 +1668,37 @@ let emit_simd_handlers ?rng b =
   ] in
   emit_handler_ast b "H_VEC_SPLAT" (vec_splat_stmts @ [ inc_instrs; fetch_next ]);
 
-  let vec_ext_stmts = [
-    let_u32 "src2" (cast UInt32 (var "imm" &~ u64 31L));
-    let_u32 "shift_bytes" (cast UInt32 ((var "imm" >>~ i32 5) &~ u64 15L));
-    decl_var UInt32 "bits" ~init:(cast UInt32 ((var "imm" >>~ i32 9) &~ u64 0x3FFL));
-    if_then (var "bits" ==~ i32 0) [ var "bits" := i32 128 ];
-    for_range "byte_idx" (i32 0) (var "bits" /~ i32 8) [
-      let_size_t "total_idx" ((var "byte_idx" %~ i32 16) +~ var "shift_bytes");
-      decl_var UInt64 "val" ~init:(u64 0L);
-      if_then_else (var "total_idx" <~ i32 16) [
-        let_size_t "bit_pos" (((var "byte_idx" /~ i32 16) *~ i32 128) +~ (var "total_idx" *~ i32 8));
-        var "val" := (get_vreg_lane (var "src") (var "bit_pos" /~ i32 64) >>~ (var "bit_pos" %~ i32 64)) &~ u64 0xFFL;
-      ] [
-        let_size_t "m_idx" (var "total_idx" -~ i32 16);
-        let_size_t "bit_pos" (((var "byte_idx" /~ i32 16) *~ i32 128) +~ (var "m_idx" *~ i32 8));
-        var "val" := (get_vreg_lane (var "src2") (var "bit_pos" /~ i32 64) >>~ (var "bit_pos" %~ i32 64)) &~ u64 0xFFL;
-      ];
-      let_size_t "chunk" ((var "byte_idx" *~ i32 8) /~ i32 64);
-      decl_var UInt32 "shift" ~init:(cast UInt32 ((var "byte_idx" *~ i32 8) %~ i32 64));
-      let_u64 "old_v" (get_vreg_lane (var "dst") (var "chunk"));
-      let_u64 "clr" (var "old_v" &~ bit_not (u64 0xFFL <<~ var "shift"));
-      set_vreg_lane (var "dst") (var "chunk") (var "clr" |~ (var "val" <<~ var "shift"));
-    ];
-  ] in
-  emit_handler_ast b "H_VEC_EXT" (vec_ext_stmts @ [ inc_instrs; fetch_next ])
+  Buffer.add_string b
+    {|
+    H_VEC_EXT: {
+        const uint32_t ext_src2 = static_cast<uint32_t>(imm & 31ULL);
+        const uint32_t shift_bytes = static_cast<uint32_t>((imm >> 5) & 15ULL);
+        uint32_t ext_bits = static_cast<uint32_t>((imm >> 9) & 0x3FFULL);
+        if (ext_bits == 0) ext_bits = 128;
+        uint64_t res_qwords[4] = {0, 0, 0, 0};
+        const size_t num_bytes = ext_bits / 8;
+        for (size_t byte_idx = 0; byte_idx < num_bytes; byte_idx++) {
+            size_t total_idx = (byte_idx % 16) + shift_bytes;
+            uint64_t val = 0;
+            if (total_idx < 16) {
+                size_t bit_pos = ((byte_idx / 16) * 128) + (total_idx * 8);
+                val = (ctx.get_vreg_lane(static_cast<uint8_t>(src), bit_pos / 64) >> (bit_pos % 64)) & 0xFFULL;
+            } else {
+                size_t m_idx = total_idx - 16;
+                size_t bit_pos = ((byte_idx / 16) * 128) + (m_idx * 8);
+                val = (ctx.get_vreg_lane(static_cast<uint8_t>(ext_src2), bit_pos / 64) >> (bit_pos % 64)) & 0xFFULL;
+            }
+            size_t chunk = (byte_idx * 8) / 64;
+            uint32_t shift = (byte_idx * 8) % 64;
+            res_qwords[chunk] |= (val << shift);
+        }
+        for (size_t l = 0; l < (ext_bits / 64); l++) {
+            ctx.set_vreg_lane(static_cast<uint8_t>(dst), l, res_qwords[l]);
+        }
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+|}
 
 let emit_mem_and_ffi_handlers ?rng b =
   let pick_variant n =

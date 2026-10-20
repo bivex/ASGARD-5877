@@ -1275,6 +1275,69 @@ let lift_movhps ?const_pool mnem ops =
         | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
     | _ -> Error (Printf.sprintf "invalid operands for %s" mnem)
 
+let lift_palignr ?const_pool mnem ops =
+  if List.exists is_zmm_operand ops then
+    Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+  else
+    let bits = determine_vec_bits mnem ops in
+    let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+    let get_index = function
+      | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+      | _ -> None
+    in
+    let get_mem_load m tmp =
+      match m.X86_parser.symbol, const_pool with
+      | Some sym, Some cp when Hashtbl.mem cp sym ->
+          let b = Hashtbl.find cp sym in
+          let lane0, lane1 = read_const_vec128 b m.disp in
+          let prep =
+            if lane0 = lane1 then
+              let tmp_gpr = Register.vtmp0 in
+              [
+                Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Imm lane0 };
+                Ir.Vec_splat { dst = tmp; src = tmp_gpr; bits; lane_bits = 64 };
+              ]
+            else
+              [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp, Register.B64)); src = Ir.Imm lane0 };
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (30, Register.B64)); src = Ir.Imm lane1 };
+                Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = tmp; src1 = tmp; src2 = 30; bits; lane_bits = 64 };
+              ]
+          in
+          (prep, tmp)
+      | _ ->
+          let mem_ref = ir_mem_of_raw m in
+          ([ Ir.Vec_load { dst = tmp; addr = mem_ref; bits } ], tmp)
+    in
+    match ops with
+    | [ dst; src; X86_parser.OpImm imm ] -> (
+        match get_index dst with
+        | Some di ->
+            let preload, s2 =
+              match src with
+              | X86_parser.OpMem m -> get_mem_load m 31
+              | _ -> ([], (match get_index src with Some s -> s | None -> 0))
+            in
+            let shift = Int64.to_int imm in
+            let instr = Ir.Vec_ext { dst = di; src1 = s2; src2 = di; imm = shift; bits } in
+            let extra = if is_vex && bits = 128 then [ Ir.Vec_clear_upper di ] else [] in
+            Ok (preload @ [ instr ] @ extra)
+        | None -> Error (Printf.sprintf "%s requires a vector register destination" mnem))
+    | [ dst; src1; src2; X86_parser.OpImm imm ] when is_vex -> (
+        match get_index dst, get_index src1 with
+        | Some di, Some s1 ->
+            let preload, s2 =
+              match src2 with
+              | X86_parser.OpMem m -> get_mem_load m 31
+              | _ -> ([], (match get_index src2 with Some s -> s | None -> 0))
+            in
+            let shift = Int64.to_int imm in
+            let instr = Ir.Vec_ext { dst = di; src1 = s2; src2 = s1; imm = shift; bits } in
+            let extra = if bits = 128 then [ Ir.Vec_clear_upper di ] else [] in
+            Ok (preload @ [ instr ] @ extra)
+        | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
+    | _ -> Error (Printf.sprintf "invalid operand count for %s" mnem)
+
 let lift_vector_binop ?const_pool mnem ops =
   if List.exists is_zmm_operand ops then
     Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
@@ -1686,6 +1749,7 @@ let lift_instr ?const_pool raw_mnem ops =
   | ("movhlps" | "vmovhlps"), _ -> lift_movhlps ?const_pool mnem ops
   | ("movlps" | "vmovlps" | "movlpd" | "vmovlpd"), _ -> lift_movlps ?const_pool mnem ops
   | ("movhps" | "vmovhps" | "movhpd" | "vmovhpd"), _ -> lift_movhps ?const_pool mnem ops
+  | ("palignr" | "vpalignr"), _ -> lift_palignr ?const_pool mnem ops
 
 
   | mnem, ops

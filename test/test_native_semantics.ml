@@ -2031,6 +2031,52 @@ func_native_system_traps:
     if (ctx.get_rax() != 42ULL) return 2;
 |})
 
+let test_native_x86_palignr () =
+  let pkg =
+    mk_pkg ~seed:20261031 {|
+func_native_palignr:
+    vpalignr xmm2, xmm0, xmm1, 4
+    palignr xmm0, xmm1, 4
+    vpalignr ymm4, ymm5, ymm6, 4
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_palignr" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* xmm0 (dst): 16..31 */
+    ctx.vregs[0][0] = 0x1716151413121110ULL; ctx.vregs[0][1] = 0x1F1E1D1C1B1A1918ULL;
+    /* xmm1 (src): 0..15 */
+    ctx.vregs[1][0] = 0x0706050403020100ULL; ctx.vregs[1][1] = 0x0F0E0D0C0B0A0908ULL;
+    /* xmm2: upper junk */
+    ctx.vregs[2][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[2][3] = 0xDEADBEEFCAFEBA00ULL;
+    /* ymm5, ymm6 for 256-bit */
+    ctx.vregs[5][0] = 0x1716151413121110ULL; ctx.vregs[5][1] = 0x1F1E1D1C1B1A1918ULL;
+    ctx.vregs[5][2] = 0x3736353433323130ULL; ctx.vregs[5][3] = 0x3F3E3D3C3B3A3938ULL;
+
+    ctx.vregs[6][0] = 0x0706050403020100ULL; ctx.vregs[6][1] = 0x0F0E0D0C0B0A0908ULL;
+    ctx.vregs[6][2] = 0x2726252423222120ULL; ctx.vregs[6][3] = 0x2F2E2D2C2B2A2928ULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    /* palignr xmm0, xmm1, 4 */
+    if (ctx.vregs[0][0] != 0x0B0A090807060504ULL) return 2;
+    if (ctx.vregs[0][1] != 0x131211100F0E0D0CULL) return 3;
+
+    /* vpalignr xmm2 */
+    if (ctx.vregs[2][0] != 0x0B0A090807060504ULL) return 4;
+    if (ctx.vregs[2][1] != 0x131211100F0E0D0CULL) return 5;
+    if (ctx.vregs[2][2] != 0ULL || ctx.vregs[2][3] != 0ULL) return 6;
+
+    /* 256-bit vpalignr */
+    if (ctx.vregs[4][0] != 0x0B0A090807060504ULL) return 7;
+    if (ctx.vregs[4][1] != 0x131211100F0E0D0CULL) return 8;
+    if (ctx.vregs[4][2] != 0x2B2A292827262524ULL) return 9;
+    if (ctx.vregs[4][3] != 0x333231302F2E2D2CULL) return 10;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -2070,4 +2116,5 @@ let tests = [
   Alcotest.test_case "native_x86_packed_conversions" `Slow test_native_x86_packed_conversions;
   Alcotest.test_case "native_x86_movlhps_movhlps_movlps_movhps" `Slow test_native_x86_movlhps_movhlps_movlps_movhps;
   Alcotest.test_case "native_x86_system_and_compiler_traps" `Slow test_native_x86_system_and_compiler_traps;
+  Alcotest.test_case "native_x86_palignr" `Slow test_native_x86_palignr;
 ]

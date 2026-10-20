@@ -990,7 +990,9 @@ let step state = function
       Ok None
   | Vec_ext { dst; src1; src2; imm; bits } ->
       let shift_bytes = imm land 15 in
-      for byte_idx = 0 to (bits / 8) - 1 do
+      let num_bytes = bits / 8 in
+      let out_bytes = Array.make num_bytes 0L in
+      for byte_idx = 0 to num_bytes - 1 do
         let total_idx = (byte_idx mod 16) + shift_bytes in
         let b =
           if total_idx < 16 then
@@ -1003,14 +1005,14 @@ let step state = function
             let s_val = get_vector_lane state src2 (bit_pos / 64) in
             Int64.logand (Int64.shift_right_logical s_val (bit_pos mod 64)) 0xFFL
         in
-        let pos = byte_idx * 8 in
-        let chunk = pos / 64 in
-        let shift = pos mod 64 in
-        let packed_mask = Int64.shift_left 0xFFL shift in
-        let dst_packed = get_vector_lane state dst chunk in
-        let cleared = Int64.logand dst_packed (Int64.lognot packed_mask) in
-        let updated = Int64.logor cleared (Int64.shift_left b shift) in
-        set_vector_lane state dst chunk updated
+        out_bytes.(byte_idx) <- b
+      done;
+      for chunk = 0 to (bits / 64) - 1 do
+        let q = ref 0L in
+        for i = 0 to 7 do
+          q := Int64.logor !q (Int64.shift_left out_bytes.(chunk * 8 + i) (i * 8))
+        done;
+        set_vector_lane state dst chunk !q
       done;
       Ok None
   | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
