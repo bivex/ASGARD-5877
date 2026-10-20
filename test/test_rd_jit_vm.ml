@@ -40,7 +40,7 @@ let test_rd_jit_cpp_compilation_e2e () =
         let runner_file = Filename.concat temp_dir "runner.cpp" in
         Test_helpers.write_file_string runner_file pkg.runner_source;
         let bin_file = Filename.concat temp_dir "rd_jit_app" in
-        let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
+        let cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" temp_dir runner_file bin_file in
         let status = Sys.command cmd in
         check int "RD JIT Compilation status == 0" 0 status;
         let run_st, _ = Test_helpers.run_command_capture (Printf.sprintf "%s 42 58" bin_file) in
@@ -65,7 +65,7 @@ let test_rd_jit_multi_op_arithmetic_e2e () =
         let runner_file = Filename.concat temp_dir "runner.cpp" in
         Test_helpers.write_file_string runner_file pkg.runner_source;
         let bin_file = Filename.concat temp_dir "rd_jit_multi_app" in
-        let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" temp_dir runner_file bin_file in
+        let cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" temp_dir runner_file bin_file in
         let status = Sys.command cmd in
         check int "RD JIT Multi-Op Compilation status == 0" 0 status;
         let run_st, out_str = Test_helpers.run_command_capture bin_file in
@@ -94,7 +94,7 @@ let test_rd_jit_call_extern_e2e () =
       let bin_file = Filename.concat tmp_dir "rd_jit_call_extern" in
       Test_helpers.write_file_string hdr_file pkg.cpp_runtime_source;
       Test_helpers.write_file_string runner_file pkg.runner_source;
-      let compile_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_file bin_file in
+      let compile_cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir runner_file bin_file in
       check int "RD-JIT extern compilation" 0 (Sys.command compile_cmd);
       let log_file = Filename.concat tmp_dir "out.log" in
       check int "RD-JIT extern execution" 0 (Sys.command (Printf.sprintf "%s > %s 2>&1" bin_file log_file));

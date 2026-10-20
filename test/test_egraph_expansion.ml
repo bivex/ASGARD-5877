@@ -240,7 +240,7 @@ int main() {
     close_out oc;
 
     let bin_path = Filename.concat tmp_dir "test_egraph_handlers" in
-    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s 2>&1" cpp_file bin_path in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O0 %s -o %s 2>&1" cpp_file bin_path in
     let comp_status = Sys.command comp_cmd in
     Alcotest.(check int) "egraph handler C++ compiles under clang++" 0 comp_status;
 

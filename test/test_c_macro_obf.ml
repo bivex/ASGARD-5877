@@ -64,7 +64,7 @@ let test_e2e_c_transformation_and_execution () =
     check (result unit string) "transformation succeeds" (Ok ()) res;
 
     (* Verify compilation with clang *)
-    let comp_cmd = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir out_c bin_file in
+    let comp_cmd = Printf.sprintf "clang -O0 -I%s %s -o %s" tmp_dir out_c bin_file in
     let comp_status = Sys.command comp_cmd in
     check int "clang compilation returns 0" 0 comp_status;
 
@@ -110,7 +110,7 @@ int main() {
 |} in
     Test_helpers.write_file_string in_c sample_src;
 
-    let comp_cmd = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir in_c bin_file in
+    let comp_cmd = Printf.sprintf "clang -O0 -I%s %s -o %s" tmp_dir in_c bin_file in
     let comp_status = Sys.command comp_cmd in
     check int "clang compilation returns 0" 0 comp_status;
 
@@ -163,7 +163,7 @@ int main() {
 |} in
     Test_helpers.write_file_string in_c sample_src;
 
-    let comp_cmd = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir in_c bin_file in
+    let comp_cmd = Printf.sprintf "clang -O0 -I%s %s -o %s" tmp_dir in_c bin_file in
     let comp_status = Sys.command comp_cmd in
     check int "clang compilation returns 0" 0 comp_status;
 
@@ -298,7 +298,7 @@ let test_arithmetic_rewriter () =
     let res = C_macro_obf.transform_file ~config:cfg ~in_file:in_c ~out_file:out_c
                 ~header_file:(Some hdr) () in
     Alcotest.(check (result unit string)) "arith transform ok" (Ok ()) res;
-    let comp = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir out_c bin in
+    let comp = Printf.sprintf "clang -O0 -I%s %s -o %s" tmp_dir out_c bin in
     Alcotest.(check int) "arith compile ok" 0 (Sys.command comp);
     let log = Filename.concat tmp_dir "out.log" in
     Alcotest.(check int) "arith run ok" 0 (Sys.command (bin ^ " > " ^ log));
@@ -361,7 +361,7 @@ let test_arithmetic_rewriter_fp_taint () =
     let res = C_macro_obf.transform_file ~config:cfg ~in_file:in_cpp ~out_file:out_cpp
                 ~header_file:(Some hdr) () in
     Alcotest.(check (result unit string)) "fp transform ok" (Ok ()) res;
-    let comp = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir out_cpp bin in
+    let comp = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir out_cpp bin in
     Alcotest.(check int) "fp compile ok (regression: MBA on doubles)" 0 (Sys.command comp);
     let log = Filename.concat tmp_dir "fp_out.log" in
     Alcotest.(check int) "fp run ok" 0 (Sys.command (bin ^ " > " ^ log));
@@ -435,7 +435,7 @@ int main(void) {
     let res = transform_file ~in_file:in_c ~out_file:out_c ~header_file:(Some hdr_file) () in
     check (result unit string) "transformation succeeds" (Ok ()) res;
 
-    let comp_cmd = Printf.sprintf "clang -O2 -I%s %s -o %s" tmp_dir out_c bin_file in
+    let comp_cmd = Printf.sprintf "clang -O0 -I%s %s -o %s" tmp_dir out_c bin_file in
     let comp_status = Sys.command comp_cmd in
     check int "clang compilation succeeds" 0 comp_status;
 

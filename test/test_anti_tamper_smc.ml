@@ -53,7 +53,7 @@ int main() {
     close_out oc;
 
     let bin_path = Filename.concat tmp_dir "test_smc" in
-    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O0 %s -o %s" main_cpp bin_path in
     let comp_status = Sys.command comp_cmd in
     Alcotest.(check int) "clang++ compilation of Layer 3 probes succeeds" 0 comp_status;
 
@@ -157,7 +157,7 @@ int main() {
     close_out oc;
 
     let bin_path = Filename.concat tmp_dir "test_sys" in
-    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O0 %s -o %s" main_cpp bin_path in
     let comp_status = Sys.command comp_cmd in
     Alcotest.(check int) "clang++ compilation of direct syscalls succeeds" 0 comp_status;
 
@@ -258,7 +258,7 @@ int main() {
     close_out oc;
 
     let bin_path = Filename.concat tmp_dir "test_visa" in
-    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s 2>&1" main_cpp bin_path in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O0 %s -o %s 2>&1" main_cpp bin_path in
     let comp_status = Sys.command comp_cmd in
     Alcotest.(check int) "vector ISA clang++ compilation succeeds" 0 comp_status;
 
@@ -324,7 +324,7 @@ int main() {
     close_out oc;
 
     let bin_path = Filename.concat tmp_dir "test_diag" in
-    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+    let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O0 %s -o %s" main_cpp bin_path in
     let comp_status = Sys.command comp_cmd in
     Alcotest.(check int) "clang++ compilation of SMC diagnostics succeeds" 0 comp_status;
 
@@ -394,7 +394,7 @@ int main() {
         close_out oc;
 
         let bin_path = Filename.concat tmp_dir "test_strict" in
-        let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O2 %s -o %s" main_cpp bin_path in
+        let comp_cmd = Printf.sprintf "clang++ -std=c++20 -O0 %s -o %s" main_cpp bin_path in
         let comp_status = Sys.command comp_cmd in
         Alcotest.(check int) "clang++ compilation with ASGARD_SMC_STRICT succeeds" 0 comp_status;
 

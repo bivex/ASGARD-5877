@@ -114,7 +114,7 @@ int main() {
     Test_helpers.write_file_string runner_path cpp_src;
 
     let bin_path = Filename.concat tmp_dir "test_runner" in
-    let cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path in
+    let cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir runner_path bin_path in
     let status = Sys.command cmd in
     check int "clang++ compilation status" 0 status;
 

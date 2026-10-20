@@ -1095,7 +1095,7 @@ let test_c_runtime_compile_and_run () =
 
     (* 3. Compile (both files live in the same dir → quoted #include resolves) *)
     let compile cmd =
-      Sys.command (Printf.sprintf "c++ -O1 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
+      Sys.command (Printf.sprintf "c++ -O0 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
     in
     let rc =
       let rc1 = compile (Filename.quote cpp_path) in
@@ -1233,7 +1233,7 @@ let test_full_pipeline_c_runtime_with_args () =
     let oc = open_out cpp_path in output_string oc driver; close_out oc;
 
     let compile cmd =
-      Sys.command (Printf.sprintf "c++ -O1 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
+      Sys.command (Printf.sprintf "c++ -O0 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
     in
     let rc =
       let rc1 = compile (Filename.quote cpp_path) in
@@ -1415,10 +1415,10 @@ let test_address_bound_c_runtime_probe_and_run () =
     let oc = open_out probe_cpp_path in output_string oc probe_src; close_out oc;
 
     let compile_bin src_path bin_target =
-      let cmd1 = Printf.sprintf "c++ -O1 -std=c++17 %s -o %s" (Filename.quote src_path) (Filename.quote bin_target) in
+      let cmd1 = Printf.sprintf "c++ -O0 -std=c++17 %s -o %s" (Filename.quote src_path) (Filename.quote bin_target) in
       let rc1 = Sys.command cmd1 in
       if rc1 = 0 then 0
-      else Sys.command (Printf.sprintf "c++ -O1 -std=c++17 %s -ldl -o %s" (Filename.quote src_path) (Filename.quote bin_target))
+      else Sys.command (Printf.sprintf "c++ -O0 -std=c++17 %s -ldl -o %s" (Filename.quote src_path) (Filename.quote bin_target))
     in
     let rc_probe = compile_bin probe_cpp_path probe_bin_path in
     Alcotest.(check bool) "probe C++ compiles" true (rc_probe = 0);
@@ -1563,7 +1563,7 @@ let test_real_license_check_macro_stack_vm_e2e () =
         Alcotest.(check bool) "bytecode generated" true (res.bytecode_length_bytes > 0);
 
         let comp_cmd =
-          Printf.sprintf "clang++ -std=c++20 -O2 -I%s -Wno-format-security %s -o %s"
+          Printf.sprintf "clang++ -std=c++20 -O0 -I%s -Wno-format-security %s -o %s"
             tmp_dir virt_cpp bin_path
         in
         let comp_st = Sys.command comp_cmd in
@@ -1624,7 +1624,7 @@ let test_real_license_check_macro_stack_vm_e2e () =
         output_string oc (flip_first_word src);
         close_out oc;
         let tampered_st =
-          Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s -Wno-format-security %s -o %s"
+          Sys.command (Printf.sprintf "clang++ -std=c++20 -O0 -I%s -Wno-format-security %s -o %s"
               tmp_dir tampered_cpp tampered_bin)
         in
         Alcotest.(check int) "tampered build succeeds" 0 tampered_st;
@@ -1865,7 +1865,7 @@ let test_payload_auth_c_runtime () =
     write driver_b (Buffer.contents buf_b);
 
     let compile target driver =
-      let cmd = Printf.sprintf "c++ -O1 -std=c++17 %s -o %s"
+      let cmd = Printf.sprintf "c++ -O0 -std=c++17 %s -o %s"
           (Filename.quote driver) (Filename.quote target) in
       let rc = Sys.command cmd in
       if rc = 0 then 0 else Sys.command (Printf.sprintf "%s -ldl" cmd)
@@ -2151,7 +2151,7 @@ let test_runtime_hardening () =
     let oc = open_out cpp_path in output_string oc runner; close_out oc;
 
     let compile cmd =
-      Sys.command (Printf.sprintf "c++ -O1 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
+      Sys.command (Printf.sprintf "c++ -O0 -std=c++17 %s -o %s" cmd (Filename.quote bin_path))
     in
     let rc =
       let rc1 = compile (Filename.quote cpp_path) in

@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
 
             (* 5. Compile vanguard_runner with clang++ *)
             let bin_path = Filename.concat tmp_dir "vanguard_runner" in
-            let compile_cmd = Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s %s/instructions.cpp -o %s"
+            let compile_cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s %s/instructions.cpp -o %s"
               tmp_dir runner_path tmp_dir bin_path in
             let comp_status = Sys.command compile_cmd in
             Alcotest.(check int) "compilation succeeds" 0 comp_status;

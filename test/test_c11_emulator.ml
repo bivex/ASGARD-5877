@@ -52,7 +52,7 @@ let test_c11_compilation_and_execution () =
                   files);
 
             (* Compile using clang or make *)
-            let compile_cmd = Printf.sprintf "clang -std=c11 -O2 -Wall -Wextra -I%s %s/visa_emulator.c %s/visa_instructions.c %s/main.c -o %s/visa_c11_runner" tmp_dir tmp_dir tmp_dir tmp_dir tmp_dir in
+            let compile_cmd = Printf.sprintf "clang -std=c11 -O0 -Wall -Wextra -I%s %s/visa_emulator.c %s/visa_instructions.c %s/main.c -o %s/visa_c11_runner" tmp_dir tmp_dir tmp_dir tmp_dir tmp_dir in
             let compile_res = Sys.command compile_cmd in
             Alcotest.(check int) "clang compilation exit code" 0 compile_res;
 

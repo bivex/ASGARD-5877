@@ -186,7 +186,7 @@ int main() {
         let runner_path = Filename.concat tmp_dir "runner.cpp" in
         write_file_string runner_path custom_runner;
         let bin_path = Filename.concat tmp_dir "runner" in
-        let comp_status = Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path) in
+        let comp_status = Sys.command (Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir runner_path bin_path) in
         Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
         let status, _ = run_command_capture bin_path in
         Alcotest.(check bool) "exit code 0 (rax 600 and all words wiped)" true (status = Unix.WEXITED 0))
@@ -245,7 +245,7 @@ int main() {
         let runner_path = Filename.concat tmp_dir "runner.cpp" in
         write_file_string runner_path custom_runner;
         let bin_path = Filename.concat tmp_dir "runner" in
-        let comp_status = Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path) in
+        let comp_status = Sys.command (Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir runner_path bin_path) in
         Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
         let status, _ = run_command_capture bin_path in
         Alcotest.(check bool) "exit code 0 (rax 24 and loop words wiped)" true (status = Unix.WEXITED 0))
@@ -299,7 +299,7 @@ int main() {
         let runner_path = Filename.concat tmp_dir "runner.cpp" in
         write_file_string runner_path custom_runner;
         let bin_path = Filename.concat tmp_dir "runner" in
-        let comp_status = Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -I%s %s -o %s" tmp_dir runner_path bin_path) in
+        let comp_status = Sys.command (Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" tmp_dir runner_path bin_path) in
         Alcotest.(check int) "clang++ compilation succeeds" 0 comp_status;
         let status, _ = run_command_capture bin_path in
         Alcotest.(check bool) "exit code 0 (integrity test passed)" true (status = Unix.WEXITED 0))
