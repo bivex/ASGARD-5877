@@ -1958,11 +1958,9 @@ func_native_subvec:
       run_custom_vm ~name:"native_subvec" tmp_dir pkg {|
     vanguard_threaded_vm::VMContext ctx = {};
     ctx.init();
-
-    /* rsp + 16 = 0x1234567890ABCDEF */
-    uint64_t vsp = ctx.get_vsp();
-    ctx.write_mem_u64(vsp + 16, 0x1234567890ABCDEFULL);
-
+    uint8_t stack_mem[64] = {0};
+    *reinterpret_cast<uint64_t*>(&stack_mem[16]) = 0x1234567890ABCDEFULL;
+    ctx.set_reg(vanguard_threaded_vm::REG_RSP, reinterpret_cast<uint64_t>(stack_mem));
     ctx.vregs[0][0] = 0x1111111111111111ULL; ctx.vregs[0][1] = 0x2222222222222222ULL;
     ctx.vregs[1][0] = 0x3333333333333333ULL; ctx.vregs[1][1] = 0x4444444444444444ULL;
     ctx.vregs[2][0] = 0x5555555555555555ULL; ctx.vregs[2][1] = 0x6666666666666666ULL;
@@ -2013,6 +2011,26 @@ func_native_subvec:
     if (ctx.vregs[9][2] != 0ULL) return 21;
 |})
 
+let test_native_x86_system_and_compiler_traps () =
+  let pkg =
+    mk_pkg ~seed:20261031 {|
+func_native_system_traps:
+    endbr64
+    endbr32
+    mov rax, 42
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_sys_traps" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if (ctx.get_rax() != 42ULL) return 2;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -2051,4 +2069,5 @@ let tests = [
   Alcotest.test_case "native_x86_shufps_shufpd" `Slow test_native_x86_shufps_shufpd;
   Alcotest.test_case "native_x86_packed_conversions" `Slow test_native_x86_packed_conversions;
   Alcotest.test_case "native_x86_movlhps_movhlps_movlps_movhps" `Slow test_native_x86_movlhps_movhlps_movlps_movhps;
+  Alcotest.test_case "native_x86_system_and_compiler_traps" `Slow test_native_x86_system_and_compiler_traps;
 ]

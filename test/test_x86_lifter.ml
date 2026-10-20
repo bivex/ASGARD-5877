@@ -1772,6 +1772,80 @@ func_subvector_moves:
           Alcotest.(check int64) "vmovhps l1" 0x1234567890ABCDEFL v9.(1);
           Alcotest.(check int64) "vmovhps l2 zero" 0L v9.(2))
 
+let test_x86_lift_system_and_compiler_traps () =
+  (* 1. endbr64 and endbr32 *)
+  let asm_endbr = {|
+func_endbr:
+    endbr64
+    endbr32
+    mov rax, 42
+    ret
+|} in
+  (match Lifter.lift_function asm_endbr with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          Alcotest.(check int64) "endbr pass rax" 42L (get_reg state Register.rax)));
+  (* 2. ud2 unreachable trap *)
+  let asm_ud2 = {|
+func_ud2:
+    mov rax, 10
+    ud2
+    mov rax, 20
+    ret
+|} in
+  (match Lifter.lift_function asm_ud2 with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error msg ->
+          Alcotest.(check string) "ud2 trapped" "VM Trapped: ud2" msg;
+          Alcotest.(check int64) "ud2 stopped before rax=20" 10L (get_reg state Register.rax)
+      | Ok () -> Alcotest.fail "ud2 should have trapped"));
+  (* 3. int3 breakpoint trap *)
+  let asm_int3 = {|
+func_int3:
+    int3
+    ret
+|} in
+  (match Lifter.lift_function asm_int3 with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error msg -> Alcotest.(check string) "int3 trapped" "VM Trapped: int3" msg
+      | Ok () -> Alcotest.fail "int3 should have trapped"));
+  (* 4. int 0x80 syscall interrupt *)
+  let asm_int80 = {|
+func_int80:
+    int 0x80
+    ret
+|} in
+  (match Lifter.lift_function asm_int80 with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error msg -> Alcotest.(check string) "int 128 trapped" "VM Trapped: int 128" msg
+      | Ok () -> Alcotest.fail "int 128 should have trapped"));
+  (* 5. hlt instruction *)
+  let asm_hlt = {|
+func_hlt:
+    hlt
+    ret
+|} in
+  (match Lifter.lift_function asm_hlt with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (match run_func state func with
+      | Error msg -> Alcotest.(check string) "hlt trapped" "VM Trapped: hlt" msg
+      | Ok () -> Alcotest.fail "hlt should have trapped"))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -3250,5 +3324,6 @@ let tests = [
   Alcotest.test_case "lift_x86_shufps_shufpd" `Quick test_x86_lift_shufps_shufpd;
   Alcotest.test_case "lift_x86_packed_conversions" `Quick test_x86_lift_packed_conversions;
   Alcotest.test_case "lift_x86_movlhps_movhlps_movlps_movhps" `Quick test_x86_lift_movlhps_movhlps_movlps_movhps;
+  Alcotest.test_case "lift_x86_system_and_compiler_traps" `Quick test_x86_lift_system_and_compiler_traps;
 ]
 

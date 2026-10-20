@@ -1627,7 +1627,12 @@ let lift_instr ?const_pool raw_mnem ops =
   match mnem, ops with
   | mnem, ops when is_fpu_mnemonic mnem -> lift_fpu_instr mnem ops
   | ("mfence" | "lfence" | "sfence"), _ -> Ok [ Ir.Fence Ir.SeqCst ]
-  | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align" | "pause" | "prefetcht0" | "prefetcht1" | "prefetcht2" | "prefetchnta" | "prefetch" | "clflush" | "clflushopt"), _ -> Ok [ Ir.Nop ]
+  | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align" | "pause" | "prefetcht0" | "prefetcht1" | "prefetcht2" | "prefetchnta" | "prefetch" | "clflush" | "clflushopt" | "endbr64" | "endbr32"), _ -> Ok [ Ir.Nop ]
+  | ("ud2" | "ud1" | "ud0"), _ -> Ok [ Ir.Trap "ud2" ]
+  | "hlt", _ -> Ok [ Ir.Trap "hlt" ]
+  | "int3", [] -> Ok [ Ir.Trap "int3" ]
+  | "int", [ X86_parser.OpImm imm ] -> Ok [ Ir.Trap (Printf.sprintf "int %Ld" imm) ]
+  | "into", [] -> Ok [ Ir.Trap "into" ]
   | "ret", [] -> Ok [ Ir.Ret ]
   | "vm_enter", [] -> Ok [ Ir.Vm_enter ]
   | "vm_exit", [] -> Ok [ Ir.Vm_exit ]
