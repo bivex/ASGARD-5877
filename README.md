@@ -2,7 +2,8 @@
 
 [![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
 [![OCaml](https://img.shields.io/badge/OCaml-5.4.1-3be5b0.svg)](dune-project)
-[![Topics](https://img.shields.io/github/topics/bivex/ASGARD-5877?color=blue)](https://github.com/bivex/ASGARD-5877#readme)
+[![Release](https://img.shields.io/github/v/release/bivex/ASGARD-5877)](https://github.com/bivex/ASGARD-5877/releases)
+[![Topics](https://img.shields.io/badge/topics-x86--64%20%7C%20ARM64%20%7C%20RISC--V%20%7C%20CFF%20%7C%20MBA%20%7C%20F%2A-blue?style=flat)](https://github.com/topics/virtual-machine)
 
 An OCaml 5 toolchain for two related jobs:
 
