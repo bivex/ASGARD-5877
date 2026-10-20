@@ -8,6 +8,8 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 
+- Add the ARM64 `CSETM` conditional set mask to the lifter (`lib/arm64_lifter/arm64_alu.ml`). `CSETM` is the `CSINV` alias over the zero register with an inverted condition, so the destination holds the mask of the condition: all bits set when the condition holds.
+- Add a test for the whole ARM64 conditional family - `cset`, `cinc`, `csel`, `csinc`, `csinv`, `cinv`, `cneg`, `csneg` and `csetm` - in the 64-bit and the 32-bit form, for a condition that holds and one that does not. The expected values are the ones the ARM64 hardware produces (`test/test_arm64_lifter.ml`).
 - Add Mach-O compact unwind support (`lib/macho/`): a container reader for 32-bit and 64-bit images that parses the load commands, the segments and the sections, and decodes the `LC_ROUTINES` (0x22) and `LC_ROUTINES64` (0x33) load commands into routine tables (`macho_image.ml`). The unwind model decodes the routine table, resolves the routine that covers an address, checks every entry against `__TEXT,__text` and `__TEXT,__unwind_info`, and repairs the entries whose extent overruns the following function without changing the image layout (`macho_unwind.ml`).
 - Add a `random_visa macho-unwind` command that inspects the compact unwind information of a Mach-O image and optionally writes a repaired copy. The command exits non-zero when the information is inconsistent, so it can gate a release pipeline.
 - Add a compact unwind audit to the protection pipeline: the binary the protector produced is checked and the result is reported in the protection summary as `Mach-O Compact Unwind`.

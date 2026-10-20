@@ -676,6 +676,21 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       if is_vzero dst then Some [ Ir.Nop ]
       else
         Some [ Ir.Setcc { cond = E; dst = Reg dst } ]
+  | ("csetm", [ OpReg dst; cond_op ]) ->
+      (* CSETM is the CSINV alias over the zero register with an inverted
+         condition: the destination holds the mask of the condition, all
+         bits set when the condition holds. *)
+      if is_vzero dst then Some [ Ir.Nop ]
+      else
+        let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
+        let cond = map_cond_str c_str in
+        let w = Register.get_width dst in
+        Some [
+          Ir.Mov { dst = Reg Register.vtmp0; src = Imm (-1L) };
+          Ir.Mov { dst = Reg Register.vtmp1; src = Imm 0L };
+          Ir.Cmov { cond = Flags.condition_negate cond; dst = Register.vtmp0; src = Reg Register.vtmp1 };
+          Ir.Mov { dst = Reg dst; src = Reg (Register.with_width Register.vtmp0 w) };
+        ]
   | ("fcsel", (OpReg (Register.Fpr (d, dw)) :: src1_op :: src2_op :: cond_op :: _)) ->
       let c_str = match cond_op with OpLabel s -> s | OpReg r -> Register.to_string r | _ -> "eq" in
       let cond = map_cond_str c_str in

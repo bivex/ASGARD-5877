@@ -397,6 +397,80 @@ let test_arm64_lift_adc_sbc () =
           check int64 "ARM64 adc/sbc sum = 40" 40L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+(* The expected values are the ones the ARM64 hardware produces; the same
+   programs were assembled and executed on an arm64 machine to obtain them. *)
+let arm64_conditional_family =
+  [ ("cset x0, eq", 1L, 0L);
+    ("cinc x0, x1, eq", 11L, 10L);
+    ("csel x0, x1, x2, eq", 10L, 20L);
+    ("csinc x0, x1, x2, eq", 10L, 21L);
+    ("csinv x0, x1, x2, eq", 10L, -21L);
+    ("cinv x0, x1, eq", -11L, 10L);
+    ("cneg x0, x1, eq", -10L, 10L);
+    ("csneg x0, x1, x2, eq", 10L, -20L);
+    ("csetm x0, eq", -1L, 0L) ]
+
+let arm64_conditional_family_32 =
+  [ ("cset w0, eq", 1L, 0L);
+    ("cinc w0, w1, eq", 11L, 10L);
+    ("csel w0, w1, w2, eq", 10L, 20L);
+    ("csinc w0, w1, w2, eq", 10L, 21L);
+    ("csinv w0, w1, w2, eq", 10L, 0xFFFFFFEBL);
+    ("cinv w0, w1, eq", 0xFFFFFFF5L, 10L);
+    ("cneg w0, w1, eq", 0xFFFFFFF6L, 10L);
+    ("csneg w0, w1, w2, eq", 10L, 0xFFFFFFECL);
+    ("csetm w0, eq", 0xFFFFFFFFL, 0L) ]
+
+let test_arm64_lift_conditional_family () =
+  let eval name asm =
+    match lift_function ~options:{ function_name = name } asm with
+    | Error err -> fail ("Failed to lift ARM64 " ^ name ^ ": " ^ err)
+    | Ok f ->
+        (match Reference_vm.evaluate f with
+        | Ok snap -> snap.final_rax
+        | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+  in
+  let run instr =
+    let taken =
+      Printf.sprintf "mov x1, #10\n    mov x2, #20\n    cmp x1, #10\n    %s\n    ret" instr
+    in
+    let not_taken =
+      Printf.sprintf "mov x1, #10\n    mov x2, #20\n    cmp x1, #11\n    %s\n    ret" instr
+    in
+    (eval (instr ^ "_taken") taken, eval (instr ^ "_not_taken") not_taken)
+  in
+  List.iter
+    (fun (instr, taken, not_taken) ->
+      let t, n = run instr in
+      check int64 ("ARM64 " ^ instr ^ " taken") taken t;
+      check int64 ("ARM64 " ^ instr ^ " not taken") not_taken n)
+    arm64_conditional_family
+
+let test_arm64_lift_conditional_family_32bit () =
+  let eval name asm =
+    match lift_function ~options:{ function_name = name } asm with
+    | Error err -> fail ("Failed to lift ARM64 " ^ name ^ ": " ^ err)
+    | Ok f ->
+        (match Reference_vm.evaluate f with
+        | Ok snap -> snap.final_rax
+        | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+  in
+  let run instr =
+    let taken =
+      Printf.sprintf "mov w1, #10\n    mov w2, #20\n    cmp w1, #10\n    %s\n    ret" instr
+    in
+    let not_taken =
+      Printf.sprintf "mov w1, #10\n    mov w2, #20\n    cmp w1, #11\n    %s\n    ret" instr
+    in
+    (eval (instr ^ "_w_taken") taken, eval (instr ^ "_w_not_taken") not_taken)
+  in
+  List.iter
+    (fun (instr, taken, not_taken) ->
+      let t, n = run instr in
+      check int64 ("ARM64 " ^ instr ^ " taken") taken t;
+      check int64 ("ARM64 " ^ instr ^ " not taken") not_taken n)
+    arm64_conditional_family_32
+
 let test_arm64_lift_ccmp_ccmn () =
   let asm = {|
     mov x1, #10
@@ -961,6 +1035,9 @@ let tests = [
   ("ARM64 Lift extensions (sxt/uxt)", `Quick, test_arm64_lift_extensions_sxt_uxt);
   ("ARM64 Lift register shifts (lsl/lsr/asr)", `Quick, test_arm64_lift_register_shifts);
   ("ARM64 Lift conditional zero reg (wzr/xzr)", `Quick, test_arm64_lift_conditional_zero_reg);
+  ("ARM64 Lift conditional family (cset/cinc/csel/csinc/csinv/cinv/cneg/csneg/csetm)", `Quick,
+    test_arm64_lift_conditional_family);
+  ("ARM64 Lift conditional family (32-bit)", `Quick, test_arm64_lift_conditional_family_32bit);
 ]
 
 
