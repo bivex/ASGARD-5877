@@ -635,34 +635,40 @@ let test_probe_b () =
     sbc x4, x1, x2
     cset x5, eq
     cmp x5, #1
-    cinc x0, x0, eq
+    orr x6, x0, #1
+    csel x0, x6, x0, eq
     cmp x1, x3
     sbcs x4, x1, x2
     cset x5, eq
     cmp x5, #0
-    cinc x0, x0, eq
+    orr x6, x0, #2
+    csel x0, x6, x0, eq
     cmp x1, x3
     adc x4, x1, x2
     cset x5, eq
     cmp x5, #1
-    cinc x0, x0, eq
+    orr x6, x0, #4
+    csel x0, x6, x0, eq
     cmp x1, x3
     adcs x4, x1, x2
     cset x5, eq
     cmp x5, #0
-    cinc x0, x0, eq
+    orr x6, x0, #8
+    csel x0, x6, x0, eq
     cmp x1, x3
     sbc x4, x1, x2
     cmn x4, #10
     cset x5, eq
     cmp x5, #1
-    cinc x0, x0, eq
+    orr x6, x0, #16
+    csel x0, x6, x0, eq
     cmp x1, x3
     adc x4, x1, x2
     cmp x4, #31
     cset x5, eq
     cmp x5, #1
-    cinc x0, x0, eq
+    orr x6, x0, #32
+    csel x0, x6, x0, eq
     ret
   |} in
   match lift_function ~options:{ function_name = "probe_b" } asm with

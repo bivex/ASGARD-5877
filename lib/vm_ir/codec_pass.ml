@@ -174,6 +174,32 @@ let process_block ~cfg (b : basic_block) : basic_block =
         set_state dst Plain;
         acc @ [ instr ]
 
+    (* Fp_conv: src is a GPR read by the FP unit; dst receives the GPR result.
+       Decode src before use; dst is thereafter plain. *)
+    | Fp_conv { dst; src; _ } ->
+        let acc = force_decode src acc in
+        set_state dst Plain;
+        acc @ [ instr ]
+
+    (* Atomic_mem: addr and src are GPR inputs; dst receives the old memory
+       value (GPR output).  Decode all three live inputs before use. *)
+    | Atomic_mem { dst; addr; src; _ } ->
+        let acc = force_decode addr acc in
+        let acc = force_decode src  acc in
+        set_state dst Plain;
+        acc @ [ instr ]
+
+    (* Cmov: reads flags and src, writes dst. *)
+    | Cmov { dst; src; _ } ->
+        let acc = force_decode_operand src acc in
+        set_state dst Plain;
+        acc @ [ instr ]
+
+    (* Setcc: writes dst (no GPR inputs beyond flags). *)
+    | Setcc { dst = Reg r; _ } ->
+        set_state r Plain;
+        acc @ [ instr ]
+
     | other -> acc @ [ other ]
   in
 
