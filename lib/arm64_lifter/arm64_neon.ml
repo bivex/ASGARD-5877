@@ -21,10 +21,18 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
   let mnem = String.lowercase_ascii mnemonic in
   match (mnem, ops) with
   (* Basic arithmetic vector binops: add, sub, mul *)
-  | (("add" | "sub" | "mul"), [ op_dst; op_s1; op_s2 ]) -> (
+  | (("add" | "sub" | "mul" | "sqadd" | "sqsub" | "sqrdmulh"), [ op_dst; op_s1; op_s2 ]) -> (
       match get_vec_info op_dst, get_vec_info op_s1, get_vec_info op_s2 with
       | Some (dst, bits, lane_bits, _), Some (s1, _, _, _), Some (s2, _, _, _) ->
-          let op = match mnem with "add" -> Ir.Vadd | "sub" -> Ir.Vsub | "mul" -> Ir.Vmul | _ -> assert false in
+          let op = match mnem with
+            | "add" -> Ir.Vadd
+            | "sub" -> Ir.Vsub
+            | "mul" -> Ir.Vmul
+            | "sqadd" -> Ir.Vsqadd
+            | "sqsub" -> Ir.Vsqsub
+            | "sqrdmulh" -> Ir.Vsqrdmulh
+            | _ -> assert false
+          in
           Some [ Ir.Vec_binop { op; elem = Ir.VInt; dst; src1 = s1; src2 = s2; bits; lane_bits } ]
       | _ -> None)
 
@@ -87,22 +95,78 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
           Some [ Ir.Vec_mov { dst; src; bits } ]
       | _ -> None)
 
-  (* Vector move between GPR and vector lane 0 *)
-  | ("mov", [ OpReg dst; op_src ]) -> (
-      match get_vec_info op_src with
-      | Some (src, _, _, lane_idx) ->
-          let idx = Option.value ~default:0 lane_idx in
-          if idx = 0 then
-            Some [ Ir.Mov { dst = Reg dst; src = Reg (Register.Fpr (src, Register.get_width dst)) } ]
-          else None
+  (* Vector element-to-element insert: ins Vd.T[i], Vn.T[j] or mov Vd.T[i], Vn.T[j] *)
+  | (("ins" | "mov"), [ op_dst; op_src ]) when (match get_vec_info op_dst, get_vec_info op_src with
+      | Some (_, _, _, Some _), Some (_, _, _, Some _) -> true
+      | _ -> false) -> (
+      match get_vec_info op_dst, get_vec_info op_src with
+      | Some (dst, _, dst_lane_bits, Some dst_idx), Some (src, _, _, Some src_idx) ->
+          let width = match dst_lane_bits with
+            | 8 -> Register.B8
+            | 16 -> Register.B16
+            | 32 -> Register.B32
+            | 64 -> Register.B64
+            | _ -> Register.B64
+          in
+          let tmp = Register.with_width Register.vtmp0 width in
+          Some [
+            Ir.Pextr { dst = Ir.Reg tmp; src; imm = src_idx; width };
+            Ir.Pinsr { dst; src1 = dst; src2 = Ir.Reg tmp; imm = dst_idx; width };
+          ]
       | _ -> None)
-  | ("mov", [ op_dst; OpReg src ]) -> (
+
+  (* Vector element insert: ins Vd.T[i], Wn/Xn or mov Vd.T[i], Wn/Xn *)
+  | (("ins" | "mov"), [ op_dst; OpReg src ]) -> (
       match get_vec_info op_dst with
-      | Some (dst, _, _, lane_idx) ->
+      | Some (dst, _, lane_bits, lane_idx) ->
           let idx = Option.value ~default:0 lane_idx in
-          if idx = 0 then
-            Some [ Ir.Mov { dst = Reg (Register.Fpr (dst, Register.get_width src)); src = Reg src } ]
-          else None
+          let width = match lane_bits with
+            | 8 -> Register.B8
+            | 16 -> Register.B16
+            | 32 -> Register.B32
+            | 64 -> Register.B64
+            | _ -> Register.get_width src
+          in
+          Some [ Ir.Pinsr { dst; src1 = dst; src2 = Ir.Reg src; imm = idx; width } ]
+      | _ -> None)
+
+  (* Vector unsigned move / extract: umov Wd, Vn.T[i] or mov Wd, Vn.T[i] *)
+  | (("umov" | "mov"), [ OpReg dst; op_src ]) -> (
+      match get_vec_info op_src with
+      | Some (src, _, lane_bits, Some idx) ->
+          let width = match lane_bits with
+            | 8 -> Register.B8
+            | 16 -> Register.B16
+            | 32 -> Register.B32
+            | 64 -> Register.B64
+            | _ -> Register.get_width dst
+          in
+          Some [ Ir.Pextr { dst = Ir.Reg dst; src; imm = idx; width } ]
+      | Some (src, _, _, None) ->
+          Some [ Ir.Mov { dst = Reg dst; src = Reg (Register.Fpr (src, Register.get_width dst)) } ]
+      | _ -> None)
+
+  (* Vector signed move / extract: smov Wd/Xd, Vn.T[i] *)
+  | ("smov", [ OpReg dst; op_src ]) -> (
+      match get_vec_info op_src with
+      | Some (src, _, lane_bits, Some idx) ->
+          let width = match lane_bits with
+            | 8 -> Register.B8
+            | 16 -> Register.B16
+            | 32 -> Register.B32
+            | 64 -> Register.B64
+            | _ -> Register.get_width dst
+          in
+          let dst_bits = Register.width_to_bits (Register.get_width dst) in
+          let shift = Int64.of_int (dst_bits - lane_bits) in
+          if shift > 0L then
+            Some [
+              Ir.Pextr { dst = Ir.Reg dst; src; imm = idx; width };
+              Ir.Alu { op = Shl; dst; src1 = Reg dst; src2 = Imm shift; set_flags = false };
+              Ir.Alu { op = Sar; dst; src1 = Reg dst; src2 = Imm shift; set_flags = false };
+            ]
+          else
+            Some [ Ir.Pextr { dst = Ir.Reg dst; src; imm = idx; width } ]
       | _ -> None)
 
   (* Vector duplicate / splat *)

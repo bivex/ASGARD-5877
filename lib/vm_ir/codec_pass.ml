@@ -180,6 +180,9 @@ let process_block ~cfg (b : basic_block) : basic_block =
         let acc = force_decode src acc in
         set_state dst Plain;
         acc @ [ instr ]
+    | Fjcvtzs { dst; _ } ->
+        set_state dst Plain;
+        acc @ [ instr ]
     | Pinsr { src2; _ } ->
         let acc = force_decode_operand src2 acc in
         acc @ [ instr ]

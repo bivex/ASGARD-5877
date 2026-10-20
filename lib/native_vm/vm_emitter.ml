@@ -414,6 +414,7 @@ let compile_and_package_multi
     | Ir.Vcmpne -> 34 | Ir.Vcmple -> 35 | Ir.Vcmpltu -> 36 | Ir.Vcmpleu -> 37
     | Ir.Vmaddwd -> 38 | Ir.Vsadbw -> 39
     | Ir.Vshuflw -> 40 | Ir.Vshufhw -> 41
+    | Ir.Vsqadd -> 42 | Ir.Vsqsub -> 43 | Ir.Vsqrdmulh -> 44
   in
   let vector_elem_code = function
     | Ir.VInt -> 0 | Ir.VF32 -> 1 | Ir.VF64 -> 2
@@ -886,6 +887,8 @@ let compile_and_package_multi
                   let s_idx = match src with Register.Fpr (i, _) -> i mod 32 | _ -> get_reg_idx src in
                   let mode = if Register.get_width dst = Register.B32 then 1L else 0L in
                   encode_raw_word (get_opcode OP_FCVT) d_idx s_idx mode
+              | Ir.Fjcvtzs { dst; src } ->
+                  encode_raw_word (get_opcode OP_FJCVTZS) (get_reg_idx dst) (src mod 32) 0L
               | Ir.Vec_mov { dst; src; bits } ->
                   encode_raw_word (get_opcode OP_VEC_MOV) (vector_index dst) (vector_index src) (Int64.of_int bits)
               | Ir.Vec_splat { dst; src; bits; lane_bits } ->

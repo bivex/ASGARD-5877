@@ -122,6 +122,7 @@ type raw_op_kind =
   | OP_FCMP_DD
   | OP_FCCMP_DD
   | OP_FCVTZS
+  | OP_FJCVTZS
   | OP_SCVTF
   | OP_ATOMIC_LOAD
   | OP_ATOMIC_STORE
@@ -196,6 +197,7 @@ let all_op_kinds = [
   OP_FADD_DD; OP_FSUB_DD; OP_FMUL_DD; OP_FDIV_DD; OP_FSQRT_D; OP_FCMP_DD;
   OP_FCCMP_DD;
   OP_FCVTZS; OP_SCVTF;
+  OP_FJCVTZS;
   OP_ATOMIC_LOAD; OP_ATOMIC_STORE; OP_ATOMIC_CAS; OP_ATOMIC_ADD; OP_ATOMIC_SWP; OP_FENCE;
   OP_BSWAP_RR; OP_CLZ_RR; OP_CTZ_RR; OP_POPCNT_RR; OP_RBIT_RR;
   OP_MOV_VR; OP_MOV_RV; OP_FCSEL_VV;
@@ -305,6 +307,7 @@ let op_kind_to_handler_name = function
   | OP_FCMP_DD -> "H_FCMP_DD"
   | OP_FCCMP_DD -> "H_FCCMP_DD"
   | OP_FCVTZS -> "H_FCVTZS"
+  | OP_FJCVTZS -> "H_FJCVTZS"
   | OP_SCVTF -> "H_SCVTF"
   | OP_ATOMIC_LOAD -> "H_ATOMIC_LOAD"
   | OP_ATOMIC_STORE -> "H_ATOMIC_STORE"
@@ -852,7 +855,7 @@ let eliminate_dead_flag_cmps (instrs : Ir.instr list) : Ir.instr list =
     | _ -> false
   in
   let is_flag_producer = function
-    | Ir.Cmp _ | Ir.Test _ | Ir.Ccmp _ | Ir.Ccmn _ | Ir.Fp_cmp _ | Ir.Fp_ccmp _ -> true
+    | Ir.Cmp _ | Ir.Test _ | Ir.Ccmp _ | Ir.Ccmn _ | Ir.Fp_cmp _ | Ir.Fp_ccmp _ | Ir.Fjcvtzs _ -> true
     | Ir.Alu { set_flags = true; _ } | Ir.Unary { set_flags = true; _ } -> true
     | _ -> false
   in

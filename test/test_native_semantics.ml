@@ -2213,11 +2213,10 @@ func_native_pack_shuf_pinsr:
 let test_native_arm64_movn_excl_fcvt_fccmp () =
   let asm = {|
     movn x1, #0
-    mov x2, #0x5000
     mov x3, #111
     mov x4, #222
-    stlxp w5, x3, x4, [x2]
-    ldaxp x6, x7, [x2]
+    stlxp w5, x3, x4, [sp]
+    ldaxp x6, x7, [sp]
     fmov d0, #1.5
     fcvtas x8, d0
     fcvtms x9, d0
@@ -2260,8 +2259,70 @@ let test_native_arm64_movn_excl_fcvt_fccmp () =
       run_custom_vm ~name:"arm64_movn_excl_fcvt_fccmp" tmp_dir pkg {|
     vanguard_threaded_vm::VMContext ctx = {};
     ctx.init();
+    alignas(16) uint8_t stack_mem[64] = {0};
+    ctx.set_reg(vanguard_threaded_vm::REG_RSP, reinterpret_cast<uint64_t>(stack_mem));
     if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
     if (ctx.get_rax() != 342) return 2;
+|})
+
+let test_native_arm64_neon_lane_sat_fjcvtzs () =
+  let asm = {|
+    mov w1, #10
+    mov w2, #20
+    ins v0.s[0], w1
+    ins v0.s[1], w2
+    ins v1.s[2], v0.s[1]
+    umov w3, v0.s[0]
+    umov w4, v1.s[2]
+    mov w5, #0xFB
+    ins v2.b[3], w5
+    smov x6, v2.b[3]
+    add x0, x3, x4
+    add x0, x0, x6
+    mov x7, #0x7FFFFFFF
+    dup v3.2s, w7
+    mov x8, #100
+    dup v4.2s, w8
+    sqadd v5.2s, v3.2s, v4.2s
+    mov x9, #0x80000000
+    dup v6.2s, w9
+    sqsub v7.2s, v6.2s, v4.2s
+    mov x10, #0x4000
+    dup v8.4h, w10
+    sqrdmulh v9.4h, v8.4h, v8.4h
+    umov w11, v5.s[0]
+    umov w12, v7.s[0]
+    umov w13, v9.h[0]
+    add w11, w11, w12
+    add w11, w11, w13
+    add x0, x0, x11
+    fmov d10, #42.0
+    fjcvtzs w1, d10
+    cset w2, eq
+    fmov d11, #42.5
+    fjcvtzs w3, d11
+    cset w4, ne
+    add x0, x0, x1
+    add x0, x0, x2
+    add x0, x0, x3
+    add x0, x0, x4
+    ret
+  |} in
+  let lifted = Arm64_lifter_adapter.lift_source asm in
+  let func =
+    match lifted with
+    | Error err -> Alcotest.fail ("lift failed: " ^ err)
+    | Ok (f, _) -> f
+  in
+  let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+  let rng = Random.State.make [| 20261104 |] in
+  let pkg = Vm_emitter.compile_and_package ~rng unwrapped in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"arm64_neon_lane_sat_fjcvtzs" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    if (ctx.get_rax() != 8302) return 2;
 |})
 
 let tests = [
@@ -2307,4 +2368,5 @@ let tests = [
   Alcotest.test_case "native_x86_pmaddwd_psadbw" `Slow test_native_x86_pmaddwd_psadbw;
   Alcotest.test_case "native_x86_pack_shufw_pinsr_pextr" `Slow test_native_x86_pack_shufw_pinsr_pextr;
   Alcotest.test_case "native_arm64_movn_excl_fcvt_fccmp" `Slow test_native_arm64_movn_excl_fcvt_fccmp;
+  Alcotest.test_case "native_arm64_neon_lane_sat_fjcvtzs" `Slow test_native_arm64_neon_lane_sat_fjcvtzs;
 ]

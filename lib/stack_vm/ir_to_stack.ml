@@ -245,7 +245,7 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
   | Fp_conv { dst; src; _ } ->
       [PushReg (Context_allocator.slot_of_reg ctx src);
        PopReg (Context_allocator.slot_of_reg ctx dst)]
-  | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _ | Vec_clear_upper _ | Vec_zero_upper | Vec_splat _ | Vec_ext _ | Vec_shuf2 _ | Vec_conv _ | Pmovmskb _ | Ptest _ | Pinsr _ | Pextr _ -> []
+  | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _ | Vec_clear_upper _ | Vec_zero_upper | Vec_splat _ | Vec_ext _ | Vec_shuf2 _ | Vec_conv _ | Pmovmskb _ | Ptest _ | Pinsr _ | Pextr _ | Fjcvtzs _ -> []
   | Vec_pclmul _ -> []
   | Read_ssp _ | Inc_ssp _ ->
       failwith "ir_to_stack: the shadow stack instructions are not supported in the stack VM"

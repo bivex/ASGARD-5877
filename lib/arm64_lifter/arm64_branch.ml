@@ -215,5 +215,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Fp_conv { op = Ucvtf; dst = Register.Fpr (d, w); src } ]
   | ("fcvt", [ OpReg dst; OpReg src ]) ->
       Some [ Ir.Fp_conv { op = Fcvt; dst; src } ]
+  | ("fjcvtzs", [ OpReg dst; OpReg (Register.Fpr (s, _)) ]) ->
+      Some [ Ir.Fjcvtzs { dst; src = s } ]
 
   | _ -> None

@@ -112,6 +112,9 @@ type vec_op =
   | Vsadbw
   | Vshuflw
   | Vshufhw
+  | Vsqadd
+  | Vsqsub
+  | Vsqrdmulh
 type vec_elem = VInt | VF32 | VF64
 
 (** The x86 SHA extensions (SHA-NI).  Every instruction works on the four
@@ -215,6 +218,7 @@ type instr =
   | Fp_cmp of { src1 : int; src2 : int; is_32 : bool }
   | Fp_ccmp of { cond : condition; src1 : int; src2 : int; nzcv : int; is_32 : bool }
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
+  | Fjcvtzs of { dst : Register.t; src : int }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
   | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }

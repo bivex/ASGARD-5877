@@ -1418,6 +1418,79 @@ let test_arm64_lift_fccmp () =
           check int64 "fccmp true and false paths = 2" 2L snap.final_rax
       | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
 
+let test_arm64_lift_ins_umov_smov () =
+  let asm = {|
+    mov w1, #10
+    mov w2, #20
+    ins v0.s[0], w1
+    ins v0.s[1], w2
+    ins v1.s[2], v0.s[1]
+    umov w3, v0.s[0]
+    umov w4, v1.s[2]
+    mov w5, #0xFB
+    ins v2.b[3], w5
+    smov x6, v2.b[3]
+    add x0, x3, x4
+    add x0, x0, x6
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_ins_umov_smov" } asm with
+  | Error err -> fail ("Failed to lift ARM64 ins/umov/smov: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "ins + umov + smov = 25" 25L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_sat_neon () =
+  let asm = {|
+    mov x1, #0x7FFFFFFF
+    dup v1.2s, w1
+    mov x2, #100
+    dup v2.2s, w2
+    sqadd v0.2s, v1.2s, v2.2s
+    mov x3, #0x80000000
+    dup v3.2s, w3
+    sqsub v4.2s, v3.2s, v2.2s
+    mov x4, #0x4000
+    dup v5.4h, w4
+    sqrdmulh v6.4h, v5.4h, v5.4h
+    umov w7, v0.s[0]
+    umov w8, v4.s[0]
+    umov w9, v6.h[0]
+    add w0, w7, w8
+    add w0, w0, w9
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_sat_neon" } asm with
+  | Error err -> fail ("Failed to lift ARM64 sat neon: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "sqadd + sqsub + sqrdmulh = 8191" 8191L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
+let test_arm64_lift_fjcvtzs () =
+  let asm = {|
+    fmov d0, #42.0
+    fjcvtzs w1, d0
+    cset w2, eq
+    fmov d1, #42.5
+    fjcvtzs w3, d1
+    cset w4, ne
+    add x0, x1, x2
+    add x0, x0, x3
+    add x0, x0, x4
+    ret
+  |} in
+  match lift_function ~options:{ function_name = "test_arm64_fjcvtzs" } asm with
+  | Error err -> fail ("Failed to lift ARM64 fjcvtzs: " ^ err)
+  | Ok f ->
+      (match Reference_vm.evaluate f with
+      | Ok snap ->
+          check int64 "fjcvtzs exact and inexact = 86" 86L snap.final_rax
+      | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
+
 let tests = [
   ("ARM64 Lift Arithmetic (add)", `Quick, test_arm64_lift_arithmetic);
   ("ARM64 Lift Branching (abs)", `Quick, test_arm64_lift_branch_abs);
@@ -1486,6 +1559,9 @@ let tests = [
   ("ARM64 Lift Exclusive Pairs (ldxp/stxp/ldaxp/stlxp)", `Quick, test_arm64_lift_exclusive_pairs);
   ("ARM64 Lift FCVT Rounding (fcvtas/ms/ns/ps/au)", `Quick, test_arm64_lift_fcvt_rounding);
   ("ARM64 Lift FCCMP (fccmp/fccmpe)", `Quick, test_arm64_lift_fccmp);
+  ("ARM64 Lift ins/umov/smov", `Quick, test_arm64_lift_ins_umov_smov);
+  ("ARM64 Lift Saturating NEON (sqadd/sqsub/sqrdmulh)", `Quick, test_arm64_lift_sat_neon);
+  ("ARM64 Lift FJCVTZS", `Quick, test_arm64_lift_fjcvtzs);
 ]
 
 

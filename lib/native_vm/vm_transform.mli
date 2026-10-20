@@ -98,6 +98,7 @@ type raw_op_kind =
   | OP_FCMP_DD
   | OP_FCCMP_DD
   | OP_FCVTZS
+  | OP_FJCVTZS
   | OP_SCVTF
   | OP_ATOMIC_LOAD
   | OP_ATOMIC_STORE

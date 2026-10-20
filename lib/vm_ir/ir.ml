@@ -112,6 +112,9 @@ type vec_op =
   | Vsadbw
   | Vshuflw
   | Vshufhw
+  | Vsqadd
+  | Vsqsub
+  | Vsqrdmulh
 type vec_elem = VInt | VF32 | VF64
 
 (* The x86 SHA extensions (SHA-NI).  Every instruction works on the four
@@ -214,6 +217,7 @@ type instr =
   | Fp_cmp of { src1 : int; src2 : int; is_32 : bool }
   | Fp_ccmp of { cond : condition; src1 : int; src2 : int; nzcv : int; is_32 : bool }
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
+  | Fjcvtzs of { dst : Register.t; src : int }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
   | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
@@ -375,6 +379,8 @@ let instr_to_string = function
         | Fcvtps -> "fcvtps" | Fcvtpu -> "fcvtpu"
       in
       Printf.sprintf "%s %s, %s" op_s (Register.to_string dst) (Register.to_string src)
+  | Fjcvtzs { dst; src } ->
+      Printf.sprintf "fjcvtzs %s, d%d" (Register.to_string dst) src
   | Vec_mov { dst; src; bits } -> Printf.sprintf "vec_mov.%d v%d, v%d" bits dst src
   | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
       let op_s = match op with
@@ -393,6 +399,7 @@ let instr_to_string = function
         | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
         | Vmaddwd -> "vec_maddwd" | Vsadbw -> "vec_sadbw"
         | Vshuflw -> "vec_shuflw" | Vshufhw -> "vec_shufhw"
+        | Vsqadd -> "vec_sqadd" | Vsqsub -> "vec_sqsub" | Vsqrdmulh -> "vec_sqrdmulh"
       in
       Printf.sprintf "%s.%d.%d.%s v%d, v%d, v%d" op_s bits lane_bits (vec_elem_to_string elem) dst src1 src2
   | Vec_sha { op; dst; src1; src2; src3; imm; bits } ->
@@ -445,6 +452,7 @@ let instr_to_string = function
         | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
         | Vmaddwd -> "vec_maddwd" | Vsadbw -> "vec_sadbw"
         | Vshuflw -> "vec_shuflw" | Vshufhw -> "vec_shufhw"
+        | Vsqadd -> "vec_sqadd" | Vsqsub -> "vec_sqsub" | Vsqrdmulh -> "vec_sqrdmulh"
       in
       Printf.sprintf "%s_imm.%d.%d.%s v%d, v%d, 0x%LX" op_s bits lane_bits (vec_elem_to_string elem) dst src imm
   | Vec_load { dst; addr; bits } -> Printf.sprintf "vec_load.%d v%d, %s" bits dst (mem_ref_to_string addr)

@@ -103,6 +103,8 @@ let remap_instr (map : (int, int) Hashtbl.t) (instr : instr) : instr =
   | Read_ssp { dst } -> Read_ssp { dst = remap_register map dst }
   | Fp_conv { op; dst; src } ->
       Fp_conv { op; dst = remap_register map dst; src = remap_register map src }
+  | Fjcvtzs { dst; src } ->
+      Fjcvtzs { dst = remap_register map dst; src }
 
 let allocate ~(strategy : strategy) ~(seed : Seed.t) (f : func) : func =
   let reg_map = build_register_map strategy seed in

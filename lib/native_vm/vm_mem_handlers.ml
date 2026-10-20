@@ -1597,6 +1597,96 @@ let emit_simd_handlers ?rng b =
                         break_stmt;
                       ]
                     ];
+                    case (i32 42) [
+                      block [
+                        let_i64 "max_val" (ternary (var "lane_bits" ==~ i32 64) (cast Int64 (u64 0x7FFFFFFFFFFFFFFFL))
+                          (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (u64 0x7FFFFFFFL)))
+                            (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (i32 0x7FFF)))
+                              (cast Int64 (c_cast Int8 (i32 0x7F))))));
+                        let_i64 "min_val" (ternary (var "lane_bits" ==~ i32 64) (cast Int64 (u64 0x8000000000000000L))
+                          (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (u64 0x80000000L)))
+                            (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (i32 0x8000)))
+                              (cast Int64 (c_cast Int8 (i32 0x80))))));
+                        if_then_else (var "lane_bits" ==~ i32 64) [
+                          decl_var Double "fa" ~init:(cast Double (var "sa"));
+                          decl_var Double "fb" ~init:(cast Double (var "sb"));
+                          decl_var Double "fsum" ~init:(var "fa" +~ var "fb");
+                          if_then_else (var "fsum" >=~ (cast Double (cast Int64 (u64 0x7FFFFFFFFFFFFFFFL)))) [
+                            var "value" := u64 0x7FFFFFFFFFFFFFFFL;
+                          ] [
+                            if_then_else (var "fsum" <=~ (cast Double (cast Int64 (u64 0x8000000000000000L)))) [
+                              var "value" := u64 0x8000000000000000L;
+                            ] [
+                              var "value" := cast UInt64 (var "sa" +~ var "sb");
+                            ];
+                          ];
+                        ] [
+                          let_i64 "sum" (var "sa" +~ var "sb");
+                          let_i64 "clamped" (ternary (var "sum" >~ var "max_val") (var "max_val")
+                            (ternary (var "sum" <~ var "min_val") (var "min_val") (var "sum")));
+                          var "value" := (cast UInt64 (var "clamped")) &~ var "mask";
+                        ];
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 43) [
+                      block [
+                        let_i64 "max_val" (ternary (var "lane_bits" ==~ i32 64) (cast Int64 (u64 0x7FFFFFFFFFFFFFFFL))
+                          (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (u64 0x7FFFFFFFL)))
+                            (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (i32 0x7FFF)))
+                              (cast Int64 (c_cast Int8 (i32 0x7F))))));
+                        let_i64 "min_val" (ternary (var "lane_bits" ==~ i32 64) (cast Int64 (u64 0x8000000000000000L))
+                          (ternary (var "lane_bits" ==~ i32 32) (cast Int64 (c_cast Int32 (u64 0x80000000L)))
+                            (ternary (var "lane_bits" ==~ i32 16) (cast Int64 (c_cast Int16 (i32 0x8000)))
+                              (cast Int64 (c_cast Int8 (i32 0x80))))));
+                        if_then_else (var "lane_bits" ==~ i32 64) [
+                          decl_var Double "fa" ~init:(cast Double (var "sa"));
+                          decl_var Double "fb" ~init:(cast Double (var "sb"));
+                          decl_var Double "fdiff" ~init:(var "fa" -~ var "fb");
+                          if_then_else (var "fdiff" >=~ (cast Double (cast Int64 (u64 0x7FFFFFFFFFFFFFFFL)))) [
+                            var "value" := u64 0x7FFFFFFFFFFFFFFFL;
+                          ] [
+                            if_then_else (var "fdiff" <=~ (cast Double (cast Int64 (u64 0x8000000000000000L)))) [
+                              var "value" := u64 0x8000000000000000L;
+                            ] [
+                              var "value" := cast UInt64 (var "sa" -~ var "sb");
+                            ];
+                          ];
+                        ] [
+                          let_i64 "diff" (var "sa" -~ var "sb");
+                          let_i64 "clamped" (ternary (var "diff" >~ var "max_val") (var "max_val")
+                            (ternary (var "diff" <~ var "min_val") (var "min_val") (var "diff")));
+                          var "value" := (cast UInt64 (var "clamped")) &~ var "mask";
+                        ];
+                        break_stmt;
+                      ]
+                    ];
+                    case (i32 44) [
+                      block [
+                        if_then_else (var "lane_bits" ==~ i32 16) [
+                          let_i64 "prod" (((var "sa" *~ var "sb") *~ (cast Int64 (i32 2))) +~ (cast Int64 (i32 0x8000)));
+                          let_i64 "res" (var "prod" >>~ i32 16);
+                          let_i64 "clamped" (ternary (var "res" >~ (cast Int64 (i32 32767))) (cast Int64 (i32 32767))
+                            (ternary (var "res" <~ (cast Int64 (i32 (-32768)))) (cast Int64 (i32 (-32768))) (var "res")));
+                          var "value" := (cast UInt64 (var "clamped")) &~ var "mask";
+                        ] [
+                          decl_var Double "fa" ~init:(cast Double (var "sa"));
+                          decl_var Double "fb" ~init:(cast Double (var "sb"));
+                          decl_var Double "prod" ~init:(((var "fa" *~ var "fb") *~ var "2.0") +~ var "2147483648.0");
+                          decl_var Double "res" ~init:(call "std::floor" [var "prod" /~ var "4294967296.0"]);
+                          if_then_else (var "res" >~ var "2147483647.0") [
+                            var "value" := u64 0x7FFFFFFFL;
+                          ] [
+                            if_then_else (var "res" <~ var "-2147483648.0") [
+                              var "value" := cast UInt64 (c_cast Int32 (u64 0x80000000L));
+                            ] [
+                              var "value" := (c_cast UInt64 (c_cast Int32 (c_cast Int64 (var "res")))) &~ var "mask";
+                            ];
+                          ];
+                        ];
+                        break_stmt;
+                      ]
+                    ];
                   ] (Some [ var "value" := var "a" ^~ var "b"; break_stmt ])
                 ]
               ]
@@ -2740,6 +2830,35 @@ let emit_mem_and_ffi_handlers ?rng b =
       ]
   in
   emit_handler_ast b "H_FCVT" (fcvt_stmts @ [ inc_instrs; fetch_next ]);
+
+  let fjcvtzs_stmts = [
+    let_u64 "d_raw" (get_vreg_lane (var "src") (i32 0));
+    decl_var Double "d" ~init:(bit_cast Double (var "d_raw"));
+    decl_var Bool "is_exact" ~init:(bool_lit false);
+    decl_var Int32 "i32_val" ~init:(i32 0);
+    if_then_else ((log_not (call "std::isnan" [var "d"])) &&~ (log_not (call "std::isinf" [var "d"]))
+                  &&~ (var "d" <=~ var "2147483647.0") &&~ (var "d" >=~ var "-2147483648.0")) [
+      (var "i32_val" := cast Int32 (var "d"));
+      if_then_else ((cast Double (var "i32_val")) ==~ var "d") [
+        (var "is_exact" := bool_lit true);
+      ] [];
+    ] [];
+    if_then_else (log_not (var "is_exact")) [
+      if_then_else ((log_not (call "std::isnan" [var "d"])) &&~ (log_not (call "std::isinf" [var "d"]))) [
+        decl_var Double "d_mod" ~init:(call "std::fmod" [call "std::trunc" [var "d"]; var "4294967296.0"]);
+        (var "i32_val" := c_cast Int32 (c_cast Int64 (var "d_mod")));
+      ] [
+        (var "i32_val" := i32 0);
+      ];
+    ] [];
+    set_reg (var "dst") (cast UInt64 (c_cast UInt32 (var "i32_val")));
+    var "ctx.zf" := var "is_exact";
+    var "ctx.sf" := bool_lit false;
+    var "ctx.cf" := bool_lit false;
+    var "ctx.of" := bool_lit false;
+    var "ctx.pf" := bool_lit false;
+  ] in
+  emit_handler_ast b "H_FJCVTZS" (fjcvtzs_stmts @ [ inc_instrs; fetch_next ]);
 
   let atomic_load_stmts =
     match pick_variant 3 with

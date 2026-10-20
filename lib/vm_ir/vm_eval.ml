@@ -386,7 +386,7 @@ let vector_binary_value ~lane_bits ~elem ~op ~a ~b =
       let ua = Int64.logand a mask in
       let ub = Int64.logand b mask in
       if Int64.unsigned_compare ua ub <= 0 then mask else 0L
-  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend | Vuzp1 | Vuzp2 | Vtrn1 | Vtrn2 | Vtbl | Vtbx | Vrem | Vdivu | Vremu | Vmaddwd | Vsadbw | Vshuflw | Vshufhw), _ -> 0L
+  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend | Vuzp1 | Vuzp2 | Vtrn1 | Vtrn2 | Vtbl | Vtbx | Vrem | Vdivu | Vremu | Vmaddwd | Vsadbw | Vshuflw | Vshufhw | Vsqadd | Vsqsub | Vsqrdmulh), _ -> 0L
 
 let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
   let mask = vector_lane_mask lane_bits in
@@ -545,6 +545,94 @@ let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
             sum := !sum + abs (b1 - b2)
           done;
           Int64.of_int !sum
+      | Vsqadd ->
+          let sign_ext v =
+            let shift = 64 - lane_bits in
+            Int64.shift_right (Int64.shift_left v shift) shift
+          in
+          let sa = sign_ext a in
+          let sb = sign_ext b in
+          let max_val =
+            if lane_bits = 64 then Int64.max_int
+            else Int64.sub (Int64.shift_left 1L (lane_bits - 1)) 1L
+          in
+          let min_val =
+            if lane_bits = 64 then Int64.min_int
+            else Int64.neg (Int64.shift_left 1L (lane_bits - 1))
+          in
+          if lane_bits = 64 then
+            let fa = Int64.to_float sa in
+            let fb = Int64.to_float sb in
+            let fsum = fa +. fb in
+            if fsum >= Int64.to_float Int64.max_int then Int64.max_int
+            else if fsum <= Int64.to_float Int64.min_int then Int64.min_int
+            else Int64.add sa sb
+          else
+            let sum = Int64.add sa sb in
+            let clamped =
+              if sum > max_val then max_val
+              else if sum < min_val then min_val
+              else sum
+            in
+            Int64.logand clamped mask
+      | Vsqsub ->
+          let sign_ext v =
+            let shift = 64 - lane_bits in
+            Int64.shift_right (Int64.shift_left v shift) shift
+          in
+          let sa = sign_ext a in
+          let sb = sign_ext b in
+          let max_val =
+            if lane_bits = 64 then Int64.max_int
+            else Int64.sub (Int64.shift_left 1L (lane_bits - 1)) 1L
+          in
+          let min_val =
+            if lane_bits = 64 then Int64.min_int
+            else Int64.neg (Int64.shift_left 1L (lane_bits - 1))
+          in
+          if lane_bits = 64 then
+            let fa = Int64.to_float sa in
+            let fb = Int64.to_float sb in
+            let fdiff = fa -. fb in
+            if fdiff >= Int64.to_float Int64.max_int then Int64.max_int
+            else if fdiff <= Int64.to_float Int64.min_int then Int64.min_int
+            else Int64.sub sa sb
+          else
+            let diff = Int64.sub sa sb in
+            let clamped =
+              if diff > max_val then max_val
+              else if diff < min_val then min_val
+              else diff
+            in
+            Int64.logand clamped mask
+      | Vsqrdmulh ->
+          let sign_ext v =
+            let shift = 64 - lane_bits in
+            Int64.shift_right (Int64.shift_left v shift) shift
+          in
+          let sa = sign_ext a in
+          let sb = sign_ext b in
+          if lane_bits = 16 then
+            let prod = Int64.add (Int64.mul (Int64.mul sa sb) 2L) 0x8000L in
+            let res = Int64.shift_right prod 16 in
+            let clamped =
+              if res > 32767L then 32767L
+              else if res < -32768L then -32768L
+              else res
+            in
+            Int64.logand clamped mask
+          else if lane_bits = 32 then
+            let fa = Int64.to_float sa in
+            let fb = Int64.to_float sb in
+            let prod = (fa *. fb *. 2.0) +. 2147483648.0 in
+            let res = Float.floor (prod /. 4294967296.0) in
+            let clamped =
+              if res > 2147483647.0 then 2147483647L
+              else if res < -2147483648.0 then -2147483648L
+              else Int64.of_float res
+            in
+            Int64.logand clamped mask
+          else 0L
       | _ ->
           vector_binary_value ~lane_bits ~elem ~op ~a ~b
     in
@@ -1782,6 +1870,28 @@ let step state = function
            set_vector_lane state i 0 (Int64.logor high32 out_val)
        | Fpr (i, _) -> set_vector_lane state i 0 out_val
        | _ -> set_reg state dst out_val);
+      Ok None
+  | Fjcvtzs { dst; src } ->
+      let a_bits = get_vector_lane state src 0 in
+      let a = Int64.float_of_bits a_bits in
+      let is_exact =
+        if Float.is_nan a || Float.is_infinite a then false
+        else if a > 2147483647.0 || a < -2147483648.0 then false
+        else
+          let trunc_i = Int32.of_float a in
+          Int32.to_float trunc_i = a
+      in
+      let res_i32 =
+        if Float.is_nan a || Float.is_infinite a then 0L
+        else
+          let f_mod = Float.rem (Float.trunc a) 4294967296.0 in
+          let i = Int64.of_float f_mod in
+          let i32 = Int64.to_int32 i in
+          Int64.logand (Int64.of_int32 i32) 0xFFFFFFFFL
+      in
+      set_reg state dst res_i32;
+      let zf_val = if is_exact then 64L else 0L in
+      state.flags <- CC_OP_RAW (Int64.logor 2L zf_val);
       Ok None
   | Atomic_mem { op; dst; addr; src; imm } ->
       let a = Int64.add (get_reg state addr) imm in
