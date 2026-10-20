@@ -863,6 +863,8 @@ let compile_and_package_multi
                   encode_raw_word (get_opcode OP_VEC_CLEAR_UPPER) (vector_index reg) 0 0L
               | Ir.Vec_zero_upper ->
                   encode_raw_word (get_opcode OP_VEC_ZERO_UPPER) 0 0 0L
+              | Ir.Cpuid ->
+                  encode_raw_word (get_opcode OP_CPUID) 0 0 0L
               | Ir.Vec_ext { dst; src1; src2; imm; bits } ->
                   let imm_payload =
                     Int64.logor (Int64.of_int (src2 land 31))

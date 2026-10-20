@@ -127,6 +127,7 @@ type raw_op_kind =
   | OP_UCVTF
   | OP_FCVT
   | OP_VEC_EXT
+  | OP_CPUID
 
 val all_op_kinds : raw_op_kind list
 val op_kind_to_handler_name : raw_op_kind -> string

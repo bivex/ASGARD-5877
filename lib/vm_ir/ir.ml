@@ -155,6 +155,7 @@ type instr =
   | Fence of mem_order
   | Get_flags of Register.t
   | Set_flags of operand
+  | Cpuid
 
 type basic_block = {
   id : int;
@@ -345,6 +346,7 @@ let instr_to_string = function
       Printf.sprintf "fence.%s" ord_s
   | Get_flags d -> Printf.sprintf "get_flags %s" (Register.to_string d)
   | Set_flags s -> Printf.sprintf "set_flags %s" (operand_to_string s)
+  | Cpuid -> "cpuid"
 
 let block_to_string b =
   let b_lines = List.map (fun i -> "    " ^ instr_to_string i) b.instrs in

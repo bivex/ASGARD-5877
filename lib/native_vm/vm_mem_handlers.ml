@@ -215,6 +215,106 @@ let emit_pclmul_ssp_handlers b =
         ctx.executed_instructions++;
         FETCH_NEXT();
     }
+    H_CPUID: {
+        const uint32_t in_eax = static_cast<uint32_t>(ctx.get_reg(REG_RAX) & 0xFFFFFFFFULL);
+        const uint32_t in_ecx = static_cast<uint32_t>(ctx.get_reg(REG_RCX) & 0xFFFFFFFFULL);
+        uint32_t out_eax = 0, out_ebx = 0, out_ecx = 0, out_edx = 0;
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+        __asm__ __volatile__(
+            "cpuid"
+            : "=a"(out_eax), "=b"(out_ebx), "=c"(out_ecx), "=d"(out_edx)
+            : "a"(in_eax), "c"(in_ecx)
+        );
+#else
+        switch (in_eax) {
+            case 0x00u:
+                out_eax = 0x16u;
+                out_ebx = 0x756e6547u;
+                out_ecx = 0x6c65746eu;
+                out_edx = 0x49656e69u;
+                break;
+            case 0x01u:
+                out_eax = 0x000906E9u;
+                out_ebx = 0x00080800u;
+                out_ecx = 0x7FFAFBEFu;
+                out_edx = 0xBFEBFBFFu;
+                break;
+            case 0x02u:
+                out_eax = 0x76036301u;
+                out_ebx = 0x00F0B5FFu;
+                out_ecx = 0x00000000u;
+                out_edx = 0x00C10000u;
+                break;
+            case 0x04u:
+                if (in_ecx == 0u) {
+                    out_eax = 0x1C004121u; out_ebx = 0x01C0003Fu; out_ecx = 0x3Fu; out_edx = 0u;
+                } else if (in_ecx == 1u) {
+                    out_eax = 0x1C004122u; out_ebx = 0x01C0003Fu; out_ecx = 0x3Fu; out_edx = 0u;
+                } else if (in_ecx == 2u) {
+                    out_eax = 0x1C004143u; out_ebx = 0x00C0003Fu; out_ecx = 0x1FFu; out_edx = 0u;
+                } else if (in_ecx == 3u) {
+                    out_eax = 0x1C03C163u; out_ebx = 0x03C0003Fu; out_ecx = 0x1FFFu; out_edx = 2u;
+                } else {
+                    out_eax = 0u; out_ebx = 0u; out_ecx = 0u; out_edx = 0u;
+                }
+                break;
+            case 0x07u:
+                if (in_ecx == 0u) {
+                    out_eax = 0u;
+                    out_ebx = 0x209C01A9u;
+                    out_ecx = 0u;
+                    out_edx = 0u;
+                }
+                break;
+            case 0x15u:
+                out_eax = 2u; out_ebx = 170u; out_ecx = 24000000u; out_edx = 0u;
+                break;
+            case 0x16u:
+                out_eax = 2800u; out_ebx = 4000u; out_ecx = 100u; out_edx = 0u;
+                break;
+            case 0x80000000u:
+                out_eax = 0x80000008u; out_ebx = 0u; out_ecx = 0u; out_edx = 0u;
+                break;
+            case 0x80000001u:
+                out_eax = 0x000906E9u;
+                out_ebx = 0u;
+                out_ecx = 0x00000121u;
+                out_edx = 0x2C100800u;
+                break;
+            case 0x80000002u:
+                out_eax = 0x65746E49u; out_ebx = 0x2952286Cu; out_ecx = 0x726F4320u; out_edx = 0x4D542865u;
+                break;
+            case 0x80000003u:
+                out_eax = 0x37692029u; out_ebx = 0x50432020u; out_ecx = 0x20202020u; out_edx = 0x20202055u;
+                break;
+            case 0x80000004u:
+                out_eax = 0x2E322040u; out_ebx = 0x4730382Eu; out_ecx = 0x007A487Au; out_edx = 0x00000000u;
+                break;
+            case 0x80000006u:
+                out_eax = 0u; out_ebx = 0u; out_ecx = 0x01006040u; out_edx = 0u;
+                break;
+            case 0x80000008u:
+                out_eax = 0x00003027u;
+                out_ebx = 0u; out_ecx = 0u; out_edx = 0u;
+                break;
+            default:
+                if (in_eax > 0x16u && in_eax < 0x80000000u) {
+                    out_eax = 2800u; out_ebx = 4000u; out_ecx = 100u; out_edx = 0u;
+                } else if (in_eax > 0x80000008u) {
+                    out_eax = 0x00003027u; out_ebx = 0u; out_ecx = 0u; out_edx = 0u;
+                } else {
+                    out_eax = 0u; out_ebx = 0u; out_ecx = 0u; out_edx = 0u;
+                }
+                break;
+        }
+#endif
+        ctx.set_reg(REG_RAX, static_cast<uint64_t>(out_eax));
+        ctx.set_reg(REG_RBX, static_cast<uint64_t>(out_ebx));
+        ctx.set_reg(REG_RCX, static_cast<uint64_t>(out_ecx));
+        ctx.set_reg(REG_RDX, static_cast<uint64_t>(out_edx));
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
 |}
 
 let emit_simd_handlers ?rng b =

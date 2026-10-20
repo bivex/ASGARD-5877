@@ -156,6 +156,7 @@ type instr =
   | Fence of mem_order
   | Get_flags of Register.t
   | Set_flags of operand
+  | Cpuid
 
 type basic_block = {
   id : int;

@@ -351,6 +351,7 @@ let is_reg_read_in_instr (instr : Ir.instr) (target : Register.t) : bool =
   | Ir.Set_flags op -> is_reg_read_in_op op target
   | Ir.Jmp (Ir.TargetReg r) -> reg_base_eq r target
   | Ir.Call (Ir.TargetReg r) -> reg_base_eq r target
+  | Ir.Cpuid -> reg_base_eq Register.rax target || reg_base_eq Register.rcx target
   | _ -> false
 
 let is_reg_written_in_instr (instr : Ir.instr) (target : Register.t) : bool =
@@ -366,6 +367,9 @@ let is_reg_written_in_instr (instr : Ir.instr) (target : Register.t) : bool =
   | Ir.Cmov { dst; _ } -> reg_base_eq dst target
   | Ir.Get_flags d -> reg_base_eq d target
   | Ir.Load_symbol { dst; _ } -> reg_base_eq dst target
+  | Ir.Cpuid ->
+      reg_base_eq Register.rax target || reg_base_eq Register.rbx target
+      || reg_base_eq Register.rcx target || reg_base_eq Register.rdx target
   | _ -> false
 
 let is_read_before_written_in_block (b : Ir.basic_block) (target : Register.t) : bool option =
@@ -433,6 +437,8 @@ let select_pinned_reg (func : Ir.func) : Register.t =
       | Ir.Xchg (op1, op2) -> check_op op1; check_op op2
       | Ir.Load_symbol { dst; _ } -> mark_reg dst
       | Ir.Jmp (Ir.TargetReg r) | Ir.Call (Ir.TargetReg r) -> mark_reg r
+      | Ir.Cpuid ->
+          mark_reg Register.rax; mark_reg Register.rbx; mark_reg Register.rcx; mark_reg Register.rdx
       | _ -> ()
     ) b.instrs
   ) func.cfg.blocks;

@@ -1828,12 +1828,7 @@ let lift_instr ?const_pool raw_mnem ops =
   | ("syscall" | "sysret"), _ ->
       Ok [ Ir.Trap "syscall" ]
   | "cpuid", _ ->
-      Ok [
-        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RAX, Register.B64)); src = Ir.Imm 0x1L };
-        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RBX, Register.B64)); src = Ir.Imm 0x756e6547L };
-        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RDX, Register.B64)); src = Ir.Imm 0x49656e69L };
-        Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RCX, Register.B64)); src = Ir.Imm 0x6c65746eL };
-      ]
+      Ok [ Ir.Cpuid ]
   | ("rdtsc" | "rdtscp"), _ ->
       Ok [
         Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RAX, Register.B64)); src = Ir.Imm 0x12345678L };

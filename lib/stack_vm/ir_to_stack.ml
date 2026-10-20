@@ -251,6 +251,8 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
       failwith "ir_to_stack: the shadow stack instructions are not supported in the stack VM"
   | Vec_sha _ ->
       failwith "ir_to_stack: the SHA extensions are not supported in the stack VM"
+  | Cpuid ->
+      failwith "ir_to_stack: the CPUID instruction is not supported in the stack VM"
   | Atomic_mem { op; dst; addr; src; imm } ->
       let is_zero_reg = function
         | Register.Vreg (Register.VZERO, _) -> true

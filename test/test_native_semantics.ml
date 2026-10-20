@@ -1046,6 +1046,27 @@ func_native_pclmul_cet:
     if (ctx.get_reg(vanguard_threaded_vm::REG_RSP) != rsp_before - 80ULL) return 9;
 |})
 
+(* CPUID dynamic leaf execution in the native runtime: tests vendor string and leaf 0 *)
+let test_native_x86_cpuid () =
+  let pkg =
+    mk_pkg ~seed:20260945 {|
+func_native_cpuid:
+    mov eax, 0
+    cpuid
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_x86_cpuid" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    if (ctx.get_rax() < 1ULL) return 2;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RBX) != 0x756E6547ULL) return 3;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 0x49656E69ULL) return 4;
+    if (ctx.get_reg(vanguard_threaded_vm::REG_RCX) != 0x6C65746EULL) return 5;
+|})
+
 (* The FSGSBASE family (RDFSBASE, RDGSBASE, WRFSBASE, WRGSBASE) reaches the
    segment base registers of the VM context: the base is written into the
    context slot and read back through the same slot. *)
@@ -1138,4 +1159,5 @@ let tests = [
   Alcotest.test_case "native_x86_fsgsbase" `Slow test_native_x86_fsgsbase;
   Alcotest.test_case "native_x86_sha_ni" `Slow test_native_x86_sha_ni;
   Alcotest.test_case "native_x86_pclmul_cet" `Slow test_native_x86_pclmul_cet;
+  Alcotest.test_case "native_x86_cpuid" `Slow test_native_x86_cpuid;
 ]

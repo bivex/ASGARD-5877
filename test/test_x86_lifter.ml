@@ -2024,6 +2024,86 @@ func_atomic_nodes:
       ) 0 b0.instrs in
       Alcotest.(check bool) "emits Atomic_mem for locked/memory RMW" true (atomic_count >= 4)
 
+let test_x86_cpuid () =
+  let run asm in_rax in_rcx =
+    match Lifter.lift_function asm with
+    | Error e -> Alcotest.fail e
+    | Ok func ->
+        let state = make_state () in
+        set_reg state Register.rax in_rax;
+        set_reg state Register.rcx in_rcx;
+        match run_func state func with
+        | Error e -> Alcotest.fail e
+        | Ok () -> state
+  in
+  (* Leaf 0: Vendor String & Maximum Basic Leaf *)
+  let s0 = run {|
+func_cpuid_0:
+    mov eax, 0
+    cpuid
+    ret
+|} 0L 0L in
+  Alcotest.(check int64) "cpuid leaf 0: EAX = max basic leaf (0x16)" 0x16L (get_reg s0 Register.rax);
+  Alcotest.(check int64) "cpuid leaf 0: EBX = 'Genu' (0x756e6547)" 0x756e6547L (get_reg s0 Register.rbx);
+  Alcotest.(check int64) "cpuid leaf 0: EDX = 'ineI' (0x49656e69)" 0x49656e69L (get_reg s0 Register.rdx);
+  Alcotest.(check int64) "cpuid leaf 0: ECX = 'ntel' (0x6c65746e)" 0x6c65746eL (get_reg s0 Register.rcx);
+
+  (* Leaf 1: Processor Signature & Standard Feature Flags *)
+  let s1 = run {|
+func_cpuid_1:
+    mov eax, 1
+    cpuid
+    ret
+|} 0L 0L in
+  Alcotest.(check int64) "cpuid leaf 1: EAX = signature" 0x000906E9L (get_reg s1 Register.rax);
+  Alcotest.(check int64) "cpuid leaf 1: EBX = brand/apic" 0x00080800L (get_reg s1 Register.rbx);
+  Alcotest.(check int64) "cpuid leaf 1: ECX = features" 0x7FFAFBEFL (get_reg s1 Register.rcx);
+  Alcotest.(check int64) "cpuid leaf 1: EDX = features" 0xBFEBFBFFL (get_reg s1 Register.rdx);
+
+  (* Leaf 7: Structured Extended Features *)
+  let s7 = run {|
+func_cpuid_7:
+    mov eax, 7
+    xor ecx, ecx
+    cpuid
+    ret
+|} 0L 0L in
+  Alcotest.(check int64) "cpuid leaf 7: EBX extended features" 0x209C01A9L (get_reg s7 Register.rbx);
+
+  (* Extended Leaf 0x80000000: Max Extended Function *)
+  let sext = run {|
+func_cpuid_ext:
+    mov eax, 0x80000000
+    cpuid
+    ret
+|} 0L 0L in
+  Alcotest.(check int64) "cpuid ext leaf: EAX = 0x80000008" 0x80000008L (get_reg sext Register.rax);
+
+  (* Extended Leaf 0x80000002: Processor Brand String 1 *)
+  let sbrand = run {|
+func_cpuid_brand:
+    mov eax, 0x80000002
+    cpuid
+    ret
+|} 0L 0L in
+  Alcotest.(check int64) "cpuid brand EAX" 0x65746E49L (get_reg sbrand Register.rax);
+  Alcotest.(check int64) "cpuid brand EBX" 0x2952286CL (get_reg sbrand Register.rbx);
+
+  (* High 32 bits cleared in 64-bit mode *)
+  let s_clear = run {|
+func_cpuid_clear_high:
+    mov rax, 0xFFFFFFFF00000001
+    mov rbx, 0xFFFFFFFFFFFFFFFF
+    mov rcx, 0xFFFFFFFFFFFFFFFF
+    mov rdx, 0xFFFFFFFFFFFFFFFF
+    cpuid
+    ret
+|} 0L 0L in
+  Alcotest.(check bool) "cpuid RAX upper 32 bits zeroed" true (Int64.shift_right_logical (get_reg s_clear Register.rax) 32 = 0L);
+  Alcotest.(check bool) "cpuid RBX upper 32 bits zeroed" true (Int64.shift_right_logical (get_reg s_clear Register.rbx) 32 = 0L);
+  Alcotest.(check bool) "cpuid RCX upper 32 bits zeroed" true (Int64.shift_right_logical (get_reg s_clear Register.rcx) 32 = 0L);
+  Alcotest.(check bool) "cpuid RDX upper 32 bits zeroed" true (Int64.shift_right_logical (get_reg s_clear Register.rdx) 32 = 0L)
+
 let tests = [
   Alcotest.test_case "parser_memory_operands" `Quick test_parser_memory_operands;
   Alcotest.test_case "lift_and_eval_math" `Quick test_lift_and_eval_math;
@@ -2100,5 +2180,6 @@ let tests = [
   Alcotest.test_case "lift_x86_verified_alu_simulation" `Quick test_x86_lift_verified_alu_simulation;
   Alcotest.test_case "lift_x86_atomic_rmw_and_lock" `Quick test_x86_lift_atomic_rmw_and_lock;
   Alcotest.test_case "lift_x86_atomic_mem_nodes" `Quick test_x86_lift_atomic_mem_nodes;
+  Alcotest.test_case "lift_x86_cpuid" `Quick test_x86_cpuid;
 ]
 

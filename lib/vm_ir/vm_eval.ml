@@ -554,6 +554,55 @@ let imulh_i64 a b =
   let adj_b = if b < 0L then a else 0L in
   Int64.sub (Int64.sub ures adj_a) adj_b
 
+let eval_cpuid (eax : int64) (ecx : int64) : int64 * int64 * int64 * int64 =
+  match eax with
+  | 0x0L ->
+      (0x16L, 0x756e6547L, 0x6c65746eL, 0x49656e69L)
+  | 0x1L ->
+      (0x000906E9L, 0x00080800L, 0x7FFAFBEFL, 0xBFEBFBFFL)
+  | 0x2L ->
+      (0x76036301L, 0x00F0B5FFL, 0x00000000L, 0x00C10000L)
+  | 0x4L ->
+      if ecx = 0L then
+        (0x1C004121L, 0x01C0003FL, 0x0000003FL, 0x00000000L)
+      else if ecx = 1L then
+        (0x1C004122L, 0x01C0003FL, 0x0000003FL, 0x00000000L)
+      else if ecx = 2L then
+        (0x1C004143L, 0x00C0003FL, 0x000001FFL, 0x00000000L)
+      else if ecx = 3L then
+        (0x1C03C163L, 0x03C0003FL, 0x00001FFFL, 0x00000002L)
+      else
+        (0L, 0L, 0L, 0L)
+  | 0x7L ->
+      if ecx = 0L then
+        (0L, 0x209C01A9L, 0L, 0L)
+      else
+        (0L, 0L, 0L, 0L)
+  | 0x15L ->
+      (2L, 170L, 24000000L, 0L)
+  | 0x16L ->
+      (2800L, 4000L, 100L, 0L)
+  | 0x80000000L ->
+      (0x80000008L, 0L, 0L, 0L)
+  | 0x80000001L ->
+      (0x000906E9L, 0L, 0x00000121L, 0x2C100800L)
+  | 0x80000002L ->
+      (0x65746E49L, 0x2952286CL, 0x726F4320L, 0x4D542865L)
+  | 0x80000003L ->
+      (0x37692029L, 0x50432020L, 0x20202020L, 0x20202055L)
+  | 0x80000004L ->
+      (0x2E322040L, 0x4730382EL, 0x007A487AL, 0x00000000L)
+  | 0x80000006L ->
+      (0L, 0L, 0x01006040L, 0L)
+  | 0x80000008L ->
+      (0x00003027L, 0L, 0L, 0L)
+  | leaf when leaf > 0x16L && leaf < 0x80000000L ->
+      (2800L, 4000L, 100L, 0L)
+  | leaf when leaf > 0x80000008L ->
+      (0x00003027L, 0L, 0L, 0L)
+  | _ ->
+      (0L, 0L, 0L, 0L)
+
 let step state = function
   | Nop -> Ok None
   | Mov { dst; src } ->
@@ -973,6 +1022,15 @@ let step state = function
         set_vector_lane state i 2 0L;
         set_vector_lane state i 3 0L;
       done;
+      Ok None
+  | Cpuid ->
+      let eax = Int64.logand (get_reg state Register.rax) 0xFFFFFFFFL in
+      let ecx = Int64.logand (get_reg state Register.rcx) 0xFFFFFFFFL in
+      let out_eax, out_ebx, out_ecx, out_edx = eval_cpuid eax ecx in
+      set_reg state Register.rax out_eax;
+      set_reg state Register.rbx out_ebx;
+      set_reg state Register.rcx out_ecx;
+      set_reg state Register.rdx out_edx;
       Ok None
   | Pmovmskb { dst; src; bits } ->
       let num_bytes = bits / 8 in

@@ -32,7 +32,7 @@ let vtmps_in_instr (i : instr) : Register.t list =
   in
   match i with
   | Nop | Ret | Vm_exit | Trap _ | Fence _ | Vm_enter
-  | Bridge_to_flow _ | Bridge_to_math _ | Load_symbol _ -> []
+  | Bridge_to_flow _ | Bridge_to_math _ | Load_symbol _ | Cpuid -> []
   | Mov { dst; src } -> of_op dst @ of_op src
   | Lea { dst; addr } ->
       of_reg dst @
