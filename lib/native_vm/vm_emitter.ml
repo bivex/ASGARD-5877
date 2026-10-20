@@ -524,11 +524,15 @@ let compile_and_package_multi
                     encode_raw_word (get_opcode OP_MOV_HIGH) (get_reg_idx temp_reg) 0 high;
                   encode_raw_word (get_opcode OP_MOV_VR) (d mod 32) (get_reg_idx temp_reg) 0L
               | Ir.Mov { dst = Ir.Reg (Register.Fpr (d, w)); src = Ir.Mem m } ->
-                  let bits = Int64.of_int (Register.width_to_bytes w * 8) in
+                  let mem_bits = Register.width_to_bytes m.width * 8 in
+                  let reg_bits = Register.width_to_bytes w * 8 in
+                  let bits = Int64.of_int (min mem_bits reg_bits) in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word ~extra_bits:bits (get_opcode OP_VEC_LOAD) (d mod 32) base_idx m.disp
               | Ir.Mov { dst = Ir.Mem m; src = Ir.Reg (Register.Fpr (s, w)) } ->
-                  let bits = Int64.of_int (Register.width_to_bytes w * 8) in
+                  let mem_bits = Register.width_to_bytes m.width * 8 in
+                  let reg_bits = Register.width_to_bytes w * 8 in
+                  let bits = Int64.of_int (min mem_bits reg_bits) in
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word ~extra_bits:bits (get_opcode OP_VEC_STORE) base_idx (s mod 32) m.disp
               | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->

@@ -1223,6 +1223,57 @@ func_native_fpu:
     if ((ctx.get_reg(vanguard_threaded_vm::REG_RDX) & 0xFF) != 1) return 6;
 |})
 
+let test_native_x86_scalar_and_vector_moves () =
+  let pkg =
+    mk_pkg ~seed:20261021 {|
+func_native_moves:
+    movss xmm0, xmm1
+    movsd xmm2, xmm3
+    movss dword ptr [rsp + 16], xmm0
+    movss xmm5, dword ptr [rsp + 16]
+    movsd qword ptr [rsp + 24], xmm2
+    movsd xmm6, qword ptr [rsp + 24]
+    movaps xmm7, xmm1
+    movups xmm8, xmm2
+    movdqa xmm9, xmm3
+    movdqu xmm10, xmm0
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_x86_moves" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    ctx.vregs[0][0] = 0x1111111122222222ULL;
+    ctx.vregs[0][1] = 0x3333333344444444ULL;
+    ctx.vregs[1][0] = 0xAAAABBBBCCCCDDDDULL;
+    ctx.vregs[1][1] = 0xEEEEFFFF00001111ULL;
+    ctx.vregs[2][0] = 0x123456789ABCDEF0ULL;
+    ctx.vregs[2][1] = 0xFEDCBA9876543210ULL;
+    ctx.vregs[3][0] = 0x0102030405060708ULL;
+    ctx.vregs[3][1] = 0x090A0B0C0D0E0F00ULL;
+
+    alignas(16) uint8_t stack_mem[64] = {};
+    *reinterpret_cast<uint32_t*>(&stack_mem[20]) = 0xA5A5A5A5U;
+    ctx.set_reg(vanguard_threaded_vm::REG_RSP, reinterpret_cast<uint64_t>(stack_mem));
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if (ctx.vregs[0][0] != 0x11111111CCCCDDDDULL) return 2;
+    if (ctx.vregs[0][1] != 0x3333333344444444ULL) return 3;
+    if (ctx.vregs[2][0] != 0x0102030405060708ULL) return 4;
+    if (ctx.vregs[2][1] != 0xFEDCBA9876543210ULL) return 5;
+    if (*reinterpret_cast<uint32_t*>(&stack_mem[20]) != 0xA5A5A5A5U) return 6;
+    if (ctx.vregs[5][0] != 0x00000000CCCCDDDDULL) return 7;
+    if (ctx.vregs[5][1] != 0ULL) return 8;
+    if (ctx.vregs[6][0] != 0x0102030405060708ULL) return 9;
+    if (ctx.vregs[6][1] != 0ULL) return 10;
+    if (ctx.vregs[7][0] != 0xAAAABBBBCCCCDDDDULL || ctx.vregs[7][1] != 0xEEEEFFFF00001111ULL) return 11;
+    if (ctx.vregs[8][0] != 0x0102030405060708ULL || ctx.vregs[8][1] != 0xFEDCBA9876543210ULL) return 12;
+    if (ctx.vregs[9][0] != 0x0102030405060708ULL || ctx.vregs[9][1] != 0x090A0B0C0D0E0F00ULL) return 13;
+    if (ctx.vregs[10][0] != 0x11111111CCCCDDDDULL || ctx.vregs[10][1] != 0x3333333344444444ULL) return 14;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1249,4 +1300,5 @@ let tests = [
   Alcotest.test_case "native_x86_pclmul_cet" `Slow test_native_x86_pclmul_cet;
   Alcotest.test_case "native_x86_cpuid" `Slow test_native_x86_cpuid;
   Alcotest.test_case "native_x86_fpu" `Slow test_native_x86_fpu;
+  Alcotest.test_case "native_x86_scalar_and_vector_moves" `Slow test_native_x86_scalar_and_vector_moves;
 ]

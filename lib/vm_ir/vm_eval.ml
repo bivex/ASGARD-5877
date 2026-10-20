@@ -140,7 +140,16 @@ let set_reg state reg value =
   if is_zero_reg reg then ()
   else
     match reg with
-    | Fpr (i, _) -> set_vector_lane state i 0 value
+    | Fpr (i, w) ->
+        let cur = get_vector_lane state i 0 in
+        let new_val =
+          match w with
+          | B32 ->
+              let high = Int64.logand cur (Int64.lognot 0xFFFFFFFFL) in
+              Int64.logor high (Int64.logand value 0xFFFFFFFFL)
+          | _ -> value
+        in
+        set_vector_lane state i 0 new_val
     | _ ->
         let w = Register.get_width reg in
         let r64 = Register.with_width reg B64 in
@@ -508,10 +517,17 @@ let apply_vector_imm state ~dst_bits ~lane_bits ~elem ~src ~imm ~dst op =
   done
 
 let copy_vector state ~dst_bits ~dst ~src =
-  let chunks = (dst_bits + 63) / 64 in
-  for chunk = 0 to chunks - 1 do
-    set_vector_lane state dst chunk (get_vector_lane state src chunk)
-  done
+  if dst_bits = 32 then
+    let cur = get_vector_lane state dst 0 in
+    let s = get_vector_lane state src 0 in
+    let high = Int64.logand cur (Int64.lognot 0xFFFFFFFFL) in
+    let low = Int64.logand s 0xFFFFFFFFL in
+    set_vector_lane state dst 0 (Int64.logor high low)
+  else
+    let chunks = (dst_bits + 63) / 64 in
+    for chunk = 0 to chunks - 1 do
+      set_vector_lane state dst chunk (get_vector_lane state src chunk)
+    done
 
 let apply_vector_splat state ~dst_bits ~lane_bits ~src ~dst =
   let raw_val = get_reg state src in
@@ -531,17 +547,33 @@ let apply_vector_splat state ~dst_bits ~lane_bits ~src ~dst =
 
 let load_vector state ~dst_bits ~dst ~addr =
   let address = eval_mem_addr state addr in
-  let bytes = dst_bits / 8 in
-  for chunk = 0 to (bytes / 8) - 1 do
-    set_vector_lane state dst chunk (read_mem state (Int64.add address (Int64.of_int (chunk * 8))) B64)
-  done
+  for chunk = 0 to 7 do
+    set_vector_lane state dst chunk 0L
+  done;
+  if dst_bits = 32 then
+    let v = read_mem state address B32 in
+    set_vector_lane state dst 0 (Int64.logand v 0xFFFFFFFFL)
+  else if dst_bits = 64 then
+    let v = read_mem state address B64 in
+    set_vector_lane state dst 0 v
+  else
+    let bytes = dst_bits / 8 in
+    let chunks = bytes / 8 in
+    for chunk = 0 to chunks - 1 do
+      set_vector_lane state dst chunk (read_mem state (Int64.add address (Int64.of_int (chunk * 8))) B64)
+    done
 
 let store_vector state ~src_bits ~src ~addr =
   let address = eval_mem_addr state addr in
-  let bytes = src_bits / 8 in
-  for chunk = 0 to (bytes / 8) - 1 do
-    write_mem state (Int64.add address (Int64.of_int (chunk * 8))) B64 (get_vector_lane state src chunk)
-  done
+  if src_bits = 32 then
+    write_mem state address B32 (get_vector_lane state src 0)
+  else if src_bits = 64 then
+    write_mem state address B64 (get_vector_lane state src 0)
+  else
+    let bytes = src_bits / 8 in
+    for chunk = 0 to (bytes / 8) - 1 do
+      write_mem state (Int64.add address (Int64.of_int (chunk * 8))) B64 (get_vector_lane state src chunk)
+    done
 
 let operand_width = function
   | Reg r -> Some (Register.get_width r)

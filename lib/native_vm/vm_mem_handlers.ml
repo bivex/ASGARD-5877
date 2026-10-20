@@ -805,23 +805,45 @@ let emit_simd_handlers ?rng b =
   let vec_mov_stmts = match pick_variant 3 with
     | 0 -> [
         let_u32 "bits" (cast UInt32 (var "imm" &~ u64 0x3FFL));
-        for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
-          set_vreg_lane (var "dst") (var "i") (get_vreg_lane (var "src") (var "i"));
+        if_then_else (var "bits" ==~ i32 32) [
+          let_u64 "_dst0" (get_vreg_lane (var "dst") (i32 0));
+          let_u64 "_src0" (get_vreg_lane (var "src") (i32 0));
+          set_vreg_lane (var "dst") (i32 0)
+            ((var "_dst0" &~ u64 0xFFFFFFFF00000000L) |~ (var "_src0" &~ u64 0xFFFFFFFFL));
+        ] [
+          for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
+            set_vreg_lane (var "dst") (var "i") (get_vreg_lane (var "src") (var "i"));
+          ];
         ];
       ]
     | 1 -> [
-        let_size_t "_words" (cast SizeT ((cast UInt32 (var "imm" &~ u64 0x3FFL) +~ i32 63) /~ i32 64));
-        for_range "i" (i32 0) (var "_words") [
-          let_u64 "_v" (get_vreg_lane (var "src") (var "i"));
-          set_vreg_lane (var "dst") (var "i") (var "_v");
+        let_u32 "bits" (cast UInt32 (var "imm" &~ u64 0x3FFL));
+        if_then_else (var "bits" ==~ i32 32) [
+          let_u64 "_dst0" (get_vreg_lane (var "dst") (i32 0));
+          let_u64 "_src0" (get_vreg_lane (var "src") (i32 0));
+          set_vreg_lane (var "dst") (i32 0)
+            ((var "_dst0" &~ u64 0xFFFFFFFF00000000L) |~ (var "_src0" &~ u64 0xFFFFFFFFL));
+        ] [
+          let_size_t "_words" (cast SizeT ((var "bits" +~ i32 63) /~ i32 64));
+          for_range "i" (i32 0) (var "_words") [
+            let_u64 "_v" (get_vreg_lane (var "src") (var "i"));
+            set_vreg_lane (var "dst") (var "i") (var "_v");
+          ];
         ];
       ]
     | _ -> [
         let_u32 "bits" (cast UInt32 (var "imm" &~ u64 0x3FFL));
-        decl_var SizeT "i" ~init:(i32 0);
-        while_loop (var "i" <~ ((var "bits" +~ i32 63) /~ i32 64)) [
-          set_vreg_lane (var "dst") (var "i") (get_vreg_lane (var "src") (var "i"));
-          (var "i" += i32 1);
+        if_then_else (var "bits" ==~ i32 32) [
+          let_u64 "_dst0" (get_vreg_lane (var "dst") (i32 0));
+          let_u64 "_src0" (get_vreg_lane (var "src") (i32 0));
+          set_vreg_lane (var "dst") (i32 0)
+            ((var "_dst0" &~ u64 0xFFFFFFFF00000000L) |~ (var "_src0" &~ u64 0xFFFFFFFFL));
+        ] [
+          decl_var SizeT "i" ~init:(i32 0);
+          while_loop (var "i" <~ ((var "bits" +~ i32 63) /~ i32 64)) [
+            set_vreg_lane (var "dst") (var "i") (get_vreg_lane (var "src") (var "i"));
+            (var "i" += i32 1);
+          ];
         ];
       ]
   in
@@ -1197,14 +1219,27 @@ let emit_simd_handlers ?rng b =
   let vec_load_stmts = [
     let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x3FFL));
     let_u64 "address" (reg_src +~ cast UInt64 (var "imm"));
-    for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
-      decl_var UInt64 "value" ~init:(u64 0L);
+    for_range "i" (i32 0) (i32 8) [
+      set_vreg_lane (var "dst") (var "i") (u64 0L);
+    ];
+    if_then_else (var "bits" ==~ i32 32) [
+      decl_var UInt32 "_val32" ~init:(u32 0l);
       expr_stmt (call "std::memcpy" [
-        addr_of (var "value");
-        reinterpret_cast (ConstPtr Void) (var "address" +~ (var "i" *~ i32 8));
-        sizeof_expr (var "value")
+        addr_of (var "_val32");
+        reinterpret_cast (ConstPtr Void) (var "address");
+        sizeof_expr (var "_val32")
       ]);
-      set_vreg_lane (var "dst") (var "i") (var "value");
+      set_vreg_lane (var "dst") (i32 0) (cast UInt64 (var "_val32"));
+    ] [
+      for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
+        decl_var UInt64 "value" ~init:(u64 0L);
+        expr_stmt (call "std::memcpy" [
+          addr_of (var "value");
+          reinterpret_cast (ConstPtr Void) (var "address" +~ (var "i" *~ i32 8));
+          sizeof_expr (var "value")
+        ]);
+        set_vreg_lane (var "dst") (var "i") (var "value");
+      ];
     ];
   ] in
   emit_handler_ast b "H_VEC_LOAD" (vec_load_stmts @ [ inc_instrs; fetch_next ]);
@@ -1212,12 +1247,22 @@ let emit_simd_handlers ?rng b =
   let vec_store_stmts = [
     let_u32 "bits" (cast UInt32 ((var "word" >>~ i32 50) &~ u64 0x3FFL));
     let_u64 "address" (reg_dst +~ cast UInt64 (var "imm"));
-    for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
+    if_then_else (var "bits" ==~ i32 32) [
+      let_u64 "_val0" (get_vreg_lane (var "src") (i32 0));
+      decl_var UInt32 "_val32" ~init:(cast UInt32 (var "_val0" &~ u64 0xFFFFFFFFL));
       expr_stmt (call "std::memcpy" [
-        reinterpret_cast (Ptr Void) (var "address" +~ (var "i" *~ i32 8));
-        addr_of (idx (idx (var "ctx.vregs") (var "src" &~ i32 31)) (var "i" &~ i32 7));
-        sizeof_ty UInt64
+        reinterpret_cast (Ptr Void) (var "address");
+        addr_of (var "_val32");
+        sizeof_expr (var "_val32")
       ]);
+    ] [
+      for_range "i" (i32 0) ((var "bits" +~ i32 63) /~ i32 64) [
+        expr_stmt (call "std::memcpy" [
+          reinterpret_cast (Ptr Void) (var "address" +~ (var "i" *~ i32 8));
+          addr_of (idx (idx (var "ctx.vregs") (var "src" &~ i32 31)) (var "i" &~ i32 7));
+          sizeof_ty UInt64
+        ]);
+      ];
     ];
   ] in
   emit_handler_ast b "H_VEC_STORE" (vec_store_stmts @ [ inc_instrs; fetch_next ]);

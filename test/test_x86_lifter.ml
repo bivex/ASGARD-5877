@@ -909,6 +909,74 @@ vector_ops:
           Alcotest.(check int64) "AVX vaddps lane2" (fbits 33.0) (Int64.logand ymm3.(1) 0xFFFFFFFFL);
           Alcotest.(check int64) "AVX vaddps lane3" (fbits 44.0) (Int64.logand (Int64.shift_right_logical ymm3.(1) 32) 0xFFFFFFFFL))
 
+let test_x86_movss_movsd_vector_moves () =
+  let asm = {|
+func_moves:
+    movss xmm0, xmm1
+    movsd xmm2, xmm3
+    movss dword ptr [rsp + 16], xmm0
+    movss xmm5, dword ptr [rsp + 16]
+    movsd qword ptr [rsp + 24], xmm2
+    movsd xmm6, qword ptr [rsp + 24]
+    vmovss xmm7, xmm0, xmm1
+    vmovsd xmm8, xmm2, xmm3
+    movups xmm9, xmm0
+    movaps xmm10, xmm1
+    movdqu xmm11, xmm2
+    movdqa xmm12, xmm3
+    movupd xmm13, xmm0
+    movapd xmm14, xmm1
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      state.vsp <- 0x1000L;
+      Hashtbl.replace state.vectors 0 [| 0x1111111122222222L; 0x3333333344444444L; 0x5555555566666666L; 0x7777777788888888L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1 [| 0xAAAABBBBCCCCDDDDL; 0xEEEEFFFF00001111L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2 [| 0x123456789ABCDEF0L; 0xFEDCBA9876543210L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 3 [| 0x0102030405060708L; 0x090A0B0C0D0E0F00L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 8 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      write_mem state 0x1014L B32 0xA5A5A5A5L;
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v5 = Hashtbl.find state.vectors 5 in
+          let v6 = Hashtbl.find state.vectors 6 in
+          let v7 = Hashtbl.find state.vectors 7 in
+          let v8 = Hashtbl.find state.vectors 8 in
+          let v9 = Hashtbl.find state.vectors 9 in
+          let v10 = Hashtbl.find state.vectors 10 in
+          let v11 = Hashtbl.find state.vectors 11 in
+          let v12 = Hashtbl.find state.vectors 12 in
+          let v13 = Hashtbl.find state.vectors 13 in
+          let v14 = Hashtbl.find state.vectors 14 in
+          Alcotest.(check int64) "movss reg lane0" 0x11111111CCCCDDDDL v0.(0);
+          Alcotest.(check int64) "movss reg lane1" 0x3333333344444444L v0.(1);
+          Alcotest.(check int64) "movsd reg lane0" 0x0102030405060708L v2.(0);
+          Alcotest.(check int64) "movsd reg lane1" 0xFEDCBA9876543210L v2.(1);
+          Alcotest.(check int64) "canary untouched" 0xA5A5A5A5L (read_mem state 0x1014L B32);
+          Alcotest.(check int64) "movss mem lane0" 0x00000000CCCCDDDDL v5.(0);
+          Alcotest.(check int64) "movss mem lane1 zeroed" 0L v5.(1);
+          Alcotest.(check int64) "movsd mem lane0" 0x0102030405060708L v6.(0);
+          Alcotest.(check int64) "movsd mem lane1 zeroed" 0L v6.(1);
+          Alcotest.(check int64) "vmovss lane0" 0x11111111CCCCDDDDL v7.(0);
+          Alcotest.(check int64) "vmovss lane1" 0x3333333344444444L v7.(1);
+          Alcotest.(check int64) "vmovss lane2 zeroed" 0L v7.(2);
+          Alcotest.(check int64) "vmovsd lane0" 0x0102030405060708L v8.(0);
+          Alcotest.(check int64) "vmovsd lane1" 0xFEDCBA9876543210L v8.(1);
+          Alcotest.(check int64) "vmovsd lane2 zeroed" 0L v8.(2);
+          Alcotest.(check int64) "movups" v0.(0) v9.(0);
+          Alcotest.(check int64) "movaps" (Hashtbl.find state.vectors 1).(0) v10.(0);
+          Alcotest.(check int64) "movdqu" v2.(0) v11.(0);
+          Alcotest.(check int64) "movdqa" (Hashtbl.find state.vectors 3).(0) v12.(0);
+          Alcotest.(check int64) "movupd" v0.(0) v13.(0);
+          Alcotest.(check int64) "movapd" (Hashtbl.find state.vectors 1).(0) v14.(0))
+
 (* ORPS / ORPD are bitwise operations on the raw element patterns: the result
    is the OR of the operands, never a numeric operation on the floats.  The
    legacy SSE form has two operands (dst = dst | src) and writes only the low
@@ -2392,5 +2460,6 @@ let tests = [
   Alcotest.test_case "lift_x86_atomic_rmw_and_lock" `Quick test_x86_lift_atomic_rmw_and_lock;
   Alcotest.test_case "lift_x86_atomic_mem_nodes" `Quick test_x86_lift_atomic_mem_nodes;
   Alcotest.test_case "lift_x86_cpuid" `Quick test_x86_cpuid;
+  Alcotest.test_case "lift_x86_movss_movsd_vector_moves" `Quick test_x86_movss_movsd_vector_moves;
 ]
 
