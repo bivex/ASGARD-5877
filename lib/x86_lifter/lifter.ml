@@ -955,6 +955,121 @@ let bit_scan_flag_word ~zf ~cf =
     Ir.Set_flags (Ir.Reg word);
   ]
 
+(* ── x87 FPU Support ─────────────────────────────────────────── *)
+
+let is_fpu_mnemonic = function
+  | "fld" | "fild" | "fst" | "fstp" | "fist" | "fistp"
+  | "fadd" | "fsub" | "fsubr" | "fmul" | "fdiv" | "fdivr"
+  | "faddp" | "fsubp" | "fsubrp" | "fmulp" | "fdivp" | "fdivrp"
+  | "fcom" | "fcomp" | "fcompp" | "fcomi" | "fcomip"
+  | "fchs" | "fabs" | "fsqrt"
+  | "fldz" | "fld1" | "fldpi" | "fldl2e" | "fldl2t" | "fldlg2" | "fldln2"
+  | "fsin" | "fcos" | "fsincos" | "fptan" | "fpatan" | "fyl2x" | "fyl2xp1" | "f2xm1"
+  | "fnstsw" | "fstsw" | "fnop" -> true
+  | _ -> false
+
+let lift_fpu_instr mnem ops =
+  match mnem, ops with
+  | "fnop", [] -> Ok [ Ir.Nop ]
+  (* 1. FLD / FILD / FST / FSTP / FIST / FISTP *)
+  | "fld", [ X86_parser.OpReg (Register.St i) ] ->
+      Ok [ Ir.Fpu (Ir.FpPush_st i) ]
+  | "fld", [ X86_parser.OpMem m ] ->
+      Ok [ Ir.Fpu (Ir.FpPush_mem (ir_mem_of_raw m)) ]
+  | "fild", [ X86_parser.OpMem m ] ->
+      Ok [ Ir.Fpu (Ir.FpPush_int (ir_mem_of_raw m)) ]
+
+  | "fst", [ X86_parser.OpReg (Register.St i) ] ->
+      Ok [ Ir.Fpu (Ir.FpStore_st { idx = i; pop = false }) ]
+  | "fst", [ X86_parser.OpMem m ] ->
+      Ok [ Ir.Fpu (Ir.FpStore_mem { addr = ir_mem_of_raw m; pop = false }) ]
+  | "fstp", [ X86_parser.OpReg (Register.St i) ] ->
+      Ok [ Ir.Fpu (Ir.FpStore_st { idx = i; pop = true }) ]
+  | "fstp", [ X86_parser.OpMem m ] ->
+      Ok [ Ir.Fpu (Ir.FpStore_mem { addr = ir_mem_of_raw m; pop = true }) ]
+  | "fstp", [] ->
+      Ok [ Ir.Fpu (Ir.FpStore_st { idx = 0; pop = true }) ]
+
+  | "fist", [ X86_parser.OpMem m ] ->
+      Ok [ Ir.Fpu (Ir.FpStore_int { addr = ir_mem_of_raw m; pop = false }) ]
+  | "fistp", [ X86_parser.OpMem m ] ->
+      Ok [ Ir.Fpu (Ir.FpStore_int { addr = ir_mem_of_raw m; pop = true }) ]
+
+  (* 2. FADD / FSUB / FMUL / FDIV and variants *)
+  | ("fadd" | "fsub" | "fsubr" | "fmul" | "fdiv" | "fdivr" |
+     "faddp" | "fsubp" | "fsubrp" | "fmulp" | "fdivp" | "fdivrp"), ops ->
+      let is_pop = String.ends_with ~suffix:"p" mnem in
+      let base_mnem = if is_pop then String.sub mnem 0 (String.length mnem - 1) else mnem in
+      let op = match base_mnem with
+        | "fadd" -> Ir.FpAdd
+        | "fsub" -> Ir.FpSub
+        | "fsubr" -> Ir.FpSubR
+        | "fmul" -> Ir.FpMul
+        | "fdiv" -> Ir.FpDiv
+        | "fdivr" -> Ir.FpDivR
+        | _ -> assert false
+      in
+      (match ops with
+      | [] ->
+          Ok [ Ir.Fpu (Ir.FpBinop { op; dst = 1; src = 0; pop = true }) ]
+      | [ X86_parser.OpReg (Register.St d); X86_parser.OpReg (Register.St s) ] ->
+          Ok [ Ir.Fpu (Ir.FpBinop { op; dst = d; src = s; pop = is_pop }) ]
+      | [ X86_parser.OpReg (Register.St d) ] ->
+          if is_pop then
+            Ok [ Ir.Fpu (Ir.FpBinop { op; dst = d; src = 0; pop = true }) ]
+          else
+            Ok [ Ir.Fpu (Ir.FpBinop { op; dst = 0; src = d; pop = false }) ]
+      | [ X86_parser.OpMem m ] ->
+          Ok [ Ir.Fpu (Ir.FpBinop_mem { op; src = ir_mem_of_raw m }) ]
+      | _ -> Error (Printf.sprintf "Unsupported operands for %s" mnem))
+
+  (* 3. FCOM / FCOMP / FCOMPP / FCOMI / FCOMIP *)
+  | "fcom", [] -> Ok [ Ir.Fpu (Ir.FpCompare { idx = 1; pop_count = 0 }) ]
+  | "fcom", [ X86_parser.OpReg (Register.St i) ] -> Ok [ Ir.Fpu (Ir.FpCompare { idx = i; pop_count = 0 }) ]
+  | "fcom", [ X86_parser.OpMem m ] -> Ok [ Ir.Fpu (Ir.FpCompare_mem { src = ir_mem_of_raw m; pop = false }) ]
+  | "fcomp", [] -> Ok [ Ir.Fpu (Ir.FpCompare { idx = 1; pop_count = 1 }) ]
+  | "fcomp", [ X86_parser.OpReg (Register.St i) ] -> Ok [ Ir.Fpu (Ir.FpCompare { idx = i; pop_count = 1 }) ]
+  | "fcomp", [ X86_parser.OpMem m ] -> Ok [ Ir.Fpu (Ir.FpCompare_mem { src = ir_mem_of_raw m; pop = true }) ]
+  | "fcompp", [] -> Ok [ Ir.Fpu (Ir.FpCompare { idx = 1; pop_count = 2 }) ]
+  | "fcomi", [ X86_parser.OpReg (Register.St 0); X86_parser.OpReg (Register.St i) ]
+  | "fcomi", [ X86_parser.OpReg (Register.St i) ] ->
+      Ok [ Ir.Fpu (Ir.FpCompare_i { idx = i; pop = false }) ]
+  | "fcomip", [ X86_parser.OpReg (Register.St 0); X86_parser.OpReg (Register.St i) ]
+  | "fcomip", [ X86_parser.OpReg (Register.St i) ] ->
+      Ok [ Ir.Fpu (Ir.FpCompare_i { idx = i; pop = true }) ]
+
+  (* 4. FCHS / FABS / FSQRT *)
+  | "fchs", [] -> Ok [ Ir.Fpu (Ir.FpUnary Ir.FpChs) ]
+  | "fabs", [] -> Ok [ Ir.Fpu (Ir.FpUnary Ir.FpAbs) ]
+  | "fsqrt", [] -> Ok [ Ir.Fpu (Ir.FpUnary Ir.FpSqrt) ]
+
+  (* 5. Constants *)
+  | "fldz", [] -> Ok [ Ir.Fpu (Ir.FpConst Ir.FpLd0) ]
+  | "fld1", [] -> Ok [ Ir.Fpu (Ir.FpConst Ir.FpLd1) ]
+  | "fldpi", [] -> Ok [ Ir.Fpu (Ir.FpConst Ir.FpLdPi) ]
+  | "fldl2e", [] -> Ok [ Ir.Fpu (Ir.FpConst Ir.FpLdL2e) ]
+  | "fldl2t", [] -> Ok [ Ir.Fpu (Ir.FpConst Ir.FpLdL2t) ]
+  | "fldlg2", [] -> Ok [ Ir.Fpu (Ir.FpConst Ir.FpLdLg2) ]
+  | "fldln2", [] -> Ok [ Ir.Fpu (Ir.FpConst Ir.FpLdLn2) ]
+
+  (* 6. Transcendentals *)
+  | "fsin", [] -> Ok [ Ir.Fpu (Ir.FpTrans Ir.FpSin) ]
+  | "fcos", [] -> Ok [ Ir.Fpu (Ir.FpTrans Ir.FpCos) ]
+  | "fsincos", [] -> Ok [ Ir.Fpu (Ir.FpTrans Ir.FpSinCos) ]
+  | "fptan", [] -> Ok [ Ir.Fpu (Ir.FpTrans Ir.FpTan) ]
+  | "fpatan", [] -> Ok [ Ir.Fpu (Ir.FpTrans Ir.FpATan) ]
+  | "fyl2x", [] -> Ok [ Ir.Fpu (Ir.FpTrans Ir.FpYl2x) ]
+  | "fyl2xp1", [] -> Ok [ Ir.Fpu (Ir.FpTrans Ir.FpYl2xp1) ]
+  | "f2xm1", [] -> Ok [ Ir.Fpu (Ir.FpTrans Ir.Fp2xm1) ]
+
+  (* Status word *)
+  | ("fnstsw" | "fstsw"), [ X86_parser.OpReg r ] when r = Register.Gpr (Register.RAX, Register.B16) || r = Register.rax ->
+      Ok [ Ir.Fpu Ir.FpStatus_to_ax ]
+  | ("fnstsw" | "fstsw"), [] ->
+      Ok [ Ir.Fpu Ir.FpStatus_to_ax ]
+
+  | _ -> Error (Printf.sprintf "Unsupported x87 FPU instruction %s" mnem)
+
 let lift_instr ?const_pool raw_mnem ops =
   let is_locked, mnem =
     if String.starts_with ~prefix:"lock " raw_mnem then
@@ -963,6 +1078,7 @@ let lift_instr ?const_pool raw_mnem ops =
       (false, raw_mnem)
   in
   match mnem, ops with
+  | mnem, ops when is_fpu_mnemonic mnem -> lift_fpu_instr mnem ops
   | ("mfence" | "lfence" | "sfence"), _ -> Ok [ Ir.Fence Ir.SeqCst ]
   | ("nop" | ".ascii" | ".asciz" | ".string" | ".byte" | ".p2align" | ".align" | "pause" | "prefetcht0" | "prefetcht1" | "prefetcht2" | "prefetchnta" | "prefetch" | "clflush" | "clflushopt"), _ -> Ok [ Ir.Nop ]
   | "ret", [] -> Ok [ Ir.Ret ]

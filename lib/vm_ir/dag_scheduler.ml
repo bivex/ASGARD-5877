@@ -4,11 +4,13 @@ type base_reg =
   | BG of Register.gpr
   | BV of Register.vreg
   | BF of int
+  | BST of int
 
 let base_of_reg = function
   | Register.Gpr (g, _) -> BG g
   | Register.Vreg (v, _) -> BV v
   | Register.Fpr (i, _) -> BF i
+  | Register.St i -> BST i
 
 let rsp_base = BG Register.RSP
 

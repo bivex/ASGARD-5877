@@ -81,6 +81,8 @@ let parse_width_prefix str =
     (Register.B16, String.trim (String.sub s 8 (String.length s - 8)))
   else if String.starts_with ~prefix:"byte ptr" s then
     (Register.B8, String.trim (String.sub s 8 (String.length s - 8)))
+  else if String.starts_with ~prefix:"tbyte ptr" s then
+    (Register.B64, String.trim (String.sub s 9 (String.length s - 9)))
   else (Register.B64, s)
 
 let parse_mem_operand body default_width =

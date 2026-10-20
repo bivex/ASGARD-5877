@@ -14,9 +14,17 @@ type state = {
   mutable gs_base : int64;
   (* The shadow stack pointer of the CET extensions (RDSSP, INCSSP). *)
   mutable ssp : int64;
+  mutable fpu_stack : float array;
+  mutable fpu_top : int;
+  mutable fpu_status : int;
   mutable halted : bool;
   mutable trapped : string option;
 }
+
+val fpu_get_st : state -> int -> float
+val fpu_set_st : state -> int -> float -> unit
+val fpu_push : state -> float -> unit
+val fpu_pop : state -> float
 
 val make_state : ?stack_base:int64 -> ?fs_base:int64 -> ?gs_base:int64 -> ?ssp:int64 -> ?arm64_carry:bool -> unit -> state
 

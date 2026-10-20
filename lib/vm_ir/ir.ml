@@ -109,6 +109,55 @@ type sha_op =
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 type mem_order = SeqCst | Acquire | Release | AcqRel | Relaxed
 
+type fpu_binop =
+  | FpAdd
+  | FpSub
+  | FpSubR
+  | FpMul
+  | FpDiv
+  | FpDivR
+
+type fpu_unary_op =
+  | FpChs
+  | FpAbs
+  | FpSqrt
+
+type fpu_const =
+  | FpLd0
+  | FpLd1
+  | FpLdPi
+  | FpLdL2e
+  | FpLdL2t
+  | FpLdLg2
+  | FpLdLn2
+
+type fpu_trans =
+  | FpSin
+  | FpCos
+  | FpSinCos
+  | FpTan
+  | FpATan
+  | FpYl2x
+  | FpYl2xp1
+  | Fp2xm1
+
+type fpu_instr =
+  | FpPush_mem of mem_ref
+  | FpPush_int of mem_ref
+  | FpPush_st of int
+  | FpStore_mem of { addr : mem_ref; pop : bool }
+  | FpStore_int of { addr : mem_ref; pop : bool }
+  | FpStore_st of { idx : int; pop : bool }
+  | FpBinop of { op : fpu_binop; dst : int; src : int; pop : bool }
+  | FpBinop_mem of { op : fpu_binop; src : mem_ref }
+  | FpCompare of { idx : int; pop_count : int }
+  | FpCompare_i of { idx : int; pop : bool }
+  | FpCompare_mem of { src : mem_ref; pop : bool }
+  | FpUnary of fpu_unary_op
+  | FpConst of fpu_const
+  | FpTrans of fpu_trans
+  | FpStatus_to_ax
+
 type instr =
   | Nop
   | Mov of { dst : operand; src : operand }
@@ -156,6 +205,7 @@ type instr =
   | Get_flags of Register.t
   | Set_flags of operand
   | Cpuid
+  | Fpu of fpu_instr
 
 type basic_block = {
   id : int;
@@ -347,6 +397,31 @@ let instr_to_string = function
   | Get_flags d -> Printf.sprintf "get_flags %s" (Register.to_string d)
   | Set_flags s -> Printf.sprintf "set_flags %s" (operand_to_string s)
   | Cpuid -> "cpuid"
+  | Fpu f -> (
+      match f with
+      | FpPush_mem m -> Printf.sprintf "fld %s" (mem_ref_to_string m)
+      | FpPush_int m -> Printf.sprintf "fild %s" (mem_ref_to_string m)
+      | FpPush_st i -> Printf.sprintf "fld st(%d)" i
+      | FpStore_mem { addr; pop } -> Printf.sprintf "%s %s" (if pop then "fstp" else "fst") (mem_ref_to_string addr)
+      | FpStore_int { addr; pop } -> Printf.sprintf "%s %s" (if pop then "fistp" else "fist") (mem_ref_to_string addr)
+      | FpStore_st { idx; pop } -> Printf.sprintf "%s st(%d)" (if pop then "fstp" else "fst") idx
+      | FpBinop { op; dst; src; pop } ->
+          let op_s = match op with FpAdd -> "fadd" | FpSub -> "fsub" | FpSubR -> "fsubr" | FpMul -> "fmul" | FpDiv -> "fdiv" | FpDivR -> "fdivr" in
+          Printf.sprintf "%s%s st(%d), st(%d)" op_s (if pop then "p" else "") dst src
+      | FpBinop_mem { op; src } ->
+          let op_s = match op with FpAdd -> "fadd" | FpSub -> "fsub" | FpSubR -> "fsubr" | FpMul -> "fmul" | FpDiv -> "fdiv" | FpDivR -> "fdivr" in
+          Printf.sprintf "%s %s" op_s (mem_ref_to_string src)
+      | FpCompare { idx; pop_count } ->
+          let op_s = if pop_count = 2 then "fcompp" else if pop_count = 1 then "fcomp" else "fcom" in
+          Printf.sprintf "%s st(%d)" op_s idx
+      | FpCompare_i { idx; pop } ->
+          Printf.sprintf "%s st(%d)" (if pop then "fcomip" else "fcomi") idx
+      | FpCompare_mem { src; pop } ->
+          Printf.sprintf "%s %s" (if pop then "fcomp" else "fcom") (mem_ref_to_string src)
+      | FpUnary un -> (match un with FpChs -> "fchs" | FpAbs -> "fabs" | FpSqrt -> "fsqrt")
+      | FpConst c -> (match c with FpLd0 -> "fldz" | FpLd1 -> "fld1" | FpLdPi -> "fldpi" | FpLdL2e -> "fldl2e" | FpLdL2t -> "fldl2t" | FpLdLg2 -> "fldlg2" | FpLdLn2 -> "fldln2")
+      | FpTrans tr -> (match tr with FpSin -> "fsin" | FpCos -> "fcos" | FpSinCos -> "fsincos" | FpTan -> "fptan" | FpATan -> "fpatan" | FpYl2x -> "fyl2x" | FpYl2xp1 -> "fyl2xp1" | Fp2xm1 -> "f2xm1")
+      | FpStatus_to_ax -> "fstsw ax")
 
 let block_to_string b =
   let b_lines = List.map (fun i -> "    " ^ instr_to_string i) b.instrs in

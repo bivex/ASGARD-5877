@@ -53,6 +53,7 @@ type t =
   | Gpr of gpr * width
   | Vreg of vreg * width
   | Fpr of int * width
+  | St of int
 
 val rax : t
 val rbx : t

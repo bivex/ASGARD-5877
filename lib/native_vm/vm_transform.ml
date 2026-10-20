@@ -20,6 +20,7 @@ let reg_to_index = function
   | Register.Vreg (Register.VX26, _)  -> 31
   | Register.Vreg (Register.VZERO, _) -> 31
   | Register.Fpr (i, _) -> (23 + (i mod 9)) mod 32
+  | Register.St i -> (23 + (i mod 9)) mod 32
 
 let cond_to_code = function
   | Flags.E -> 0 | Flags.NE -> 1 | Flags.B -> 2 | Flags.AE -> 3

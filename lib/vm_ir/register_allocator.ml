@@ -49,7 +49,7 @@ let remap_register (map : (int, int) Hashtbl.t) (r : Register.t) : Register.t =
           | Ok new_g -> Gpr (new_g, w)
           | Error _ -> r)
       | None -> r)
-  | Vreg _ | Fpr _ -> r
+  | Vreg _ | Fpr _ | St _ -> r
 
 let remap_operand (map : (int, int) Hashtbl.t) = function
   | Reg r -> Reg (remap_register map r)
@@ -94,7 +94,7 @@ let remap_instr (map : (int, int) Hashtbl.t) (instr : instr) : instr =
   | Jmp _ | Jcc _ | Call _ | Ret | Vm_enter | Vm_exit | Trap _ | Nop | Bridge_to_flow _ | Bridge_to_math _
    | Load_symbol _ | Fp_binop _ | Fp_cmp _ | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _
    | Vec_sha _ | Vec_pclmul _ | Vec_clear_upper _ | Vec_zero_upper | Vec_ext _ | Fence _ | Inc_ssp _
-   | Cpuid -> instr
+   | Cpuid | Fpu _ -> instr
   | Read_ssp { dst } -> Read_ssp { dst = remap_register map dst }
   | Fp_conv { op; dst; src } ->
       Fp_conv { op; dst = remap_register map dst; src = remap_register map src }

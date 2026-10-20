@@ -66,6 +66,7 @@ type t =
   | Gpr of gpr * width
   | Vreg of vreg * width
   | Fpr of int * width
+  | St of int
 
 let rax = Gpr (RAX, B64)
 let rcx = Gpr (RCX, B64)
@@ -172,6 +173,7 @@ let to_string = function
   | Fpr (i, B256) -> Printf.sprintf "ymm%d" i
   | Fpr (i, B512) -> Printf.sprintf "zmm%d" i
   | Fpr (i, _)   -> Printf.sprintf "v%d" i
+  | St i         -> Printf.sprintf "st(%d)" i
 
 let of_string str =
   let s = String.lowercase_ascii (String.trim str) in
@@ -222,6 +224,14 @@ let of_string str =
   | "vzero" | "xzr" | "wzr" -> Ok vzero
   | "vx18" -> Ok vx18 | "vx19" -> Ok vx19 | "vx20" -> Ok vx20 | "vx21" -> Ok vx21
   | "vx22" -> Ok vx22 | "vx23" -> Ok vx23 | "vx24" -> Ok vx24 | "vx25" -> Ok vx25 | "vx26" -> Ok vx26
+  | "st" | "st(0)" | "st0" -> Ok (St 0)
+  | "st(1)" | "st1" -> Ok (St 1)
+  | "st(2)" | "st2" -> Ok (St 2)
+  | "st(3)" | "st3" -> Ok (St 3)
+  | "st(4)" | "st4" -> Ok (St 4)
+  | "st(5)" | "st5" -> Ok (St 5)
+  | "st(6)" | "st6" -> Ok (St 6)
+  | "st(7)" | "st7" -> Ok (St 7)
   | other -> Error (Printf.sprintf "Unknown register '%s'" other))
 
 let gpr_index = function
@@ -241,9 +251,11 @@ let get_width = function
   | Gpr (_, w) -> w
   | Vreg (_, w) -> w
   | Fpr (_, w) -> w
+  | St _ -> B64
 
 let with_width reg w =
   match reg with
   | Gpr (g, _) -> Gpr (g, w)
   | Vreg (v, _) -> Vreg (v, w)
   | Fpr (i, _) -> Fpr (i, w)
+  | St i -> St i

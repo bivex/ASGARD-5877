@@ -110,6 +110,55 @@ type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
 type mem_order = SeqCst | Acquire | Release | AcqRel | Relaxed
 
+type fpu_binop =
+  | FpAdd
+  | FpSub
+  | FpSubR
+  | FpMul
+  | FpDiv
+  | FpDivR
+
+type fpu_unary_op =
+  | FpChs
+  | FpAbs
+  | FpSqrt
+
+type fpu_const =
+  | FpLd0
+  | FpLd1
+  | FpLdPi
+  | FpLdL2e
+  | FpLdL2t
+  | FpLdLg2
+  | FpLdLn2
+
+type fpu_trans =
+  | FpSin
+  | FpCos
+  | FpSinCos
+  | FpTan
+  | FpATan
+  | FpYl2x
+  | FpYl2xp1
+  | Fp2xm1
+
+type fpu_instr =
+  | FpPush_mem of mem_ref
+  | FpPush_int of mem_ref
+  | FpPush_st of int
+  | FpStore_mem of { addr : mem_ref; pop : bool }
+  | FpStore_int of { addr : mem_ref; pop : bool }
+  | FpStore_st of { idx : int; pop : bool }
+  | FpBinop of { op : fpu_binop; dst : int; src : int; pop : bool }
+  | FpBinop_mem of { op : fpu_binop; src : mem_ref }
+  | FpCompare of { idx : int; pop_count : int }
+  | FpCompare_i of { idx : int; pop : bool }
+  | FpCompare_mem of { src : mem_ref; pop : bool }
+  | FpUnary of fpu_unary_op
+  | FpConst of fpu_const
+  | FpTrans of fpu_trans
+  | FpStatus_to_ax
+
 type instr =
   | Nop
   | Mov of { dst : operand; src : operand }
@@ -157,6 +206,7 @@ type instr =
   | Get_flags of Register.t
   | Set_flags of operand
   | Cpuid
+  | Fpu of fpu_instr
 
 type basic_block = {
   id : int;

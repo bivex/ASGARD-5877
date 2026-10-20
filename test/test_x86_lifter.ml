@@ -452,6 +452,132 @@ rol_ror_test:
           Alcotest.(check int64) "ror ecx, 1 zeroes upper 32" 0x80000000L (get_reg state Register.rcx);
           Alcotest.(check int64) "rol r8 (implicit 1)" 0x0000000000000003L (get_reg state Register.r8)
 
+let test_x86_fpu_load_store () =
+  let asm = {|
+fpu_ld_st:
+    sub rsp, 64
+    fld1
+    fldz
+    fldpi
+    fst qword ptr [rsp]
+    fstp qword ptr [rsp + 8]
+    mov dword ptr [rsp + 16], 42
+    fild dword ptr [rsp + 16]
+    fistp dword ptr [rsp + 24]
+    add rsp, 64
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let sp = 0x1000L in
+          let pi_bits = read_mem state (Int64.sub sp 64L) Register.B64 in
+          let pi_val = Int64.float_of_bits pi_bits in
+          Alcotest.(check bool) "fst stored pi" true (abs_float (pi_val -. 3.141592653589793) < 1e-10);
+          let pi_bits2 = read_mem state (Int64.add (Int64.sub sp 64L) 8L) Register.B64 in
+          let pi_val2 = Int64.float_of_bits pi_bits2 in
+          Alcotest.(check bool) "fstp stored pi" true (abs_float (pi_val2 -. 3.141592653589793) < 1e-10);
+          let int_res = read_mem state (Int64.add (Int64.sub sp 64L) 24L) Register.B32 in
+          Alcotest.(check int64) "fistp converted 42 back to int" 42L int_res
+
+let test_x86_fpu_arithmetic () =
+  let asm = {|
+fpu_arith:
+    sub rsp, 32
+    fld1
+    fld1
+    faddp st(1), st(0)
+    fst qword ptr [rsp]
+    fld1
+    fsubp
+    fst qword ptr [rsp + 8]
+    fld1
+    fld1
+    faddp
+    fld1
+    fld1
+    faddp
+    fmulp
+    fstp qword ptr [rsp + 16]
+    add rsp, 32
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let sp = 0x1000L in
+          let two_bits = read_mem state (Int64.sub sp 32L) Register.B64 in
+          let two_val = Int64.float_of_bits two_bits in
+          Alcotest.(check bool) "faddp 1+1 = 2" true (abs_float (two_val -. 2.0) < 1e-10);
+          let one_bits = read_mem state (Int64.add (Int64.sub sp 32L) 8L) Register.B64 in
+          let one_val = Int64.float_of_bits one_bits in
+          Alcotest.(check bool) "fsubp 2-1 = 1" true (abs_float (one_val -. 1.0) < 1e-10);
+          let four_bits = read_mem state (Int64.add (Int64.sub sp 32L) 16L) Register.B64 in
+          let four_val = Int64.float_of_bits four_bits in
+          Alcotest.(check bool) "fmulp 2*2 = 4" true (abs_float (four_val -. 4.0) < 1e-10)
+
+let test_x86_fpu_comparison () =
+  let asm = {|
+fpu_cmp:
+    fld1
+    fldz
+    fcomi st(1)
+    setb dl
+    fstsw ax
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let ax_val = Int64.logand (get_reg state Register.rax) 0xFFFFL in
+          Alcotest.(check bool) "fstsw ax wrote status word" true (ax_val <> 0L);
+          let dl_val = Int64.logand (get_reg state Register.rdx) 0xFFL in
+          Alcotest.(check int64) "fcomi 0 < 1 set CF (setb dl=1)" 1L dl_val
+
+let test_x86_fpu_unary_and_transcendental () =
+  let asm = {|
+fpu_trans:
+    sub rsp, 32
+    fld1
+    fchs
+    fabs
+    fst qword ptr [rsp]
+    fldz
+    fcos
+    fst qword ptr [rsp + 8]
+    add rsp, 32
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      set_reg state Register.rsp 0x1000L;
+      match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let sp = 0x1000L in
+          let one_bits = read_mem state (Int64.sub sp 32L) Register.B64 in
+          let one_val = Int64.float_of_bits one_bits in
+          Alcotest.(check bool) "fchs + fabs = 1.0" true (abs_float (one_val -. 1.0) < 1e-10);
+          let cos_bits = read_mem state (Int64.add (Int64.sub sp 32L) 8L) Register.B64 in
+          let cos_val = Int64.float_of_bits cos_bits in
+          Alcotest.(check bool) "fcos(0) = 1.0" true (abs_float (cos_val -. 1.0) < 1e-10)
+
 let test_lift_one_operand_mul () =
   let asm = {|
 mul8:
@@ -2203,6 +2329,10 @@ let tests = [
   Alcotest.test_case "lift_and_eval_movzx_reg" `Quick test_lift_and_eval_movzx_reg;
   Alcotest.test_case "lift_and_eval_movzx_forms" `Quick test_lift_and_eval_movzx_forms;
   Alcotest.test_case "lift_and_eval_rol_ror" `Quick test_lift_and_eval_rol_ror;
+  Alcotest.test_case "lift_and_eval_fpu_load_store" `Quick test_x86_fpu_load_store;
+  Alcotest.test_case "lift_and_eval_fpu_arithmetic" `Quick test_x86_fpu_arithmetic;
+  Alcotest.test_case "lift_and_eval_fpu_comparison" `Quick test_x86_fpu_comparison;
+  Alcotest.test_case "lift_and_eval_fpu_trans" `Quick test_x86_fpu_unary_and_transcendental;
   Alcotest.test_case "lift_one_operand_mul_b8" `Quick test_lift_one_operand_mul;
   Alcotest.test_case "lift_one_operand_mul_b8_signed" `Quick test_lift_one_operand_mul_signed;
   Alcotest.test_case "lift_one_operand_mul_b64" `Quick test_lift_one_operand_mul64;

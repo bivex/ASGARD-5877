@@ -262,6 +262,16 @@ CATEGORIES = {
     "Доп. сдвиги": ["SHLD", "SHRD", "RCL", "RCR"],
     "Знако-расширение": ["CBW", "CWD", "CDQ", "CQO", "CWDE", "CDQE", "CBTW", "CWTL", "CWTD", "CQTO"],
     "Расширение при переносе": ["MOVSX", "MOVSXD", "MOVZX"],
+    "FPU (x87)": [
+        "FLD", "FST", "FSTP", "FILD", "FIST", "FISTP",
+        "FADD", "FADDP", "FSUB", "FSUBP", "FSUBR", "FSUBRP",
+        "FMUL", "FMULP", "FDIV", "FDIVP", "FDIVR", "FDIVRP",
+        "FCOM", "FCOMP", "FCOMPP", "FCOMI", "FCOMIP",
+        "FCHS", "FABS", "FSQRT",
+        "FLD1", "FLDZ", "FLDPI", "FLDL2E", "FLDL2T", "FLDLG2", "FLDLN2",
+        "FSIN", "FCOS", "FSINCOS", "FPTAN", "FPATAN", "FYL2X", "FYL2XP1", "F2XM1",
+        "FSTSW", "FNSTSW",
+    ],
 }
 
 
@@ -441,6 +451,23 @@ def audit_instructions_in_codebase(mnemonics: list[str]):
             ev_pat = r"(get_flags|set_flags|alu)"
             nat_pat = r"(h_get_flags|h_set_flags|h_alu)"
             t_pat = rf"({m_lower}|test_x86_rcl_rcr_cmc)"
+        elif m_lower.startswith("f") and (
+            m_lower in (
+                "fld", "fst", "fstp", "fild", "fist", "fistp",
+                "fadd", "faddp", "fsub", "fsubp", "fsubr", "fsubrp",
+                "fmul", "fmulp", "fdiv", "fdivp", "fdivr", "fdivrp",
+                "fcom", "fcomp", "fcompp", "fcomi", "fcomip",
+                "fchs", "fabs", "fsqrt",
+                "fld1", "fldz", "fldpi", "fldl2e", "fldl2t", "fldlg2", "fldln2",
+                "fsin", "fcos", "fsincos", "fptan", "fpatan", "fyl2x", "fyl2xp1", "f2xm1",
+                "fstsw", "fnstsw",
+            )
+        ):
+            l_pat = rf'"{m_lower}"'
+            ir_pat = r"(fpu|fp_)"
+            ev_pat = r"(fpu|fp_)"
+            nat_pat = r"(st\b|vm_transform)"
+            t_pat = r"(fpu|test_x86_lifter)"
         else:
             l_pat = rf'("{m_lower}"|\b{m_lower}\b)'
             ir_pat = rf"\b{m_lower}\b"

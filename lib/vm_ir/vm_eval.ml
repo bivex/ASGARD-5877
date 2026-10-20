@@ -16,6 +16,9 @@ type state = {
   mutable gs_base : int64;
   (* The shadow stack pointer of the CET extensions (RDSSP, INCSSP). *)
   mutable ssp : int64;
+  mutable fpu_stack : float array;
+  mutable fpu_top : int;
+  mutable fpu_status : int;
   mutable halted : bool;
   mutable trapped : string option;
 }
@@ -28,6 +31,23 @@ let sync_sp state value =
   state.vsp <- value;
   Hashtbl.replace state.vregs (Register.with_width Register.rsp Register.B64) value;
   Hashtbl.replace state.vregs (Register.with_width Register.vsp Register.B64) value
+
+let fpu_get_st state i =
+  let idx = (state.fpu_top + i) land 7 in
+  state.fpu_stack.(idx)
+
+let fpu_set_st state i v =
+  let idx = (state.fpu_top + i) land 7 in
+  state.fpu_stack.(idx) <- v
+
+let fpu_push state v =
+  state.fpu_top <- (state.fpu_top + 7) land 7;
+  state.fpu_stack.(state.fpu_top) <- v
+
+let fpu_pop state =
+  let v = state.fpu_stack.(state.fpu_top) in
+  state.fpu_top <- (state.fpu_top + 1) land 7;
+  v
 
 let make_state
     ?(stack_base = 0x7FFFFFFF0000L)
@@ -48,6 +68,9 @@ let make_state
     fs_base;
     gs_base;
     ssp;
+    fpu_stack = Array.make 8 0.0;
+    fpu_top = 0;
+    fpu_status = 0;
     halted = false;
     trapped = None;
   } in
@@ -1032,6 +1055,205 @@ let step state = function
       set_reg state Register.rcx out_ecx;
       set_reg state Register.rdx out_edx;
       Ok None
+  | Fpu f -> (
+      match f with
+      | FpPush_mem m ->
+          let addr = eval_mem_addr state m in
+          let v =
+            match m.width with
+            | Register.B32 ->
+                let bits = Int64.to_int32 (read_mem state addr Register.B32) in
+                Int32.float_of_bits bits
+            | _ ->
+                let bits = read_mem state addr Register.B64 in
+                Int64.float_of_bits bits
+          in
+          fpu_push state v;
+          Ok None
+      | FpPush_int m ->
+          let addr = eval_mem_addr state m in
+          let i_val =
+            match m.width with
+            | Register.B16 -> sign_extend Register.B16 (read_mem state addr Register.B16)
+            | Register.B32 -> sign_extend Register.B32 (read_mem state addr Register.B32)
+            | _ -> read_mem state addr Register.B64
+          in
+          fpu_push state (Int64.to_float i_val);
+          Ok None
+      | FpPush_st idx ->
+          let v = fpu_get_st state idx in
+          fpu_push state v;
+          Ok None
+      | FpStore_mem { addr = m; pop } ->
+          let a = eval_mem_addr state m in
+          let v = fpu_get_st state 0 in
+          (match m.width with
+          | Register.B32 ->
+              let bits = Int64.of_int32 (Int32.bits_of_float v) in
+              write_mem state a Register.B32 bits
+          | _ ->
+              let bits = Int64.bits_of_float v in
+              write_mem state a Register.B64 bits);
+          if pop then ignore (fpu_pop state);
+          Ok None
+      | FpStore_int { addr = m; pop } ->
+          let a = eval_mem_addr state m in
+          let v = fpu_get_st state 0 in
+          let i_val = Int64.of_float (Float.round v) in
+          write_mem state a m.width i_val;
+          if pop then ignore (fpu_pop state);
+          Ok None
+      | FpStore_st { idx; pop } ->
+          let v = fpu_get_st state 0 in
+          fpu_set_st state idx v;
+          if pop then ignore (fpu_pop state);
+          Ok None
+      | FpBinop { op; dst; src; pop } ->
+          let a = fpu_get_st state dst in
+          let b = fpu_get_st state src in
+          let res =
+            match op with
+            | FpAdd -> a +. b
+            | FpSub -> a -. b
+            | FpSubR -> b -. a
+            | FpMul -> a *. b
+            | FpDiv -> a /. b
+            | FpDivR -> b /. a
+          in
+          fpu_set_st state dst res;
+          if pop then ignore (fpu_pop state);
+          Ok None
+      | FpBinop_mem { op; src = m } ->
+          let addr = eval_mem_addr state m in
+          let b =
+            match m.width with
+            | Register.B32 ->
+                let bits = Int64.to_int32 (read_mem state addr Register.B32) in
+                Int32.float_of_bits bits
+            | _ ->
+                let bits = read_mem state addr Register.B64 in
+                Int64.float_of_bits bits
+          in
+          let a = fpu_get_st state 0 in
+          let res =
+            match op with
+            | FpAdd -> a +. b
+            | FpSub -> a -. b
+            | FpSubR -> b -. a
+            | FpMul -> a *. b
+            | FpDiv -> a /. b
+            | FpDivR -> b /. a
+          in
+          fpu_set_st state 0 res;
+          Ok None
+      | FpCompare { idx; pop_count } ->
+          let a = fpu_get_st state 0 in
+          let b = fpu_get_st state idx in
+          let c3, c2, c0 =
+            if Float.is_nan a || Float.is_nan b then (1, 1, 1)
+            else if a > b then (0, 0, 0)
+            else if a < b then (0, 0, 1)
+            else (1, 0, 0)
+          in
+          let status = (c0 lsl 8) lor (c2 lsl 10) lor (c3 lsl 14) in
+          state.fpu_status <- (state.fpu_status land (lnot 0x4500)) lor status;
+          for _ = 1 to pop_count do ignore (fpu_pop state) done;
+          Ok None
+      | FpCompare_i { idx; pop } ->
+          let a = fpu_get_st state 0 in
+          let b = fpu_get_st state idx in
+          let zf, pf, cf =
+            if Float.is_nan a || Float.is_nan b then (true, true, true)
+            else if a > b then (false, false, false)
+            else if a < b then (false, false, true)
+            else (true, false, false)
+          in
+          let raw = ref 0x202L in
+          if cf then raw := Int64.logor !raw 0x1L;
+          if pf then raw := Int64.logor !raw 0x4L;
+          if zf then raw := Int64.logor !raw 0x40L;
+          state.flags <- CC_OP_RAW !raw;
+          if pop then ignore (fpu_pop state);
+          Ok None
+      | FpCompare_mem { src = m; pop } ->
+          let addr = eval_mem_addr state m in
+          let b =
+            match m.width with
+            | Register.B32 ->
+                let bits = Int64.to_int32 (read_mem state addr Register.B32) in
+                Int32.float_of_bits bits
+            | _ ->
+                let bits = read_mem state addr Register.B64 in
+                Int64.float_of_bits bits
+          in
+          let a = fpu_get_st state 0 in
+          let c3, c2, c0 =
+            if Float.is_nan a || Float.is_nan b then (1, 1, 1)
+            else if a > b then (0, 0, 0)
+            else if a < b then (0, 0, 1)
+            else (1, 0, 0)
+          in
+          let status = (c0 lsl 8) lor (c2 lsl 10) lor (c3 lsl 14) in
+          state.fpu_status <- (state.fpu_status land (lnot 0x4500)) lor status;
+          if pop then ignore (fpu_pop state);
+          Ok None
+      | FpUnary un ->
+          let v = fpu_get_st state 0 in
+          let res =
+            match un with
+            | FpChs -> -. v
+            | FpAbs -> Float.abs v
+            | FpSqrt -> Float.sqrt v
+          in
+          fpu_set_st state 0 res;
+          Ok None
+      | FpConst c ->
+          let v =
+            match c with
+            | FpLd0 -> 0.0
+            | FpLd1 -> 1.0
+            | FpLdPi -> 3.14159265358979323846
+            | FpLdL2e -> 1.4426950408889634
+            | FpLdL2t -> 3.3219280948873623
+            | FpLdLg2 -> 0.3010299956639812
+            | FpLdLn2 -> 0.6931471805599453
+          in
+          fpu_push state v;
+          Ok None
+      | FpTrans tr ->
+          (match tr with
+          | FpSin -> fpu_set_st state 0 (Float.sin (fpu_get_st state 0))
+          | FpCos -> fpu_set_st state 0 (Float.cos (fpu_get_st state 0))
+          | FpSinCos ->
+              let v = fpu_get_st state 0 in
+              fpu_set_st state 0 (Float.sin v);
+              fpu_push state (Float.cos v)
+          | FpTan ->
+              let v = fpu_get_st state 0 in
+              fpu_set_st state 0 (Float.tan v);
+              fpu_push state 1.0
+          | FpATan ->
+              let y = fpu_get_st state 1 and x = fpu_get_st state 0 in
+              ignore (fpu_pop state);
+              fpu_set_st state 0 (Float.atan2 y x)
+          | FpYl2x ->
+              let y = fpu_get_st state 1 and x = fpu_get_st state 0 in
+              ignore (fpu_pop state);
+              fpu_set_st state 0 (y *. (Float.log x /. Float.log 2.0))
+          | FpYl2xp1 ->
+              let y = fpu_get_st state 1 and x = fpu_get_st state 0 in
+              ignore (fpu_pop state);
+              fpu_set_st state 0 (y *. (Float.log (x +. 1.0) /. Float.log 2.0))
+          | Fp2xm1 ->
+              let x = fpu_get_st state 0 in
+              fpu_set_st state 0 ((2.0 ** x) -. 1.0));
+          Ok None
+      | FpStatus_to_ax ->
+          let rax_val = get_reg state Register.rax in
+          let fsw = Int64.of_int (((state.fpu_top land 7) lsl 11) lor (state.fpu_status land 0xFFFF)) in
+          let new_rax = Int64.logor (Int64.logand rax_val (Int64.lognot 0xFFFFL)) fsw in
+          set_reg state Register.rax new_rax;
+          Ok None)
   | Pmovmskb { dst; src; bits } ->
       let num_bytes = bits / 8 in
       let mask = ref 0L in
