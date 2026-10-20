@@ -3,6 +3,7 @@ opam-version: "2.0"
 version: "0.2.0"
 synopsis:
   "Hexagonal DDD Random Sail (V-ISA) Synthesizer and Emulator Generator in OCaml"
+license: "BUSL-1.1"
 depends: [
   "ocaml" {>= "4.14.0"}
   "dune" {>= "3.0" & >= "3.0"}

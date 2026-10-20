@@ -1,5 +1,9 @@
 # ASGARD-5877
 
+[![License: BUSL-1.1](https://img.shields.io/badge/license-BUSL--1.1-blue.svg)](LICENSE)
+[![OCaml](https://img.shields.io/badge/OCaml-5.4.1-3be5b0.svg)](dune-project)
+[![Topics](https://img.shields.io/github/topics/bivex/ASGARD-5877?color=blue)](https://github.com/bivex/ASGARD-5877#readme)
+
 An OCaml 5 toolchain for two related jobs:
 
 - **vISA synthesizer** — randomizes a RISC-V-style vector ISA, exports a formal Sail model, and generates a C++/C11 emulator together with a hardware cost estimate.
@@ -250,4 +254,10 @@ The command reads the `LC_ROUTINES` and `LC_ROUTINES64` load commands, checks th
 
 ## License
 
-MIT.
+**Business Source License 1.1 (BUSL-1.1)** — the full text is in [`LICENSE`](LICENSE).
+
+- **Open source is free.** You may use, modify and redistribute the code, including in production, as long as the project is distributed under an open source license approved by the OSI and the full source — yours and the modifications — is published under that license.
+- **Commercial use is licensed.** Using the tool in a proprietary product, embedding it into a closed-source product, or offering it as a hosted or embedded service needs a commercial license.
+- **It opens up on its own.** Three years after a version is published it converts to the Apache License 2.0.
+
+The source code in this repository is public and stays public: the license restricts commercial *use*, not *reading*. Evaluation, testing, prototyping, research and education are allowed for everyone.

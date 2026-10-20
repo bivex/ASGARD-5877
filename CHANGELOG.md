@@ -39,6 +39,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Changed
 
+- License the project under the Business Source License 1.1 (BUSL-1.1): the full text is in `LICENSE`, and the package metadata declares it in `dune-project` (`random_visa` and `vanguard-9292`) and in the generated `random_visa.opam` and `vanguard-9292.opam`. Use is free for open-source projects, including production use, as long as the project is distributed under an OSI-approved open source license and the full source stays published under it; any other commercial use - a proprietary product, an embedded copy in closed-source software, or a hosted or embedded service - requires a commercial license, and three years after each release the version converts to the Apache License 2.0. The source code of the repository is public and stays public: the license restricts commercial use, not reading. This replaces the MIT statement that the readme carried without a license file.
 - Translate all remaining Russian comments, formal verification specifications, and documentation across `fstar/`, `docs/`, `examples/`, and `scripts/` to English, establishing uniform technical documentation across the repository while preserving F* proof semantics.
 
 ## [0.2.0] - 2026-10-20
