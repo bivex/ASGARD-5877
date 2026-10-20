@@ -1185,6 +1185,44 @@ func_native_shld_shrd:
     if (ctx.get_reg(vanguard_threaded_vm::REG_R11) != 0xFFFFFFFFFFFFFFFFULL) return 6;
 |})
 
+(* Legacy x87 FPU stack execution, arithmetic, comparisons, and status word in native threaded VM *)
+let test_native_x86_fpu () =
+  let pkg =
+    mk_pkg ~seed:20260946 {|
+func_native_fpu:
+    fld1
+    fld1
+    faddp
+    fldpi
+    fmulp
+    fld1
+    fchs
+    fabs
+    fldz
+    fcomi st, st(1)
+    setb dl
+    fldln2
+    fstsw ax
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_x86_fpu" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    // st(0) should be ln(2) (~0.693147)
+    if (std::fabs(ctx.get_st(0) - 0.6931471805599453) > 1e-6) return 2;
+    // st(1) was fldz (0.0)
+    if (std::fabs(ctx.get_st(1) - 0.0) > 1e-6) return 3;
+    // st(2) was fabs(fchs(fld1)) = 1.0
+    if (std::fabs(ctx.get_st(2) - 1.0) > 1e-6) return 4;
+    // st(3) was (1 + 1) * pi = 2 * pi (~6.283185)
+    if (std::fabs(ctx.get_st(3) - 6.283185307179586) > 1e-5) return 5;
+    // RDX low byte (dl) set by setb (CF=1 because 0.0 < 1.0)
+    if ((ctx.get_reg(vanguard_threaded_vm::REG_RDX) & 0xFF) != 1) return 6;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1210,4 +1248,5 @@ let tests = [
   Alcotest.test_case "native_x86_sha_ni" `Slow test_native_x86_sha_ni;
   Alcotest.test_case "native_x86_pclmul_cet" `Slow test_native_x86_pclmul_cet;
   Alcotest.test_case "native_x86_cpuid" `Slow test_native_x86_cpuid;
+  Alcotest.test_case "native_x86_fpu" `Slow test_native_x86_fpu;
 ]

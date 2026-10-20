@@ -929,6 +929,67 @@ let compile_and_package_multi
                   let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
                   encode_raw_word (get_opcode OP_LOAD_64) (get_reg_idx tmp) base_idx m.disp;
                   encode_raw_word (get_opcode OP_SET_FLAGS_R) 0 (get_reg_idx tmp) 0L
+              | Ir.Fpu f -> (
+                  match f with
+                  | FpPush_st idx ->
+                      encode_raw_word (get_opcode OP_FPU_PUSH_ST) 0 0 (Int64.of_int idx)
+                  | FpPush_mem m ->
+                      let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
+                      let is_32 = if m.width = Register.B32 then 1L else 0L in
+                      encode_raw_word ~extra_bits:is_32 (get_opcode OP_FPU_PUSH_MEM) 0 base_idx m.disp
+                  | FpPush_int m ->
+                      let base_idx = match m.base with Some b -> get_reg_idx b | None -> 0 in
+                      let wcode = match m.width with Register.B16 -> 1L | Register.B32 -> 2L | _ -> 3L in
+                      encode_raw_word ~extra_bits:wcode (get_opcode OP_FPU_PUSH_INT) 0 base_idx m.disp
+                  | FpStore_st { idx; pop } ->
+                      let pop_bit = if pop then 1L else 0L in
+                      encode_raw_word ~extra_bits:pop_bit (get_opcode OP_FPU_STORE_ST) 0 0 (Int64.of_int idx)
+                  | FpStore_mem { addr; pop } ->
+                      let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
+                      let pop_bit = if pop then 4L else 0L in
+                      let w_bit = if addr.width = Register.B32 then 1L else 0L in
+                      encode_raw_word ~extra_bits:(Int64.logor pop_bit w_bit) (get_opcode OP_FPU_STORE_MEM) 0 base_idx addr.disp
+                  | FpStore_int { addr; pop } ->
+                      let base_idx = match addr.base with Some b -> get_reg_idx b | None -> 0 in
+                      let pop_bit = if pop then 4L else 0L in
+                      let wcode = match addr.width with Register.B16 -> 1L | Register.B32 -> 2L | _ -> 3L in
+                      encode_raw_word ~extra_bits:(Int64.logor pop_bit wcode) (get_opcode OP_FPU_STORE_INT) 0 base_idx addr.disp
+                  | FpBinop { op; dst; src; pop } ->
+                      let op_code = match op with FpAdd -> 0L | FpSub -> 1L | FpSubR -> 2L | FpMul -> 3L | FpDiv -> 4L | FpDivR -> 5L in
+                      let pop_bit = if pop then 1L else 0L in
+                      let flags = Int64.logor (Int64.shift_left op_code 1) pop_bit in
+                      encode_raw_word ~extra_bits:flags (get_opcode OP_FPU_BINOP) dst src 0L
+                  | FpBinop_mem { op; src } ->
+                      let base_idx = match src.base with Some b -> get_reg_idx b | None -> 0 in
+                      let op_code = match op with FpAdd -> 0L | FpSub -> 1L | FpSubR -> 2L | FpMul -> 3L | FpDiv -> 4L | FpDivR -> 5L in
+                      let is_32 = if src.width = Register.B32 then 1L else 0L in
+                      let flags = Int64.logor (Int64.shift_left op_code 1) is_32 in
+                      encode_raw_word ~extra_bits:flags (get_opcode OP_FPU_BINOP_MEM) 0 base_idx src.disp
+                  | FpCompare { idx; pop_count } ->
+                      encode_raw_word ~extra_bits:(Int64.of_int pop_count) (get_opcode OP_FPU_COMPARE) 0 0 (Int64.of_int idx)
+                  | FpCompare_i { idx; pop } ->
+                      let pop_bit = if pop then 1L else 0L in
+                      encode_raw_word ~extra_bits:pop_bit (get_opcode OP_FPU_COMPARE_I) 0 0 (Int64.of_int idx)
+                  | FpCompare_mem { src; pop } ->
+                      let base_idx = match src.base with Some b -> get_reg_idx b | None -> 0 in
+                      let pop_bit = if pop then 4L else 0L in
+                      let is_32 = if src.width = Register.B32 then 1L else 0L in
+                      encode_raw_word ~extra_bits:(Int64.logor pop_bit is_32) (get_opcode OP_FPU_COMPARE_MEM) 0 base_idx src.disp
+                  | FpUnary op ->
+                      let op_code = match op with FpChs -> 0L | FpAbs -> 1L | FpSqrt -> 2L in
+                      encode_raw_word (get_opcode OP_FPU_UNARY) 0 0 op_code
+                  | FpConst c ->
+                      let c_code = match c with
+                        | FpLd0 -> 0L | FpLd1 -> 1L | FpLdPi -> 2L | FpLdL2e -> 3L | FpLdL2t -> 4L | FpLdLg2 -> 5L | FpLdLn2 -> 6L
+                      in
+                      encode_raw_word (get_opcode OP_FPU_CONST) 0 0 c_code
+                  | FpTrans t ->
+                      let t_code = match t with
+                        | FpSin -> 0L | FpCos -> 1L | FpSinCos -> 2L | FpTan -> 3L | FpATan -> 4L | FpYl2x -> 5L | FpYl2xp1 -> 6L | Fp2xm1 -> 7L
+                      in
+                      encode_raw_word (get_opcode OP_FPU_TRANS) 0 0 t_code
+                  | FpStatus_to_ax ->
+                      encode_raw_word (get_opcode OP_FPU_STATUS_TO_AX) 0 0 0L)
               | other ->
                   failwith (Printf.sprintf "vm_emitter: unsupported instruction: %s" (Ir.instr_to_string other))))
         ops)

@@ -115,6 +115,10 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field ~init:(var "CANARY_VAL") UInt64 "canary_tail";
     member_field ~init:(u64 0L) UInt64 "decoy_sink";
     member_field (Array (UInt64, 64)) "oblivious_frame";
+    (* x87 FPU circular register stack (8 doubles), top pointer and status word *)
+    member_field (Array (Double, 8)) "fpu_stack";
+    member_field ~init:(i32 0) UInt8 "fpu_top";
+    member_field ~init:(i32 0) UInt16 "fpu_status";
 
     (* Affine Register Mapping Constants & Helper *)
     member_static_constexpr SizeT "REG_AFFINE_A" (i32 affine_a);
@@ -150,6 +154,11 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       (var "decoy_sink" := u64 0L);
       for_range "i" (u64 0L) (u64 64L) [
         (idx (var "oblivious_frame") (var "i") := u64 0L);
+      ];
+      (var "fpu_top" := i32 0);
+      (var "fpu_status" := i32 0);
+      for_range "i" (u64 0L) (u64 8L) [
+        (idx (var "fpu_stack") (var "i") := i32 0);
       ];
     ];
 
@@ -258,6 +267,29 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_method ~attrs:[AlwaysInline; NoExcept] Void "set_gs_base" [(UInt64, "v")] [ expr_stmt (call "set_reg" [var "REG_VX26"; var "v"]) ];
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "get_ssp" [] [ ret (var "ssp") ];
     member_method ~attrs:[AlwaysInline; NoExcept] Void "set_ssp" [(UInt64, "v")] [ var "ssp" := var "v" ];
+
+    (* x87 FPU Register Accessors *)
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true Double "get_st" [(UInt8, "i")] [
+      ret (idx (var "fpu_stack") (((cast SizeT (var "fpu_top") +~ cast SizeT (var "i" &~ i32 7))) &~ i32 7));
+    ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_st" [(UInt8, "i"); (Double, "v")] [
+      (idx (var "fpu_stack") (((cast SizeT (var "fpu_top") +~ cast SizeT (var "i" &~ i32 7))) &~ i32 7) := var "v");
+    ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "fpu_push" [(Double, "v")] [
+      (var "fpu_top" := cast UInt8 ((cast SizeT (var "fpu_top") +~ i32 7) &~ i32 7));
+      (idx (var "fpu_stack") (cast SizeT (var "fpu_top")) := var "v");
+    ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Double "fpu_pop" [] [
+      decl_var Double "val" ~init:(idx (var "fpu_stack") (cast SizeT (var "fpu_top")));
+      (var "fpu_top" := cast UInt8 ((cast SizeT (var "fpu_top") +~ i32 1) &~ i32 7));
+      ret (var "val");
+    ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt16 "get_fsw" [] [
+      ret (cast UInt16 ((var "fpu_status" &~ i32 0xC7FF) |~ (cast UInt16 (var "fpu_top" &~ i32 7) <<~ i32 11)));
+    ];
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_fsw" [(UInt16, "sw")] [
+      (var "fpu_status" := var "sw");
+    ];
 
     (* RNS-4 Residue Arithmetic Engine *)
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_const:true UInt64 "rns_add" [(UInt64, "a"); (UInt64, "b")] [

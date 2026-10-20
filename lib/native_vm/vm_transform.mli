@@ -128,6 +128,21 @@ type raw_op_kind =
   | OP_FCVT
   | OP_VEC_EXT
   | OP_CPUID
+  | OP_FPU_PUSH_ST
+  | OP_FPU_PUSH_MEM
+  | OP_FPU_PUSH_INT
+  | OP_FPU_STORE_ST
+  | OP_FPU_STORE_MEM
+  | OP_FPU_STORE_INT
+  | OP_FPU_BINOP
+  | OP_FPU_BINOP_MEM
+  | OP_FPU_COMPARE
+  | OP_FPU_COMPARE_I
+  | OP_FPU_COMPARE_MEM
+  | OP_FPU_UNARY
+  | OP_FPU_CONST
+  | OP_FPU_TRANS
+  | OP_FPU_STATUS_TO_AX
 
 val all_op_kinds : raw_op_kind list
 val op_kind_to_handler_name : raw_op_kind -> string

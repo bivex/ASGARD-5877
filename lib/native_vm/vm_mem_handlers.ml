@@ -317,6 +317,310 @@ let emit_pclmul_ssp_handlers b =
     }
 |}
 
+(* Legacy x87 FPU Handlers: circular stack, arithmetic, comparisons, transcendentals *)
+let emit_fpu_handlers b =
+  Buffer.add_string b
+    {|
+    H_FPU_PUSH_ST: {
+        const double val = ctx.get_st(static_cast<uint8_t>(imm & 7ULL));
+        ctx.fpu_push(val);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_PUSH_MEM: {
+        const uint64_t addr = ctx.get_reg(src) + static_cast<uint64_t>(imm);
+        const uint64_t mode = (word >> 50) & 0x3FFFULL;
+        double val = 0.0;
+        if (mode & 1ULL) {
+            float f = 0.0f;
+            std::memcpy(&f, reinterpret_cast<const void*>(addr), 4);
+            val = static_cast<double>(f);
+        } else if (mode & 2ULL) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+            long double ld = 0.0L;
+            std::memcpy(&ld, reinterpret_cast<const void*>(addr), 10);
+            val = static_cast<double>(ld);
+#else
+            uint64_t mantissa = 0; uint16_t exp_bits = 0;
+            std::memcpy(&mantissa, reinterpret_cast<const void*>(addr), 8);
+            std::memcpy(&exp_bits, reinterpret_cast<const void*>(addr + 8), 2);
+            const int sign = (exp_bits & 0x8000) ? -1 : 1;
+            const int exp = (exp_bits & 0x7FFF);
+            if (exp == 0 && mantissa == 0) val = 0.0 * sign;
+            else if (exp == 0x7FFF) val = (mantissa & 0x7FFFFFFFFFFFFFFFULL) ? NAN : (sign * INFINITY);
+            else val = sign * std::ldexp(static_cast<double>(mantissa) / 9223372036854775808.0, exp - 16382);
+#endif
+        } else {
+            std::memcpy(&val, reinterpret_cast<const void*>(addr), 8);
+        }
+        ctx.fpu_push(val);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_PUSH_INT: {
+        const uint64_t addr = ctx.get_reg(src) + static_cast<uint64_t>(imm);
+        const uint64_t wcode = (word >> 50) & 0x3FFFULL;
+        double val = 0.0;
+        if (wcode == 1ULL) {
+            int16_t v = 0;
+            std::memcpy(&v, reinterpret_cast<const void*>(addr), 2);
+            val = static_cast<double>(v);
+        } else if (wcode == 2ULL) {
+            int32_t v = 0;
+            std::memcpy(&v, reinterpret_cast<const void*>(addr), 4);
+            val = static_cast<double>(v);
+        } else {
+            int64_t v = 0;
+            std::memcpy(&v, reinterpret_cast<const void*>(addr), 8);
+            val = static_cast<double>(v);
+        }
+        ctx.fpu_push(val);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_STORE_ST: {
+        const double val = ctx.get_st(0);
+        ctx.set_st(static_cast<uint8_t>(imm & 7ULL), val);
+        const uint64_t pop_flag = (word >> 50) & 0x3FFFULL;
+        if (pop_flag & 1ULL) ctx.fpu_pop();
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_STORE_MEM: {
+        const double val = ctx.get_st(0);
+        const uint64_t addr = ctx.get_reg(src) + static_cast<uint64_t>(imm);
+        const uint64_t flags = (word >> 50) & 0x3FFFULL;
+        if (flags & 1ULL) {
+            float f = static_cast<float>(val);
+            std::memcpy(reinterpret_cast<void*>(addr), &f, 4);
+        } else if (flags & 2ULL) {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+            long double ld = static_cast<long double>(val);
+            std::memcpy(reinterpret_cast<void*>(addr), &ld, 10);
+#else
+            double d = val;
+            std::memcpy(reinterpret_cast<void*>(addr), &d, 8);
+            uint16_t pad = 0;
+            std::memcpy(reinterpret_cast<void*>(addr + 8), &pad, 2);
+#endif
+        } else {
+            std::memcpy(reinterpret_cast<void*>(addr), &val, 8);
+        }
+        if (flags & 4ULL) ctx.fpu_pop();
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_STORE_INT: {
+        const double val = ctx.get_st(0);
+        const uint64_t addr = ctx.get_reg(src) + static_cast<uint64_t>(imm);
+        const uint64_t flags = (word >> 50) & 0x3FFFULL;
+        const int64_t ival = static_cast<int64_t>(std::nearbyint(val));
+        const uint64_t wcode = flags & 3ULL;
+        if (wcode == 1ULL) {
+            int16_t v = static_cast<int16_t>(ival);
+            std::memcpy(reinterpret_cast<void*>(addr), &v, 2);
+        } else if (wcode == 2ULL) {
+            int32_t v = static_cast<int32_t>(ival);
+            std::memcpy(reinterpret_cast<void*>(addr), &v, 4);
+        } else {
+            std::memcpy(reinterpret_cast<void*>(addr), &ival, 8);
+        }
+        if (flags & 4ULL) ctx.fpu_pop();
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_BINOP: {
+        const double a = ctx.get_st(static_cast<uint8_t>(dst));
+        const double b = ctx.get_st(static_cast<uint8_t>(src));
+        const uint64_t flags = (word >> 50) & 0x3FFFULL;
+        const uint64_t fop = (flags >> 1) & 7ULL;
+        double res = 0.0;
+        switch (fop) {
+            case 0: res = a + b; break;
+            case 1: res = a - b; break;
+            case 2: res = b - a; break;
+            case 3: res = a * b; break;
+            case 4: res = (b == 0.0) ? 0.0 : (a / b); break;
+            case 5: res = (a == 0.0) ? 0.0 : (b / a); break;
+            default: res = a + b; break;
+        }
+        ctx.set_st(static_cast<uint8_t>(dst), res);
+        if (flags & 1ULL) ctx.fpu_pop();
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_BINOP_MEM: {
+        const uint64_t addr = ctx.get_reg(src) + static_cast<uint64_t>(imm);
+        const uint64_t flags = (word >> 50) & 0x3FFFULL;
+        const uint64_t fop = (flags >> 1) & 7ULL;
+        double b = 0.0;
+        if (flags & 1ULL) {
+            float f = 0.0f;
+            std::memcpy(&f, reinterpret_cast<const void*>(addr), 4);
+            b = static_cast<double>(f);
+        } else {
+            std::memcpy(&b, reinterpret_cast<const void*>(addr), 8);
+        }
+        const double a = ctx.get_st(0);
+        double res = 0.0;
+        switch (fop) {
+            case 0: res = a + b; break;
+            case 1: res = a - b; break;
+            case 2: res = b - a; break;
+            case 3: res = a * b; break;
+            case 4: res = (b == 0.0) ? 0.0 : (a / b); break;
+            case 5: res = (a == 0.0) ? 0.0 : (b / a); break;
+            default: res = a + b; break;
+        }
+        ctx.set_st(0, res);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_COMPARE: {
+        const double a = ctx.get_st(0);
+        const double b = ctx.get_st(static_cast<uint8_t>(imm & 7ULL));
+        uint16_t sw = ctx.get_fsw() & ~0x4500;
+        if (std::isnan(a) || std::isnan(b)) {
+            sw |= 0x4500;
+        } else if (a < b) {
+            sw |= 0x0100;
+        } else if (a == b) {
+            sw |= 0x4000;
+        }
+        ctx.set_fsw(sw);
+        const uint64_t pop_count = (word >> 50) & 0x3FFFULL;
+        for (uint64_t p = 0; p < pop_count; ++p) ctx.fpu_pop();
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_COMPARE_I: {
+        const double a = ctx.get_st(0);
+        const double b = ctx.get_st(static_cast<uint8_t>(imm & 7ULL));
+        ctx.of = false; ctx.sf = false;
+        if (std::isnan(a) || std::isnan(b)) {
+            ctx.zf = true; ctx.pf = true; ctx.cf = true;
+        } else if (a < b) {
+            ctx.zf = false; ctx.pf = false; ctx.cf = true;
+        } else if (a == b) {
+            ctx.zf = true; ctx.pf = false; ctx.cf = false;
+        } else {
+            ctx.zf = false; ctx.pf = false; ctx.cf = false;
+        }
+        const uint64_t pop_flag = (word >> 50) & 0x3FFFULL;
+        if (pop_flag & 1ULL) ctx.fpu_pop();
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_COMPARE_MEM: {
+        const uint64_t addr = ctx.get_reg(src) + static_cast<uint64_t>(imm);
+        const uint64_t flags = (word >> 50) & 0x3FFFULL;
+        double b = 0.0;
+        if (flags & 1ULL) {
+            float f = 0.0f;
+            std::memcpy(&f, reinterpret_cast<const void*>(addr), 4);
+            b = static_cast<double>(f);
+        } else {
+            std::memcpy(&b, reinterpret_cast<const void*>(addr), 8);
+        }
+        const double a = ctx.get_st(0);
+        uint16_t sw = ctx.get_fsw() & ~0x4500;
+        if (std::isnan(a) || std::isnan(b)) {
+            sw |= 0x4500;
+        } else if (a < b) {
+            sw |= 0x0100;
+        } else if (a == b) {
+            sw |= 0x4000;
+        }
+        ctx.set_fsw(sw);
+        if (flags & 4ULL) ctx.fpu_pop();
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_UNARY: {
+        const double a = ctx.get_st(0);
+        double res = a;
+        switch (imm & 3ULL) {
+            case 0: res = -a; break;
+            case 1: res = std::fabs(a); break;
+            case 2: res = std::sqrt(a); break;
+            default: break;
+        }
+        ctx.set_st(0, res);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_CONST: {
+        double c = 0.0;
+        switch (imm & 7ULL) {
+            case 0: c = 0.0; break;
+            case 1: c = 1.0; break;
+            case 2: c = 3.14159265358979323846; break;
+            case 3: c = 1.44269504088896340736; break;
+            case 4: c = 3.32192809488736234787; break;
+            case 5: c = 0.30102999566398119521; break;
+            case 6: c = 0.693147180559945309417; break;
+            default: c = 0.0; break;
+        }
+        ctx.fpu_push(c);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_TRANS: {
+        switch (imm & 7ULL) {
+            case 0:
+                ctx.set_st(0, std::sin(ctx.get_st(0)));
+                break;
+            case 1:
+                ctx.set_st(0, std::cos(ctx.get_st(0)));
+                break;
+            case 2: {
+                const double v = ctx.get_st(0);
+                ctx.set_st(0, std::sin(v));
+                ctx.fpu_push(std::cos(v));
+                break;
+            }
+            case 3:
+                ctx.set_st(0, std::tan(ctx.get_st(0)));
+                ctx.fpu_push(1.0);
+                break;
+            case 4: {
+                const double y = ctx.get_st(1);
+                const double x = ctx.get_st(0);
+                ctx.fpu_pop();
+                ctx.set_st(0, std::atan2(y, x));
+                break;
+            }
+            case 5: {
+                const double y = ctx.get_st(1);
+                const double x = ctx.get_st(0);
+                ctx.fpu_pop();
+                ctx.set_st(0, y * std::log2(x));
+                break;
+            }
+            case 6: {
+                const double y = ctx.get_st(1);
+                const double x = ctx.get_st(0);
+                ctx.fpu_pop();
+                ctx.set_st(0, y * std::log2(x + 1.0));
+                break;
+            }
+            case 7:
+                ctx.set_st(0, std::pow(2.0, ctx.get_st(0)) - 1.0);
+                break;
+            default: break;
+        }
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+    H_FPU_STATUS_TO_AX: {
+        const uint16_t fsw = ctx.get_fsw();
+        const uint64_t cur_rax = ctx.get_reg(REG_RAX);
+        ctx.set_reg(REG_RAX, (cur_rax & ~0xFFFFULL) | static_cast<uint64_t>(fsw));
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+|}
+
 let emit_simd_handlers ?rng b =
   let pick_variant n =
     match rng with
@@ -790,6 +1094,7 @@ let emit_simd_handlers ?rng b =
   emit_handler_ast b "H_VEC_BINOP" (vec_binop_stmts @ [ inc_instrs; fetch_next ]);
   emit_sha_handler b;
   emit_pclmul_ssp_handlers b;
+  emit_fpu_handlers b;
 
   let vec_imm_stmts = [
     let_u64 "imm_val" (var "imm" &~ u64 0xFFL);

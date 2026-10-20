@@ -466,8 +466,8 @@ def audit_instructions_in_codebase(mnemonics: list[str]):
             l_pat = rf'"{m_lower}"'
             ir_pat = r"(fpu|fp_)"
             ev_pat = r"(fpu|fp_)"
-            nat_pat = r"(st\b|vm_transform)"
-            t_pat = r"(fpu|test_x86_lifter)"
+            nat_pat = r"(h_fpu_|fpu_stack|op_fpu_)"
+            t_pat = r"(native_x86_fpu|test_x86_lifter|lift_and_eval_fpu)"
         else:
             l_pat = rf'("{m_lower}"|\b{m_lower}\b)'
             ir_pat = rf"\b{m_lower}\b"
