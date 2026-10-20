@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# backup.sh — Создание архива исходного кода в папку backup (.tar.gz / .zip)
+# backup.sh — Archive source tree into backup directory (.tar.gz / .zip)
 #
 
 set -euo pipefail
 
-# Определение директории проекта (директория на уровень выше scripts/ или текущая папка)
+# Determine project directory (parent of scripts/ or current folder)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/dune-project" || -d "$SCRIPT_DIR/.git" ]]; then
     PROJECT_ROOT="$SCRIPT_DIR"
@@ -18,29 +18,29 @@ fi
 PROJECT_NAME="$(basename "$PROJECT_ROOT")"
 TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 
-# Формат по умолчанию: tar (или из переменной окружения BACKUP_FORMAT)
+# Default format: tar (or from BACKUP_FORMAT environment variable)
 FORMAT="${BACKUP_FORMAT:-tar}"
 BACKUP_DIR=""
 
 show_help() {
     cat <<EOF
-Использование: $0 [ОПЦИИ] [ПАПКА_НАЗНАЧЕНИЯ]
+Usage: $0 [OPTIONS] [DESTINATION_DIR]
 
-Опции:
-  -z, --zip       Создать ZIP-архив (.zip, без сжатия: zip -0)
-  -t, --tar       Создать TAR.GZ-архив (.tar.gz) [по умолчанию]
-  -b, --both      Создать оба архива (.tar.gz и .zip)
-  -h, --help      Показать эту справку
+Options:
+  -z, --zip       Create ZIP archive (.zip, uncompressed: zip -0)
+  -t, --tar       Create TAR.GZ archive (.tar.gz) [default]
+  -b, --both      Create both archives (.tar.gz and .zip)
+  -h, --help      Display this help message
 
-Примеры:
-  $0                  # Создает .tar.gz в ./backup
-  $0 --zip            # Создает .zip в ./backup
-  $0 --both           # Создает и .tar.gz, и .zip
-  $0 --zip /tmp/pack  # Создает .zip в указанной папке
+Examples:
+  $0                  # Creates .tar.gz in ./backup
+  $0 --zip            # Creates .zip in ./backup
+  $0 --both           # Creates both .tar.gz and .zip
+  $0 --zip /tmp/pack  # Creates .zip in target directory
 EOF
 }
 
-# Разбор аргументов командной строки
+# Parse command-line arguments
 for arg in "$@"; do
     case "$arg" in
         -z|--zip|zip)
@@ -60,7 +60,7 @@ for arg in "$@"; do
             if [[ -z "$BACKUP_DIR" ]]; then
                 BACKUP_DIR="$arg"
             else
-                echo "Ошибка: неизвестный аргумент '$arg'" >&2
+                echo "Error: unrecognized argument '$arg'" >&2
                 show_help
                 exit 1
             fi
@@ -115,7 +115,7 @@ create_tar() {
     local archive_name="${PROJECT_NAME}_backup_${TIMESTAMP}.tar.gz"
     local archive_path="${BACKUP_DIR}/${archive_name}"
 
-    echo "==> Упаковка TAR.GZ архива: $archive_name"
+    echo "==> Packaging TAR.GZ archive: $archive_name"
     if [[ "$IS_GIT" -eq 1 ]]; then
         git ls-files --cached --others --exclude-standard | tar -czf "$archive_path" -T -
     else
@@ -127,24 +127,24 @@ create_tar() {
     local count
     count="$(tar -tzf "$archive_path" | wc -l | tr -d ' ')"
 
-    echo "    ✓ Создан: $archive_path"
-    echo "    Размер:   $size"
-    echo "    Файлов:   $count"
+    echo "    Created: $archive_path"
+    echo "    Size:    $size"
+    echo "    Files:   $count"
 }
 
 create_zip() {
     if ! command -v zip >/dev/null 2>&1; then
-        echo "Ошибка: утилита zip не найдена в системе" >&2
+        echo "Error: zip utility not found" >&2
         return 1
     fi
 
     local archive_name="${PROJECT_NAME}_backup_${TIMESTAMP}.zip"
     local archive_path="${BACKUP_DIR}/${archive_name}"
 
-    # Удаляем существующий архив с тем же именем, если есть
+    # Remove existing archive with the same name if present
     rm -f "$archive_path"
 
-    echo "==> Упаковка ZIP архива (без сжатия, -0): $archive_name"
+    echo "==> Packaging ZIP archive (uncompressed, -0): $archive_name"
     if [[ "$IS_GIT" -eq 1 ]]; then
         git ls-files --cached --others --exclude-standard | zip -0 -q "$archive_path" -@
     else
@@ -156,19 +156,19 @@ create_zip() {
     local count
     count="$(unzip -l "$archive_path" | tail -n 1 | awk '{print $(NF-1)}')"
 
-    echo "    ✓ Создан: $archive_path"
-    echo "    Размер:   $size"
-    echo "    Файлов:   $count"
+    echo "    Created: $archive_path"
+    echo "    Size:    $size"
+    echo "    Files:   $count"
 }
 
 echo "========================================"
-echo " Резервное копирование исходников"
-echo " Проект: $PROJECT_ROOT"
-echo " Папка:  $BACKUP_DIR"
+echo " Source Code Backup"
+echo " Project: $PROJECT_ROOT"
+echo " Target:  $BACKUP_DIR"
 if [[ "$IS_GIT" -eq 1 ]]; then
-    echo " Режим:  Git (отслеживаемые + новые файлы, исключая .gitignore)"
+    echo " Mode:    Git (tracked + untracked files, respecting .gitignore)"
 else
-    echo " Режим:  Tar/Zip (исключая временные каталоги и сборку)"
+    echo " Mode:    Tar/Zip (excluding temporary and build directories)"
 fi
 echo "========================================"
 
@@ -185,10 +185,10 @@ case "$FORMAT" in
         create_zip
         ;;
     *)
-        echo "Ошибка: неизвестный формат архива '$FORMAT'" >&2
+        echo "Error: unrecognized archive format '$FORMAT'" >&2
         exit 1
         ;;
 esac
 
 echo "========================================"
-echo "Готово!"
+echo "Done!"
