@@ -1100,6 +1100,65 @@ func_tzcnt_bit:
   Alcotest.(check bool) "tzcnt of 1<<32 clears ZF" false (zf s);
   Alcotest.(check bool) "tzcnt of 1<<32 clears CF" false (cf s)
 
+(* The sign-extension family: CBW and CWDE extend the low part of RAX, and
+   CWD, CDQ and CQO build the high half of the dividend in RDX.  The expected
+   values are the ones the hardware produces; the same programs were
+   assembled and executed on an x86-64 machine. *)
+let test_x86_lift_sign_extension_family () =
+  let run asm =
+    match Lifter.lift_function asm with
+    | Error e -> Alcotest.fail e
+    | Ok func ->
+        let state = make_state () in
+        (match run_func state func with
+        | Error e -> Alcotest.fail e
+        | Ok () -> state)
+  in
+  let s = run {|
+func_cbw:
+    mov rax, 0x12345678000000FF
+    cbw
+    ret
+|} in
+  Alcotest.(check int64) "cbw sign-extends AL into AX" 0x123456780000FFFFL (get_reg s Register.rax);
+  let s = run {|
+func_cwde:
+    mov rax, 0x123456780000FFFF
+    cwde
+    ret
+|} in
+  Alcotest.(check int64) "cwde sign-extends AX into EAX" 0xFFFFFFFFL (get_reg s Register.rax);
+  let s = run {|
+func_cwtl:
+    mov rax, 0x123456780000FFFF
+    cwtl
+    ret
+|} in
+  Alcotest.(check int64) "cwtl is the AT&T spelling of cwde" 0xFFFFFFFFL (get_reg s Register.rax);
+  let s = run {|
+func_cdqe:
+    mov rax, 0x12345678FFFFFFFF
+    cdqe
+    ret
+|} in
+  Alcotest.(check int64) "cdqe sign-extends EAX into RAX" (-1L) (get_reg s Register.rax);
+  let s = run {|
+func_cqto:
+    mov rax, 0x123456789ABCDEF0
+    cqto
+    mov rbx, rdx
+    ret
+|} in
+  Alcotest.(check int64) "cqto sign-extends RAX into RDX" 0L (get_reg s Register.rbx);
+  let s = run {|
+func_cwtd:
+    mov rax, 0x1234567800000005
+    cwtd
+    mov rbx, rdx
+    ret
+|} in
+  Alcotest.(check int64) "cwtd is the AT&T spelling of cdq" 0L (get_reg s Register.rbx)
+
 let test_x86_lift_adc_sbb () =
   let asm = {|
 func_adc_sbb:
@@ -1909,6 +1968,7 @@ let tests = [
   Alcotest.test_case "lift_sse_avx" `Quick test_lift_sse_avx;
   Alcotest.test_case "lift_orps_orpd" `Quick test_x86_lift_orps_orpd;
   Alcotest.test_case "lift_bit_scan_family" `Quick test_x86_lift_bit_scan_family;
+  Alcotest.test_case "lift_sign_extension_family" `Quick test_x86_lift_sign_extension_family;
   Alcotest.test_case "lift_vorps_vorpd" `Quick test_x86_lift_vorps_vorpd;
   Alcotest.test_case "lift_x86_bitmanip" `Quick test_x86_bitmanip;
   Alcotest.test_case "lift_x86_fp_scalar" `Quick test_x86_fp_scalar;

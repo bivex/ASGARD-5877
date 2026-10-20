@@ -1990,11 +1990,29 @@ let lift_instr ?const_pool raw_mnem ops =
       | OpReg r -> Ok [ Ir.Cmov { cond; dst = r; src = ir_src } ]
       | _ -> Error "CMOV destination must be a register")
   | ("div" | "idiv"), [ divisor ] -> lift_x86_div ~signed:(mnem = "idiv") divisor
-  | ("cdq" | "cltd"), [] ->
+  | ("cdq" | "cltd" | "cwtd"), [] ->
       Ok
         [ Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };
           Ir.Alu { op = Ir.Shl; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 32L; set_flags = false };
           Ir.Alu { op = Ir.Sar; dst = Register.rdx; src1 = Ir.Reg Register.rdx; src2 = Ir.Imm 63L; set_flags = false } ]
+  | ("cbw" | "cbtw"), [] ->
+      (* CBW: AX becomes the sign-extended AL.  A 16-bit write keeps the
+         upper half of RAX. *)
+      Ok
+        [ Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 0xFFL; set_flags = false };
+          Ir.Alu { op = Ir.Shl; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 56L; set_flags = false };
+          Ir.Alu { op = Ir.Sar; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 56L; set_flags = false };
+          Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0xFFFFL; set_flags = false };
+          Ir.Alu { op = Ir.And; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 0xFFFFFFFFFFFF0000L; set_flags = false };
+          Ir.Alu { op = Ir.Or; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Reg Register.vtmp0; set_flags = false } ]
+  | ("cwde" | "cwtl"), [] ->
+      (* CWDE: EAX becomes the sign-extended AX.  A 32-bit write zeroes the
+         upper half of RAX. *)
+      Ok
+        [ Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 0xFFFFL; set_flags = false };
+          Ir.Alu { op = Ir.Shl; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 48L; set_flags = false };
+          Ir.Alu { op = Ir.Sar; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 48L; set_flags = false };
+          Ir.Alu { op = Ir.And; dst = Register.rax; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0xFFFFFFFFL; set_flags = false } ]
   | ("cqo" | "cqto"), [] ->
       Ok
         [ Ir.Mov { dst = Ir.Reg Register.rdx; src = Ir.Reg Register.rax };

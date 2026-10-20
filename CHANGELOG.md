@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 
+- Add the missing x86 sign-extension forms to the lifter: `cbw` (AX becomes the sign-extended AL, the upper half of RAX is kept) and `cwde` (EAX becomes the sign-extended AX, the upper half of RAX is zeroed), plus the AT&T spellings `cbtw`, `cwtl` and `cwtd`. `cqo` and `cqto` were already supported; the whole family is now pinned by a test against the values an x86-64 machine produces.
 - Add x86 BMI1 `BLSR` (reset lowest set bit) to the lifter: the result is `(SRC - 1) & SRC`, so the lowest set bit of the source is cleared, ZF and SF come from the result, CF is set when the source is zero and OF is cleared. The `blsr`, `blsrq` and `blsrl` spellings are accepted.
 - Add x86 lifter tests for the bitwise packed OR instructions: `orps` / `orpd` in their legacy SSE form (two operands, the destination is both operands, only the low 128 bits are written and the upper half of the destination survives) and `vorps` / `vorpd` in their VEX form (three operands, 256-bit destination, and a 128-bit destination whose upper half is zeroed). The expected values are the OR of the raw element patterns, so the tests pin the bitwise semantics instead of a numeric operation on the floats (`test/test_x86_lifter.ml`).
 - Add the ARM64 `CSETM` conditional set mask to the lifter (`lib/arm64_lifter/arm64_alu.ml`). `CSETM` is the `CSINV` alias over the zero register with an inverted condition, so the destination holds the mask of the condition: all bits set when the condition holds.
