@@ -717,6 +717,121 @@ vector_ops:
           Alcotest.(check int64) "AVX vaddps lane2" (fbits 33.0) (Int64.logand ymm3.(1) 0xFFFFFFFFL);
           Alcotest.(check int64) "AVX vaddps lane3" (fbits 44.0) (Int64.logand (Int64.shift_right_logical ymm3.(1) 32) 0xFFFFFFFFL))
 
+(* ORPS / ORPD are bitwise operations on the raw element patterns: the result
+   is the OR of the operands, never a numeric operation on the floats.  The
+   legacy SSE form has two operands (dst = dst | src) and writes only the low
+   128 bits, so the upper half of the destination survives; the VEX form has
+   three operands and zeroes the upper half of a 128-bit destination. *)
+let test_x86_lift_orps_orpd () =
+  let asm = {|
+func_orps_orpd:
+    orps xmm0, xmm1
+    orpd xmm2, xmm3
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      Hashtbl.replace state.vectors 0
+        [| 0x0F0F0F0F0F0F0F0FL;
+           0x1234567890ABCDEFL;
+           0xAAAAAAAAAAAAAAAAL;
+           0xBBBBBBBBBBBBBBBBL;
+           0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1
+        [| 0xF0F0F0F0F0F0F0F0L;
+           0x0F0F0F0F0F0F0F0FL;
+           0x5555555555555555L;
+           0L; 0L; 0L; 0L; 0L |];
+      (* ORPD over double bit patterns: 1.0, -2.0 and a raw pattern *)
+      Hashtbl.replace state.vectors 2
+        [| 0x3FF0000000000000L;
+           0xC000000000000000L;
+           0xAAAAAAAAAAAAAAAAL;
+           0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 3
+        [| 0x3FE0000000000000L;
+           0x00000000000000FFL;
+           0x5555555555555555L;
+           0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let xmm0 = Hashtbl.find state.vectors 0 in
+          let xmm2 = Hashtbl.find state.vectors 2 in
+          Alcotest.(check int64) "orps lane 0" 0xFFFFFFFFFFFFFFFFL xmm0.(0);
+          Alcotest.(check int64) "orps lane 1" 0x1F3F5F7F9FAFCFEFL xmm0.(1);
+          Alcotest.(check int64) "orps keeps the upper 128 bits" 0xAAAAAAAAAAAAAAAAL xmm0.(2);
+          Alcotest.(check int64) "orps keeps the upper 128 bits" 0xBBBBBBBBBBBBBBBBL xmm0.(3);
+          Alcotest.(check int64) "orpd lane 0" 0x3FF0000000000000L xmm2.(0);
+          Alcotest.(check int64) "orpd lane 1" 0xC0000000000000FFL xmm2.(1);
+          Alcotest.(check int64) "orpd keeps the upper 128 bits" 0xAAAAAAAAAAAAAAAAL xmm2.(2))
+
+let test_x86_lift_vorps_vorpd () =
+  let asm = {|
+func_vor:
+    vorps ymm0, ymm1, ymm2
+    vorpd ymm3, ymm4, ymm5
+    vorps xmm6, xmm7, xmm8
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      Hashtbl.replace state.vectors 1
+        [| 0x0F0F0F0F0F0F0F0FL;
+           0x1111111111111111L;
+           0x2222222222222222L;
+           0x3333333333333333L;
+           0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2
+        [| 0xF0F0F0F0F0F0F0F0L;
+           0x0F0F0F0F0F0F0F0FL;
+           0x00000000000000FFL;
+           0x000000000000FF00L;
+           0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 4
+        [| 0x3FF0000000000000L;
+           0xC000000000000000L;
+           0x0F0F0F0F0F0F0F0FL;
+           0x7777777777777777L;
+           0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5
+        [| 0x3FE0000000000000L;
+           0x00000000000000FFL;
+           0xF0F0F0F0F0F0F0F0L;
+           0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7
+        [| 0x0F0F0F0F0F0F0F0FL;
+           0x1234567890ABCDEFL;
+           0xCCCCCCCCCCCCCCCCL;
+           0xDDDDDDDDDDDDDDDDL;
+           0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 8
+        [| 0xF0F0F0F0F0F0F0F0L;
+           0x0F0F0F0F0F0F0F0FL;
+           0L; 0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let ymm0 = Hashtbl.find state.vectors 0 in
+          let ymm3 = Hashtbl.find state.vectors 3 in
+          let xmm6 = Hashtbl.find state.vectors 6 in
+          Alcotest.(check int64) "vorps chunk 0" 0xFFFFFFFFFFFFFFFFL ymm0.(0);
+          Alcotest.(check int64) "vorps chunk 1" 0x1F1F1F1F1F1F1F1FL ymm0.(1);
+          Alcotest.(check int64) "vorps chunk 2" 0x22222222222222FFL ymm0.(2);
+          Alcotest.(check int64) "vorps chunk 3" 0x333333333333FF33L ymm0.(3);
+          Alcotest.(check int64) "vorpd chunk 0" 0x3FF0000000000000L ymm3.(0);
+          Alcotest.(check int64) "vorpd chunk 1" 0xC0000000000000FFL ymm3.(1);
+          Alcotest.(check int64) "vorpd chunk 2" 0xFFFFFFFFFFFFFFFFL ymm3.(2);
+          Alcotest.(check int64) "vorpd chunk 3" 0x7777777777777777L ymm3.(3);
+          Alcotest.(check int64) "vex-128 vorps lane 0" 0xFFFFFFFFFFFFFFFFL xmm6.(0);
+          Alcotest.(check int64) "vex-128 vorps lane 1" 0x1F3F5F7F9FAFCFEFL xmm6.(1);
+          Alcotest.(check int64) "vex-128 vorps zeroes the upper half" 0L xmm6.(2);
+          Alcotest.(check int64) "vex-128 vorps zeroes the upper half" 0L xmm6.(3))
+
 let test_x86_bitmanip () =
   let asm = {|
 func_bitmanip:
@@ -1674,6 +1789,8 @@ let tests = [
   Alcotest.test_case "division_by_zero_fault" `Quick test_division_by_zero_fault;
   Alcotest.test_case "b8_b16_merge_semantics" `Quick test_b8_b16_merge_semantics;
   Alcotest.test_case "lift_sse_avx" `Quick test_lift_sse_avx;
+  Alcotest.test_case "lift_orps_orpd" `Quick test_x86_lift_orps_orpd;
+  Alcotest.test_case "lift_vorps_vorpd" `Quick test_x86_lift_vorps_vorpd;
   Alcotest.test_case "lift_x86_bitmanip" `Quick test_x86_bitmanip;
   Alcotest.test_case "lift_x86_fp_scalar" `Quick test_x86_fp_scalar;
   Alcotest.test_case "lift_x86_bmi" `Quick test_x86_lift_bmi;
