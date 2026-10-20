@@ -1074,6 +1074,73 @@ let lift_shuf ?const_pool mnem ops =
         | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
     | _ -> Error (Printf.sprintf "invalid operand count for %s" mnem)
 
+let vec_conv_op_of_mnemonic = function
+  | "cvtps2pd" | "vcvtps2pd" -> Some Ir.Vcvtps2pd
+  | "cvtpd2ps" | "vcvtpd2ps" -> Some Ir.Vcvtpd2ps
+  | "cvtdq2ps" | "vcvtdq2ps" -> Some Ir.Vcvtdq2ps
+  | "cvtps2dq" | "vcvtps2dq" -> Some Ir.Vcvtps2dq
+  | "cvttps2dq" | "vcvttps2dq" -> Some Ir.Vcvttps2dq
+  | "cvtdq2pd" | "vcvtdq2pd" -> Some Ir.Vcvtdq2pd
+  | "cvtpd2dq" | "vcvtpd2dq" -> Some Ir.Vcvtpd2dq
+  | "cvttpd2dq" | "vcvttpd2dq" -> Some Ir.Vcvttpd2dq
+  | _ -> None
+
+let lift_packed_conv ?const_pool mnem dst src =
+  let ops = [ dst; src ] in
+  if List.exists is_zmm_operand ops then
+    Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+  else
+    match vec_conv_op_of_mnemonic mnem with
+    | None -> Error (Printf.sprintf "unknown packed conversion mnemonic %s" mnem)
+    | Some op ->
+        let bits = determine_vec_bits mnem ops in
+        let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+        let get_index = function
+          | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+          | _ -> None
+        in
+        match get_index dst with
+        | None -> Error (Printf.sprintf "%s requires a vector register destination" mnem)
+        | Some di ->
+            let load_bits =
+              match op with
+              | Ir.Vcvtps2pd | Ir.Vcvtdq2pd -> if bits = 256 then 128 else 64
+              | _ -> bits
+            in
+            let preload, si =
+              match src with
+              | X86_parser.OpMem m -> (
+                  match m.X86_parser.symbol, const_pool with
+                  | Some sym, Some cp when Hashtbl.mem cp sym ->
+                      let b = Hashtbl.find cp sym in
+                      let lane0, lane1 = read_const_vec128 b m.disp in
+                      let prep =
+                        if lane0 = lane1 then
+                          let tmp_gpr = Register.vtmp0 in
+                          [
+                            Ir.Mov { dst = Ir.Reg tmp_gpr; src = Ir.Imm lane0 };
+                            Ir.Vec_splat { dst = 31; src = tmp_gpr; bits = load_bits; lane_bits = 64 };
+                          ]
+                        else
+                          [
+                            Ir.Mov { dst = Ir.Reg (Register.Fpr (31, Register.B64)); src = Ir.Imm lane0 };
+                            Ir.Mov { dst = Ir.Reg (Register.Fpr (30, Register.B64)); src = Ir.Imm lane1 };
+                            Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = 31; src1 = 31; src2 = 30; bits = 128; lane_bits = 64 };
+                          ]
+                      in
+                      (prep, 31)
+                  | _ ->
+                      let mem_ref = ir_mem_of_raw m in
+                      ([ Ir.Vec_load { dst = 31; addr = mem_ref; bits = load_bits } ], 31))
+              | _ -> (
+                  match get_index src with
+                  | Some s -> ([], s)
+                  | None -> ([], 0))
+            in
+            let instr = Ir.Vec_conv { op; dst = di; src = si; bits } in
+            let extra = if is_vex && bits = 128 then [ Ir.Vec_clear_upper di ] else [] in
+            Ok (preload @ [ instr ] @ extra)
+
 let lift_vector_binop ?const_pool mnem ops =
   if List.exists is_zmm_operand ops then
     Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
@@ -1445,6 +1512,18 @@ let lift_instr ?const_pool raw_mnem ops =
             in
             Ok [ Ir.Pmovmskb { dst = gpr; src = si; bits; lane_bits } ]
         | _ -> Error (mnem ^ " requires GPR destination and vector source"))
+  | ("ptest" | "vptest"), [ dst; src ] -> (
+      if is_zmm_operand dst || is_zmm_operand src then
+        Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+      else
+        match dst, src, vector_reg_index dst, vector_reg_index src with
+        | X86_parser.OpReg _, X86_parser.OpReg _, Some s1, Some s2 ->
+            (* Intel SDM: PTEST/VPTEST set ZF when (SRC1 AND SRC2) is zero and
+               CF when (SRC2 ANDNOT SRC1) is zero; no register is written, so
+               the VEX-128 form needs no upper-half zeroing. *)
+            let bits = determine_vec_bits mnem [ dst; src ] in
+            Ok [ Ir.Ptest { src1 = s1; src2 = s2; bits } ]
+        | _ -> Error "ptest requires two vector registers")
   | mnem, [ dst; src ] when vector_move_mnemonic mnem -> lift_vector_move ?const_pool mnem dst src
   | mnem, ops when is_scalar_fp_move mnem ops -> lift_scalar_fp_move ?const_pool mnem ops
   | mnem, ops when (match scalar_fp_arith_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
@@ -1462,6 +1541,8 @@ let lift_instr ?const_pool raw_mnem ops =
   | ("rdsspd" | "rdsspq" | "incsspd" | "incsspq"), _ -> lift_shadow_stack mnem ops
   | ("shufps" | "vshufps" | "shufpd" | "vshufpd"), _ ->
       lift_shuf ?const_pool mnem ops
+  | mnem, [ dst; src ] when (match vec_conv_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
+      lift_packed_conv ?const_pool mnem dst src
 
 
   | mnem, ops

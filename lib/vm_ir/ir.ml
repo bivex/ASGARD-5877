@@ -56,6 +56,15 @@ type target =
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
 type fp_conv = Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
+type vec_conv_op =
+  | Vcvtps2pd
+  | Vcvtpd2ps
+  | Vcvtdq2ps
+  | Vcvtps2dq
+  | Vcvttps2dq
+  | Vcvtdq2pd
+  | Vcvtpd2dq
+  | Vcvttpd2dq
 type vec_op =
   | Vadd
   | Vsub
@@ -201,6 +210,8 @@ type instr =
   | Vec_pclmul of { dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Vec_aes of { op : aes_op; dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Vec_shuf2 of { dst : int; src1 : int; src2 : int; imm : int64; bits : int; lane_bits : int }
+  | Vec_conv of { op : vec_conv_op; dst : int; src : int; bits : int }
+  | Ptest of { src1 : int; src2 : int; bits : int }
   | Read_ssp of { dst : Register.t }
   | Inc_ssp of { width : width }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
@@ -380,6 +391,15 @@ let instr_to_string = function
       Printf.sprintf "vec_%s.%d v%d, v%d, v%d, 0x%LX" op_s bits dst src1 src2 imm
   | Vec_shuf2 { dst; src1; src2; imm; bits; lane_bits } ->
       Printf.sprintf "vec_shuf2.%d.%d v%d, v%d, v%d, 0x%LX" bits lane_bits dst src1 src2 imm
+  | Ptest { src1; src2; bits } ->
+      Printf.sprintf "ptest.%d v%d, v%d" bits src1 src2
+  | Vec_conv { op; dst; src; bits } ->
+      let op_s = match op with
+        | Vcvtps2pd -> "cvtps2pd" | Vcvtpd2ps -> "cvtpd2ps"
+        | Vcvtdq2ps -> "cvtdq2ps" | Vcvtps2dq -> "cvtps2dq" | Vcvttps2dq -> "cvttps2dq"
+        | Vcvtdq2pd -> "cvtdq2pd" | Vcvtpd2dq -> "cvtpd2dq" | Vcvttpd2dq -> "cvttpd2dq"
+      in
+      Printf.sprintf "vec_%s.%d v%d, v%d" op_s bits dst src
   | Read_ssp { dst } -> Printf.sprintf "read_ssp %s" (Register.to_string dst)
   | Inc_ssp { width } -> Printf.sprintf "inc_ssp %d" (Register.width_to_bits width)
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->

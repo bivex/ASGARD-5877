@@ -56,6 +56,15 @@ type target =
 
 type fp_binop = Fadd | Fsub | Fmul | Fdiv | Fsqrt
 type fp_conv = Fcvtzs | Scvtf | Fcvtzu | Ucvtf | Fcvt
+type vec_conv_op =
+  | Vcvtps2pd
+  | Vcvtpd2ps
+  | Vcvtdq2ps
+  | Vcvtps2dq
+  | Vcvttps2dq
+  | Vcvtdq2pd
+  | Vcvtpd2dq
+  | Vcvttpd2dq
 type vec_op =
   | Vadd
   | Vsub
@@ -202,6 +211,8 @@ type instr =
   | Vec_pclmul of { dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Vec_aes of { op : aes_op; dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Vec_shuf2 of { dst : int; src1 : int; src2 : int; imm : int64; bits : int; lane_bits : int }
+  | Vec_conv of { op : vec_conv_op; dst : int; src : int; bits : int }
+  | Ptest of { src1 : int; src2 : int; bits : int }
   | Read_ssp of { dst : Register.t }
   | Inc_ssp of { width : width }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }

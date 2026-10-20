@@ -1107,6 +1107,110 @@ let step state = function
         done
       end;
       Ok None
+  | Vec_conv { op; dst; src; bits } ->
+      let get_w reg w_idx =
+        let q = get_vector_lane state reg (w_idx / 2) in
+        let shift = (w_idx mod 2) * 32 in
+        Int64.logand (Int64.shift_right_logical q shift) 0xFFFFFFFFL
+      in
+      let get_d reg d_idx =
+        get_vector_lane state reg d_idx
+      in
+      let set_w reg w_idx w_val =
+        let q_idx = w_idx / 2 in
+        let cur = get_vector_lane state reg q_idx in
+        let shift = (w_idx mod 2) * 32 in
+        let mask = Int64.shift_left 0xFFFFFFFFL shift in
+        let updated = Int64.logor (Int64.logand cur (Int64.lognot mask)) (Int64.shift_left (Int64.logand w_val 0xFFFFFFFFL) shift) in
+        set_vector_lane state reg q_idx updated
+      in
+      let f32_to_bits f = Int64.logand (Int64.of_int32 (Int32.bits_of_float f)) 0xFFFFFFFFL in
+      let bits_to_f32 b = Int32.float_of_bits (Int64.to_int32 b) in
+      let f64_to_bits d = Int64.bits_of_float d in
+      let bits_to_f64 b = Int64.float_of_bits b in
+      let round_rne x =
+        if Float.is_nan x || x > 2147483647.0 || x < -2147483648.0 then 0x80000000L
+        else
+          let fl = Float.floor x in
+          let diff = x -. fl in
+          let r =
+            if diff < 0.5 then fl
+            else if diff > 0.5 then fl +. 1.0
+            else if (Int64.to_int (Int64.of_float fl)) land 1 = 0 then fl
+            else fl +. 1.0
+          in
+          Int64.logand (Int64.of_int32 (Int32.of_float r)) 0xFFFFFFFFL
+      in
+      let round_trunc x =
+        if Float.is_nan x || x > 2147483647.0 || x < -2147483648.0 then 0x80000000L
+        else
+          Int64.logand (Int64.of_int32 (Int32.of_float (Float.trunc x))) 0xFFFFFFFFL
+      in
+      (match op with
+      | Vcvtps2pd ->
+          let count = bits / 64 in
+          for i = 0 to count - 1 do
+            let f = bits_to_f32 (get_w src i) in
+            set_vector_lane state dst i (f64_to_bits f)
+          done
+      | Vcvtpd2ps ->
+          let count = bits / 64 in
+          for i = 0 to count - 1 do
+            let d = bits_to_f64 (get_d src i) in
+            set_w dst i (f32_to_bits d)
+          done;
+          if bits = 128 then set_vector_lane state dst 1 0L
+          else begin
+            set_vector_lane state dst 2 0L;
+            set_vector_lane state dst 3 0L;
+          end
+      | Vcvtdq2ps ->
+          let count = bits / 32 in
+          for i = 0 to count - 1 do
+            let i32_val = Int64.to_int32 (get_w src i) in
+            set_w dst i (f32_to_bits (Int32.to_float i32_val))
+          done
+      | Vcvtps2dq ->
+          let count = bits / 32 in
+          for i = 0 to count - 1 do
+            let f = bits_to_f32 (get_w src i) in
+            set_w dst i (round_rne f)
+          done
+      | Vcvttps2dq ->
+          let count = bits / 32 in
+          for i = 0 to count - 1 do
+            let f = bits_to_f32 (get_w src i) in
+            set_w dst i (round_trunc f)
+          done
+      | Vcvtdq2pd ->
+          let count = bits / 64 in
+          for i = 0 to count - 1 do
+            let i32_val = Int64.to_int32 (get_w src i) in
+            set_vector_lane state dst i (f64_to_bits (Int32.to_float i32_val))
+          done
+      | Vcvtpd2dq ->
+          let count = bits / 64 in
+          for i = 0 to count - 1 do
+            let d = bits_to_f64 (get_d src i) in
+            set_w dst i (round_rne d)
+          done;
+          if bits = 128 then set_vector_lane state dst 1 0L
+          else begin
+            set_vector_lane state dst 2 0L;
+            set_vector_lane state dst 3 0L;
+          end
+      | Vcvttpd2dq ->
+          let count = bits / 64 in
+          for i = 0 to count - 1 do
+            let d = bits_to_f64 (get_d src i) in
+            set_w dst i (round_trunc d)
+          done;
+          if bits = 128 then set_vector_lane state dst 1 0L
+          else begin
+            set_vector_lane state dst 2 0L;
+            set_vector_lane state dst 3 0L;
+          end);
+      Ok None
   | Read_ssp { dst } ->
       (* RDSSPD / RDSSPQ: the shadow stack pointer. *)
       let w = Register.get_width dst in
@@ -1378,6 +1482,24 @@ let step state = function
         | Fsqrt -> if a < 0.0 then 0.0 else Float.sqrt a
       in
       set_vector_lane state dst 0 (Int64.bits_of_float res);
+      Ok None
+  | Ptest { src1; src2; bits } ->
+      (* Intel SDM PTEST: ZF = ((SRC1 AND SRC2) = 0), CF = ((SRC2 ANDNOT SRC1) = 0).
+         Only ZF and CF are modified; the other flags keep their value. *)
+      let chunks = bits / 64 in
+      let and_acc = ref (-1L) in
+      let andnot_acc = ref (-1L) in
+      for c = 0 to chunks - 1 do
+        let a = get_vector_lane state src1 c in
+        let b = get_vector_lane state src2 c in
+        and_acc := Int64.logand !and_acc (Int64.logand a b);
+        andnot_acc := Int64.logand !andnot_acc (Int64.logand b (Int64.lognot a))
+      done;
+      let raw = Flags.materialize_rflags state.flags in
+      let cleared = Int64.logand raw (Int64.lognot 0x41L) in
+      let zf_bit = if !and_acc = 0L then 0x40L else 0L in
+      let cf_bit = if !andnot_acc = 0L then 1L else 0L in
+      state.flags <- Flags.of_rflags (Int64.logor cleared (Int64.logor zf_bit cf_bit));
       Ok None
   | Fp_cmp { src1; src2; is_32 } ->
       let a_bits = get_vector_lane state src1 0 in

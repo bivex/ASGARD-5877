@@ -1618,6 +1618,79 @@ func_shuf:
           Alcotest.(check int64) "vshufpd 256 lane2" 0x6666666666666666L v10.(2);
           Alcotest.(check int64) "vshufpd 256 lane3" 0x7777777777777777L v10.(3))
 
+let test_x86_lift_packed_conversions () =
+  let asm = {|
+func_packed_conv:
+    cvtps2pd xmm0, xmm1
+    cvtpd2ps xmm2, xmm3
+    cvtdq2ps xmm4, xmm5
+    cvtps2dq xmm6, xmm7
+    cvttps2dq xmm8, xmm7
+    cvtdq2pd xmm9, xmm10
+    cvtpd2dq xmm11, xmm12
+    cvttpd2dq xmm13, xmm12
+    vcvtps2pd ymm14, xmm1
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (* xmm1: floats 1.5, -2.5 (lower 64 bits) *)
+      Hashtbl.replace state.vectors 1 [| 0xC02000003FC00000L; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm3: doubles 3.25, -4.75 *)
+      Hashtbl.replace state.vectors 3 [| 0x400A000000000000L; 0xC013000000000000L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm5: ints 10, -20, 1000, -50000 *)
+      Hashtbl.replace state.vectors 5 [| 0xFFFFFFEC0000000AL; 0xFFFF3CB0000003E8L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm7: floats 1.2, 1.8, -1.8, -1.2 *)
+      Hashtbl.replace state.vectors 7 [| 0x3FE666663F99999AL; 0xBF99999ABFE66666L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm10: ints 42, -99 *)
+      Hashtbl.replace state.vectors 10 [| 0xFFFFFF9D0000002AL; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm12: doubles 42.7, -99.8 *)
+      Hashtbl.replace state.vectors 12 [| 0x404559999999999AL; 0xC058F33333333333L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v4 = Hashtbl.find state.vectors 4 in
+          let v6 = Hashtbl.find state.vectors 6 in
+          let v8 = Hashtbl.find state.vectors 8 in
+          let v9 = Hashtbl.find state.vectors 9 in
+          let v11 = Hashtbl.find state.vectors 11 in
+          let v13 = Hashtbl.find state.vectors 13 in
+          let v14 = Hashtbl.find state.vectors 14 in
+          (* cvtps2pd xmm0, xmm1 -> doubles 1.5, -2.5 *)
+          Alcotest.(check int64) "cvtps2pd d0" 0x3FF8000000000000L v0.(0);
+          Alcotest.(check int64) "cvtps2pd d1" 0xC004000000000000L v0.(1);
+          (* cvtpd2ps xmm2, xmm3 -> floats 3.25, -4.75; upper zeroed *)
+          Alcotest.(check int64) "cvtpd2ps f0f1" 0xC098000040500000L v2.(0);
+          Alcotest.(check int64) "cvtpd2ps upper zero" 0L v2.(1);
+          (* cvtdq2ps xmm4, xmm5 -> floats 10.0, -20.0, 1000.0, -50000.0 *)
+          Alcotest.(check int64) "cvtdq2ps f0f1" 0xC1A0000041200000L v4.(0);
+          Alcotest.(check int64) "cvtdq2ps f2f3" 0xC7435000447A0000L v4.(1);
+          (* cvtps2dq xmm6, xmm7 (round nearest even) -> 1, 2, -2, -1 *)
+          Alcotest.(check int64) "cvtps2dq i0i1" 0x0000000200000001L v6.(0);
+          Alcotest.(check int64) "cvtps2dq i2i3" 0xFFFFFFFF00000000L (Int64.logand v6.(1) 0xFFFFFFFF00000000L);
+          Alcotest.(check int64) "cvtps2dq i2" (-2L) (Int64.of_int32 (Int64.to_int32 v6.(1)));
+          (* cvttps2dq xmm8, xmm7 (truncate) -> 1, 1, -1, -1 *)
+          Alcotest.(check int64) "cvttps2dq i0i1" 0x0000000100000001L v8.(0);
+          Alcotest.(check int64) "cvttps2dq i2" (-1L) (Int64.of_int32 (Int64.to_int32 v8.(1)));
+          (* cvtdq2pd xmm9, xmm10 -> doubles 42.0, -99.0 *)
+          Alcotest.(check int64) "cvtdq2pd d0" 0x4045000000000000L v9.(0);
+          Alcotest.(check int64) "cvtdq2pd d1" 0xC058C00000000000L v9.(1);
+          (* cvtpd2dq xmm11, xmm12 -> ints 43, -100; upper zeroed *)
+          Alcotest.(check int64) "cvtpd2dq i0" 43L (Int64.logand v11.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "cvtpd2dq i1" (-100L) (Int64.of_int32 (Int64.to_int32 (Int64.shift_right_logical v11.(0) 32)));
+          Alcotest.(check int64) "cvtpd2dq upper zero" 0L v11.(1);
+          (* cvttpd2dq xmm13, xmm12 -> ints 42, -99; upper zeroed *)
+          Alcotest.(check int64) "cvttpd2dq i0" 42L (Int64.logand v13.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "cvttpd2dq i1" (-99L) (Int64.of_int32 (Int64.to_int32 (Int64.shift_right_logical v13.(0) 32)));
+          Alcotest.(check int64) "cvttpd2dq upper zero" 0L v13.(1);
+          (* 256-bit vcvtps2pd ymm14, xmm1 *)
+          Alcotest.(check int64) "vcvtps2pd d0" 0x3FF8000000000000L v14.(0);
+          Alcotest.(check int64) "vcvtps2pd d1" 0xC004000000000000L v14.(1))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -2662,6 +2735,74 @@ func_unpck:
           Alcotest.(check int64) "vunpcklpd upper zeroed" 0L (vec 10).(2);
           Alcotest.(check int64) "vunpcklpd upper zeroed 2" 0L (vec 10).(3))
 
+(* PTEST (SSE4.1) and VPTEST (AVX) do a bitwise test of two vector registers:
+   ZF is set when (SRC1 AND SRC2) is zero, CF is set when (SRC2 ANDNOT SRC1)
+   is zero, and no other flag is touched.  The expected values were taken
+   from a real x86-64 machine (the same programs were run under Rosetta). *)
+let test_x86_ptest () =
+  let all = -1L in
+  let run asm a b =
+    match Lifter.lift_function asm with
+    | Error e -> Alcotest.fail e
+    | Ok func ->
+        let state = make_state () in
+        Hashtbl.replace state.vectors 1 (Array.append a [| 0L; 0L; 0L; 0L |]);
+        Hashtbl.replace state.vectors 2 (Array.append b [| 0L; 0L; 0L; 0L |]);
+        (match run_func state func with
+        | Error e -> Alcotest.fail e
+        | Ok () -> state)
+  in
+  let zf state = Flags.compute_zf state.flags in
+  let cf state = Flags.compute_cf state.flags in
+  let lo x = [| x; 0L; 0L; 0L |] in
+  let ptest_asm = {|
+func_ptest:
+    ptest xmm1, xmm2
+    ret
+|} in
+  let vptest_asm = {|
+func_vptest:
+    vptest ymm1, ymm2
+    ret
+|} in
+  let s = run ptest_asm (lo 0L) (lo 0L) in
+  Alcotest.(check bool) "ptest 0/0 sets ZF" true (zf s);
+  Alcotest.(check bool) "ptest 0/0 sets CF" true (cf s);
+  let s = run ptest_asm (lo all) (lo 0L) in
+  Alcotest.(check bool) "ptest all/0 sets ZF" true (zf s);
+  Alcotest.(check bool) "ptest all/0 sets CF" true (cf s);
+  let s = run ptest_asm (lo 0L) (lo all) in
+  Alcotest.(check bool) "ptest 0/all sets ZF" true (zf s);
+  Alcotest.(check bool) "ptest 0/all clears CF" false (cf s);
+  let s = run ptest_asm (lo all) (lo all) in
+  Alcotest.(check bool) "ptest all/all clears ZF" false (zf s);
+  Alcotest.(check bool) "ptest all/all sets CF" true (cf s);
+  let s = run ptest_asm (lo 0xF0L) (lo 0x0FL) in
+  Alcotest.(check bool) "ptest 0xF0/0x0F sets ZF" true (zf s);
+  Alcotest.(check bool) "ptest 0xF0/0x0F clears CF" false (cf s);
+  let s = run ptest_asm (lo 0xFFL) (lo 0x0FL) in
+  Alcotest.(check bool) "ptest 0xFF/0x0F clears ZF" false (zf s);
+  Alcotest.(check bool) "ptest 0xFF/0x0F sets CF" true (cf s);
+  let s = run ptest_asm (lo 0x0FL) (lo 0xFFL) in
+  Alcotest.(check bool) "ptest 0x0F/0xFF clears ZF" false (zf s);
+  Alcotest.(check bool) "ptest 0x0F/0xFF clears CF" false (cf s);
+  (* the 128-bit form looks at the low 128 bits only: the upper halves
+     differ, but the low halves give ZF = 1 and CF = 1 *)
+  let s = run ptest_asm [| all; 0L; 0L; 0L |] [| 0L; 0L; all; all |] in
+  Alcotest.(check bool) "ptest xmm ignores the upper half (ZF)" true (zf s);
+  Alcotest.(check bool) "ptest xmm ignores the upper half (CF)" true (cf s);
+  (* the 256-bit form looks at all 256 bits: the same vectors now give
+     ZF = 0 and CF = 0 *)
+  let s = run vptest_asm [| all; 0L; 0L; 0L |] [| 0L; 0L; all; all |] in
+  Alcotest.(check bool) "vptest sees the upper half (ZF)" false (zf s);
+  Alcotest.(check bool) "vptest sees the upper half (CF)" false (cf s);
+  let s = run vptest_asm [| 0xFFFFFFFFL; 0L; all; all |] [| 0L; 0L; all; all |] in
+  Alcotest.(check bool) "vptest common bits only in the upper half clears ZF" false (zf s);
+  Alcotest.(check bool) "vptest common bits only in the upper half sets CF" true (cf s);
+  let s = run vptest_asm [| 0xFFFFFFFFL; 0L; 0L; 0L |] [| 0xFFFFFFFFL; 0L; all; all |] in
+  Alcotest.(check bool) "vptest differing bits only in the upper half clears ZF" false (zf s);
+  Alcotest.(check bool) "vptest differing bits only in the upper half clears CF" false (cf s)
+
 let test_x86_evex_zmm_trap () =
   let asm = {|
 func_evex:
@@ -3006,6 +3147,7 @@ let tests = [
   Alcotest.test_case "lift_x86_vzeroupper" `Quick test_x86_vzeroupper;
   Alcotest.test_case "lift_x86_pmovmskb" `Quick test_x86_pmovmskb;
   Alcotest.test_case "lift_x86_unpck_fp" `Quick test_x86_unpck_fp;
+  Alcotest.test_case "lift_x86_ptest" `Quick test_x86_ptest;
   Alcotest.test_case "lift_x86_evex_zmm_trap" `Quick test_x86_evex_zmm_trap;
   Alcotest.test_case "lift_x86_tls_fs_gs_segment_prefixes" `Quick test_x86_tls_fs_gs_segment_prefixes;
   Alcotest.test_case "lift_x86_tls_native_vm_canonicalize" `Quick test_x86_tls_native_vm_canonicalize;
@@ -3025,5 +3167,6 @@ let tests = [
   Alcotest.test_case "lift_x86_aes_ni" `Quick test_x86_aes_ni;
   Alcotest.test_case "lift_x86_aes_ni_fips197_full_cycle" `Quick test_x86_lift_aes_ni_fips197_full_cycle;
   Alcotest.test_case "lift_x86_shufps_shufpd" `Quick test_x86_lift_shufps_shufpd;
+  Alcotest.test_case "lift_x86_packed_conversions" `Quick test_x86_lift_packed_conversions;
 ]
 

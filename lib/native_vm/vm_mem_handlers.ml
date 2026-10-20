@@ -383,6 +383,156 @@ let emit_shuf2_handler b =
     }
 |}
 
+let emit_vec_conv_handler b =
+  Buffer.add_string b
+    {|
+    H_VEC_CONV: {
+        const uint32_t conv_op = static_cast<uint32_t>(imm & 15ULL);
+        const uint32_t conv_bits = static_cast<uint32_t>((imm >> 4) & 0x3FFULL);
+        uint64_t res_qwords[4] = {0, 0, 0, 0};
+
+        auto get_w = [&](uint32_t reg_idx, size_t w_idx) -> uint32_t {
+            uint64_t q = ctx.get_vreg_lane(static_cast<uint8_t>(reg_idx), w_idx / 2);
+            uint32_t shift = (w_idx % 2) * 32;
+            return static_cast<uint32_t>((q >> shift) & 0xFFFFFFFFULL);
+        };
+        auto get_d = [&](uint32_t reg_idx, size_t d_idx) -> uint64_t {
+            return ctx.get_vreg_lane(static_cast<uint8_t>(reg_idx), d_idx);
+        };
+        auto set_res_w = [&](size_t w_idx, uint32_t val) {
+            size_t q_idx = w_idx / 2;
+            uint32_t shift = (w_idx % 2) * 32;
+            res_qwords[q_idx] |= (static_cast<uint64_t>(val) << shift);
+        };
+
+        auto round_rne_f32 = [](float f) -> uint32_t {
+            if (std::isnan(f) || f > 2147483647.0f || f < -2147483648.0f)
+                return 0x80000000u;
+            return static_cast<uint32_t>(static_cast<int32_t>(std::nearbyint(f)));
+        };
+        auto round_trunc_f32 = [](float f) -> uint32_t {
+            if (std::isnan(f) || f > 2147483647.0f || f < -2147483648.0f)
+                return 0x80000000u;
+            return static_cast<uint32_t>(static_cast<int32_t>(std::trunc(f)));
+        };
+        auto round_rne_f64 = [](double d) -> uint32_t {
+            if (std::isnan(d) || d > 2147483647.0 || d < -2147483648.0)
+                return 0x80000000u;
+            return static_cast<uint32_t>(static_cast<int32_t>(std::nearbyint(d)));
+        };
+        auto round_trunc_f64 = [](double d) -> uint32_t {
+            if (std::isnan(d) || d > 2147483647.0 || d < -2147483648.0)
+                return 0x80000000u;
+            return static_cast<uint32_t>(static_cast<int32_t>(std::trunc(d)));
+        };
+
+        switch (conv_op) {
+            case 0: { /* Vcvtps2pd */
+                size_t count = (conv_bits >= 256) ? 4 : 2;
+                for (size_t i = 0; i < count; i++) {
+                    float f = std::bit_cast<float>(get_w(src, i));
+                    double d = static_cast<double>(f);
+                    res_qwords[i] = std::bit_cast<uint64_t>(d);
+                }
+                break;
+            }
+            case 1: { /* Vcvtpd2ps */
+                size_t count = (conv_bits >= 256) ? 4 : 2;
+                for (size_t i = 0; i < count; i++) {
+                    double d = std::bit_cast<double>(get_d(src, i));
+                    float f = static_cast<float>(d);
+                    set_res_w(i, std::bit_cast<uint32_t>(f));
+                }
+                break;
+            }
+            case 2: { /* Vcvtdq2ps */
+                size_t count = (conv_bits >= 256) ? 8 : 4;
+                for (size_t i = 0; i < count; i++) {
+                    int32_t val = static_cast<int32_t>(get_w(src, i));
+                    float f = static_cast<float>(val);
+                    set_res_w(i, std::bit_cast<uint32_t>(f));
+                }
+                break;
+            }
+            case 3: { /* Vcvtps2dq */
+                size_t count = (conv_bits >= 256) ? 8 : 4;
+                for (size_t i = 0; i < count; i++) {
+                    float f = std::bit_cast<float>(get_w(src, i));
+                    set_res_w(i, round_rne_f32(f));
+                }
+                break;
+            }
+            case 4: { /* Vcvttps2dq */
+                size_t count = (conv_bits >= 256) ? 8 : 4;
+                for (size_t i = 0; i < count; i++) {
+                    float f = std::bit_cast<float>(get_w(src, i));
+                    set_res_w(i, round_trunc_f32(f));
+                }
+                break;
+            }
+            case 5: { /* Vcvtdq2pd */
+                size_t count = (conv_bits >= 256) ? 4 : 2;
+                for (size_t i = 0; i < count; i++) {
+                    int32_t val = static_cast<int32_t>(get_w(src, i));
+                    double d = static_cast<double>(val);
+                    res_qwords[i] = std::bit_cast<uint64_t>(d);
+                }
+                break;
+            }
+            case 6: { /* Vcvtpd2dq */
+                size_t count = (conv_bits >= 256) ? 4 : 2;
+                for (size_t i = 0; i < count; i++) {
+                    double d = std::bit_cast<double>(get_d(src, i));
+                    set_res_w(i, round_rne_f64(d));
+                }
+                break;
+            }
+            case 7: { /* Vcvttpd2dq */
+                size_t count = (conv_bits >= 256) ? 4 : 2;
+                for (size_t i = 0; i < count; i++) {
+                    double d = std::bit_cast<double>(get_d(src, i));
+                    set_res_w(i, round_trunc_f64(d));
+                }
+                break;
+            }
+            default:
+                break;
+        }
+
+        size_t total_lanes = (conv_bits >= 256) ? 4 : 2;
+        for (size_t l = 0; l < total_lanes; l++) {
+            ctx.set_vreg_lane(static_cast<uint8_t>(dst), l, res_qwords[l]);
+        }
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+|}
+
+
+(* PTEST: bitwise test of two vector registers.  Intel SDM: ZF is set when
+   (SRC1 AND SRC2) is zero, CF is set when (SRC2 ANDNOT SRC1) is zero; no
+   other flag is modified.  The word carries SRC1 in the destination field,
+   SRC2 in the source field and the vector width in the immediate. *)
+let emit_ptest_handler b =
+  Buffer.add_string b
+    {|
+    H_PTEST: {
+        const uint32_t ptest_bits = static_cast<uint32_t>(imm & 0x3FFULL);
+        const size_t ptest_chunks = (ptest_bits + 63) / 64;
+        uint64_t and_acc = ~0ULL;
+        uint64_t andnot_acc = ~0ULL;
+        for (size_t c = 0; c < ptest_chunks; c++) {
+            const uint64_t a = ctx.get_vreg_lane(static_cast<uint8_t>(dst), c);
+            const uint64_t b = ctx.get_vreg_lane(static_cast<uint8_t>(src), c);
+            and_acc &= (a & b);
+            andnot_acc &= (b & ~a);
+        }
+        ctx.zf = (and_acc == 0ULL);
+        ctx.cf = (andnot_acc == 0ULL);
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+|}
 
 (* PCLMULQDQ and the CET shadow stack instructions (RDSSP, INCSSP). *)
 let emit_pclmul_ssp_handlers b =
@@ -1340,6 +1490,8 @@ let emit_simd_handlers ?rng b =
   emit_sha_handler b;
   emit_aes_handler b;
   emit_shuf2_handler b;
+  emit_vec_conv_handler b;
+  emit_ptest_handler b;
   emit_pclmul_ssp_handlers b;
   emit_fpu_handlers b;
 

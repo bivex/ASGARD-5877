@@ -463,6 +463,17 @@ let compile_and_package_multi
     Int64.logor p (Int64.shift_left (Int64.of_int bits) 13)
   in
 
+  let vec_conv_op_code = function
+    | Ir.Vcvtps2pd -> 0
+    | Ir.Vcvtpd2ps -> 1
+    | Ir.Vcvtdq2ps -> 2
+    | Ir.Vcvtps2dq -> 3
+    | Ir.Vcvttps2dq -> 4
+    | Ir.Vcvtdq2pd -> 5
+    | Ir.Vcvtpd2dq -> 6
+    | Ir.Vcvttpd2dq -> 7
+  in
+
   let encode_alu_imm ?(extra_bits = 0L) op_ri op_rr dst imm =
     if is_i32 imm then
       encode_raw_word ~extra_bits (get_opcode op_ri) (get_reg_idx dst) 0 imm
@@ -881,6 +892,14 @@ let compile_and_package_multi
                           (Int64.shift_left (Int64.of_int lane_bits) 23)))
                   in
                   encode_raw_word (get_opcode OP_VEC_SHUF2) (vector_index dst) (vector_index src1) payload
+              | Ir.Ptest { src1; src2; bits } ->
+                  encode_raw_word (get_opcode OP_PTEST) (vector_index src1) (vector_index src2) (Int64.of_int bits)
+              | Ir.Vec_conv { op; dst; src; bits } ->
+                  let payload =
+                    Int64.logor (Int64.of_int (vec_conv_op_code op))
+                      (Int64.shift_left (Int64.of_int bits) 4)
+                  in
+                  encode_raw_word (get_opcode OP_VEC_CONV) (vector_index dst) (vector_index src) payload
               | Ir.Read_ssp { dst } ->
                   encode_raw_word (get_opcode OP_READ_SSP) (get_reg_idx dst) 0
                     (if Register.get_width dst = Register.B32 then 32L else 64L)
