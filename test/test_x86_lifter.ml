@@ -977,6 +977,115 @@ func_moves:
           Alcotest.(check int64) "movupd" v0.(0) v13.(0);
           Alcotest.(check int64) "movapd" (Hashtbl.find state.vectors 1).(0) v14.(0))
 
+let test_x86_scalar_and_packed_fp_arithmetic () =
+  let asm = {|
+func_fp_arith:
+    addss xmm0, xmm1
+    subss xmm2, xmm3
+    mulss xmm4, xmm5
+    divss xmm6, xmm7
+    addsd xmm8, xmm9
+    subsd xmm10, xmm11
+    mulsd xmm12, xmm13
+    divsd xmm14, xmm15
+    addpd xmm16, xmm17
+    subpd xmm18, xmm19
+    mulpd xmm20, xmm21
+    divpd xmm22, xmm23
+    vdivps ymm24, ymm25, ymm26
+    vdivpd ymm27, ymm28, ymm29
+    vaddss xmm30, xmm0, xmm1
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let fbits v = Int64.logand (Int64.of_int32 (Int32.bits_of_float v)) 0xFFFFFFFFL in
+      let dbits v = Int64.bits_of_float v in
+      let state = make_state () in
+      Hashtbl.replace state.vectors 0 [| Int64.logor (fbits 10.0) 0x1111111100000000L; 0x2222222233333333L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1 [| fbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2 [| Int64.logor (fbits 10.0) 0x4444444400000000L; 0x5555555566666666L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 3 [| fbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 4 [| fbits 10.0; 0x7777777788888888L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5 [| fbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 6 [| fbits 10.0; 0x99999999AAAAAAAAL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| fbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 8 [| dbits 10.0; 0xBBBBBBBBCCCCCCCCL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 9 [| dbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 10 [| dbits 10.0; 0xDDDDDDDDEEEEEEEEL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 11 [| dbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 12 [| dbits 10.0; 0xFFFFFFFF00000000L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 13 [| dbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 14 [| dbits 10.0; 0x1234567812345678L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 15 [| dbits 2.5; 0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 16 [| dbits 1.0; dbits 2.0; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 17 [| dbits 3.0; dbits 4.0; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 18 [| dbits 10.0; dbits 20.0; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 19 [| dbits 1.0; dbits 2.0; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 20 [| dbits 2.0; dbits 3.0; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 21 [| dbits 4.0; dbits 5.0; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 22 [| dbits 10.0; dbits 20.0; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 23 [| dbits 2.0; dbits 4.0; 0L; 0L; 0L; 0L; 0L; 0L |];
+      let pack2 a b = Int64.logor (fbits a) (Int64.shift_left (fbits b) 32) in
+      Hashtbl.replace state.vectors 25 [| pack2 10.0 20.0; pack2 30.0 40.0; pack2 50.0 60.0; pack2 70.0 80.0; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 26 [| pack2 2.0 4.0; pack2 5.0 8.0; pack2 10.0 12.0; pack2 14.0 16.0; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 28 [| dbits 100.0; dbits 200.0; dbits 300.0; dbits 400.0; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 29 [| dbits 10.0; dbits 20.0; dbits 30.0; dbits 40.0; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v4 = Hashtbl.find state.vectors 4 in
+          let v6 = Hashtbl.find state.vectors 6 in
+          let v8 = Hashtbl.find state.vectors 8 in
+          let v10 = Hashtbl.find state.vectors 10 in
+          let v12 = Hashtbl.find state.vectors 12 in
+          let v14 = Hashtbl.find state.vectors 14 in
+          let v16 = Hashtbl.find state.vectors 16 in
+          let v18 = Hashtbl.find state.vectors 18 in
+          let v20 = Hashtbl.find state.vectors 20 in
+          let v22 = Hashtbl.find state.vectors 22 in
+          let v24 = Hashtbl.find state.vectors 24 in
+          let v27 = Hashtbl.find state.vectors 27 in
+          let v30 = Hashtbl.find state.vectors 30 in
+          Alcotest.(check int64) "addss val" (fbits 12.5) (Int64.logand v0.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "addss upper32" 0x1111111100000000L (Int64.logand v0.(0) 0xFFFFFFFF00000000L);
+          Alcotest.(check int64) "addss lane1" 0x2222222233333333L v0.(1);
+          Alcotest.(check int64) "subss val" (fbits 7.5) (Int64.logand v2.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "subss lane1" 0x5555555566666666L v2.(1);
+          Alcotest.(check int64) "mulss val" (fbits 25.0) (Int64.logand v4.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "mulss lane1" 0x7777777788888888L v4.(1);
+          Alcotest.(check int64) "divss val" (fbits 4.0) (Int64.logand v6.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "divss lane1" 0x99999999AAAAAAAAL v6.(1);
+          Alcotest.(check int64) "addsd val" (dbits 12.5) v8.(0);
+          Alcotest.(check int64) "addsd lane1" 0xBBBBBBBBCCCCCCCCL v8.(1);
+          Alcotest.(check int64) "subsd val" (dbits 7.5) v10.(0);
+          Alcotest.(check int64) "subsd lane1" 0xDDDDDDDDEEEEEEEEL v10.(1);
+          Alcotest.(check int64) "mulsd val" (dbits 25.0) v12.(0);
+          Alcotest.(check int64) "mulsd lane1" 0xFFFFFFFF00000000L v12.(1);
+          Alcotest.(check int64) "divsd val" (dbits 4.0) v14.(0);
+          Alcotest.(check int64) "divsd lane1" 0x1234567812345678L v14.(1);
+          Alcotest.(check int64) "addpd lane0" (dbits 4.0) v16.(0);
+          Alcotest.(check int64) "addpd lane1" (dbits 6.0) v16.(1);
+          Alcotest.(check int64) "subpd lane0" (dbits 9.0) v18.(0);
+          Alcotest.(check int64) "subpd lane1" (dbits 18.0) v18.(1);
+          Alcotest.(check int64) "mulpd lane0" (dbits 8.0) v20.(0);
+          Alcotest.(check int64) "mulpd lane1" (dbits 15.0) v20.(1);
+          Alcotest.(check int64) "divpd lane0" (dbits 5.0) v22.(0);
+          Alcotest.(check int64) "divpd lane1" (dbits 5.0) v22.(1);
+          Alcotest.(check int64) "vdivps 0" (fbits 5.0) (Int64.logand v24.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "vdivps 1" (fbits 5.0) (Int64.logand (Int64.shift_right_logical v24.(0) 32) 0xFFFFFFFFL);
+          Alcotest.(check int64) "vdivpd 0" (dbits 10.0) v27.(0);
+          Alcotest.(check int64) "vdivpd 1" (dbits 10.0) v27.(1);
+          Alcotest.(check int64) "vdivpd 2" (dbits 10.0) v27.(2);
+          Alcotest.(check int64) "vdivpd 3" (dbits 10.0) v27.(3);
+          Alcotest.(check int64) "vaddss val" (fbits 15.0) (Int64.logand v30.(0) 0xFFFFFFFFL);
+          Alcotest.(check int64) "vaddss upper32" 0x1111111100000000L (Int64.logand v30.(0) 0xFFFFFFFF00000000L);
+          Alcotest.(check int64) "vaddss lane1" 0x2222222233333333L v30.(1);
+          Alcotest.(check int64) "vaddss lane2 zeroed" 0L v30.(2))
+
 (* ORPS / ORPD are bitwise operations on the raw element patterns: the result
    is the OR of the operands, never a numeric operation on the floats.  The
    legacy SSE form has two operands (dst = dst | src) and writes only the low
@@ -2461,5 +2570,6 @@ let tests = [
   Alcotest.test_case "lift_x86_atomic_mem_nodes" `Quick test_x86_lift_atomic_mem_nodes;
   Alcotest.test_case "lift_x86_cpuid" `Quick test_x86_cpuid;
   Alcotest.test_case "lift_x86_movss_movsd_vector_moves" `Quick test_x86_movss_movsd_vector_moves;
+  Alcotest.test_case "lift_x86_scalar_and_packed_fp_arithmetic" `Quick test_x86_scalar_and_packed_fp_arithmetic;
 ]
 

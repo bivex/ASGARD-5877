@@ -865,11 +865,12 @@ let emit_simd_handlers ?rng b =
       let_u64 "a" ((get_vreg_lane (var "src") (var "chunk") >>~ var "shift") &~ var "mask");
       let_u64 "b" ((get_vreg_lane (var "src2") (var "chunk") >>~ var "shift") &~ var "mask");
       decl_var UInt64 "value" ~init:(u64 0L);
-      if_then_else ((var "elem" ==~ i32 1) &&~ (var "vop" <=~ i32 2)) [
+      if_then_else ((var "elem" ==~ i32 1) &&~ ((var "vop" <=~ i32 2) ||~ (var "vop" ==~ i32 30))) [
         decl_var Float "fa" ~init:(bit_cast Float (cast UInt32 (var "a")));
         decl_var Float "fb" ~init:(bit_cast Float (cast UInt32 (var "b")));
         decl_var Float "fr" ~init:(ternary (var "vop" ==~ i32 0) (var "fa" +~ var "fb")
-          (ternary (var "vop" ==~ i32 1) (var "fa" -~ var "fb") (var "fa" *~ var "fb")));
+          (ternary (var "vop" ==~ i32 1) (var "fa" -~ var "fb")
+            (ternary (var "vop" ==~ i32 2) (var "fa" *~ var "fb") (var "fa" /~ var "fb"))));
         var "value" := bit_cast UInt32 (var "fr");
       ] [
         if_then_else ((var "elem" ==~ i32 1) &&~ (var "vop" ==~ i32 11)) [
@@ -882,11 +883,12 @@ let emit_simd_handlers ?rng b =
             decl_var Float "fb" ~init:(bit_cast Float (cast UInt32 (var "b")));
             var "value" := bit_cast UInt32 (call "std::fmax" [var "fa"; var "fb"]);
           ] [
-            if_then_else ((var "elem" ==~ i32 2) &&~ (var "vop" <=~ i32 2)) [
+            if_then_else ((var "elem" ==~ i32 2) &&~ ((var "vop" <=~ i32 2) ||~ (var "vop" ==~ i32 30))) [
               decl_var Double "fa" ~init:(bit_cast Double (var "a"));
               decl_var Double "fb" ~init:(bit_cast Double (var "b"));
               decl_var Double "fr" ~init:(ternary (var "vop" ==~ i32 0) (var "fa" +~ var "fb")
-                (ternary (var "vop" ==~ i32 1) (var "fa" -~ var "fb") (var "fa" *~ var "fb")));
+                (ternary (var "vop" ==~ i32 1) (var "fa" -~ var "fb")
+                  (ternary (var "vop" ==~ i32 2) (var "fa" *~ var "fb") (var "fa" /~ var "fb"))));
               var "value" := bit_cast UInt64 (var "fr");
             ] [
               if_then_else ((var "elem" ==~ i32 2) &&~ (var "vop" ==~ i32 11)) [

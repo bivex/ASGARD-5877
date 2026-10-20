@@ -277,6 +277,10 @@ let vector_binary_value ~lane_bits ~elem ~op ~a ~b =
       let fa = Int32.float_of_bits (Int64.to_int32 a) in
       let fb = Int32.float_of_bits (Int64.to_int32 b) in
       float32_bits (fa *. fb)
+  | Vdiv, VF32 ->
+      let fa = Int32.float_of_bits (Int64.to_int32 a) in
+      let fb = Int32.float_of_bits (Int64.to_int32 b) in
+      float32_bits (fa /. fb)
   | Vmin, VF32 ->
       let fa = Int32.float_of_bits (Int64.to_int32 a) in
       let fb = Int32.float_of_bits (Int64.to_int32 b) in
@@ -290,6 +294,7 @@ let vector_binary_value ~lane_bits ~elem ~op ~a ~b =
   | Vmul, VF64 -> float64_bits (Int64.float_of_bits a *. Int64.float_of_bits b)
   | Vmin, VF64 -> float64_bits (Float.min (Int64.float_of_bits a) (Int64.float_of_bits b))
   | Vmax, VF64 -> float64_bits (Float.max (Int64.float_of_bits a) (Int64.float_of_bits b))
+  | Vdiv, VF64 -> float64_bits (Int64.float_of_bits a /. Int64.float_of_bits b)
   | (Vadd | Vsub | Vmul), VInt -> (
       match op with
       | Vadd -> Int64.add a b
@@ -381,7 +386,7 @@ let vector_binary_value ~lane_bits ~elem ~op ~a ~b =
       let ua = Int64.logand a mask in
       let ub = Int64.logand b mask in
       if Int64.unsigned_compare ua ub <= 0 then mask else 0L
-  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend | Vuzp1 | Vuzp2 | Vtrn1 | Vtrn2 | Vtbl | Vtbx | Vdiv | Vrem | Vdivu | Vremu), _ -> 0L
+  | (Vunpckl | Vunpckh | Vpackss | Vpackus | Vshuf | Vblend | Vuzp1 | Vuzp2 | Vtrn1 | Vtrn2 | Vtbl | Vtbx | Vrem | Vdivu | Vremu), _ -> 0L
 
 let apply_vector_lanes state ~dst_bits ~lane_bits ~elem ~src1 ~src2 ~dst op =
   let mask = vector_lane_mask lane_bits in

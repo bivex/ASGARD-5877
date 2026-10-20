@@ -574,6 +574,8 @@ let vector_op_of_mnemonic = function
   | "subpd" | "vsubpd" -> Some (Ir.Vsub, Ir.VF64, 64)
   | "mulps" | "vmulps" -> Some (Ir.Vmul, Ir.VF32, 32)
   | "mulpd" | "vmulpd" -> Some (Ir.Vmul, Ir.VF64, 64)
+  | "divps" | "vdivps" -> Some (Ir.Vdiv, Ir.VF32, 32)
+  | "divpd" | "vdivpd" -> Some (Ir.Vdiv, Ir.VF64, 64)
   | "andps" | "vandps" | "andpd" | "vandpd" -> Some (Ir.Vand, Ir.VInt, 64)
   | "andnps" | "vandnps" | "andnpd" | "vandnpd" -> Some (Ir.Vandn, Ir.VInt, 64)
   | "orps" | "vorps" | "orpd" | "vorpd" -> Some (Ir.Vor, Ir.VInt, 64)
@@ -743,6 +745,81 @@ let lift_scalar_fp_move ?const_pool mnem ops =
             | None -> Error (Printf.sprintf "%s destination must be a vector register" mnem))
         | _ -> Error (Printf.sprintf "Invalid operands for %s" mnem))
     | _ -> Error (Printf.sprintf "Invalid operand count for %s" mnem)
+
+let scalar_fp_arith_op_of_mnemonic = function
+  | "addss" | "vaddss" -> Some (Ir.Vadd, Ir.VF32, 32)
+  | "addsd" | "vaddsd" -> Some (Ir.Vadd, Ir.VF64, 64)
+  | "subss" | "vsubss" -> Some (Ir.Vsub, Ir.VF32, 32)
+  | "subsd" | "vsubsd" -> Some (Ir.Vsub, Ir.VF64, 64)
+  | "mulss" | "vmulss" -> Some (Ir.Vmul, Ir.VF32, 32)
+  | "mulsd" | "vmulsd" -> Some (Ir.Vmul, Ir.VF64, 64)
+  | "divss" | "vdivss" -> Some (Ir.Vdiv, Ir.VF32, 32)
+  | "divsd" | "vdivsd" -> Some (Ir.Vdiv, Ir.VF64, 64)
+  | _ -> None
+
+let lift_scalar_fp_arith ?const_pool mnem ops =
+  if List.exists is_zmm_operand ops then
+    Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+  else
+    match scalar_fp_arith_op_of_mnemonic mnem with
+    | None -> Error "unsupported scalar FP arithmetic operation"
+    | Some (op, elem, lane_bits) ->
+        let is_vex = String.length mnem > 0 && mnem.[0] = 'v' in
+        let bits = lane_bits in
+        let tmp = 31 in
+        let get_mem_load m =
+          match m.X86_parser.symbol, const_pool with
+          | Some sym, Some cp when Hashtbl.mem cp sym ->
+              let b = Hashtbl.find cp sym in
+              let w = if bits = 32 then Register.B32 else Register.B64 in
+              let v = read_const_int64 b m.disp w in
+              let lane0 = if bits = 32 then Int64.logand v 0xFFFFFFFFL else v in
+              [
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp, Register.B64)); src = Ir.Imm lane0 };
+                Ir.Mov { dst = Ir.Reg (Register.Fpr (30, Register.B64)); src = Ir.Imm 0L };
+                Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = tmp; src1 = tmp; src2 = 30; bits = 128; lane_bits = 64 };
+              ]
+          | _ ->
+              [ Ir.Vec_load { dst = tmp; addr = ir_mem_of_raw m; bits } ]
+        in
+        match ops with
+        | [ dst; src ] -> (
+            match dst, src with
+            | X86_parser.OpReg _, X86_parser.OpReg _ -> (
+                match vector_reg_index dst, vector_reg_index src with
+                | Some di, Some si ->
+                    let binop = Ir.Vec_binop { op; elem; dst = di; src1 = di; src2 = si; bits; lane_bits } in
+                    let extra = if is_vex then [ Ir.Vec_clear_upper di ] else [] in
+                    Ok ([ binop ] @ extra)
+                | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
+            | X86_parser.OpReg _, X86_parser.OpMem m -> (
+                match vector_reg_index dst with
+                | Some di ->
+                    let prep = get_mem_load m in
+                    let binop = Ir.Vec_binop { op; elem; dst = di; src1 = di; src2 = tmp; bits; lane_bits } in
+                    let extra = if is_vex then [ Ir.Vec_clear_upper di ] else [] in
+                    Ok (prep @ [ binop ] @ extra)
+                | None -> Error (Printf.sprintf "%s destination must be a vector register" mnem))
+            | _ -> Error (Printf.sprintf "Invalid operands for %s" mnem))
+        | [ dst; src1; src2 ] when is_vex -> (
+            match dst, src1, src2 with
+            | X86_parser.OpReg _, X86_parser.OpReg _, X86_parser.OpReg _ -> (
+                match vector_reg_index dst, vector_reg_index src1, vector_reg_index src2 with
+                | Some di, Some s1, Some s2 ->
+                    let mov = if di = s1 then [] else [ Ir.Vec_mov { dst = di; src = s1; bits = 128 } ] in
+                    let binop = Ir.Vec_binop { op; elem; dst = di; src1 = di; src2 = s2; bits; lane_bits } in
+                    Ok (mov @ [ binop; Ir.Vec_clear_upper di ])
+                | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
+            | X86_parser.OpReg _, X86_parser.OpReg _, X86_parser.OpMem m -> (
+                match vector_reg_index dst, vector_reg_index src1 with
+                | Some di, Some s1 ->
+                    let prep = get_mem_load m in
+                    let mov = if di = s1 then [] else [ Ir.Vec_mov { dst = di; src = s1; bits = 128 } ] in
+                    let binop = Ir.Vec_binop { op; elem; dst = di; src1 = di; src2 = tmp; bits; lane_bits } in
+                    Ok (prep @ mov @ [ binop; Ir.Vec_clear_upper di ])
+                | _ -> Error (Printf.sprintf "%s requires vector registers" mnem))
+            | _ -> Error (Printf.sprintf "Invalid operands for %s" mnem))
+        | _ -> Error (Printf.sprintf "Invalid operand count for %s" mnem)
 
 (* The x86 SHA extensions (SHA-NI).  Every instruction works on the four
    32-bit words of a 128-bit vector register; the destination is both a source
@@ -1170,6 +1247,8 @@ let lift_instr ?const_pool raw_mnem ops =
         | _ -> Error "pmovmskb requires GPR destination and vector source")
   | mnem, [ dst; src ] when vector_move_mnemonic mnem -> lift_vector_move ?const_pool mnem dst src
   | mnem, ops when is_scalar_fp_move mnem ops -> lift_scalar_fp_move ?const_pool mnem ops
+  | mnem, ops when (match scalar_fp_arith_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
+      lift_scalar_fp_arith ?const_pool mnem ops
   | mnem, ops
     when (List.length ops >= 2 && List.length ops <= 3)
          && (match sha_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
@@ -2035,15 +2114,8 @@ let lift_instr ?const_pool raw_mnem ops =
         Ir.Mov { dst = Ir.Reg (Register.Gpr (Register.RDX, Register.B64)); src = Ir.Imm 0L };
       ]
 
-  | ("addss" | "addsd" | "subss" | "subsd" | "mulss" | "mulsd" | "divss" | "divsd" | "sqrtss" | "sqrtsd"), [ OpReg dst; src ] ->
-      let fp_op = match mnem with
-        | "addss" | "addsd" -> Ir.Fadd
-        | "subss" | "subsd" -> Ir.Fsub
-        | "mulss" | "mulsd" -> Ir.Fmul
-        | "divss" | "divsd" -> Ir.Fdiv
-        | "sqrtss" | "sqrtsd" -> Ir.Fsqrt
-        | _ -> assert false
-      in
+  | ("sqrtss" | "sqrtsd"), [ OpReg dst; src ] ->
+      let fp_op = Ir.Fsqrt in
       (match dst with
       | Register.Fpr (d_idx, _) ->
           (match src with

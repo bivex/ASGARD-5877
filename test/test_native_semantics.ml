@@ -1274,6 +1274,109 @@ func_native_moves:
     if (ctx.vregs[10][0] != 0x11111111CCCCDDDDULL || ctx.vregs[10][1] != 0x3333333344444444ULL) return 14;
 |})
 
+let test_native_x86_scalar_and_packed_fp_arithmetic () =
+  let pkg =
+    mk_pkg ~seed:20261022 {|
+func_native_fp_arith:
+    addss xmm0, xmm1
+    subss xmm2, xmm3
+    mulss xmm4, xmm5
+    divss xmm6, xmm7
+    addsd xmm8, xmm9
+    subsd xmm10, xmm11
+    mulsd xmm12, xmm13
+    divsd xmm14, xmm15
+    addpd xmm16, xmm17
+    subpd xmm18, xmm19
+    mulpd xmm20, xmm21
+    divpd xmm22, xmm23
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_fp_arith" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    auto fbits = [](float f) { return static_cast<uint64_t>(std::bit_cast<uint32_t>(f)); };
+    auto dbits = [](double d) { return std::bit_cast<uint64_t>(d); };
+
+    ctx.vregs[0][0] = fbits(10.0f) | 0x1111111100000000ULL;
+    ctx.vregs[0][1] = 0x2222222233333333ULL;
+    ctx.vregs[1][0] = fbits(2.5f);
+
+    ctx.vregs[2][0] = fbits(10.0f) | 0x4444444400000000ULL;
+    ctx.vregs[2][1] = 0x5555555566666666ULL;
+    ctx.vregs[3][0] = fbits(2.5f);
+
+    ctx.vregs[4][0] = fbits(10.0f);
+    ctx.vregs[4][1] = 0x7777777788888888ULL;
+    ctx.vregs[5][0] = fbits(2.5f);
+
+    ctx.vregs[6][0] = fbits(10.0f);
+    ctx.vregs[6][1] = 0x99999999AAAAAAAAULL;
+    ctx.vregs[7][0] = fbits(2.5f);
+
+    ctx.vregs[8][0] = dbits(10.0);
+    ctx.vregs[8][1] = 0xBBBBBBBBCCCCCCCCULL;
+    ctx.vregs[9][0] = dbits(2.5);
+
+    ctx.vregs[10][0] = dbits(10.0);
+    ctx.vregs[10][1] = 0xDDDDDDDDEEEEEEEEULL;
+    ctx.vregs[11][0] = dbits(2.5);
+
+    ctx.vregs[12][0] = dbits(10.0);
+    ctx.vregs[12][1] = 0xFFFFFFFF00000000ULL;
+    ctx.vregs[13][0] = dbits(2.5);
+
+    ctx.vregs[14][0] = dbits(10.0);
+    ctx.vregs[14][1] = 0x1234567812345678ULL;
+    ctx.vregs[15][0] = dbits(2.5);
+
+    ctx.vregs[16][0] = dbits(1.0); ctx.vregs[16][1] = dbits(2.0);
+    ctx.vregs[17][0] = dbits(3.0); ctx.vregs[17][1] = dbits(4.0);
+
+    ctx.vregs[18][0] = dbits(10.0); ctx.vregs[18][1] = dbits(20.0);
+    ctx.vregs[19][0] = dbits(1.0); ctx.vregs[19][1] = dbits(2.0);
+
+    ctx.vregs[20][0] = dbits(2.0); ctx.vregs[20][1] = dbits(3.0);
+    ctx.vregs[21][0] = dbits(4.0); ctx.vregs[21][1] = dbits(5.0);
+
+    ctx.vregs[22][0] = dbits(10.0); ctx.vregs[22][1] = dbits(20.0);
+    ctx.vregs[23][0] = dbits(2.0); ctx.vregs[23][1] = dbits(4.0);
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if ((ctx.vregs[0][0] & 0xFFFFFFFFULL) != fbits(12.5f)) return 2;
+    if ((ctx.vregs[0][0] & 0xFFFFFFFF00000000ULL) != 0x1111111100000000ULL) return 3;
+    if (ctx.vregs[0][1] != 0x2222222233333333ULL) return 4;
+
+    if ((ctx.vregs[2][0] & 0xFFFFFFFFULL) != fbits(7.5f)) return 5;
+    if (ctx.vregs[2][1] != 0x5555555566666666ULL) return 6;
+
+    if ((ctx.vregs[4][0] & 0xFFFFFFFFULL) != fbits(25.0f)) return 7;
+    if (ctx.vregs[4][1] != 0x7777777788888888ULL) return 8;
+
+    if ((ctx.vregs[6][0] & 0xFFFFFFFFULL) != fbits(4.0f)) return 9;
+    if (ctx.vregs[6][1] != 0x99999999AAAAAAAAULL) return 10;
+
+    if (ctx.vregs[8][0] != dbits(12.5)) return 11;
+    if (ctx.vregs[8][1] != 0xBBBBBBBBCCCCCCCCULL) return 12;
+
+    if (ctx.vregs[10][0] != dbits(7.5)) return 13;
+    if (ctx.vregs[10][1] != 0xDDDDDDDDEEEEEEEEULL) return 14;
+
+    if (ctx.vregs[12][0] != dbits(25.0)) return 15;
+    if (ctx.vregs[12][1] != 0xFFFFFFFF00000000ULL) return 16;
+
+    if (ctx.vregs[14][0] != dbits(4.0)) return 17;
+    if (ctx.vregs[14][1] != 0x1234567812345678ULL) return 18;
+
+    if (ctx.vregs[16][0] != dbits(4.0) || ctx.vregs[16][1] != dbits(6.0)) return 19;
+    if (ctx.vregs[18][0] != dbits(9.0) || ctx.vregs[18][1] != dbits(18.0)) return 20;
+    if (ctx.vregs[20][0] != dbits(8.0) || ctx.vregs[20][1] != dbits(15.0)) return 21;
+    if (ctx.vregs[22][0] != dbits(5.0) || ctx.vregs[22][1] != dbits(5.0)) return 22;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1301,4 +1404,5 @@ let tests = [
   Alcotest.test_case "native_x86_cpuid" `Slow test_native_x86_cpuid;
   Alcotest.test_case "native_x86_fpu" `Slow test_native_x86_fpu;
   Alcotest.test_case "native_x86_scalar_and_vector_moves" `Slow test_native_x86_scalar_and_vector_moves;
+  Alcotest.test_case "native_x86_scalar_and_packed_fp_arithmetic" `Slow test_native_x86_scalar_and_packed_fp_arithmetic;
 ]
