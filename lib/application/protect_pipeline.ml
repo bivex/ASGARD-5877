@@ -243,11 +243,13 @@ let run
                       Some (Printf.sprintf "skipped (%s)" msg)
                   | img ->
                       let report = Macho_unwind.check img in
+                      let issues = List.length report.Macho_unwind.issues in
                       Some
-                        (Printf.sprintf "%s, %d routine(s), %d issue(s)"
+                        (Printf.sprintf "%s, %d routine(s), %s"
                            (Macho_unwind.format_layout report.Macho_unwind.layout)
                            (List.length report.Macho_unwind.routines)
-                           (List.length report.Macho_unwind.issues)))
+                           (if issues = 0 then "no inconsistency"
+                            else Printf.sprintf "%d issue(s)" issues)))
               | _ -> None
             in
 

@@ -437,7 +437,13 @@ A routine entry maps a function address and size onto a blob of unwind informati
 The protection pipeline audits the binary it produced and reports the result in the protection summary:
 
 ```
-- Mach-O Compact Unwind: section index (unwind_info_section_header v1, 2 page(s)), 0 routine(s), 0 issue(s)
+- Mach-O Compact Unwind: section index (unwind_info_section_header v1, 2 page(s)), 0 routine(s), no inconsistency
+```
+
+An image that carries no unwind information at all is a state, not an inconsistency: there is no routine table that could disagree with the code, so the audit reports the layout and counts no issue:
+
+```
+- Mach-O Compact Unwind: not emitted (no __TEXT,__unwind_info section), 0 routine(s), no inconsistency
 ```
 
 The same check is available on its own:
@@ -447,6 +453,6 @@ dune exec random_visa -- macho-unwind --input ./protected_app
 dune exec random_visa -- macho-unwind --input ./protected_app --output ./protected_app.repaired
 ```
 
-The command exits non-zero when the compact unwind information of the image is inconsistent, which makes it usable as a gate in a release pipeline.
+The command exits non-zero only when the compact unwind information that the image does carry is inconsistent, which makes it usable as a gate in a release pipeline.
 
-The protector compiles the protected binary with `-fno-unwind-tables -fno-asynchronous-unwind-tables`, so the image it produces carries no compact unwind information at all and the audit reports `no __TEXT,__unwind_info section`. A binary without unwind information cannot unwind: a C++ exception crossing a protected frame terminates the process instead of running the landing pads. Tech-2601 shadowing also has nothing to shadow in such a binary. The audit makes that visible; whether to spend the metadata budget on unwinding is a deployment decision.
+The protector compiles the protected binary with `-fno-unwind-tables -fno-asynchronous-unwind-tables`, so the image it produces carries no compact unwind information at all. A binary without unwind information cannot unwind: a C++ exception crossing a protected frame terminates the process instead of running the landing pads. Tech-2601 shadowing also has nothing to shadow in such a binary. The audit makes that visible through the layout (`not emitted`), not as an inconsistency; whether to spend the metadata budget on unwinding is a deployment decision.

@@ -343,9 +343,22 @@ let test_check_without_unwind_info () =
     Macho_image.of_bytes (build_image (spec64 ~with_routines:false ~with_unwind_info:false ()))
   in
   let report = Macho_unwind.check img in
-  Alcotest.(check bool) "missing unwind info" true
-    (List.exists (function Macho_unwind.Missing_unwind_info_section -> true | _ -> false)
-       report.Macho_unwind.issues)
+  (* An image without unwind information carries no routine table that could
+     disagree with the code: the absence is a layout, not an inconsistency. *)
+  Alcotest.(check int) "issue count" 0 (List.length report.Macho_unwind.issues);
+  Alcotest.(check bool) "no unwind info layout" true
+    (match report.Macho_unwind.layout with
+    | Macho_unwind.No_unwind_info -> true
+    | _ -> false);
+  Alcotest.(check bool) "the report says the unwind info is absent" true
+    (let text = Macho_unwind.format_report report in
+     let needle = "__TEXT,__unwind_info: absent" in
+     let n = String.length needle in
+     let rec find i =
+       i + n <= String.length text
+       && (String.sub text i n = needle || find (i + 1))
+     in
+     find 0)
 
 let test_repair_clamps_size () =
   let routines =
@@ -426,7 +439,7 @@ let tests =
     Alcotest.test_case "detect an unsorted routine table" `Quick test_check_detects_unsorted_table;
     Alcotest.test_case "detect a section index layout" `Quick test_layout_section_index;
     Alcotest.test_case "detect a routine table layout" `Quick test_layout_routine_table;
-    Alcotest.test_case "report an image without unwind information" `Quick
+    Alcotest.test_case "treat an image without unwind information as a state, not an issue" `Quick
       test_check_without_unwind_info;
     Alcotest.test_case "repair a stale routine size" `Quick test_repair_clamps_size;
     Alcotest.test_case "leave a consistent image untouched" `Quick test_repair_keeps_valid_entries;

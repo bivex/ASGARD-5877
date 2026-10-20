@@ -9,8 +9,11 @@ type routine = {
   unwind_info_size : int64;
 }
 
+(** An inconsistency of the compact unwind information.  An image that carries
+    no unwind information at all is not inconsistent: the protector compiles the
+    protected binary without unwind tables, and the layout of such an image is
+    reported as [No_unwind_info] instead. *)
 type issue =
-  | Missing_unwind_info_section
   | Missing_text_section
   | Unsorted_routines of { previous : int64; current : int64 }
   | Address_outside_text of { routine : routine; text_start : int64; text_end : int64 }
@@ -131,7 +134,9 @@ let check img =
   let issues = ref [] in
   let add i = issues := i :: !issues in
   if text = None then add Missing_text_section;
-  if unwind = None then add Missing_unwind_info_section;
+  (* An image without an unwind info section is not inconsistent: there is no
+     routine table that could disagree with the code.  The absence is reported
+     through the layout, not as an issue. *)
   let rec sorted prev i =
     if i < Array.length routines then begin
       let address = routines.(i).address in
@@ -210,7 +215,6 @@ let repair_to_file (img : Macho_image.t) report path =
   with Sys_error msg -> Error msg
 
 let format_issue = function
-  | Missing_unwind_info_section -> "no __TEXT,__unwind_info section"
   | Missing_text_section -> "no __TEXT,__text section"
   | Unsorted_routines { previous; current } ->
       Printf.sprintf "routine table is not sorted (0x%Lx after 0x%Lx)" current previous
@@ -234,7 +238,7 @@ let format_layout = function
   | Section_index s ->
       Printf.sprintf "section index (unwind_info_section_header v%ld, %d page(s))"
         s.version s.index_count
-  | No_unwind_info -> "none"
+  | No_unwind_info -> "not emitted (no __TEXT,__unwind_info section)"
 
 let format_report report =
   let buf = Buffer.create 256 in
@@ -244,13 +248,14 @@ let format_report report =
     (Printf.sprintf "routines: %d\n" (List.length report.routines));
   Buffer.add_string buf
     (Printf.sprintf "__TEXT,__text: [0x%Lx, 0x%Lx)\n" report.text_start report.text_end);
-  Buffer.add_string buf
-    (Printf.sprintf "__TEXT,__unwind_info: %Ld bytes\n" report.unwind_info_size);
-  if report.issues = [] then Buffer.add_string buf "issues: none\n"
-  else begin
-    Buffer.add_string buf (Printf.sprintf "issues: %d\n" (List.length report.issues));
-    List.iter
-      (fun i -> Buffer.add_string buf (Printf.sprintf "  - %s\n" (format_issue i)))
-      report.issues
-  end;
+  (match report.layout with
+  | No_unwind_info ->
+      Buffer.add_string buf "__TEXT,__unwind_info: absent\n"
+  | _ ->
+      Buffer.add_string buf
+        (Printf.sprintf "__TEXT,__unwind_info: %Ld bytes\n" report.unwind_info_size));
+  Buffer.add_string buf (Printf.sprintf "issues: %d\n" (List.length report.issues));
+  List.iter
+    (fun i -> Buffer.add_string buf (Printf.sprintf "  - %s\n" (format_issue i)))
+    report.issues;
   Buffer.contents buf

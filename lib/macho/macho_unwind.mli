@@ -8,7 +8,13 @@
     A routine table that no longer matches the code it describes makes the
     unwinder read foreign bytes, so this module decodes the table, checks it
     against [__TEXT,__text] and [__TEXT,__unwind_info], and can repair the
-    entries whose extent overruns the following function. *)
+    entries whose extent overruns the following function.
+
+    An image that carries no unwind information at all is a state, not an
+    inconsistency: the protector compiles the protected binary without unwind
+    tables, so there is no routine table that could disagree with the code.
+    Such an image is reported through the [layout] as [No_unwind_info] and
+    produces no issue. *)
 
 type routine = {
   address : int64;              (** virtual address of the function *)
@@ -17,10 +23,9 @@ type routine = {
   unwind_info_size : int64;     (** size of the unwind blob, in bytes *)
 }
 
+(** An inconsistency of the compact unwind information.  The absence of the
+    unwind information is not one of them: it is a layout, [No_unwind_info]. *)
 type issue =
-  | Missing_unwind_info_section
-      (** The image has no [__TEXT,__unwind_info] section, so it cannot
-          unwind at all. *)
   | Missing_text_section
       (** The image has no [__TEXT,__text] section. *)
   | Unsorted_routines of { previous : int64; current : int64 }
