@@ -18,6 +18,8 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Fixed
 
+- Fix the ISA reference parser (`scripts/isa_ref_parser.py`) so that a specification table copied from the rendered documentation page is parsed: the table columns are separated by runs of spaces, not by tabs, so `parse-text` reported "Variants Found: 0" and generated a test without operands. The MOVZX specification now yields its five opcode variants (`0F B6 /r`, `REX.W + 0F B6 /r`, `0F B7 /r`, `REX.W + 0F B7 /r`) and a concrete sample instruction.
+- Fix the ISA implementation audit (`scripts/isa_ref_parser.py`) reporting the x86 `MOVZX`, `MOVSX` and `MOVSXD` as missing in the micro-IR, reference oracle and native VM layers. These instructions have no dedicated node or handler - the lifter lowers them to a masked move (`Ir.Mov` plus `Ir.Alu And`) or to a move plus a sign-extension pair (`Ir.Alu Shl` and `Ir.Alu Sar`) - so the audit now looks for the primitives the lowering uses, and the new "Расширение при переносе" category lists the three instructions.
 - Reject illegal attempts to load the CS register using the x86 `MOV` instruction (`mov cs, ...`) in `lib/x86_lifter/lifter.ml`, strictly adhering to Intel SDM invalid opcode (#UD) architecture rules matching `pop cs`.
 
 ### Changed

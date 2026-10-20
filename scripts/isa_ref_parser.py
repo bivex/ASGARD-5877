@@ -171,10 +171,13 @@ def parse_raw_text(text: str) -> InstructionSpec:
             if line.startswith("Instruction Operand Encoding") or line.startswith("Description"):
                 in_table = False
             else:
-                parts = line.split("\t")
+                # The specification tables are tab-separated on the site, but
+                # a copy-paste of the rendered page keeps the column padding
+                # as runs of spaces instead.
+                parts = re.split(r"\t+|\s{2,}", line.strip())
                 if len(parts) >= 6:
                     spec.variants.append(
-                        InstructionVariant(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5])
+                        InstructionVariant(parts[0], parts[1], parts[2], parts[3], parts[4], " ".join(parts[5:]))
                     )
         if line.startswith("Flags Affected"):
             in_flags = True
@@ -258,6 +261,7 @@ CATEGORIES = {
                   "REP", "REPE", "REPNE", "REPZ", "REPNZ"],
     "Доп. сдвиги": ["SHLD", "SHRD", "RCL", "RCR"],
     "Знако-расширение": ["CBW", "CWD", "CDQ", "CQO", "CWDE", "CDQE", "CBTW", "CWTL", "CWTD", "CQTO"],
+    "Расширение при переносе": ["MOVSX", "MOVSXD", "MOVZX"],
 }
 
 
@@ -397,6 +401,22 @@ def audit_instructions_in_codebase(mnemonics: list[str]):
             ev_pat = r"(alu|shl|sar)"
             nat_pat = r"(h_shl|h_sar)"
             t_pat = r"(cdqe|cltq|sign_extension)"
+        elif m_lower in ("movzx", "movzxb", "movzxw", "movzbq", "movzwq"):
+            # MOVZX has no dedicated micro-IR node: the lifter lowers it to a
+            # masked move (Ir.Mov + Ir.Alu And) over an r/m8 or r/m16 source.
+            l_pat = r'"movzx"|"movzxb"|"movzxw"|"movzbq"|"movzwq"'
+            ir_pat = r"(mov|and)"
+            ev_pat = r"(mov|and)"
+            nat_pat = r"(h_mov|h_and|h_load_8|h_load_16)"
+            t_pat = r"(movzx|zero_extend)"
+        elif m_lower in ("movsx", "movsxd", "movsxb", "movsxw", "movsbq", "movswq", "movslq"):
+            # MOVSX/MOVSXD are lowered to a move plus a sign-extension pair
+            # (Ir.Alu Shl followed by Ir.Alu Sar).
+            l_pat = r'"movsx"|"movsxd"|"movsxb"|"movsxw"|"movsbq"|"movswq"|"movslq"'
+            ir_pat = r"(mov|shl|sar)"
+            ev_pat = r"(mov|shl|sar)"
+            nat_pat = r"(h_mov|h_shl|h_sar|h_load_s8|h_load_s16|h_load_s32)"
+            t_pat = r"(movsx|sign_extension)"
         elif m_lower in ("bt", "btc", "btr", "bts"):
             l_pat = rf'"{m_lower}"'
             ir_pat = r"(alu|cmp|not)"
