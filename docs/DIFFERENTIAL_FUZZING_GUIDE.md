@@ -1,58 +1,58 @@
-# Руководство по дифференциальному фаззингу ASGARD-5877
+# ASGARD-5877 Differential Fuzzing Guide
 
-Дифференциальный фаззер (Differential Fuzzer) — это автоматизированная система верификации, которая проверяет **семантическую эквивалентность** между оригинальным (нативным) кодом и кодом, прошедшим через полный конвейер защиты ASGARD (C Macro Obfuscation + MBA + Control Flow Flattening + Native VM Virtualization).
+The Differential Fuzzer is an automated verification harness that validates **semantic equivalence** between the original native code and the code processed by the full ASGARD protection pipeline (C Macro Obfuscation + MBA + Control Flow Flattening + Native VM Virtualization).
 
 ---
 
-## 1. Главная цель: Что ищет фаззер?
+## 1. Primary Goal: What Does the Fuzzer Look For?
 
-Главная формула дифференциального тестирования:
+The fundamental invariant of differential testing is:
 $$\forall x: \quad f_{\text{native}}(x) \equiv f_{\text{protected\_vm}}(x)$$
 
-Фаззер подает одни и те же псевдослучайные и мутированные входные данные $x$ в обе реализации и ищет любое из трех критических состояний:
+The fuzzer feeds identical pseudorandom and mutated inputs $x$ into both implementations and flags any of the three critical failure states:
 
-1. **Divergence (Расхождение результатов)**: $f_{\text{native}}(x) \neq f_{\text{protected\_vm}}(x)$ — код выполнился без падений, но VM вернула неправильный результат.
-2. **Crash / Fault (Падение VM)**: Исходный код успешно отрабатывает, а виртуализированный падает с `SIGSEGV`, `SIGBUS`, `SIGILL` или попадает в бесконечный цикл.
-3. **Compilation / Transformation Failure**: Обфускатор сгенерировал C++ код, который не компилируется или нарушает правила типов языка.
-
----
-
-## 2. Какие конкретные классы багов находит фаззер
-
-### А. Ошибки сохранения и усечения регистров (Bit-width Truncation)
-* **Пример**: Косвенная адресация памяти SIB вида `[base + index * scale]`.
-* **Что нашел фаззер**: При трансляции инструкции `movzx r9d, byte ptr [rsi + rax]` временный скретч-регистр адреса унаследовал 32-битную разрядность `r9d`. 64-битный адрес памяти `rsi + rax` усекся до 32 бит, приведя к немедленному `SIGSEGV` при чтении.
-* **Фикс**: В `vm_transform.ml` регистры-скретчи адресации теперь принудительно зафиксированы в `Register.B64`.
-
-### Б. Ошибки типов в MBA-обфускации (FP-Taint / Type Safety)
-* **Пример**: Исходный код складывает числа с плавающей точкой: `double q2 = q + p.d;`.
-* **Что нашел фаззер**: Арифметический рерайтер `c_arith_rewriter.ml` переписывал бинарный `+` в целочисленный MBA-макрос: `ASG_MBA_ADD(q, p.d)`. Внутри макроса использовались побитовые операции `^`, `&`, `|`, недопустимые для `double` в C++.
-* **Фикс**: Внедрен статический анализ FP-taint (распространение признака float/double через литералы, касты, объявления структур и auto-цепочки), исключающий применение целочисленных MBA к вещественным типам.
-
-### В. Порча флагов процессора (Flags Clobbering в CFF и Opaque Predicates)
-* **Пример**: Инструкция сравнения `cmp rax, rbx` выставляет флаги `ZF/CF/SF/OF`. Затем диспетчер CFF (Control Flow Flattening) или непрозрачный предикат выполняет вспомогательную арифметику перед условным переходом `jcc`.
-* **Что находит фаззер**: Если диспетчер перезаписал флаги своими промежуточными операциями без сохранения в регистр флагов (`Get_flags` / `Set_flags`), переход пойдет не по той ветке, и результат разойдется (`DIVERGENCE FOUND: Golden != Protected`).
-
-### Г. Десинхронизация динамического ключа расшифровки (Rolling Key Desync)
-* **Пример**: Байткод в памяти шифруется динамическим ключом: `k_dyn = k_pos ^ ctx.running_key`. При каждом шаге `FETCH_NEXT()` ключ эволюционирует.
-* **Что находит фаззер**: Если в циклах (back-edges) или на ветках условных переходов (`H_JCC`) ключ не перепривязывается к базовому смещению блока (`reanchor_running_key`), при следующей итерации цикла байткод расшифровывается в псевдослучайный мусор.
-* **Последствие**: Невалидный опкод попадает в ловушку `H_DECOY_*`, отравляет регистровую маску `ctx.reg_mask`, и следующий `LOAD/STORE` падает по адресу `0x5877...`.
-
-### Д. Ложные срабатывания Anti-Tamper и Anti-Debug (Scheduler Preemption)
-* **Пример**: Проверка таймеров `evaluate_emulation_differential` и SMC-зондов `execute_introspective_smc_probe`.
-* **Что нашел фаззер**: При интенсивном фаззинге планировщик ОС периодически прерывает тред (context switch). Замер времени выполнения 64 nop'ов через `cntvct_el0` скакал с 10 нс до 4 миллисекунд. Код защиты ошибочно считал это "замедлением под отладчиком" и отравлял регистры штрафом `0x5877AABBCCDDEEFFULL`.
-* **Фикс**: Переход на мульти-трайл замеры (минимум по 5 попыткам отсекает контекстные переключения) и замер обоих таймеров (`cntvct` и `mach_absolute_time`) строго на одном интервале.
-
-### Е. Тонкие краевые случаи архитектуры процессора
-* Сдвиги на 0, 31, 32, 63, 64 бита (поведение UB в C++ vs x86/ARM маскирование счетчика сдвига `& 31` / `& 63`).
-* Округление и насыщение при конверсии `cvttsd2si`: приведение NaN / Inf / переполненного double к `int64_t` должно давать одинаковый архитектурный результат (`0x8000000000000000ULL`).
-* Деление на 0 и работа со знаковыми числами вокруг `INT32_MIN` (-2147483648).
+1. **Divergence (Value Mismatch)**: $f_{\text{native}}(x) \neq f_{\text{protected\_vm}}(x)$ — both implementations exit cleanly, but the VM produces an incorrect return value or state.
+2. **Crash / Fault**: The native code executes cleanly, while the virtualized code crashes with `SIGSEGV`, `SIGBUS`, `SIGILL`, or enters an infinite loop.
+3. **Compilation / Transformation Failure**: The obfuscator emits C++ source code that fails to compile under `clang++` or violates target language type constraints.
 
 ---
 
-## 3. Архитектура: как устроен поиск
+## 2. Specific Bug Classes Detected by the Fuzzer
 
-В ASGARD реализованы **два взаимодополняющих инструмента**:
+### A. Register Preservation & Bit-Width Truncation
+* **Scenario**: SIB indirect memory addressing of the form `[base + index * scale]`.
+* **Root Cause Found**: During lowering of `movzx r9d, byte ptr [rsi + rax]`, the scratch address register inherited the 32-bit width of `r9d`. The 64-bit base address `rsi + rax` was truncated to 32 bits, causing an immediate segmentation fault (`SIGSEGV`).
+* **Fix**: In `lib/native_vm/vm_transform.ml`, memory scratch registers are strictly enforced to `Register.B64`.
+
+### B. Type Errors in MBA Obfuscation (Floating-Point Taint)
+* **Scenario**: Source code performing floating-point addition: `double q2 = q + p.d;`.
+* **Root Cause Found**: The arithmetic rewriter `c_arith_rewriter.ml` converted binary `+` into an integer MBA macro: `ASG_MBA_ADD(q, p.d)`. The macro used bitwise operators (`^`, `&`, `|`), which are invalid for floating-point types in C++.
+* **Fix**: Introduced static FP-taint analysis (propagating float/double properties through literals, casts, structure definitions, and auto chains) to exclude floating-point types from integer MBA transformations.
+
+### C. CPU Flags Clobbering in CFF and Opaque Predicates
+* **Scenario**: A comparison instruction `cmp rax, rbx` sets CPU condition flags `ZF/CF/SF/OF`. The Control-Flow Flattening (CFF) dispatcher or opaque predicate inserts auxiliary arithmetic before a conditional branch (`jcc`).
+* **Root Cause Found**: When the dispatcher overwrote flags during intermediate operations without saving them via `Get_flags` / `Set_flags`, conditional branches took the wrong path, causing semantic divergence (`DIVERGENCE FOUND: Golden != Protected`).
+
+### D. Dynamic Decryption Key Desynchronization (Rolling Key Desync)
+* **Scenario**: In-memory bytecode is encrypted with a positional dynamic key: `k_dyn = k_pos ^ ctx.running_key`. The key evolves with every `FETCH_NEXT()` invocation.
+* **Root Cause Found**: In loops (back-edges) or conditional branches (`H_JCC`), failure to re-anchor the key to the target block's base offset (`reanchor_running_key`) caused the next loop iteration to decrypt instructions as pseudo-random junk.
+* **Impact**: Invalid opcodes hit trap handlers (`H_DECOY_*`), poisoned register masks (`ctx.reg_mask`), and subsequent `LOAD/STORE` operations crashed on invalid addresses (`0x5877...`).
+
+### E. False Positives in Anti-Tamper & Anti-Debug (Scheduler Preemption)
+* **Scenario**: Timing checks in `evaluate_emulation_differential` and introspective SMC probes via `execute_introspective_smc_probe`.
+* **Root Cause Found**: Under heavy fuzzing load, OS thread preemption caused 64-nop timing measurements (`cntvct_el0`) to spike from 10 ns to 4 ms. The runtime falsely identified this as debugger single-stepping and poisoned registers with penalty constants (`0x5877AABBCCDDEEFFULL`).
+* **Fix**: Transitioned to multi-trial measurements (taking the minimum of 5 runs to eliminate context-switch outliers) and measured paired timers (`cntvct` and `mach_absolute_time`) over identical intervals.
+
+### F. Subtle Architectural Edge Cases
+* Shift counts of 0, 31, 32, 63, and 64 bits (undefined behavior in C++ versus x86/ARM hardware counter masking `& 31` / `& 63`).
+* Float-to-integer conversion saturation in `cvttsd2si`: converting NaN, Inf, or out-of-bounds doubles to `int64_t` must produce the exact architecture-defined result (`0x8000000000000000ULL`).
+* Division by zero and signed edge cases around `INT32_MIN` (-2147483648).
+
+---
+
+## 3. Architecture: How Differential Fuzzing Operates
+
+ASGARD provides two complementary fuzzing harnesses:
 
 ```
                     ┌──────────────────────────────────────────┐
@@ -64,48 +64,50 @@ $$\forall x: \quad f_{\text{native}}(x) \equiv f_{\text{protected\_vm}}(x)$$
      markers = inert no-ops                     macro-obf + CFF + MBA + VM
               │                                              │
    ┌──────────┴──────────┐                       ┌───────────┴───────────┐
-   │ Вариант 2: Python    │                       │ Вариант 1: libFuzzer  │
-   │ run_diff_project.py  │                       │ run_libfuzzer.sh      │
-   │ Out-of-process       │                       │ In-process            │
-   │ Тестирует весь CLI   │                       │ Coverage-guided       │
-   │ Скорость: ~100-500/s │                       │ Скорость: 5000-8000/s │
-   └──────────────────────┘                       └───────────────────────┘
+   │ Option 2: Python    │                       │ Option 1: libFuzzer   │
+   │ run_diff_project.py │                       │ run_libfuzzer.sh      │
+   │ Out-of-process      │                       │ In-process            │
+   │ Full CLI validation │                       │ Coverage-guided       │
+   │ Speed: ~100-500/s   │                       │ Speed: 5000-8000/s    │
+   └─────────────────────┘                       └───────────────────────┘
 ```
 
-### Вариант 1: libFuzzer (`run_libfuzzer.sh`)
-* **Принцип**: Оба ядра компилируются в **один исполняемый процесс**. Входные данные мутируются генератором LLVM libFuzzer.
-* **Coverage-Guided**: LLVM инструментирует базовые блоки. Если мутация покрывает новую ветку кода (в нативном ядре или внутри диспетчера VM), вход сохраняется в корпус `corpus/`.
-* **Сверхвысокая скорость**: До 5 000 – 8 000 проверок в секунду (миллионы тестов за 5 минут).
-* **Авто-минимизация**: При любом падении или расхождении вызывается `__builtin_trap()`, libFuzzer сохраняет минимальный набор байт в `artifacts/crash-*`, воспроизводимый одной командой.
+### Option 1: libFuzzer (`run_libfuzzer.sh`)
+* **Mechanism**: Compiles both golden and protected implementations into a **single unified process**. Inputs are generated and mutated by LLVM's libFuzzer engine.
+* **Coverage-Guided**: LLVM instruments basic blocks. When a mutation triggers a new control-flow branch (in the native core or inside the VM interpreter loop), the input is preserved in `corpus/`.
+* **High Throughput**: 5,000 to 8,000 executions per second (millions of trials in under 5 minutes).
+* **Automated Minimization**: Divergences or faults invoke `__builtin_trap()`, prompting libFuzzer to persist the minimal crash reproduction input to `artifacts/crash-*`.
 
-### Вариант 2: Python Project Runner (`run_diff_project.py`)
-* **Принцип**: Собирает два отдельных бинарника (`app_native` и `protected_proj`) через консольную команду `random_visa project`.
-* **Проверка полного пайплайна**: Проверяет не только виртуализацию функций, но и генерацию Makefile, заголовочных файлов, линковку и strip-статус.
-* **Наглядная локализация**: При расхождении печатает дамп структуры `TestPayload`, значения golden vs VM и побитовую XOR-маску ошибки.
+### Option 2: Python Project Runner (`run_diff_project.py`)
+* **Mechanism**: Compiles two distinct binaries (`app_native` and `protected_proj`) via the `random_visa project` command-line interface.
+* **Full Pipeline Verification**: Validates not only instruction virtualization, but also Makefile generation, header dependencies, symbol stripping, and linking.
+* **Granular Diagnostics**: On divergence, prints a structured payload dump, comparing golden versus VM values along with an XOR bitmask of differences.
 
 ---
 
-## 4. Как запускать
+## 4. Usage Instructions
 
-### Быстрый запуск libFuzzer (60 секунд):
+### Quick libFuzzer Run (60 seconds):
 ```bash
 ./examples/diff_fuzz/run_libfuzzer.sh
 ```
 
-### Длительная ночная кампания (10 минут или 5 миллионов итераций):
+### Extended Overnight Fuzzing Campaign:
 ```bash
+# By duration (e.g. 10 minutes)
 ASG_FUZZ_SECONDS=600 ./examples/diff_fuzz/run_libfuzzer.sh
-# или
+
+# Or by iteration count (e.g. 5 million executions)
 ASG_FUZZ_RUNS=5000000 ./examples/diff_fuzz/run_libfuzzer.sh
 ```
 
-### Воспроизведение конкретного креша:
+### Reproducing a Specific Crash Artifact:
 ```bash
 ./examples/diff_fuzz/build/diff_fuzzer ./examples/diff_fuzz/artifacts/crash-<hash>
 ```
 
-### Запуск через Make:
+### Running via Makefile:
 ```bash
-make diff-fuzz-libfuzzer    # Вариант 1 (libFuzzer)
-make diff-fuzz-project      # Вариант 2 (Python runner, 10 000 векторов)
+make diff-fuzz-libfuzzer    # Option 1: libFuzzer in-process
+make diff-fuzz-project      # Option 2: Python runner (10,000 vectors)
 ```
