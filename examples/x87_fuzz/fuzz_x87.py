@@ -33,8 +33,13 @@ import subprocess
 import time
 from typing import List, Tuple, Dict, Any, Optional
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+# Find repo root by locating dune-project
+cur = SCRIPT_DIR
+while cur != "/" and not os.path.exists(os.path.join(cur, "dune-project")):
+    cur = os.path.dirname(cur)
+REPO_ROOT = cur if cur != "/" else os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
 ARTIFACT_DIR = os.path.join(SCRIPT_DIR, "artifacts")
 os.makedirs(ARTIFACT_DIR, exist_ok=True)
 
