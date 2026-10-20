@@ -1,82 +1,82 @@
-# Правила оформлення Markdown у репозиторії
+# Repository Markdown Style Guide
 
-Практичний набір правил для оформлення `.md` файлів у репозиторії. Орієнтований на читабельність, однаковий стиль і просту навігацію, без зайвого декоративного оформлення.
+A practical set of rules for formatting Markdown files in the repository. Focused on readability, consistent style, and simple navigation without extraneous decorative markup.
 
-## 1. Загальні правила
+## 1. General Rules
 
-- Використовувати Markdown відповідно до CommonMark/GitHub Flavored Markdown.
-- Один файл — одна чітка тема або відповідальність.
-- Не дублювати інформацію, яка вже описана в іншому документі.
-- Писати коротко й конкретно.
-- Використовувати просту структуру заголовків.
-- Не використовувати емодзі та декоративні символи.
-- Не використовувати великі блоки тексту без поділу на секції.
-- Не використовувати HTML, якщо те саме можна зробити стандартним Markdown.
-- Не додавати інформацію, яка швидко застаріває, без вказання джерела або способу її перевірки.
-
----
-
-## 2. Структура документа
-
-Кожен документ повинен мати зрозумілу ієрархію:
-
-```md
-# Назва документа
-
-Короткий опис документа.
-
-## Основний розділ
-
-Текст або список.
-
-### Підрозділ
-
-Детальна інформація.
-
-## Наступний розділ
-
-Текст.
-```
-
-Рекомендована структура:
-
-```md
-# Назва
-
-Короткий опис: що це за документ і для чого він потрібен.
-
-## Мета
-
-Що описує документ.
-
-## Передумови
-
-Що потрібно знати або мати перед виконанням описаних дій.
-
-## Основна інформація
-
-Основний зміст документа.
-
-## Приклади
-
-Практичні приклади.
-
-## Обмеження
-
-Відомі обмеження або особливі випадки.
-
-## Пов'язані документи
-
-Посилання на інші документи.
-```
-
-Не потрібно використовувати всі секції, якщо вони не мають змісту.
+- Follow CommonMark and GitHub Flavored Markdown specifications.
+- Maintain one distinct topic or scope per file.
+- Do not duplicate information already documented elsewhere.
+- Write concisely and concretely.
+- Maintain a clean heading hierarchy.
+- Do not use emojis or decorative symbols.
+- Avoid large walls of text without sectional division.
+- Avoid raw HTML when standard Markdown syntax suffices.
+- Do not include rapidly changing state without citing a source or verification mechanism.
 
 ---
 
-## 3. Заголовки
+## 2. Document Structure
 
-Використовувати `#` для основного заголовка і послідовну ієрархію:
+Every document must present an intuitive hierarchy:
+
+```md
+# Document Title
+
+Brief description of the document purpose.
+
+## Primary Section
+
+Text or list content.
+
+### Subsection
+
+Detailed information.
+
+## Next Section
+
+Text content.
+```
+
+Recommended layout template:
+
+```md
+# Title
+
+Brief overview: what this document covers and why it exists.
+
+## Purpose
+
+Scope and objectives of the document.
+
+## Prerequisites
+
+Required background knowledge, tools, or configurations.
+
+## Core Content
+
+Detailed specifications and technical guidance.
+
+## Examples
+
+Practical usage scenarios.
+
+## Limitations
+
+Known edge cases, trade-offs, or constraints.
+
+## Related Documents
+
+Cross-references and relative links to complementary documents.
+```
+
+Omit unnecessary sections when they do not apply to the specific topic.
+
+---
+
+## 3. Headings
+
+Use a single top-level `#` heading and maintain sequential levels:
 
 ```md
 # Level 1
@@ -88,64 +88,63 @@
 #### Level 4
 ```
 
-Не можна пропускати рівні:
+Never skip hierarchy levels:
 
 ```md
-# Назва
+# Title
 
-### Розділ
+### Section
 ```
 
-Якщо `##` не використовується, структура документа стає складнішою для навігації.
+Skipping `##` makes document navigation and automatic outline generation disjointed.
 
-Не використовувати заголовки тільки для зміни розміру тексту.
+Do not use headings merely to adjust text font sizes.
 
-Погано:
+Incorrect:
 
 ```md
-# Встановлення
+# Installation
 
-### Встановлення залежностей
+### Dependency Setup
 
 ##### npm
 ```
 
-Добре:
+Correct:
 
 ```md
-# Встановлення
+# Installation
 
-## Встановлення залежностей
+## Dependency Setup
 
 ### npm
 ```
 
 ---
 
-## 4. Абзаци
+## 4. Paragraphs
 
-Один абзац повинен містити одну логічну думку.
+Structure paragraphs around a single coherent concept.
 
-Погано:
+Incorrect:
 
 ```md
-Для запуску проєкту потрібно встановити Node.js після цього
-потрібно встановити залежності і запустити команду npm install
-після чого можна запускати проєкт.
+To run the project install Node.js after that install dependencies
+and run npm install command then you can start the project.
 ```
 
-Краще:
+Correct:
 
 ````md
-Для запуску проєкту потрібен Node.js.
+The project requires Node.js.
 
-Після встановлення Node.js встановіть залежності:
+Install required dependencies:
 
 ```bash
 npm install
 ```
 
-Після цього запустіть проєкт:
+Start the application:
 
 ```bash
 npm run dev
@@ -154,9 +153,9 @@ npm run dev
 
 ---
 
-## 5. Списки
+## 5. Lists
 
-Для переліків використовувати `-`:
+Use `-` for unordered itemization:
 
 ```md
 - Node.js
@@ -165,16 +164,16 @@ npm run dev
 - PostgreSQL
 ```
 
-Для послідовності дій використовувати нумерований список:
+Use numbered lists for chronological step-by-step procedures:
 
 ```md
-1. Встановіть залежності.
-2. Створіть `.env`.
-3. Запустіть міграції.
-4. Запустіть застосунок.
+1. Install dependencies.
+2. Create `.env` configuration.
+3. Apply database migrations.
+4. Launch the application.
 ```
 
-Не змішувати різні стилі маркерів без необхідності:
+Do not mix marker styles within the same document:
 
 ```md
 - Item
@@ -182,7 +181,7 @@ npm run dev
 + Item
 ```
 
-Краще використовувати один стиль у всьому репозиторії:
+Maintain consistent `-` dashes across the entire repository:
 
 ```md
 - Item
@@ -192,9 +191,9 @@ npm run dev
 
 ---
 
-## 6. Код
+## 6. Code Blocks
 
-Для команд використовувати fenced code blocks із зазначенням мови:
+Use fenced code blocks with explicit language identifiers:
 
 ````md
 ```bash
@@ -203,7 +202,7 @@ npm run build
 ```
 ````
 
-Для JavaScript:
+For JavaScript:
 
 ````md
 ```javascript
@@ -211,7 +210,7 @@ const result = await getData();
 ```
 ````
 
-Для TypeScript:
+For TypeScript:
 
 ````md
 ```typescript
@@ -219,7 +218,7 @@ const result: User = await getUser();
 ```
 ````
 
-Для конфігурації:
+For configuration:
 
 ````md
 ```yaml
@@ -228,7 +227,7 @@ server:
 ```
 ````
 
-Для тексту без конкретної мови:
+For generic raw text output:
 
 ````md
 ```text
@@ -236,20 +235,18 @@ example output
 ```
 ````
 
-Не використовувати inline code для великих фрагментів.
-
-Inline code підходить для коротких значень:
+Do not use inline backticks for multi-line snippets. Inline code is reserved for concise identifiers:
 
 ```md
-Запустіть `npm install`.
-Файл конфігурації знаходиться у `.env`.
+Execute `npm install`.
+Configuration parameters reside in `.env`.
 ```
 
 ---
 
-## 7. Команди
+## 7. Commands
 
-Команди повинні бути готові до копіювання:
+Commands should be directly copy-pasteable:
 
 ````md
 ```bash
@@ -259,107 +256,105 @@ npm run build
 ```
 ````
 
-Якщо команда залежить від конкретної директорії або умови, це потрібно вказати перед командою:
+If execution depends on a specific directory or condition, document it immediately prior:
 
 ````md
-Перейдіть до директорії проєкту:
+Navigate to the project root:
 
 ```bash
 cd project
 ```
 
-Встановіть залежності:
+Install dependencies:
 
 ```bash
 npm install
 ```
 ````
 
-Не ховати важливі параметри команд у тексті.
+Do not bury critical execution flags or arguments in prose paragraphs.
 
 ---
 
-## 8. Таблиці
+## 8. Tables
 
-Таблиці використовувати для структурованого порівняння даних.
+Use Markdown tables for structured data comparisons:
 
 ```md
-| Параметр | Значення | Опис |
+| Parameter | Value | Description |
 |---|---|---|
-| `PORT` | `3000` | Порт сервера |
-| `HOST` | `localhost` | Адреса сервера |
-| `NODE_ENV` | `development` | Середовище запуску |
+| `PORT` | `3000` | Server listen port |
+| `HOST` | `localhost` | Server bind interface |
+| `NODE_ENV` | `development` | Target runtime environment |
 ```
 
-Не використовувати таблиці для великих обсягів тексту.
-
-Якщо інформацію простіше прочитати списком, використовувати список.
+Do not force long text blocks or complex paragraphs into table cells. Use standard lists when reading ease outweighs tabular alignment.
 
 ---
 
-## 9. Посилання
+## 9. Links
 
-Для внутрішніх документів використовувати відносні посилання:
+Use relative file links for internal repository references:
 
 ```md
-Див. [інструкцію з розгортання](./deployment.md).
+See the [deployment guide](./deployment.md).
 ```
 
-Для конкретного розділу:
+For anchoring to specific subsections:
 
 ```md
-Див. [налаштування бази даних](./setup.md#database).
+See [database configuration](./setup.md#database).
 ```
 
-Не використовувати голі URL у тексті, якщо можна зробити нормальне текстове посилання:
+Do not insert bare URLs in body text when descriptive markdown anchor text is possible:
 
-Погано:
+Incorrect:
 
 ```md
-Документація: https://example.com/docs
+Documentation: https://example.com/docs
 ```
 
-Краще:
+Correct:
 
 ```md
-[Документація](https://example.com/docs)
-```
-
----
-
-## 10. Файли та директорії
-
-Назви файлів, директорій, змінних і команд виділяти через inline code:
-
-```md
-Файл конфігурації: `.env`.
-
-Основний код знаходиться в `src/`.
-
-Змінна середовища: `DATABASE_URL`.
+See the [official documentation](https://example.com/docs).
 ```
 
 ---
 
-## 11. Змінні середовища
+## 10. Files and Directories
 
-Для `.env` змінних використовувати таблицю:
+Format file names, directory paths, environment variables, and command names with inline code:
 
 ```md
-| Змінна | Обов'язкова | Опис |
+Configuration file: `.env`.
+
+Core source code resides under `src/`.
+
+Environment variable: `DATABASE_URL`.
+```
+
+---
+
+## 11. Environment Variables
+
+Document environment variables in a dedicated table:
+
+```md
+| Variable | Required | Description |
 |---|---|---|
-| `DATABASE_URL` | Так | URL бази даних |
-| `PORT` | Ні | Порт HTTP-сервера |
-| `LOG_LEVEL` | Ні | Рівень логування |
+| `DATABASE_URL` | Yes | Target database connection URI |
+| `PORT` | No | HTTP listening port (default: 3000) |
+| `LOG_LEVEL` | No | Logging verbosity (`info`, `debug`, `error`) |
 ```
 
-Не додавати реальні секрети:
+Never commit real credentials, tokens, or passwords:
 
 ```md
-DATABASE_PASSWORD=real-password
+DATABASE_PASSWORD=actual-secret-password
 ```
 
-Для прикладу використовувати placeholder:
+Use sanitized placeholders:
 
 ```md
 DATABASE_PASSWORD=<password>
@@ -367,37 +362,37 @@ DATABASE_PASSWORD=<password>
 
 ---
 
-## 12. Warning та важливі примітки
+## 12. Warnings and Notes
 
-Для важливої інформації можна використовувати GitHub alerts:
+Emphasize critical operational constraints using standard GitHub alert syntax:
 
 ```md
 > [!NOTE]
-> Для локального запуску потрібен Docker.
+> Local development requires a running Docker daemon.
 
 > [!WARNING]
-> Команда видаляє локальні дані бази.
+> This command truncates all local database tables.
 
 > [!IMPORTANT]
-> Перед деплоєм необхідно виконати міграції.
+> Pending schema migrations must be applied prior to deployment.
 ```
 
-Не використовувати такі блоки для звичайного тексту.
+Do not abuse alerts for ordinary informative paragraphs.
 
 ---
 
-## 13. Приклади
+## 13. Examples
 
-Приклади повинні бути реалістичними та мінімальними.
+Provide realistic, minimal, and reproducible examples.
 
-Погано:
+Incorrect:
 
 ```md
 Here is some example code that demonstrates many
 different things that are not actually needed.
 ```
 
-Краще:
+Correct:
 
 ````md
 ```typescript
@@ -405,74 +400,74 @@ const user = await getUser(userId);
 ```
 ````
 
-Якщо приклад не є повним, це потрібно явно зазначити:
+If a snippet is abbreviated for clarity, indicate this explicitly:
 
 ```md
-Наведений приклад містить лише необхідну частину конфігурації.
+The snippet above demonstrates only the pertinent configuration subset.
 ```
 
 ---
 
-## 14. README
+## 14. README Structure
 
-`README.md` повинен швидко відповісти на основні питання:
+A `README.md` must immediately resolve the following questions:
 
-1. Що це за проєкт?
-2. Для чого він потрібен?
-3. Як його встановити?
-4. Як його запустити?
-5. Як запустити тести?
-6. Де знаходиться додаткова документація?
+1. What is this project?
+2. Why does it exist?
+3. How do you install it?
+4. How do you run it?
+5. How do you execute the test suite?
+6. Where is the additional documentation located?
 
-Рекомендована структура:
+Recommended layout:
 
 ```md
 # Project Name
 
-Короткий опис проєкту.
+Brief project synopsis.
 
 ## Requirements
 
-Необхідні залежності.
+External tools and runtime prerequisites.
 
 ## Installation
 
-Інструкція встановлення.
+Step-by-step installation instructions.
 
 ## Configuration
 
-Налаштування.
+Environment variables and configuration files.
 
 ## Usage
 
-Приклади використання.
+Practical command-line or API usage examples.
 
 ## Development
 
-Інформація для розробників.
+Local build, watch, and contribution instructions.
 
 ## Testing
 
-Запуск тестів.
+Test suite execution procedures.
 
 ## Deployment
 
-Інструкція деплою.
+Production compilation, packaging, and release procedures.
 
 ## Documentation
 
-Посилання на додаткову документацію.
+Index of links to extended technical manuals.
 
 ## License
 
-Інформація про ліцензію.
+Repository licensing information.
 ```
 
 ---
 
-## 15. ADR та технічні рішення
+## 15. Architecture Decision Records (ADRs)
 
-Для Architecture Decision Records використовувати окремий файл на кожне рішення:
+Maintain ADRs as individual files per architectural decision:
 
 ```text
 docs/
@@ -482,10 +477,10 @@ docs/
     └── 003-api-versioning.md
 ```
 
-Структура:
+Structure:
 
 ```md
-# ADR-001: Використання PostgreSQL
+# ADR-001: PostgreSQL Database Engine
 
 ## Status
 
@@ -493,86 +488,86 @@ Accepted
 
 ## Context
 
-Опис проблеми та контексту.
+Technical challenges, requirements, and constraints motivating the decision.
 
 ## Decision
 
-Опис прийнятого рішення.
+The architectural choice and technical justification.
 
 ## Alternatives
 
-Розглянуті альтернативи.
+Considered alternatives and reasons for rejection.
 
 ## Consequences
 
-Наслідки рішення.
+Positive outcomes, trade-offs, and downstream operational implications.
 ```
 
 ---
 
-## 16. Формулювання
+## 16. Phrasing and Tone
 
-Використовувати конкретні формулювання.
+Use concrete, unambiguous, and direct statements.
 
-Погано:
-
-```md
-Тут потрібно якось налаштувати базу даних.
-```
-
-Добре:
+Incorrect:
 
 ```md
-Створіть базу даних PostgreSQL та вкажіть її URL у `DATABASE_URL`.
+You should somehow configure the database here.
 ```
 
-Уникати нечітких слів:
+Correct:
 
-- `можливо`
-- `якось`
-- `приблизно`
-- `зазвичай`
-- `мабуть`
-- `і так далі`
+```md
+Provision a PostgreSQL database and assign its connection URI to `DATABASE_URL`.
+```
 
-Якщо є виняток або невизначеність — описати її конкретно.
+Avoid ambiguous hedging words:
+
+- `maybe`
+- `somehow`
+- `approximately`
+- `usually`
+- `probably`
+- `etc.`
+
+When exceptions or non-deterministic behaviors exist, state their boundaries explicitly.
 
 ---
 
-## 17. Порядок інформації
+## 17. Information Flow
 
-У документації використовувати принцип:
+Structure documentation along a logical progression:
 
 ```text
 Context → Requirements → Steps → Examples → Troubleshooting
 ```
 
-Тобто спочатку пояснити **що і навіщо**, потім **що потрібно**, після цього **що робити**, а потім показати **приклад**.
+First explain **what and why**, followed by **prerequisites**, then **concrete steps**, followed by **verifiable examples**, and concluding with **troubleshooting**.
 
 ---
 
 ## 18. Troubleshooting
 
-Для типових проблем використовувати формат:
+Format diagnostic and failure resolutions consistently:
 
 ````md
 ## Troubleshooting
 
 ### Error: `ECONNREFUSED`
 
-**Причина**
+**Cause**
 
-PostgreSQL не запущений.
+The PostgreSQL daemon is not running or listening on the target port.
 
-**Рішення**
+**Resolution**
 
-Перевірте статус контейнера:
+Check the container state:
 
 ```bash
 docker compose ps
 ```
 
-Якщо контейнер зупинений:
+If stopped, restart the service:
 
 ```bash
 docker compose up -d postgres
@@ -581,11 +576,11 @@ docker compose up -d postgres
 
 ---
 
-## 19. Єдиний стиль термінології
+## 19. Consistent Terminology
 
-Один термін повинен мати одне написання в межах репозиторію.
+Use uniform technical terms across the repository.
 
-Наприклад, якщо використовується `deployment`, не потрібно в різних місцях писати:
+For example, do not alternate arbitrarily between:
 
 ```text
 deployment
@@ -595,9 +590,9 @@ release
 publishing
 ```
 
-якщо всі вони означають один і той самий процес.
+when referring to the identical lifecycle stage.
 
-Також потрібно однаково писати назви:
+Standardize casing for common tooling and platforms:
 
 ```md
 PostgreSQL
@@ -609,9 +604,9 @@ GitHub
 
 ---
 
-## 20. Що не використовувати
+## 20. Prohibited Elements
 
-Не використовувати:
+Do not use excessive punctuation or emojis:
 
 ```md
 # !!!!! IMPORTANT !!!!!
@@ -629,7 +624,7 @@ GitHub
 💡
 ```
 
-Не використовувати декоративні роздільники без необхідності:
+Avoid redundant decorative dividers:
 
 ```md
 -------------------
@@ -637,9 +632,9 @@ GitHub
 ===================
 ```
 
-Для структури використовувати заголовки.
+Use semantic Markdown headings to establish structural boundaries.
 
-Не писати:
+Do not number sections sequentially without descriptive titles:
 
 ```md
 # Setup
@@ -653,27 +648,27 @@ Some more text...
 ## Setup 3
 ```
 
-Назви секцій повинні описувати їхній зміст.
+Section titles must summarize their contents.
 
 ---
 
-## Мінімальний стандарт для репозиторію
+## Minimum Repository Standard
 
 ```text
-1. Один документ — одна тема.
-2. Кожен файл має один # заголовок.
-3. Заголовки використовуються послідовно: # → ## → ###.
-4. Один абзац — одна логічна думка.
-5. Списки використовуються для переліків (-).
-6. Нумеровані списки використовуються для послідовності дій.
-7. Команди завжди знаходяться у code block з мовою bash/shell.
-8. Назви файлів, змінних і команд оформлюються через inline code.
-9. Внутрішні документи пов'язуються відносними посиланнями.
-10. Таблиці використовуються тільки для структурованих даних.
-11. Не зберігати секрети та паролі в документації.
-12. Не використовувати емодзі та декоративні символи.
-13. Не дублювати інформацію між документами.
-14. Писати конкретно та без зайвих пояснень.
-15. Документація повинна бути придатною для копіювання команд і прикладів.
-16. Перед merge перевіряти Markdown на биті посилання, неправильну ієрархію заголовків та форматування.
+1. One topic per document.
+2. Exactly one top-level `#` title per file.
+3. Strictly sequential heading depth: # → ## → ###.
+4. Single logical thought per paragraph.
+5. Standard dash lists (-) for itemization.
+6. Numbered lists for sequential procedural steps.
+7. Terminal commands formatted in fenced code blocks with bash/shell syntax.
+8. File names, directories, variables, and commands formatted via inline code.
+9. Internal documents linked via relative repository paths.
+10. Tables reserved exclusively for structured tabular data.
+11. No credentials or secrets committed in documentation.
+12. Zero emojis and zero decorative symbols.
+13. No duplication of content across documents.
+14. Direct, concise prose without conversational filler.
+15. Commands and examples must be complete and copy-pasteable.
+16. Verify Markdown prior to merging for broken relative links, heading violations, and lint issues.
 ```
