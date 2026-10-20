@@ -980,11 +980,34 @@ let lift_vector_binop ?const_pool mnem ops =
                 Ok (instrs @ extra)
             | Some di, Some s1, None -> (
                 match src2 with
-                | X86_parser.OpMem m ->
-                    let load = Ir.Vec_load { dst = 31; addr = ir_mem_of_raw m; bits } in
-                    let binop = Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = 31; bits; lane_bits } in
-                    let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
-                    Ok ([ load; binop ] @ extra)
+                | X86_parser.OpMem m -> (
+                    match m.symbol, const_pool with
+                    | Some sym, Some cp when Hashtbl.mem cp sym ->
+                        let b = Hashtbl.find cp sym in
+                        let lane0, lane1 = read_const_vec128 b m.disp in
+                        let tmp_vec = 31 in
+                        let prep =
+                          if lane0 = lane1 then
+                            let tmp = Register.vtmp0 in
+                            [
+                              Ir.Mov { dst = Ir.Reg tmp; src = Ir.Imm lane0 };
+                              Ir.Vec_splat { dst = tmp_vec; src = tmp; bits = 128; lane_bits = 64 };
+                            ]
+                          else
+                            [
+                              Ir.Mov { dst = Ir.Reg (Register.Fpr (tmp_vec, Register.B64)); src = Ir.Imm lane0 };
+                              Ir.Mov { dst = Ir.Reg (Register.Fpr (30, Register.B64)); src = Ir.Imm lane1 };
+                              Ir.Vec_binop { op = Ir.Vunpckl; elem = Ir.VInt; dst = tmp_vec; src1 = tmp_vec; src2 = 30; bits = 128; lane_bits = 64 };
+                            ]
+                        in
+                        let binop = Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = tmp_vec; bits; lane_bits } in
+                        let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                        Ok (prep @ [ binop ] @ extra)
+                    | _ ->
+                        let load = Ir.Vec_load { dst = 31; addr = ir_mem_of_raw m; bits } in
+                        let binop = Ir.Vec_binop { op; elem; dst = di; src1 = s1; src2 = 31; bits; lane_bits } in
+                        let extra = if clear_upper then [ Ir.Vec_clear_upper di ] else [] in
+                        Ok ([ load; binop ] @ extra))
                 | _ -> Error "vector binary operation requires vector registers or memory operand")
             | _ -> Error "vector binary operation requires vector registers")
         | [dst; src1; src2; X86_parser.OpImm imm] -> (

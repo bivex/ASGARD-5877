@@ -1353,6 +1353,73 @@ func_comi:
           Alcotest.(check int64) "nan: jp taken" 1L (get_reg state Register.rdx);
           Alcotest.(check int64) "mem equal: je taken" 1L (get_reg state Register.rsi))
 
+let test_x86_pand_por_pxor_pandn () =
+  let asm = {|
+func_bitwise:
+    pand xmm0, xmm1
+    por xmm2, xmm3
+    pxor xmm4, xmm5
+    pxor xmm6, xmm6
+    pandn xmm7, xmm8
+    vpandn xmm9, xmm7, xmm8
+    vpor ymm10, ymm11, ymm12
+    vpxor ymm13, ymm14, ymm15
+    pand xmm0, xmmword ptr [rsp + 16]
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      state.vsp <- 0x1000L;
+      write_mem state 0x1010L B64 0x0F0F0F0F0F0F0F0FL;
+      write_mem state 0x1018L B64 0x0F0F0F0F0F0F0F0FL;
+      Hashtbl.replace state.vectors 0 [| 0xAAAAAAAAAAAAAAAA_L; 0xCCCCCCCCCCCCCCCC_L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1 [| 0xFFFFFFFF00000000L; 0x123456789ABCDEF0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 2 [| 0xAAAAAAAAAAAAAAAA_L; 0x1111111111111111L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 3 [| 0x5555555555555555L; 0x2222222222222222L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 4 [| 0xAAAAAAAAAAAAAAAA_L; 0x123456789ABCDEF0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5 [| 0xFFFFFFFFFFFFFFFF_L; 0x123456789ABCDEF0L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 6 [| 0xDEADBEEFCAFEBABEL; 0xFEEDFACEDEADBEEFL; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 7 [| 0x00000000FFFFFFFFL; 0x1111111111111111L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 8 [| 0xFFFFFFFFFFFFFFFF_L; 0xFFFFFFFFFFFFFFFF_L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 9 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 11 [| 0x1111111111111111L; 0x2222222222222222L; 0x3333333333333333L; 0x4444444444444444L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 12 [| 0xEEEEEEEEEEEEEEEEL; 0xDDDDDDDDDDDDDDDD_L; 0xCCCCCCCCCCCCCCCC_L; 0xBBBBBBBBBBBBBBBB_L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 14 [| 0x1234567890ABCDEF_L; 0xFEEDBEEFCAFE1234L; 0x5555555555555555L; 0xAAAAAAAAAAAAAAAA_L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 15 [| 0x1234567890ABCDEF_L; 0x0000000000000000L; 0xAAAAAAAAAAAAAAAA_L; 0x5555555555555555L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v4 = Hashtbl.find state.vectors 4 in
+          let v6 = Hashtbl.find state.vectors 6 in
+          let v7 = Hashtbl.find state.vectors 7 in
+          let v9 = Hashtbl.find state.vectors 9 in
+          let v10 = Hashtbl.find state.vectors 10 in
+          let v13 = Hashtbl.find state.vectors 13 in
+          Alcotest.(check int64) "pand mem lane0" 0x0A0A0A0A00000000L v0.(0);
+          Alcotest.(check int64) "por lane0" (-1L) v2.(0);
+          Alcotest.(check int64) "por lane1" 0x3333333333333333L v2.(1);
+          Alcotest.(check int64) "pxor lane0" 0x5555555555555555L v4.(0);
+          Alcotest.(check int64) "pxor lane1" 0L v4.(1);
+          Alcotest.(check int64) "pxor zero lane0" 0L v6.(0);
+          Alcotest.(check int64) "pxor zero lane1" 0L v6.(1);
+          Alcotest.(check int64) "pandn lane0" 0xFFFFFFFF00000000L v7.(0);
+          Alcotest.(check int64) "pandn lane1" 0xEEEEEEEEEEEEEEEEL v7.(1);
+          Alcotest.(check int64) "vpandn lane0" 0x00000000FFFFFFFFL v9.(0);
+          Alcotest.(check int64) "vpandn lane1" 0x1111111111111111L v9.(1);
+          Alcotest.(check int64) "vpandn lane2 zeroed" 0L v9.(2);
+          Alcotest.(check int64) "vpor 0" (-1L) v10.(0);
+          Alcotest.(check int64) "vpor 1" (-1L) v10.(1);
+          Alcotest.(check int64) "vpor 2" (-1L) v10.(2);
+          Alcotest.(check int64) "vpor 3" (-1L) v10.(3);
+          Alcotest.(check int64) "vpxor 0" 0L v13.(0);
+          Alcotest.(check int64) "vpxor 1" 0xFEEDBEEFCAFE1234L v13.(1);
+          Alcotest.(check int64) "vpxor 2" (-1L) v13.(2);
+          Alcotest.(check int64) "vpxor 3" (-1L) v13.(3))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -2686,5 +2753,6 @@ let tests = [
   Alcotest.test_case "lift_x86_scalar_and_packed_fp_arithmetic" `Quick test_x86_scalar_and_packed_fp_arithmetic;
   Alcotest.test_case "lift_x86_int_float_conversions" `Quick test_x86_int_float_conversions;
   Alcotest.test_case "lift_x86_float_comparisons" `Quick test_x86_float_comparisons;
+  Alcotest.test_case "lift_x86_pand_por_pxor_pandn" `Quick test_x86_pand_por_pxor_pandn;
 ]
 

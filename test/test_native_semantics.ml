@@ -1483,11 +1483,67 @@ func_native_fcmp:
     ctx.vregs[7][0] = dbits(1.0);
 
     if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    std::printf("DEBUG: zf=%d pf=%d cf=%d rax=%llu rbx=%llu rcx=%llu rdx=%llu\n", (int)ctx.zf, (int)ctx.pf, (int)ctx.cf, (unsigned long long)ctx.get_rax(), (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RBX), (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RCX), (unsigned long long)ctx.get_reg(vanguard_threaded_vm::REG_RDX));
 
     if (ctx.get_rax() != 1ULL) return 2;
     if (ctx.get_reg(vanguard_threaded_vm::REG_RBX) != 1ULL) return 3;
     if (ctx.get_reg(vanguard_threaded_vm::REG_RCX) != 1ULL) return 4;
     if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 1ULL) return 5;
+|})
+
+let test_native_x86_pand_por_pxor_pandn () =
+  let pkg =
+    mk_pkg ~seed:20261025 {|
+func_native_xmm_bitwise:
+    pand xmm0, xmm1
+    por xmm2, xmm3
+    pxor xmm4, xmm5
+    pxor xmm6, xmm6
+    pandn xmm7, xmm8
+    vpandn xmm9, xmm7, xmm8
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_xmm_bitwise" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    ctx.vregs[0][0] = 0xAAAAAAAAAAAAAAAAULL; ctx.vregs[0][1] = 0xCCCCCCCCCCCCCCCCULL;
+    ctx.vregs[1][0] = 0xFFFFFFFF00000000ULL; ctx.vregs[1][1] = 0x123456789ABCDEF0ULL;
+
+    ctx.vregs[2][0] = 0xAAAAAAAAAAAAAAAAULL; ctx.vregs[2][1] = 0x1111111111111111ULL;
+    ctx.vregs[3][0] = 0x5555555555555555ULL; ctx.vregs[3][1] = 0x2222222222222222ULL;
+
+    ctx.vregs[4][0] = 0xAAAAAAAAAAAAAAAAULL; ctx.vregs[4][1] = 0x123456789ABCDEF0ULL;
+    ctx.vregs[5][0] = 0xFFFFFFFFFFFFFFFFULL; ctx.vregs[5][1] = 0x123456789ABCDEF0ULL;
+
+    ctx.vregs[6][0] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[6][1] = 0xFEEDFACEDEADBEEFULL;
+
+    ctx.vregs[7][0] = 0x00000000FFFFFFFFULL; ctx.vregs[7][1] = 0x1111111111111111ULL;
+    ctx.vregs[8][0] = 0xFFFFFFFFFFFFFFFFULL; ctx.vregs[8][1] = 0xFFFFFFFFFFFFFFFFULL;
+
+    ctx.vregs[9][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[9][3] = 0xDEADBEEFCAFEBA00ULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if (ctx.vregs[0][0] != 0xAAAAAAAA00000000ULL) return 2;
+    if (ctx.vregs[0][1] != (0xCCCCCCCCCCCCCCCCULL & 0x123456789ABCDEF0ULL)) return 3;
+
+    if (ctx.vregs[2][0] != 0xFFFFFFFFFFFFFFFFULL) return 4;
+    if (ctx.vregs[2][1] != 0x3333333333333333ULL) return 5;
+
+    if (ctx.vregs[4][0] != 0x5555555555555555ULL) return 6;
+    if (ctx.vregs[4][1] != 0ULL) return 7;
+
+    if (ctx.vregs[6][0] != 0ULL || ctx.vregs[6][1] != 0ULL) return 8;
+
+    if (ctx.vregs[7][0] != 0xFFFFFFFF00000000ULL) return 9;
+    if (ctx.vregs[7][1] != 0xEEEEEEEEEEEEEEEEULL) return 10;
+
+    if (ctx.vregs[9][0] != 0x00000000FFFFFFFFULL) return 11;
+    if (ctx.vregs[9][1] != 0x1111111111111111ULL) return 12;
+    if (ctx.vregs[9][2] != 0ULL || ctx.vregs[9][3] != 0ULL) return 13;
 |})
 
 let tests = [
@@ -1520,4 +1576,5 @@ let tests = [
   Alcotest.test_case "native_x86_scalar_and_packed_fp_arithmetic" `Slow test_native_x86_scalar_and_packed_fp_arithmetic;
   Alcotest.test_case "native_x86_conversions" `Slow test_native_x86_conversions;
   Alcotest.test_case "native_x86_float_comparisons" `Slow test_native_x86_float_comparisons;
+  Alcotest.test_case "native_x86_pand_por_pxor_pandn" `Slow test_native_x86_pand_por_pxor_pandn;
 ]
