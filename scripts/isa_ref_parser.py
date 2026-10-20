@@ -247,6 +247,17 @@ CATEGORIES = {
     "Сравнение/флаги": ["CMP", "TEST"],
     "Управление потоком": ["JMP", "Jcc", "CALL", "RET"],
     "Условные пересылки": ["CMOVcc", "SETcc"],
+    "Деление": ["DIV", "IDIV"],
+    "Битовые тесты": ["BT", "BTC", "BTR", "BTS"],
+    "Обмен": ["XCHG", "XADD", "CMPXCHG", "CMPXCHG8B", "CMPXCHG16B"],
+    "Строковые": ["MOVS", "MOVSB", "MOVSW", "MOVSD", "MOVSQ",
+                  "STOS", "STOSB", "STOSW", "STOSD", "STOSQ",
+                  "CMPS", "CMPSB", "CMPSW", "CMPSD", "CMPSQ",
+                  "SCAS", "SCASB", "SCASW", "SCASD", "SCASQ",
+                  "LODS", "LODSB", "LODSW", "LODSD", "LODSQ",
+                  "REP", "REPE", "REPNE", "REPZ", "REPNZ"],
+    "Доп. сдвиги": ["SHLD", "SHRD", "RCL", "RCR"],
+    "Знако-расширение": ["CBW", "CWD", "CDQ", "CQO", "CWDE", "CDQE", "CBTW", "CWTL", "CWTD", "CQTO"],
 }
 
 
@@ -333,6 +344,83 @@ def audit_instructions_in_codebase(mnemonics: list[str]):
             ev_pat = r"\bsetcc\b"
             nat_pat = r"(h_setcc|op_setcc)"
             t_pat = r"(setcc|setz|setne|sete|seta|setb)"
+        elif m_lower in ("movs", "stos", "cmps", "scas", "lods"):
+            l_pat = rf'("{m_lower}b"|"{m_lower}w"|"{m_lower}d"|"{m_lower}q"|\b{m_lower}\b)'
+            ir_pat = r"(mem|atomic_mem|\balu\b)"
+            ev_pat = r"(mem|\balu\b|eval_mem)"
+            nat_pat = r"(load_|store_|h_add)"
+            t_pat = rf"({m_lower}b|{m_lower}w|{m_lower}d|{m_lower}q|test_x86_.*string)"
+        elif m_lower in ("movsb", "movsw", "movsd", "movsq",
+                         "stosb", "stosw", "stosd", "stosq",
+                         "cmpsb", "cmpsw", "cmpsd", "cmpsq",
+                         "scasb", "scasw", "scasd", "scasq",
+                         "lodsb", "lodsw", "lodsd", "lodsq"):
+            l_pat = rf'"{m_lower}"'
+            ir_pat = r"(mem|atomic_mem|\balu\b)"
+            ev_pat = r"(mem|\balu\b|eval_mem)"
+            nat_pat = r"(load_|store_|h_add)"
+            base_str = m_lower[:-1]
+            t_pat = rf"({m_lower}|test_x86_.*string|test_x86_rep.*{base_str})"
+        elif m_lower in ("rep", "repe", "repne", "repz", "repnz"):
+            l_pat = rf'("{m_lower}"|"{m_lower} "|\b{m_lower}\b)'
+            ir_pat = r"(jcc|jmp|alu)"
+            ev_pat = r"(jcc|jmp|eval)"
+            nat_pat = r"(h_jcc|h_jmp|h_sub)"
+            t_pat = rf"({m_lower}|test_x86_rep)"
+        elif m_lower in ("cbw", "cbtw", "cwd"):
+            l_pat = r'("cbw"|"cbtw"|"cwd")'
+            ir_pat = r"(alu|shl|sar|mov)"
+            ev_pat = r"(alu|shl|sar|mov)"
+            nat_pat = r"(h_shl|h_sar|h_and|h_or|h_mov)"
+            t_pat = r"(cbw|cbtw|cwd|sign_extension)"
+        elif m_lower in ("cwde", "cwtl"):
+            l_pat = r'("cwde"|"cwtl")'
+            ir_pat = r"(alu|shl|sar)"
+            ev_pat = r"(alu|shl|sar)"
+            nat_pat = r"(h_shl|h_sar|h_and)"
+            t_pat = r"(cwde|cwtl|sign_extension)"
+        elif m_lower in ("cdq", "cltd", "cwtd"):
+            l_pat = r'("cdq"|"cltd"|"cwtd")'
+            ir_pat = r"(alu|shl|sar)"
+            ev_pat = r"(alu|shl|sar)"
+            nat_pat = r"(h_shl|h_sar)"
+            t_pat = r"(cdq|cltd|cwtd|sign_extension)"
+        elif m_lower in ("cqo", "cqto"):
+            l_pat = r'("cqo"|"cqto")'
+            ir_pat = r"(alu|sar)"
+            ev_pat = r"(alu|sar)"
+            nat_pat = r"(h_sar)"
+            t_pat = r"(cqo|cqto|sign_extension)"
+        elif m_lower in ("cdqe", "cltq"):
+            l_pat = r'("cdqe"|"cltq")'
+            ir_pat = r"(alu|shl|sar)"
+            ev_pat = r"(alu|shl|sar)"
+            nat_pat = r"(h_shl|h_sar)"
+            t_pat = r"(cdqe|cltq|sign_extension)"
+        elif m_lower in ("bt", "btc", "btr", "bts"):
+            l_pat = rf'"{m_lower}"'
+            ir_pat = r"(alu|cmp|not)"
+            ev_pat = r"(alu|cmp)"
+            nat_pat = r"(h_and|h_or|h_xor|h_shr|h_shl|h_cmp)"
+            t_pat = rf"({m_lower}|bit_test)"
+        elif m_lower in ("xchg", "xadd", "cmpxchg", "cmpxchg8b", "cmpxchg16b"):
+            l_pat = rf'"{m_lower}"'
+            ir_pat = rf"(atomic_mem|xchg|cmov|\b{m_lower}\b)"
+            ev_pat = rf"(atomic_mem|xchg|cmov|eval_atomic)"
+            nat_pat = r"(atomic_cas|atomic_swp|atomic_add|h_cmov|atomic_mem)"
+            t_pat = rf"({m_lower}|test_x86_cmpxchg)"
+        elif m_lower in ("shld", "shrd"):
+            l_pat = rf'"{m_lower}"'
+            ir_pat = r"(alu|shl|shr|or)"
+            ev_pat = r"(alu|shl|shr|or)"
+            nat_pat = r"(h_shl|h_shr|h_or)"
+            t_pat = rf"({m_lower}|test_x86_shld_shrd)"
+        elif m_lower in ("rcl", "rcr"):
+            l_pat = rf'"{m_lower}"'
+            ir_pat = r"(get_flags|set_flags|alu)"
+            ev_pat = r"(get_flags|set_flags|alu)"
+            nat_pat = r"(h_get_flags|h_set_flags|h_alu)"
+            t_pat = rf"({m_lower}|test_x86_rcl_rcr_cmc)"
         else:
             l_pat = rf'("{m_lower}"|\b{m_lower}\b)'
             ir_pat = rf"\b{m_lower}\b"

@@ -1520,7 +1520,10 @@ let test_x86_lift_bit_tests () =
   let asm = {|
 bit_test:
     xor rax, rax
+    xor rcx, rcx
     bts rax, 3
+    bt rax, 3
+    setc cl
     bts rax, 5
     btc rax, 3
     btr rax, 5
@@ -1533,7 +1536,8 @@ bit_test:
       match run_func state func with
       | Error e -> Alcotest.fail e
       | Ok () ->
-          Alcotest.(check int64) "bts/btc/btr bit test ops" 0L (get_reg state Register.rax)
+          Alcotest.(check int64) "bts/btc/btr bit test ops" 0L (get_reg state Register.rax);
+          Alcotest.(check int64) "bt sets CF correctly" 1L (get_reg state Register.rcx)
 
 let test_x86_lift_pext_pdep () =
   let asm = {|
