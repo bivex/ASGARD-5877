@@ -331,6 +331,58 @@ let emit_aes_handler b =
     }
 |}
 
+let emit_shuf2_handler b =
+  Buffer.add_string b
+    {|
+    H_VEC_SHUF2: {
+        const uint32_t shuf_src2 = static_cast<uint32_t>(imm & 31ULL);
+        const uint32_t shuf_imm8 = static_cast<uint32_t>((imm >> 5) & 0xFFULL);
+        const uint32_t shuf_bits = static_cast<uint32_t>((imm >> 13) & 0x3FFULL);
+        const uint32_t shuf_lane_bits = static_cast<uint32_t>((imm >> 23) & 0xFFULL);
+        const size_t num_blocks = (shuf_bits >= 256) ? 2 : 1;
+
+        if (shuf_lane_bits == 32) {
+            for (size_t b = 0; b < num_blocks; b++) {
+                const uint32_t sel0 = shuf_imm8 & 3u;
+                const uint32_t sel1 = (shuf_imm8 >> 2) & 3u;
+                const uint32_t sel2 = (shuf_imm8 >> 4) & 3u;
+                const uint32_t sel3 = (shuf_imm8 >> 6) & 3u;
+
+                auto get_word = [&](uint32_t reg_idx, uint32_t sel) -> uint64_t {
+                    size_t qword_idx = b * 2 + (sel / 2);
+                    uint64_t q = ctx.get_vreg_lane(static_cast<uint8_t>(reg_idx), qword_idx);
+                    uint32_t shift = (sel % 2) * 32;
+                    return (q >> shift) & 0xFFFFFFFFULL;
+                };
+
+                uint64_t w0 = get_word(src, sel0);
+                uint64_t w1 = get_word(src, sel1);
+                uint64_t w2 = get_word(shuf_src2, sel2);
+                uint64_t w3 = get_word(shuf_src2, sel3);
+
+                uint64_t q0 = w0 | (w1 << 32);
+                uint64_t q1 = w2 | (w3 << 32);
+                ctx.set_vreg_lane(static_cast<uint8_t>(dst), b * 2, q0);
+                ctx.set_vreg_lane(static_cast<uint8_t>(dst), b * 2 + 1, q1);
+            }
+        } else if (shuf_lane_bits == 64) {
+            for (size_t b = 0; b < num_blocks; b++) {
+                const uint32_t sel0 = (shuf_imm8 >> (b * 2)) & 1u;
+                const uint32_t sel1 = (shuf_imm8 >> (b * 2 + 1)) & 1u;
+
+                uint64_t q0 = ctx.get_vreg_lane(static_cast<uint8_t>(src), b * 2 + sel0);
+                uint64_t q1 = ctx.get_vreg_lane(static_cast<uint8_t>(shuf_src2), b * 2 + sel1);
+
+                ctx.set_vreg_lane(static_cast<uint8_t>(dst), b * 2, q0);
+                ctx.set_vreg_lane(static_cast<uint8_t>(dst), b * 2 + 1, q1);
+            }
+        }
+
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+|}
+
 
 (* PCLMULQDQ and the CET shadow stack instructions (RDSSP, INCSSP). *)
 let emit_pclmul_ssp_handlers b =
@@ -1018,12 +1070,21 @@ let emit_simd_handlers ?rng b =
     let_u64 "mask" (ternary (var "lane_bits" ==~ i32 8) (u64 0xFFL)
       (ternary (var "lane_bits" ==~ i32 16) (u64 0xFFFFL)
         (ternary (var "lane_bits" ==~ i32 32) (u64 0xFFFFFFFFL) (u64 (-1L)))));
+    (* Snapshot both sources: the destination may alias src/src2 (in-place
+       UNPCK/ZIP/UZP/TRN), so reads inside the loop must not observe lanes
+       the loop has already written. *)
+    decl_var (Array (UInt64, 8)) "snap_a";
+    decl_var (Array (UInt64, 8)) "snap_b";
+    for_range "s" (i32 0) (i32 8) [
+      (idx (var "snap_a") (var "s")) := get_vreg_lane (var "src") (var "s");
+      (idx (var "snap_b") (var "s")) := get_vreg_lane (var "src2") (var "s");
+    ];
     decl_var SizeT "bit" ~init:(i32 0);
     while_loop (var "bit" <~ var "bits") [
       let_size_t "chunk" (var "bit" /~ i32 64);
       decl_var UInt32 "shift" ~init:(cast UInt32 (var "bit" %~ i32 64));
-      let_u64 "a" ((get_vreg_lane (var "src") (var "chunk") >>~ var "shift") &~ var "mask");
-      let_u64 "b" ((get_vreg_lane (var "src2") (var "chunk") >>~ var "shift") &~ var "mask");
+      let_u64 "a" ((idx (var "snap_a") (var "chunk") >>~ var "shift") &~ var "mask");
+      let_u64 "b" ((idx (var "snap_b") (var "chunk") >>~ var "shift") &~ var "mask");
       decl_var UInt64 "value" ~init:(u64 0L);
       if_then_else ((var "elem" ==~ i32 1) &&~ ((var "vop" <=~ i32 2) ||~ (var "vop" ==~ i32 30))) [
         decl_var Float "fa" ~init:(bit_cast Float (cast UInt32 (var "a")));
@@ -1076,21 +1137,21 @@ let emit_simd_handlers ?rng b =
                     case (i32 5) [ var "value" := var "a" ^~ var "b"; break_stmt ];
                     case (i32 6) [
                       block [
-                        let_u32 "cnt" (cast UInt32 (get_vreg_lane (var "src2") (i32 0) &~ u64 0xFFL));
+                        let_u32 "cnt" (cast UInt32 (idx (var "snap_b") (i32 0) &~ u64 0xFFL));
                         var "value" := ternary (var "cnt" >=~ var "lane_bits") (u64 0L) (var "a" <<~ var "cnt");
                         break_stmt;
                       ]
                     ];
                     case (i32 7) [
                       block [
-                        let_u32 "cnt" (cast UInt32 (get_vreg_lane (var "src2") (i32 0) &~ u64 0xFFL));
+                        let_u32 "cnt" (cast UInt32 (idx (var "snap_b") (i32 0) &~ u64 0xFFL));
                         var "value" := ternary (var "cnt" >=~ var "lane_bits") (u64 0L) (var "a" >>~ var "cnt");
                         break_stmt;
                       ]
                     ];
                     case (i32 8) [
                       block [
-                        let_u32 "cnt" (cast UInt32 (get_vreg_lane (var "src2") (i32 0) &~ u64 0xFFL));
+                        let_u32 "cnt" (cast UInt32 (idx (var "snap_b") (i32 0) &~ u64 0xFFL));
                         var "value" := ternary (var "cnt" >=~ var "lane_bits")
                           (ternary (var "sa" <~ i32 0) (var "mask") (u64 0L))
                           ((cast UInt64 (var "sa" >>~ var "cnt")) &~ var "mask");
@@ -1114,7 +1175,7 @@ let emit_simd_handlers ?rng b =
                         let_size_t "half_idx" (var "block_lane" /~ i32 2);
                         let_size_t "src_reg" (ternary ((var "block_lane" %~ i32 2) ==~ i32 0) (var "src") (var "src2"));
                         let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "half_idx" *~ var "lane_bits"));
-                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        var "value" := ((ternary (var "src_reg" ==~ var "src") (idx (var "snap_a") (var "src_bit" /~ i32 64)) (idx (var "snap_b") (var "src_bit" /~ i32 64))) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
                         break_stmt;
                       ]
                     ];
@@ -1125,7 +1186,7 @@ let emit_simd_handlers ?rng b =
                         let_size_t "half_idx" ((var "num_lanes" /~ i32 2) +~ (var "block_lane" /~ i32 2));
                         let_size_t "src_reg" (ternary ((var "block_lane" %~ i32 2) ==~ i32 0) (var "src") (var "src2"));
                         let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "half_idx" *~ var "lane_bits"));
-                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        var "value" := ((ternary (var "src_reg" ==~ var "src") (idx (var "snap_a") (var "src_bit" /~ i32 64)) (idx (var "snap_b") (var "src_bit" /~ i32 64))) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
                         break_stmt;
                       ]
                     ];
@@ -1136,7 +1197,7 @@ let emit_simd_handlers ?rng b =
                           var "value" := u64 0L;
                         ] [
                           let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ ((var "ctrl" &~ i32 0xF) *~ i32 8));
-                          var "value" := (get_vreg_lane (var "src") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
+                          var "value" := (idx (var "snap_a") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
                         ];
                         break_stmt;
                       ]
@@ -1149,7 +1210,7 @@ let emit_simd_handlers ?rng b =
                         let_size_t "src_reg" (ternary (var "block_lane" <~ var "half_len") (var "src") (var "src2"));
                         let_size_t "sel_elem" (ternary (var "block_lane" <~ var "half_len") (var "block_lane" *~ i32 2) ((var "block_lane" -~ var "half_len") *~ i32 2));
                         let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel_elem" *~ var "lane_bits"));
-                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        var "value" := ((ternary (var "src_reg" ==~ var "src") (idx (var "snap_a") (var "src_bit" /~ i32 64)) (idx (var "snap_b") (var "src_bit" /~ i32 64))) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
                         break_stmt;
                       ]
                     ];
@@ -1161,7 +1222,7 @@ let emit_simd_handlers ?rng b =
                         let_size_t "src_reg" (ternary (var "block_lane" <~ var "half_len") (var "src") (var "src2"));
                         let_size_t "sel_elem" (ternary (var "block_lane" <~ var "half_len") ((var "block_lane" *~ i32 2) +~ i32 1) (((var "block_lane" -~ var "half_len") *~ i32 2) +~ i32 1));
                         let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel_elem" *~ var "lane_bits"));
-                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        var "value" := ((ternary (var "src_reg" ==~ var "src") (idx (var "snap_a") (var "src_bit" /~ i32 64)) (idx (var "snap_b") (var "src_bit" /~ i32 64))) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
                         break_stmt;
                       ]
                     ];
@@ -1173,7 +1234,7 @@ let emit_simd_handlers ?rng b =
                         let_size_t "src_reg" (ternary ((var "block_lane" %~ i32 2) ==~ i32 0) (var "src") (var "src2"));
                         let_size_t "sel_elem" (var "k" *~ i32 2);
                         let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel_elem" *~ var "lane_bits"));
-                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        var "value" := ((ternary (var "src_reg" ==~ var "src") (idx (var "snap_a") (var "src_bit" /~ i32 64)) (idx (var "snap_b") (var "src_bit" /~ i32 64))) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
                         break_stmt;
                       ]
                     ];
@@ -1185,7 +1246,7 @@ let emit_simd_handlers ?rng b =
                         let_size_t "src_reg" (ternary ((var "block_lane" %~ i32 2) ==~ i32 0) (var "src") (var "src2"));
                         let_size_t "sel_elem" ((var "k" *~ i32 2) +~ i32 1);
                         let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "sel_elem" *~ var "lane_bits"));
-                        var "value" := (get_vreg_lane (var "src_reg") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
+                        var "value" := ((ternary (var "src_reg" ==~ var "src") (idx (var "snap_a") (var "src_bit" /~ i32 64)) (idx (var "snap_b") (var "src_bit" /~ i32 64))) >>~ (var "src_bit" %~ i32 64)) &~ var "mask";
                         break_stmt;
                       ]
                     ];
@@ -1194,7 +1255,7 @@ let emit_simd_handlers ?rng b =
                         let_u8 "idx" (cast UInt8 (var "b" &~ u64 0xFFL));
                         if_then_else (var "idx" <~ i32 16) [
                           let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "idx" *~ i32 8));
-                          var "value" := (get_vreg_lane (var "src") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
+                          var "value" := (idx (var "snap_a") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
                         ] [
                           var "value" := u64 0L;
                         ];
@@ -1206,7 +1267,7 @@ let emit_simd_handlers ?rng b =
                         let_u8 "idx" (cast UInt8 (var "b" &~ u64 0xFFL));
                         if_then_else (var "idx" <~ i32 16) [
                           let_size_t "src_bit" (((var "bit" /~ i32 128) *~ i32 128) +~ (var "idx" *~ i32 8));
-                          var "value" := (get_vreg_lane (var "src") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
+                          var "value" := (idx (var "snap_a") (var "src_bit" /~ i32 64) >>~ (var "src_bit" %~ i32 64)) &~ u64 0xFFL;
                         ] [
                           var "value" := (get_vreg_lane (var "dst") (var "chunk") >>~ var "shift") &~ u64 0xFFL;
                         ];
@@ -1278,6 +1339,7 @@ let emit_simd_handlers ?rng b =
   emit_handler_ast b "H_VEC_BINOP" (vec_binop_stmts @ [ inc_instrs; fetch_next ]);
   emit_sha_handler b;
   emit_aes_handler b;
+  emit_shuf2_handler b;
   emit_pclmul_ssp_handlers b;
   emit_fpu_handlers b;
 

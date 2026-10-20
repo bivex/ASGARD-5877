@@ -201,6 +201,7 @@ type instr =
   | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
   | Vec_pclmul of { dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Vec_aes of { op : aes_op; dst : int; src1 : int; src2 : int; imm : int64; bits : int }
+  | Vec_shuf2 of { dst : int; src1 : int; src2 : int; imm : int64; bits : int; lane_bits : int }
   | Read_ssp of { dst : Register.t }
   | Inc_ssp of { width : width }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }

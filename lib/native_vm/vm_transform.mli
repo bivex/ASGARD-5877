@@ -68,6 +68,7 @@ type raw_op_kind =
   | OP_VEC_SHA
   | OP_VEC_PCLMUL
   | OP_VEC_AES
+  | OP_VEC_SHUF2
   | OP_READ_SSP
   | OP_INC_SSP
   | OP_VEC_LOAD

@@ -873,6 +873,14 @@ let compile_and_package_multi
                   encode_raw_word ~extra_bits:(Int64.of_int (aes_op_code op)) (get_opcode OP_VEC_AES)
                     (vector_index dst) (vector_index src1)
                     (aes_imm ~src2:(vector_index src2) ~imm ~bits)
+              | Ir.Vec_shuf2 { dst; src1; src2; imm; bits; lane_bits } ->
+                  let payload =
+                    Int64.logor (Int64.of_int (vector_index src2))
+                      (Int64.logor (Int64.shift_left (Int64.logand imm 0xFFL) 5)
+                        (Int64.logor (Int64.shift_left (Int64.of_int bits) 13)
+                          (Int64.shift_left (Int64.of_int lane_bits) 23)))
+                  in
+                  encode_raw_word (get_opcode OP_VEC_SHUF2) (vector_index dst) (vector_index src1) payload
               | Ir.Read_ssp { dst } ->
                   encode_raw_word (get_opcode OP_READ_SSP) (get_reg_idx dst) 0
                     (if Register.get_width dst = Register.B32 then 32L else 64L)

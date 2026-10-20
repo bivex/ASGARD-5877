@@ -200,6 +200,7 @@ type instr =
   | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
   | Vec_pclmul of { dst : int; src1 : int; src2 : int; imm : int64; bits : int }
   | Vec_aes of { op : aes_op; dst : int; src1 : int; src2 : int; imm : int64; bits : int }
+  | Vec_shuf2 of { dst : int; src1 : int; src2 : int; imm : int64; bits : int; lane_bits : int }
   | Read_ssp of { dst : Register.t }
   | Inc_ssp of { width : width }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
@@ -377,6 +378,8 @@ let instr_to_string = function
         | Aesimc -> "aesimc" | Aeskeygenassist -> "aeskeygenassist"
       in
       Printf.sprintf "vec_%s.%d v%d, v%d, v%d, 0x%LX" op_s bits dst src1 src2 imm
+  | Vec_shuf2 { dst; src1; src2; imm; bits; lane_bits } ->
+      Printf.sprintf "vec_shuf2.%d.%d v%d, v%d, v%d, 0x%LX" bits lane_bits dst src1 src2 imm
   | Read_ssp { dst } -> Printf.sprintf "read_ssp %s" (Register.to_string dst)
   | Inc_ssp { width } -> Printf.sprintf "inc_ssp %d" (Register.width_to_bits width)
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->

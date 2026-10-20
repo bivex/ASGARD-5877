@@ -1583,6 +1583,51 @@ func_native_movmsk:
     if (ctx.get_reg(vanguard_threaded_vm::REG_RDX) != 0x5ULL) return 5;
 |})
 
+let test_native_x86_unpck_fp () =
+  let pkg =
+    mk_pkg ~seed:20261021 {|
+func_native_unpck:
+    unpcklps xmm1, xmm2
+    unpckhps xmm3, xmm4
+    unpcklpd xmm5, xmm6
+    unpckhpd xmm7, xmm8
+    vunpcklps ymm9, ymm1, ymm2
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_unpck" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    ctx.vregs[1][0] = 0x2222222211111111ULL; ctx.vregs[1][1] = 0x4444444433333333ULL;
+    ctx.vregs[1][2] = 0xAAAAAAAABBBBBBBBULL; ctx.vregs[1][3] = 0ULL;
+    ctx.vregs[2][0] = 0x6666666655555555ULL; ctx.vregs[2][1] = 0x8888888877777777ULL;
+    ctx.vregs[2][2] = 0xDDDDDDDDCCCCCCCCULL; ctx.vregs[2][3] = 0ULL;
+    ctx.vregs[3][0] = 0x2222222211111111ULL; ctx.vregs[3][1] = 0x4444444433333333ULL;
+    ctx.vregs[4][0] = 0x6666666655555555ULL; ctx.vregs[4][1] = 0x8888888877777777ULL;
+    ctx.vregs[5][0] = 0x2222222211111111ULL; ctx.vregs[5][1] = 0x4444444433333333ULL;
+    ctx.vregs[6][0] = 0x6666666655555555ULL; ctx.vregs[6][1] = 0x8888888877777777ULL;
+    ctx.vregs[7][0] = 0x2222222211111111ULL; ctx.vregs[7][1] = 0x4444444433333333ULL;
+    ctx.vregs[8][0] = 0x6666666655555555ULL; ctx.vregs[8][1] = 0x8888888877777777ULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    if (ctx.vregs[1][0] != 0x5555555511111111ULL) return 2;
+    if (ctx.vregs[1][1] != 0x6666666622222222ULL) return 3;
+    if (ctx.vregs[3][0] != 0x7777777733333333ULL) return 4;
+    if (ctx.vregs[3][1] != 0x8888888844444444ULL) return 5;
+    if (ctx.vregs[5][0] != 0x2222222211111111ULL) return 6;
+    if (ctx.vregs[5][1] != 0x6666666655555555ULL) return 7;
+    if (ctx.vregs[7][0] != 0x4444444433333333ULL) return 8;
+    if (ctx.vregs[7][1] != 0x8888888877777777ULL) return 9;
+    if (ctx.vregs[9][0] != 0x5555555511111111ULL) return 10;
+    if (ctx.vregs[9][1] != 0x6666666622222222ULL) return 11;
+    if (ctx.vregs[9][2] != 0xCCCCCCCCBBBBBBBBULL) return 12;
+    if (ctx.vregs[9][3] != 0xDDDDDDDDAAAAAAAAULL) return 13;
+|})
+
+
 let test_native_x86_aes_ni () =
   let pkg =
     mk_pkg ~seed:20261026 {|
@@ -1694,6 +1739,81 @@ func_native_aes_full_cycle:
     if (ctx.vregs[10][1] != 0xB4FB4C66908839B0ULL) return 9;
 |})
 
+let test_native_x86_shufps_shufpd () =
+  let pkg =
+    mk_pkg ~seed:20261028 {|
+func_native_shuf:
+    vshufps xmm4, xmm0, xmm1, 0xD8
+    vshufpd xmm5, xmm2, xmm3, 0x01
+    shufps xmm0, xmm1, 0xD8
+    shufpd xmm2, xmm3, 0x01
+    vshufps ymm7, ymm8, ymm9, 0xD8
+    vshufpd ymm10, ymm11, ymm12, 0x05
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_shuf" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+
+    /* xmm0, xmm1: [1, 2, 3, 4] and [5, 6, 7, 8] */
+    ctx.vregs[0][0] = 0x0000000200000001ULL; ctx.vregs[0][1] = 0x0000000400000003ULL;
+    ctx.vregs[1][0] = 0x0000000600000005ULL; ctx.vregs[1][1] = 0x0000000800000007ULL;
+
+    /* xmm2, xmm3: [0x1111..., 0x2222...] and [0x3333..., 0x4444...] */
+    ctx.vregs[2][0] = 0x1111111111111111ULL; ctx.vregs[2][1] = 0x2222222222222222ULL;
+    ctx.vregs[3][0] = 0x3333333333333333ULL; ctx.vregs[3][1] = 0x4444444444444444ULL;
+
+    /* xmm4, xmm5: upper lanes pre-filled to verify VEX-128 zeroing */
+    ctx.vregs[4][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[4][3] = 0xDEADBEEFCAFEBA00ULL;
+    ctx.vregs[5][2] = 0xDEADBEEFCAFEBA00ULL; ctx.vregs[5][3] = 0xDEADBEEFCAFEBA00ULL;
+
+    /* ymm8, ymm9: 256-bit vshufps */
+    ctx.vregs[8][0] = 0x0000000200000001ULL; ctx.vregs[8][1] = 0x0000000400000003ULL;
+    ctx.vregs[8][2] = 0x0000000B0000000AULL; ctx.vregs[8][3] = 0x0000000D0000000CULL;
+
+    ctx.vregs[9][0] = 0x0000000600000005ULL; ctx.vregs[9][1] = 0x0000000800000007ULL;
+    ctx.vregs[9][2] = 0x0000000F0000000EULL; ctx.vregs[9][3] = 0x0000001100000010ULL;
+
+    /* ymm11, ymm12: 256-bit vshufpd */
+    ctx.vregs[11][0] = 0x1111111111111111ULL; ctx.vregs[11][1] = 0x2222222222222222ULL;
+    ctx.vregs[11][2] = 0x5555555555555555ULL; ctx.vregs[11][3] = 0x6666666666666666ULL;
+
+    ctx.vregs[12][0] = 0x3333333333333333ULL; ctx.vregs[12][1] = 0x4444444444444444ULL;
+    ctx.vregs[12][2] = 0x7777777777777777ULL; ctx.vregs[12][3] = 0x8888888888888888ULL;
+
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+
+    /* shufps xmm0, xmm1, 0xD8 -> [1, 3, 6, 8] */
+    if (ctx.vregs[0][0] != 0x0000000300000001ULL) return 2;
+    if (ctx.vregs[0][1] != 0x0000000800000006ULL) return 3;
+
+    /* shufpd xmm2, xmm3, 0x01 -> [0x2222..., 0x3333...] */
+    if (ctx.vregs[2][0] != 0x2222222222222222ULL) return 4;
+    if (ctx.vregs[2][1] != 0x3333333333333333ULL) return 5;
+
+    /* vshufps zeroing of upper lanes */
+    if (ctx.vregs[4][2] != 0ULL || ctx.vregs[4][3] != 0ULL) return 6;
+
+    /* vshufpd zeroing of upper lanes */
+    if (ctx.vregs[5][0] != 0x2222222222222222ULL) return 7;
+    if (ctx.vregs[5][1] != 0x3333333333333333ULL) return 8;
+    if (ctx.vregs[5][2] != 0ULL || ctx.vregs[5][3] != 0ULL) return 9;
+
+    /* 256-bit vshufps */
+    if (ctx.vregs[7][0] != 0x0000000300000001ULL) return 10;
+    if (ctx.vregs[7][1] != 0x0000000800000006ULL) return 11;
+    if (ctx.vregs[7][2] != 0x0000000C0000000AULL) return 12;
+    if (ctx.vregs[7][3] != 0x000000110000000FULL) return 13;
+
+    /* 256-bit vshufpd */
+    if (ctx.vregs[10][0] != 0x2222222222222222ULL) return 14;
+    if (ctx.vregs[10][1] != 0x3333333333333333ULL) return 15;
+    if (ctx.vregs[10][2] != 0x6666666666666666ULL) return 16;
+    if (ctx.vregs[10][3] != 0x7777777777777777ULL) return 17;
+|})
+
 let tests = [
   Alcotest.test_case "native_div_idiv_with_remainder" `Slow test_native_div_idiv_with_remainder;
   Alcotest.test_case "native_b32_subregister_semantics" `Slow test_native_b32_subregister_semantics;
@@ -1725,7 +1845,8 @@ let tests = [
   Alcotest.test_case "native_x86_conversions" `Slow test_native_x86_conversions;
   Alcotest.test_case "native_x86_float_comparisons" `Slow test_native_x86_float_comparisons;
   Alcotest.test_case "native_x86_pand_por_pxor_pandn" `Slow test_native_x86_pand_por_pxor_pandn;
-  Alcotest.test_case "native_x86_movmskps_movmskpd" `Slow test_native_x86_movmskps_movmskpd;
+  Alcotest.test_case "native_x86_unpck_fp" `Slow test_native_x86_unpck_fp;
   Alcotest.test_case "native_x86_aes_ni" `Slow test_native_x86_aes_ni;
   Alcotest.test_case "native_x86_aes_ni_fips197_full_cycle" `Slow test_native_x86_aes_ni_fips197_full_cycle;
+  Alcotest.test_case "native_x86_shufps_shufpd" `Slow test_native_x86_shufps_shufpd;
 ]

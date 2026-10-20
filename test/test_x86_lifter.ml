@@ -1544,6 +1544,80 @@ func_aes_full_cycle:
           Alcotest.(check int64) "dec key 9 lane0" 0xFEEA1913635A7B0CL v10.(0);
           Alcotest.(check int64) "dec key 9 lane1" 0xB4FB4C66908839B0L v10.(1))
 
+let test_x86_lift_shufps_shufpd () =
+  let asm = {|
+func_shuf:
+    vshufps xmm4, xmm0, xmm1, 0xD8
+    vshufpd xmm5, xmm2, xmm3, 0x01
+    shufps xmm0, xmm1, 0xD8
+    shufpd xmm2, xmm3, 0x01
+    shufps xmm6, xmmword ptr [rsp + 16], 0xD8
+    vshufps ymm7, ymm8, ymm9, 0xD8
+    vshufpd ymm10, ymm11, ymm12, 0x05
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      state.vsp <- 0x1000L;
+      write_mem state 0x1010L B64 0x0000000600000005L;
+      write_mem state 0x1018L B64 0x0000000800000007L;
+      (* xmm0, xmm1 for shufps *)
+      Hashtbl.replace state.vectors 0 [| 0x0000000200000001L; 0x0000000400000003L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 1 [| 0x0000000600000005L; 0x0000000800000007L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm2, xmm3 for shufpd *)
+      Hashtbl.replace state.vectors 2 [| 0x1111111111111111L; 0x2222222222222222L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 3 [| 0x3333333333333333L; 0x4444444444444444L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* xmm4, xmm5 pre-filled with upper junk to verify zeroing *)
+      Hashtbl.replace state.vectors 4 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 5 [| 0L; 0L; 0xDEADBEEFCAFEBABEL; 0xDEADBEEFCAFEBABEL; 0L; 0L; 0L; 0L |];
+      (* xmm6 for mem shufps *)
+      Hashtbl.replace state.vectors 6 [| 0x0000000200000001L; 0x0000000400000003L; 0L; 0L; 0L; 0L; 0L; 0L |];
+      (* ymm8, ymm9 for 256-bit vshufps *)
+      Hashtbl.replace state.vectors 8 [| 0x0000000200000001L; 0x0000000400000003L; 0x0000000B0000000AL; 0x0000000D0000000CL; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 9 [| 0x0000000600000005L; 0x0000000800000007L; 0x0000000F0000000EL; 0x0000001100000010L; 0L; 0L; 0L; 0L |];
+      (* ymm11, ymm12 for 256-bit vshufpd *)
+      Hashtbl.replace state.vectors 11 [| 0x1111111111111111L; 0x2222222222222222L; 0x5555555555555555L; 0x6666666666666666L; 0L; 0L; 0L; 0L |];
+      Hashtbl.replace state.vectors 12 [| 0x3333333333333333L; 0x4444444444444444L; 0x7777777777777777L; 0x8888888888888888L; 0L; 0L; 0L; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let v0 = Hashtbl.find state.vectors 0 in
+          let v2 = Hashtbl.find state.vectors 2 in
+          let v4 = Hashtbl.find state.vectors 4 in
+          let v5 = Hashtbl.find state.vectors 5 in
+          let v6 = Hashtbl.find state.vectors 6 in
+          let v7 = Hashtbl.find state.vectors 7 in
+          let v10 = Hashtbl.find state.vectors 10 in
+          (* shufps xmm0, xmm1, 0xD8 -> [1, 3, 6, 8] *)
+          Alcotest.(check int64) "shufps lane0" 0x0000000300000001L v0.(0);
+          Alcotest.(check int64) "shufps lane1" 0x0000000800000006L v0.(1);
+          (* shufpd xmm2, xmm3, 0x01 -> [xmm2[1], xmm3[0]] *)
+          Alcotest.(check int64) "shufpd lane0" 0x2222222222222222L v2.(0);
+          Alcotest.(check int64) "shufpd lane1" 0x3333333333333333L v2.(1);
+          (* vshufps zeroing *)
+          Alcotest.(check int64) "vshufps lane2 zeroed" 0L v4.(2);
+          Alcotest.(check int64) "vshufps lane3 zeroed" 0L v4.(3);
+          (* vshufpd zeroing *)
+          Alcotest.(check int64) "vshufpd lane0" 0x2222222222222222L v5.(0);
+          Alcotest.(check int64) "vshufpd lane1" 0x3333333333333333L v5.(1);
+          Alcotest.(check int64) "vshufpd lane2 zeroed" 0L v5.(2);
+          Alcotest.(check int64) "vshufpd lane3 zeroed" 0L v5.(3);
+          (* shufps with memory *)
+          Alcotest.(check int64) "shufps mem lane0" 0x0000000300000001L v6.(0);
+          Alcotest.(check int64) "shufps mem lane1" 0x0000000800000006L v6.(1);
+          (* 256-bit vshufps *)
+          Alcotest.(check int64) "vshufps 256 lane0" 0x0000000300000001L v7.(0);
+          Alcotest.(check int64) "vshufps 256 lane1" 0x0000000800000006L v7.(1);
+          Alcotest.(check int64) "vshufps 256 lane2" 0x0000000C0000000AL v7.(2);
+          Alcotest.(check int64) "vshufps 256 lane3" 0x000000110000000FL v7.(3);
+          (* 256-bit vshufpd imm8=0x05 (0b0101): blk0: [1, 0]->[0x2222, 0x3333]; blk1: [1, 0]->[0x6666, 0x7777] *)
+          Alcotest.(check int64) "vshufpd 256 lane0" 0x2222222222222222L v10.(0);
+          Alcotest.(check int64) "vshufpd 256 lane1" 0x3333333333333333L v10.(1);
+          Alcotest.(check int64) "vshufpd 256 lane2" 0x6666666666666666L v10.(2);
+          Alcotest.(check int64) "vshufpd 256 lane3" 0x7777777777777777L v10.(3))
+
 let test_x86_lift_bmi () =
   let asm = {|
 func_bmi:
@@ -2535,6 +2609,59 @@ func_pmov:
           Alcotest.(check int64) "movmskpd edx" 0x1L (get_reg state (Register.Gpr (Register.RDX, Register.B32)));
           Alcotest.(check int64) "vmovmskpd r9d" 0xAL (get_reg state (Register.Gpr (Register.R9, Register.B32))))
 
+let test_x86_unpck_fp () =
+  let asm = {|
+func_unpck:
+    unpcklps xmm1, xmm2
+    unpckhps xmm3, xmm4
+    unpcklpd xmm5, xmm6
+    unpckhpd xmm7, xmm8
+    vunpcklpd xmm10, xmm5, xmm2
+    vunpcklps ymm9, ymm1, ymm2
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+
+      let state = make_state () in
+      let setv i c0 c1 c2 c3 = Hashtbl.replace state.vectors i [| c0; c1; c2; c3; 0L; 0L; 0L; 0L |] in
+      setv 1 0x2222222211111111L 0x4444444433333333L 0xAAAAAAAABBBBBBBBL 0L;
+      setv 2 0x6666666655555555L 0x8888888877777777L 0xDDDDDDDDCCCCCCCCL 0L;
+      setv 3 0x2222222211111111L 0x4444444433333333L 0L 0L;
+      setv 4 0x6666666655555555L 0x8888888877777777L 0L 0L;
+      setv 5 0x2222222211111111L 0x4444444433333333L 0L 0L;
+      setv 6 0x6666666655555555L 0x8888888877777777L 0L 0L;
+      setv 7 0x2222222211111111L 0x4444444433333333L 0L 0L;
+      setv 8 0x6666666655555555L 0x8888888877777777L 0L 0L;
+      setv 10 0L 0L 0xDEADBEEFCAFEBABEL 0xFEEDFACE12345678L;
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let vec i = Hashtbl.find state.vectors i in
+          (* unpcklps: [d0, s0, d1, s1] *)
+          Alcotest.(check int64) "unpcklps lo" 0x5555555511111111L (vec 1).(0);
+          Alcotest.(check int64) "unpcklps hi" 0x6666666622222222L (vec 1).(1);
+          (* unpckhps: [d2, s2, d3, s3] *)
+          Alcotest.(check int64) "unpckhps lo" 0x7777777733333333L (vec 3).(0);
+          Alcotest.(check int64) "unpckhps hi" 0x8888888844444444L (vec 3).(1);
+          (* unpcklpd: [D0, S0] *)
+          Alcotest.(check int64) "unpcklpd lo" 0x2222222211111111L (vec 5).(0);
+          Alcotest.(check int64) "unpcklpd hi" 0x6666666655555555L (vec 5).(1);
+          (* unpckhpd: [D1, S1] *)
+          Alcotest.(check int64) "unpckhpd lo" 0x4444444433333333L (vec 7).(0);
+          Alcotest.(check int64) "unpckhpd hi" 0x8888888877777777L (vec 7).(1);
+          (* vunpcklps ymm: per-128-bit block [d,s,d,s] *)
+          Alcotest.(check int64) "vunpcklps b0" 0x5555555511111111L (vec 9).(0);
+          Alcotest.(check int64) "vunpcklps b1" 0x6666666655555555L (vec 9).(1);
+          Alcotest.(check int64) "vunpcklps b2" 0xCCCCCCCCBBBBBBBBL (vec 9).(2);
+          Alcotest.(check int64) "vunpcklps b3" 0xDDDDDDDDAAAAAAAAL (vec 9).(3);
+          (* vunpcklpd xmm (VEX-128): result plus zeroed upper half *)
+          Alcotest.(check int64) "vunpcklpd lo" 0x2222222211111111L (vec 10).(0);
+          Alcotest.(check int64) "vunpcklpd hi" 0x6666666655555555L (vec 10).(1);
+          Alcotest.(check int64) "vunpcklpd upper zeroed" 0L (vec 10).(2);
+          Alcotest.(check int64) "vunpcklpd upper zeroed 2" 0L (vec 10).(3))
+
 let test_x86_evex_zmm_trap () =
   let asm = {|
 func_evex:
@@ -2878,6 +3005,7 @@ let tests = [
   Alcotest.test_case "lift_x86_avx_upper_zeroing" `Quick test_x86_avx_upper_zeroing;
   Alcotest.test_case "lift_x86_vzeroupper" `Quick test_x86_vzeroupper;
   Alcotest.test_case "lift_x86_pmovmskb" `Quick test_x86_pmovmskb;
+  Alcotest.test_case "lift_x86_unpck_fp" `Quick test_x86_unpck_fp;
   Alcotest.test_case "lift_x86_evex_zmm_trap" `Quick test_x86_evex_zmm_trap;
   Alcotest.test_case "lift_x86_tls_fs_gs_segment_prefixes" `Quick test_x86_tls_fs_gs_segment_prefixes;
   Alcotest.test_case "lift_x86_tls_native_vm_canonicalize" `Quick test_x86_tls_native_vm_canonicalize;
@@ -2896,5 +3024,6 @@ let tests = [
   Alcotest.test_case "lift_x86_pand_por_pxor_pandn" `Quick test_x86_pand_por_pxor_pandn;
   Alcotest.test_case "lift_x86_aes_ni" `Quick test_x86_aes_ni;
   Alcotest.test_case "lift_x86_aes_ni_fips197_full_cycle" `Quick test_x86_lift_aes_ni_fips197_full_cycle;
+  Alcotest.test_case "lift_x86_shufps_shufpd" `Quick test_x86_lift_shufps_shufpd;
 ]
 
