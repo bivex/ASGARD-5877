@@ -93,7 +93,7 @@ let remap_instr (map : (int, int) Hashtbl.t) (instr : instr) : instr =
       }
   | Jmp _ | Jcc _ | Call _ | Ret | Vm_enter | Vm_exit | Trap _ | Nop | Bridge_to_flow _ | Bridge_to_math _
    | Load_symbol _ | Fp_binop _ | Fp_cmp _ | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _
-   | Vec_clear_upper _ | Vec_zero_upper | Vec_ext _ | Fence _ -> instr
+   | Vec_sha _ | Vec_clear_upper _ | Vec_zero_upper | Vec_ext _ | Fence _ -> instr
   | Fp_conv { op; dst; src } ->
       Fp_conv { op; dst = remap_register map dst; src = remap_register map src }
 

@@ -95,6 +95,17 @@ type vec_op =
   | Vcmpltu
   | Vcmpleu
 type vec_elem = VInt | VF32 | VF64
+
+(* The x86 SHA extensions (SHA-NI).  Every instruction works on the four
+   32-bit words of a 128-bit vector register. *)
+type sha_op =
+  | Sha1rnds4
+  | Sha1nexte
+  | Sha1msg1
+  | Sha1msg2
+  | Sha256rnds2
+  | Sha256msg1
+  | Sha256msg2
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 type mem_order = SeqCst | Acquire | Release | AcqRel | Relaxed
 
@@ -128,6 +139,7 @@ type instr =
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
+  | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
   | Vec_load of { dst : int; addr : mem_ref; bits : int }
   | Vec_store of { src : int; addr : mem_ref; bits : int }
@@ -285,6 +297,13 @@ let instr_to_string = function
         | Vcmpne -> "vec_cmpne" | Vcmple -> "vec_cmple" | Vcmpltu -> "vec_cmpltu" | Vcmpleu -> "vec_cmpleu"
       in
       Printf.sprintf "%s.%d.%d.%s v%d, v%d, v%d" op_s bits lane_bits (vec_elem_to_string elem) dst src1 src2
+  | Vec_sha { op; dst; src1; src2; src3; imm; bits } ->
+      let op_s = match op with
+        | Sha1rnds4 -> "sha1rnds4" | Sha1nexte -> "sha1nexte"
+        | Sha1msg1 -> "sha1msg1" | Sha1msg2 -> "sha1msg2"
+        | Sha256rnds2 -> "sha256rnds2" | Sha256msg1 -> "sha256msg1" | Sha256msg2 -> "sha256msg2"
+      in
+      Printf.sprintf "%s.%d v%d, v%d, v%d, v%d, 0x%LX" op_s bits dst src1 src2 src3 imm
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
       let op_s = match op with
         | Vadd -> "vec_add" | Vsub -> "vec_sub" | Vmul -> "vec_mul" | Vand -> "vec_and" | Vor -> "vec_or" | Vxor -> "vec_xor"

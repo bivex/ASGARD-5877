@@ -670,6 +670,53 @@ let lift_vector_move ?const_pool mnem dst src =
         | None -> Error "vector store source must be a vector register")
     | _ -> Error "invalid vector move operands"
 
+(* The x86 SHA extensions (SHA-NI).  Every instruction works on the four
+   32-bit words of a 128-bit vector register; the destination is both a source
+   and the destination, and SHA256RNDS2 takes its round constants from the
+   implicit XMM0. *)
+let sha_op_of_mnemonic = function
+  | "sha1rnds4" -> Some Ir.Sha1rnds4
+  | "sha1nexte" -> Some Ir.Sha1nexte
+  | "sha1msg1" -> Some Ir.Sha1msg1
+  | "sha1msg2" -> Some Ir.Sha1msg2
+  | "sha256rnds2" -> Some Ir.Sha256rnds2
+  | "sha256msg1" -> Some Ir.Sha256msg1
+  | "sha256msg2" -> Some Ir.Sha256msg2
+  | _ -> None
+
+let lift_sha_ni mnem ops =
+  if List.exists is_zmm_operand ops then
+    Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
+  else
+    match sha_op_of_mnemonic mnem with
+    | None -> Error "unsupported SHA operation"
+    | Some op ->
+        let get_index = function
+          | X86_parser.OpReg r -> vector_reg_index (X86_parser.OpReg r)
+          | _ -> None
+        in
+        let dst_op = match ops with d :: _ -> d | _ -> X86_parser.OpReg (Register.rax) in
+        let src_op = match ops with _ :: s :: _ -> s | _ -> X86_parser.OpReg (Register.rax) in
+        let imm = match ops with
+          | _ :: _ :: X86_parser.OpImm i :: _ -> i
+          | _ -> 0L
+        in
+        (match get_index dst_op with
+        | None -> Error "SHA operation requires a vector register destination"
+        | Some di ->
+            (* A memory source is read into a scratch vector register. *)
+            let preload, si =
+              match src_op with
+              | X86_parser.OpMem m ->
+                  let mem_ref = ir_mem_of_raw m in
+                  ([ Ir.Vec_load { dst = 31; addr = mem_ref; bits = 128 }], 31)
+              | _ -> ([], (match get_index src_op with Some s -> s | None -> 0))
+            in
+            let instr =
+              Ir.Vec_sha { op; dst = di; src1 = di; src2 = si; src3 = 0; imm; bits = 128 }
+            in
+            Ok (preload @ [ instr ]))
+
 let lift_vector_binop ?const_pool mnem ops =
   if List.exists is_zmm_operand ops then
     Ok [ Ir.Trap "AVX-512 EVEX is unsupported" ]
@@ -898,6 +945,11 @@ let lift_instr ?const_pool raw_mnem ops =
             Ok [ Ir.Pmovmskb { dst = gpr; src = si; bits } ]
         | _ -> Error "pmovmskb requires GPR destination and vector source")
   | mnem, [ dst; src ] when vector_move_mnemonic mnem -> lift_vector_move ?const_pool mnem dst src
+  | mnem, ops
+    when (List.length ops >= 2 && List.length ops <= 3)
+         && (match sha_op_of_mnemonic mnem with Some _ -> true | None -> false) ->
+      lift_sha_ni mnem ops
+
   | mnem, ops
     when (List.length ops >= 2 && List.length ops <= 4)
          && (match vector_op_of_mnemonic mnem with Some _ -> true | None -> false) ->

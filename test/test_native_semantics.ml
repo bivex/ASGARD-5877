@@ -957,6 +957,59 @@ func_native_vector_fp:
     if (std::bit_cast<float>(lane3) != 44.0f) return 5;
 |})
 
+(* The x86 SHA extensions (SHA-NI) in the native runtime: the same values as
+   the reference VM produces. *)
+let test_native_x86_sha_ni () =
+  let pkg =
+    mk_pkg ~seed:20260943 {|
+func_native_sha:
+    sha1rnds4 xmm3, xmm4, 0x0
+    sha1nexte xmm5, xmm6
+    sha1msg1 xmm7, xmm8
+    sha1msg2 xmm9, xmm10
+    sha256rnds2 xmm11, xmm12
+    sha256msg1 xmm13, xmm14
+    sha256msg2 xmm15, xmm16
+    ret
+|}
+  in
+  with_temp_dir (fun tmp_dir ->
+      run_custom_vm ~name:"native_x86_sha_ni" tmp_dir pkg {|
+    vanguard_threaded_vm::VMContext ctx = {};
+    ctx.init();
+    const uint64_t state_words[2] = {0x89ABCDEF01234567ULL, 0x76543210FEDCBA98ULL};
+    const uint64_t src_words[2] = {0x2222222211111111ULL, 0x4444444433333333ULL};
+    for (int reg : {3, 5, 7, 9, 11, 13, 15}) {
+        ctx.vregs[reg][0] = state_words[0];
+        ctx.vregs[reg][1] = state_words[1];
+    }
+    for (int reg : {4, 6, 8, 10, 12, 14, 16}) {
+        ctx.vregs[reg][0] = src_words[0];
+        ctx.vregs[reg][1] = src_words[1];
+    }
+    ctx.vregs[0][0] = 0x0BADF00DCAFEBABEULL;
+    ctx.vregs[0][1] = 0;
+    if (!vanguard_threaded_vm::execute_threaded(ctx, embedded_bytecode, count)) return 1;
+    auto word = [&ctx](int reg, int i) -> uint32_t {
+        return static_cast<uint32_t>(ctx.vregs[reg][i / 2] >> ((i % 2) * 32));
+    };
+    const uint32_t expected[7][4] = {
+        {0xFA700561u, 0x0FBEFBB6u, 0xF3458385u, 0xA3B63C88u},
+        {0xD159E26Au, 0x22222222u, 0x33333333u, 0x44444444u},
+        {0xFFFFFFFFu, 0xFFFFFFFFu, 0xEFCDAB89u, 0x54761032u},
+        {0x4602CE8Au, 0x7531FDB9u, 0x7531FDB9u, 0x60ADF934u},
+        {0xC1C9B1D2u, 0xCAFE3234u, 0x64E9BCB2u, 0xCAFE7678u},
+        {0x0FEEEDC8u, 0x20FDBA9Bu, 0xF0111236u, 0x89ABCDEFu},
+        {0x54320FEDu, 0xEDCBA986u, 0xDBA986C3u, 0xCFE19A0Cu},
+    };
+    const int regs[7] = {3, 5, 7, 9, 11, 13, 15};
+    for (int k = 0; k < 7; k++) {
+        for (int i = 0; i < 4; i++) {
+            if (word(regs[k], i) != expected[k][i]) return 2 + k;
+        }
+    }
+|})
+
 (* The FSGSBASE family (RDFSBASE, RDGSBASE, WRFSBASE, WRGSBASE) reaches the
    segment base registers of the VM context: the base is written into the
    context slot and read back through the same slot. *)
@@ -1047,4 +1100,5 @@ let tests = [
   Alcotest.test_case "native_vector_fp" `Slow test_native_vector_fp;
   Alcotest.test_case "native_x86_shld_shrd_mem_and_cdq" `Slow test_native_x86_shld_shrd_mem_and_cdq;
   Alcotest.test_case "native_x86_fsgsbase" `Slow test_native_x86_fsgsbase;
+  Alcotest.test_case "native_x86_sha_ni" `Slow test_native_x86_sha_ni;
 ]

@@ -431,6 +431,24 @@ let compile_and_package_multi
     Int64.logor w (Int64.shift_left (Int64.of_int (vector_elem_code elem)) 31)
   in
 
+  let sha_op_code = function
+    | Ir.Sha1rnds4 -> 0
+    | Ir.Sha1nexte -> 1
+    | Ir.Sha1msg1 -> 2
+    | Ir.Sha1msg2 -> 3
+    | Ir.Sha256rnds2 -> 4
+    | Ir.Sha256msg1 -> 5
+    | Ir.Sha256msg2 -> 6
+  in
+  let sha_imm ~src2 ~src3 ~imm ~bits =
+    (* The immediate field carries the two source registers, the eight-bit
+       immediate of SHA1RNDS4 and the width of the vector register. *)
+    let w = Int64.of_int src2 in
+    let w = Int64.logor w (Int64.shift_left (Int64.of_int src3) 5) in
+    let w = Int64.logor w (Int64.shift_left (Int64.logand imm 0xFFL) 10) in
+    Int64.logor w (Int64.shift_left (Int64.of_int bits) 18)
+  in
+
   let encode_alu_imm ?(extra_bits = 0L) op_ri op_rr dst imm =
     if is_i32 imm then
       encode_raw_word ~extra_bits (get_opcode op_ri) (get_reg_idx dst) 0 imm
@@ -813,6 +831,10 @@ let compile_and_package_multi
               | Ir.Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
                   encode_raw_word (get_opcode OP_VEC_BINOP) (vector_index dst) (vector_index src1)
                     (vector_imm ~src2:(vector_index src2) ~bits ~lane_bits ~elem op)
+              | Ir.Vec_sha { op; dst; src1; src2; src3; imm; bits } ->
+                  encode_raw_word ~extra_bits:(Int64.of_int (sha_op_code op)) (get_opcode OP_VEC_SHA)
+                    (vector_index dst) (vector_index src1)
+                    (sha_imm ~src2:(vector_index src2) ~src3:(vector_index src3) ~imm ~bits)
               | Ir.Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
                   encode_raw_word (get_opcode OP_VEC_IMM) (vector_index dst) (vector_index src)
                     (vector_imm_val ~imm_val:imm ~bits ~lane_bits ~elem op)

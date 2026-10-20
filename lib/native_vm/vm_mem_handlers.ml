@@ -35,6 +35,143 @@ let get_vreg_lane r lane = call "ctx.get_vreg_lane" [r; lane]
 let set_vreg_lane r lane val_e = expr_stmt (call "ctx.set_vreg_lane" [r; lane; val_e])
 let set_vreg dst_e l0 l1 = expr_stmt (call "ctx.set_vreg" [dst_e; l0; l1])
 
+(* The x86 SHA extensions (SHA-NI).  The handler works on the four 32-bit
+   words of a 128-bit vector register, so it is written as portable C++ and
+   not through the statement DSL: the round functions need 32-bit rotates and
+   several dozen steps per instruction. *)
+let emit_sha_handler b =
+  Buffer.add_string b
+    {|
+    H_VEC_SHA: {
+        const uint32_t sha_op = static_cast<uint32_t>((word >> 50) & 0x7ULL);
+        const uint32_t sha_s2 = static_cast<uint32_t>(imm & 31ULL);
+        const uint32_t sha_s3 = static_cast<uint32_t>((imm >> 5) & 31ULL);
+        const uint32_t sha_imm8 = static_cast<uint32_t>((imm >> 10) & 0xFFULL);
+        uint32_t sha_d[4], sha_s[4], sha_w[4], sha_r[4];
+        for (int i = 0; i < 4; i++) {
+            sha_d[i] = static_cast<uint32_t>(ctx.get_vreg_lane(static_cast<uint8_t>(dst), i / 2) >> ((i % 2) * 32));
+            sha_s[i] = static_cast<uint32_t>(ctx.get_vreg_lane(static_cast<uint8_t>(sha_s2), i / 2) >> ((i % 2) * 32));
+        }
+        auto sha_rol32 = [](uint32_t x, int n) -> uint32_t {
+            n &= 31;
+            return n ? ((x << n) | (x >> (32 - n))) : x;
+        };
+        auto sha_ror32 = [](uint32_t x, int n) -> uint32_t {
+            n &= 31;
+            return n ? ((x >> n) | (x << (32 - n))) : x;
+        };
+        auto sha_f = [](int round, uint32_t b, uint32_t c, uint32_t d) -> uint32_t {
+            switch (round) {
+                case 0: return (b & c) | (~b & d);
+                case 2: return (b & c) | (b & d) | (c & d);
+                default: return b ^ c ^ d;
+            }
+        };
+        auto sha_k = [](int round) -> uint32_t {
+            switch (round) {
+                case 0: return 0x5A827999u;
+                case 1: return 0x6ED9EBA1u;
+                case 2: return 0x8F1BBCDCu;
+                default: return 0xCA62C1D6u;
+            }
+        };
+        auto sha_ch = [](uint32_t x, uint32_t y, uint32_t z) -> uint32_t {
+            return (x & y) ^ (~x & z);
+        };
+        auto sha_maj = [](uint32_t x, uint32_t y, uint32_t z) -> uint32_t {
+            return (x & y) ^ (x & z) ^ (y & z);
+        };
+        auto sha_sigma0 = [&](uint32_t x) -> uint32_t {
+            return sha_ror32(x, 2) ^ sha_ror32(x, 13) ^ sha_ror32(x, 22);
+        };
+        auto sha_sigma1 = [&](uint32_t x) -> uint32_t {
+            return sha_ror32(x, 6) ^ sha_ror32(x, 11) ^ sha_ror32(x, 25);
+        };
+        switch (sha_op) {
+            case 0: { /* SHA1RNDS4 */
+                const int round = static_cast<int>(sha_imm8 & 3u);
+                uint32_t a = sha_d[0], b = sha_d[1], c = sha_d[2], d = sha_d[3], e = 0u;
+                for (int i = 0; i < 4; i++) {
+                    const uint32_t a_new = sha_f(round, b, c, d) + sha_rol32(a, 5) + sha_s[i] + e + sha_k(round);
+                    const uint32_t b_new = a;
+                    const uint32_t c_new = sha_rol32(b, 30);
+                    const uint32_t d_new = c;
+                    const uint32_t e_new = d;
+                    a = a_new; b = b_new; c = c_new; d = d_new; e = e_new;
+                }
+                sha_r[0] = a; sha_r[1] = b; sha_r[2] = c; sha_r[3] = d;
+                break;
+            }
+            case 1: { /* SHA1NEXTE */
+                sha_r[0] = sha_s[0] + sha_rol32(sha_d[0], 30);
+                sha_r[1] = sha_s[1];
+                sha_r[2] = sha_s[2];
+                sha_r[3] = sha_s[3];
+                break;
+            }
+            case 2: { /* SHA1MSG1 */
+                sha_r[0] = sha_d[2] ^ sha_d[0];
+                sha_r[1] = sha_d[3] ^ sha_d[1];
+                sha_r[2] = sha_s[0] ^ sha_d[2];
+                sha_r[3] = sha_s[1] ^ sha_d[3];
+                break;
+            }
+            case 3: { /* SHA1MSG2 */
+                const uint32_t w16 = sha_rol32(sha_d[0] ^ sha_s[1], 1);
+                const uint32_t w17 = sha_rol32(sha_d[1] ^ sha_s[2], 1);
+                const uint32_t w18 = sha_rol32(sha_d[2] ^ sha_s[3], 1);
+                const uint32_t w19 = sha_rol32(sha_d[3] ^ w16, 1);
+                sha_r[0] = w16; sha_r[1] = w17; sha_r[2] = w18; sha_r[3] = w19;
+                break;
+            }
+            case 4: { /* SHA256RNDS2 */
+                uint32_t wk[2];
+                for (int i = 0; i < 2; i++) {
+                    wk[i] = static_cast<uint32_t>(ctx.get_vreg_lane(static_cast<uint8_t>(sha_s3), i / 2) >> ((i % 2) * 32));
+                }
+                uint32_t a = sha_s[0], b = sha_s[1], c = sha_d[0], d = sha_d[1];
+                uint32_t e = sha_s[2], f = sha_s[3], g = sha_d[2], h = sha_d[3];
+                for (int i = 0; i < 2; i++) {
+                    const uint32_t ch = sha_ch(e, f, g);
+                    const uint32_t t1 = ch + sha_sigma1(e) + wk[i] + h;
+                    const uint32_t a_new = t1 + sha_maj(a, b, c) + sha_sigma0(a);
+                    const uint32_t e_new = t1 + d;
+                    const uint32_t b_new = a, c_new = b, d_new = c;
+                    const uint32_t f_new = e, g_new = f, h_new = g;
+                    a = a_new; b = b_new; c = c_new; d = d_new;
+                    e = e_new; f = f_new; g = g_new; h = h_new;
+                }
+                sha_r[0] = a; sha_r[1] = b; sha_r[2] = e; sha_r[3] = f;
+                break;
+            }
+            case 5: { /* SHA256MSG1 */
+                sha_r[0] = sha_d[3] + sha_sigma0(sha_d[2]);
+                sha_r[1] = sha_d[2] + sha_sigma0(sha_d[1]);
+                sha_r[2] = sha_d[1] + sha_sigma0(sha_d[0]);
+                sha_r[3] = sha_d[0] + sha_sigma0(sha_s[0]);
+                break;
+            }
+            default: { /* SHA256MSG2 */
+                const uint32_t w16 = sha_d[3] + sha_sigma1(sha_s[1]);
+                const uint32_t w17 = sha_d[2] + sha_sigma1(sha_s[0]);
+                const uint32_t w18 = sha_d[1] + sha_sigma1(w16);
+                const uint32_t w19 = sha_d[0] + sha_sigma1(w17);
+                sha_r[0] = w16; sha_r[1] = w17; sha_r[2] = w18; sha_r[3] = w19;
+                break;
+            }
+        }
+        for (int i = 0; i < 4; i++) {
+            const uint8_t lane = static_cast<uint8_t>(i / 2);
+            const uint64_t mask = (i % 2 == 0) ? 0xFFFFFFFFULL : 0xFFFFFFFF00000000ULL;
+            const uint64_t old_value = ctx.get_vreg_lane(static_cast<uint8_t>(dst), lane);
+            ctx.set_vreg_lane(static_cast<uint8_t>(dst), lane,
+                              (old_value & ~mask) | (static_cast<uint64_t>(sha_r[i]) << ((i % 2) * 32)));
+        }
+        ctx.executed_instructions++;
+        FETCH_NEXT();
+    }
+|}
+
 let emit_simd_handlers ?rng b =
   let pick_variant n =
     match rng with
@@ -506,6 +643,7 @@ let emit_simd_handlers ?rng b =
     ];
   ] in
   emit_handler_ast b "H_VEC_BINOP" (vec_binop_stmts @ [ inc_instrs; fetch_next ]);
+  emit_sha_handler b;
 
   let vec_imm_stmts = [
     let_u64 "imm_val" (var "imm" &~ u64 0xFFL);

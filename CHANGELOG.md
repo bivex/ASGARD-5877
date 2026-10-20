@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 
+- Add the x86 SHA extensions (SHA-NI) to the lifter and the virtual machines: `SHA1RNDS4`, `SHA1NEXTE`, `SHA1MSG1`, `SHA1MSG2`, `SHA256RNDS2`, `SHA256MSG1` and `SHA256MSG2`. Every instruction works on the four 32-bit words of a 128-bit vector register; the destination is both a source and the destination and `SHA256RNDS2` takes its round constants from the implicit XMM0. The round functions live in a new module (`lib/vm_ir/sha_ni.ml`), the reference VM evaluates them directly and the native runtime carries a portable C++ handler, so the protected binary needs no SHA CPU feature.
 - Add a native-execution test for the x86 FSGSBASE family (`RDFSBASE`, `RDGSBASE`, `WRFSBASE`, `WRGSBASE`): the segment base is written into the VM context slot and read back through the same slot, which the lifter test alone did not cover.
 
 ## [0.2.0] - 2026-10-20

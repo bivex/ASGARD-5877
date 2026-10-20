@@ -897,6 +897,23 @@ let step state = function
   | Vec_binop { op; elem; dst; src1; src2; bits; lane_bits } ->
       apply_vector_lanes state ~dst_bits:bits ~lane_bits ~elem ~src1 ~src2 ~dst op;
       Ok None
+  | Vec_sha { op; dst; src1; src2; src3; imm; bits = _ } ->
+      let lanes reg = (get_vector_lane state reg 0, get_vector_lane state reg 1) in
+      let words reg = Sha_ni.words_of_lanes (lanes reg) in
+      let result =
+        match op with
+        | Ir.Sha1rnds4 -> Sha_ni.sha1rnds4 (Int64.to_int imm) (words src1) (words src2)
+        | Ir.Sha1nexte -> Sha_ni.sha1nexte (words src1) (words src2)
+        | Ir.Sha1msg1 -> Sha_ni.sha1msg1 (words src1) (words src2)
+        | Ir.Sha1msg2 -> Sha_ni.sha1msg2 (words src1) (words src2)
+        | Ir.Sha256rnds2 -> Sha_ni.sha256rnds2 (words src1) (words src2) (words src3)
+        | Ir.Sha256msg1 -> Sha_ni.sha256msg1 (words src1) (words src2)
+        | Ir.Sha256msg2 -> Sha_ni.sha256msg2 (words src1) (words src2)
+      in
+      let l0, l1 = Sha_ni.lanes_of_words result in
+      set_vector_lane state dst 0 l0;
+      set_vector_lane state dst 1 l1;
+      Ok None
   | Vec_imm { op; elem; dst; src; imm; bits; lane_bits } ->
       apply_vector_imm state ~dst_bits:bits ~lane_bits ~elem ~src ~imm ~dst op;
       Ok None

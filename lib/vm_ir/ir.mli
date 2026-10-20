@@ -95,6 +95,17 @@ type vec_op =
   | Vcmpltu
   | Vcmpleu
 type vec_elem = VInt | VF32 | VF64
+
+(** The x86 SHA extensions (SHA-NI).  Every instruction works on the four
+    32-bit words of a 128-bit vector register. *)
+type sha_op =
+  | Sha1rnds4
+  | Sha1nexte
+  | Sha1msg1
+  | Sha1msg2
+  | Sha256rnds2
+  | Sha256msg1
+  | Sha256msg2
 type atomic_op = AtLoad | AtStore | AtCas | AtAdd | AtSwp
 
 type mem_order = SeqCst | Acquire | Release | AcqRel | Relaxed
@@ -129,6 +140,7 @@ type instr =
   | Fp_conv of { op : fp_conv; dst : Register.t; src : Register.t }
   | Vec_mov of { dst : int; src : int; bits : int }
   | Vec_binop of { op : vec_op; elem : vec_elem; dst : int; src1 : int; src2 : int; bits : int; lane_bits : int }
+  | Vec_sha of { op : sha_op; dst : int; src1 : int; src2 : int; src3 : int; imm : int64; bits : int }
   | Vec_imm of { op : vec_op; elem : vec_elem; dst : int; src : int; imm : int64; bits : int; lane_bits : int }
   | Vec_load of { dst : int; addr : mem_ref; bits : int }
   | Vec_store of { src : int; addr : mem_ref; bits : int }

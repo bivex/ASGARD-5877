@@ -1159,6 +1159,58 @@ func_cwtd:
 |} in
   Alcotest.(check int64) "cwtd is the AT&T spelling of cdq" 0L (get_reg s Register.rbx)
 
+(* The x86 SHA extensions (SHA-NI).  Every instruction works on the four
+   32-bit words of a 128-bit vector register; the destination is both a source
+   and the destination, and SHA256RNDS2 takes its round constants from the
+   implicit XMM0.  The expected values follow the Intel SDM. *)
+let test_x86_lift_sha_ni () =
+  let asm = {|
+func_sha_ni:
+    sha1rnds4 xmm3, xmm4, 0x0
+    sha1nexte xmm5, xmm6
+    sha1msg1 xmm7, xmm8
+    sha1msg2 xmm9, xmm10
+    sha256rnds2 xmm11, xmm12
+    sha256msg1 xmm13, xmm14
+    sha256msg2 xmm15, xmm16
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let state = make_state () in
+      (* the SHA-1 state (A, B, C, D) and the source words *)
+      let state_words = [| 0x89ABCDEF01234567L; 0x76543210FEDCBA98L |] in
+      let src_words = [| 0x2222222211111111L; 0x4444444433333333L |] in
+      List.iter (fun reg -> Hashtbl.replace state.vectors reg state_words) [ 3; 5; 7; 9; 11; 13; 15 ];
+      List.iter (fun reg -> Hashtbl.replace state.vectors reg src_words) [ 4; 6; 8; 10; 12; 14; 16 ];
+      (* the two SHA-256 round constants of the implicit XMM0 *)
+      Hashtbl.replace state.vectors 0 [| 0x0BADF00DCAFEBABEL; 0L |];
+      (match run_func state func with
+      | Error e -> Alcotest.fail e
+      | Ok () ->
+          let words reg =
+            let lanes = Hashtbl.find state.vectors reg in
+            let w i =
+              Int64.logand (Int64.shift_right_logical lanes.(i / 2) (32 * (i mod 2))) 0xFFFFFFFFL
+            in
+            [| w 0; w 1; w 2; w 3 |]
+          in
+          let check name reg expected =
+            let got = words reg in
+            Array.iteri
+              (fun i e ->
+                Alcotest.(check int64) (Printf.sprintf "%s word %d" name i) e got.(i))
+              expected
+          in
+          check "sha1rnds4" 3 [| 0xFA700561L; 0x0FBEFBB6L; 0xF3458385L; 0xA3B63C88L |];
+          check "sha1nexte" 5 [| 0xD159E26AL; 0x22222222L; 0x33333333L; 0x44444444L |];
+          check "sha1msg1" 7 [| 0xFFFFFFFFL; 0xFFFFFFFFL; 0xEFCDAB89L; 0x54761032L |];
+          check "sha1msg2" 9 [| 0x4602CE8AL; 0x7531FDB9L; 0x7531FDB9L; 0x60ADF934L |];
+          check "sha256rnds2" 11 [| 0xC1C9B1D2L; 0xCAFE3234L; 0x64E9BCB2L; 0xCAFE7678L |];
+          check "sha256msg1" 13 [| 0x0FEEEDC8L; 0x20FDBA9BL; 0xF0111236L; 0x89ABCDEFL |];
+          check "sha256msg2" 15 [| 0x54320FEDL; 0xEDCBA986L; 0xDBA986C3L; 0xCFE19A0CL |])
+
 let test_x86_lift_adc_sbb () =
   let asm = {|
 func_adc_sbb:
@@ -1969,6 +2021,7 @@ let tests = [
   Alcotest.test_case "lift_orps_orpd" `Quick test_x86_lift_orps_orpd;
   Alcotest.test_case "lift_bit_scan_family" `Quick test_x86_lift_bit_scan_family;
   Alcotest.test_case "lift_sign_extension_family" `Quick test_x86_lift_sign_extension_family;
+  Alcotest.test_case "lift_sha_ni" `Quick test_x86_lift_sha_ni;
   Alcotest.test_case "lift_vorps_vorpd" `Quick test_x86_lift_vorps_vorpd;
   Alcotest.test_case "lift_x86_bitmanip" `Quick test_x86_bitmanip;
   Alcotest.test_case "lift_x86_fp_scalar" `Quick test_x86_fp_scalar;
