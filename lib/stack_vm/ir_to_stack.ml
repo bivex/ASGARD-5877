@@ -241,11 +241,60 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         [PopReg (Context_allocator.slot_of_reg ctx dst)]
       in
       load_ops
-  | Fp_binop _ | Fp_cmp _ | Fp_conv _ -> []
-  | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _ | Vec_clear_upper _ | Vec_zero_upper | Vec_splat _ | Vec_ext _ | Pmovmskb _ -> []
-  | Atomic_mem { dst; src; _ } ->
+  | Fp_binop _ | Fp_cmp _ -> []
+  | Fp_conv { dst; src; _ } ->
       [PushReg (Context_allocator.slot_of_reg ctx src);
        PopReg (Context_allocator.slot_of_reg ctx dst)]
+  | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _ | Vec_store _ | Vec_clear_upper _ | Vec_zero_upper | Vec_splat _ | Vec_ext _ | Pmovmskb _ -> []
+  | Atomic_mem { op; dst; addr; src; imm } ->
+      let is_zero_reg = function
+        | Register.Vreg (Register.VZERO, _) -> true
+        | _ -> false
+      in
+      let addr_slot = Context_allocator.slot_of_reg ctx addr in
+      let src_slot = Context_allocator.slot_of_reg ctx src in
+      let dst_slot = Context_allocator.slot_of_reg ctx dst in
+      let width = if is_zero_reg dst then Register.get_width src else Register.get_width dst in
+      let bytes = width_to_bytes width in
+      let addr_ops =
+        if imm = 0L then [PushReg addr_slot]
+        else [PushReg addr_slot; PushImm imm; Add]
+      in
+      (match op with
+       | AtLoad ->
+           addr_ops @ [ReadMem bytes; PopReg dst_slot]
+       | AtStore ->
+           let scratch_val = Context_allocator.alloc_scratch ctx in
+           [PushReg src_slot; PopReg scratch_val] @
+           addr_ops @
+           [PushReg scratch_val; WriteMem bytes]
+       | AtAdd ->
+           let addr_scratch = Context_allocator.alloc_scratch ctx in
+           let old_scratch = Context_allocator.alloc_scratch ctx in
+           let new_scratch = Context_allocator.alloc_scratch ctx in
+           addr_ops @
+           [PopReg addr_scratch;
+            PushReg addr_scratch; ReadMem bytes; PopReg old_scratch;
+            PushReg old_scratch; PushReg src_slot; Add; PopReg new_scratch;
+            PushReg addr_scratch; PushReg new_scratch; WriteMem bytes;
+            PushReg old_scratch; PopReg dst_slot]
+       | AtSwp ->
+           let addr_scratch = Context_allocator.alloc_scratch ctx in
+           let old_scratch = Context_allocator.alloc_scratch ctx in
+           addr_ops @
+           [PopReg addr_scratch;
+            PushReg addr_scratch; ReadMem bytes; PopReg old_scratch;
+            PushReg addr_scratch; PushReg src_slot; WriteMem bytes;
+            PushReg old_scratch; PopReg dst_slot]
+       | AtCas ->
+           let addr_scratch = Context_allocator.alloc_scratch ctx in
+           let cur_scratch = Context_allocator.alloc_scratch ctx in
+           let rax_slot = Context_allocator.slot_of_reg ctx Register.rax in
+           addr_ops @
+           [PopReg addr_scratch;
+            PushReg addr_scratch; ReadMem bytes; PopReg cur_scratch;
+            PushReg cur_scratch; PushReg rax_slot; Cmp;
+            PushReg cur_scratch; PopReg dst_slot])
   | Fence _ -> []
   | Get_flags dst ->
       [PushFlags; PopReg (Context_allocator.slot_of_reg ctx dst)]

@@ -262,7 +262,7 @@ let test_runtime_synthesis () =
   let prog = make_program 0 [b] 16 in
   let c_code = Stack_runtime.generate_c_runtime cfg prog in
   Alcotest.(check bool) "c runtime contains stack_vm_run" true
-    (String.length c_code > 0 && String.sub c_code 0 18 = "#include <stdint.h");
+    (String.length c_code > 0 && (String.starts_with ~prefix:"#include <stdint.h" c_code || String.starts_with ~prefix:"#pragma once" c_code));
   let runner_cpp = Stack_runtime.emit_runner_cpp [0x1234567890ABCDEFL] in
   Alcotest.(check bool) "runner cpp generated" true (String.length runner_cpp > 0)
 
@@ -1022,13 +1022,17 @@ let test_full_pipeline_semantics () =
   let prog_r = Stack_balance_pass.repair_program ctx prog in
   let prog_g = Stack_ghost_pass.apply_program (Stack_ghost_pass.default_ghost_config seed) ctx prog_r in
   let prog_m = Stack_mba_pass.apply_program Stack_mba_pass.{ seed = Int64.logxor seed 0x1111L; mba_rate = 100 } prog_g in
-  let prog_c = Stack_cff_pass.apply_program (Stack_cff_pass.default_cff_config (Int64.logxor seed 0x2222L)) ctx prog_m in
+  let prog_c, cff_info = Stack_cff_pass.apply_program_with_info (Stack_cff_pass.default_cff_config (Int64.logxor seed 0x2222L)) ctx prog_m in
 
   (* balance invariant holds for every block of the final program *)
   let errors = Stack_balance_pass.verify_program prog_c in
   Alcotest.(check int) "pipeline: no balance errors" 0 (List.length errors);
 
-  let enc = Stack_encoder.encode_program ~seed_key:seed prog_c in
+  let dispatcher_tokens = Hashtbl.create (Hashtbl.length cff_info.block_tokens) in
+  Hashtbl.iter (fun id token ->
+    Hashtbl.replace dispatcher_tokens id (cff_info.vpc_slot, token)
+  ) cff_info.block_tokens;
+  let enc = Stack_encoder.encode_program ~dispatcher_tokens ~seed_key:seed prog_c in
   check_state "pipeline" (run_bytecode enc)
 
 (* ── Generated C++ runtime: compile it and cross-check against OCaml ──── *)
@@ -2312,6 +2316,41 @@ let test_pass_contracts_and_pipeline () =
   let pipe_res = Stack_pass.run_pipeline pipeline prog0 in
   Alcotest.(check bool) "pipeline executes cleanly when contracts hold" true (Result.is_ok pipe_res)
 
+let test_atomic_mem_and_fp_conv_stack () =
+  (* Test Atomic_mem and Fp_conv lowering in Stack-VM:
+     Memory cell at 0x2000 has value 100.
+     src = 7.
+     AtAdd dst, addr, src -> memory cell becomes 107, dst becomes 100.
+     Fp_conv copies/converts src to dst. *)
+  let cell_addr = 0x2000L in
+  let b0 = {
+    id = 0;
+    label = "entry";
+    instrs = [
+      Mov { dst = Reg rbx; src = Imm cell_addr };
+      Mov { dst = Reg rcx; src = Imm 100L };
+      Mov { dst = Mem { base = Some rbx; index = None; disp = 0L; width = B64; is_signed = false; segment = None }; src = Reg rcx };
+      Mov { dst = Reg rsi; src = Imm 7L };
+      Atomic_mem { op = AtAdd; dst = rax; addr = rbx; src = rsi; imm = 0L };
+      Fp_conv { op = Scvtf; dst = rdx; src = rax };
+      Ret;
+    ];
+  } in
+  let cfg = { entry_id = 0; blocks = Hashtbl.create 1 } in
+  Hashtbl.replace cfg.blocks 0 b0;
+  let func = { name = "atomic_fp_func"; cfg } in
+
+  let ctx, prog = Ir_to_stack.lower_func func in
+  let state = run_program prog in
+  let rax_slot = Context_allocator.slot_of_reg ctx rax in
+  let rdx_slot = Context_allocator.slot_of_reg ctx rdx in
+  let old_val = get_reg state rax_slot in
+  let fp_val = get_reg state rdx_slot in
+  Alcotest.(check int64) "Atomic_mem dst receives old value 100" 100L old_val;
+  Alcotest.(check int64) "Fp_conv dst receives converted value" 100L fp_val;
+  let mem_val = Stack_eval.read_mem_word state cell_addr 8 in
+  Alcotest.(check int64) "Memory cell updated to 107" 107L mem_val
+
 let test_dup2_rot_eval_and_encoder () =
   let st = create_state () in
   (* Test Dup2: [20; 10] (10 is top) -> [10; 20; 10; 20] *)
@@ -2336,6 +2375,7 @@ let test_dup2_rot_eval_and_encoder () =
 
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
+  ("Atomic_mem & Fp_conv Stack-VM Lowering", `Quick, test_atomic_mem_and_fp_conv_stack);
   ("Dup2 & Rot Semantics, Invariants & Codec", `Quick, test_dup2_rot_eval_and_encoder);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
   ("Universal Logic Reduction Truth Tables", `Quick, test_logic_reduction_truth_tables);
