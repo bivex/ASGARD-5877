@@ -1,11 +1,11 @@
 (**
-  Flags_Verified.fst — Верификация семантики флагов процессора (Lazy Flags) ASGARD-5877.
+  Flags_Verified.fst — Processor Flag Semantics Verification (Lazy Flags) for ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Доказывает:
-  1. Корректность вычисления флагов переноса (CF), нуля (ZF), знака (SF) и переполнения (OF).
-  2. Эквивалентность ленивых битовых выражений аппаратной семантике x86_64 / ARM64.
-  3. Фундаментальные теоремы условий ветвления (Jcc):
+  Proves:
+  1. Correctness of Carry (CF), Zero (ZF), Sign (SF), and Overflow (OF) flag calculation.
+  2. Equivalence of lazy bitwise expressions to x86_64 / ARM64 hardware semantics.
+  3. Fundamental branch condition theorems (Jcc):
      - L (Less): SF <> OF <=> to_signed a < to_signed b
      - GE (Greater or Equal): SF == OF <=> to_signed a >= to_signed b
      - LE (Less or Equal): ZF || (SF <> OF) <=> to_signed a <= to_signed b
@@ -24,7 +24,7 @@ module M = FStar.Math.Lemmas
 let w : pos = 64
 type u64 = uint_t w
 
-(* Знаковая интерпретация 64-битного целого числа (Two's complement) *)
+(* Signed interpretation of 64-bit integer (Two's complement) *)
 let to_signed (x:u64) : int =
   if x >= pow2 63 then x - pow2 64 else x
 
@@ -32,7 +32,7 @@ let min_int64 : int = - (pow2 63)
 let max_int64 : int = pow2 63 - 1
 
 (* ------------------------------------------------------------------ *)
-(* 1. Вспомогательные леммы модулярной арифметики                     *)
+(* 1. Modular Arithmetic Helper Lemmas                                *)
 (* ------------------------------------------------------------------ *)
 
 let lemma_add_mod_val (a:u64) (b:u64) : Lemma
@@ -57,11 +57,11 @@ let lemma_sub_mod_val (a:u64) (b:u64) : Lemma
 (* 2. Carry Flag (CF)                                                 *)
 (* ------------------------------------------------------------------ *)
 
-(** Аппаратное определение CF для ADD: произошло беззнаковое переполнение *)
+(** Hardware definition of CF for ADD: unsigned overflow occurred *)
 let hw_cf_add (a:u64) (b:u64) : bool =
   a + b >= pow2 64
 
-(** Ленивое вычисление CF в VM-IR: dst < a *)
+(** Lazy CF evaluation in VM-IR: dst < a *)
 let lazy_cf_add (a:u64) (b:u64) : bool =
   add_mod #w a b < a
 
@@ -70,7 +70,7 @@ val theorem_cf_add : a:u64 -> b:u64 ->
 let theorem_cf_add a b =
   lemma_add_mod_val a b
 
-(** Аппаратное определение CF (Borrow) для SUB: a < b *)
+(** Hardware definition of CF (Borrow) for SUB: a < b *)
 let hw_cf_sub (a:u64) (b:u64) : bool =
   a < b
 
@@ -104,14 +104,14 @@ let theorem_sf res =
 (* 4. Overflow Flag (OF)                                              *)
 (* ------------------------------------------------------------------ *)
 
-(** Аппаратное определение OF для ADD: знаковое переполнение *)
+(** Hardware definition of OF for ADD: signed overflow *)
 let hw_of_add (a:u64) (b:u64) : bool =
   let sa = to_signed a in
   let sb = to_signed b in
   let sum = sa + sb in
   sum < min_int64 || sum > max_int64
 
-(** Ленивое вычисление OF для ADD: sign_bit ((a ^ dst) & (b ^ dst)) *)
+(** Lazy OF evaluation for ADD: sign_bit ((a ^ dst) & (b ^ dst)) *)
 let lazy_of_add (a:u64) (b:u64) : bool =
   let dst = add_mod #w a b in
   msb #w (logand #w (logxor #w a dst) (logxor #w b dst))
@@ -128,14 +128,14 @@ let theorem_of_add a b =
   lemma_msb_pow2 #w dst;
   lemma_add_mod_val a b
 
-(** Аппаратное определение OF для SUB: знаковое переполнение *)
+(** Hardware definition of OF for SUB: signed overflow *)
 let hw_of_sub (a:u64) (b:u64) : bool =
   let sa = to_signed a in
   let sb = to_signed b in
   let diff = sa - sb in
   diff < min_int64 || diff > max_int64
 
-(** Ленивое вычисление OF для SUB: sign_bit ((a ^ b) & (a ^ dst)) *)
+(** Lazy OF evaluation for SUB: sign_bit ((a ^ b) & (a ^ dst)) *)
 let lazy_of_sub (a:u64) (b:u64) : bool =
   let dst = sub_mod #w a b in
   msb #w (logand #w (logxor #w a b) (logxor #w a dst))
@@ -153,7 +153,7 @@ let theorem_of_sub a b =
   lemma_sub_mod_val a b
 
 (* ------------------------------------------------------------------ *)
-(* 5. Теоремы условий переходов (Jcc / Branch Conditions)              *)
+(* 5. Branch Condition Theorems (Jcc / Branch Conditions)             *)
 (* ------------------------------------------------------------------ *)
 
 let cond_l (sf:bool) (of_:bool) : bool =
@@ -180,7 +180,7 @@ let cond_be (cf:bool) (zf:bool) : bool =
 let cond_a (cf:bool) (zf:bool) : bool =
   (not cf) && (not zf)
 
-(** Фундаментальная теорема x86: Less (L) эквивалентен to_signed a < to_signed b *)
+(** Fundamental x86 theorem: Less (L) equivalent to to_signed a < to_signed b *)
 val theorem_cond_l : a:u64 -> b:u64 ->
   Lemma (cond_l (compute_sf (sub_mod #w a b)) (lazy_of_sub a b) == (to_signed a < to_signed b))
 let theorem_cond_l a b =

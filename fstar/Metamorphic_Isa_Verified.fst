@@ -1,7 +1,7 @@
 module Metamorphic_Isa_Verified
 
-(** Доказательство биективности смешанной системы счисления (Mixed-Radix Packing)
-    для непересекающихся диапазонов произвольных (нестепенных) баз N_op, N_reg, N_rt *)
+(** Proof of bijectivity of mixed-radix packing
+    for disjoint ranges across arbitrary (non-power-of-two) bases N_op, N_reg, N_rt *)
 
 let pack_pair (x : nat) (y : nat) (base_x : pos{x < base_x}) : Tot nat =
   x + base_x * y
@@ -24,8 +24,8 @@ let lemma_mixed_radix_step_bijective x y base_x =
   FStar.Math.Lemmas.lemma_div_plus x y base_x;
   FStar.Math.Lemmas.small_div x base_x
 
-(** Спецификация обратимости определителя матрицы базиса GL(2, Z_{2^64}):
-    при нечетных (a, d) и четных (b, c) определитель det = a*d - b*c всегда нечетен *)
+(** Invertibility specification for basis matrix determinant in GL(2, Z_{2^64}):
+    for odd (a, d) and even (b, c), the determinant det = a*d - b*c is always odd *)
 val lemma_gl2_odd_determinant :
   a:int -> b:int -> c:int -> d:int ->
   Lemma

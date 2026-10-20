@@ -1,10 +1,10 @@
 (**
-  Mba_Verified.fst — Верифицированный MBA-движок ASGARD-5877.
+  Mba_Verified.fst — Verified MBA Engine for ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 
-  Тактика: nth_lemma + SMTPat из *_definition → Z3 закрывает биты побитово.
-  Арифметика: леммы дополнительного кода (two's complement) из FStar.UInt.
-  Экстракция: fstar.exe --codegen OCaml --extract Mba_Verified --odir . Mba_Verified.fst
+  Tactics: nth_lemma + SMTPat from *_definition -> Z3 verifies bits bitwise.
+  Arithmetic: Two's complement lemmas from FStar.UInt.
+  Extraction: fstar.exe --codegen OCaml --extract Mba_Verified --odir . Mba_Verified.fst
 *)
 module Mba_Verified
 
@@ -25,7 +25,7 @@ private val bit_ext : a:u64 -> b:u64 ->
 let bit_ext a b = nth_lemma #w a b
 
 (* ------------------------------------------------------------------ *)
-(* Базовые MBA-тождества (Z3 доказывает каждое за < 0.3s)              *)
+(* Basic MBA Identities (Z3 proves each in < 0.3s)                    *)
 (* ------------------------------------------------------------------ *)
 
 val mba_xor_eq : a:u64 -> b:u64 ->
@@ -80,7 +80,7 @@ let mba_not_eq a =
   bit_ext (lognot #w a) (logxor #w a (ones w))
 
 (* ------------------------------------------------------------------ *)
-(* Законы де Моргана и побитовые инволюции                             *)
+(* De Morgan Laws and Bitwise Involutions                             *)
 (* ------------------------------------------------------------------ *)
 
 val mba_and_demorgan : a:u64 -> b:u64 ->
@@ -170,7 +170,7 @@ let mba_or_not_self a =
   bit_ext (logor #w a (lognot #w a)) (ones w)
 
 (* ------------------------------------------------------------------ *)
-(* Арифметические тождества дополнительного кода (Two's Complement)    *)
+(* Two's Complement Arithmetic Identities                             *)
 (* ------------------------------------------------------------------ *)
 
 val mba_not_arith : a:u64 ->
@@ -211,7 +211,7 @@ let mba_sub_zero a =
   lemma_sub_add_cancel #w a 0
 
 (* ------------------------------------------------------------------ *)
-(* AST и семантика                                                     *)
+(* AST and Semantics                                                  *)
 (* ------------------------------------------------------------------ *)
 
 type expr =
@@ -240,10 +240,10 @@ let rec eval e = function
   | Neg a   -> sub_mod #w 0 (eval e a)
 
 (* ------------------------------------------------------------------ *)
-(* Реврайтеры                                                          *)
+(* Rewriters                                                          *)
 (* ------------------------------------------------------------------ *)
 
-(** Основной MBA-реврайтер: раскрывает логические и арифметические операции в MBA *)
+(** Primary MBA rewriter: expands logic and arithmetic operations into MBA *)
 val rewrite : nat -> expr -> expr
 let rec rewrite depth e =
   if depth = 0 then e
@@ -260,7 +260,7 @@ let rec rewrite depth e =
     | Not a   -> Xor (r a) (Const (ones w))
     | Neg a   -> Add (Not (r a)) (Const 1)
 
-(** Де Морган реврайтер: преобразует AND/OR через двойное отрицание *)
+(** De Morgan rewriter: transforms AND/OR via double negation *)
 val rewrite_demorgan : nat -> expr -> expr
 let rec rewrite_demorgan depth e =
   if depth = 0 then e
@@ -278,7 +278,7 @@ let rec rewrite_demorgan depth e =
     | Neg a   -> Neg (r a)
 
 (* ------------------------------------------------------------------ *)
-(* Теоремы корректности реврайтеров                                    *)
+(* Rewriter Correctness Theorems                                      *)
 (* ------------------------------------------------------------------ *)
 
 val rewrite_sound_env : depth:nat -> e:expr -> env:env_t ->

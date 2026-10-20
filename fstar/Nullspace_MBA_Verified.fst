@@ -1,5 +1,5 @@
 (**
-  Nullspace_MBA_Verified.fst — Верифицированный движок шумовых MBA-тождеств ASGARD-5877.
+  Nullspace_MBA_Verified.fst — Verified Noise MBA Identity Engine for ASGARD-5877.
   F* 2026.08.23 + Z3 5.0.0.
 *)
 module Nullspace_MBA_Verified
