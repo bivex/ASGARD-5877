@@ -43,6 +43,7 @@ let () =
     ("Null-Space MBA Synthesis", Test_nullspace_mba.tests);
     ("Cross-Seed Metrics", Test_cross_seed_metrics.tests);
     ("Metamorphic ISA & Ring Codec", Test_metamorphic_isa.tests);
+    ("Mach-O Compact Unwind (LC_ROUTINES)", Test_macho.tests);
   ]
 
 

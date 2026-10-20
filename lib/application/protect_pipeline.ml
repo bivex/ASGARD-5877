@@ -1,5 +1,6 @@
 open Random_visa_ports
 open Protect_ports
+open Macho
 
 let run
     ~(lifter : (module Lifter))
@@ -230,6 +231,26 @@ let run
               else (None, None)
             in
 
+            (* 8b. Mach-O compact unwind audit of the produced binary.
+               The audit reads the LC_ROUTINES / LC_ROUTINES64 load commands
+               and the __TEXT,__unwind_info section, and reports whether the
+               routine table still matches __TEXT,__text. *)
+            let unwind_audit =
+              match bin_artifact with
+              | Some bin when Sys.file_exists bin ->
+                  (match Macho_image.of_file bin with
+                  | exception Macho_image.Parse_error msg ->
+                      Some (Printf.sprintf "skipped (%s)" msg)
+                  | img ->
+                      let report = Macho_unwind.check img in
+                      Some
+                        (Printf.sprintf "%s, %d routine(s), %d issue(s)"
+                           (Macho_unwind.format_layout report.Macho_unwind.layout)
+                           (List.length report.Macho_unwind.routines)
+                           (List.length report.Macho_unwind.issues)))
+              | _ -> None
+            in
+
             (* The address binding key is only known here: the probe
                resolves it from the load address of the built binary.  Put
                it into the protection report, so the report states the
@@ -250,6 +271,21 @@ let run
                     formatted_summary =
                       body
                       ^ Printf.sprintf "- Address Binding: Active (D=0x%s)\n%s" hex sep }
+            in
+            let metrics =
+              match unwind_audit with
+              | None -> metrics
+              | Some line ->
+                  let sep = "===============================================" in
+                  let summary = metrics.formatted_summary in
+                  let n = String.length summary in
+                  let sep_len = String.length sep in
+                  let body =
+                    if n > sep_len then String.sub summary 0 (n - sep_len) else summary
+                  in
+                  { metrics with
+                    formatted_summary =
+                      body ^ Printf.sprintf "- Mach-O Compact Unwind: %s\n%s" line sep }
             in
             Ok {
               header_path = hdr_path;

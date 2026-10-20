@@ -44,6 +44,7 @@
   test_nullspace_mba
   test_cross_seed_metrics
   test_metamorphic_isa
+  test_macho
   test_helpers
   run_tests)
  (libraries
@@ -74,6 +75,7 @@
   tech_2601
   tech_2603
   tech_2608
+  random_visa.macho
   alcotest
   qcheck
   qcheck-alcotest

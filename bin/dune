@@ -2,7 +2,7 @@
  (public_name random_visa)
  (package random_visa)
  (name main)
- (modules main cli_isa cli_vanguard cli_protect cli_protect_arm64 cli_protect_riscv cli_project)
+ (modules main cli_isa cli_vanguard cli_protect cli_protect_arm64 cli_protect_riscv cli_project cli_macho)
  (libraries
   cmdliner
   random_visa_domain
@@ -26,6 +26,7 @@
   native_vm
   c_macro_obf
   protect_adapters
+  random_visa.macho
   bos
   fpath
   unix))

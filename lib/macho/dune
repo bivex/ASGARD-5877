@@ -1,0 +1,4 @@
+(library
+ (name macho)
+ (public_name random_visa.macho)
+ (modules macho_image macho_unwind))

@@ -8,6 +8,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 
+- Add Mach-O compact unwind support (`lib/macho/`): a container reader for 32-bit and 64-bit images that parses the load commands, the segments and the sections, and decodes the `LC_ROUTINES` (0x22) and `LC_ROUTINES64` (0x33) load commands into routine tables (`macho_image.ml`). The unwind model decodes the routine table, resolves the routine that covers an address, checks every entry against `__TEXT,__text` and `__TEXT,__unwind_info`, and repairs the entries whose extent overruns the following function without changing the image layout (`macho_unwind.ml`).
+- Add a `random_visa macho-unwind` command that inspects the compact unwind information of a Mach-O image and optionally writes a repaired copy. The command exits non-zero when the information is inconsistent, so it can gate a release pipeline.
+- Add a compact unwind audit to the protection pipeline: the binary the protector produced is checked and the result is reported in the protection summary as `Mach-O Compact Unwind`.
+- Add a 23-case test suite for the Mach-O reader and the compact unwind model, covering both compact unwind layouts, the 32-bit and 64-bit routine tables, the consistency checks and the repair (`test/test_macho.ml`).
+
 - Add 100% complete VM handler metamorphism across the entire Native VM instruction set architecture (`131/131` handlers in `vm_alu_handlers.ml`, `vm_control_handlers.ml`, and `vm_mem_handlers.ml`) with 2–3 semantically equivalent polymorphic implementations per opcode. Fully covers:
   - ALU instructions (51/51): arithmetic/immediate ops (`ADD`, `SUB`, `IMUL`, `DIV`, `IDIV`, `MULH`, `IMULH`, `XOR`, `AND`, `OR`), shifts/rotates (`ROL`, `ROR`, `SHL`, `SHR`, `SAR` in RR/RI forms), bit manipulations (`CLZ`, `CTZ`, `POPCNT`, `RBIT`, `BSWAP`, `NOT`, `NEG`), flags/comparisons (`ADC`, `SBB`, `CCMP`, `CCMN`, `CMP`, `GET_FLAGS`, `SET_FLAGS`, `MOV_HIGH`, `NOP`).
   - Control-flow instructions (17/17): branch/call skeleton (`JMP`, `JCC`, `CMOV`, `SETCC`, `CALL`, `RET`, `EXIT`, `IJMP_R`, `ICALL_R`, domain bridges `BRIDGE_TO_FLOW`/`MATH`), and 6 fused super-operators (`H_FUSED_MOV_ADD_RRI`, `H_FUSED_ADD_IMUL_RRI`, `H_FUSED_ADD_XOR_RRI`, `H_FUSED_SUB_XOR_RRI`, `H_FUSED_XOR_ADD_RRI`, `H_FUSED_CMP_CMOV`).

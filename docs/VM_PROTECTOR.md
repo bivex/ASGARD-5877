@@ -417,3 +417,36 @@ while ( 1 )
 All business logic, variables, and constants remain sealed inside the encrypted bytecode stream (`protected.vanguard`) and RNS-4 modular residue channels.
 
 
+
+## 12. Mach-O Compact Unwind Support (`LC_ROUTINES` / `LC_ROUTINES64`)
+
+A Mach-O image stores its compact unwind information in `__TEXT,__unwind_info`. Two layouts exist:
+
+| Layout | Carrier | Produced by |
+|---|---|---|
+| Routine table | `LC_ROUTINES` (0x22) and `LC_ROUTINES64` (0x33) load commands pointing at a table of `routine_entry` / `routine_entry_64` records | The classic linker, and any tool that rewrites the table |
+| Section index | `__TEXT,__unwind_info` starting with an `unwind_info_section_header` followed by a page table | The current linker, for executables |
+
+A routine entry maps a function address and size onto a blob of unwind information. When a routine claims more bytes than the function owns, the unwinder walks into the next function and reads foreign bytes; when it points outside the section, it faults. Both are silent failures that only surface as a crash during exception unwinding.
+
+`lib/macho/` reads both layouts:
+
+- `macho_image.ml` parses the header, the load commands, the segments and the sections of 32-bit and 64-bit images, and decodes `LC_ROUTINES` and `LC_ROUTINES64` into routine commands.
+- `macho_unwind.ml` decodes the routine table, resolves the routine that covers an address, checks every entry against `__TEXT,__text` and `__TEXT,__unwind_info`, and repairs the entries whose extent overruns the following function. The repair keeps the image layout intact, so no offset has to be fixed up.
+
+The protection pipeline audits the binary it produced and reports the result in the protection summary:
+
+```
+- Mach-O Compact Unwind: section index (unwind_info_section_header v1, 2 page(s)), 0 routine(s), 0 issue(s)
+```
+
+The same check is available on its own:
+
+```bash
+dune exec random_visa -- macho-unwind --input ./protected_app
+dune exec random_visa -- macho-unwind --input ./protected_app --output ./protected_app.repaired
+```
+
+The command exits non-zero when the compact unwind information of the image is inconsistent, which makes it usable as a gate in a release pipeline.
+
+The protector compiles the protected binary with `-fno-unwind-tables -fno-asynchronous-unwind-tables`, so the image it produces carries no compact unwind information at all and the audit reports `no __TEXT,__unwind_info section`. A binary without unwind information cannot unwind: a C++ exception crossing a protected frame terminates the process instead of running the landing pads. Tech-2601 shadowing also has nothing to shadow in such a binary. The audit makes that visible; whether to spend the metadata budget on unwinding is a deployment decision.

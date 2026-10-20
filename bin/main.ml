@@ -17,6 +17,7 @@ let main_cmd =
     Cli_protect.c_obf_cmd;
     Cli_project.project_cmd;
     Cli_protect.init_config_cmd;
+    Cli_macho.macho_unwind_cmd;
   ]
 
 let () = exit (Cmd.eval main_cmd)

@@ -127,6 +127,23 @@ if [[ -f "${HEADER}" ]]; then
   echo "  [INFO] runtime context array: ${ctxline:-not found}"
 fi
 
+# Compact unwind information: the LC_ROUTINES / LC_ROUTINES64 routine table has
+# to agree with __TEXT,__text and __TEXT,__unwind_info, otherwise the unwinder
+# reads foreign bytes while an exception crosses a protected frame.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+UNWIND_CLI="${REPO_ROOT}/_build/default/bin/main.exe"
+if [[ -x "${UNWIND_CLI}" ]]; then
+  unwind_report=$("${UNWIND_CLI}" macho-unwind --input "${BINARY}" 2>&1 || true)
+  unwind_issues=$(printf '%s\n' "${unwind_report}" | sed -n 's/^issues: \([0-9]*\).*/\1/p' | head -1)
+  unwind_layout=$(printf '%s\n' "${unwind_report}" | sed -n 's/^layout: \(.*\)/\1/p' | head -1)
+  if [[ -n "${unwind_issues}" ]]; then
+    check "the compact unwind information is consistent" "0" "${unwind_issues}"
+    echo "  [INFO] compact unwind layout: ${unwind_layout:-unknown}"
+  else
+    echo "  [INFO] compact unwind audit skipped: the CLI did not report"
+  fi
+fi
+
 # ---------------------------------------------------------------------
 # 2. IDA-based checks
 # ---------------------------------------------------------------------
