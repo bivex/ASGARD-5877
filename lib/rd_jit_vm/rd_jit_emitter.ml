@@ -69,6 +69,7 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
               split_rate = c.cff.split_rate;
               hub_count = c.cff.hub_count;
               pop_digest = Some (Cff.Pop_coupler.default_pop_config.digest_reg, Cff.Pop_coupler.default_pop_config.initial_seed);
+              red_herring = true;
             }
         | None ->
             { Cff.default_cff_options with

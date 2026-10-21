@@ -7,6 +7,7 @@ type cff_options = {
   split_rate : int;   (** 0..100: probability of splitting a block into two state aliases *)
   hub_count : int;    (** 1..6: number of dispatcher hubs for multi-hub partitioning *)
   pop_digest : (Register.t * int64) option;
+  red_herring : bool;
 }
 
 let default_cff_options = {
@@ -16,6 +17,7 @@ let default_cff_options = {
   split_rate = 30;
   hub_count = 1;
   pop_digest = None;
+  red_herring = true;
 }
 
 let inject_opaque_predicate ?next_block_id ~rng ~trap_block_id (b : Ir.basic_block) =
@@ -220,13 +222,18 @@ let kronecker_product_states ~(base_states : int64 list) ~(dim : int) ~(seed : i
     List.map (fun f -> Int64.logxor s f) factors
   ) base_states
 
-let split_hot_states ~(sorted_orig : Ir.basic_block list) ~(split_rate : int) ~rng ~(used_states : (int64, unit) Hashtbl.t) =
+let split_hot_states ?(red_herring = true) ?(seed = 0x5877CAFE1337BEEFL) ~(sorted_orig : Ir.basic_block list) ~(split_rate : int) ~rng ~(used_states : (int64, unit) Hashtbl.t) () =
   let clone_map = Hashtbl.create (List.length sorted_orig) in
   let clone_entries = ref [] in
   if split_rate > 0 then
     List.iter
       (fun (b : Ir.basic_block) ->
-        if Random.State.int rng 100 < split_rate then begin
+        let eff_rate =
+          if red_herring then
+            Red_herring.modulate_split_rate ~base_rate:split_rate ~seed ~block_id:b.id
+          else split_rate
+        in
+        if eff_rate > 0 && Random.State.int rng 100 < eff_rate then begin
           let rec gen_clone_state () =
             let s = Int64.logand (Int64.of_int32 (Random.State.int32 rng Int32.max_int)) 0xFFFFFFFEL in
             let s = if s = 0L then 0x200L else s in
@@ -495,7 +502,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
 
     (* Gather all target block IDs (primary blocks + alias clones) *)
     let (_, clone_entries_list) =
-      split_hot_states ~sorted_orig ~split_rate:options.split_rate ~rng ~used_states:(Hashtbl.create 16)
+      split_hot_states ~red_herring:options.red_herring ~seed:secret_salt ~sorted_orig ~split_rate:options.split_rate ~rng ~used_states:(Hashtbl.create 16) ()
     in
     let clone_bids = List.map snd clone_entries_list in
     let primary_bids = List.map (fun (b : Ir.basic_block) -> b.id) sorted_orig in
@@ -840,3 +847,4 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     Ok new_func
 
 module Pop_coupler = Pop_coupler
+module Red_herring = Red_herring

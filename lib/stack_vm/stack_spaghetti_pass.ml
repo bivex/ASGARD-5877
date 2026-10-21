@@ -79,7 +79,8 @@ type spaghetti_config = {
   seed       : int64;
   split_rate : int;   (** Probability (0–100) of splitting an eligible block *)
   max_blocks : int;   (** Upper bound on total blocks in program *)
-  min_chunk  : int;   (** Minimum ops before and after split point (default: 2) *)
+  min_chunk   : int;   (** Minimum ops before and after split point (default: 2) *)
+  red_herring : bool;
 }
 
 let default_spaghetti_config seed = {
@@ -87,6 +88,7 @@ let default_spaghetti_config seed = {
   split_rate = 80;
   max_blocks = 128;
   min_chunk  = 2;
+  red_herring = true;
 }
 
 let apply_program cfg prog =
@@ -101,7 +103,18 @@ let apply_program cfg prog =
   in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks * 2) in
   List.iter (fun block ->
-    if !current_block_count < cfg.max_blocks && maybe rng cfg.split_rate then
+    let eff_rate =
+      if cfg.red_herring then
+        let noise = Int64.to_int (Int64.logand (snd (splitmix64 (Int64.logxor cfg.seed (Int64.of_int block.id)))) 0x7FFFFFFF_FFFFFFFFL) mod 100 in
+        if noise < 30 then 0
+        else if noise >= 80 then 100
+        else
+          let delta = (noise mod 41) - 20 in
+          Stdlib.max 10 (Stdlib.min 95 (cfg.split_rate + delta))
+      else
+        cfg.split_rate
+    in
+    if !current_block_count < cfg.max_blocks && maybe rng eff_rate then
       let cuts = find_candidate_cuts cfg.min_chunk block.ops in
       match cuts with
       | [] ->

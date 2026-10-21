@@ -8,6 +8,8 @@ type cff_options = {
   hub_count : int;    (** 1..6: number of dispatcher hubs for multi-hub partitioning *)
   pop_digest : (Register.t * int64) option;
   (** Optional (digest_reg, initial_seed) for load-bearing POP path coupling. *)
+  red_herring : bool;
+  (** Enable asymmetric effort allocation across basic blocks via pseudo-random noise. *)
 }
 
 val default_cff_options : cff_options
@@ -67,10 +69,14 @@ val kronecker_product_states :
   int64 list
 
 val split_hot_states :
+  ?red_herring:bool ->
+  ?seed:int64 ->
   sorted_orig:Ir.basic_block list ->
   split_rate:int ->
   rng:Random.State.t ->
   used_states:(int64, unit) Hashtbl.t ->
+  unit ->
   (int, int64) Hashtbl.t * (int64 * int) list
 
+module Red_herring : module type of Red_herring
 module Pop_coupler : module type of Pop_coupler

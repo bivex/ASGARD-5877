@@ -736,6 +736,66 @@ let test_tmr_silent_anti_patching () =
   | Ok () ->
       Alcotest.(check int64) "silent recovery under lane 2 patch" 142L (get_reg state_t2 Register.rax))
 
+let test_red_herring_effort_asymmetry () =
+  let seed = 0x5877CAFE1337BEEFL in
+  let stealth_count = ref 0 in
+  let monster_count = ref 0 in
+  let modulated_count = ref 0 in
+  for b = 0 to 99 do
+    match Cff.Red_herring.block_effort_tier ~seed ~block_id:b with
+    | Cff.Red_herring.StealthPlain ->
+        incr stealth_count;
+        Alcotest.(check int) "stealth split rate is 0" 0
+          (Cff.Red_herring.modulate_split_rate ~base_rate:50 ~seed ~block_id:b);
+        Alcotest.(check int) "stealth mba depth is 1" 1
+          (Cff.Red_herring.modulate_mba_depth ~base_depth:3 ~seed ~block_id:b);
+        Alcotest.(check int) "stealth ghost count is 0" 0
+          (Cff.Red_herring.modulate_ghost_count ~max_ghosts:8 ~seed ~block_id:b)
+    | Cff.Red_herring.RedHerringMonster ->
+        incr monster_count;
+        Alcotest.(check int) "monster split rate is 100" 100
+          (Cff.Red_herring.modulate_split_rate ~base_rate:50 ~seed ~block_id:b);
+        Alcotest.(check bool) "monster mba depth amplified" true
+          (Cff.Red_herring.modulate_mba_depth ~base_depth:3 ~seed ~block_id:b >= 4);
+        Alcotest.(check int) "monster ghost count is max" 8
+          (Cff.Red_herring.modulate_ghost_count ~max_ghosts:8 ~seed ~block_id:b)
+    | Cff.Red_herring.Modulated ->
+        incr modulated_count
+  done;
+  Alcotest.(check bool) "stealth tier populated (>15%)" true (!stealth_count > 15);
+  Alcotest.(check bool) "monster tier populated (>10%)" true (!monster_count > 10);
+  Alcotest.(check bool) "modulated tier populated (>25%)" true (!modulated_count > 25)
+
+let test_red_herring_cff_execution () =
+  let rng = Random.State.make [| 20261022 |] in
+  let asm = {|
+func_red_herring:
+    mov rax, 10
+    cmp rdi, 5
+    jg .Lg
+    add rax, 20
+    ret
+.Lg:
+    sub rax, 3
+    ret
+|} in
+  match X86_lifter.Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let options = { Cff.default_cff_options with red_herring = true; split_rate = 50 } in
+      match Cff.flatten_func ~options ~rng func with
+      | Error e -> Alcotest.fail e
+      | Ok flat_func ->
+          let run_with rdi_val =
+            let state = make_state () in
+            set_reg state Register.rdi rdi_val;
+            match run_func state flat_func with
+            | Error e -> Alcotest.fail e
+            | Ok () -> get_reg state Register.rax
+          in
+          Alcotest.(check int64) "branch 1 (rdi=2 -> 10+20=30)" 30L (run_with 2L);
+          Alcotest.(check int64) "branch 2 (rdi=10 -> 10-3=7)" 7L (run_with 10L)
+
 
 let tests = [
   Alcotest.test_case "cff_tainted_stack_vm" `Quick test_cff_tainted_stack_vm;
@@ -762,4 +822,6 @@ let tests = [
   Alcotest.test_case "tmr_majority_truth_table" `Quick test_tmr_majority_truth_table;
   Alcotest.test_case "tmr_triplet_synthesis" `Quick test_tmr_triplet_synthesis;
   Alcotest.test_case "tmr_silent_anti_patching" `Quick test_tmr_silent_anti_patching;
+  Alcotest.test_case "red_herring_effort_asymmetry" `Quick test_red_herring_effort_asymmetry;
+  Alcotest.test_case "red_herring_cff_execution" `Quick test_red_herring_cff_execution;
 ]

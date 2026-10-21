@@ -425,6 +425,7 @@ module Stack_vm_packager : Vm_packager = struct
           split_rate = native_cfg.cff.split_rate;
           hub_count = native_cfg.cff.hub_count;
           pop_digest = None;
+          red_herring = true;
         } in
 
         match Cff.flatten_func ~options:cff_opts ~rng ir with

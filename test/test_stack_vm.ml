@@ -680,6 +680,7 @@ let test_spaghetti_splitting () =
     split_rate = 100;
     max_blocks = 10;
     min_chunk = 2;
+    red_herring = false;
   } in
   let prog_split = Stack_spaghetti_pass.apply_program cfg prog_orig in
 
@@ -707,6 +708,7 @@ let test_spaghetti_splitting () =
     split_rate = 100;
     max_blocks = 1;
     min_chunk = 2;
+    red_herring = false;
   } in
   let prog_capped = Stack_spaghetti_pass.apply_program cfg_capped prog_orig in
   Alcotest.(check int) "max_blocks cap respected" 1 (Hashtbl.length prog_capped.blocks);

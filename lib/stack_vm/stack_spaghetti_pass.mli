@@ -17,7 +17,8 @@ type spaghetti_config = {
   seed       : int64; (** Random seed for reproducible splitting *)
   split_rate : int;   (** Probability (0–100) of splitting an eligible block *)
   max_blocks : int;   (** Upper bound on total blocks in program *)
-  min_chunk  : int;   (** Minimum ops before and after split point (default: 2) *)
+  min_chunk   : int;   (** Minimum ops before and after split point (default: 2) *)
+  red_herring : bool;  (** Enable per-block asymmetric noise modulation *)
 }
 
 val default_spaghetti_config : int64 -> spaghetti_config
