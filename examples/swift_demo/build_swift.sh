@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# ASGARD-5877: Swift Native Application Protection Pipeline
+# ASGARD-5877: Pure Swift Zero-Bridge Protection Pipeline
 #
-# This script builds and virtualizes the critical security core into a polymorphic
-# ASGARD Stack-VM, generates encrypted bytecode with MBA constant synthesis and
-# CFG flattening, binds the VM runtime via a zero-overhead C bridge, and links
-# the final protected Swift binary.
+# Automates the entire compilation, ARM64 extraction, Stack-VM bytecode
+# synthesis, in-place assembly trampoline patching, and native Mach-O linking.
+# The developer writes 100% pure Swift; all VM bridge code is auto-synthesized.
 # ==============================================================================
 set -euo pipefail
 
@@ -13,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 echo "=================================================================="
-echo "🛡️  ASGARD-5877: Building Protected Swift Application"
+echo "🛡️  ASGARD-5877: Pure Swift Zero-Bridge Protection Pipeline"
 echo "=================================================================="
 
 # 1. Verify Prerequisites
@@ -27,14 +26,41 @@ if [[ ! -f "${ROOT_DIR}/_build/default/bin/main.exe" ]]; then
     (cd "${ROOT_DIR}" && dune build bin/main.exe)
 fi
 
-OUT_DIR="${SCRIPT_DIR}/build"
-VM_OUT="${OUT_DIR}/vm_out"
+BUILD_DIR="${SCRIPT_DIR}/build"
+VM_OUT="${BUILD_DIR}/vm_out"
 mkdir -p "${VM_OUT}"
 
-# 3. Virtualize the ARM64 security core using ASGARD Stack-VM Engine
-echo "[*] Virtualizing ARM64 Security Core with ASGARD Stack-VM Engine..."
+# 3. Compile Swift source directly to ARM64 assembly
+echo "[*] Step 1/6: Compiling pure Swift to ARM64 assembly via swiftc..."
+swiftc -O -parse-as-library -emit-assembly \
+    "${SCRIPT_DIR}/Sources/App/main.swift" \
+    -o "${BUILD_DIR}/app_raw.s"
+
+# 4. Extract targeted function instructions for ASGARD virtualization
+echo "[*] Step 2/6: Extracting target Swift function (_verify_license)..."
+python3 - << EOF
+with open("${BUILD_DIR}/app_raw.s", "r") as f:
+    lines = f.readlines()
+
+snip_lines = [".globl verify_license\n", "verify_license:\n"]
+in_func = False
+for line in lines:
+    if line.startswith("_verify_license:"):
+        in_func = True
+        continue
+    if in_func:
+        snip_lines.append(line)
+        if line.strip() == "ret":
+            break
+
+with open("${BUILD_DIR}/target_func.s", "w") as out:
+    out.writelines(snip_lines)
+EOF
+
+# 5. Virtualize the extracted ARM64 routine using ASGARD Stack-VM Engine
+echo "[*] Step 3/6: Virtualizing ARM64 logic into ASGARD Stack-VM Bytecode..."
 "${ROOT_DIR}/_build/default/bin/main.exe" protect-arm64 \
-    -i "${SCRIPT_DIR}/Sources/Core/license_core_arm64.s" \
+    -i "${BUILD_DIR}/target_func.s" \
     -o "${VM_OUT}" \
     --engine=stack \
     --cff \
@@ -43,8 +69,7 @@ echo "[*] Virtualizing ARM64 Security Core with ASGARD Stack-VM Engine..."
     --seed 1337 \
     --compile=false
 
-# 4. Extract generated encrypted bytecode for direct static compilation
-echo "[*] Extracting polymorphic bytecode for static bridge linking..."
+# 6. Extract bytecode array into C++ header
 python3 - << EOF
 import re
 
@@ -61,27 +86,69 @@ with open("${VM_OUT}/embedded_bytecode.hpp", "w") as out:
     out.write("#pragma once\n#include <stdint.h>\n" + arr + "\n")
 EOF
 
-# 5. Compile C++ VM Bridge into Object File
-echo "[*] Compiling C++ ASGARD VM Bridge..."
-clang++ -std=c++17 -O2 \
-    -I"${SCRIPT_DIR}/Sources/Bridge" \
-    -I"${VM_OUT}" \
-    -c "${SCRIPT_DIR}/Sources/Bridge/LicenseBridge.cpp" \
-    -o "${OUT_DIR}/LicenseBridge.o"
+# 7. Auto-synthesize the zero-overhead C++ VM dispatcher
+echo "[*] Step 4/6: Synthesizing automated VM entrypoint dispatcher..."
+cat << 'EOF' > "${BUILD_DIR}/asgard_auto_dispatch.cpp"
+#include "stack_vm_runtime.hpp"
+#include "embedded_bytecode.hpp"
+#include <stdint.h>
+#include <stddef.h>
 
-# 6. Compile Swift Application and Link Protected Core
-echo "[*] Compiling Protected Swift Application via swiftc..."
+extern "C" uint64_t asgard_vm_entry_verify_license(uint64_t a0, uint64_t a1) {
+    size_t bc_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);
+    return vanguard_threaded_vm::asgard_vm_call(
+        embedded_bytecode,
+        bc_len,
+        a0,
+        a1
+    );
+}
+EOF
+
+clang++ -std=c++17 -O2 \
+    -I"${VM_OUT}" \
+    -c "${BUILD_DIR}/asgard_auto_dispatch.cpp" \
+    -o "${BUILD_DIR}/asgard_auto_dispatch.o"
+
+# 8. In-place assembly patching: replace function body with jump to VM entrypoint
+echo "[*] Step 5/6: Patching Swift ARM64 assembly with opaque VM trampoline..."
+python3 - "${BUILD_DIR}" << 'EOF'
+import sys
+build_dir = sys.argv[1]
+with open(f"{build_dir}/app_raw.s", "r") as f:
+    lines = f.readlines()
+
+new_lines = []
+skip = False
+for line in lines:
+    if line.startswith("_") and "verify_license" in line and line.strip().endswith(":"):
+        new_lines.append(line)
+        new_lines.append("\tb\t_asgard_vm_entry_verify_license\n")
+        skip = True
+    elif skip and line.strip() == "ret":
+        skip = False
+    elif not skip:
+        new_lines.append(line)
+
+with open(f"{build_dir}/app_protected.s", "w") as f:
+    f.writelines(new_lines)
+EOF
+
+# 9. Assemble patched assembly and link protected executable
+echo "[*] Step 6/6: Linking protected Swift Mach-O binary..."
+clang -c "${BUILD_DIR}/app_protected.s" -o "${BUILD_DIR}/app_protected.o"
+
 swiftc -O \
-    "${SCRIPT_DIR}/Sources/App/main.swift" \
-    "${OUT_DIR}/LicenseBridge.o" \
+    "${BUILD_DIR}/app_protected.o" \
+    "${BUILD_DIR}/asgard_auto_dispatch.o" \
     -lc++ \
-    -o "${OUT_DIR}/protected_swift_app"
+    -o "${BUILD_DIR}/protected_swift_app"
 
 echo "=================================================================="
-echo "✅ Build Successful: ${OUT_DIR}/protected_swift_app"
+echo "✅ Build Successful: ${BUILD_DIR}/protected_swift_app"
 echo "=================================================================="
 echo ""
-echo "[*] Launching Protected Swift Application:"
+echo "[*] Executing Protected Swift Application:"
 echo "------------------------------------------------------------------"
-"${OUT_DIR}/protected_swift_app"
+"${BUILD_DIR}/protected_swift_app"
 echo "------------------------------------------------------------------"
