@@ -843,7 +843,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     } while(0)
 #else
     #define DISPATCH_OPCODE() do { \
-        uint8_t domain_idx = (uint8_t)((k_dyn >> 32) %% %d); \
+        uint8_t domain_idx = (uint8_t)(((k_dyn >> 32) ^ (ctx.data_key >> 40)) %% %d); \
         uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[domain_idx] ^ ctx.macro_salt); \
         uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)permuted_slot) * 0x6A09E667F3BCC908ULL); \
         void* target = (void*)(all_dispatch_domains[domain_idx][permuted_slot] ^ k_slot); \

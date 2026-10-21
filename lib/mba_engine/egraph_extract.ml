@@ -47,7 +47,7 @@ type chooser = eligible_count:int -> site_tag:(int * int) -> int
 let pure_rng_chooser rng ~eligible_count ~site_tag:_ =
   Random.State.int rng eligible_count
 
-let extract ?chooser ~rng ?(max_depth = 6) eg root_id =
+let extract ?chooser ?bias ~rng ?(max_depth = 6) eg root_id =
   let pick_candidate = match chooser with
     | Some c -> c
     | None -> pure_rng_chooser rng
@@ -182,18 +182,24 @@ let extract ?chooser ~rng ?(max_depth = 6) eg root_id =
                     | None -> None)
                 | [ single ] -> Some single
                 | cs ->
-                    (* Rank candidate nodes by (alternation, size); randomize ties *)
                     let sorted =
                       List.sort
-                        (fun (_, s1, a1) (_, s2, a2) ->
-                          if a1 <> a2 then compare a2 a1 else compare s2 s1)
+                        (fun (e1, s1, a1) (e2, s2, a2) ->
+                          let b1 = match bias with Some f -> f e1 | None -> 0 in
+                          let b2 = match bias with Some f -> f e2 | None -> 0 in
+                          if b1 <> b2 then compare b2 b1
+                          else if a1 <> a2 then compare a2 a1
+                          else compare s2 s1)
                         cs
                     in
+                    let top_bias = match sorted with (e, _, _) :: _ -> (match bias with Some f -> f e | None -> 0) | [] -> 0 in
                     let top_alt = match sorted with (_, _, a) :: _ -> a | [] -> 0 in
                     let top_size = match sorted with (_, s, _) :: _ -> s | [] -> 0 in
                     let best_group =
                       List.filter
-                        (fun (_, s, a) -> a = top_alt && s = top_size)
+                        (fun (e, s, a) ->
+                          let b = match bias with Some f -> f e | None -> 0 in
+                          b = top_bias && a = top_alt && s = top_size)
                         sorted
                     in
                     let count = List.length best_group in
@@ -211,3 +217,6 @@ let extract ?chooser ~rng ?(max_depth = 6) eg root_id =
       match Hashtbl.find_opt min_ast root with
       | Some (e, s) -> (e, s, alternation e)
       | None -> (Var "x", 1, 0))
+
+let extract_with_bias ~rng ~bias ?chooser ?max_depth eg root_id =
+  extract ?chooser ~bias ~rng ?max_depth eg root_id

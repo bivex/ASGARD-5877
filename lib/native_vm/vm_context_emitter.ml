@@ -98,6 +98,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field UInt32 "init_seed";
     member_field UInt64 "poison_penalty";
     member_field UInt64 "running_key";
+    member_field ~init:(u64 0x5877CAFE1337BEEFL) UInt64 "data_key";
     (* The shadow stack pointer of the CET extensions (RDSSP, INCSSP). *)
     member_field ~init:(u64 0x50000000L) UInt64 "ssp";
     member_field Bool "cf";
@@ -138,6 +139,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       (var "poison_penalty" := ((call "key64_for_offset" [var "seed"; u64 0x5877L] ^~ u64 0xCAA7E1D8718BF877L) |~ u64 1L));
       (var "running_key" := (call "key64_for_offset" [var "seed"; u64 0x13375877L] ^~ u64 0xCAFEBABE13375877L));
       (var "reg_mask" := (u64 0x5A5A5A5A13375877L ^~ (cast UInt64 (var "seed") *~ u64 0x9E3779B97F4A7C15L)));
+      (var "data_key" := (call "key64_for_offset" [var "seed"; u64 0x5877A5A5L] ^~ u64 0x5877CAFE1337BEEFL));
       (var "macro_salt" := i32 0);
       for_range "i" (u64 0L) (u64 32L) [
         (idx (var "slot_masks") (var "i") := (call "key64_for_offset" [var "seed"; u64 0x1000L +~ var "i"] ^~ u64 0xA5A5A5A51337BEEFL));
@@ -179,6 +181,16 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_method ~attrs:[AlwaysInline; NoExcept] Void "advance_running_key"
       [(UInt8, "op"); (UInt8, "dst"); (Int64, "imm")] [
       (var "running_key" := call "advance_key_step" [var "running_key"; var "op"; var "dst"; var "imm"]);
+    ];
+    member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "advance_data_key_step"
+      [(UInt64, "data_k"); (UInt64, "res_val")] [
+      let_u64 "rot" ((var "data_k" >>~ u64 47L) |~ (var "data_k" <<~ u64 17L));
+      ret (var "rot" ^~ (var "res_val" *~ u64 0x9E3779B97F4A7C15L));
+    ];
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "advance_data_key"
+      [(UInt64, "res_val")] [
+      (var "data_key" := call "advance_data_key_step" [var "data_key"; var "res_val"]);
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "anchor_key"
@@ -233,6 +245,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       let_u64 "new_m" ((idx (var "slot_masks") (var "idx") ^~ var "running_key") *~ u64 0x9E3779B97F4A7C15L);
       (idx (var "slot_masks") (var "idx") := var "new_m");
       (idx (var "gprs") (var "idx") := (var "v" ^~ var "new_m" ^~ var "reg_mask"));
+      expr_stmt (call "advance_data_key" [var "v"]);
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "evolve_slot_mask" [(UInt8, "i"); (UInt32, "k")] [

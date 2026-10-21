@@ -627,6 +627,115 @@ let test_select_pinned_reg_exhaustion () =
   let func = Ir.make_func ~name:"test_exhaustion" ~entry_id:1 ~blocks:[ b ] in
   let pinned = Cff.select_pinned_reg func in
   Alcotest.(check bool) "pinned reg exhausted" true (pinned = None)
+let test_tmr_majority_truth_table () =
+  (* Truth table for all 8 bit patterns *)
+  Alcotest.(check int64) "000 -> 0" 0L (Mba_engine.Tmr_guard.evaluate_tmr_majority 0L 0L 0L);
+  Alcotest.(check int64) "001 -> 0" 0L (Mba_engine.Tmr_guard.evaluate_tmr_majority 0L 0L 1L);
+  Alcotest.(check int64) "010 -> 0" 0L (Mba_engine.Tmr_guard.evaluate_tmr_majority 0L 1L 0L);
+  Alcotest.(check int64) "011 -> 1" 1L (Mba_engine.Tmr_guard.evaluate_tmr_majority 0L 1L 1L);
+  Alcotest.(check int64) "100 -> 0" 0L (Mba_engine.Tmr_guard.evaluate_tmr_majority 1L 0L 0L);
+  Alcotest.(check int64) "101 -> 1" 1L (Mba_engine.Tmr_guard.evaluate_tmr_majority 1L 0L 1L);
+  Alcotest.(check int64) "110 -> 1" 1L (Mba_engine.Tmr_guard.evaluate_tmr_majority 1L 1L 0L);
+  Alcotest.(check int64) "111 -> 1" 1L (Mba_engine.Tmr_guard.evaluate_tmr_majority 1L 1L 1L);
+  (* Full 64-bit word majority *)
+  let w1 = 0xAAAA_5555_AAAA_5555L in
+  let w2 = 0xCCCC_3333_CCCC_3333L in
+  let w3 = 0xF0F0_0F0F_F0F0_0F0FL in
+  let maj = Mba_engine.Tmr_guard.evaluate_tmr_majority w1 w2 w3 in
+  for bit = 0 to 63 do
+    let b1 = Int64.logand (Int64.shift_right_logical w1 bit) 1L in
+    let b2 = Int64.logand (Int64.shift_right_logical w2 bit) 1L in
+    let b3 = Int64.logand (Int64.shift_right_logical w3 bit) 1L in
+    let b_maj = Int64.logand (Int64.shift_right_logical maj bit) 1L in
+    let sum = Int64.add (Int64.add b1 b2) b3 in
+    let expected = if sum >= 2L then 1L else 0L in
+    Alcotest.(check int64) (Printf.sprintf "bit %d majority" bit) expected b_maj
+  done
+
+let test_tmr_triplet_synthesis () =
+  let rng = Random.State.make [| 9999 |] in
+  let expr = Mba.Add (Mba.Var "x", Mba.Const 42L) in
+  let (e1, e2, e3) = Mba_engine.Tmr_synth.synth_triplet_from_expr ~rng expr in
+  (* Test mathematical equivalence across 20 randomized inputs *)
+  for sample = 1 to 20 do
+    let x_val = Int64.of_int (sample * 1337 + 7) in
+    let env = (fun s -> if s = "x" then x_val else 0L) in
+    let res_orig = Mba.eval env expr in
+    let res1 = Mba.eval env e1 in
+    let res2 = Mba.eval env e2 in
+    let res3 = Mba.eval env e3 in
+    Alcotest.(check int64) "lane 1 arith equivalence" res_orig res1;
+    Alcotest.(check int64) "lane 2 bool equivalence" res_orig res2;
+    Alcotest.(check int64) "lane 3 canonical equivalence" res_orig res3;
+  done
+
+let test_tmr_silent_anti_patching () =
+  let rng = Random.State.make [| 8888 |] in
+  let expr = Mba.Add (Mba.Var "a", Mba.Const 42L) in
+  let (e1, e2, e3) = Mba_engine.Tmr_synth.synth_triplet_from_expr ~rng expr in
+  let env = [ ("a", Ir.Reg Register.rdi) ] in
+
+  (* 1. Normal unpatched execution *)
+  let instrs =
+    Mba_engine.Tmr_guard.emit_tmr_evaluation
+      ~e1 ~e2 ~e3 ~env
+      ~dst:Register.rax
+      ~r1:Register.vx19
+      ~r2:Register.vx20
+      ~r3:Register.vx21
+      ~scratch1:Register.vtmp0
+      ~scratch2:Register.vtmp1
+    @ [ Ir.Ret ]
+  in
+  let b = Ir.make_block ~id:1 ~label:"tmr_entry" ~instrs in
+  let func = Ir.make_func ~name:"tmr_test" ~entry_id:1 ~blocks:[ b ] in
+  let state = make_state () in
+  set_reg state Register.rdi 100L;
+  (match run_func state func with
+  | Error e -> Alcotest.fail e
+  | Ok () -> Alcotest.(check int64) "unpatched 100+42=142" 142L (get_reg state Register.rax));
+
+  (* 2. Tampered / patched Lane 1: an attacker patched r1 to garbage 0xDEADBEEFL *)
+  let instrs_tampered1 =
+    (Mba.lower_to_ir ~dst:Register.vx19 ~env e1)
+    @ [ Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Imm 0xDEADBEEFL } ] (* attacker patch! *)
+    @ (Mba.lower_to_ir ~dst:Register.vx20 ~env e2)
+    @ (Mba.lower_to_ir ~dst:Register.vx21 ~env e3)
+    @ (Mba_engine.Tmr_guard.emit_tmr_majority
+         ~r1:Register.vx19 ~r2:Register.vx20 ~r3:Register.vx21
+         ~dst:Register.rax ~scratch1:Register.vtmp0 ~scratch2:Register.vtmp1)
+    @ [ Ir.Ret ]
+  in
+  let b_t1 = Ir.make_block ~id:1 ~label:"tmr_t1" ~instrs:instrs_tampered1 in
+  let func_t1 = Ir.make_func ~name:"tmr_tampered1" ~entry_id:1 ~blocks:[ b_t1 ] in
+  let state_t1 = make_state () in
+  set_reg state_t1 Register.rdi 100L;
+  (match run_func state_t1 func_t1 with
+  | Error e -> Alcotest.fail e
+  | Ok () ->
+      (* Silent recovery: majority vote ignores tampered lane 1, producing correct 142 *)
+      Alcotest.(check int64) "silent recovery under lane 1 patch" 142L (get_reg state_t1 Register.rax));
+
+  (* 3. Tampered Lane 2: an attacker patched r2 to 0L *)
+  let instrs_tampered2 =
+    (Mba.lower_to_ir ~dst:Register.vx19 ~env e1)
+    @ (Mba.lower_to_ir ~dst:Register.vx20 ~env e2)
+    @ [ Ir.Mov { dst = Ir.Reg Register.vx20; src = Ir.Imm 0L } ] (* attacker patch! *)
+    @ (Mba.lower_to_ir ~dst:Register.vx21 ~env e3)
+    @ (Mba_engine.Tmr_guard.emit_tmr_majority
+         ~r1:Register.vx19 ~r2:Register.vx20 ~r3:Register.vx21
+         ~dst:Register.rax ~scratch1:Register.vtmp0 ~scratch2:Register.vtmp1)
+    @ [ Ir.Ret ]
+  in
+  let b_t2 = Ir.make_block ~id:1 ~label:"tmr_t2" ~instrs:instrs_tampered2 in
+  let func_t2 = Ir.make_func ~name:"tmr_tampered2" ~entry_id:1 ~blocks:[ b_t2 ] in
+  let state_t2 = make_state () in
+  set_reg state_t2 Register.rdi 100L;
+  (match run_func state_t2 func_t2 with
+  | Error e -> Alcotest.fail e
+  | Ok () ->
+      Alcotest.(check int64) "silent recovery under lane 2 patch" 142L (get_reg state_t2 Register.rax))
+
 
 let tests = [
   Alcotest.test_case "cff_tainted_stack_vm" `Quick test_cff_tainted_stack_vm;
@@ -650,4 +759,7 @@ let tests = [
   Alcotest.test_case "cff_multi_hub_partitioning" `Quick test_cff_multi_hub_partitioning;
   Alcotest.test_case "cff_topological_fallthrough" `Quick test_cff_topological_fallthrough;
   Alcotest.test_case "select_pinned_reg_exhaustion" `Quick test_select_pinned_reg_exhaustion;
+  Alcotest.test_case "tmr_majority_truth_table" `Quick test_tmr_majority_truth_table;
+  Alcotest.test_case "tmr_triplet_synthesis" `Quick test_tmr_triplet_synthesis;
+  Alcotest.test_case "tmr_silent_anti_patching" `Quick test_tmr_silent_anti_patching;
 ]

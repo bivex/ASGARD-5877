@@ -22,7 +22,9 @@ type config = {
 val default_config : config
 val default_op_config : config
 
-(** Saturation / extraction statistics. *)
+val saturate : rng:Random.State.t -> config:config -> Egraph_types.t -> int
+val rebuild : Egraph_types.t -> unit
+(* Saturation / extraction statistics. *)
 type stats = {
   iterations : int;            (** saturation iterations executed *)
   classes : int;               (** final e-class count *)
