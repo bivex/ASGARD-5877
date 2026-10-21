@@ -123,6 +123,20 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field ~init:(i32 0) UInt8 "macro_salt";
     member_field (Array (UInt64, 32)) "decoy_regs";
     member_field ~init:(i32 1) Int32 "format_version_tag";
+    member_field ~init:(u32 0l) UInt32 "analysis_pressure";
+    member_field ~init:(i32 0) UInt8 "pressure_tier";
+    member_field ~init:(u64 0L) UInt64 "last_step_tsc";
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "check_analysis_pressure" [(UInt64, "delta_cycles")] [
+      raw {|if (__builtin_expect(delta_cycles > 2000000ULL, 0)) {
+        analysis_pressure++;
+        if (__builtin_expect(analysis_pressure >= 4, 0)) {
+            analysis_pressure = 0;
+            pressure_tier = (pressure_tier + 1) & 3;
+            data_key ^= 0x5877CAFE1337BEEFULL;
+        }
+    }|};
+    ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "set_macro_salt" [(UInt8, "s")] [
       (var "macro_salt" := var "s");
@@ -174,6 +188,9 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       for_range "i" (u64 0L) (u64 8L) [
         (idx (var "fpu_stack") (var "i") := i32 0);
       ];
+      (var "analysis_pressure" := u32 0l);
+      (var "pressure_tier" := i32 0);
+      (var "last_step_tsc" := u64 0L);
     ];
 
     (* Rolling Key Derivations *)

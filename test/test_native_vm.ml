@@ -454,6 +454,33 @@ func_honeypot_check:
         (string_contains pkg.cpp_runtime_source "format_version_tag < 0");
       Alcotest.(check bool) "header contains decoy_regs in context" true
         (string_contains pkg.cpp_runtime_source "decoy_regs")
+let test_self_escalating_pressure_manifold () =
+  let rng = Random.State.make [| 20261023 |] in
+  let asm = {|
+func_pressure_check:
+    mov rax, 500
+    add rax, 50
+    sub rax, 5
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let pkg = Vm_emitter.compile_and_package ~rng func in
+      Alcotest.(check bool) "header contains check_analysis_pressure" true
+        (string_contains pkg.cpp_runtime_source "check_analysis_pressure");
+      Alcotest.(check bool) "header contains pressure_tier" true
+        (string_contains pkg.cpp_runtime_source "pressure_tier");
+      Alcotest.(check bool) "header contains ASG_READ_HW_CYCLES" true
+        (string_contains pkg.cpp_runtime_source "ASG_READ_HW_CYCLES");
+      with_temp_dir (fun tmp_dir ->
+        let bin_path = compile_and_prepare_vm tmp_dir pkg in
+        let bc_path = Filename.concat tmp_dir "code.vanguard" in
+        write_bytecode_bin bc_path pkg.bytecode;
+        let status, out_str = run_command_capture (Printf.sprintf "%s %s" bin_path bc_path) in
+        Alcotest.(check bool) "exit code 0 under runtime timing probes" true (status = Unix.WEXITED 0);
+        Alcotest.(check bool) "rax is 545 (500+50-5)" true (string_contains out_str "545"))
+
 
 let tests = [
   Alcotest.test_case "threaded_vm_compilation_and_execution" `Slow test_threaded_vm_compilation_and_execution;
@@ -469,4 +496,5 @@ let tests = [
   Alcotest.test_case "indirect_jump_target_reg" `Slow test_indirect_jump_target_reg;
   Alcotest.test_case "ephemeral_jit_micro_handlers" `Slow test_ephemeral_jit_micro_handlers;
   Alcotest.test_case "honeypot_decoy_dispatcher" `Quick test_honeypot_decoy_dispatcher;
+  Alcotest.test_case "self_escalating_pressure_manifold" `Slow test_self_escalating_pressure_manifold;
 ]

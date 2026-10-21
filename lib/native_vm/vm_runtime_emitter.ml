@@ -851,6 +851,14 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         legacy_bytecode_interpreter_fallback(op, dst, ctx.decoy_regs);
     }
 
+#if defined(__x86_64__)
+    #define ASG_READ_HW_CYCLES() __builtin_ia32_rdtsc()
+#elif defined(__aarch64__)
+    #define ASG_READ_HW_CYCLES() ([]() noexcept -> uint64_t { uint64_t v; __asm__ volatile("mrs %%0, cntvct_el0" : "=r"(v)); return v; }())
+#else
+    #define ASG_READ_HW_CYCLES() (0ULL)
+#endif
+
 #if defined(_MSC_VER) && !defined(__clang__)
     #define DISPATCH_OPCODE() do { \
         if (__builtin_expect(ctx.format_version_tag < 0, 0)) { \
@@ -863,7 +871,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         if (__builtin_expect(ctx.format_version_tag < 0, 0)) { \
             legacy_bytecode_interpreter_fallback(op, dst, ctx.decoy_regs); \
         } \
-        uint8_t domain_idx = (uint8_t)(((k_dyn >> 32) ^ (ctx.data_key >> 40)) %% %d); \
+        uint8_t domain_idx = (uint8_t)(((k_dyn >> 32) ^ (ctx.data_key >> 40) ^ ((uint64_t)ctx.pressure_tier * 0x5AULL)) %% %d); \
         uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[domain_idx] ^ ctx.macro_salt); \
         uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)permuted_slot) * 0x6A09E667F3BCC908ULL); \
         void* target = (void*)(all_dispatch_domains[domain_idx][permuted_slot] ^ k_slot); \
@@ -877,6 +885,11 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
             ctx.trapped = true; \
             goto EXIT_VM; \
         } \
+        uint64_t _tsc_cur = ASG_READ_HW_CYCLES(); \
+        if (__builtin_expect(ctx.last_step_tsc != 0, 1)) { \
+            ctx.check_analysis_pressure(_tsc_cur - ctx.last_step_tsc); \
+        } \
+        ctx.last_step_tsc = _tsc_cur; \
         uint64_t k_pos = key64_for_offset(seed, vIP_idx); \
         %s \
         if (__builtin_expect(ctx.executed_instructions >= next_canary_step, 0)) { \
@@ -920,7 +933,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         raw (Printf.sprintf {|#if defined(_MSC_VER) && !defined(__clang__)
     goto START_VM_MSVC;
     DISPATCH_MSVC: {
-        uint8_t d_idx = (uint8_t)((k_dyn >> 32) %% %d);
+        uint8_t d_idx = (uint8_t)(((k_dyn >> 32) ^ (ctx.data_key >> 40) ^ ((uint64_t)ctx.pressure_tier * 0x5AULL)) %% %d);
         uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[d_idx]);
         if (__builtin_expect(asg_vm_trace_on, 0)) { fprintf(stderr, "%%u\n", (unsigned)ASG_TRC_CLASS[d_idx][permuted_slot]); }
         switch ((uint32_t)d_idx * 256U + (uint32_t)permuted_slot) {
