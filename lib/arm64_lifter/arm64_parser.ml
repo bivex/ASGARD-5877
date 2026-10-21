@@ -304,25 +304,25 @@ let parse_lines text =
           let upper = String.uppercase_ascii clean in
           if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" then
             let acc' = match acc with
-              | LineInstr ("b", _) :: prev -> prev
+              | LineInstr (("b" | "bl"), _) :: prev -> prev
               | _ -> acc
             in
             loop (LineMarkerBegin (ModeVirtualize "region") :: acc') rest
           else if contains_sub upper "ASGARD_BEG_M" || contains_sub upper "ASGARD_BEGIN_M" then
             let acc' = match acc with
-              | LineInstr ("b", _) :: prev -> prev
+              | LineInstr (("b" | "bl"), _) :: prev -> prev
               | _ -> acc
             in
             loop (LineMarkerBegin (ModeMutation "region") :: acc') rest
           else if contains_sub upper "ASGARD_BEG" || contains_sub upper "ASGARD_BEGIN" then
             let acc' = match acc with
-              | LineInstr ("b", _) :: prev -> prev
+              | LineInstr (("b" | "bl"), _) :: prev -> prev
               | _ -> acc
             in
             loop (LineMarkerBegin (ModeUltra "region") :: acc') rest
           else if contains_sub upper "ASGARD_END" then
             let acc' = match acc with
-              | LineInstr ("b", _) :: prev -> prev
+              | LineInstr (("b" | "bl"), _) :: prev -> prev
               | _ -> acc
             in
             loop (LineMarkerEnd :: acc') rest

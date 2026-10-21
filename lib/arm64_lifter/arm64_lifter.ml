@@ -148,8 +148,56 @@ let extract_marked_regions ?(require_markers = false) (raw_lines : Arm64_parser.
         | _ -> false)
       raw_lines
   in
+  let is_asgard_target lbl =
+    let clean = if String.starts_with ~prefix:"_" lbl then String.sub lbl 1 (String.length lbl - 1) else lbl in
+    String.starts_with ~prefix:"asgard_" clean
+    || String.starts_with ~prefix:"verify_" clean
+    || String.ends_with ~suffix:"_asgard" clean
+  in
+  let has_asgard_labels =
+    List.exists
+      (function
+        | Arm64_parser.LineLabel lbl when not (String.starts_with ~prefix:"L" lbl) && not (String.starts_with ~prefix:"." lbl) ->
+            is_asgard_target lbl
+        | _ -> false)
+      raw_lines
+  in
   if not has_markers then
-    if require_markers then []
+    if has_asgard_labels then
+      let regions = ref [] in
+      let fn_lines = ref [] in
+      let last_label = ref "" in
+      let in_target = ref false in
+      List.iter
+        (function
+          | Arm64_parser.LineLabel lbl when not (String.starts_with ~prefix:"L" lbl) && not (String.starts_with ~prefix:"." lbl) ->
+              if !in_target then begin
+                regions := (Arm64_parser.ModeUltra !last_label, Arm64_parser.LineLabel !last_label :: List.rev !fn_lines) :: !regions;
+                in_target := false;
+                fn_lines := []
+              end;
+              if is_asgard_target lbl then begin
+                in_target := true;
+                last_label := (if String.starts_with ~prefix:"_" lbl then String.sub lbl 1 (String.length lbl - 1) else lbl);
+                fn_lines := []
+              end
+          | Arm64_parser.LineInstr (mnem, _) as instr ->
+              if !in_target then begin
+                fn_lines := instr :: !fn_lines;
+                if mnem = "ret" then begin
+                  regions := (Arm64_parser.ModeUltra !last_label, Arm64_parser.LineLabel !last_label :: List.rev !fn_lines) :: !regions;
+                  in_target := false;
+                  fn_lines := []
+                end
+              end
+          | (Arm64_parser.LineLabel _ | Arm64_parser.LineDirective _) as line ->
+              if !in_target then fn_lines := line :: !fn_lines
+          | _ -> ())
+        raw_lines;
+      if !in_target then
+        regions := (Arm64_parser.ModeUltra !last_label, Arm64_parser.LineLabel !last_label :: List.rev !fn_lines) :: !regions;
+      List.rev !regions
+    else if require_markers then []
     else [ (Arm64_parser.ModeUltra "main", raw_lines) ]
   else
     let regions = ref [] in

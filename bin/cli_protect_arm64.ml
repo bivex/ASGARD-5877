@@ -99,9 +99,9 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
       `Ok ()
 
 let protect_arm64_cmd =
-  let doc = "Virtualize and protect ARM64 assembly or C source with ARM64 Lifter, CFF, MBA, and Direct Threaded or RD-JIT VM" in
+  let doc = "Virtualize and protect ARM64 assembly, C/C++, or Swift source with ARM64 Lifter, CFF, MBA, and Direct Threaded or Stack VM" in
   let input =
-    let doc = "Input ARM64 assembly (.s / .asm) or C source (.c)" in
+    let doc = "Input ARM64 assembly (.s / .asm), C/C++ source (.c, .cpp), or Swift source (.swift)" in
     Arg.(required & opt (some string) None & info [ "i"; "input" ] ~docv:"FILE" ~doc)
   in
   let out_dir =

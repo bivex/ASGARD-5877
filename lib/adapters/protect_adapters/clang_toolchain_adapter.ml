@@ -115,3 +115,64 @@ let execute_binary ~(binary_path : string) : (int * string, error) result =
     | Ok (output, (_, `Exited code)) -> Ok (code, output)
     | Ok (output, (_, `Signaled s)) -> Ok (128 + s, output)
     | Error (`Msg msg) -> Error (Printf.sprintf "Binary execution error: %s" msg)
+
+let compile_swift_to_asm ~(swift_source : string) ~(out_asm : string) : (unit, error) result =
+  let content =
+    try
+      let ic = open_in swift_source in
+      let len = in_channel_length ic in
+      let s = really_input_string ic len in
+      close_in ic;
+      s
+    with _ -> ""
+  in
+  let has_main_attr =
+    let rec contains i =
+      if i + 5 > String.length content then false
+      else if String.sub content i 5 = "@main" then true
+      else contains (i + 1)
+    in
+    contains 0
+  in
+  let base_cmd = Cmd.(v "swiftc" % "-O") in
+  let cmd =
+    if has_main_attr then
+      Cmd.(base_cmd % "-parse-as-library" % "-emit-assembly" % swift_source % "-o" % out_asm)
+    else
+      Cmd.(base_cmd % "-emit-assembly" % swift_source % "-o" % out_asm)
+  in
+  match OS.Cmd.run_status cmd with
+  | Ok (`Exited 0) -> Ok ()
+  | Ok (`Exited c) -> Error (Printf.sprintf "swiftc -emit-assembly failed with exit code %d" c)
+  | Ok (`Signaled s) -> Error (Printf.sprintf "swiftc -emit-assembly terminated by signal %d" s)
+  | Error (`Msg msg) -> Error (Printf.sprintf "swiftc execution error: %s" msg)
+
+let compile_swift_binary ~(asm_source : string) ~(dispatch_source : string) ~(out_binary : string) ~(include_dir : string) : (unit, error) result =
+  let dir = Filename.dirname out_binary in
+  let dispatch_obj = Filename.concat dir "asgard_auto_dispatch.o" in
+  let asm_obj = Filename.concat dir "app_protected.o" in
+  let inc_args = get_inc_args include_dir dispatch_source in
+  let compile_dispatch =
+    Cmd.(v "clang++" % "-std=c++17" % "-O2" %% inc_args % "-c" % dispatch_source % "-o" % dispatch_obj)
+  in
+  match OS.Cmd.run_status compile_dispatch with
+  | Ok (`Exited 0) ->
+      let compile_asm =
+        Cmd.(v "clang" % "-c" % asm_source % "-o" % asm_obj)
+      in
+      (match OS.Cmd.run_status compile_asm with
+      | Ok (`Exited 0) ->
+          let link_cmd =
+            Cmd.(v "swiftc" % "-O" % asm_obj % dispatch_obj % "-lc++" % "-o" % out_binary)
+          in
+          (match OS.Cmd.run_status link_cmd with
+          | Ok (`Exited 0) -> Ok ()
+          | Ok (`Exited c) -> Error (Printf.sprintf "swiftc linking failed with exit code %d" c)
+          | Ok (`Signaled s) -> Error (Printf.sprintf "swiftc linking signaled %d" s)
+          | Error (`Msg msg) -> Error (Printf.sprintf "swiftc link error: %s" msg))
+      | Ok (`Exited c) -> Error (Printf.sprintf "clang asm compilation failed with exit code %d" c)
+      | Ok (`Signaled s) -> Error (Printf.sprintf "clang asm compilation signaled %d" s)
+      | Error (`Msg msg) -> Error (Printf.sprintf "clang asm compilation error: %s" msg))
+  | Ok (`Exited c) -> Error (Printf.sprintf "clang++ dispatch compilation failed with exit code %d" c)
+  | Ok (`Signaled s) -> Error (Printf.sprintf "clang++ dispatch compilation signaled %d" s)
+  | Error (`Msg msg) -> Error (Printf.sprintf "clang++ dispatch compilation error: %s" msg)

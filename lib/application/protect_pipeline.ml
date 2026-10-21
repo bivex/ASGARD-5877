@@ -25,6 +25,7 @@ let run
     Error (Printf.sprintf "Input file not found: %s" input_file)
   else
     let () = if not (Sys.file_exists out_dir) then Sys.mkdir out_dir 0o755 in
+    let is_swift_src = String.ends_with ~suffix:".swift" input_file in
     let is_cpp_src =
       String.ends_with ~suffix:".cpp" input_file || String.ends_with ~suffix:".cc" input_file || String.ends_with ~suffix:".cxx" input_file
     in
@@ -32,9 +33,23 @@ let run
       String.ends_with ~suffix:".c" input_file || is_cpp_src
     in
 
-    (* 1. Optional C/C++ macro pre-transformation and clang frontend *)
+    (* 1. Optional C/C++/Swift frontend to assembly *)
     let asm_source_file_res =
-      if is_c_src then
+      if is_swift_src then
+        match toolchain with
+        | Some (module T : Toolchain) ->
+            let asm_name =
+              match L.target_arch with
+              | X86_64 -> "app_swift_x86_64.s"
+              | Arm64 -> "app_swift_arm64.s"
+              | Riscv64 -> "app_swift_riscv64.s"
+            in
+            let asm_out = Filename.concat out_dir asm_name in
+            (match T.compile_swift_to_asm ~swift_source:input_file ~out_asm:asm_out with
+            | Ok () -> Ok asm_out
+            | Error err -> Error err)
+        | None -> Error "A Swift source was provided, but no toolchain was available to compile it to assembly"
+      else if is_c_src then
         match toolchain with
         | Some (module T : Toolchain) ->
             let c_source_for_asm, include_dir =
@@ -187,8 +202,102 @@ let run
               pkg.bytecode;
             close_out oc_b;
 
-            (* 7. In-place C trampoline embedding if C/C++ source *)
-            if is_c_src then begin
+            (* 7. In-place trampoline embedding *)
+            let protected_swift_asm = ref None in
+            let dispatch_cpp_path = ref None in
+            if is_swift_src then begin
+              let raw_names =
+                match pkg.bytecodes with
+                | [] ->
+                    (try [ (unwrap_ir lifted_func : Vm_ir.Ir.func).name ]
+                     with _ -> [ "target_func" ])
+                | bs -> List.map fst bs
+              in
+              let target_names =
+                let found = ref [] in
+                (try
+                   let ic_scan = open_in asm_source_file in
+                   let rec scan () =
+                     match input_line ic_scan with
+                     | line ->
+                         let trimmed = String.trim line in
+                         if String.starts_with ~prefix:"_" line && String.ends_with ~suffix:":" trimmed then begin
+                           let sym = String.sub trimmed 0 (String.length trimmed - 1) in
+                           let clean = if String.starts_with ~prefix:"_" sym then String.sub sym 1 (String.length sym - 1) else sym in
+                           if String.starts_with ~prefix:"asgard_" clean || String.starts_with ~prefix:"verify_" clean then
+                             if not (List.mem clean !found) then found := clean :: !found
+                         end;
+                         scan ()
+                     | exception End_of_file -> close_in ic_scan
+                   in
+                   scan ()
+                 with _ -> ());
+                if !found <> [] then !found else raw_names
+              in
+              let d_path = Filename.concat out_dir "asgard_auto_dispatch.cpp" in
+              dispatch_cpp_path := Some d_path;
+              let oc_d = open_out d_path in
+              output_string oc_d (Printf.sprintf "#include \"%s\"\n#include <stdint.h>\n#include <stddef.h>\n\nstatic const uint64_t embedded_bytecode[] = {\n" pkg.header_name);
+              List.iteri (fun idx w ->
+                if idx > 0 then output_string oc_d ",\n";
+                output_string oc_d (Printf.sprintf "    0x%016LxULL" w)
+              ) pkg.bytecode;
+              output_string oc_d "\n};\n\n";
+              List.iter (fun fn ->
+                let clean_fn = if String.starts_with ~prefix:"_" fn then String.sub fn 1 (String.length fn - 1) else fn in
+                output_string oc_d (Printf.sprintf "extern \"C\" uint64_t asgard_vm_entry_%s(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {\n" clean_fn);
+                output_string oc_d "    size_t bc_len = sizeof(embedded_bytecode) / sizeof(embedded_bytecode[0]);\n";
+                output_string oc_d "    return vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, bc_len, a0, a1, a2, a3, a4, a5, a6, a7);\n}\n\n";
+                output_string oc_d (Printf.sprintf "extern \"C\" uint64_t _asgard_vm_entry_%s(uint64_t a0, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5, uint64_t a6, uint64_t a7) {\n" clean_fn);
+                output_string oc_d (Printf.sprintf "    return asgard_vm_entry_%s(a0, a1, a2, a3, a4, a5, a6, a7);\n}\n\n" clean_fn)
+              ) target_names;
+              close_out oc_d;
+
+              (* In-place ASM rewriting *)
+              let s_protected = Filename.concat out_dir "app_swift_protected.s" in
+              protected_swift_asm := Some s_protected;
+              let ic_s = open_in asm_source_file in
+              let oc_s = open_out s_protected in
+              let skip = ref false in
+              let rec patch_lines () =
+                match input_line ic_s with
+                | line ->
+                    let trimmed = String.trim line in
+                    let is_target_label =
+                      List.exists (fun fn ->
+                        let clean_fn = if String.starts_with ~prefix:"_" fn then String.sub fn 1 (String.length fn - 1) else fn in
+                        String.starts_with ~prefix:"_" line && String.ends_with ~suffix:":" trimmed
+                        && (let has_sub s sub =
+                              let slen = String.length s in
+                              let sublen = String.length sub in
+                              let rec check i =
+                                if i + sublen > slen then false
+                                else if String.sub s i sublen = sub then true
+                                else check (i + 1)
+                              in check 0
+                            in has_sub line clean_fn)
+                      ) target_names
+                    in
+                    if is_target_label then begin
+                      output_string oc_s line;
+                      output_char oc_s '\n';
+                      let first_fn = List.hd target_names in
+                      let clean_first = if String.starts_with ~prefix:"_" first_fn then String.sub first_fn 1 (String.length first_fn - 1) else first_fn in
+                      output_string oc_s (Printf.sprintf "\tb\t_asgard_vm_entry_%s\n" clean_first);
+                      skip := true
+                    end else if !skip && trimmed = "ret" then begin
+                      skip := false
+                    end else if not !skip then begin
+                      output_string oc_s line;
+                      output_char oc_s '\n'
+                    end;
+                    patch_lines ()
+                | exception End_of_file ->
+                    close_in ic_s;
+                    close_out oc_s
+              in
+              patch_lines ()
+            end else if is_c_src then begin
               match trampoline_engine with
               | Some (module TE : Trampoline_engine) ->
                   let obf_name = if is_cpp_src then "app_obf.cpp" else "app_obf.c" in
@@ -208,25 +317,42 @@ let run
               if compile_and_run then
                 match toolchain with
                 | Some (module T : Toolchain) ->
-                    let bin_path = Filename.concat out_dir (if is_c_src then "protected_app" else "protected_runner") in
-                    let virt_cpp = Filename.concat out_dir "app_virtualized.cpp" in
-                    let comp_src =
-                      if is_c_src && Sys.file_exists virt_cpp then virt_cpp
-                      else if is_c_src then Filename.concat out_dir (if is_cpp_src then "app_obf.cpp" else "app_obf.c")
-                      else runner_path
-                    in
-                    let is_c_target = is_c_src && not (String.ends_with ~suffix:".cpp" comp_src) in
-                    (match T.compile_native_binary ~is_c:is_c_target ~source_file:comp_src ~out_binary:bin_path ~include_dir:out_dir with
-                    | Ok () ->
-                        let exec_res =
-                          match T.execute_binary ~binary_path:bin_path with
-                          | Ok (code, out) -> Some (code, out)
-                          | Error _ -> None
-                        in
-                        (Some bin_path, exec_res)
-                    | Error err ->
-                        prerr_endline (Printf.sprintf "Native build warning: %s" err);
-                        (None, None))
+                    if is_swift_src then
+                      match !protected_swift_asm, !dispatch_cpp_path with
+                      | Some s_asm, Some d_cpp ->
+                          let bin_path = Filename.concat out_dir "protected_app" in
+                          (match T.compile_swift_binary ~asm_source:s_asm ~dispatch_source:d_cpp ~out_binary:bin_path ~include_dir:out_dir with
+                          | Ok () ->
+                              let exec_res =
+                                match T.execute_binary ~binary_path:bin_path with
+                                | Ok (code, out) -> Some (code, out)
+                                | Error _ -> None
+                              in
+                              (Some bin_path, exec_res)
+                          | Error err ->
+                              prerr_endline (Printf.sprintf "Swift native build warning: %s" err);
+                              (None, None))
+                      | _ -> (None, None)
+                    else
+                      let bin_path = Filename.concat out_dir (if is_c_src then "protected_app" else "protected_runner") in
+                      let virt_cpp = Filename.concat out_dir "app_virtualized.cpp" in
+                      let comp_src =
+                        if is_c_src && Sys.file_exists virt_cpp then virt_cpp
+                        else if is_c_src then Filename.concat out_dir (if is_cpp_src then "app_obf.cpp" else "app_obf.c")
+                        else runner_path
+                      in
+                      let is_c_target = is_c_src && not (String.ends_with ~suffix:".cpp" comp_src) in
+                      (match T.compile_native_binary ~is_c:is_c_target ~source_file:comp_src ~out_binary:bin_path ~include_dir:out_dir with
+                      | Ok () ->
+                          let exec_res =
+                            match T.execute_binary ~binary_path:bin_path with
+                            | Ok (code, out) -> Some (code, out)
+                            | Error _ -> None
+                          in
+                          (Some bin_path, exec_res)
+                      | Error err ->
+                          prerr_endline (Printf.sprintf "Native build warning: %s" err);
+                          (None, None))
                 | None -> (None, None)
               else (None, None)
             in

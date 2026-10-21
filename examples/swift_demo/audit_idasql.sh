@@ -11,7 +11,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_BIN="${SCRIPT_DIR}/build/protected_swift_app"
+APP_BIN="${SCRIPT_DIR}/build/protected_app"
 DB_PATH="${APP_BIN}.i64"
 
 IDAT_PATH="${IDAT_PATH:-/Applications/IDA Professional 9.3.app/Contents/MacOS/idat}"

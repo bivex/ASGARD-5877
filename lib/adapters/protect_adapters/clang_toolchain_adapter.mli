@@ -18,3 +18,15 @@ val compile_native_binary :
 val execute_binary :
   binary_path:string ->
   (int * string, error) result
+
+val compile_swift_to_asm :
+  swift_source:string ->
+  out_asm:string ->
+  (unit, error) result
+
+val compile_swift_binary :
+  asm_source:string ->
+  dispatch_source:string ->
+  out_binary:string ->
+  include_dir:string ->
+  (unit, error) result
