@@ -88,12 +88,12 @@ type stats = {
   extracted_alternation : int;
 }
 
-let expand_full ~rng ?(config = default_config) e =
+let expand_full ~rng ?chooser ?(config = default_config) e =
   let eg = create () in
   let root = add_expr eg e in
   let iters = saturate ~rng ~config eg in
   rebuild eg;
-  let (e', s, a) = extract ~rng eg root in
+  let (e', s, a) = extract ?chooser ~rng eg root in
   ( e',
     { iterations = iters;
       classes = Hashtbl.length eg.classes;
@@ -102,7 +102,7 @@ let expand_full ~rng ?(config = default_config) e =
       extracted_size = s;
       extracted_alternation = a } )
 
-let expand ~rng ?(config = default_config) e = fst (expand_full ~rng ~config e)
+let expand ~rng ?chooser ?(config = default_config) e = fst (expand_full ~rng ?chooser ~config e)
 
 let default_op_config = { node_limit = 80; time_budget_s = 0.05; iter_limit = 4 }
 

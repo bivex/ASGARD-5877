@@ -42,7 +42,16 @@ let alternation e =
 
 type extracted = expr * int * int (* expression, size, alternation *)
 
-let extract ~rng ?(max_depth = 6) eg root_id =
+type chooser = eligible_count:int -> site_tag:(int * int) -> int
+
+let pure_rng_chooser rng ~eligible_count ~site_tag:_ =
+  Random.State.int rng eligible_count
+
+let extract ?chooser ~rng ?(max_depth = 6) eg root_id =
+  let pick_candidate = match chooser with
+    | Some c -> c
+    | None -> pure_rng_chooser rng
+  in
   let root = find eg root_id in
   (* 1. Compute the strictly minimal (acyclic) AST for every reachable e-class *)
   let min_ast : (int, expr * int) Hashtbl.t = Hashtbl.create 512 in
@@ -187,7 +196,9 @@ let extract ~rng ?(max_depth = 6) eg root_id =
                         (fun (_, s, a) -> a = top_alt && s = top_size)
                         sorted
                     in
-                    let idx = Random.State.int rng (List.length best_group) in
+                    let count = List.length best_group in
+                    let raw_idx = pick_candidate ~eligible_count:count ~site_tag:(cid, depth) in
+                    let idx = ((raw_idx mod count) + count) mod count in
                     Some (List.nth best_group idx)
               in
               let res = pick cands in

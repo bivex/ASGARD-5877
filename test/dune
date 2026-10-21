@@ -46,6 +46,7 @@
   test_metamorphic_isa
   test_macho
   test_helpers
+  test_watermark
   run_tests)
  (libraries
   random_visa_domain
@@ -76,6 +77,7 @@
   tech_2603
   tech_2608
   random_visa.macho
+  watermark
   alcotest
   qcheck
   qcheck-alcotest

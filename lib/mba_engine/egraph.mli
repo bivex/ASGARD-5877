@@ -35,11 +35,11 @@ type stats = {
 (** Expand [e] into a semantically equivalent, structurally more complex MBA
     expression. Deterministic for a given rng state; polymorphic across
     different rng states. *)
-val expand : rng:Random.State.t -> ?config:config -> Mba.expr -> Mba.expr
+val expand : rng:Random.State.t -> ?chooser:Egraph_extract.chooser -> ?config:config -> Mba.expr -> Mba.expr
 
 (** [expand] with saturation statistics. *)
 val expand_full :
-  rng:Random.State.t -> ?config:config -> Mba.expr -> Mba.expr * stats
+  rng:Random.State.t -> ?chooser:Egraph_extract.chooser -> ?config:config -> Mba.expr -> Mba.expr * stats
 
 (** Structural metric: total AST node count (leaves included). *)
 val ast_size : Mba.expr -> int

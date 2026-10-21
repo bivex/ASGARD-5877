@@ -18,6 +18,7 @@ let main_cmd =
     Cli_project.project_cmd;
     Cli_protect.init_config_cmd;
     Cli_macho.macho_unwind_cmd;
+    Cli_watermark.extract_cmd;
   ]
 
 let () = exit (Cmd.eval main_cmd)
