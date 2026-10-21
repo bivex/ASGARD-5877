@@ -195,11 +195,15 @@ let compile_and_package_multi
                 input_tainted_transitions = c.cff.input_tainted_transitions;
                 split_rate = c.cff.split_rate;
                 hub_count = c.cff.hub_count;
+                pop_digest = Some (Cff.Pop_coupler.default_pop_config.digest_reg, Cff.Pop_coupler.default_pop_config.initial_seed);
               }
-          | None -> Cff.default_cff_options
-
+          | None ->
+              { Cff.default_cff_options with
+                pop_digest = Some (Cff.Pop_coupler.default_pop_config.digest_reg, Cff.Pop_coupler.default_pop_config.initial_seed);
+              }
         in
-        match Cff.flatten_func ~options:cff_opts ~rng func with
+        let pop_func = Cff.Pop_coupler.apply_pop_transform ~rng func in
+        match Cff.flatten_func ~options:cff_opts ~rng pop_func with
         | Ok f -> f
         | Error _ -> func
       else func

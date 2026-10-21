@@ -6,6 +6,7 @@ type cff_options = {
   input_tainted_transitions : bool;
   split_rate : int;   (** 0..100: probability of splitting a block into two state aliases *)
   hub_count : int;    (** 1..6: number of dispatcher hubs for multi-hub partitioning *)
+  pop_digest : (Register.t * int64) option;
 }
 
 let default_cff_options = {
@@ -14,6 +15,7 @@ let default_cff_options = {
   input_tainted_transitions = true;
   split_rate = 30;
   hub_count = 1;
+  pop_digest = None;
 }
 
 let inject_opaque_predicate ?next_block_id ~rng ~trap_block_id (b : Ir.basic_block) =
@@ -404,7 +406,7 @@ let select_input_reg (func : Ir.func) : Register.t option =
   in
   List.find_opt is_read_before_written candidates
 
-let select_pinned_reg (func : Ir.func) : Register.t =
+let select_pinned_reg (func : Ir.func) : Register.t option =
   let used = Hashtbl.create 32 in
   let mark_reg r =
     match r with
@@ -445,12 +447,10 @@ let select_pinned_reg (func : Ir.func) : Register.t =
   (* Exclude VX26 (junk instruction decoy target) and VX25 (fs_base) *)
   let candidates = [
     Register.vx19; Register.vx20; Register.vx21; Register.vx22;
-    Register.vx23; Register.vx24; Register.vx18;
+    Register.vx23; Register.vx24;
     Register.r15; Register.r14; Register.r13; Register.r12; Register.rbx;
   ] in
-  match List.find_opt (fun r -> not (Hashtbl.mem used (Register.to_string r))) candidates with
-  | Some r -> r
-  | None -> Register.vx19
+  List.find_opt (fun r -> not (Hashtbl.mem used (Register.to_string r))) candidates
 
 
 let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
@@ -466,13 +466,17 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     let max_id = List.fold_left (fun acc (b : Ir.basic_block) -> max acc b.id) 0 sorted_orig in
     let entry_block_id = max_id + 1 in
     let trap_block_id = max_id + 2 in
-    let disp_base_id = max_id + 3 in
 
     let input_reg_opt = select_input_reg func in
-    let is_tainted = options.input_tainted_transitions && Option.is_some input_reg_opt in
+    let pinned_reg_opt =
+      if options.input_tainted_transitions then select_pinned_reg func
+      else None
+    in
+    let is_tainted = Option.is_some input_reg_opt && Option.is_some pinned_reg_opt in
     let pinned_reg =
-      if is_tainted then select_pinned_reg func
-      else Register.vx19
+      match pinned_reg_opt with
+      | Some r -> r
+      | None -> Register.vx19
     in
 
 
@@ -513,47 +517,79 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
        coded_i = secret_salt + i * stride
        state_i = poly_unhash64_dyn hparams coded_i
        And populate state_pool mapping bid -> state list *)
+    let num_hubs = max 1 (min options.hub_count total_disp) in
+    let disp_base_id = max_id + 3 in
+    let next_fresh_id = ref (disp_base_id + num_hubs) in
+    let thunk_blocks = ref [] in
+
+    let hub_slots = Array.init num_hubs (fun h ->
+      let low = (h * total_disp) / num_hubs in
+      let high = ((h + 1) * total_disp) / num_hubs - 1 in
+      (low, high)
+    ) in
+    let find_hub_of_slot s =
+      let rec loop h =
+        if h >= num_hubs - 1 then num_hubs - 1
+        else
+          let (_, high_h) = hub_slots.(h) in
+          if s <= high_h then h
+          else loop (h + 1)
+      in
+      loop 0
+    in
+
     let state_pool = Hashtbl.create n in
     for slot_idx = 0 to total_disp - 1 do
       let bid = targets_array.(slot_idx) in
+      let h_idx = find_hub_of_slot slot_idx in
+      let hub_id = disp_base_id + h_idx in
       let coded = Int64.add secret_salt (Int64.mul (Int64.of_int slot_idx) stride) in
       let state = poly_unhash64_dyn hparams coded in
       let cur = match Hashtbl.find_opt state_pool bid with Some l -> l | None -> [] in
-      Hashtbl.replace state_pool bid (state :: cur)
+      Hashtbl.replace state_pool bid ((state, hub_id) :: cur)
     done;
 
-    let get_target_state bid =
+    let get_target_info bid =
       match Hashtbl.find_opt state_pool bid with
       | Some (_ :: _) ->
           let pool = Hashtbl.find state_pool bid in
           List.nth pool (Random.State.int rng (List.length pool))
       | _ ->
-          let coded = secret_salt in
-          poly_unhash64_dyn hparams coded
+          failwith (Printf.sprintf "cff: target basic block id %d not found in state_pool" bid)
+    in
+    let pop_digest_fold dst_reg =
+      match options.pop_digest with
+      | Some (dreg, _) ->
+          [ Ir.Alu { op = Ir.Xor; dst = dst_reg; src1 = Ir.Reg dst_reg; src2 = Ir.Reg dreg; set_flags = false } ]
+      | None -> []
     in
 
     let emit_set_state_tainted dst_reg target_state =
-      if is_tainted then
-        (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3 ())
-        @ [
-          Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm target_state };
-          Ir.Alu { op = Ir.Xor; dst = dst_reg; src1 = Ir.Reg dst_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-        ]
-      else
-        [
-          Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm target_state };
-        ]
+      (if is_tainted then
+         (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3 ())
+         @ [
+           Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm target_state };
+           Ir.Alu { op = Ir.Xor; dst = dst_reg; src1 = Ir.Reg dst_reg; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+         ]
+       else
+         [
+           Ir.Mov { dst = Ir.Reg dst_reg; src = Ir.Imm target_state };
+         ])
+      @ pop_digest_fold dst_reg
     in
 
-    (* Entry Block: pins input to pinned_reg, sets state to func.cfg.entry_id's state and jumps to disp_base_id *)
-    let initial_state = get_target_state func.cfg.entry_id in
+    (* Entry Block: pins input to pinned_reg, initializes POP digest if enabled, sets state and jumps to initial_hub *)
+    let initial_state, initial_hub = get_target_info func.cfg.entry_id in
     let entry_instrs =
       (if is_tainted then
          [ Ir.Mov { dst = Ir.Reg pinned_reg; src = Ir.Reg (Option.get input_reg_opt) } ]
        else
          [])
+      @ (match options.pop_digest with
+         | Some (dreg, seed) -> [ Ir.Mov { dst = Ir.Reg dreg; src = Ir.Imm seed } ]
+         | None -> [])
       @ (emit_set_state_tainted Register.vkey initial_state) @ [
-        Ir.Jmp (Ir.BlockId disp_base_id);
+        Ir.Jmp (Ir.BlockId initial_hub);
       ]
     in
     let entry_block = Ir.make_block ~id:entry_block_id ~label:(func.name ^ "_cff_entry") ~instrs:entry_instrs in
@@ -562,7 +598,6 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     let trap_block = Ir.make_block ~id:trap_block_id ~label:(func.name ^ "_cff_trap") ~instrs:[ Ir.Trap "CFF State Violation" ] in
 
     (* Binary Decision Tree Construction *)
-    let next_fresh_id = ref (disp_base_id + 1) in
     let tree_blocks = ref [] in
     let rec build_tree low high =
       if low = high then
@@ -615,7 +650,6 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         tree_blocks := blk :: !tree_blocks;
         Ir.BlockId node_id
     in
-    let tree_root_target = build_tree 0 (total_disp - 1) in
 
     let entry_jitter =
       match Random.State.int rng 3 with
@@ -629,100 +663,163 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         ]
     in
 
-    (* Dispatcher Entry Block: unmasks dynamic taint, computes poly_hash64, decodes slot *)
-    let bound_cond, bound_t, bound_f =
-      if Random.State.bool rng then
-        (Flags.AE, Ir.BlockId trap_block_id, tree_root_target)
-      else
-        (Flags.B, tree_root_target, Ir.BlockId trap_block_id)
-    in
-    let disp_entry_instrs =
-      entry_jitter
-      @ (if is_tainted then
-           (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3 ())
-           @ [
-             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
-             Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-           ]
-         else
-           [
-             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
-           ])
-      @ (emit_poly_hash64 ~rng:(Some rng) ~hparams ~dst:Register.vtmp0 ~src:Register.vtmp0 ~scratch:Register.vtmp1 ())
-      @ [
-        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm secret_salt };
-        Ir.Alu { op = Ir.Sub; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-        Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm stride_inv };
-        Ir.Alu { op = Ir.Mul; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-        Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int total_disp) };
-        Ir.Jcc { cond = bound_cond; target_true = bound_t; target_false = bound_f };
-      ]
-    in
-    let disp_entry_block = Ir.make_block ~id:disp_base_id ~label:(func.name ^ "_disp_entry") ~instrs:disp_entry_instrs in
+    (* Dispatcher Hub Blocks: each hub handles its subrange of slots with dedicated entry block and tree *)
+    let hub_blocks = ref [] in
+    for h = 0 to num_hubs - 1 do
+      let (low_h, high_h) = hub_slots.(h) in
+      let hub_id = disp_base_id + h in
+      let tree_root_target = build_tree low_h high_h in
+      let bound_cond, bound_t, bound_f =
+        if Random.State.bool rng then
+          (Flags.AE, Ir.BlockId trap_block_id, tree_root_target)
+        else
+          (Flags.B, tree_root_target, Ir.BlockId trap_block_id)
+      in
+      let range_len = high_h - low_h + 1 in
+      let range_check =
+        if low_h = 0 then
+          [
+            Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int range_len) };
+            Ir.Jcc { cond = bound_cond; target_true = bound_t; target_false = bound_f };
+          ]
+        else
+          [
+            Ir.Alu { op = Ir.Sub; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm (Int64.of_int low_h); set_flags = false };
+            Ir.Cmp { src1 = Ir.Reg Register.vtmp1; src2 = Ir.Imm (Int64.of_int range_len) };
+            Ir.Jcc { cond = bound_cond; target_true = bound_t; target_false = bound_f };
+          ]
+      in
+      let disp_entry_instrs =
+        entry_jitter
+        @ (if is_tainted then
+             (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp3 ())
+             @ [
+               Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
+               Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+             ]
+           else
+             [
+               Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.vkey };
+             ])
+        @ (match options.pop_digest with
+           | Some (dreg, _) ->
+               [ Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg dreg; set_flags = false } ]
+           | None -> [])
+        @ (emit_poly_hash64 ~rng:(Some rng) ~hparams ~dst:Register.vtmp0 ~src:Register.vtmp0 ~scratch:Register.vtmp1 ())
+        @ [
+          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm secret_salt };
+          Ir.Alu { op = Ir.Sub; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm stride_inv };
+          Ir.Alu { op = Ir.Mul; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
+        ]
+        @ range_check
+      in
+      let hub_blk = Ir.make_block ~id:hub_id ~label:(Printf.sprintf "%s_disp_hub_%d" func.name h) ~instrs:disp_entry_instrs in
+      hub_blocks := hub_blk :: !hub_blocks
+    done;
 
-    (* Transform each original block: redirect control flow back to disp_base_id *)
+    (* Layout fallthrough map across sorted_orig *)
+    let fallthrough_map = Hashtbl.create (List.length sorted_orig) in
+    let rec build_fallthrough = function
+      | (b1 : Ir.basic_block) :: (b2 : Ir.basic_block) :: rest ->
+          Hashtbl.replace fallthrough_map b1.id b2.id;
+          build_fallthrough (b2 :: rest)
+      | _ -> ()
+    in
+    build_fallthrough sorted_orig;
+
+    (* Transform each original block: redirect control flow back to the destination hub *)
     let transformed_blocks =
       List.concat_map
         (fun (b : Ir.basic_block) ->
           let rev_instrs = List.rev b.instrs in
           let new_instrs =
             match rev_instrs with
-            | [] -> [ Ir.Jmp (Ir.BlockId disp_base_id) ]
+            | [] -> (
+                match Hashtbl.find_opt fallthrough_map b.id with
+                | Some next_id ->
+                    let next_state, target_hub = get_target_info next_id in
+                    (emit_set_state_tainted Register.vkey next_state) @ [
+                      Ir.Jmp (Ir.BlockId target_hub);
+                    ]
+                | None -> []
+              )
             | last :: body_rev -> (
                 let body = List.rev body_rev in
                 match last with
                 | Ir.Jmp (Ir.BlockId target_id) ->
-                    let next_state = get_target_state target_id in
+                    let next_state, target_hub = get_target_info target_id in
                     body @ (emit_set_state_tainted Register.vkey next_state) @ [
-                      Ir.Jmp (Ir.BlockId disp_base_id);
+                      Ir.Jmp (Ir.BlockId target_hub);
                     ]
                 | Ir.Jcc { cond; target_true = Ir.BlockId t_id; target_false = Ir.BlockId f_id } ->
-                    let state_true = get_target_state t_id in
-                    let state_false = get_target_state f_id in
-                    let setup_states =
-                      if is_tainted then
-                        (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp0 ())
-                        @ [
-                          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
-                          Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-                          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
-                          Ir.Alu { op = Ir.Xor; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-                        ]
-                      else
-                        [
-                          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
-                          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
-                        ]
-                    in
-                    let emit_direct_cmp src1 src2 prev_body_rev =
-                      let prev_body = List.rev prev_body_rev in
-                      prev_body @ setup_states @ [
-                        Ir.Cmp { src1; src2 };
-                        Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
-                        Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
-                        Ir.Jmp (Ir.BlockId disp_base_id);
-                      ]
-                    in
-                    (match body_rev with
-                    | Ir.Cmp { src1 = Ir.Reg _ as src1; src2 = Ir.Reg _ as src2 } :: prev_body_rev ->
-                        emit_direct_cmp src1 src2 prev_body_rev
-                    | Ir.Cmp { src1 = Ir.Reg _ as src1; src2 = Ir.Imm imm as src2 } :: prev_body_rev
-                      when imm >= -2147483648L && imm <= 2147483647L ->
-                        emit_direct_cmp src1 src2 prev_body_rev
-                    | _ ->
-                        body @ [ Ir.Get_flags Register.vtmp3 ] @ setup_states @ [
-                          Ir.Set_flags (Ir.Reg Register.vtmp3);
+                    let state_true, hub_true = get_target_info t_id in
+                    let state_false, hub_false = get_target_info f_id in
+                    if hub_true = hub_false then
+                      let setup_states =
+                        (if is_tainted then
+                           (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp0 ())
+                           @ [
+                             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
+                             Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+                             Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
+                             Ir.Alu { op = Ir.Xor; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Reg Register.vtmp2; set_flags = false };
+                           ]
+                         else
+                           [
+                             Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Imm state_true };
+                             Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm state_false };
+                           ])
+                        @ (pop_digest_fold Register.vtmp0)
+                        @ (pop_digest_fold Register.vtmp1)
+                      in
+                      let emit_direct_cmp src1 src2 prev_body_rev =
+                        let prev_body = List.rev prev_body_rev in
+                        prev_body @ setup_states @ [
+                          Ir.Cmp { src1; src2 };
                           Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
                           Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
-                          Ir.Jmp (Ir.BlockId disp_base_id);
-                        ])
+                          Ir.Jmp (Ir.BlockId hub_true);
+                        ]
+                      in
+                      (match body_rev with
+                      | Ir.Cmp { src1 = Ir.Reg _ as src1; src2 = Ir.Reg _ as src2 } :: prev_body_rev ->
+                          emit_direct_cmp src1 src2 prev_body_rev
+                      | Ir.Cmp { src1 = Ir.Reg _ as src1; src2 = Ir.Imm imm as src2 } :: prev_body_rev
+                        when imm >= -2147483648L && imm <= 2147483647L ->
+                          emit_direct_cmp src1 src2 prev_body_rev
+                      | _ ->
+                          body @ [ Ir.Get_flags Register.vtmp3 ] @ setup_states @ [
+                            Ir.Set_flags (Ir.Reg Register.vtmp3);
+                            Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
+                            Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
+                            Ir.Jmp (Ir.BlockId hub_true);
+                          ])
+                    else
+                      let thunk_t_id = !next_fresh_id in
+                      incr next_fresh_id;
+                      let thunk_f_id = !next_fresh_id in
+                      incr next_fresh_id;
+                      let thunk_t = Ir.make_block ~id:thunk_t_id ~label:(Printf.sprintf "%s_cff_branch_t_%d" func.name thunk_t_id)
+                        ~instrs:((emit_set_state_tainted Register.vkey state_true) @ [ Ir.Jmp (Ir.BlockId hub_true) ])
+                      in
+                      let thunk_f = Ir.make_block ~id:thunk_f_id ~label:(Printf.sprintf "%s_cff_branch_f_%d" func.name thunk_f_id)
+                        ~instrs:((emit_set_state_tainted Register.vkey state_false) @ [ Ir.Jmp (Ir.BlockId hub_false) ])
+                      in
+                      thunk_blocks := thunk_t :: thunk_f :: !thunk_blocks;
+                      body @ [ Ir.Jcc { cond; target_true = Ir.BlockId thunk_t_id; target_false = Ir.BlockId thunk_f_id } ]
                 | Ir.Ret | Ir.Vm_exit | Ir.Trap _ ->
                     b.instrs
-                | other ->
-                    let next_state = get_target_state (b.id + 1) in
-                    body @ [ other ] @ (emit_set_state_tainted Register.vkey next_state) @ [
-                      Ir.Jmp (Ir.BlockId disp_base_id);
-                    ])
+                | other -> (
+                    match Hashtbl.find_opt fallthrough_map b.id with
+                    | Some next_id ->
+                        let next_state, target_hub = get_target_info next_id in
+                        body @ [ other ] @ (emit_set_state_tainted Register.vkey next_state) @ [
+                          Ir.Jmp (Ir.BlockId target_hub);
+                        ]
+                    | None ->
+                        body @ [ other ]
+                  ))
           in
           if options.inject_opaque_predicates && b.id <> func.cfg.entry_id then
             let body_id = !next_fresh_id in
@@ -738,7 +835,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         sorted_orig
     in
 
-    let all_blocks = (entry_block :: trap_block :: disp_entry_block :: !tree_blocks) @ transformed_blocks in
+    let all_blocks = (entry_block :: trap_block :: !hub_blocks @ !tree_blocks @ !thunk_blocks) @ transformed_blocks in
     let new_func = Ir.make_func ~name:func.name ~entry_id:entry_block_id ~blocks:all_blocks in
     Ok new_func
 

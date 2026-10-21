@@ -536,6 +536,98 @@ func_taint_test:
           let res2 = Stack_vm.Stack_eval.get_reg state2 rax_slot in
           Alcotest.(check int64) "stack_eval tainted branch 3 <= 10" (-2L) res2
 
+let test_cff_multi_hub_partitioning () =
+  let rng = Random.State.make [| 5555 |] in
+  let asm = {|
+func_multi_hub:
+    mov rax, rdi
+    cmp rdi, 10
+    jl .L1
+    cmp rdi, 20
+    jl .L2
+    add rax, 300
+    ret
+.L1:
+    add rax, 100
+    ret
+.L2:
+    add rax, 200
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok lifted_func ->
+      let options = { Cff.default_cff_options with hub_count = 3; split_rate = 50 } in
+      match Cff.flatten_func ~options ~rng lifted_func with
+      | Error e -> Alcotest.fail e
+      | Ok flattened_func ->
+          let hub_count =
+            Hashtbl.fold (fun _ (b : Ir.basic_block) acc ->
+              if (let slen = String.length b.label and sublen = 9 in
+                  let rec check i =
+                    if i + sublen > slen then false
+                    else if String.sub b.label i sublen = "disp_hub_" then true
+                    else check (i + 1)
+                  in check 0) then acc + 1 else acc
+            ) flattened_func.cfg.blocks 0
+          in
+          Alcotest.(check bool) "multiple dispatcher hubs generated" (hub_count >= 2) true;
+          let state = make_state () in
+          set_reg state Register.rdi 5L;
+          (match run_func state flattened_func with
+          | Error e -> Alcotest.fail e
+          | Ok () -> Alcotest.(check int64) "branch < 10 through multi-hub" 105L (get_reg state Register.rax));
+          let state2 = make_state () in
+          set_reg state2 Register.rdi 15L;
+          (match run_func state2 flattened_func with
+          | Error e -> Alcotest.fail e
+          | Ok () -> Alcotest.(check int64) "branch < 20 through multi-hub" 215L (get_reg state2 Register.rax));
+          let state3 = make_state () in
+          set_reg state3 Register.rdi 25L;
+          (match run_func state3 flattened_func with
+          | Error e -> Alcotest.fail e
+          | Ok () -> Alcotest.(check int64) "branch >= 20 through multi-hub" 325L (get_reg state3 Register.rax))
+
+let test_cff_topological_fallthrough () =
+  let rng = Random.State.make [| 6666 |] in
+  let b1 = Ir.make_block ~id:10 ~label:"blk10" ~instrs:[
+    Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm 42L };
+  ] in
+  let b2 = Ir.make_block ~id:99 ~label:"blk99" ~instrs:[
+    Ir.Alu { op = Ir.Add; dst = Register.rax; src1 = Ir.Reg Register.rax; src2 = Ir.Imm 8L; set_flags = false };
+    Ir.Ret;
+  ] in
+  let func = Ir.make_func ~name:"test_fallthrough" ~entry_id:10 ~blocks:[ b1; b2 ] in
+  match Cff.flatten_func ~rng func with
+  | Error e -> Alcotest.fail e
+  | Ok flattened_func ->
+      let state = make_state () in
+      match run_func state flattened_func with
+      | Error e -> Alcotest.fail e
+      | Ok () -> Alcotest.(check int64) "non-consecutive fallthrough 42+8=50" 50L (get_reg state Register.rax)
+
+let test_select_pinned_reg_exhaustion () =
+  let instrs = [
+    Ir.Mov { dst = Ir.Reg Register.rdi; src = Ir.Imm 10L };
+    Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Imm 1L };
+    Ir.Mov { dst = Ir.Reg Register.vx20; src = Ir.Imm 2L };
+    Ir.Mov { dst = Ir.Reg Register.vx21; src = Ir.Imm 3L };
+    Ir.Mov { dst = Ir.Reg Register.vx22; src = Ir.Imm 4L };
+    Ir.Mov { dst = Ir.Reg Register.vx23; src = Ir.Imm 5L };
+    Ir.Mov { dst = Ir.Reg Register.vx24; src = Ir.Imm 6L };
+    Ir.Mov { dst = Ir.Reg Register.r12; src = Ir.Imm 7L };
+    Ir.Mov { dst = Ir.Reg Register.r13; src = Ir.Imm 8L };
+    Ir.Mov { dst = Ir.Reg Register.r14; src = Ir.Imm 9L };
+    Ir.Mov { dst = Ir.Reg Register.r15; src = Ir.Imm 10L };
+    Ir.Mov { dst = Ir.Reg Register.rbx; src = Ir.Imm 11L };
+    Ir.Mov { dst = Ir.Reg Register.rax; src = Ir.Imm 999L };
+    Ir.Ret;
+  ] in
+  let b = Ir.make_block ~id:1 ~label:"entry" ~instrs in
+  let func = Ir.make_func ~name:"test_exhaustion" ~entry_id:1 ~blocks:[ b ] in
+  let pinned = Cff.select_pinned_reg func in
+  Alcotest.(check bool) "pinned reg exhausted" true (pinned = None)
+
 let tests = [
   Alcotest.test_case "cff_tainted_stack_vm" `Quick test_cff_tainted_stack_vm;
   Alcotest.test_case "mba_eval_and_soundness" `Quick test_mba_eval_and_soundness;
@@ -555,5 +647,7 @@ let tests = [
   Alcotest.test_case "cff_opaque_parity_extremes" `Quick test_cff_opaque_parity_extremes;
   QCheck_alcotest.to_alcotest prop_mba_equivalence_1000;
   QCheck_alcotest.to_alcotest prop_cff_opaque_parity_1000;
+  Alcotest.test_case "cff_multi_hub_partitioning" `Quick test_cff_multi_hub_partitioning;
+  Alcotest.test_case "cff_topological_fallthrough" `Quick test_cff_topological_fallthrough;
+  Alcotest.test_case "select_pinned_reg_exhaustion" `Quick test_select_pinned_reg_exhaustion;
 ]
-

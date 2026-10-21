@@ -6,6 +6,8 @@ type cff_options = {
   input_tainted_transitions : bool;
   split_rate : int;   (** 0..100: probability of splitting a block into two state aliases *)
   hub_count : int;    (** 1..6: number of dispatcher hubs for multi-hub partitioning *)
+  pop_digest : (Register.t * int64) option;
+  (** Optional (digest_reg, initial_seed) for load-bearing POP path coupling. *)
 }
 
 val default_cff_options : cff_options
@@ -47,6 +49,8 @@ val flatten_func :
   rng:Random.State.t ->
   Ir.func ->
   (Ir.func, string) result
+val select_pinned_reg : Ir.func -> Register.t option
+
 
 (** Injects an opaque predicate into a basic block, creating an invariant conditional branch. *)
 val inject_opaque_predicate :

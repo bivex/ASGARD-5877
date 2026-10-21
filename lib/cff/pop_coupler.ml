@@ -8,7 +8,7 @@ type pop_config = {
 }
 
 let default_pop_config = {
-  digest_reg = Register.vtmp2;
+  digest_reg = Register.vx18;
   scratch_reg1 = Register.vtmp0;
   scratch_reg2 = Register.vtmp1;
   initial_seed = 0x5877CAFEBABE1337L;
@@ -51,13 +51,7 @@ let apply_pop_transform ?(config = default_pop_config) ~rng (func : Ir.func) =
           Ir.Alu { op = Ir.Xor; dst = config.digest_reg; src1 = Ir.Reg config.scratch_reg1; src2 = Ir.Imm term_const; set_flags = false };
         ] in
 
-        let init_instrs =
-          if b.id = func.cfg.entry_id then
-            [ Ir.Mov { dst = Ir.Reg config.digest_reg; src = Ir.Imm config.initial_seed } ]
-          else []
-        in
-
-        let new_instrs = init_instrs @ digest_update_instrs @ b.instrs in
+        let new_instrs = digest_update_instrs @ b.instrs in
         { b with instrs = new_instrs })
       sorted_orig
   in
