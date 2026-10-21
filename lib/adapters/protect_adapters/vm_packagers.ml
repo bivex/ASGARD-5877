@@ -39,13 +39,60 @@ let dump_bytecode_json ~phase (prog : Stack_vm.Stack_ir.program) =
               (Printexc.to_string e)))
   | _ -> ()
 
-let convert_metrics (m : Native_vm.Metrics.metrics_report) : Protect_ports.metrics_report =
+let make_native_pass_board (engine_name : string) (cfg : Protection_config.t) : string =
+  let pass_switch name enabled note =
+    Printf.sprintf "    [%s] %s%s" (if enabled then "ON " else "OFF") name
+      (if enabled || note = "" then "" else " (" ^ note ^ ")")
+  in
+  let passes =
+    [
+      pass_switch "Control-Flow Flattening (CFF)" cfg.cff.enabled "disabled in configuration";
+      pass_switch "Mixed Boolean-Arithmetic (MBA)" cfg.mba.enabled "disabled in configuration";
+      pass_switch "Superoperator Fusion" cfg.vm_runtime.enable_super_operators "disabled in configuration";
+      pass_switch "Stack Scrambling" cfg.vm_runtime.stack_scrambling "disabled in configuration";
+      pass_switch "Chameleon Multi-Domain Handlers" cfg.vm_runtime.chameleon_handlers (Printf.sprintf "domains=%d" cfg.vm_runtime.num_dispatch_domains);
+      pass_switch "Oblivious Memory & Entanglement" cfg.vm_runtime.oblivious_memory "disabled in configuration";
+      pass_switch "E-Graph Equality Expansion" cfg.vm_runtime.egraph_expansion "disabled in configuration";
+      pass_switch "Junk Bytecode Injection" cfg.vm_runtime.enable_junk_instructions "disabled in configuration";
+      pass_switch "Ephemeral JIT Micro-Handlers" cfg.vm_runtime.ephemeral_jit "disabled in configuration";
+      pass_switch "Memory Sanitization" cfg.vm_runtime.memory_sanitization "disabled in configuration";
+      pass_switch "Anti-Pushan Rolling Key" cfg.anti_pushan.running_key "disabled in configuration";
+      pass_switch "Address Binding" cfg.anti_pushan.address_bound "disabled in configuration";
+      pass_switch "Anti-Tamper (SMC + probes)" cfg.anti_tamper.enabled "disabled in configuration";
+      pass_switch "Hardware Timing Probes" (cfg.anti_tamper.enabled && cfg.anti_tamper.hardware_timing_probes) "disabled in configuration";
+      pass_switch "Memory Integrity Scanner" (cfg.anti_tamper.enabled && cfg.anti_tamper.memory_integrity_scanner) "disabled in configuration";
+      pass_switch "Anti-Emulation Protection" (cfg.anti_tamper.enabled && cfg.anti_tamper.anti_emulation) "disabled in configuration";
+      pass_switch "Dynamic Nanomites" (cfg.anti_tamper.enabled && cfg.anti_tamper.nanomites) "disabled in configuration";
+      pass_switch "Direct Syscalls" (cfg.anti_tamper.enabled && cfg.anti_tamper.direct_syscalls) "disabled in configuration";
+      pass_switch "C-Macro Obfuscation" cfg.c_macro.enabled "disabled in configuration";
+      pass_switch "Stack String Encryption (ASG_STR)" (cfg.c_macro.enabled && cfg.c_macro.obfuscate_strings) "disabled in configuration";
+      pass_switch "Constant Blinding (ASG_BLIND)" (cfg.c_macro.enabled && cfg.c_macro.obfuscate_constants) "disabled in configuration";
+      pass_switch "Opaque Predicates" (cfg.c_macro.enabled && cfg.c_macro.opaque_predicates) "disabled in configuration";
+      pass_switch "EH Shadowing" cfg.eh_shadowing.enabled "disabled in configuration";
+      pass_switch "Anti-VPC Tracking" cfg.anti_vpc.enabled "disabled in configuration";
+      pass_switch "Memory Chaffing" cfg.memory_chaffing.enabled "disabled in configuration";
+    ]
+  in
+  Printf.sprintf
+    "=== ASGARD-5877 %s Protection Report ===\n\
+     - Protection Passes (ON/OFF):\n\
+     %s\n\
+     --------------------------------------------------------------------\n"
+    engine_name
+    (String.concat "\n" passes)
+
+let convert_metrics ?(engine_name = "Threaded-VM") ?config (m : Native_vm.Metrics.metrics_report) : Protect_ports.metrics_report =
+  let header =
+    match config with
+    | Some cfg -> make_native_pass_board engine_name cfg
+    | None -> ""
+  in
   {
     cyclomatic_complexity = Native_vm.Metrics.cyclomatic_complexity m;
     shannon_entropy = Native_vm.Metrics.shannon_entropy m;
     uniform_entropy = Native_vm.Metrics.shannon_entropy m /. 8.0;
     drs_score = Native_vm.Metrics.devirtualization_resistance_score m;
-    formatted_summary = Native_vm.Metrics.report_to_string m;
+    formatted_summary = header ^ Native_vm.Metrics.report_to_string m;
   }
 
 let inject_tech_2601 (config : Protection_config.t) (func_name : string) (cpp_source : string) : string =
@@ -115,7 +162,7 @@ module Threaded_vm_packager : Vm_packager = struct
         runner_source = pkg.runner_source;
         bytecode = pkg.bytecode;
         bytecodes = pkg.bytecodes;
-        metrics = convert_metrics pkg.metrics;
+        metrics = convert_metrics ~engine_name:"Threaded-VM" ~config:native_cfg pkg.metrics;
         header_name = "threaded_vm.hpp";
         rebind_address = None;
       }
@@ -127,7 +174,7 @@ module Threaded_vm_packager : Vm_packager = struct
         runner_source = pkg.runner_source;
         bytecode = pkg.bytecode;
         bytecodes = pkg.bytecodes;
-        metrics = convert_metrics pkg.metrics;
+        metrics = convert_metrics ~engine_name:"Threaded-VM" ~config:native_cfg pkg.metrics;
         header_name = "threaded_vm.hpp";
         rebind_address = None;
       }
@@ -153,7 +200,7 @@ module Jit_vm_packager : Vm_packager = struct
       runner_source = jit_pkg.runner_source;
       bytecode = jit_pkg.bytecode;
       bytecodes = [ (ir.name, jit_pkg.bytecode) ];
-      metrics = convert_metrics jit_pkg.metrics;
+      metrics = convert_metrics ~engine_name:"Register-Driven JIT-VM" ~config:native_cfg jit_pkg.metrics;
       header_name = "jit_vm_runtime.hpp";
       rebind_address = None;
     }
@@ -180,7 +227,7 @@ module Multi_vm_packager : Vm_packager = struct
       runner_source = mv_pkg.runner_source;
       bytecode = mv_pkg.bytecode;
       bytecodes = [ (ir.name, mv_pkg.bytecode) ];
-      metrics = convert_metrics mv_pkg.metrics;
+      metrics = convert_metrics ~engine_name:"Multi-VM" ~config:native_cfg mv_pkg.metrics;
       header_name = "multi_vm_runtime.hpp";
       rebind_address = None;
     }
@@ -283,7 +330,23 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Anti-Tamper (SMC + probes)" native_cfg.anti_tamper.enabled
           "disabled in configuration";
+        pass_switch "Hardware Timing Probes" (native_cfg.anti_tamper.enabled && native_cfg.anti_tamper.hardware_timing_probes)
+          "disabled in configuration";
+        pass_switch "Memory Integrity Scanner" (native_cfg.anti_tamper.enabled && native_cfg.anti_tamper.memory_integrity_scanner)
+          "disabled in configuration";
+        pass_switch "Anti-Emulation Protection" (native_cfg.anti_tamper.enabled && native_cfg.anti_tamper.anti_emulation)
+          "disabled in configuration";
+        pass_switch "Dynamic Nanomites" (native_cfg.anti_tamper.enabled && native_cfg.anti_tamper.nanomites)
+          "disabled in configuration";
+        pass_switch "Direct Syscalls" (native_cfg.anti_tamper.enabled && native_cfg.anti_tamper.direct_syscalls)
+          "disabled in configuration";
         pass_switch "C-Macro Obfuscation" native_cfg.c_macro.enabled
+          "disabled in configuration";
+        pass_switch "Stack String Encryption (ASG_STR)" (native_cfg.c_macro.enabled && native_cfg.c_macro.obfuscate_strings)
+          "disabled in configuration";
+        pass_switch "Constant Blinding (ASG_BLIND)" (native_cfg.c_macro.enabled && native_cfg.c_macro.obfuscate_constants)
+          "disabled in configuration";
+        pass_switch "Opaque Predicates" (native_cfg.c_macro.enabled && native_cfg.c_macro.opaque_predicates)
           "disabled in configuration";
         pass_switch "EH Shadowing" native_cfg.eh_shadowing.enabled
           "disabled in configuration";
