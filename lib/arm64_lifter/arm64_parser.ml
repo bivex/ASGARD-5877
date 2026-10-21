@@ -302,7 +302,13 @@ let parse_lines text =
         if clean = "" then loop (LineEmpty :: acc) rest
         else if contains_sub clean "ASGARD_" || contains_sub clean "asgard_" then
           let upper = String.uppercase_ascii clean in
-          if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" then
+          if contains_sub upper "ASGARD_BEG_P" || contains_sub upper "ASGARD_BEGIN_P" || contains_sub upper "ASGARD_BEG_R" || contains_sub upper "ASGARD_BEGIN_R" then
+            let acc' = match acc with
+              | LineInstr (("b" | "bl"), _) :: prev -> prev
+              | _ -> acc
+            in
+            loop (LineMarkerBegin (ModePerIsa "region") :: acc') rest
+          else if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" then
             let acc' = match acc with
               | LineInstr (("b" | "bl"), _) :: prev -> prev
               | _ -> acc

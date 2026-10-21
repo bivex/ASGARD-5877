@@ -224,6 +224,12 @@ static __attribute__((always_inline)) inline char* ASG_decrypt_str(char* buf, co
 #define ASGARD_BEGIN_ULTRA(tag) \
         __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_U____\" \n\t .balign 4 \n 1:\n\t" ::: "memory")
 
+#define ASGARD_BEGIN_PER_ISA(tag) \
+        __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_BEG_P____\" \n\t .balign 4 \n 1:\n\t" ::: "memory")
+
+#define ASGARD_BEGIN_RANDOM_ISA(tag) ASGARD_BEGIN_PER_ISA(tag)
+#define ASGARD_BEGIN_POLY_ISA(tag)   ASGARD_BEGIN_PER_ISA(tag)
+
 #define ASGARD_END() \
         __asm__ volatile ("b 1f \n\t .ascii \"ASGARD_END______\" \n\t .balign 4 \n 1:\n\t" ::: "memory")
 #else
@@ -236,6 +242,12 @@ static __attribute__((always_inline)) inline char* ASG_decrypt_str(char* buf, co
 #define ASGARD_BEGIN_ULTRA(tag) \
         __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_BEG_U__\" \n 1:\n\t" ::: "memory")
 
+#define ASGARD_BEGIN_PER_ISA(tag) \
+        __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_BEG_P__\" \n 1:\n\t" ::: "memory")
+
+#define ASGARD_BEGIN_RANDOM_ISA(tag) ASGARD_BEGIN_PER_ISA(tag)
+#define ASGARD_BEGIN_POLY_ISA(tag)   ASGARD_BEGIN_PER_ISA(tag)
+
 #define ASGARD_END() \
         __asm__ volatile ("jmp 1f \n\t .ascii \"ASGARD_END____\" \n 1:\n\t" ::: "memory")
 #endif
@@ -246,6 +258,9 @@ static __attribute__((always_inline)) inline char* ASG_decrypt_str(char* buf, co
 #define ASGARD_BEGIN_MUTATION(tag)
 
 #define ASGARD_BEGIN_ULTRA(tag)
+#define ASGARD_BEGIN_PER_ISA(tag)
+#define ASGARD_BEGIN_RANDOM_ISA(tag)
+#define ASGARD_BEGIN_POLY_ISA(tag)
 
 #define ASGARD_END()
 #endif

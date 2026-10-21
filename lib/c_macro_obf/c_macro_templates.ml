@@ -138,12 +138,18 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
             raw_top "#define ASGARD_BEGIN_VIRTUALIZE(tag) \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_V____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
             raw_top "#define ASGARD_BEGIN_MUTATION(tag) \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_M____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
             raw_top "#define ASGARD_BEGIN_ULTRA(tag) \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_U____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_BEGIN_PER_ISA(tag) \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_BEG_P____\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_BEGIN_RANDOM_ISA(tag) ASGARD_BEGIN_PER_ISA(tag)";
+            raw_top "#define ASGARD_BEGIN_POLY_ISA(tag)   ASGARD_BEGIN_PER_ISA(tag)";
             raw_top "#define ASGARD_END() \\\n        __asm__ volatile (\"b 1f \\n\\t .ascii \\\"ASGARD_END______\\\" \\n\\t .balign 4 \\n 1:\\n\\t\" ::: \"memory\")";
           ]
           ~else_decls:[
             raw_top "#define ASGARD_BEGIN_VIRTUALIZE(tag) \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_V__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
             raw_top "#define ASGARD_BEGIN_MUTATION(tag) \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_M__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
             raw_top "#define ASGARD_BEGIN_ULTRA(tag) \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_U__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_BEGIN_PER_ISA(tag) \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_BEG_P__\\\" \\n 1:\\n\\t\" ::: \"memory\")";
+            raw_top "#define ASGARD_BEGIN_RANDOM_ISA(tag) ASGARD_BEGIN_PER_ISA(tag)";
+            raw_top "#define ASGARD_BEGIN_POLY_ISA(tag)   ASGARD_BEGIN_PER_ISA(tag)";
             raw_top "#define ASGARD_END() \\\n        __asm__ volatile (\"jmp 1f \\n\\t .ascii \\\"ASGARD_END____\\\" \\n 1:\\n\\t\" ::: \"memory\")";
           ]
       ]
@@ -151,6 +157,9 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
         raw_top "#define ASGARD_BEGIN_VIRTUALIZE(tag)";
         raw_top "#define ASGARD_BEGIN_MUTATION(tag)";
         raw_top "#define ASGARD_BEGIN_ULTRA(tag)";
+        raw_top "#define ASGARD_BEGIN_PER_ISA(tag)";
+        raw_top "#define ASGARD_BEGIN_RANDOM_ISA(tag)";
+        raw_top "#define ASGARD_BEGIN_POLY_ISA(tag)";
         raw_top "#define ASGARD_END()";
       ]
   ] in

@@ -25,7 +25,7 @@ type marker_mode =
   | ModeVirtualize of string
   | ModeMutation of string
   | ModeUltra of string
-
+  | ModePerIsa of string
 type raw_line =
   | LineLabel of string
   | LineInstr of string * raw_op list

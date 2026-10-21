@@ -184,7 +184,13 @@ let parse_lines text =
     | l :: rest ->
         if contains_sub l "ASGARD_" || contains_sub l "asgard_" then
           let upper = String.uppercase_ascii l in
-          if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" || contains_sub upper "ASGARD_MARKER_BEGIN_V" then
+          if contains_sub upper "ASGARD_BEG_P" || contains_sub upper "ASGARD_BEGIN_P" || contains_sub upper "ASGARD_MARKER_BEGIN_P" || contains_sub upper "ASGARD_BEG_R" || contains_sub upper "ASGARD_BEGIN_R" then
+            let acc' = match acc with
+              | LineInstr ("j", _) :: prev | LineInstr ("jal", _) :: prev -> prev
+              | _ -> acc
+            in
+            loop (LineMarkerBegin (ModePerIsa "region") :: acc') rest
+          else if contains_sub upper "ASGARD_BEG_V" || contains_sub upper "ASGARD_BEGIN_V" || contains_sub upper "ASGARD_MARKER_BEGIN_V" then
             let acc' = match acc with
               | LineInstr ("j", _) :: prev | LineInstr ("jal", _) :: prev -> prev
               | _ -> acc

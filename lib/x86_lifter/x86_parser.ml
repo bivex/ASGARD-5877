@@ -19,7 +19,7 @@ type marker_mode =
   | ModeVirtualize of string
   | ModeMutation of string
   | ModeUltra of string
-
+  | ModePerIsa of string
 type raw_line =
   | LineLabel of string
   | LineInstr of string * raw_op list
@@ -32,6 +32,7 @@ let marker_mode_to_string = function
   | ModeVirtualize tag -> Printf.sprintf "VIRTUALIZE(%s)" tag
   | ModeMutation tag -> Printf.sprintf "MUTATION(%s)" tag
   | ModeUltra tag -> Printf.sprintf "ULTRA(%s)" tag
+  | ModePerIsa tag -> Printf.sprintf "PER_ISA(%s)" tag
 
 let strip_comments line =
   let len = String.length line in
@@ -275,7 +276,9 @@ let parse_line line =
     let norm = normalize_alphas clean in
     (* Marker detection *)
     if contains_sub norm "BEG" || contains_sub norm "BEGIN" then
-      if contains_sub norm "_V" || contains_sub norm "VIRTUAL" then
+      if contains_sub norm "_P" || contains_sub norm "PER_ISA" || contains_sub norm "RANDOM_ISA" then
+        Ok (LineMarkerBegin (ModePerIsa "region"))
+      else if contains_sub norm "_V" || contains_sub norm "VIRTUAL" then
         Ok (LineMarkerBegin (ModeVirtualize "region"))
       else if contains_sub norm "_M" || contains_sub norm "MUTAT" then
         Ok (LineMarkerBegin (ModeMutation "region"))
@@ -371,7 +374,9 @@ let parse_lines text =
             | LineInstr ("jmp", _) :: prev -> prev
             | _ -> acc
           in
-          if contains_sub str "ASGARD_BEG_V" || contains_sub str "ASGARD_BEGIN_V" then
+          if contains_sub str "ASGARD_BEG_P" || contains_sub str "ASGARD_BEGIN_P" || contains_sub str "ASGARD_BEG_R" || contains_sub str "ASGARD_BEGIN_R" then
+            loop (line_no + 1) (LineMarkerBegin (ModePerIsa "region") :: acc') [] rest
+          else if contains_sub str "ASGARD_BEG_V" || contains_sub str "ASGARD_BEGIN_V" then
             loop (line_no + 1) (LineMarkerBegin (ModeVirtualize "region") :: acc') [] rest
           else if contains_sub str "ASGARD_BEG_M" || contains_sub str "ASGARD_BEGIN_M" then
             loop (line_no + 1) (LineMarkerBegin (ModeMutation "region") :: acc') [] rest

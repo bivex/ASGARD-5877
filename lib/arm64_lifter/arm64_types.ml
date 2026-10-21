@@ -25,7 +25,7 @@ type marker_mode =
   | ModeVirtualize of string
   | ModeMutation of string
   | ModeUltra of string
-
+  | ModePerIsa of string
 type raw_line =
   | LineLabel of string
   | LineInstr of string * raw_op list
@@ -38,3 +38,4 @@ let marker_mode_to_string = function
   | ModeVirtualize s -> "VIRTUALIZE(" ^ s ^ ")"
   | ModeMutation s -> "MUTATION(" ^ s ^ ")"
   | ModeUltra s -> "ULTRA(" ^ s ^ ")"
+  | ModePerIsa s -> "PER_ISA(" ^ s ^ ")"
