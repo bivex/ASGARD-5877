@@ -384,7 +384,7 @@ let embed_vm_trampoline
       in
       let ensure_assembled_fn =
         func_decl
-          ~attrs:[StaticFn; InlineFn]
+          ~attrs:[StaticFn; NoInline]
           Void
           (Printf.sprintf "%s_ensure_assembled" name)
           []
