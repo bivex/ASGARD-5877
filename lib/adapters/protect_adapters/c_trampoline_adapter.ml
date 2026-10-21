@@ -424,12 +424,25 @@ let embed_vm_trampoline
       )
   in
 
-  let build_trampoline_body arr_name ret_type args_to_pass =
+  let salt_of_name is_multi name =
+    let clean = if String.starts_with ~prefix:"_" name then String.sub name 1 (String.length name - 1) else name in
+    if not is_multi || clean = "" || clean = "main" || clean = "target_func" then 0
+    else
+      let h = Hashtbl.hash clean in
+      (h land 0xFE) lor 1
+  in
+  let build_trampoline_body is_multi arr_name ret_type args_to_pass fn_name =
     let open Cpp_codegen.Cpp_dsl in
     let open Cpp_codegen.Cpp_printer in
     let ensure_stmt = expr_stmt (call (Printf.sprintf "%s_ensure_assembled" arr_name) []) in
     let comma_args = if args_to_pass = "" then "" else ", " ^ args_to_pass in
-    let call_expr = var (Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(%s, sizeof(%s) / sizeof(%s[0])%s)" arr_name arr_name arr_name comma_args) in
+    let macro_salt = salt_of_name is_multi fn_name in
+    let call_expr =
+      if macro_salt = 0 then
+        var (Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(%s, sizeof(%s) / sizeof(%s[0])%s)" arr_name arr_name arr_name comma_args)
+      else
+        var (Printf.sprintf "vanguard_threaded_vm::asgard_vm_call_with_salt(%d, %s, sizeof(%s) / sizeof(%s[0])%s)" macro_salt arr_name arr_name arr_name comma_args)
+    in
     let is_void = ret_type = "void" in
     let is_ptr = String.contains ret_type '*' in
     let ret_stmts =
@@ -461,7 +474,7 @@ let embed_vm_trampoline
       in
       let before_body = String.sub c_src 0 (single_fn.open_brace_idx + 1) in
       let after_body = String.sub c_src single_fn.close_brace_idx (len - single_fn.close_brace_idx) in
-      let trampoline_body = build_trampoline_body "embedded_bytecode" single_fn.ret_type single_fn.args_to_pass in
+      let trampoline_body = build_trampoline_body false "embedded_bytecode" single_fn.ret_type single_fn.args_to_pass single_fn.fn_name in
       let full_out = bc_header ^ before_body ^ trampoline_body ^ after_body in
       let oc = open_out out_path in
       output_string oc full_out;
@@ -507,7 +520,7 @@ let embed_vm_trampoline
       List.iter (fun fn ->
         let arr_name = Printf.sprintf "embedded_bytecode_%s" (sanitize_ident fn.fn_name) in
         Buffer.add_string body_buf (String.sub c_src !last_pos (fn.open_brace_idx + 1 - !last_pos));
-        let trampoline_body = build_trampoline_body arr_name fn.ret_type fn.args_to_pass in
+        let trampoline_body = build_trampoline_body (List.length multi_fns > 1) arr_name fn.ret_type fn.args_to_pass fn.fn_name in
         Buffer.add_string body_buf trampoline_body;
         last_pos := fn.close_brace_idx
       ) multi_fns;

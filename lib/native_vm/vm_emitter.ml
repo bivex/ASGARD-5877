@@ -172,7 +172,7 @@ let compile_and_package_multi
     !h
   in
 
-  let compile_one_func (func : Ir.func) =
+  let compile_one_func ?(macro_salt = 0) (func : Ir.func) =
     let func =
       if enable_mba then
         Dynamic_mba.transform ~density:0.4 ~rng func
@@ -369,8 +369,9 @@ let compile_and_package_multi
           (Ir.alu_op_to_string op) (Register.to_string dst) (Ir.operand_to_string src1))
   in
   let encode_raw_word ?(extra_bits = 0L) op dst src imm =
+    let op_salted = (op lxor macro_salt) land 0xFF in
     let w = ref 0L in
-    w := Int64.logor !w (Int64.shift_left (Int64.of_int op) word_layout.op_shift);
+    w := Int64.logor !w (Int64.shift_left (Int64.of_int op_salted) word_layout.op_shift);
     w := Int64.logor !w (Int64.shift_left (Int64.of_int dst) word_layout.dst_shift);
     w := Int64.logor !w (Int64.shift_left (Int64.of_int src) word_layout.src_shift);
     let imm_masked =
@@ -1112,8 +1113,16 @@ let compile_and_package_multi
     (final_bytecode, block_spans, target_func)
   in
 
+  let salt_of_name name =
+    let clean = if String.starts_with ~prefix:"_" name then String.sub name 1 (String.length name - 1) else name in
+    if clean = "" || clean = "main" || clean = "target_func" || List.length funcs <= 1 then 0
+    else
+      let h = Hashtbl.hash clean in
+      (h land 0xFE) lor 1
+  in
   let compiled = List.map (fun (name, f) ->
-    let (bc, spans, tf) = compile_one_func f in
+    let macro_salt = salt_of_name name in
+    let (bc, spans, tf) = compile_one_func ~macro_salt f in
     let h = compute_bytecode_hash key_seed bc in
     (name, bc, h, spans, tf)
   ) funcs in

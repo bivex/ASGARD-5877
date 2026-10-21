@@ -604,7 +604,8 @@ let asgard_vm_call_decl () : top_decl =
       (UInt64, "a4 = 0");
       (UInt64, "a5 = 0");
       (UInt64, "a6 = 0");
-      (UInt64, "a7 = 0") ]
+      (UInt64, "a7 = 0");
+      (UInt8, "macro_salt = 0") ]
     [
       raw {|VMContext ctx;
         ctx.init();

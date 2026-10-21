@@ -1246,6 +1246,7 @@ static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t a
           (SizeT, "len");
           (UInt64, "a0 = 0"); (UInt64, "a1 = 0"); (UInt64, "a2 = 0"); (UInt64, "a3 = 0");
           (UInt64, "a4 = 0"); (UInt64, "a5 = 0"); (UInt64, "a6 = 0"); (UInt64, "a7 = 0");
+          (UInt8, "macro_salt = 0");
         ]
         [
           let_u64 "res" (call "asgard_stack_vm::stack_vm_call" [

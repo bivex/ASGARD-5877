@@ -119,6 +119,11 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field (Array (Double, 8)) "fpu_stack";
     member_field ~init:(i32 0) UInt8 "fpu_top";
     member_field ~init:(i32 0) UInt16 "fpu_status";
+    member_field ~init:(i32 0) UInt8 "macro_salt";
+
+    member_method ~attrs:[AlwaysInline; NoExcept] Void "set_macro_salt" [(UInt8, "s")] [
+      (var "macro_salt" := var "s");
+    ];
 
     (* Affine Register Mapping Constants & Helper *)
     member_static_constexpr SizeT "REG_AFFINE_A" (i32 affine_a);
@@ -133,6 +138,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       (var "poison_penalty" := ((call "key64_for_offset" [var "seed"; u64 0x5877L] ^~ u64 0xCAA7E1D8718BF877L) |~ u64 1L));
       (var "running_key" := (call "key64_for_offset" [var "seed"; u64 0x13375877L] ^~ u64 0xCAFEBABE13375877L));
       (var "reg_mask" := (u64 0x5A5A5A5A13375877L ^~ (cast UInt64 (var "seed") *~ u64 0x9E3779B97F4A7C15L)));
+      (var "macro_salt" := i32 0);
       for_range "i" (u64 0L) (u64 32L) [
         (idx (var "slot_masks") (var "i") := (call "key64_for_offset" [var "seed"; u64 0x1000L +~ var "i"] ^~ u64 0xA5A5A5A51337BEEFL));
         (idx (var "gprs") (var "i") := (idx (var "slot_masks") (var "i") ^~ var "reg_mask"));

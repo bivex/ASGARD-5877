@@ -844,7 +844,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
 #else
     #define DISPATCH_OPCODE() do { \
         uint8_t domain_idx = (uint8_t)((k_dyn >> 32) %% %d); \
-        uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[domain_idx]); \
+        uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[domain_idx] ^ ctx.macro_salt); \
         uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)permuted_slot) * 0x6A09E667F3BCC908ULL); \
         void* target = (void*)(all_dispatch_domains[domain_idx][permuted_slot] ^ k_slot); \
         goto *target; \
@@ -961,9 +961,10 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
       ]
   in
 
-  let fn_asgard_vm_call =
-    func_decl ~attrs:[StaticFn; InlineFn; NoInline] UInt64 "asgard_vm_call"
+  let fn_asgard_vm_call_with_salt =
+    func_decl ~attrs:[StaticFn; InlineFn; NoInline] UInt64 "asgard_vm_call_with_salt"
       [
+        (UInt8, "macro_salt");
         (ConstPtr UInt64, "bc");
         (SizeT, "len");
         (UInt64, "a0 = 0"); (UInt64, "a1 = 0"); (UInt64, "a2 = 0"); (UInt64, "a3 = 0");
@@ -972,6 +973,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
       [
         decl_var (StructType "vanguard_threaded_vm::VMContext") "ctx" ~init:(init_list []);
         expr_stmt (call "ctx.init" [call "asgard_wbox_derive_seed" []]);
+        expr_stmt (call "ctx.set_macro_salt" [var "macro_salt"]);
         decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, 1048576)) "host_stack";
         expr_stmt (call "ctx.set_reg" [var "vanguard_threaded_vm::REG_RSP"; c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L)]);
         expr_stmt (call "ctx.set_reg" [var "vanguard_threaded_vm::REG_RBP"; c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L)]);
@@ -1013,6 +1015,23 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         ret (((var "ret_val" ^~ u64 0x5877CAFE1337BEEFL) +~ (u64 2L *~ (var "ret_val" &~ u64 0x5877CAFE1337BEEFL))) -~ u64 0x5877CAFE1337BEEFL);
       ]
   in
+  let fn_asgard_vm_call =
+    func_decl ~attrs:[StaticFn; InlineFn] UInt64 "asgard_vm_call"
+      [
+        (ConstPtr UInt64, "bc");
+        (SizeT, "len");
+        (UInt64, "a0 = 0"); (UInt64, "a1 = 0"); (UInt64, "a2 = 0"); (UInt64, "a3 = 0");
+        (UInt64, "a4 = 0"); (UInt64, "a5 = 0"); (UInt64, "a6 = 0"); (UInt64, "a7 = 0");
+      ]
+      [
+        ret (call "asgard_vm_call_with_salt" [
+          i32 0;
+          var "bc"; var "len";
+          var "a0"; var "a1"; var "a2"; var "a3";
+          var "a4"; var "a5"; var "a6"; var "a7";
+        ]);
+      ]
+  in
 
   let vanguard_ns =
     namespace_def "vanguard_threaded_vm" (
@@ -1025,6 +1044,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
       @ [
         fn_execute_threaded;
         fn_execute_threaded_short;
+        fn_asgard_vm_call_with_salt;
         fn_asgard_vm_call;
       ]
     )
