@@ -1259,6 +1259,22 @@ static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t a
           ];
           ret (var "res");
         ];
+      func_decl ~attrs:[StaticFn; InlineFn] UInt64 "asgard_vm_call_with_salt"
+        [
+          (UInt8, "macro_salt");
+          (ConstPtr UInt64, "bc");
+          (SizeT, "len");
+          (UInt64, "a0 = 0"); (UInt64, "a1 = 0"); (UInt64, "a2 = 0"); (UInt64, "a3 = 0");
+          (UInt64, "a4 = 0"); (UInt64, "a5 = 0"); (UInt64, "a6 = 0"); (UInt64, "a7 = 0");
+        ]
+        [
+          ret (call "asgard_vm_call" [
+            var "bc"; var "len";
+            var "a0"; var "a1"; var "a2"; var "a3";
+            var "a4"; var "a5"; var "a6"; var "a7";
+            var "macro_salt";
+          ]);
+        ];
     ]
   in
 
