@@ -172,7 +172,7 @@ H_MY_OP: {
 }
 ```
 
-*For emission via typed AST, use `emit_handler_ast` or string buffers via `Buffer.add_string`.*
+*For emission, use the typed EDSL only: `emit_handler_ast` and the `Cpp_dsl` combinators rendered by `Cpp_printer`. Never build C++ with `Buffer.add_string`; if a needed C++ construct has no EDSL counterpart, add it to the EDSL first (see `AGENTS.md`, section 2).*
 
 ---
 

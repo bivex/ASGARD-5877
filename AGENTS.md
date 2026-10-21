@@ -51,7 +51,49 @@ values from the hardware - the x86-64 programs were assembled and run on a real
 x86-64 machine (Rosetta on Apple Silicon), the ARM64 ones natively on arm64 -
 and not from memory.
 
-## 2. Every change ships with a changelog entry and a commit
+## 2. Emit C/C++ through the typed EDSL, never through string buffers
+
+C and C++ code in this repository is **not** assembled with `Buffer.add_string`,
+`Printf.sprintf` concatenation, or raw text templates. Every C/C++ artifact -
+VM runtimes, handler tables, headers, trampolines, shims, macro headers - is
+built as a typed AST and printed by the EDSL that the engine implements in
+`lib/cpp_codegen/`:
+
+| Module | Role |
+|---|---|
+| `cpp_ast.ml` | the types: `ctype`, `expr`, `stmt`, `struct_member`, `top_decl` |
+| `cpp_dsl.ml` | the combinators: `func_decl`, `let_u64`, `:=`, `if_then_else`, `call`, `preproc_if`, ... |
+| `cpp_printer.ml` | the renderer: `render_top_decls`, `render_header_unit`, `render_top_decl` |
+| `cpp_ast_obf.ml` | the scrambler; every new AST node needs a traversal case here |
+| `cpp_validator.ml` | structural and compiler validation of the rendered text |
+
+- Build the declarations with the `Cpp_dsl` combinators and render them with
+  `Cpp_printer.render_top_decls` (or `render_header_unit` for a header unit).
+  Do not splice C++ text into a `Buffer` yourself, not even for a single line:
+  `Buffer.add_string b (Printf.sprintf "    %s: {\n" label)` is the anti-pattern.
+- When the C++ construct you need has no EDSL counterpart yet, **add the
+  counterpart to the EDSL first** and then use it: the type or constructor in
+  `cpp_ast.ml`, the combinator in `cpp_dsl.ml`, the printing rule in
+  `cpp_printer.ml`, the traversal case in `cpp_ast_obf.ml`. Never work around
+  a missing constructor with string concatenation - extending the EDSL is the
+  fix, the string is the bug.
+- `Raw`, `RawTop`, `MemberRaw` and the `Cpp_dsl.emit_pp_*` helpers are
+  Buffer-level escape hatches. Use them only for a construct that is not worth
+  modelling; prefer the typed `preproc_if` / `preproc_ifdef` /
+  `preproc_ifndef` declarations for preprocessor blocks.
+- The rule governs C/C++ emission only. Ordinary OCaml text - reports, metric
+  tables, log lines, test fixtures - may still use `Buffer.add_string`.
+- Call sites that still concatenate C++ into a `Buffer` (for example
+  `lib/native_vm/vm_mem_handlers.ml`) are known debt: when you touch such a
+  file, convert the C++ part to the EDSL instead of extending the string path.
+- After extending the EDSL, run its suite:
+
+  ```bash
+  dune build test/test_cpp_codegen.exe
+  _build/default/test/test_cpp_codegen.exe
+  ```
+
+## 3. Every change ships with a changelog entry and a commit
 
 - Update `CHANGELOG.md` under `## [Unreleased]` for every user-visible change:
   `### Added` for new behaviour, `### Fixed` for corrections, `### Changed` for
@@ -67,7 +109,7 @@ and not from memory.
 - Never commit scratch files, probe programs, generated headers or build
   output. Files that another agent is working on stay uncommitted.
 
-## 3. Report the evidence
+## 4. Report the evidence
 
 Report what was actually run: the command, the suite, the number of tests, and
 the observed result. Do not claim a behaviour is verified when only a build
