@@ -4,8 +4,9 @@ open Bos
 
 let get_inc_args include_dir source_file =
   let src_dir = Filename.dirname source_file in
-  let base = Cmd.(v "-I" % include_dir) in
-  if src_dir <> "" && src_dir <> "." && src_dir <> include_dir then
+  let dirs = String.split_on_char ':' include_dir in
+  let base = List.fold_left (fun acc d -> if d <> "" then Cmd.(acc % "-I" % d) else acc) Cmd.empty dirs in
+  if src_dir <> "" && src_dir <> "." && not (List.mem src_dir dirs) then
     Cmd.(base % "-I" % src_dir)
   else
     base

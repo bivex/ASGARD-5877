@@ -54,6 +54,8 @@ let run
         | Some (module T : Toolchain) ->
             let c_source_for_asm, include_dir =
               let hdr_path = Filename.concat out_dir "asgard_obf.h" in
+              let orig_dir = Filename.dirname input_file in
+              let inc_paths = if orig_dir <> "" && orig_dir <> "." && orig_dir <> out_dir then out_dir ^ ":" ^ orig_dir else out_dir in
               if is_c_macro_enabled config then
                 match c_macro_obfuscator with
                 | Some (module C : C_macro_obfuscator) ->
@@ -62,8 +64,8 @@ let run
                     (match C.transform_source ~config ~in_file:input_file ~out_c_file:obf_c_path ~out_header_file:hdr_path ~rng with
                     | Ok () -> ()
                     | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
-                    (obf_c_path, out_dir)
-                | None -> (input_file, out_dir)
+                    (obf_c_path, inc_paths)
+                | None -> (input_file, inc_paths)
               else begin
                 (match c_macro_obfuscator with
                 | Some (module C : C_macro_obfuscator) when not (Sys.file_exists hdr_path) ->
@@ -72,7 +74,7 @@ let run
                     | Ok () -> if Sys.file_exists dummy_c then Sys.remove dummy_c
                     | Error _ -> ())
                 | _ -> ());
-                (input_file, out_dir)
+                (input_file, inc_paths)
               end
             in
             let asm_name =

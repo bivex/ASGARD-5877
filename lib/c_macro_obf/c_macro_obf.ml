@@ -150,7 +150,15 @@ let obfuscate_source ?(config = default_config) src =
     end
     else if c = '"' && config.obfuscate_strings then begin
       let is_exempt () =
-        let p = ref (!i - 1) in
+        let rec has_asm_lookback p count =
+          if p < 0 || count > 80 then false
+          else if p >= 6 && String.sub src (p - 6) 7 = "__asm__" then true
+          else if p >= 2 && String.sub src (p - 2) 3 = "asm" then true
+          else has_asm_lookback (p - 1) (count + 1)
+        in
+        if has_asm_lookback (!i - 1) 0 then true
+        else
+          let p = ref (!i - 1) in
         while !p >= 0 && (src.[!p] = ' ' || src.[!p] = '\t' || src.[!p] = '\n' || src.[!p] = '\r' || src.[!p] = '(') do
           decr p
         done;
