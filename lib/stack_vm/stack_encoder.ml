@@ -1,6 +1,7 @@
 open Vm_ir
 open Stack_ir
 open Flags
+open Random_visa_constants.Magic_numbers
 
 type opcode_map = {
   op_push_imm : int;
@@ -185,9 +186,9 @@ let feedback_hash v =
   let open Int64 in
   let ( lxor ) = logxor and ( lsr ) = shift_right_logical and ( * ) = mul in
   let v = v lxor (v lsr 33) in
-  let v = v * 0xFF51AFD7ED558CCDL in
+  let v = v * murmur3_64_fmix_c1 in
   let v = v lxor (v lsr 33) in
-  let v = v * 0xC4CEB9FE1A85EC53L in
+  let v = v * murmur3_64_fmix_c2 in
   let v = v lxor (v lsr 33) in
   v
 

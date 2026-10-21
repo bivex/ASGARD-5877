@@ -93,7 +93,30 @@ built as a typed AST and printed by the EDSL that the engine implements in
   _build/default/test/test_cpp_codegen.exe
   ```
 
-## 3. Every change ships with a changelog entry and a commit
+## 3. Magic numbers live in the registry
+
+A magic number is a numeric literal whose value cannot be guessed from the code
+that uses it: a hash or PRNG constant, a key-derivation salt, a bit mask, a
+sentinel. Such a literal is **not** written inline at the call site. It belongs
+in `lib/constants/magic_numbers.ml`, the single registry of the magic numbers
+of the engine.
+
+- Declare the constant there, under a name that states its provenance
+  (`golden_ratio_64`, `splitmix64_gamma`, `fnv1a_64_prime`, `even_bit_mask`,
+  ...), with a comment that says where the number comes from and what it is for.
+- Add it to the `registry` table, naming the modules that use it, so the
+  registry stays auditable.
+- Refer to the constant by name at the call site - in OCaml and in the emitted
+  C++ alike (`Cpp_dsl.u64 Magic_numbers.golden_ratio_64`). One declaration, one
+  value: the OCaml side and the emitted runtime cannot drift apart.
+
+Adding an entry to the registry is the only way to introduce a new magic
+number; copying a literal from one module to another is not. When a magic
+number shows up in a module you touch, move it into the registry instead of
+naming it locally. Plain literals - `0`, `1`, a bit width, a page size - are
+not magic numbers and stay where they are.
+
+## 4. Every change ships with a changelog entry and a commit
 
 - Update `CHANGELOG.md` under `## [Unreleased]` for every user-visible change:
   `### Added` for new behaviour, `### Fixed` for corrections, `### Changed` for
@@ -109,7 +132,7 @@ built as a typed AST and printed by the EDSL that the engine implements in
 - Never commit scratch files, probe programs, generated headers or build
   output. Files that another agent is working on stay uncommitted.
 
-## 4. Report the evidence
+## 5. Report the evidence
 
 Report what was actually run: the command, the suite, the number of tests, and
 the observed result. Do not claim a behaviour is verified when only a build

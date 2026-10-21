@@ -10,6 +10,7 @@
 *)
 
 open Vm_ir
+open Random_visa_constants.Magic_numbers
 
 type expr =
   | Var of string
@@ -50,8 +51,8 @@ let rec eval env = function
 type order = [ `Deg4 | `Deg5 ]
 
 (* Semi-Linear Bitmask Constants (Disjoint 1-bit partitions) *)
-let mask_even = Const 0x5555555555555555L
-let mask_odd  = Const (-0x5555555555555556L) (* 0xAAAAAAAAAAAAAAAA in two's complement *)
+let mask_even = Const even_bit_mask
+let mask_odd  = Const odd_bit_mask (* 0xAAAAAAAAAAAAAAAA in two's complement *)
 
 (* Opaque Polynomial Zero Invariants: Z(a, b) = 0 for all a, b in Z_{2^64} *)
 let zero_inv1 a b =

@@ -1,5 +1,7 @@
 open Ir
 
+open Random_visa_constants.Magic_numbers
+
 type discrepancy_kind =
   | RegMismatch of { reg : Register.t; expected : int64; actual : int64 }
   | CalleeSavedClobbered of { reg : Register.t; initial : int64; actual : int64 }
@@ -33,8 +35,8 @@ let corner_cases = [|
   0x8000L;
   0xFFL;
   0x80L;
-  0x5555555555555555L;
-  Int64.lognot 0x5555555555555555L;
+  even_bit_mask;
+  odd_bit_mask;
 |]
 
 let make_full_rand64 (rng : Random.State.t) : int64 =
@@ -75,7 +77,7 @@ let generate_test_vector (rng : Random.State.t) (idx : int) : (Register.t * int6
       (r, if i mod 2 = 0 then 0x7FFFFFFFFFFFFFFFL else 0x8000000000000000L)) all_gprs
   else if idx = 3 then
     (Register.rsp, default_stack_base) :: List.mapi (fun i r ->
-      (r, if i mod 2 = 0 then 0x5555555555555555L else Int64.lognot 0x5555555555555555L)) all_gprs
+      (r, if i mod 2 = 0 then even_bit_mask else odd_bit_mask)) all_gprs
   else
     (Register.rsp, rsp_val) :: List.map (fun r -> (r, rand_val rng)) all_gprs
 

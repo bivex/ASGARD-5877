@@ -1,6 +1,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
+open Random_visa_constants.Magic_numbers
 
 let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize : top_decl list =
   ignore enable_running_key;
@@ -25,9 +26,9 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     params = [(UInt32, "seed"); (SizeT, "offset")];
     body = [
       let_u64 "s64" (cast UInt64 (var "seed"));
-      let_u64 "x0" (((var "s64" <<~ u64 32L) |~ (var "s64" ^~ u64 0x9E3779B9L)) ^~ (cast UInt64 (var "offset") *~ u64 0x517CC1B727220A95L));
-      let_u64 "x1" ((var "x0" ^~ (var "x0" >>~ u64 30L)) *~ u64 0xBF58476D1CE4E5B9L);
-      let_u64 "x2" ((var "x1" ^~ (var "x1" >>~ u64 27L)) *~ u64 0x94D049BB133111EBL);
+      let_u64 "x0" (((var "s64" <<~ u64 32L) |~ (var "s64" ^~ u64 0x9E3779B9L)) ^~ (cast UInt64 (var "offset") *~ u64 sqrt2_fraction_64));
+      let_u64 "x1" ((var "x0" ^~ (var "x0" >>~ u64 30L)) *~ u64 splitmix64_gamma);
+      let_u64 "x2" ((var "x1" ^~ (var "x1" >>~ u64 27L)) *~ u64 splitmix64_mix);
       ret (var "x2" ^~ (var "x2" >>~ u64 31L));
     ];
   } in
@@ -43,9 +44,9 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       for_range "d" (u64 0L) (var "num_domains") [
         for_range "op" (u64 0L) (u64 256L) [
           let_u64 "ptr_val" (cast UInt64 (idx (var "all_domains") ((var "d" *~ u64 256L) +~ var "op")));
-          (var "h" ^= (var "ptr_val" *~ u64 0x9E3779B97F4A7C15L));
+          (var "h" ^= (var "ptr_val" *~ u64 golden_ratio_64));
           (var "h" := ((var "h" >>~ u64 27L) |~ (var "h" <<~ u64 37L)));
-          (var "h" *= u64 0xBF58476D1CE4E5B9L);
+          (var "h" *= u64 splitmix64_gamma);
         ];
       ];
       (var "h" ^= call "asgard_mem_integrity::compute_section_integrity_hash" []);
@@ -154,7 +155,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       (var "init_seed" := var "seed");
       (var "poison_penalty" := ((call "key64_for_offset" [var "seed"; u64 0x5877L] ^~ u64 0xCAA7E1D8718BF877L) |~ u64 1L));
       (var "running_key" := (call "key64_for_offset" [var "seed"; u64 0x13375877L] ^~ u64 0xCAFEBABE13375877L));
-      (var "reg_mask" := (u64 0x5A5A5A5A13375877L ^~ (cast UInt64 (var "seed") *~ u64 0x9E3779B97F4A7C15L)));
+      (var "reg_mask" := (u64 0x5A5A5A5A13375877L ^~ (cast UInt64 (var "seed") *~ u64 golden_ratio_64)));
       (var "data_key" := (call "key64_for_offset" [var "seed"; u64 0x5877A5A5L] ^~ u64 0x5877CAFE1337BEEFL));
       (var "macro_salt" := i32 0);
       (var "format_version_tag" := (cast Int32 (call "key64_for_offset" [var "seed"; u64 0x7758L] &~ u64 0x7FFFFFFFL)) +~ i32 1);
@@ -164,7 +165,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       for_range "i" (u64 0L) (u64 32L) [
         (idx (var "slot_masks") (var "i") := (call "key64_for_offset" [var "seed"; u64 0x1000L +~ var "i"] ^~ u64 0xA5A5A5A51337BEEFL));
         (idx (var "gprs") (var "i") := (idx (var "slot_masks") (var "i") ^~ var "reg_mask"));
-        (idx (var "mid_canaries") (var "i") := (var "CANARY_VAL" ^~ (cast UInt64 (var "i") *~ u64 0x517CC1B727220A95L) ^~ cast UInt64 (var "seed")));
+        (idx (var "mid_canaries") (var "i") := (var "CANARY_VAL" ^~ (cast UInt64 (var "i") *~ u64 sqrt2_fraction_64) ^~ cast UInt64 (var "seed")));
         (idx (idx (var "vregs") (var "i")) (i32 0) := u64 0L);
         for_range "v" (u64 1L) (u64 8L) [
           (idx (idx (var "vregs") (var "i")) (var "v") := u64 0L);
@@ -196,9 +197,9 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     (* Rolling Key Derivations *)
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "advance_key_step"
       [(UInt64, "k"); (UInt8, "op"); (UInt8, "dst"); (Int64, "imm")] [
-      let_u64 "x" (var "k" ^~ (((cast UInt64 (var "op") *~ u64 0x9E3779B97F4A7C15L) +~ (cast UInt64 (var "dst") <<~ u64 24L)) +~ cast UInt64 (var "imm")));
+      let_u64 "x" (var "k" ^~ (((cast UInt64 (var "op") *~ u64 golden_ratio_64) +~ (cast UInt64 (var "dst") <<~ u64 24L)) +~ cast UInt64 (var "imm")));
       let_u64 "rot" ((var "x" >>~ u64 23L) |~ (var "x" <<~ u64 41L));
-      ret ((var "rot" *~ u64 0xBF58476D1CE4E5B9L) ^~ u64 0x5877CAFE1337BEEFL);
+      ret ((var "rot" *~ u64 splitmix64_gamma) ^~ u64 0x5877CAFE1337BEEFL);
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "advance_running_key"
@@ -208,7 +209,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "advance_data_key_step"
       [(UInt64, "data_k"); (UInt64, "res_val")] [
       let_u64 "rot" ((var "data_k" >>~ u64 47L) |~ (var "data_k" <<~ u64 17L));
-      ret (var "rot" ^~ (var "res_val" *~ u64 0x9E3779B97F4A7C15L));
+      ret (var "rot" ^~ (var "res_val" *~ u64 golden_ratio_64));
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "advance_data_key"
@@ -218,7 +219,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
 
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "anchor_key"
       [(UInt32, "seed"); (UInt64, "off"); (UInt64, "addr_hash = 0")] [
-      ret (call "key64_for_offset" [var "seed" ^~ u32 0x5BD1E995l; cast SizeT (var "off" ^~ u64 0x13375877L)] ^~ var "addr_hash");
+      ret (call "key64_for_offset" [var "seed" ^~ u32 murmur3_32_c1; cast SizeT (var "off" ^~ u64 0x13375877L)] ^~ var "addr_hash");
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "reanchor_running_key"
@@ -227,8 +228,8 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "poly_hash64" [(UInt64, "x")] [
-      let_u64 "x1" ((var "x" ^~ (var "x" >>~ u64 30L)) *~ u64 0xBF58476D1CE4E5B9L);
-      let_u64 "x2" ((var "x1" ^~ (var "x1" >>~ u64 27L)) *~ u64 0x94D049BB133111EBL);
+      let_u64 "x1" ((var "x" ^~ (var "x" >>~ u64 30L)) *~ u64 splitmix64_gamma);
+      let_u64 "x2" ((var "x1" ^~ (var "x1" >>~ u64 27L)) *~ u64 splitmix64_mix);
       ret (var "x2" ^~ (var "x2" >>~ u64 31L));
     ];
 
@@ -253,7 +254,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         ret (bool_lit false);
       ];
       decl_var ~init:((var "sp" >>~ u64 4L) &~ u64 31L) SizeT "frame";
-      let_u64 "expected" ((var "CANARY_VAL" ^~ (cast UInt64 (var "frame") *~ u64 0x517CC1B727220A95L)) ^~ cast UInt64 (var "init_seed"));
+      let_u64 "expected" ((var "CANARY_VAL" ^~ (cast UInt64 (var "frame") *~ u64 sqrt2_fraction_64)) ^~ cast UInt64 (var "init_seed"));
       ret (idx (var "mid_canaries") (var "frame") ==~ var "expected");
     ];
 
@@ -265,7 +266,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "set_reg" [(UInt8, "i"); (UInt64, "v")] [
       decl_var ~init:(cast SizeT (call "reg_phys_idx" [var "i"])) SizeT "idx";
-      let_u64 "new_m" ((idx (var "slot_masks") (var "idx") ^~ var "running_key") *~ u64 0x9E3779B97F4A7C15L);
+      let_u64 "new_m" ((idx (var "slot_masks") (var "idx") ^~ var "running_key") *~ u64 golden_ratio_64);
       (idx (var "slot_masks") (var "idx") := var "new_m");
       (idx (var "gprs") (var "idx") := (var "v" ^~ var "new_m" ^~ var "reg_mask"));
       expr_stmt (call "advance_data_key" [var "v"]);
@@ -274,8 +275,8 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_method ~attrs:[AlwaysInline; NoExcept] Void "evolve_slot_mask" [(UInt8, "i"); (UInt32, "k")] [
       decl_var ~init:(cast SizeT (call "reg_phys_idx" [var "i"])) SizeT "idx";
       let_u64 "cur_val" (idx (var "gprs") (var "idx") ^~ idx (var "slot_masks") (var "idx") ^~ var "reg_mask");
-      let_u64 "delta" ((cast UInt64 (var "k") *~ u64 0x6A09E667F3BCC908L) ^~ (cast UInt64 (var "idx") *~ u64 0x517CC1B727220A95L));
-      (idx (var "slot_masks") (var "idx") := (idx (var "slot_masks") (var "idx") ^~ var "delta") *~ u64 0xBF58476D1CE4E5B9L);
+      let_u64 "delta" ((cast UInt64 (var "k") *~ u64 cbrt3_fraction_64) ^~ (cast UInt64 (var "idx") *~ u64 sqrt2_fraction_64));
+      (idx (var "slot_masks") (var "idx") := (idx (var "slot_masks") (var "idx") ^~ var "delta") *~ u64 splitmix64_gamma);
       (idx (var "gprs") (var "idx") := var "cur_val" ^~ idx (var "slot_masks") (var "idx") ^~ var "reg_mask");
     ];
 
@@ -346,7 +347,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
 
     (* Global Mask Evolution *)
     member_method ~attrs:[AlwaysInline; NoExcept] Void "evolve_mask" [(UInt32, "k")] [
-      let_u64 "delta" ((cast UInt64 (var "k") *~ u64 0x6A09E667F3BCC908L) ^~ u64 0x1337L);
+      let_u64 "delta" ((cast UInt64 (var "k") *~ u64 cbrt3_fraction_64) ^~ u64 0x1337L);
       let_u64 "old_mask" (var "reg_mask");
       let_u64 "new_mask" ((var "reg_mask" ^~ var "delta") +~ u64 0x5877L);
       for_range "i" (u64 0L) (u64 32L) [
@@ -380,7 +381,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       ];
       if_then (var "sp" <~ var "STACK_SIZE") [
         decl_var ~init:(call "scramble_stack_idx" [var "sp"]) SizeT "phys_idx";
-        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 0x9E3779B97F4A7C15L) ^~ u64 0xA5A5A5A55A5A5A5AL);
+        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 golden_ratio_64) ^~ u64 0xA5A5A5A55A5A5A5AL);
         (idx (var "stack") (var "phys_idx") := var "v" ^~ var "enc_mask");
         (var "sp" += i32 1);
       ];
@@ -394,7 +395,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       if_then (var "sp" >~ i32 0) ([
         (var "sp" -= i32 1);
         decl_var ~init:(call "scramble_stack_idx" [var "sp"]) SizeT "phys_idx";
-        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 0x9E3779B97F4A7C15L) ^~ u64 0xA5A5A5A55A5A5A5AL);
+        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 golden_ratio_64) ^~ u64 0xA5A5A5A55A5A5A5AL);
         let_u64 "val" (idx (var "stack") (var "phys_idx") ^~ var "enc_mask");
       ] @ (if enable_mem_sanitize then [
         (idx (var "stack") (var "phys_idx") := u64 0xDEADBEEFCAFE1337L ^~ var "enc_mask");

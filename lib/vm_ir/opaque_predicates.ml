@@ -1,5 +1,7 @@
 open Ir
 
+open Random_visa_constants.Magic_numbers
+
 type opaque_kind =
   | BitmaskDisjoint
   | AdditiveIdentity
@@ -12,8 +14,8 @@ let generate_zero_predicate ~rng ~scratch ~target_true ~target_decoy : instr lis
   match roll with
   | 0 ->
       (* 1. Bitmask Disjoint: (scratch & 0x5555...) & (scratch & 0xAAAA...) == 0 *)
-      let mask_even = 0x5555555555555555L in
-      let mask_odd  = -0x5555555555555556L in (* 0xAAAAAAAAAAAAAAAA *)
+      let mask_even = even_bit_mask in
+      let mask_odd  = odd_bit_mask in (* 0xAAAAAAAAAAAAAAAA *)
       [
         Mov { dst = Reg scratch; src = Imm mask_even };
         Alu { op = And; dst = scratch; src1 = Reg scratch; src2 = Imm mask_odd; set_flags = false };

@@ -1,0 +1,4 @@
+(library
+ (name random_visa_constants)
+ (public_name random_visa.constants)
+ (modules magic_numbers))

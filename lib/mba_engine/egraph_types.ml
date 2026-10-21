@@ -1,7 +1,8 @@
 open Mba
+open Random_visa_constants.Magic_numbers
 
-let mask_even = 0x5555555555555555L
-let mask_odd = -0x5555555555555556L (* 0xAAAAAAAAAAAAAAAA in two's complement *)
+let mask_even = even_bit_mask
+let mask_odd = odd_bit_mask (* 0xAAAAAAAAAAAAAAAA in two's complement *)
 
 type enode =
   | EVar of string

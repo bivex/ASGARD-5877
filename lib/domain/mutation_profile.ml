@@ -1,3 +1,5 @@
+open Random_visa_constants.Magic_numbers
+
 type alu_variant =
   | LinearStandard
   | MbaZhouEyrolles of int
@@ -30,8 +32,8 @@ let generate ~rng ~total_opcodes ?(enable_silent_poisoning = true) ?(max_mba_dep
       | 1 -> MbaZhouEyrolles (1 + Random.State.int rng max_mba_depth)
       | 2 ->
           MaskedSemiLinear {
-            mask_even = 0x5555555555555555L;
-            mask_odd  = -0x5555555555555556L;
+            mask_even = even_bit_mask;
+            mask_odd  = odd_bit_mask;
           }
       | _ -> PolynomialOpaqueZero
     in
