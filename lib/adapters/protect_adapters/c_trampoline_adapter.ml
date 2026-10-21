@@ -63,6 +63,7 @@ let embed_vm_trampoline
     ?(header_name = "threaded_vm.hpp")
     ~c_src
     ?bytecodes
+    ?decoy_bytecode
     ~bytecode
     ~out_path
     () =
@@ -282,6 +283,13 @@ let embed_vm_trampoline
     ]
   in
   let chunk_struct_def = Cpp_codegen.Cpp_printer.render_top_decls chunk_struct_decls in
+  let effective_decoy_bc =
+    match decoy_bytecode with
+    | Some dbc -> dbc
+    | None ->
+        let rng = Random.State.make [| 0xDEC01337; List.length bytecode |] in
+        Native_vm.Decoy_synth.synth_decoy_bytecode ~rng ~seed:0x5877CAFE1337BEEFL ~name:"decoy_payload"
+  in
 
   let format_fragmented_bytecode name bc =
     let open Cpp_codegen.Cpp_ast in
@@ -432,34 +440,52 @@ let embed_vm_trampoline
       (h land 0xFE) lor 1
   in
   let build_trampoline_body is_multi arr_name ret_type args_to_pass fn_name =
-    let open Cpp_codegen.Cpp_dsl in
-    let open Cpp_codegen.Cpp_printer in
-    let ensure_stmt = expr_stmt (call (Printf.sprintf "%s_ensure_assembled" arr_name) []) in
     let comma_args = if args_to_pass = "" then "" else ", " ^ args_to_pass in
     let macro_salt = salt_of_name is_multi fn_name in
-    let call_expr =
-      if macro_salt = 0 then
-        var (Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(%s, sizeof(%s) / sizeof(%s[0])%s)" arr_name arr_name arr_name comma_args)
-      else
-        var (Printf.sprintf "vanguard_threaded_vm::asgard_vm_call_with_salt(%d, %s, sizeof(%s) / sizeof(%s[0])%s)" macro_salt arr_name arr_name arr_name comma_args)
-    in
+    let decoy_arr_name = arr_name ^ "_decoy" in
     let is_void = ret_type = "void" in
     let is_ptr = String.contains ret_type '*' in
-    let ret_stmts =
-      if is_void then [expr_stmt call_expr; ret_void]
-      else if is_ptr then [ret (var (Printf.sprintf "(%s)(uintptr_t)%s" ret_type (string_of_expr call_expr)))]
-      else [ret call_expr]
+    let call_expr =
+      if macro_salt = 0 then
+        Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(_active_bc, _active_len%s)" comma_args
+      else
+        Printf.sprintf "vanguard_threaded_vm::asgard_vm_call_with_salt(%d, _active_bc, _active_len%s)" macro_salt comma_args
     in
-    let rendered = string_of_stmts (ensure_stmt :: ret_stmts) in
-    "\n    " ^ String.concat "\n    " (String.split_on_char '\n' (String.trim rendered)) ^ "\n"
+    let ret_part =
+      if is_void then Printf.sprintf "%s;\n    return;" call_expr
+      else if is_ptr then Printf.sprintf "return (%s)(uintptr_t)(%s);" ret_type call_expr
+      else Printf.sprintf "return %s;" call_expr
+    in
+    Printf.sprintf {|
+    %s_ensure_assembled();
+    %s_ensure_assembled();
+
+    uint64_t _penalty = asgard_mem_integrity::evaluate_memory_integrity() ^ asgard_anti_emulation::evaluate_emulation_differential();
+#if defined(__APPLE__) || defined(__linux__)
+    if (asgard_syscalls::sys_check_debugger_present()) {
+        _penalty ^= 0x5877DECOY1337BEEFULL;
+    }
+#endif
+    uintptr_t _mask = (uintptr_t)(-(intptr_t)(_penalty != 0));
+    const uint64_t* _active_bc = (const uint64_t*)(((uintptr_t)%s & ~_mask) | ((uintptr_t)%s & _mask));
+    size_t _active_len = ((sizeof(%s)/sizeof(%s[0])) & ~_mask) | ((sizeof(%s)/sizeof(%s[0])) & _mask);
+
+    %s
+|}
+      arr_name
+      decoy_arr_name
+      arr_name decoy_arr_name
+      arr_name arr_name decoy_arr_name decoy_arr_name
+      ret_part
   in
 
   match marked_fns with
   | [] ->
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
+      let decoy_bc_formatted = format_fragmented_bytecode "embedded_bytecode_decoy" effective_decoy_bc in
       let bc_header =
-        Printf.sprintf "\n%s\n%s\n"
-          chunk_struct_def bc_formatted
+        Printf.sprintf "\n%s\n%s\n%s\n"
+          chunk_struct_def bc_formatted decoy_bc_formatted
       in
       let oc = open_out out_path in
       output_string oc (bc_header ^ c_src);
@@ -468,9 +494,10 @@ let embed_vm_trampoline
   | [ single_fn ] when (match bytecodes with Some bcs -> List.length bcs <= 1 | None -> true) ->
       (* Backward-compatible single function path *)
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
+      let decoy_bc_formatted = format_fragmented_bytecode "embedded_bytecode_decoy" effective_decoy_bc in
       let bc_header =
-        Printf.sprintf "\n%s\n%s\n"
-          chunk_struct_def bc_formatted
+        Printf.sprintf "\n%s\n%s\n%s\n"
+          chunk_struct_def bc_formatted decoy_bc_formatted
       in
       let before_body = String.sub c_src 0 (single_fn.open_brace_idx + 1) in
       let after_body = String.sub c_src single_fn.close_brace_idx (len - single_fn.close_brace_idx) in
@@ -503,7 +530,8 @@ let embed_vm_trampoline
       List.iteri (fun idx fn ->
         let fn_bc = find_bc_for_fn idx fn.fn_name in
         let arr_name = Printf.sprintf "embedded_bytecode_%s" (sanitize_ident fn.fn_name) in
-        Buffer.add_string header_buf (format_fragmented_bytecode arr_name fn_bc)
+        Buffer.add_string header_buf (format_fragmented_bytecode arr_name fn_bc);
+        Buffer.add_string header_buf (format_fragmented_bytecode (arr_name ^ "_decoy") effective_decoy_bc)
       ) multi_fns;
 
       (* Fallback alias / first bytecode for embedded_bytecode symbol search *)
@@ -512,6 +540,7 @@ let embed_vm_trampoline
         | [] -> bytecode
       in
       Buffer.add_string header_buf (format_fragmented_bytecode "embedded_bytecode" first_bc);
+      Buffer.add_string header_buf (format_fragmented_bytecode "embedded_bytecode_decoy" effective_decoy_bc);
 
       let body_buf = Buffer.create (len + 2048) in
       Buffer.add_string body_buf (Buffer.contents header_buf);

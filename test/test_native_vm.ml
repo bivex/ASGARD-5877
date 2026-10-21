@@ -480,6 +480,42 @@ func_pressure_check:
         let status, out_str = run_command_capture (Printf.sprintf "%s %s" bin_path bc_path) in
         Alcotest.(check bool) "exit code 0 under runtime timing probes" true (status = Unix.WEXITED 0);
         Alcotest.(check bool) "rax is 545 (500+50-5)" true (string_contains out_str "545"))
+let test_decoy_synth_and_manifold_routing () =
+  let rng = Random.State.make [| 20261024 |] in
+  let decoy_func = Native_vm.Decoy_synth.synth_decoy_validator_func ~seed:0x13375877L ~name:"test_decoy" in
+  Alcotest.(check int) "decoy func has 5 blocks" 5 (Hashtbl.length decoy_func.cfg.blocks);
+  let decoy_bc = Native_vm.Decoy_synth.synth_decoy_bytecode ~rng ~seed:0x13375877L ~name:"test_decoy" in
+  Alcotest.(check bool) "decoy bytecode non-empty" true (List.length decoy_bc > 0);
+
+  (* Verify embedding of Decoy VM Manifold in C trampoline *)
+  with_temp_dir (fun tmp_dir ->
+    let c_src = {|
+int check_license(const char* key) {
+    ASGARD_BEGIN_VIRTUALIZE("license_check");
+    return 1;
+    ASGARD_END();
+}
+|} in
+    let out_virt = Filename.concat tmp_dir "virt.cpp" in
+    let real_bc = [ 0x1111L; 0x2222L; 0x3333L ] in
+    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+      ~c_src
+      ~bytecode:real_bc
+      ~decoy_bytecode:decoy_bc
+      ~out_path:out_virt
+      ();
+    let virt_content = read_file_string out_virt in
+    Alcotest.(check bool) "contains real bytecode chunks" true
+      (string_contains virt_content "embedded_bytecode_chunks");
+    Alcotest.(check bool) "contains decoy bytecode chunks" true
+      (string_contains virt_content "embedded_bytecode_decoy_chunks");
+    Alcotest.(check bool) "contains penalty hardware probe check" true
+      (string_contains virt_content "evaluate_memory_integrity");
+    Alcotest.(check bool) "contains branchless mask routing" true
+      (string_contains virt_content "_mask = (uintptr_t)(-(intptr_t)(_penalty != 0))");
+    Alcotest.(check bool) "contains active bytecode selection" true
+      (string_contains virt_content "(((uintptr_t)embedded_bytecode & ~_mask) | ((uintptr_t)embedded_bytecode_decoy & _mask))"))
+
 
 
 let tests = [
@@ -497,4 +533,5 @@ let tests = [
   Alcotest.test_case "ephemeral_jit_micro_handlers" `Slow test_ephemeral_jit_micro_handlers;
   Alcotest.test_case "honeypot_decoy_dispatcher" `Quick test_honeypot_decoy_dispatcher;
   Alcotest.test_case "self_escalating_pressure_manifold" `Slow test_self_escalating_pressure_manifold;
+  Alcotest.test_case "decoy_synth_and_manifold_routing" `Quick test_decoy_synth_and_manifold_routing;
 ]
