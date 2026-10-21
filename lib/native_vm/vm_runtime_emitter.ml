@@ -677,6 +677,17 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
       ~enable_stack_scramble:policy.enable_stack_scramble
       ~enable_mem_sanitize:policy.enable_mem_sanitize
   in
+  let decoy_mnemonics =
+    let list = ref [] in
+    Array.iteri (fun op h ->
+      if not (String.starts_with ~prefix:"H_DECOY" h) then
+        list.contents <- (op, h) :: list.contents
+    ) opcode_to_handler;
+    List.rev !list
+  in
+  let fn_honeypot_switch =
+    Honeypot_dispatch.emit_honeypot_switch_fn rng decoy_mnemonics
+  in
 
   let fn_execute_threaded =
     func_decl ~attrs:[StaticFn; InlineFn] Bool "execute_threaded"
@@ -836,13 +847,22 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     uint8_t src = 0;
     int64_t imm = 0;
     size_t next_canary_step = 47 + ((uint64_t)seed & 0x3FULL);
+    if (__builtin_expect(ctx.format_version_tag < 0, 0)) {
+        legacy_bytecode_interpreter_fallback(op, dst, ctx.decoy_regs);
+    }
 
 #if defined(_MSC_VER) && !defined(__clang__)
     #define DISPATCH_OPCODE() do { \
+        if (__builtin_expect(ctx.format_version_tag < 0, 0)) { \
+            legacy_bytecode_interpreter_fallback(op, dst, ctx.decoy_regs); \
+        } \
         goto DISPATCH_MSVC; \
     } while(0)
 #else
     #define DISPATCH_OPCODE() do { \
+        if (__builtin_expect(ctx.format_version_tag < 0, 0)) { \
+            legacy_bytecode_interpreter_fallback(op, dst, ctx.decoy_regs); \
+        } \
         uint8_t domain_idx = (uint8_t)(((k_dyn >> 32) ^ (ctx.data_key >> 40)) %% %d); \
         uint8_t permuted_slot = (uint8_t)(op ^ domain_salt[domain_idx] ^ ctx.macro_salt); \
         uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)domain_idx * 256ULL + (uintptr_t)permuted_slot) * 0x6A09E667F3BCC908ULL); \
@@ -1042,6 +1062,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
       @ wbox_decls
       @ context_decls
       @ [
+        fn_honeypot_switch;
         fn_execute_threaded;
         fn_execute_threaded_short;
         fn_asgard_vm_call_with_salt;

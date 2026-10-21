@@ -121,6 +121,8 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field ~init:(i32 0) UInt8 "fpu_top";
     member_field ~init:(i32 0) UInt16 "fpu_status";
     member_field ~init:(i32 0) UInt8 "macro_salt";
+    member_field (Array (UInt64, 32)) "decoy_regs";
+    member_field ~init:(i32 1) Int32 "format_version_tag";
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "set_macro_salt" [(UInt8, "s")] [
       (var "macro_salt" := var "s");
@@ -141,6 +143,10 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       (var "reg_mask" := (u64 0x5A5A5A5A13375877L ^~ (cast UInt64 (var "seed") *~ u64 0x9E3779B97F4A7C15L)));
       (var "data_key" := (call "key64_for_offset" [var "seed"; u64 0x5877A5A5L] ^~ u64 0x5877CAFE1337BEEFL));
       (var "macro_salt" := i32 0);
+      (var "format_version_tag" := (cast Int32 (call "key64_for_offset" [var "seed"; u64 0x7758L] &~ u64 0x7FFFFFFFL)) +~ i32 1);
+      for_range "d" (u64 0L) (u64 32L) [
+        (idx (var "decoy_regs") (var "d") := (call "key64_for_offset" [var "seed"; u64 0xDEC00000L +~ var "d"]));
+      ];
       for_range "i" (u64 0L) (u64 32L) [
         (idx (var "slot_masks") (var "i") := (call "key64_for_offset" [var "seed"; u64 0x1000L +~ var "i"] ^~ u64 0xA5A5A5A51337BEEFL));
         (idx (var "gprs") (var "i") := (idx (var "slot_masks") (var "i") ^~ var "reg_mask"));

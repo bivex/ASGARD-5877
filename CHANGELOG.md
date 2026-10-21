@@ -8,6 +8,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 
+- Implement Honeypot Decoy Dispatcher (`lib/native_vm/honeypot_dispatch.ml`) and Steganographic Bytecode Storage (`lib/bytecode_crypto/bytecode_steganography.ml`):
+  1. Add `legacy_bytecode_interpreter_fallback` (`NoInline`) with textbook switch-case structure and plausible pseudo-arithmetic operations updating `ctx.decoy_regs`, hooked via an opaque guard `ctx.format_version_tag < 0` in `DISPATCH_OPCODE()` and emitted at the top of `vanguard_threaded_vm`, misleading reverse engineers into reverse engineering an inert decoy VM.
+  2. Implement Steganographic Bytecode Storage engine decomposing 64-bit bytecode words into 11-bit fragments distributed across pre-existing innocuous carriers (Nullspace MBA zero-coefficients, Ghost padding junk immediates, Chameleon jitter noise constants), with mathematical compensation on the orthogonal minterm basis ($e_1..e_4$) preserving the identical zero-sum invariant ($0 \pmod{2^{64}}$).
 - Implement Data-Keyed Stateful Dispatch in `lib/native_vm/` and TMR-Voting Anti-Patching Guard in `lib/mba_engine/`:
   1. Add runtime `data_key` accumulator to `VMContext` (`lib/native_vm/vm_context_emitter.ml`) advancing on every register write via `set_reg(i, v)`, and factor `(ctx.data_key >> 40)` into `DISPATCH_OPCODE()` domain index resolution (`lib/native_vm/vm_runtime_emitter.ml`), preventing offline static replay of Chameleon domain sequences without live execution.
   2. Implement Triple Modular Redundancy (TMR) synthesis (`lib/mba_engine/tmr_synth.ml`) and branchless bitwise majority voting (`lib/mba_engine/tmr_guard.ml`) via biased E-graph extraction (`extract_with_bias` across arithmetic, boolean, and canonical lanes), ensuring that an attacker patching or corrupting any single lane is silently neutralized by majority vote with zero trap or error signal.

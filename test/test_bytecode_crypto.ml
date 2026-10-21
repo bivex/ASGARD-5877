@@ -113,6 +113,65 @@ let test_payload_tamper_detection_fail_closed () =
   (match Bytecode_payload.verify_and_unpack ~master_key ~module_name:"License" ~payload_bytes:bad_magic_blob with
    | Error (Bytecode_payload.BadMagic _) -> ()
    | _ -> fail "Expected BadMagic error")
+let test_steganographic_word_decomposition_roundtrip () =
+  let rng = Random.State.make [| 20261022 |] in
+  let carriers = [|
+    Bytecode_steganography.NullspaceCoeff 0;
+    Bytecode_steganography.NullspaceCoeff 1;
+    Bytecode_steganography.GhostImm 0;
+    Bytecode_steganography.GhostImm 1;
+    Bytecode_steganography.JitterConst 0;
+    Bytecode_steganography.JitterConst 1;
+  |] in
+  for sample = 1 to 20 do
+    let word = Int64.logor (Random.State.int64 rng Int64.max_int) (Int64.shift_left (Random.State.int64 rng Int64.max_int) 32) in
+    let (sites, patches) = Bytecode_steganography.embed_word ~rng ~carriers_available:carriers word in
+    let store = Hashtbl.create 8 in
+    List.iter (fun (k, v) -> Hashtbl.replace store k v) patches;
+    let carrier_values k = Option.value ~default:0L (Hashtbl.find_opt store k) in
+    let recovered = Bytecode_steganography.extract_word ~carrier_values sites in
+    check int64 (Printf.sprintf "Stego word match #%d" sample) word recovered
+  done
+
+let test_steganographic_bytecode_stream_roundtrip () =
+  let rng = Random.State.make [| 133742 |] in
+  let carriers = Array.init 300 (fun i ->
+    match i mod 3 with
+    | 0 -> Bytecode_steganography.NullspaceCoeff i
+    | 1 -> Bytecode_steganography.GhostImm i
+    | _ -> Bytecode_steganography.JitterConst i
+  ) in
+  let code_words = List.init 50 (fun i ->
+    Int64.logxor 0x5877CAFE1337BEEFL (Int64.mul (Int64.of_int (i + 1)) 0x9E3779B97F4A7C15L)
+  ) in
+  let (plan, patches) = Bytecode_steganography.embed_bytecode ~rng ~extraction_key:0xABCDL ~carriers_available:carriers code_words in
+  let store = Hashtbl.create 16 in
+  List.iter (fun (k, v) -> Hashtbl.replace store k v) patches;
+  let carrier_values k = Option.value ~default:0L (Hashtbl.find_opt store k) in
+  let recovered = Bytecode_steganography.extract_bytecode ~carrier_values plan in
+  check int "Recovered bytecode length match" (List.length code_words) (List.length recovered);
+  List.iter2 (fun orig recov ->
+    check int64 "Stream word match" orig recov
+  ) code_words recovered
+
+let test_nullspace_zero_embedding_and_compensation () =
+  let rng = Random.State.make [| 99991111 |] in
+  for sample = 1 to 10 do
+    let fragment = Int64.of_int (Random.State.int rng 2048) in (* 11 bits *)
+    let (terms, target_id) =
+      Bytecode_steganography.embed_into_nullspace_zero ~rng ~terms_count:5 ~fragment ~bit_width:11
+    in
+    (* 1. Verify the polynomial is STILL identically zero over all 64-bit inputs *)
+    check bool (Printf.sprintf "Sample #%d nullspace zero invariant holds" sample)
+      true (Mba_engine.Nullspace_mba.verify_minterm_zero terms);
+
+    (* 2. Find carrier term and verify lowest 11 bits match fragment *)
+    let carrier = List.find (fun (t : Mba_engine.Nullspace_mba.minterm_term) -> t.bfunc_id = target_id) terms in
+    let mask = 0x7FFL in
+    let extracted = Int64.logand carrier.coeff mask in
+    check int64 (Printf.sprintf "Sample #%d fragment match" sample) fragment extracted
+  done
+
 
 let tests = [
   ("SHA-256 Canonical Vectors", `Quick, test_sha256_canonical_vectors);
@@ -120,4 +179,7 @@ let tests = [
   ("Block Key KDF Determinism", `Quick, test_block_key_kdf_determinism);
   ("Bytecode Payload Seal & Unpack Roundtrip", `Quick, test_payload_seal_and_unpack_roundtrip);
   ("Bytecode Payload Tamper Fail-Closed", `Quick, test_payload_tamper_detection_fail_closed);
+  ("Steganographic Word Decomposition Roundtrip", `Quick, test_steganographic_word_decomposition_roundtrip);
+  ("Steganographic Bytecode Stream Roundtrip", `Quick, test_steganographic_bytecode_stream_roundtrip);
+  ("Nullspace Zero Embedding & Compensation", `Quick, test_nullspace_zero_embedding_and_compensation);
 ]

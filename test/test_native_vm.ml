@@ -423,6 +423,38 @@ func_eph_jit:
         Alcotest.(check bool) "exit code 0" true (status = Unix.WEXITED 0);
         Alcotest.(check bool) "rax is 240 ((42+58-20)*3)" true (string_contains out_str "240"))
 
+let test_honeypot_decoy_dispatcher () =
+  let rng = Random.State.make [| 20261022 |] in
+  let honeypot_fn = Honeypot_dispatch.emit_honeypot_switch_fn rng Honeypot_dispatch.default_decoy_mnemonics in
+  let rendered = Cpp_codegen.Cpp_printer.render_top_decl honeypot_fn in
+  Alcotest.(check bool) "contains legacy function name" true
+    (string_contains rendered "legacy_bytecode_interpreter_fallback");
+  Alcotest.(check bool) "contains switch statement" true
+    (string_contains rendered "switch (op)");
+  Alcotest.(check bool) "contains decoy_regs" true
+    (string_contains rendered "decoy_regs");
+  Alcotest.(check bool) "contains OP_ADD case" true
+    (string_contains rendered "/* OP_ADD */");
+  Alcotest.(check bool) "contains __builtin_trap" true
+    (string_contains rendered "__builtin_trap();");
+
+  (* Also verify in full packaged VM runtime source *)
+  let asm = {|
+func_honeypot_check:
+    mov rax, 1337
+    ret
+|} in
+  match Lifter.lift_function asm with
+  | Error e -> Alcotest.fail e
+  | Ok func ->
+      let pkg = Vm_emitter.compile_and_package ~rng func in
+      Alcotest.(check bool) "header contains honeypot function" true
+        (string_contains pkg.cpp_runtime_source "legacy_bytecode_interpreter_fallback");
+      Alcotest.(check bool) "header contains format_version_tag guard" true
+        (string_contains pkg.cpp_runtime_source "format_version_tag < 0");
+      Alcotest.(check bool) "header contains decoy_regs in context" true
+        (string_contains pkg.cpp_runtime_source "decoy_regs")
+
 let tests = [
   Alcotest.test_case "threaded_vm_compilation_and_execution" `Slow test_threaded_vm_compilation_and_execution;
   Alcotest.test_case "threaded_vm_with_cff" `Slow test_threaded_vm_with_cff;
@@ -436,4 +468,5 @@ let tests = [
   Alcotest.test_case "sub_64bit_comparison_and_flags" `Slow test_sub_64bit_comparison_and_flags;
   Alcotest.test_case "indirect_jump_target_reg" `Slow test_indirect_jump_target_reg;
   Alcotest.test_case "ephemeral_jit_micro_handlers" `Slow test_ephemeral_jit_micro_handlers;
+  Alcotest.test_case "honeypot_decoy_dispatcher" `Quick test_honeypot_decoy_dispatcher;
 ]
