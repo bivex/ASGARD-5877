@@ -13,6 +13,7 @@ let emit_dual_mapping_header () =
 #include <sys/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/syscall.h>
 #elif defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -179,7 +180,12 @@ struct DualMappedBuffer {
             if (p_vm_dealloc) p_vm_dealloc(mach_task_self(), rw_addr, buf.size);
         }
 #elif defined(__linux__) && defined(MFD_CLOEXEC)
-        int fd = memfd_create("asgard_dual_wx", MFD_CLOEXEC);
+        int fd = -1;
+#if defined(__NR_memfd_create)
+        fd = (int)syscall(__NR_memfd_create, "asgard_dual_wx", MFD_CLOEXEC);
+#elif !defined(__ANDROID__)
+        fd = memfd_create("asgard_dual_wx", MFD_CLOEXEC);
+#endif
         if (fd >= 0) {
             if (ftruncate(fd, buf.size) == 0) {
                 buf.rw_alias = mmap(NULL, buf.size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);

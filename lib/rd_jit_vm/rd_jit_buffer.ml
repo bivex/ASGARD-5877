@@ -131,7 +131,12 @@ let dual_mapped_jit_buffer_def () : top_decl =
         rx_buf = rw_buf;
 #endif
 #elif defined(__linux__) && defined(MFD_CLOEXEC)
-        int fd = memfd_create("asgard_rd_jit_wx", MFD_CLOEXEC);
+        int fd = -1;
+#if defined(__NR_memfd_create)
+        fd = (int)syscall(__NR_memfd_create, "asgard_rd_jit_wx", MFD_CLOEXEC);
+#elif !defined(__ANDROID__)
+        fd = memfd_create("asgard_rd_jit_wx", MFD_CLOEXEC);
+#endif
         if (fd >= 0) {
             if (ftruncate(fd, capacity) == 0) {
                 rw_buf = mmap(NULL, capacity, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
