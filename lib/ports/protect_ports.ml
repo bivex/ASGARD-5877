@@ -26,6 +26,7 @@ type protection_config = {
   mba_enabled : bool;
   mba_depth : int;
   seed : int option;
+  watermark : int64 option;
   raw : Obj.t;
 }
 
@@ -34,14 +35,16 @@ let is_cff_enabled c = c.cff_enabled
 let is_mba_enabled c = c.mba_enabled
 let mba_depth c = c.mba_depth
 let seed c = c.seed
+let watermark c = c.watermark
 
-let wrap_config ~c_macro_enabled ~cff_enabled ~mba_enabled ~mba_depth ~seed raw =
+let wrap_config ~c_macro_enabled ~cff_enabled ~mba_enabled ~mba_depth ~seed ?watermark raw =
   {
     c_macro_enabled;
     cff_enabled;
     mba_enabled;
     mba_depth;
     seed;
+    watermark;
     raw = Obj.repr raw;
   }
 

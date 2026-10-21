@@ -2,13 +2,14 @@ open Random_visa_ports
 open Protect_ports
 open Native_vm
 
-let wrap (cfg : Protection_config.t) : protection_config =
+let wrap ?watermark (cfg : Protection_config.t) : protection_config =
   wrap_config
     ~c_macro_enabled:cfg.c_macro.enabled
     ~cff_enabled:cfg.cff.enabled
     ~mba_enabled:cfg.mba.enabled
     ~mba_depth:cfg.mba.depth
     ~seed:cfg.seed
+    ?watermark
     cfg
 
 let unwrap (pcfg : protection_config) : Protection_config.t =
@@ -42,7 +43,7 @@ let init_config ~out_file ~preset =
       Ok ()
   | Error err -> Error err
 
-let resolve ~config_file ~preset ~enable_cff ~enable_mba ~mba_depth ~seed =
+let resolve_with_watermark ~watermark ~config_file ~preset ~enable_cff ~enable_mba ~mba_depth ~seed : protection_config =
   let base =
     match config_file with
     | Some path -> (
@@ -76,4 +77,7 @@ let resolve ~config_file ~preset ~enable_cff ~enable_mba ~mba_depth ~seed =
     cff = { raw.cff with enabled = resolved_cff };
     mba = { raw.mba with enabled = resolved_mba; depth = resolved_mba_depth };
   } in
-  wrap effective
+  wrap ?watermark effective
+
+let resolve ~config_file ~preset ~enable_cff ~enable_mba ~mba_depth ~seed =
+  resolve_with_watermark ~watermark:None ~config_file ~preset ~enable_cff ~enable_mba ~mba_depth ~seed

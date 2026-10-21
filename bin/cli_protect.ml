@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7. PROTECT COMMAND (Automated x86_64 & C/C++ VM-Protector Pipeline via Hexagonal Architecture) *)
-let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile_and_run debug_symbols dump_bytecode =
+let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile_and_run debug_symbols dump_bytecode watermark =
   if dump_bytecode then Unix.putenv "ASGARD_DUMP_BYTECODE" "1";
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
@@ -12,8 +12,14 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
     else if enable_multi_vm || engine = "multi_vm" || engine = "multi-vm" || engine = "multi" then "multi_vm"
     else "threaded"
   in
+  let watermark_val =
+    match watermark with
+    | Some s -> (try Some (Int64.of_string s) with _ -> None)
+    | None -> None
+  in
   let effective_cfg =
-    Protect_adapters.Config_adapter.resolve
+    Protect_adapters.Config_adapter.resolve_with_watermark
+      ~watermark:watermark_val
       ~config_file
       ~preset
       ~enable_cff
@@ -144,7 +150,11 @@ let protect_cmd =
     let doc = "Print Stack-IR bytecode listing to stderr after each pipeline phase (env: ASGARD_DUMP_BYTECODE=1)" in
     Arg.(value & flag & info [ "dump-bytecode" ] ~doc)
   in
-  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ engine $ jit $ compile $ debug_symbols $ dump_bytecode)) in
+  let watermark =
+    let doc = "Client payload ID (hex or decimal integer, e.g. 0x58771337) to embed as stealth Build-Seed Watermark" in
+    Arg.(value & opt (some string) None & info [ "w"; "watermark"; "client-id" ] ~docv:"ID" ~doc)
+  in
+  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ engine $ jit $ compile $ debug_symbols $ dump_bytecode $ watermark)) in
   Cmd.v (Cmd.info "protect" ~doc) term
 
 let run_c_obf input out_file out_header seed strings consts mba_depth compile =

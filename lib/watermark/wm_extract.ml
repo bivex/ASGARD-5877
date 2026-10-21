@@ -21,7 +21,13 @@ let evaluate_candidate
     (fun (p : Wm_chooser.carrier_point) ->
       if p.eligible_count > 1 then begin
         let global_tag = Wm_chooser.mix_tag p.call_site_salt p.site_tag in
-        match Wm_chooser.is_carrier_slot ~derivation_key ~global_tag ~carrier_rate:0.35 with
+        let carrier_bit_opt =
+          match p.payload_bit_idx with
+          | Some b -> Some b
+          | None ->
+              Wm_chooser.is_carrier_slot ~derivation_key ~global_tag ~carrier_rate:0.35
+        in
+        match carrier_bit_opt with
         | Some bit_idx ->
             incr total_carrier_pts;
             let key = Int64.logxor derivation_key global_tag in

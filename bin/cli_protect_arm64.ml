@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline via Hexagonal Architecture) *)
-let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit enable_ephemeral_jit compile_and_run debug_symbols dump_bytecode =
+let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit enable_ephemeral_jit compile_and_run debug_symbols dump_bytecode watermark =
   if dump_bytecode then Unix.putenv "ASGARD_DUMP_BYTECODE" "1";
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
@@ -12,9 +12,15 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
     else if engine = "multi" || engine = "multi_vm" then "multi"
     else "threaded"
   in
+  let watermark_val =
+    match watermark with
+    | Some s -> (try Some (Int64.of_string s) with _ -> None)
+    | None -> None
+  in
   let effective_cfg =
     let resolved =
-      Protect_adapters.Config_adapter.resolve
+      Protect_adapters.Config_adapter.resolve_with_watermark
+        ~watermark:watermark_val
         ~config_file
         ~preset
         ~enable_cff
@@ -27,11 +33,11 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
        ARM64-view carry (C = NOT borrow), encoded per-word in the bytecode. *)
     let raw = { raw with arch = `AArch64 } in
     if enable_ephemeral_jit then
-      Protect_adapters.Config_adapter.wrap {
+      Protect_adapters.Config_adapter.wrap ?watermark:watermark_val {
         raw with
         vm_runtime = { raw.vm_runtime with ephemeral_jit = true };
       }
-    else Protect_adapters.Config_adapter.wrap raw
+    else Protect_adapters.Config_adapter.wrap ?watermark:watermark_val raw
   in
   let rng =
     match Protect_ports.seed effective_cfg with
@@ -156,5 +162,9 @@ let protect_arm64_cmd =
     let doc = "Print Stack-IR bytecode listing to stderr after each pipeline phase (env: ASGARD_DUMP_BYTECODE=1)" in
     Arg.(value & flag & info [ "dump-bytecode" ] ~doc)
   in
-  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ ephemeral_jit $ compile $ debug_symbols $ dump_bytecode)) in
+  let watermark =
+    let doc = "Client payload ID (hex or decimal integer, e.g. 0x58771337) to embed as stealth Build-Seed Watermark" in
+    Arg.(value & opt (some string) None & info [ "w"; "watermark"; "client-id" ] ~docv:"ID" ~doc)
+  in
+  let term = Term.(ret (const run_protect_arm64 $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ ephemeral_jit $ compile $ debug_symbols $ dump_bytecode $ watermark)) in
   Cmd.v (Cmd.info "protect-arm64" ~doc) term

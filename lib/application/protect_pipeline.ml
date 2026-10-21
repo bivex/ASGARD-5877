@@ -417,6 +417,59 @@ let run
                     formatted_summary =
                       body ^ Printf.sprintf "- Mach-O Compact Unwind: %s\n%s" line sep }
             in
+            let wm_id_opt =
+              match Protect_ports.watermark config with
+              | Some payload ->
+                  let s_val = Int64.of_int (match Protect_ports.seed config with Some s -> s | None -> 1337) in
+                  let wid = Watermark.Wm_types.derive ~build_seed:s_val ~client_payload:payload in
+                  let manifest_path = Filename.concat out_dir "watermark_manifest.json" in
+                  let manifest : Watermark.Wm_chooser.manifest = {
+                    build_id = Printf.sprintf "build_%016LX" wid.derivation_key;
+                    derivation_key = wid.derivation_key;
+                    client_payload = wid.raw_bits;
+                    carrier_points = (
+                      let pts = ref [] in
+                      for p = 0 to 48 * 7 - 1 do
+                        let bit_idx = p mod 48 in
+                        let target_bit = Watermark.Wm_embed.get_bit wid.raw_bits bit_idx in
+                        let site_tag = (p + 1, 1) in
+                        let global_tag = Watermark.Wm_chooser.mix_tag wid.derivation_key site_tag in
+                        let key = Int64.logxor wid.derivation_key global_tag in
+                        let pool_zeros, pool_ones = Watermark.Wm_chooser.balanced_split ~key 2 in
+                        let chosen = if target_bit then pool_ones.(0) else pool_zeros.(0) in
+                        pts := {
+                          Watermark.Wm_chooser.function_name = "license_validation";
+                          call_site_salt = wid.derivation_key;
+                          site_tag;
+                          eligible_count = 2;
+                          chosen_idx = chosen;
+                          payload_bit_idx = Some bit_idx;
+                        } :: !pts
+                      done;
+                      List.rev !pts
+                    );
+                  } in
+                  Watermark.Wm_chooser.save_manifest manifest_path manifest;
+                  Some wid
+              | None -> None
+            in
+            let metrics =
+              match wm_id_opt with
+              | None -> metrics
+              | Some wid ->
+                  let sep = "===============================================" in
+                  let summary = metrics.formatted_summary in
+                  let n = String.length summary in
+                  let sep_len = String.length sep in
+                  let body =
+                    if n > sep_len then String.sub summary 0 (n - sep_len) else summary
+                  in
+                  { metrics with
+                    formatted_summary =
+                      body
+                      ^ Printf.sprintf "- Build-Seed Watermark: Active (Client ID: 0x%016LX, Derivation Key: 0x%016LX)\n%s"
+                          wid.raw_bits wid.derivation_key sep }
+            in
             Ok {
               header_path = hdr_path;
               runner_path;

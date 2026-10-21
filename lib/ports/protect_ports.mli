@@ -22,6 +22,7 @@ val is_cff_enabled : protection_config -> bool
 val is_mba_enabled : protection_config -> bool
 val mba_depth : protection_config -> int
 val seed : protection_config -> int option
+val watermark : protection_config -> int64 option
 
 val wrap_config :
   c_macro_enabled:bool ->
@@ -29,9 +30,9 @@ val wrap_config :
   mba_enabled:bool ->
   mba_depth:int ->
   seed:int option ->
+  ?watermark:int64 ->
   'a ->
   protection_config
-
 val unwrap_config : protection_config -> 'a
 
 type metrics_report = {

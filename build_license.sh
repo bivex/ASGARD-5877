@@ -17,4 +17,5 @@ _build/default/bin/main.exe protect-arm64 \
   --mba \
   --mba-depth 4 \
   --seed 1337 \
+  --watermark 0x58771337 \
   --compile=true
