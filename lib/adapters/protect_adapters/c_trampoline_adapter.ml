@@ -65,6 +65,7 @@ let embed_vm_trampoline
     ~c_src
     ?bytecodes
     ?decoy_bytecode
+    ?(chunk_size = 64)
     ~bytecode
     ~out_path
     () =
@@ -315,7 +316,7 @@ let embed_vm_trampoline
       render_top_decls [ empty_arr ]
       ^ Printf.sprintf "\n__attribute__((unused)) static inline void %s_ensure_assembled(void) {}\n\n" name
     else
-      let chunk_size = 64 in
+      let chunk_size = max 4 chunk_size in
       let rec split idx offset acc remaining =
         if remaining = [] then List.rev acc
         else

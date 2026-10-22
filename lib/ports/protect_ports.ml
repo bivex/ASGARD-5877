@@ -112,6 +112,7 @@ module type Trampoline_engine = sig
     c_src:string ->
     ?bytecodes:(string * int64 list) list ->
     ?decoy_bytecode:int64 list ->
+    ?chunk_size:int ->
     bytecode:int64 list ->
     out_path:string ->
     unit ->

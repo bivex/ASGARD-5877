@@ -7,7 +7,9 @@
   "bloat": {
     "mode": "insane",
     "target_size_budget_kb": 2000,
-    "junk_density": 0.7
+    "junk_density": 0.7,
+    "density_cap_threshold1_kb": 200,
+    "density_cap_threshold2_kb": 500
   },
   "cff": {
     "enabled": true,
@@ -24,7 +26,10 @@
     "egraph_rate": 30,
     "egraph_node_limit": 120,
     "egraph_time_budget_ms": 80,
-    "egraph_iter_limit": 5
+    "egraph_iter_limit": 5,
+    "ir_max_depth": 4,
+    "ir_egraph_node_limit": 80,
+    "ir_egraph_time_budget_ms": 50
   },
   "anti_pushan": {
     "enabled": true,
@@ -121,5 +126,8 @@
     "ghost_rate": 80,
     "max_ghosts": 0,
     "entangle": true
+  },
+  "trampoline": {
+    "chunk_size": 64
   }
 }

@@ -13,6 +13,9 @@ type mba_config = {
   egraph_node_limit : int;
   egraph_time_budget_ms : int;
   egraph_iter_limit : int;
+  ir_max_depth : int;
+  ir_egraph_node_limit : int;
+  ir_egraph_time_budget_ms : int;
 }
 
 type crypto_config = {
@@ -26,6 +29,8 @@ type bloat_config = {
   mode : bloat_mode;
   target_size_budget_kb : int option;
   junk_density : float;
+  density_cap_threshold1_kb : int;
+  density_cap_threshold2_kb : int;
 }
 
 type cff_config = {
@@ -150,6 +155,10 @@ type ghost_config = {
   entangle   : bool;
 }
 
+type trampoline_config = {
+  chunk_size : int;
+}
+
 
 type arch = [ `X86_64 | `AArch64 | `RISCV ]
 
@@ -172,6 +181,7 @@ type t = {
   amplifier : amplifier_config;
   superop : superop_config;
   ghost : ghost_config;
+  trampoline : trampoline_config;
 }
 
 val default_eh_shadowing : eh_shadowing_config
@@ -181,6 +191,7 @@ val default_spaghetti : spaghetti_config
 val default_amplifier : amplifier_config
 val default_superop : superop_config
 val default_ghost : ghost_config
+val default_trampoline : trampoline_config
 
 val minimal : t
 val lightweight : t

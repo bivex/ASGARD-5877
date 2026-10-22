@@ -366,7 +366,8 @@ let run
                   let c_src = really_input_string ic_c c_len in
                   close_in ic_c;
                   let virt_cpp_path = Filename.concat out_dir "app_virtualized.cpp" in
-                  TE.embed_vm_trampoline ~header_name:pkg.header_name ~c_src ~bytecodes:pkg.bytecodes ~bytecode:pkg.bytecode ~out_path:virt_cpp_path ()
+                  let chunk_size = if native_cfg.trampoline.chunk_size > 0 then Some native_cfg.trampoline.chunk_size else None in
+                  TE.embed_vm_trampoline ?chunk_size ~header_name:pkg.header_name ~c_src ~bytecodes:pkg.bytecodes ~bytecode:pkg.bytecode ~out_path:virt_cpp_path ()
               | None -> ()
             end;
 

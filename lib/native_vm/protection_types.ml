@@ -50,6 +50,14 @@ type mba_config = {
   egraph_node_limit : int [@default 120];
   egraph_time_budget_ms : int [@default 80];
   egraph_iter_limit : int [@default 5];
+  (** Ceiling for the per-block IR-level MBA depth (with the built-in ±1
+      jitter); mba.depth values above this are clamped. *)
+  ir_max_depth : int [@default 4];
+  (** E-graph node cap and wall-clock budget (ms) for the IR-level ALU
+      obfuscation loop in the native/threaded/jit engines (the iteration
+      limit there is the jittered mba.depth itself). *)
+  ir_egraph_node_limit : int [@default 80];
+  ir_egraph_time_budget_ms : int [@default 50];
 } [@@deriving yojson]
 
 (* Target architecture of the lifted program.  The VM stores flags in the
@@ -97,6 +105,11 @@ type bloat_config = {
   mode : (bloat_mode [@of_yojson bloat_mode_of_yojson] [@to_yojson bloat_mode_to_yojson]) [@default `Balanced];
   target_size_budget_kb : int option [@default Some 1000];
   junk_density : (float [@of_yojson float_of_yojson] [@to_yojson float_to_yojson]) [@default 0.5];
+  (** Junk-density safety caps by budget tier: when the budget is below
+      threshold1 the density is capped at 0.1, below threshold2 at 0.5.
+      A threshold of 0 disables that tier. *)
+  density_cap_threshold1_kb : int [@default 200];
+  density_cap_threshold2_kb : int [@default 500];
 } [@@deriving yojson]
 
 type cff_config = {
@@ -270,12 +283,21 @@ let default_ghost = {
   entangle   = true;
 }
 
+type trampoline_config = {
+  (** Number of 64-bit words per fragmented bytecode chunk. Default 64. *)
+  chunk_size : int [@default 64];
+} [@@deriving yojson]
+
+let default_trampoline = {
+  chunk_size = 64;
+}
+
 
 let default_crypto = { rounds = 16; key_bits = 128 }
-let default_bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5 }
+let default_bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5; density_cap_threshold1_kb = 200; density_cap_threshold2_kb = 500 }
 let default_cff = { enabled = true; obfuscate_states = true; inject_opaque_predicates = false; input_tainted_transitions = true; split_rate = 30; hub_count = 1; pop_digest = false; red_herring = true }
 
-let default_mba = { enabled = true; depth = 2; engine = `Egraph; stack_synthesis_rate = 100; egraph_rate = 30; egraph_node_limit = 120; egraph_time_budget_ms = 80; egraph_iter_limit = 5 }
+let default_mba = { enabled = true; depth = 2; engine = `Egraph; stack_synthesis_rate = 100; egraph_rate = 30; egraph_node_limit = 120; egraph_time_budget_ms = 80; egraph_iter_limit = 5; ir_max_depth = 4; ir_egraph_node_limit = 80; ir_egraph_time_budget_ms = 50 }
 let default_anti_pushan = { enabled = true; running_key = true; address_bound = false }
 let default_anti_tamper = {
   enabled = true; smc = true; smc_strict = false;
@@ -365,6 +387,7 @@ type t = {
   amplifier : amplifier_config [@default default_amplifier];
   superop : superop_config [@default default_superop];
   ghost : ghost_config [@default default_ghost];
+  trampoline : trampoline_config [@default default_trampoline];
 } [@@deriving yojson]
 
 (* ADC/SBC carry dialect: true when the lifted program reads the carry in the

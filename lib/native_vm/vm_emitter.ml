@@ -41,12 +41,16 @@ let compile_and_package_multi
     ?(constants = [])
     (funcs : (string * Ir.func) list) =
 
-  let (enable_cff, enable_mba, enable_junk, mba_depth, mba_engine) =
+  let (enable_cff, enable_mba, enable_junk, mba_depth, mba_engine,
+       mba_max_depth, ir_eg_nodes, ir_eg_ms) =
     match config with
     | Some (c : Protection_config.t) ->
-        (c.cff.enabled, c.mba.enabled, c.vm_runtime.enable_junk_instructions, c.mba.depth, c.mba.engine)
+        (c.cff.enabled, c.mba.enabled, c.vm_runtime.enable_junk_instructions,
+         c.mba.depth, c.mba.engine,
+         c.mba.ir_max_depth, c.mba.ir_egraph_node_limit, c.mba.ir_egraph_time_budget_ms)
     | None ->
-        (enable_cff, enable_mba, enable_junk, mba_depth, `Egraph)
+        (enable_cff, enable_mba, enable_junk, mba_depth, `Egraph,
+         4, 80, 50)
   in
 
   (* ADC/SBC carry dialect (todo item 8): ARM64 reads C = NOT borrow after
@@ -123,9 +127,11 @@ let compile_and_package_multi
     match config with
     | Some (c : Protection_config.t) -> (
         let d = c.bloat.junk_density in
+        let t1 = c.bloat.density_cap_threshold1_kb in
+        let t2 = c.bloat.density_cap_threshold2_kb in
         match c.bloat.target_size_budget_kb with
-        | Some budget_kb when budget_kb < 200 -> min d 0.1
-        | Some budget_kb when budget_kb < 500 -> min d 0.5
+        | Some budget_kb when t1 > 0 && budget_kb < t1 -> min d 0.1
+        | Some budget_kb when t2 > 0 && budget_kb < t2 -> min d 0.5
         | _ -> d
       )
     | None -> 0.5
@@ -187,6 +193,14 @@ let compile_and_package_multi
     let func = Dag_scheduler.transform ~rng func in
     let target_func =
       if enable_cff then
+        (* POP digest transform and the pop_digest option must be gated
+           together: enabling one without the other leaves either an
+           uninitialized digest register or dead digest computation. *)
+        let pop_enabled, red_herring =
+          match config with
+          | Some c -> (c.cff.pop_digest, c.cff.red_herring)
+          | None -> (true, true)
+        in
         let cff_opts =
           match config with
           | Some c ->
@@ -196,15 +210,26 @@ let compile_and_package_multi
                 input_tainted_transitions = c.cff.input_tainted_transitions;
                 split_rate = c.cff.split_rate;
                 hub_count = c.cff.hub_count;
-                pop_digest = Some (Cff.Pop_coupler.default_pop_config.digest_reg, Cff.Pop_coupler.default_pop_config.initial_seed);
-                red_herring = true;
+                pop_digest =
+                  (if pop_enabled then
+                     Some (Cff.Pop_coupler.default_pop_config.digest_reg,
+                           Cff.Pop_coupler.default_pop_config.initial_seed)
+                   else None);
+                red_herring;
               }
           | None ->
               { Cff.default_cff_options with
-                pop_digest = Some (Cff.Pop_coupler.default_pop_config.digest_reg, Cff.Pop_coupler.default_pop_config.initial_seed);
+                pop_digest =
+                  (if pop_enabled then
+                     Some (Cff.Pop_coupler.default_pop_config.digest_reg,
+                           Cff.Pop_coupler.default_pop_config.initial_seed)
+                   else None);
+                red_herring;
               }
         in
-        let pop_func = Cff.Pop_coupler.apply_pop_transform ~rng func in
+        let pop_func =
+          if pop_enabled then Cff.Pop_coupler.apply_pop_transform ~rng func else func
+        in
         match Cff.flatten_func ~options:cff_opts ~rng pop_func with
         | Ok f -> f
         | Error _ -> func
@@ -267,7 +292,13 @@ let compile_and_package_multi
         let brng = block_rngs.(i) in
         let block_mba_depth =
           let jitter = Random.State.int brng 3 - 1 in (* -1, 0, +1 *)
-          max 1 (min 4 (mba_depth + jitter))
+          max 1 (min mba_max_depth (mba_depth + jitter))
+        in
+        let ir_eg_cfg =
+          { Mba_engine.Egraph.
+            node_limit = ir_eg_nodes;
+            time_budget_s = float_of_int ir_eg_ms /. 1000.0;
+            iter_limit = block_mba_depth }
         in
         let instrs =
           if enable_mba then
@@ -289,8 +320,7 @@ let compile_and_package_multi
                       try
                         match mba_engine with
                         | `Egraph ->
-                            let eg_cfg = { Mba_engine.Egraph.default_op_config with iter_limit = block_mba_depth } in
-                            Mba_engine.Egraph.obfuscate_alu ~config:eg_cfg ~rng:brng ~dst ~src1 ~src2 op
+                            Mba_engine.Egraph.obfuscate_alu ~config:ir_eg_cfg ~rng:brng ~dst ~src1 ~src2 op
                         | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:block_mba_depth ~dst ~src1 ~src2 op
                         | `Ncfg   -> Mba_engine.Ncfg_synth.obfuscate_alu ~rng:brng ~depth:block_mba_depth ~dst ~src1 ~src2 op
                         | `Nullspace -> Mba_engine.Nullspace_synth.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op

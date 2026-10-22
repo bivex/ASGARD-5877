@@ -59,6 +59,13 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
 
   let target_func =
     if enable_cff then
+      (* POP digest transform and the pop_digest option must be gated
+         together (see vm_emitter.ml for the rationale). *)
+      let pop_enabled, red_herring =
+        match config with
+        | Some c -> (c.cff.pop_digest, c.cff.red_herring)
+        | None -> (true, true)
+      in
       let cff_opts =
         match config with
         | Some c ->
@@ -68,15 +75,26 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
               input_tainted_transitions = c.cff.input_tainted_transitions;
               split_rate = c.cff.split_rate;
               hub_count = c.cff.hub_count;
-              pop_digest = Some (Cff.Pop_coupler.default_pop_config.digest_reg, Cff.Pop_coupler.default_pop_config.initial_seed);
-              red_herring = true;
+              pop_digest =
+                (if pop_enabled then
+                   Some (Cff.Pop_coupler.default_pop_config.digest_reg,
+                         Cff.Pop_coupler.default_pop_config.initial_seed)
+                 else None);
+              red_herring;
             }
         | None ->
             { Cff.default_cff_options with
-              pop_digest = Some (Cff.Pop_coupler.default_pop_config.digest_reg, Cff.Pop_coupler.default_pop_config.initial_seed);
+              pop_digest =
+                (if pop_enabled then
+                   Some (Cff.Pop_coupler.default_pop_config.digest_reg,
+                         Cff.Pop_coupler.default_pop_config.initial_seed)
+                 else None);
+              red_herring;
             }
       in
-      let pop_func = Cff.Pop_coupler.apply_pop_transform ~rng func in
+      let pop_func =
+        if pop_enabled then Cff.Pop_coupler.apply_pop_transform ~rng func else func
+      in
       match Cff.flatten_func ~options:cff_opts ~rng pop_func with
       | Ok f -> f
       | Error _ -> func

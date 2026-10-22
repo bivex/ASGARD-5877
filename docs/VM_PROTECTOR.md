@@ -486,6 +486,7 @@ pre-populate every field; the JSON file then overrides what it mentions.
 | | `max_extra_blocks` | `0` | Absolute ceiling of new blocks; priority: `max_extra_blocks > max_splits_factor > legacy min 512 (cur/2)` |
 | | `max_splits_factor` | `1` | Ceiling as multiplier of current block count |
 | | `min_chunk` | `2` | Min ops on each side of a cut point; `1` yields more candidates |
+| `trampoline` | `chunk_size` | `64` | Number of 64-bit words per fragmented bytecode chunk in C++ dispatch thunks |
 
 ### Knobs inside existing sections
 
@@ -498,6 +499,11 @@ pre-populate every field; the JSON file then overrides what it mentions.
 | `cff.red_herring` | `true` | IR-level CFF: red-herring (never-taken) state aliases during hot-state splitting |
 | `cff.hub_count` | `1` | Multi-hub dispatcher partitioning (1–6) |
 | `cff.split_rate` | `30` | Hot-state splitting probability |
+| `mba.ir_max_depth` | `4` | Ceiling for IR-level per-block MBA depth in native/threaded/jit engines (clamps `mba.depth + jitter`) |
+| `mba.ir_egraph_node_limit` | `80` | E-graph node cap for IR-level ALU obfuscation in native/threaded engines |
+| `mba.ir_egraph_time_budget_ms` | `50` | Wall-clock saturation budget (ms) for IR-level ALU obfuscation |
+| `bloat.density_cap_threshold1_kb` | `200` | Target size budget threshold (KB) below which junk density is capped at 0.1 (`0` disables) |
+| `bloat.density_cap_threshold2_kb` | `500` | Target size budget threshold (KB) below which junk density is capped at 0.5 (`0` disables) |
 
 ### E-graph MBA budget (`mba.*`)
 

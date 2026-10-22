@@ -201,6 +201,12 @@ let test_pass_config_sections () =
       Protection_config.default.cff with
       pop_digest = true; red_herring = false;
     };
+    trampoline = { chunk_size = 128 };
+    bloat = {
+      Protection_config.default.bloat with
+      density_cap_threshold1_kb = 300;
+      density_cap_threshold2_kb = 600;
+    };
   } in
   let json_str = Protection_config.to_json_string ~pretty:true original in
   (match Protection_config.from_json_string json_str with
@@ -219,8 +225,10 @@ let test_pass_config_sections () =
        Alcotest.(check int) "stack_vm.feedback_rate" original.stack_vm.feedback_rate parsed.stack_vm.feedback_rate;
        Alcotest.(check bool) "stack_vm.cff_couple_key" original.stack_vm.cff_couple_key parsed.stack_vm.cff_couple_key;
        Alcotest.(check bool) "cff.pop_digest" original.cff.pop_digest parsed.cff.pop_digest;
-       Alcotest.(check bool) "cff.red_herring" original.cff.red_herring parsed.cff.red_herring);
-  (* Defaults when sections absent: minimal JSON must parse *)
+       Alcotest.(check bool) "cff.red_herring" original.cff.red_herring parsed.cff.red_herring;
+       Alcotest.(check int) "trampoline.chunk_size" 128 parsed.trampoline.chunk_size;
+       Alcotest.(check int) "bloat.density_cap_threshold1_kb" 300 parsed.bloat.density_cap_threshold1_kb;
+       Alcotest.(check int) "bloat.density_cap_threshold2_kb" 600 parsed.bloat.density_cap_threshold2_kb);
   (match Protection_json.from_json_string {|{"arch":"aarch64"}|} with
    | Error err -> Alcotest.fail ("defaults parse: " ^ err)
    | Ok cfg ->
@@ -236,7 +244,12 @@ let test_pass_config_sections () =
        Alcotest.(check int) "stack_vm defaults feedback 100" 100 cfg.stack_vm.feedback_rate;
        Alcotest.(check bool) "stack_vm defaults couple key" true cfg.stack_vm.cff_couple_key;
        Alcotest.(check bool) "cff defaults pop_digest off" false cfg.cff.pop_digest;
-       Alcotest.(check bool) "cff defaults red_herring on" true cfg.cff.red_herring)
+       Alcotest.(check bool) "cff defaults red_herring on" true cfg.cff.red_herring;
+       Alcotest.(check int) "trampoline defaults chunk_size 64" 64 cfg.trampoline.chunk_size;
+       Alcotest.(check int) "bloat defaults threshold1 200" 200 cfg.bloat.density_cap_threshold1_kb;
+       Alcotest.(check int) "bloat defaults threshold2 500" 500 cfg.bloat.density_cap_threshold2_kb;
+       Alcotest.(check int) "mba defaults ir_max_depth 4" 4 cfg.mba.ir_max_depth;
+       Alcotest.(check int) "mba defaults ir_egraph_nodes 80" 80 cfg.mba.ir_egraph_node_limit)
 
 let test_pass_config_presets () =
   let open Protection_config in
