@@ -1,0 +1,90 @@
+{
+  "seed": 1337,
+  "crypto": {
+    "rounds": 16,
+    "key_bits": 128
+  },
+  "bloat": {
+    "mode": "balanced",
+    "target_size_budget_kb": 250,
+    "junk_density": 0.2
+  },
+  "cff": {
+    "enabled": true,
+    "obfuscate_states": true,
+    "inject_opaque_predicates": false,
+    "input_tainted_transitions": true,
+    "split_rate": 30,
+    "hub_count": 2
+  },
+  "mba": {
+    "enabled": true,
+    "depth": 2,
+    "engine": "egraph"
+  },
+  "anti_pushan": {
+    "enabled": true,
+    "running_key": true,
+    "address_bound": false
+  },
+  "anti_tamper": {
+    "enabled": true,
+    "smc": false,
+    "smc_strict": false,
+    "hardware_timing_probes": true,
+    "memory_integrity_scanner": false,
+    "anti_emulation": false,
+    "nanomites": false,
+    "direct_syscalls": false
+  },
+  "vm_runtime": {
+    "num_dispatch_domains": 4,
+    "enable_junk_instructions": false,
+    "enable_super_operators": true,
+    "stack_scrambling": true,
+    "memory_sanitization": false,
+    "vector_isa": true,
+    "egraph_expansion": true,
+    "ephemeral_jit": false,
+    "chameleon_handlers": true,
+    "oblivious_memory": false
+  },
+  "c_macro": {
+    "enabled": true,
+    "macro_prefix": "ASG_",
+    "obfuscate_strings": true,
+    "obfuscate_constants": true,
+    "obfuscate_arithmetic": true,
+    "opaque_predicates": false,
+    "api_hashing": false,
+    "anti_debug": false,
+    "signal_dispatch": false,
+    "nanomites": false,
+    "timing_guard": false,
+    "timing_threshold_ticks": 50000000
+  },
+  "stack_vm": {
+    "enabled": true,
+    "superoperators": true,
+    "state_feedback": true,
+    "layout_randomization": true,
+    "runtime_hardening": true,
+    "compact_imm": true
+  },
+  "eh_shadowing": {
+    "enabled": false,
+    "shadow_alloc_size": 64,
+    "interceptor_symbol": "tech_2601_interceptor"
+  },
+  "anti_vpc": {
+    "enabled": true,
+    "scramble_vpc": true,
+    "split_vpc": false,
+    "entropy_whitening": true
+  },
+  "memory_chaffing": {
+    "enabled": false,
+    "pool_size": 4096,
+    "chaff_ratio": 1.0
+  }
+}

@@ -315,6 +315,91 @@ let stealth : t = {
   };
 }
 
+let edr_stealth : t = {
+  arch = `X86_64;
+  seed = None;
+  crypto = { rounds = 16; key_bits = 128 };
+  bloat = { mode = `Balanced; target_size_budget_kb = Some 250; junk_density = 0.2 };
+  cff = {
+    enabled = true;
+    obfuscate_states = true;
+    inject_opaque_predicates = false;
+    input_tainted_transitions = true;
+    split_rate = 30;
+    hub_count = 2;
+  };
+  mba = {
+    enabled = true;
+    depth = 2;
+    engine = `Egraph;
+  };
+  anti_pushan = {
+    enabled = true;
+    running_key = true;
+    address_bound = false;
+  };
+  anti_tamper = {
+    enabled = true;
+    smc = false;
+    smc_strict = false;
+    hardware_timing_probes = true;
+    memory_integrity_scanner = false;
+    anti_emulation = false;
+    nanomites = false;
+    direct_syscalls = false;
+  };
+  vm_runtime = {
+    num_dispatch_domains = 4;
+    enable_junk_instructions = false;
+    enable_super_operators = true;
+    stack_scrambling = true;
+    memory_sanitization = false;
+    vector_isa = true;
+    egraph_expansion = true;
+    ephemeral_jit = false;
+    chameleon_handlers = true;
+    oblivious_memory = false;
+  };
+  c_macro = {
+    enabled = true;
+    macro_prefix = "ASG_";
+    obfuscate_strings = true;
+    obfuscate_constants = true;
+    obfuscate_arithmetic = true;
+    opaque_predicates = false;
+    api_hashing = false;
+    anti_debug = false;
+    signal_dispatch = false;
+    nanomites = false;
+    timing_guard = false;
+    timing_threshold_ticks = 50000000L;
+  };
+  stack_vm = {
+    enabled = true;
+    superoperators = true;
+    state_feedback = true;
+    layout_randomization = true;
+    runtime_hardening = true;
+    compact_imm = true;
+  };
+  eh_shadowing = {
+    enabled = false;
+    shadow_alloc_size = 64;
+    interceptor_symbol = "tech_2601_interceptor";
+  };
+  anti_vpc = {
+    enabled = true;
+    scramble_vpc = true;
+    split_vpc = false;
+    entropy_whitening = true;
+  };
+  memory_chaffing = {
+    enabled = false;
+    pool_size = 4096;
+    chaff_ratio = 1.0;
+  };
+}
+
 let minimal : t = {
   arch = `X86_64;
   seed = None;
@@ -484,4 +569,5 @@ let from_preset name =
   | "high" | "hardened" | "strong" | "3" -> Ok high
   | "max" | "max_security" | "paranoid" | "military" | "insane" | "4" -> Ok max_security
   | "stealth" | "covert" -> Ok stealth
-  | other -> Error (Printf.sprintf "Unknown protection preset '%s'. Available: min (0), lightweight (1), default/medium (2), high (3), max (4), stealth" other)
+  | "edr" | "edr_stealth" | "av_clean" | "whitelist" -> Ok edr_stealth
+  | other -> Error (Printf.sprintf "Unknown protection preset '%s'. Available: min (0), lightweight (1), default/medium (2), high (3), max (4), stealth, edr_stealth" other)
