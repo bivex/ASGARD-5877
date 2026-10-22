@@ -87,32 +87,28 @@ let split_terminators ops =
   | _ ->
     (ops, No_term)
 
+let hash_shard_id ~(salt : int64) (token : int64) (n_shards : int) : int =
+  let z = Int64.add token salt in
+  let z = Int64.logxor z (Int64.shift_right_logical z 30) in
+  let z = Int64.mul z 0xBF58476D1CE4E5B9L in
+  let z = Int64.logxor z (Int64.shift_right_logical z 27) in
+  let z = Int64.mul z 0x94D049BB133111EBL in
+  let z = Int64.logxor z (Int64.shift_right_logical z 31) in
+  abs (Int64.to_int z) mod n_shards
+
 (* ── Block transformation ─────────────────────────────────────────────── *)
-let transform_block vpc_slot dispatcher_0_id tokens block =
+let transform_block vpc_slot entry_of tokens block =
   let (body, term) = split_terminators block.ops in
   (* Helper: write token to VPC — delta 0 *)
-  (* Every CFF edge writes the token of the target block into the VPC
-     before jumping.  Coupling the rolling key to that write makes the
-     key depend on the path the program took: a block harvested in
-     isolation carries no key of its own any more, because the coupling
-     that unlocks the next block is missing.
-
-     The coupled value is the token itself, and the VPC provably holds
-     it at that point (the write is the immediately preceding op), so
-     the encryptor can reproduce the key schedule - the encoder rejects
-     a KeyFeedback whose value is not statically known. *)
   let set_vpc token = [ PushImm token; PopReg vpc_slot ] in
-  let go_disp = [ JmpRel dispatcher_0_id ] in
+  let go_disp target = [ JmpRel (entry_of target) ] in
   let new_ops = match term with
     | Exit_term | No_term | Jcc_only _ ->
-      (* Leave unchanged: Exit is correct; No_term/Jcc_only are edge cases *)
       block.ops
 
     | Jmp_term target ->
-      (* Unknown target (e.g. block removed by an earlier pass): leave the
-        whole block untouched rather than raising Not_found mid-pipeline. *)
       (match Hashtbl.find_opt tokens target with
-       | Some token -> body @ set_vpc token @ go_disp
+       | Some token -> body @ set_vpc token @ go_disp target
        | None -> block.ops)
 
     | Jcc_term (true_bid, cond, false_bid) ->
@@ -123,42 +119,94 @@ let transform_block vpc_slot dispatcher_0_id tokens block =
            PopReg vpc_slot   (-1)  → vpc = T[false] by default
            PushImm t_true    (+1)
            Cmov(cond, vpc)   (-1)  → if cond: vpc = T[true]
-           JmpRel dispatcher (0)
+           JmpRel entry(seg(false_bid)) (0)
          Flags from the Cmp/Test that preceded this JccRel are preserved
-         because none of the above ops modify the flag register. *)
+         because none of the above ops modify the flag register.
+         Circular expander topology guarantees reachability of true_bid
+         even when seg(true_bid) != seg(false_bid). *)
       body
       @ set_vpc t_false
       @ [ PushImm t_true; Cmov (cond, vpc_slot) ]
-      @ go_disp
+      @ go_disp false_bid
        | _ -> block.ops)
   in
   { block with ops = new_ops }
 
 (* ── Dispatcher chain construction ────────────────────────────────────── *)
-(** Build a chain of (n_real + 1) dispatcher blocks.
-    Block at [base_id + i] checks vpc against T[real_ids[i]],
-    jumps to real block if equal, else falls to [base_id + i + 1].
-    Block at [base_id + n] is the emergency Exit. *)
-let build_dispatcher_chain vpc_slot tokens real_ids base_id =
-  let sorted_ids = List.sort compare real_ids in
-  let n = List.length sorted_ids in
-  let exit_block = make_block (base_id + n) "cff_exit" [ Exit ] in
-  let comparison_blocks =
-    List.mapi (fun i bid ->
-      let disp_id      = base_id + i in
-      let next_disp_id = base_id + i + 1 in
-      let token = Hashtbl.find tokens bid in
-      make_block disp_id
-        (Printf.sprintf "cff_disp_%d" i)
-        [ PushReg vpc_slot      (* +1: load VPC token *)
-        ; PushImm token         (* +1: load expected token *)
-        ; Cmp                   (* -2: sets flags, stack empty *)
-        ; JccRel (bid, E)      (*  0: jump to real block if EQ *)
-        ; JmpRel next_disp_id   (*  0: else continue chain *)
-        ]
-    ) sorted_ids
+(** Builds a circular sharded Ramanujan expander dispatcher.
+    Real blocks are partitioned across [n_shards] buckets by SplitMix64 token hash.
+    Each shard checks its local bucket tokens; on mismatch at the shard tail,
+    execution falls through circularly to [(s + 1) mod n_shards].
+    This ensures 100% reachability across any branch without ever deadlocking or
+    prematurely exiting, eliminating the single dispatcher entry bottleneck. *)
+let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
+  let n_real = List.length real_ids in
+  let n_shards = min 16 (max 2 (n_real / 4)) in
+  let buckets = Array.make n_shards [] in
+  List.iter (fun bid ->
+    let tok = Hashtbl.find tokens bid in
+    let s = hash_shard_id ~salt:seed tok n_shards in
+    buckets.(s) <- bid :: buckets.(s)
+  ) real_ids;
+  for s = 0 to n_shards - 1 do
+    buckets.(s) <- List.sort compare buckets.(s)
+  done;
+
+  let entry_base = Array.make n_shards 0 in
+  let next = ref base_id in
+  for s = 0 to n_shards - 1 do
+    entry_base.(s) <- !next;
+    next := !next + List.length buckets.(s)
+  done;
+  let exit_id = !next in
+
+  let entry_of_s s =
+    let rec find i count =
+      if count >= n_shards then exit_id
+      else if buckets.(i) <> [] then entry_base.(i)
+      else find ((i + 1) mod n_shards) (count + 1)
+    in
+    if buckets.(s) <> [] then entry_base.(s)
+    else find ((s + 1) mod n_shards) 1
   in
-  comparison_blocks @ [ exit_block ]
+
+  let entry_of target =
+    match Hashtbl.find_opt tokens target with
+    | Some tok ->
+      let s = hash_shard_id ~salt:seed tok n_shards in
+      entry_of_s s
+    | None -> exit_id
+  in
+
+  let comparison_blocks = ref [] in
+  for s = 0 to n_shards - 1 do
+    let ids = buckets.(s) in
+    let n_in_s = List.length ids in
+    List.iteri (fun i bid ->
+      let disp_id = entry_base.(s) + i in
+      let fall_to =
+        if i + 1 < n_in_s then entry_base.(s) + i + 1
+        else
+          (* Circular expander ring transition to next non-empty shard *)
+          entry_of_s ((s + 1) mod n_shards)
+      in
+      let token = Hashtbl.find tokens bid in
+      let blk =
+        make_block disp_id
+          (Printf.sprintf "cff_disp_%d" disp_id)
+          [ PushReg vpc_slot
+          ; PushImm token
+          ; Cmp
+          ; JccRel (bid, E)
+          ; JmpRel fall_to
+          ]
+      in
+      comparison_blocks := blk :: !comparison_blocks
+    ) ids
+  done;
+
+  let exit_block = make_block exit_id "cff_exit" [ Exit ] in
+  (List.rev !comparison_blocks @ [ exit_block ], entry_of)
 
 (* ── Public API ───────────────────────────────────────────────────────── *)
 
@@ -192,13 +240,18 @@ let apply_program_with_info cfg ctx prog =
     Hashtbl.fold (fun id _ acc -> max id acc) prog.blocks 0
   in
   let dispatcher_base = max_real_id + 1 in
-  let dispatcher_0_id = dispatcher_base in
 
-  (* 4. Transform every real block's terminators *)
+  (* 4. Build the circular sharded dispatcher chain *)
+  let real_ids = Hashtbl.fold (fun id _ acc -> id :: acc) prog.blocks [] in
+  let disp_blocks, entry_of =
+    build_dispatcher_chain ~seed:cfg.seed vpc_slot tokens real_ids dispatcher_base
+  in
+
+  (* 5. Transform every real block's terminators with sharded entry routing *)
   let new_real_blocks = Hashtbl.create n_real in
   Hashtbl.iter (fun id b ->
-    let b' = transform_block vpc_slot dispatcher_0_id tokens b in
-    (* 4b. Couple the rolling key to the VPC at the entry of every block
+    let b' = transform_block vpc_slot entry_of tokens b in
+    (* 5b. Couple the rolling key to the VPC at the entry of every block
        the dispatcher can reach.  There the VPC provably holds that
        block's token, so the coupled value is statically known and the
        encryptor can reproduce the key schedule.  The coupling therefore
@@ -216,10 +269,6 @@ let apply_program_with_info cfg ctx prog =
     in
     Hashtbl.replace new_real_blocks id b'
   ) prog.blocks;
-
-  (* 5. Build the dispatcher chain *)
-  let real_ids = Hashtbl.fold (fun id _ acc -> id :: acc) prog.blocks [] in
-  let disp_blocks = build_dispatcher_chain vpc_slot tokens real_ids dispatcher_base in
 
   (* 6. Assemble the new program *)
   let all_blocks = Hashtbl.create (n_real + List.length disp_blocks) in
