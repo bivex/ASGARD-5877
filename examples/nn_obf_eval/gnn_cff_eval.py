@@ -208,6 +208,7 @@ def audit_cfg_phase(cfg_data, epochs=45):
     N = cfg_data["N"]
     hubs = cfg_data["hubs"]
 
+    torch.manual_seed(1337)
     model = CFGGraphNetwork(in_dim=FEAT_DIM, hidden_dim=64, embed_dim=32, num_heads=4)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-4)
 
