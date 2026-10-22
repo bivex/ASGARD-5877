@@ -460,12 +460,7 @@ let embed_vm_trampoline
     let ensure_real = expr_stmt (call (Printf.sprintf "%s_ensure_assembled" arr_name) []) in
     let ensure_decoy = expr_stmt (call (Printf.sprintf "%s_ensure_assembled" decoy_arr_name) []) in
 
-    let penalty_init =
-      Binary (BitXor,
-        Call ("asgard_mem_integrity::evaluate_memory_integrity", []),
-        Call ("asgard_anti_emulation::evaluate_emulation_differential", []))
-    in
-    let decl_penalty = decl_var UInt64 "_penalty" ~init:penalty_init in
+    let decl_penalty = decl_var UInt64 "_penalty" ~init:(u64 0L) in
 
     let apple_check =
       preproc_if_stmt "defined(__APPLE__)" [

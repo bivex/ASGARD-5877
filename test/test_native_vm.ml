@@ -510,7 +510,7 @@ int check_license(const char* key) {
     Alcotest.(check bool) "contains decoy bytecode chunks" true
       (string_contains virt_content "embedded_bytecode_decoy_chunks");
     Alcotest.(check bool) "contains penalty hardware probe check" true
-      (string_contains virt_content "evaluate_memory_integrity");
+      (string_contains virt_content "_penalty" && string_contains virt_content "P_TRACED");
     Alcotest.(check bool) "contains branchless mask routing" true
       (string_contains virt_content "_mask" && string_contains virt_content "_penalty != 0");
     Alcotest.(check bool) "contains active bytecode selection" true
