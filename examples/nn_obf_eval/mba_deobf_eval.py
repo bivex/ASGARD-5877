@@ -87,33 +87,49 @@ def generate_mba_dataset(depth=1, n_samples=300):
                 if k == "or":  return ["x", "|", "y"]
                 if k == "sub": return ["x", "-", "y"]
                 return ["x"]
-
-            # Rewrite rules:
+            # Diverse MBA rewrite pool matching ASGARD Nullspace & Metamorphic rules:
             if k == "add":
-                # (x ^ y) + 2 * (x & y)
-                sub1 = rewrite_node("xor", d - 1)
-                sub2 = rewrite_node("and", d - 1)
-                return ["("] + sub1 + [")", "+", "2", "*", "("] + sub2 + [")"]
+                choice = random.choice([0, 1, 2])
+                if choice == 0:
+                    # (x ^ y) + 2 * (x & y)
+                    return ["("] + rewrite_node("xor", d - 1) + [")", "+", "2", "*", "("] + rewrite_node("and", d - 1) + [")"]
+                elif choice == 1:
+                    # (x | y) + (x & y)
+                    return ["("] + rewrite_node("or", d - 1) + [")", "+", "("] + rewrite_node("and", d - 1) + [")"]
+                else:
+                    # 2 * (x | y) - (x ^ y)
+                    return ["2", "*", "("] + rewrite_node("or", d - 1) + [")", "-", "("] + rewrite_node("xor", d - 1) + [")"]
             elif k == "sub":
-                # (x ^ y) - 2 * (~x & y)
-                sub1 = rewrite_node("xor", d - 1)
-                return ["("] + sub1 + [")", "-", "2", "*", "(", "~", "x", "&", "y", ")"]
+                choice = random.choice([0, 1])
+                if choice == 0:
+                    # (x ^ y) - 2 * (~x & y)
+                    return ["("] + rewrite_node("xor", d - 1) + [")", "-", "2", "*", "(", "~", "x", "&", "y", ")"]
+                else:
+                    # (x & ~y) - (~x & y)
+                    return ["(", "x", "&", "~", "y", ")", "-", "(", "~", "x", "&", "y", ")"]
             elif k == "xor":
-                # (x | y) - (x & y)
-                sub1 = rewrite_node("or", d - 1)
-                sub2 = rewrite_node("and", d - 1)
-                return ["("] + sub1 + [")", "-", "("] + sub2 + [")"]
+                choice = random.choice([0, 1, 2])
+                if choice == 0:
+                    # (x | y) - (x & y)
+                    return ["("] + rewrite_node("or", d - 1) + [")", "-", "("] + rewrite_node("and", d - 1) + [")"]
+                elif choice == 1:
+                    # (x & ~y) + (~x & y)
+                    return ["(", "x", "&", "~", "y", ")", "+", "(", "~", "x", "&", "y", ")"]
+                else:
+                    # 2 * (x | y) - (x + y)
+                    return ["2", "*", "("] + rewrite_node("or", d - 1) + [")", "-", "("] + rewrite_node("add", d - 1) + [")"]
             elif k == "or":
-                # (x & y) + (x ^ y)
-                sub1 = rewrite_node("and", d - 1)
-                sub2 = rewrite_node("xor", d - 1)
-                return ["("] + sub1 + [")", "+", "("] + sub2 + [")"]
+                choice = random.choice([0, 1])
+                if choice == 0:
+                    return ["("] + rewrite_node("and", d - 1) + [")", "+", "("] + rewrite_node("xor", d - 1) + [")"]
+                else:
+                    return ["("] + rewrite_node("add", d - 1) + [")", "-", "("] + rewrite_node("and", d - 1) + [")"]
             else: # and
-                # (x | y) - (x ^ y)
-                sub1 = rewrite_node("or", d - 1)
-                sub2 = rewrite_node("xor", d - 1)
-                return ["("] + sub1 + [")", "-", "("] + sub2 + [")"]
-
+                choice = random.choice([0, 1])
+                if choice == 0:
+                    return ["("] + rewrite_node("or", d - 1) + [")", "-", "("] + rewrite_node("xor", d - 1) + [")"]
+                else:
+                    return ["("] + rewrite_node("add", d - 1) + [")", "-", "("] + rewrite_node("or", d - 1) + [")"]
         obf_tokens = rewrite_node(kind, depth)
         samples.append((obf_tokens, canon_toks))
 

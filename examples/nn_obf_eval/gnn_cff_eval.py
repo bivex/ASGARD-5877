@@ -301,7 +301,7 @@ if __name__ == "__main__":
     import sys
     dump_dir = sys.argv[1] if len(sys.argv) > 1 else "/tmp/pipeline_dump"
     print(f"[*] Auditing CFG Obfuscation Phases in '{dump_dir}' using Graph Attention Network...")
-    phases = ["1-lowered", "2-amplified", "3-cff", "4-spaghetti", "5-ghost", "7-balance"]
+    phases = ["1-lowered", "2-amplified", "3-cff", "4-spaghetti", "5-ghost", "7-balance", "7-balance_(final)"]
 
     print(f"{'Phase':<16} {'Blocks':<8} {'Edges':<8} {'Hub-F1':<10} {'Edge-AUC':<10} {'DRS (0-100)':<12}")
     print("-" * 68)

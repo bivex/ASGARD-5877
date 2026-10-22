@@ -31,16 +31,19 @@ def run_pipeline_dump(out_dir="/tmp/pipeline_dump"):
     return out_dir
 
 
-def evaluate_trace_entropy(seed=0x5877A564, steps=1000):
-    """Measures next-handler predictability and Shannon entropy of the rolling key."""
-    # Simulates rolling key transitions matching ASGARD Stack-VM
-    rng = [((seed >> (i * 8)) & 0xFF) for i in range(8)]
-    history = []
-    k = seed
-    for i in range(steps):
-        k = ((k << 3) | (k >> 61)) ^ 0x9E3779B97F4A7C15
-        handler_slot = (k ^ (i * 0x5D + 0x33)) & 0xFF
-        history.append(handler_slot)
+def evaluate_trace_entropy(seed=0x3CD4810B2EEB0926, bytecode_path=None, steps=50000):
+    """Measures next-handler predictability and Shannon entropy of the rolling key or bytecode."""
+    if bytecode_path and os.path.exists(bytecode_path):
+        with open(bytecode_path, "rb") as f:
+            data = f.read()
+        history = list(data)
+    else:
+        history = []
+        k = seed
+        for i in range(steps):
+            k = ((k * 0x9E3779B97F4A7C15) ^ (k >> 29)) & 0xFFFFFFFFFFFFFFFF
+            handler_slot = (k ^ (i * 0x5D + 0x33)) & 0xFF
+            history.append(handler_slot)
 
     # Bigram conditional entropy: H(S_t | S_{t-1})
     counts = {}
@@ -67,9 +70,9 @@ def evaluate_trace_entropy(seed=0x5877A564, steps=1000):
     return {
         "cond_entropy": cond_entropy,
         "max_entropy": max_entropy,
-        "drs_trace": drs_trace
+        "drs_trace": drs_trace,
+        "samples": len(history)
     }
-
 
 def main():
     import math
@@ -79,10 +82,19 @@ def main():
 
     # 1. Pipeline CFG Evaluation with GAT
     print("\n[Phase 1] Auditing CFG & CFF Flattening with Graph Attention Network (GAT)...")
-    dump_dir = run_pipeline_dump()
-    cfg_phases = ["1-lowered", "2-amplified", "3-cff", "4-spaghetti", "5-ghost", "7-balance"]
-    cfg_results = []
+    if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]):
+        dump_dir = sys.argv[1]
+    else:
+        dump_dir = run_pipeline_dump()
 
+    bytecode_path = sys.argv[2] if len(sys.argv) > 2 else None
+    if not bytecode_path:
+        candidate = os.path.join(os.path.dirname(dump_dir), "real_license_out", "protected.vanguard")
+        if os.path.exists(candidate):
+            bytecode_path = candidate
+
+    cfg_phases = ["1-lowered", "2-amplified", "3-cff", "4-spaghetti", "5-ghost", "7-balance", "7-balance_(final)"]
+    cfg_results = []
     print(f"  {'Phase':<16} {'Blocks':<8} {'Edges':<8} {'Hub-F1':<10} {'Edge-AUC':<10} {'DRS (0-100)':<12}")
     print("  " + "-" * 66)
     for p in cfg_phases:
@@ -110,7 +122,7 @@ def main():
 
     # 3. Dynamic Trace Entropy
     print("\n[Phase 3] Auditing Dynamic Execution Trace & Rolling-Key Entropy...")
-    trace_res = evaluate_trace_entropy()
+    trace_res = evaluate_trace_entropy(bytecode_path=bytecode_path)
     print(f"  Conditional Transition Entropy: {trace_res['cond_entropy']:.3f} / {trace_res['max_entropy']:.1f} bits (Uniform Noise = 8.0)")
     print(f"  Dynamic Trace DRS:             {trace_res['drs_trace']:.1f} / 100.0")
 
