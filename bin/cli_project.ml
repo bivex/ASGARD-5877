@@ -1,3 +1,5 @@
+open Random_visa_ports
+
 open Cmdliner
 
 let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth compile_and_run debug_symbols =
@@ -28,7 +30,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
   in
 
   if all_inputs = [] then begin
-    prerr_endline "No C/C++/Assembly source files found to protect.";
+    Logger.error ~section:"PROJECT" "No C/C++/Assembly source files found to protect.";
     `Error (false, "No input files")
   end else begin
     let out_dir = Filename.dirname out_bin in
@@ -86,7 +88,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
           let obf_c_path = Filename.concat build_dir (base ^ "_obf" ^ ext) in
           (match C_macro_obf.transform_file ~config ~in_file ~out_file:obf_c_path ~header_file:(Some hdr_path) () with
           | Ok () -> ()
-          | Error err -> prerr_endline (Printf.sprintf "  [!] Pre-transform note: %s" err));
+          | Error err -> Logger.warnf ~section:"PROJECT" "Pre-transform note: %s" err);
 
           let asm_out = Filename.concat build_dir (base ^ ".s") in
           let compiler = if is_cpp then "clang++ -std=c++20" else "clang" in
@@ -95,7 +97,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
 
           let is_virtualized = ref false in
           if not (Sys.file_exists asm_out) then
-            prerr_endline (Printf.sprintf "  [ERROR] Assembly generation failed for %s (obfuscated source did not compile; see diagnostics above)" in_file)
+            Logger.errorf ~section:"PROJECT" "Assembly generation failed for %s" in_file
           else begin
 
           let ic = open_in asm_out in
@@ -176,7 +178,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
                   let cxx_flags = if debug_symbols then "-std=c++20 -g -O1" else "-std=c++20 -O3 -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden" in
                   let comp_obj_cmd = Printf.sprintf "clang++ %s %s -c %s -o %s" cxx_flags inc_flags virt_cpp_path obj_out in
                   let st = Sys.command comp_obj_cmd in
-                  if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile VM wrapper for %s" in_file)
+                  if st <> 0 then Logger.errorf ~section:"PROJECT" "Failed to compile VM wrapper for %s" in_file
                   else (
                     obj_files := obj_out :: !obj_files;
                     is_virtualized := true
@@ -197,7 +199,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
             let c_flags = if debug_symbols then "-g -O1 -Wno-format-security" else "-O3 -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden" in
             let comp_obj_cmd = Printf.sprintf "%s %s %s -c %s -o %s" compiler c_flags inc_flags obf_c_path obj_out in
             let st = Sys.command comp_obj_cmd in
-            if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile %s" in_file)
+            if st <> 0 then Logger.errorf ~section:"PROJECT" "Failed to compile %s" in_file
             else obj_files := obj_out :: !obj_files
           end
         end else begin
@@ -205,7 +207,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
           let c_plain_flags = if debug_symbols then "-g -O1 " else "" in
           let comp_obj_cmd = Printf.sprintf "clang %s-c %s -o %s" c_plain_flags in_file obj_out in
           let st = Sys.command comp_obj_cmd in
-          if st <> 0 then prerr_endline (Printf.sprintf "  [ERROR] Failed to compile %s" in_file)
+          if st <> 0 then Logger.errorf ~section:"PROJECT" "Failed to compile %s" in_file
           else obj_files := obj_out :: !obj_files
         end)
       all_inputs;
@@ -223,7 +225,7 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
     Printf.printf "\n[Linking] Linking %d protected object files into %s...\n" (List.length !obj_files) out_bin;
     let link_st = Sys.command link_cmd in
     if link_st <> 0 then begin
-      prerr_endline "Project linking failed!";
+      Logger.error ~section:"PROJECT" "Project linking failed!";
       `Error (false, "Linking error")
     end else begin
       Printf.printf "[SUCCESS] Multi-File Protected Binary created successfully: %s\n" out_bin;

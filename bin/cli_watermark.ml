@@ -1,13 +1,15 @@
+open Random_visa_ports
+
 open Cmdliner
 
 let run_extract (manifest_file : string) (candidates : string list) =
   if not (Sys.file_exists manifest_file) then begin
-    prerr_endline (Printf.sprintf "Error: Manifest file not found: %s" manifest_file);
+    Logger.errorf ~section:"WATERMARK" "Manifest file not found: %s" manifest_file;
     `Error (false, Printf.sprintf "Manifest file not found: %s" manifest_file)
   end else
     match Watermark.Wm_chooser.load_manifest manifest_file with
     | Error err ->
-        prerr_endline (Printf.sprintf "Error loading manifest: %s" err);
+        Logger.errorf ~section:"WATERMARK" "Error loading manifest: %s" err;
         `Error (false, err)
     | Ok manifest ->
         Printf.printf "==================================================================\n";
@@ -22,7 +24,7 @@ let run_extract (manifest_file : string) (candidates : string list) =
             (fun s ->
               try Some (Int64.of_string s)
               with _ ->
-                prerr_endline (Printf.sprintf "Warning: ignoring invalid candidate payload: %s" s);
+                Logger.warnf ~section:"WATERMARK" "Ignoring invalid candidate payload: %s" s;
                 None)
             candidates
         in
