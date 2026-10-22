@@ -43,6 +43,8 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
     else
       Cmd.(v "-fno-jump-tables" % "-mllvm" % "-switch-to-lookup=false")
   in
+  Logger.debugf ~section:"TOOLCHAIN" "Compiling C/C++ source '%s' to assembly '%s' (%s)"
+    c_source out_asm compiler;
   let cmd =
     Cmd.(v compiler % "-S" %% extra_flags %% target_args % "-O1" % "-fno-inline" % "-fno-stack-protector" % "-Wno-format-security"
          %% inc_args % "-fno-asynchronous-unwind-tables" % c_source % "-o" % out_asm)
@@ -65,6 +67,8 @@ let compile_native_binary ~is_c ~(source_file : string) ~(out_binary : string) ~
     if is_c then Cmd.empty
     else Cmd.(v "-std=c++20" % "-fvisibility-inlines-hidden")
   in
+  Logger.debugf ~section:"TOOLCHAIN" "Compiling native binary '%s' -> '%s' (compiler=%s, debug=%b)"
+    source_file out_binary compiler is_debug;
   if is_debug then begin
     let obj_file = Filename.chop_extension source_file ^ ".o" in
     let compile_obj_cmd =
@@ -112,8 +116,11 @@ let execute_binary ~(binary_path : string) : (int * string, error) result =
     Error (Printf.sprintf "Binary not found: %s" binary_path)
   else
     let cmd = Cmd.v binary_path in
+    Logger.debugf ~section:"TOOLCHAIN" "Executing binary: '%s'" binary_path;
     match OS.Cmd.run_io ~err:OS.Cmd.err_run_out cmd OS.Cmd.in_null |> OS.Cmd.out_string with
-    | Ok (output, (_, `Exited code)) -> Ok (code, output)
+    | Ok (output, (_, `Exited code)) ->
+        Logger.debugf ~section:"TOOLCHAIN" "Binary '%s' exited with code %d (output: %d bytes)" binary_path code (String.length output);
+        Ok (code, output)
     | Ok (output, (_, `Signaled s)) -> Ok (128 + s, output)
     | Error (`Msg msg) -> Error (Printf.sprintf "Binary execution error: %s" msg)
 

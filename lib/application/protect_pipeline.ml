@@ -106,6 +106,7 @@ let run
         let len = in_channel_length ic in
         let text = really_input_string ic len in
         close_in ic;
+        Logger.debugf ~section:"LIFTER" "Read %d bytes of assembly text from '%s'" len asm_source_file;
 
         (* 2. Lifter: parse assembly and lift to VM-IR *)
         Logger.stepf ~section:"LIFTER" ~step:2 ~total:8 "Parsing and lifting %s assembly to VM-IR..." L.arch_name;
@@ -114,7 +115,17 @@ let run
             Logger.errorf ~section:"LIFTER" "Lifter failed (%s): %s" L.arch_name err;
             Error (Printf.sprintf "Lifter failed (%s): %s" L.arch_name err)
         | Ok (lifted_func, constants) ->
-            Logger.debugf ~section:"LIFTER" "Lifting successful: %d constants in pool" (List.length constants);
+            let func_info =
+              match unwrap_multi_ir lifted_func with
+              | [ (name, obj) ] ->
+                  (try
+                     let f : Vm_ir.Ir.func = obj in
+                     Printf.sprintf "single func '%s' (%d blocks)" f.name (Hashtbl.length f.cfg.blocks)
+                   with _ -> Printf.sprintf "single func '%s'" name)
+              | fns ->
+                  Printf.sprintf "multi-func [%s]" (String.concat ", " (List.map fst fns))
+            in
+            Logger.infof ~section:"LIFTER" "Lifted IR: %s (%d constant pool entries)" func_info (List.length constants);
             (* 3. VM Packaging: CFF, MBA, rolling key, handler synthesis *)
             let engine_str =
               match P.engine_kind with
@@ -125,7 +136,7 @@ let run
             in
             Logger.stepf ~section:"PACKAGER" ~step:3 ~total:8 "Packaging VM bytecode and synthesizing handlers (engine=%s)..." engine_str;
             let pkg = P.package ~rng ~config ~constants lifted_func in
-            Logger.debugf ~section:"PACKAGER" "Bytecode packaging complete: %d words (%d bytes), runtime header='%s'"
+            Logger.infof ~section:"PACKAGER" "Bytecode packaging complete: %d words (%d bytes), runtime header='%s'"
               (List.length pkg.bytecode) (List.length pkg.bytecode * 8) pkg.header_name;
 
             (* 4. Write C++ runtime header *)
@@ -376,8 +387,12 @@ let run
                       | Ok () ->
                           let exec_res =
                             match T.execute_binary ~binary_path:bin_path with
-                            | Ok (code, out) -> Some (code, out)
-                            | Error _ -> None
+                            | Ok (code, out) ->
+                                Logger.infof ~section:"TOOLCHAIN" "Native binary '%s' executed successfully (code=%d)" bin_path code;
+                                Some (code, out)
+                            | Error err ->
+                                Logger.warnf ~section:"TOOLCHAIN" "Execution warning: %s" err;
+                                None
                           in
                           (Some bin_path, exec_res)
                       | Error err ->
@@ -388,25 +403,26 @@ let run
             in
 
             Logger.step ~section:"AUDIT" ~step:8 ~total:8 "Running Mach-O compact unwind audit and build-seed watermark sealing...";
-            (* 8b. Mach-O compact unwind audit of the produced binary.
-               The audit reads the LC_ROUTINES / LC_ROUTINES64 load commands
-               and the __TEXT,__unwind_info section, and reports whether the
-               routine table still matches __TEXT,__text. *)
+            (* 8b. Mach-O compact unwind audit of the produced binary. *)
             let unwind_audit =
               match bin_artifact with
               | Some bin when Sys.file_exists bin ->
                   (match Macho_image.of_file bin with
                   | exception Macho_image.Parse_error msg ->
+                      Logger.debugf ~section:"AUDIT" "Mach-O audit skipped: %s" msg;
                       Some (Printf.sprintf "skipped (%s)" msg)
                   | img ->
                       let report = Macho_unwind.check img in
                       let issues = List.length report.Macho_unwind.issues in
-                      Some
-                        (Printf.sprintf "%s, %d routine(s), %s"
+                      let rep_str =
+                        Printf.sprintf "%s, %d routine(s), %s"
                            (Macho_unwind.format_layout report.Macho_unwind.layout)
                            (List.length report.Macho_unwind.routines)
                            (if issues = 0 then "no inconsistency"
-                            else Printf.sprintf "%d issue(s)" issues)))
+                            else Printf.sprintf "%d issue(s)" issues)
+                      in
+                      Logger.infof ~section:"AUDIT" "Mach-O compact unwind audit: %s" rep_str;
+                      Some rep_str)
               | _ -> None
             in
 

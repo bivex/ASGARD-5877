@@ -20,6 +20,8 @@ let transform_source ~(config : protection_config) ~(in_file : string) ~(out_c_f
     timing_guard = raw_cfg.c_macro.timing_guard;
     timing_threshold_ticks = raw_cfg.c_macro.timing_threshold_ticks;
   } in
+  Logger.infof ~section:"C_MACRO" "Applying polymorphic macro obfuscation: in='%s', out='%s' (strings=%b, consts=%b, mba_depth=%d)"
+    in_file out_c_file c_cfg.obfuscate_strings c_cfg.obfuscate_constants c_cfg.mba_depth;
   C_macro_obf.transform_file
     ~config:c_cfg
     ~in_file

@@ -564,6 +564,7 @@ let embed_vm_trampoline
 
   match marked_fns with
   | [] ->
+      Logger.warn ~section:"TRAMPOLINE" "No functions marked with ASGARD_BEGIN / ASGARD_END found; embedding raw bytecode only";
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let decoy_bc_formatted = format_fragmented_bytecode "embedded_bytecode_decoy" effective_decoy_bc in
       let bc_header =
@@ -575,6 +576,8 @@ let embed_vm_trampoline
       close_out oc
 
   | [ single_fn ] when (match bytecodes with Some bcs -> List.length bcs <= 1 | None -> true) ->
+      Logger.infof ~section:"TRAMPOLINE" "Embedding zero-native trampoline for function '%s' (ret=%s, args='%s')"
+        single_fn.fn_name single_fn.ret_type single_fn.args_to_pass;
       (* Backward-compatible single function path *)
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let decoy_bc_formatted = format_fragmented_bytecode "embedded_bytecode_decoy" effective_decoy_bc in
@@ -591,6 +594,8 @@ let embed_vm_trampoline
       close_out oc
 
   | multi_fns ->
+      Logger.infof ~section:"TRAMPOLINE" "Embedding zero-native trampolines for %d functions: [%s]"
+        (List.length multi_fns) (String.concat ", " (List.map (fun f -> f.fn_name) multi_fns));
       (* Multi-function path *)
       let bcs_list = match bytecodes with Some bcs -> bcs | None -> [] in
       let find_bc_for_fn idx fn_name =
@@ -640,7 +645,9 @@ let embed_vm_trampoline
       Buffer.add_string body_buf (String.sub c_src !last_pos (len - !last_pos));
       let oc = open_out out_path in
       output_string oc (Buffer.contents body_buf);
-      close_out oc
+      close_out oc;
+      Logger.debugf ~section:"TRAMPOLINE" "Virtualized source with trampolines written to '%s' (decoy_words=%d)"
+        out_path (List.length effective_decoy_bc);
 
 module C_trampoline_engine : Protect_ports.Trampoline_engine = struct
   let embed_vm_trampoline = embed_vm_trampoline

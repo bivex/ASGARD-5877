@@ -143,19 +143,25 @@ module Threaded_vm_packager : Vm_packager = struct
   let transform_func ~rng (f : Vm_ir.Ir.func) : Vm_ir.Ir.func =
     let seed = Vm_ir.Seed.create ~master_seed:(Random.State.int64 rng Int64.max_int) () in
     match Vm_ir.Ir_pipeline.compile ~seed ~verify_equivalence:true f with
-    | Ok res -> res.diversified_func
+    | Ok res ->
+        Logger.debugf ~section:"PACKAGER" "Function '%s': IR pipeline optimization & diversification succeeded" f.name;
+        res.diversified_func
     | Error err ->
-        Printf.eprintf "[TRANSFORM_FUNC ERROR] %s\n" err;
+        Logger.warnf ~section:"PACKAGER" "Transform func failed on '%s': %s (falling back to semantic transform)" f.name err;
         let sem_f = Vm_ir.Semantic_transform.transform_func ~seed f in
         let codec_cfg = Vm_ir.Codec_pass.default_config (Vm_ir.Seed.codec_seed seed) in
         Vm_ir.Codec_pass.transform_func ~cfg:codec_cfg sem_f
-
   let package ~rng ~config ?constants (func : ir_func) : package_result =
     let native_cfg : Protection_config.t = unwrap_config config in
     let ir_funcs = unwrap_multi_ir func in
-    if List.length ir_funcs > 1 then
-      let diversified_funcs = List.map (fun (name, f) -> (name, transform_func ~rng f)) ir_funcs in
+    if List.length ir_funcs > 1 then begin
+      Logger.infof ~section:"PACKAGER" "Threaded-VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
+      let diversified_funcs = List.map (fun (name, f) ->
+        Logger.debugf ~section:"PACKAGER" "Diversifying function '%s'..." name;
+        (name, transform_func ~rng f)
+      ) ir_funcs in
       let pkg = Native_vm.Vm_emitter.compile_and_package_multi ~rng ~config:native_cfg ?constants diversified_funcs in
+      Logger.debugf ~section:"PACKAGER" "Threaded-VM multi-function packaging complete: %d bytecode words" (List.length pkg.bytecode);
       {
         cpp_runtime_source = inject_pipeline_hardening native_cfg "multi_func" pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
@@ -165,9 +171,16 @@ module Threaded_vm_packager : Vm_packager = struct
         header_name = "threaded_vm.hpp";
         rebind_address = None;
       }
-    else
-      let ir : Vm_ir.Ir.func = transform_func ~rng (unwrap_ir func) in
+    end else begin
+      let raw_ir = unwrap_ir func in
+      Logger.infof ~section:"PACKAGER" "Threaded-VM: packaging function '%s' (CFF=%b, MBA=%b, superoperators=%b, chameleon=%b)"
+        (unwrap_ir func : Vm_ir.Ir.func).name
+        native_cfg.cff.enabled native_cfg.mba.enabled
+        native_cfg.vm_runtime.enable_super_operators
+        native_cfg.vm_runtime.chameleon_handlers;
+      let ir : Vm_ir.Ir.func = transform_func ~rng raw_ir in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
+      Logger.debugf ~section:"PACKAGER" "Threaded-VM packaging complete: %d bytecode words" (List.length pkg.bytecode);
       {
         cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
@@ -177,6 +190,7 @@ module Threaded_vm_packager : Vm_packager = struct
         header_name = "threaded_vm.hpp";
         rebind_address = None;
       }
+    end
 end
 
 module Jit_vm_packager : Vm_packager = struct
@@ -185,6 +199,8 @@ module Jit_vm_packager : Vm_packager = struct
   let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
     let ir : Vm_ir.Ir.func = unwrap_ir func in
     let native_cfg : Protection_config.t = unwrap_config config in
+    Logger.infof ~section:"JIT_VM" "RD-JIT VM: packaging function '%s' (CFF=%b, MBA=%b, depth=%d)"
+      ir.name native_cfg.cff.enabled native_cfg.mba.enabled native_cfg.mba.depth;
     let jit_pkg =
       Rd_jit_vm.Rd_jit_emitter.compile_and_package
         ~rng
@@ -194,6 +210,7 @@ module Jit_vm_packager : Vm_packager = struct
         ~mba_depth:native_cfg.mba.depth
         ir
     in
+    Logger.debugf ~section:"JIT_VM" "RD-JIT VM packaging complete: %d bytecode words" (List.length jit_pkg.bytecode);
     {
       cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name jit_pkg.cpp_runtime_source;
       runner_source = jit_pkg.runner_source;
@@ -211,6 +228,8 @@ module Multi_vm_packager : Vm_packager = struct
   let package ~rng ~config ?constants (func : ir_func) : package_result =
     let ir : Vm_ir.Ir.func = unwrap_ir func in
     let native_cfg : Protection_config.t = unwrap_config config in
+    Logger.infof ~section:"MULTI_VM" "Multi-VM: packaging function '%s' with affine zero-bridge (CFF=%b, MBA=%b)"
+      ir.name native_cfg.cff.enabled native_cfg.mba.enabled;
     let mv_pkg =
       Multi_vm.Multi_vm_emitter.compile_and_package
         ~rng
@@ -221,6 +240,7 @@ module Multi_vm_packager : Vm_packager = struct
         ?constants
         ir
     in
+    Logger.debugf ~section:"MULTI_VM" "Multi-VM packaging complete: %d bytecode words" (List.length mv_pkg.bytecode);
     {
       cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name mv_pkg.cpp_runtime_source;
       runner_source = mv_pkg.runner_source;
@@ -410,6 +430,8 @@ module Stack_vm_packager : Vm_packager = struct
   let package ~rng ~config ?constants (func : ir_func) : package_result =
     let ir : Vm_ir.Ir.func = unwrap_ir func in
     let native_cfg : Protection_config.t = unwrap_config config in
+    Logger.infof ~section:"STACK_VM" "Stack-VM: hardening function '%s' (%d IR blocks)"
+      ir.name (Hashtbl.length ir.cfg.blocks);
     (* The effective parameters of every pass, collected while the phases
        run, so the report states the settings that were actually used
        (and the seeds, which make the build reproducible). *)
@@ -438,6 +460,8 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"1-lowered" prog;
     dump_bytecode_json ~phase:"1-lowered" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"1-lowered" ~final:false prog;
+    Logger.debugf ~section:"STACK_VM" "Phase 1 (lowered): %d blocks, %d context slots"
+      (Hashtbl.length prog.blocks) (Stack_vm.Context_allocator.total_slots ctx);
 
     (* Phase 2a (Pre-amplification): Superoperator Fusion on original lowered program instructions *)
     let prog, pre_superop_stats =
@@ -464,6 +488,8 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2a-pre-superop" prog;
     dump_bytecode_json ~phase:"2a-pre-superop" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-pre-superop" ~final:false prog;
+    if native_cfg.stack_vm.superoperators then
+      Logger.debug ~section:"STACK_VM" "Phase 2a (pre-superop): superoperator fusion pass applied";
 
     (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing)
        Pass Order Architecture: Bytecode_amplifier runs BEFORE Phase 2b (Stack_mba_pass) so that
@@ -490,6 +516,8 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2-amplified" prog;
     dump_bytecode_json ~phase:"2-amplified" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2-amplified" ~final:false prog;
+    Logger.debugf ~section:"STACK_VM" "Phase 2 (amplified): mathematical amplification complete (%d blocks, Horner degree %d)"
+      (Hashtbl.length prog.blocks) amp_profile.horner_degree;
 
     (* Phase 2a (Post-amplification): Superoperator Fusion on synthesized constants *)
     let prog, superop_info =
@@ -516,6 +544,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2a-post-superop" prog;
     dump_bytecode_json ~phase:"2a-post-superop" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-post-superop" ~final:false prog;
+    Logger.debugf ~section:"STACK_VM" "Phase 2a (post-superop): %s" superop_info;
 
     (* Phase 2b: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
     let mba_seed =
@@ -533,6 +562,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2b-mba" prog;
     dump_bytecode_json ~phase:"2b-mba" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2b-mba" ~final:false prog;
+    Logger.debugf ~section:"STACK_VM" "Phase 2b (MBA): %s" mba_info;
 
     let real_blocks = Hashtbl.length prog.blocks in
     let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
@@ -556,6 +586,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"3-cff" prog;
     dump_bytecode_json ~phase:"3-cff" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"3-cff" ~final:false prog;
+    Logger.debugf ~section:"STACK_VM" "Phase 3 (CFF): %s" cff_info;
 
     (* Phase 4: Spaghetti Control-Flow Splitting — split blocks after CFF *)
     let spaghetti_seed =
@@ -579,6 +610,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"4-spaghetti" prog;
     dump_bytecode_json ~phase:"4-spaghetti" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"4-spaghetti" ~final:false prog;
+    Logger.debugf ~section:"STACK_VM" "Phase 4 (spaghetti): %s" spaghetti_info;
 
     (* Phase 5: Ghost Stack Padding — inject neutral junk ops per block *)
     let ghost_seed =
@@ -600,6 +632,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5-ghost" prog;
     dump_bytecode_json ~phase:"5-ghost" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5-ghost" ~final:false prog;
+    Logger.debugf ~section:"STACK_VM" "Phase 5 (ghost): %s" ghost_info;
 
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
@@ -638,12 +671,14 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"6-feedback" prog;
     dump_bytecode_json ~phase:"6-feedback" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6-feedback" ~final:false prog;
+    Logger.debugf ~section:"STACK_VM" "Phase 6 (feedback): %s" feedback_info;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
     dump_bytecode_trace ~phase:"7-balance (final)" prog;
     dump_bytecode_json ~phase:"7-balance (final)" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"7-balance (final)" ~final:true prog;
+    Logger.debug ~section:"STACK_VM" "Phase 7 (balance): verified stack balance invariants";
 
 
     let seed_key =
@@ -742,6 +777,8 @@ module Stack_vm_packager : Vm_packager = struct
           runtime_cfg
           prog)
     in
+    Logger.infof ~section:"STACK_VM" "Stack-VM packaging complete: %d words (%d bytes)"
+      (List.length bc_words) (Bytes.length enc.bytes);
     {
       cpp_runtime_source = inject_pipeline_hardening native_cfg target_func.name cpp_runtime_source;
       runner_source;
