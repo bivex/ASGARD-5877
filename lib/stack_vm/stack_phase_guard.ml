@@ -1,3 +1,5 @@
+open Random_visa_ports
+
 (** Invariant guard for the protection pipeline.
 
     Every phase of the Stack-VM packager rewrites the program, and a
@@ -65,7 +67,7 @@ let check_phase_invariants ~(phase : string) ~(final : bool) (prog : program) : 
       Printf.sprintf "[asgard] phase %s broke the program invariants:\n      %s"
         phase (String.concat "\n      " parts)
     in
-    prerr_endline msg;
+    Logger.error ~section:"PHASE_GUARD" msg;
     failwith msg
   end;
   if stack_errs <> [] then begin
@@ -76,6 +78,7 @@ let check_phase_invariants ~(phase : string) ~(final : bool) (prog : program) : 
         (if final then " (fatal)" else " (repaired by the balance pass)")
         (report stack_errs)
     in
-    prerr_endline msg;
+    if final then Logger.error ~section:"PHASE_GUARD" msg
+    else Logger.warn ~section:"PHASE_GUARD" msg;
     if final then failwith msg
   end

@@ -173,14 +173,18 @@ module Threaded_vm_packager : Vm_packager = struct
       }
     end else begin
       let raw_ir = unwrap_ir func in
-      Logger.infof ~section:"PACKAGER" "Threaded-VM: packaging function '%s' (CFF=%b, MBA=%b, superoperators=%b, chameleon=%b)"
-        (unwrap_ir func : Vm_ir.Ir.func).name
-        native_cfg.cff.enabled native_cfg.mba.enabled
-        native_cfg.vm_runtime.enable_super_operators
-        native_cfg.vm_runtime.chameleon_handlers;
+      Logger.infof ~section:"PACKAGER" "Threaded-VM: packaging function '%s'" (unwrap_ir func : Vm_ir.Ir.func).name;
+      if native_cfg.cff.enabled then
+        Logger.infof ~section:"PACKAGER" "  ├─ Control-Flow Flattening (CFF) active: state dispatcher synthesized";
+      if native_cfg.mba.enabled then
+        Logger.infof ~section:"PACKAGER" "  ├─ Mixed Boolean-Arithmetic (MBA) active (depth=%d)" native_cfg.mba.depth;
+      if native_cfg.vm_runtime.enable_super_operators then
+        Logger.infof ~section:"PACKAGER" "  ├─ Superoperator Fusion active: fused ALU/memory sequences";
+      if native_cfg.vm_runtime.chameleon_handlers then
+        Logger.infof ~section:"PACKAGER" "  ├─ Chameleon Handlers active: %d dispatch domains" native_cfg.vm_runtime.num_dispatch_domains;
       let ir : Vm_ir.Ir.func = transform_func ~rng raw_ir in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
-      Logger.debugf ~section:"PACKAGER" "Threaded-VM packaging complete: %d bytecode words" (List.length pkg.bytecode);
+      Logger.infof ~section:"PACKAGER" "  └─ Threaded-VM packaging complete: %d bytecode words" (List.length pkg.bytecode);
       {
         cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
@@ -460,7 +464,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"1-lowered" prog;
     dump_bytecode_json ~phase:"1-lowered" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"1-lowered" ~final:false prog;
-    Logger.debugf ~section:"STACK_VM" "Phase 1 (lowered): %d blocks, %d context slots"
+    Logger.infof ~section:"STACK_VM" "  ├─ [Phase 1/7] IR Lowering: %d blocks lowered to Stack-IR (%d context slots)"
       (Hashtbl.length prog.blocks) (Stack_vm.Context_allocator.total_slots ctx);
 
     (* Phase 2a (Pre-amplification): Superoperator Fusion on original lowered program instructions *)
@@ -489,7 +493,8 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"2a-pre-superop" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-pre-superop" ~final:false prog;
     if native_cfg.stack_vm.superoperators then
-      Logger.debug ~section:"STACK_VM" "Phase 2a (pre-superop): superoperator fusion pass applied";
+      Logger.infof ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (pre): %s"
+        (match pre_superop_stats with Some (_, st) -> Printf.sprintf "%d rules fused" st.fused_ops | None -> "none");
 
     (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing)
        Pass Order Architecture: Bytecode_amplifier runs BEFORE Phase 2b (Stack_mba_pass) so that
@@ -516,8 +521,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2-amplified" prog;
     dump_bytecode_json ~phase:"2-amplified" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2-amplified" ~final:false prog;
-    Logger.debugf ~section:"STACK_VM" "Phase 2 (amplified): mathematical amplification complete (%d blocks, Horner degree %d)"
-      (Hashtbl.length prog.blocks) amp_profile.horner_degree;
+    Logger.infof ~section:"STACK_VM" "  ├─ [Phase 2/7] Bytecode Amplification: %s" amplifier_info;
 
     (* Phase 2a (Post-amplification): Superoperator Fusion on synthesized constants *)
     let prog, superop_info =
@@ -544,7 +548,8 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2a-post-superop" prog;
     dump_bytecode_json ~phase:"2a-post-superop" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-post-superop" ~final:false prog;
-    Logger.debugf ~section:"STACK_VM" "Phase 2a (post-superop): %s" superop_info;
+    if native_cfg.stack_vm.superoperators then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (post): %s" superop_info;
 
     (* Phase 2b: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
     let mba_seed =
@@ -562,7 +567,8 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2b-mba" prog;
     dump_bytecode_json ~phase:"2b-mba" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2b-mba" ~final:false prog;
-    Logger.debugf ~section:"STACK_VM" "Phase 2b (MBA): %s" mba_info;
+    if native_cfg.mba.enabled then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Phase 2b] MBA Constant Synthesis: %s" mba_info;
 
     let real_blocks = Hashtbl.length prog.blocks in
     let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
@@ -586,7 +592,8 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"3-cff" prog;
     dump_bytecode_json ~phase:"3-cff" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"3-cff" ~final:false prog;
-    Logger.debugf ~section:"STACK_VM" "Phase 3 (CFF): %s" cff_info;
+    if native_cfg.cff.enabled then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Phase 3/7] Virtual CFG Flattening: %s" cff_info;
 
     (* Phase 4: Spaghetti Control-Flow Splitting — split blocks after CFF *)
     let spaghetti_seed =
@@ -610,8 +617,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"4-spaghetti" prog;
     dump_bytecode_json ~phase:"4-spaghetti" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"4-spaghetti" ~final:false prog;
-    Logger.debugf ~section:"STACK_VM" "Phase 4 (spaghetti): %s" spaghetti_info;
-
+    Logger.infof ~section:"STACK_VM" "  ├─ [Phase 4/7] Spaghetti Block Splitting: %s" spaghetti_info;
     (* Phase 5: Ghost Stack Padding — inject neutral junk ops per block *)
     let ghost_seed =
       Int64.logxor
@@ -632,8 +638,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5-ghost" prog;
     dump_bytecode_json ~phase:"5-ghost" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5-ghost" ~final:false prog;
-    Logger.debugf ~section:"STACK_VM" "Phase 5 (ghost): %s" ghost_info;
-
+    Logger.infof ~section:"STACK_VM" "  ├─ [Phase 5/7] Ghost Stack Padding: %s" ghost_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
       if native_cfg.stack_vm.state_feedback then
@@ -671,14 +676,16 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"6-feedback" prog;
     dump_bytecode_json ~phase:"6-feedback" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6-feedback" ~final:false prog;
-    Logger.debugf ~section:"STACK_VM" "Phase 6 (feedback): %s" feedback_info;
+    if native_cfg.stack_vm.state_feedback then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Phase 6/7] State-Feedback Rolling Key: %s" feedback_info;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
     dump_bytecode_trace ~phase:"7-balance (final)" prog;
     dump_bytecode_json ~phase:"7-balance (final)" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"7-balance (final)" ~final:true prog;
-    Logger.debug ~section:"STACK_VM" "Phase 7 (balance): verified stack balance invariants";
+    Logger.infof ~section:"STACK_VM" "  ├─ [Phase 7/7] Stack Balance Pass: verified and balanced exit delta = 0 across %d blocks"
+      (Hashtbl.length prog.blocks);
 
 
     let seed_key =

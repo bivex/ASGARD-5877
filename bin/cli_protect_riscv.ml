@@ -75,8 +75,7 @@ let run_protect_riscv input_file out_dir seed config_file preset enable_cff enab
       Printf.printf "Generated RISC-V Protected Bytecode: %s (%d bytes)\n" res.bytecode_path res.bytecode_length_bytes;
       (match res.binary_path with
       | Some bin ->
-          Printf.printf "\n[1/2] Compiling Native RISC-V Protected Binary...\n";
-          Printf.printf "[2/2] Launching RISC-V Protected Binary (%s):\n" bin;
+          Printf.printf "\nProtected Binary Execution (%s):\n" bin;
           Printf.printf "--------------------------------------------------------\n";
           (match res.execution_output with
           | Some (code, out) ->
