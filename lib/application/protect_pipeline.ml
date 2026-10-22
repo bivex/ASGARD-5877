@@ -23,6 +23,7 @@ let run
   in
   let module L = (val lifter : Lifter) in
   let module P = (val vm_packager : Vm_packager) in
+  let native_cfg : Native_vm.Protection_config.t = unwrap_config config in
 
   if not (Sys.file_exists input_file) then begin
     Logger.errorf ~section:"PIPELINE" "Input file not found: %s" input_file;
@@ -129,6 +130,8 @@ let run
                   Printf.sprintf "multi-func [%s]" (String.concat ", " (List.map fst fns))
             in
             Logger.infof ~section:"LIFTER" "Lifted IR: %s (%d constant pool entries)" func_info (List.length constants);
+            Logger.infof ~section:"LIFTER" "  ├─ SIB memory addressing and RMW instructions lowered";
+            Logger.infof ~section:"LIFTER" "  └─ Sub-register zero-extension & lazy algebraic flags configured";
             (* 3. VM Packaging: CFF, MBA, rolling key, handler synthesis *)
             let engine_str =
               match P.engine_kind with
@@ -148,6 +151,13 @@ let run
             let oc_h = open_out hdr_path in
             output_string oc_h pkg.cpp_runtime_source;
             close_out oc_h;
+            Logger.infof ~section:"CODEGEN" "  ├─ VM Runtime: emitted '%s'" pkg.header_name;
+            if native_cfg.eh_shadowing.enabled then
+              Logger.infof ~section:"CODEGEN" "  ├─ [Tech-2601] Emitted ABI Exception Handling Shadowing header (asg_tech_2601.hpp)";
+            if native_cfg.anti_vpc.enabled then
+              Logger.infof ~section:"CODEGEN" "  ├─ [Tech-2603] Emitted Anti-VPC Tracking header (asg_tech_2603.hpp)";
+            if native_cfg.memory_chaffing.enabled then
+              Logger.infof ~section:"CODEGEN" "  └─ [Tech-2608] Emitted Anti-Trace Memory Chaffing header (asg_tech_2608.hpp)";
 
             (* 4a. Write Tech-2601 Exception Handling Shadowing runtime header *)
             let eh_hdr_path = Filename.concat out_dir "asg_tech_2601.hpp" in
@@ -208,7 +218,8 @@ let run
                                    output_string oc_h2 hpp2;
                                    close_out oc_h2;
                                    resolved_addr_key := Some hex;
-                                   Logger.infof ~section:"ANTI_VMPREDATOR" "Address binding active, D=0x%s" hex
+                                   Logger.infof ~section:"ANTI_VMPREDATOR" "Address Binding: probe executed against runtime ASLR delta";
+                                   Logger.infof ~section:"ANTI_VMPREDATOR" "  └─ Rebound bytecode with key D=0x%s" hex
                                  with Failure err ->
                                    Logger.warnf ~section:"ANTI_VMPREDATOR" "Address binding probe parse warning: %s (fallback to mask 0)" err)
                             | None ->
@@ -232,6 +243,9 @@ let run
             (* 6. Write protected.vanguard bytecode *)
             let bc_path = Filename.concat out_dir "protected.vanguard" in
             Logger.stepf ~section:"CODEGEN" ~step:5 ~total:8 "Writing runner harness and protected bytecode payload (%s)..." bc_path;
+            Logger.infof ~section:"CODEGEN" "  ├─ Serialized %d bytecode words (%d bytes)"
+              (List.length pkg.bytecode) (List.length pkg.bytecode * 8);
+            Logger.infof ~section:"CODEGEN" "  └─ Runner test harness written: '%s'" runner_path;
             let oc_b = open_out_bin bc_path in
             List.iter
               (fun w ->
@@ -440,7 +454,7 @@ let run
                            (if issues = 0 then "no inconsistency"
                             else Printf.sprintf "%d issue(s)" issues)
                       in
-                      Logger.infof ~section:"AUDIT" "Mach-O compact unwind audit: %s" rep_str;
+                      Logger.infof ~section:"AUDIT" "  ├─ Mach-O compact unwind audit: %s" rep_str;
                       Some rep_str)
               | _ -> None
             in
@@ -514,7 +528,7 @@ let run
                     );
                   } in
                   Watermark.Wm_chooser.save_manifest manifest_path manifest;
-                  Logger.infof ~section:"WATERMARK" "Build-seed watermark active (Client ID: 0x%016LX, Derivation Key: 0x%016LX)"
+                  Logger.infof ~section:"WATERMARK" "  └─ Build-seed watermark: embedded 48-bit payload via balanced SplitMix64 ECC (Client ID: 0x%016LX, Derivation Key: 0x%016LX)"
                     wid.raw_bits wid.derivation_key;
                   Some wid
               | None -> None

@@ -578,6 +578,9 @@ let embed_vm_trampoline
   | [ single_fn ] when (match bytecodes with Some bcs -> List.length bcs <= 1 | None -> true) ->
       Logger.infof ~section:"TRAMPOLINE" "Embedding zero-native trampoline for function '%s' (ret=%s, args='%s')"
         single_fn.fn_name single_fn.ret_type single_fn.args_to_pass;
+      Logger.infof ~section:"TRAMPOLINE" "  ├─ Zero-Native Dispatch: 56-byte inline jump stub replaces function body";
+      Logger.infof ~section:"TRAMPOLINE" "  ├─ Fragmented Bytecode Storage: word chunks guarded with canary & entropy seeds";
+      Logger.infof ~section:"TRAMPOLINE" "  └─ Decoy VM Manifold: dual dummy bytecode stream embedded (%d words)" (List.length effective_decoy_bc);
       (* Backward-compatible single function path *)
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let decoy_bc_formatted = format_fragmented_bytecode "embedded_bytecode_decoy" effective_decoy_bc in
@@ -596,6 +599,9 @@ let embed_vm_trampoline
   | multi_fns ->
       Logger.infof ~section:"TRAMPOLINE" "Embedding zero-native trampolines for %d functions: [%s]"
         (List.length multi_fns) (String.concat ", " (List.map (fun f -> f.fn_name) multi_fns));
+      Logger.infof ~section:"TRAMPOLINE" "  ├─ Zero-Native Dispatch: per-function jump stubs with isolated macro salts";
+      Logger.infof ~section:"TRAMPOLINE" "  ├─ Fragmented Bytecode Storage: word chunks guarded with canary & entropy seeds";
+      Logger.infof ~section:"TRAMPOLINE" "  └─ Decoy VM Manifold: dual dummy bytecode stream embedded (%d words)" (List.length effective_decoy_bc);
       (* Multi-function path *)
       let bcs_list = match bytecodes with Some bcs -> bcs | None -> [] in
       let find_bc_for_fn idx fn_name =
