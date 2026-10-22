@@ -6,6 +6,7 @@ type mba_config = {
   enabled : bool;
   depth : int;
   engine : mba_engine;
+  stack_synthesis_rate : int;
 }
 
 type crypto_config = {
@@ -28,6 +29,8 @@ type cff_config = {
   input_tainted_transitions : bool;
   split_rate : int;
   hub_count : int;
+  pop_digest : bool;
+  red_herring : bool;
 }
 
 
@@ -83,6 +86,8 @@ type stack_vm_config = {
   layout_randomization : bool;
   runtime_hardening : bool;
   compact_imm : bool;
+  feedback_rate : int;
+  cff_couple_key : bool;
 }
 
 type eh_shadowing_config = {
@@ -112,6 +117,33 @@ type spaghetti_config = {
   min_chunk         : int;
 }
 
+type amplifier_config = {
+  enabled             : bool;
+  profile             : string;
+  horner_degree       : int;
+  bit_slice_lanes     : int;
+  expander_chord_len  : int;
+  expander_chord_rate : int;
+}
+
+type superop_config = {
+  enabled            : bool;
+  fusion_rate        : int;
+  enable_add_imm     : bool;
+  enable_sub_imm     : bool;
+  enable_add_ii      : bool;
+  enable_sub_ii      : bool;
+  enable_set_reg_imm : bool;
+  enable_add_reg_imm : bool;
+}
+
+type ghost_config = {
+  enabled    : bool;
+  ghost_rate : int;
+  max_ghosts : int;
+  entangle   : bool;
+}
+
 type arch = [ `X86_64 | `AArch64 | `RISCV ]
 
 type t = {
@@ -130,6 +162,9 @@ type t = {
   anti_vpc : anti_vpc_config;
   memory_chaffing : memory_chaffing_config;
   spaghetti : spaghetti_config;
+  amplifier : amplifier_config;
+  superop : superop_config;
+  ghost : ghost_config;
 }
 
 val default_stack_vm : stack_vm_config
@@ -137,6 +172,9 @@ val default_eh_shadowing : eh_shadowing_config
 val default_anti_vpc : anti_vpc_config
 val default_memory_chaffing : memory_chaffing_config
 val default_spaghetti : spaghetti_config
+val default_amplifier : amplifier_config
+val default_superop : superop_config
+val default_ghost : ghost_config
 
 val to_yojson : t -> Yojson.Safe.t
 val of_yojson : Yojson.Safe.t -> (t, string) result

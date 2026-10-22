@@ -12,11 +12,14 @@ let default : t = {
     input_tainted_transitions = true;
     split_rate = 30;
     hub_count = 1;
+    pop_digest = false;
+    red_herring = true;
   };
   mba = {
     enabled = true;
     depth = 2;
     engine = `Egraph;
+    stack_synthesis_rate = 100;
   };
   anti_pushan = {
     enabled = true;
@@ -64,6 +67,9 @@ let default : t = {
   anti_vpc = default_anti_vpc;
   memory_chaffing = default_memory_chaffing;
   spaghetti = default_spaghetti;
+  amplifier = default_amplifier;
+  superop = default_superop;
+  ghost = default_ghost;
 }
 
 let max_security : t = {
@@ -78,11 +84,14 @@ let max_security : t = {
     input_tainted_transitions = true;
     split_rate = 50;
     hub_count = 2;
+    pop_digest = false;
+    red_herring = true;
   };
   mba = {
     enabled = true;
     depth = 4;
     engine = (if Gpu_synth.is_gpu_available () then `Gpu_metal else `Egraph);
+    stack_synthesis_rate = 100;
   };
   anti_pushan = {
     enabled = true;
@@ -132,6 +141,8 @@ let max_security : t = {
     layout_randomization = true;
     runtime_hardening = true;
     compact_imm = true;
+    feedback_rate = 100;
+    cff_couple_key = true;
   };
   eh_shadowing = {
     enabled = true;
@@ -150,6 +161,9 @@ let max_security : t = {
     chaff_ratio = 4.0;
   };
   spaghetti = default_spaghetti;
+  amplifier = default_amplifier;
+  superop = default_superop;
+  ghost = default_ghost;
 }
 
 let lightweight : t = {
@@ -164,11 +178,14 @@ let lightweight : t = {
     input_tainted_transitions = false;
     split_rate = 0;
     hub_count = 1;
+    pop_digest = false;
+    red_herring = true;
   };
   mba = {
     enabled = true;
     depth = 1;
     engine = `Poly;
+    stack_synthesis_rate = 100;
   };
   anti_pushan = {
     enabled = true;
@@ -218,6 +235,8 @@ let lightweight : t = {
     layout_randomization = false;
     runtime_hardening = false;
     compact_imm = true;
+    feedback_rate = 100;
+    cff_couple_key = true;
   };
   eh_shadowing = {
     enabled = false;
@@ -236,6 +255,9 @@ let lightweight : t = {
     chaff_ratio = 0.5;
   };
   spaghetti = default_spaghetti;
+  amplifier = default_amplifier;
+  superop = default_superop;
+  ghost = default_ghost;
 }
 
 let stealth : t = {
@@ -250,11 +272,14 @@ let stealth : t = {
     input_tainted_transitions = true;
     split_rate = 30;
     hub_count = 1;
+    pop_digest = false;
+    red_herring = true;
   };
   mba = {
     enabled = true;
     depth = 2;
     engine = `Ncfg;
+    stack_synthesis_rate = 100;
   };
   anti_pushan = {
     enabled = true;
@@ -304,6 +329,8 @@ let stealth : t = {
     layout_randomization = true;
     runtime_hardening = true;
     compact_imm = true;
+    feedback_rate = 100;
+    cff_couple_key = true;
   };
   eh_shadowing = {
     enabled = true;
@@ -317,6 +344,9 @@ let stealth : t = {
     chaff_ratio = 3.0;
   };
   spaghetti = default_spaghetti;
+  amplifier = default_amplifier;
+  superop = default_superop;
+  ghost = default_ghost;
 }
 
 let edr_stealth : t = {
@@ -331,11 +361,14 @@ let edr_stealth : t = {
     input_tainted_transitions = true;
     split_rate = 30;
     hub_count = 2;
+    pop_digest = false;
+    red_herring = true;
   };
   mba = {
     enabled = true;
     depth = 2;
     engine = `Egraph;
+    stack_synthesis_rate = 100;
   };
   anti_pushan = {
     enabled = true;
@@ -385,6 +418,8 @@ let edr_stealth : t = {
     layout_randomization = true;
     runtime_hardening = true;
     compact_imm = true;
+    feedback_rate = 100;
+    cff_couple_key = true;
   };
   eh_shadowing = {
     enabled = false;
@@ -403,6 +438,9 @@ let edr_stealth : t = {
     chaff_ratio = 1.0;
   };
   spaghetti = default_spaghetti;
+  amplifier = default_amplifier;
+  superop = default_superop;
+  ghost = default_ghost;
 }
 
 let minimal : t = {
@@ -417,11 +455,14 @@ let minimal : t = {
     input_tainted_transitions = false;
     split_rate = 0;
     hub_count = 1;
+    pop_digest = false;
+    red_herring = true;
   };
   mba = {
     enabled = false;
     depth = 0;
     engine = `Poly;
+    stack_synthesis_rate = 100;
   };
   anti_pushan = {
     enabled = false;
@@ -471,6 +512,8 @@ let minimal : t = {
     layout_randomization = false;
     runtime_hardening = false;
     compact_imm = false;
+    feedback_rate = 100;
+    cff_couple_key = true;
   };
   eh_shadowing = {
     enabled = false;
@@ -489,6 +532,9 @@ let minimal : t = {
     chaff_ratio = 0.0;
   };
   spaghetti = default_spaghetti;
+  amplifier = default_amplifier;
+  superop = default_superop;
+  ghost = default_ghost;
 }
 
 let high : t = {
@@ -503,11 +549,14 @@ let high : t = {
     input_tainted_transitions = true;
     split_rate = 40;
     hub_count = 1;
+    pop_digest = false;
+    red_herring = true;
   };
   mba = {
     enabled = true;
     depth = 3;
     engine = `Egraph;
+    stack_synthesis_rate = 100;
   };
   anti_pushan = {
     enabled = true;
@@ -557,6 +606,8 @@ let high : t = {
     layout_randomization = true;
     runtime_hardening = true;
     compact_imm = true;
+    feedback_rate = 100;
+    cff_couple_key = true;
   };
   eh_shadowing = {
     enabled = true;
@@ -566,6 +617,9 @@ let high : t = {
   anti_vpc = default_anti_vpc;
   memory_chaffing = default_memory_chaffing;
   spaghetti = default_spaghetti;
+  amplifier = default_amplifier;
+  superop = default_superop;
+  ghost = default_ghost;
 }
 
 let from_preset name =

@@ -474,8 +474,12 @@ module Stack_vm_packager : Vm_packager = struct
           input_tainted_transitions = native_cfg.cff.input_tainted_transitions;
           split_rate = native_cfg.cff.split_rate;
           hub_count = native_cfg.cff.hub_count;
-          pop_digest = None;
-          red_herring = true;
+          pop_digest =
+            (if native_cfg.cff.pop_digest then
+               Some (Cff.Pop_coupler.default_pop_config.digest_reg,
+                     Cff.Pop_coupler.default_pop_config.initial_seed)
+             else None);
+          red_herring = native_cfg.cff.red_herring;
         } in
 
         match Cff.flatten_func ~options:cff_opts ~rng ir with
@@ -494,20 +498,37 @@ module Stack_vm_packager : Vm_packager = struct
 
     (* Phase 2a (Pre-amplification): Superoperator Fusion on original lowered program instructions *)
     let prog, pre_superop_stats =
-      if native_cfg.stack_vm.superoperators then
+      if native_cfg.stack_vm.superoperators && native_cfg.superop.enabled then
         let superop_seed =
           Int64.logxor
             (Int64.of_int (Random.State.bits rng))
             (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
         in
+        let sup = native_cfg.superop in
         let superop_cfg =
           { (Stack_vm.Stack_superop_pass.default_superop_config superop_seed) with
-            fusion_rate = 100 }
+            fusion_rate = sup.fusion_rate;
+            enable_add_imm = sup.enable_add_imm;
+            enable_sub_imm = sup.enable_sub_imm;
+            enable_add_ii = sup.enable_add_ii;
+            enable_sub_ii = sup.enable_sub_ii;
+            enable_set_reg_imm = sup.enable_set_reg_imm;
+            enable_add_reg_imm = sup.enable_add_reg_imm;
+          }
         in
         note
           (Printf.sprintf
-             "    Superoperator Fusion       fusion=%d%% rules=[AddImm SubImm AddII SubII SetRegImm AddRegImm] seed=0x%016LX"
-             superop_cfg.fusion_rate superop_cfg.seed);
+             "    Superoperator Fusion       fusion=%d%% rules=[%s] seed=0x%016LX"
+             superop_cfg.fusion_rate
+             (String.concat " " [
+               (if sup.enable_add_imm then "AddImm" else "");
+               (if sup.enable_sub_imm then "SubImm" else "");
+               (if sup.enable_add_ii then "AddII" else "");
+               (if sup.enable_sub_ii then "SubII" else "");
+               (if sup.enable_set_reg_imm then "SetRegImm" else "");
+               (if sup.enable_add_reg_imm then "AddRegImm" else "");
+             ] |> String.trim)
+             superop_cfg.seed);
         let prog_superop = Stack_vm.Stack_superop_pass.apply_program superop_cfg prog in
         let stats = Stack_vm.Stack_superop_pass.superop_stats prog prog_superop in
         (prog_superop, Some (superop_cfg, stats))
@@ -517,7 +538,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2a-pre-superop" prog;
     dump_bytecode_json ~phase:"2a-pre-superop" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-pre-superop" ~final:false prog;
-    if native_cfg.stack_vm.superoperators then
+    if native_cfg.stack_vm.superoperators && native_cfg.superop.enabled then
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (pre): %s"
         (match pre_superop_stats with Some (_, st) -> Printf.sprintf "%d rules fused" st.fused_ops | None -> "none");
 
@@ -527,22 +548,41 @@ module Stack_vm_packager : Vm_packager = struct
        Running amplifier after MBA would cause multiplicative explosion O(MBA * Amplifier) ~ 1000x.
        We also use adaptive_profile to automatically scale Horner degree (2..6) based on block size. *)
     let max_block_size = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> max acc (List.length b.ops)) prog.blocks 0 in
-    (* Strong setting: the heavy amplification profile for every block.
-       The stack pipeline amplifies BEFORE the MBA pass, so the
-       multiplicative explosion the adaptive profile guards against
-       (MBA * Amplifier) cannot happen here; the adaptive downgrade to
-       the light profile (Horner degree 2) only made the constant
-       synthesis cheap to recognise. *)
-    let amp_profile = Stack_vm.Bytecode_amplifier.default_heavy_profile in
+    (* Amplifier profile: base profile selected by name, numeric overrides
+       (value > 0) take precedence over the profile's own values. *)
+    let amp = native_cfg.amplifier in
+    let amp_base =
+      match String.lowercase_ascii (String.trim amp.profile) with
+      | "light" -> Stack_vm.Bytecode_amplifier.light_profile
+      | "balanced" -> Stack_vm.Bytecode_amplifier.balanced_profile
+      | _ -> Stack_vm.Bytecode_amplifier.default_heavy_profile
+    in
+    let amp_profile = {
+      Stack_vm.Bytecode_amplifier.
+      horner_degree =
+        (if amp.horner_degree > 0 then amp.horner_degree else amp_base.horner_degree);
+      bit_slice_lanes =
+        (if amp.bit_slice_lanes > 0 then amp.bit_slice_lanes else amp_base.bit_slice_lanes);
+      expander_chord_len =
+        (if amp.expander_chord_len > 0 then amp.expander_chord_len else amp_base.expander_chord_len);
+      expander_chord_rate =
+        (if amp.expander_chord_rate > 0 then amp.expander_chord_rate else amp_base.expander_chord_rate);
+    } in
     note
       (Printf.sprintf
-         "    Bytecode Amplification    horner_degree=%d bit_slice_lanes=%d expander_chord_len=%d expander_chord_rate=%d%% (heavy profile, max block %d ops)"
+         "    Bytecode Amplification    horner_degree=%d bit_slice_lanes=%d expander_chord_len=%d expander_chord_rate=%d%% (profile=%s%s, max block %d ops)"
          amp_profile.horner_degree amp_profile.bit_slice_lanes amp_profile.expander_chord_len
-         amp_profile.expander_chord_rate max_block_size);
-    let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~ctx ~profile:amp_profile prog in
-    let amplifier_info = Stack_vm.Bytecode_amplifier.amplifier_stats prog prog_amplified in
-    let prog = prog_amplified in
-    Stack_vm.Context_allocator.reserve_slots ctx prog.context_slots;
+         amp_profile.expander_chord_rate amp.profile
+         (if amp.enabled then "" else ", DISABLED") max_block_size);
+    let prog, amplifier_info =
+      if amp.enabled then begin
+        let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~ctx ~profile:amp_profile prog in
+        let info = Stack_vm.Bytecode_amplifier.amplifier_stats prog prog_amplified in
+        Stack_vm.Context_allocator.reserve_slots ctx prog_amplified.context_slots;
+        (prog_amplified, info)
+      end else
+        (prog, "Disabled (config: amplifier.enabled=false)")
+    in
     dump_bytecode_trace ~phase:"2-amplified" prog;
     dump_bytecode_json ~phase:"2-amplified" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2-amplified" ~final:false prog;
@@ -573,7 +613,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2a-post-superop" prog;
     dump_bytecode_json ~phase:"2a-post-superop" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-post-superop" ~final:false prog;
-    if native_cfg.stack_vm.superoperators then
+    if native_cfg.stack_vm.superoperators && native_cfg.superop.enabled then
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (post): %s" superop_info;
 
     (* Phase 2b: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
@@ -582,13 +622,22 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 19)
     in
-    let mba_cfg = { (Stack_vm.Stack_mba_pass.default_mba_config mba_seed) with mba_rate = 100 } in
+    let mba_cfg = {
+      (Stack_vm.Stack_mba_pass.default_mba_config mba_seed) with
+      mba_rate = native_cfg.mba.stack_synthesis_rate
+    } in
     note
-      (Printf.sprintf "    MBA Constant Synthesis     rate=%d%% seed=0x%016LX" mba_cfg.mba_rate
-         mba_cfg.seed);
-    let prog_mba = Stack_vm.Stack_mba_pass.apply_program ~ctx mba_cfg prog in
-    let mba_info = Stack_vm.Stack_mba_pass.mba_stats prog prog_mba in
-    let prog = prog_mba in
+      (Printf.sprintf "    MBA Constant Synthesis     rate=%d%% seed=0x%016LX%s"
+         mba_cfg.mba_rate mba_cfg.seed
+         (if native_cfg.mba.enabled then "" else " (DISABLED by mba.enabled=false)"));
+    let prog, mba_info =
+      if native_cfg.mba.enabled then begin
+        let prog_mba = Stack_vm.Stack_mba_pass.apply_program ~ctx mba_cfg prog in
+        let info = Stack_vm.Stack_mba_pass.mba_stats prog prog_mba in
+        (prog_mba, info)
+      end else
+        (prog, "Disabled (config: mba.enabled=false)")
+    in
     dump_bytecode_trace ~phase:"2b-mba" prog;
     dump_bytecode_json ~phase:"2b-mba" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2b-mba" ~final:false prog;
@@ -604,7 +653,10 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 11)
     in
-    let cff_cfg = Stack_vm.Stack_cff_pass.default_cff_config cff_seed in
+    let cff_cfg = {
+      (Stack_vm.Stack_cff_pass.default_cff_config cff_seed) with
+      couple_key = native_cfg.stack_vm.cff_couple_key
+    } in
     note
       (Printf.sprintf
          "    Virtual CFG Flattening     hubs=%d split_rate=%d opaque_predicates=%s seed=0x%016LX"
@@ -658,17 +710,29 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 17)
     in
-    let ghost_cfg = { (Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed) with ghost_rate = 80 } in
+    let g = native_cfg.ghost in
+    let ghost_cfg = {
+      (Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed) with
+      ghost_rate = g.ghost_rate;
+      max_ghosts = g.max_ghosts;
+      entangle = g.entangle;
+    } in
     note
       (Printf.sprintf
-         "    Ghost Stack Padding        rate=%d%% max_ghosts=%s entanglement=%s seed=0x%016LX"
+         "    Ghost Stack Padding        rate=%d%% max_ghosts=%s entanglement=%s seed=0x%016LX%s"
          ghost_cfg.ghost_rate
          (if ghost_cfg.max_ghosts <= 0 then "unlimited" else string_of_int ghost_cfg.max_ghosts)
          (if ghost_cfg.entangle then "on" else "off")
-         ghost_cfg.seed);
-    let prog_ghost = Stack_vm.Stack_ghost_pass.apply_program ghost_cfg ctx prog in
-    let ghost_info = Stack_vm.Stack_ghost_pass.ghost_stats prog prog_ghost in
-    let prog = prog_ghost in
+         ghost_cfg.seed
+         (if g.enabled then "" else " (DISABLED)"));
+    let prog, ghost_info =
+      if g.enabled then begin
+        let prog_ghost = Stack_vm.Stack_ghost_pass.apply_program ghost_cfg ctx prog in
+        let info = Stack_vm.Stack_ghost_pass.ghost_stats prog prog_ghost in
+        (prog_ghost, info)
+      end else
+        (prog, "Disabled (config: ghost.enabled=false)")
+    in
     dump_bytecode_trace ~phase:"5-ghost" prog;
     dump_bytecode_json ~phase:"5-ghost" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5-ghost" ~final:false prog;
@@ -683,7 +747,7 @@ module Stack_vm_packager : Vm_packager = struct
         in
         let feedback_cfg =
           { (Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed) with
-            feedback_rate = 100 }
+            feedback_rate = native_cfg.stack_vm.feedback_rate }
         in
         note
           (Printf.sprintf "    State-Feedback Rolling Key rate=%d%% seed=0x%016LX"

@@ -23,7 +23,7 @@ let with_mba ?depth enabled b =
   b := { !b with mba };
   b
 
-let with_stack_vm ?superoperators ?state_feedback ?layout_randomization ?runtime_hardening ?compact_imm enabled b =
+let with_stack_vm ?superoperators ?state_feedback ?layout_randomization ?runtime_hardening ?compact_imm ?feedback_rate ?cff_couple_key enabled b =
   let curr = !b.stack_vm in
   let stack_vm = {
     enabled;
@@ -32,6 +32,8 @@ let with_stack_vm ?superoperators ?state_feedback ?layout_randomization ?runtime
     layout_randomization = Option.value ~default:curr.layout_randomization layout_randomization;
     runtime_hardening = Option.value ~default:curr.runtime_hardening runtime_hardening;
     compact_imm = Option.value ~default:curr.compact_imm compact_imm;
+    feedback_rate = Option.value ~default:curr.feedback_rate feedback_rate;
+    cff_couple_key = Option.value ~default:curr.cff_couple_key cff_couple_key;
   } in
   b := { !b with stack_vm };
   b

@@ -93,5 +93,29 @@
     "max_extra_blocks": 0,
     "max_splits_factor": 1,
     "min_chunk": 2
+  },
+  "amplifier": {
+    "enabled": true,
+    "profile": "heavy",
+    "horner_degree": 0,
+    "bit_slice_lanes": 0,
+    "expander_chord_len": 0,
+    "expander_chord_rate": 0
+  },
+  "superop": {
+    "enabled": true,
+    "fusion_rate": 100,
+    "enable_add_imm": true,
+    "enable_sub_imm": true,
+    "enable_add_ii": true,
+    "enable_sub_ii": true,
+    "enable_set_reg_imm": true,
+    "enable_add_reg_imm": true
+  },
+  "ghost": {
+    "enabled": true,
+    "ghost_rate": 80,
+    "max_ghosts": 0,
+    "entangle": true
   }
 }

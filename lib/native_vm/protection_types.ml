@@ -38,6 +38,10 @@ type mba_config = {
   enabled : bool [@default true];
   depth : int [@default 2];
   engine : (mba_engine [@of_yojson mba_engine_of_yojson] [@to_yojson mba_engine_to_yojson]) [@default `Egraph];
+  (** Stack-VM Phase 2b (MBA Constant Synthesis) rewrite rate, 0-100:
+      probability each PushImm is replaced by a NOR/NAND/ADD sequence.
+      The IR-level MBA engine (depth/engine) is independent of this. *)
+  stack_synthesis_rate : int [@default 100];
 } [@@deriving yojson]
 
 (* Target architecture of the lifted program.  The VM stores flags in the
@@ -94,6 +98,14 @@ type cff_config = {
   input_tainted_transitions : bool [@default true];
   split_rate : int [@default 30];
   hub_count : int [@default 1];
+  (** Path-Oriented Protection: couple an ARX path digest register into the
+      CFF state encoding and dispatcher decoding, making the digest
+      load-bearing and immune to dead-code elimination. Uses the shared
+      [Cff.Pop_coupler.default_pop_config] register and seed. *)
+  pop_digest : bool [@default false];
+  (** Insert red-herring (never-taken) state aliases when splitting hot
+      states, inflating static state-count analysis. *)
+  red_herring : bool [@default true];
 } [@@deriving yojson]
 
 
@@ -149,6 +161,12 @@ type stack_vm_config = {
   layout_randomization : bool [@default true];
   runtime_hardening : bool [@default true];
   compact_imm : bool [@default true];
+  (** Phase 6 (State-Feedback Rolling Key) injection rate, 0-100:
+      probability a register-coupled cipher checkpoint is injected. *)
+  feedback_rate : int [@default 100];
+  (** Phase 3 stack-level CFF: couple the rolling key to the VPC write on
+      every CFF edge, so the key depends on the executed path. *)
+  cff_couple_key : bool [@default true];
 } [@@deriving yojson]
 
 type spaghetti_config = {
@@ -176,11 +194,78 @@ let default_spaghetti = {
   min_chunk         = 2;
 }
 
+type amplifier_config = {
+  enabled : bool [@default true];
+  (** Base profile: "heavy" (Horner 6, +281% ops), "balanced" (Horner 3),
+      "light" (Horner 2). Individual numeric overrides below with value 0
+      inherit from the profile. *)
+  profile : string [@default "heavy"];
+  (** Degree of the Horner polynomial expansion for PushImm constants. *)
+  horner_degree : int [@default 0];
+  (** Carry-chain bit-slice lanes for Add/Sub (0-2). *)
+  bit_slice_lanes : int [@default 0];
+  (** Number of ops between def-use web "knots" (expander chords). *)
+  expander_chord_len : int [@default 0];
+  (** Probability 0-100 of emitting an expander knot. *)
+  expander_chord_rate : int [@default 0];
+} [@@deriving yojson]
+
+let default_amplifier = {
+  enabled             = true;
+  profile             = "heavy";
+  horner_degree       = 0;
+  bit_slice_lanes     = 0;
+  expander_chord_len  = 0;
+  expander_chord_rate = 0;
+}
+
+type superop_config = {
+  enabled : bool [@default true];
+  (** Probability 0-100 of fusing an eligible op pair into a superoperator.
+      Effective gate is [stack_vm.superoperators && superop.enabled]. *)
+  fusion_rate : int [@default 100];
+  enable_add_imm : bool [@default true];
+  enable_sub_imm : bool [@default true];
+  enable_add_ii : bool [@default true];
+  enable_sub_ii : bool [@default true];
+  enable_set_reg_imm : bool [@default true];
+  enable_add_reg_imm : bool [@default true];
+} [@@deriving yojson]
+
+let default_superop = {
+  enabled            = true;
+  fusion_rate        = 100;
+  enable_add_imm     = true;
+  enable_sub_imm     = true;
+  enable_add_ii      = true;
+  enable_sub_ii      = true;
+  enable_set_reg_imm = true;
+  enable_add_reg_imm = true;
+}
+
+type ghost_config = {
+  enabled : bool [@default true];
+  (** Probability 0-100 of inserting a ghost op after each real op. *)
+  ghost_rate : int [@default 80];
+  (** Maximum ghost ops per block (0 = unlimited). *)
+  max_ghosts : int [@default 0];
+  (** Data-flow entanglement of ghost checksums with memory ops (P1-02). *)
+  entangle : bool [@default true];
+} [@@deriving yojson]
+
+let default_ghost = {
+  enabled    = true;
+  ghost_rate = 80;
+  max_ghosts = 0;
+  entangle   = true;
+}
+
+
 let default_crypto = { rounds = 16; key_bits = 128 }
 let default_bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5 }
-let default_cff = { enabled = true; obfuscate_states = true; inject_opaque_predicates = false; input_tainted_transitions = true; split_rate = 30; hub_count = 1 }
+let default_cff = { enabled = true; obfuscate_states = true; inject_opaque_predicates = false; input_tainted_transitions = true; split_rate = 30; hub_count = 1; pop_digest = false; red_herring = true }
 
-let default_mba = { enabled = true; depth = 2; engine = `Egraph }
+let default_mba = { enabled = true; depth = 2; engine = `Egraph; stack_synthesis_rate = 100 }
 let default_anti_pushan = { enabled = true; running_key = true; address_bound = false }
 let default_anti_tamper = {
   enabled = true; smc = true; smc_strict = false;
@@ -247,6 +332,8 @@ let default_stack_vm = {
   layout_randomization = true;
   runtime_hardening = true;
   compact_imm = true;
+  feedback_rate = 100;
+  cff_couple_key = true;
 }
 
 type t = {
@@ -265,6 +352,9 @@ type t = {
   anti_vpc : anti_vpc_config [@default default_anti_vpc];
   memory_chaffing : memory_chaffing_config [@default default_memory_chaffing];
   spaghetti : spaghetti_config [@default default_spaghetti];
+  amplifier : amplifier_config [@default default_amplifier];
+  superop : superop_config [@default default_superop];
+  ghost : ghost_config [@default default_ghost];
 } [@@deriving yojson]
 
 (* ADC/SBC carry dialect: true when the lifted program reads the carry in the
