@@ -1,15 +1,15 @@
 {
   "seed": 1337,
   "crypto": {
-    "rounds": 32,
-    "key_bits": 128
+    "rounds": 64,
+    "key_bits": 256
   },
   "bloat": {
     "mode": "insane",
-    "target_size_budget_kb": 2000,
-    "junk_density": 0.7,
-    "density_cap_threshold1_kb": 200,
-    "density_cap_threshold2_kb": 500
+    "target_size_budget_kb": 5000,
+    "junk_density": 1.5,
+    "density_cap_threshold1_kb": 0,
+    "density_cap_threshold2_kb": 0
   },
   "cff": {
     "enabled": true,
@@ -17,19 +17,22 @@
     "inject_opaque_predicates": true,
     "input_tainted_transitions": true,
     "split_rate": 100,
-    "hub_count": 4
+    "hub_count": 6,
+    "pop_digest": true,
+    "red_herring": true
   },
   "mba": {
     "enabled": true,
     "depth": 4,
     "engine": "egraph",
-    "egraph_rate": 30,
-    "egraph_node_limit": 120,
-    "egraph_time_budget_ms": 80,
-    "egraph_iter_limit": 5,
-    "ir_max_depth": 4,
-    "ir_egraph_node_limit": 80,
-    "ir_egraph_time_budget_ms": 50
+    "stack_synthesis_rate": 100,
+    "egraph_rate": 40,
+    "egraph_node_limit": 250,
+    "egraph_time_budget_ms": 120,
+    "egraph_iter_limit": 8,
+    "ir_max_depth": 6,
+    "ir_egraph_node_limit": 150,
+    "ir_egraph_time_budget_ms": 100
   },
   "anti_pushan": {
     "enabled": true,
@@ -57,8 +60,8 @@
     "ephemeral_jit": false,
     "chameleon_handlers": true,
     "oblivious_memory": true,
-    "context_epochs": 4,
-    "oblivious_decoys": 3
+    "context_epochs": 8,
+    "oblivious_decoys": 7
   },
   "c_macro": {
     "enabled": true,
@@ -69,8 +72,8 @@
     "opaque_predicates": true,
     "api_hashing": true,
     "anti_debug": true,
-    "signal_dispatch": true,
-    "nanomites": true,
+    "signal_dispatch": false,
+    "nanomites": false,
     "timing_guard": true,
     "timing_threshold_ticks": 50000000
   },
@@ -81,9 +84,11 @@
     "layout_randomization": true,
     "runtime_hardening": true,
     "compact_imm": true,
+    "feedback_rate": 100,
+    "cff_couple_key": true,
     "opcode_polymorphism": true,
     "permute_registers": false,
-    "host_stack_size_kb": 1024
+    "host_stack_size_kb": 2048
   },
   "eh_shadowing": {
     "enabled": true,
@@ -105,16 +110,16 @@
     "enabled": true,
     "split_rate": 100,
     "max_extra_blocks": 0,
-    "max_splits_factor": 1,
-    "min_chunk": 2
+    "max_splits_factor": 2,
+    "min_chunk": 1
   },
   "amplifier": {
     "enabled": true,
     "profile": "heavy",
-    "horner_degree": 0,
-    "bit_slice_lanes": 0,
-    "expander_chord_len": 0,
-    "expander_chord_rate": 0
+    "horner_degree": 6,
+    "bit_slice_lanes": 2,
+    "expander_chord_len": 6,
+    "expander_chord_rate": 85
   },
   "superop": {
     "enabled": true,
@@ -128,16 +133,16 @@
   },
   "ghost": {
     "enabled": true,
-    "ghost_rate": 80,
+    "ghost_rate": 100,
     "max_ghosts": 0,
     "entangle": true
   },
   "trampoline": {
-    "chunk_size": 64
+    "chunk_size": 32
   },
   "watermark": {
     "payload_bits": 48,
-    "redundancy": 7
+    "redundancy": 11
   },
   "toolchain": {
     "opt_level": "-O3",
