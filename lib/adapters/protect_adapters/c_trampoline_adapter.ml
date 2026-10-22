@@ -449,59 +449,122 @@ let embed_vm_trampoline
       (h land 0xFE) lor 1
   in
   let build_trampoline_body is_multi arr_name ret_type args_to_pass fn_name =
-    let comma_args = if args_to_pass = "" then "" else ", " ^ args_to_pass in
+    let open Cpp_codegen.Cpp_ast in
+    let open Cpp_codegen.Cpp_dsl in
+    let open Cpp_codegen.Cpp_printer in
     let macro_salt = salt_of_name is_multi fn_name in
     let decoy_arr_name = arr_name ^ "_decoy" in
     let is_void = ret_type = "void" in
     let is_ptr = String.contains ret_type '*' in
+
+    let ensure_real = expr_stmt (call (Printf.sprintf "%s_ensure_assembled" arr_name) []) in
+    let ensure_decoy = expr_stmt (call (Printf.sprintf "%s_ensure_assembled" decoy_arr_name) []) in
+
+    let penalty_init =
+      Binary (BitXor,
+        Call ("asgard_mem_integrity::evaluate_memory_integrity", []),
+        Call ("asgard_anti_emulation::evaluate_emulation_differential", []))
+    in
+    let decl_penalty = decl_var UInt64 "_penalty" ~init:penalty_init in
+
+    let apple_check =
+      preproc_if_stmt "defined(__APPLE__)" [
+        decl_var (Array (Int32, 4)) "_mib"
+          ~init:(init_list [ var "CTL_KERN"; var "KERN_PROC"; var "KERN_PROC_PID"; call "getpid" [] ]);
+        decl_var (StructType "struct kinfo_proc") "_kinfo"
+          ~init:(init_list []);
+        decl_var SizeT "_ksize"
+          ~init:(sizeof_ty (StructType "struct kinfo_proc"));
+        if_then (
+          Binary (LogAnd,
+            Binary (Eq,
+              call "sysctl" [var "_mib"; i32 4; addr_of (var "_kinfo"); addr_of (var "_ksize"); cast (Ptr Void) (u64 0L); i32 0],
+              i32 0),
+            Binary (Ne,
+              Binary (BitAnd, (var "_kinfo" $. "kp_proc.p_flag"), var "P_TRACED"),
+              u64 0L))
+        ) [
+          (var "_penalty" ^= u64 salt_xwcafe_leetbeef);
+        ];
+      ] ~elifs:[
+        ("defined(__linux__)", [
+          decl_var (Ptr (StructType "FILE")) "_fp_stat"
+            ~init:(call "fopen" [str_lit "/proc/self/status"; str_lit "r"]);
+          if_then (var "_fp_stat" <>~ nullptr) [
+            decl_var (Array (Int8, 128)) "_line";
+            while_loop (call "fgets" [var "_line"; call "sizeof" [var "_line"]; var "_fp_stat"]) [
+              if_then (Binary (Eq, call "strncmp" [var "_line"; str_lit "TracerPid:"; i32 10], i32 0)) [
+                decl_var Int32 "_pid" ~init:(call "atoi" [Binary (Add, var "_line", i32 10)]);
+                if_then (var "_pid" >~ i32 0) [
+                  (var "_penalty" ^= u64 salt_xwcafe_leetbeef);
+                ];
+                break_stmt;
+              ];
+            ];
+            expr_stmt (call "fclose" [var "_fp_stat"]);
+          ];
+        ])
+      ]
+    in
+
+    let mask_init =
+      c_cast UIntPtr (neg (c_cast (StructType "intptr_t") (var "_penalty" <>~ u64 0L)))
+    in
+    let decl_mask = decl_var UIntPtr "_mask" ~init:mask_init in
+
+    let active_bc_init =
+      c_cast (ConstPtr UInt64) (
+        Binary (BitOr,
+          Binary (BitAnd, c_cast UIntPtr (var arr_name), bit_not (var "_mask")),
+          Binary (BitAnd, c_cast UIntPtr (var decoy_arr_name), var "_mask"))
+      )
+    in
+    let decl_active_bc = decl_var (ConstPtr UInt64) "_active_bc" ~init:active_bc_init in
+
+    let active_len_init =
+      Binary (BitOr,
+        Binary (BitAnd,
+          Binary (Div, call "sizeof" [var arr_name], call "sizeof" [idx (var arr_name) (i32 0)]),
+          bit_not (var "_mask")),
+        Binary (BitAnd,
+          Binary (Div, call "sizeof" [var decoy_arr_name], call "sizeof" [idx (var decoy_arr_name) (i32 0)]),
+          var "_mask"))
+    in
+    let decl_active_len = decl_var SizeT "_active_len" ~init:active_len_init in
+
+    let parsed_args =
+      if args_to_pass = "" then []
+      else
+        String.split_on_char ',' args_to_pass
+        |> List.map String.trim
+        |> List.filter (fun s -> s <> "")
+        |> List.map (fun a -> c_cast UInt64 (var a))
+    in
+    let base_call_args = var "_active_bc" :: var "_active_len" :: parsed_args in
     let call_expr =
       if macro_salt = 0 then
-        Printf.sprintf "vanguard_threaded_vm::asgard_vm_call(_active_bc, _active_len%s)" comma_args
+        call "vanguard_threaded_vm::asgard_vm_call" base_call_args
       else
-        Printf.sprintf "vanguard_threaded_vm::asgard_vm_call_with_salt(%d, _active_bc, _active_len%s)" macro_salt comma_args
+        call "vanguard_threaded_vm::asgard_vm_call_with_salt" (u8 macro_salt :: base_call_args)
     in
-    let ret_part =
-      if is_void then Printf.sprintf "%s;\n    return;" call_expr
-      else if is_ptr then Printf.sprintf "return (%s)(uintptr_t)(%s);" ret_type call_expr
-      else Printf.sprintf "return %s;" call_expr
+
+    let ret_stmts =
+      if is_void then [ expr_stmt call_expr; ret_void ]
+      else if is_ptr then [ ret (c_cast (StructType ret_type) (c_cast UIntPtr call_expr)) ]
+      else [ ret (c_cast (StructType ret_type) call_expr) ]
     in
-    Printf.sprintf {|
-    %s_ensure_assembled();
-    %s_ensure_assembled();
 
-    uint64_t _penalty = asgard_mem_integrity::evaluate_memory_integrity() ^ asgard_anti_emulation::evaluate_emulation_differential();
-#if defined(__APPLE__)
-    int _mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
-    struct kinfo_proc _kinfo = {};
-    size_t _ksize = sizeof(_kinfo);
-    if (sysctl(_mib, 4, &_kinfo, &_ksize, (void*)0, 0) == 0 && (_kinfo.kp_proc.p_flag & P_TRACED)) {
-        _penalty ^= 0x5877DEC01337BEEFULL;
-    }
-#elif defined(__linux__)
-    FILE* _fp_stat = fopen("/proc/self/status", "r");
-    if (_fp_stat) {
-        char _line[128];
-        while (fgets(_line, sizeof(_line), _fp_stat)) {
-            if (strncmp(_line, "TracerPid:", 10) == 0) {
-                int _pid = atoi(_line + 10);
-                if (_pid > 0) _penalty ^= 0x5877DEC01337BEEFULL;
-                break;
-            }
-        }
-        fclose(_fp_stat);
-    }
-#endif
-    uintptr_t _mask = (uintptr_t)(-(intptr_t)(_penalty != 0));
-    const uint64_t* _active_bc = (const uint64_t*)(((uintptr_t)%s & ~_mask) | ((uintptr_t)%s & _mask));
-    size_t _active_len = ((sizeof(%s)/sizeof(%s[0])) & ~_mask) | ((sizeof(%s)/sizeof(%s[0])) & _mask);
-
-    %s
-|}
-      arr_name
-      decoy_arr_name
-      arr_name decoy_arr_name
-      arr_name arr_name decoy_arr_name decoy_arr_name
-      ret_part
+    let all_stmts = [
+      ensure_real;
+      ensure_decoy;
+      decl_penalty;
+      apple_check;
+      decl_mask;
+      decl_active_bc;
+      decl_active_len;
+    ] @ ret_stmts in
+    let rendered = string_of_stmts all_stmts in
+    "\n    " ^ String.concat "\n    " (String.split_on_char '\n' (String.trim rendered)) ^ "\n"
   in
 
   match marked_fns with
