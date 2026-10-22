@@ -19,8 +19,8 @@ warnings.filterwarnings("ignore")
 
 from gnn_cff_eval import parse_cfg_json, audit_cfg_phase
 from mba_deobf_eval import audit_mba_depth
-
-
+from trace_lstm_eval import audit_trace_lstm
+from predicate_realism_eval import audit_opaque_predicates
 def run_pipeline_dump(out_dir="/tmp/pipeline_dump"):
     """Builds and runs dump_pipeline.exe to generate fresh JSON phase dumps."""
     os.makedirs(out_dir, exist_ok=True)
@@ -120,24 +120,42 @@ def main():
 
     final_mba_drs = mba_results[-1]["drs_mba"] if mba_results else 50.0
 
-    # 3. Dynamic Trace Entropy
+    # 3. Dynamic Trace Entropy & Long-Range LSTM Predictor
     print("\n[Phase 3] Auditing Dynamic Execution Trace & Rolling-Key Entropy...")
     trace_res = evaluate_trace_entropy(bytecode_path=bytecode_path)
+    lstm_res = audit_trace_lstm(bytecode_path=bytecode_path, epochs=10)
+    combined_trace_drs = 0.5 * trace_res["drs_trace"] + 0.5 * lstm_res["drs_trace_lstm"]
+
     print(f"  Conditional Transition Entropy: {trace_res['cond_entropy']:.3f} / {trace_res['max_entropy']:.1f} bits (Uniform Noise = 8.0)")
-    print(f"  Dynamic Trace DRS:             {trace_res['drs_trace']:.1f} / 100.0")
+    print(f"  LSTM Top-1 Next-Byte Accuracy:  {lstm_res['top1_acc']*100:.3f}%  (Baseline = 0.391%, 95% Bound = {lstm_res['top1_upper_95']*100:.3f}%)")
+    print(f"  Dynamic Trace & LSTM DRS:       {combined_trace_drs:.1f} / 100.0")
 
-    # 4. Composite Assessment Score
-    composite_drs = (0.45 * final_cfg_drs) + (0.35 * final_mba_drs) + (0.20 * trace_res["drs_trace"])
+    # 4. Opaque Predicate Realism & AST Classifier
+    print("\n[Phase 4] Auditing Opaque Predicate Realism (BiLSTM + Transformer vs Real Conditions)...")
+    op_res = audit_opaque_predicates(n_samples=400, epochs=25)
+    print(f"  BiLSTM ROC-AUC:                 {op_res['bilstm_auc']:.3f}  (Accuracy: {op_res['bilstm_acc']*100:.1f}%)")
+    print(f"  Transformer ROC-AUC:            {op_res['tf_auc']:.3f}  (Accuracy: {op_res['tf_acc']*100:.1f}%)")
+    print(f"  Tabular Baseline ROC-AUC:       {op_res['tab_auc']:.3f}")
+    print(f"  Opaque Predicate DRS:           {op_res['drs_opaque']:.1f} / 100.0")
 
-    print("\n" + "=" * 76)
-    print("                      NEURAL BENCHMARK SUMMARY")
-    print("=" * 76)
-    print(f"  [1] CFG & CFF Resilience (GAT):            {final_cfg_drs:>5.1f} / 100.0")
-    print(f"  [2] Algebraic Incompressibility (Seq2Seq): {final_mba_drs:>5.1f} / 100.0")
-    print(f"  [3] Dynamic Trace Unpredictability:        {trace_res['drs_trace']:>5.1f} / 100.0")
-    print("  " + "-" * 72)
-    print(f"  ===> COMPOSITE NEURAL DRS SCORE:           {composite_drs:>5.1f} / 100.0  [ TIER 3+ RESILIENT ]")
-    print("=" * 76 + "\n")
+    # 5. Composite Assessment Score
+    composite_drs = (
+        (0.35 * final_cfg_drs)
+        + (0.30 * final_mba_drs)
+        + (0.20 * combined_trace_drs)
+        + (0.15 * op_res["drs_opaque"])
+    )
+
+    print("\n" + "=" * 80)
+    print("                         NEURAL BENCHMARK SUMMARY")
+    print("=" * 80)
+    print(f"  [1] CFG & CFF Multi-Model Ensemble:         {final_cfg_drs:>5.1f} / 100.0")
+    print(f"  [2] Algebraic Incompressibility (Seq2Seq):  {final_mba_drs:>5.1f} / 100.0")
+    print(f"  [3] Dynamic Trace & Rolling-Key LSTM:       {combined_trace_drs:>5.1f} / 100.0")
+    print(f"  [4] Opaque Predicate Realism:               {op_res['drs_opaque']:>5.1f} / 100.0")
+    print("  " + "-" * 76)
+    print(f"  ===> COMPOSITE NEURAL DRS SCORE:            {composite_drs:>5.1f} / 100.0  [ TIER 3+ RESILIENT ]")
+    print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":

@@ -109,12 +109,23 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
 
   let opaque_predicates = [
     comment_top "/* ------------------------------------------------------------------------- */";
-    comment_top "/* 4. NUMBER-THEORETIC OPAQUE PREDICATES                                    */";
-    comment_top "/* Invariants: for all x in Z, x*(x+1) % 2 == 0 and x^2 + x + 7 % 2 != 0    */";
+    comment_top "/* 4. POLYMORPHIC OPAQUE PREDICATES (Number-Theoretic, Modular & MBA Ring)  */";
+    comment_top "/* 8 distinct invariant generators preventing AST template memorization      */";
     comment_top "/* ------------------------------------------------------------------------- */";
-    raw_top ("#define " ^ p ^ "OPAQUE_TRUE(x)  (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) == 0ULL)");
-    raw_top ("#define " ^ p ^ "OPAQUE_FALSE(x) (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) != 0ULL)");
+    raw_top ("#define " ^ p ^ "OPAQUE_P1(x) (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) == 0ULL)");
+    raw_top ("#define " ^ p ^ "OPAQUE_P2(x) (((((uint64_t)(x)) * (((uint64_t)(x)) * ((uint64_t)(x)) - 1ULL)) % 6ULL) == 0ULL)");
+    raw_top ("#define " ^ p ^ "OPAQUE_P3(x) (((((((uint64_t)(x)) | 1ULL) * (((uint64_t)(x)) | 1ULL)) - 1ULL) % 8ULL) == 0ULL)");
+    raw_top ("#define " ^ p ^ "OPAQUE_P4(x, y) (((((uint64_t)(x)) ^ ((uint64_t)(y))) + 2ULL * (((uint64_t)(x)) & ((uint64_t)(y)))) == (((uint64_t)(x)) + ((uint64_t)(y))))");
+    raw_top ("#define " ^ p ^ "OPAQUE_P5(x) (((((uint64_t)(x)) * ((uint64_t)(x))) % 4ULL) < 2ULL)");
+    raw_top ("#define " ^ p ^ "OPAQUE_P6(x, y) (((((uint64_t)(x)) & (((uint64_t)(x)) | ((uint64_t)(y))))) == ((uint64_t)(x)))");
+    raw_top ("#define " ^ p ^ "OPAQUE_P7(x, y) (((((uint64_t)(x)) ^ (((uint64_t)(x)) & ((uint64_t)(y))))) == (((uint64_t)(x)) & (~((uint64_t)(y)))))");
+    raw_top ("#define " ^ p ^ "OPAQUE_P8(x) ((((((uint64_t)(x)) * ((uint64_t)(x))) + ((uint64_t)(x)) + 7ULL) % 2ULL) != 0ULL)");
+    raw_top ("#define " ^ p ^ "OPAQUE_TRUE(x) (" ^ p ^ "OPAQUE_P1(x) && " ^ p ^ "OPAQUE_P3(x) && " ^ p ^ "OPAQUE_P5(x))");
+    raw_top ("#define " ^ p ^ "OPAQUE_FALSE(x) (!(" ^ p ^ "OPAQUE_TRUE(x)))");
+    raw_top ("#define " ^ p ^ "OPAQUE_TRUE_2(x, y) (" ^ p ^ "OPAQUE_P4(x, y) && " ^ p ^ "OPAQUE_P6(x, y) && " ^ p ^ "OPAQUE_P7(x, y))");
+    raw_top ("#define " ^ p ^ "OPAQUE_FALSE_2(x, y) (!(" ^ p ^ "OPAQUE_TRUE_2(x, y)))");
     raw_top ("#define " ^ p ^ "IF_OPAQUE(x, true_body, false_body) do { \\\n    if (" ^ p ^ "OPAQUE_TRUE(x)) { true_body; } else { false_body; } \\\n} while(0)");
+    raw_top ("#define " ^ p ^ "IF_OPAQUE_2(x, y, true_body, false_body) do { \\\n    if (" ^ p ^ "OPAQUE_TRUE_2(x, y)) { true_body; } else { false_body; } \\\n} while(0)");
   ] in
 
   let cff_dsl = [

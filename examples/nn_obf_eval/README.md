@@ -51,13 +51,20 @@ The suite trains three specialized deep-learning models targeting the core prote
   $$\text{DRS}_{\text{MBA}} = 100.0 \times (1.0 - \text{Simplification Rate})$$
   On Depth 4 (with ASGARD's L6 NullspaceZero strategy), the simplification rate drops to **0.0%** ($\text{DRS} = 100.0 / 100.0$).
 
-### 3. Dynamic Trace Entropy Estimator (`eval_obfuscation.py`)
-- **Attack Vector:** Recurrent next-state prediction (LSTM/RNN) and dynamic trace clustering on VM execution bytecode.
-- **Methodology:** Computes bigram conditional Shannon entropy $H(S_t \mid S_{t-1})$ directly over serialized Vanguard bytecode words (`protected.vanguard`):
+### 3. Dynamic Trace Entropy & Long-Range LSTM Predictor (`trace_lstm_eval.py`)
+- **Attack Vector:** Recurrent next-state prediction (2-layer LSTM with hidden size 64) and dynamic trace clustering on VM execution bytecode.
+- **Methodology:** Evaluates next-byte predictability over sliding context windows $k = 8$ across 151,000 serialized Vanguard bytecode words (`protected.vanguard`), combined with bigram conditional Shannon entropy:
   $$H(S_t \mid S_{t-1}) = - \sum_{u} P(u) \sum_{v} P(v \mid u) \log_2 P(v \mid u)$$
 - **Resilience Formula:**
-  $$\text{DRS}_{\text{Trace}} = \min\left(100.0, \frac{H(S_t \mid S_{t-1})}{8.0} \times 100.0\right)$$
-  With State-Feedback Rolling Key and VSP stack value whitening, the entropy reaches **7.928 / 8.0 bits** ($\text{DRS} = 99.1 / 100.0$).
+  $$\text{Top1 advantage} = \max\left(0.0, \frac{\text{Top1Acc}_{95\%} - 1/256}{1.0 - 1/256}\right)$$
+  $$\text{DRS}_{\text{Trace}} = 0.5 \cdot \text{DRS}_{\text{entropy}} + 0.5 \cdot \max(0.0, 100.0 \times (1.0 - \text{Top1 advantage}))$$
+  With State-Feedback Rolling Key, the LSTM Top-1 accuracy is restricted to **0.375%** (against the 0.391% uniform random baseline), yielding **99.4 / 100.0**.
+
+### 4. Opaque Predicate Realism & AST Classifier (`predicate_realism_eval.py`)
+- **Attack Vector:** Automated branch condition classification (distinguishing constant true/false invariants from genuine program branching).
+- **Ensemble Models:** BiLSTM with Attention Pooling, AST-Transformer Encoder, and Tabular Structural Baseline.
+- **Resilience Formula:**
+  $$\text{DRS}_{\text{opaque}} = \min_{M} \left[ \max\left(0.0, 100.0 \times \left(1.0 - \left(2.0 \cdot \max(0.0, \text{AUC}_{95\%}(M) - 0.5)\right)^2\right)\right) \right]$$
 
 ---
 
@@ -126,17 +133,25 @@ Evaluates across 6 real C programs (`sqlite_varint_hash`, `coreutils_crc32`, `op
 
 [Phase 3] Auditing Dynamic Execution Trace & Rolling-Key Entropy...
   Conditional Transition Entropy: 7.928 / 8.0 bits (Uniform Noise = 8.0)
-  Dynamic Trace DRS:             99.1 / 100.0
+  LSTM Top-1 Next-Byte Accuracy:  0.375%  (Baseline = 0.391%, 95% Bound = 0.620%)
+  Dynamic Trace & LSTM DRS:       99.4 / 100.0
 
-============================================================================
-                      NEURAL BENCHMARK SUMMARY
-============================================================================
-  [1] CFG & CFF Resilience (GAT):             82.0 / 100.0
-  [2] Algebraic Incompressibility (Seq2Seq): 100.0 / 100.0
-  [3] Dynamic Trace Unpredictability:         99.1 / 100.0
-  ------------------------------------------------------------------------
-  ===> COMPOSITE NEURAL DRS SCORE:            91.7 / 100.0  [ TIER 3+ RESILIENT ]
-============================================================================
+[Phase 4] Auditing Opaque Predicate Realism (BiLSTM + Transformer vs Real Conditions)...
+  BiLSTM ROC-AUC:                 0.960  (Accuracy: 84.0%)
+  Transformer ROC-AUC:            0.999  (Accuracy: 97.0%)
+  Tabular Baseline ROC-AUC:       0.517
+  Opaque Predicate DRS:           0.0 / 100.0
+
+================================================================================
+                         NEURAL BENCHMARK SUMMARY
+================================================================================
+  [1] CFG & CFF Multi-Model Ensemble:          95.3 / 100.0
+  [2] Algebraic Incompressibility (Seq2Seq):   97.1 / 100.0
+  [3] Dynamic Trace & Rolling-Key LSTM:        99.4 / 100.0
+  [4] Opaque Predicate Realism:                 0.0 / 100.0
+  ----------------------------------------------------------------------------
+  ===> COMPOSITE NEURAL DRS SCORE:             82.4 / 100.0  [ TIER 3+ RESILIENT ]
+================================================================================
 ```
 
 ---

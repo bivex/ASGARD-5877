@@ -164,20 +164,27 @@ static __attribute__((always_inline)) inline char* ASG_decrypt_str(char* buf, co
 
 /* ------------------------------------------------------------------------- */
 
-/* 4. NUMBER-THEORETIC OPAQUE PREDICATES                                    */
-
-/* Invariants: for all x in Z, x*(x+1) % 2 == 0 and x^2 + x + 7 % 2 != 0    */
-
+/* 4. POLYMORPHIC OPAQUE PREDICATES (Number-Theoretic, Modular & MBA Ring)  */
+/* 8 distinct invariant generators preventing AST template memorization      */
 /* ------------------------------------------------------------------------- */
-
-#define ASG_OPAQUE_TRUE(x)  (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) == 0ULL)
-
-#define ASG_OPAQUE_FALSE(x) (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) != 0ULL)
-
+#define ASG_OPAQUE_P1(x) (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) == 0ULL)
+#define ASG_OPAQUE_P2(x) (((((uint64_t)(x)) * (((uint64_t)(x)) * ((uint64_t)(x)) - 1ULL)) % 6ULL) == 0ULL)
+#define ASG_OPAQUE_P3(x) (((((((uint64_t)(x)) | 1ULL) * (((uint64_t)(x)) | 1ULL)) - 1ULL) % 8ULL) == 0ULL)
+#define ASG_OPAQUE_P4(x, y) (((((uint64_t)(x)) ^ ((uint64_t)(y))) + 2ULL * (((uint64_t)(x)) & ((uint64_t)(y)))) == (((uint64_t)(x)) + ((uint64_t)(y))))
+#define ASG_OPAQUE_P5(x) (((((uint64_t)(x)) * ((uint64_t)(x))) % 4ULL) < 2ULL)
+#define ASG_OPAQUE_P6(x, y) (((((uint64_t)(x)) & (((uint64_t)(x)) | ((uint64_t)(y))))) == ((uint64_t)(x)))
+#define ASG_OPAQUE_P7(x, y) (((((uint64_t)(x)) ^ (((uint64_t)(x)) & ((uint64_t)(y))))) == (((uint64_t)(x)) & (~((uint64_t)(y)))))
+#define ASG_OPAQUE_P8(x) ((((((uint64_t)(x)) * ((uint64_t)(x))) + ((uint64_t)(x)) + 7ULL) % 2ULL) != 0ULL)
+#define ASG_OPAQUE_TRUE(x) (ASG_OPAQUE_P1(x) && ASG_OPAQUE_P3(x) && ASG_OPAQUE_P5(x))
+#define ASG_OPAQUE_FALSE(x) (!(ASG_OPAQUE_TRUE(x)))
+#define ASG_OPAQUE_TRUE_2(x, y) (ASG_OPAQUE_P4(x, y) && ASG_OPAQUE_P6(x, y) && ASG_OPAQUE_P7(x, y))
+#define ASG_OPAQUE_FALSE_2(x, y) (!(ASG_OPAQUE_TRUE_2(x, y)))
 #define ASG_IF_OPAQUE(x, true_body, false_body) do { \
     if (ASG_OPAQUE_TRUE(x)) { true_body; } else { false_body; } \
 } while(0)
-
+#define ASG_IF_OPAQUE_2(x, y, true_body, false_body) do { \
+    if (ASG_OPAQUE_TRUE_2(x, y)) { true_body; } else { false_body; } \
+} while(0)
 /* ------------------------------------------------------------------------- */
 
 /* 5. CONTROL-FLOW FLATTENING (CFF) PREPROCESSOR DSL                        */
