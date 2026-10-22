@@ -40,7 +40,8 @@ val splitmix64_gamma : int64
 val splitmix64_mix : int64
 val splitmix64_gamma_inverse : int64
 
-(** The FNV-1a prime and the two offset bases. *)
+(** The FNV-1a primes and the two offset bases. *)
+val fnv1a_32_prime : int64
 val fnv1a_64_prime : int64
 val fnv1a_32_offset_basis : int64
 val fnv1a_64_offset_basis : int64
@@ -83,6 +84,9 @@ val salt_deadbeef_5a5a5a5a : int64
 val salt_deadbeef_cafebabe : int64
 val salt_deadbeef_5877cafe : int64
 val salt_deadbeef_cafe1337 : int64
+val salt_chunk_kdyn_seed : int64
+val salt_stack_vm_state : int64
+val salt_bridge_vector_seed : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

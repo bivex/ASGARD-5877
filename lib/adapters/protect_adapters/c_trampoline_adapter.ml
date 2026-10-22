@@ -339,12 +339,12 @@ let embed_vm_trampoline
           in
           let canary = Int64.logand (Int64.add (Int64.mul (Int64.of_int chunk_id) 0xDEADL) 0xCAFEL) 0xFFFFFFFFL in
           let entropy_seed = Int64.logand (Int64.add (Int64.mul (Int64.of_int idx) 0x6A09L) 0xBEEFL) 0xFFFFFFFFL in
-          let junk_pad0 = Int64.logxor salt_xwcafe_leetbeef (Int64.mul (Int64.of_int idx) 0x9E3779B97F4A7C15L) in
-          let junk_pad1 = Int64.logxor salt_deadbeef_cafebabe (Int64.mul (Int64.of_int chunk_id) 0x517CC1B727220A95L) in
-          let k_dyn = Int64.logxor 0x5877A56A11223344L (Int64.mul (Int64.of_int chunk_id) 0x9E3779B97F4A7C15L) in
+          let junk_pad0 = Int64.logxor salt_xwcafe_leetbeef (Int64.mul (Int64.of_int idx) golden_ratio_64) in
+          let junk_pad1 = Int64.logxor salt_deadbeef_cafebabe (Int64.mul (Int64.of_int chunk_id) sqrt2_fraction_64) in
+          let k_dyn = Int64.logxor salt_chunk_kdyn_seed (Int64.mul (Int64.of_int chunk_id) golden_ratio_64) in
           let masked_words =
             List.mapi (fun j w ->
-              let word_key = Int64.add k_dyn (Int64.mul (Int64.of_int j) 0x100000001B3L) in
+              let word_key = Int64.add k_dyn (Int64.mul (Int64.of_int j) fnv1a_64_prime) in
               Int64.logxor w word_key
             ) chunk_words
           in
@@ -413,9 +413,9 @@ let embed_vm_trampoline
                 if_then (ne (var "c" $-> "canary") (c_cast UInt64 ((((var "c" $-> "chunk_id") *~ u32 0xDEADl) +~ u32 0xCAFEl) &~ u32 0xFFFFFFFFl))) [
                   expr_stmt (call "ASG_CHUNK_TRAP" []);
                 ];
-                let_u64 "k_dyn" (u64 0x5877A56A11223344L ^~ (c_cast UInt64 (var "c" $-> "chunk_id") *~ u64 0x9E3779B97F4A7C15L));
+                let_u64 "k_dyn" (u64 salt_chunk_kdyn_seed ^~ (c_cast UInt64 (var "c" $-> "chunk_id") *~ u64 golden_ratio_64));
                 for_range "j" (i32 0) (c_cast Int32 (var "c" $-> "word_count")) [
-                  let_u64 "word_key" (var "k_dyn" +~ (c_cast UInt64 (var "j") *~ u64 0x100000001B3L));
+                  let_u64 "word_key" (var "k_dyn" +~ (c_cast UInt64 (var "j") *~ u64 fnv1a_64_prime));
                   idx (var name) ((var "c" $-> "word_offset") +~ var "j") :=
                     (idx (var "c" $-> "data") (var "j") ^~ var "word_key");
                 ];

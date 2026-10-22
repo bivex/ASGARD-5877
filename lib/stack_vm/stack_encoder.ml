@@ -88,17 +88,17 @@ let default_opcode_map = {
 }
 
 let splitmix64 state =
-  state := Int64.add !state 0x9E3779B97F4A7C15L;
+  state := Int64.add !state golden_ratio_64;
   let z = ref !state in
   z := Int64.logxor !z (Int64.shift_right_logical !z 30);
-  z := Int64.mul !z 0xBF58476D1CE4E5B9L;
+  z := Int64.mul !z splitmix64_gamma;
   z := Int64.logxor !z (Int64.shift_right_logical !z 27);
-  z := Int64.mul !z 0x94D049BB133111EBL;
+  z := Int64.mul !z splitmix64_mix;
   z := Int64.logxor !z (Int64.shift_right_logical !z 31);
   !z
 
 let generate_opcode_map seed =
-  let state = ref (if seed = 0L then 0x5877A564D00FL else seed) in
+  let state = ref (if seed = 0L then salt_stack_vm_state else seed) in
   let pool = Array.init 254 (fun i -> i + 1) in
   for i = 0 to 38 do
     let r = splitmix64 state in
@@ -166,7 +166,7 @@ let default_field_layout = {
 }
 
 let generate_field_layout seed =
-  let state = ref (Int64.logxor (if seed = 0L then 0x5877A564D00FL else seed) 0xA5A5_5A5A_0FF0_F00FL) in
+  let state = ref (Int64.logxor (if seed = 0L then salt_stack_vm_state else seed) 0xA5A5_5A5A_0FF0_F00FL) in
   let r = splitmix64 state in
   {
     jcc_target_first  = Int64.logand r 1L <> 0L;

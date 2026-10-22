@@ -1,9 +1,11 @@
-let phi64 = 0x9E3779B97F4A7C15L
+open Random_visa_constants.Magic_numbers
+
+let phi64 = golden_ratio_64
 
 let splitmix64 (v : int64) : int64 =
   let z = Int64.add v phi64 in
-  let z = Int64.mul (Int64.logxor z (Int64.shift_right_logical z 30)) 0xBF58476D1CE4E5B9L in
-  let z = Int64.mul (Int64.logxor z (Int64.shift_right_logical z 27)) 0x94D049BB133111EBL in
+  let z = Int64.mul (Int64.logxor z (Int64.shift_right_logical z 30)) splitmix64_gamma in
+  let z = Int64.mul (Int64.logxor z (Int64.shift_right_logical z 27)) splitmix64_mix in
   Int64.logxor z (Int64.shift_right_logical z 31)
 
 let derive_block_key ~master_key ~block_id ~block_offset : int64 =

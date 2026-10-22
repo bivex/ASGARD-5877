@@ -3259,7 +3259,7 @@ let emit_decoy_handlers ?rng b =
 
   (match pick_variant 3 with
    | 0 -> emit_handler_inline_ast b "H_DECOY_0" [
-       (reg_mask ^= (((k_dyn *~ u64 0x6A09E667F3BCC908L) +~ u64 0x5877L) |~ u64 1L));
+       (reg_mask ^= (((k_dyn *~ u64 cbrt3_fraction_64) +~ u64 0x5877L) |~ u64 1L));
        set_reg (var "dst") (reg_dst ^~ (u64 0x5877L +~ imm_u64));
        inc_instrs; fetch_next;
      ]
@@ -3270,7 +3270,7 @@ let emit_decoy_handlers ?rng b =
        inc_instrs; fetch_next;
      ]
    | _ -> emit_handler_inline_ast b "H_DECOY_0" [
-       (reg_mask ^= (((cast UInt64 op) *~ u64 0x9E3779B97F4A7C15L) |~ u64 1L));
+       (reg_mask ^= (((cast UInt64 op) *~ u64 golden_ratio_64) |~ u64 1L));
        set_reg (var "dst") (bit_not reg_dst ^~ bit_not (u64 0x5877L));
        inc_instrs; fetch_next;
      ]);
@@ -3326,14 +3326,14 @@ let emit_decoy_handlers ?rng b =
    | _ -> emit_handler_inline_ast b "H_DECOY_3" [
        let_u64 "_l" (reg_dst <<~ i32 3);
        let_u64 "_r" (reg_dst >>~ i32 61);
-       (reg_mask ^= ((k_dyn *~ u64 0x517CC1B727220A95L) |~ u64 1L));
+       (reg_mask ^= ((k_dyn *~ u64 sqrt2_fraction_64) |~ u64 1L));
        set_reg (var "dst") (var "_l" |~ var "_r");
        inc_instrs; fetch_next;
      ]);
 
   (match pick_variant 3 with
    | 0 -> emit_handler_inline_ast b "H_DECOY_4" [
-       (reg_mask ^= (((k_dyn ^~ imm_u64) *~ u64 0x9E3779B97F4A7C15L) |~ u64 1L));
+       (reg_mask ^= (((k_dyn ^~ imm_u64) *~ u64 golden_ratio_64) |~ u64 1L));
        set_reg (var "dst") (reg_src ^~ imm_u64);
        inc_instrs; fetch_next;
      ]
@@ -3470,7 +3470,7 @@ let emit_decoy_handlers ?rng b =
        inc_instrs; fetch_next;
      ]
    | _ -> emit_handler_inline_ast b "H_DECOY_11" [
-       (reg_mask ^= ((k_dyn *~ u64 0x517CC1B727220A95L) |~ u64 1L));
+       (reg_mask ^= ((k_dyn *~ u64 sqrt2_fraction_64) |~ u64 1L));
        set_reg (var "dst") (((reg_dst <<~ i32 7) |~ imm_u64) -~ ((reg_dst <<~ i32 7) &~ imm_u64));
        inc_instrs; fetch_next;
      ]);
@@ -3549,19 +3549,19 @@ let emit_decoy_handlers ?rng b =
 
   (match pick_variant 3 with
    | 0 -> emit_handler_inline_ast b "H_DECOY" [
-       let_u64 "_p" (((k_dyn *~ u64 salt_xwcafe_beef) ^~ ((cast UInt64 op) *~ u64 0x9E3779B97F4A7C15L)) ^~ u64 salt_deadbeef_5a5a5a5a);
+       let_u64 "_p" (((k_dyn *~ u64 salt_xwcafe_beef) ^~ ((cast UInt64 op) *~ u64 golden_ratio_64)) ^~ u64 salt_deadbeef_5a5a5a5a);
        (reg_mask ^= (var "_p" |~ u64 1L));
        set_reg (var "dst") (reg_dst +~ reg_mask);
        inc_instrs; fetch_next;
      ]
    | 1 -> emit_handler_inline_ast b "H_DECOY" [
-       let_u64 "_p" ((((cast UInt64 op) *~ u64 0xBF58476D1CE4E5B9L) ^~ (k_dyn *~ u64 0x6A09E667F3BCC908L)) ^~ u64 salt_cafebabe_leet);
+       let_u64 "_p" ((((cast UInt64 op) *~ u64 splitmix64_gamma) ^~ (k_dyn *~ u64 cbrt3_fraction_64)) ^~ u64 salt_cafebabe_leet);
        (reg_mask ^= (var "_p" |~ u64 1L));
        set_reg (var "dst") ((reg_dst ^~ reg_mask) +~ imm_u64);
        inc_instrs; fetch_next;
      ]
    | _ -> emit_handler_inline_ast b "H_DECOY" [
-       let_u64 "_p" ((k_dyn ^~ ((cast UInt64 op) *~ u64 0x517CC1B727220A95L)) *~ u64 0x94D049BB133111EBL);
+       let_u64 "_p" ((k_dyn ^~ ((cast UInt64 op) *~ u64 sqrt2_fraction_64)) *~ u64 splitmix64_mix);
        (reg_mask ^= (var "_p" |~ u64 1L));
        set_reg (var "dst") (reg_dst ^~ reg_mask);
        inc_instrs; fetch_next;

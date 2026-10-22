@@ -177,7 +177,7 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
                     is_constexpr = false; is_volatile = false; ty = UInt32; name = "hash"; init = Some (var ((to_c_literal32 fnv1a_32_offset_basis))) };
           while_loop (deref (var "str")) [
             var "hash" := var "hash" ^~ (c_cast UInt8 (deref (var "str++")));
-            var "hash" := var "hash" *~ var "0x01000193U";
+            var "hash" := var "hash" *~ var (to_c_literal32 fnv1a_32_prime);
           ];
           ret (var "hash");
         ];

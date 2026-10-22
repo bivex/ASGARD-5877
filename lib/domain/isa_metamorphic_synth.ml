@@ -1,3 +1,4 @@
+open Random_visa_constants.Magic_numbers
 open Int64
 
 type addressing_endpoint =
@@ -175,10 +176,10 @@ let decode_mixed_radix_insn (spec : isa_radix_spec) (word : int64) : raw_instruc
 
 let step_mealy_grammar_state ~(state : int64) ~(insn_word : int64) ~(data_invariant : int64) : int64 =
   (* SplitMix64 / Stafford Mix13 nonlinear bijection of the decoder automaton state *)
-  let z = add state 0x9E3779B97F4A7C15L in
-  let z = logxor z ( add insn_word (mul data_invariant 0xBF58476D1CE4E5B9L) ) in
-  let z = mul (logxor z (shift_right_logical z 30)) 0xBF58476D1CE4E5B9L in
-  let z = mul (logxor z (shift_right_logical z 27)) 0x94D049BB133111EBL in
+  let z = add state golden_ratio_64 in
+  let z = logxor z ( add insn_word (mul data_invariant splitmix64_gamma) ) in
+  let z = mul (logxor z (shift_right_logical z 30)) splitmix64_gamma in
+  let z = mul (logxor z (shift_right_logical z 27)) splitmix64_mix in
   logxor z (shift_right_logical z 31)
 
 let next_insn_byte_width ~(state : int64) : int =

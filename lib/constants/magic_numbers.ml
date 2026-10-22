@@ -55,6 +55,9 @@ let splitmix64_gamma_inverse = 0x96DE1B173F119089L
 (* The 64-bit FNV-1a prime: 2^40 + 2^8 + 0xB3.  Multiplies the hashed word. *)
 let fnv1a_64_prime = 0x100000001B3L
 
+(* The 32-bit FNV-1a prime: 2^24 + 2^8 + 0x93 = 16777619. *)
+let fnv1a_32_prime = 0x01000193L
+
 (* The two FNV-1a offset bases: the initial value of the hash before the first
    word is mixed in.  The 32-bit one starts the symbol-name hash of the
    emitted runtime, the 64-bit one the polynomial key initialisation. *)
@@ -174,6 +177,15 @@ let salt_deadbeef_5877cafe = 0xDEADBEEF5877CAFEL
 
 (* "DEADBEEF" + "CAFE1337": the scrub pattern of the shadow stack. *)
 let salt_deadbeef_cafe1337 = 0xDEADBEEFCAFE1337L
+
+(* "XWCAFE" + "A56A" + "11223344": the dynamic chunk key seed in the C trampoline. *)
+let salt_chunk_kdyn_seed = 0x5877A56A11223344L
+
+(* "XWCAFE" + "A564D00F": the Stack-VM rolling state initialization salt. *)
+let salt_stack_vm_state = 0x5877A564D00FL
+
+(* "13375877" + "AABBCCDD": the Multi-VM bridge morphing test seed. *)
+let salt_bridge_vector_seed = 0x13375877AABBCCDDL
 
 (* --- Registry -------------------------------------------------------- *)
 
@@ -332,6 +344,23 @@ let registry : entry list = [
     value = salt_deadbeef_cafe1337;
     source = "hex-speak scrub pattern 'DEADBEEF'+'CAFE1337'";
     used_in = [ "lib/native_vm/vm_context_emitter.ml" ] };
+  { name = "fnv1a_32_prime";
+    value = fnv1a_32_prime;
+    source = "FNV-1a 32-bit prime, 2^24 + 2^8 + 0x93 = 16777619";
+    used_in = [ "lib/c_macro_obf/c_macro_templates.ml"; "lib/native_vm/native_vm_templates.ml";
+                "lib/stack_vm/stack_runtime.ml" ] };
+  { name = "salt_chunk_kdyn_seed";
+    value = salt_chunk_kdyn_seed;
+    source = "hex-speak salt 'XWCAFE'+'A56A'+'11223344' - chunk table key derivation";
+    used_in = [ "lib/adapters/protect_adapters/c_trampoline_adapter.ml" ] };
+  { name = "salt_stack_vm_state";
+    value = salt_stack_vm_state;
+    source = "hex-speak salt 'XWCAFE'+'A564D00F' - Stack-VM state initialization";
+    used_in = [ "lib/cff/cff.ml"; "lib/stack_vm/stack_encoder.ml"; "lib/stack_vm/stack_runtime.ml" ] };
+  { name = "salt_bridge_vector_seed";
+    value = salt_bridge_vector_seed;
+    source = "hex-speak salt '13375877'+'AABBCCDD' - Multi-VM bridge morphing seed";
+    used_in = [ "bin/profile_bottlenecks.ml"; "test/test_multi_vm.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

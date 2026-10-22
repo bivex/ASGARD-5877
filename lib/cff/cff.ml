@@ -52,7 +52,7 @@ let inject_opaque_predicate ?next_block_id ~rng ~trap_block_id (b : Ir.basic_blo
         ]
     | _ ->
         (* Invariant 3 (Nilpotent Boolean MBA identity): ((x ^ c) ^ (x | c)) ^ (x & c) == 0 *)
-        let c = 0x5877A564D00FL in
+        let c = salt_stack_vm_state in
         [
           Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
           Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm c };
