@@ -147,10 +147,12 @@ module Threaded_vm_packager : Vm_packager = struct
         Logger.debugf ~section:"PACKAGER" "Function '%s': IR pipeline optimization & diversification succeeded" f.name;
         res.diversified_func
     | Error err ->
-        Logger.warnf ~section:"PACKAGER" "Transform func failed on '%s': %s (falling back to semantic transform)" f.name err;
-        let sem_f = Vm_ir.Semantic_transform.transform_func ~seed f in
-        let codec_cfg = Vm_ir.Codec_pass.default_config (Vm_ir.Seed.codec_seed seed) in
-        Vm_ir.Codec_pass.transform_func ~cfg:codec_cfg sem_f
+        Logger.warnf ~section:"PACKAGER" "Transform func failed on '%s': %s (retrying with unverified pipeline)" f.name err;
+        match Vm_ir.Ir_pipeline.compile ~seed ~verify_equivalence:false f with
+        | Ok res -> res.diversified_func
+        | Error _ ->
+            let sem_f = Vm_ir.Semantic_transform.transform_func ~seed f in
+            sem_f
   let package ~rng ~config ?constants (func : ir_func) : package_result =
     let native_cfg : Protection_config.t = unwrap_config config in
     let ir_funcs = unwrap_multi_ir func in
