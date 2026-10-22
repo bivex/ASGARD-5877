@@ -63,6 +63,7 @@ let default : t = {
   eh_shadowing = default_eh_shadowing;
   anti_vpc = default_anti_vpc;
   memory_chaffing = default_memory_chaffing;
+  spaghetti = default_spaghetti;
 }
 
 let max_security : t = {
@@ -148,6 +149,7 @@ let max_security : t = {
     pool_size = 16384;
     chaff_ratio = 4.0;
   };
+  spaghetti = default_spaghetti;
 }
 
 let lightweight : t = {
@@ -233,6 +235,7 @@ let lightweight : t = {
     pool_size = 1024;
     chaff_ratio = 0.5;
   };
+  spaghetti = default_spaghetti;
 }
 
 let stealth : t = {
@@ -313,6 +316,7 @@ let stealth : t = {
     pool_size = 8192;
     chaff_ratio = 3.0;
   };
+  spaghetti = default_spaghetti;
 }
 
 let edr_stealth : t = {
@@ -398,6 +402,7 @@ let edr_stealth : t = {
     pool_size = 4096;
     chaff_ratio = 1.0;
   };
+  spaghetti = default_spaghetti;
 }
 
 let minimal : t = {
@@ -483,6 +488,7 @@ let minimal : t = {
     pool_size = 1024;
     chaff_ratio = 0.0;
   };
+  spaghetti = default_spaghetti;
 }
 
 let high : t = {
@@ -559,6 +565,7 @@ let high : t = {
   };
   anti_vpc = default_anti_vpc;
   memory_chaffing = default_memory_chaffing;
+  spaghetti = default_spaghetti;
 }
 
 let from_preset name =

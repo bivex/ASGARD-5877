@@ -151,6 +151,31 @@ type stack_vm_config = {
   compact_imm : bool [@default true];
 } [@@deriving yojson]
 
+type spaghetti_config = {
+  enabled   : bool  [@default true];
+  (** Probability 0–100 of splitting each eligible block. 100 = always split
+      when a valid cut-point exists and the block-count ceiling permits. *)
+  split_rate : int  [@default 100];
+  (** Maximum additional blocks allowed beyond the post-CFF count.
+      Formula: actual cap = min max_extra_blocks (cur_blocks * max_splits_factor).
+      Set to 0 to use the old hard-coded heuristic (min 512 (cur/2)). *)
+  max_extra_blocks : int  [@default 0];
+  (** Multiplier applied to the current block count to derive max_splits.
+      Default 1 means "at most 1× extra blocks"; 2 means 2× extra; etc. *)
+  max_splits_factor : int  [@default 1];
+  (** Minimum number of ops required on each side of a cut point.
+      Lower = more candidate splits; minimum useful value is 1. *)
+  min_chunk : int  [@default 2];
+} [@@deriving yojson]
+
+let default_spaghetti = {
+  enabled           = true;
+  split_rate        = 100;
+  max_extra_blocks  = 0;
+  max_splits_factor = 1;
+  min_chunk         = 2;
+}
+
 let default_crypto = { rounds = 16; key_bits = 128 }
 let default_bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5 }
 let default_cff = { enabled = true; obfuscate_states = true; inject_opaque_predicates = false; input_tainted_transitions = true; split_rate = 30; hub_count = 1 }
@@ -239,6 +264,7 @@ type t = {
   eh_shadowing : eh_shadowing_config [@default default_eh_shadowing];
   anti_vpc : anti_vpc_config [@default default_anti_vpc];
   memory_chaffing : memory_chaffing_config [@default default_memory_chaffing];
+  spaghetti : spaghetti_config [@default default_spaghetti];
 } [@@deriving yojson]
 
 (* ADC/SBC carry dialect: true when the lifted program reads the carry in the

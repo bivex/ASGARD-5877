@@ -106,6 +106,15 @@ type memory_chaffing_config = {
   chaff_ratio : float;
 }
 
+type spaghetti_config = {
+  enabled           : bool;
+  split_rate        : int;
+  max_extra_blocks  : int;
+  max_splits_factor : int;
+  min_chunk         : int;
+}
+
+
 type arch = [ `X86_64 | `AArch64 | `RISCV ]
 
 type t = {
@@ -123,11 +132,13 @@ type t = {
   eh_shadowing : eh_shadowing_config;
   anti_vpc : anti_vpc_config;
   memory_chaffing : memory_chaffing_config;
+  spaghetti : spaghetti_config;
 }
 
 val default_eh_shadowing : eh_shadowing_config
 val default_anti_vpc : anti_vpc_config
 val default_memory_chaffing : memory_chaffing_config
+val default_spaghetti : spaghetti_config
 
 val minimal : t
 val lightweight : t

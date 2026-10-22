@@ -626,16 +626,25 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
     in
+    let sp = native_cfg.spaghetti in
     let cur_b = Hashtbl.length prog.blocks in
-    let max_splits = max 64 (min 512 (cur_b / 2)) in
+    (* max_splits: user-configurable via max_extra_blocks or max_splits_factor;
+       fall back to the original heuristic when both are zero (default). *)
+    let max_splits =
+      if not sp.enabled then 0
+      else if sp.max_extra_blocks > 0 then sp.max_extra_blocks
+      else if sp.max_splits_factor > 0 then cur_b * sp.max_splits_factor
+      else max 64 (min 512 (cur_b / 2))   (* legacy heuristic *)
+    in
     let spaghetti_cfg = {
       (Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed) with
-      split_rate = 100;
+      split_rate = (if sp.enabled then sp.split_rate else 0);
       max_blocks = cur_b + max_splits;
+      min_chunk  = sp.min_chunk;
     } in
     note
-      (Printf.sprintf "    Spaghetti CFG Splitting    split_rate=%d max_blocks=%d seed=0x%016LX"
-         spaghetti_cfg.split_rate spaghetti_cfg.max_blocks spaghetti_cfg.seed);
+      (Printf.sprintf "    Spaghetti CFG Splitting    split_rate=%d max_blocks=%d min_chunk=%d seed=0x%016LX"
+         spaghetti_cfg.split_rate spaghetti_cfg.max_blocks spaghetti_cfg.min_chunk spaghetti_cfg.seed);
     let prog_spaghetti = Stack_vm.Stack_spaghetti_pass.apply_program spaghetti_cfg prog in
     let spaghetti_info = Stack_vm.Stack_spaghetti_pass.spaghetti_stats prog prog_spaghetti in
     let prog = prog_spaghetti in

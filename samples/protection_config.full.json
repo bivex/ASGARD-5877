@@ -86,5 +86,12 @@
     "enabled": true,
     "pool_size": 16384,
     "chaff_ratio": 4.0
+  },
+  "spaghetti": {
+    "enabled": true,
+    "split_rate": 100,
+    "max_extra_blocks": 0,
+    "max_splits_factor": 1,
+    "min_chunk": 2
   }
 }
