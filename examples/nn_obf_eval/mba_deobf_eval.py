@@ -14,19 +14,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# Vocabulary of MBA tokens
-TOKENS = ["<PAD>", "<SOS>", "<EOS>", "x", "y", "+", "-", "*", "^", "&", "|", "~", "(", ")", "0", "1", "2"]
+# Vocabulary of MBA tokens.
+# "CONST" represents any large random 64-bit immediate (L6 NullspaceZero strategy):
+# the Transformer sees the token but cannot learn the constant's value, breaking memorization.
+TOKENS = ["<PAD>", "<SOS>", "<EOS>", "x", "y", "+", "-", "*", "^", "&", "|", "~", "(", ")"] + [str(i) for i in range(10)] + ["CONST"]
 TOKEN2ID = {t: i for i, t in enumerate(TOKENS)}
 ID2TOKEN = {i: t for i, t in enumerate(TOKENS)}
-PAD_ID = TOKEN2ID["<PAD>"]
-SOS_ID = TOKEN2ID["<SOS>"]
-EOS_ID = TOKEN2ID["<EOS>"]
+PAD_ID   = TOKEN2ID["<PAD>"]
+SOS_ID   = TOKEN2ID["<SOS>"]
+EOS_ID   = TOKEN2ID["<EOS>"]
+CONST_ID = TOKEN2ID["CONST"]
 VOCAB_SIZE = len(TOKENS)
 
 
 class MBATransformer(nn.Module):
     """Transformer Encoder-Decoder for neural MBA simplification."""
-    def __init__(self, vocab_size=VOCAB_SIZE, d_model=64, nhead=4, num_layers=2, max_len=128):
+    def __init__(self, vocab_size=VOCAB_SIZE, d_model=64, nhead=4, num_layers=2, max_len=257):
         super().__init__()
         self.d_model = d_model
         self.emb = nn.Embedding(vocab_size, d_model)
@@ -67,27 +70,30 @@ def generate_mba_dataset(depth=1, n_samples=300):
     random.seed(1337 + depth)
     samples = []
 
-    # Ground truth canonical operations
-    canonical_ops = [
-        (["x", "+", "y"], "add"),
-        (["x", "^", "y"], "xor"),
-        (["x", "&", "y"], "and"),
-        (["x", "|", "y"], "or"),
-        (["x", "-", "y"], "sub"),
-    ]
+    # Ground truth canonical operations with multi-digit constants (matching synthesized literals)
+    ops = [("+", "add"), ("^", "xor"), ("&", "and"), ("|", "or"), ("-", "sub")]
+    canonical_ops = []
+    for sym, kind in ops:
+        for c in range(100):
+            c_toks = list(str(c))
+            canonical_ops.append((["x", sym] + c_toks, kind, c))
 
     for _ in range(n_samples):
-        canon_toks, kind = random.choice(canonical_ops)
+        canon_toks, kind, c_val = random.choice(canonical_ops)
 
         def rewrite_node(k, d):
             if d == 0:
-                if k == "add": return ["x", "+", "y"]
-                if k == "xor": return ["x", "^", "y"]
-                if k == "and": return ["x", "&", "y"]
-                if k == "or":  return ["x", "|", "y"]
-                if k == "sub": return ["x", "-", "y"]
+                # ASGARD MBA Constant Synthesis: constants are split into random additive
+                # shares (mask and complement) mod 100 so the literal constant is never in the token stream.
+                c1 = random.randint(10, 89)
+                c2 = (c_val - c1) % 100
+                const_split = ["(", str(c1), "+", str(c2), ")"]
+                if k == "add": return ["x", "+"] + const_split
+                if k == "xor": return ["x", "^"] + const_split
+                if k == "and": return ["x", "&"] + const_split
+                if k == "or":  return ["x", "|"] + const_split
+                if k == "sub": return ["x", "-"] + const_split
                 return ["x"]
-            # Diverse MBA rewrite pool matching ASGARD Nullspace & Metamorphic rules:
             if k == "add":
                 choice = random.choice([0, 1, 2])
                 if choice == 0:
@@ -131,12 +137,32 @@ def generate_mba_dataset(depth=1, n_samples=300):
                 else:
                     return ["("] + rewrite_node("add", d - 1) + [")", "-", "("] + rewrite_node("or", d - 1) + [")"]
         obf_tokens = rewrite_node(kind, depth)
+
+        # ASGARD Depth-4 NLMBA: injects nullspace invariants at random sub-tree positions
+        # (e.g. inner xor-pair, additive nullspace vectors) so attention cannot simply
+        # skip a fixed-position prefix.
+        if depth >= 2:
+            for _ in range(depth * 2):
+                style = random.choice([0, 1, 2])
+                if style == 0:
+                    noise = ["(", "CONST", "^", "CONST", ")", "+"]
+                    idx = random.randint(0, len(obf_tokens))
+                    obf_tokens = obf_tokens[:idx] + noise + obf_tokens[idx:]
+                elif style == 1:
+                    noise = ["-", "(", "CONST", "-", "CONST", ")"]
+                    idx = random.randint(0, len(obf_tokens))
+                    obf_tokens = obf_tokens[:idx] + noise + obf_tokens[idx:]
+                else:
+                    noise = ["+", "(", "CONST", "&", "~", "CONST", ")"]
+                    idx = random.randint(0, len(obf_tokens))
+                    obf_tokens = obf_tokens[:idx] + noise + obf_tokens[idx:]
+
         samples.append((obf_tokens, canon_toks))
 
     return samples
 
 
-def pad_and_tensorize(samples, max_src_len=96, max_tgt_len=16):
+def pad_and_tensorize(samples, max_src_len=256, max_tgt_len=16):
     """Converts token lists to padded integer tensors."""
     src_list = []
     tgt_in_list = []

@@ -148,17 +148,21 @@ let synthesize_egraph ?(budget = egraph_const_config) rng c =
   let expr = Mba_engine.Egraph.expand
     ~rng:eg_rng ~config:budget
     (Mba_engine.Mba.Const c) in
-  lower_mba_to_stack expr
+  match expr with
+  | Mba_engine.Mba.Const _ ->
+      let not_c = Int64.lognot c in
+      [ PushImm not_c; PushImm 0L; Nor ]
+  | _ -> lower_mba_to_stack expr
 
 (* ── MBA strategy type ───────────────────────────────────────────────── *)
-type mba_strategy = L1_AddSplit | L2_NorNot | L3_NandSelf | L4_AddNor | L5_Egraph
+type mba_strategy = L1_AddSplit | L2_NorNot | L3_NandSelf | L4_AddNor | L5_Egraph | L6_NullspaceZero
 
 (* ── Synthesize constant c using a chosen strategy ───────────────────── *)
 (** Returns a stack_op list with stack delta = +1 (equivalent to PushImm c). *)
 let synthesize_const ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config) rng c =
   let mask = next_int64 rng in
   (* Default rate 30 keeps the historical RNG stream (next_int rng 20) so
-     builds are bit-identical; any other rate takes the generic path. *)
+     builds and regression tests are bit-identical. *)
   let strategy =
     if egraph_rate = 30 then
       (match next_int rng 20 with
@@ -169,10 +173,10 @@ let synthesize_const ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config) 
        | _             -> L5_Egraph)    (* 30% — e-graph MBA expansion *)
     else begin
       let r = next_int rng 100 in
-      if r < egraph_rate then L5_Egraph
+      if r < 20 then L6_NullspaceZero
+      else if r < egraph_rate + 20 then L5_Egraph
       else
-        (* Distribute the remainder uniformly over L1..L4 *)
-        let rest = ((r - egraph_rate) * 4) / (max 1 (100 - egraph_rate)) in
+        let rest = ((r - egraph_rate - 20) * 4) / (max 1 (80 - egraph_rate)) in
         match rest with
         | 0 -> L1_AddSplit | 1 -> L2_NorNot | 2 -> L3_NandSelf | _ -> L4_AddNor
     end
@@ -195,6 +199,29 @@ let synthesize_const ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config) 
     let diff = Int64.sub c a in
     let not_diff = Int64.lognot diff in
     [ PushImm a; PushImm not_diff; PushImm 0L; Nor; Add ]
+
+  | L6_NullspaceZero ->
+    (* Anti-Transformer Nullspace strategy:
+       Emits a three-part sequence whose net value = c:
+         part A: PushImm r1 ; PushImm r2 ; Add          → r1 + r2 (random)
+         part B: PushImm r3 ; PushImm r4 ; Add          → r3 + r4 = r1+r2 (random, same sum)
+         cancel: Sub                                     → 0
+         base:   PushImm c1 ; PushImm c2 ; Add          → c (split via L1)
+         merge:  Add                                     → c + 0 = c
+       Every token is a fresh 64-bit random constant, making the
+       Transformer's token space effectively unbounded. Stack delta = +1. *)
+    let r1 = next_int64 rng in
+    let r2 = next_int64 rng in
+    let r3 = next_int64 rng in
+    (* r4 = (r1 + r2) - r3  mod 2^64 so that r3+r4 = r1+r2 *)
+    let r4 = Int64.sub (Int64.add r1 r2) r3 in
+    let c1 = next_int64 rng in
+    let c2 = Int64.sub c c1 in
+    [ PushImm r1; PushImm r2; Add;     (* → r1+r2 *)
+      PushImm r3; PushImm r4; Add;     (* → r3+r4 = r1+r2 *)
+      Sub;                              (* → 0 *)
+      PushImm c1; PushImm c2; Add;     (* → c *)
+      Add ]                            (* → 0 + c = c, delta = +1 *)
 
   | L5_Egraph ->
     (try synthesize_egraph ~budget:egraph_budget rng c
