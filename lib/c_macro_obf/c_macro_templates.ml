@@ -58,16 +58,16 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
     preproc_if "defined(__cplusplus)"
       [
         preproc_if "defined(_MSC_VER) && !defined(__clang__)"
-          [ raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) ([&]() -> char* { \\\n    char* _buf = (char*)_alloca((len) + 1); \\\n    return " ^ p ^ "decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \\\n}())") ]
+          [ raw_top ("#define " ^ p ^ "STR(len, key, ...) ([&]() -> char* { \\\n    static const uint8_t _enc[] = { __VA_ARGS__ }; \\\n    char* _buf = (char*)_alloca((len) + 1); \\\n    return " ^ p ^ "decrypt_str(_buf, _enc, (len), (key)); \\\n}())") ]
           ~else_decls:[
-            raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\\n    char* _buf = (char*)__builtin_alloca((len) + 1); \\\n    " ^ p ^ "decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \\\n})")
+            raw_top ("#define " ^ p ^ "STR(len, key, ...) ({ \\\n    static const uint8_t _enc[] = { __VA_ARGS__ }; \\\n    char* _buf = (char*)__builtin_alloca((len) + 1); \\\n    " ^ p ^ "decrypt_str(_buf, _enc, (len), (key)); \\\n})")
           ]
       ]
       ~else_decls:[
         preproc_if "defined(__GNUC__) || defined(__clang__)"
-          [ raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\\n    char* _buf = (char*)__builtin_alloca((len) + 1); \\\n    " ^ p ^ "decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \\\n})") ]
+          [ raw_top ("#define " ^ p ^ "STR(len, key, ...) ({ \\\n    static const uint8_t _enc[] = { __VA_ARGS__ }; \\\n    char* _buf = (char*)__builtin_alloca((len) + 1); \\\n    " ^ p ^ "decrypt_str(_buf, _enc, (len), (key)); \\\n})") ]
           ~else_decls:[
-            raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) \\\n    " ^ p ^ "decrypt_str((char*)alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))")
+            raw_top ("#define " ^ p ^ "STR(len, key, ...) ({ \\\n    static const uint8_t _enc[] = { __VA_ARGS__ }; \\\n    char* _buf = (char*)alloca((len) + 1); \\\n    " ^ p ^ "decrypt_str(_buf, _enc, (len), (key)); \\\n})")
           ]
       ]
   in

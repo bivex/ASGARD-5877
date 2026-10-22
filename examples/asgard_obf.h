@@ -72,27 +72,33 @@ static __attribute__((always_inline)) inline char* ASG_decrypt_str(char* buf, co
 #if defined(__cplusplus)
 
 #if defined(_MSC_VER) && !defined(__clang__)
-#define ASG_STR(enc_bytes, len, key) ([&]() -> char* { \
+#define ASG_STR(len, key, ...) ([&]() -> char* { \
+    static const uint8_t _enc[] = { __VA_ARGS__ }; \
     char* _buf = (char*)_alloca((len) + 1); \
-    return ASG_decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \
+    return ASG_decrypt_str(_buf, _enc, (len), (key)); \
 }())
 #else
-#define ASG_STR(enc_bytes, len, key) ({ \
+#define ASG_STR(len, key, ...) ({ \
+    static const uint8_t _enc[] = { __VA_ARGS__ }; \
     char* _buf = (char*)__builtin_alloca((len) + 1); \
-    ASG_decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \
+    ASG_decrypt_str(_buf, _enc, (len), (key)); \
 })
 #endif
 
 #else
 
 #if defined(__GNUC__) || defined(__clang__)
-#define ASG_STR(enc_bytes, len, key) ({ \
+#define ASG_STR(len, key, ...) ({ \
+    static const uint8_t _enc[] = { __VA_ARGS__ }; \
     char* _buf = (char*)__builtin_alloca((len) + 1); \
-    ASG_decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \
+    ASG_decrypt_str(_buf, _enc, (len), (key)); \
 })
 #else
-#define ASG_STR(enc_bytes, len, key) \
-    ASG_decrypt_str((char*)alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))
+#define ASG_STR(len, key, ...) ({ \
+    static const uint8_t _enc[] = { __VA_ARGS__ }; \
+    char* _buf = (char*)alloca((len) + 1); \
+    ASG_decrypt_str(_buf, _enc, (len), (key)); \
+})
 #endif
 
 #endif

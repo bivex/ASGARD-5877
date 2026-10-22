@@ -33,9 +33,8 @@ let obfuscate_string_literal ~prefix ~seed s =
   let key = (C_macro_config.xorshift32 (seed + len * 31)) land 0x7FFFFFFF in
   let bytes = Buffer.create (len * 6 + 32) in
   if len = 0 then
-    Buffer.add_string bytes "((const uint8_t[]){ 0 })"
+    Buffer.add_string bytes "0"
   else begin
-    Buffer.add_string bytes "((const uint8_t[]){ ";
     for i = 0 to len - 1 do
       let orig_byte = Char.code s.[i] in
       let k = ((key lxor (i * 0x5D)) land 0xFF) in
@@ -43,9 +42,8 @@ let obfuscate_string_literal ~prefix ~seed s =
       if i > 0 then Buffer.add_string bytes ", ";
       Buffer.add_string bytes (Printf.sprintf "0x%02X" enc_byte)
     done;
-    Buffer.add_string bytes " })"
   end;
-  Printf.sprintf "%sSTR(%s, %d, 0x%XU)" prefix (Buffer.contents bytes) len key
+  Printf.sprintf "%sSTR(%d, 0x%XU, %s)" prefix len key (Buffer.contents bytes)
 
 let obfuscate_constant_i64 ~prefix ~seed n =
   let rng = Random.State.make [| seed; Int64.to_int (Int64.logand n 0x7FFFFFFFL) |] in
