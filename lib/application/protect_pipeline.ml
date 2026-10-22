@@ -496,8 +496,23 @@ let run
                       ^ Printf.sprintf "- Build-Seed Watermark: Active (Client ID: 0x%016LX, Derivation Key: 0x%016LX)\n%s"
                           wid.raw_bits wid.derivation_key sep }
             in
-            Logger.infof ~loc:__LOC__ ~section:"PIPELINE" "Protection completed successfully (Aggregated DRS: %.1f/100.0)"
-              metrics.drs_score;
+            let output_target = match bin_artifact with Some b -> b | None -> hdr_path in
+            let sep = "===============================================" in
+            let summary = metrics.formatted_summary in
+            let n = String.length summary in
+            let sep_len = String.length sep in
+            let body =
+              if n > sep_len then String.sub summary 0 (n - sep_len) else summary
+            in
+            let metrics =
+              { metrics with
+                formatted_summary =
+                  body
+                  ^ Printf.sprintf "- Protected File: %s -> %s\n%s" input_file output_target sep }
+            in
+            Logger.infof ~loc:__LOC__ ~section:"PIPELINE" "Protected file: '%s' -> '%s'" input_file output_target;
+            Logger.infof ~loc:__LOC__ ~section:"PIPELINE" "Protection completed successfully for '%s' (Aggregated DRS: %.1f/100.0)"
+              input_file metrics.drs_score;
             Ok {
               header_path = hdr_path;
               runner_path;
