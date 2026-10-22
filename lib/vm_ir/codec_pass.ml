@@ -211,6 +211,14 @@ let process_block ~cfg (b : basic_block) : basic_block =
         set_state r Plain;
         acc @ [ instr ]
 
+    | Load_symbol { dst; _ } ->
+        set_state dst Plain;
+        acc @ [ instr ]
+
+    | Get_flags d ->
+        set_state d Plain;
+        acc @ [ instr ]
+
     | other -> acc @ [ other ]
   in
 

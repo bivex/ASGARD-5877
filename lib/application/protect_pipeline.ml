@@ -366,8 +366,14 @@ let run
                           | Ok () ->
                               let exec_res =
                                 match T.execute_binary ~binary_path:bin_path with
-                                | Ok (code, out) -> Some (code, out)
-                                | Error _ -> None
+                                | Ok (code, out) ->
+                                    Logger.infof ~section:"TOOLCHAIN" "Native Swift binary '%s' executed (exit code %d)" bin_path code;
+                                    if String.trim out <> "" then
+                                      Logger.debugf ~section:"TOOLCHAIN" "Binary execution output:\n%s" (String.trim out);
+                                    Some (code, out)
+                                | Error err ->
+                                    Logger.warnf ~section:"TOOLCHAIN" "Swift execution warning: %s" err;
+                                    None
                               in
                               (Some bin_path, exec_res)
                           | Error err ->
@@ -388,7 +394,9 @@ let run
                           let exec_res =
                             match T.execute_binary ~binary_path:bin_path with
                             | Ok (code, out) ->
-                                Logger.infof ~section:"TOOLCHAIN" "Native binary '%s' executed successfully (code=%d)" bin_path code;
+                                Logger.infof ~section:"TOOLCHAIN" "Native binary '%s' executed (exit code %d)" bin_path code;
+                                if String.trim out <> "" then
+                                  Logger.debugf ~section:"TOOLCHAIN" "Binary execution output:\n%s" (String.trim out);
                                 Some (code, out)
                             | Error err ->
                                 Logger.warnf ~section:"TOOLCHAIN" "Execution warning: %s" err;

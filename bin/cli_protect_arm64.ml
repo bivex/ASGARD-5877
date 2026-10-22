@@ -86,21 +86,6 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
       `Error (false, err)
   | Ok res ->
       print_endline res.metrics.formatted_summary;
-      Printf.printf "Generated ARM64 VM Header: %s\n" res.header_path;
-      Printf.printf "Generated ARM64 Protected Bytecode: %s (%d bytes)\n" res.bytecode_path res.bytecode_length_bytes;
-      (match res.binary_path with
-      | Some bin ->
-          Printf.printf "\nProtected Binary Execution (%s):\n" bin;
-          Printf.printf "--------------------------------------------------------\n";
-          (match res.execution_output with
-          | Some (code, out) ->
-              print_string out;
-              if String.length out > 0 && not (String.ends_with ~suffix:"\n" out) then
-                print_newline ();
-              Printf.printf "--------------------------------------------------------\n\n";
-              Printf.printf "--- Target Execution Complete (Return Code: %d) ---\n" code
-          | None -> ());
-      | None -> ());
       `Ok ()
 
 let protect_arm64_cmd =
