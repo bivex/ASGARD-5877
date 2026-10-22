@@ -27,16 +27,20 @@ The suite trains three specialized deep-learning models targeting the core prote
                      Composite Neural DRS (0..100)
 ```
 
-### 1. Graph Attention Network (GAT) (`gnn_cff_eval.py`)
+### 1. Multi-Model Red-Team Ensemble & Statistical Bounds (`gnn_cff_eval.py`)
 - **Attack Vector:** Automated CFF unflattening and dispatcher localization (simulating tools like D-Tigress, Ghidra unflatteners, and IDA VTIL).
-- **Architecture:** 4-head Graph Attention Network (`GATLayer`) operating on Stack-IR basic block feature vectors $X \in \mathbb{R}^{15}$ (normalized opcode distributions, in/out degrees, stack delta, entry flag).
-- **Metrics:**
-  - **Hub-F1:** F1-score of detecting the CFF dispatcher entry among hundreds of blocks. An ideal defense yields $\text{Hub-F1} = 0.000$.
-  - **Edge-AUC:** Area under ROC curve for link prediction on held-out validation edges vs. composition-matched decoy edges. An ideal defense forces $\text{Edge-AUC} \to 0.500$ (random coin-flip baseline).
-- **Resilience Formula:**
-  $$\text{AUC advantage} = \max(0.0, \text{Edge-AUC} - 0.5) \times 2.0$$
-  $$\text{DRS}_{\text{CFG}} = 100.0 \times \left(1.0 - \left(0.6 \cdot (\text{AUC advantage})^2 + 0.4 \cdot (\text{Hub-F1})^2\right)\right)$$
-
+- **Ensemble Architectures:**
+  - **GAT (Attention):** 4-head Graph Attention Network (`GATLayer`) operating on Stack-IR basic block feature vectors $X \in \mathbb{R}^{15}$.
+  - **GCN (Spectral):** Kipf & Welling Graph Convolutional Network with symmetric Laplacian normalization ($\tilde{D}^{-1/2} \tilde{A} \tilde{D}^{-1/2} X W$).
+  - **GraphSAGE (Inductive):** Mean neighborhood pooling with representation concatenation ($W \cdot [X_u \,\|\, \text{mean}_{v \in \mathcal{N}(u)} X_v]$).
+  - **Tabular Baseline:** Regularized pairwise Logistic Regression on non-graph edge features ($[X_u, X_v, |X_u - X_v|, X_u \cdot X_v]$).
+- **Statistical Metrics (Hanley & McNeil 1982):**
+  - **Standard Error (SE) & $z$-score:** Tests statistical significance of deviation from the random-guess boundary ($H_0: \text{AUC} = 0.50$):
+    $$z = \frac{\text{AUC} - 0.50}{\text{SE}}, \quad p = \frac{1}{2} \text{erfc}\left(\frac{z}{\sqrt{2}}\right)$$
+  - **95% Confidence Upper Bound ($\text{AUC}_{95\%}$):** Rather than taking an optimistic point estimate, the audit discounts DRS by the conservative upper bound $\text{AUC}_{95\%} = \min(1.0, \text{AUC} + 1.96 \cdot \text{SE})$.
+- **Conservative Resilience Formula:**
+  $$\text{AUC advantage} = \max(0.0, \text{AUC}_{95\%} - 0.5) \times 2.0$$
+  $$\text{DRS}_{\text{CFG}} = \min_{M \in \{\text{GAT}, \text{GCN}, \text{SAGE}, \text{Tab}\}} \left[ 100.0 \times \left(1.0 - \left(0.6 \cdot (\text{AUC advantage}_M)^2 + 0.4 \cdot (\text{Hub-F1}_M)^2\right)\right) \right]$$
 ### 2. AST-Level Seq2Seq Transformer (`mba_deobf_eval.py`)
 - **Attack Vector:** Neural symbolic deobfuscation and algebraic simplification of Mixed Boolean-Arithmetic (simulating NeuReduce and QSynth).
 - **Architecture:** Sequence-to-Sequence Transformer with positional embeddings and self/cross-attention across tokenized expressions (`TOKENS`: operators, variables, constants, and `CONST` nullspace wildcards).
@@ -85,6 +89,13 @@ ASGARD_DUMP_JSON_DIR=/tmp/my_license_json _build/default/bin/main.exe protect-ar
 python3 examples/nn_obf_eval/eval_obfuscation.py \
   /tmp/my_license_json \
   /tmp/my_license_out/protected.vanguard
+```
+
+### 3. Run Multi-Function Corpus Benchmark across C Algorithms
+Evaluates across 6 real C programs (`sqlite_varint_hash`, `coreutils_crc32`, `openssl_sha256`, `wireguard_chacha20`, `zstd_xxhash64`, `license_check`), computing mean DRS, worst-case minimum (guaranteed lower bound), P10, and standard deviation:
+
+```bash
+./examples/nn_obf_eval/eval_corpus.py
 ```
 
 ---

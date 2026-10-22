@@ -241,10 +241,16 @@ let apply_program_with_info cfg ctx prog =
   in
   let dispatcher_base = max_real_id + 1 in
 
-  (* 4. Build the circular sharded dispatcher chain *)
+  (* 4. Build the circular sharded dispatcher chain with per-function salt derivation
+     so shard mapping cannot be precomputed statically across functions in the binary *)
   let real_ids = Hashtbl.fold (fun id _ acc -> id :: acc) prog.blocks [] in
+  let func_salt =
+    Int64.logxor cfg.seed
+      (Int64.logxor salt_stack_vm_state
+         (Int64.mul (Int64.of_int prog.entry_id) block_id_multiplier))
+  in
   let disp_blocks, entry_of =
-    build_dispatcher_chain ~seed:cfg.seed vpc_slot tokens real_ids dispatcher_base
+    build_dispatcher_chain ~seed:func_salt vpc_slot tokens real_ids dispatcher_base
   in
 
   (* 5. Transform every real block's terminators with sharded entry routing *)
