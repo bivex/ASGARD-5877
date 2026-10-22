@@ -6,10 +6,11 @@
     the Decoy VM under analysis pressure. *)
 
 open Vm_ir
+open Random_visa_constants.Magic_numbers
 
 let synth_decoy_validator_func ~(seed : int64) ~(name : string) : Ir.func =
-  let c1 = Int64.logxor seed 0x5877CAFE1337BEEFL in
-  let c2 = Int64.logxor (Int64.mul seed 0x9E3779B97F4A7C15L) 0xDEADBEEF5A5A5A5AL in
+  let c1 = Int64.logxor seed salt_xwcafe_leetbeef in
+  let c2 = Int64.logxor (Int64.mul seed 0x9E3779B97F4A7C15L) salt_deadbeef_5a5a5a5a in
   let c3 = 0xBF58476D1CE4E5B9L in
 
   let b1_instrs = [

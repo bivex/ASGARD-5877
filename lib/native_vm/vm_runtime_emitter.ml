@@ -1,3 +1,4 @@
+open Random_visa_constants.Magic_numbers
 let generate_wbox_seed_derivation_decls ~rng (key_seed : int32) : Cpp_codegen.Cpp_ast.top_decl list =
   let rotl32 x n =
     let n = n land 31 in
@@ -172,7 +173,7 @@ module Runtime_policy = struct
 end
 
 let calc_fnv1a32 (s : string) : int32 =
-  let h = ref 0x811c9dc5l in
+  let h = ref (Int64.to_int32 fnv1a_32_offset_basis) in
   for i = 0 to String.length s - 1 do
     Stdlib.(h := Int32.logxor !h (Int32.of_int (Char.code s.[i])));
     Stdlib.(h := Int32.mul !h 0x01000193l)
@@ -546,10 +547,12 @@ let emit_native_runtime_hpp_decls
      else [])
   @ (if policy.enable_mem_scan then [ raw_top mem_scan_header ]
      else [
-       raw_top {|namespace asgard_mem_integrity {
-    static inline uint64_t compute_section_integrity_hash() noexcept { return 0x5877CAFE1337BEEFULL; }
+       raw_top ({|namespace asgard_mem_integrity {
+    static inline uint64_t compute_section_integrity_hash() noexcept { return |} ^
+        (to_c_literal salt_xwcafe_leetbeef) ^
+        {|; }
     static inline uint64_t evaluate_memory_integrity() noexcept { return 0; }
-}|};
+}|});
      ])
   @ (if policy.enable_nanomites then [ raw_top nanomite_header ] else [])
   @ (if policy.enable_ephemeral_jit then [
@@ -560,7 +563,7 @@ let emit_native_runtime_hpp_decls
   in
 
   let dynamic_resolvers : top_decl list = [
-    raw_top {|static inline void* asgard_resolve_constant(uint32_t hash, uint32_t alt_hash) noexcept {
+    raw_top ({|static inline void* asgard_resolve_constant(uint32_t hash, uint32_t alt_hash) noexcept {
     for (size_t i = 0; i < sizeof(g_asgard_constants) / sizeof(g_asgard_constants[0]); ++i) {
         AsgardConstantEntry* c = &g_asgard_constants[i];
         if (c->size > 0) {
@@ -584,14 +587,18 @@ let emit_native_runtime_hpp_decls
 
 static inline void* asgard_resolve_constant_name(const char* name) noexcept {
     if (!name || name[0] == '\0') return nullptr;
-    uint32_t h = 0x811C9DC5U;
+    uint32_t h = |} ^
+        (to_c_literal32 fnv1a_32_offset_basis) ^
+        {|;
     const char* p = name;
     while (*p) {
         h = (h ^ (uint8_t)*p++) * 0x01000193U;
     }
     uint32_t ah = 0;
     if (name[0] == '_') {
-        ah = 0x811C9DC5U;
+        ah = |} ^
+        (to_c_literal32 fnv1a_32_offset_basis) ^
+        {|;
         p = name + 1;
         while (*p) {
             ah = (ah ^ (uint8_t)*p++) * 0x01000193U;
@@ -666,7 +673,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
     while (*p) *p++ = 0;
 
     return sym_ptr;
-}|};
+}|});
   ] in
 
   let wbox_decls = generate_wbox_seed_derivation_decls ~rng key_seed in
@@ -714,21 +721,23 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
          | Some hl when List.length hl > 1 ->
              [
                emit_native_valid_hashes_ast hl;
-               raw {|    bool hash_ok = false;
+               raw ({|    bool hash_ok = false;
     for (size_t hi = 0; hi < sizeof(valid_hashes)/sizeof(valid_hashes[0]); ++hi) {
         if (full_hash == valid_hashes[hi]) { hash_ok = true; break; }
     }
     if (!hash_ok) {
-        ctx.reg_mask ^= 0xDEADBEEF5A5A5A5AULL ^ full_hash;
+        ctx.reg_mask ^= |} ^
+        (to_c_literal salt_deadbeef_5a5a5a5a) ^
+        {| ^ full_hash;
         ctx.trapped = true;
         return false;
-    }|};
+    }|});
              ]
          | _ ->
              [
                let_u64 "hash_diff" (var "full_hash" ^~ u64 expected_hash);
                (var "ctx.running_key" ^= var "hash_diff");
-               (var "ctx.reg_mask" ^= (var "hash_diff" *~ u64 0x5877CAFEBEEFL));
+               (var "ctx.reg_mask" ^= (var "hash_diff" *~ u64 salt_xwcafe_beef));
                if_then (var "hash_diff" <>~ u64 0L) [
                  (var "ctx.trapped" := bool_lit true);
                  ret (bool_lit false);
@@ -736,21 +745,23 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
              ])
       @ (if policy.enable_direct_syscalls then [
           if_then (call "asgard_syscalls::sys_check_debugger_present" []) [
-            (var "ctx.reg_mask" ^= u64 0xCAFEBABE13375877L);
+            (var "ctx.reg_mask" ^= u64 salt_cafebabe_leet);
             (var "ctx.trapped" := bool_lit true);
             ret (bool_lit false);
           ];
         ] else [
-          raw {|#if defined(__APPLE__)
+          raw ({|#if defined(__APPLE__)
     int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
     struct kinfo_proc kinfo = {};
     size_t ksize = sizeof(kinfo);
     if (false && sysctl(mib, 4, &kinfo, &ksize, (void*)0, 0) == 0 && (kinfo.kp_proc.p_flag & P_TRACED)) {
-        ctx.reg_mask ^= 0xCAFEBABE13375877ULL;
+        ctx.reg_mask ^= |} ^
+        (to_c_literal salt_cafebabe_leet) ^
+        {|;
         ctx.trapped = true;
         return false;
     }
-#endif|};
+#endif|});
         ])
       @ (if policy.enable_anti_emu then [
           let_u64 "emu_penalty" (call "asgard_anti_emulation::evaluate_emulation_differential" []);
@@ -775,7 +786,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
       ]
       @ (if policy.enable_mem_sanitize then [
           for_range "i" (u64 0L) (var "count") [
-            idx (var "work_bc") (var "i") := u64 0x5877CAFE1337BEEFL ^~ (c_cast UInt64 (var "seed") +~ c_cast UInt64 (var "i"));
+            idx (var "work_bc") (var "i") := u64 salt_xwcafe_leetbeef ^~ (c_cast UInt64 (var "seed") +~ c_cast UInt64 (var "i"));
           ];
         ] else [
           for_range "i" (u64 0L) (var "count") [
@@ -799,7 +810,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
             for (size_t o = 0; o < 256; ++o) {
                 uintptr_t k_slot = ((uintptr_t)seed * 0x517CC1B727220A95ULL) ^ (((uintptr_t)d * 256ULL + (uintptr_t)o) * 0x6A09E667F3BCC908ULL);
                 all_dispatch_domains[d][o] = (uintptr_t)raw_all_domains[d][o] ^ k_slot;
-                *(reinterpret_cast<volatile uintptr_t*>(&raw_all_domains[d][o])) = k_slot ^ 0xDEADBEEF5A5A5A5AULL;
+                *(reinterpret_cast<volatile uintptr_t*>(&raw_all_domains[d][o])) = k_slot ^ %s;
             }
         }
 #else
@@ -811,7 +822,7 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         }
 #endif
         dispatch_domains_ready = true;
-    }|} num_domains num_domains);
+    }|} num_domains (to_c_literal salt_deadbeef_5a5a5a5a) num_domains);
         let_u64 "g_handlers_hash" (call "compute_handlers_hash" [c_cast (ConstPtr (StructType "uintptr_t")) (var "all_dispatch_domains"); i32 num_domains]);
       ]
       @ (if policy.enable_address_bound then [
@@ -915,7 +926,9 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
           num_domains
           (if policy.enable_running_key then "k_dyn = k_pos ^ ctx.running_key;" else "k_dyn = k_pos;")
           (if policy.enable_address_bound then "work_bc[vIP_idx] = bound_bc[vIP_idx];" else "work_bc[vIP_idx] = bytecode[vIP_idx];")
-          (if policy.enable_mem_sanitize then "SCRUB_WORD(&work_bc[vIP_idx], (k_dyn * 0x6A09E667F3BCC908ULL) ^ 0x5877CAFE1337BEEFULL);" else "")
+          (if policy.enable_mem_sanitize then ("SCRUB_WORD(&work_bc[vIP_idx], (k_dyn * 0x6A09E667F3BCC908ULL) ^ " ^
+        (to_c_literal salt_xwcafe_leetbeef) ^
+        ");") else "")
           word_layout.op_shift word_layout.op_shift
           word_layout.dst_shift word_layout.dst_shift
           word_layout.src_shift word_layout.src_shift
@@ -950,21 +963,27 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
         raw "if (__builtin_expect(asg_vm_trace_on, 0)) { fputs(\"# E\\n\", stderr); }";
       ]
       @ (if policy.enable_mem_sanitize then [
-          raw {|    for (size_t i = 0; i < count; ++i) {
-        SCRUB_WORD(&work_bc[i], 0x5A5A5A5A13375877ULL ^ ((uint64_t)seed + (uint64_t)i));
-    }|};
+          raw ({|    for (size_t i = 0; i < count; ++i) {
+        SCRUB_WORD(&work_bc[i], |} ^
+        (to_c_literal salt_regmask) ^
+        {| ^ ((uint64_t)seed + (uint64_t)i));
+    }|});
         ] else [])
       @ (if policy.enable_mem_sanitize && policy.enable_address_bound then [
-          raw {|    for (size_t i = 0; i < count; ++i) {
-        SCRUB_WORD(&bound_bc[i], 0xDEADBEEF5877CAFEULL ^ ((uint64_t)seed + (uint64_t)i));
-    }|};
+          raw ({|    for (size_t i = 0; i < count; ++i) {
+        SCRUB_WORD(&bound_bc[i], |} ^
+        (to_c_literal salt_deadbeef_5877cafe) ^
+        {| ^ ((uint64_t)seed + (uint64_t)i));
+    }|});
         ] else [])
       @ (if policy.enable_mem_sanitize then [
-          raw {|    if (scrub_source && bytecode) {
+          raw ({|    if (scrub_source && bytecode) {
         for (size_t i = 0; i < count; ++i) {
-            SCRUB_WORD(&const_cast<uint64_t*>(bytecode)[i], 0xDEADBEEFCAFEBABEULL ^ ((uint64_t)seed + (uint64_t)i));
+            SCRUB_WORD(&const_cast<uint64_t*>(bytecode)[i], |} ^
+        (to_c_literal salt_deadbeef_cafebabe) ^
+        {| ^ ((uint64_t)seed + (uint64_t)i));
         }
-    }|};
+    }|});
         ] else [])
       @ [
         if_then (ne (var "heap_work_bc") nullptr) [ expr_stmt (call "free" [var "heap_work_bc"]) ];
@@ -1042,10 +1061,12 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
 #endif|};
         expr_stmt (call "vanguard_threaded_vm::execute_threaded" [var "ctx"; var "bc"; var "len"; call "asgard_wbox_derive_seed" []; bool_lit false]);
         let_u64 "ret_val" (call "ctx.get_rax" []);
-        raw {|if (__builtin_expect(ctx.trapped || ctx.canary_head != vanguard_threaded_vm::VMContext::CANARY_VAL || ctx.canary_tail != vanguard_threaded_vm::VMContext::CANARY_VAL, 0)) {
-        ret_val ^= 0xDEADBEEF5A5A5A5AULL ^ ctx.reg_mask;
-    }|};
-        ret (((var "ret_val" ^~ u64 0x5877CAFE1337BEEFL) +~ (u64 2L *~ (var "ret_val" &~ u64 0x5877CAFE1337BEEFL))) -~ u64 0x5877CAFE1337BEEFL);
+        raw ({|if (__builtin_expect(ctx.trapped || ctx.canary_head != vanguard_threaded_vm::VMContext::CANARY_VAL || ctx.canary_tail != vanguard_threaded_vm::VMContext::CANARY_VAL, 0)) {
+        ret_val ^= |} ^
+        (to_c_literal salt_deadbeef_5a5a5a5a) ^
+        {| ^ ctx.reg_mask;
+    }|});
+        ret (((var "ret_val" ^~ u64 salt_xwcafe_leetbeef) +~ (u64 2L *~ (var "ret_val" &~ u64 salt_xwcafe_leetbeef))) -~ u64 salt_xwcafe_leetbeef);
       ]
   in
   let fn_asgard_vm_call =
@@ -1134,7 +1155,7 @@ let emit_native_runner_main_def () : Cpp_codegen.Cpp_ast.top_decl =
     if_then (ne (var "heap_bc") nullptr) [
       comment "Ephemeral Heap Sanitization: Scrub all dynamically allocated bytecode before free";
       for_range "i" (u64 0L) (var "bc_len") [
-        expr_stmt (call "SCRUB_WORD" [addr_of (idx (var "heap_bc") (var "i")); u64 0xDEADBEEFCAFEBABEL ^~ c_cast UInt64 (var "i")]);
+        expr_stmt (call "SCRUB_WORD" [addr_of (idx (var "heap_bc") (var "i")); u64 salt_deadbeef_cafebabe ^~ c_cast UInt64 (var "i")]);
       ];
       expr_stmt (call "free" [var "heap_bc"]);
     ];
@@ -1149,7 +1170,7 @@ let emit_native_runner_main_def () : Cpp_codegen.Cpp_ast.top_decl =
     ret (i32 0);
   ]
 
-let emit_runner_cpp ?(key_seed = 0x5877CAFEL) ~reg_perm bytecode =
+let emit_runner_cpp ?(key_seed = salt_xwcafe) ~reg_perm bytecode =
   let _ = key_seed in
   let _ = reg_perm in
   let open Cpp_codegen.Cpp_ast in

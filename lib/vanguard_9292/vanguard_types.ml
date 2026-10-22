@@ -1,3 +1,5 @@
+open Random_visa_constants.Magic_numbers
+
 type field_kind =
   | Opcode
   | Dst
@@ -103,7 +105,7 @@ module Rolling_key = struct
   type t = { seed : int32; mutable state : int32; mutable counter : int32 }
 
   let make ~seed =
-    let init_state = if seed = 0l then 0x1337BEEFl else seed in
+    let init_state = if seed = 0l then (Int64.to_int32 salt_leetbeef) else seed in
     { seed; state = init_state; counter = 0l }
 
   let next t =
@@ -114,8 +116,8 @@ module Rolling_key = struct
     let x = logxor x (shift_right_logical x 17) in
     let x = logxor x (shift_left x 5) in
     let rot = logor (shift_left x 7) (shift_right_logical x 25) in
-    let mixed = add rot (mul t.counter 0x9E3779B9l) in
-    let next_state = if mixed = 0l then 0x1337BEEFl else mixed in
+    let mixed = add rot (mul t.counter (Int64.to_int32 golden_ratio_32)) in
+    let next_state = if mixed = 0l then (Int64.to_int32 salt_leetbeef) else mixed in
     t.state <- next_state;
     next_state
 
@@ -125,7 +127,7 @@ module Rolling_key = struct
     Int64.logor (Int64.shift_left w1 32) w2
 
   let reset t =
-    let init_state = if t.seed = 0l then 0x1337BEEFl else t.seed in
+    let init_state = if t.seed = 0l then (Int64.to_int32 salt_leetbeef) else t.seed in
     t.state <- init_state;
     t.counter <- 0l
 end

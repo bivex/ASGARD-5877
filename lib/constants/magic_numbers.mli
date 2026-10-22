@@ -25,18 +25,33 @@ type entry = {
     PRIME64_1. *)
 val golden_ratio_64 : int64
 
+(** frac(phi^-1) * 2^32: the 32-bit golden ratio. *)
+val golden_ratio_32 : int64
+
 (** frac(sqrt(2)) * 2^64. *)
 val sqrt2_fraction_64 : int64
 
 (** frac(cbrt(3)) * 2^64: the first word of the SHA-256 initial hash. *)
 val cbrt3_fraction_64 : int64
 
-(** The two increments of the SplitMix64 finalizer. *)
+(** The two increments of the SplitMix64 finalizer, and the modular inverse of
+    the first one. *)
 val splitmix64_gamma : int64
 val splitmix64_mix : int64
+val splitmix64_gamma_inverse : int64
 
-(** The 64-bit FNV-1a prime, 2^40 + 2^8 + 0xB3. *)
+(** The FNV-1a prime and the two offset bases. *)
 val fnv1a_64_prime : int64
+val fnv1a_32_offset_basis : int64
+val fnv1a_64_offset_basis : int64
+
+(** The initial hash and the round constants of SHA-256 (FIPS 180-4), and the
+    first word of each: the engine uses them as well-distributed 32-bit
+    mixers. *)
+val sha256_iv : int32 array
+val sha256_k : int32 array
+val sha256_iv_h0 : int64
+val sha256_k0 : int64
 
 (** MurmurHash3 for x86, 32-bit: the mixing multiplier. *)
 val murmur3_32_c1 : int32
@@ -50,6 +65,25 @@ val murmur3_64_fmix_c2 : int64
 val even_bit_mask : int64
 val odd_bit_mask : int64
 
+(** The engine's salt palette, written in hex-speak so that the values read as
+    words in a disassembly.  They are salts, not derived values. *)
+val salt_xwcafe : int64
+val salt_xwcafe_leetbeef : int64
+val salt_xwcafe_cafebabe1337 : int64
+val salt_xwcafe_beef : int64
+val salt_leetbeef : int64
+val salt_cafebabe_leet : int64
+val salt_leet_13375877 : int64
+val salt_regmask : int64
+val salt_canary_mid : int64
+val salt_canary_stack : int64
+val salt_poison_penalty : int64
+val salt_deadbeef : int64
+val salt_deadbeef_5a5a5a5a : int64
+val salt_deadbeef_cafebabe : int64
+val salt_deadbeef_5877cafe : int64
+val salt_deadbeef_cafe1337 : int64
+
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
 
@@ -58,6 +92,13 @@ val entry_by_name : string -> entry option
 
 (** ["0x9E3779B97F4A7C15ULL"] - the C spelling of a 64-bit constant. *)
 val to_c_literal : int64 -> string
+
+(** ["0x811C9DC5U"] - the C spelling of a 32-bit constant. *)
+val to_c_literal32 : int64 -> string
+
+(** ["0x5877CAFE"] - the hexadecimal spelling of a 32-bit constant, without the
+    C type suffix. *)
+val to_hex_literal32 : int64 -> string
 
 (** ["0x9E3779B97F4A7C15L"] - the OCaml spelling of a 64-bit constant. *)
 val to_ocaml_literal : int64 -> string

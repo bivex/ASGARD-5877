@@ -1,4 +1,5 @@
 open Vm_ir
+open Random_visa_constants.Magic_numbers
 
 type cff_options = {
   inject_opaque_predicates : bool;
@@ -222,7 +223,7 @@ let kronecker_product_states ~(base_states : int64 list) ~(dim : int) ~(seed : i
     List.map (fun f -> Int64.logxor s f) factors
   ) base_states
 
-let split_hot_states ?(red_herring = true) ?(seed = 0x5877CAFE1337BEEFL) ~(sorted_orig : Ir.basic_block list) ~(split_rate : int) ~rng ~(used_states : (int64, unit) Hashtbl.t) () =
+let split_hot_states ?(red_herring = true) ?(seed = salt_xwcafe_leetbeef) ~(sorted_orig : Ir.basic_block list) ~(split_rate : int) ~rng ~(used_states : (int64, unit) Hashtbl.t) () =
   let clone_map = Hashtbl.create (List.length sorted_orig) in
   let clone_entries = ref [] in
   if split_rate > 0 then
@@ -490,7 +491,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     (* Secret affine parameters for non-linear slot coding *)
     let secret_salt =
       let s = Random.State.int64 rng Int64.max_int in
-      if s = 0L then 0x5877CAFE1337BEEFL else s
+      if s = 0L then salt_xwcafe_leetbeef else s
     in
     let stride =
       let s = Random.State.int64 rng Int64.max_int in

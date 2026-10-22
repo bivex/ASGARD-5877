@@ -1,6 +1,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
+open Random_visa_constants.Magic_numbers
 
 let emit_handler_ast b label (stmts : stmt list) =
   Buffer.add_string b (Printf.sprintf "    %s: {\n" label);
@@ -83,7 +84,7 @@ let emit_control_handlers b ?rng ~enable_nanomites ~enable_running_key ?(enable_
     decl_var ~init:(cast UInt8 (((var "word" >>~ u64 18L) +~ u64 0x0FL) -~ ((var "word" >>~ u64 18L) |~ u64 0x0FL))) UInt8 "cond";
     decl_var ~init:(cast UInt64 ((var "word" >>~ u64 22L) &~ u64 0x1FFFFFL)) UInt64 "base_vip";
     decl_var ~init:(cast UInt64 ((var "word" >>~ u64 43L) &~ u64 0x1FFFFFL)) UInt64 "enc_delta";
-    decl_var ~init:(((cast UInt64 (var "cond") *~ u64 0x5877L) ^~ u64 0x1337BEEFL) &~ u64 0x1FFFFFL) UInt64 "salt";
+    decl_var ~init:(((cast UInt64 (var "cond") *~ u64 0x5877L) ^~ u64 salt_leetbeef) &~ u64 0x1FFFFFL) UInt64 "salt";
     decl_var ~init:(var "enc_delta" ^~ var "salt") UInt64 "delta";
     decl_var ~init:(var "base_vip" ^~ var "delta") UInt64 "t_true";
     decl_var ~init:(var "base_vip") UInt64 "t_false";

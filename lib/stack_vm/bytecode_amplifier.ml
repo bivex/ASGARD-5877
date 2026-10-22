@@ -1,4 +1,5 @@
 open Stack_ir
+open Random_visa_constants.Magic_numbers
 
 type amplification_profile = {
   horner_degree       : int;
@@ -365,7 +366,7 @@ let amplify_stack_program
     let block_rng = Random.State.make [|
       Random.State.bits rng;
       id * 0x5877;
-      0xDEADBEEF;
+      (Int64.to_int salt_deadbeef);
     |] in
     Hashtbl.replace new_blocks id (amplify_block block_rng ~profile ~scratch_base b)
   ) sorted_blocks;

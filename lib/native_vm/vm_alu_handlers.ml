@@ -1,6 +1,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
+open Random_visa_constants.Magic_numbers
 
 let emit_probes b ~enable_timing_probes =
   if enable_timing_probes then begin
@@ -237,7 +238,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     inc_instrs; fetch_next
   ];
   let k_mov1 = rand_u64 () in
-  let mov1_expr = dynamic_runtime_variant ((var "_s" +~ u64 0x13375877L) -~ u64 0x13375877L) ((var "_s" ^~ u64 k_mov1) ^~ u64 k_mov1) in
+  let mov1_expr = dynamic_runtime_variant ((var "_s" +~ u64 salt_leet_13375877) -~ u64 salt_leet_13375877) ((var "_s" ^~ u64 k_mov1) ^~ u64 k_mov1) in
   emit_handler_inline_ast b "H_MOV_RR_A1" [
     let_u64 "_s" reg_src;
     let_u64 "_v" mov1_expr;
@@ -259,7 +260,7 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     set_reg (var "dst") (var "_v");
     inc_instrs; fetch_next
   ];
-  let movi2_expr = dynamic_runtime_variant (bit_not (bit_not (var "_imm"))) ((var "_imm" +~ u64 0xDEADBEEFL) -~ u64 0xDEADBEEFL) in
+  let movi2_expr = dynamic_runtime_variant (bit_not (bit_not (var "_imm"))) ((var "_imm" +~ u64 salt_deadbeef) -~ u64 salt_deadbeef) in
   emit_handler_inline_ast b "H_MOV_RI_A2" [
     let_u64 "_imm" (cast UInt64 (cast UInt32 (var "imm")));
     let_u64 "_v" movi2_expr;

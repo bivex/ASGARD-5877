@@ -4,6 +4,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
+open Random_visa_constants.Magic_numbers
 
 let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
   let includes = [
@@ -173,7 +174,7 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
         [ (ConstPtr (StructType "char"), "str") ]
         [
           DeclVar { align_as = None; is_static = false; is_thread_local = false; is_const = false;
-                    is_constexpr = false; is_volatile = false; ty = UInt32; name = "hash"; init = Some (var "0x811C9DC5U") };
+                    is_constexpr = false; is_volatile = false; ty = UInt32; name = "hash"; init = Some (var ((to_c_literal32 fnv1a_32_offset_basis))) };
           while_loop (deref (var "str")) [
             var "hash" := var "hash" ^~ (c_cast UInt8 (deref (var "str++")));
             var "hash" := var "hash" *~ var "0x01000193U";

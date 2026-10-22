@@ -1,3 +1,5 @@
+open Random_visa_constants.Magic_numbers
+
 (** Red Herring Complexity — Effort Asymmetry & Cognitive Deception Engine.
     ────────────────────────────────────────────────────────────────────────
     Decorrelates structural CFG complexity (block counts, edge density,
@@ -22,8 +24,8 @@ let splitmix64 s =
   z
 
 let hash_block_noise ~(seed : int64) ~(block_id : int) ~(salt : int) : int64 =
-  let bid_mix = Int64.mul (Int64.of_int (block_id + 1)) 0x5877CAFEBEEFL in
-  let salt_mix = Int64.mul (Int64.of_int (salt + 1)) 0xDEADBEEF5A5A5A5AL in
+  let bid_mix = Int64.mul (Int64.of_int (block_id + 1)) salt_xwcafe_beef in
+  let salt_mix = Int64.mul (Int64.of_int (salt + 1)) salt_deadbeef_5a5a5a5a in
   let combined = Int64.logxor (Int64.logxor seed bid_mix) salt_mix in
   splitmix64 combined
 

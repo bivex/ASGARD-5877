@@ -1,6 +1,8 @@
+open Random_visa_constants.Magic_numbers
+
 let split_rng rng tag =
   let s = Random.State.int rng 0x3FFFFFFF in
-  Random.State.make [| s; tag; 0x5877CAFE |]
+  Random.State.make [| s; tag; (Int64.to_int salt_xwcafe) |]
 
 let transform_domain_labels src domain_idx =
   let lines = String.split_on_char '\n' src in

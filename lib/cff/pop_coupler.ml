@@ -1,4 +1,5 @@
 open Vm_ir
+open Random_visa_constants.Magic_numbers
 
 type pop_config = {
   digest_reg : Register.t;
@@ -11,7 +12,7 @@ let default_pop_config = {
   digest_reg = Register.vx18;
   scratch_reg1 = Register.vtmp0;
   scratch_reg2 = Register.vtmp1;
-  initial_seed = 0x5877CAFEBABE1337L;
+  initial_seed = salt_xwcafe_cafebabe1337;
 }
 
 let rol64 v s =

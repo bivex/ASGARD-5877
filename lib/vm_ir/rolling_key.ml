@@ -8,7 +8,7 @@ open Random_visa_constants.Magic_numbers
 (* SplitMix64-style positional PRF, mirrored from the emitted key64_for_offset. *)
 let key64_for_offset (seed : int32) (offset : int) : int64 =
   let s64 = Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL in
-  let x0 = Int64.logxor (Int64.logor (Int64.shift_left s64 32) (Int64.logxor s64 0x9E3779B9L))
+  let x0 = Int64.logxor (Int64.logor (Int64.shift_left s64 32) (Int64.logxor s64 golden_ratio_32))
                         (Int64.mul (Int64.of_int offset) sqrt2_fraction_64) in
   let x1 = Int64.mul (Int64.logxor x0 (Int64.shift_right_logical x0 30)) splitmix64_gamma in
   let x2 = Int64.mul (Int64.logxor x1 (Int64.shift_right_logical x1 27)) splitmix64_mix in
@@ -17,7 +17,7 @@ let key64_for_offset (seed : int32) (offset : int) : int64 =
 (* Domain-separated block-entry anchor. Must NOT equal key64_for_offset itself,
    otherwise the first in-block mask (k_pos lxor anchor) collapses to zero. *)
 let anchor_key (seed : int32) (offset : int) : int64 =
-  key64_for_offset (Int32.logxor seed murmur3_32_c1) (offset lxor 0x13375877)
+  key64_for_offset (Int32.logxor seed murmur3_32_c1) (offset lxor (Int64.to_int salt_leet_13375877))
 
 (* One step of the in-block chain, mirroring C++ advance_key_step exactly:
    x = k ^ (op*0x9E3779B97F4A7C15 + (dst<<24) + imm); rot = ROR23(x);
@@ -31,7 +31,7 @@ let advance_key_step (k : int64) (op : int) (dst : int) (imm : int64) : int64 =
             (Int64.shift_left (Int64.of_int dst) 24))
          imm) in
   let rot = Int64.logor (Int64.shift_right_logical x 23) (Int64.shift_left x 41) in
-  Int64.logxor (Int64.mul rot splitmix64_gamma) 0x5877CAFE1337BEEFL
+  Int64.logxor (Int64.mul rot splitmix64_gamma) salt_xwcafe_leetbeef
 
 let sign_extend_32 (v : int64) : int64 =
   if Int64.logand v 0x80000000L <> 0L then Int64.logor v 0xFFFFFFFF00000000L else v
@@ -79,7 +79,7 @@ let poly_multiplier_of_seed (seed : int32) : int64 =
 
 let poly_init_of_seed (seed : int32) : int64 =
   let s64 = Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL in
-  Int64.logxor 0x811C9DC5C9DC5119L (Int64.mul s64 golden_ratio_64)
+  Int64.logxor fnv1a_64_offset_basis (Int64.mul s64 golden_ratio_64)
 
 (* Anti-DSE branch-invariant polynomial key updates (P2-01):
    Eliminates static key ^= fixup_const at CFG merge points.
@@ -128,8 +128,8 @@ let solve_path_delta ~(k_old : int64) ~(k_target : int64) ~(poly_const : int64) 
   Int64.mul term c_inv
 
 let _m_const = splitmix64_gamma
-let m_inv   = 0x96DE1B173F119089L (* Formally verified in fstar/Rolling_Key_Verified.fst *)
-let c_const = 0x5877CAFE1337BEEFL
+let m_inv   = splitmix64_gamma_inverse (* Formally verified in fstar/Rolling_Key_Verified.fst *)
+let c_const = salt_xwcafe_leetbeef
 let phi_op  = golden_ratio_64
 
 let rol64 x n =

@@ -1,4 +1,4 @@
 (library
  (name bytecode_crypto)
  (public_name random_visa.bytecode_crypto)
- (libraries vm_ir mba_engine))
+ (libraries vm_ir mba_engine random_visa_constants))

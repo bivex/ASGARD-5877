@@ -1,4 +1,4 @@
 (library
  (name c_macro_obf)
  (public_name random_visa.c_macro_obf)
- (libraries cpp_codegen))
+ (libraries cpp_codegen random_visa_constants))

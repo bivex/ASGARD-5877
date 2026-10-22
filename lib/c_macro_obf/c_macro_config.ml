@@ -1,3 +1,5 @@
+open Random_visa_constants.Magic_numbers
+
 type config = {
   seed : int;
   mba_depth : int;
@@ -31,7 +33,7 @@ let default_config = {
 }
 
 let xorshift32 seed =
-  let x = ref (if seed = 0 then 0x1337BEEF else seed land 0x7FFFFFFF) in
+  let x = ref (if seed = 0 then (Int64.to_int salt_leetbeef) else seed land 0x7FFFFFFF) in
   x := !x lxor (!x lsl 13);
   x := !x lxor (!x lsr 17);
   x := !x lxor (!x lsl 5);

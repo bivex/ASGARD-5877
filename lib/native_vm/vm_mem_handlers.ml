@@ -1,6 +1,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
+open Random_visa_constants.Magic_numbers
 
 [@@@warning "-32"]
 
@@ -3199,8 +3200,8 @@ let emit_mem_and_ffi_handlers ?rng b =
        inc_instrs; fetch_next;
      ]
    | _ -> emit_handler_ast b "H_MOV_VR" [
-       let_u64 "_val" (reg_src ^~ u64 0xA5A5A5A55A5A5A5AL);
-       expr_stmt (call "ctx.set_vreg_lane" [var "dst"; i32 0; var "_val" ^~ u64 0xA5A5A5A55A5A5A5AL]);
+       let_u64 "_val" (reg_src ^~ u64 salt_canary_stack);
+       expr_stmt (call "ctx.set_vreg_lane" [var "dst"; i32 0; var "_val" ^~ u64 salt_canary_stack]);
        inc_instrs; fetch_next;
      ]);
   (match pick_variant 3 with
@@ -3476,19 +3477,19 @@ let emit_decoy_handlers ?rng b =
 
   (match pick_variant 3 with
    | 0 -> emit_handler_inline_ast b "H_DECOY_12" [
-       (reg_mask ^= ((k_dyn ^~ u64 0xDEADBEEFL) |~ u64 1L));
-       set_reg (var "dst") (reg_dst ^~ u64 0xDEADBEEFL);
+       (reg_mask ^= ((k_dyn ^~ u64 salt_deadbeef) |~ u64 1L));
+       set_reg (var "dst") (reg_dst ^~ u64 salt_deadbeef);
        inc_instrs; fetch_next;
      ]
    | 1 -> emit_handler_inline_ast b "H_DECOY_12" [
        let_u64 "_d" reg_dst;
-       (reg_mask ^= (((cast UInt64 op) *~ u64 0xDEADBEEFL) |~ u64 1L));
-       set_reg (var "dst") (var "_d" ^~ u64 0xDEADBEEFL);
+       (reg_mask ^= (((cast UInt64 op) *~ u64 salt_deadbeef) |~ u64 1L));
+       set_reg (var "dst") (var "_d" ^~ u64 salt_deadbeef);
        inc_instrs; fetch_next;
      ]
    | _ -> emit_handler_inline_ast b "H_DECOY_12" [
-       (reg_mask ^= ((k_dyn +~ u64 0xDEADBEEFL) |~ u64 1L));
-       set_reg (var "dst") (bit_not reg_dst ^~ bit_not (u64 0xDEADBEEFL));
+       (reg_mask ^= ((k_dyn +~ u64 salt_deadbeef) |~ u64 1L));
+       set_reg (var "dst") (bit_not reg_dst ^~ bit_not (u64 salt_deadbeef));
        inc_instrs; fetch_next;
      ]);
 
@@ -3548,13 +3549,13 @@ let emit_decoy_handlers ?rng b =
 
   (match pick_variant 3 with
    | 0 -> emit_handler_inline_ast b "H_DECOY" [
-       let_u64 "_p" (((k_dyn *~ u64 0x5877CAFEBEEFL) ^~ ((cast UInt64 op) *~ u64 0x9E3779B97F4A7C15L)) ^~ u64 0xDEADBEEF5A5A5A5AL);
+       let_u64 "_p" (((k_dyn *~ u64 salt_xwcafe_beef) ^~ ((cast UInt64 op) *~ u64 0x9E3779B97F4A7C15L)) ^~ u64 salt_deadbeef_5a5a5a5a);
        (reg_mask ^= (var "_p" |~ u64 1L));
        set_reg (var "dst") (reg_dst +~ reg_mask);
        inc_instrs; fetch_next;
      ]
    | 1 -> emit_handler_inline_ast b "H_DECOY" [
-       let_u64 "_p" ((((cast UInt64 op) *~ u64 0xBF58476D1CE4E5B9L) ^~ (k_dyn *~ u64 0x6A09E667F3BCC908L)) ^~ u64 0xCAFEBABE13375877L);
+       let_u64 "_p" ((((cast UInt64 op) *~ u64 0xBF58476D1CE4E5B9L) ^~ (k_dyn *~ u64 0x6A09E667F3BCC908L)) ^~ u64 salt_cafebabe_leet);
        (reg_mask ^= (var "_p" |~ u64 1L));
        set_reg (var "dst") ((reg_dst ^~ reg_mask) +~ imm_u64);
        inc_instrs; fetch_next;

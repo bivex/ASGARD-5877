@@ -1,6 +1,7 @@
 open Register
 open Flags
 open Ir
+open Random_visa_constants.Magic_numbers
 
 type state = {
   vregs : (Register.t, int64) Hashtbl.t;
@@ -78,7 +79,7 @@ let make_state
   Hashtbl.replace s.vregs (Register.with_width Register.vsp Register.B64) stack_base;
   Hashtbl.replace s.vregs (Register.with_width Register.vfs_base Register.B64) fs_base;
   Hashtbl.replace s.vregs (Register.with_width Register.vgs_base Register.B64) gs_base;
-  let canary = 0xCAFEBABE13375877L in
+  let canary = salt_cafebabe_leet in
   let canary_addr = Int64.add fs_base 0x28L in
   for i = 0 to 7 do
     let b = Int64.to_int (Int64.logand (Int64.shift_right_logical canary (i * 8)) 0xFFL) in

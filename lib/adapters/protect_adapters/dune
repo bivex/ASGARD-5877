@@ -17,6 +17,7 @@
   tech_2603
   tech_2608
   cpp_codegen
+  random_visa_constants
   yojson
   bos
   unix))

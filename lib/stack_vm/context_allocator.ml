@@ -1,4 +1,5 @@
 open Vm_ir
+open Random_visa_constants.Magic_numbers
 
 type t = {
   reg_to_slot : (Register.t, int) Hashtbl.t;
@@ -86,7 +87,7 @@ let dump_mapping ctx =
   List.sort (fun (s1, _) (s2, _) -> compare s1 s2) !list
 
 let permute_epoch ?(seed = 0x5877) ctx ~epoch =
-  let epoch_seed = seed lxor ((epoch * 0x9E3779B9) land 0x7FFFFFFF) in
+  let epoch_seed = seed lxor ((epoch * (Int64.to_int golden_ratio_32)) land 0x7FFFFFFF) in
   let rng = Random.State.make [| epoch_seed |] in
   let reg_to_slot = Hashtbl.create 64 in
   let slot_to_reg = Hashtbl.create 64 in

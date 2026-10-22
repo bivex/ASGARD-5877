@@ -26,7 +26,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     params = [(UInt32, "seed"); (SizeT, "offset")];
     body = [
       let_u64 "s64" (cast UInt64 (var "seed"));
-      let_u64 "x0" (((var "s64" <<~ u64 32L) |~ (var "s64" ^~ u64 0x9E3779B9L)) ^~ (cast UInt64 (var "offset") *~ u64 sqrt2_fraction_64));
+      let_u64 "x0" (((var "s64" <<~ u64 32L) |~ (var "s64" ^~ u64 golden_ratio_32)) ^~ (cast UInt64 (var "offset") *~ u64 sqrt2_fraction_64));
       let_u64 "x1" ((var "x0" ^~ (var "x0" >>~ u64 30L)) *~ u64 splitmix64_gamma);
       let_u64 "x2" ((var "x1" ^~ (var "x1" >>~ u64 27L)) *~ u64 splitmix64_mix);
       ret (var "x2" ^~ (var "x2" >>~ u64 31L));
@@ -40,7 +40,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     name = "compute_handlers_hash";
     params = [(ConstPtr UIntPtr, "all_domains"); (SizeT, "num_domains")];
     body = [
-      let_u64 "h" (u64 0x5877CAFEBABE1337L);
+      let_u64 "h" (u64 salt_xwcafe_cafebabe1337);
       for_range "d" (u64 0L) (var "num_domains") [
         for_range "op" (u64 0L) (u64 256L) [
           let_u64 "ptr_val" (cast UInt64 (idx (var "all_domains") ((var "d" *~ u64 256L) +~ var "op")));
@@ -87,7 +87,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   in
 
   let vm_context_members : struct_member list = [
-    member_static_constexpr UInt64 "CANARY_VAL" (u64 0xCAFEBABE13375877L);
+    member_static_constexpr UInt64 "CANARY_VAL" (u64 salt_cafebabe_leet);
     member_field ~init:(var "CANARY_VAL") UInt64 "canary_head";
     member_field (Array (UInt64, 32)) "mid_canaries";
     member_field (Array (UInt64, 32)) "gprs";
@@ -99,7 +99,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field UInt32 "init_seed";
     member_field UInt64 "poison_penalty";
     member_field UInt64 "running_key";
-    member_field ~init:(u64 0x5877CAFE1337BEEFL) UInt64 "data_key";
+    member_field ~init:(u64 salt_xwcafe_leetbeef) UInt64 "data_key";
     (* The shadow stack pointer of the CET extensions (RDSSP, INCSSP). *)
     member_field ~init:(u64 0x50000000L) UInt64 "ssp";
     member_field Bool "cf";
@@ -129,14 +129,16 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field ~init:(u64 0L) UInt64 "last_step_tsc";
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "check_analysis_pressure" [(UInt64, "delta_cycles")] [
-      raw {|if (__builtin_expect(delta_cycles > 2000000ULL, 0)) {
+      raw ({|if (__builtin_expect(delta_cycles > 2000000ULL, 0)) {
         analysis_pressure++;
         if (__builtin_expect(analysis_pressure >= 4, 0)) {
             analysis_pressure = 0;
             pressure_tier = (pressure_tier + 1) & 3;
-            data_key ^= 0x5877CAFE1337BEEFULL;
+            data_key ^= |} ^
+        (to_c_literal salt_xwcafe_leetbeef) ^
+        {|;
         }
-    }|};
+    }|});
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "set_macro_salt" [(UInt8, "s")] [
@@ -153,17 +155,17 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     (* VMContext Initialization *)
     member_method ~attrs:[AlwaysInline; NoExcept] Void "init" [(UInt32, "seed = asgard_wbox_derive_seed()")] [
       (var "init_seed" := var "seed");
-      (var "poison_penalty" := ((call "key64_for_offset" [var "seed"; u64 0x5877L] ^~ u64 0xCAA7E1D8718BF877L) |~ u64 1L));
-      (var "running_key" := (call "key64_for_offset" [var "seed"; u64 0x13375877L] ^~ u64 0xCAFEBABE13375877L));
-      (var "reg_mask" := (u64 0x5A5A5A5A13375877L ^~ (cast UInt64 (var "seed") *~ u64 golden_ratio_64)));
-      (var "data_key" := (call "key64_for_offset" [var "seed"; u64 0x5877A5A5L] ^~ u64 0x5877CAFE1337BEEFL));
+      (var "poison_penalty" := ((call "key64_for_offset" [var "seed"; u64 0x5877L] ^~ u64 salt_poison_penalty) |~ u64 1L));
+      (var "running_key" := (call "key64_for_offset" [var "seed"; u64 salt_leet_13375877] ^~ u64 salt_cafebabe_leet));
+      (var "reg_mask" := (u64 salt_regmask ^~ (cast UInt64 (var "seed") *~ u64 golden_ratio_64)));
+      (var "data_key" := (call "key64_for_offset" [var "seed"; u64 0x5877A5A5L] ^~ u64 salt_xwcafe_leetbeef));
       (var "macro_salt" := i32 0);
       (var "format_version_tag" := (cast Int32 (call "key64_for_offset" [var "seed"; u64 0x7758L] &~ u64 0x7FFFFFFFL)) +~ i32 1);
       for_range "d" (u64 0L) (u64 32L) [
         (idx (var "decoy_regs") (var "d") := (call "key64_for_offset" [var "seed"; u64 0xDEC00000L +~ var "d"]));
       ];
       for_range "i" (u64 0L) (u64 32L) [
-        (idx (var "slot_masks") (var "i") := (call "key64_for_offset" [var "seed"; u64 0x1000L +~ var "i"] ^~ u64 0xA5A5A5A51337BEEFL));
+        (idx (var "slot_masks") (var "i") := (call "key64_for_offset" [var "seed"; u64 0x1000L +~ var "i"] ^~ u64 salt_canary_mid));
         (idx (var "gprs") (var "i") := (idx (var "slot_masks") (var "i") ^~ var "reg_mask"));
         (idx (var "mid_canaries") (var "i") := (var "CANARY_VAL" ^~ (cast UInt64 (var "i") *~ u64 sqrt2_fraction_64) ^~ cast UInt64 (var "seed")));
         (idx (idx (var "vregs") (var "i")) (i32 0) := u64 0L);
@@ -199,7 +201,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       [(UInt64, "k"); (UInt8, "op"); (UInt8, "dst"); (Int64, "imm")] [
       let_u64 "x" (var "k" ^~ (((cast UInt64 (var "op") *~ u64 golden_ratio_64) +~ (cast UInt64 (var "dst") <<~ u64 24L)) +~ cast UInt64 (var "imm")));
       let_u64 "rot" ((var "x" >>~ u64 23L) |~ (var "x" <<~ u64 41L));
-      ret ((var "rot" *~ u64 splitmix64_gamma) ^~ u64 0x5877CAFE1337BEEFL);
+      ret ((var "rot" *~ u64 splitmix64_gamma) ^~ u64 salt_xwcafe_leetbeef);
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "advance_running_key"
@@ -219,7 +221,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
 
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "anchor_key"
       [(UInt32, "seed"); (UInt64, "off"); (UInt64, "addr_hash = 0")] [
-      ret (call "key64_for_offset" [var "seed" ^~ u32 murmur3_32_c1; cast SizeT (var "off" ^~ u64 0x13375877L)] ^~ var "addr_hash");
+      ret (call "key64_for_offset" [var "seed" ^~ u32 murmur3_32_c1; cast SizeT (var "off" ^~ u64 salt_leet_13375877)] ^~ var "addr_hash");
     ];
 
     member_method ~attrs:[AlwaysInline; NoExcept] Void "reanchor_running_key"
@@ -381,7 +383,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       ];
       if_then (var "sp" <~ var "STACK_SIZE") [
         decl_var ~init:(call "scramble_stack_idx" [var "sp"]) SizeT "phys_idx";
-        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 golden_ratio_64) ^~ u64 0xA5A5A5A55A5A5A5AL);
+        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 golden_ratio_64) ^~ u64 salt_canary_stack);
         (idx (var "stack") (var "phys_idx") := var "v" ^~ var "enc_mask");
         (var "sp" += i32 1);
       ];
@@ -395,10 +397,10 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
       if_then (var "sp" >~ i32 0) ([
         (var "sp" -= i32 1);
         decl_var ~init:(call "scramble_stack_idx" [var "sp"]) SizeT "phys_idx";
-        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 golden_ratio_64) ^~ u64 0xA5A5A5A55A5A5A5AL);
+        let_u64 "enc_mask" ((cast UInt64 (var "sp") *~ u64 golden_ratio_64) ^~ u64 salt_canary_stack);
         let_u64 "val" (idx (var "stack") (var "phys_idx") ^~ var "enc_mask");
       ] @ (if enable_mem_sanitize then [
-        (idx (var "stack") (var "phys_idx") := u64 0xDEADBEEFCAFE1337L ^~ var "enc_mask");
+        (idx (var "stack") (var "phys_idx") := u64 salt_deadbeef_cafe1337 ^~ var "enc_mask");
       ] else []) @ [
         ret (var "val");
       ]);
@@ -411,7 +413,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
         decl_var SizeT "p_idx" ~init:(call "asgard::oblivious_mem::logical_to_physical_slot" [var "logical_idx" &~ i32 63; i32 37; i32 17; i32 64]);
         let_u64 "mask" (call "asgard::oblivious_mem::slot_tweak_mask" [var "running_key"; var "logical_idx" &~ i32 63]);
         (idx (var "oblivious_frame") (var "p_idx") := (var "v" ^~ var "mask"));
-        (var "decoy_sink" := (var "v" ^~ u64 0x5877CAFE1337BEEFL));
+        (var "decoy_sink" := (var "v" ^~ u64 salt_xwcafe_leetbeef));
       ] ~else_stmts:[
         (idx (var "oblivious_frame") (var "logical_idx" &~ i32 63) := var "v");
       ]
@@ -437,21 +439,25 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
     member_field ~init:(u64 0x53B7D9F7A1B4283EL) UInt64 "trace_digest";
     member_field (Array (UInt64, 16)) "bridge_state";
 
-    member_raw "    inline void morph_math_to_flow(uint64_t target_digest = 0) noexcept {
+    member_raw ("    inline void morph_math_to_flow(uint64_t target_digest = 0) noexcept {
 #if defined(ASGARD_MULTI_VM_ENABLED)
         uint64_t dig = target_digest ? target_digest : trace_digest;
         uint64_t regs[16];
         for (int i = 0; i < 16; ++i) regs[i] = get_reg(i);
         in_place_morph_math_to_flow(regs, bridge_state, dig);
-        trace_digest = bridge_rol64(dig, 13) ^ 0x5877CAFEULL;
+        trace_digest = bridge_rol64(dig, 13) ^ " ^
+        (to_c_literal salt_xwcafe) ^
+        ";
 #else
         (void)target_digest;
 #endif
-    }";
+    }");
 
-    member_raw "    inline void morph_flow_to_math(uint64_t target_digest = 0) noexcept {
+    member_raw ("    inline void morph_flow_to_math(uint64_t target_digest = 0) noexcept {
 #if defined(ASGARD_MULTI_VM_ENABLED)
-        uint64_t dig = target_digest ? target_digest : (bridge_rol64(trace_digest, 51) ^ 0x5877CAFEULL);
+        uint64_t dig = target_digest ? target_digest : (bridge_rol64(trace_digest, 51) ^ " ^
+        (to_c_literal salt_xwcafe) ^
+        ");
         uint64_t regs[16];
         for (int i = 0; i < 16; ++i) regs[i] = get_reg(i);
         in_place_morph_flow_to_math(bridge_state, regs, dig);
@@ -459,7 +465,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
 #else
         (void)target_digest;
 #endif
-    }";
+    }");
   ] in
 
   let struct_vm_context = struct_def "VMContext" vm_context_members in

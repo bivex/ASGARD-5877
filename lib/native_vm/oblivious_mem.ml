@@ -1,4 +1,5 @@
 open Int64
+open Random_visa_constants.Magic_numbers
 
 type frame_scrambler = {
   n_slots   : int;
@@ -225,7 +226,7 @@ let emit_oblivious_mem_decls (rng : Random.State.t) : Cpp_codegen.Cpp_ast.top_de
     body     = [
       (deref (reinterpret_cast (Ptr UInt64) (var "addr")) := var "val");
       if_then (var "decoy_sink" <>~ nullptr) [
-        (deref (var "decoy_sink") := (var "val" ^~ u64 0x5877CAFE1337BEEFL));
+        (deref (var "decoy_sink") := (var "val" ^~ u64 salt_xwcafe_leetbeef));
       ];
     ];
   } in
@@ -238,7 +239,7 @@ let emit_oblivious_mem_decls (rng : Random.State.t) : Cpp_codegen.Cpp_ast.top_de
     body     = [
       (deref (reinterpret_cast (Ptr UInt32) (var "addr")) := var "val");
       if_then (var "decoy_sink" <>~ nullptr) [
-        (deref (var "decoy_sink") := (cast UInt64 (var "val") ^~ u64 0x5877CAFE1337BEEFL));
+        (deref (var "decoy_sink") := (cast UInt64 (var "val") ^~ u64 salt_xwcafe_leetbeef));
       ];
     ];
   } in
@@ -251,7 +252,7 @@ let emit_oblivious_mem_decls (rng : Random.State.t) : Cpp_codegen.Cpp_ast.top_de
     body     = [
       (deref (reinterpret_cast (Ptr UInt16) (var "addr")) := var "val");
       if_then (var "decoy_sink" <>~ nullptr) [
-        (deref (var "decoy_sink") := (cast UInt64 (var "val") ^~ u64 0x5877CAFE1337BEEFL));
+        (deref (var "decoy_sink") := (cast UInt64 (var "val") ^~ u64 salt_xwcafe_leetbeef));
       ];
     ];
   } in
@@ -264,7 +265,7 @@ let emit_oblivious_mem_decls (rng : Random.State.t) : Cpp_codegen.Cpp_ast.top_de
     body     = [
       (deref (reinterpret_cast (Ptr UInt8) (var "addr")) := var "val");
       if_then (var "decoy_sink" <>~ nullptr) [
-        (deref (var "decoy_sink") := (cast UInt64 (var "val") ^~ u64 0x5877CAFE1337BEEFL));
+        (deref (var "decoy_sink") := (cast UInt64 (var "val") ^~ u64 salt_xwcafe_leetbeef));
       ];
     ];
   } in

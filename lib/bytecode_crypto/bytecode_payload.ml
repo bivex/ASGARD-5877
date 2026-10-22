@@ -1,3 +1,5 @@
+open Random_visa_constants.Magic_numbers
+
 type payload_error =
   | BadMagic of int32
   | UnsupportedVersion of int32
@@ -6,7 +8,8 @@ type payload_error =
   | CorruptedBlockTable of string
 
 let error_to_string = function
-  | BadMagic m -> Printf.sprintf "Invalid payload magic: 0x%08lx (expected 0x5877CAFE)" m
+  | BadMagic m ->
+      Printf.sprintf "Invalid payload magic: 0x%08lx (expected %s)" m (to_hex_literal32 salt_xwcafe)
   | UnsupportedVersion v -> Printf.sprintf "Unsupported payload format version: %ld (expected 1)" v
   | TruncatedPayload { expected; actual } ->
       Printf.sprintf "Truncated bytecode payload: expected at least %d bytes, got %d" expected actual
@@ -36,7 +39,7 @@ type authenticated_payload = {
   code_words : int64 list;
 }
 
-let magic_constant = 0x5877CAFEl
+let magic_constant = (Int64.to_int32 salt_xwcafe)
 let current_version = 1l
 
 let read_u32_le b off =

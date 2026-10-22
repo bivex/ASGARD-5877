@@ -1,5 +1,6 @@
 open Vm_ir
 open Vm_transform
+open Random_visa_constants.Magic_numbers
 
 type vm_package = {
   bytecode : int64 list;
@@ -803,7 +804,7 @@ let compile_and_package_multi
                   let f_off = resolve_target target_false in
                   let base_vip = Int64.logand f_off 0x1FFFFFL in
                   let delta = Int64.logxor (Int64.logand t_off 0x1FFFFFL) base_vip in
-                  let salt = Int64.logand (Int64.logxor (Int64.mul (Int64.of_int c) 0x5877L) 0x1337BEEFL) 0x1FFFFFL in
+                  let salt = Int64.logand (Int64.logxor (Int64.mul (Int64.of_int c) 0x5877L) salt_leetbeef) 0x1FFFFFL in
                   let enc_delta = Int64.logxor delta salt in
                   let imm = Int64.logor (Int64.of_int c) (Int64.shift_left base_vip 4) in
                   let imm = Int64.logor imm (Int64.shift_left enc_delta 25) in

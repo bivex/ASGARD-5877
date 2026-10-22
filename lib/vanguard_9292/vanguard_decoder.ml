@@ -2,6 +2,7 @@ open Random_visa_domain
 open Vanguard_types
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
+open Random_visa_constants.Magic_numbers
 
 let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
   let find_field kind =
@@ -31,7 +32,7 @@ let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
         ~is_explicit:true
         ~params:[ (UInt32, "seed") ]
         ~init_list:[
-          ("state", ternary (var "seed" ==~ u32 0l) (LitU32 0x1337BEEFl) (var "seed"));
+          ("state", ternary (var "seed" ==~ u32 0l) (LitU32 (Int64.to_int32 salt_leetbeef)) (var "seed"));
           ("counter", u32 0l);
         ]
         "RollingKey"
@@ -46,8 +47,8 @@ let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
           (var "x") ^= (var "x" >>~ i32 17);
           (var "x") ^= (var "x" <<~ i32 5);
           decl_var ~init:((var "x" <<~ i32 7) |~ (var "x" >>~ i32 25)) UInt32 "rot";
-          decl_var ~init:(var "rot" +~ (var "counter" *~ LitU32 0x9E3779B9l)) UInt32 "mixed";
-          if_then (var "mixed" ==~ u32 0l) [ (var "mixed") := LitU32 0x1337BEEFl ];
+          decl_var ~init:(var "rot" +~ (var "counter" *~ LitU32 (Int64.to_int32 golden_ratio_32))) UInt32 "mixed";
+          if_then (var "mixed" ==~ u32 0l) [ (var "mixed") := LitU32 (Int64.to_int32 salt_leetbeef) ];
           (var "state") := var "mixed";
           ret (var "mixed");
         ];
