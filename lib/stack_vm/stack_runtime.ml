@@ -456,20 +456,41 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
   let vip_decl =
     decl_var SizeT "vip" ~init:(call "ASG_UNMASK_OFFSET" [ i32 entry_bid ])
   in
+  let used_opcodes = Hashtbl.create 256 in
+  List.iter (fun (op, _, _) -> Hashtbl.add used_opcodes op true) cases;
+  let unused_opcodes = List.filter (fun op -> not (Hashtbl.mem used_opcodes op)) (List.init 256 (fun i -> i)) in
   let gnuc_stmts =
-    let table_init =
+    let raw_table_init =
       init_list (
-        desig_range (i32 0) (i32 255) (label_addr "lbl_default")
-        :: List.map (fun (op, _name, _fn) ->
-             desig_idx (u8 op) (label_addr (Printf.sprintf "lbl_%02X" op))
-           ) cases
+        List.init 256 (fun op ->
+          desig_idx (u8 op) (label_addr (Printf.sprintf "lbl_%02X" op))
+        )
       )
     in
-    let table_decl =
+    let raw_table_decl =
       decl_var ~is_static:true
         (Array (ConstPtr Void, 256))
+        "raw_dispatch_table"
+        ~init:raw_table_init
+    in
+    let dispatch_table_decl =
+      decl_var ~is_static:true
+        (Array (UIntPtr, 256))
         "dispatch_table"
-        ~init:table_init
+    in
+    let ready_decl =
+      decl_var ~is_static:true Bool "dispatch_ready" ~init:(bool_lit false)
+    in
+    let init_loop =
+      if_then (call "__builtin_expect" [ log_not (var "dispatch_ready"); i32 0 ]) [
+        raw_table_decl;
+        for_range "i" (u64 0L) (u64 256L)
+          [
+            let_u64 "k_slot" ((var "i" *~ u64 cbrt3_fraction_64) ^~ u64 salt_stack_dispatch_blind);
+            idx (var "dispatch_table") (var "i") := (c_cast UIntPtr (idx (var "raw_dispatch_table") (var "i")) ^~ var "k_slot");
+          ];
+        var "dispatch_ready" := bool_lit true;
+      ]
     in
     let handler_blocks =
       List.concat_map (fun (op, _name, fn) ->
@@ -480,15 +501,70 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
         ]
       ) cases
     in
+    let decoy_blocks =
+      List.concat_map (fun op ->
+        let decoy_body =
+          match op mod 6 with
+          | 0 ->
+              [
+                idx (var "vm" $-> "ctx") (i32 (op land 15)) ^= ((var "vm" $-> "vkey") +~ u64 (Int64.of_int op));
+                raw "ASG_DISPATCH_STEP();";
+              ]
+          | 1 ->
+              [
+                if_then ((var "vm" $-> "vsp_idx") <~ i32 4095) [
+                  idx (var "vm" $-> "vsp") (var "vm" $-> "vsp_idx") := ((var "vm" $-> "vkey") ^~ u64 (Int64.of_int op));
+                  (var "vm" $-> "vsp_idx") += i32 1;
+                ];
+                raw "ASG_DISPATCH_STEP();";
+              ]
+          | 2 ->
+              [
+                if_then ((var "vm" $-> "vsp_idx") >~ i32 0) [
+                  idx (var "vm" $-> "vsp") ((var "vm" $-> "vsp_idx") -~ i32 1) :=
+                    (idx (var "vm" $-> "vsp") ((var "vm" $-> "vsp_idx") -~ i32 1) *~ u64 golden_ratio_64) +~ u64 (Int64.of_int op);
+                ];
+                raw "ASG_DISPATCH_STEP();";
+              ]
+          | 3 ->
+              [
+                (var "vm" $-> "cf") := (if op land 1 <> 0 then u8 1 else u8 0);
+                (var "vm" $-> "zf") := (if op land 2 <> 0 then u8 1 else u8 0);
+                raw "ASG_DISPATCH_STEP();";
+              ]
+          | 4 ->
+              [
+                expr_stmt (call "fetch_byte" [ var "vm"; var "bytecode"; addr_of (var "vip") ]);
+                raw "ASG_DISPATCH_STEP();";
+              ]
+          | _ ->
+              [
+                (var "vm" $-> "vkey") := ((var "vm" $-> "vkey") >>~ i32 7) ^~ ((var "vm" $-> "vkey") <<~ i32 57) ^~ u64 (Int64.of_int op);
+                raw "ASG_DISPATCH_STEP();";
+              ]
+        in
+        [ label (Printf.sprintf "lbl_%02X" op) ] @ decoy_body
+      ) unused_opcodes
+    in
+    let step_macro_str =
+      Printf.sprintf
+        "#define ASG_DISPATCH_STEP() do { \\\n\
+        \        if (vm->halted || vip >= size) goto lbl_exit; \\\n\
+        \        uint8_t op = fetch_byte(vm, bytecode, &vip); \\\n\
+        \        uintptr_t k_slot = ((uintptr_t)op * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX); \\\n\
+        \        goto *(void*)(dispatch_table[op] ^ k_slot); \\\n\
+        \    } while (0)"
+        cbrt3_fraction_64 salt_stack_dispatch_blind
+    in
     [
-      raw "#pragma clang diagnostic push";
-      raw "#pragma clang diagnostic ignored \"-Winitializer-overrides\"";
-      table_decl;
-      raw "#pragma clang diagnostic pop";
-      raw "#define ASG_DISPATCH_STEP() do { \\\n        if (vm->halted || vip >= size) goto lbl_exit; \\\n        uint8_t op = fetch_byte(vm, bytecode, &vip); \\\n        goto *dispatch_table[op]; \\\n    } while (0)";
+      dispatch_table_decl;
+      ready_decl;
+      init_loop;
+      raw step_macro_str;
       raw "ASG_DISPATCH_STEP();";
     ]
     @ handler_blocks
+    @ decoy_blocks
     @ [
       label "lbl_default";
       var "vm" $-> "halted" := i32 1;
@@ -505,6 +581,12 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
         break_stmt;
       ]
     ) cases
+    @ List.map (fun op ->
+      case (u8 op) [
+        idx (var "vm" $-> "ctx") (i32 (op land 15)) ^= ((var "vm" $-> "vkey") +~ u64 (Int64.of_int op));
+        break_stmt;
+      ]
+    ) unused_opcodes
   in
   let fallback_stmts =
     [

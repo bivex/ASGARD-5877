@@ -87,6 +87,7 @@ val salt_deadbeef_cafe1337 : int64
 val salt_chunk_kdyn_seed : int64
 val salt_stack_vm_state : int64
 val salt_bridge_vector_seed : int64
+val salt_stack_dispatch_blind : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

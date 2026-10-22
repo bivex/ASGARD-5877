@@ -610,7 +610,8 @@ let () =
   ] in
   let stack_disp_cpp = Stack_vm.Stack_runtime.emit_stack_dispatch_source ~entry_bid:0 test_dispatch_cases in
   assert (contains_str stack_disp_cpp "dispatch_table[256]");
-  assert (contains_str stack_disp_cpp "&&lbl_default");
+  assert (contains_str stack_disp_cpp "raw_dispatch_table[256]");
+  assert (contains_str stack_disp_cpp "lbl_default:");
   assert (contains_str stack_disp_cpp "case 0x01: /* PUSH_IMM */");
   assert (contains_str stack_disp_cpp "case 0x02: /* ADD */");
   assert (contains_str stack_disp_cpp "case 0xFF: /* EXIT */");

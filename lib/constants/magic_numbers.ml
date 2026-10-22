@@ -186,6 +186,9 @@ let salt_stack_vm_state = 0x5877A564D00FL
 
 (* "13375877" + "AABBCCDD": the Multi-VM bridge morphing test seed. *)
 let salt_bridge_vector_seed = 0x13375877AABBCCDDL
+(* "5877A564" + "CAFEBEEF": the Stack-VM dispatch table blinding salt. *)
+let salt_stack_dispatch_blind = 0x5877A564CAFEBEEFL
+
 
 (* --- Registry -------------------------------------------------------- *)
 
@@ -208,7 +211,7 @@ let registry : entry list = [
   { name = "cbrt3_fraction_64";
     value = cbrt3_fraction_64;
     source = "frac(cbrt(3)) * 2^64 - first word of the SHA-256 initial hash";
-    used_in = [ "lib/native_vm/vm_context_emitter.ml" ] };
+    used_in = [ "lib/native_vm/vm_context_emitter.ml"; "lib/stack_vm/stack_runtime.ml" ] };
   { name = "splitmix64_gamma";
     value = splitmix64_gamma;
     source = "SplitMix64 finalizer increment 1 (Steele, Lea and Flood, OOPSLA 2014)";
@@ -361,6 +364,10 @@ let registry : entry list = [
     value = salt_bridge_vector_seed;
     source = "hex-speak salt '13375877'+'AABBCCDD' - Multi-VM bridge morphing seed";
     used_in = [ "bin/profile_bottlenecks.ml"; "test/test_multi_vm.ml" ] };
+  { name = "salt_stack_dispatch_blind";
+    value = salt_stack_dispatch_blind;
+    source = "hex-speak salt '5877A564'+'CAFEBEEF' - Stack-VM dispatch table blinding";
+    used_in = [ "lib/stack_vm/stack_runtime.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =
