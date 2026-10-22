@@ -15,7 +15,7 @@
 open Stack_ir
 open Vm_ir
 open Flags
-
+open Random_visa_constants.Magic_numbers
 let int64_to_json (v : int64) : Yojson.Safe.t = `String (Int64.to_string v)
 
 let condition_to_json (c : condition) : Yojson.Safe.t =
@@ -139,7 +139,7 @@ let program_to_json ~(phase : string) (prog : program) : Yojson.Safe.t =
   in
   let n_all = Array.length all_ids in
   let rng =
-    let seed = (Hashtbl.hash phase) lxor 0x5CA_FE58_77 in
+    let seed = (Hashtbl.hash phase) lxor Int64.to_int salt_dump_phase in
     Random.State.make [| seed |]
   in
   let real_succs (b : block) : int list =

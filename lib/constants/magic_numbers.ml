@@ -189,6 +189,20 @@ let salt_bridge_vector_seed = 0x13375877AABBCCDDL
 (* "5877A564" + "CAFEBEEF": the Stack-VM dispatch table blinding salt. *)
 let salt_stack_dispatch_blind = 0x5877A564CAFEBEEFL
 
+(* "DEAD" + "C0DE": the mask that diversifies block IDs before token derivation. *)
+let salt_deadcode = 0xDEADC0DEL
+
+(* "C0FFEE" + 1: the sentinel token replacing zero so no block token is zero. *)
+let sentinel_c0ffee_1 = 0xC0FFEE00000001L
+
+(* Alternating-nibble scrambler seed for E-graph expansion in Stack-MBA. *)
+let salt_egraph_scrambler = 0xECA8642013579BDFL
+
+(* Multiplier for per-block PRNG diversification in Stack-MBA pass. *)
+let block_id_multiplier = 0xB7E15163L
+
+(* "CAFE" + "5877": salt for deterministic decoy edge generation in Stack-IR dumps. *)
+let salt_dump_phase = 0x5CAFE5877L
 
 (* --- Registry -------------------------------------------------------- *)
 
@@ -203,7 +217,8 @@ let registry : entry list = [
   { name = "golden_ratio_64";
     value = golden_ratio_64;
     source = "frac(phi^-1) * 2^64 - Knuth multiplicative hashing, xxHash PRIME64_1";
-    used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/native_vm/vm_context_emitter.ml" ] };
+    used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/native_vm/vm_context_emitter.ml";
+                "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml" ] };
   { name = "sqrt2_fraction_64";
     value = sqrt2_fraction_64;
     source = "frac(sqrt(2)) * 2^64";
@@ -215,11 +230,11 @@ let registry : entry list = [
   { name = "splitmix64_gamma";
     value = splitmix64_gamma;
     source = "SplitMix64 finalizer increment 1 (Steele, Lea and Flood, OOPSLA 2014)";
-    used_in = [ "lib/vm_ir/rolling_key.ml" ] };
+    used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml" ] };
   { name = "splitmix64_mix";
     value = splitmix64_mix;
     source = "SplitMix64 finalizer increment 2 (Steele, Lea and Flood, OOPSLA 2014)";
-    used_in = [ "lib/vm_ir/rolling_key.ml" ] };
+    used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml" ] };
   { name = "fnv1a_64_prime";
     value = fnv1a_64_prime;
     source = "FNV-1a 64-bit prime, 2^40 + 2^8 + 0xB3";
@@ -368,6 +383,26 @@ let registry : entry list = [
     value = salt_stack_dispatch_blind;
     source = "hex-speak salt '5877A564'+'CAFEBEEF' - Stack-VM dispatch table blinding";
     used_in = [ "lib/stack_vm/stack_runtime.ml" ] };
+  { name = "salt_deadcode";
+    value = salt_deadcode;
+    source = "hex-speak salt 'DEAD'+'C0DE' - block ID token diversification";
+    used_in = [ "lib/stack_vm/stack_cff_pass.ml" ] };
+  { name = "sentinel_c0ffee_1";
+    value = sentinel_c0ffee_1;
+    source = "hex-speak sentinel 'C0FFEE'+1 - non-zero token replacement";
+    used_in = [ "lib/stack_vm/stack_cff_pass.ml" ] };
+  { name = "salt_egraph_scrambler";
+    value = salt_egraph_scrambler;
+    source = "alternating-nibble scrambler seed for E-graph expansion in Stack-MBA";
+    used_in = [ "lib/stack_vm/stack_mba_pass.ml" ] };
+  { name = "block_id_multiplier";
+    value = block_id_multiplier;
+    source = "multiplier for per-block PRNG diversification in Stack-MBA";
+    used_in = [ "lib/stack_vm/stack_mba_pass.ml" ] };
+  { name = "salt_dump_phase";
+    value = salt_dump_phase;
+    source = "hex-speak salt 'CAFE'+'5877' - deterministic decoy edge seed";
+    used_in = [ "lib/stack_vm/stack_ir_json.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

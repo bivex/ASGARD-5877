@@ -39,18 +39,18 @@
 *)
 
 open Stack_ir
+open Random_visa_constants.Magic_numbers
 
 (* ── SplitMix64 PRNG ─────────────────────────────────────────────────── *)
 let splitmix64 s =
-  let s = Int64.add s 0x9E3779B97F4A7C15L in
+  let s = Int64.add s golden_ratio_64 in
   let z = s in
   let z = Int64.logxor z (Int64.shift_right_logical z 30) in
-  let z = Int64.mul z 0xBF58476D1CE4E5B9L in
+  let z = Int64.mul z splitmix64_gamma in
   let z = Int64.logxor z (Int64.shift_right_logical z 27) in
-  let z = Int64.mul z 0x94D049BB133111EBL in
+  let z = Int64.mul z splitmix64_mix in
   let z = Int64.logxor z (Int64.shift_right_logical z 31) in
   (s, z)
-
 type mba_rng = { mutable state : int64 }
 
 let make_rng seed = { state = seed }
@@ -142,7 +142,7 @@ let egraph_config_of ~node_limit ~time_budget_ms ~iter_limit = {
     stack ops.  Falls back to L2 on any error. *)
 let synthesize_egraph ?(budget = egraph_const_config) rng c =
   (* Derive a Random.State seed from the SplitMix state, advance rng *)
-  let seed_word = Int64.to_int (Int64.logxor rng.state 0xECA8_6420_1357_9BDFL) in
+  let seed_word = Int64.to_int (Int64.logxor rng.state salt_egraph_scrambler) in
   let _ = next_int64 rng in  (* advance so next call gets a different seed *)
   let eg_rng = Random.State.make [| seed_word |] in
   let expr = Mba_engine.Egraph.expand
@@ -300,7 +300,7 @@ let egraph_budget_of (cfg : mba_config) =
     ~iter_limit:cfg.egraph_iter_limit
 
 let apply_block ?ctx cfg block =
-  let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * 0xB7E1_5163))) in
+  let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * Int64.to_int block_id_multiplier))) in
   (* Without a context allocator there is no safe scratch slot: slot 0
      is a program register, so the noise is omitted rather than
      corrupting the program. *)
@@ -337,7 +337,7 @@ let apply_program ?ctx cfg prog =
       out.(i) <- (id, rewrite_block
         ~egraph_rate:cfg.egraph_rate
         ~egraph_budget:(egraph_budget_of cfg)
-        ~rng:(make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0xB7E1_5163))))
+        ~rng:(make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * Int64.to_int block_id_multiplier))))
         ~scratch_slot cfg.mba_rate b));
   let new_blocks = Hashtbl.create n in
   Array.iter (fun (id, b) -> Hashtbl.replace new_blocks id b) out;

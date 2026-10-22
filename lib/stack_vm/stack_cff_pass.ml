@@ -37,22 +37,22 @@
 open Stack_ir
 open Vm_ir
 open Flags
+open Random_visa_constants.Magic_numbers
 
 (* ── SplitMix64 ───────────────────────────────────────────────────────── *)
 let splitmix64 s =
-  let s = Int64.add s 0x9E3779B97F4A7C15L in
+  let s = Int64.add s golden_ratio_64 in
   let z = s in
   let z = Int64.logxor z (Int64.shift_right_logical z 30) in
-  let z = Int64.mul z 0xBF58476D1CE4E5B9L in
+  let z = Int64.mul z splitmix64_gamma in
   let z = Int64.logxor z (Int64.shift_right_logical z 27) in
-  let z = Int64.mul z 0x94D049BB133111EBL in
+  let z = Int64.mul z splitmix64_mix in
   let z = Int64.logxor z (Int64.shift_right_logical z 31) in
   (s, z)
 
 let block_token seed id =
-  let _, z = splitmix64 (Int64.logxor seed (Int64.of_int (id lxor 0xDEAD_C0DE))) in
-  if z = 0L then 0xC0FFEE_0000_0001L else z
-
+  let _, z = splitmix64 (Int64.logxor seed (Int64.of_int (id lxor Int64.to_int salt_deadcode))) in
+  if z = 0L then sentinel_c0ffee_1 else z
 (* The dispatcher state the state-feedback pass needs: the VPC context
    slot and the token every real block is addressed by.  On entry to a
    real block the VPC provably holds that block's token: the predecessor
@@ -90,9 +90,9 @@ let split_terminators ops =
 let hash_shard_id ~(salt : int64) (token : int64) (n_shards : int) : int =
   let z = Int64.add token salt in
   let z = Int64.logxor z (Int64.shift_right_logical z 30) in
-  let z = Int64.mul z 0xBF58476D1CE4E5B9L in
+  let z = Int64.mul z splitmix64_gamma in
   let z = Int64.logxor z (Int64.shift_right_logical z 27) in
-  let z = Int64.mul z 0x94D049BB133111EBL in
+  let z = Int64.mul z splitmix64_mix in
   let z = Int64.logxor z (Int64.shift_right_logical z 31) in
   abs (Int64.to_int z) mod n_shards
 
