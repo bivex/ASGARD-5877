@@ -12,6 +12,7 @@ type runtime_config = {
   ctx_reg : string;     (* VCTX *)
   enable_hw_binding : bool;
   enable_address_bound : bool;
+  host_stack_size_kb : int;
 }
 
 let default_config = function
@@ -24,6 +25,7 @@ let default_config = function
       ctx_reg = "r14";
       enable_hw_binding = true;
       enable_address_bound = false;
+      host_stack_size_kb = 1024;
     }
   | AArch64 -> {
       arch = AArch64;
@@ -34,6 +36,7 @@ let default_config = function
       ctx_reg = "x23";
       enable_hw_binding = true;
       enable_address_bound = false;
+      host_stack_size_kb = 1024;
     }
   | RV64 -> {
       arch = RV64;
@@ -44,6 +47,7 @@ let default_config = function
       ctx_reg = "s5";
       enable_hw_binding = true;
       enable_address_bound = false;
+      host_stack_size_kb = 1024;
     }
 
 let emit_entry_stub cfg total_slots =
@@ -1005,7 +1009,7 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
              "vm.vkey ^= asgard_stack_vm::verify_handler_integrity();"
          else raw "");
         raw "vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);";
-        decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, 1048576)) "host_stack";
+        decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, max 64 cfg.host_stack_size_kb * 1024)) "host_stack";
         let_u64 "sp_val" (c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L));
         idx (var "vm" $. "ctx") (i32 4) := var "sp_val";
         idx (var "vm" $. "ctx") (i32 5) := var "sp_val";

@@ -73,6 +73,8 @@ type vm_runtime_config = {
   ephemeral_jit : bool;
   chameleon_handlers : bool;
   oblivious_memory : bool;
+  context_epochs : int;
+  oblivious_decoys : int;
 }
 
 type c_macro_config = {
@@ -99,6 +101,9 @@ type stack_vm_config = {
   compact_imm : bool;
   feedback_rate : int;
   cff_couple_key : bool;
+  opcode_polymorphism : bool;
+  permute_registers : bool;
+  host_stack_size_kb : int;
 }
 
 type eh_shadowing_config = {
@@ -159,6 +164,20 @@ type trampoline_config = {
   chunk_size : int;
 }
 
+type watermark_config = {
+  payload_bits : int;
+  redundancy   : int;
+}
+
+val default_watermark : watermark_config
+
+type toolchain_config = {
+  opt_level   : string;
+  extra_flags : string list;
+}
+
+val default_toolchain : toolchain_config
+
 
 type arch = [ `X86_64 | `AArch64 | `RISCV ]
 
@@ -182,6 +201,8 @@ type t = {
   superop : superop_config;
   ghost : ghost_config;
   trampoline : trampoline_config;
+  watermark : watermark_config;
+  toolchain : toolchain_config;
 }
 
 val default_eh_shadowing : eh_shadowing_config

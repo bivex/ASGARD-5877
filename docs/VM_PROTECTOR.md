@@ -487,6 +487,10 @@ pre-populate every field; the JSON file then overrides what it mentions.
 | | `max_splits_factor` | `1` | Ceiling as multiplier of current block count |
 | | `min_chunk` | `2` | Min ops on each side of a cut point; `1` yields more candidates |
 | `trampoline` | `chunk_size` | `64` | Number of 64-bit words per fragmented bytecode chunk in C++ dispatch thunks |
+| `watermark` | `payload_bits` | `48` | Watermark payload bit count (48 bits = $2.8 \times 10^{14}$ unique client IDs) |
+| | `redundancy` | `7` | Repetition ECC code redundancy ($48 \times 7 = 336$ carrier points; higher = stronger patch resistance) |
+| `toolchain` | `opt_level` | `"-O3"` | Native C++ compiler optimization level (`-O1`, `-O2`, `-O3`, `-Os`, `-Oz`) |
+| | `extra_flags` | `[]` | Extra compiler/linker flags appended during native binary compilation |
 
 ### Knobs inside existing sections
 
@@ -504,6 +508,11 @@ pre-populate every field; the JSON file then overrides what it mentions.
 | `mba.ir_egraph_time_budget_ms` | `50` | Wall-clock saturation budget (ms) for IR-level ALU obfuscation |
 | `bloat.density_cap_threshold1_kb` | `200` | Target size budget threshold (KB) below which junk density is capped at 0.1 (`0` disables) |
 | `bloat.density_cap_threshold2_kb` | `500` | Target size budget threshold (KB) below which junk density is capped at 0.5 (`0` disables) |
+| `vm_runtime.context_epochs` | `4` | Number of independent register permutations for epoch-based context scrambling |
+| `vm_runtime.oblivious_decoys` | `3` | Number of false accesses emitted per memory load in oblivious memory |
+| `stack_vm.opcode_polymorphism` | `true` | Enable randomized opcode mapping (`false` forces static canonical map) |
+| `stack_vm.permute_registers` | `false` | Enable random permutation of initial register context slots |
+| `stack_vm.host_stack_size_kb` | `1024` | Size in KB of the dedicated VM thread-local host stack buffer |
 
 ### E-graph MBA budget (`mba.*`)
 

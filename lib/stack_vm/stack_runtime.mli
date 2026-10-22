@@ -16,6 +16,7 @@ type runtime_config = {
       breaks the decryption as well. *)
   enable_hw_binding : bool;
   enable_address_bound : bool;
+  host_stack_size_kb : int;
 }
 
 val default_config : target_arch -> runtime_config

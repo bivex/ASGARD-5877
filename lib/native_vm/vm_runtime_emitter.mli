@@ -18,6 +18,8 @@ module Runtime_policy : sig
     enable_egraph_expansion : bool;
     enable_ephemeral_jit : bool;
     enable_oblivious_mem : bool;
+    context_epochs : int;
+    oblivious_decoys : int;
   }
 
   val of_config : ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t -> Protection_config.t option -> t

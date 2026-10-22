@@ -56,7 +56,9 @@
     "egraph_expansion": true,
     "ephemeral_jit": false,
     "chameleon_handlers": true,
-    "oblivious_memory": true
+    "oblivious_memory": true,
+    "context_epochs": 4,
+    "oblivious_decoys": 3
   },
   "c_macro": {
     "enabled": true,
@@ -78,7 +80,10 @@
     "state_feedback": true,
     "layout_randomization": true,
     "runtime_hardening": true,
-    "compact_imm": true
+    "compact_imm": true,
+    "opcode_polymorphism": true,
+    "permute_registers": false,
+    "host_stack_size_kb": 1024
   },
   "eh_shadowing": {
     "enabled": true,
@@ -129,5 +134,13 @@
   },
   "trampoline": {
     "chunk_size": 64
+  },
+  "watermark": {
+    "payload_bits": 48,
+    "redundancy": 7
+  },
+  "toolchain": {
+    "opt_level": "-O3",
+    "extra_flags": []
   }
 }

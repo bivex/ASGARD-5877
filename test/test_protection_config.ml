@@ -193,12 +193,21 @@ let test_pass_config_sections () =
       max_splits_factor = 3; min_chunk = 1;
     };
     mba = { Protection_config.default.mba with stack_synthesis_rate = 45 };
+    vm_runtime = {
+      Protection_config.default.vm_runtime with
+      context_epochs = 6;
+      oblivious_decoys = 5;
+    };
     stack_vm = {
       Protection_config.default.stack_vm with
       feedback_rate = 33; cff_couple_key = false;
+      opcode_polymorphism = false;
+      permute_registers = true;
+      host_stack_size_kb = 2048;
     };
-    cff = {
-      Protection_config.default.cff with
+    watermark = { payload_bits = 48; redundancy = 9 };
+    toolchain = { opt_level = "-O2"; extra_flags = ["-flto"] };
+    cff = { Protection_config.default.cff with
       pop_digest = true; red_herring = false;
     };
     trampoline = { chunk_size = 128 };
@@ -227,6 +236,13 @@ let test_pass_config_sections () =
        Alcotest.(check bool) "cff.pop_digest" original.cff.pop_digest parsed.cff.pop_digest;
        Alcotest.(check bool) "cff.red_herring" original.cff.red_herring parsed.cff.red_herring;
        Alcotest.(check int) "trampoline.chunk_size" 128 parsed.trampoline.chunk_size;
+       Alcotest.(check int) "watermark.redundancy" 9 parsed.watermark.redundancy;
+       Alcotest.(check string) "toolchain.opt_level" "-O2" parsed.toolchain.opt_level;
+       Alcotest.(check int) "vm_runtime.context_epochs" 6 parsed.vm_runtime.context_epochs;
+       Alcotest.(check int) "vm_runtime.oblivious_decoys" 5 parsed.vm_runtime.oblivious_decoys;
+       Alcotest.(check bool) "stack_vm.opcode_polymorphism" false parsed.stack_vm.opcode_polymorphism;
+       Alcotest.(check bool) "stack_vm.permute_registers" true parsed.stack_vm.permute_registers;
+       Alcotest.(check int) "stack_vm.host_stack_size_kb" 2048 parsed.stack_vm.host_stack_size_kb;
        Alcotest.(check int) "bloat.density_cap_threshold1_kb" 300 parsed.bloat.density_cap_threshold1_kb;
        Alcotest.(check int) "bloat.density_cap_threshold2_kb" 600 parsed.bloat.density_cap_threshold2_kb);
   (match Protection_json.from_json_string {|{"arch":"aarch64"}|} with
@@ -249,7 +265,14 @@ let test_pass_config_sections () =
        Alcotest.(check int) "bloat defaults threshold1 200" 200 cfg.bloat.density_cap_threshold1_kb;
        Alcotest.(check int) "bloat defaults threshold2 500" 500 cfg.bloat.density_cap_threshold2_kb;
        Alcotest.(check int) "mba defaults ir_max_depth 4" 4 cfg.mba.ir_max_depth;
-       Alcotest.(check int) "mba defaults ir_egraph_nodes 80" 80 cfg.mba.ir_egraph_node_limit)
+       Alcotest.(check int) "mba defaults ir_egraph_nodes 80" 80 cfg.mba.ir_egraph_node_limit;
+       Alcotest.(check int) "watermark defaults redundancy 7" 7 cfg.watermark.redundancy;
+       Alcotest.(check string) "toolchain defaults opt_level -O3" "-O3" cfg.toolchain.opt_level;
+       Alcotest.(check int) "vm_runtime defaults epochs 4" 4 cfg.vm_runtime.context_epochs;
+       Alcotest.(check int) "vm_runtime defaults decoys 3" 3 cfg.vm_runtime.oblivious_decoys;
+       Alcotest.(check bool) "stack_vm defaults polymorphism on" true cfg.stack_vm.opcode_polymorphism;
+       Alcotest.(check bool) "stack_vm defaults permute off" false cfg.stack_vm.permute_registers;
+       Alcotest.(check int) "stack_vm defaults host stack 1024" 1024 cfg.stack_vm.host_stack_size_kb)
 
 let test_pass_config_presets () =
   let open Protection_config in

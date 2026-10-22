@@ -488,7 +488,8 @@ module Stack_vm_packager : Vm_packager = struct
       else ir
     in
     let ext_syms = Hashtbl.create 16 in
-    let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ext_syms target_func in
+    let ctx = Stack_vm.Context_allocator.create ~permute:native_cfg.stack_vm.permute_registers () in
+    let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
     dump_bytecode_trace ~phase:"1-lowered" prog;
     dump_bytecode_json ~phase:"1-lowered" prog;
@@ -810,8 +811,9 @@ module Stack_vm_packager : Vm_packager = struct
       (fun id token ->
         Hashtbl.replace dispatcher_tokens id (cff_dispatcher.vpc_slot, token))
       cff_dispatcher.block_tokens;
+    let polymorphic = native_cfg.stack_vm.opcode_polymorphism in
     let enc =
-      Stack_vm.Stack_encoder.encode_program ~seed_key ?layout ~compact_imm
+      Stack_vm.Stack_encoder.encode_program ~seed_key ?layout ~polymorphic ~compact_imm
         ~dispatcher_tokens prog
     in
     let bc_words = bytes_to_words enc.bytes in
@@ -819,7 +821,8 @@ module Stack_vm_packager : Vm_packager = struct
       if compact_imm then "Hybrid {i32, i64} (Compact Polymorphic)"
       else "Fixed i64 (Uniform 8-byte)"
     in
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] Opcode Polymorphism & %s applied" imm_width_info;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] Opcode Polymorphism: %s & %s applied"
+      (if polymorphic then "Enabled" else "Disabled") imm_width_info;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] Field Layout Randomization: %s"
       (if native_cfg.stack_vm.layout_randomization then "Randomized per-instruction layout" else "Default canonical layout");
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] VSP Stack Value Whitening & Anti-Pushan Rolling Key (seed=0x%016LX)" seed_key;
@@ -868,6 +871,7 @@ module Stack_vm_packager : Vm_packager = struct
     let runtime_cfg = {
       (Stack_vm.Stack_runtime.default_config target_arch) with
       enable_address_bound;
+      host_stack_size_kb = native_cfg.stack_vm.host_stack_size_kb;
     } in
     let obfuscate_runtime = native_cfg.stack_vm.runtime_hardening in
     let cpp_runtime_source =

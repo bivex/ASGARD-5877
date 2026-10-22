@@ -361,7 +361,7 @@ let run
                         else runner_path
                       in
                       let is_c_target = is_c_src && not (String.ends_with ~suffix:".cpp" comp_src) in
-                      (match T.compile_native_binary ~is_c:is_c_target ~source_file:comp_src ~out_binary:bin_path ~include_dir:out_dir with
+                      (match T.compile_native_binary ~opt_level:native_cfg.toolchain.opt_level ~extra_flags:native_cfg.toolchain.extra_flags ~is_c:is_c_target ~source_file:comp_src ~out_binary:bin_path ~include_dir:out_dir () with
                       | Ok () ->
                           Logger.infof ~loc:__LOC__ ~section:"TOOLCHAIN" "Native binary compiled: %s" bin_path;
                           let exec_res =
@@ -452,9 +452,11 @@ let run
                     derivation_key = wid.derivation_key;
                     client_payload = wid.raw_bits;
                     carrier_points = (
+                      let pbits = native_cfg.watermark.payload_bits in
+                      let red = native_cfg.watermark.redundancy in
                       let pts = ref [] in
-                      for p = 0 to 48 * 7 - 1 do
-                        let bit_idx = p mod 48 in
+                      for p = 0 to (pbits * red) - 1 do
+                        let bit_idx = p mod pbits in
                         let target_bit = Watermark.Wm_embed.get_bit wid.raw_bits bit_idx in
                         let site_tag = (p + 1, 1) in
                         let global_tag = Watermark.Wm_chooser.mix_tag wid.derivation_key site_tag in
@@ -474,8 +476,10 @@ let run
                     );
                   } in
                   Watermark.Wm_chooser.save_manifest manifest_path manifest;
-                  Logger.infof ~loc:__LOC__ ~section:"WATERMARK" "  └─ Build-seed watermark: embedded 48-bit payload via balanced SplitMix64 ECC (Client ID: 0x%016LX, Derivation Key: 0x%016LX)"
-                    wid.raw_bits wid.derivation_key;
+                  let pbits = native_cfg.watermark.payload_bits in
+                  let red = native_cfg.watermark.redundancy in
+                  Logger.infof ~loc:__LOC__ ~section:"WATERMARK" "  └─ Build-seed watermark: embedded %d-bit payload via balanced SplitMix64 ECC (%dx redundancy, Client ID: 0x%016LX, Derivation Key: 0x%016LX)"
+                    pbits red wid.raw_bits wid.derivation_key;
                   Some wid
               | None -> None
             in

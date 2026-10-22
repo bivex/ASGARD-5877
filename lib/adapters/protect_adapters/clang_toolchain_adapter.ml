@@ -55,7 +55,7 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
   | Ok (`Signaled s) -> Error (Printf.sprintf "%s -S terminated by signal %d" compiler s)
   | Error (`Msg msg) -> Error (Printf.sprintf "%s -S execution error: %s" compiler msg)
 
-let compile_native_binary ~is_c ~(source_file : string) ~(out_binary : string) ~(include_dir : string) : (unit, error) result =
+let compile_native_binary ?(opt_level = "-O3") ?(extra_flags = []) ~is_c ~(source_file : string) ~(out_binary : string) ~(include_dir : string) () : (unit, error) result =
   let is_debug =
     match Sys.getenv_opt "ASGARD_DEBUG_SYMBOLS" with
     | Some "1" | Some "true" | Some "yes" -> true
@@ -90,10 +90,13 @@ let compile_native_binary ~is_c ~(source_file : string) ~(out_binary : string) ~
     | Error (`Msg msg) -> Error (Printf.sprintf "Native debug compilation error: %s" msg)
   end else begin
     let opt_args =
-      Cmd.(v "-O3" % "-Wno-format-security"
-           % "-fno-rtti" % "-fno-exceptions"
-           % "-fno-unwind-tables" % "-fno-asynchronous-unwind-tables"
-           % "-fvisibility=hidden" % "-Wl,-dead_strip" % "-Wl,-x")
+      let base_opt =
+        Cmd.(v opt_level % "-Wno-format-security"
+             % "-fno-rtti" % "-fno-exceptions"
+             % "-fno-unwind-tables" % "-fno-asynchronous-unwind-tables"
+             % "-fvisibility=hidden" % "-Wl,-dead_strip" % "-Wl,-x")
+      in
+      List.fold_left (fun acc flag -> Cmd.(acc % flag)) base_opt extra_flags
     in
     let compile_cmd =
       Cmd.(v compiler %% base_args %% opt_args %% inc_args % source_file % "-o" % out_binary)

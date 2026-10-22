@@ -3,7 +3,7 @@ open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
 open Random_visa_constants.Magic_numbers
 
-let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize : top_decl list =
+let emit_context_decls ?(context_epochs = 4) ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize () : top_decl list =
   ignore enable_running_key;
 
   let gpr_names = [|
@@ -58,13 +58,14 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   let affine_a = ((Int32.to_int (Int32.shift_right_logical key_seed 16)) land 0x1E) lor 1 in
   let affine_b = (Int32.to_int key_seed) land 31 in
 
+  let num_epochs = max 1 context_epochs in
   let sched = Context_permutation.gen_epoch_schedule
-    (Random.State.make [| Int32.to_int key_seed; 0x1337 |]) ~n_regs:16 ~n_epochs:4 in
+    (Random.State.make [| Int32.to_int key_seed; 0x1337 |]) ~n_regs:16 ~n_epochs:num_epochs in
 
   let rotate_cases =
     let cases = ref [] in
-    for from_e = 0 to 3 do
-      for to_e = 0 to 3 do
+    for from_e = 0 to num_epochs - 1 do
+      for to_e = 0 to num_epochs - 1 do
         if from_e <> to_e then begin
           let target = Array.init 16 (fun s ->
             let r = sched.inv_perms.(from_e).(s) in
@@ -582,7 +583,7 @@ let emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~
   decls
 
 let emit_context_hpp b ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize =
-  let decls = emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize in
+  let decls = emit_context_decls ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize () in
   let rendered = render_top_decls decls in
   Buffer.add_string b rendered
 

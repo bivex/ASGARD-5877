@@ -141,6 +141,8 @@ module Runtime_policy = struct
     enable_egraph_expansion : bool;
     enable_ephemeral_jit : bool;
     enable_oblivious_mem : bool;
+    context_epochs : int;
+    oblivious_decoys : int;
   }
 
   let of_config ?runtime_profile (config : Protection_config.t option) : t =
@@ -169,6 +171,8 @@ module Runtime_policy = struct
       enable_egraph_expansion = (match config with Some c -> c.vm_runtime.egraph_expansion | None -> true);
       enable_ephemeral_jit = Protection_config.ephemeral_jit_enabled config;
       enable_oblivious_mem = Protection_config.oblivious_memory_enabled config;
+      context_epochs = (match config with Some c -> max 1 c.vm_runtime.context_epochs | None -> 4);
+      oblivious_decoys = (match config with Some c -> max 0 c.vm_runtime.oblivious_decoys | None -> 3);
     }
 end
 
@@ -679,10 +683,12 @@ static inline void* asgard_resolve_sym_idx(int32_t sym_idx) noexcept {
   let wbox_decls = generate_wbox_seed_derivation_decls ~rng key_seed in
   let context_decls =
     Vm_context_emitter.emit_context_decls
+      ~context_epochs:policy.context_epochs
       ~key_seed ~reg_perm ~stride ~offset
       ~enable_running_key:policy.enable_running_key
       ~enable_stack_scramble:policy.enable_stack_scramble
       ~enable_mem_sanitize:policy.enable_mem_sanitize
+      ()
   in
   let decoy_mnemonics =
     let list = ref [] in

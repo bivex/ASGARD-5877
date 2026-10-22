@@ -54,6 +54,8 @@ let default : t = {
     ephemeral_jit = false;
     chameleon_handlers = true;
     oblivious_memory = true;
+    context_epochs = 4;
+    oblivious_decoys = 3;
   };
   c_macro = {
     enabled = true;
@@ -78,6 +80,8 @@ let default : t = {
   superop = default_superop;
   ghost = default_ghost;
   trampoline = default_trampoline;
+  watermark = default_watermark;
+  toolchain = default_toolchain;
 }
 
 let max_security : t = {
@@ -134,6 +138,8 @@ let max_security : t = {
     ephemeral_jit = true;
     chameleon_handlers = true;
     oblivious_memory = true;
+    context_epochs = 8;
+    oblivious_decoys = 7;
   };
   c_macro = {
     enabled = true;
@@ -158,6 +164,9 @@ let max_security : t = {
     compact_imm = true;
     feedback_rate = 100;
     cff_couple_key = true;
+    opcode_polymorphism = true;
+    permute_registers = true;
+    host_stack_size_kb = 2048;
   };
   eh_shadowing = {
     enabled = true;
@@ -180,6 +189,8 @@ let max_security : t = {
   superop = default_superop;
   ghost = { default_ghost with ghost_rate = 100 };
   trampoline = default_trampoline;
+  watermark = { default_watermark with redundancy = 11 };
+  toolchain = default_toolchain;
 }
 
 let lightweight : t = {
@@ -236,6 +247,8 @@ let lightweight : t = {
     ephemeral_jit = true;
     chameleon_handlers = false;
     oblivious_memory = false;
+    context_epochs = 2;
+    oblivious_decoys = 1;
   };
   c_macro = {
     enabled = true;
@@ -260,6 +273,9 @@ let lightweight : t = {
     compact_imm = true;
     feedback_rate = 100;
     cff_couple_key = true;
+    opcode_polymorphism = true;
+    permute_registers = false;
+    host_stack_size_kb = 512;
   };
   eh_shadowing = {
     enabled = false;
@@ -282,6 +298,8 @@ let lightweight : t = {
   superop = { default_superop with fusion_rate = 80 };
   ghost = { default_ghost with ghost_rate = 40 };
   trampoline = default_trampoline;
+  watermark = { default_watermark with redundancy = 5 };
+  toolchain = default_toolchain;
 }
 
 let stealth : t = {
@@ -338,6 +356,8 @@ let stealth : t = {
     ephemeral_jit = false;
     chameleon_handlers = true;
     oblivious_memory = true;
+    context_epochs = 4;
+    oblivious_decoys = 3;
   };
   c_macro = {
     enabled = true;
@@ -362,6 +382,9 @@ let stealth : t = {
     compact_imm = true;
     feedback_rate = 100;
     cff_couple_key = true;
+    opcode_polymorphism = true;
+    permute_registers = false;
+    host_stack_size_kb = 1024;
   };
   eh_shadowing = {
     enabled = true;
@@ -379,6 +402,8 @@ let stealth : t = {
   superop = default_superop;
   ghost = default_ghost;
   trampoline = default_trampoline;
+  watermark = default_watermark;
+  toolchain = default_toolchain;
 }
 
 let edr_stealth : t = {
@@ -435,6 +460,8 @@ let edr_stealth : t = {
     ephemeral_jit = false;
     chameleon_handlers = true;
     oblivious_memory = false;
+    context_epochs = 4;
+    oblivious_decoys = 3;
   };
   c_macro = {
     enabled = true;
@@ -459,6 +486,9 @@ let edr_stealth : t = {
     compact_imm = true;
     feedback_rate = 100;
     cff_couple_key = true;
+    opcode_polymorphism = true;
+    permute_registers = false;
+    host_stack_size_kb = 1024;
   };
   eh_shadowing = {
     enabled = false;
@@ -481,6 +511,8 @@ let edr_stealth : t = {
   superop = default_superop;
   ghost = default_ghost;
   trampoline = default_trampoline;
+  watermark = default_watermark;
+  toolchain = default_toolchain;
 }
 
 let minimal : t = {
@@ -537,6 +569,8 @@ let minimal : t = {
     ephemeral_jit = false;
     chameleon_handlers = false;
     oblivious_memory = false;
+    context_epochs = 1;
+    oblivious_decoys = 0;
   };
   c_macro = {
     enabled = false;
@@ -561,6 +595,9 @@ let minimal : t = {
     compact_imm = false;
     feedback_rate = 100;
     cff_couple_key = true;
+    opcode_polymorphism = false;
+    permute_registers = false;
+    host_stack_size_kb = 256;
   };
   eh_shadowing = {
     enabled = false;
@@ -583,6 +620,8 @@ let minimal : t = {
   superop = default_superop;
   ghost = { default_ghost with enabled = false };
   trampoline = default_trampoline;
+  watermark = { default_watermark with redundancy = 3 };
+  toolchain = default_toolchain;
 }
 
 let high : t = {
@@ -639,6 +678,8 @@ let high : t = {
     ephemeral_jit = false;
     chameleon_handlers = true;
     oblivious_memory = true;
+    context_epochs = 4;
+    oblivious_decoys = 3;
   };
   c_macro = {
     enabled = true;
@@ -663,6 +704,9 @@ let high : t = {
     compact_imm = true;
     feedback_rate = 100;
     cff_couple_key = true;
+    opcode_polymorphism = true;
+    permute_registers = false;
+    host_stack_size_kb = 1024;
   };
   eh_shadowing = {
     enabled = true;
@@ -676,6 +720,8 @@ let high : t = {
   superop = default_superop;
   ghost = { default_ghost with ghost_rate = 90 };
   trampoline = default_trampoline;
+  watermark = default_watermark;
+  toolchain = default_toolchain;
 }
 
 let from_preset name =

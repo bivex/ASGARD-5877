@@ -158,6 +158,8 @@ type vm_runtime_config = {
   ephemeral_jit : bool [@default false];
   chameleon_handlers : bool [@default true];
   oblivious_memory : bool [@default true];
+  context_epochs : int [@default 4];
+  oblivious_decoys : int [@default 3];
 } [@@deriving yojson]
 
 type c_macro_config = {
@@ -185,9 +187,11 @@ type stack_vm_config = {
   (** Phase 6 (State-Feedback Rolling Key) injection rate, 0-100:
       probability a register-coupled cipher checkpoint is injected. *)
   feedback_rate : int [@default 100];
-  (** Phase 3 stack-level CFF: couple the rolling key to the VPC write on
-      every CFF edge, so the key depends on the executed path. *)
+  (** Phase 3 stack-level CFF: couple the rolling key to the VPC write on every CFF edge. *)
   cff_couple_key : bool [@default true];
+  opcode_polymorphism : bool [@default true];
+  permute_registers : bool [@default false];
+  host_stack_size_kb : int [@default 1024];
 } [@@deriving yojson]
 
 type spaghetti_config = {
@@ -292,6 +296,26 @@ let default_trampoline = {
   chunk_size = 64;
 }
 
+type watermark_config = {
+  payload_bits : int [@default 48];
+  redundancy   : int [@default 7];
+} [@@deriving yojson]
+
+let default_watermark = {
+  payload_bits = 48;
+  redundancy   = 7;
+}
+
+type toolchain_config = {
+  opt_level   : string      [@default "-O3"];
+  extra_flags : string list [@default []];
+} [@@deriving yojson]
+
+let default_toolchain = {
+  opt_level   = "-O3";
+  extra_flags = [];
+}
+
 
 let default_crypto = { rounds = 16; key_bits = 128 }
 let default_bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5; density_cap_threshold1_kb = 200; density_cap_threshold2_kb = 500 }
@@ -311,6 +335,8 @@ let default_vm_runtime = {
   egraph_expansion = true; ephemeral_jit = false;
   chameleon_handlers = true;
   oblivious_memory = true;
+  context_epochs = 4;
+  oblivious_decoys = 3;
 }
 let default_c_macro = {
   enabled = true; macro_prefix = "ASG_"; obfuscate_strings = true;
@@ -366,6 +392,9 @@ let default_stack_vm = {
   compact_imm = true;
   feedback_rate = 100;
   cff_couple_key = true;
+  opcode_polymorphism = true;
+  permute_registers = false;
+  host_stack_size_kb = 1024;
 }
 
 type t = {
@@ -388,6 +417,8 @@ type t = {
   superop : superop_config [@default default_superop];
   ghost : ghost_config [@default default_ghost];
   trampoline : trampoline_config [@default default_trampoline];
+  watermark : watermark_config [@default default_watermark];
+  toolchain : toolchain_config [@default default_toolchain];
 } [@@deriving yojson]
 
 (* ADC/SBC carry dialect: true when the lifted program reads the carry in the

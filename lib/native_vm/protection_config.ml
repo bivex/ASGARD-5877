@@ -34,6 +34,9 @@ let with_stack_vm ?superoperators ?state_feedback ?layout_randomization ?runtime
     compact_imm = Option.value ~default:curr.compact_imm compact_imm;
     feedback_rate = Option.value ~default:curr.feedback_rate feedback_rate;
     cff_couple_key = Option.value ~default:curr.cff_couple_key cff_couple_key;
+    opcode_polymorphism = curr.opcode_polymorphism;
+    permute_registers = curr.permute_registers;
+    host_stack_size_kb = curr.host_stack_size_kb;
   } in
   b := { !b with stack_vm };
   b
