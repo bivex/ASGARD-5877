@@ -57,12 +57,30 @@ let color_enabled = ref (init_color ())
 let set_color_enabled b = color_enabled := b
 let is_color_enabled () = !color_enabled
 
+let format_loc raw =
+  try
+    Scanf.sscanf raw "File %S, line %d" (fun f n ->
+      Printf.sprintf "%s:%d" (Filename.basename f) n)
+  with _ -> raw
+
+let resolve_loc ?loc ?file ?line () =
+  match loc with
+  | Some l -> format_loc l
+  | None ->
+      (match file with
+       | Some f ->
+           let base = Filename.basename f in
+           (match line with
+            | Some n -> Printf.sprintf "%s:%d" base n
+            | None -> base)
+       | None -> "")
+
 type sink = {
-  write : level -> string option -> string -> unit;
+  write : level -> string option -> string -> string -> unit;
   flush : unit -> unit;
 }
 
-let default_sink_write lvl section msg =
+let default_sink_write lvl section loc msg =
   let use_color = !color_enabled in
   let tag =
     if use_color then
@@ -89,7 +107,14 @@ let default_sink_write lvl section msg =
         else
           Printf.sprintf " [%s]" s
   in
-  Printf.eprintf "%s%s %s\n%!" tag sec_tag msg
+  let loc_tag =
+    if loc = "" then ""
+    else if use_color then
+      Printf.sprintf " \027[90m(%s)\027[0m" loc
+    else
+      Printf.sprintf " (%s)" loc
+  in
+  Printf.eprintf "%s%s%s %s\n%!" tag sec_tag loc_tag msg
 
 let default_sink = {
   write = default_sink_write;
@@ -101,27 +126,28 @@ let current_sink = ref default_sink
 let set_sink s = current_sink := s
 let reset_sink () = current_sink := default_sink
 
-let log ?section lvl msg =
+let log ?loc ?file ?line ?section lvl msg =
   if is_enabled lvl then
-    !current_sink.write lvl section msg
+    let l_str = resolve_loc ?loc ?file ?line () in
+    !current_sink.write lvl section l_str msg
 
-let logf ?section lvl fmt =
+let logf ?loc ?file ?line ?section lvl fmt =
   if not (is_enabled lvl) then
     Printf.ikfprintf (fun () -> ()) () fmt
   else
-    Printf.ksprintf (fun msg -> log ?section lvl msg) fmt
+    Printf.ksprintf (fun msg -> log ?loc ?file ?line ?section lvl msg) fmt
 
-let debug ?section msg = log ?section Debug msg
-let debugf ?section fmt = logf ?section Debug fmt
+let debug ?loc ?file ?line ?section msg = log ?loc ?file ?line ?section Debug msg
+let debugf ?loc ?file ?line ?section fmt = logf ?loc ?file ?line ?section Debug fmt
 
-let info ?section msg = log ?section Info msg
-let infof ?section fmt = logf ?section Info fmt
+let info ?loc ?file ?line ?section msg = log ?loc ?file ?line ?section Info msg
+let infof ?loc ?file ?line ?section fmt = logf ?loc ?file ?line ?section Info fmt
 
-let warn ?section msg = log ?section Warn msg
-let warnf ?section fmt = logf ?section Warn fmt
+let warn ?loc ?file ?line ?section msg = log ?loc ?file ?line ?section Warn msg
+let warnf ?loc ?file ?line ?section fmt = logf ?loc ?file ?line ?section Warn fmt
 
-let error ?section msg = log ?section Error msg
-let errorf ?section fmt = logf ?section Error fmt
+let error ?loc ?file ?line ?section msg = log ?loc ?file ?line ?section Error msg
+let errorf ?loc ?file ?line ?section fmt = logf ?loc ?file ?line ?section Error fmt
 
 let format_step_prefix ~step ~total =
   if !color_enabled then
@@ -129,12 +155,12 @@ let format_step_prefix ~step ~total =
   else
     Printf.sprintf "[%d/%d]" step total
 
-let step ?section ~step:cur ~total msg =
+let step ?loc ?file ?line ?section ~step:cur ~total msg =
   let prefix = format_step_prefix ~step:cur ~total in
-  info ?section (Printf.sprintf "%s %s" prefix msg)
+  info ?loc ?file ?line ?section (Printf.sprintf "%s %s" prefix msg)
 
-let stepf ?section ~step:cur ~total fmt =
+let stepf ?loc ?file ?line ?section ~step:cur ~total fmt =
   if not (is_enabled Info) then
     Printf.ikfprintf (fun () -> ()) () fmt
   else
-    Printf.ksprintf (fun msg -> step ?section ~step:cur ~total msg) fmt
+    Printf.ksprintf (fun msg -> step ?loc ?file ?line ?section ~step:cur ~total msg) fmt

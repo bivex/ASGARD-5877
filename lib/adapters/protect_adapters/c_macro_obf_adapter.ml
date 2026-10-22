@@ -20,22 +20,22 @@ let transform_source ~(config : protection_config) ~(in_file : string) ~(out_c_f
     timing_guard = raw_cfg.c_macro.timing_guard;
     timing_threshold_ticks = raw_cfg.c_macro.timing_threshold_ticks;
   } in
-  Logger.infof ~section:"C_MACRO" "Applying polymorphic macro obfuscation: in='%s', out='%s'" in_file out_c_file;
+  Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "Applying polymorphic macro obfuscation: in='%s', out='%s'" in_file out_c_file;
   if c_cfg.obfuscate_strings then
-    Logger.infof ~section:"C_MACRO" "  ├─ Stack String Encryption: converting string literals to ASG_STR variadic static byte arrays";
+    Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "  ├─ Stack String Encryption: converting string literals to ASG_STR variadic static byte arrays";
   if c_cfg.obfuscate_constants then
-    Logger.infof ~section:"C_MACRO" "  ├─ Constant Blinding: ASG_BLIND additive & XOR splitting active";
+    Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "  ├─ Constant Blinding: ASG_BLIND additive & XOR splitting active";
   if c_cfg.obfuscate_arithmetic then
-    Logger.infof ~section:"C_MACRO" "  ├─ Mixed Boolean-Arithmetic: AST algebraic rewriting (depth=%d)" c_cfg.mba_depth;
+    Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "  ├─ Mixed Boolean-Arithmetic: AST algebraic rewriting (depth=%d)" c_cfg.mba_depth;
   if c_cfg.inject_opaque_predicates then
-    Logger.infof ~section:"C_MACRO" "  ├─ Opaque Predicates: non-linear polynomial invariant guards injected";
+    Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "  ├─ Opaque Predicates: non-linear polynomial invariant guards injected";
   if c_cfg.api_hashing then
-    Logger.infof ~section:"C_MACRO" "  ├─ API Hashing: compile-time FNV-1a import elimination active";
+    Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "  ├─ API Hashing: compile-time FNV-1a import elimination active";
   if c_cfg.timing_guard then
-    Logger.infof ~section:"C_MACRO" "  ├─ Hardware Timing Probes: cycle delta threshold guard active (%Ld ticks)" c_cfg.timing_threshold_ticks;
+    Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "  ├─ Hardware Timing Probes: cycle delta threshold guard active (%Ld ticks)" c_cfg.timing_threshold_ticks;
   if c_cfg.nanomites then
-    Logger.infof ~section:"C_MACRO" "  ├─ Dynamic Nanomites: signal-driven exception state machine active";
-  Logger.infof ~section:"C_MACRO" "  └─ Companion header emitted: '%s'" out_header_file;
+    Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "  ├─ Dynamic Nanomites: signal-driven exception state machine active";
+  Logger.infof ~loc:__LOC__ ~section:"C_MACRO" "  └─ Companion header emitted: '%s'" out_header_file;
   C_macro_obf.transform_file
     ~config:c_cfg
     ~in_file

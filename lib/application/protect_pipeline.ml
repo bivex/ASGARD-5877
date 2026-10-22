@@ -26,7 +26,7 @@ let run
   let native_cfg : Native_vm.Protection_config.t = unwrap_config config in
 
   if not (Sys.file_exists input_file) then begin
-    Logger.errorf ~section:"PIPELINE" "Input file not found: %s" input_file;
+    Logger.errorf ~loc:__LOC__ ~section:"PIPELINE" "Input file not found: %s" input_file;
     Error (Printf.sprintf "Input file not found: %s" input_file)
   end else
     let () = if not (Sys.file_exists out_dir) then Sys.mkdir out_dir 0o755 in
@@ -38,12 +38,12 @@ let run
       String.ends_with ~suffix:".c" input_file || is_cpp_src
     in
 
-    Logger.infof ~section:"PIPELINE" "Starting VM protection for '%s' (out_dir='%s', arch=%s)"
+    Logger.infof ~loc:__LOC__ ~section:"PIPELINE" "Starting VM protection for '%s' (out_dir='%s', arch=%s)"
       input_file out_dir L.arch_name;
     (* 1. Optional C/C++/Swift frontend to assembly *)
     let asm_source_file_res =
       if is_swift_src then begin
-        Logger.stepf ~section:"FRONTEND" ~step:1 ~total:8 "Compiling Swift source '%s' to %s assembly..." input_file L.arch_name;
+        Logger.stepf ~loc:__LOC__ ~section:"FRONTEND" ~step:1 ~total:8 "Compiling Swift source '%s' to %s assembly..." input_file L.arch_name;
         match toolchain with
         | Some (module T : Toolchain) ->
             let asm_name =
@@ -58,7 +58,7 @@ let run
             | Error err -> Error err)
         | None -> Error "A Swift source was provided, but no toolchain was available to compile it to assembly"
       end else if is_c_src then begin
-        Logger.stepf ~section:"FRONTEND" ~step:1 ~total:8 "Compiling C/C++ source '%s' to %s assembly..." input_file L.arch_name;
+        Logger.stepf ~loc:__LOC__ ~section:"FRONTEND" ~step:1 ~total:8 "Compiling C/C++ source '%s' to %s assembly..." input_file L.arch_name;
         match toolchain with
         | Some (module T : Toolchain) ->
             let c_source_for_asm, include_dir =
@@ -72,7 +72,7 @@ let run
                     let obf_c_path = Filename.concat out_dir obf_name in
                     (match C.transform_source ~config ~in_file:input_file ~out_c_file:obf_c_path ~out_header_file:hdr_path ~rng with
                     | Ok () -> ()
-                    | Error err -> Logger.warnf ~section:"C_MACRO" "C pre-transform warning: %s" err);
+                    | Error err -> Logger.warnf ~loc:__LOC__ ~section:"C_MACRO" "C pre-transform warning: %s" err);
                     (obf_c_path, inc_paths)
                 | None -> (input_file, inc_paths)
               else begin
@@ -98,7 +98,7 @@ let run
             | Error err -> Error err)
         | None -> Error "A C/C++ source was provided, but no toolchain was available to compile it to assembly"
       end else begin
-        Logger.stepf ~section:"FRONTEND" ~step:1 ~total:8 "Using assembly source '%s'" input_file;
+        Logger.stepf ~loc:__LOC__ ~section:"FRONTEND" ~step:1 ~total:8 "Using assembly source '%s'" input_file;
         Ok input_file
       end
     in
@@ -110,13 +110,13 @@ let run
         let len = in_channel_length ic in
         let text = really_input_string ic len in
         close_in ic;
-        Logger.debugf ~section:"LIFTER" "Read %d bytes of assembly text from '%s'" len asm_source_file;
+        Logger.debugf ~loc:__LOC__ ~section:"LIFTER" "Read %d bytes of assembly text from '%s'" len asm_source_file;
 
         (* 2. Lifter: parse assembly and lift to VM-IR *)
-        Logger.stepf ~section:"LIFTER" ~step:2 ~total:8 "Parsing and lifting %s assembly to VM-IR..." L.arch_name;
+        Logger.stepf ~loc:__LOC__ ~section:"LIFTER" ~step:2 ~total:8 "Parsing and lifting %s assembly to VM-IR..." L.arch_name;
         match L.lift_source text with
         | Error err ->
-            Logger.errorf ~section:"LIFTER" "Lifter failed (%s): %s" L.arch_name err;
+            Logger.errorf ~loc:__LOC__ ~section:"LIFTER" "Lifter failed (%s): %s" L.arch_name err;
             Error (Printf.sprintf "Lifter failed (%s): %s" L.arch_name err)
         | Ok (lifted_func, constants) ->
             let func_info =
@@ -129,9 +129,9 @@ let run
               | fns ->
                   Printf.sprintf "multi-func [%s]" (String.concat ", " (List.map fst fns))
             in
-            Logger.infof ~section:"LIFTER" "Lifted IR: %s (%d constant pool entries)" func_info (List.length constants);
-            Logger.infof ~section:"LIFTER" "  ├─ SIB memory addressing and RMW instructions lowered";
-            Logger.infof ~section:"LIFTER" "  └─ Sub-register zero-extension & lazy algebraic flags configured";
+            Logger.infof ~loc:__LOC__ ~section:"LIFTER" "Lifted IR: %s (%d constant pool entries)" func_info (List.length constants);
+            Logger.infof ~loc:__LOC__ ~section:"LIFTER" "  ├─ SIB memory addressing and RMW instructions lowered";
+            Logger.infof ~loc:__LOC__ ~section:"LIFTER" "  └─ Sub-register zero-extension & lazy algebraic flags configured";
             (* 3. VM Packaging: CFF, MBA, rolling key, handler synthesis *)
             let engine_str =
               match P.engine_kind with
@@ -140,24 +140,24 @@ let run
               | MultiVm -> "multi_vm"
               | Stack -> "stack"
             in
-            Logger.stepf ~section:"PACKAGER" ~step:3 ~total:8 "Packaging VM bytecode and synthesizing handlers (engine=%s)..." engine_str;
+            Logger.stepf ~loc:__LOC__ ~section:"PACKAGER" ~step:3 ~total:8 "Packaging VM bytecode and synthesizing handlers (engine=%s)..." engine_str;
             let pkg = P.package ~rng ~config ~constants lifted_func in
-            Logger.infof ~section:"PACKAGER" "Bytecode packaging complete: %d words (%d bytes), runtime header='%s'"
+            Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "Bytecode packaging complete: %d words (%d bytes), runtime header='%s'"
               (List.length pkg.bytecode) (List.length pkg.bytecode * 8) pkg.header_name;
 
             (* 4. Write C++ runtime header *)
-            Logger.stepf ~section:"CODEGEN" ~step:4 ~total:8 "Writing VM runtime headers to '%s'..." out_dir;
+            Logger.stepf ~loc:__LOC__ ~section:"CODEGEN" ~step:4 ~total:8 "Writing VM runtime headers to '%s'..." out_dir;
             let hdr_path = Filename.concat out_dir pkg.header_name in
             let oc_h = open_out hdr_path in
             output_string oc_h pkg.cpp_runtime_source;
             close_out oc_h;
-            Logger.infof ~section:"CODEGEN" "  ├─ VM Runtime: emitted '%s'" pkg.header_name;
+            Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  ├─ VM Runtime: emitted '%s'" pkg.header_name;
             if native_cfg.eh_shadowing.enabled then
-              Logger.infof ~section:"CODEGEN" "  ├─ [Tech-2601] Emitted ABI Exception Handling Shadowing header (asg_tech_2601.hpp)";
+              Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  ├─ [Tech-2601] Emitted ABI Exception Handling Shadowing header (asg_tech_2601.hpp)";
             if native_cfg.anti_vpc.enabled then
-              Logger.infof ~section:"CODEGEN" "  ├─ [Tech-2603] Emitted Anti-VPC Tracking header (asg_tech_2603.hpp)";
+              Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  ├─ [Tech-2603] Emitted Anti-VPC Tracking header (asg_tech_2603.hpp)";
             if native_cfg.memory_chaffing.enabled then
-              Logger.infof ~section:"CODEGEN" "  └─ [Tech-2608] Emitted Anti-Trace Memory Chaffing header (asg_tech_2608.hpp)";
+              Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  └─ [Tech-2608] Emitted Anti-Trace Memory Chaffing header (asg_tech_2608.hpp)";
 
             (* 4a. Write Tech-2601 Exception Handling Shadowing runtime header *)
             let eh_hdr_path = Filename.concat out_dir "asg_tech_2601.hpp" in
@@ -218,8 +218,8 @@ let run
                                    output_string oc_h2 hpp2;
                                    close_out oc_h2;
                                    resolved_addr_key := Some hex;
-                                   Logger.infof ~section:"ANTI_VMPREDATOR" "Address Binding: probe executed against runtime ASLR delta";
-                                   Logger.infof ~section:"ANTI_VMPREDATOR" "  └─ Rebound bytecode with key D=0x%s" hex
+                                   Logger.infof ~loc:__LOC__ ~section:"ANTI_VMPREDATOR" "Address Binding: probe executed against runtime ASLR delta";
+                                   Logger.infof ~loc:__LOC__ ~section:"ANTI_VMPREDATOR" "  └─ Rebound bytecode with key D=0x%s" hex
                                  with Failure err ->
                                    Logger.warnf ~section:"ANTI_VMPREDATOR" "Address binding probe parse warning: %s (fallback to mask 0)" err)
                             | None ->
@@ -242,10 +242,10 @@ let run
 
             (* 6. Write protected.vanguard bytecode *)
             let bc_path = Filename.concat out_dir "protected.vanguard" in
-            Logger.stepf ~section:"CODEGEN" ~step:5 ~total:8 "Writing runner harness and protected bytecode payload (%s)..." bc_path;
-            Logger.infof ~section:"CODEGEN" "  ├─ Serialized %d bytecode words (%d bytes)"
+            Logger.stepf ~loc:__LOC__ ~section:"CODEGEN" ~step:5 ~total:8 "Writing runner harness and protected bytecode payload (%s)..." bc_path;
+            Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  ├─ Serialized %d bytecode words (%d bytes)"
               (List.length pkg.bytecode) (List.length pkg.bytecode * 8);
-            Logger.infof ~section:"CODEGEN" "  └─ Runner test harness written: '%s'" runner_path;
+            Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  └─ Runner test harness written: '%s'" runner_path;
             let oc_b = open_out_bin bc_path in
             List.iter
               (fun w ->
@@ -257,7 +257,7 @@ let run
             close_out oc_b;
 
             (* 7. In-place trampoline embedding *)
-            Logger.step ~section:"TRAMPOLINE" ~step:6 ~total:8 "Generating zero-native call trampolines...";
+            Logger.step ~loc:__LOC__ ~section:"TRAMPOLINE" ~step:6 ~total:8 "Generating zero-native call trampolines...";
             let protected_swift_asm = ref None in
             let dispatch_cpp_path = ref None in
             if is_swift_src then begin
@@ -368,7 +368,7 @@ let run
             end;
 
             (* 7. Native compilation and optional execution *)
-            Logger.stepf ~section:"TOOLCHAIN" ~step:7 ~total:8 "%s"
+            Logger.stepf ~loc:__LOC__ ~section:"TOOLCHAIN" ~step:7 ~total:8 "%s"
               (if should_compile then
                  (if should_run then "Compiling and launching protected native binary..."
                   else "Compiling protected native binary...")
@@ -383,7 +383,7 @@ let run
                           let bin_path = Filename.concat out_dir "protected_app" in
                           (match T.compile_swift_binary ~asm_source:s_asm ~dispatch_source:d_cpp ~out_binary:bin_path ~include_dir:out_dir with
                           | Ok () ->
-                              Logger.infof ~section:"TOOLCHAIN" "Native Swift binary compiled: %s" bin_path;
+                              Logger.infof ~loc:__LOC__ ~section:"TOOLCHAIN" "Native Swift binary compiled: %s" bin_path;
                               let exec_res =
                                 if should_run then
                                   match T.execute_binary ~binary_path:bin_path with
@@ -413,7 +413,7 @@ let run
                       let is_c_target = is_c_src && not (String.ends_with ~suffix:".cpp" comp_src) in
                       (match T.compile_native_binary ~is_c:is_c_target ~source_file:comp_src ~out_binary:bin_path ~include_dir:out_dir with
                       | Ok () ->
-                          Logger.infof ~section:"TOOLCHAIN" "Native binary compiled: %s" bin_path;
+                          Logger.infof ~loc:__LOC__ ~section:"TOOLCHAIN" "Native binary compiled: %s" bin_path;
                           let exec_res =
                             if should_run then
                               match T.execute_binary ~binary_path:bin_path with
@@ -435,7 +435,7 @@ let run
               else (None, None)
             in
 
-            Logger.step ~section:"AUDIT" ~step:8 ~total:8 "Running Mach-O compact unwind audit and build-seed watermark sealing...";
+            Logger.step ~loc:__LOC__ ~section:"AUDIT" ~step:8 ~total:8 "Running Mach-O compact unwind audit and build-seed watermark sealing...";
             (* 8b. Mach-O compact unwind audit of the produced binary. *)
             let unwind_audit =
               match bin_artifact with
@@ -454,7 +454,7 @@ let run
                            (if issues = 0 then "no inconsistency"
                             else Printf.sprintf "%d issue(s)" issues)
                       in
-                      Logger.infof ~section:"AUDIT" "  ├─ Mach-O compact unwind audit: %s" rep_str;
+                      Logger.infof ~loc:__LOC__ ~section:"AUDIT" "  ├─ Mach-O compact unwind audit: %s" rep_str;
                       Some rep_str)
               | _ -> None
             in
@@ -528,7 +528,7 @@ let run
                     );
                   } in
                   Watermark.Wm_chooser.save_manifest manifest_path manifest;
-                  Logger.infof ~section:"WATERMARK" "  └─ Build-seed watermark: embedded 48-bit payload via balanced SplitMix64 ECC (Client ID: 0x%016LX, Derivation Key: 0x%016LX)"
+                  Logger.infof ~loc:__LOC__ ~section:"WATERMARK" "  └─ Build-seed watermark: embedded 48-bit payload via balanced SplitMix64 ECC (Client ID: 0x%016LX, Derivation Key: 0x%016LX)"
                     wid.raw_bits wid.derivation_key;
                   Some wid
               | None -> None
@@ -550,7 +550,7 @@ let run
                       ^ Printf.sprintf "- Build-Seed Watermark: Active (Client ID: 0x%016LX, Derivation Key: 0x%016LX)\n%s"
                           wid.raw_bits wid.derivation_key sep }
             in
-            Logger.infof ~section:"PIPELINE" "Protection completed successfully (Aggregated DRS: %.1f/100.0)"
+            Logger.infof ~loc:__LOC__ ~section:"PIPELINE" "Protection completed successfully (Aggregated DRS: %.1f/100.0)"
               metrics.drs_score;
             Ok {
               header_path = hdr_path;
