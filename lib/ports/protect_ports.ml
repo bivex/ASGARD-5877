@@ -1,3 +1,5 @@
+module Logger = Logger
+
 type error = string
 
 type target_arch = X86_64 | Arm64 | Riscv64

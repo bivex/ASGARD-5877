@@ -21,9 +21,10 @@ let run
   let module L = (val lifter : Lifter) in
   let module P = (val vm_packager : Vm_packager) in
 
-  if not (Sys.file_exists input_file) then
+  if not (Sys.file_exists input_file) then begin
+    Logger.errorf ~section:"PIPELINE" "Input file not found: %s" input_file;
     Error (Printf.sprintf "Input file not found: %s" input_file)
-  else
+  end else
     let () = if not (Sys.file_exists out_dir) then Sys.mkdir out_dir 0o755 in
     let is_swift_src = String.ends_with ~suffix:".swift" input_file in
     let is_cpp_src =
@@ -33,9 +34,12 @@ let run
       String.ends_with ~suffix:".c" input_file || is_cpp_src
     in
 
+    Logger.infof ~section:"PIPELINE" "Starting VM protection for '%s' (out_dir='%s', arch=%s)"
+      input_file out_dir L.arch_name;
     (* 1. Optional C/C++/Swift frontend to assembly *)
     let asm_source_file_res =
-      if is_swift_src then
+      if is_swift_src then begin
+        Logger.stepf ~section:"FRONTEND" ~step:1 ~total:8 "Compiling Swift source '%s' to %s assembly..." input_file L.arch_name;
         match toolchain with
         | Some (module T : Toolchain) ->
             let asm_name =
@@ -49,7 +53,8 @@ let run
             | Ok () -> Ok asm_out
             | Error err -> Error err)
         | None -> Error "A Swift source was provided, but no toolchain was available to compile it to assembly"
-      else if is_c_src then
+      end else if is_c_src then begin
+        Logger.stepf ~section:"FRONTEND" ~step:1 ~total:8 "Compiling C/C++ source '%s' to %s assembly..." input_file L.arch_name;
         match toolchain with
         | Some (module T : Toolchain) ->
             let c_source_for_asm, include_dir =
@@ -63,7 +68,7 @@ let run
                     let obf_c_path = Filename.concat out_dir obf_name in
                     (match C.transform_source ~config ~in_file:input_file ~out_c_file:obf_c_path ~out_header_file:hdr_path ~rng with
                     | Ok () -> ()
-                    | Error err -> prerr_endline (Printf.sprintf "C pre-transform warning: %s" err));
+                    | Error err -> Logger.warnf ~section:"C_MACRO" "C pre-transform warning: %s" err);
                     (obf_c_path, inc_paths)
                 | None -> (input_file, inc_paths)
               else begin
@@ -88,7 +93,10 @@ let run
             | Ok () -> Ok asm_out
             | Error err -> Error err)
         | None -> Error "A C/C++ source was provided, but no toolchain was available to compile it to assembly"
-      else Ok input_file
+      end else begin
+        Logger.stepf ~section:"FRONTEND" ~step:1 ~total:8 "Using assembly source '%s'" input_file;
+        Ok input_file
+      end
     in
 
     match asm_source_file_res with
@@ -100,13 +108,28 @@ let run
         close_in ic;
 
         (* 2. Lifter: parse assembly and lift to VM-IR *)
+        Logger.stepf ~section:"LIFTER" ~step:2 ~total:8 "Parsing and lifting %s assembly to VM-IR..." L.arch_name;
         match L.lift_source text with
-        | Error err -> Error (Printf.sprintf "Lifter failed (%s): %s" L.arch_name err)
+        | Error err ->
+            Logger.errorf ~section:"LIFTER" "Lifter failed (%s): %s" L.arch_name err;
+            Error (Printf.sprintf "Lifter failed (%s): %s" L.arch_name err)
         | Ok (lifted_func, constants) ->
+            Logger.debugf ~section:"LIFTER" "Lifting successful: %d constants in pool" (List.length constants);
             (* 3. VM Packaging: CFF, MBA, rolling key, handler synthesis *)
+            let engine_str =
+              match P.engine_kind with
+              | Threaded -> "threaded"
+              | Jit -> "jit"
+              | MultiVm -> "multi_vm"
+              | Stack -> "stack"
+            in
+            Logger.stepf ~section:"PACKAGER" ~step:3 ~total:8 "Packaging VM bytecode and synthesizing handlers (engine=%s)..." engine_str;
             let pkg = P.package ~rng ~config ~constants lifted_func in
+            Logger.debugf ~section:"PACKAGER" "Bytecode packaging complete: %d words (%d bytes), runtime header='%s'"
+              (List.length pkg.bytecode) (List.length pkg.bytecode * 8) pkg.header_name;
 
             (* 4. Write C++ runtime header *)
+            Logger.stepf ~section:"CODEGEN" ~step:4 ~total:8 "Writing VM runtime headers to '%s'..." out_dir;
             let hdr_path = Filename.concat out_dir pkg.header_name in
             let oc_h = open_out hdr_path in
             output_string oc_h pkg.cpp_runtime_source;
@@ -171,19 +194,19 @@ let run
                                    output_string oc_h2 hpp2;
                                    close_out oc_h2;
                                    resolved_addr_key := Some hex;
-                                   print_endline (Printf.sprintf "address binding active, D=0x%s" hex)
+                                   Logger.infof ~section:"ANTI_VMPREDATOR" "Address binding active, D=0x%s" hex
                                  with Failure err ->
-                                   prerr_endline (Printf.sprintf "address binding probe parse warning: %s (fallback to mask 0)" err))
+                                   Logger.warnf ~section:"ANTI_VMPREDATOR" "Address binding probe parse warning: %s (fallback to mask 0)" err)
                             | None ->
-                                prerr_endline "address binding probe warning: ADDR_KEY not found in output (fallback to mask 0)")
+                                Logger.warn ~section:"ANTI_VMPREDATOR" "Address binding probe warning: ADDR_KEY not found in output (fallback to mask 0)")
                         | Error err ->
-                            prerr_endline (Printf.sprintf "address binding probe execution warning: %s (fallback to mask 0)" err))
+                            Logger.warnf ~section:"ANTI_VMPREDATOR" "Address binding probe execution warning: %s (fallback to mask 0)" err)
                     | Error err ->
-                        prerr_endline (Printf.sprintf "address binding probe compilation warning: %s (fallback to mask 0)" err))
+                        Logger.warnf ~section:"ANTI_VMPREDATOR" "Address binding probe compilation warning: %s (fallback to mask 0)" err)
                 | None ->
-                    prerr_endline "address binding warning: toolchain not available (fallback to mask 0)")
+                    Logger.warn ~section:"ANTI_VMPREDATOR" "Address binding warning: toolchain not available (fallback to mask 0)")
             | Some _ ->
-                prerr_endline "address binding warning: compilation disabled (fallback to mask 0)"
+                Logger.debug ~section:"ANTI_VMPREDATOR" "Address binding probe skipped (compilation disabled, fallback to mask 0)"
             | None -> ());
 
             (* 5. Write runner.cpp *)
@@ -194,6 +217,7 @@ let run
 
             (* 6. Write protected.vanguard bytecode *)
             let bc_path = Filename.concat out_dir "protected.vanguard" in
+            Logger.stepf ~section:"CODEGEN" ~step:5 ~total:8 "Writing runner harness and protected bytecode payload (%s)..." bc_path;
             let oc_b = open_out_bin bc_path in
             List.iter
               (fun w ->
@@ -205,6 +229,7 @@ let run
             close_out oc_b;
 
             (* 7. In-place trampoline embedding *)
+            Logger.step ~section:"TRAMPOLINE" ~step:6 ~total:8 "Generating zero-native call trampolines...";
             let protected_swift_asm = ref None in
             let dispatch_cpp_path = ref None in
             if is_swift_src then begin
@@ -315,6 +340,9 @@ let run
             end;
 
             (* 8. Optional native binary build and test execution *)
+            Logger.stepf ~section:"TOOLCHAIN" ~step:7 ~total:8 "%s"
+              (if compile_and_run then "Compiling and launching protected native binary..."
+               else "Native compilation skipped (compile_and_run=false)");
             let bin_artifact, exec_result =
               if compile_and_run then
                 match toolchain with
@@ -332,7 +360,7 @@ let run
                               in
                               (Some bin_path, exec_res)
                           | Error err ->
-                              prerr_endline (Printf.sprintf "Swift native build warning: %s" err);
+                              Logger.warnf ~section:"TOOLCHAIN" "Swift native build warning: %s" err;
                               (None, None))
                       | _ -> (None, None)
                     else
@@ -353,12 +381,13 @@ let run
                           in
                           (Some bin_path, exec_res)
                       | Error err ->
-                          prerr_endline (Printf.sprintf "Native build warning: %s" err);
+                          Logger.warnf ~section:"TOOLCHAIN" "Native build warning: %s" err;
                           (None, None))
                 | None -> (None, None)
               else (None, None)
             in
 
+            Logger.step ~section:"AUDIT" ~step:8 ~total:8 "Running Mach-O compact unwind audit and build-seed watermark sealing...";
             (* 8b. Mach-O compact unwind audit of the produced binary.
                The audit reads the LC_ROUTINES / LC_ROUTINES64 load commands
                and the __TEXT,__unwind_info section, and reports whether the
@@ -450,6 +479,8 @@ let run
                     );
                   } in
                   Watermark.Wm_chooser.save_manifest manifest_path manifest;
+                  Logger.infof ~section:"WATERMARK" "Build-seed watermark active (Client ID: 0x%016LX, Derivation Key: 0x%016LX)"
+                    wid.raw_bits wid.derivation_key;
                   Some wid
               | None -> None
             in
@@ -470,6 +501,8 @@ let run
                       ^ Printf.sprintf "- Build-Seed Watermark: Active (Client ID: 0x%016LX, Derivation Key: 0x%016LX)\n%s"
                           wid.raw_bits wid.derivation_key sep }
             in
+            Logger.infof ~section:"PIPELINE" "Protection completed successfully (Aggregated DRS: %.1f/100.0)"
+              metrics.drs_score;
             Ok {
               header_path = hdr_path;
               runner_path;

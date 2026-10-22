@@ -50,7 +50,7 @@ let resolve_with_watermark ~watermark ~config_file ~preset ~enable_cff ~enable_m
         match from_file path with
         | Ok c -> c
         | Error err ->
-            prerr_endline (Printf.sprintf "[Config] Warning: %s, using default" err);
+            Logger.warnf ~section:"CONFIG" "%s, using default" err;
             default)
     | None -> (
         match preset with
@@ -58,7 +58,7 @@ let resolve_with_watermark ~watermark ~config_file ~preset ~enable_cff ~enable_m
             match from_preset p with
             | Ok c -> c
             | Error err ->
-                prerr_endline (Printf.sprintf "[Preset] Warning: %s, using default" err);
+                Logger.warnf ~section:"PRESET" "%s, using default" err;
                 default)
         | None -> default)
   in

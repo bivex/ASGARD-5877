@@ -79,6 +79,7 @@ let () =
     ("Metamorphic ISA & Ring Codec", Test_metamorphic_isa.tests);
     ("Mach-O Compact Unwind (LC_ROUTINES)", Test_macho.tests);
     ("Build-Seed Watermarking", Test_watermark.tests);
+    ("Structured Logger", Test_logger.tests);
   ])
 
 

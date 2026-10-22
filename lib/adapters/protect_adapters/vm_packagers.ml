@@ -34,9 +34,8 @@ let dump_bytecode_json ~phase (prog : Stack_vm.Stack_ir.program) =
       let json = Stack_vm.Stack_ir_json.program_to_json ~phase prog in
       (try Yojson.Safe.to_file path json
        with e ->
-         prerr_endline
-           (Printf.sprintf "[asgard] JSON phase dump failed (%s): %s" path
-              (Printexc.to_string e)))
+         Logger.errorf ~section:"STACK_VM" "JSON phase dump failed (%s): %s" path
+           (Printexc.to_string e))
   | _ -> ()
 
 let make_native_pass_board (engine_name : string) (cfg : Protection_config.t) : string =
