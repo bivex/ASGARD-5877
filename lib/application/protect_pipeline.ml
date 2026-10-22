@@ -21,6 +21,9 @@ let run
   let () =
     if debug_symbols then Unix.putenv "ASGARD_DEBUG_SYMBOLS" "1"
   in
+  (* Pre-warm the parallel worker pool so domain-spawn latency is paid once
+     at pipeline entry rather than inside the first Stack-VM pass. *)
+  let () = Random_visa_ports.Domain_pool.warm () in
   let module L = (val lifter : Lifter) in
   let module P = (val vm_packager : Vm_packager) in
   let native_cfg : Native_vm.Protection_config.t = unwrap_config config in

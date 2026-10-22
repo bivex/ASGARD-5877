@@ -279,21 +279,50 @@ let apply_block ?entangle_slot cfg ctx block =
     [prog]. The stack balance of each block is preserved exactly by
     construction (each ghost sequence has delta = 0). *)
 let apply_program cfg ctx prog =
-  let block_ids =
-    Hashtbl.fold (fun id _ acc -> id :: acc) prog.blocks []
-    |> List.sort Int.compare
+  let sorted =
+    Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
+    |> List.sort (fun (a, _) (b, _) -> compare a b)
+    |> Array.of_list
   in
-  let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-  List.iter (fun id ->
-    match Hashtbl.find_opt prog.blocks id with
-    | Some b ->
-        let entangle_slot =
-          if cfg.entangle then Context_allocator.alloc_scratch ctx else 0
-        in
-        Hashtbl.replace new_blocks id (apply_block ~entangle_slot cfg ctx b)
-    | None -> ()
-  ) block_ids;
-  (* Ghost PopReg slots may be freshly allocated — grow the context *)
+  let n = Array.length sorted in
+  (* Pre-allocate all context slots on the main domain to avoid racing on
+     Context_allocator's mutable next_slot counter.
+     Each block needs: 1 scratch slot + (if entangle) 1 entangle slot. *)
+  let scratch_slots  = Array.init n (fun _ -> Context_allocator.alloc_scratch ctx) in
+  let entangle_slots = Array.init n (fun _ ->
+    if cfg.entangle then Context_allocator.alloc_scratch ctx else 0) in
+  let pool = Random_visa_ports.Domain_pool.global_pool () in
+  let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
+  Random_visa_ports.Domain_pool.parallel_for pool ~n
+    (fun i ->
+      let (id, b) = sorted.(i) in
+      let scratch_slot  = scratch_slots.(i)  in
+      let entangle_slot = entangle_slots.(i) in
+      let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0x6B7))) in
+      let new_ops =
+        insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot
+          ~scratch_slot rng ctx b.ops cfg.ghost_rate
+      in
+      (* Trim ghost ops if max_ghosts is set *)
+      let new_ops =
+        if cfg.max_ghosts <= 0 then new_ops
+        else begin
+          let real_count  = List.length b.ops in
+          let total       = List.length new_ops in
+          let ghost_count = total - real_count in
+          if ghost_count <= cfg.max_ghosts then new_ops
+          else begin
+            let rng2 = make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0x6B7))) in
+            let capped_rate =
+              cfg.ghost_rate * cfg.max_ghosts / (max 1 ghost_count) in
+            insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot
+              ~scratch_slot rng2 ctx b.ops capped_rate
+          end
+        end
+      in
+      out.(i) <- (id, { b with ops = new_ops }));
+  let new_blocks = Hashtbl.create n in
+  Array.iter (fun (id, b) -> Hashtbl.replace new_blocks id b) out;
   { prog with
     blocks = new_blocks;
     context_slots = max prog.context_slots (Context_allocator.total_slots ctx) }

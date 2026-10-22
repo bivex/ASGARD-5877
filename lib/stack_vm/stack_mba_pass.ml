@@ -249,16 +249,36 @@ let apply_block ?ctx cfg block =
   rewrite_block ~rng ~scratch_slot cfg.mba_rate block
 
 let apply_program ?ctx cfg prog =
-  let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-  Hashtbl.iter (fun id b ->
-    Hashtbl.replace new_blocks id (apply_block ?ctx cfg b)
-  ) prog.blocks;
-  (* The noise writes into a scratch slot, so the declared context has to
-     grow with it - otherwise the slot access would be out of range. *)
+  (* Collect blocks in deterministic id order so the output is stable. *)
+  let sorted =
+    Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
+    |> List.sort (fun (a, _) (b, _) -> compare a b)
+    |> Array.of_list
+  in
+  let n = Array.length sorted in
+  (* Pre-allocate one scratch slot per block on the (single-threaded) main
+     domain so Context_allocator.alloc_scratch is never called in parallel. *)
+  let scratch_slots =
+    match ctx with
+    | None -> Array.make n None
+    | Some c ->
+        Array.init n (fun _ -> Some (Context_allocator.alloc_scratch c))
+  in
+  let pool = Random_visa_ports.Domain_pool.global_pool () in
+  let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
+  Random_visa_ports.Domain_pool.parallel_for pool ~n
+    (fun i ->
+      let (id, b) = sorted.(i) in
+      let scratch_slot = scratch_slots.(i) in
+      out.(i) <- (id, rewrite_block
+        ~rng:(make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0xB7E1_5163))))
+        ~scratch_slot cfg.mba_rate b));
+  let new_blocks = Hashtbl.create n in
+  Array.iter (fun (id, b) -> Hashtbl.replace new_blocks id b) out;
   let context_slots =
     match ctx with
     | Some c -> max prog.context_slots (Context_allocator.total_slots c)
-    | None -> prog.context_slots
+    | None   -> prog.context_slots
   in
   { prog with blocks = new_blocks; context_slots }
 

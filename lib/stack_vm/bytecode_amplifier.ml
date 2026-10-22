@@ -355,21 +355,38 @@ let amplify_stack_program
           (max (Context_allocator.total_slots c) prog.context_slots)
     | None -> max (scratch_base + 16) prog.context_slots
   in
-  (* Determinism: the block order is fixed by sorting on id, otherwise the
-     block_rng seeding would depend on the non-deterministic Hashtbl.iter order. *)
+  (* Determinism: block order is fixed by id so block_rng seeds are stable
+     regardless of Hashtbl.iter order or parallel scheduling. *)
   let sorted_blocks =
     Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
     |> List.sort (fun (a, _) (b, _) -> compare a b)
+    |> Array.of_list
   in
-  let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-  List.iter (fun (id, b) ->
+  (* Pre-derive one seed word per block sequentially (preserves the RNG
+     stream of the caller), then map over blocks in parallel. *)
+  let n = Array.length sorted_blocks in
+  let parent_seeds = Array.init n (fun _ -> Random.State.bits rng) in
+  (* Build a (parent_seed, id, block) triple for each block, then run all
+     amplify_block calls in parallel.  Each block uses its own
+     deterministic RNG (seeded from parent_seeds.(i) + id), so there is
+     no shared mutable state between tasks. *)
+  let pool = Random_visa_ports.Domain_pool.global_pool () in
+  let indexed = Array.init n (fun i ->
+    let (id, b) = sorted_blocks.(i) in
     let block_rng = Random.State.make [|
-      Random.State.bits rng;
+      parent_seeds.(i);
       id * 0x5877;
       (Int64.to_int salt_deadbeef);
     |] in
-    Hashtbl.replace new_blocks id (amplify_block block_rng ~profile ~scratch_base b)
-  ) sorted_blocks;
+    (id, block_rng, b))
+  in
+  let out = Array.make n (0, { (snd sorted_blocks.(0)) with ops = [] }) in
+  Random_visa_ports.Domain_pool.parallel_for pool ~n
+    (fun i ->
+      let (id, block_rng, b) = indexed.(i) in
+      out.(i) <- (id, amplify_block block_rng ~profile ~scratch_base b));
+  let new_blocks = Hashtbl.create n in
+  Array.iter (fun (id, b) -> Hashtbl.replace new_blocks id b) out;
   { prog with blocks = new_blocks; context_slots = new_context_slots }
 
 let amplifier_stats (prog_before : program) (prog_after : program) : string =
