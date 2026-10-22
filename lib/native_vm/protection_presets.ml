@@ -20,6 +20,10 @@ let default : t = {
     depth = 2;
     engine = `Egraph;
     stack_synthesis_rate = 100;
+    egraph_rate = 30;
+    egraph_node_limit = 120;
+    egraph_time_budget_ms = 80;
+    egraph_iter_limit = 5;
   };
   anti_pushan = {
     enabled = true;
@@ -92,6 +96,10 @@ let max_security : t = {
     depth = 4;
     engine = (if Gpu_synth.is_gpu_available () then `Gpu_metal else `Egraph);
     stack_synthesis_rate = 100;
+    egraph_rate = 30;
+    egraph_node_limit = 120;
+    egraph_time_budget_ms = 80;
+    egraph_iter_limit = 5;
   };
   anti_pushan = {
     enabled = true;
@@ -160,10 +168,10 @@ let max_security : t = {
     pool_size = 16384;
     chaff_ratio = 4.0;
   };
-  spaghetti = default_spaghetti;
+  spaghetti = { default_spaghetti with max_splits_factor = 2 };
   amplifier = default_amplifier;
   superop = default_superop;
-  ghost = default_ghost;
+  ghost = { default_ghost with ghost_rate = 100 };
 }
 
 let lightweight : t = {
@@ -186,6 +194,10 @@ let lightweight : t = {
     depth = 1;
     engine = `Poly;
     stack_synthesis_rate = 100;
+    egraph_rate = 30;
+    egraph_node_limit = 120;
+    egraph_time_budget_ms = 80;
+    egraph_iter_limit = 5;
   };
   anti_pushan = {
     enabled = true;
@@ -255,9 +267,9 @@ let lightweight : t = {
     chaff_ratio = 0.5;
   };
   spaghetti = default_spaghetti;
-  amplifier = default_amplifier;
-  superop = default_superop;
-  ghost = default_ghost;
+  amplifier = { default_amplifier with profile = "light" };
+  superop = { default_superop with fusion_rate = 80 };
+  ghost = { default_ghost with ghost_rate = 40 };
 }
 
 let stealth : t = {
@@ -280,6 +292,10 @@ let stealth : t = {
     depth = 2;
     engine = `Ncfg;
     stack_synthesis_rate = 100;
+    egraph_rate = 30;
+    egraph_node_limit = 120;
+    egraph_time_budget_ms = 80;
+    egraph_iter_limit = 5;
   };
   anti_pushan = {
     enabled = true;
@@ -369,6 +385,10 @@ let edr_stealth : t = {
     depth = 2;
     engine = `Egraph;
     stack_synthesis_rate = 100;
+    egraph_rate = 30;
+    egraph_node_limit = 120;
+    egraph_time_budget_ms = 80;
+    egraph_iter_limit = 5;
   };
   anti_pushan = {
     enabled = true;
@@ -463,6 +483,10 @@ let minimal : t = {
     depth = 0;
     engine = `Poly;
     stack_synthesis_rate = 100;
+    egraph_rate = 30;
+    egraph_node_limit = 120;
+    egraph_time_budget_ms = 80;
+    egraph_iter_limit = 5;
   };
   anti_pushan = {
     enabled = false;
@@ -532,9 +556,9 @@ let minimal : t = {
     chaff_ratio = 0.0;
   };
   spaghetti = default_spaghetti;
-  amplifier = default_amplifier;
+  amplifier = { default_amplifier with enabled = false };
   superop = default_superop;
-  ghost = default_ghost;
+  ghost = { default_ghost with enabled = false };
 }
 
 let high : t = {
@@ -557,6 +581,10 @@ let high : t = {
     depth = 3;
     engine = `Egraph;
     stack_synthesis_rate = 100;
+    egraph_rate = 30;
+    egraph_node_limit = 120;
+    egraph_time_budget_ms = 80;
+    egraph_iter_limit = 5;
   };
   anti_pushan = {
     enabled = true;
@@ -619,7 +647,7 @@ let high : t = {
   spaghetti = default_spaghetti;
   amplifier = default_amplifier;
   superop = default_superop;
-  ghost = default_ghost;
+  ghost = { default_ghost with ghost_rate = 90 };
 }
 
 let from_preset name =

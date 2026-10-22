@@ -9,6 +9,10 @@ type mba_config = {
   depth : int;
   engine : mba_engine;
   stack_synthesis_rate : int;
+  egraph_rate : int;
+  egraph_node_limit : int;
+  egraph_time_budget_ms : int;
+  egraph_iter_limit : int;
 }
 
 type crypto_config = {

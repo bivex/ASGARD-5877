@@ -129,17 +129,24 @@ let egraph_const_config : Mba_engine.Egraph.config = {
   iter_limit    = 5;
 }
 
+let egraph_config_of ~node_limit ~time_budget_ms ~iter_limit = {
+  Mba_engine.Egraph.
+  node_limit;
+  time_budget_s = float_of_int time_budget_ms /. 1000.0;
+  iter_limit;
+}
+
 (* ── Synthesize constant via E-graph expansion ───────────────────────── *)
 (** [synthesize_egraph rng c] expands [Mba.Const c] through the e-graph,
     extracts the maximally complex equivalent expression, and lowers it to
     stack ops.  Falls back to L2 on any error. *)
-let synthesize_egraph rng c =
+let synthesize_egraph ?(budget = egraph_const_config) rng c =
   (* Derive a Random.State seed from the SplitMix state, advance rng *)
   let seed_word = Int64.to_int (Int64.logxor rng.state 0xECA8_6420_1357_9BDFL) in
   let _ = next_int64 rng in  (* advance so next call gets a different seed *)
   let eg_rng = Random.State.make [| seed_word |] in
   let expr = Mba_engine.Egraph.expand
-    ~rng:eg_rng ~config:egraph_const_config
+    ~rng:eg_rng ~config:budget
     (Mba_engine.Mba.Const c) in
   lower_mba_to_stack expr
 
@@ -148,15 +155,27 @@ type mba_strategy = L1_AddSplit | L2_NorNot | L3_NandSelf | L4_AddNor | L5_Egrap
 
 (* ── Synthesize constant c using a chosen strategy ───────────────────── *)
 (** Returns a stack_op list with stack delta = +1 (equivalent to PushImm c). *)
-let synthesize_const rng c =
+let synthesize_const ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config) rng c =
   let mask = next_int64 rng in
+  (* Default rate 30 keeps the historical RNG stream (next_int rng 20) so
+     builds are bit-identical; any other rate takes the generic path. *)
   let strategy =
-    match next_int rng 20 with
-    | 0 | 1 | 2 | 3 -> L1_AddSplit   (* 20% *)
-    | 4 | 5 | 6 | 7 -> L2_NorNot     (* 20% *)
-    | 8 | 9 | 10    -> L3_NandSelf   (* 15% *)
-    | 11 | 12 | 13  -> L4_AddNor     (* 15% *)
-    | _             -> L5_Egraph     (* 30% — e-graph MBA expansion *)
+    if egraph_rate = 30 then
+      (match next_int rng 20 with
+       | 0 | 1 | 2 | 3 -> L1_AddSplit   (* 20% *)
+       | 4 | 5 | 6 | 7 -> L2_NorNot     (* 20% *)
+       | 8 | 9 | 10    -> L3_NandSelf   (* 15% *)
+       | 11 | 12 | 13  -> L4_AddNor     (* 15% *)
+       | _             -> L5_Egraph)    (* 30% — e-graph MBA expansion *)
+    else begin
+      let r = next_int rng 100 in
+      if r < egraph_rate then L5_Egraph
+      else
+        (* Distribute the remainder uniformly over L1..L4 *)
+        let rest = ((r - egraph_rate) * 4) / (max 1 (100 - egraph_rate)) in
+        match rest with
+        | 0 -> L1_AddSplit | 1 -> L2_NorNot | 2 -> L3_NandSelf | _ -> L4_AddNor
+    end
   in
   match strategy with
   | L1_AddSplit ->
@@ -178,7 +197,7 @@ let synthesize_const rng c =
     [ PushImm a; PushImm not_diff; PushImm 0L; Nor; Add ]
 
   | L5_Egraph ->
-    (try synthesize_egraph rng c
+    (try synthesize_egraph ~budget:egraph_budget rng c
      with _ ->
        let not_c = Int64.lognot c in
        [ PushImm not_c; PushImm 0L; Nor ])
@@ -203,7 +222,8 @@ let noise_prefix rng scratch_slot =
 (** Rewrites PushImm instructions with probability [mba_rate].
     Flag-liveness aware: synthesis is skipped when flags are live after
     the PushImm (every strategy ends with an instruction that sets flags). *)
-let rewrite_block ~rng ~scratch_slot mba_rate block =
+let rewrite_block ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config)
+    ~rng ~scratch_slot mba_rate block =
   let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
   let new_ops =
     List.concat_map (fun (i, op) ->
@@ -218,7 +238,7 @@ let rewrite_block ~rng ~scratch_slot mba_rate block =
           (match scratch_slot with
            | Some slot -> noise_prefix rng slot
            | None -> [])
-          @ synthesize_const rng c
+          @ synthesize_const ~egraph_rate ~egraph_budget rng c
       | _ -> [ op ]
     ) (List.mapi (fun i op -> (i, op)) block.ops)
   in
@@ -229,12 +249,28 @@ let rewrite_block ~rng ~scratch_slot mba_rate block =
 type mba_config = {
   seed     : int64;
   mba_rate : int;   (** Probability 0–100 of synthesizing each PushImm *)
+  egraph_rate : int;  (** Probability 0-100 of choosing the L5 e-graph
+                          strategy (default 30 preserves the historical
+                          distribution and RNG stream). *)
+  egraph_node_limit  : int;
+  egraph_time_budget_ms : int;
+  egraph_iter_limit  : int;
 }
 
 let default_mba_config seed = {
   seed;
   mba_rate = 75;    (* 75% of PushImm instructions get synthesized *)
+  egraph_rate = 30;
+  egraph_node_limit = 120;
+  egraph_time_budget_ms = 80;
+  egraph_iter_limit = 5;
 }
+
+let egraph_budget_of (cfg : mba_config) =
+  egraph_config_of
+    ~node_limit:cfg.egraph_node_limit
+    ~time_budget_ms:cfg.egraph_time_budget_ms
+    ~iter_limit:cfg.egraph_iter_limit
 
 let apply_block ?ctx cfg block =
   let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * 0xB7E1_5163))) in
@@ -247,6 +283,7 @@ let apply_block ?ctx cfg block =
     | None -> None
   in
   rewrite_block ~rng ~scratch_slot cfg.mba_rate block
+
 
 let apply_program ?ctx cfg prog =
   (* Collect blocks in deterministic id order so the output is stable. *)
@@ -271,6 +308,8 @@ let apply_program ?ctx cfg prog =
       let (id, b) = sorted.(i) in
       let scratch_slot = scratch_slots.(i) in
       out.(i) <- (id, rewrite_block
+        ~egraph_rate:cfg.egraph_rate
+        ~egraph_budget:(egraph_budget_of cfg)
         ~rng:(make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0xB7E1_5163))))
         ~scratch_slot cfg.mba_rate b));
   let new_blocks = Hashtbl.create n in

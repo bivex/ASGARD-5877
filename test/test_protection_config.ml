@@ -173,6 +173,93 @@ let test_eh_shadowing_config () =
   Alcotest.(check bool) "builder disabled eh_shadowing" false custom.eh_shadowing.enabled;
   Alcotest.(check int) "builder shadow_alloc_size 48" 48 custom.eh_shadowing.shadow_alloc_size
 
+let test_pass_config_sections () =
+  (* Round-trip: new sections survive to_yojson/of_yojson *)
+  let original = {
+    Protection_config.default with
+    amplifier = {
+      enabled = true; profile = "balanced"; horner_degree = 4;
+      bit_slice_lanes = 1; expander_chord_len = 6; expander_chord_rate = 55;
+    };
+    superop = {
+      enabled = true; fusion_rate = 65;
+      enable_add_imm = true; enable_sub_imm = false;
+      enable_add_ii = false; enable_sub_ii = true;
+      enable_set_reg_imm = true; enable_add_reg_imm = false;
+    };
+    ghost = { enabled = false; ghost_rate = 25; max_ghosts = 7; entangle = false };
+    spaghetti = {
+      enabled = true; split_rate = 90; max_extra_blocks = 500;
+      max_splits_factor = 3; min_chunk = 1;
+    };
+    mba = { Protection_config.default.mba with stack_synthesis_rate = 45 };
+    stack_vm = {
+      Protection_config.default.stack_vm with
+      feedback_rate = 33; cff_couple_key = false;
+    };
+    cff = {
+      Protection_config.default.cff with
+      pop_digest = true; red_herring = false;
+    };
+  } in
+  let json_str = Protection_config.to_json_string ~pretty:true original in
+  (match Protection_config.from_json_string json_str with
+   | Error err -> Alcotest.fail ("round-trip parse: " ^ err)
+   | Ok parsed ->
+       Alcotest.(check string) "amplifier.profile" original.amplifier.profile parsed.amplifier.profile;
+       Alcotest.(check int) "amplifier.horner_degree" original.amplifier.horner_degree parsed.amplifier.horner_degree;
+       Alcotest.(check int) "amplifier.expander_chord_rate" original.amplifier.expander_chord_rate parsed.amplifier.expander_chord_rate;
+       Alcotest.(check int) "superop.fusion_rate" original.superop.fusion_rate parsed.superop.fusion_rate;
+       Alcotest.(check bool) "superop.enable_sub_ii" original.superop.enable_sub_ii parsed.superop.enable_sub_ii;
+       Alcotest.(check int) "ghost.ghost_rate" original.ghost.ghost_rate parsed.ghost.ghost_rate;
+       Alcotest.(check int) "ghost.max_ghosts" original.ghost.max_ghosts parsed.ghost.max_ghosts;
+       Alcotest.(check int) "spaghetti.max_extra_blocks" original.spaghetti.max_extra_blocks parsed.spaghetti.max_extra_blocks;
+       Alcotest.(check int) "spaghetti.min_chunk" original.spaghetti.min_chunk parsed.spaghetti.min_chunk;
+       Alcotest.(check int) "mba.stack_synthesis_rate" original.mba.stack_synthesis_rate parsed.mba.stack_synthesis_rate;
+       Alcotest.(check int) "stack_vm.feedback_rate" original.stack_vm.feedback_rate parsed.stack_vm.feedback_rate;
+       Alcotest.(check bool) "stack_vm.cff_couple_key" original.stack_vm.cff_couple_key parsed.stack_vm.cff_couple_key;
+       Alcotest.(check bool) "cff.pop_digest" original.cff.pop_digest parsed.cff.pop_digest;
+       Alcotest.(check bool) "cff.red_herring" original.cff.red_herring parsed.cff.red_herring);
+  (* Defaults when sections absent: minimal JSON must parse *)
+  (match Protection_json.from_json_string {|{"arch":"aarch64"}|} with
+   | Error err -> Alcotest.fail ("defaults parse: " ^ err)
+   | Ok cfg ->
+       Alcotest.(check bool) "amplifier defaults enabled" true cfg.amplifier.enabled;
+       Alcotest.(check string) "amplifier defaults heavy" "heavy" cfg.amplifier.profile;
+       Alcotest.(check int) "amplifier horner override 0" 0 cfg.amplifier.horner_degree;
+       Alcotest.(check int) "superop defaults fusion 100" 100 cfg.superop.fusion_rate;
+       Alcotest.(check bool) "superop defaults enabled" true cfg.superop.enabled;
+       Alcotest.(check int) "ghost defaults rate 80" 80 cfg.ghost.ghost_rate;
+       Alcotest.(check bool) "ghost defaults enabled" true cfg.ghost.enabled;
+       Alcotest.(check int) "spaghetti defaults factor 1" 1 cfg.spaghetti.max_splits_factor;
+       Alcotest.(check int) "mba defaults stack rate 100" 100 cfg.mba.stack_synthesis_rate;
+       Alcotest.(check int) "stack_vm defaults feedback 100" 100 cfg.stack_vm.feedback_rate;
+       Alcotest.(check bool) "stack_vm defaults couple key" true cfg.stack_vm.cff_couple_key;
+       Alcotest.(check bool) "cff defaults pop_digest off" false cfg.cff.pop_digest;
+       Alcotest.(check bool) "cff defaults red_herring on" true cfg.cff.red_herring)
+
+let test_pass_config_presets () =
+  let open Protection_config in
+  (* lightweight: light amplifier, low ghost/superop rates *)
+  Alcotest.(check string) "lightweight amplifier light" "light" lightweight.amplifier.profile;
+  Alcotest.(check int) "lightweight ghost_rate 40" 40 lightweight.ghost.ghost_rate;
+  Alcotest.(check int) "lightweight fusion 80" 80 lightweight.superop.fusion_rate;
+  (* minimal: amplifier and ghost disabled *)
+  Alcotest.(check bool) "minimal amplifier disabled" false minimal.amplifier.enabled;
+  Alcotest.(check bool) "minimal ghost disabled" false minimal.ghost.enabled;
+  (* high: heavier ghost *)
+  Alcotest.(check int) "high ghost_rate 90" 90 high.ghost.ghost_rate;
+  (* max_security: max ghost + doubled spaghetti ceiling *)
+  Alcotest.(check int) "max_security ghost_rate 100" 100 max_security.ghost.ghost_rate;
+  Alcotest.(check int) "max_security spaghetti factor 2" 2 max_security.spaghetti.max_splits_factor;
+  (* default/stealth/edr_stealth keep base defaults *)
+  Alcotest.(check int) "default ghost_rate 80" 80 default.ghost.ghost_rate;
+  Alcotest.(check string) "default amplifier heavy" "heavy" default.amplifier.profile;
+  Alcotest.(check string) "stealth amplifier heavy" "heavy" stealth.amplifier.profile;
+  ; let edr = match Protection_config.from_preset "edr_stealth" with Ok c -> c | Error e -> Alcotest.fail e in
+    Alcotest.(check int) "edr_stealth ghost_rate 80" 80 edr.ghost.ghost_rate
+
+
 let tests = [
   Alcotest.test_case "presets" `Quick test_presets;
   Alcotest.test_case "json_roundtrip" `Quick test_json_roundtrip;
@@ -183,4 +270,6 @@ let tests = [
   Alcotest.test_case "presets_opaque_predicates" `Quick test_presets_opaque_predicates;
   Alcotest.test_case "dispatch_domain_diversification" `Quick test_dispatch_domain_diversification;
   Alcotest.test_case "eh_shadowing_config" `Quick test_eh_shadowing_config;
+  Alcotest.test_case "pass_config_sections" `Quick test_pass_config_sections;
+  Alcotest.test_case "pass_config_presets" `Quick test_pass_config_presets;
 ]

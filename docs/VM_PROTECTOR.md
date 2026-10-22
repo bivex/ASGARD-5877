@@ -456,3 +456,73 @@ dune exec random_visa -- macho-unwind --input ./protected_app --output ./protect
 The command exits non-zero only when the compact unwind information that the image does carry is inconsistent, which makes it usable as a gate in a release pipeline.
 
 The protector compiles the protected binary with `-fno-unwind-tables -fno-asynchronous-unwind-tables`, so the image it produces carries no compact unwind information at all. A binary without unwind information cannot unwind: a C++ exception crossing a protected frame terminates the process instead of running the landing pads. Tech-2601 shadowing also has nothing to shadow in such a binary. The audit makes that visible through the layout (`not emitted`), not as an inconsistency; whether to spend the metadata budget on unwinding is a deployment decision.
+
+## 13. Protection Configuration Reference (JSON)
+
+Every protection pass is controlled from a JSON file passed via `--config`.
+Unknown sections fall back to defaults, so partial configs are valid.
+Presets (`--preset minimal|lightweight|default|high|max|military|stealth|edr_stealth`)
+pre-populate every field; the JSON file then overrides what it mentions.
+
+### Pass-level sections (Stack-VM engine)
+
+| Section | Field | Default | Meaning |
+|---|---|---|---|
+| `amplifier` | `enabled` | `true` | Phase 2 mathematical bytecode amplification on/off |
+| | `profile` | `"heavy"` | `heavy` (Horner 6, ~5.5× ops), `balanced` (Horner 3), `light` (Horner 2, ~3.9×) |
+| | `horner_degree` | `0` | Override polynomial degree; `0` = inherit from profile |
+| | `bit_slice_lanes` | `0` | Carry-chain lanes for Add/Sub; `0` = inherit |
+| | `expander_chord_len` | `0` | Ops between def-use web knots; `0` = inherit |
+| | `expander_chord_rate` | `0` | Knot probability 0–100; `0` = inherit |
+| `superop` | `enabled` | `true` | Phase 2a superoperator fusion; effective gate is `stack_vm.superoperators && superop.enabled` |
+| | `fusion_rate` | `100` | Probability of fusing an eligible op pair |
+| | `enable_add_imm` … `enable_add_reg_imm` | `true` | Per-rule toggles: AddImm, SubImm, AddII, SubII, SetRegImm, AddRegImm |
+| `ghost` | `enabled` | `true` | Phase 5 ghost stack padding on/off |
+| | `ghost_rate` | `80` | Probability of a ghost op after each real op |
+| | `max_ghosts` | `0` | Per-block ghost ceiling; `0` = unlimited |
+| | `entangle` | `true` | Data-flow entanglement of ghost checksums with memory ops |
+| `spaghetti` | `enabled` | `true` | Phase 4 block splitting on/off |
+| | `split_rate` | `100` | Probability of splitting an eligible block |
+| | `max_extra_blocks` | `0` | Absolute ceiling of new blocks; priority: `max_extra_blocks > max_splits_factor > legacy min 512 (cur/2)` |
+| | `max_splits_factor` | `1` | Ceiling as multiplier of current block count |
+| | `min_chunk` | `2` | Min ops on each side of a cut point; `1` yields more candidates |
+
+### Knobs inside existing sections
+
+| Field | Default | Meaning |
+|---|---|---|
+| `mba.stack_synthesis_rate` | `100` | Phase 2b rate of replacing `PushImm` with NOR/NAND/ADD sequences (`mba.enabled=false` now disables the pass itself) |
+| `stack_vm.feedback_rate` | `100` | Phase 6 state-feedback rolling-key checkpoint density |
+| `stack_vm.cff_couple_key` | `true` | Phase 3 coupling of the rolling key to the VPC write on every CFF edge |
+| `cff.pop_digest` | `false` | IR-level CFF: Path-Oriented Protection digest coupling (register/seed from `Cff.Pop_coupler`) |
+| `cff.red_herring` | `true` | IR-level CFF: red-herring (never-taken) state aliases during hot-state splitting |
+| `cff.hub_count` | `1` | Multi-hub dispatcher partitioning (1–6) |
+| `cff.split_rate` | `30` | Hot-state splitting probability |
+
+### E-graph MBA budget (`mba.*`)
+
+The Phase 2b L5 strategy runs constants through e-graph equality
+saturation; both its selection probability and its saturation budget are
+configurable:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `mba.egraph_rate` | `30` | Probability of choosing L5; the value 30 keeps the historical strategy distribution and RNG stream (bit-identical builds) |
+| `mba.egraph_node_limit` | `120` | E-graph node cap per constant |
+| `mba.egraph_time_budget_ms` | `80` | Wall-clock saturation budget per constant |
+| `mba.egraph_iter_limit` | `5` | Saturation iteration cap |
+
+Raising the budget (e.g. `nodes=400, ms=300, iters=12`) yields more
+complex alternation-heavy expressions at a linear compile-time cost.
+
+### Preset differentiation (Stack-VM density knobs)
+
+| Preset | amplifier | ghost | superop | spaghetti |
+|---|---|---|---|---|
+| `minimal` | off | off | default | default |
+| `lightweight` | `light` | rate 40 | fusion 80 | default |
+| `default` / `stealth` / `edr_stealth` | `heavy` | rate 80 | fusion 100 | factor 1 |
+| `high` | `heavy` | rate 90 | fusion 100 | factor 1 |
+| `max` / `military` | `heavy` | rate 100 | fusion 100 | factor 2 |
+
+See `samples/protection_config.full.json` for a fully-populated example.

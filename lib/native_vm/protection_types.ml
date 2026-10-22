@@ -42,6 +42,14 @@ type mba_config = {
       probability each PushImm is replaced by a NOR/NAND/ADD sequence.
       The IR-level MBA engine (depth/engine) is independent of this. *)
   stack_synthesis_rate : int [@default 100];
+  (** Probability 0-100 of choosing the L5 e-graph strategy inside the
+      synthesis (default 30 = historical distribution; the value 30 also
+      preserves the RNG stream bit-for-bit). *)
+  egraph_rate : int [@default 30];
+  (** E-graph saturation budget for constant synthesis. *)
+  egraph_node_limit : int [@default 120];
+  egraph_time_budget_ms : int [@default 80];
+  egraph_iter_limit : int [@default 5];
 } [@@deriving yojson]
 
 (* Target architecture of the lifted program.  The VM stores flags in the
@@ -175,11 +183,13 @@ type spaghetti_config = {
       when a valid cut-point exists and the block-count ceiling permits. *)
   split_rate : int  [@default 100];
   (** Maximum additional blocks allowed beyond the post-CFF count.
-      Formula: actual cap = min max_extra_blocks (cur_blocks * max_splits_factor).
-      Set to 0 to use the old hard-coded heuristic (min 512 (cur/2)). *)
+      Priority: [max_extra_blocks > 0] wins; otherwise
+      [cur_blocks * max_splits_factor]; when both are 0 the legacy
+      hard-coded heuristic (min 512 (cur/2)) applies. *)
   max_extra_blocks : int  [@default 0];
-  (** Multiplier applied to the current block count to derive max_splits.
-      Default 1 means "at most 1× extra blocks"; 2 means 2× extra; etc. *)
+  (** Multiplier applied to the current block count to derive max_splits
+      (used only when [max_extra_blocks = 0]).  Default 1 means "at most
+      1× extra blocks"; 2 means 2× extra; etc. *)
   max_splits_factor : int  [@default 1];
   (** Minimum number of ops required on each side of a cut point.
       Lower = more candidate splits; minimum useful value is 1. *)
@@ -265,7 +275,7 @@ let default_crypto = { rounds = 16; key_bits = 128 }
 let default_bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5 }
 let default_cff = { enabled = true; obfuscate_states = true; inject_opaque_predicates = false; input_tainted_transitions = true; split_rate = 30; hub_count = 1; pop_digest = false; red_herring = true }
 
-let default_mba = { enabled = true; depth = 2; engine = `Egraph; stack_synthesis_rate = 100 }
+let default_mba = { enabled = true; depth = 2; engine = `Egraph; stack_synthesis_rate = 100; egraph_rate = 30; egraph_node_limit = 120; egraph_time_budget_ms = 80; egraph_iter_limit = 5 }
 let default_anti_pushan = { enabled = true; running_key = true; address_bound = false }
 let default_anti_tamper = {
   enabled = true; smc = true; smc_strict = false;

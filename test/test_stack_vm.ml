@@ -751,7 +751,7 @@ let test_mba_synthesis () =
   let prog_orig = make_program 0 [b0] 8 in
 
   (* Apply MBA at 100% rate to synthesize every PushImm *)
-  let mba_cfg = Stack_mba_pass.{ seed; mba_rate = 100 } in
+  let mba_cfg = Stack_mba_pass.{ (Stack_mba_pass.default_mba_config seed) with mba_rate = 100 } in
   let prog_mba = Stack_mba_pass.apply_program mba_cfg prog_orig in
 
   (* 1. No PushImm instructions should contain the original constants literally *)
@@ -809,7 +809,7 @@ let test_mba_synthesis () =
   Alcotest.(check bool) "mba_stats mentions 'PushImm'" true (contains stats "PushImm");
 
   (* 6. Different seeds produce different synthesized sequences *)
-  let mba_cfg2 = Stack_mba_pass.{ seed = Int64.logxor seed 0xDEAD_BEEFL; mba_rate = 100 } in
+  let mba_cfg2 = Stack_mba_pass.{ (Stack_mba_pass.default_mba_config (Int64.logxor seed 0xDEAD_BEEFL)) with mba_rate = 100 } in
   let prog_mba2 = Stack_mba_pass.apply_program mba_cfg2 prog_orig in
   let vals2 = push_imm_values prog_mba2 in
   (* The two MBA outputs should have at least one different PushImm value *)
@@ -1023,7 +1023,7 @@ let test_full_pipeline_semantics () =
   let ctx = Context_allocator.create () in
   let prog_r = Stack_balance_pass.repair_program ctx prog in
   let prog_g = Stack_ghost_pass.apply_program (Stack_ghost_pass.default_ghost_config seed) ctx prog_r in
-  let prog_m = Stack_mba_pass.apply_program Stack_mba_pass.{ seed = Int64.logxor seed 0x1111L; mba_rate = 100 } prog_g in
+  let prog_m = Stack_mba_pass.apply_program Stack_mba_pass.{ (Stack_mba_pass.default_mba_config (Int64.logxor seed 0x1111L)) with mba_rate = 100 } prog_g in
   let prog_c, cff_info = Stack_cff_pass.apply_program_with_info (Stack_cff_pass.default_cff_config (Int64.logxor seed 0x2222L)) ctx prog_m in
 
   (* balance invariant holds for every block of the final program *)
@@ -1170,7 +1170,7 @@ let test_full_pipeline_c_runtime_with_args () =
     let ctx = Context_allocator.create () in
     let prog_r = Stack_balance_pass.repair_program ctx prog in
     let prog_g = Stack_ghost_pass.apply_program (Stack_ghost_pass.default_ghost_config seed) ctx prog_r in
-    let prog_m = Stack_mba_pass.apply_program Stack_mba_pass.{ seed = Int64.logxor seed 0x1111L; mba_rate = 100 } prog_g in
+    let prog_m = Stack_mba_pass.apply_program Stack_mba_pass.{ (Stack_mba_pass.default_mba_config (Int64.logxor seed 0x1111L)) with mba_rate = 100 } prog_g in
     let prog_c = Stack_cff_pass.apply_program (Stack_cff_pass.default_cff_config (Int64.logxor seed 0x2222L)) ctx prog_m in
     Alcotest.(check int) "args test: no balance errors" 0
       (List.length (Stack_balance_pass.verify_program prog_c));

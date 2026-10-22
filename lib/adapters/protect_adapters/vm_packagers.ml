@@ -624,11 +624,18 @@ module Stack_vm_packager : Vm_packager = struct
     in
     let mba_cfg = {
       (Stack_vm.Stack_mba_pass.default_mba_config mba_seed) with
-      mba_rate = native_cfg.mba.stack_synthesis_rate
+      mba_rate = native_cfg.mba.stack_synthesis_rate;
+      egraph_rate = native_cfg.mba.egraph_rate;
+      egraph_node_limit = native_cfg.mba.egraph_node_limit;
+      egraph_time_budget_ms = native_cfg.mba.egraph_time_budget_ms;
+      egraph_iter_limit = native_cfg.mba.egraph_iter_limit;
     } in
     note
-      (Printf.sprintf "    MBA Constant Synthesis     rate=%d%% seed=0x%016LX%s"
-         mba_cfg.mba_rate mba_cfg.seed
+      (Printf.sprintf
+         "    MBA Constant Synthesis     rate=%d%% egraph_rate=%d%% egraph_budget={nodes=%d,ms=%d,iters=%d} seed=0x%016LX%s"
+         mba_cfg.mba_rate mba_cfg.egraph_rate
+         mba_cfg.egraph_node_limit mba_cfg.egraph_time_budget_ms mba_cfg.egraph_iter_limit
+         mba_cfg.seed
          (if native_cfg.mba.enabled then "" else " (DISABLED by mba.enabled=false)"));
     let prog, mba_info =
       if native_cfg.mba.enabled then begin

@@ -20,7 +20,11 @@
   "mba": {
     "enabled": true,
     "depth": 4,
-    "engine": "egraph"
+    "engine": "egraph",
+    "egraph_rate": 30,
+    "egraph_node_limit": 120,
+    "egraph_time_budget_ms": 80,
+    "egraph_iter_limit": 5
   },
   "anti_pushan": {
     "enabled": true,
