@@ -31,15 +31,20 @@ let generate_header = C_macro_header.generate_header
 let obfuscate_string_literal ~prefix ~seed s =
   let len = String.length s in
   let key = (C_macro_config.xorshift32 (seed + len * 31)) land 0x7FFFFFFF in
-  let bytes = Buffer.create (len * 4 + 10) in
-  Buffer.add_string bytes "\"";
-  for i = 0 to len - 1 do
-    let orig_byte = Char.code s.[i] in
-    let k = ((key lxor (i * 0x5D)) land 0xFF) in
-    let enc_byte = orig_byte lxor k in
-    Buffer.add_string bytes (Printf.sprintf "\\%03o" enc_byte)
-  done;
-  Buffer.add_string bytes "\"";
+  let bytes = Buffer.create (len * 6 + 32) in
+  if len = 0 then
+    Buffer.add_string bytes "((const uint8_t[]){ 0 })"
+  else begin
+    Buffer.add_string bytes "((const uint8_t[]){ ";
+    for i = 0 to len - 1 do
+      let orig_byte = Char.code s.[i] in
+      let k = ((key lxor (i * 0x5D)) land 0xFF) in
+      let enc_byte = orig_byte lxor k in
+      if i > 0 then Buffer.add_string bytes ", ";
+      Buffer.add_string bytes (Printf.sprintf "0x%02X" enc_byte)
+    done;
+    Buffer.add_string bytes " })"
+  end;
   Printf.sprintf "%sSTR(%s, %d, 0x%XU)" prefix (Buffer.contents bytes) len key
 
 let obfuscate_constant_i64 ~prefix ~seed n =

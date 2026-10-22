@@ -279,7 +279,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       | _ -> None)
 
   (* Vector loads: ld1, ldr (when vector target) *)
-  | (("ld1" | "ldr"), [ op_dst; OpMem m ]) -> (
+  | (("ld1" | "ldr" | "ldur"), [ op_dst; OpMem m ]) -> (
       match get_vec_info op_dst with
       | Some (dst, bits, _, _) ->
           let scratch = Register.vtmp0 in
@@ -314,7 +314,7 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       | _ -> None)
 
   (* Vector stores: st1, str (when vector source) *)
-  | (("st1" | "str"), [ op_src; OpMem m ]) -> (
+  | (("st1" | "str" | "stur"), [ op_src; OpMem m ]) -> (
       match get_vec_info op_src with
       | Some (src, bits, _, _) ->
           let scratch = Register.vtmp0 in

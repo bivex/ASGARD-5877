@@ -57,15 +57,15 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
   let str_macro =
     preproc_if "defined(__cplusplus)"
       [
-        preproc_if "defined(_MSC_VER)"
-          [ raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) \\\n    " ^ p ^ "decrypt_str((char*)_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))") ]
+        preproc_if "defined(_MSC_VER) && !defined(__clang__)"
+          [ raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) ([&]() -> char* { \\\n    char* _buf = (char*)_alloca((len) + 1); \\\n    return " ^ p ^ "decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \\\n}())") ]
           ~else_decls:[
-            raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) \\\n    " ^ p ^ "decrypt_str((char*)__builtin_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))")
+            raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\\n    char* _buf = (char*)__builtin_alloca((len) + 1); \\\n    " ^ p ^ "decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \\\n})")
           ]
       ]
       ~else_decls:[
         preproc_if "defined(__GNUC__) || defined(__clang__)"
-          [ raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\\n    static const uint8_t _enc[] = enc_bytes; \\\n    char* _buf = (char*)__builtin_alloca((len) + 1); \\\n    volatile uint32_t _vkey = (uint32_t)(key); \\\n    volatile const uint8_t* _venc = _enc; \\\n    for (size_t _i = 0; _i < (size_t)(len); ++_i) { \\\n        uint8_t _k = (uint8_t)((_vkey ^ (uint32_t)(_i * 0x5DU)) & 0xFFU); \\\n        _buf[_i] = (char)(_venc[_i] ^ _k); \\\n    } \\\n    _buf[len] = '\\0'; \\\n    __asm__ volatile(\"\" : \"+r\"(_buf) : : \"memory\"); \\\n    _buf; \\\n})") ]
+          [ raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) ({ \\\n    char* _buf = (char*)__builtin_alloca((len) + 1); \\\n    " ^ p ^ "decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \\\n})") ]
           ~else_decls:[
             raw_top ("#define " ^ p ^ "STR(enc_bytes, len, key) \\\n    " ^ p ^ "decrypt_str((char*)alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))")
           ]

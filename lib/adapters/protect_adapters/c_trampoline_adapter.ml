@@ -533,7 +533,7 @@ let embed_vm_trampoline
         String.split_on_char ',' args_to_pass
         |> List.map String.trim
         |> List.filter (fun s -> s <> "")
-        |> List.map (fun a -> c_cast UInt64 (var a))
+        |> List.map (fun a -> var a)
     in
     let base_call_args = var "_active_bc" :: var "_active_len" :: parsed_args in
     let call_expr =

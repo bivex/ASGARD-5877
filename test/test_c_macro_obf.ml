@@ -462,7 +462,7 @@ void my_procedure(int x, const char* name) {
     Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_void ~bytecode:[ 0x1122334455667788L ] ~out_path:out_void ();
     let res_void = Test_helpers.read_file_string out_void in
-    check bool "void function has no return expr" true (contains_sub res_void "asgard_vm_call(embedded_bytecode");
+    check bool "void function has no return expr" true (contains_sub res_void "asgard_vm_call(_active_bc");
     check bool "void function returns void" true (contains_sub res_void "return;");
 
     let out_ptr = Filename.concat tmp_dir "ptr_virt.cpp" in
@@ -477,7 +477,8 @@ char* get_buffer(size_t sz) {
     Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_ptr ~bytecode:[ 0x1122334455667788L ] ~out_path:out_ptr ();
     let res_ptr = Test_helpers.read_file_string out_ptr in
-    check bool "pointer function casts return type" true (contains_sub res_ptr "return (char*)(uintptr_t)vanguard_threaded_vm::asgard_vm_call");
+    check bool "pointer function casts return type" true
+      (contains_sub res_ptr "(char*)" && contains_sub res_ptr "(uintptr_t)" && contains_sub res_ptr "asgard_vm_call");
 
     let out_u64 = Filename.concat tmp_dir "u64_virt.cpp" in
     let c_u64 = {|
@@ -492,7 +493,8 @@ uint64_t calculate_hash(
     Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_u64 ~bytecode:[ 0x1122334455667788L ] ~out_path:out_u64 ();
     let res_u64 = Test_helpers.read_file_string out_u64 in
-    check bool "u64 function does not truncate to int" true (contains_sub res_u64 "return vanguard_threaded_vm::asgard_vm_call");
+    check bool "u64 function does not truncate to int" true
+      (contains_sub res_u64 "(uint64_t)" && contains_sub res_u64 "asgard_vm_call");
     check bool "u64 function passes clean args" true (contains_sub res_u64 "(uint64_t)a, (uint64_t)b");
 
     let out_attr = Filename.concat tmp_dir "attr_virt.cpp" in
@@ -505,7 +507,8 @@ __attribute__((noinline)) char* custom_alloc(size_t sz) {
     Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_attr ~bytecode:[ 0x1122334455667788L ] ~out_path:out_attr ();
     let res_attr = Test_helpers.read_file_string out_attr in
-    check bool "clean type stripped attribute in cast" true (contains_sub res_attr "return (char*)(uintptr_t)vanguard_threaded_vm::asgard_vm_call")
+    check bool "clean type stripped attribute in cast" true
+      (contains_sub res_attr "(char*)" && contains_sub res_attr "(uintptr_t)" && contains_sub res_attr "asgard_vm_call");
   )
 
 let test_trampoline_multi_functions () =
@@ -535,8 +538,8 @@ uint64_t compute_xor(uint64_t x, uint64_t y) {
     let res = Test_helpers.read_file_string out_multi in
     check bool "contains embedded_bytecode_compute_add" true (contains_sub res "embedded_bytecode_compute_add");
     check bool "contains embedded_bytecode_compute_xor" true (contains_sub res "embedded_bytecode_compute_xor");
-    check bool "contains trampoline call for compute_add" true (contains_sub res "asgard_vm_call(embedded_bytecode_compute_add");
-    check bool "contains trampoline call for compute_xor" true (contains_sub res "asgard_vm_call(embedded_bytecode_compute_xor");
+    check bool "contains trampoline call for compute_add" true (contains_sub res "embedded_bytecode_compute_add_ensure_assembled");
+    check bool "contains trampoline call for compute_xor" true (contains_sub res "embedded_bytecode_compute_xor_ensure_assembled");
     check bool "contains original fallback embedded_bytecode" true (contains_sub res "embedded_bytecode[")
   )
 

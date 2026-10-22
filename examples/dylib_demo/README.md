@@ -71,7 +71,7 @@ Expands using Zhou / Eyrolles identities:
 ### C. Stack String Encryption (`ASG_STR`)
 String literals are encrypted at compile time and decrypted onto volatile stack buffers (`_alloca` / `__builtin_alloca`), disappearing upon function return:
 ```c
-const char* msg = ASG_STR("\x76\x29\xce...", 14, 0x1337);
+const char* msg = ASG_STR(((const uint8_t[]){ 0x76, 0x29, 0xCE, ... }), 14, 0x1337);
 ```
 No cleartext strings land in the `.dylib`'s Mach-O `__cstring` section.
 

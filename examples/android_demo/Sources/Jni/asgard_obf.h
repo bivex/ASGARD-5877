@@ -71,29 +71,24 @@ static __attribute__((always_inline)) inline char* ASG_decrypt_str(char* buf, co
 
 #if defined(__cplusplus)
 
-#if defined(_MSC_VER)
-#define ASG_STR(enc_bytes, len, key) \
-    ASG_decrypt_str((char*)_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))
+#if defined(_MSC_VER) && !defined(__clang__)
+#define ASG_STR(enc_bytes, len, key) ([&]() -> char* { \
+    char* _buf = (char*)_alloca((len) + 1); \
+    return ASG_decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \
+}())
 #else
-#define ASG_STR(enc_bytes, len, key) \
-    ASG_decrypt_str((char*)__builtin_alloca((len) + 1), (const uint8_t*)(enc_bytes), (len), (key))
+#define ASG_STR(enc_bytes, len, key) ({ \
+    char* _buf = (char*)__builtin_alloca((len) + 1); \
+    ASG_decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \
+})
 #endif
 
 #else
 
 #if defined(__GNUC__) || defined(__clang__)
 #define ASG_STR(enc_bytes, len, key) ({ \
-    static const uint8_t _enc[] = enc_bytes; \
     char* _buf = (char*)__builtin_alloca((len) + 1); \
-    volatile uint32_t _vkey = (uint32_t)(key); \
-    volatile const uint8_t* _venc = _enc; \
-    for (size_t _i = 0; _i < (size_t)(len); ++_i) { \
-        uint8_t _k = (uint8_t)((_vkey ^ (uint32_t)(_i * 0x5DU)) & 0xFFU); \
-        _buf[_i] = (char)(_venc[_i] ^ _k); \
-    } \
-    _buf[len] = '\0'; \
-    __asm__ volatile("" : "+r"(_buf) : : "memory"); \
-    _buf; \
+    ASG_decrypt_str(_buf, (const uint8_t*)(enc_bytes), (len), (key)); \
 })
 #else
 #define ASG_STR(enc_bytes, len, key) \
