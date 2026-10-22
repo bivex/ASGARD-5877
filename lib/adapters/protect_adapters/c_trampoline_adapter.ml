@@ -1,4 +1,5 @@
 open Random_visa_ports
+open Random_visa_constants.Magic_numbers
 
 type marked_fn = {
   fn_name : string;
@@ -265,6 +266,14 @@ let embed_vm_trampoline
         macro_def "ASGARD_BYTECODE_CHUNK_DEF";
         include_sys "stdint.h";
         include_sys "stddef.h";
+        preproc_if "defined(__APPLE__)" [
+          include_sys "sys/sysctl.h";
+          include_sys "unistd.h";
+        ] ~else_decls:[
+          preproc_if "defined(__linux__)" [
+            include_sys "unistd.h";
+          ] ~else_decls:[];
+        ];
         preproc_if "defined(_MSC_VER) && !defined(__clang__)"
           [
             include_sys "intrin.h";
@@ -288,7 +297,7 @@ let embed_vm_trampoline
     | Some dbc -> dbc
     | None ->
         let rng = Random.State.make [| 0xDEC01337; List.length bytecode |] in
-        Native_vm.Decoy_synth.synth_decoy_bytecode ~rng ~seed:0x5877CAFE1337BEEFL ~name:"decoy_payload"
+        Native_vm.Decoy_synth.synth_decoy_bytecode ~rng ~seed:salt_xwcafe_leetbeef ~name:"decoy_payload"
   in
 
   let format_fragmented_bytecode name bc =
@@ -330,8 +339,8 @@ let embed_vm_trampoline
           in
           let canary = Int64.logand (Int64.add (Int64.mul (Int64.of_int chunk_id) 0xDEADL) 0xCAFEL) 0xFFFFFFFFL in
           let entropy_seed = Int64.logand (Int64.add (Int64.mul (Int64.of_int idx) 0x6A09L) 0xBEEFL) 0xFFFFFFFFL in
-          let junk_pad0 = Int64.logxor 0x5877CAFE1337BEEFL (Int64.mul (Int64.of_int idx) 0x9E3779B97F4A7C15L) in
-          let junk_pad1 = Int64.logxor 0xDEADBEEFCAFEBABEL (Int64.mul (Int64.of_int chunk_id) 0x517CC1B727220A95L) in
+          let junk_pad0 = Int64.logxor salt_xwcafe_leetbeef (Int64.mul (Int64.of_int idx) 0x9E3779B97F4A7C15L) in
+          let junk_pad1 = Int64.logxor salt_deadbeef_cafebabe (Int64.mul (Int64.of_int chunk_id) 0x517CC1B727220A95L) in
           let k_dyn = Int64.logxor 0x5877A56A11223344L (Int64.mul (Int64.of_int chunk_id) 0x9E3779B97F4A7C15L) in
           let masked_words =
             List.mapi (fun j w ->
@@ -461,9 +470,25 @@ let embed_vm_trampoline
     %s_ensure_assembled();
 
     uint64_t _penalty = asgard_mem_integrity::evaluate_memory_integrity() ^ asgard_anti_emulation::evaluate_emulation_differential();
-#if defined(__APPLE__) || defined(__linux__)
-    if (asgard_syscalls::sys_check_debugger_present()) {
-        _penalty ^= 0x5877DECOY1337BEEFULL;
+#if defined(__APPLE__)
+    int _mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
+    struct kinfo_proc _kinfo = {};
+    size_t _ksize = sizeof(_kinfo);
+    if (sysctl(_mib, 4, &_kinfo, &_ksize, (void*)0, 0) == 0 && (_kinfo.kp_proc.p_flag & P_TRACED)) {
+        _penalty ^= 0x5877DEC01337BEEFULL;
+    }
+#elif defined(__linux__)
+    FILE* _fp_stat = fopen("/proc/self/status", "r");
+    if (_fp_stat) {
+        char _line[128];
+        while (fgets(_line, sizeof(_line), _fp_stat)) {
+            if (strncmp(_line, "TracerPid:", 10) == 0) {
+                int _pid = atoi(_line + 10);
+                if (_pid > 0) _penalty ^= 0x5877DEC01337BEEFULL;
+                break;
+            }
+        }
+        fclose(_fp_stat);
     }
 #endif
     uintptr_t _mask = (uintptr_t)(-(intptr_t)(_penalty != 0));
