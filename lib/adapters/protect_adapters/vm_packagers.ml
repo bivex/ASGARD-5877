@@ -174,16 +174,39 @@ module Threaded_vm_packager : Vm_packager = struct
         rebind_address = None;
       }
     end else begin
-      let raw_ir = unwrap_ir func in
-      Logger.infof ~section:"PACKAGER" "Threaded-VM: packaging function '%s'" (unwrap_ir func : Vm_ir.Ir.func).name;
+      let raw_ir : Vm_ir.Ir.func = unwrap_ir func in
+      Logger.infof ~section:"PACKAGER" "Threaded-VM: packaging function '%s'" raw_ir.name;
       if native_cfg.cff.enabled then
         Logger.infof ~section:"PACKAGER" "  ├─ Control-Flow Flattening (CFF) active: state dispatcher synthesized";
       if native_cfg.mba.enabled then
         Logger.infof ~section:"PACKAGER" "  ├─ Mixed Boolean-Arithmetic (MBA) active (depth=%d)" native_cfg.mba.depth;
       if native_cfg.vm_runtime.enable_super_operators then
         Logger.infof ~section:"PACKAGER" "  ├─ Superoperator Fusion active: fused ALU/memory sequences";
+      if native_cfg.vm_runtime.stack_scrambling then
+        Logger.infof ~section:"PACKAGER" "  ├─ Stack Scrambling active: randomized frame layout";
       if native_cfg.vm_runtime.chameleon_handlers then
         Logger.infof ~section:"PACKAGER" "  ├─ Chameleon Handlers active: %d dispatch domains" native_cfg.vm_runtime.num_dispatch_domains;
+      if native_cfg.vm_runtime.oblivious_memory then
+        Logger.infof ~section:"PACKAGER" "  ├─ Oblivious Memory & Entanglement active";
+      if native_cfg.vm_runtime.egraph_expansion then
+        Logger.infof ~section:"PACKAGER" "  ├─ E-Graph Equality Expansion active";
+      if native_cfg.vm_runtime.enable_junk_instructions then
+        Logger.infof ~section:"PACKAGER" "  ├─ Junk Bytecode Injection active";
+      if native_cfg.vm_runtime.ephemeral_jit then
+        Logger.infof ~section:"PACKAGER" "  ├─ Ephemeral JIT Micro-Handlers active";
+      if native_cfg.vm_runtime.memory_sanitization then
+        Logger.infof ~section:"PACKAGER" "  ├─ Memory Sanitization active";
+      if native_cfg.anti_pushan.running_key then
+        Logger.infof ~section:"PACKAGER" "  ├─ Anti-Pushan: positional rolling PRF key stream active";
+      if native_cfg.anti_tamper.enabled then
+        Logger.infof ~section:"PACKAGER" "  ├─ Anti-Tamper active: timing=%b, scanner=%b, anti_emu=%b, nanomites=%b, syscalls=%b"
+          native_cfg.anti_tamper.hardware_timing_probes native_cfg.anti_tamper.memory_integrity_scanner native_cfg.anti_tamper.anti_emulation native_cfg.anti_tamper.nanomites native_cfg.anti_tamper.direct_syscalls;
+      if native_cfg.eh_shadowing.enabled then
+        Logger.infof ~section:"PACKAGER" "  ├─ [Tech-2601] EH Shadowing: ABI shadow frame active (%d bytes)" native_cfg.eh_shadowing.shadow_alloc_size;
+      if native_cfg.anti_vpc.enabled then
+        Logger.infof ~section:"PACKAGER" "  ├─ [Tech-2603] Anti-VPC Tracking: non-linear dispatch active";
+      if native_cfg.memory_chaffing.enabled then
+        Logger.infof ~section:"PACKAGER" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d)" native_cfg.memory_chaffing.pool_size;
       let ir : Vm_ir.Ir.func = transform_func ~rng raw_ir in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
       Logger.infof ~section:"PACKAGER" "  └─ Threaded-VM packaging complete: %d bytecode words" (List.length pkg.bytecode);
@@ -712,6 +735,26 @@ module Stack_vm_packager : Vm_packager = struct
         ~dispatcher_tokens prog
     in
     let bc_words = bytes_to_words enc.bytes in
+    let imm_width_info =
+      if compact_imm then "Hybrid {i32, i64} (Compact Polymorphic)"
+      else "Fixed i64 (Uniform 8-byte)"
+    in
+    Logger.infof ~section:"STACK_VM" "  ├─ [Encoder] Opcode Polymorphism & %s applied" imm_width_info;
+    Logger.infof ~section:"STACK_VM" "  ├─ [Encoder] Field Layout Randomization: %s"
+      (if native_cfg.stack_vm.layout_randomization then "Randomized per-instruction layout" else "Default canonical layout");
+    Logger.infof ~section:"STACK_VM" "  ├─ [Encoder] VSP Stack Value Whitening & Anti-Pushan Rolling Key (seed=0x%016LX)" seed_key;
+    if native_cfg.stack_vm.runtime_hardening then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Runtime] C++ Runtime Hardening: identifier scrambling & comment stripping enabled";
+    if native_cfg.anti_tamper.enabled then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Security] Anti-Tamper & SMC active (timing_probes=%b, scanner=%b, anti_emu=%b, nanomites=%b, syscalls=%b)"
+        native_cfg.anti_tamper.hardware_timing_probes native_cfg.anti_tamper.memory_integrity_scanner native_cfg.anti_tamper.anti_emulation native_cfg.anti_tamper.nanomites native_cfg.anti_tamper.direct_syscalls;
+    if native_cfg.eh_shadowing.enabled then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Tech-2601] EH Shadowing: ABI shadow frame active (%d bytes)" native_cfg.eh_shadowing.shadow_alloc_size;
+    if native_cfg.anti_vpc.enabled then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Tech-2603] Anti-VPC Tracking: affine non-linear dispatch active";
+    if native_cfg.memory_chaffing.enabled then
+      Logger.infof ~section:"STACK_VM" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d, ratio=%.1f)"
+        native_cfg.memory_chaffing.pool_size native_cfg.memory_chaffing.chaff_ratio;
 
     let is_internal_sym name =
       (match constants with
