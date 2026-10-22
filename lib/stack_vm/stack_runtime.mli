@@ -15,6 +15,7 @@ type runtime_config = {
       the bytecode then decrypts into garbage.  Patching the probe out
       breaks the decryption as well. *)
   enable_hw_binding : bool;
+  enable_address_bound : bool;
 }
 
 val default_config : target_arch -> runtime_config

@@ -859,7 +859,16 @@ module Stack_vm_packager : Vm_packager = struct
       List.map sanitize_sym external_symbols
     in
 
-    let runtime_cfg = Stack_vm.Stack_runtime.default_config Stack_vm.Stack_runtime.AArch64 in
+    let enable_address_bound = Protection_config.address_bound_enabled (Some native_cfg) in
+    let target_arch =
+      match native_cfg.arch with
+      | `RISCV -> Stack_vm.Stack_runtime.RV64
+      | _ -> Stack_vm.Stack_runtime.AArch64
+    in
+    let runtime_cfg = {
+      (Stack_vm.Stack_runtime.default_config target_arch) with
+      enable_address_bound;
+    } in
     let obfuscate_runtime = native_cfg.stack_vm.runtime_hardening in
     let cpp_runtime_source =
       Stack_vm.Stack_runtime.generate_c_runtime
@@ -897,18 +906,7 @@ module Stack_vm_packager : Vm_packager = struct
         ~spaghetti_info ~ghost_info ~feedback_info ~mba_info ~cff_info
         ~real_ops ~real_blocks prog enc
     in
-    let rebind_address =
-      Some (fun d_hex ->
-        let d = Stack_vm.Stack_encoder.parse_u64_hex d_hex in
-        let enc_rebound = Stack_vm.Stack_encoder.apply_addr_mask enc d in
-        Stack_vm.Stack_runtime.generate_c_runtime
-          ~external_symbols:sanitized_external_symbols
-          ?constants:sanitized_constants
-          ~obfuscate_runtime
-          ~enc:enc_rebound
-          runtime_cfg
-          prog)
-    in
+    let rebind_address = None in
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "Stack-VM packaging complete: %d words (%d bytes)"
       (List.length bc_words) (Bytes.length enc.bytes);
     {

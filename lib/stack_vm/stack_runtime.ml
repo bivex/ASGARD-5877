@@ -1,4 +1,5 @@
 open Stack_ir
+open Random_visa_constants.Magic_numbers
 
 type target_arch = X86_64 | AArch64 | RV64
 
@@ -9,14 +10,8 @@ type runtime_config = {
   crypt_reg : string;   (* VKEY *)
   disp_reg : string;    (* VDISP *)
   ctx_reg : string;     (* VCTX *)
-  (* Bind the decryption key to the machine: the emulation differential
-     (CPUID/timer consistency) is mixed into the rolling key.  On real
-     hardware the penalty is zero and the decryption is unaffected; in a
-     slow emulator the key becomes wrong and the bytecode decrypts into
-     garbage, so the protected program fails closed.  Patching the probe
-     out therefore also breaks the decryption - the check cannot simply
-     be removed. *)
   enable_hw_binding : bool;
+  enable_address_bound : bool;
 }
 
 let default_config = function
@@ -28,6 +23,7 @@ let default_config = function
       disp_reg = "r13";
       ctx_reg = "r14";
       enable_hw_binding = true;
+      enable_address_bound = false;
     }
   | AArch64 -> {
       arch = AArch64;
@@ -37,6 +33,7 @@ let default_config = function
       disp_reg = "x22";
       ctx_reg = "x23";
       enable_hw_binding = true;
+      enable_address_bound = false;
     }
   | RV64 -> {
       arch = RV64;
@@ -46,6 +43,7 @@ let default_config = function
       disp_reg = "s4";
       ctx_reg = "s5";
       enable_hw_binding = true;
+      enable_address_bound = false;
     }
 
 let emit_entry_stub cfg total_slots =
@@ -1002,6 +1000,10 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
            raw
              "vm.vkey ^= asgard_anti_emulation::evaluate_emulation_differential();"
          else raw "");
+        (if cfg.enable_address_bound then
+           raw
+             "vm.vkey ^= asgard_stack_vm::verify_handler_integrity();"
+         else raw "");
         raw "vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);";
         decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, 1048576)) "host_stack";
         let_u64 "sp_val" (c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L));
@@ -1163,7 +1165,7 @@ static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
           ~set_reg_imm_first:enc.layout.set_reg_imm_first
           ~add_reg_imm_first:enc.layout.add_reg_imm_first ()
       @ [
-        raw_top {|static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {
+        raw_top (Printf.sprintf {|static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {
     &h_push_imm, &h_push_imm32, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
     &h_add, &h_sub, &h_mul, &h_nor, &h_nand,
     &h_shl, &h_shr, &h_sar, &h_div, &h_idiv,
@@ -1173,6 +1175,20 @@ static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
     &h_add_imm, &h_sub_imm, &h_add_ii, &h_sub_ii, &h_set_reg_imm, &h_add_reg_imm,
     &h_key_feedback
 };
+__attribute__((always_inline))
+static inline uint64_t verify_handler_integrity(void) {
+    uint64_t penalty = 0;
+    const uintptr_t base = (uintptr_t)&h_push_imm;
+    const size_t n = sizeof(g_stack_handler_table) / sizeof(g_stack_handler_table[0]);
+    for (size_t i = 0; i < n; ++i) {
+        uintptr_t p = (uintptr_t)g_stack_handler_table[i];
+        uintptr_t diff = (p > base) ? (p - base) : (base - p);
+        if (__builtin_expect(p == 0 || diff > 0x400000, 0)) {
+            penalty ^= (uint64_t)(p ^ UINT64_C(0x%016LX));
+        }
+    }
+    return penalty;
+}
 __attribute__((noinline))
 static uint64_t derive_addr_key(void) {
     const size_t n = sizeof(g_stack_handler_table) / sizeof(g_stack_handler_table[0]);
@@ -1187,7 +1203,7 @@ static uint64_t derive_addr_key(void) {
         acc ^= d + UINT64_C(0x165667B19E3779F9) + (acc << 6) + (acc >> 2);
     }
     return rotl64(acc, 31) ^ UINT64_C(0xA5A5A5A5A5A5A5A5);
-}|};
+}|} salt_deadbeef_5877cafe);
         macro_def ~value:(var (Printf.sprintf "UINT64_C(0x%016LX)" enc.payload_tag)) "ASG_PAYLOAD_TAG";
         raw_top {|static inline uint64_t asg_siphash12(uint64_t k0, uint64_t k1, uint64_t m) {
     uint64_t v0 = k0 ^ UINT64_C(0x736F6D6570736575);

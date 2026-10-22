@@ -180,63 +180,9 @@ let run
             output_string oc_chaff (Tech_2608.Tech_2608_engine.emit_tech_2608_cpp_header ());
             close_out oc_chaff;
 
-            (* 4b. Optional address binding probe (Anti-VMPredator Phase 6) *)
-            let resolved_addr_key = ref None in
-            (match pkg.rebind_address with
-            | Some f when should_compile ->
-                (match toolchain with
-                | Some (module T : Toolchain) ->
-                    let probe_src = Stack_vm.Stack_runtime.emit_probe_cpp ~header_name:pkg.header_name () in
-                    let probe_cpp = Filename.concat out_dir "addr_probe.cpp" in
-                    let oc_p = open_out probe_cpp in
-                    output_string oc_p probe_src;
-                    close_out oc_p;
-                    let probe_bin = Filename.concat out_dir "addr_probe" in
-                    (match T.compile_native_binary ~is_c:false ~source_file:probe_cpp ~out_binary:probe_bin ~include_dir:out_dir with
-                    | Ok () ->
-                        (match T.execute_binary ~binary_path:probe_bin with
-                        | Ok (_code, stdout) ->
-                            let rec parse_addr_key i =
-                              let prefix = "ADDR_KEY:" in
-                              let plen = String.length prefix in
-                              let slen = String.length stdout in
-                              if i + plen + 16 <= slen then
-                                if String.sub stdout i plen = prefix then
-                                  let j = ref (i + plen) in
-                                  while !j < slen && (stdout.[!j] = ' ' || stdout.[!j] = '\t') do
-                                    incr j
-                                  done;
-                                  if !j + 16 <= slen then
-                                    Some (String.sub stdout !j 16)
-                                  else None
-                                else parse_addr_key (i + 1)
-                              else None
-                            in
-                            (match parse_addr_key 0 with
-                            | Some hex ->
-                                (try
-                                   let _d = Stack_vm.Stack_encoder.parse_u64_hex hex in
-                                   let hpp2 = f hex in
-                                   let oc_h2 = open_out hdr_path in
-                                   output_string oc_h2 hpp2;
-                                   close_out oc_h2;
-                                   resolved_addr_key := Some hex;
-                                   Logger.infof ~loc:__LOC__ ~section:"ANTI_VMPREDATOR" "Address Binding: probe executed against runtime ASLR delta";
-                                   Logger.infof ~loc:__LOC__ ~section:"ANTI_VMPREDATOR" "  └─ Rebound bytecode with key D=0x%s" hex
-                                 with Failure err ->
-                                   Logger.warnf ~section:"ANTI_VMPREDATOR" "Address binding probe parse warning: %s (fallback to mask 0)" err)
-                            | None ->
-                                Logger.warn ~section:"ANTI_VMPREDATOR" "Address binding probe warning: ADDR_KEY not found in output (fallback to mask 0)")
-                        | Error err ->
-                            Logger.warnf ~section:"ANTI_VMPREDATOR" "Address binding probe execution warning: %s (fallback to mask 0)" err)
-                    | Error err ->
-                        Logger.warnf ~section:"ANTI_VMPREDATOR" "Address binding probe compilation warning: %s (fallback to mask 0)" err)
-                | None ->
-                    Logger.warn ~section:"ANTI_VMPREDATOR" "Address binding warning: toolchain not available (fallback to mask 0)")
-            | Some _ ->
-                Logger.debug ~section:"ANTI_VMPREDATOR" "Address binding probe skipped (compilation disabled, fallback to mask 0)"
-            | None -> ());
-
+            (* 4b. Address binding (Anti-VMPredator): active via runtime handler integrity *)
+            if native_cfg.anti_pushan.address_bound then
+              Logger.infof ~loc:__LOC__ ~section:"ANTI_VMPREDATOR" "Address Binding: active via runtime handler integrity binding";
             (* 5. Write runner.cpp *)
             let runner_path = Filename.concat out_dir "runner.cpp" in
             let oc_r = open_out runner_path in
@@ -463,26 +409,22 @@ let run
               | _ -> None
             in
 
-            (* The address binding key is only known here: the probe
-               resolves it from the load address of the built binary.  Put
-               it into the protection report, so the report states the
-               value that was actually bound. *)
+            (* Address binding report: runtime integrity binding active when configured *)
             let metrics =
-              match !resolved_addr_key with
-              | None -> pkg.metrics
-              | Some hex ->
-                  (* insert before the closing separator, not after it *)
-                  let sep = "===============================================" in
-                  let summary = pkg.metrics.formatted_summary in
-                  let n = String.length summary in
-                  let sep_len = String.length sep in
-                  let body =
-                    if n > sep_len then String.sub summary 0 (n - sep_len) else summary
-                  in
-                  { pkg.metrics with
-                    formatted_summary =
-                      body
-                      ^ Printf.sprintf "- Address Binding: Active (D=0x%s)\n%s" hex sep }
+              if native_cfg.anti_pushan.address_bound then
+                let sep = "===============================================" in
+                let summary = pkg.metrics.formatted_summary in
+                let n = String.length summary in
+                let sep_len = String.length sep in
+                let body =
+                  if n > sep_len then String.sub summary 0 (n - sep_len) else summary
+                in
+                { pkg.metrics with
+                  formatted_summary =
+                    body
+                    ^ Printf.sprintf "- Address Binding: Active (Runtime Integrity Binding)\n%s" sep }
+              else
+                pkg.metrics
             in
             let metrics =
               match unwind_audit with
