@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7c. PROTECT-RISCV COMMAND (Automated RISC-V RV64GC Native Lifter & VM Pipeline via Hexagonal Architecture) *)
-let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile_and_run debug_symbols =
+let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile debug_symbols =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
     else if engine = "stack" then "stack"
@@ -62,7 +62,7 @@ let run_protect_riscv input_file out_dir seed config_file preset enable_cff enab
       ~config:effective_cfg
       ~input_file
       ~out_dir
-      ~compile_and_run
+      ~compile
       ~debug_symbols
       ()
   with
@@ -116,7 +116,7 @@ let protect_riscv_cmd =
     Arg.(value & flag & info [ "jit" ] ~doc)
   in
   let compile =
-    let doc = "Compile native C++ runner and execute protected RISC-V binary" in
+    let doc = "Compile native protected binary with Clang" in
     Arg.(value & opt bool false & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
   let debug_symbols =

@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline via Hexagonal Architecture) *)
-let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit enable_ephemeral_jit compile_and_run debug_symbols dump_bytecode watermark =
+let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit enable_ephemeral_jit compile debug_symbols dump_bytecode watermark =
   if dump_bytecode then Unix.putenv "ASGARD_DUMP_BYTECODE" "1";
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
@@ -77,7 +77,7 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
       ~config:effective_cfg
       ~input_file
       ~out_dir
-      ~compile_and_run
+      ~compile
       ~debug_symbols
       ()
   with
@@ -135,7 +135,7 @@ let protect_arm64_cmd =
     Arg.(value & flag & info [ "ephemeral-jit" ] ~doc)
   in
   let compile =
-    let doc = "Compile native C++ runner and execute protected ARM64 binary" in
+    let doc = "Compile native protected binary with Clang" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
   let debug_symbols =

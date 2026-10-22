@@ -11,6 +11,7 @@ val run :
   config:protection_config ->
   input_file:string ->
   out_dir:string ->
+  ?compile:bool ->
   ?compile_and_run:bool ->
   ?debug_symbols:bool ->
   unit ->

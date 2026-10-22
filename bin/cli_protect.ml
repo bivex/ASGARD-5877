@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7. PROTECT COMMAND (Automated x86_64 & C/C++ VM-Protector Pipeline via Hexagonal Architecture) *)
-let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile_and_run debug_symbols dump_bytecode watermark =
+let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile debug_symbols dump_bytecode watermark =
   if dump_bytecode then Unix.putenv "ASGARD_DUMP_BYTECODE" "1";
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
@@ -65,7 +65,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
       ~config:effective_cfg
       ~input_file
       ~out_dir
-      ~compile_and_run
+      ~compile
       ~debug_symbols
       ()
   with
@@ -123,7 +123,7 @@ let protect_cmd =
     Arg.(value & flag & info [ "jit" ] ~doc)
   in
   let compile =
-    let doc = "Compile native C++ runner and execute protected binary" in
+    let doc = "Compile native protected binary with Clang" in
     Arg.(value & opt bool true & info [ "compile" ] ~docv:"BOOL" ~doc)
   in
   let debug_symbols =

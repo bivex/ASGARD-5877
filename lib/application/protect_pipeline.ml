@@ -12,9 +12,12 @@ let run
     ~(config : protection_config)
     ~(input_file : string)
     ~(out_dir : string)
+    ?(compile = false)
     ?(compile_and_run = false)
     ?(debug_symbols = false)
     () : (protect_result, error) result =
+  let should_compile = compile || compile_and_run in
+  let should_run = compile_and_run in
   let () =
     if debug_symbols then Unix.putenv "ASGARD_DEBUG_SYMBOLS" "1"
   in
@@ -167,7 +170,7 @@ let run
             (* 4b. Optional address binding probe (Anti-VMPredator Phase 6) *)
             let resolved_addr_key = ref None in
             (match pkg.rebind_address with
-            | Some f when compile_and_run ->
+            | Some f when should_compile ->
                 (match toolchain with
                 | Some (module T : Toolchain) ->
                     let probe_src = Stack_vm.Stack_runtime.emit_probe_cpp ~header_name:pkg.header_name () in
@@ -350,12 +353,14 @@ let run
               | None -> ()
             end;
 
-            (* 8. Optional native binary build and test execution *)
+            (* 7. Native compilation and optional execution *)
             Logger.stepf ~section:"TOOLCHAIN" ~step:7 ~total:8 "%s"
-              (if compile_and_run then "Compiling and launching protected native binary..."
-               else "Native compilation skipped (compile_and_run=false)");
+              (if should_compile then
+                 (if should_run then "Compiling and launching protected native binary..."
+                  else "Compiling protected native binary...")
+               else "Native compilation skipped (compile=false)");
             let bin_artifact, exec_result =
-              if compile_and_run then
+              if should_compile then
                 match toolchain with
                 | Some (module T : Toolchain) ->
                     if is_swift_src then
@@ -364,16 +369,19 @@ let run
                           let bin_path = Filename.concat out_dir "protected_app" in
                           (match T.compile_swift_binary ~asm_source:s_asm ~dispatch_source:d_cpp ~out_binary:bin_path ~include_dir:out_dir with
                           | Ok () ->
+                              Logger.infof ~section:"TOOLCHAIN" "Native Swift binary compiled: %s" bin_path;
                               let exec_res =
-                                match T.execute_binary ~binary_path:bin_path with
-                                | Ok (code, out) ->
-                                    Logger.infof ~section:"TOOLCHAIN" "Native Swift binary '%s' executed (exit code %d)" bin_path code;
-                                    if String.trim out <> "" then
-                                      Logger.debugf ~section:"TOOLCHAIN" "Binary execution output:\n%s" (String.trim out);
-                                    Some (code, out)
-                                | Error err ->
-                                    Logger.warnf ~section:"TOOLCHAIN" "Swift execution warning: %s" err;
-                                    None
+                                if should_run then
+                                  match T.execute_binary ~binary_path:bin_path with
+                                  | Ok (code, out) ->
+                                      Logger.infof ~section:"TOOLCHAIN" "Native Swift binary '%s' executed (exit code %d)" bin_path code;
+                                      if String.trim out <> "" then
+                                        Logger.debugf ~section:"TOOLCHAIN" "Binary execution output:\n%s" (String.trim out);
+                                      Some (code, out)
+                                  | Error err ->
+                                      Logger.warnf ~section:"TOOLCHAIN" "Swift execution warning: %s" err;
+                                      None
+                                else None
                               in
                               (Some bin_path, exec_res)
                           | Error err ->
@@ -391,16 +399,19 @@ let run
                       let is_c_target = is_c_src && not (String.ends_with ~suffix:".cpp" comp_src) in
                       (match T.compile_native_binary ~is_c:is_c_target ~source_file:comp_src ~out_binary:bin_path ~include_dir:out_dir with
                       | Ok () ->
+                          Logger.infof ~section:"TOOLCHAIN" "Native binary compiled: %s" bin_path;
                           let exec_res =
-                            match T.execute_binary ~binary_path:bin_path with
-                            | Ok (code, out) ->
-                                Logger.infof ~section:"TOOLCHAIN" "Native binary '%s' executed (exit code %d)" bin_path code;
-                                if String.trim out <> "" then
-                                  Logger.debugf ~section:"TOOLCHAIN" "Binary execution output:\n%s" (String.trim out);
-                                Some (code, out)
-                            | Error err ->
-                                Logger.warnf ~section:"TOOLCHAIN" "Execution warning: %s" err;
-                                None
+                            if should_run then
+                              match T.execute_binary ~binary_path:bin_path with
+                              | Ok (code, out) ->
+                                  Logger.infof ~section:"TOOLCHAIN" "Native binary '%s' executed (exit code %d)" bin_path code;
+                                  if String.trim out <> "" then
+                                    Logger.debugf ~section:"TOOLCHAIN" "Binary execution output:\n%s" (String.trim out);
+                                  Some (code, out)
+                              | Error err ->
+                                  Logger.warnf ~section:"TOOLCHAIN" "Execution warning: %s" err;
+                                  None
+                            else None
                           in
                           (Some bin_path, exec_res)
                       | Error err ->
