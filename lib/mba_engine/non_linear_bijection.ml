@@ -63,5 +63,17 @@ let synth_xorshift_involution ~rng ~dst =
   let inv_ir = emit_inverse_ir ~params ~dst ~src:dst in
   f_ir @ inv_ir
 
+let synth_nested_involution ~rng ~dst =
+  (* 2-stage nested non-linear involution: f1_fwd @ f2_fwd @ f2_inv @ f1_inv.
+     Separates the outer f1 forward and inverse with an independent inner
+     non-linear transformation, defeating windowed peephole cancelers. *)
+  let p1 = random_params ~shift:33 rng in
+  let p2 = random_params ~shift:33 rng in
+  let f1 = emit_forward_ir ~params:p1 ~dst ~src:dst in
+  let f2 = emit_forward_ir ~params:p2 ~dst ~src:dst in
+  let inv2 = emit_inverse_ir ~params:p2 ~dst ~src:dst in
+  let inv1 = emit_inverse_ir ~params:p1 ~dst ~src:dst in
+  f1 @ f2 @ inv2 @ inv1
+
 let wrap_non_algebraic_mba ~rng ~dst body_instrs =
-  body_instrs @ (synth_xorshift_involution ~rng ~dst)
+  body_instrs @ (synth_nested_involution ~rng ~dst)

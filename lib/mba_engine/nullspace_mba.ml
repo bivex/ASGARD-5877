@@ -167,7 +167,18 @@ let obfuscate_alu ~rng ~dst ~src1 ~src2 op =
         ]
       end
     ) terms;
+    (* Non-linear modulation: multiply the zero sum in scratch1 by a strictly odd
+       quadratic polynomial ((x ^ y)^2 | 1). Since scratch1 == 0 mod 2^64,
+       0 * M(x, y) = 0 identically for all 64-bit inputs.
+       This creates cubic cross-terms and full 64-bit carry propagation, defeating
+       1-bit linear matrix solvers (SiMBA / CoBRA / GAMBA). *)
+    let nl_modulator = [
+      Ir.Alu { op = Xor; dst = scratch0; src1 = Reg x_reg; src2 = Reg y_reg; set_flags = false };
+      Ir.Alu { op = Mul; dst = scratch0; src1 = Reg scratch0; src2 = Reg scratch0; set_flags = false };
+      Ir.Alu { op = Or;  dst = scratch0; src1 = Reg scratch0; src2 = Imm 1L; set_flags = false };
+      Ir.Alu { op = Mul; dst = scratch1; src1 = Reg scratch1; src2 = Reg scratch0; set_flags = false };
+    ] in
     let add_to_dst = [
       Ir.Alu { op = Add; dst; src1 = Reg dst; src2 = Reg scratch1; set_flags = false }
     ] in
-    setup1 @ setup2 @ [ base_instr ] @ !noise_instrs @ add_to_dst
+    setup1 @ setup2 @ [ base_instr ] @ !noise_instrs @ nl_modulator @ add_to_dst
