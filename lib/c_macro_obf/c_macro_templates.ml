@@ -113,7 +113,7 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
     comment_top "/* 8 distinct invariant generators preventing AST template memorization      */";
     comment_top "/* ------------------------------------------------------------------------- */";
     raw_top ("#define " ^ p ^ "OPAQUE_P1(x) (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL)) % 2ULL) == 0ULL)");
-    raw_top ("#define " ^ p ^ "OPAQUE_P2(x) (((((uint64_t)(x)) * (((uint64_t)(x)) * ((uint64_t)(x)) - 1ULL)) % 6ULL) == 0ULL)");
+    raw_top ("#define " ^ p ^ "OPAQUE_P2(x) (((((uint64_t)(x)) * (((uint64_t)(x)) + 1ULL) * (((uint64_t)(x)) + 2ULL) * (((uint64_t)(x)) + 3ULL)) % 8ULL) == 0ULL)");
     raw_top ("#define " ^ p ^ "OPAQUE_P3(x) (((((((uint64_t)(x)) | 1ULL) * (((uint64_t)(x)) | 1ULL)) - 1ULL) % 8ULL) == 0ULL)");
     raw_top ("#define " ^ p ^ "OPAQUE_P4(x, y) (((((uint64_t)(x)) ^ ((uint64_t)(y))) + 2ULL * (((uint64_t)(x)) & ((uint64_t)(y)))) == (((uint64_t)(x)) + ((uint64_t)(y))))");
     raw_top ("#define " ^ p ^ "OPAQUE_P5(x) (((((uint64_t)(x)) * ((uint64_t)(x))) % 4ULL) < 2ULL)");

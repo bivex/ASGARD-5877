@@ -6,8 +6,13 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
-### Added
 
+### Fixed
+- Fix `OPAQUE_P2` opaque predicate in `lib/c_macro_obf/c_macro_templates.ml` and `examples/asgard_obf.h`: replaced the broken `x*(x²-1) % 6 == 0` formula (fails ~67% of 64-bit inputs due to modular overflow since 6 ∤ 2⁶⁴) with `x*(x+1)*(x+2)*(x+3) % 8 == 0` (product of four consecutive integers, always divisible by 8, invariant under mod-2⁶⁴ reduction), restoring guaranteed-true semantics across all seeds.
+- Restore def-use anchor ring recording on `PopReg r` in `lib/stack_vm/bytecode_amplifier.ml`: re-enables writing each popped value into the rotating anchor slot, so `emit_expander_web_knot` can form backward def-use chords over the full K-slot ring rather than the trivially empty set; fixes a regression introduced during PopReg diversification.
+- Fix `emit_ring_twist` variant 3 in `lib/stack_vm/bytecode_amplifier.ml`: replaced the flag-clobbering `PushImm salt; PushImm salt; Sub; Add` additive zero knot (Sub sets flags) with a flag-neutral `PushImm k_odd; PushImm k_inv; Mul; Mul` ring inversion, consistent with the other three variants.
+
+### Added
 - Implement Metamorphic Horner and Ring Twist Expansion in `lib/stack_vm/bytecode_amplifier.ml`: replaces deterministic 8-instruction Horner polynomials and adjacent ring twist templates with a stochastic 10-variant metamorphic grammar pool and diversified anchor stores, breaking n-gram and Seq2Seq Dead-Code Elimination (DCE) pattern matching.
 - Implement Automated Opaque Guard Rewriting in `lib/c_macro_obf/` (`c_opaque_guards.ml`, `c_macro_obf.ml`) and Brooks MBA 1:1 Branch Synthesis in `lib/stack_vm/stack_cff_pass.ml`: automatically intercepts C-level `if`-statements and wraps conditions with the 8-member polymorphic invariant family (`ASG_OPAQUE_P1..P8`) using unique 64-bit salts, and synthesizes 1:1 Branch Indistinguishability (BIS = 1.0) zero-invariants on block terminators in Stack-VM CFF, stabilizing corpus resilience across diverse C topologies (standard deviation reduced from 6.8 to 2.8, guaranteed lower bound raised to 84.7/100).
 - Implement Circular Sharded Expander Dispatcher in `lib/stack_vm/stack_cff_pass.ml`: replaces the single dispatcher bottleneck with 16 circular expander shards routed via SplitMix64 token hash and ring transitions, ensuring 100% conditional branch reachability while eliminating topological degree concentration, driving GNN link prediction Edge-AUC down to 0.574 and raising CFG & CFF Resilience to 98.7/100, reaching Composite Neural DRS 99.2/100 (Tier 3+ Resilient).

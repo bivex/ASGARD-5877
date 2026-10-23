@@ -154,10 +154,10 @@ let emit_ring_twist (rng : Random.State.t) : stack_op list =
       let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
       [ PushImm k_inv; PushImm k_odd; Mul; Mul ]
   | _ ->
-      (* Additive zero knot with random mask *)
-      let salt = rand_u64 rng in
-      [ PushImm salt; PushImm salt; Sub; Add ]
-
+      (* Inverted evaluation order with split factors: Mul does not touch flags *)
+      let k_odd = Int64.logor (rand_u64 rng) 1L in
+      let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
+      [ PushImm k_odd; PushImm k_inv; Mul; Mul ]
 (* ------------------------------------------------------------------ *)
 (* Minterm basis (bridge to Nullspace_mba): NOR/NAND representations
    of disjoint minterms over a pair of registers. Each push leaves
@@ -354,17 +354,7 @@ let amplify_block
       | PopReg r ->
           let anchor = anchors.(!anchor_j mod k_anchors) in
           incr anchor_j;
-          let variant = Random.State.int rng 3 in
-          let ops =
-            match variant with
-            | 0 ->
-                [ PopReg r; PushReg r; PopReg anchor ]
-            | 1 ->
-                [ PopReg r; PushReg r; PushImm 0L; Add; PopReg anchor ]
-            | _ ->
-                [ PopReg r; PushReg r; PushImm 1L; Mul; PopReg anchor ]
-          in
-          ops
+          [ PopReg r; PushReg r; PopReg anchor ]
       | other ->
           [other]
     ) (List.mapi (fun i op -> (i, op)) block.ops)
