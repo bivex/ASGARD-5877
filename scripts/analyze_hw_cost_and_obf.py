@@ -200,7 +200,6 @@ class ObfuscationTradeoffModel:
 
     PROFILES = [
         ObfProfile("BASELINE", 0, 0, 0, 1, "Исходная линейная операция ALU"),
-        ObfProfile("LIGHT", 1, 0, 0, 4, "Линейные тождества MBA 1-го порядка"),
         ObfProfile("BALANCED", 2, 30, 2, 20, "Нелинейный MBA (d=2) + E-Graph 30 + 2 шума Z_(2^64)"),
         ObfProfile("HEAVY", 3, 80, 4, 60, "MBA 3-го порядка + E-Graph 80 + 4 шума Z_(2^64)"),
         ObfProfile(
