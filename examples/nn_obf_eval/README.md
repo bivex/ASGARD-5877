@@ -108,6 +108,20 @@ The suite trains three specialized deep-learning models targeting the core prote
 - **Resilience Formula:**
   $$\text{Pairwise-AUC}_{95\%} = \min(1.0, \text{AUC} + 1.96 \cdot \text{SE})$$
   $$\text{DRS}_{\text{spaghetti}} = \max\left(0.0, 100.0 \times \left(1.0 - 2.0 \cdot \max(0.0, \text{Pairwise-AUC}_{95\%} - 0.5)\right)^2\right)$$
+
+### 8. Branchless VIP Idiom & Signature Collision Auditor (`branchless_vip_eval.py`)
+- **Attack Vector:** Static Bytecode / AST Idiom Scanning (simulating reverse engineers using YARA rules, IDA signature scanners, or Ghidra decompilation pattern matchers to find unbroken constant-time VIP selection sequences like Warren's two's complement sign-bit trick).
+- **Metamorphic Formulation Repertoire:**
+  - **Variant 0:** $1 - ((d \mid -d) \gg 63)$ (Classic two's complement sign-bit)
+  - **Variant 1:** $((\sim d) \ \& \ (d - 1)) \gg 63$ (Warren subtraction borrow from zero)
+  - **Variant 2:** $1 - (((d \oplus -d) + (d \ \& \ -d)) \gg 63)$ (Mixed Boolean-Arithmetic OR decomposition)
+  - **Variant 3:** $(\sim(d \mid -d) \gg 63) \ \& \ 1$ (De Morgan bitwise complement sign extraction)
+  - **Variant 4:** $((d \mid -d) \gg 63) \oplus 1$ (Boolean XOR bit flipping)
+- **Metrics:**
+  - **Signature Collision Rate:** $\text{Collision Rate} = \frac{\max_i \text{Count}(\text{variant}_i)}{\text{Total Sites}}$.
+  - **Variant Shannon Entropy:** $H(\text{variants}) = -\sum_{i=1}^5 p_i \log_2 p_i$, with normalized entropy $\eta = \frac{H}{\log_2(5)} \in [0.0, 1.0]$.
+  - **Resilience Formula:**
+    $$\text{DRS}_{\text{branchless}} = \max\left(0.0, 100.0 \times \left(1.0 - \frac{\text{Collision Rate} - 0.20}{0.80}\right) \times \eta\right)$$
 ---
 
 ## Quick Start

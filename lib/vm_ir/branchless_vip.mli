@@ -10,9 +10,14 @@ type branch_cond =
   | CondSlt  (** x < y signed (SF != OF) *)
   | CondSge  (** x >= y signed (SF == OF) *)
 
-(** Arithmetic indicator is_zero(d) \in {0, 1} without branching:
-    is_zero(d) = 1 - ((d | -d) lsr 63) *)
-val eval_is_zero_branchless : int64 -> int64
+(** Arithmetic indicator is_zero(d) \in {0, 1} without branching.
+    Supports 5 algebraically equivalent metamorphic formulations to defeat static n-gram scanners:
+      • v0: 1 - ((d | -d) lsr 63)   (two's complement sign-bit)
+      • v1: ((~d) & (d - 1)) lsr 63 (Warren borrow from zero)
+      • v2: 1 - (((d ^ -d) + (d & -d)) lsr 63) (MBA OR decomposition)
+      • v3: (~(d | -d) lsr 63) & 1  (De Morgan sign extraction)
+      • v4: ((d | -d) lsr 63) ^ 1   (Boolean XOR inversion) *)
+val eval_is_zero_branchless : ?variant:int -> int64 -> int64
 
 (** Evaluation of the boolean jump condition (returns 1L if the condition is true, 0L if false)
     exclusively via bit shifts and arithmetic in the ring Z_{2^64} *)
@@ -33,7 +38,7 @@ val compute_vip_and_key_branchless :
   int64 * int64
 
 (** Construction of a typed C++20 AST for the Branchless VIP dispatcher *)
-val build_branchless_vip_ast : unit -> Cpp_codegen.Cpp_ast.top_decl list
+val build_branchless_vip_ast : ?default_variant:int -> unit -> Cpp_codegen.Cpp_ast.top_decl list
 
 (** Generation of a C++20 header for the Branchless VIP dispatcher *)
 val emit_branchless_vip_cpp_header : unit -> string

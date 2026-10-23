@@ -24,10 +24,10 @@ from predicate_realism_eval import audit_opaque_predicates
 from amplifier_dce_eval import audit_amplifier_dce
 from ghost_padding_eval import audit_ghost_padding
 from spaghetti_reassembly_eval import audit_spaghetti_reassembly
+from branchless_vip_eval import audit_branchless_vip
 
 def run_pipeline_dump(out_dir="/tmp/pipeline_dump"):
     """Builds and runs dump_pipeline.exe to generate fresh JSON phase dumps."""
-    os.makedirs(out_dir, exist_ok=True)
     bin_path = "_build/default/examples/pipeline_dump/dump_pipeline.exe"
     if not os.path.exists(bin_path):
         subprocess.run(["dune", "build", "examples/pipeline_dump/dump_pipeline.exe"], check=True)
@@ -168,16 +168,24 @@ def main():
     print(f"  Red Herring Correlation:        r(is_split, position)={spagh_res['r_pos']:+.3f}, r(is_split, length)={spagh_res['r_len']:+.3f}")
     print(f"  Siamese Reassembly Pairwise-AUC:{spagh_res['auc']:>6.3f}  (Accuracy: {spagh_res['acc']*100:.1f}%)")
     print(f"  Spaghetti Reassembly DRS:       {spagh_res['drs_spaghetti']:.1f} / 100.0")
+    # 8. Branchless VIP Idiom Collision & Metamorphism Audit
+    print("\n[Phase 8] Auditing Constant-Time Branchless VIP Idioms against Pattern Matchers...")
+    vip_res = audit_branchless_vip(target_path=dump_dir)
+    print(f"  Branchless VIP Sites:           {vip_res['total_sites']}")
+    print(f"  Signature Entropy:              H={vip_res['entropy']:.3f} / {vip_res['max_entropy']:.3f} bits (Normalized: {vip_res['norm_entropy']:.3f})")
+    print(f"  Max Idiom Collision Rate:       {vip_res['collision_rate']*100:.1f}%")
+    print(f"  Branchless VIP DRS:             {vip_res['drs_branchless']:.1f} / 100.0")
 
-    # 8. Composite Assessment Score
+    # 9. Composite Assessment Score
     composite_drs = (
         (0.20 * final_cfg_drs)
-        + (0.20 * final_mba_drs)
+        + (0.15 * final_mba_drs)
         + (0.15 * combined_trace_drs)
         + (0.15 * amp_res["drs_amp"])
         + (0.10 * op_res["drs_opaque"])
         + (0.10 * ghost_res["drs_ghost"])
         + (0.10 * spagh_res["drs_spaghetti"])
+        + (0.05 * vip_res["drs_branchless"])
     )
 
     print("\n" + "=" * 80)
@@ -190,6 +198,7 @@ def main():
     print(f"  [5] Opaque Predicate Realism:               {op_res['drs_opaque']:>5.1f} / 100.0")
     print(f"  [6] Ghost Stack Padding Resilience:         {ghost_res['drs_ghost']:>5.1f} / 100.0")
     print(f"  [7] Spaghetti Fragment Reassembly:          {spagh_res['drs_spaghetti']:>5.1f} / 100.0")
+    print(f"  [8] Branchless VIP Metamorphism:            {vip_res['drs_branchless']:>5.1f} / 100.0")
     print("  " + "-" * 76)
     def tier_label(drs):
         if drs >= 90.0: return "TIER 3+"
@@ -197,6 +206,5 @@ def main():
         else: return "TIER 1"
     print(f"  ===> COMPOSITE NEURAL DRS SCORE:            {composite_drs:>5.1f} / 100.0  [ {tier_label(composite_drs)} ]")
     print("=" * 80 + "\n")
-
 if __name__ == "__main__":
     main()
