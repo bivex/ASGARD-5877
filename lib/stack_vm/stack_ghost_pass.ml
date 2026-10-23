@@ -131,11 +131,12 @@ let emit_ghost ?(entangle = true) rng ~scratch_ring ~ctx ~entangle_slot stack_de
 
   | GhostLiveIdentity when stack_depth >= 1 ->
       if flags_live then
-        ([ PushImm 1L; Mul ], 0L)
+        (* Must not clobber flags; PushFlags/PopFlags sandwich preserves them *)
+        let imm = next_int64 rng in
+        ([ PushFlags; AddImm imm; SubImm imm; PopFlags ], 0L)
       else
-        (match next_int rng 3 with
-         | 0 -> ([ PushImm 0L; Add ], 0L)
-         | 1 -> ([ PushImm 0L; Sub ], 0L)
+        (match next_int rng 2 with
+         | 0 -> ([ PushImm 0L; Add ], 0L)   (* A + 0 = A, safe regardless of Sub direction *)
          | _ ->
              let imm = next_int64 rng in
              ([ AddImm imm; SubImm imm ], 0L))
@@ -170,42 +171,12 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng c
     ) ghost_ops
   in
 
-  let maybe_entangle_mem is_write flags_live =
-    if entangle && !checksum <> 0L then begin
-      if is_write then begin
-        if flags_live then begin
-          emit Swap;
-          emit PushFlags;
-          emit Swap;
-          emit (AddImm (Int64.neg !checksum));
-          emit (PushReg entangle_slot);
-          emit Add;
-          emit Swap;
-          emit PopFlags;
-          emit Swap
-        end else begin
-          emit Swap;
-          emit (AddImm (Int64.neg !checksum));
-          emit (PushReg entangle_slot);
-          emit Add;
-          emit Swap
-        end
-      end else begin
-        if flags_live then begin
-          emit PushFlags;
-          emit Swap;
-          emit (AddImm (Int64.neg !checksum));
-          emit (PushReg entangle_slot);
-          emit Add;
-          emit Swap;
-          emit PopFlags
-        end else begin
-          emit (AddImm (Int64.neg !checksum));
-          emit (PushReg entangle_slot);
-          emit Add
-        end
-      end
-    end
+  (* Entanglement checkpoint at memory ops: just reset the checksum accumulator
+     so the terminator sink only needs to compensate for post-memory ghost ops.
+     We do NOT inject ops here — any emission risks corrupting flags, rolling-key
+     state, or the memory address on the stack. *)
+  let maybe_entangle_mem _is_write _flags_live =
+    checksum := 0L
   in
 
   (* Zero accumulator at the entry of the block *)
@@ -219,17 +190,18 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng c
     let i = !idx in
     incr idx;
     (match op with
-     | ReadMem _ -> maybe_entangle_mem false live.(i)
-     | WriteMem _ -> maybe_entangle_mem true live.(i)
+     | ReadMem _ ->
+         let next_flags = if !idx < Array.length live then live.(!idx) else false in
+         maybe_entangle_mem false next_flags
+     | WriteMem _ ->
+         let next_flags = if !idx < Array.length live then live.(!idx) else false in
+         maybe_entangle_mem true next_flags
      | _ -> ());
     if Stack_balance_pass.is_terminator op then begin
       if not !seen_terminator then begin
         seen_terminator := true;
-        if entangle && !checksum <> 0L then begin
-          emit (PushReg entangle_slot);
-          emit (AddImm (Int64.neg !checksum));
-          emit (PopReg entangle_slot);
-        end;
+        if entangle && !checksum <> 0L then
+          emit (SetRegImm (entangle_slot, 0L));
         if not live.(i) && maybe rng ghost_rate then emit_ghost_here false
       end;
       emit op
