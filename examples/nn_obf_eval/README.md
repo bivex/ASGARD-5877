@@ -66,6 +66,17 @@ The suite trains three specialized deep-learning models targeting the core prote
 - **Resilience Formula:**
   $$\text{DRS}_{\text{opaque}} = \min_{M} \left[ \max\left(0.0, 100.0 \times \left(1.0 - \left(2.0 \cdot \max(0.0, \text{AUC}_{95\%}(M) - 0.5)\right)^2\right)\right) \right]$$
 
+### 5. Bytecode Amplifier & Dead-Code Elimination (DCE) (`amplifier_dce_eval.py`)
+- **Attack Vector:** Intra-block Dead-Code Elimination (DCE) and redundant instruction recovery (simulating automated deobfuscators like de-obfuscating JIT compilers and peephole simplifiers).
+- **Methodology:** Ingests `phase_1-lowered.json` (canonical core blocks) and `phase_2-amplified.json` (amplified blocks), aligning instructions via LCS to extract ground-truth dead-code labels.
+- **Ensemble Models:**
+  - **Opcode-Transformer:** Transformer Encoder sequence tagger predicting per-token redundancy across blocks up to 512 instructions.
+  - **BiLSTM-Tagger:** Bidirectional LSTM with hidden size 48 per direction.
+  - **5-gram Tabular Baseline:** Contextual n-gram logistic regression predicting redundancy from local opcode windows.
+- **Resilience Formula:**
+  $$\text{DCE Recovery Rate} = \text{Recall of identifying amplified dead-code instructions}$$
+  $$\text{DRS}_{\text{amp}} = \max\left(0.0, 100.0 \times \left(1.0 - \max_{M} \text{DCE Recovery Rate}_M\right)\right)$$
+
 ---
 
 ## Quick Start

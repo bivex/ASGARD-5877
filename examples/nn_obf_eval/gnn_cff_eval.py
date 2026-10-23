@@ -482,7 +482,7 @@ if __name__ == "__main__":
     dump_dir = sys.argv[1] if len(sys.argv) > 1 else "/tmp/pipeline_dump"
     print(f"[*] Auditing CFG Obfuscation Phases in '{dump_dir}' using Multi-Model Red-Team Ensemble...")
     print("    Models: GAT (Attention), GCN (Spectral), GraphSAGE (Inductive), Tabular (Pairwise Logistic)")
-    phases = ["1-lowered", "2-amplified", "3-cff", "4-spaghetti", "5-ghost", "7-balance", "7-balance_(final)"]
+    phases = ["1-lowered", "3-cff", "4-spaghetti", "5-ghost", "7-balance", "7-balance_(final)"]
 
     header = f"{'Phase':<16} {'Blocks':<7} {'Edges':<7} {'Hub-F1':<8} {'GAT':<7} {'GCN':<7} {'SAGE':<7} {'Tab':<7} {'Worst-AUC95':<12} {'p-val':<8} {'DRS (0-100)':<12}"
     print(header)

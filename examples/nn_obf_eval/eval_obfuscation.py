@@ -21,6 +21,7 @@ from gnn_cff_eval import parse_cfg_json, audit_cfg_phase
 from mba_deobf_eval import audit_mba_depth
 from trace_lstm_eval import audit_trace_lstm
 from predicate_realism_eval import audit_opaque_predicates
+from amplifier_dce_eval import audit_amplifier_dce
 def run_pipeline_dump(out_dir="/tmp/pipeline_dump"):
     """Builds and runs dump_pipeline.exe to generate fresh JSON phase dumps."""
     os.makedirs(out_dir, exist_ok=True)
@@ -93,7 +94,7 @@ def main():
         if os.path.exists(candidate):
             bytecode_path = candidate
 
-    cfg_phases = ["1-lowered", "2-amplified", "3-cff", "4-spaghetti", "5-ghost", "7-balance", "7-balance_(final)"]
+    cfg_phases = ["1-lowered", "3-cff", "4-spaghetti", "5-ghost", "7-balance", "7-balance_(final)"]
     cfg_results = []
     print(f"  {'Phase':<16} {'Blocks':<8} {'Edges':<8} {'Hub-F1':<10} {'Edge-AUC':<10} {'DRS (0-100)':<12}")
     print("  " + "-" * 66)
@@ -130,20 +131,30 @@ def main():
     print(f"  LSTM Top-1 Next-Byte Accuracy:  {lstm_res['top1_acc']*100:.3f}%  (Baseline = 0.391%, 95% Bound = {lstm_res['top1_upper_95']*100:.3f}%)")
     print(f"  Dynamic Trace & LSTM DRS:       {combined_trace_drs:.1f} / 100.0")
 
-    # 4. Opaque Predicate Realism & AST Classifier
-    print("\n[Phase 4] Auditing Opaque Predicate Realism (BiLSTM + Transformer vs Real Conditions)...")
+    # 4. Bytecode Amplifier & Dead-Code Elimination (DCE)
+    print("\n[Phase 4] Auditing Bytecode Amplifier & Opcode-Level Dead-Code Recovery (Seq2Seq / Transformer)...")
+    amp_res = audit_amplifier_dce(dump_dir=dump_dir, epochs=15)
+    print(f"  Total Instructions:             Before={amp_res['ops_before']} -> After={amp_res['ops_after']} ({amp_res['redundancy_ratio']*100:.1f}% amplified)")
+    print(f"  Opcode-Transformer DCE F1:      {amp_res['tf']['f1']:.3f}  (Recall/Recovery: {amp_res['tf']['recovery_rate']*100:.1f}%)")
+    print(f"  BiLSTM Tagger DCE F1:           {amp_res['lstm']['f1']:.3f}  (Recall/Recovery: {amp_res['lstm']['recovery_rate']*100:.1f}%)")
+    print(f"  5-gram Tabular Baseline F1:     {amp_res['tab']['f1']:.3f}")
+    print(f"  Amplifier DCE Resilience (DRS): {amp_res['drs_amp']:.1f} / 100.0")
+
+    # 5. Opaque Predicate Realism & AST Classifier
+    print("\n[Phase 5] Auditing Opaque Predicate Realism (BiLSTM + Transformer vs Real Conditions)...")
     op_res = audit_opaque_predicates(n_samples=400, epochs=25)
     print(f"  BiLSTM ROC-AUC:                 {op_res['bilstm_auc']:.3f}  (Accuracy: {op_res['bilstm_acc']*100:.1f}%)")
     print(f"  Transformer ROC-AUC:            {op_res['tf_auc']:.3f}  (Accuracy: {op_res['tf_acc']*100:.1f}%)")
     print(f"  Tabular Baseline ROC-AUC:       {op_res['tab_auc']:.3f}")
     print(f"  Opaque Predicate DRS:           {op_res['drs_opaque']:.1f} / 100.0")
 
-    # 5. Composite Assessment Score
+    # 6. Composite Assessment Score
     composite_drs = (
-        (0.35 * final_cfg_drs)
-        + (0.30 * final_mba_drs)
+        (0.30 * final_cfg_drs)
+        + (0.25 * final_mba_drs)
         + (0.20 * combined_trace_drs)
-        + (0.15 * op_res["drs_opaque"])
+        + (0.15 * amp_res["drs_amp"])
+        + (0.10 * op_res["drs_opaque"])
     )
 
     print("\n" + "=" * 80)
@@ -152,7 +163,8 @@ def main():
     print(f"  [1] CFG & CFF Multi-Model Ensemble:         {final_cfg_drs:>5.1f} / 100.0")
     print(f"  [2] Algebraic Incompressibility (Seq2Seq):  {final_mba_drs:>5.1f} / 100.0")
     print(f"  [3] Dynamic Trace & Rolling-Key LSTM:       {combined_trace_drs:>5.1f} / 100.0")
-    print(f"  [4] Opaque Predicate Realism:               {op_res['drs_opaque']:>5.1f} / 100.0")
+    print(f"  [4] Bytecode Amplifier DCE Resilience:      {amp_res['drs_amp']:>5.1f} / 100.0")
+    print(f"  [5] Opaque Predicate Realism:               {op_res['drs_opaque']:>5.1f} / 100.0")
     print("  " + "-" * 76)
     print(f"  ===> COMPOSITE NEURAL DRS SCORE:            {composite_drs:>5.1f} / 100.0  [ TIER 3+ RESILIENT ]")
     print("=" * 80 + "\n")
