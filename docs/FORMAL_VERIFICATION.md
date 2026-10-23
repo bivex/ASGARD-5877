@@ -153,7 +153,14 @@ The formally verified proofs directly back the obfuscation pipeline in ASGARD-58
    - `zero_inv_sub_not a b`: $(a - b) - (a + (\sim b + 1)) \equiv 0$
 4. **E-graph Equality Saturation (`egraph_rules.ml`)**:
    Contains 31 verified rewriting rules + 4 degree-5 non-linear invariants (total 35 rules), all validated against randomized inputs and edge vectors over $\mathbb{Z}_{2^{64}}$.
-
+5. **Constructive Nullspace MBA Synthesis (`Nullspace_MBA_Verified.fst`, `nullspace_mba.ml`)**:
+   Noise terms are synthesized directly as linear combinations of constructive kernel vectors in $\ker(M)$:
+   $$\mathbf{v}_f = \mathbf{e}_f - \sum_{i} f_i \cdot \mathbf{e}_{m_i} \in \ker(M) \pmod{2^{64}}$$
+   where $f \in \{2, \dots, 15\}$ is a two-variable boolean function with truth-table bits $f_i \in \{0, 1\}$ and $m_i$ are pairwise-orthogonal minterm masks. The engine does NOT solve linear systems over $\mathbb{Z}_{2^{64}}$; it scales $k \in \{1, \dots, 8\}$ such kernel vectors by independent random odd multipliers $\lambda_k$, yielding $\sum_k \lambda_k \mathbf{v}_{f_k} \equiv 0 \pmod{2^{64}}$ with verified exhaustive 4-corner bitwise checks.
+6. **Architectural Realism & Anti-Tamper Invariants**:
+   - **Timing Probe Target**: Hardware timing probes (`rdtsc`, `cntvct_el0`, `rdtime`) trigger register mask poisoning via `ctx.reg_mask ^= 0x1337BEEF5877A5A5ULL` (`vm_alu_handlers.ml`), NOT the deferred flag descriptor `cc_op`.
+   - **Vector Hardware Cost Invariant (`hw_cost.ml`)**: The physical vector register constraint is strictly $\text{LMUL} \le \text{VLEN} / \text{SEW}$ (register group must fit within vector register allocation); the fictitious $2 \times \text{LMUL} \le 8$ constraint is non-existent. Evaluated via the additive cost model:
+     $$\text{Cost}_{\text{ALU}} = \alpha \cdot \text{Area} + \beta \cdot \text{Latency} + \gamma \cdot \text{Energy}$$
 ---
 
 ## 5. Formally Verified Lazy Flags & Branch Conditions (`fstar/Flags_Verified.fst`)

@@ -18,7 +18,11 @@ let print_hw_report (report : Hw_cost.report) =
   Printf.printf "  ELEN:                  %d bits\n" report.elen_bits;
   Printf.printf "  Widening Dst Width:    %d bits\n" report.widening_dst_bits;
   Printf.printf "  Decoder Entries:       %d\n" report.decoder_entries;
-  Printf.printf "  Distinct funct6 codes: %d\n" report.distinct_funct6;
+  Printf.printf "  Cost (Area/Lat/Energy): %.1f / %.2f / %.1f\n"
+    report.cost.area_estimate report.cost.latency_estimate report.cost.energy_estimate;
+  Printf.printf "  Cost_ALU (a=%.2f b=%.2f g=%.2f):  %.1f\n"
+    report.cost.weights.alpha_area report.cost.weights.beta_latency
+    report.cost.weights.gamma_energy report.cost.cost_alu;
   if report.warnings <> [] then begin
     Printf.printf "  Warnings:\n";
     List.iter (fun w -> Printf.printf "    [!] %s\n" w) report.warnings

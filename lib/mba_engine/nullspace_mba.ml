@@ -1,3 +1,24 @@
+(* Nullspace MBA noise via constructive kernel synthesis.
+
+   For the 16-element boolean basis over (x, y), every function f satisfies
+   the pointwise minterm decomposition f = SUM_i f_i * m_i (f_i in {0,1}
+   are the truth-table bits, m_i the four pairwise-orthogonal minterm
+   masks).  Hence each relation vector
+
+     v_f = e_f - SUM_i f_i * e_{m_i}
+
+   lies in the kernel of the truth-table matrix M over Z_{2^64}
+   (M c = 0 for every input).  The synthesizer does NOT solve a linear
+   system for ker(M); instead it constructs kernel vectors directly from
+   the minterm decomposition and combines k of them with independent
+   random odd scales lambda_k:
+
+     noise = SUM_k lambda_k * v_{f_k}   in ker(M)  (kernel closed under
+   linear combinations), so the noise evaluates to 0 for ALL inputs.
+
+   Verification re-checks the four corner patterns (00/01/10/11 in every
+   bit position simultaneously), which is exhaustive for bitwise-parallel
+   identities.                                                     *)
 open Vm_ir
 open Int64
 
@@ -76,17 +97,20 @@ let synth_minterm_zero ~(rng : Random.State.t) ~(terms_count : int) : minterm_te
   in
   let count = Stdlib.max 1 (Stdlib.min terms_count 8) in
   for _ = 1 to count do
-    let code = 2 + Random.State.int rng 13 in
-    let r = logor (Random.State.int64 rng max_int) 1L in
+    (* Relation pool: bfunc ids 2..15.  id 15 (constant -1) yields the
+       5-term relation e15 - m1 - m2 - m4 - m8 (since m1+m2+m4+m8 = ~0).
+       ids 0 (constant 0) and 1 (m1 itself) are trivial and excluded. *)
+    let code = 2 + Random.State.int rng 14 in
+    let lambda = logor (Random.State.int64 rng max_int) 1L in
     let v00 = code land 1 in
     let v01 = (code lsr 1) land 1 in
     let v10 = (code lsr 2) land 1 in
     let v11 = (code lsr 3) land 1 in
-    add_coeff code r;
-    if v11 <> 0 then add_coeff 8 (neg r);
-    if v10 <> 0 then add_coeff 4 (neg r);
-    if v01 <> 0 then add_coeff 2 (neg r);
-    if v00 <> 0 then add_coeff 1 (neg r);
+    add_coeff code lambda;
+    if v11 <> 0 then add_coeff 8 (neg lambda);
+    if v10 <> 0 then add_coeff 4 (neg lambda);
+    if v01 <> 0 then add_coeff 2 (neg lambda);
+    if v00 <> 0 then add_coeff 1 (neg lambda);
   done;
   let terms = ref [] in
   for id = 0 to 15 do
@@ -109,7 +133,7 @@ let verify_minterm_zero (terms : minterm_term list) : bool =
 
 let obfuscate_alu ~rng ~dst ~src1 ~src2 op =
   let base_instr = Ir.Alu { op; dst; src1; src2; set_flags = false } in
-  let terms = synth_minterm_zero ~rng ~terms_count:3 in
+  let terms = synth_minterm_zero ~rng ~terms_count:4 in
   if terms = [] || not (verify_minterm_zero terms) then
     [ base_instr ]
   else

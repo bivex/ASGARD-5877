@@ -176,17 +176,29 @@ All three real-world workloads fall well within the **MIL-GRADE HARDENED** brack
 
 Virtualization-based obfuscation involves a deliberate architectural trade-off between execution speed and reverse-engineering resistance:
 
-- **Computational Slowdown**:
-  The observed overhead factors ($20,000\times$ to $240,000\times$) stem from:
-  - Ephemeral memory scrubbing (in-flight zeroing of fetched bytecode words).
-  - Positional rolling PRF key updates on every instruction step.
-  - Multi-tier dynamic stack canary verification.
-  - Direct threaded dispatch through 256-slot jump tables with computed GOTOs.
+### 6.1 Full Defense Stack Overhead (Production Hardening)
+When the complete ten-phase protection pipeline is engaged (`--flatten --cff --mba --mba-depth 4 --engine=stack`), the observed real-world overhead reaches **$18,000\times$ to $124,000\times$** (as empirically measured in Section 4.1). This slowdown stems from the compounding effect of orthogonal defenses:
+- **Virtual CFG Flattening (CFF)**: 245 blocks expanded into 491 dispatcher nodes with a non-linear VPC router (~615 operations per basic transition).
+- **Bytecode Amplification**: 10-variant Horner polynomial synthesis and bit-slice expansion (5.3× expansion of instruction count).
+- **MBA Constant Synthesis**: Degree-4 mixed boolean-arithmetic rewriters expanding immediate operands by +289%.
+- **Ghost Stack Padding**: Uniform metamorphic padding injecting +135% to +360% additional stack-neutral instructions.
+- **State-Feedback Rolling Key Cipher**: Every instruction execution updates the running cryptographic key state via register-coupled feedback hashes.
+- **Dynamic Stack Canary Verification & Memory Sanitization**: In-flight zeroing and validation of fetched bytecode words.
+
+### 6.2 Per-Engine Baseline Overhead Breakdown (Isolated Execution Engines)
+When executing pure VM dispatch without the heavy combinatorial obfuscation passes (CFF, Horner amplification, high-order MBA), the baseline engines exhibit markedly lower architectural overheads:
+
+| Virtual Execution Engine | Dispatch Paradigm | Baseline Slowdown vs `-O3` | Primary Microarchitectural Bottleneck | Recommended Production Workload |
+| :--- | :--- | :---: | :--- | :--- |
+| **RD-JIT VM (`--engine=jit`)** | Ephemeral dynamic machine code execution with cryptographic self-wiping | **$2\times - 6\times$** | Memory page permission switching (`mprotect` RX/RW) and JIT buffer allocation | High-throughput data loops, packet filters, matrix operations |
+| **Native Threaded VM (`--engine=threaded`)** | Direct-threaded computed-goto (`goto *labels[op]`) through 256-slot jump tables | **$8\times - 25\times$** | CPU Branch Target Buffer (BTB) mispredictions and L1i instruction cache footprint | Control logic, parsers, state machines, general-purpose business code |
+| **Stack-VM Engine (`--engine=stack`)** | Zero-address bytecoded virtual stack interpreter with dynamic rolling key | **$45\times - 150\times$** | VSP stack pointer bounds checking, push/pop dataflow serialization, and register spill overhead | High-value IP, software licensing checks, cryptographic key derivation |
+
+### 6.3 Application Scope & Binary Code Bloat
 - **Application Scope**:
   VBO is designed for high-value intellectual property, licensing validation routines, cryptographic key scheduling, and authentication logic. It is not intended for high-throughput inner data loops where performance dominates over IP protection.
 - **Binary Code Bloat**:
-  The protected binaries expand by $7.4\times$ to $22.1\times$ compared to native `-O3` binaries. This expansion accounts for the self-contained C++ direct threaded runtime, metamorphic handler variants, encrypted bytecode payload, and decoy trap tables.
-
+  The protected binaries expand by $7.4\times$ to $35.3\times$ compared to native `-O3` binaries. This expansion accounts for the self-contained C++ direct threaded runtime, metamorphic handler variants, encrypted bytecode payload, and decoy trap tables.
 ---
 
 ## 7. How to Reproduce
