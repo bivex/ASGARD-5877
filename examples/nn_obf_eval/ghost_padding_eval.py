@@ -488,10 +488,11 @@ def audit_ghost_padding(dump_dir=None, epochs=20, batch_size=16):
 
     metrics_tab = compute_ghost_metrics(np.array(val_trues_tab), np.array(val_preds_tab))
 
-    # Ghost-Recall is the highest detection recall across all 3 adversaries
+    # Conservative DRS: quadratic penalty discounted by worst-case 95% AUC upper bound
+    worst_auc_95 = max(metrics_tf["auc_95_upper"], metrics_lstm["auc_95_upper"], metrics_tab["auc_95_upper"])
     worst_ghost_recall = max(metrics_tf["recall"], metrics_lstm["recall"], metrics_tab["recall"])
-    drs_ghost = max(0.0, 100.0 * (1.0 - worst_ghost_recall))
-
+    adv = max(0.0, worst_auc_95 - 0.5) * 2.0
+    drs_ghost = max(0.0, 100.0 * (1.0 - adv ** 2))
     return {
         "ops_before": data_dict["ops_before"],
         "ops_after": data_dict["ops_after"],

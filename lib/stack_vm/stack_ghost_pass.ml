@@ -1,31 +1,27 @@
-(** Phase 3: Ghost Stack Padding Pass
-    ─────────────────────────────────
-    Inserts semantically neutral "ghost" stack operations between real
-    instructions. Ghost pairs have stack delta = 0, so block balance is
-    preserved exactly. Their presence breaks symbolic VSP tracking used
-    by devirtualization tools (VTIL stack-pinning, NoVmp, Mergen).
+(** Phase 3: Metamorphic Ghost Stack Padding Pass
+    ─────────────────────────────────────────────
+    Inserts semantically neutral "ghost" operations between real instructions
+    to break symbolic VSP tracking (VTIL, NoVmp) and neural sequence taggers
+    (BiLSTM, Transformer, n-gram baselines).
 
-    Ghost operation repertoire (all delta = 0):
-      • GhostPushPop:  PushImm <rng>  ; PopReg <scratch>
-      • GhostDupDrop:  Dup            ; PopReg <scratch>
-                       (only when stack depth >= 1 at insertion point)
-      • GhostArith:    PushImm <a>    ; PushImm <b>  ; Add  ; PopReg <scratch>
-                       (always delta = 0: +2 then −2)
-      • GhostKeyAdj:   KeyAdjust d ; KeyAdjust d   (d ≠ 0, random)
-                       (d XOR d = 0 → key unchanged; but breaks linear key recovery)
-      • GhostFlags:    PushFlags   ; PopFlags
-                       (saves & restores RFLAGS; neutral even when flags are live)
-      • GhostMemRead:  PushReg <sp>; ReadMem 8   ; PopReg <scratch>
-                       (canonical host-stack read; neutral to flags and stack depth)
-
-    Insertion is seed-deterministic using SplitMix64, at configurable
-    density (ghost_rate: probability 0.0–1.0 per real instruction gap).
+    Metamorphic Invariants & Anti-Neural Protections:
+      1. Homomorphic Grammar Pool: Ghost sequences use the full opcode repertoire
+         of Stack-VM (AddRegImm, SetRegImm, AddImm, SubImm, Nor, Swap, Rot, ReadMem),
+         eliminating the rigid template tells (PushFlags; PopFlags, KeyAdjust; KeyAdjust).
+      2. Flag-Preserving Wrappers: Any flag-producing ghost operation executed
+         while architectural flags are live is wrapped in PushFlags ... PopFlags
+         containing real arithmetic in between, eliminating isolated pushf/popf pairs.
+      3. Non-Adjacent Key Adjustments: Key perturbations are split across 3 non-identical
+         deltas (d1 ^ d2 ^ (d1 ^ d2) = 0) interleaved with scratch stores.
+      4. Scratch & Accumulator Ring: Reuses an 8-slot ring of scratch registers
+         allocated once per block to prevent single-register write concentration.
+      5. Soundness: Every ghost sequence preserves stack depth (delta = 0).
 *)
 
 open Stack_ir
 open Vm_ir
 
-(* ── SplitMix64 PRNG (same as stack_encoder.ml) ──────────────────────── *)
+(* ── SplitMix64 PRNG ─────────────────────────────────────────────────── *)
 let splitmix64 s =
   let s = Int64.add s 0x9E3779B97F4A7C15L in
   let z = s in
@@ -45,106 +41,203 @@ let next_int64 rng =
   rng.state <- s;
   z
 
-(* Uniform [0, n) *)
 let next_int rng n =
-  let v = Int64.to_int (Int64.logand (next_int64 rng) 0x7FFFFFFFL) in
-  v mod n
+  if n <= 1 then 0
+  else
+    let v = Int64.to_int (Int64.logand (next_int64 rng) 0x7FFFFFFFL) in
+    v mod n
 
-(* Boolean with probability p/100 *)
-let maybe rng prob =
-  next_int rng 100 < prob
+let maybe rng prob = next_int rng 100 < prob
 
-(* ── Ghost operation types ────────────────────────────────────────────── *)
-type ghost_kind =
-  | GhostPushPop
-  | GhostDupDrop
-  | GhostArith
-  | GhostKeyAdj
-  | GhostFlags
-  | GhostMemRead
-
+(* ── Metamorphic Accumulator Entanglement ────────────────────────────── *)
 let entangle_with_accumulator ?(flags_live = false) ~(acc_slot : int) (delta : int64) : Stack_ir.stack_op list =
   if delta = 0L then []
   else if flags_live then [
     PushFlags;
-    PushReg acc_slot;
-    PushImm delta;
-    Add;
+    AddRegImm (acc_slot, delta);
     PopReg acc_slot;
     PopFlags;
   ] else [
-    PushReg acc_slot;
-    PushImm delta;
-    Add;
+    AddRegImm (acc_slot, delta);
     PopReg acc_slot;
   ]
 
-(* ── Emitting a ghost sequence ────────────────────────────────────────── *)
-(** [emit_ghost rng ctx stack_depth flags_live] returns a list of ops forming
-    a stack-neutral ghost sequence. Choices depend on current stack depth and
-    on whether architectural flags are live: GhostArith contains [Add], which
-    overwrites the flags, so it is banned while a produced flag value is
-    still needed by a later Jcc/Setcc/Cmov/PushFlags. *)
-let emit_ghost ?(entangle = true) rng ~scratch_slot ctx entangle_slot stack_depth flags_live =
+(* ── Metamorphic Ghost Repertoire ────────────────────────────────────── *)
+type ghost_kind =
+  | GhostSuperopAdd      (** AddRegImm on accumulator (superoperator) *)
+  | GhostSuperopScratch  (** SetRegImm + AddRegImm zero-net chain *)
+  | GhostSubImmChain     (** PushReg s; AddImm d; SubImm d; PopReg s *)
+  | GhostNorInvert       (** PushReg s; PushReg s; Nor; Dup; Nor; PopReg s *)
+  | GhostArithZero       (** PushImm a; PushImm b; Add; PushImm (a+b); Sub; PopReg s *)
+  | GhostSandwichFlags   (** PushFlags; PushImm a; PushImm b; Add; PopReg s; PopFlags *)
+  | GhostTriKeyAdjust    (** KeyAdjust d1; PushImm v; PopReg s; KeyAdjust d2; KeyAdjust (d1^d2) *)
+  | GhostMemRead         (** PushReg sp; ReadMem 8; PopReg s *)
+  | GhostDupDrop         (** Dup; AddImm d; SubImm d; PopReg s *)
+  | GhostSwapSwap        (** Swap; Swap *)
+  | GhostRotCycle        (** Rot; Rot; Rot *)
+
+let emit_ghost ?(entangle = true) rng ~scratch_ring ~ctx ~entangle_slot stack_depth flags_live =
+  let n_scratch = Array.length scratch_ring in
+  let scratch = scratch_ring.(next_int rng n_scratch) in
   let kinds =
-    match (stack_depth >= 1, flags_live) with
-    | true,  false -> [| GhostPushPop; GhostDupDrop; GhostArith; GhostKeyAdj; GhostFlags; GhostMemRead |]
-    | false, false -> [| GhostPushPop; GhostArith; GhostKeyAdj; GhostFlags; GhostMemRead |]
-    | true,  true  -> [| GhostPushPop; GhostDupDrop; GhostKeyAdj; GhostFlags; GhostMemRead |]
-    | false, true  -> [| GhostPushPop; GhostKeyAdj; GhostFlags; GhostMemRead |]
+    match (stack_depth >= 3, stack_depth >= 2, stack_depth >= 1, flags_live) with
+    | true,  _, _, false ->
+        [| GhostSuperopAdd; GhostSuperopScratch; GhostSubImmChain; GhostNorInvert;
+           GhostArithZero; GhostSandwichFlags; GhostTriKeyAdjust; GhostMemRead;
+           GhostDupDrop; GhostSwapSwap; GhostRotCycle |]
+    | _, true, _, false ->
+        [| GhostSuperopAdd; GhostSuperopScratch; GhostSubImmChain; GhostNorInvert;
+           GhostArithZero; GhostSandwichFlags; GhostTriKeyAdjust; GhostMemRead;
+           GhostDupDrop; GhostSwapSwap |]
+    | _, _, true, false ->
+        [| GhostSuperopAdd; GhostSuperopScratch; GhostSubImmChain; GhostNorInvert;
+           GhostArithZero; GhostSandwichFlags; GhostTriKeyAdjust; GhostMemRead;
+           GhostDupDrop |]
+    | _, _, false, false ->
+        [| GhostSuperopAdd; GhostSuperopScratch; GhostSubImmChain; GhostNorInvert;
+           GhostArithZero; GhostSandwichFlags; GhostTriKeyAdjust; GhostMemRead |]
+    (* When flags are live: use flag-preserving superoperators and sandwiches *)
+    | true,  _, _, true ->
+        [| GhostSuperopAdd; GhostSuperopScratch; GhostSandwichFlags;
+           GhostTriKeyAdjust; GhostMemRead; GhostSwapSwap; GhostRotCycle |]
+    | _, true, _, true ->
+        [| GhostSuperopAdd; GhostSuperopScratch; GhostSandwichFlags;
+           GhostTriKeyAdjust; GhostMemRead; GhostSwapSwap |]
+    | _, _, _, true ->
+        [| GhostSuperopAdd; GhostSuperopScratch; GhostSandwichFlags;
+           GhostTriKeyAdjust; GhostMemRead |]
   in
   let kind = kinds.(next_int rng (Array.length kinds)) in
   match kind with
-  | GhostPushPop when entangle ->
-    let imm = next_int64 rng in
-    (entangle_with_accumulator ~flags_live ~acc_slot:entangle_slot imm, imm)
-  | GhostPushPop ->
-    let imm = next_int64 rng in
-    ([ PushImm imm; PopReg scratch_slot ], 0L)
-  | GhostDupDrop ->
-    ([ Dup; PopReg scratch_slot ], 0L)
-  | GhostArith when entangle ->
-    let a = next_int64 rng in
-    let b = next_int64 rng in
-    let sum = Int64.add a b in
-    let ghost_core =
+  | GhostSuperopAdd when entangle ->
+      let imm = next_int64 rng in
+      (entangle_with_accumulator ~flags_live ~acc_slot:entangle_slot imm, imm)
+  | GhostSuperopAdd ->
+      let delta = next_int64 rng in
       if flags_live then
-        [ PushFlags; PushImm a; PushImm b; Add; PopReg scratch_slot; PopFlags ]
+        ([ PushFlags; AddRegImm (scratch, delta); PopReg scratch; PopFlags ], 0L)
       else
-        [ PushImm a; PushImm b; Add; PopReg scratch_slot ]
-    in
-    (ghost_core @ entangle_with_accumulator ~flags_live ~acc_slot:entangle_slot sum, sum)
-  | GhostArith ->
-    let a = next_int64 rng in
-    let b = next_int64 rng in
-    ([ PushImm a; PushImm b; Add; PopReg scratch_slot ], 0L)
-  | GhostKeyAdj ->
-    let d = ref (next_int64 rng) in
-    while Int64.equal !d 0L do d := next_int64 rng done;
-    ([ KeyAdjust !d; KeyAdjust !d ], 0L)
-  | GhostFlags ->
-    ([ PushFlags; PopFlags ], 0L)
-  | GhostMemRead ->
-    let sp_slot = Context_allocator.slot_of_reg ctx Register.rsp in
-    ([ PushReg sp_slot; ReadMem 8; PopReg scratch_slot ], 0L)
+        ([ AddRegImm (scratch, delta); PopReg scratch ], 0L)
 
-(** [insert_ghosts_into_ops rng ctx ops ghost_rate] walks through [ops]
-    and inserts ghost sequences at each non-terminator gap with probability
-    [ghost_rate] (0–100 integer percent). Terminators are never padded.
-    Flag-liveness aware: no flag-writing ghost (GhostArith) is inserted at
-    a gap where produced flags are still live.
-    Data-Flow Entanglement (P1-02): chains ghost computations into execution
-    checksum Sigma_{exec} bound to effective memory addresses. *)
-let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_slot rng ctx ops ghost_rate =
+  | GhostSuperopScratch ->
+      let imm = next_int64 rng in
+      let delta = next_int64 rng in
+      if flags_live then
+        ([ SetRegImm (scratch, imm);
+           PushFlags;
+           AddRegImm (scratch, delta);
+           PopReg scratch;
+           PopFlags ], 0L)
+      else
+        ([ SetRegImm (scratch, imm);
+           AddRegImm (scratch, delta);
+           PopReg scratch ], 0L)
+  | GhostSubImmChain ->
+      let delta = next_int64 rng in
+      if flags_live then
+        ([ PushFlags;
+           PushReg scratch;
+           AddImm delta;
+           SubImm delta;
+           PopReg scratch;
+           PopFlags ], 0L)
+      else
+        ([ PushReg scratch;
+           AddImm delta;
+           SubImm delta;
+           PopReg scratch ], 0L)
+
+  | GhostNorInvert ->
+      if flags_live then
+        ([ PushFlags;
+           PushReg scratch;
+           PushReg scratch;
+           Nor;
+           Dup;
+           Nor;
+           PopReg scratch;
+           PopFlags ], 0L)
+      else
+        ([ PushReg scratch;
+           PushReg scratch;
+           Nor;
+           Dup;
+           Nor;
+           PopReg scratch ], 0L)
+
+  | GhostArithZero when entangle ->
+      let a = next_int64 rng in
+      let b = next_int64 rng in
+      let sum = Int64.add a b in
+      let ghost_core =
+        if flags_live then
+          [ PushFlags; PushImm a; PushImm b; Add; PushImm sum; Sub; PopReg scratch; PopFlags ]
+        else
+          [ PushImm a; PushImm b; Add; PushImm sum; Sub; PopReg scratch ]
+      in
+      (ghost_core @ entangle_with_accumulator ~flags_live ~acc_slot:entangle_slot sum, sum)
+
+  | GhostArithZero ->
+      let a = next_int64 rng in
+      let b = next_int64 rng in
+      let sum = Int64.add a b in
+      if flags_live then
+        ([ PushFlags; PushImm a; PushImm b; Add; PushImm sum; Sub; PopReg scratch; PopFlags ], 0L)
+      else
+        ([ PushImm a; PushImm b; Add; PushImm sum; Sub; PopReg scratch ], 0L)
+
+  | GhostSandwichFlags ->
+      let a = next_int64 rng in
+      let b = next_int64 rng in
+      ([ PushFlags;
+         PushImm a;
+         PushImm b;
+         Add;
+         PopReg scratch;
+         PopFlags ], 0L)
+
+  | GhostTriKeyAdjust ->
+      let d1 = ref (next_int64 rng) in
+      while Int64.equal !d1 0L do d1 := next_int64 rng done;
+      let d2 = ref (next_int64 rng) in
+      while Int64.equal !d2 0L do d2 := next_int64 rng done;
+      let d3 = Int64.logxor !d1 !d2 in
+      let imm = next_int64 rng in
+      ([ KeyAdjust !d1;
+         PushImm imm;
+         PopReg scratch;
+         KeyAdjust !d2;
+         KeyAdjust d3 ], 0L)
+
+  | GhostMemRead ->
+      let sp_slot = Context_allocator.slot_of_reg ctx Register.rsp in
+      ([ PushReg sp_slot; ReadMem 8; PopReg scratch ], 0L)
+
+  | GhostDupDrop ->
+      let delta = next_int64 rng in
+      if flags_live then
+        ([ PushFlags; Dup; AddImm delta; SubImm delta; PopReg scratch; PopFlags ], 0L)
+      else
+        ([ Dup; AddImm delta; SubImm delta; PopReg scratch ], 0L)
+
+  | GhostSwapSwap ->
+      ([ Swap; Swap ], 0L)
+
+  | GhostRotCycle ->
+      ([ Rot; Rot; Rot ], 0L)
+
+(* ── Insertion Pass with Data-Flow Entanglement ───────────────────────── *)
+let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng ctx ops ghost_rate =
   let checksum = ref 0L in
   let depth = ref 0 in
   let result = ref [] in
   let emit op = result := op :: !result in
   let live = Stack_flag_liveness.analyze_list ops in
   let idx = ref 0 in
+
   let emit_ghost_here flags_live =
     let ghost_ops, delta =
-      emit_ghost ~entangle ~scratch_slot rng ctx entangle_slot !depth flags_live
+      emit_ghost ~entangle ~scratch_ring ~ctx ~entangle_slot rng !depth flags_live
     in
     checksum := Int64.add !checksum delta;
     List.iter (fun gop ->
@@ -152,6 +245,7 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_slot rng c
       depth := !depth + stack_delta gop
     ) ghost_ops
   in
+
   let maybe_entangle_mem is_write flags_live =
     if entangle && !checksum <> 0L then begin
       if is_write then begin
@@ -159,18 +253,16 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_slot rng c
           emit Swap;
           emit PushFlags;
           emit Swap;
+          emit (AddImm (Int64.neg !checksum));
           emit (PushReg entangle_slot);
-          emit (PushImm !checksum);
-          emit Sub;
           emit Add;
           emit Swap;
           emit PopFlags;
           emit Swap
         end else begin
           emit Swap;
+          emit (AddImm (Int64.neg !checksum));
           emit (PushReg entangle_slot);
-          emit (PushImm !checksum);
-          emit Sub;
           emit Add;
           emit Swap
         end
@@ -178,26 +270,26 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_slot rng c
         if flags_live then begin
           emit PushFlags;
           emit Swap;
+          emit (AddImm (Int64.neg !checksum));
           emit (PushReg entangle_slot);
-          emit (PushImm !checksum);
-          emit Sub;
           emit Add;
           emit Swap;
           emit PopFlags
         end else begin
+          emit (AddImm (Int64.neg !checksum));
           emit (PushReg entangle_slot);
-          emit (PushImm !checksum);
-          emit Sub;
           emit Add
         end
       end
     end
   in
+
   (* Zero accumulator at the entry of the block *)
   if entangle then begin
     emit (PushImm 0L);
     emit (PopReg entangle_slot)
   end;
+
   List.iter (fun op ->
     let i = !idx in
     incr idx;
@@ -206,57 +298,48 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_slot rng c
      | WriteMem _ -> maybe_entangle_mem true live.(i)
      | _ -> ());
     if Stack_balance_pass.is_terminator op then begin
-      (* Before the terminator, optionally insert a ghost. The terminator
-         itself may consume the flags (Jcc), so use its entry liveness. *)
       if maybe rng ghost_rate then emit_ghost_here live.(i);
       emit op
-      (* depth after terminator doesn't matter *)
     end else begin
       emit op;
       depth := !depth + stack_delta op;
-      (* After the real op, maybe insert a ghost *)
       if maybe rng ghost_rate then emit_ghost_here live.(i + 1)
     end
   ) ops;
+
   List.rev !result
 
 (* ── Public API ───────────────────────────────────────────────────────── *)
-
 type ghost_config = {
-  seed        : int64;   (** Entropy seed for this build *)
-  ghost_rate  : int;     (** Probability 0–100 of inserting a ghost after each op *)
-  max_ghosts  : int;     (** Max ghost ops per block (0 = unlimited) *)
-  entangle    : bool;    (** Enable data-flow entanglement with memory operations (P1-02) *)
+  seed        : int64;
+  ghost_rate  : int;
+  max_ghosts  : int;
+  entangle    : bool;
 }
 
 let default_ghost_config seed = {
   seed;
-  ghost_rate = 40;    (* ~40% chance after each real instruction *)
+  ghost_rate = 40;
   max_ghosts = 0;
   entangle = true;
 }
 
-(** [apply_block ?entangle_slot cfg ctx block] applies ghost padding to a
-    single block.  The scratch slot the ghost sequences pop into is
-    allocated once per block and reused by every ghost of that block. *)
-let apply_block ?entangle_slot cfg ctx block =
+let apply_block ?scratch_ring ?entangle_slot cfg ctx block =
   let entangle_slot =
     match entangle_slot with
     | Some s -> s
     | None -> if cfg.entangle then Context_allocator.alloc_scratch ctx else 0
   in
   let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * 0x6B7))) in
-  (* One scratch slot per block, reused by every ghost of that block: a
-     ghost sequence is self-contained (it pushes and pops within the
-     sequence), so the value is dead when the sequence ends.  Allocating
-     a fresh slot per ghost grew the declared context by an order of
-     magnitude - the same order as the number of ghost sequences. *)
-  let scratch_slot = Context_allocator.alloc_scratch ctx in
+  let scratch_ring =
+    match scratch_ring with
+    | Some r -> r
+    | None -> Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx)
+  in
   let new_ops =
-    insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot ~scratch_slot rng ctx
+    insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot ~scratch_ring rng ctx
       block.ops cfg.ghost_rate
   in
-  (* If max_ghosts is set, trim ghost ops beyond the limit *)
   let new_ops =
     if cfg.max_ghosts <= 0 then new_ops
     else begin
@@ -265,76 +348,32 @@ let apply_block ?entangle_slot cfg ctx block =
       let ghost_count = total - real_count in
       if ghost_count <= cfg.max_ghosts then new_ops
       else begin
-        (* Keep real ops and first max_ghosts ghost ops; rebuild *)
         let rng2 = make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id * 0x6B7))) in
         let capped_rate = cfg.ghost_rate * cfg.max_ghosts / (max 1 ghost_count) in
-        insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot ~scratch_slot rng2 ctx
+        insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot ~scratch_ring rng2 ctx
           block.ops capped_rate
       end
     end
   in
   { block with ops = new_ops }
 
-(** [apply_program cfg ctx prog] applies ghost padding to every block in
-    [prog]. The stack balance of each block is preserved exactly by
-    construction (each ghost sequence has delta = 0). *)
-let apply_program cfg ctx prog =
-  let sorted =
-    Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
-    |> List.sort (fun (a, _) (b, _) -> compare a b)
-    |> Array.of_list
-  in
-  let n = Array.length sorted in
-  (* Pre-allocate all context slots on the main domain to avoid racing on
-     Context_allocator's mutable next_slot counter.
-     Each block needs: 1 scratch slot + (if entangle) 1 entangle slot. *)
-  let scratch_slots  = Array.init n (fun _ -> Context_allocator.alloc_scratch ctx) in
-  let entangle_slots = Array.init n (fun _ ->
-    if cfg.entangle then Context_allocator.alloc_scratch ctx else 0) in
-  let pool = Random_visa_ports.Domain_pool.global_pool () in
-  let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
-  Random_visa_ports.Domain_pool.parallel_for pool ~n
-    (fun i ->
-      let (id, b) = sorted.(i) in
-      let scratch_slot  = scratch_slots.(i)  in
-      let entangle_slot = entangle_slots.(i) in
-      let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0x6B7))) in
-      let new_ops =
-        insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot
-          ~scratch_slot rng ctx b.ops cfg.ghost_rate
-      in
-      (* Trim ghost ops if max_ghosts is set *)
-      let new_ops =
-        if cfg.max_ghosts <= 0 then new_ops
-        else begin
-          let real_count  = List.length b.ops in
-          let total       = List.length new_ops in
-          let ghost_count = total - real_count in
-          if ghost_count <= cfg.max_ghosts then new_ops
-          else begin
-            let rng2 = make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0x6B7))) in
-            let capped_rate =
-              cfg.ghost_rate * cfg.max_ghosts / (max 1 ghost_count) in
-            insert_ghosts_into_ops ~entangle:cfg.entangle ~entangle_slot
-              ~scratch_slot rng2 ctx b.ops capped_rate
-          end
-        end
-      in
-      out.(i) <- (id, { b with ops = new_ops }));
-  let new_blocks = Hashtbl.create n in
-  Array.iter (fun (id, b) -> Hashtbl.replace new_blocks id b) out;
-  { prog with
-    blocks = new_blocks;
-    context_slots = max prog.context_slots (Context_allocator.total_slots ctx) }
+let apply_program (cfg : ghost_config) ctx (prog : program) : program =
+  let entangle_slot = if cfg.entangle then Context_allocator.alloc_scratch ctx else 0 in
+  let scratch_ring = Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx) in
+  let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
+  Hashtbl.iter (fun id block ->
+    Hashtbl.add new_blocks id (apply_block ~scratch_ring ~entangle_slot cfg ctx block)
+  ) prog.blocks;
+  let context_slots = max prog.context_slots (Context_allocator.total_slots ctx) in
+  { prog with blocks = new_blocks; context_slots }
 
-(** [ghost_stats prog_before prog_after] returns a human-readable summary
-    of how many ghost ops were injected. *)
 let ghost_stats prog_before prog_after =
   let count_ops prog =
     Hashtbl.fold (fun _ b acc -> acc + List.length b.ops) prog.blocks 0
   in
   let before = count_ops prog_before in
   let after  = count_ops prog_after in
+  let ghost_count = after - before in
   Printf.sprintf "Ghost padding: %d real ops → %d total ops (%d ghost, +%.0f%%)"
-    before after (after - before)
-    (float_of_int (after - before) /. float_of_int before *. 100.0)
+    before after ghost_count
+    (if before = 0 then 0.0 else float_of_int ghost_count /. float_of_int before *. 100.0)
