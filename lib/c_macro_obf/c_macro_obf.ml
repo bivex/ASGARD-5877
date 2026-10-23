@@ -65,14 +65,19 @@ let obfuscate_source ?(config = default_config) src =
     else
       (src, "")
   in
-
-  let arith_rewritten =
-    if config.obfuscate_arithmetic then
-      rewrite_arithmetic_in_source ~prefix:p ~depth:config.mba_depth lifted_src
+  let opaque_guarded =
+    if config.inject_opaque_predicates then
+      C_opaque_guards.inject_opaque_predicates_in_source ~prefix:p ~seed:config.seed lifted_src
     else
       lifted_src
   in
 
+  let arith_rewritten =
+    if config.obfuscate_arithmetic then
+      rewrite_arithmetic_in_source ~prefix:p ~depth:config.mba_depth opaque_guarded
+    else
+      opaque_guarded
+  in
   let len = String.length arith_rewritten in
   let buf = Buffer.create (len * 2) in
   let seed_seq = ref config.seed in

@@ -97,11 +97,31 @@ let hash_shard_id ~(salt : int64) (token : int64) (n_shards : int) : int =
   abs (Int64.to_int z) mod n_shards
 
 (* ── Block transformation ─────────────────────────────────────────────── *)
-let transform_block vpc_slot entry_of tokens block =
+let transform_block ?(rng = Random.State.make [| 0x5877 |]) vpc_slot entry_of decoy_entry_of tokens block =
   let (body, term) = split_terminators block.ops in
-  (* Helper: write token to VPC — delta 0 *)
   let set_vpc token = [ PushImm token; PopReg vpc_slot ] in
-  let go_disp target = [ JmpRel (entry_of target) ] in
+  let go_disp target =
+    let real_entry = entry_of target in
+    let decoy_entry = decoy_entry_of target in
+    (* Brooks MBA Opaque Zero Branch (Module 2):
+       c1+c2 - (c3+c4) == 0 in Z/2^64Z.
+       Sets ZERO flag and takes JccRel(real_entry, E) in 100% of runtime executions,
+       while JmpRel(decoy_entry) creates a 1:1 branch indistinguishability (BIS = 1.0)
+       so every block has exactly 2 outgoing edges without any bare JmpRel. *)
+    let c1 = Random.State.int64 rng Int64.max_int in
+    let c2 = Random.State.int64 rng Int64.max_int in
+    let c3 = Random.State.int64 rng Int64.max_int in
+    let c4 = Int64.sub (Int64.add c1 c2) c3 in
+    [
+      PushImm c1; PushImm c2; Add;
+      PushImm c3; PushImm c4; Add;
+      Sub;
+      PushImm 0L;
+      Cmp;
+      JccRel (real_entry, E);
+      JmpRel decoy_entry;
+    ]
+  in
   let new_ops = match term with
     | Exit_term | No_term | Jcc_only _ ->
       block.ops
@@ -114,16 +134,6 @@ let transform_block vpc_slot entry_of tokens block =
     | Jcc_term (true_bid, cond, false_bid) ->
       (match Hashtbl.find_opt tokens true_bid, Hashtbl.find_opt tokens false_bid with
        | Some t_true, Some t_false ->
-       (* Sequence (stack delta = 0 total for the new suffix):
-           PushImm t_false   (+1)
-           PopReg vpc_slot   (-1)  → vpc = T[false] by default
-           PushImm t_true    (+1)
-           Cmov(cond, vpc)   (-1)  → if cond: vpc = T[true]
-           JmpRel entry(seg(false_bid)) (0)
-         Flags from the Cmp/Test that preceded this JccRel are preserved
-         because none of the above ops modify the flag register.
-         Circular expander topology guarantees reachability of true_bid
-         even when seg(true_bid) != seg(false_bid). *)
       body
       @ set_vpc t_false
       @ [ PushImm t_true; Cmov (cond, vpc_slot) ]
@@ -205,8 +215,15 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
     ) ids
   done;
 
+  let decoy_entry_of target =
+    match Hashtbl.find_opt tokens target with
+    | Some tok ->
+      let s = hash_shard_id ~salt:seed tok n_shards in
+      entry_of_s ((s + max 1 (n_shards / 2)) mod n_shards)
+    | None -> exit_id
+  in
   let exit_block = make_block exit_id "cff_exit" [ Exit ] in
-  (List.rev !comparison_blocks @ [ exit_block ], entry_of)
+  (List.rev !comparison_blocks @ [ exit_block ], entry_of, decoy_entry_of)
 
 (* ── Public API ───────────────────────────────────────────────────────── *)
 
@@ -249,14 +266,15 @@ let apply_program_with_info cfg ctx prog =
       (Int64.logxor salt_stack_vm_state
          (Int64.mul (Int64.of_int prog.entry_id) block_id_multiplier))
   in
-  let disp_blocks, entry_of =
+  let disp_blocks, entry_of, decoy_entry_of =
     build_dispatcher_chain ~seed:func_salt vpc_slot tokens real_ids dispatcher_base
   in
 
   (* 5. Transform every real block's terminators with sharded entry routing *)
   let new_real_blocks = Hashtbl.create n_real in
+  let rng = Random.State.make [| Int64.to_int func_salt |] in
   Hashtbl.iter (fun id b ->
-    let b' = transform_block vpc_slot entry_of tokens b in
+    let b' = transform_block ~rng vpc_slot entry_of decoy_entry_of tokens b in
     (* 5b. Couple the rolling key to the VPC at the entry of every block
        the dispatcher can reach.  There the VPC provably holds that
        block's token, so the coupled value is statically known and the
