@@ -7,6 +7,7 @@ open Format
 let rec pp_ctype fmt = function
   | Void          -> fprintf fmt "void"
   | Bool          -> fprintf fmt "bool"
+  | Char          -> fprintf fmt "char"
   | Int8          -> fprintf fmt "int8_t"
   | Int16         -> fprintf fmt "int16_t"
   | Int32         -> fprintf fmt "int32_t"

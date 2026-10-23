@@ -1007,13 +1007,18 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
     }
 #else
     if (!sym_ptr) {
-        sym_ptr = dlsym(RTLD_DEFAULT, dec_name);
-        if (!sym_ptr && dec_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, dec_name + 1);
-        if (!sym_ptr) {
-            char alt[66];
-            alt[0] = '_';
-            memcpy(alt + 1, dec_name, sym->len + 1);
-            sym_ptr = dlsym(RTLD_DEFAULT, alt);
+        if (strcmp(dec_name, "___stdoutp") == 0 || strcmp(dec_name, "__stdoutp") == 0) sym_ptr = dlsym(RTLD_DEFAULT, "stdout");
+        else if (strcmp(dec_name, "___stdinp") == 0 || strcmp(dec_name, "__stdinp") == 0) sym_ptr = dlsym(RTLD_DEFAULT, "stdin");
+        else if (strcmp(dec_name, "___stderrp") == 0 || strcmp(dec_name, "__stderrp") == 0) sym_ptr = dlsym(RTLD_DEFAULT, "stderr");
+        else {
+            sym_ptr = dlsym(RTLD_DEFAULT, dec_name);
+            if (!sym_ptr && dec_name[0] == '_') sym_ptr = dlsym(RTLD_DEFAULT, dec_name + 1);
+            if (!sym_ptr) {
+                char alt[66];
+                alt[0] = '_';
+                memcpy(alt + 1, dec_name, sym->len + 1);
+                sym_ptr = dlsym(RTLD_DEFAULT, alt);
+            }
         }
     }
 #endif
@@ -1250,7 +1255,7 @@ static inline int eval_cond(const stack_vm_t *vm, uint8_t cond) {
       @ [
         raw_top {|static inline int asg_addr_canonical(uint64_t addr) {
     uint64_t top = addr >> 48;
-    return top == ((addr & (UINT64_C(1) << 47)) ? UINT64_C(0xFFFF) : UINT64_C(0));
+    return top == 0 || top == UINT64_C(0xFFFF) || (addr >> 52) == 0;
 }
 
 static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {

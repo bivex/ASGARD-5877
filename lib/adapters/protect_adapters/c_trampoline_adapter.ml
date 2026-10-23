@@ -487,7 +487,7 @@ let embed_vm_trampoline
           decl_var (Ptr (StructType "FILE")) "_fp_stat"
             ~init:(call "fopen" [str_lit "/proc/self/status"; str_lit "r"]);
           if_then (var "_fp_stat" <>~ nullptr) [
-            decl_var (Array (Int8, 128)) "_line";
+            decl_var (Array (Char, 128)) "_line";
             while_loop (call "fgets" [var "_line"; call "sizeof" [var "_line"]; var "_fp_stat"]) [
               if_then (Binary (Eq, call "strncmp" [var "_line"; str_lit "TracerPid:"; i32 10], i32 0)) [
                 decl_var Int32 "_pid" ~init:(call "atoi" [Binary (Add, var "_line", i32 10)]);
