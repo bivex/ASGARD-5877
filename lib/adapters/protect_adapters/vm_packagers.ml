@@ -509,8 +509,7 @@ module Stack_vm_packager : Vm_packager = struct
     let prog =
       if native_cfg.comp_stall.enabled then
         let iters =
-          if native_cfg.comp_stall.n_iterations > 100 then 30
-          else if native_cfg.comp_stall.n_iterations <= 0 then 10
+          if native_cfg.comp_stall.n_iterations <= 0 then 500
           else native_cfg.comp_stall.n_iterations
         in
         let seed = if native_cfg.comp_stall.seed <> 0L then native_cfg.comp_stall.seed else 0x13375877L in

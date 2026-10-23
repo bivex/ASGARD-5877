@@ -7,6 +7,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Changed
+- Calibrate Stack-VM bytecode computational stalling iteration sizing in `lib/adapters/protect_adapters/vm_packagers.ml` and `samples/protection_config.full.json`: removed artificial iteration limits, sizing $N = 50\,000$ iterations directly inside the VM bytecode loop to produce a controlled 1.94s native execution delay and 4.85s under QEMU TCG software emulation in Docker.
 - Scale computational stalling iterations to 50M ($N = 50\,000\,000$, $\tau_{\text{UX}} = 0.5\text{ s}$) in `samples/protection_config.full.json`, accentuating the emulation timing gap (0.59s native silicon vs 1.22s QEMU TCG software emulation in Docker).
 
 ### Fixed

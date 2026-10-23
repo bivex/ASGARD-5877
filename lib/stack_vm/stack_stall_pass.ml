@@ -13,7 +13,7 @@ type stall_config = {
 }
 
 let default_config = {
-  n_iterations = 1000;
+  n_iterations = 500;
   seed = 0x13375877CAFEBABEL;
 }
 
