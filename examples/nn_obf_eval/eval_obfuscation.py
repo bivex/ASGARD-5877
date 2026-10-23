@@ -23,6 +23,7 @@ from trace_lstm_eval import audit_trace_lstm
 from predicate_realism_eval import audit_opaque_predicates
 from amplifier_dce_eval import audit_amplifier_dce
 from ghost_padding_eval import audit_ghost_padding
+from spaghetti_reassembly_eval import audit_spaghetti_reassembly
 
 def run_pipeline_dump(out_dir="/tmp/pipeline_dump"):
     """Builds and runs dump_pipeline.exe to generate fresh JSON phase dumps."""
@@ -159,14 +160,24 @@ def main():
     print(f"  5-gram Context Baseline Recall: {ghost_res['tab']['recall']*100:.1f}%")
     print(f"  Ghost Padding DRS:              {ghost_res['drs_ghost']:.1f} / 100.0")
 
-    # 7. Composite Assessment Score
+    # 7. Spaghetti Reassembly & Fragment Boundary Audit
+    print("\n[Phase 7] Auditing Spaghetti Splitting & Fragment Reassembly (Siamese Network)...")
+    spagh_res = audit_spaghetti_reassembly(dump_dir=dump_dir, epochs=20)
+    print(f"  Fragments Synthesized:          {spagh_res['total_cff_blocks']} -> {spagh_res['total_spaghetti_blocks']} (+{spagh_res['split_count']} fragments)")
+    print(f"  Length-Matched Pairs:           {spagh_res['split_count']} positive (adjacent) vs {spagh_res['split_count']} negative (inter-block)")
+    print(f"  Red Herring Correlation:        r(is_split, position)={spagh_res['r_pos']:+.3f}, r(is_split, length)={spagh_res['r_len']:+.3f}")
+    print(f"  Siamese Reassembly Pairwise-AUC:{spagh_res['auc']:>6.3f}  (Accuracy: {spagh_res['acc']*100:.1f}%)")
+    print(f"  Spaghetti Reassembly DRS:       {spagh_res['drs_spaghetti']:.1f} / 100.0")
+
+    # 8. Composite Assessment Score
     composite_drs = (
-        (0.25 * final_cfg_drs)
+        (0.20 * final_cfg_drs)
         + (0.20 * final_mba_drs)
-        + (0.20 * combined_trace_drs)
+        + (0.15 * combined_trace_drs)
         + (0.15 * amp_res["drs_amp"])
         + (0.10 * op_res["drs_opaque"])
         + (0.10 * ghost_res["drs_ghost"])
+        + (0.10 * spagh_res["drs_spaghetti"])
     )
 
     print("\n" + "=" * 80)
@@ -178,6 +189,7 @@ def main():
     print(f"  [4] Bytecode Amplifier DCE Resilience:      {amp_res['drs_amp']:>5.1f} / 100.0")
     print(f"  [5] Opaque Predicate Realism:               {op_res['drs_opaque']:>5.1f} / 100.0")
     print(f"  [6] Ghost Stack Padding Resilience:         {ghost_res['drs_ghost']:>5.1f} / 100.0")
+    print(f"  [7] Spaghetti Fragment Reassembly:          {spagh_res['drs_spaghetti']:>5.1f} / 100.0")
     print("  " + "-" * 76)
     print(f"  ===> COMPOSITE NEURAL DRS SCORE:            {composite_drs:>5.1f} / 100.0  [ TIER 3+ RESILIENT ]")
     print("=" * 80 + "\n")

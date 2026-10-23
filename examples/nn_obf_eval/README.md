@@ -92,6 +92,22 @@ The suite trains three specialized deep-learning models targeting the core prote
 - **Resilience Formula:**
   $$\text{Ghost-Recall} = \max_{M} \left[\text{Recall of identifying inserted ghost padding operations}_M\right]$$
   $$\text{DRS}_{\text{ghost}} = \max\left(0.0, 100.0 \times \left(1.0 - \text{Ghost-Recall}\right)\right)$$
+
+### 7. Spaghetti Reassembly & Fragment Boundary Auditor (`spaghetti_reassembly_eval.py`)
+- **Attack Vector:** Control-Flow Fragment Reassembly (simulating neural boundary classifiers and decompilers attempting to glue cut basic block fragments back into their pre-split straight-line form).
+- **Siamese Network Architecture:**
+  - Two weight-sharing Bidirectional LSTM encoders: $h_A = \text{Enc}(A)$, $h_B = \text{Enc}(B)$.
+  - Fragment pair representation: $V = [h_A \,\|\, h_B \,\|\, |h_A - h_B| \,\|\, h_A \odot h_B]$.
+  - 2-layer MLP classifier outputting predicted adjacency probability $P(A, B \text{ were originally adjacent})$.
+- **Length-Matched Ground Truth:**
+  - Positive pairs: genuine $(fragment_i, fragment_{i+1})$ cuts from `phase_4-spaghetti.json`.
+  - Negative pairs: fragment pairs from different pre-split blocks matched by chunk length ($|\text{len}(B') - \text{len}(B)| \le 2$), eliminating sequence length as an artificial confounding tell.
+- **Red Herring Spatial Audit:**
+  - Computes Pearson correlation $r(\text{is\_split}, \text{position})$ and $r(\text{is\_split}, \text{length})$ across candidate blocks.
+  - Verifies that Fisher-Yates shuffled budget allocation maintains uniform spatial dispersion ($r \approx 0.0$) so red herring noise does not create an exploitable boundary marker.
+- **Resilience Formula:**
+  $$\text{Pairwise-AUC}_{95\%} = \min(1.0, \text{AUC} + 1.96 \cdot \text{SE})$$
+  $$\text{DRS}_{\text{spaghetti}} = \max\left(0.0, 100.0 \times \left(1.0 - 2.0 \cdot \max(0.0, \text{Pairwise-AUC}_{95\%} - 0.5)\right)^2\right)$$
 ---
 
 ## Quick Start

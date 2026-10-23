@@ -96,13 +96,25 @@ let apply_program cfg prog =
   let max_id = Hashtbl.fold (fun id _ acc -> max acc id) prog.blocks 0 in
   let next_id = ref (max_id + 1) in
   let current_block_count = ref (Hashtbl.length prog.blocks) in
-  (* Sort blocks by ID for deterministic processing across builds with same seed *)
+  (* Sort blocks by ID for deterministic baseline across builds with same seed *)
   let blocks_list =
     Hashtbl.fold (fun _ b acc -> b :: acc) prog.blocks []
     |> List.sort (fun a b -> compare a.id b.id)
   in
+  (* Deterministic Fisher-Yates shuffle driven by cfg.seed: distributes
+     the max_blocks split budget uniformly across all block positions in the
+     program instead of exhausting the budget on low block IDs (eliminates
+     the r = -0.42 positional tell). *)
+  let blocks_arr = Array.of_list blocks_list in
+  let n = Array.length blocks_arr in
+  for i = n - 1 downto 1 do
+    let j = next_int rng (i + 1) in
+    let tmp = blocks_arr.(i) in
+    blocks_arr.(i) <- blocks_arr.(j);
+    blocks_arr.(j) <- tmp
+  done;
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks * 2) in
-  List.iter (fun block ->
+  Array.iter (fun block ->
     let eff_rate =
       if cfg.red_herring then
         let noise = Int64.to_int (Int64.logand (snd (splitmix64 (Int64.logxor cfg.seed (Int64.of_int block.id)))) 0x7FFFFFFF_FFFFFFFFL) mod 100 in
@@ -135,7 +147,7 @@ let apply_program cfg prog =
           Hashtbl.replace new_blocks b2.id b2
     else
       Hashtbl.replace new_blocks block.id block
-  ) blocks_list;
+  ) blocks_arr;
   { prog with blocks = new_blocks }
 
 let spaghetti_stats prog_before prog_after =
