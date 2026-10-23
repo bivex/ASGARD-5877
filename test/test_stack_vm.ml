@@ -571,8 +571,8 @@ let test_vsp_whitening () =
   in
   Alcotest.(check bool) "VSP_ENCODE macro present (static 2-arg form)" true
     (contains c_code "#define VSP_ENCODE(slot, v) ((v) ^ VSP_MASK(slot))");
-  Alcotest.(check bool) "VSP_MASK macro present (static key form)" true
-    (contains c_code "#define VSP_MASK(slot) (vm->vsp_key + (uint64_t)(slot) * UINT64_C(0x9E3779B97F4A7C15))");
+  Alcotest.(check bool) "VSP_MASK macro present (asg_vsp_mask form)" true
+    (contains c_code "#define VSP_MASK(slot) asg_vsp_mask(vm->vsp_key, (uint32_t)(slot))");
   Alcotest.(check bool) "vsp_key is static (derived once, not from rolling vkey)" true
     (contains c_code "vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);");
   Alcotest.(check bool) "PUSH_IMM uses VSP_ENCODE" true

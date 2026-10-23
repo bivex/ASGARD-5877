@@ -32,11 +32,18 @@ let compute_chaff_address ~pool_base ~pool_size ~guest_reg ~salt : int64 =
   let aligned_offset = Int64.logand raw_offset (Int64.lognot 7L) in
   Int64.add pool_base aligned_offset
 
+let fmix64 z =
+  let z = Int64.logxor z (Int64.shift_right_logical z 30) in
+  let z = Int64.mul z 0xBF58476D1CE4E5B9L in
+  let z = Int64.logxor z (Int64.shift_right_logical z 27) in
+  let z = Int64.mul z 0x94D049BB133111EBL in
+  Int64.logxor z (Int64.shift_right_logical z 31)
+
 let compute_chaff_value ~guest_reg_a ~guest_reg_b ~rolling_key ~salt : int64 =
   let term_a = Int64.mul guest_reg_a 0x9E3779B97F4A7C15L in
   let term_b = Int64.mul guest_reg_b 0xBF58476D1CE4E5B9L in
   let k_mix = Int64.logxor rolling_key salt in
-  Int64.logxor (Int64.add term_a term_b) k_mix
+  fmix64 (Int64.logxor (Int64.add term_a term_b) k_mix)
 
 (* ── Chaff Events Synthesis ───────────────────────────────────────────────── *)
 let synthesize_chaff_events
@@ -123,7 +130,8 @@ let inject_chaff_into_trace
     (* Chaff ops before real event *)
     let chaff_count = int_of_float (Float.round config.chaff_ratio) in
     for _ = 1 to chaff_count do
-      result := generate_one_chaff true :: !result
+      let is_write = Int64.logand (next_u64 prng) 1L = 1L in
+      result := generate_one_chaff is_write :: !result
     done;
 
     incr ts;

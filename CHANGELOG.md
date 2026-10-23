@@ -33,6 +33,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Eliminate illusory Tier-1 `lightweight` preset and raw linear MBA depth 1 in `lib/native_vm/protection_presets.ml`, `lib/native_vm/protection_config.mli`, `lib/mba_engine/mba.ml`, and `lib/mba_engine/ncfg_synth.ml`: removed the `lightweight` preset (which disabled CFF and ran linear MBA at depth 1 without non-linear bijections, offering zero resilience against SMT solvers while incurring runtime overhead), enforced a minimum MBA depth of 2 across the ALU obfuscator, and updated CLI and test references.
 
 ### Added
+- Replace trivial linear cancellations with non-linear polynomial invariants in `lib/vm_ir/opaque_predicates.ml`:
+  * Eliminated `xor scratch, scratch` register zeroing and `+ salt - salt` adjacent linear cancellations across families 0, 2, 4, and 5.
+  * Family 2: implemented degree-4 Fermat fourth-power invariant $((x \lor 1)^4 - 1) \ \& \ 15 \equiv 0$ over $\mathbb{Z}_{2^{64}}$.
+  * Family 4: implemented degree-2 quadratic residue invariant $(x^2) \ \& \ 2 \equiv 0$ (squares modulo 4 cannot have bit 1 set).
+  * Family 5: coupled stack memory aliasing roundtrip with quadratic modular invariant $((x \lor 1)^2 - 1) \ \& \ 7 \equiv 0$.
 - Eliminate linear cancellations in constant blinding and upgrade POP digest to true non-linear ARX (`lib/c_macro_obf/c_macro_templates.ml`, `lib/c_macro_obf/c_macro_obf.ml`, `lib/cff/pop_coupler.ml`):
   * `c_macro_templates.ml` / `c_macro_obf.ml`: replace trivial `+ k2 - k2` additive cancellation with genuine Additive-XOR splitting ($c_1 = (n - k_2) \oplus k_1$ precomputed, $(c_1 \oplus k_1) + k_2 = n$ evaluated at runtime), preventing Clang/GCC `-O1` constant folding from eliminating $k_2$.
   * `pop_coupler.ml`: upgrade linear $\mathbb{F}_2^{64}$ digest step ($\text{ROL}_{13}(P) \oplus C$) to true non-linear ARX step ($P_{t+1} = \text{ROL}_{13}(P_t + (\text{bid} \cdot \text{Golden})) \oplus \text{term}$), injecting 64-bit carry propagation that blocks $\mathbb{F}_2$ Gaussian elimination solvers (CryptoMiniSat).

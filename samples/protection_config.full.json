@@ -104,7 +104,7 @@
   "memory_chaffing": {
     "enabled": true,
     "pool_size": 16384,
-    "chaff_ratio": 4.0
+    "chaff_ratio": 8.0
   },
   "spaghetti": {
     "enabled": true,

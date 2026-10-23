@@ -77,16 +77,14 @@ let generate_zero_predicate ~rng ~scratch ~target_true ~target_decoy : instr lis
          without a disjointness rule on complement masks cannot fold this. *)
       let m  = rand_odd rng in
       let nm = Int64.lognot m in
-      let salt = rand_u64 rng in
+      let k = rand_odd rng in
       [
         Alu { op = And; dst = scratch; src1 = Reg scratch; src2 = Imm m;
               set_flags = false };
         Alu { op = And; dst = scratch; src1 = Reg scratch; src2 = Imm nm;
               set_flags = false };
-        (* Mix in a unique salt+desalt to differentiate call sites in the binary *)
-        Alu { op = Add; dst = scratch; src1 = Reg scratch; src2 = Imm salt;
-              set_flags = false };
-        Alu { op = Sub; dst = scratch; src1 = Reg scratch; src2 = Imm salt;
+        (* Modulate with random odd multiplier: scratch is 0, so 0 * k == 0 *)
+        Alu { op = Mul; dst = scratch; src1 = Reg scratch; src2 = Imm k;
               set_flags = false };
         Cmp { src1 = Reg scratch; src2 = Imm 0L };
         directed_jcc cond ~zero_target:target_true ~nonzero_target:target_decoy
@@ -112,23 +110,24 @@ let generate_zero_predicate ~rng ~scratch ~target_true ~target_decoy : instr lis
       ]
 
   | 2 ->
-      (* ParityNilpotent: (scratch & 1) XOR (scratch & 1) = 0 always.
-         Reading the same register twice in Xor (src1=Reg scratch, src2=Reg scratch)
-         forces a self-cancel regardless of what the AND produced.  The & 1 step
-         creates a data-dependent sub-expression that defeats constant propagation
-         on the AND output (the value is 0 or 1, runtime-dependent), while the Xor
-         of any value with itself is provably 0 only if the prover tracks aliasing
-         between src1 and src2.  Then a random salt add+sub keeps the stream unique. *)
-      let salt = rand_u64 rng in
+      (* FermatFourthPowerInvariant: ((scratch | 1)^4 - 1) & 15 == 0
+         For any integer x, o = (x | 1) is odd (o = 2k + 1).
+         (2k + 1)^4 = 16k^4 + 32k^3 + 24k^2 + 8k + 1
+                    = 16(k^4 + 2k^3 + k^2) + 8k(k + 1) + 1.
+         Since k(k + 1) is always even, 8k(k + 1) is divisible by 16.
+         Hence o^4 = 16*M + 1 == 1 (mod 16), so (o^4 - 1) & 15 == 0 unconditionally.
+         Degree-4 non-linear polynomial defeating linear SMT/DSE simplifiers. *)
       [
-        Alu { op = And; dst = scratch; src1 = Reg scratch; src2 = Imm 1L;
-              set_flags = false };
-        Alu { op = Xor; dst = scratch; src1 = Reg scratch; src2 = Reg scratch;
-              set_flags = false };
-        Alu { op = Add; dst = scratch; src1 = Reg scratch; src2 = Imm salt;
-              set_flags = false };
-        Alu { op = Sub; dst = scratch; src1 = Reg scratch; src2 = Imm salt;
-              set_flags = false };
+        Alu { op = Or;  dst = scratch; src1 = Reg scratch;
+              src2 = Imm 1L; set_flags = false };   (* o = scratch | 1 *)
+        Alu { op = Mul; dst = scratch; src1 = Reg scratch;
+              src2 = Reg scratch; set_flags = false }; (* o^2 *)
+        Alu { op = Mul; dst = scratch; src1 = Reg scratch;
+              src2 = Reg scratch; set_flags = false }; (* o^4 *)
+        Alu { op = Sub; dst = scratch; src1 = Reg scratch;
+              src2 = Imm 1L; set_flags = false };   (* o^4 - 1 *)
+        Alu { op = And; dst = scratch; src1 = Reg scratch;
+              src2 = Imm 15L; set_flags = false };  (* & 15 == 0 *)
         Cmp { src1 = Reg scratch; src2 = Imm 0L };
         directed_jcc cond ~zero_target:target_true ~nonzero_target:target_decoy
           ~target_true ~target_decoy;
@@ -151,21 +150,19 @@ let generate_zero_predicate ~rng ~scratch ~target_true ~target_decoy : instr lis
       ]
 
   | 4 ->
-      (* 3-Variable Boolean Lattice Zero: (x | x) - (x & x) - (x ^ x)
-         = x - x - 0 = 0.  Written in single-register form using the identity
-         (a|b)-(a&b) == a^b, so (x^x) - (x^x) = 0.
-         Unlike the old duplicate this uses two separate ALU steps with distinct
-         per-call constants so the instruction stream is unique each time. *)
-      let salt = rand_u64 rng in
+      (* QuadraticResidueBit1: For any integer x, x^2 mod 4 in {0, 1}.
+         The square of an integer can never have bit 1 set:
+         0^2 = 0, 1^2 = 1, 2^2 = 0 mod 4, 3^2 = 1 mod 4.
+         Hence (x^2) & 2 == 0 unconditionally.
+         Degree-2 non-linear polynomial with full cross-bit carry diffusion. *)
+      let k = rand_odd rng in
       [
-        (* Step 1: scratch = scratch ^ scratch  (always 0) *)
-        Alu { op = Xor; dst = scratch; src1 = Reg scratch;
-              src2 = Reg scratch; set_flags = false };
-        (* Step 2: add a random salt, then subtract it: still 0 *)
-        Alu { op = Add; dst = scratch; src1 = Reg scratch;
-              src2 = Imm salt; set_flags = false };
-        Alu { op = Sub; dst = scratch; src1 = Reg scratch;
-              src2 = Imm salt; set_flags = false };
+        Alu { op = Mul; dst = scratch; src1 = Reg scratch;
+              src2 = Reg scratch; set_flags = false }; (* x^2 *)
+        Alu { op = And; dst = scratch; src1 = Reg scratch;
+              src2 = Imm 2L; set_flags = false };      (* (x^2) & 2 == 0 *)
+        Alu { op = Mul; dst = scratch; src1 = Reg scratch;
+              src2 = Imm k; set_flags = false };       (* 0 * k == 0 *)
         Cmp { src1 = Reg scratch; src2 = Imm 0L };
         directed_jcc cond ~zero_target:target_true ~nonzero_target:target_decoy
           ~target_true ~target_decoy;
@@ -181,9 +178,14 @@ let generate_zero_predicate ~rng ~scratch ~target_true ~target_decoy : instr lis
       [
         Push (Reg scratch);      (* store scratch to stack memory *)
         Pop  (Reg scratch);      (* reload into scratch *)
-        Alu { op = Xor; dst = scratch; src1 = Reg scratch;
-              src2 = Reg scratch; set_flags = false }; (* x ^ x = 0 *)
-        Cmp { src1 = Reg scratch; src2 = Imm 0L };
+        Alu { op = Or;  dst = scratch; src1 = Reg scratch;
+              src2 = Imm 1L; set_flags = false };   (* o = scratch | 1 *)
+        Alu { op = Mul; dst = scratch; src1 = Reg scratch;
+              src2 = Reg scratch; set_flags = false }; (* o^2 *)
+        Alu { op = Sub; dst = scratch; src1 = Reg scratch;
+              src2 = Imm 1L; set_flags = false };   (* o^2 - 1 *)
+        Alu { op = And; dst = scratch; src1 = Reg scratch;
+              src2 = Imm 7L; set_flags = false };   (* & 7 == 0 *)
         Jcc { cond = Flags.E; target_true; target_false = target_decoy };
       ]
 

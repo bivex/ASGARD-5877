@@ -234,6 +234,7 @@ let identifier_scramble_map seed =
   add_id "stack_vm_t" "stk";
   add_id "VSP_ENCODE" "VE";
   add_id "VSP_MASK" "VM";
+  add_id "asg_vsp_mask" "AVM";
   add_id "ASG_UNMASK_OFFSET" "UMO";
   add_id "ASG_UNMASK_KEY" "UMK";
   add_id "ASG_UNMASK_TAG_K0" "UT0";
@@ -1191,7 +1192,13 @@ static inline int64_t fetch_i64(stack_vm_t *vm, const uint8_t *bc, size_t *vip) 
     return (int64_t)res;
 }
 
-#define VSP_MASK(slot) (vm->vsp_key + (uint64_t)(slot) * UINT64_C(0x9E3779B97F4A7C15))
+static inline uint64_t asg_vsp_mask(uint64_t key, uint32_t slot) {
+    uint64_t z = key + (uint64_t)slot * UINT64_C(0x9E3779B97F4A7C15);
+    z = (z ^ (z >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
+    z = (z ^ (z >> 27)) * UINT64_C(0x94D049BB133111EB);
+    return z ^ (z >> 31);
+}
+#define VSP_MASK(slot) asg_vsp_mask(vm->vsp_key, (uint32_t)(slot))
 #define VSP_ENCODE(slot, v) ((v) ^ VSP_MASK(slot))
 
 static inline uint8_t parity8(uint64_t v) {
