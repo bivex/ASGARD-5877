@@ -146,7 +146,7 @@ def main():
 
     # 5. Opaque Predicate Realism & AST Classifier
     print("\n[Phase 5] Auditing Opaque Predicate Realism (BiLSTM + Transformer vs Real Conditions)...")
-    op_res = audit_opaque_predicates(n_samples=400, epochs=25)
+    op_res = audit_opaque_predicates(dump_dir=dump_dir, n_samples=400, epochs=25)
     print(f"  BiLSTM ROC-AUC:                 {op_res['bilstm_auc']:.3f}  (Accuracy: {op_res['bilstm_acc']*100:.1f}%)")
     print(f"  Transformer ROC-AUC:            {op_res['tf_auc']:.3f}  (Accuracy: {op_res['tf_acc']*100:.1f}%)")
     print(f"  Tabular Baseline ROC-AUC:       {op_res['tab_auc']:.3f}")

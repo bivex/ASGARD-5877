@@ -95,19 +95,12 @@ class TransformerPredicateClassifier(nn.Module):
 
 
 def extract_opaque_dataset_from_dump(dump_dir):
-    """Loads phase_3-cff.json from dump_dir and extracts labeled Stack-VM op sequences.
+    """Loads phase_3-cff.json and phase_1-lowered.json to extract condition computation windows.
 
-    Positive samples (label 1 = opaque branch):
-        For every block containing a JccRel op, extract the window of ops
-        from max(0, jcc_pos - 12) to jcc_pos (inclusive) as a token sequence.
-
-    Negative samples (label 0 = real/non-CFF branch):
-        For every block without JccRel that ends in JmpRel or Exit,
-        extract the last 5-12 ops as a "real branch" proxy.
-
-    Returns:
-        (samples, True)  where samples is [(tok_list, label), ...]
-        (None, False)    if the required file is missing or malformed
+    Both positive and negative sequences represent the 3-10 instructions that compute
+    branch flags immediately preceding a conditional jump (JccRel), truncated before
+    the JccRel opcode itself. This ensures the classification task evaluates condition
+    semantics (opaque algebraic identity vs genuine computation) rather than token presence.
     """
     cff_path = os.path.join(dump_dir, "phase_3-cff.json")
     lowered_path = os.path.join(dump_dir, "phase_1-lowered.json")
@@ -124,7 +117,7 @@ def extract_opaque_dataset_from_dump(dump_dir):
     if not cff_blocks:
         return None, False
 
-    # Positive samples: CFF blocks ending in JccRel (Brooks MBA / VPC dispatcher branches)
+    # Positive samples: CFF blocks containing JccRel (condition windows preceding JccRel, truncated before JccRel)
     pos_samples = []
     for block in cff_blocks:
         ops = block.get("ops", [])
@@ -133,12 +126,12 @@ def extract_opaque_dataset_from_dump(dump_dir):
         op_names = [o.get("op", "<CONST>") if isinstance(o, dict) else str(o) for o in ops]
         jcc_positions = [i for i, name in enumerate(op_names) if name == "JccRel"]
         for jcc_pos in jcc_positions:
-            start = max(0, jcc_pos - 12)
-            window = op_names[start: jcc_pos + 1]
-            if window:
+            start = max(0, jcc_pos - 10)
+            window = op_names[start:jcc_pos]  # Truncated before JccRel
+            if len(window) >= 2:
                 pos_samples.append((window, 1))
 
-    # Negative samples: Genuine program branch conditions from phase_1-lowered.json
+    # Negative samples: Genuine program branch condition windows from phase_1-lowered.json
     neg_samples = []
     if os.path.isfile(lowered_path):
         try:
@@ -150,26 +143,19 @@ def extract_opaque_dataset_from_dump(dump_dir):
                 op_names = [o.get("op", "<CONST>") if isinstance(o, dict) else str(o) for o in ops]
                 jcc_positions = [i for i, name in enumerate(op_names) if name == "JccRel"]
                 for jcc_pos in jcc_positions:
-                    start = max(0, jcc_pos - 12)
-                    window = op_names[start: jcc_pos + 1]
-                    if window:
+                    start = max(0, jcc_pos - 10)
+                    window = op_names[start:jcc_pos]  # Truncated before JccRel
+                    if len(window) >= 2:
                         neg_samples.append((window, 0))
-                if not jcc_positions and op_names and op_names[-1] in ("JmpRel", "Exit"):
-                    n = len(op_names)
-                    window = op_names[max(0, n - 8):]
-                    neg_samples.append((window, 0))
+                if not jcc_positions:
+                    jmp_positions = [i for i, name in enumerate(op_names) if name in ("JmpRel", "Exit")]
+                    for jmp_pos in jmp_positions:
+                        start = max(0, jmp_pos - 10)
+                        window = op_names[start:jmp_pos]
+                        if len(window) >= 2:
+                            neg_samples.append((window, 0))
         except Exception:
             pass
-
-    # Fallback negatives if lowered_path not present: non-Jcc blocks in cff
-    if not neg_samples:
-        for block in cff_blocks:
-            ops = block.get("ops", [])
-            op_names = [o.get("op", "<CONST>") if isinstance(o, dict) else str(o) for o in ops]
-            if "JccRel" not in op_names and op_names and op_names[-1] in ("JmpRel", "Exit"):
-                n = len(op_names)
-                window = op_names[max(0, n - 8):]
-                neg_samples.append((window, 0))
 
     if not pos_samples or not neg_samples:
         return None, False
@@ -180,45 +166,45 @@ def extract_opaque_dataset_from_dump(dump_dir):
     neg = random.sample(neg_samples, n)
     balanced = pos + neg
 
-    # If dataset is small, replicate to guarantee valid train/validation splits
     if len(balanced) < 60:
         multiplier = (60 // len(balanced)) + 1
         balanced = balanced * multiplier
 
     random.shuffle(balanced)
     return balanced, True
+
+
 def generate_stack_vm_predicate_dataset(n_samples=400, seed=1337):
     """Generates a synthetic balanced Stack-VM dataset as fallback.
 
-    Positive samples (opaque=1): Brooks-MBA-style sequences ending in
-        PushImm PushImm Add PushImm PushImm Add Sub PushImm Cmp JccRel
-    Negative samples (real=0): random arithmetic sequences without Cmp+JccRel.
+    Both classes represent condition calculations ending in Cmp.
+    Positive: Brooks-MBA invariant identity calculation.
+    Negative: Genuine variable arithmetic comparison.
     """
     random.seed(seed)
     samples = []
 
     arith_ops = ["Add", "Sub", "Mul", "And", "Or", "Xor", "Shl", "Shr"]
-    nonbranch_end = ["JmpRel", "Exit"]
 
     for _ in range(n_samples // 2):
-        # Positive: synthetic Brooks-MBA CFF opaque predicate window
-        prefix_len = random.randint(0, 4)
+        prefix_len = random.randint(1, 4)
         prefix = [random.choice(["PushImm", "PushReg", "AddImm"]) for _ in range(prefix_len)]
         core = [
             "PushImm", "PushImm", "Add",
             "PushImm", "PushImm", "Add",
-            "Sub", "PushImm", "Cmp", "JccRel",
+            "Sub", "PushImm", "Cmp"
         ]
         toks = prefix + core
         samples.append((toks, 1))
 
     for _ in range(n_samples // 2):
-        # Negative: random arithmetic block ending in jump/exit, no Cmp+JccRel
-        length = random.randint(5, 12)
-        toks = []
-        for _ in range(length - 1):
-            toks.append(random.choice(["PushImm", "PushReg", "AddImm"] + arith_ops))
-        toks.append(random.choice(nonbranch_end))
+        prefix_len = random.randint(1, 4)
+        prefix = [random.choice(["PushImm", "PushReg", "AddImm"]) for _ in range(prefix_len)]
+        core = [
+            random.choice(arith_ops), "PushReg", "PushImm",
+            random.choice(arith_ops), "PushReg", "Cmp"
+        ]
+        toks = prefix + core
         samples.append((toks, 0))
 
     random.shuffle(samples)
@@ -226,14 +212,13 @@ def generate_stack_vm_predicate_dataset(n_samples=400, seed=1337):
 
 
 def extract_ast_features(toks):
-    """Extracts structural non-graph features: length, push count, arith count, has_cmp, has_jcc."""
+    """Extracts non-graph structural features without tautological op flags."""
     length = float(len(toks))
     push_count = float(sum(1 for t in toks if "Push" in t or "Imm" in t))
     arith_count = float(sum(1 for t in toks if t in ("Add", "Sub", "Mul", "And", "Or", "Xor", "Shl", "Shr")))
-    has_cmp = 1.0 if "Cmp" in toks else 0.0
-    has_jcc = 1.0 if "JccRel" in toks else 0.0
-    return np.array([length, push_count, arith_count, has_cmp, has_jcc], dtype=np.float32)
-
+    nor_count = float(sum(1 for t in toks if t in ("Nor", "Nand")))
+    unique_ops = float(len(set(toks)))
+    return np.array([length, push_count, arith_count, nor_count, unique_ops], dtype=np.float32)
 
 def compute_stats(pos_scores, neg_scores):
     """Computes AUC, SE via Hanley-McNeil, z-score, p-value, and 95% upper bound."""
@@ -422,8 +407,12 @@ def main():
     print(f"  Tabular Baseline ROC-AUC:            {res['tab_auc']:>6.3f}")
     print(f"  Worst-Case 95% Upper Bound (AUC_95): {res['worst_auc_95']:>6.3f}")
     print(f"  Statistical z-score:                 {res['z_score']:>6.2f}  (p-value: {res['p_value']:.4f})")
+    def tier_label(drs):
+        if drs >= 90.0: return "TIER 3+ RESILIENT"
+        elif drs >= 70.0: return "TIER 2 HARDENED"
+        else: return "TIER 1 VULNERABLE"
     print("  " + "-" * 76)
-    print(f"  ===> OPAQUE PREDICATE DRS SCORE:     {res['drs_opaque']:>6.1f} / 100.0  [ TIER 3+ RESILIENT ]")
+    print(f"  ===> OPAQUE PREDICATE DRS SCORE:     {res['drs_opaque']:>6.1f} / 100.0  [ {tier_label(res['drs_opaque'])} ]")
     print("=" * 80 + "\n")
 
 

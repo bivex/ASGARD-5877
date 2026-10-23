@@ -85,30 +85,38 @@ class OpcodeDCELSTM(nn.Module):
 
 
 def lcs_align_block(ops_before, ops_after):
-    """Greedy Longest Common Subsequence alignment marking core ops (0) vs amplified dead code (1).
+    """Windowed alignment marking core ops (0) vs amplified dead code (1).
 
-    Each element of *ops_before* and *ops_after* is an ``(op_name, args_tuple)`` pair so that
-    two instructions with the same mnemonic but different operands are treated as distinct,
-    preventing false matches (e.g. two ``PushImm`` with different immediates).
+    Uses a bounded lookahead window to prevent non-matching transformations
+    (e.g. Horner polynomial expansions of PushImm) from permanently freezing
+    subsequent alignment across the block.
     """
     m, n = len(ops_before), len(ops_after)
     labels = [1] * n  # default: 1 = amplified/dead code
-    i, j = 0, 0
+    j_last = 0
     matched = 0
-    while i < m and j < n:
-        if ops_before[i] == ops_after[j]:
-            labels[j] = 0  # 0 = core semantic instruction
-            i += 1
-            j += 1
+    for i in range(m):
+        found_j = -1
+        for j in range(j_last, min(n, j_last + 50)):
+            if ops_before[i] == ops_after[j]:
+                found_j = j
+                break
+        if found_j != -1:
+            labels[found_j] = 0
+            j_last = found_j + 1
             matched += 1
-        else:
-            j += 1
     return labels, matched
 
 
 def extract_dataset_from_dumps(dump_dir):
-    """Ingests phase_1-lowered.json and phase_2-amplified.json to extract block instruction pairs."""
-    f1 = os.path.join(dump_dir, "phase_1-lowered.json")
+    """Ingests input phase dump and phase_2-amplified.json to extract block instruction pairs.
+
+    Prefers phase_2a-pre-superop.json as the direct input to the amplifier pass,
+    falling back to phase_1-lowered.json.
+    """
+    f1_pref = os.path.join(dump_dir, "phase_2a-pre-superop.json")
+    f1_fallback = os.path.join(dump_dir, "phase_1-lowered.json")
+    f1 = f1_pref if os.path.exists(f1_pref) else f1_fallback
     f2 = os.path.join(dump_dir, "phase_2-amplified.json")
 
     if not (os.path.exists(f1) and os.path.exists(f2)):
@@ -144,13 +152,15 @@ def extract_dataset_from_dumps(dump_dir):
         total_ops_after += len(ops_after)
         total_matched += matched
 
+    label_balance = (total_ops_after - total_matched) / max(1, total_ops_after)
     return {
         "dataset": dataset,
         "ops_before": total_ops_before,
         "ops_after": total_ops_after,
         "matched_core": total_matched,
         "redundant_ops": total_ops_after - total_matched,
-        "redundancy_ratio": (total_ops_after - total_matched) / max(1, total_ops_after)
+        "redundancy_ratio": label_balance,
+        "label_balance": label_balance,
     }
 
 
@@ -411,6 +421,7 @@ def main():
 
     res = audit_amplifier_dce(dump_dir=dump_dir, epochs=20)
     print(f"  Total Instructions: Before={res['ops_before']} -> After={res['ops_after']} ({res['redundancy_ratio']*100:.1f}% amplified)")
+    print(f"  Label Balance (Dead=1): {res['redundancy_ratio']*100:.1f}% (Core=0: {(1.0 - res['redundancy_ratio'])*100:.1f}%)\n")
 
     header = f"{'Model':<22} {'Precision':<12} {'Recall (DCE)':<14} {'F1-Score':<10} {'ROC-AUC':<10} {'Worst-AUC95':<12}"
     print(header)
@@ -418,8 +429,13 @@ def main():
     for name, m in [("Opcode-Transformer", res["tf"]), ("BiLSTM-Tagger", res["lstm"]), ("5-gram Tabular", res["tab"])]:
         print(f"{name:<22} {m['precision']*100:>10.1f}% {m['recovery_rate']*100:>12.1f}% {m['f1']:>9.3f} {m['auc']:>9.3f} {m['auc_95_upper']:>11.3f}")
 
+    def tier_label(drs):
+        if drs >= 90.0: return "TIER 3+ RESILIENT"
+        elif drs >= 70.0: return "TIER 2 HARDENED"
+        else: return "TIER 1 VULNERABLE"
+
     print("  " + "-" * 82)
-    print(f"  ===> AMPLIFIER DCE RESILIENCE (DRS_amp):  {res['drs_amp']:>5.1f} / 100.0  [ TIER 3+ RESILIENT ]")
+    print(f"  ===> AMPLIFIER DCE RESILIENCE (DRS_amp):  {res['drs_amp']:>5.1f} / 100.0  [ {tier_label(res['drs_amp'])} ]")
     print("=" * 86 + "\n")
 
 

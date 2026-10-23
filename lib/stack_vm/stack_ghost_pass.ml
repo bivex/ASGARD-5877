@@ -64,17 +64,18 @@ let entangle_with_accumulator ?(flags_live = false) ~(acc_slot : int) (delta : i
 (* ── Natural Bytecode Shadowing Repertoire ───────────────────────────── *)
 type ghost_kind =
   | GhostSuperopSet       (** SetRegImm into scratch *)
-  | GhostRegCopy          (** PushReg r; PopReg scratch *)
-  | GhostImmStore         (** PushImm imm; PopReg scratch *)
-  | GhostArithShadow      (** PushReg r; PushImm imm; Add; PopReg scratch *)
-  | GhostNorShadow        (** PushReg r; PushImm imm; Nor; PopReg scratch *)
-  | GhostSwapSwap         (** Swap; Swap *)
-  | GhostDupDrop          (** Dup; PopReg scratch *)
+  | GhostRegCopy          (** PushReg r; PopReg s_dst; PushReg s_dst; PopReg s_src *)
+  | GhostImmStore         (** PushImm imm; PopReg s_dst; PushReg s_dst; PopReg s_src *)
+  | GhostArithShadow      (** PushReg r; PushImm imm; Add; PushReg s_src; Add; PopReg s_dst *)
+  | GhostNorShadow        (** PushReg r; PushImm imm; Nor; PushReg s_src; Nor; PopReg s_dst *)
+  | GhostLiveIdentity     (** Live stack identity transform: +0, -0, *1 *)
+  | GhostDupEntangle      (** Dup; PushReg s_src; Nor; PopReg s_dst; PopReg s_src *)
   | GhostEntangle         (** AddRegImm (acc, delta); PopReg acc *)
 
 let emit_ghost ?(entangle = true) rng ~scratch_ring ~ctx ~entangle_slot stack_depth flags_live =
   let n_scratch = Array.length scratch_ring in
-  let scratch = scratch_ring.(next_int rng n_scratch) in
+  let s_src = scratch_ring.(next_int rng n_scratch) in
+  let s_dst = scratch_ring.(next_int rng n_scratch) in
   let n_slots = Context_allocator.total_slots ctx in
   let real_r = if n_slots > 0 then next_int rng n_slots else 0 in
   let kinds =
@@ -82,20 +83,20 @@ let emit_ghost ?(entangle = true) rng ~scratch_ring ~ctx ~entangle_slot stack_de
       (* Flag-neutral operations: zero flag distortion *)
       match (stack_depth >= 2, stack_depth >= 1) with
       | true, _ ->
-          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostSwapSwap; GhostDupDrop |]
+          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostLiveIdentity |]
       | false, true ->
-          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostDupDrop |]
+          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostLiveIdentity |]
       | false, false ->
           [| GhostSuperopSet; GhostRegCopy; GhostImmStore |]
     else
-      (* When flags dead: can execute arithmetic and NOR shadows *)
+      (* When flags dead: can execute arithmetic, NOR shadows, and live-stack identities *)
       match (stack_depth >= 2, stack_depth >= 1) with
       | true, _ ->
           [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostArithShadow;
-             GhostNorShadow; GhostSwapSwap; GhostDupDrop; GhostEntangle |]
+             GhostNorShadow; GhostLiveIdentity; GhostDupEntangle; GhostEntangle |]
       | false, true ->
           [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostArithShadow;
-             GhostNorShadow; GhostDupDrop; GhostEntangle |]
+             GhostNorShadow; GhostLiveIdentity; GhostDupEntangle; GhostEntangle |]
       | false, false ->
           [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostArithShadow;
              GhostNorShadow; GhostEntangle |]
@@ -107,32 +108,47 @@ let emit_ghost ?(entangle = true) rng ~scratch_ring ~ctx ~entangle_slot stack_de
       ([ AddRegImm (entangle_slot, delta); PopReg entangle_slot ], delta)
   | GhostEntangle ->
       let delta = next_int64 rng in
-      ([ AddRegImm (scratch, delta); PopReg scratch ], 0L)
+      ([ AddRegImm (s_dst, delta); PopReg s_dst ], 0L)
 
   | GhostSuperopSet ->
       let imm = next_int64 rng in
-      ([ SetRegImm (scratch, imm) ], 0L)
+      ([ SetRegImm (s_dst, imm); PushReg s_dst; PopReg s_src ], 0L)
 
   | GhostRegCopy ->
-      ([ PushReg real_r; PopReg scratch ], 0L)
+      ([ PushReg real_r; PopReg s_dst; PushReg s_dst; PopReg s_src ], 0L)
 
   | GhostImmStore ->
       let imm = next_int64 rng in
-      ([ PushImm imm; PopReg scratch ], 0L)
+      ([ PushImm imm; PopReg s_dst; PushReg s_dst; PopReg s_src ], 0L)
 
   | GhostArithShadow ->
       let imm = next_int64 rng in
-      ([ PushReg real_r; PushImm imm; Add; PopReg scratch ], 0L)
+      ([ PushReg real_r; PushImm imm; Add; PushReg s_src; Add; PopReg s_dst ], 0L)
 
   | GhostNorShadow ->
       let imm = next_int64 rng in
-      ([ PushReg real_r; PushImm imm; Nor; PopReg scratch ], 0L)
+      ([ PushReg real_r; PushImm imm; Nor; PushReg s_src; Nor; PopReg s_dst ], 0L)
 
-  | GhostSwapSwap ->
-      ([ Swap; Swap ], 0L)
+  | GhostLiveIdentity when stack_depth >= 1 ->
+      if flags_live then
+        ([ PushImm 1L; Mul ], 0L)
+      else
+        (match next_int rng 3 with
+         | 0 -> ([ PushImm 0L; Add ], 0L)
+         | 1 -> ([ PushImm 0L; Sub ], 0L)
+         | _ ->
+             let imm = next_int64 rng in
+             ([ AddImm imm; SubImm imm ], 0L))
 
-  | GhostDupDrop ->
-      ([ Dup; PopReg scratch ], 0L)
+  | GhostLiveIdentity ->
+      let imm = next_int64 rng in
+      ([ SetRegImm (s_dst, imm); PushReg s_dst; PopReg s_src ], 0L)
+
+  | GhostDupEntangle when stack_depth >= 1 ->
+      ([ Dup; PushReg s_src; Nor; PopReg s_dst; PopReg s_src ], 0L)
+
+  | GhostDupEntangle ->
+      ([ PushReg s_src; PopReg s_dst ], 0L)
 (* ── Insertion Pass with Data-Flow Entanglement ───────────────────────── *)
 let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng ctx ops ghost_rate =
   let checksum = ref 0L in
@@ -208,6 +224,13 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng c
     if Stack_balance_pass.is_terminator op then begin
       if not !seen_terminator then begin
         seen_terminator := true;
+        if entangle && !checksum <> 0L then begin
+          emit PushFlags;
+          emit (PushReg entangle_slot);
+          emit (AddImm (Int64.neg !checksum));
+          emit Test;
+          emit PopFlags;
+        end;
         if not live.(i) && maybe rng ghost_rate then emit_ghost_here false
       end;
       emit op

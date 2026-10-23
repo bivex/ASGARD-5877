@@ -536,8 +536,12 @@ def main():
     for name, m in [("Opcode-Transformer", res["tf"]), ("BiLSTM-Tagger", res["lstm"]), ("5-gram Tabular", res["tab"])]:
         print(f"{name:<22} {m['precision']*100:>9.1f}% {m['recall']*100:>14.1f}% {m['f1']:>10.3f} {m['auc']:>10.3f} {m['auc_95_upper']:>12.3f}")
 
+    def tier_label(drs):
+        if drs >= 90.0: return "TIER 3+ RESILIENT"
+        elif drs >= 70.0: return "TIER 2 HARDENED"
+        else: return "TIER 1 VULNERABLE"
     print("  " + "-" * 82)
-    print(f"  ===> GHOST PADDING RESILIENCE (DRS_ghost): {res['drs_ghost']:>6.1f} / 100.0  [ TIER 3+ RESILIENT ]")
+    print(f"  ===> GHOST PADDING RESILIENCE (DRS_ghost): {res['drs_ghost']:>6.1f} / 100.0  [ {tier_label(res['drs_ghost'])} ]")
     print("=" * 86 + "\n")
 
 
