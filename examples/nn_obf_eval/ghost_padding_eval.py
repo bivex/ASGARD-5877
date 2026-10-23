@@ -297,6 +297,22 @@ def synthesize_ghost_dataset(n_blocks=120, seed=1337):
     }
 
 
+def chunk_dataset(dataset, chunk_size=256):
+    """
+    Splits basic blocks into uniform contiguous chunks of length <= chunk_size,
+    ensuring sequence models (Transformer, BiLSTM) evaluate 100% of instructions
+    without discarding tail operations in long basic blocks.
+    """
+    chunked = []
+    for ops, labels in dataset:
+        if len(ops) <= chunk_size:
+            chunked.append((ops, labels))
+        else:
+            for i in range(0, len(ops), chunk_size):
+                chunked.append((ops[i:i + chunk_size], labels[i:i + chunk_size]))
+    return chunked
+
+
 def pad_blocks(batch, max_len=256):
     """Pads opcode sequences and label masks."""
     x_list, y_list, mask_list = [], [], []
@@ -381,22 +397,23 @@ def compute_ghost_metrics(y_true, y_pred):
     }
 
 
-def audit_ghost_padding(dump_dir=None, epochs=20, batch_size=16):
+def audit_ghost_padding(dump_dir=None, epochs=12, batch_size=32):
     """
     Trains Opcode-level Transformer, BiLSTM, and 5-gram Baseline
-    to detect and tag inserted ghost padding instructions.
+    to detect and tag inserted ghost padding instructions across 100% of bytecode.
     """
     data_dict = extract_dataset_from_dumps(dump_dir) if dump_dir else None
     if not data_dict:
         data_dict = synthesize_ghost_dataset(n_blocks=100)
 
     dataset = data_dict["dataset"]
+    chunked_dataset = chunk_dataset(dataset, chunk_size=256)
     random.seed(1337)
-    random.shuffle(dataset)
+    random.shuffle(chunked_dataset)
 
-    split = max(1, int(len(dataset) * 0.75))
-    train_data = dataset[:split]
-    val_data = dataset[split:] if len(dataset) > 1 else dataset
+    split = max(1, int(len(chunked_dataset) * 0.75))
+    train_data = chunked_dataset[:split]
+    val_data = chunked_dataset[split:] if len(chunked_dataset) > 1 else chunked_dataset
 
     # Model A: GhostTransformerTagger
     torch.manual_seed(1337)
@@ -481,7 +498,7 @@ def audit_ghost_padding(dump_dir=None, epochs=20, batch_size=16):
         op_names = [op[0] if isinstance(op, tuple) else str(op) for op in ops]
         for idx in range(len(op_names)):
             ctx = tuple(op_names[max(0, idx - 2): idx + 3])
-            c = ngram_counts.get(ctx, [1, 1])
+            c = ngram_counts.get(ctx, [1.0 - prior, prior])
             prob = c[1] / float(c[0] + c[1])
             val_preds_tab.append(prob)
             val_trues_tab.append(labels[idx])
