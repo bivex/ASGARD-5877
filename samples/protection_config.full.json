@@ -109,9 +109,9 @@
   "comp_stall": {
     "enabled": true,
     "variant": "time_lock",
-    "n_iterations": 500000,
+    "n_iterations": 50000000,
     "pow_difficulty": 20,
-    "tau_ux_sec": 0.05,
+    "tau_ux_sec": 0.5,
     "emu_quota_instrs": 10000000,
     "seed": 1337
   },

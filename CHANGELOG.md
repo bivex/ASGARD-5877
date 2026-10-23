@@ -6,6 +6,8 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+- Scale computational stalling iterations to 50M ($N = 50\,000\,000$, $\tau_{\text{UX}} = 0.5\text{ s}$) in `samples/protection_config.full.json`, accentuating the emulation timing gap (0.59s native silicon vs 1.22s QEMU TCG software emulation in Docker).
 
 ### Fixed
 - Fix Linux Docker and GCC portability in generated C++ runtimes and trampolines: added `Char` type to typed C++ AST/printer (`lib/cpp_codegen/cpp_ast.ml`, `lib/cpp_codegen/cpp_printer.ml`) and updated `/proc/self/status` parser buffer to `char[128]` in `lib/adapters/protect_adapters/c_trampoline_adapter.ml`; resolved Darwin stdio symbols (`___stdoutp`, `___stdinp`, `___stderrp`) to Linux dynamic libc streams in `lib/stack_vm/stack_runtime.ml` and `lib/native_vm/vm_runtime_emitter.ml`; widened `asg_addr_canonical` to admit AArch64 TTBR0 48-bit and 52-bit user virtual addresses.
