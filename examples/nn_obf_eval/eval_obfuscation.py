@@ -191,9 +191,12 @@ def main():
     print(f"  [6] Ghost Stack Padding Resilience:         {ghost_res['drs_ghost']:>5.1f} / 100.0")
     print(f"  [7] Spaghetti Fragment Reassembly:          {spagh_res['drs_spaghetti']:>5.1f} / 100.0")
     print("  " + "-" * 76)
-    print(f"  ===> COMPOSITE NEURAL DRS SCORE:            {composite_drs:>5.1f} / 100.0  [ TIER 3+ RESILIENT ]")
+    def tier_label(drs):
+        if drs >= 90.0: return "TIER 3+"
+        elif drs >= 70.0: return "TIER 2"
+        else: return "TIER 1"
+    print(f"  ===> COMPOSITE NEURAL DRS SCORE:            {composite_drs:>5.1f} / 100.0  [ {tier_label(composite_drs)} ]")
     print("=" * 80 + "\n")
-
 
 if __name__ == "__main__":
     main()
