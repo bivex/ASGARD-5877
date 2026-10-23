@@ -145,8 +145,9 @@ let emit_ghost ?(entangle = true) rng ~scratch_ring ~ctx ~entangle_slot stack_de
       ([ SetRegImm (s_dst, imm); PushReg s_dst; PopReg s_src ], 0L)
 
   | GhostDupEntangle when stack_depth >= 1 ->
-      ([ Dup; PushReg s_src; Nor; PopReg s_dst; PopReg s_src ], 0L)
-
+      (* Dup(+1), PushReg(+1), Nor(-1 net=+1), PopReg(-1), PopReg(-1) = -1: wrong.
+         Use: PushReg s_src, PopReg s_dst = net 0. *)
+      ([ PushReg s_src; PopReg s_dst ], 0L)
   | GhostDupEntangle ->
       ([ PushReg s_src; PopReg s_dst ], 0L)
 (* ── Insertion Pass with Data-Flow Entanglement ───────────────────────── *)
@@ -225,11 +226,9 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng c
       if not !seen_terminator then begin
         seen_terminator := true;
         if entangle && !checksum <> 0L then begin
-          emit PushFlags;
           emit (PushReg entangle_slot);
           emit (AddImm (Int64.neg !checksum));
-          emit Test;
-          emit PopFlags;
+          emit (PopReg entangle_slot);
         end;
         if not live.(i) && maybe rng ghost_rate then emit_ghost_here false
       end;
