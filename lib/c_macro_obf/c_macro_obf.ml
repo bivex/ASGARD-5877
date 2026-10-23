@@ -49,7 +49,7 @@ let obfuscate_constant_i64 ~prefix ~seed n =
   let rng = Random.State.make [| seed; Int64.to_int (Int64.logand n 0x7FFFFFFFL) |] in
   let k1 = C_macro_config.rand_u64 rng in
   let k2 = C_macro_config.rand_u64 rng in
-  let c1 = Int64.logxor n k1 in
+  let c1 = Int64.logxor (Int64.sub n k2) k1 in
   Printf.sprintf "%sBLIND_I64(0x%LXULL, 0x%LXULL, 0x%LXULL)" prefix c1 k1 k2
 
 let lift_nanomites_in_source = C_nanomites.lift_nanomites_in_source

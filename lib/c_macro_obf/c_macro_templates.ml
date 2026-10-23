@@ -102,7 +102,7 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
     comment_top "/* ------------------------------------------------------------------------- */";
     comment_top "/* 3. CONSTANT BLINDING MACROS                                              */";
     comment_top "/* ------------------------------------------------------------------------- */";
-    raw_top ("#define " ^ p ^ "BLIND_U64(c1, k1, k2) ((((uint64_t)(c1) ^ (uint64_t)(k1)) + (uint64_t)(k2)) - (uint64_t)(k2))");
+    raw_top ("#define " ^ p ^ "BLIND_U64(c1, k1, k2) (((uint64_t)(c1) ^ (uint64_t)(k1)) + (uint64_t)(k2))");
     raw_top ("#define " ^ p ^ "BLIND_I64(c1, k1, k2) ((int64_t)" ^ p ^ "BLIND_U64(c1, k1, k2))");
     raw_top ("#define " ^ p ^ "BLIND_I32(c1, k1, k2) ((int32_t)" ^ p ^ "BLIND_U64(c1, k1, k2))");
   ] in
