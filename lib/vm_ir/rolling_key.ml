@@ -19,10 +19,23 @@ let key64_for_offset (seed : int32) (offset : int) : int64 =
 let anchor_key (seed : int32) (offset : int) : int64 =
   key64_for_offset (Int32.logxor seed murmur3_32_c1) (offset lxor (Int64.to_int salt_leet_13375877))
 
+(* Anti-DSE branch-invariant polynomial key updates (P2-01):
+   Eliminates static key ^= fixup_const at CFG merge points.
+   K_{new} = H(K_{old} ^ (C * Delta)) where H is SplitMix64 non-linear permutation. *)
+
+let poly_hash64 (x : int64) : int64 =
+  let x1 = Int64.mul (Int64.logxor x (Int64.shift_right_logical x 30)) splitmix64_gamma in
+  let x2 = Int64.mul (Int64.logxor x1 (Int64.shift_right_logical x1 27)) splitmix64_mix in
+  Int64.logxor x2 (Int64.shift_right_logical x2 31)
+
 (* One step of the in-block chain, mirroring C++ advance_key_step exactly:
-   x = k ^ (op*0x9E3779B97F4A7C15 + (dst<<24) + imm); rot = ROR23(x);
-   (rot * 0xBF58476D1CE4E5B9) ^ 0x5877CAFE1337BEEF.  Int64 arithmetic is
-   modulo 2^64, matching uint64_t wraparound. *)
+   x = k ^ (op*0x9E3779B97F4A7C15 + (dst<<24) + imm); xh = poly_hash64(x);
+   rot = ROR23(xh); (rot * 0xBF58476D1CE4E5B9) ^ 0x5877CAFE1337BEEF.
+   The poly_hash64 (SplitMix64 finalizer) inside the step breaks the F2 /
+   Z/2^64 affine structure of the old chain (rot/xor/odd-mul only): carries
+   from its two odd multiplications defeat linear key recovery via Gaussian
+   elimination and linear SMT.  Int64 arithmetic is modulo 2^64, matching
+   uint64_t wraparound. *)
 let advance_key_step (k : int64) (op : int) (dst : int) (imm : int64) : int64 =
   let x = Int64.logxor k
       (Int64.add
@@ -30,7 +43,8 @@ let advance_key_step (k : int64) (op : int) (dst : int) (imm : int64) : int64 =
             (Int64.mul (Int64.of_int op) golden_ratio_64)
             (Int64.shift_left (Int64.of_int dst) 24))
          imm) in
-  let rot = Int64.logor (Int64.shift_right_logical x 23) (Int64.shift_left x 41) in
+  let xh = poly_hash64 x in
+  let rot = Int64.logor (Int64.shift_right_logical xh 23) (Int64.shift_left xh 41) in
   Int64.logxor (Int64.mul rot splitmix64_gamma) salt_xwcafe_leetbeef
 
 let sign_extend_32 (v : int64) : int64 =
@@ -81,14 +95,6 @@ let poly_init_of_seed (seed : int32) : int64 =
   let s64 = Int64.logand (Int64.of_int32 seed) 0xFFFFFFFFL in
   Int64.logxor fnv1a_64_offset_basis (Int64.mul s64 golden_ratio_64)
 
-(* Anti-DSE branch-invariant polynomial key updates (P2-01):
-   Eliminates static key ^= fixup_const at CFG merge points.
-   K_{new} = H(K_{old} ^ (C * Delta)) where H is SplitMix64 non-linear permutation. *)
-
-let poly_hash64 (x : int64) : int64 =
-  let x1 = Int64.mul (Int64.logxor x (Int64.shift_right_logical x 30)) splitmix64_gamma in
-  let x2 = Int64.mul (Int64.logxor x1 (Int64.shift_right_logical x1 27)) splitmix64_mix in
-  Int64.logxor x2 (Int64.shift_right_logical x2 31)
 
 let unshift_xor_right (y : int64) (shift : int) : int64 =
   let rec loop acc s =
@@ -135,14 +141,18 @@ let phi_op  = golden_ratio_64
 let rol64 x n =
   Int64.logor (Int64.shift_left x n) (Int64.shift_right_logical x (64 - n))
 
-(** Solves for 64-bit delta_imm such that advance_key_step(k_in, op, dst, delta_imm) == k_target *)
+(** Solves for 64-bit delta_imm such that advance_key_step(k_in, op, dst, delta_imm) == k_target.
+    Inverts the non-linear step via poly_unhash64 (exact SplitMix64 inverse):
+    k_target = ((ROR23(poly_hash64(x)) * gamma) ^ C)  =>  x recovered by
+    un-C, un-mul, un-rot, poly_unhash64.  The step is still bijective —
+    only its LINEAR structure is gone. *)
 let solve_join_compensation ~(k_in : int64) ~(k_target : int64) ~(op : int) ~(dst : int) : int64 =
   let step1 = Int64.logxor k_target c_const in
   let unmul = Int64.mul step1 m_inv in
   let unrot = rol64 unmul 23 in
-  let req_mix = Int64.logxor k_in unrot in
+  let x_req = poly_unhash64 unrot in
   let op_part = Int64.mul (Int64.of_int op) phi_op in
   let dst_part = Int64.shift_left (Int64.of_int dst) 24 in
-  Int64.sub req_mix (Int64.add op_part dst_part)
+  Int64.sub x_req (Int64.add (Int64.add k_in op_part) dst_part)
 
 

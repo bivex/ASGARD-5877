@@ -201,7 +201,11 @@ let emit_context_decls ?(context_epochs = 4) ~key_seed ~reg_perm ~stride ~offset
     member_method ~attrs:[AlwaysInline; NoExcept] ~is_static:true UInt64 "advance_key_step"
       [(UInt64, "k"); (UInt8, "op"); (UInt8, "dst"); (Int64, "imm")] [
       let_u64 "x" (var "k" ^~ (((cast UInt64 (var "op") *~ u64 golden_ratio_64) +~ (cast UInt64 (var "dst") <<~ u64 24L)) +~ cast UInt64 (var "imm")));
-      let_u64 "rot" ((var "x" >>~ u64 23L) |~ (var "x" <<~ u64 41L));
+      (* Non-linear SplitMix64 diffusion defeats F2/Z2^64 linear key recovery *)
+      let_u64 "x1" ((var "x" ^~ (var "x" >>~ u64 30L)) *~ u64 splitmix64_gamma);
+      let_u64 "x2" ((var "x1" ^~ (var "x1" >>~ u64 27L)) *~ u64 splitmix64_mix);
+      let_u64 "xh" (var "x2" ^~ (var "x2" >>~ u64 31L));
+      let_u64 "rot" ((var "xh" >>~ u64 23L) |~ (var "xh" <<~ u64 41L));
       ret ((var "rot" *~ u64 splitmix64_gamma) ^~ u64 salt_xwcafe_leetbeef);
     ];
 

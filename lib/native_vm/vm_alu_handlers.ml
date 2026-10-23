@@ -71,9 +71,14 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi1.bias in
     let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi2.bias in
     let lin_res = (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const in
-    (* Non-linear zero invariant: ((x ^ y) + 2*(x & y) - (x + y)) * ((x ^ y) | 1) == 0 *)
-    let nl_zero = (((reg_dst ^~ reg_src) +~ (u64 2L *~ (reg_dst &~ reg_src))) -~ (reg_dst +~ reg_src)) *~ ((reg_dst ^~ reg_src) |~ u64 1L) in
-    lin_res +~ nl_zero
+    (* Degree-3 non-linear zero invariant:
+       Z = (x ^ y) + 2*(x & y) - (x + y) == 0 identically (carry identity),
+       modulated by ((x * x) | 1): ring multiplication injects 64-bit carry
+       chains of algebraic degree 3 — SiMBA/GAMBA 1-bit linear truth-table
+       solvers can no longer close on the basis monomials. *)
+    let z_add = ((reg_dst ^~ reg_src) +~ (u64 2L *~ (reg_dst &~ reg_src))) -~ (reg_dst +~ reg_src) in
+    let nl_modulator = (reg_dst *~ reg_dst) |~ u64 1L in
+    lin_res +~ (z_add *~ nl_modulator)
   in
 
   let synth_basis_sub () =
@@ -82,10 +87,12 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi1.bias in
     let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi2.bias in
     let lin_res = (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const in
-    (* Non-linear zero invariant: ((x - y) - ((x ^ ~y) + 2*(x & ~y) + 1)) * ((x ^ y) | 1) == 0 *)
+    (* Degree-3 zero: Z = (x - y) - ((x ^ ~y) + 2*(x & ~y) + 1) == 0,
+       modulated by ((y * y) | 1) — distinct non-linearity per op. *)
     let not_src = bit_not reg_src in
-    let nl_zero = ((reg_dst -~ reg_src) -~ (((reg_dst ^~ not_src) +~ (u64 2L *~ (reg_dst &~ not_src))) +~ u64 1L)) *~ ((reg_dst ^~ reg_src) |~ u64 1L) in
-    lin_res +~ nl_zero
+    let z_sub = (reg_dst -~ reg_src) -~ (((reg_dst ^~ not_src) +~ (u64 2L *~ (reg_dst &~ not_src))) +~ u64 1L) in
+    let nl_modulator = (reg_src *~ reg_src) |~ u64 1L in
+    lin_res +~ (z_sub *~ nl_modulator)
   in
 
   let synth_basis_xor () =
@@ -94,9 +101,11 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
     let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi1.bias in
     let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi2.bias in
     let lin_res = (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const in
-    (* Non-linear zero invariant: ((x ^ y) - ((x | y) - (x & y))) * ((x | y) | 1) == 0 *)
-    let nl_zero = ((reg_dst ^~ reg_src) -~ ((reg_dst |~ reg_src) -~ (reg_dst &~ reg_src))) *~ ((reg_dst |~ reg_src) |~ u64 1L) in
-    lin_res +~ nl_zero
+    (* Degree-3 zero: Z = (x ^ y) - ((x | y) - (x & y)) == 0,
+       modulated by (((x + y) * (x - y)) | 1) — difference-of-squares form. *)
+    let z_xor = (reg_dst ^~ reg_src) -~ ((reg_dst |~ reg_src) -~ (reg_dst &~ reg_src)) in
+    let nl_modulator = ((reg_dst +~ reg_src) *~ (reg_dst -~ reg_src)) |~ u64 1L in
+    lin_res +~ (z_xor *~ nl_modulator)
   in
 
   let synth_chameleon_expr ~x ~y sem =

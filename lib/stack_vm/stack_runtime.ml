@@ -1145,10 +1145,6 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
     return (v << (k & 63)) | (v >> ((64 - k) & 63));
 }
 
-static inline void step_key(uint64_t *key, uint8_t p) {
-    *key = rotl64(*key, 3) + (p ^ 0x5A);
-}
-
 static inline uint64_t feedback_hash(uint64_t v) {
     v ^= v >> 33;
     v *= UINT64_C(0xFF51AFD7ED558CCD);
@@ -1158,6 +1154,12 @@ static inline uint64_t feedback_hash(uint64_t v) {
     return v;
 }
 
+static inline void step_key(uint64_t *key, uint8_t p) {
+    /* Non-linear: feedback_hash diffusion breaks affine key recovery. */
+    *key = feedback_hash(rotl64(*key, 3) + (p ^ 0x5A));
+}
+|};
+        raw_top {|
 static inline uint8_t fetch_byte(stack_vm_t *vm, const uint8_t *bc, size_t *vip) {
     if (*vip >= vm->bc_size) {
         vm->halted = 1;

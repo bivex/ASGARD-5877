@@ -6,8 +6,8 @@ open Native_vm
     contract and must fail loudly here. *)
 let gold_anchor_seed12345678_off0 = 0xBD4DB93D6D585E96L
 let gold_anchor_seed0BADF00D_off1337 = 0x74A78CAE58D19631L
-let gold_advance_kDEADBEEF_op61_dst7 = 0x43420536502AD634L
-let gold_advance_k0123_op3_dst31_negimm = 0x71825847E6590789L
+let gold_advance_kDEADBEEF_op61_dst7 = 0xC04474C81748F3DAL
+let gold_advance_k0123_op3_dst31_negimm = 0xFEF66F56E726277EL
 
 (** Tests for Anti-Pushan Protection: Execution-History Coupled Rolling Key.
     Pushan assumes static / constraint-free block emulation where opcodes are
@@ -365,11 +365,33 @@ func_tamper:
       Alcotest.(check bool) "tampered handler binding aborts/fails execution" false succeeded_and_120
 
 let invert_key_step (k_next : int64) (op : int) (dst : int) (imm : int64) : int64 =
+  (* Mirror of the non-linear advance_key_step inverse:
+     un-C, un-mul(gamma^-1), un-ROR23, poly_unhash64, then un-mix. *)
   let const_M_inv = 0x96DE1B173F119089L in
   let const_C = 0x5877CAFE1337BEEFL in
   let temp1 = Int64.logxor k_next const_C in
-  let rot = Int64.mul temp1 const_M_inv in
-  let x = Int64.logor (Int64.shift_left rot 23) (Int64.shift_right_logical rot 41) in
+  let xh = Int64.mul temp1 const_M_inv in
+  let rot = Int64.logor (Int64.shift_left xh 23) (Int64.shift_right_logical xh 41) in
+  (* poly_unhash64: exact inverse of SplitMix64 finalizer *)
+  let unshift_xor_right y shift =
+    let rec loop acc s =
+      if s >= 64 then acc
+      else loop (Int64.logxor acc (Int64.shift_right_logical y s)) (s + shift)
+    in
+    loop y shift
+  in
+  let mod_inv a =
+    let rec iter x i =
+      if i >= 6 then x
+      else iter (Int64.mul x (Int64.sub 2L (Int64.mul a x))) (i + 1)
+    in
+    iter a 0
+  in
+  let x2 = unshift_xor_right rot 31 in
+  let w1 = Int64.mul x2 (mod_inv 0x94D049BB133111EBL) in
+  let x1 = unshift_xor_right w1 27 in
+  let w0 = Int64.mul x1 (mod_inv 0xBF58476D1CE4E5B9L) in
+  let x = unshift_xor_right w0 30 in
   let delta =
     Int64.add
       (Int64.add

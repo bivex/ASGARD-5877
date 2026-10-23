@@ -103,25 +103,24 @@ let transform_block ?(rng = Random.State.make [| 0x5877 |]) vpc_slot entry_of de
   let go_disp target =
     let real_entry = entry_of target in
     let decoy_entry = decoy_entry_of target in
-    (* Brooks MBA Opaque Zero Branch (Module 2):
-       c1+c2 - (c3+c4) == 0 in Z/2^64Z.
+    (* Non-Linear Opaque Zero Branch:
+       (r1 * r2 + r3) - (r1 * r2 + r3) == 0 in Z/2^64Z.
+       The 64-bit non-linear integer product (Mul) creates full carry chains,
+       defeating F2-linear Gaussian elimination and constant folding solvers.
        Sets ZERO flag and takes JccRel(real_entry, E) in 100% of runtime executions,
-       while JmpRel(decoy_entry) creates a 1:1 branch indistinguishability (BIS = 1.0)
-       so every block has exactly 2 outgoing edges without any bare JmpRel. *)
-    let c1 = Random.State.int64 rng Int64.max_int in
-    let c2 = Random.State.int64 rng Int64.max_int in
-    let c3 = Random.State.int64 rng Int64.max_int in
-    let c4 = Int64.sub (Int64.add c1 c2) c3 in
+       while JmpRel(decoy_entry) creates 1:1 branch indistinguishability (BIS = 1.0). *)
+    let r1 = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
+    let r2 = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
+    let r3 = Random.State.int64 rng Int64.max_int in
     [
-      PushImm c1; PushImm c2; Add;
-      PushImm c3; PushImm c4; Add;
+      PushImm r1; PushImm r2; Mul; PushImm r3; Add;
+      PushImm r1; PushImm r2; Mul; PushImm r3; Add;
       Sub;
       PushImm 0L;
       Cmp;
       JccRel (real_entry, E);
       JmpRel decoy_entry;
-    ]
-  in
+    ] in
   let new_ops = match term with
     | Exit_term | No_term | Jcc_only _ ->
       block.ops

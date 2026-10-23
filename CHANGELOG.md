@@ -33,6 +33,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Eliminate illusory Tier-1 `lightweight` preset and raw linear MBA depth 1 in `lib/native_vm/protection_presets.ml`, `lib/native_vm/protection_config.mli`, `lib/mba_engine/mba.ml`, and `lib/mba_engine/ncfg_synth.ml`: removed the `lightweight` preset (which disabled CFF and ran linear MBA at depth 1 without non-linear bijections, offering zero resilience against SMT solvers while incurring runtime overhead), enforced a minimum MBA depth of 2 across the ALU obfuscator, and updated CLI and test references.
 
 ### Added
+- Eliminate linear key-derivation and structural leakage across VM pipelines:
+  * Advance-key step non-linearity: inject SplitMix64 `poly_hash64` into `advance_key_step` in `lib/vm_ir/rolling_key.ml`, `lib/native_vm/vm_context_emitter.ml`, and `test/test_anti_pushan.ml`, defeating F2-linear Gaussian elimination solvers while preserving exact analytical inversion.
+  * Byte-rolling keystream non-linearity: upgrade `step_key` in `lib/stack_vm/stack_encoder.ml` and `lib/stack_vm/stack_runtime.ml` from affine `ROTL3` to Murmur3 `feedback_hash` diffusion.
+  * GL(2, $\mathbb{Z}_{2^{64}}$) basis degree-3 zero modulation: modulate algebraic zero invariants by non-linear square cross-terms `((x*x)|1)` in `lib/native_vm/vm_alu_handlers.ml`.
+  * CFF non-linear opaque zero: replace linear additive zero with non-linear integer product `(r1*r2 + r3) - (r1*r2 + r3)` in `lib/stack_vm/stack_cff_pass.ml`.
+  * Tech-2603 Decoy Ring: route padding slots into an irreducible closed cycle with in-degree 1 in `lib/tech_2603/tech_2603_engine.ml`, eliminating entry-block frequency tells.
 - Upgrade Tech-2603 Anti-VPC Tracking from linear affine permutation to non-linear T-function permutation (`lib/tech_2603/tech_2603_engine.ml`, `lib/tech_2603/asg_tech_2603.hpp`):
   * Replaced 1D linear mapping $(a \cdot i + b) \pmod M$ with a non-linear XorShift-Mul T-function permutation $\pi(i) = (( (i \cdot a) \oplus ((i \cdot a) \gg s) ) + b) \pmod M$ where $s = \lceil \log_2(M) / 2 \rceil$.
   * Guaranteed strict bijectivity and exact $O(1)$ analytical inversion $\pi^{-1}(p) = (( (p - b) \oplus ((p - b) \gg s) ) \cdot a^{-1}) \pmod M$ without iteration or lookup tables.

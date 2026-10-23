@@ -346,8 +346,11 @@ let rotl64 v k =
   let k = k mod 64 in
   Int64.logor (Int64.shift_left v k) (Int64.shift_right_logical v (64 - k))
 
+(* Non-linear byte-rolling step: the feedback_hash (Murmur3 fmix64) diffusion
+   breaks the affine (ROTL + const) structure recoverable via known-plaintext
+   linear algebra over Z/2^64.  Mirror: step_key() in stack_runtime.ml. *)
 let step_key key byte_val =
-  Int64.add (rotl64 key 3) (Int64.of_int (byte_val lxor 0x5A))
+  feedback_hash (Int64.add (rotl64 key 3) (Int64.of_int (byte_val lxor 0x5A)))
 
 (* ── SipHash-1-2 (64-bit) for per-block key derivation ─────────────── *)
 (** SipHash-1-2: 1 compression round, 2 finalisation rounds.

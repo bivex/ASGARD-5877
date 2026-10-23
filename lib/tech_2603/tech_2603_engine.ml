@@ -133,10 +133,23 @@ let generate_affine_plan ?(min_capacity = 16) ~seed ~real_count () : (vpc_scramb
           successor_table.(p) <- -1 (* Terminating block *)
       end else begin
         padding_slots_rev := p :: !padding_slots_rev;
-        (* In padding slots, set dummy successor to preserve non-empty table *)
-        successor_table.(p) <- logical_to_phys.(0)
       end
     done;
+
+    (* Decoy Manifold: padding slots form an irreducible closed ring.
+       Each padding slot points to the next padding slot with in-degree == 1,
+       completely eliminating the slot 0 frequency tell where all decoys
+       pointed to logical_to_phys[0]. *)
+    let pad_slots = List.rev !padding_slots_rev in
+    let num_pads = List.length pad_slots in
+    if num_pads > 0 then begin
+      let pad_arr = Array.of_list pad_slots in
+      for j = 0 to num_pads - 1 do
+        let p = pad_arr.(j) in
+        let next_p = pad_arr.((j + 1) mod num_pads) in
+        successor_table.(p) <- next_p
+      done
+    end;
 
     Ok {
       logical_to_physical = logical_to_phys;
