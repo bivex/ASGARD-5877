@@ -1239,6 +1239,7 @@ static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
     return 1;
 }|};
       ]
+      @ Vm_ir.Branchless_vip.build_branchless_vip_ast ()
       @ Stack_handlers_emitter.emit_mem_handlers ()
       @ Stack_handlers_emitter.emit_alu_handlers ()
       @ Stack_handlers_emitter.emit_dup_swap_handlers ()
