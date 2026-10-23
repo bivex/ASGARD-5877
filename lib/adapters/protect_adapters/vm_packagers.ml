@@ -29,6 +29,8 @@ let dump_bytecode_trace ~phase (prog : Stack_vm.Stack_ir.program) =
 let dump_bytecode_json ~phase (prog : Stack_vm.Stack_ir.program) =
   match Sys.getenv_opt "ASGARD_DUMP_JSON_DIR" with
   | Some dir when dir <> "" && dir <> "0" ->
+      (if not (Sys.file_exists dir) then
+         try Unix.mkdir dir 0o755 with _ -> ());
       let slug = String.map (fun c -> if c = ' ' then '_' else c) phase in
       let path = Filename.concat dir (Printf.sprintf "phase_%s.json" slug) in
       let json = Stack_vm.Stack_ir_json.program_to_json ~phase prog in
