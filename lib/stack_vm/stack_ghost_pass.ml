@@ -19,7 +19,6 @@
 *)
 
 open Stack_ir
-open Vm_ir
 
 (* ── SplitMix64 PRNG ─────────────────────────────────────────────────── *)
 let splitmix64 s =
@@ -62,170 +61,78 @@ let entangle_with_accumulator ?(flags_live = false) ~(acc_slot : int) (delta : i
     PopReg acc_slot;
   ]
 
-(* ── Metamorphic Ghost Repertoire ────────────────────────────────────── *)
+(* ── Natural Bytecode Shadowing Repertoire ───────────────────────────── *)
 type ghost_kind =
-  | GhostSuperopAdd      (** AddRegImm on accumulator (superoperator) *)
-  | GhostSuperopScratch  (** SetRegImm + AddRegImm zero-net chain *)
-  | GhostSubImmChain     (** PushReg s; AddImm d; SubImm d; PopReg s *)
-  | GhostNorInvert       (** PushReg s; PushReg s; Nor; Dup; Nor; PopReg s *)
-  | GhostArithZero       (** PushImm a; PushImm b; Add; PushImm (a+b); Sub; PopReg s *)
-  | GhostSandwichFlags   (** PushFlags; PushImm a; PushImm b; Add; PopReg s; PopFlags *)
-  | GhostTriKeyAdjust    (** KeyAdjust d1; PushImm v; PopReg s; KeyAdjust d2; KeyAdjust (d1^d2) *)
-  | GhostMemRead         (** PushReg sp; ReadMem 8; PopReg s *)
-  | GhostDupDrop         (** Dup; AddImm d; SubImm d; PopReg s *)
-  | GhostSwapSwap        (** Swap; Swap *)
-  | GhostRotCycle        (** Rot; Rot; Rot *)
+  | GhostSuperopSet       (** SetRegImm into scratch *)
+  | GhostRegCopy          (** PushReg r; PopReg scratch *)
+  | GhostImmStore         (** PushImm imm; PopReg scratch *)
+  | GhostArithShadow      (** PushReg r; PushImm imm; Add; PopReg scratch *)
+  | GhostNorShadow        (** PushReg r; PushImm imm; Nor; PopReg scratch *)
+  | GhostSwapSwap         (** Swap; Swap *)
+  | GhostDupDrop          (** Dup; PopReg scratch *)
+  | GhostEntangle         (** AddRegImm (acc, delta); PopReg acc *)
 
 let emit_ghost ?(entangle = true) rng ~scratch_ring ~ctx ~entangle_slot stack_depth flags_live =
   let n_scratch = Array.length scratch_ring in
   let scratch = scratch_ring.(next_int rng n_scratch) in
+  let n_slots = Context_allocator.total_slots ctx in
+  let real_r = if n_slots > 0 then next_int rng n_slots else 0 in
   let kinds =
-    match (stack_depth >= 3, stack_depth >= 2, stack_depth >= 1, flags_live) with
-    | true,  _, _, false ->
-        [| GhostSuperopAdd; GhostSuperopScratch; GhostSubImmChain; GhostNorInvert;
-           GhostArithZero; GhostSandwichFlags; GhostTriKeyAdjust; GhostMemRead;
-           GhostDupDrop; GhostSwapSwap; GhostRotCycle |]
-    | _, true, _, false ->
-        [| GhostSuperopAdd; GhostSuperopScratch; GhostSubImmChain; GhostNorInvert;
-           GhostArithZero; GhostSandwichFlags; GhostTriKeyAdjust; GhostMemRead;
-           GhostDupDrop; GhostSwapSwap |]
-    | _, _, true, false ->
-        [| GhostSuperopAdd; GhostSuperopScratch; GhostSubImmChain; GhostNorInvert;
-           GhostArithZero; GhostSandwichFlags; GhostTriKeyAdjust; GhostMemRead;
-           GhostDupDrop |]
-    | _, _, false, false ->
-        [| GhostSuperopAdd; GhostSuperopScratch; GhostSubImmChain; GhostNorInvert;
-           GhostArithZero; GhostSandwichFlags; GhostTriKeyAdjust; GhostMemRead |]
-    (* When flags are live: use flag-preserving superoperators and sandwiches *)
-    | true,  _, _, true ->
-        [| GhostSuperopAdd; GhostSuperopScratch; GhostSandwichFlags;
-           GhostTriKeyAdjust; GhostMemRead; GhostSwapSwap; GhostRotCycle |]
-    | _, true, _, true ->
-        [| GhostSuperopAdd; GhostSuperopScratch; GhostSandwichFlags;
-           GhostTriKeyAdjust; GhostMemRead; GhostSwapSwap |]
-    | _, _, _, true ->
-        [| GhostSuperopAdd; GhostSuperopScratch; GhostSandwichFlags;
-           GhostTriKeyAdjust; GhostMemRead |]
+    if flags_live then
+      (* Flag-neutral operations: zero flag distortion *)
+      match (stack_depth >= 2, stack_depth >= 1) with
+      | true, _ ->
+          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostSwapSwap; GhostDupDrop |]
+      | false, true ->
+          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostDupDrop |]
+      | false, false ->
+          [| GhostSuperopSet; GhostRegCopy; GhostImmStore |]
+    else
+      (* When flags dead: can execute arithmetic and NOR shadows *)
+      match (stack_depth >= 2, stack_depth >= 1) with
+      | true, _ ->
+          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostArithShadow;
+             GhostNorShadow; GhostSwapSwap; GhostDupDrop; GhostEntangle |]
+      | false, true ->
+          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostArithShadow;
+             GhostNorShadow; GhostDupDrop; GhostEntangle |]
+      | false, false ->
+          [| GhostSuperopSet; GhostRegCopy; GhostImmStore; GhostArithShadow;
+             GhostNorShadow; GhostEntangle |]
   in
   let kind = kinds.(next_int rng (Array.length kinds)) in
   match kind with
-  | GhostSuperopAdd when entangle ->
+  | GhostEntangle when entangle ->
+      let delta = next_int64 rng in
+      ([ AddRegImm (entangle_slot, delta); PopReg entangle_slot ], delta)
+  | GhostEntangle ->
+      let delta = next_int64 rng in
+      ([ AddRegImm (scratch, delta); PopReg scratch ], 0L)
+
+  | GhostSuperopSet ->
       let imm = next_int64 rng in
-      (entangle_with_accumulator ~flags_live ~acc_slot:entangle_slot imm, imm)
-  | GhostSuperopAdd ->
-      let delta = next_int64 rng in
-      if flags_live then
-        ([ PushFlags; AddRegImm (scratch, delta); PopReg scratch; PopFlags ], 0L)
-      else
-        ([ AddRegImm (scratch, delta); PopReg scratch ], 0L)
+      ([ SetRegImm (scratch, imm) ], 0L)
 
-  | GhostSuperopScratch ->
+  | GhostRegCopy ->
+      ([ PushReg real_r; PopReg scratch ], 0L)
+
+  | GhostImmStore ->
       let imm = next_int64 rng in
-      let delta = next_int64 rng in
-      if flags_live then
-        ([ SetRegImm (scratch, imm);
-           PushFlags;
-           AddRegImm (scratch, delta);
-           PopReg scratch;
-           PopFlags ], 0L)
-      else
-        ([ SetRegImm (scratch, imm);
-           AddRegImm (scratch, delta);
-           PopReg scratch ], 0L)
-  | GhostSubImmChain ->
-      let delta = next_int64 rng in
-      if flags_live then
-        ([ PushFlags;
-           PushReg scratch;
-           AddImm delta;
-           SubImm delta;
-           PopReg scratch;
-           PopFlags ], 0L)
-      else
-        ([ PushReg scratch;
-           AddImm delta;
-           SubImm delta;
-           PopReg scratch ], 0L)
+      ([ PushImm imm; PopReg scratch ], 0L)
 
-  | GhostNorInvert ->
-      if flags_live then
-        ([ PushFlags;
-           PushReg scratch;
-           PushReg scratch;
-           Nor;
-           Dup;
-           Nor;
-           PopReg scratch;
-           PopFlags ], 0L)
-      else
-        ([ PushReg scratch;
-           PushReg scratch;
-           Nor;
-           Dup;
-           Nor;
-           PopReg scratch ], 0L)
-
-  | GhostArithZero when entangle ->
-      let a = next_int64 rng in
-      let b = next_int64 rng in
-      let sum = Int64.add a b in
-      let ghost_core =
-        if flags_live then
-          [ PushFlags; PushImm a; PushImm b; Add; PushImm sum; Sub; PopReg scratch; PopFlags ]
-        else
-          [ PushImm a; PushImm b; Add; PushImm sum; Sub; PopReg scratch ]
-      in
-      (ghost_core @ entangle_with_accumulator ~flags_live ~acc_slot:entangle_slot sum, sum)
-
-  | GhostArithZero ->
-      let a = next_int64 rng in
-      let b = next_int64 rng in
-      let sum = Int64.add a b in
-      if flags_live then
-        ([ PushFlags; PushImm a; PushImm b; Add; PushImm sum; Sub; PopReg scratch; PopFlags ], 0L)
-      else
-        ([ PushImm a; PushImm b; Add; PushImm sum; Sub; PopReg scratch ], 0L)
-
-  | GhostSandwichFlags ->
-      let a = next_int64 rng in
-      let b = next_int64 rng in
-      ([ PushFlags;
-         PushImm a;
-         PushImm b;
-         Add;
-         PopReg scratch;
-         PopFlags ], 0L)
-
-  | GhostTriKeyAdjust ->
-      let d1 = ref (next_int64 rng) in
-      while Int64.equal !d1 0L do d1 := next_int64 rng done;
-      let d2 = ref (next_int64 rng) in
-      while Int64.equal !d2 0L do d2 := next_int64 rng done;
-      let d3 = Int64.logxor !d1 !d2 in
+  | GhostArithShadow ->
       let imm = next_int64 rng in
-      ([ KeyAdjust !d1;
-         PushImm imm;
-         PopReg scratch;
-         KeyAdjust !d2;
-         KeyAdjust d3 ], 0L)
+      ([ PushReg real_r; PushImm imm; Add; PopReg scratch ], 0L)
 
-  | GhostMemRead ->
-      let sp_slot = Context_allocator.slot_of_reg ctx Register.rsp in
-      ([ PushReg sp_slot; ReadMem 8; PopReg scratch ], 0L)
-
-  | GhostDupDrop ->
-      let delta = next_int64 rng in
-      if flags_live then
-        ([ PushFlags; Dup; AddImm delta; SubImm delta; PopReg scratch; PopFlags ], 0L)
-      else
-        ([ Dup; AddImm delta; SubImm delta; PopReg scratch ], 0L)
+  | GhostNorShadow ->
+      let imm = next_int64 rng in
+      ([ PushReg real_r; PushImm imm; Nor; PopReg scratch ], 0L)
 
   | GhostSwapSwap ->
       ([ Swap; Swap ], 0L)
 
-  | GhostRotCycle ->
-      ([ Rot; Rot; Rot ], 0L)
-
+  | GhostDupDrop ->
+      ([ Dup; PopReg scratch ], 0L)
 (* ── Insertion Pass with Data-Flow Entanglement ───────────────────────── *)
 let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng ctx ops ghost_rate =
   let checksum = ref 0L in
@@ -290,6 +197,7 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng c
     emit (PopReg entangle_slot)
   end;
 
+  let seen_terminator = ref false in
   List.iter (fun op ->
     let i = !idx in
     incr idx;
@@ -298,7 +206,10 @@ let insert_ghosts_into_ops ?(entangle = true) ~entangle_slot ~scratch_ring rng c
      | WriteMem _ -> maybe_entangle_mem true live.(i)
      | _ -> ());
     if Stack_balance_pass.is_terminator op then begin
-      if maybe rng ghost_rate then emit_ghost_here live.(i);
+      if not !seen_terminator then begin
+        seen_terminator := true;
+        if not live.(i) && maybe rng ghost_rate then emit_ghost_here false
+      end;
       emit op
     end else begin
       emit op;
