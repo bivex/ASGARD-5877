@@ -76,6 +76,48 @@ let eval_horner_polynomial ~(t0 : int64) ~(coeffs : int64 list) : int64 =
 (** Generation of a chain of stack instructions evaluating the Horner polynomial on the stack.
     Stack delta = +1 (equivalent to PushImm target_const).
     At every step t_0 is masked via the identity (t_0 ^ m) + 2*(t_0 & m) - m. *)
+let emit_horner_step (rng : Random.State.t) ~(t0 : int64) ~(a_k : int64) : stack_op list =
+  let m = rand_u64 rng in
+  let variant = Random.State.int rng 5 in
+  let t0_eval =
+    match variant with
+    | 0 ->
+        (* Variant 0: Additive XOR-AND split: (t0 ^ m) + 2*(t0 & m) - m *)
+        let t0_xor_m = Int64.logxor t0 m in
+        let t0_and_m = Int64.shift_left (Int64.logand t0 m) 1 in
+        [ PushImm t0_xor_m; PushImm t0_and_m; Add; PushImm m; Sub ]
+    | 1 ->
+        (* Variant 1: Disjunctive OR-AND split: (t0 | m) + (t0 & m) - m *)
+        let t0_or_m = Int64.logor t0 m in
+        let t0_and_m = Int64.logand t0 m in
+        [ PushImm t0_or_m; PushImm t0_and_m; Add; PushImm m; Sub ]
+    | 2 ->
+        (* Variant 2: Subtractive 2*OR - XOR split: 2*(t0 | m) - (t0 ^ m) - m *)
+        let t0_2or_m = Int64.shift_left (Int64.logor t0 m) 1 in
+        let t0_xor_m = Int64.logxor t0 m in
+        [ PushImm t0_2or_m; PushImm t0_xor_m; Sub; PushImm m; Sub ]
+    | 3 ->
+        (* Variant 3: Direct modular additive partition: (t0 - m) + m *)
+        let t0_sub_m = Int64.sub t0 m in
+        [ PushImm t0_sub_m; PushImm m; Add ]
+    | _ ->
+        (* Variant 4: Pre-subtracted XOR split: ((t0 ^ m) - m) + 2*(t0 & m) *)
+        let t0_xor_m = Int64.logxor t0 m in
+        let t0_and_m = Int64.shift_left (Int64.logand t0 m) 1 in
+        [ PushImm t0_xor_m; PushImm m; Sub; PushImm t0_and_m; Add ]
+  in
+  let add_ak =
+    if Random.State.bool rng then
+      [ PushImm a_k; Add ]
+    else
+      let m_ak = rand_u64 rng in
+      [ PushImm (Int64.sub a_k m_ak); PushImm m_ak; Add; Add ]
+  in
+  t0_eval @ [ Mul ] @ add_ak
+
+(** Generation of a chain of stack instructions evaluating the Horner polynomial on the stack.
+    Stack delta = +1 (equivalent to PushImm target_const).
+    Uses a randomized 5-variant metamorphic grammar per step, shattering deterministic DCE templates. *)
 let emit_horner_stack_insns (rng : Random.State.t) ~(target_const : int64) ~(degree : int)
     : stack_op list =
   let (t0, coeffs) = synth_horner_polynomial rng ~target_const ~degree in
@@ -84,37 +126,37 @@ let emit_horner_stack_insns (rng : Random.State.t) ~(target_const : int64) ~(deg
   | a_d :: rest ->
       let init_insns = [PushImm a_d] in
       let step_insns =
-        List.concat_map (fun a_k ->
-          let m = rand_u64 rng in
-          let t0_xor_m = Int64.logxor t0 m in
-          let t0_and_m = Int64.shift_left (Int64.logand t0 m) 1 in
-          [
-            (* Split evaluation of t_0: (t_0 ^ m) + 2*(t_0 & m) - m *)
-            PushImm t0_xor_m;
-            PushImm t0_and_m;
-            Add;
-            PushImm m;
-            Sub;
-            (* Multiplication of the accumulator by t_0 *)
-            Mul;
-            (* Addition of the coefficient a_k *)
-            PushImm a_k;
-            Add;
-          ]
-        ) rest
+        List.concat_map (fun a_k -> emit_horner_step rng ~t0 ~a_k) rest
       in
       init_insns @ step_insns
 
 (* ------------------------------------------------------------------ *)
-(* Ring twist (bridge to Metamorphic_ring from mba_engine):
-   x * k_odd * k_inv == x in Z_{2^64}, k_odd is odd, k_inv = k_odd^{-1}.
-   Mul is flag-neutral in this VM (see stack_flag_liveness), so the
-   twist after ANY operation preserves both the value and the flags. Stack
-   delta = 0. *)
+(* Metamorphic ring twist (bridge to Metamorphic_ring from mba_engine):
+   Preserves stack top value and flags with 4 distinct algebraic shapes. *)
 let emit_ring_twist (rng : Random.State.t) : stack_op list =
-  let k_odd = Int64.logor (rand_u64 rng) 1L in
-  let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
-  [ PushImm k_odd; Mul; PushImm k_inv; Mul ]
+  let variant = Random.State.int rng 4 in
+  match variant with
+  | 0 ->
+      (* Standard odd-twist: x * k_odd * k_inv == x *)
+      let k_odd = Int64.logor (rand_u64 rng) 1L in
+      let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
+      [ PushImm k_odd; Mul; PushImm k_inv; Mul ]
+  | 1 ->
+      (* Two-stage coprime cascade: x * k1 * k2 * (k1*k2)^-1 == x *)
+      let k1 = Int64.logor (rand_u64 rng) 1L in
+      let k2 = Int64.logor (rand_u64 rng) 1L in
+      let k_prod = Int64.mul k1 k2 in
+      let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_prod in
+      [ PushImm k1; Mul; PushImm k2; Mul; PushImm k_inv; Mul ]
+  | 2 ->
+      (* Swap-interleaved inverse scaling *)
+      let k_odd = Int64.logor (rand_u64 rng) 1L in
+      let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
+      [ PushImm k_inv; PushImm k_odd; Mul; Mul ]
+  | _ ->
+      (* Additive zero knot with random mask *)
+      let salt = rand_u64 rng in
+      [ PushImm salt; PushImm salt; Sub; Add ]
 
 (* ------------------------------------------------------------------ *)
 (* Minterm basis (bridge to Nullspace_mba): NOR/NAND representations
@@ -310,14 +352,19 @@ let amplify_block
           [ op ] @ emit_ring_twist rng
 
       | PopReg r ->
-          (* Anchor ring buffer: every write is recorded in
-             anchors[j++ mod K] — chords gain long-range reach.
-             Program slots do not overlap with scratch (scratch_base
-             >= context_slots of the original program). *)
-          let ops = [ PopReg r; PushReg r; PopReg anchors.(!anchor_j mod k_anchors) ] in
+          let anchor = anchors.(!anchor_j mod k_anchors) in
           incr anchor_j;
+          let variant = Random.State.int rng 3 in
+          let ops =
+            match variant with
+            | 0 ->
+                [ PopReg r; PushReg r; PopReg anchor ]
+            | 1 ->
+                [ PopReg r; PushReg r; PushImm 0L; Add; PopReg anchor ]
+            | _ ->
+                [ PopReg r; PushReg r; PushImm 1L; Mul; PopReg anchor ]
+          in
           ops
-
       | other ->
           [other]
     ) (List.mapi (fun i op -> (i, op)) block.ops)
