@@ -82,15 +82,23 @@ KNOWN_IDIOMS = {
 }
 
 
+def strip_comments(text):
+    """Strips C/C++ and OCaml comments so formula annotations are not scanned as active code."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+    text = re.sub(r"//.*", "", text)
+    text = re.sub(r"\(\*.*?\*\)", "", text, flags=re.DOTALL)
+    return text
+
+
 def scan_content_for_idioms(text):
-    """Scans text for all 5 known branchless VIP is_zero idioms."""
+    """Scans clean code text for all 5 known branchless VIP is_zero idioms."""
+    clean_text = strip_comments(text)
     counts = Counter()
     for vid, info in KNOWN_IDIOMS.items():
         for pat in info["patterns"]:
-            matches = re.findall(pat, text, re.IGNORECASE)
+            matches = re.findall(pat, clean_text, re.IGNORECASE)
             counts[vid] += len(matches)
     return counts
-
 
 def audit_branchless_vip(target_path=None):
     """
