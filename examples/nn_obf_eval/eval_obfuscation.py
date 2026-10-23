@@ -26,6 +26,7 @@ from ghost_padding_eval import audit_ghost_padding
 from spaghetti_reassembly_eval import audit_spaghetti_reassembly
 from branchless_vip_eval import audit_branchless_vip
 from superop_isa_eval import audit_superop_isa_diversity
+from svd_structural_eval import audit_svd_structural
 
 def run_pipeline_dump(out_dir="/tmp/pipeline_dump"):
     """Builds and runs dump_pipeline.exe to generate fresh JSON phase dumps."""
@@ -185,17 +186,26 @@ def main():
     print(f"  Cross-Build Transfer Ratio:                 {isa_res['transfer_ratio']*100:.1f}%")
     print(f"  Superop ISA Diversity DRS:                  {isa_res['drs_isa']:.1f} / 100.0")
 
-    # 10. Composite Assessment Score
+    # 10. SVD & Eigenvirus Structural Detection Audit (Jidigam, Austin & Stamp, 2014)
+    print("\n[Phase 10] Auditing SVD & Eigenvirus Structural Detection (Spectral Subspace Invariance)...")
+    target_bin = os.path.join(dump_dir, "protected_app") if os.path.exists(os.path.join(dump_dir, "protected_app")) else None
+    svd_res = audit_svd_structural(target_path=target_bin, num_samples=40)
+    print(f"  Naive Metamorphic SVD AUC:      {svd_res['naive']['auc']:.3f}  (100% Leaked Template)")
+    print(f"  ASGARD-5877 Protected SVD AUC:  {svd_res['asgard']['auc']:.3f}  (Blind Random Baseline = 0.500)")
+    print(f"  SVD Structural Detection DRS:   {svd_res['drs_svd']:.1f} / 100.0")
+
+    # 11. Composite Assessment Score
     composite_drs = (
-        (0.20 * final_cfg_drs)
-        + (0.15 * final_mba_drs)
-        + (0.15 * combined_trace_drs)
-        + (0.10 * amp_res["drs_amp"])
-        + (0.10 * op_res["drs_opaque"])
-        + (0.10 * ghost_res["drs_ghost"])
-        + (0.10 * spagh_res["drs_spaghetti"])
+        (0.18 * final_cfg_drs)
+        + (0.14 * final_mba_drs)
+        + (0.14 * combined_trace_drs)
+        + (0.09 * amp_res["drs_amp"])
+        + (0.09 * op_res["drs_opaque"])
+        + (0.09 * ghost_res["drs_ghost"])
+        + (0.09 * spagh_res["drs_spaghetti"])
         + (0.05 * vip_res["drs_branchless"])
-        + (0.05 * isa_res["drs_isa"])
+        + (0.06 * isa_res["drs_isa"])
+        + (0.06 * svd_res["drs_svd"])
     )
 
     print("\n" + "=" * 80)
@@ -210,6 +220,7 @@ def main():
     print(f"  [7] Spaghetti Fragment Reassembly:          {spagh_res['drs_spaghetti']:>5.1f} / 100.0")
     print(f"  [8] Branchless VIP Metamorphism:            {vip_res['drs_branchless']:>5.1f} / 100.0")
     print(f"  [9] Superop ISA Cross-Build Diversity:      {isa_res['drs_isa']:>5.1f} / 100.0")
+    print(f"  [10] SVD & Eigenvirus Structural Invariance:{svd_res['drs_svd']:>5.1f} / 100.0")
     print("  " + "-" * 76)
     def tier_label(drs):
         if drs >= 90.0: return "TIER 3+"

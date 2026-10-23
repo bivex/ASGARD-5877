@@ -134,6 +134,18 @@ The suite trains three specialized deep-learning models targeting the core prote
   - Compares against random-guess chance baseline $\frac{1}{K} = 6.25\%$.
 - **Resilience Formula:**
   $$\text{DRS}_{\text{isa}} = \max\left(0.0, 100.0 \times \left(1.0 - \text{Zero-Shot Transfer Accuracy}\right)\right)$$
+
+### 10. SVD & Eigenvirus Structural Detection Auditor (`svd_structural_eval.py`)
+- **Attack Vector:** Linear-algebraic Singular Value Decomposition (SVD / PCA) over raw binary and bytecode matrices (the "Eigenviruses" technique by Jidigam, Austin & Stamp, 2014).
+- **Mathematical Method:**
+  - Evaluates spatial byte covariance matrix $C = \frac{1}{M} A A^T$ using the Turk-Pentland Dual Matrix Snapshot method ($L = A^T A \in \mathbb{R}^{M \times M}$, $M \ll N$).
+  - Projects test binary code into the dominant singular subspace ($m=1..3$ singular vectors).
+  - Measures subspace reconstruction error $\|X - \hat{X}\|_2$ and singular distance $\min_i \|W_X - \Omega_i\|_2$.
+- **Evaluation Protocol (5-Fold Cross Validation):**
+  - Confirms naive metamorphic code with dead-code padding (MWOR) is detected with $\text{AUC} = 1.000$ (vulnerable).
+  - Proves ASGARD-5877 Protected VM (VSP Bytecode Whitening + Spaghetti Fisher-Yates Chunk Permutation) collapses SVD detection down to random chance ($\text{AUC} \approx 0.50$).
+- **Resilience Formula:**
+  $$\text{DRS}_{\text{SVD}} = \max\left(0.0, 100.0 \times \left(1.0 - 2 \cdot \max(0, \text{AUC} - 0.50)\right)^2\right)$$
 ---
 
 ## Quick Start
