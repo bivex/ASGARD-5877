@@ -14,6 +14,8 @@
 #   [Phase 8] Metamorphic Pattern Scanner (Branchless VIP Metamorphism)
 #   [Phase 9] Cross-Build Transfer Classifier (Superop ISA Diversification)
 # ==============================================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "Usage: $0 [TARGET_SOURCE] [SEED] [DUMP_DIR]"
     echo ""
@@ -43,6 +45,7 @@ echo "--------------------------------------------------------------------------
 # 1. Build ASGARD main executable if not present
 if [[ ! -f "${SCRIPT_DIR}/_build/default/bin/main.exe" ]]; then
     echo "[*] Building ASGARD compiler executable via Dune..."
+    if command -v opam >/dev/null 2>&1; then eval "$(opam env --switch=default 2>/dev/null || true)"; fi
     (cd "${SCRIPT_DIR}" && dune build bin/main.exe)
 fi
 
