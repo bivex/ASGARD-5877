@@ -129,7 +129,39 @@ let test_cpp_header_emission () =
   check bool "header length > 500" true (String.length hdr > 500);
   check bool "contains RswTimeLock" true (string_contains hdr "RswTimeLock");
   check bool "contains PowHashPuzzle" true (string_contains hdr "PowHashPuzzle");
+  check bool "contains ChebyshevChaoticMap" true (string_contains hdr "ChebyshevChaoticMap");
+  check bool "contains ErgodicPolyTimeLock" true (string_contains hdr "ErgodicPolyTimeLock");
+  check bool "contains TwoAdicNewtonSolver" true (string_contains hdr "TwoAdicNewtonSolver");
   check bool "contains asgard::comp_stall" true (string_contains hdr "asgard::comp_stall")
+
+(* ── Test 7: Chebyshev chaotic map round-trip ───────────────────────────── *)
+
+let test_chebyshev_roundtrip () =
+  let key = compute_chebyshev_key ~seed:0x13375877L ~n_iterations:100 in
+  let res = simulate_chebyshev_runtime ~key in
+  check int64 "chebyshev simulated matches target" key.x_n res;
+  (* Partial run must differ *)
+  let key_short = { key with n_iterations = 50 } in
+  let res_short = simulate_chebyshev_runtime ~key:key_short in
+  check bool "chebyshev partial differs from final" true (res_short <> key.x_n)
+
+(* ── Test 8: Ergodic permutation polynomial round-trip ──────────────────── *)
+
+let test_ergodic_roundtrip () =
+  let key = compute_ergodic_key ~seed:0xCAFEBABE1337L ~n_iterations:500 in
+  let res = simulate_ergodic_runtime ~key in
+  check int64 "ergodic simulated matches target" key.x_n res;
+  (* Partial run must differ *)
+  let key_short = { key with n_iterations = 250 } in
+  let res_short = simulate_ergodic_runtime ~key:key_short in
+  check bool "ergodic partial differs from final" true (res_short <> key.x_n)
+
+(* ── Test 9: 2-adic Newton-Hensel root convergence ───────────────────────── *)
+
+let test_two_adic_newton_convergence () =
+  let key = compute_two_adic_key ~seed:0x58771337DEADBEEFL ~steps:5 in
+  let res = simulate_two_adic_runtime ~key in
+  check int64 "2-adic newton converges to exact secret root" key.x_star res
 
 (* ── Test list ──────────────────────────────────────────────────────────── *)
 
@@ -140,4 +172,7 @@ let tests = [
   ("RSW Loop-Skip Detection",     `Quick, test_rsw_loop_skip_detection);
   ("PoW Difficulty Sizing",       `Quick, test_pow_difficulty_sizing);
   ("C++ Header Emission",         `Quick, test_cpp_header_emission);
+  ("Chebyshev Chaotic Round-Trip",`Quick, test_chebyshev_roundtrip);
+  ("Ergodic Poly Round-Trip",     `Quick, test_ergodic_roundtrip);
+  ("2-adic Newton Convergence",   `Quick, test_two_adic_newton_convergence);
 ]

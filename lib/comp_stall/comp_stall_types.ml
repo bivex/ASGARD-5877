@@ -15,6 +15,9 @@ type stall_variant =
   | TimeLockPuzzle   (** Rivest–Shamir–Wagner sequential squaring mod M *)
   | HashPow          (** Proof-of-Work hash puzzle with d leading-zero bits *)
   | Combined         (** TimeLockPuzzle followed by HashPow *)
+  | ChebyshevChaotic (** Discrete Chebyshev chaotic polynomial T_{2^N}(x0) mod M *)
+  | TwoAdicNewton    (** 2-adic Hensel-Newton singular polynomial solver mod 2^64 *)
+  | ErgodicPoly      (** Rivest-Knuth ergodic non-linear permutation polynomial mod 2^64 *)
 
 type hw_bound_primitive =
   | GF2Mul64          (** PCLMULQDQ / PMULL — carry-less GF(2^64) multiply *)
@@ -57,6 +60,30 @@ type rsw_key_material = {
   (** x_N = a^(2^N) mod M — the correct decryption key. *)
   x_n_lo              : int64;
   x_n_hi              : int64;
+}
+
+type chebyshev_key_material = {
+  n_iterations : int;
+  modulus      : int64;
+  x0           : int64;
+  x_n          : int64;
+}
+
+type ergodic_key_material = {
+  n_iterations : int;
+  c_const      : int64;
+  x0           : int64;
+  x_n          : int64;
+}
+
+type two_adic_key_material = {
+  steps   : int;
+  x_init  : int64;
+  c0      : int64;
+  c1      : int64;
+  c2      : int64;
+  c3      : int64;
+  x_star  : int64;
 }
 
 type comp_stall_error =

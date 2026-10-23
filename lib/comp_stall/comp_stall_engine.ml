@@ -182,6 +182,104 @@ let simulate_runtime_unlock ~(key : rsw_key_material) : int64 * int64 =
   done;
   (!x, 0L)
 
+let compute_chebyshev_key ~(seed : int64) ~(n_iterations : int) : chebyshev_key_material =
+  let p = derive_prime_32 seed 20000 40000 in
+  let q = derive_prime_32 (Int64.logxor seed Magic_numbers.comp_stall_chebyshev_salt) 40001 60000 in
+  let modulus = Int64.mul (Int64.of_int p) (Int64.of_int q) in
+  let raw_x0 = Int64.logand (Int64.logxor seed Magic_numbers.comp_stall_chebyshev_salt) 0x7FFFFFFFFFFFFFFFL in
+  let x0 = Int64.add 2L (Int64.rem raw_x0 (Int64.sub modulus 3L)) in
+  let rec loop i x =
+    if i >= n_iterations then x
+    else
+      let x2 = mulmod x x modulus in
+      let two_x2 = Int64.rem (Int64.shift_left x2 1) modulus in
+      let next_x = Int64.rem (Int64.add two_x2 (Int64.sub modulus 1L)) modulus in
+      loop (i + 1) next_x
+  in
+  let x_n = loop 0 x0 in
+  { n_iterations; modulus; x0; x_n }
+
+let simulate_chebyshev_runtime ~(key : chebyshev_key_material) : int64 =
+  let m = key.modulus in
+  let rec loop i x =
+    if i >= key.n_iterations then x
+    else
+      let x2 = mulmod x x m in
+      let two_x2 = Int64.rem (Int64.shift_left x2 1) m in
+      let next_x = Int64.rem (Int64.add two_x2 (Int64.sub m 1L)) m in
+      loop (i + 1) next_x
+  in
+  loop 0 (Int64.rem key.x0 m)
+
+let compute_ergodic_key ~(seed : int64) ~(n_iterations : int) : ergodic_key_material =
+  let c_const = Magic_numbers.comp_stall_ergodic_c in
+  let x0 = Int64.logxor seed Magic_numbers.comp_stall_chebyshev_salt in
+  let rec loop i x =
+    if i >= n_iterations then x
+    else
+      let x2 = Int64.mul x x in
+      let x3 = Int64.mul x2 x in
+      let term2 = Int64.shift_left x2 1 in
+      let term3 = Int64.shift_left x3 2 in
+      let next_x = Int64.add (Int64.add (Int64.add x term2) term3) c_const in
+      loop (i + 1) next_x
+  in
+  let x_n = loop 0 x0 in
+  { n_iterations; c_const; x0; x_n }
+
+let simulate_ergodic_runtime ~(key : ergodic_key_material) : int64 =
+  let c = key.c_const in
+  let rec loop i x =
+    if i >= key.n_iterations then x
+    else
+      let x2 = Int64.mul x x in
+      let x3 = Int64.mul x2 x in
+      let term2 = Int64.shift_left x2 1 in
+      let term3 = Int64.shift_left x3 2 in
+      let next_x = Int64.add (Int64.add (Int64.add x term2) term3) c in
+      loop (i + 1) next_x
+  in
+  loop 0 key.x0
+
+let compute_two_adic_key ~(seed : int64) ~(steps : int) : two_adic_key_material =
+  let x_star = Int64.logxor seed Magic_numbers.comp_stall_chebyshev_salt in
+  let a3 = Magic_numbers.comp_stall_two_adic_c3 in
+  let a2 = Magic_numbers.comp_stall_two_adic_c2 in
+  let a1 = Int64.logor Magic_numbers.golden_ratio_64 1L in
+  let c3 = a3 in
+  let c2 = Int64.sub a2 (Int64.mul 3L (Int64.mul a3 x_star)) in
+  let x_star_sq = Int64.mul x_star x_star in
+  let c1 = Int64.add (Int64.sub a1 (Int64.mul (Int64.mul 2L a2) x_star))
+                     (Int64.mul 3L (Int64.mul a3 x_star_sq)) in
+  let c0 = Int64.sub 0L (Int64.add (Int64.sub (Int64.mul a3 (Int64.mul x_star_sq x_star))
+                                              (Int64.mul a2 x_star_sq))
+                                   (Int64.mul a1 x_star)) in
+  let x_init = Int64.add x_star 4L in
+  { steps; x_init; c0; c1; c2; c3; x_star }
+
+let simulate_two_adic_runtime ~(key : two_adic_key_material) : int64 =
+  let hensel_inv (dfx : int64) : int64 =
+    let two = 2L in
+    let inv = dfx in
+    let inv = Int64.mul inv (Int64.sub two (Int64.mul dfx inv)) in
+    let inv = Int64.mul inv (Int64.sub two (Int64.mul dfx inv)) in
+    let inv = Int64.mul inv (Int64.sub two (Int64.mul dfx inv)) in
+    let inv = Int64.mul inv (Int64.sub two (Int64.mul dfx inv)) in
+    Int64.mul inv (Int64.sub two (Int64.mul dfx inv))
+  in
+  let rec solve step x =
+    if step >= key.steps then x
+    else
+      let x2 = Int64.mul x x in
+      let fx = Int64.add key.c0 (Int64.mul x (Int64.add key.c1 (Int64.mul x (Int64.add key.c2 (Int64.mul x key.c3))))) in
+      let dfx = Int64.add (Int64.add key.c1 (Int64.mul (Int64.shift_left x 1) key.c2)) (Int64.mul 3L (Int64.mul x2 key.c3)) in
+      let inv = hensel_inv dfx in
+      let delta = Int64.mul fx inv in
+      let next_x = Int64.sub x delta in
+      solve (step + 1) next_x
+  in
+  solve 0 key.x_init
+
 let compute_pow_difficulty_for_quota
     ~(emu_quota_instrs : int)
     ~(i_hash : int)
@@ -342,19 +440,133 @@ let emit_comp_stall_guard_def () : top_decl =
         ];
     ]
 
+let emit_chebyshev_run_body () : stmt list =
+  [
+    let_u64 "x" (var "X0" %~ var "M");
+    for_range "i" (u64 0L) (var "N")
+      [
+        let_u64 "x2" ((var "x" *~ var "x") %~ var "M");
+        var "x" := (((u64 2L *~ var "x2") +~ (var "M" -~ u64 1L)) %~ var "M");
+      ];
+    ret (var "x");
+  ]
+
+let emit_chebyshev_time_lock_def () : top_decl =
+  template_struct_def
+    ~template_params:["uint64_t N"; "uint64_t M"; "uint64_t X0"]
+    "ChebyshevChaoticMap"
+    [
+      member_static_assert (var "N" >~ u64 0L) "N must be positive";
+      member_static_assert (var "M" >~ u64 3L) "M must be > 3";
+      member_method
+        ~attrs:[Nodiscard; NoExcept]
+        ~is_static:true
+        UInt64 "run" []
+        (emit_chebyshev_run_body ());
+      member_method
+        ~attrs:[Nodiscard; NoExcept]
+        ~is_static:true
+        Bool "verify"
+        [(UInt64, "result"); (UInt64, "expected_x_n")]
+        [ ret ((var "result" ^~ var "expected_x_n") ==~ u64 0L) ];
+    ]
+
+let emit_ergodic_run_body () : stmt list =
+  [
+    let_u64 "x" (var "X0");
+    for_range "i" (u64 0L) (var "N")
+      [
+        let_u64 "x2" (var "x" *~ var "x");
+        let_u64 "x3" (var "x2" *~ var "x");
+        var "x" := var "x" +~ (var "x2" <<~ u64 1L) +~ (var "x3" <<~ u64 2L) +~ var "C";
+      ];
+    ret (var "x");
+  ]
+
+let emit_ergodic_poly_def () : top_decl =
+  template_struct_def
+    ~template_params:["uint64_t N"; "uint64_t C"; "uint64_t X0"]
+    "ErgodicPolyTimeLock"
+    [
+      member_static_assert (var "N" >~ u64 0L) "N must be positive";
+      member_method
+        ~attrs:[Nodiscard; NoExcept]
+        ~is_static:true
+        UInt64 "run" []
+        (emit_ergodic_run_body ());
+      member_method
+        ~attrs:[Nodiscard; NoExcept]
+        ~is_static:true
+        Bool "verify"
+        [(UInt64, "result"); (UInt64, "expected_x_n")]
+        [ ret ((var "result" ^~ var "expected_x_n") ==~ u64 0L) ];
+    ]
+
+let emit_two_adic_run_body () : stmt list =
+  [
+    let_u64 "x" (var "X_INIT");
+    for_range "step" (u64 0L) (var "STEPS")
+      [
+        let_u64 "x2" (var "x" *~ var "x");
+        let_u64 "fx" (var "C0" +~ (var "x" *~ (var "C1" +~ (var "x" *~ (var "C2" +~ (var "x" *~ var "C3"))))));
+        let_u64 "dfx" (var "C1" +~ ((var "x" <<~ u64 1L) *~ var "C2") +~ (u64 3L *~ var "x2" *~ var "C3"));
+        let_u64 "inv" (var "dfx");
+        var "inv" := var "inv" *~ (u64 2L -~ (var "dfx" *~ var "inv"));
+        var "inv" := var "inv" *~ (u64 2L -~ (var "dfx" *~ var "inv"));
+        var "inv" := var "inv" *~ (u64 2L -~ (var "dfx" *~ var "inv"));
+        var "inv" := var "inv" *~ (u64 2L -~ (var "dfx" *~ var "inv"));
+        var "inv" := var "inv" *~ (u64 2L -~ (var "dfx" *~ var "inv"));
+        let_u64 "delta" (var "fx" *~ var "inv");
+        var "x" := var "x" -~ var "delta";
+      ];
+    ret (var "x");
+  ]
+
+let emit_two_adic_newton_def () : top_decl =
+  template_struct_def
+    ~template_params:[
+      "uint64_t STEPS";
+      "uint64_t X_INIT";
+      "uint64_t C0";
+      "uint64_t C1";
+      "uint64_t C2";
+      "uint64_t C3"
+    ]
+    "TwoAdicNewtonSolver"
+    [
+      member_static_assert (var "STEPS" >~ u64 0L) "STEPS must be positive";
+      member_method
+        ~attrs:[Nodiscard; NoExcept]
+        ~is_static:true
+        UInt64 "run" []
+        (emit_two_adic_run_body ());
+      member_method
+        ~attrs:[Nodiscard; NoExcept]
+        ~is_static:true
+        Bool "verify"
+        [(UInt64, "result"); (UInt64, "expected_x_star")]
+        [ ret ((var "result" ^~ var "expected_x_star") ==~ u64 0L) ];
+    ]
+
 let emit_comp_stall_cpp_header () : string =
   let decls = [
     comment_top "============================================================================";
     comment_top "ASGARD-5877: Computational Stalling (CPU-bound Anti-Emulation)";
     comment_top "Raises the emulation slowdown factor Ω to force sandbox timeout.";
-    comment_top "  RswTimeLock<N,M,A>     – N sequential squarings mod M (depth Θ(N))";
-    comment_top "  PowHashPuzzle<D>       – D leading-zero-bit PoW with GF(2^64) inner loop";
-    comment_top "  CompStallGuard<N,D,M,A,XN> – composite guard (RSW then PoW)";
+    comment_top "  RswTimeLock<N,M,A>           – N sequential squarings mod M (depth Θ(N))";
+    comment_top "  ChebyshevChaoticMap<N,M,X0>   – Discrete Chebyshev chaotic attractor mod M";
+    comment_top "  ErgodicPolyTimeLock<N,C,X0>   – Rivest-Knuth cubic ergodic permutation poly mod 2^64";
+    comment_top "  TwoAdicNewtonSolver<...>      – 2-adic Hensel-Newton singular polynomial solver mod 2^64";
+    comment_top "  PowHashPuzzle<D>             – D leading-zero-bit PoW with GF(2^64) inner loop";
+    comment_top "  CompStallGuard<N,D,M,A,XN>   – composite guard (RSW then PoW)";
     comment_top "============================================================================";
     IncludeSys "cstdint";
     IncludeSys "cstring";
     namespace_def "asgard::comp_stall" [
       emit_rsw_time_lock_def ();
+      emit_chebyshev_time_lock_def ();
+      emit_ergodic_poly_def ();
+      emit_two_adic_newton_def ();
       emit_pow_hash_puzzle_def ();
       emit_comp_stall_guard_def ();
     ];

@@ -47,6 +47,39 @@ val compute_pow_difficulty_for_quota :
 (** Solves for d such that P(Evasion) ≥ target_evasion_prob:
     d = ceil(log2(-Q_max / (I_hash · ln(1 - p_target)))). *)
 
+val compute_chebyshev_key :
+  seed:int64 ->
+  n_iterations:int ->
+  chebyshev_key_material
+(** Offline computation of discrete Chebyshev chaotic map key T_{2^N}(x0) mod M. *)
+
+val simulate_chebyshev_runtime :
+  key:chebyshev_key_material ->
+  int64
+(** Simulates sequential runtime evaluation of the Chebyshev chaotic map. *)
+
+val compute_ergodic_key :
+  seed:int64 ->
+  n_iterations:int ->
+  ergodic_key_material
+(** Offline computation of Rivest-Knuth cubic ergodic permutation polynomial key over Z_{2^64}. *)
+
+val simulate_ergodic_runtime :
+  key:ergodic_key_material ->
+  int64
+(** Simulates sequential runtime evaluation of the ergodic permutation polynomial. *)
+
+val compute_two_adic_key :
+  seed:int64 ->
+  steps:int ->
+  two_adic_key_material
+(** Offline synthesis of 2-adic Hensel-Newton singular polynomial system with secret root x_star. *)
+
+val simulate_two_adic_runtime :
+  key:two_adic_key_material ->
+  int64
+(** Simulates runtime 2-adic Newton-Hensel solver steps. *)
+
 val emit_comp_stall_cpp_header : unit -> string
 (** Emits the standalone C++20 header <asg_comp_stall.hpp> as a rendered
     string using the typed EDSL (Cpp_dsl / Cpp_printer).

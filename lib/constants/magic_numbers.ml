@@ -219,6 +219,12 @@ let comp_stall_lcg_add = 0xBL
    reduction polynomial mask in the software PCLMULQDQ emulation loop. *)
 let comp_stall_pow_gf_poly = 0xC4CEB9FE1A85EC53L
 
+(* Non-linear mathematical stalling constants *)
+let comp_stall_chebyshev_salt = 0x5877C4E051C11337L
+let comp_stall_ergodic_c = 0x58771337CAFEBEEFL
+let comp_stall_two_adic_c3 = 0x13375877DEADBEEFL
+let comp_stall_two_adic_c2 = 0xCAFEBABE01000002L
+
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -429,6 +435,22 @@ let registry : entry list = [
   { name = "comp_stall_pow_gf_poly";
     value = comp_stall_pow_gf_poly;
     source = "MurmurHash3 64-bit mix1 / GF(2^64) reduction polynomial for PoW inner loop";
+    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+  { name = "comp_stall_chebyshev_salt";
+    value = comp_stall_chebyshev_salt;
+    source = "hex-speak 5877 + CHAOS + LEET: state seed salt for Chebyshev discrete chaotic map";
+    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+  { name = "comp_stall_ergodic_c";
+    value = comp_stall_ergodic_c;
+    source = "hex-speak 5877 + 1337 + CAFE + BEEF: odd constant for Rivest-Knuth ergodic cubic polynomial";
+    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+  { name = "comp_stall_two_adic_c3";
+    value = comp_stall_two_adic_c3;
+    source = "hex-speak 1337 + 5877 + DEAD + BEEF: degree 3 coefficient for 2-adic Hensel-Newton solver";
+    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+  { name = "comp_stall_two_adic_c2";
+    value = comp_stall_two_adic_c2;
+    source = "hex-speak CAFE + BABE + 01000002: degree 2 even coefficient for 2-adic Hensel-Newton solver";
     used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
 ]
 

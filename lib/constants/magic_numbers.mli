@@ -106,6 +106,11 @@ val comp_stall_lcg_add : int64
     CompStall PoW inner loop. *)
 val comp_stall_pow_gf_poly : int64
 
+val comp_stall_chebyshev_salt : int64
+val comp_stall_ergodic_c : int64
+val comp_stall_two_adic_c3 : int64
+val comp_stall_two_adic_c2 : int64
+
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
 

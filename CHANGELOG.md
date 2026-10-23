@@ -38,6 +38,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ### Added
 - Implement Computational Stalling (CPU-bound anti-emulation) pass (`lib/comp_stall/`):
   * Implemented strictly sequential Rivest–Shamir–Wagner (RSW) Time-Lock Puzzle ($x_N \equiv a^{2^N} \pmod M$) with compile-time $O(\log N)$ key derivation via $\phi(M)$ and runtime $O(N)$ depth preventing loop-skipping.
+  * Implemented Discrete Chebyshev Chaotic Attractor ($x_{n+1} = 2x_n^2 - 1 \pmod M$) with exponential Lyapunov sensitivity to initial conditions and FPU rounding differences.
+  * Implemented Rivest–Knuth Cubic Ergodic Permutation Polynomials over $\mathbb{Z}_{2^{64}}$ ($x_{n+1} = x_n + 2x_n^2 + 4x_n^3 + c \pmod{2^{64}}$) with guaranteed maximal cycle length of $2^{64}$ and branchless integer operations.
+  * Implemented 2-adic Hensel–Newton Singular Polynomial System Solver over $\mathbb{Z}_{2^{64}}$ with division-free modular inverse lifting ($inv \leftarrow inv \cdot (2 - f'(x) \cdot inv)$), defeating SMT/DSE symbolic execution via exponential non-linear degree explosion.
+  * Emitted typed C++20 EDSL templates (`ChebyshevChaoticMap`, `ErgodicPolyTimeLock`, `TwoAdicNewtonSolver`) in `lib/comp_stall/comp_stall_engine.ml` and `lib/comp_stall/asg_comp_stall.hpp`.
+  * Registered cryptographic salts and polynomial constants in `lib/constants/magic_numbers.ml` and `lib/constants/magic_numbers.mli`.
+  * Added unit and roundtrip tests in `test/test_comp_stall.ml` verifying exact convergence, loop-skip detection, and EDSL header validity.
   * Implemented local Proof-of-Work (PoW) hash puzzle with $d$ leading-zero-bit search using hardware-expensive GF($2^{64}$) carry-less multiplication and ADC/flag-chaining inner loops maximizing software emulation slowdown factor $\Omega$.
   * Added timing-gap analytical validator verifying $T_{\text{real}} \le \tau_{\text{UX}}$ and $T_{\text{emu}} > \tau_{\text{AV}}$ with evasion probability modeling against instruction quotas.
   * Emitted C++20 runtime header `<asg_comp_stall.hpp>` (`RswTimeLock`, `PowHashPuzzle`, `CompStallGuard`) using the typed EDSL (`Cpp_dsl` / `Cpp_printer`).
