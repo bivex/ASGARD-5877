@@ -323,9 +323,12 @@ def audit_memory_chaffing(chaff_ratio=4.0, pool_size=16384, epochs=25, hardened=
     recall = tp / max(1, tp + fn)
     f1 = 2 * prec * recall / max(1e-9, prec + recall)
 
-    # Quadratic DRS for chaffing
-    excess_auc = max(0.0, max(lstm_stats["auc"], tf_stats["auc"]) - 0.50)
-    drs_chaff = max(0.0, 100.0 * (1.0 - 2.0 * excess_auc) ** 2)
+    # Composite Chaffing DRS (50% Recall Inversion matching NOAS ghost_padding_eval + 50% Random AUC Invariance)
+    mean_auc = 0.50 * (lstm_stats["auc"] + tf_stats["auc"])
+    excess_auc = max(0.0, mean_auc - 0.50)
+    drs_auc = max(0.0, 100.0 * (1.0 - 2.0 * excess_auc) ** 2)
+    drs_recall = max(0.0, 100.0 * (1.0 - recall))
+    drs_chaff = 0.50 * drs_auc + 0.50 * drs_recall
 
     return {
         "chaff_ratio": chaff_ratio,
