@@ -25,6 +25,7 @@ from amplifier_dce_eval import audit_amplifier_dce
 from ghost_padding_eval import audit_ghost_padding
 from spaghetti_reassembly_eval import audit_spaghetti_reassembly
 from branchless_vip_eval import audit_branchless_vip
+from superop_isa_eval import audit_superop_isa_diversity
 
 def run_pipeline_dump(out_dir="/tmp/pipeline_dump"):
     """Builds and runs dump_pipeline.exe to generate fresh JSON phase dumps."""
@@ -176,16 +177,25 @@ def main():
     print(f"  Max Idiom Collision Rate:       {vip_res['collision_rate']*100:.1f}%")
     print(f"  Branchless VIP DRS:             {vip_res['drs_branchless']:.1f} / 100.0")
 
-    # 9. Composite Assessment Score
+    # 9. Superop ISA-Diversification & Cross-Build Transfer Audit
+    print("\n[Phase 9] Auditing Superop ISA Diversification (Cross-Build Transfer Attack)...")
+    isa_res = audit_superop_isa_diversity(seed_a=1337, seed_b=42, epochs=30)
+    print(f"  In-Build Generalization (C_A on Build A):   {isa_res['in_build_acc']*100:.1f}%")
+    print(f"  Zero-Shot Transfer (C_A on Build B):        {isa_res['transfer_acc']*100:.1f}%  (Chance: {isa_res['chance_baseline']*100:.1f}%)")
+    print(f"  Cross-Build Transfer Ratio:                 {isa_res['transfer_ratio']*100:.1f}%")
+    print(f"  Superop ISA Diversity DRS:                  {isa_res['drs_isa']:.1f} / 100.0")
+
+    # 10. Composite Assessment Score
     composite_drs = (
         (0.20 * final_cfg_drs)
         + (0.15 * final_mba_drs)
         + (0.15 * combined_trace_drs)
-        + (0.15 * amp_res["drs_amp"])
+        + (0.10 * amp_res["drs_amp"])
         + (0.10 * op_res["drs_opaque"])
         + (0.10 * ghost_res["drs_ghost"])
         + (0.10 * spagh_res["drs_spaghetti"])
         + (0.05 * vip_res["drs_branchless"])
+        + (0.05 * isa_res["drs_isa"])
     )
 
     print("\n" + "=" * 80)
@@ -199,6 +209,7 @@ def main():
     print(f"  [6] Ghost Stack Padding Resilience:         {ghost_res['drs_ghost']:>5.1f} / 100.0")
     print(f"  [7] Spaghetti Fragment Reassembly:          {spagh_res['drs_spaghetti']:>5.1f} / 100.0")
     print(f"  [8] Branchless VIP Metamorphism:            {vip_res['drs_branchless']:>5.1f} / 100.0")
+    print(f"  [9] Superop ISA Cross-Build Diversity:      {isa_res['drs_isa']:>5.1f} / 100.0")
     print("  " + "-" * 76)
     def tier_label(drs):
         if drs >= 90.0: return "TIER 3+"

@@ -122,6 +122,18 @@ The suite trains three specialized deep-learning models targeting the core prote
   - **Variant Shannon Entropy:** $H(\text{variants}) = -\sum_{i=1}^5 p_i \log_2 p_i$, with normalized entropy $\eta = \frac{H}{\log_2(5)} \in [0.0, 1.0]$.
   - **Resilience Formula:**
     $$\text{DRS}_{\text{branchless}} = \max\left(0.0, 100.0 \times \left(1.0 - \frac{\text{Collision Rate} - 0.20}{0.80}\right) \times \eta\right)$$
+
+### 9. Superop ISA-Diversification & Cross-Build Transfer Auditor (`superop_isa_eval.py`)
+- **Attack Vector:** Cross-Build Zero-Shot Handler Signature Transfer (simulating an adversary collecting a database of handler signatures and opcode byte sequences on Build A and attempting to deobfuscate instructions in Build B generated with an independent seed).
+- **Classifier Architecture:**
+  - Multi-class Neural Handler Semantics Classifier $C_A$ trained on Build A instruction byte encodings.
+  - Predicts semantic instruction classes ($K = 16$: `AddImm`, `SubImm`, `AddImmImm`, `SubImmImm`, `SetRegImm`, `AddRegImm`, `PushImm`, `PushReg`, `PopReg`, `Add`, `Sub`, `Mul`, `Nor`, `Nand`, `Cmp`, `JccRel`).
+- **Cross-Build Evaluation Protocol:**
+  - Evaluates In-Build Accuracy $C_A(\text{Build A})$ on held-out test instructions (baseline competence).
+  - Evaluates Zero-Shot Transfer Accuracy $C_A(\text{Build B})$ on instructions from an independent build (different seed $\implies$ randomized opcode byte permutation + randomized operand field layout).
+  - Compares against random-guess chance baseline $\frac{1}{K} = 6.25\%$.
+- **Resilience Formula:**
+  $$\text{DRS}_{\text{isa}} = \max\left(0.0, 100.0 \times \left(1.0 - \text{Zero-Shot Transfer Accuracy}\right)\right)$$
 ---
 
 ## Quick Start
