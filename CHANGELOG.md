@@ -33,6 +33,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Eliminate illusory Tier-1 `lightweight` preset and raw linear MBA depth 1 in `lib/native_vm/protection_presets.ml`, `lib/native_vm/protection_config.mli`, `lib/mba_engine/mba.ml`, and `lib/mba_engine/ncfg_synth.ml`: removed the `lightweight` preset (which disabled CFF and ran linear MBA at depth 1 without non-linear bijections, offering zero resilience against SMT solvers while incurring runtime overhead), enforced a minimum MBA depth of 2 across the ALU obfuscator, and updated CLI and test references.
 
 ### Added
+- Implement Computational Stalling (CPU-bound anti-emulation) pass (`lib/comp_stall/`):
+  * Implemented strictly sequential Rivest–Shamir–Wagner (RSW) Time-Lock Puzzle ($x_N \equiv a^{2^N} \pmod M$) with compile-time $O(\log N)$ key derivation via $\phi(M)$ and runtime $O(N)$ depth preventing loop-skipping.
+  * Implemented local Proof-of-Work (PoW) hash puzzle with $d$ leading-zero-bit search using hardware-expensive GF($2^{64}$) carry-less multiplication and ADC/flag-chaining inner loops maximizing software emulation slowdown factor $\Omega$.
+  * Added timing-gap analytical validator verifying $T_{\text{real}} \le \tau_{\text{UX}}$ and $T_{\text{emu}} > \tau_{\text{AV}}$ with evasion probability modeling against instruction quotas.
+  * Emitted C++20 runtime header `<asg_comp_stall.hpp>` (`RswTimeLock`, `PowHashPuzzle`, `CompStallGuard`) using the typed EDSL (`Cpp_dsl` / `Cpp_printer`).
+  * Registered constants `comp_stall_lcg_mul`, `comp_stall_lcg_add`, `comp_stall_pow_gf_poly` in `lib/constants/magic_numbers.ml`.
+  * Added `comp_stall` configuration to `protection_types.ml` and `protection_presets.ml`.
+  * Added comprehensive test suite `test/test_comp_stall.ml` registered in `test/run_tests.ml`.
 - Eliminate linear key-derivation and structural leakage across VM pipelines:
   * Advance-key step non-linearity: inject SplitMix64 `poly_hash64` into `advance_key_step` in `lib/vm_ir/rolling_key.ml`, `lib/native_vm/vm_context_emitter.ml`, and `test/test_anti_pushan.ml`, defeating F2-linear Gaussian elimination solvers while preserving exact analytical inversion.
   * Byte-rolling keystream non-linearity: upgrade `step_key` in `lib/stack_vm/stack_encoder.ml` and `lib/stack_vm/stack_runtime.ml` from affine `ROTL3` to Murmur3 `feedback_hash` diffusion.

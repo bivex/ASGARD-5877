@@ -40,6 +40,7 @@
   test_tech_2601
   test_tech_2603
   test_tech_2608
+  test_comp_stall
   test_ring_codec
   test_nullspace_mba
   test_cross_seed_metrics
@@ -77,6 +78,7 @@
   tech_2601
   tech_2603
   tech_2608
+  random_visa.comp_stall
   random_visa.macho
   watermark
   alcotest

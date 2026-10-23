@@ -73,6 +73,7 @@ let () =
     ("Tech-2601 Exception Handling", Test_tech_2601.tests);
     ("Tech-2603 Anti-VPC Tracking", Test_tech_2603.tests);
     ("Tech-2608 Anti-Trace-Synthesis", Test_tech_2608.tests);
+    ("Computational Stalling (Anti-Emulation)", Test_comp_stall.tests);
     ("Ring Codec (Data-Space Automorphisms)", Test_ring_codec.tests);
     ("Null-Space MBA Synthesis", Test_nullspace_mba.tests);
     ("Cross-Seed Metrics", Test_cross_seed_metrics.tests);

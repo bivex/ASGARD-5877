@@ -72,6 +72,20 @@ let with_memory_chaffing ?pool_size ?chaff_ratio enabled b =
   b := { !b with memory_chaffing };
   b
 
+let with_comp_stall ?n_iterations ?pow_difficulty ?variant enabled b =
+  let curr = !b.comp_stall in
+  let comp_stall = {
+    enabled;
+    n_iterations = Option.value ~default:curr.n_iterations n_iterations;
+    pow_difficulty = Option.value ~default:curr.pow_difficulty pow_difficulty;
+    variant = Option.value ~default:curr.variant variant;
+    tau_ux_sec = curr.tau_ux_sec;
+    emu_quota_instrs = curr.emu_quota_instrs;
+    seed = curr.seed;
+  } in
+  b := { !b with comp_stall };
+  b
+
 let with_seed seed b =
   b := { !b with seed };
   b

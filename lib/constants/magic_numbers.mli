@@ -94,6 +94,18 @@ val salt_egraph_scrambler : int64
 val block_id_multiplier : int64
 val salt_dump_phase : int64
 
+(** LCG multiplier for RSW prime candidate generation in CompStall
+    (POSIX/java.util.Random constant a = 25214903917 = 0x5DEECE66D). *)
+val comp_stall_lcg_mul : int64
+
+(** LCG addend for RSW prime generation in CompStall (c = 11 = 0xB;
+    pair (a,c) satisfies the Hull-Dobell theorem for mod 2^k). *)
+val comp_stall_lcg_add : int64
+
+(** GF(2^64) reduction polynomial / MurmurHash3 mix1 constant for the
+    CompStall PoW inner loop. *)
+val comp_stall_pow_gf_poly : int64
+
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
 

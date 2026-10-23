@@ -55,31 +55,31 @@ namespace asgard {
                                                          uint32_t state[8];
                                                          uint64_t count;
                                                          uint8_t buffer[64];
-                                                         static inline uint32_t rotr(uint32_t x, uint32_t n) {
+                                                         inline static uint32_t rotr(uint32_t x, uint32_t n) {
                                                          
                                                              return ((x >> n) | (x << (32 - n)));
                                                          }
-                                                         static inline uint32_t choose(uint32_t x, uint32_t y, uint32_t z) {
+                                                         inline static uint32_t choose(uint32_t x, uint32_t y, uint32_t z) {
                                                          
                                                              return ((x & y) ^ ((~x) & z));
                                                          }
-                                                         static inline uint32_t majority(uint32_t x, uint32_t y, uint32_t z) {
+                                                         inline static uint32_t majority(uint32_t x, uint32_t y, uint32_t z) {
                                                          
                                                              return (((x & y) ^ (x & z)) ^ (y & z));
                                                          }
-                                                         static inline uint32_t big_sigma0(uint32_t x) {
+                                                         inline static uint32_t big_sigma0(uint32_t x) {
                                                          
                                                              return ((rotr(x, 2) ^ rotr(x, 13)) ^ rotr(x, 22));
                                                          }
-                                                         static inline uint32_t big_sigma1(uint32_t x) {
+                                                         inline static uint32_t big_sigma1(uint32_t x) {
                                                          
                                                              return ((rotr(x, 6) ^ rotr(x, 11)) ^ rotr(x, 25));
                                                          }
-                                                         static inline uint32_t small_sigma0(uint32_t x) {
+                                                         inline static uint32_t small_sigma0(uint32_t x) {
                                                          
                                                              return ((rotr(x, 7) ^ rotr(x, 18)) ^ (x >> 3));
                                                          }
-                                                         static inline uint32_t small_sigma1(uint32_t x) {
+                                                         inline static uint32_t small_sigma1(uint32_t x) {
                                                          
                                                              return ((rotr(x, 17) ^ rotr(x, 19)) ^ (x >> 10));
                                                          }

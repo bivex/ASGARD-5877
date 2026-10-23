@@ -1,0 +1,5 @@
+(library
+ (name comp_stall)
+ (public_name random_visa.comp_stall)
+ (libraries cpp_codegen random_visa_constants))
+

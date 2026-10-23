@@ -123,6 +123,16 @@ type memory_chaffing_config = {
   chaff_ratio : float;
 }
 
+type comp_stall_config = {
+  enabled          : bool;
+  variant          : string;
+  n_iterations     : int;
+  pow_difficulty   : int;
+  tau_ux_sec       : float;
+  emu_quota_instrs : int;
+  seed             : int64;
+}
+
 type spaghetti_config = {
   enabled           : bool;
   split_rate        : int;
@@ -193,6 +203,7 @@ type t = {
   eh_shadowing : eh_shadowing_config;
   anti_vpc : anti_vpc_config;
   memory_chaffing : memory_chaffing_config;
+  comp_stall : comp_stall_config;
   spaghetti : spaghetti_config;
   amplifier : amplifier_config;
   superop : superop_config;
@@ -206,6 +217,7 @@ val default_stack_vm : stack_vm_config
 val default_eh_shadowing : eh_shadowing_config
 val default_anti_vpc : anti_vpc_config
 val default_memory_chaffing : memory_chaffing_config
+val default_comp_stall : comp_stall_config
 val default_spaghetti : spaghetti_config
 val default_amplifier : amplifier_config
 val default_superop : superop_config
@@ -244,6 +256,9 @@ val anti_vpc_enabled : t option -> bool
 
 val memory_chaffing_enabled : t option -> bool
 (** Tech-2608 Anti-Trace-Synthesis gate: [true] when enabled in memory_chaffing config. *)
+
+val comp_stall_enabled : t option -> bool
+(** Computational Stalling (anti-emulation) gate: [true] when enabled in comp_stall config. *)
 
 val oblivious_memory_enabled : t option -> bool
 (** Oblivious Memory & Decoy Access gate: [true] when enabled in vm_runtime. *)

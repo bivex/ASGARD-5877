@@ -81,6 +81,7 @@ let default : t = {
   ghost = default_ghost;
   trampoline = default_trampoline;
   watermark = default_watermark;
+  comp_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -190,6 +191,7 @@ let max_security : t = {
   ghost = { default_ghost with ghost_rate = 100 };
   trampoline = default_trampoline;
   watermark = { default_watermark with redundancy = 11 };
+  comp_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -294,6 +296,7 @@ let stealth : t = {
   ghost = default_ghost;
   trampoline = default_trampoline;
   watermark = default_watermark;
+  comp_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -403,6 +406,7 @@ let edr_stealth : t = {
   ghost = default_ghost;
   trampoline = default_trampoline;
   watermark = default_watermark;
+  comp_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -512,6 +516,7 @@ let minimal : t = {
   ghost = { default_ghost with enabled = false };
   trampoline = default_trampoline;
   watermark = { default_watermark with redundancy = 3 };
+  comp_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -612,6 +617,7 @@ let high : t = {
   ghost = { default_ghost with ghost_rate = 90 };
   trampoline = default_trampoline;
   watermark = default_watermark;
+  comp_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 

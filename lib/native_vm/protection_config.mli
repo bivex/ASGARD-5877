@@ -125,6 +125,16 @@ type memory_chaffing_config = {
   chaff_ratio : float;
 }
 
+type comp_stall_config = {
+  enabled          : bool;
+  variant          : string;
+  n_iterations     : int;
+  pow_difficulty   : int;
+  tau_ux_sec       : float;
+  emu_quota_instrs : int;
+  seed             : int64;
+}
+
 type spaghetti_config = {
   enabled           : bool;
   split_rate        : int;
@@ -196,6 +206,7 @@ type t = {
   eh_shadowing : eh_shadowing_config;
   anti_vpc : anti_vpc_config;
   memory_chaffing : memory_chaffing_config;
+  comp_stall : comp_stall_config;
   spaghetti : spaghetti_config;
   amplifier : amplifier_config;
   superop : superop_config;
@@ -208,6 +219,7 @@ type t = {
 val default_eh_shadowing : eh_shadowing_config
 val default_anti_vpc : anti_vpc_config
 val default_memory_chaffing : memory_chaffing_config
+val default_comp_stall : comp_stall_config
 val default_spaghetti : spaghetti_config
 val default_amplifier : amplifier_config
 val default_superop : superop_config
@@ -296,6 +308,13 @@ val with_anti_vpc :
 val with_memory_chaffing :
   ?pool_size:int ->
   ?chaff_ratio:float ->
+  bool ->
+  builder ->
+  builder
+val with_comp_stall :
+  ?n_iterations:int ->
+  ?pow_difficulty:int ->
+  ?variant:string ->
   bool ->
   builder ->
   builder

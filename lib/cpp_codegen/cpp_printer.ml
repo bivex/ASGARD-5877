@@ -269,8 +269,8 @@ let pp_struct_member fmt = function
   | MemberMethod { attrs; is_static; is_const; template_params; ret_type; name; params; body } ->
       if template_params <> [] then
         fprintf fmt "template <%s>@," (String.concat ", " template_params);
-      if is_static then fprintf fmt "static ";
       pp_attrs fmt attrs;
+      if is_static then fprintf fmt "static ";
       let is_noexcept = List.mem NoExcept attrs in
       fprintf fmt "%a %s(%a)%s%s {@[<v 4>@,%a@]@,}@,"
         pp_ctype ret_type name
@@ -284,8 +284,8 @@ let pp_struct_member fmt = function
   | MemberMethodDecl { attrs; is_static; is_const; template_params; ret_type; name; params } ->
       if template_params <> [] then
         fprintf fmt "template <%s>@," (String.concat ", " template_params);
-      if is_static then fprintf fmt "static ";
       pp_attrs fmt attrs;
+      if is_static then fprintf fmt "static ";
       let is_noexcept = List.mem NoExcept attrs in
       fprintf fmt "%a %s(%a)%s%s;@,"
         pp_ctype ret_type name

@@ -204,6 +204,21 @@ let block_id_multiplier = 0xB7E15163L
 (* "CAFE" + "5877": salt for deterministic decoy edge generation in Stack-IR dumps. *)
 let salt_dump_phase = 0x5CAFE5877L
 
+(* --- Computational Stalling (comp_stall) --------------------------------- *)
+
+(* LCG multiplier used to derive synthetic RSW prime candidates from a seed.
+   Standard POSIX / java.util.Random LCG constant: a = 25214903917 = 0x5DEECE66D. *)
+let comp_stall_lcg_mul = 0x5DEECE66DL
+
+(* LCG addend used together with [comp_stall_lcg_mul]:
+   c = 11 = 0xB.  Pair (a, c) satisfies the Hull-Dobell theorem for mod 2^k. *)
+let comp_stall_lcg_add = 0xBL
+
+(* GF(2^64) carry-less multiplication inner-loop constant for the PoW puzzle.
+   MurmurHash3 64-bit finalizer mix1 constant; also functions as the GF(2^64)
+   reduction polynomial mask in the software PCLMULQDQ emulation loop. *)
+let comp_stall_pow_gf_poly = 0xC4CEB9FE1A85EC53L
+
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -403,6 +418,18 @@ let registry : entry list = [
     value = salt_dump_phase;
     source = "hex-speak salt 'CAFE'+'5877' - deterministic decoy edge seed";
     used_in = [ "lib/stack_vm/stack_ir_json.ml" ] };
+  { name = "comp_stall_lcg_mul";
+    value = comp_stall_lcg_mul;
+    source = "POSIX/java.util.Random LCG multiplier a=25214903917; prime candidate generation in CompStall";
+    used_in = [ "lib/comp_stall/comp_stall_engine.ml" ] };
+  { name = "comp_stall_lcg_add";
+    value = comp_stall_lcg_add;
+    source = "POSIX LCG addend c=11; pair (a,c) satisfies Hull-Dobell theorem mod 2^k";
+    used_in = [ "lib/comp_stall/comp_stall_engine.ml" ] };
+  { name = "comp_stall_pow_gf_poly";
+    value = comp_stall_pow_gf_poly;
+    source = "MurmurHash3 64-bit mix1 / GF(2^64) reduction polynomial for PoW inner loop";
+    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

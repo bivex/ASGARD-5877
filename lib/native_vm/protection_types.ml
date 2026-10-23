@@ -383,6 +383,26 @@ let default_memory_chaffing = {
   chaff_ratio = 2.0;
 }
 
+type comp_stall_config = {
+  enabled          : bool   [@default false];
+  variant          : string [@default "time_lock"];  (* "time_lock" | "pow" | "combined" *)
+  n_iterations     : int    [@default 500_000];
+  pow_difficulty   : int    [@default 20];
+  tau_ux_sec       : (float [@of_yojson float_of_yojson] [@to_yojson float_to_yojson]) [@default 0.05];
+  emu_quota_instrs : int    [@default 10_000_000];
+  seed             : int64  [@default 0L];
+} [@@deriving yojson]
+
+let default_comp_stall = {
+  enabled = false;
+  variant = "time_lock";
+  n_iterations = 500_000;
+  pow_difficulty = 20;
+  tau_ux_sec = 0.05;
+  emu_quota_instrs = 10_000_000;
+  seed = 0L;
+}
+
 let default_stack_vm = {
   enabled = true;
   superoperators = true;
@@ -412,6 +432,7 @@ type t = {
   eh_shadowing : eh_shadowing_config [@default default_eh_shadowing];
   anti_vpc : anti_vpc_config [@default default_anti_vpc];
   memory_chaffing : memory_chaffing_config [@default default_memory_chaffing];
+  comp_stall : comp_stall_config [@default default_comp_stall];
   spaghetti : spaghetti_config [@default default_spaghetti];
   amplifier : amplifier_config [@default default_amplifier];
   superop : superop_config [@default default_superop];
@@ -465,6 +486,11 @@ let memory_chaffing_enabled (config : t option) : bool =
   match config with
   | Some c -> c.memory_chaffing.enabled
   | None -> true
+
+let comp_stall_enabled (config : t option) : bool =
+  match config with
+  | Some c -> c.comp_stall.enabled
+  | None -> false
 
 let oblivious_memory_enabled (config : t option) : bool =
   match config with
