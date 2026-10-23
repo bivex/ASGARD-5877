@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Enhance Stack-VM Bytecode Computational Stalling pass (`lib/stack_vm/stack_stall_pass.ml`):
+  * Added dynamic state-dependent dual-path control flow (`stall_split_id` branching to `stall_body_even_id` or `stall_body_odd_id` via Horner vs direct cubic polynomial expansion) forcing $2^N$ path explosion in symbolic execution / DSE solvers (Angr / Triton / Z3) with zero physical CPU branch stalls.
+  * Added L1-stack memory touches (`WriteMem 8` / `ReadMem 8` on guest stack offset) to trigger SoftMMU page-table translations in emulators while hitting CPU L1 cache on native hardware.
+  * Added flag state evaluation (`PushFlags; PopFlags`) forcing emulators to materialize lazy condition codes on each iteration.
+  * Calibrated default iteration count to $N = 500$ ($0.05-0.18\text{ s}$ native baseline, preserving interactive UX while exposing emulators to $2^{500}$ symbolic path divergence).
 - Expose computational stalling parameters through CLI and configuration system (`bin/cli_protect_arm64.ml`, `bin/cli_protect.ml`, `bin/cli_protect_riscv.ml`, `lib/adapters/protect_adapters/config_adapter.ml`): added `--comp-stall`, `--comp-stall-iterations`/`--stall-iters`, `--comp-stall-variant`/`--stall-variant`, and `--comp-stall-seed` CLI arguments; eliminated hardcoded iteration counts and magic numbers across `lib/adapters/protect_adapters/vm_packagers.ml` and `lib/stack_vm/stack_stall_pass.ml`.
 
 ### Changed
