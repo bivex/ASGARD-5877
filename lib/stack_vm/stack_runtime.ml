@@ -1100,16 +1100,6 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
            raw
              "vm.vkey ^= asgard_stack_vm::verify_handler_integrity();"
          else raw "");
-        (match cfg.comp_stall_params with
-         | Some (n, m, a, xn) ->
-             raw
-               (Printf.sprintf
-                  "vm.vkey ^= (::asgard::comp_stall::RswTimeLock<%d, %s, %s>::run() ^ %s);"
-                  n
-                  (Random_visa_constants.Magic_numbers.to_c_literal m)
-                  (Random_visa_constants.Magic_numbers.to_c_literal a)
-                  (Random_visa_constants.Magic_numbers.to_c_literal xn))
-         | None -> raw "");
         raw "vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);";
         decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, max 64 cfg.host_stack_size_kb * 1024)) "host_stack";
         let_u64 "sp_val" (c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L));

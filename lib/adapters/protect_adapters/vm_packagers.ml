@@ -504,6 +504,21 @@ module Stack_vm_packager : Vm_packager = struct
     let ctx = Stack_vm.Context_allocator.create ~permute:native_cfg.stack_vm.permute_registers () in
     let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
+
+    (* Bytecode Computational Stalling: runs exclusively inside VM bytecode *)
+    let prog =
+      if native_cfg.comp_stall.enabled then
+        let iters =
+          if native_cfg.comp_stall.n_iterations > 100 then 30
+          else if native_cfg.comp_stall.n_iterations <= 0 then 10
+          else native_cfg.comp_stall.n_iterations
+        in
+        let seed = if native_cfg.comp_stall.seed <> 0L then native_cfg.comp_stall.seed else 0x13375877L in
+        Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Bytecode-Stall] Injecting dynamical stall into bytecode (N=%d)" iters;
+        Stack_vm.Stack_stall_pass.apply_stall ~ctx ~config:{ n_iterations = iters; seed } prog
+      else prog
+    in
+
     dump_bytecode_trace ~phase:"1-lowered" prog;
     dump_bytecode_json ~phase:"1-lowered" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"1-lowered" ~final:false prog;
@@ -879,14 +894,7 @@ module Stack_vm_packager : Vm_packager = struct
     in
 
     let enable_address_bound = Protection_config.address_bound_enabled (Some native_cfg) in
-    let comp_stall_params =
-      if native_cfg.comp_stall.enabled then
-        let seed = if native_cfg.comp_stall.seed <> 0L then native_cfg.comp_stall.seed else 0x13375877L in
-        let n_iters = native_cfg.comp_stall.n_iterations in
-        let key = Comp_stall.Comp_stall_engine.compute_rsw_key ~seed ~n_iterations:n_iters in
-        Some (key.n_iterations, key.modulus_lo, key.base_a, key.x_n_lo)
-      else None
-    in
+    let comp_stall_params = None in
     let target_arch =
       match native_cfg.arch with
       | `RISCV -> Stack_vm.Stack_runtime.RV64

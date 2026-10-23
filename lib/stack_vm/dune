@@ -1,5 +1,5 @@
 (library
  (name stack_vm)
  (public_name random_visa.stack_vm)
- (libraries vm_ir mba_engine cpp_codegen yojson random_visa_constants random_visa_ports))
+ (libraries vm_ir mba_engine cpp_codegen yojson random_visa_constants random_visa_ports comp_stall))
 

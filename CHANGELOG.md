@@ -36,6 +36,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Eliminate illusory Tier-1 `lightweight` preset and raw linear MBA depth 1 in `lib/native_vm/protection_presets.ml`, `lib/native_vm/protection_config.mli`, `lib/mba_engine/mba.ml`, and `lib/mba_engine/ncfg_synth.ml`: removed the `lightweight` preset (which disabled CFF and ran linear MBA at depth 1 without non-linear bijections, offering zero resilience against SMT solvers while incurring runtime overhead), enforced a minimum MBA depth of 2 across the ALU obfuscator, and updated CLI and test references.
 
 ### Added
+- Implement Stack-VM Bytecode Computational Stalling pass (`lib/stack_vm/stack_stall_pass.ml`, `lib/stack_vm/stack_stall_pass.mli`):
+  * Migrated computational stalling execution exclusively into the virtual machine bytecode stream (Stack-IR), eliminating host C++ prologue loops and subjecting the non-linear dynamical stall loop to downstream Superoperator fusion, Horner polynomial amplification, MBA rewriting, CFF VPC dispatcher routing, spaghetti splitting, and metamorphic ghost padding.
+  * Coupled mathematical stall termination invariant directly into live register `ctx[0]`, ensuring any loop skipping or emulator rounding error permanently distorts application input arguments.
 - Implement Computational Stalling (CPU-bound anti-emulation) pass (`lib/comp_stall/`):
   * Implemented strictly sequential Rivest–Shamir–Wagner (RSW) Time-Lock Puzzle ($x_N \equiv a^{2^N} \pmod M$) with compile-time $O(\log N)$ key derivation via $\phi(M)$ and runtime $O(N)$ depth preventing loop-skipping.
   * Implemented Discrete Chebyshev Chaotic Attractor ($x_{n+1} = 2x_n^2 - 1 \pmod M$) with exponential Lyapunov sensitivity to initial conditions and FPU rounding differences.

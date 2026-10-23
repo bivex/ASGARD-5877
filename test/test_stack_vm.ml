@@ -2375,8 +2375,21 @@ let test_dup2_rot_eval_and_encoder () =
   Alcotest.(check bool) "Decoded ops contains Dup2" true (List.mem Dup2 decoded);
   Alcotest.(check bool) "Decoded ops contains Rot" true (List.mem Rot decoded)
 
+let test_bytecode_stall_execution () =
+  let orig_prog = make_program 0 [
+    make_block 0 "entry" [
+      PushImm 42L; PopReg 1; Exit
+    ]
+  ] 4 in
+  let stalled = Stack_stall_pass.apply_stall ~config:{ n_iterations = 1000; seed = 0x13375877CAFEBABEL } orig_prog in
+  let st = run_program stalled in
+  Alcotest.(check bool) "Stalled program halted" true st.halted;
+  Alcotest.(check int64) "Original entry executed (ctx[1]=42)" 42L (get_reg st 1);
+  Alcotest.(check int64) "ctx[0] untouched (0)" 0L (get_reg st 0)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
+  ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
   ("Atomic_mem & Fp_conv Stack-VM Lowering", `Quick, test_atomic_mem_and_fp_conv_stack);
   ("Dup2 & Rot Semantics, Invariants & Codec", `Quick, test_dup2_rot_eval_and_encoder);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
