@@ -95,7 +95,7 @@ let protect_cmd =
     Arg.(value & opt (some string) None & info [ "c"; "config" ] ~docv:"FILE" ~doc)
   in
   let preset =
-    let doc = "Protection preset (default, max_security, lightweight, stealth)" in
+    let doc = "Protection preset (default, max_security, stealth, edr_stealth)" in
     Arg.(value & opt (some string) None & info [ "p"; "preset" ] ~docv:"PRESET" ~doc)
   in
   let cff =
@@ -209,7 +209,7 @@ let init_config_cmd =
     Arg.(value & opt string "asgard.json" & info [ "o"; "output" ] ~docv:"FILE" ~doc)
   in
   let preset =
-    let doc = "Protection preset template (default, max_security, lightweight, stealth)" in
+    let doc = "Protection preset template (default, max_security, stealth, edr_stealth)" in
     Arg.(value & opt (some string) None & info [ "p"; "preset" ] ~docv:"PRESET" ~doc)
   in
   let term = Term.(ret (const run_init_config $ out_file $ preset)) in

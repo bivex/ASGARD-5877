@@ -135,8 +135,8 @@ func_rk_mirror:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok func ->
-      let on_cfg = Protection_config.lightweight in
-      let off_cfg = { on_cfg with anti_pushan = { enabled = false; running_key = false; address_bound = false } } in
+      let on_cfg = { Protection_config.minimal with anti_pushan = { enabled = true; running_key = true; address_bound = false } } in
+      let off_cfg = { Protection_config.minimal with anti_pushan = { enabled = false; running_key = false; address_bound = false } } in
       let pkg_on = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xC0FFEE |]) ~config:on_cfg func in
       let pkg_off = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xC0FFEE |]) ~config:off_cfg func in
       let bc_on = Array.of_list pkg_on.bytecode in
@@ -181,12 +181,9 @@ func_rk_legacy:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok func ->
-      let off_cfg =
-        let base = Protection_config.lightweight in
-        { base with anti_pushan = { enabled = false; running_key = false; address_bound = false } }
-      in
+      let off_cfg = { Protection_config.minimal with anti_pushan = { enabled = false; running_key = false; address_bound = false } } in
       let pkg_off = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xFEED |]) ~config:off_cfg func in
-      let pkg_on = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xFEED |]) ~config:Protection_config.lightweight func in
+      let pkg_on = Vm_emitter.compile_and_package ~rng:(Random.State.make [| 0xFEED |]) ~config:{ Protection_config.minimal with anti_pushan = { enabled = true; running_key = true; address_bound = false } } func in
       let bc_off = Array.of_list pkg_off.bytecode in
       let bc_on = Array.of_list pkg_on.bytecode in
       let seed32 =
@@ -311,10 +308,7 @@ func_addr_bound:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok func ->
-      let addr_cfg =
-        let base = Protection_config.lightweight in
-        { base with anti_pushan = { enabled = true; running_key = true; address_bound = true } }
-      in
+      let addr_cfg = { Protection_config.minimal with anti_pushan = { enabled = true; running_key = true; address_bound = true } } in
       let pkg = Vm_emitter.compile_and_package ~rng ~config:addr_cfg func in
       Alcotest.(check bool) "contains address-bound macro" true
         (string_contains pkg.cpp_runtime_source "#define ASGARD_ADDRESS_BOUND_BYTECODE 1");
@@ -343,10 +337,7 @@ func_tamper:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok func ->
-      let addr_cfg =
-        let base = Protection_config.lightweight in
-        { base with anti_pushan = { enabled = true; running_key = true; address_bound = true } }
-      in
+      let addr_cfg = { Protection_config.minimal with anti_pushan = { enabled = true; running_key = true; address_bound = true } } in
       let pkg = Vm_emitter.compile_and_package ~rng ~config:addr_cfg func in
       (* Simulate an emulator or hook tampering with handler address binding on branch *)
       let pattern =

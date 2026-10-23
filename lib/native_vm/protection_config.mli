@@ -215,7 +215,6 @@ val default_ghost : ghost_config
 val default_trampoline : trampoline_config
 
 val minimal : t
-val lightweight : t
 val default : t
 val high : t
 val max_security : t

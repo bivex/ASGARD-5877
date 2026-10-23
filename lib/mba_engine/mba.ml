@@ -350,6 +350,7 @@ let is_stack_op = function
   | _ -> false
 
 let obfuscate_alu ?(order = `Deg5) ~rng ~depth ~dst ~src1 ~src2 op =
+  let depth = max 2 depth in
   if is_stack_reg dst || is_stack_op src1 || is_stack_op src2 then
     [ Ir.Alu { op; dst; src1; src2; set_flags = false } ]
   else

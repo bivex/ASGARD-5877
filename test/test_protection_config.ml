@@ -6,7 +6,9 @@ open X86_lifter
 let test_presets () =
   Alcotest.(check bool) "default config has cff enabled" true Protection_config.default.cff.enabled;
   Alcotest.(check bool) "max_security has depth 4" true (Protection_config.max_security.mba.depth = 4);
-  Alcotest.(check bool) "lightweight has cff disabled" false Protection_config.lightweight.cff.enabled;
+  (match Protection_config.from_preset "lightweight" with
+   | Error _ -> Alcotest.(check bool) "lightweight rejected" true true
+   | Ok _ -> Alcotest.fail "lightweight should be rejected");
   Alcotest.(check bool) "stealth has ncfg engine" true (Protection_config.stealth.mba.engine = `Ncfg);
 
   match Protection_config.from_preset "military" with
@@ -75,11 +77,6 @@ let test_stack_vm_presets () =
   let def = Protection_config.default in
   Alcotest.(check bool) "default stack_vm enabled" true def.stack_vm.enabled;
   Alcotest.(check bool) "default runtime_hardening enabled" true def.stack_vm.runtime_hardening;
-  let light = Protection_config.lightweight in
-  Alcotest.(check bool) "lightweight stack_vm superoperators enabled" true light.stack_vm.superoperators;
-  Alcotest.(check bool) "lightweight stack_vm state_feedback disabled" false light.stack_vm.state_feedback;
-  Alcotest.(check bool) "lightweight stack_vm layout_randomization disabled" false light.stack_vm.layout_randomization;
-  Alcotest.(check bool) "lightweight stack_vm runtime_hardening disabled" false light.stack_vm.runtime_hardening;
   let max_s = Protection_config.max_security in
   Alcotest.(check bool) "max_security stack_vm runtime_hardening enabled" true max_s.stack_vm.runtime_hardening;
   let custom =
@@ -109,14 +106,14 @@ func_cfg_test:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok func ->
-      let config = Protection_config.lightweight in
+      let config = Protection_config.default in
       let pkg = Vm_emitter.compile_and_package ~rng ~config func in
-      Alcotest.(check bool) "lightweight bytecode emitted" true (List.length pkg.bytecode > 0);
+      Alcotest.(check bool) "default bytecode emitted" true (List.length pkg.bytecode > 0);
 
       let config_max = Protection_config.max_security in
       let pkg_max = Vm_emitter.compile_and_package ~rng ~config:config_max func in
       Alcotest.(check bool) "max_security bytecode emitted" true (List.length pkg_max.bytecode > 0);
-      Alcotest.(check bool) "max_security DRS > lightweight DRS" true
+      Alcotest.(check bool) "max_security DRS >= default DRS" true
         (Native_vm.Metrics.devirtualization_resistance_score pkg_max.metrics >= Native_vm.Metrics.devirtualization_resistance_score pkg.metrics)
 
 let test_junk_density_scaling () =
@@ -139,7 +136,6 @@ let test_presets_opaque_predicates () =
   Alcotest.(check bool) "high has opaque predicates" true Protection_config.high.cff.inject_opaque_predicates;
   Alcotest.(check bool) "stealth has opaque predicates" true Protection_config.stealth.cff.inject_opaque_predicates;
   Alcotest.(check bool) "default has opaque predicates disabled" false Protection_config.default.cff.inject_opaque_predicates;
-  Alcotest.(check bool) "lightweight has opaque predicates disabled" false Protection_config.lightweight.cff.inject_opaque_predicates;
   Alcotest.(check bool) "minimal has opaque predicates disabled" false Protection_config.minimal.cff.inject_opaque_predicates
 
 let test_dispatch_domain_diversification () =
@@ -166,7 +162,6 @@ let test_eh_shadowing_config () =
   Alcotest.(check bool) "max_security has eh_shadowing enabled" true Protection_config.max_security.eh_shadowing.enabled;
   Alcotest.(check int) "max_security shadow_alloc_size is 64" 64 Protection_config.max_security.eh_shadowing.shadow_alloc_size;
   Alcotest.(check bool) "minimal has eh_shadowing disabled" false Protection_config.minimal.eh_shadowing.enabled;
-  Alcotest.(check bool) "lightweight has eh_shadowing disabled" false Protection_config.lightweight.eh_shadowing.enabled;
 
   let builder = Protection_config.create_builder () in
   let custom = Protection_config.with_eh_shadowing ~shadow_alloc_size:48 false builder |> Protection_config.build in
@@ -276,10 +271,6 @@ let test_pass_config_sections () =
 
 let test_pass_config_presets () =
   let open Protection_config in
-  (* lightweight: light amplifier, low ghost/superop rates *)
-  Alcotest.(check string) "lightweight amplifier light" "light" lightweight.amplifier.profile;
-  Alcotest.(check int) "lightweight ghost_rate 40" 40 lightweight.ghost.ghost_rate;
-  Alcotest.(check int) "lightweight fusion 80" 80 lightweight.superop.fusion_rate;
   (* minimal: amplifier and ghost disabled *)
   Alcotest.(check bool) "minimal amplifier disabled" false minimal.amplifier.enabled;
   Alcotest.(check bool) "minimal ghost disabled" false minimal.ghost.enabled;

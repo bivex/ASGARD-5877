@@ -193,115 +193,6 @@ let max_security : t = {
   toolchain = default_toolchain;
 }
 
-let lightweight : t = {
-  arch = `X86_64;
-  seed = None;
-  crypto = { rounds = 16; key_bits = 128 };
-  bloat = { mode = `Compact; target_size_budget_kb = Some 250; junk_density = 0.2; density_cap_threshold1_kb = 200; density_cap_threshold2_kb = 500 };
-  cff = {
-    enabled = false;
-    obfuscate_states = false;
-    inject_opaque_predicates = false;
-    input_tainted_transitions = false;
-    split_rate = 0;
-    hub_count = 1;
-    pop_digest = false;
-    red_herring = true;
-  };
-  mba = {
-    enabled = true;
-    depth = 1;
-    engine = `Poly;
-    stack_synthesis_rate = 100;
-    egraph_rate = 30;
-    egraph_node_limit = 120;
-    egraph_time_budget_ms = 80;
-    egraph_iter_limit = 5;
-    ir_max_depth = 4;
-    ir_egraph_node_limit = 80;
-    ir_egraph_time_budget_ms = 50;
-  };
-  anti_pushan = {
-    enabled = true;
-    running_key = true;
-    address_bound = false;
-  };
-  anti_tamper = {
-    enabled = false;
-    smc = false;
-    smc_strict = false;
-    hardware_timing_probes = false;
-    memory_integrity_scanner = false;
-    anti_emulation = false;
-    nanomites = false;
-    direct_syscalls = false;
-  };
-  vm_runtime = {
-    num_dispatch_domains = 2;
-    enable_junk_instructions = false;
-    enable_super_operators = true;
-    stack_scrambling = false;
-    memory_sanitization = false;
-    vector_isa = false;
-    egraph_expansion = false;
-    ephemeral_jit = true;
-    chameleon_handlers = false;
-    oblivious_memory = false;
-    context_epochs = 2;
-    oblivious_decoys = 1;
-  };
-  c_macro = {
-    enabled = true;
-    macro_prefix = "ASG_";
-    obfuscate_strings = true;
-    obfuscate_constants = true;
-    obfuscate_arithmetic = true;
-    opaque_predicates = false;
-    api_hashing = true;
-    anti_debug = false;
-    signal_dispatch = false;
-    nanomites = false;
-    timing_guard = false;
-    timing_threshold_ticks = 100000000L;
-  };
-  stack_vm = {
-    enabled = true;
-    superoperators = true;
-    state_feedback = false;
-    layout_randomization = false;
-    runtime_hardening = false;
-    compact_imm = true;
-    feedback_rate = 100;
-    cff_couple_key = true;
-    opcode_polymorphism = true;
-    permute_registers = false;
-    host_stack_size_kb = 512;
-  };
-  eh_shadowing = {
-    enabled = false;
-    shadow_alloc_size = 32;
-    interceptor_symbol = "tech_2601_interceptor";
-  };
-  anti_vpc = {
-    enabled = true;
-    scramble_vpc = true;
-    split_vpc = false;
-    entropy_whitening = false;
-  };
-  memory_chaffing = {
-    enabled = false;
-    pool_size = 1024;
-    chaff_ratio = 0.5;
-  };
-  spaghetti = default_spaghetti;
-  amplifier = { default_amplifier with profile = "light" };
-  superop = { default_superop with fusion_rate = 80 };
-  ghost = { default_ghost with ghost_rate = 40 };
-  trampoline = default_trampoline;
-  watermark = { default_watermark with redundancy = 5 };
-  toolchain = default_toolchain;
-}
-
 let stealth : t = {
   arch = `X86_64;
   seed = None;
@@ -727,10 +618,11 @@ let high : t = {
 let from_preset name =
   match String.lowercase_ascii (String.trim name) with
   | "min" | "minimal" | "none" | "zero" | "0" -> Ok minimal
-  | "light" | "lightweight" | "fast" | "low" | "1" -> Ok lightweight
+  | "light" | "lightweight" | "fast" | "low" | "1" ->
+      Error "Preset 'lightweight' has been removed: linear MBA (depth 1) provides illusory Tier-1 security. Use 'default' (Tier-2 balanced) or 'minimal' instead."
   | "default" | "std" | "standard" | "medium" | "med" | "2" -> Ok default
   | "high" | "hardened" | "strong" | "3" -> Ok high
   | "max" | "max_security" | "paranoid" | "military" | "insane" | "4" -> Ok max_security
   | "stealth" | "covert" -> Ok stealth
   | "edr" | "edr_stealth" | "av_clean" | "whitelist" -> Ok edr_stealth
-  | other -> Error (Printf.sprintf "Unknown protection preset '%s'. Available: min (0), lightweight (1), default/medium (2), high (3), max (4), stealth, edr_stealth" other)
+  | other -> Error (Printf.sprintf "Unknown protection preset '%s'. Available: min (0), default/medium (2), high (3), max (4), stealth, edr_stealth" other)

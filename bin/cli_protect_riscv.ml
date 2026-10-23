@@ -92,7 +92,7 @@ let protect_riscv_cmd =
     Arg.(value & opt (some string) None & info [ "c"; "config" ] ~docv:"FILE" ~doc)
   in
   let preset =
-    let doc = "Protection preset (default, max_security, lightweight, stealth)" in
+    let doc = "Protection preset (default, max_security, stealth, edr_stealth)" in
     Arg.(value & opt (some string) None & info [ "p"; "preset" ] ~docv:"PRESET" ~doc)
   in
   let cff =
