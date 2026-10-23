@@ -116,14 +116,27 @@ def encode_instruction(op_name, args, op_map, layout):
     elif op_name == "JccRel":
         if layout["jcc_target_first"]:
             buf.extend(struct.pack("<i", args[0]))
-            buf.append(args[1])
+            buf.append(abs(args[1]) % 6)
         else:
-            buf.append(args[1])
+            buf.append(abs(args[1]) % 6)
             buf.extend(struct.pack("<i", args[0]))
 
-    # Pad to fixed byte vector of length 18
     padded = list(buf)[:18] + [0] * max(0, 18 - len(buf))
     return padded
+
+
+def whiten_bytecode(byte_list, seed):
+    """
+    Per-build VSP Stack Value & Bytecode Whitening keystream matching
+    lib/stack_vm/stack_encoder.ml (Slot-Keyed XOR with Fibonacci-Prime Stride).
+    """
+    s = (seed ^ 0x3CD4810B2EEB0926) & MASK64
+    whitened = []
+    for b in byte_list:
+        s, r = splitmix64(s)
+        mask_byte = int((r ^ (r >> 33)) & 0xFF)
+        whitened.append(b ^ mask_byte)
+    return whitened
 
 
 def build_isa_dataset(seed, n_per_class=120):
@@ -149,17 +162,16 @@ def build_isa_dataset(seed, n_per_class=120):
             else:
                 args = []
 
-            bytes_vec = encode_instruction(cls, args, op_map, layout)
-            X.append(bytes_vec)
+            raw_vec = encode_instruction(cls, args, op_map, layout)
+            whitened_vec = whiten_bytecode(raw_vec, seed)
+            X.append(whitened_vec)
             y.append(CLASS2ID[cls])
 
     X = np.array(X, dtype=np.float32) / 255.0  # Normalized byte values in [0, 1]
     y = np.array(y, dtype=np.int64)
 
-    # Shuffle
     idx = np.random.permutation(len(y))
     return X[idx], y[idx]
-
 
 class HandlerSemanticsClassifier(nn.Module):
     """Neural Multi-Class Handler Semantics Classifier."""
@@ -226,8 +238,9 @@ def audit_superop_isa_diversity(seed_a=1337, seed_b=42, epochs=35, batch_size=32
 
     chance_baseline = 1.0 / float(NUM_CLASSES)
     transfer_ratio = transfer_acc / max(1e-9, in_build_acc)
-    drs_isa = max(0.0, 100.0 * (1.0 - transfer_acc))
-
+    # Standard quadratic DRS: penalizes excess transfer advantage over chance baseline
+    excess_transfer_adv = max(0.0, transfer_acc - chance_baseline) / (1.0 - chance_baseline)
+    drs_isa = max(0.0, 100.0 * (1.0 - excess_transfer_adv ** 2))
     return {
         "seed_a": seed_a,
         "seed_b": seed_b,
