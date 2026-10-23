@@ -22,6 +22,8 @@ from mba_deobf_eval import audit_mba_depth
 from trace_lstm_eval import audit_trace_lstm
 from predicate_realism_eval import audit_opaque_predicates
 from amplifier_dce_eval import audit_amplifier_dce
+from ghost_padding_eval import audit_ghost_padding
+
 def run_pipeline_dump(out_dir="/tmp/pipeline_dump"):
     """Builds and runs dump_pipeline.exe to generate fresh JSON phase dumps."""
     os.makedirs(out_dir, exist_ok=True)
@@ -147,14 +149,24 @@ def main():
     print(f"  Transformer ROC-AUC:            {op_res['tf_auc']:.3f}  (Accuracy: {op_res['tf_acc']*100:.1f}%)")
     print(f"  Tabular Baseline ROC-AUC:       {op_res['tab_auc']:.3f}")
     print(f"  Opaque Predicate DRS:           {op_res['drs_opaque']:.1f} / 100.0")
+    # 6. Ghost Stack Padding Sequence Tagger Audit
+    print("\n[Phase 6] Auditing Ghost Stack Padding (Sequence Tagger vs Spatial Dispersion)...")
+    ghost_res = audit_ghost_padding(dump_dir=dump_dir, epochs=15)
+    print(f"  Ghost Ops Injected:             +{ghost_res['ghost_ratio']*100:.1f}% ({ghost_res['ghost_ops']} ghost ops)")
+    print(f"  Positional Entropy:             H={ghost_res['positional_entropy']:.3f} / {ghost_res['max_positional_entropy']:.3f} bits (Normalized: {ghost_res['normalized_entropy']:.3f})")
+    print(f"  Transformer Ghost Recall:       {ghost_res['tf']['recall']*100:.1f}%  (F1: {ghost_res['tf']['f1']:.3f})")
+    print(f"  BiLSTM Tagger Ghost Recall:     {ghost_res['lstm']['recall']*100:.1f}%  (F1: {ghost_res['lstm']['f1']:.3f})")
+    print(f"  5-gram Context Baseline Recall: {ghost_res['tab']['recall']*100:.1f}%")
+    print(f"  Ghost Padding DRS:              {ghost_res['drs_ghost']:.1f} / 100.0")
 
-    # 6. Composite Assessment Score
+    # 7. Composite Assessment Score
     composite_drs = (
-        (0.30 * final_cfg_drs)
-        + (0.25 * final_mba_drs)
+        (0.25 * final_cfg_drs)
+        + (0.20 * final_mba_drs)
         + (0.20 * combined_trace_drs)
         + (0.15 * amp_res["drs_amp"])
         + (0.10 * op_res["drs_opaque"])
+        + (0.10 * ghost_res["drs_ghost"])
     )
 
     print("\n" + "=" * 80)
@@ -165,6 +177,7 @@ def main():
     print(f"  [3] Dynamic Trace & Rolling-Key LSTM:       {combined_trace_drs:>5.1f} / 100.0")
     print(f"  [4] Bytecode Amplifier DCE Resilience:      {amp_res['drs_amp']:>5.1f} / 100.0")
     print(f"  [5] Opaque Predicate Realism:               {op_res['drs_opaque']:>5.1f} / 100.0")
+    print(f"  [6] Ghost Stack Padding Resilience:         {ghost_res['drs_ghost']:>5.1f} / 100.0")
     print("  " + "-" * 76)
     print(f"  ===> COMPOSITE NEURAL DRS SCORE:            {composite_drs:>5.1f} / 100.0  [ TIER 3+ RESILIENT ]")
     print("=" * 80 + "\n")

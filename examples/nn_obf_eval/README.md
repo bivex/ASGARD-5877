@@ -77,6 +77,21 @@ The suite trains three specialized deep-learning models targeting the core prote
   $$\text{DCE Recovery Rate} = \text{Recall of identifying amplified dead-code instructions}$$
   $$\text{DRS}_{\text{amp}} = \max\left(0.0, 100.0 \times \left(1.0 - \max_{M} \text{DCE Recovery Rate}_M\right)\right)$$
 
+
+### 6. Ghost Stack Padding & Sequence Tagger (`ghost_padding_eval.py`)
+- **Attack Vector:** Intra-block Ghost Instruction Identification (simulating sequence taggers and neural deobfuscators learning the micro-patterns of semantically neutral stack padding operations like `PushImm; PopReg`, `KeyAdjust; KeyAdjust`, and `entangle_with_accumulator`).
+- **Ground Truth:** Derived via Longest Common Subsequence (LCS) alignment matching on full `(opcode, operands)` tuples between `phase_4-spaghetti.json` (unpadded core) and `phase_5-ghost.json` (padded blocks), assigning label 0 to core instructions and label 1 to inserted ghost operations.
+- **Spatial Dispersion & Positional Entropy:**
+  - Evaluates whether ghost padding operations are clustered at block boundaries or uniformly distributed across instruction depth.
+  - Measures Shannon positional entropy $H(\text{pos} \mid L) = -\sum_{i=1}^{10} p_i \log_2 p_i$ across 10 discrete relative block depth bins $[0.0, 1.0]$.
+  - Normalized spatial dispersion $\eta = \frac{H}{\log_2(10)} \in [0.0, 1.0]$, where $\eta \to 1.0$ indicates maximal uniform dispersion without spatial clustering tells.
+- **Ensemble Models:**
+  - **Opcode-Transformer:** 2-layer Transformer Encoder with multi-head self-attention classifying each token position.
+  - **BiLSTM-Tagger:** 2-layer Bidirectional LSTM sequence tagger.
+  - **5-gram Tabular Baseline:** Contextual n-gram frequency lookup baseline.
+- **Resilience Formula:**
+  $$\text{Ghost-Recall} = \max_{M} \left[\text{Recall of identifying inserted ghost padding operations}_M\right]$$
+  $$\text{DRS}_{\text{ghost}} = \max\left(0.0, 100.0 \times \left(1.0 - \text{Ghost-Recall}\right)\right)$$
 ---
 
 ## Quick Start
