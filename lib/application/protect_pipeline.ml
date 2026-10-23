@@ -160,7 +160,9 @@ let run
             if native_cfg.anti_vpc.enabled then
               Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  ├─ [Tech-2603] Emitted Anti-VPC Tracking header (asg_tech_2603.hpp)";
             if native_cfg.memory_chaffing.enabled then
-              Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  └─ [Tech-2608] Emitted Anti-Trace Memory Chaffing header (asg_tech_2608.hpp)";
+              Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  ├─ [Tech-2608] Emitted Anti-Trace Memory Chaffing header (asg_tech_2608.hpp)";
+            if native_cfg.comp_stall.enabled then
+              Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  └─ [Comp-Stall] Emitted Computational Stalling header (asg_comp_stall.hpp)";
 
             (* 4a. Write Tech-2601 Exception Handling Shadowing runtime header *)
             let eh_hdr_path = Filename.concat out_dir "asg_tech_2601.hpp" in
@@ -179,6 +181,12 @@ let run
             let oc_chaff = open_out chaff_hdr_path in
             output_string oc_chaff (Tech_2608.Tech_2608_engine.emit_tech_2608_cpp_header ());
             close_out oc_chaff;
+
+            (* 4e. Write Computational Stalling runtime header *)
+            let stall_hdr_path = Filename.concat out_dir "asg_comp_stall.hpp" in
+            let oc_stall = open_out stall_hdr_path in
+            output_string oc_stall (Comp_stall.Comp_stall_engine.emit_comp_stall_cpp_header ());
+            close_out oc_stall;
 
             (* 4b. Address binding (Anti-VMPredator): active via runtime handler integrity *)
             if native_cfg.anti_pushan.address_bound then

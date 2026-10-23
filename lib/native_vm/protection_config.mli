@@ -272,6 +272,9 @@ val anti_vpc_enabled : t option -> bool
 val memory_chaffing_enabled : t option -> bool
 (** Tech-2608 Anti-Trace-Synthesis gate: [true] when enabled in memory_chaffing config. *)
 
+val comp_stall_enabled : t option -> bool
+(** Computational Stalling (anti-emulation) gate: [true] when enabled in comp_stall config. *)
+
 val oblivious_memory_enabled : t option -> bool
 (** Oblivious Memory & Decoy Access gate: [true] when enabled in vm_runtime. *)
 

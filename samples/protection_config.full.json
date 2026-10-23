@@ -106,6 +106,15 @@
     "pool_size": 16384,
     "chaff_ratio": 8.0
   },
+  "comp_stall": {
+    "enabled": true,
+    "variant": "time_lock",
+    "n_iterations": 500000,
+    "pow_difficulty": 20,
+    "tau_ux_sec": 0.05,
+    "emu_quota_instrs": 10000000,
+    "seed": 1337
+  },
   "spaghetti": {
     "enabled": true,
     "split_rate": 100,

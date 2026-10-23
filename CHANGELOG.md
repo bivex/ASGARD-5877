@@ -41,6 +41,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered constants `comp_stall_lcg_mul`, `comp_stall_lcg_add`, `comp_stall_pow_gf_poly` in `lib/constants/magic_numbers.ml`.
   * Added `comp_stall` configuration to `protection_types.ml` and `protection_presets.ml`.
   * Added comprehensive test suite `test/test_comp_stall.ml` registered in `test/run_tests.ml`.
+  * Wired `comp_stall` into `lib/application/protect_pipeline.ml` (emitting `asg_comp_stall.hpp`), `lib/adapters/protect_adapters/vm_packagers.ml` (protection board reporting & runtime header injection), and `samples/protection_config.full.json`.
 - Eliminate linear key-derivation and structural leakage across VM pipelines:
   * Advance-key step non-linearity: inject SplitMix64 `poly_hash64` into `advance_key_step` in `lib/vm_ir/rolling_key.ml`, `lib/native_vm/vm_context_emitter.ml`, and `test/test_anti_pushan.ml`, defeating F2-linear Gaussian elimination solvers while preserving exact analytical inversion.
   * Byte-rolling keystream non-linearity: upgrade `step_key` in `lib/stack_vm/stack_encoder.ml` and `lib/stack_vm/stack_runtime.ml` from affine `ROTL3` to Murmur3 `feedback_hash` diffusion.

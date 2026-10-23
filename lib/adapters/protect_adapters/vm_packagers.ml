@@ -72,6 +72,7 @@ let make_native_pass_board (engine_name : string) (cfg : Protection_config.t) : 
       pass_switch "EH Shadowing" cfg.eh_shadowing.enabled "disabled in configuration";
       pass_switch "Anti-VPC Tracking" cfg.anti_vpc.enabled "disabled in configuration";
       pass_switch "Memory Chaffing" cfg.memory_chaffing.enabled "disabled in configuration";
+      pass_switch "Computational Stalling" cfg.comp_stall.enabled "disabled in configuration";
     ]
   in
   Printf.sprintf
@@ -135,6 +136,12 @@ let inject_pipeline_hardening (config : Protection_config.t) (func_name : string
     if Protection_config.memory_chaffing_enabled (Some config) then
       "// [ASGARD Tech-2608] Anti-Trace-Synthesis & Memory Chaffing Active\n\
 #include \"asg_tech_2608.hpp\"\n\n" ^ s
+    else s
+  in
+  let s =
+    if Protection_config.comp_stall_enabled (Some config) then
+      "// [ASGARD] Computational Stalling (Anti-Emulation) Active\n\
+#include \"asg_comp_stall.hpp\"\n\n" ^ s
     else s
   in
   s
@@ -209,6 +216,8 @@ module Threaded_vm_packager : Vm_packager = struct
         Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2603] Anti-VPC Tracking: non-linear dispatch active";
       if native_cfg.memory_chaffing.enabled then
         Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d)" native_cfg.memory_chaffing.pool_size;
+      if native_cfg.comp_stall.enabled then
+        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)" native_cfg.comp_stall.n_iterations native_cfg.comp_stall.pow_difficulty;
       let ir : Vm_ir.Ir.func = transform_func ~rng raw_ir in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
       Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  └─ Threaded-VM packaging complete: %d bytecode words" (List.length pkg.bytecode);
@@ -403,6 +412,8 @@ let make_stack_metrics
         pass_switch "Anti-VPC Tracking" native_cfg.anti_vpc.enabled
           "disabled in configuration";
         pass_switch "Memory Chaffing" native_cfg.memory_chaffing.enabled
+          "disabled in configuration";
+        pass_switch "Computational Stalling" native_cfg.comp_stall.enabled
           "disabled in configuration";
       ]
   in
@@ -840,6 +851,9 @@ module Stack_vm_packager : Vm_packager = struct
     if native_cfg.memory_chaffing.enabled then
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d, ratio=%.1f)"
         native_cfg.memory_chaffing.pool_size native_cfg.memory_chaffing.chaff_ratio;
+    if native_cfg.comp_stall.enabled then
+      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)"
+        native_cfg.comp_stall.n_iterations native_cfg.comp_stall.pow_difficulty;
 
     let is_internal_sym name =
       (match constants with
