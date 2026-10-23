@@ -4,22 +4,33 @@ open Protect_ports
 open Random_visa_application
 
 (* 7c. PROTECT-RISCV COMMAND (Automated RISC-V RV64GC Native Lifter & VM Pipeline via Hexagonal Architecture) *)
-let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile debug_symbols =
+let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile debug_symbols comp_stall comp_stall_iterations comp_stall_variant comp_stall_seed =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
     else if engine = "stack" then "stack"
     else if engine = "multi" || engine = "multi_vm" then "multi"
     else "threaded"
   in
+  let comp_stall_seed_val =
+    match comp_stall_seed with
+    | Some s -> (try Some (Int64.of_string s) with _ -> None)
+    | None -> None
+  in
   let effective_cfg =
     let resolved =
-      Protect_adapters.Config_adapter.resolve
+      Protect_adapters.Config_adapter.resolve_with_watermark
+        ~watermark:None
         ~config_file
         ~preset
         ~enable_cff
         ~enable_mba
         ~mba_depth
+        ?enable_comp_stall:comp_stall
+        ?comp_stall_iterations
+        ?comp_stall_variant
+        ?comp_stall_seed:comp_stall_seed_val
         ~seed
+        ()
     in
     let raw = Protect_adapters.Config_adapter.unwrap resolved in
     Protect_adapters.Config_adapter.wrap { raw with arch = `RISCV }
@@ -123,5 +134,21 @@ let protect_riscv_cmd =
     let doc = "Preserve DWARF debug symbols and generate .dSYM for debugging/auditing in IDA" in
     Arg.(value & flag & info [ "g"; "debug-symbols" ] ~doc)
   in
-  let term = Term.(ret (const run_protect_riscv $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ compile $ debug_symbols)) in
+  let comp_stall =
+    let doc = "Enable Computational Stalling anti-emulation loop inside bytecode" in
+    Arg.(value & opt (some bool) None & info [ "comp-stall" ] ~docv:"BOOL" ~doc)
+  in
+  let comp_stall_iterations =
+    let doc = "Number of computational stalling iterations inside bytecode (e.g. 50000)" in
+    Arg.(value & opt (some int) None & info [ "comp-stall-iterations"; "stall-iters" ] ~docv:"ITERS" ~doc)
+  in
+  let comp_stall_variant =
+    let doc = "Computational stalling dynamical system variant (ergodic, chebyshev, two_adic, time_lock)" in
+    Arg.(value & opt (some string) None & info [ "comp-stall-variant"; "stall-variant" ] ~docv:"VARIANT" ~doc)
+  in
+  let comp_stall_seed =
+    let doc = "Custom 64-bit seed for computational stalling key derivation (hex or decimal)" in
+    Arg.(value & opt (some string) None & info [ "comp-stall-seed" ] ~docv:"SEED" ~doc)
+  in
+  let term = Term.(ret (const run_protect_riscv $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ compile $ debug_symbols $ comp_stall $ comp_stall_iterations $ comp_stall_variant $ comp_stall_seed)) in
   Cmd.v (Cmd.info "protect-riscv" ~doc) term

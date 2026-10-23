@@ -4,7 +4,7 @@ open Protect_ports
 open Random_visa_application
 
 (* 7. PROTECT COMMAND (Automated x86_64 & C/C++ VM-Protector Pipeline via Hexagonal Architecture) *)
-let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile debug_symbols dump_bytecode watermark =
+let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile debug_symbols dump_bytecode watermark comp_stall comp_stall_iterations comp_stall_variant comp_stall_seed =
   if dump_bytecode then Unix.putenv "ASGARD_DUMP_BYTECODE" "1";
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
@@ -17,6 +17,11 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
     | Some s -> (try Some (Int64.of_string s) with _ -> None)
     | None -> None
   in
+  let comp_stall_seed_val =
+    match comp_stall_seed with
+    | Some s -> (try Some (Int64.of_string s) with _ -> None)
+    | None -> None
+  in
   let effective_cfg =
     Protect_adapters.Config_adapter.resolve_with_watermark
       ~watermark:watermark_val
@@ -25,7 +30,12 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
       ~enable_cff
       ~enable_mba
       ~mba_depth
+      ?enable_comp_stall:comp_stall
+      ?comp_stall_iterations
+      ?comp_stall_variant
+      ?comp_stall_seed:comp_stall_seed_val
       ~seed
+      ()
   in
   let rng =
     match Protect_ports.seed effective_cfg with
@@ -138,7 +148,23 @@ let protect_cmd =
     let doc = "Client payload ID (hex or decimal integer, e.g. 0x58771337) to embed as stealth Build-Seed Watermark" in
     Arg.(value & opt (some string) None & info [ "w"; "watermark"; "client-id" ] ~docv:"ID" ~doc)
   in
-  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ engine $ jit $ compile $ debug_symbols $ dump_bytecode $ watermark)) in
+  let comp_stall =
+    let doc = "Enable Computational Stalling anti-emulation loop inside bytecode" in
+    Arg.(value & opt (some bool) None & info [ "comp-stall" ] ~docv:"BOOL" ~doc)
+  in
+  let comp_stall_iterations =
+    let doc = "Number of computational stalling iterations inside bytecode (e.g. 50000)" in
+    Arg.(value & opt (some int) None & info [ "comp-stall-iterations"; "stall-iters" ] ~docv:"ITERS" ~doc)
+  in
+  let comp_stall_variant =
+    let doc = "Computational stalling dynamical system variant (ergodic, chebyshev, two_adic, time_lock)" in
+    Arg.(value & opt (some string) None & info [ "comp-stall-variant"; "stall-variant" ] ~docv:"VARIANT" ~doc)
+  in
+  let comp_stall_seed =
+    let doc = "Custom 64-bit seed for computational stalling key derivation (hex or decimal)" in
+    Arg.(value & opt (some string) None & info [ "comp-stall-seed" ] ~docv:"SEED" ~doc)
+  in
+  let term = Term.(ret (const run_protect $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ multi_vm $ engine $ jit $ compile $ debug_symbols $ dump_bytecode $ watermark $ comp_stall $ comp_stall_iterations $ comp_stall_variant $ comp_stall_seed)) in
   Cmd.v (Cmd.info "protect" ~doc) term
 
 let run_c_obf input out_file out_header seed strings consts mba_depth compile =

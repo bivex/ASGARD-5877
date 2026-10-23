@@ -8,6 +8,7 @@ open Stack_ir
 type stall_config = {
   n_iterations : int;
   seed : int64;
+  variant : string;
 }
 
 val default_config : stall_config

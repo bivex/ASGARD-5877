@@ -509,12 +509,21 @@ module Stack_vm_packager : Vm_packager = struct
     let prog =
       if native_cfg.comp_stall.enabled then
         let iters =
-          if native_cfg.comp_stall.n_iterations <= 0 then 500
+          if native_cfg.comp_stall.n_iterations <= 0 then
+            Native_vm.Protection_types.default_comp_stall.n_iterations
           else native_cfg.comp_stall.n_iterations
         in
-        let seed = if native_cfg.comp_stall.seed <> 0L then native_cfg.comp_stall.seed else 0x13375877L in
-        Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Bytecode-Stall] Injecting dynamical stall into bytecode (N=%d)" iters;
-        Stack_vm.Stack_stall_pass.apply_stall ~ctx ~config:{ n_iterations = iters; seed } prog
+        let seed =
+          if native_cfg.comp_stall.seed <> 0L then native_cfg.comp_stall.seed
+          else match native_cfg.seed with
+               | Some s -> Int64.of_int s
+               | None -> Random_visa_constants.Magic_numbers.comp_stall_chebyshev_salt
+        in
+        let variant = native_cfg.comp_stall.variant in
+        Logger.infof ~loc:__LOC__ ~section:"STACK_VM"
+          "  ├─ [Bytecode-Stall] Injecting dynamical stall into bytecode (N=%d, variant=%s, seed=0x%016LX)"
+          iters variant seed;
+        Stack_vm.Stack_stall_pass.apply_stall ~ctx ~config:{ n_iterations = iters; seed; variant } prog
       else prog
     in
 

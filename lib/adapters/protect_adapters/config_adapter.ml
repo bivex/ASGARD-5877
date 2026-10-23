@@ -43,7 +43,19 @@ let init_config ~out_file ~preset =
       Ok ()
   | Error err -> Error err
 
-let resolve_with_watermark ~watermark ~config_file ~preset ~enable_cff ~enable_mba ~mba_depth ~seed : protection_config =
+let resolve_with_watermark
+    ?enable_comp_stall
+    ?comp_stall_iterations
+    ?comp_stall_variant
+    ?comp_stall_seed
+    ~watermark
+    ~config_file
+    ~preset
+    ~enable_cff
+    ~enable_mba
+    ~mba_depth
+    ~seed
+    () : protection_config =
   let base =
     match config_file with
     | Some path -> (
@@ -71,13 +83,30 @@ let resolve_with_watermark ~watermark ~config_file ~preset ~enable_cff ~enable_m
     | Some s -> Some s
     | None -> raw.seed
   in
+  let resolved_comp_stall =
+    let c = raw.comp_stall in
+    let enabled = match enable_comp_stall with Some b -> b | None -> c.enabled in
+    let n_iterations = match comp_stall_iterations with Some n -> n | None -> c.n_iterations in
+    let variant = match comp_stall_variant with Some v -> v | None -> c.variant in
+    let seed = match comp_stall_seed with Some s -> s | None -> c.seed in
+    { c with enabled; n_iterations; variant; seed }
+  in
   let effective = {
     raw with
     seed = resolved_seed;
     cff = { raw.cff with enabled = resolved_cff };
     mba = { raw.mba with enabled = resolved_mba; depth = resolved_mba_depth };
+    comp_stall = resolved_comp_stall;
   } in
   wrap ?watermark effective
 
 let resolve ~config_file ~preset ~enable_cff ~enable_mba ~mba_depth ~seed =
-  resolve_with_watermark ~watermark:None ~config_file ~preset ~enable_cff ~enable_mba ~mba_depth ~seed
+  resolve_with_watermark
+    ~watermark:None
+    ~config_file
+    ~preset
+    ~enable_cff
+    ~enable_mba
+    ~mba_depth
+    ~seed
+    ()

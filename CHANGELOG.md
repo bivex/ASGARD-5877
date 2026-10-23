@@ -6,6 +6,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+- Expose computational stalling parameters through CLI and configuration system (`bin/cli_protect_arm64.ml`, `bin/cli_protect.ml`, `bin/cli_protect_riscv.ml`, `lib/adapters/protect_adapters/config_adapter.ml`): added `--comp-stall`, `--comp-stall-iterations`/`--stall-iters`, `--comp-stall-variant`/`--stall-variant`, and `--comp-stall-seed` CLI arguments; eliminated hardcoded iteration counts and magic numbers across `lib/adapters/protect_adapters/vm_packagers.ml` and `lib/stack_vm/stack_stall_pass.ml`.
+
 ### Changed
 - Calibrate Stack-VM bytecode computational stalling iteration sizing in `lib/adapters/protect_adapters/vm_packagers.ml` and `samples/protection_config.full.json`: removed artificial iteration limits, sizing $N = 50\,000$ iterations directly inside the VM bytecode loop to produce a controlled 1.94s native execution delay and 4.85s under QEMU TCG software emulation in Docker.
 - Scale computational stalling iterations to 50M ($N = 50\,000\,000$, $\tau_{\text{UX}} = 0.5\text{ s}$) in `samples/protection_config.full.json`, accentuating the emulation timing gap (0.59s native silicon vs 1.22s QEMU TCG software emulation in Docker).

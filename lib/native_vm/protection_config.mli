@@ -318,6 +318,7 @@ val with_comp_stall :
   ?n_iterations:int ->
   ?pow_difficulty:int ->
   ?variant:string ->
+  ?seed:int64 ->
   bool ->
   builder ->
   builder

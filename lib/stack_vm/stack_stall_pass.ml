@@ -6,15 +6,18 @@
 open Stack_ir
 open Vm_ir
 open Flags
+open Random_visa_constants.Magic_numbers
 
 type stall_config = {
   n_iterations : int;
   seed : int64;
+  variant : string;
 }
 
 let default_config = {
-  n_iterations = 500;
-  seed = 0x13375877CAFEBABEL;
+  n_iterations = 50_000;
+  seed = comp_stall_chebyshev_salt;
+  variant = "ergodic";
 }
 
 let apply_stall ?ctx ?(config = default_config) (prog : program) : program =

@@ -2381,7 +2381,7 @@ let test_bytecode_stall_execution () =
       PushImm 42L; PopReg 1; Exit
     ]
   ] 4 in
-  let stalled = Stack_stall_pass.apply_stall ~config:{ n_iterations = 1000; seed = 0x13375877CAFEBABEL } orig_prog in
+  let stalled = Stack_stall_pass.apply_stall ~config:{ n_iterations = 1000; seed = 0x13375877CAFEBABEL; variant = "ergodic" } orig_prog in
   let st = run_program stalled in
   Alcotest.(check bool) "Stalled program halted" true st.halted;
   Alcotest.(check int64) "Original entry executed (ctx[1]=42)" 42L (get_reg st 1);

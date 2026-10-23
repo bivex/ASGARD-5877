@@ -25,6 +25,10 @@ val resolve :
   protection_config
 
 val resolve_with_watermark :
+  ?enable_comp_stall:bool ->
+  ?comp_stall_iterations:int ->
+  ?comp_stall_variant:string ->
+  ?comp_stall_seed:int64 ->
   watermark:int64 option ->
   config_file:string option ->
   preset:string option ->
@@ -32,4 +36,5 @@ val resolve_with_watermark :
   enable_mba:bool ->
   mba_depth:int ->
   seed:int option ->
+  unit ->
   protection_config
