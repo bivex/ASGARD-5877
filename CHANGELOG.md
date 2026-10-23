@@ -33,6 +33,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Eliminate illusory Tier-1 `lightweight` preset and raw linear MBA depth 1 in `lib/native_vm/protection_presets.ml`, `lib/native_vm/protection_config.mli`, `lib/mba_engine/mba.ml`, and `lib/mba_engine/ncfg_synth.ml`: removed the `lightweight` preset (which disabled CFF and ran linear MBA at depth 1 without non-linear bijections, offering zero resilience against SMT solvers while incurring runtime overhead), enforced a minimum MBA depth of 2 across the ALU obfuscator, and updated CLI and test references.
 
 ### Added
+- Upgrade Tech-2603 Anti-VPC Tracking from linear affine permutation to non-linear T-function permutation (`lib/tech_2603/tech_2603_engine.ml`, `lib/tech_2603/asg_tech_2603.hpp`):
+  * Replaced 1D linear mapping $(a \cdot i + b) \pmod M$ with a non-linear XorShift-Mul T-function permutation $\pi(i) = (( (i \cdot a) \oplus ((i \cdot a) \gg s) ) + b) \pmod M$ where $s = \lceil \log_2(M) / 2 \rceil$.
+  * Guaranteed strict bijectivity and exact $O(1)$ analytical inversion $\pi^{-1}(p) = (( (p - b) \oplus ((p - b) \gg s) ) \cdot a^{-1}) \pmod M$ without iteration or lookup tables.
+  * Completely defeats linear congruential (LCG) solvers and Moon-Park modular difference attacks on VPC dispatch sequence.
 - Replace trivial linear cancellations with non-linear polynomial invariants in `lib/vm_ir/opaque_predicates.ml`:
   * Eliminated `xor scratch, scratch` register zeroing and `+ salt - salt` adjacent linear cancellations across families 0, 2, 4, and 5.
   * Family 2: implemented degree-4 Fermat fourth-power invariant $((x \lor 1)^4 - 1) \ \& \ 15 \equiv 0$ over $\mathbb{Z}_{2^{64}}$.

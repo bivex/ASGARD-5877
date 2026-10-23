@@ -43,6 +43,7 @@ template<size_t Capacity>
 struct NonLinearVPCDispatcher {
     static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be power-of-two");
     static constexpr size_t MASK = Capacity - 1;
+    static constexpr size_t SHIFT = (__builtin_ctzll(Capacity) + 1) / 2;
 
     uint64_t a_mul{1};
     uint64_t a_inv{1};
@@ -50,13 +51,15 @@ struct NonLinearVPCDispatcher {
     const int32_t* successor_lut{nullptr};
 
     [[nodiscard]] constexpr size_t logical_to_physical(size_t logical_idx) const noexcept {
-        return (logical_idx * a_mul + b_add) & MASK;
+        size_t xc = (logical_idx * a_mul) & MASK;
+        return ((xc ^ (xc >> SHIFT)) + b_add) & MASK;
     }
 
     [[nodiscard]] constexpr size_t physical_to_logical(size_t physical_idx) const noexcept {
-        return ((physical_idx - b_add) * a_inv) & MASK;
+        size_t yb = (physical_idx - b_add) & MASK;
+        size_t z = (yb ^ (yb >> SHIFT)) & MASK;
+        return (z * a_inv) & MASK;
     }
-
     [[nodiscard]] inline size_t next_physical(size_t current_physical) const noexcept {
         if (successor_lut != nullptr) {
             int32_t succ = successor_lut[current_physical & MASK];

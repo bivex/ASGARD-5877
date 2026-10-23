@@ -104,12 +104,15 @@ let generate_affine_plan ?(min_capacity = 16) ~seed ~real_count () : (vpc_scramb
     let phys_to_logical = Array.make capacity 0 in
     let visited = Array.make capacity false in
 
+    let half_shift = (shift + 1) / 2 in
     for i = 0 to capacity - 1 do
       let i64 = Int64.of_int i in
-      let p64 = Int64.logand (Int64.add (Int64.mul affine_gen.a i64) affine_gen.b) mask64 in
+      let xc = Int64.logand (Int64.mul affine_gen.a i64) mask64 in
+      let fwd = Int64.logxor xc (Int64.shift_right_logical xc half_shift) in
+      let p64 = Int64.logand (Int64.add fwd affine_gen.b) mask64 in
       let p = Int64.to_int p64 in
       if visited.(p) then
-        failwith "Internal error: affine mapping collided despite coprime condition";
+        failwith "Internal error: non-linear T-function mapping collided";
       visited.(p) <- true;
       logical_to_phys.(i) <- p;
       phys_to_logical.(p) <- i
@@ -306,17 +309,21 @@ let emit_nonlinear_vpc_dispatcher_def () : top_decl =
   template_struct_def ~template_params:["size_t Capacity"] "NonLinearVPCDispatcher" [
     member_static_assert ((var "Capacity" &~ (var "Capacity" -~ i32 1)) ==~ i32 0) "Capacity must be power-of-two";
     member_static_constexpr SizeT "MASK" (var "Capacity" -~ i32 1);
+    member_static_constexpr SizeT "SHIFT" ((call "__builtin_ctzll" [var "Capacity"] +~ i32 1) /~ i32 2);
     member_field UInt64 "a_mul" ~init:(i32 1);
     member_field UInt64 "a_inv" ~init:(i32 1);
     member_field UInt64 "b_add" ~init:(i32 0);
     member_field (ConstPtr Int32) "successor_lut" ~init:(var "nullptr");
     member_method ~attrs:[Nodiscard; ConstexprFn; NoExcept] ~is_const:true SizeT "logical_to_physical"
       [(SizeT, "logical_idx")] [
-      ret (((var "logical_idx" *~ var "a_mul") +~ var "b_add") &~ var "MASK");
+      let_u64 "xc" ((var "logical_idx" *~ var "a_mul") &~ var "MASK");
+      ret (((var "xc" ^~ (var "xc" >>~ var "SHIFT")) +~ var "b_add") &~ var "MASK");
     ];
     member_method ~attrs:[Nodiscard; ConstexprFn; NoExcept] ~is_const:true SizeT "physical_to_logical"
       [(SizeT, "physical_idx")] [
-      ret (((var "physical_idx" -~ var "b_add") *~ var "a_inv") &~ var "MASK");
+      let_u64 "yb" ((var "physical_idx" -~ var "b_add") &~ var "MASK");
+      let_u64 "z" ((var "yb" ^~ (var "yb" >>~ var "SHIFT")) &~ var "MASK");
+      ret ((var "z" *~ var "a_inv") &~ var "MASK");
     ];
     member_method ~attrs:[Nodiscard; InlineFn; NoExcept] ~is_const:true SizeT "next_physical"
       [(SizeT, "current_physical")] [
