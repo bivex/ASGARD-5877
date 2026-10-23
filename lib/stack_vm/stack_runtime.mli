@@ -16,6 +16,7 @@ type runtime_config = {
       breaks the decryption as well. *)
   enable_hw_binding : bool;
   enable_address_bound : bool;
+  comp_stall_params : (int * int64 * int64 * int64) option;
   host_stack_size_kb : int;
 }
 

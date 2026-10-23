@@ -879,6 +879,14 @@ module Stack_vm_packager : Vm_packager = struct
     in
 
     let enable_address_bound = Protection_config.address_bound_enabled (Some native_cfg) in
+    let comp_stall_params =
+      if native_cfg.comp_stall.enabled then
+        let seed = if native_cfg.comp_stall.seed <> 0L then native_cfg.comp_stall.seed else 0x13375877L in
+        let n_iters = native_cfg.comp_stall.n_iterations in
+        let key = Comp_stall.Comp_stall_engine.compute_rsw_key ~seed ~n_iterations:n_iters in
+        Some (key.n_iterations, key.modulus_lo, key.base_a, key.x_n_lo)
+      else None
+    in
     let target_arch =
       match native_cfg.arch with
       | `RISCV -> Stack_vm.Stack_runtime.RV64
@@ -887,6 +895,7 @@ module Stack_vm_packager : Vm_packager = struct
     let runtime_cfg = {
       (Stack_vm.Stack_runtime.default_config target_arch) with
       enable_address_bound;
+      comp_stall_params;
       host_stack_size_kb = native_cfg.stack_vm.host_stack_size_kb;
     } in
     let obfuscate_runtime = native_cfg.stack_vm.runtime_hardening in
