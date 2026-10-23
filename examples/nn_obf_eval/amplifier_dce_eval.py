@@ -85,7 +85,12 @@ class OpcodeDCELSTM(nn.Module):
 
 
 def lcs_align_block(ops_before, ops_after):
-    """Greedy Longest Common Subsequence alignment marking core ops (0) vs amplified dead code (1)."""
+    """Greedy Longest Common Subsequence alignment marking core ops (0) vs amplified dead code (1).
+
+    Each element of *ops_before* and *ops_after* is an ``(op_name, args_tuple)`` pair so that
+    two instructions with the same mnemonic but different operands are treated as distinct,
+    preventing false matches (e.g. two ``PushImm`` with different immediates).
+    """
     m, n = len(ops_before), len(ops_after)
     labels = [1] * n  # default: 1 = amplified/dead code
     i, j = 0, 0
@@ -113,7 +118,10 @@ def extract_dataset_from_dumps(dump_dir):
         d1 = json.load(p1)
         d2 = json.load(p2)
 
-    b1_map = {b["id"]: [o["op"] for o in b.get("ops", [])] for b in d1.get("blocks", [])}
+    def op_key(o):
+        args = o.get("args", [])
+        return (o["op"], tuple(str(a) for a in args))
+    b1_map = {b["id"]: [op_key(o) for o in b.get("ops", [])] for b in d1.get("blocks", [])}
     b2_list = d2.get("blocks", [])
 
     dataset = []
@@ -123,7 +131,7 @@ def extract_dataset_from_dumps(dump_dir):
 
     for b2 in b2_list:
         bid = b2["id"]
-        ops_after = [o["op"] for o in b2.get("ops", [])]
+        ops_after = [op_key(o) for o in b2.get("ops", [])]
         ops_before = b1_map.get(bid, [])
 
         if len(ops_after) == 0:
@@ -154,31 +162,32 @@ def synthesize_amplified_dataset(n_blocks=150, seed=1337):
 
     for _ in range(n_blocks):
         core_len = random.randint(8, 25)
-        core_ops = [random.choice(core_ops_pool) for _ in range(core_len)]
+        core_ops = [(random.choice(core_ops_pool), ()) for _ in range(core_len)]
 
         # Expand with Horner polynomials and ring twists
         ops_after = []
         labels = []
 
-        for op in core_ops:
+        for op_key_item in core_ops:
+            op = op_key_item[0]
             # 70% chance to expand around this instruction
             if random.random() < 0.70:
                 expansion_type = random.choice([0, 1, 2])
                 if expansion_type == 0:
                     # Horner polynomial constant expansion
-                    junk = ["PushImm", "PushImm", "Add", "PushImm", "Sub", "Mul", "PushImm", "Add"]
+                    junk = [("PushImm", ("0",)), ("PushImm", ("1",)), ("Add", ()), ("PushImm", ("2",)), ("Sub", ()), ("Mul", ()), ("PushImm", ("3",)), ("Add", ())]
                 elif expansion_type == 1:
                     # Modular ring twist: k_odd * k_inv == 1
-                    junk = ["PushImm", "Mul", "PushImm", "Mul"]
+                    junk = [("PushImm", ("k",)), ("Mul", ()), ("PushImm", ("k_inv",)), ("Mul", ())]
                 else:
                     # Carry cascade
-                    junk = ["PushReg", "PushReg", "Nor", "Nand", "Sub"]
+                    junk = [("PushReg", ("r0",)), ("PushReg", ("r1",)), ("Nor", ()), ("Nand", ()), ("Sub", ())]
 
                 # Interleave
                 ops_after.extend(junk)
                 labels.extend([1] * len(junk))
 
-            ops_after.append(op)
+            ops_after.append(op_key_item)
             labels.append(0)
 
         dataset.append((ops_after, labels))
@@ -197,7 +206,7 @@ def pad_blocks(batch, max_len=256):
     """Pads opcode sequences and label masks."""
     x_list, y_list, mask_list = [], [], []
     for ops, labels in batch:
-        ids = [OP2ID.get(op, OP2ID["<UNK>"]) for op in ops][:max_len]
+        ids = [OP2ID.get(op[0] if isinstance(op, tuple) else op, OP2ID["<UNK>"]) for op in ops][:max_len]
         labs = labels[:max_len]
         pad_len = max_len - len(ids)
 

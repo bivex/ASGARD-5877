@@ -1,35 +1,43 @@
 #!/usr/bin/env python3
 """
-ASGARD-5877 Opaque Predicate Realism & AST Classifier Evaluator
-==============================================================
+ASGARD-5877 Opaque Predicate Realism & Stack-VM CFF Classifier Evaluator
+=========================================================================
 Audits whether deep-learning sequence models (BiLSTM with attention,
-Transformer Encoder) or tabular baselines can distinguish opaque predicates
-(algebraic/number-theoretic invariants that always evaluate to true/false)
-from genuine program branching conditions.
+Transformer Encoder) or tabular baselines can distinguish Stack-VM CFF
+opaque branch sequences from real (non-CFF) branch sequences.
 
-Evaluates against:
- - Euler mod 2 invariants
- - Fermat-Euler mod 6 invariants
- - Wilson mod 8 odd-square invariants
- - Brooks MBA invariants in Z/2^64Z
- - Quadratic residue mod 4 invariants
- - Boolean ring absorption & nullspace identities
+When a pipeline dump directory is supplied the evaluator loads
+phase_3-cff.json and extracts:
+  - Positive samples (opaque=1): windows of Stack-VM ops ending at each
+    JccRel instruction found in CFF dispatcher blocks.
+  - Negative samples (real condition=0): trailing op windows from blocks
+    that end in JmpRel or Exit and contain no JccRel.
+
+Without a dump directory the evaluator falls back to a synthetic dataset
+of toy Brooks-MBA-style sequences (PushImm/Add/Sub/Cmp/JccRel) as positives
+and random arithmetic sequences without Cmp+JccRel as negatives.
 """
 
+import json
 import math
+import os
 import random
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 TOKENS = [
-    "<PAD>", "<SOS>", "<EOS>",
-    "x", "y", "z", "len", "ptr", "flags", "count",
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "16", "32", "64",
-    "+", "-", "*", "/", "%", "^", "&", "|", "~",
-    "==", "!=", "<", ">", "<=", ">=",
-    "(", ")", "&&", "||", "CONST"
+    "<PAD>", "<CONST>",
+    "PushImm", "PopReg", "PushReg",
+    "Add", "Sub", "Mul", "Nor", "Nand",
+    "Shl", "Shr", "And", "Or", "Xor",
+    "Cmp", "JccRel", "JmpRel",
+    "KeyFeedback", "AddImm", "SubImm",
+    "AddImmImm", "SubImmImm", "SetRegImm",
+    "AddRegImm", "Dup", "Dup2", "Rot",
+    "Swap", "Exit",
 ]
 TOKEN2ID = {t: i for i, t in enumerate(TOKENS)}
 ID2TOKEN = {i: t for i, t in enumerate(TOKENS)}
@@ -86,138 +94,164 @@ class TransformerPredicateClassifier(nn.Module):
         return self.fc(pooled).squeeze(-1)
 
 
-def generate_predicate_dataset(n_samples=400, seed=1337):
-    """Generates a balanced dataset: 50% real conditions (label 0), 50% opaque predicates (label 1)."""
+def extract_opaque_dataset_from_dump(dump_dir):
+    """Loads phase_3-cff.json from dump_dir and extracts labeled Stack-VM op sequences.
+
+    Positive samples (label 1 = opaque branch):
+        For every block containing a JccRel op, extract the window of ops
+        from max(0, jcc_pos - 12) to jcc_pos (inclusive) as a token sequence.
+
+    Negative samples (label 0 = real/non-CFF branch):
+        For every block without JccRel that ends in JmpRel or Exit,
+        extract the last 5-12 ops as a "real branch" proxy.
+
+    Returns:
+        (samples, True)  where samples is [(tok_list, label), ...]
+        (None, False)    if the required file is missing or malformed
+    """
+    cff_path = os.path.join(dump_dir, "phase_3-cff.json")
+    lowered_path = os.path.join(dump_dir, "phase_1-lowered.json")
+    if not os.path.isfile(cff_path):
+        return None, False
+
+    try:
+        with open(cff_path, "r") as fh:
+            cff_data = json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        return None, False
+
+    cff_blocks = cff_data.get("blocks", []) if isinstance(cff_data, dict) else (cff_data if isinstance(cff_data, list) else [])
+    if not cff_blocks:
+        return None, False
+
+    # Positive samples: CFF blocks ending in JccRel (Brooks MBA / VPC dispatcher branches)
+    pos_samples = []
+    for block in cff_blocks:
+        ops = block.get("ops", [])
+        if not isinstance(ops, list):
+            continue
+        op_names = [o.get("op", "<CONST>") if isinstance(o, dict) else str(o) for o in ops]
+        jcc_positions = [i for i, name in enumerate(op_names) if name == "JccRel"]
+        for jcc_pos in jcc_positions:
+            start = max(0, jcc_pos - 12)
+            window = op_names[start: jcc_pos + 1]
+            if window:
+                pos_samples.append((window, 1))
+
+    # Negative samples: Genuine program branch conditions from phase_1-lowered.json
+    neg_samples = []
+    if os.path.isfile(lowered_path):
+        try:
+            with open(lowered_path, "r") as fh:
+                low_data = json.load(fh)
+            low_blocks = low_data.get("blocks", []) if isinstance(low_data, dict) else (low_data if isinstance(low_data, list) else [])
+            for block in low_blocks:
+                ops = block.get("ops", [])
+                op_names = [o.get("op", "<CONST>") if isinstance(o, dict) else str(o) for o in ops]
+                jcc_positions = [i for i, name in enumerate(op_names) if name == "JccRel"]
+                for jcc_pos in jcc_positions:
+                    start = max(0, jcc_pos - 12)
+                    window = op_names[start: jcc_pos + 1]
+                    if window:
+                        neg_samples.append((window, 0))
+                if not jcc_positions and op_names and op_names[-1] in ("JmpRel", "Exit"):
+                    n = len(op_names)
+                    window = op_names[max(0, n - 8):]
+                    neg_samples.append((window, 0))
+        except Exception:
+            pass
+
+    # Fallback negatives if lowered_path not present: non-Jcc blocks in cff
+    if not neg_samples:
+        for block in cff_blocks:
+            ops = block.get("ops", [])
+            op_names = [o.get("op", "<CONST>") if isinstance(o, dict) else str(o) for o in ops]
+            if "JccRel" not in op_names and op_names and op_names[-1] in ("JmpRel", "Exit"):
+                n = len(op_names)
+                window = op_names[max(0, n - 8):]
+                neg_samples.append((window, 0))
+
+    if not pos_samples or not neg_samples:
+        return None, False
+
+    # Balance classes
+    n = min(len(pos_samples), len(neg_samples))
+    pos = random.sample(pos_samples, n)
+    neg = random.sample(neg_samples, n)
+    balanced = pos + neg
+
+    # If dataset is small, replicate to guarantee valid train/validation splits
+    if len(balanced) < 60:
+        multiplier = (60 // len(balanced)) + 1
+        balanced = balanced * multiplier
+
+    random.shuffle(balanced)
+    return balanced, True
+def generate_stack_vm_predicate_dataset(n_samples=400, seed=1337):
+    """Generates a synthetic balanced Stack-VM dataset as fallback.
+
+    Positive samples (opaque=1): Brooks-MBA-style sequences ending in
+        PushImm PushImm Add PushImm PushImm Add Sub PushImm Cmp JccRel
+    Negative samples (real=0): random arithmetic sequences without Cmp+JccRel.
+    """
     random.seed(seed)
     samples = []
 
-    # 1. Real program branching conditions (diverse lengths, arithmetic, modular and bitwise checks)
-    real_vars = ["x", "y", "z", "len", "ptr", "flags", "count"]
-    real_constants = ["0", "1", "2", "3", "4", "5", "8", "16", "32", "64"]
-    real_cmps = ["<", ">", "<=", ">=", "==", "!="]
+    arith_ops = ["Add", "Sub", "Mul", "And", "Or", "Xor", "Shl", "Shr"]
+    nonbranch_end = ["JmpRel", "Exit"]
 
     for _ in range(n_samples // 2):
-        style = random.choice([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
-        v1 = random.choice(real_vars)
-        v2 = random.choice(real_vars)
-        c1 = random.choice(real_constants)
-        c2 = random.choice(real_constants)
-        cmp_op = random.choice(real_cmps)
-
-        if style == 0:
-            # v < const
-            toks = ["(", v1, cmp_op, c1, ")"]
-        elif style == 1:
-            # v1 == v2
-            toks = ["(", v1, cmp_op, v2, ")"]
-        elif style == 2:
-            # (flags & mask) == 0
-            toks = ["(", "(", v1, "&", c1, ")", cmp_op, "0", ")"]
-        elif style == 3:
-            # (x + y) < len
-            toks = ["(", "(", v1, "+", c1, ")", cmp_op, v2, ")"]
-        elif style == 4:
-            # c1 <= v && v <= c2
-            toks = ["(", "(", v1, ">=", c1, ")", "&&", "(", v1, "<=", c2, ")", ")"]
-        elif style == 5:
-            # Power of 2 check: (x & (x - 1)) == 0
-            toks = ["(", "(", v1, "&", "(", v1, "-", "1", ")", ")", "==", "0", ")"]
-        elif style == 6:
-            # Memory alignment check: ((ptr % 8) == 0)
-            toks = ["(", "(", "ptr", "%", "8", ")", "==", "0", ")"]
-        elif style == 7:
-            # Real bitmask containment: ((x & y) == x)
-            toks = ["(", "(", v1, "&", v2, ")", "==", v1, ")"]
-        elif style == 8:
-            # Real disjoint bitset check: ((x & ~y) == 0)
-            toks = ["(", "(", v1, "&", "(", "~", v2, ")", ")", "==", "0", ")"]
-        elif style == 9:
-            # Hash bucket / cacheline modulo: ((x % 64) == 0)
-            toks = ["(", "(", v1, "%", "64", ")", cmp_op, "0", ")"]
-        elif style == 10:
-            # Composite hash check: ((x * 33) ^ y) < 64
-            toks = ["(", "(", "(", v1, "*", c1, ")", "^", v2, ")", cmp_op, c2, ")"]
-        else:
-            # Parity check: ((x * (x + 1)) % 2 == 0)
-            toks = ["(", "(", "(", v1, "*", "(", v1, "+", "1", ")", ")", "%", "2", ")", cmp_op, "0", ")"]
-
-        samples.append((toks, 0))
-
-    # 2. Opaque Predicates (8-member ASGARD polymorphic family + compact ring identities)
-    # 2. Opaque Predicates (polymorphic algebraic bounds, inequalities, and modular ring identities)
-    for _ in range(n_samples // 2):
-        family = random.choice([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
-        vx = random.choice(["x", "y", "count", "ptr", "len"])
-        vy = random.choice(["y", "z", "flags", "count"])
-        c = random.choice(["1", "2", "3", "4", "7", "8", "16"])
-
-        if family == 0:
-            # Natural bitwise lower bound: (x | 7) >= 7 (always true)
-            toks = ["(", "(", vx, "|", c, ")", ">=", c, ")"]
-        elif family == 1:
-            # Natural bitwise upper bound: (x & 3) <= 3 (always true)
-            toks = ["(", "(", vx, "&", c, ")", "<=", c, ")"]
-        elif family == 2:
-            # Natural parity inequality: (x * 2) != (x * 2 + 1) (always true)
-            toks = ["(", "(", vx, "*", "2", ")", "!=", "(", "(", vx, "*", "2", ")", "+", "1", ")", ")"]
-        elif family == 3:
-            # Natural lattice bound: (x | y) >= (x & y) (always true)
-            toks = ["(", "(", vx, "|", vy, ")", ">=", "(", vx, "&", vy, ")", ")"]
-        elif family == 4:
-            # Natural pointer non-null: (ptr | 1) != 0 (always true)
-            toks = ["(", "(", vx, "|", "1", ")", "!=", "0", ")"]
-        elif family == 5:
-            # Trivial boolean identity: (x ^ x) == 0
-            toks = ["(", "(", vx, "^", vx, ")", "==", "0", ")"]
-        elif family == 6:
-            # Euler mod 2: ((x * (x + 1)) % 2) == 0
-            toks = ["(", "(", "(", vx, "*", "(", vx, "+", "1", ")", ")", "%", "2", ")", "==", "0", ")"]
-        elif family == 7:
-            # Fermat mod 6: ((x * (x^2 - 1)) % 6) == 0
-            toks = ["(", "(", "(", vx, "*", "(", "(", vx, "*", vx, ")", "-", "1", ")", ")", "%", "6", ")", "==", "0", ")"]
-        elif family == 8:
-            # Wilson mod 8: ((((x|1)^2) - 1) % 8) == 0
-            toks = ["(", "(", "(", "(", "(", vx, "|", "1", ")", "*", "(", vx, "|", "1", ")", ")", "-", "1", ")", "%", "8", ")", "==", "0", ")"]
-        elif family == 9:
-            # Brooks MBA: (x^y) + 2*(x&y) == x+y
-            toks = ["(", "(", "(", vx, "^", vy, ")", "+", "(", "2", "*", "(", vx, "&", vy, ")", ")", ")", "==", "(", vx, "+", vy, ")", ")"]
-        elif family == 10:
-            # Quadratic residue mod 4: ((x*x) % 4) < 2
-            toks = ["(", "(", "(", vx, "*", vx, ")", "%", "4", ")", "<", "2", ")"]
-        elif family == 11:
-            # Absorption: (x & (x | y)) == x
-            toks = ["(", "(", vx, "&", "(", vx, "|", vy, ")", ")", "==", vx, ")"]
-        elif family == 12:
-            # Nullspace: (x ^ (x & y)) == (x & ~y)
-            toks = ["(", "(", vx, "^", "(", vx, "&", vy, ")", ")", "==", "(", vx, "&", "(", "~", vy, ")", ")", ")"]
-        else:
-            # Non-zero parity: ((x^2 + x + 7) % 2) != 0
-            toks = ["(", "(", "(", "(", vx, "*", vx, ")", "+", vx, "+", "7", ")", "%", "2", ")", "!=", "0", ")"]
-
+        # Positive: synthetic Brooks-MBA CFF opaque predicate window
+        prefix_len = random.randint(0, 4)
+        prefix = [random.choice(["PushImm", "PushReg", "AddImm"]) for _ in range(prefix_len)]
+        core = [
+            "PushImm", "PushImm", "Add",
+            "PushImm", "PushImm", "Add",
+            "Sub", "PushImm", "Cmp", "JccRel",
+        ]
+        toks = prefix + core
         samples.append((toks, 1))
+
+    for _ in range(n_samples // 2):
+        # Negative: random arithmetic block ending in jump/exit, no Cmp+JccRel
+        length = random.randint(5, 12)
+        toks = []
+        for _ in range(length - 1):
+            toks.append(random.choice(["PushImm", "PushReg", "AddImm"] + arith_ops))
+        toks.append(random.choice(nonbranch_end))
+        samples.append((toks, 0))
 
     random.shuffle(samples)
     return samples
 
 
 def extract_ast_features(toks):
-    """Extracts structural non-graph features: depth, var count, modulo, operator counts."""
-    num_vars = sum(1 for t in toks if t in ["x", "y", "z", "len", "ptr", "flags", "count"])
-    has_mod = 1.0 if "%" in toks else 0.0
-    has_mba = 1.0 if any(t in toks for t in ["^", "&", "|", "~"]) else 0.0
+    """Extracts structural non-graph features: length, push count, arith count, has_cmp, has_jcc."""
     length = float(len(toks))
-    num_parens = float(toks.count("("))
-    return np.array([length, num_vars, has_mod, has_mba, num_parens], dtype=np.float32)
+    push_count = float(sum(1 for t in toks if "Push" in t or "Imm" in t))
+    arith_count = float(sum(1 for t in toks if t in ("Add", "Sub", "Mul", "And", "Or", "Xor", "Shl", "Shr")))
+    has_cmp = 1.0 if "Cmp" in toks else 0.0
+    has_jcc = 1.0 if "JccRel" in toks else 0.0
+    return np.array([length, push_count, arith_count, has_cmp, has_jcc], dtype=np.float32)
 
 
 def compute_stats(pos_scores, neg_scores):
     """Computes AUC, SE via Hanley-McNeil, z-score, p-value, and 95% upper bound."""
+    n_pos = len(pos_scores)
+    n_neg = len(neg_scores)
+    if n_pos == 0 or n_neg == 0:
+        return {
+            "auc": 0.5,
+            "acc": 0.5,
+            "se": 0.1,
+            "z": 0.0,
+            "p_value": 0.5,
+            "auc_95_upper": 0.5
+        }
     y_true = np.concatenate([np.ones_like(pos_scores), np.zeros_like(neg_scores)])
     y_pred = np.concatenate([pos_scores, neg_scores])
     order = np.argsort(y_pred)[::-1]
     y_true_sorted = y_true[order]
-    n_pos = len(pos_scores)
-    n_neg = len(neg_scores)
     tps = np.cumsum(y_true_sorted)
     fps = np.cumsum(1.0 - y_true_sorted)
     tpr = tps / max(1, n_pos)
@@ -251,9 +285,20 @@ def compute_stats(pos_scores, neg_scores):
     }
 
 
-def audit_opaque_predicates(n_samples=400, epochs=30):
-    """Trains BiLSTM, Transformer, and Tabular baseline to distinguish opaque predicates."""
-    dataset = generate_predicate_dataset(n_samples=n_samples)
+def audit_opaque_predicates(dump_dir=None, n_samples=400, epochs=30):
+    """Trains BiLSTM, Transformer, and Tabular baseline to distinguish opaque predicates.
+
+    If dump_dir is provided and phase_3-cff.json is present, uses real pipeline
+    Stack-VM CFF data. Falls back to synthetic Brooks-MBA-style sequences otherwise.
+    """
+    using_real = False
+    if dump_dir is not None:
+        dataset, using_real = extract_opaque_dataset_from_dump(dump_dir)
+
+    if not using_real:
+        dataset = generate_stack_vm_predicate_dataset(n_samples=n_samples)
+
+    random.shuffle(dataset)
     split = int(len(dataset) * 0.75)
     train_data = dataset[:split]
     val_data = dataset[split:]
@@ -261,7 +306,7 @@ def audit_opaque_predicates(n_samples=400, epochs=30):
     def pad(samples, max_len=64):
         x_list, y_list = [], []
         for toks, label in samples:
-            ids = [TOKEN2ID.get(t, TOKEN2ID["CONST"]) for t in toks][:max_len]
+            ids = [TOKEN2ID.get(t, TOKEN2ID["<CONST>"]) for t in toks][:max_len]
             x_list.append(ids + [PAD_ID] * (max_len - len(ids)))
             y_list.append(label)
         return torch.tensor(x_list, dtype=torch.long), torch.tensor(y_list, dtype=torch.float32)
@@ -272,11 +317,12 @@ def audit_opaque_predicates(n_samples=400, epochs=30):
     val_pos_idx = np.where(y_val.numpy() == 1.0)[0]
     val_neg_idx = np.where(y_val.numpy() == 0.0)[0]
 
+    loss_fn = nn.BCEWithLogitsLoss()
+
     # Model A: BiLSTM
     torch.manual_seed(1337)
     bilstm = BiLSTMPredicateClassifier()
     opt_lstm = torch.optim.Adam(bilstm.parameters(), lr=3e-3, weight_decay=1e-4)
-    loss_fn = nn.BCEWithLogitsLoss()
 
     for _ in range(epochs):
         bilstm.train()
@@ -350,18 +396,27 @@ def audit_opaque_predicates(n_samples=400, epochs=30):
         "worst_auc_95": worst_stats["auc_95_upper"],
         "z_score": worst_stats["z"],
         "p_value": worst_stats["p_value"],
-        "drs_opaque": conservative_drs
+        "drs_opaque": conservative_drs,
+        "using_real_dump": using_real,
     }
 
 
 def main():
+    dump_dir = sys.argv[1] if len(sys.argv) > 1 else None
+
     print("=" * 80)
     print("       ASGARD-5877 OPAQUE PREDICATE REALISM & AST AUDITOR")
     print("=" * 80)
-    print("[*] Auditing Polymorphic Opaque Predicates vs Real Branch Conditions...")
+    print("[*] Auditing Stack-VM CFF Opaque Branches vs Real Branch Sequences...")
     print("    Models: BiLSTM (Attention), AST-Transformer, Tabular Structural Baseline\n")
 
-    res = audit_opaque_predicates(n_samples=400, epochs=30)
+    res = audit_opaque_predicates(dump_dir=dump_dir, n_samples=400, epochs=30)
+    source = "real pipeline dump" if res["using_real_dump"] else "synthetic fallback"
+    print(f"    Data source: {source}")
+    if dump_dir and not res["using_real_dump"]:
+        print(f"    (phase_3-cff.json not found in {dump_dir!r}; using synthetic data)\n")
+    else:
+        print()
     print(f"  BiLSTM ROC-AUC:                      {res['bilstm_auc']:>6.3f}  (Accuracy: {res['bilstm_acc']*100:.1f}%)")
     print(f"  Transformer ROC-AUC:                 {res['tf_auc']:>6.3f}  (Accuracy: {res['tf_acc']*100:.1f}%)")
     print(f"  Tabular Baseline ROC-AUC:            {res['tab_auc']:>6.3f}")
