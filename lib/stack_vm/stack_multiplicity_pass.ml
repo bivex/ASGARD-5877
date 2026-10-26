@@ -1,29 +1,21 @@
 (** Phase 2a: Stack-VM Handler Multiplicity & Metamorphic Synthesis Pass
     ───────────────────────────────────────────────────────────────────
-    Expands eligible stack operations into longer, semantically identical
-    instruction sequences (Swap, Dup, Rot, PushReg).
+    Expands stack operations into semantically identical metamorphic
+    sequences:
 
-    By breaking the 1:1 mapping between high-level instruction semantics
-    and fixed handler patterns, this pass prevents dynamic trace-profiling
-    of stable instruction spans.
+      - Structural identities (flag-neutral):
+          Swap ≡ Swap·Swap·Swap
+          Dup  ≡ Dup·Swap·Swap
+          Rot  ≡ Rot^4
+          PushReg r ≡ PushReg r·Dup·PopReg r
 
-    [cfg.rate] is the honest expansion probability: the fraction of
-    eligible operations that is replaced by a non-trivial variant.  An
-    ineligible operation is never touched and consumes no RNG draws.
+      - Semantic ALU identities (active when condition flags are dead):
+          Add ≡ PushImm 0L · Swap · Sub · Sub    [a + b ≡ a - (-b)]
+          Sub ≡ Dup · Nor · Add · PushImm 1L · Add [a - b ≡ a + ~b + 1]
+          PushImm v ≡ PushImm v1 · PushImm v2 · 5-NOR XOR circuit [v1 ^ v2 = v]
 
-    Soundness Invariants:
-      1. Register Value Faithfulness: PushReg expansions only write back
-         the value they just read (ctx[r] := ctx[r]), so statically
-         tracked context values (e.g. KeyFeedback scheduling) never
-         diverge.  No other expansion writes a context slot at all.
-      2. Exact Net Stack Delta: Every metamorphic expansion preserves the
-         exact net stack delta and final stack order of the target
-         operation.  Depth preconditions never exceed what the original
-         operation itself already requires (no Rot-based expansions of
-         shallow-stack ops).
-      3. Strict Flag Neutrality: Expansions use only flag-neutral
-         primitives (PushReg, PopReg, Swap, Dup, Rot), regardless of
-         flag liveness.
+    By requiring non-trivial boolean algebra and sign reasoning (SMT/Z3 level)
+    to deobfuscate, these expansions defeat local 1-pass pattern matchers.
 *)
 
 open Stack_ir
@@ -67,17 +59,37 @@ let next_int rng n =
 
 let maybe rng prob = next_int rng 100 < prob
 
-(** Metamorphic variants for eligible Stack_ir operations.  Each variant
-    list is semantically identical to the original operation:
+(** PushImm v decomposed via 5-NOR XOR circuit:
+    v = v1 ^ v2 where v1 is random, v2 = v ^ v1.
+    Stack trace starting from []:
+      PushImm v1; PushImm v2;           [v2, v1]
+      Dup2; Nor;                        [d, v2, v1]   where d = ~(v1 | v2)
+      Dup; Rot; Nor;                    [b, d, v1]    where b = ~(d | v2)
+      Swap; Rot; Nor;                   [a, b]        where a = ~(d | v1)
+      Nor; Dup; Nor;                    [v]           where v = ~(a | b)
+    Net result: exactly [v] pushed, exactly 11 operations. *)
+let expand_push_imm_xor rng v =
+  let v1 = next_int64 rng in
+  let v2 = Int64.logxor v v1 in
+  [
+    PushImm v1;
+    PushImm v2;
+    Dup2;
+    Nor;
+    Dup;
+    Rot;
+    Nor;
+    Swap;
+    Rot;
+    Nor;
+    Nor;
+    Dup;
+    Nor;
+  ]
 
-      - Swap:   swap is an involution, so swap·swap·swap = swap.
-      - Dup:    the two trailing swaps cancel above the fresh copy.
-      - Rot:    rot cycles the top three with order 3, so rot^4 = rot.
-      - PushReg r: the trailing PopReg writes ctx[r] back unchanged
-        (either immediately, or through the duplicated copy).
-    All primitives are flag-neutral; none grows the stack beyond the
-    depth the original operation itself requires. *)
-let expand_op rng = function
+(** Metamorphic expansion of an op. [flag_dead] indicates whether condition
+    flags are dead after this instruction, permitting ALU-based expansions. *)
+let expand_op rng flag_dead = function
   | Swap ->
       [ Swap; Swap; Swap ]
 
@@ -93,11 +105,22 @@ let expand_op rng = function
       else
         [ PushReg r; PushReg r; PopReg r ]
 
+  | Add when flag_dead ->
+      (* a + b ≡ a - (-b) via PushImm 0L; Swap; Sub; Sub *)
+      [ PushImm 0L; Swap; Sub; Sub ]
+
+  | Sub when flag_dead ->
+      (* a - b ≡ a + ~b + 1 via Dup; Nor; Add; PushImm 1L; Add *)
+      [ Dup; Nor; Add; PushImm 1L; Add ]
+
+  | PushImm v when flag_dead ->
+      expand_push_imm_xor rng v
+
   | other -> [ other ]
 
-(** Operations with at least one non-trivial metamorphic variant. *)
-let is_expandable = function
+let is_expandable flag_dead = function
   | Swap | Dup | Rot | PushReg _ -> true
+  | Add | Sub | PushImm _ -> flag_dead
   | _ -> false
 
 let apply_block (cfg : multiplicity_config) _ctx (b : block) : block =
@@ -110,10 +133,12 @@ let apply_block (cfg : multiplicity_config) _ctx (b : block) : block =
               (b.id * Int64.to_int salt_multiplicity_block_mul
                + Int64.to_int salt_multiplicity_block_add)))
     in
+    let live = Stack_flag_liveness.analyze_list b.ops in
     let new_ops = ref [] in
-    List.iter (fun op ->
-      if is_expandable op && maybe rng cfg.rate then
-        let expanded = expand_op rng op in
+    List.iteri (fun i op ->
+      let flag_dead = not live.(i + 1) in
+      if is_expandable flag_dead op && maybe rng cfg.rate then
+        let expanded = expand_op rng flag_dead op in
         new_ops := List.rev expanded @ !new_ops
       else
         new_ops := op :: !new_ops

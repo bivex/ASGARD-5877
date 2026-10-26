@@ -1,20 +1,34 @@
 (** Phase 5b: Stack-VM Avid Junk Operands Pass
     ───────────────────────────────────────────
-    Inserts randomized variable-size avid junk operands (PushImm / PopReg scratch)
-    directly into program basic blocks.
+    Inserts randomized variable-size avid junk operands directly into
+    program basic blocks.
 
-    Soundness & Anti-Disassembly Invariants:
-      1. Zero Net Stack Delta: Every injected avid operand cluster pushes a
-         random non-zero pseudo-immediate onto the stack, applies an opaque
-         scramble, and immediately drains it into a dedicated scratch context slot.
-         Net stack delta across the avid pair = 0.
-      2. Flag Preservation: Avid operations are either completely flag-neutral
-         (PushImm / PopReg, PushReg), or wrapped safely if architectural flags
-         are live according to [Stack_flag_liveness].
-      3. Non-Linear Key Diffusion: The generated pseudo-immediates vary dynamically,
-         disrupting static instruction length profiling.
-      4. Scratch Isolation: Scratch slots used by avid operands are allocated
-         via Context_allocator to guarantee zero collision with program state.
+    Def-Use Entanglement & Anti-Deobfuscation Architecture:
+      In legacy implementations, junk clusters wrote only to isolated dead
+      scratch slots, making them 100% reversible by linear dead-code
+      elimination (D810/peephole_eval).
+
+      This overhauled implementation couples avid junk to the live execution
+      graph using Nor-based def-use webbing:
+        1. Anchor Recording: Pops to scratch slots are recorded into a small
+           ring buffer of anchor slots.
+        2. Def-Use Chords: Subsequent avid clusters weave the value stored
+           in a previously written anchor slot into the computation:
+             Nor(r, Nor(r, r)) ≡ 0 for all r ∈ Z_2^64
+           Adding this knot to the stack top preserves the exact value
+           while introducing genuine dataflow reads from the anchor slot.
+        3. Global Liveness: Because the anchor slot is subsequently READ by
+           future expander chords, the slot is NOT dead, defeating DCE and
+           peephole scanners that rely on write-without-read liveness.
+
+    Soundness Invariants:
+      1. Zero Net Stack Delta: Every injected cluster preserves the net
+         stack delta of the insertion point.
+      2. Strict Flag Preservation: When condition flags are live, only
+         flag-neutral instructions (PushImm, PopReg, PushReg, Swap) are
+         used.
+      3. Context Isolation: All scratch and anchor slots are allocated via
+         [Context_allocator] to prevent collision with program state.
 *)
 
 open Stack_ir
@@ -62,27 +76,46 @@ let is_terminator = function
   | JmpRel _ | JccRel _ | Exit -> true
   | _ -> false
 
-(** Generates a balanced avid sequence (net stack delta = 0).
-    Guarantees strict flag neutrality when flags_live is true. *)
-let generate_avid_cluster rng scratch_slot flags_live =
+(** Emits an expander knot that consumes an anchor slot:
+    Identity: Nor(reg, Nor(reg, reg)) ≡ 0.
+    Adding 0 to the stack top preserves the value while creating a read
+    of [reg]. Net stack delta: 0 (Add consumes the knot). *)
+let emit_anchor_chord reg =
+  [
+    PushReg reg;
+    PushReg reg;
+    Nor;
+    PushReg reg;
+    Nor;
+    Add;
+  ]
+
+(** Generates an avid cluster. If an anchor is available and flags are dead,
+    weaves a def-use chord from the anchor. *)
+let generate_avid_cluster rng scratch_slot anchor_slot flags_live =
   let imm1 = next_int64 rng in
   let imm2 = next_int64 rng in
   if flags_live then
-    (* Pure flag-neutral cluster: PushImm, PopReg, PushReg are 100% flag neutral *)
+    (* Pure flag-neutral cluster *)
     match next_int rng 2 with
     | 0 ->
         [ PushImm imm1; PopReg scratch_slot ]
     | _ ->
         [ PushImm imm1; PushReg scratch_slot; PopReg scratch_slot; PopReg scratch_slot ]
   else
-    (* Flags are dead here: can use ALU-based avid clusters as well *)
-    match next_int rng 3 with
-    | 0 ->
-        [ PushImm imm1; PopReg scratch_slot ]
-    | 1 ->
-        [ SetRegImm (scratch_slot, imm1); AddRegImm (scratch_slot, imm2); PopReg scratch_slot ]
+    (* Flags are dead: can use ALU-based avid clusters and anchor chords *)
+    match anchor_slot with
+    | Some anchor when next_int rng 3 = 0 ->
+        (* Def-use entangled cluster: pushes imm1, adds identity zero from anchor, pops to scratch *)
+        [ PushImm imm1 ] @ emit_anchor_chord anchor @ [ PopReg scratch_slot ]
     | _ ->
-        [ PushImm imm1; Dup; Sub; PopReg scratch_slot ]
+        match next_int rng 3 with
+        | 0 ->
+            [ PushImm imm1; PopReg scratch_slot ]
+        | 1 ->
+            [ SetRegImm (scratch_slot, imm1); AddRegImm (scratch_slot, imm2); PopReg scratch_slot ]
+        | _ ->
+            [ PushImm imm1; Dup; Sub; PopReg scratch_slot ]
 
 let apply_block (cfg : avid_config) ctx (b : block) : block =
   if not cfg.enabled || cfg.rate <= 0 then b
@@ -95,6 +128,8 @@ let apply_block (cfg : avid_config) ctx (b : block) : block =
                + Int64.to_int salt_avid_block_add)))
     in
     let scratch_slot = Context_allocator.alloc_scratch ctx in
+    let anchor_slot = Context_allocator.alloc_scratch ctx in
+    let last_anchor = ref None in
     let live = Stack_flag_liveness.analyze_list b.ops in
     let new_ops = ref [] in
     let count = ref 0 in
@@ -103,7 +138,9 @@ let apply_block (cfg : avid_config) ctx (b : block) : block =
       if not (is_terminator op) && (cfg.max_avid <= 0 || !count < cfg.max_avid) then begin
         if next_int rng 100 < cfg.rate then begin
           let flags_live = live.(idx + 1) in
-          let cluster = generate_avid_cluster rng scratch_slot flags_live in
+          let target_slot = if !last_anchor = None then anchor_slot else scratch_slot in
+          let cluster = generate_avid_cluster rng target_slot !last_anchor flags_live in
+          last_anchor := Some target_slot;
           new_ops := List.rev cluster @ !new_ops;
           incr count
         end
