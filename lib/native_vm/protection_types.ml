@@ -297,6 +297,16 @@ let default_avid = {
   rate     = 40;
   max_avid = 0;
 }
+type multiplicity_config = {
+  enabled : bool [@default true];
+  rate    : int  [@default 30];
+} [@@deriving yojson]
+
+let default_multiplicity = {
+  enabled = true;
+  rate    = 30;
+}
+
 
 
 type trampoline_config = {
@@ -450,6 +460,7 @@ type t = {
   superop : superop_config [@default default_superop];
   ghost : ghost_config [@default default_ghost];
   avid : avid_config [@default default_avid];
+  multiplicity : multiplicity_config [@default default_multiplicity];
   trampoline : trampoline_config [@default default_trampoline];
   watermark : watermark_config [@default default_watermark];
   toolchain : toolchain_config [@default default_toolchain];

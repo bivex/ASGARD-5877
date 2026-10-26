@@ -174,6 +174,13 @@ type avid_config = {
 }
 
 val default_avid : avid_config
+type multiplicity_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_multiplicity : multiplicity_config
+
 
 
 type trampoline_config = {
@@ -217,6 +224,7 @@ type t = {
   superop : superop_config;
   ghost : ghost_config;
   avid : avid_config;
+  multiplicity : multiplicity_config;
   trampoline : trampoline_config;
   watermark : watermark_config;
   toolchain : toolchain_config;

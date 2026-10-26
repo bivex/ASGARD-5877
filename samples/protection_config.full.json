@@ -151,6 +151,10 @@
     "rate": 70,
     "max_avid": 0
   },
+  "multiplicity": {
+    "enabled": true,
+    "rate": 50
+  },
   "trampoline": {
     "chunk_size": 32
   },

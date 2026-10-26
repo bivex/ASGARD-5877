@@ -2413,6 +2413,36 @@ let test_avid_junk_operands () =
   Alcotest.(check bool) "Bytecode with avid operands halted" true state_bc.halted;
   Alcotest.(check int64) "Bytecode execution exact: reg[2]=200" 200L (get_reg state_bc 2)
 
+let test_handler_multiplicity () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 50L;
+    PushImm 30L;
+    Swap;
+    Dup;
+    PopReg 2;
+    Add;
+    PushImm 15L;
+    Sub;
+    PopReg 1;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 8 in
+  let cfg = { (Stack_multiplicity_pass.default_multiplicity_config 0xCAFEBABE5877L) with rate = 100 } in
+  let prog_mult = Stack_multiplicity_pass.apply_program cfg ctx prog in
+  Alcotest.(check bool) "Multiplicity expanded instructions" true
+    (Hashtbl.find prog_mult.blocks 0 |> (fun b -> List.length b.ops > List.length b0.ops));
+  (* Semantic evaluation: 50 + 30 (with swap & pop) -> reg[1]=65, reg[2]=50 *)
+  let state = run_program prog_mult in
+  Alcotest.(check bool) "Multiplicity program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[1]=65" 65L (get_reg state 1);
+  Alcotest.(check int64) "Computation exact: reg[2]=50" 50L (get_reg state 2);
+  (* Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x1337A564D00FL prog_mult in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode with multiplicity halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[1]=65" 65L (get_reg state_bc 1)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2455,6 +2485,7 @@ let tests = [
   ("P2: Key Invariants at Merge Points", `Quick, test_key_invariants_at_merge);
   ("P2: Formal Pass Contracts & Pipeline", `Quick, test_pass_contracts_and_pipeline);
   ("Avid Junk Operands Pass & Semantics", `Quick, test_avid_junk_operands);
+  ("Handler Multiplicity & Metamorphic Synthesis", `Quick, test_handler_multiplicity);
 ]
 
 

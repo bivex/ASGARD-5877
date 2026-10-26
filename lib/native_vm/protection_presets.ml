@@ -80,6 +80,7 @@ let default : t = {
   superop = default_superop;
   ghost = default_ghost;
   avid = default_avid;
+  multiplicity = default_multiplicity;
   trampoline = default_trampoline;
   watermark = default_watermark;
   comp_stall = default_comp_stall;
@@ -191,6 +192,7 @@ let max_security : t = {
   superop = default_superop;
   ghost = { default_ghost with ghost_rate = 100 };
   avid = { default_avid with rate = 70 };
+  multiplicity = { default_multiplicity with rate = 60 };
   trampoline = default_trampoline;
   watermark = { default_watermark with redundancy = 11 };
   comp_stall = default_comp_stall;
@@ -297,6 +299,7 @@ let stealth : t = {
   superop = default_superop;
   ghost = default_ghost;
   avid = default_avid;
+  multiplicity = default_multiplicity;
   trampoline = default_trampoline;
   watermark = default_watermark;
   comp_stall = default_comp_stall;
@@ -408,6 +411,7 @@ let edr_stealth : t = {
   superop = default_superop;
   ghost = default_ghost;
   avid = default_avid;
+  multiplicity = default_multiplicity;
   trampoline = default_trampoline;
   watermark = default_watermark;
   comp_stall = default_comp_stall;
@@ -519,6 +523,7 @@ let minimal : t = {
   superop = default_superop;
   ghost = { default_ghost with enabled = false };
   avid = { default_avid with enabled = false };
+  multiplicity = { default_multiplicity with enabled = false };
   trampoline = default_trampoline;
   watermark = { default_watermark with redundancy = 3 };
   comp_stall = default_comp_stall;
@@ -621,6 +626,7 @@ let high : t = {
   superop = default_superop;
   ghost = { default_ghost with ghost_rate = 90 };
   avid = { default_avid with rate = 60 };
+  multiplicity = { default_multiplicity with rate = 50 };
   trampoline = default_trampoline;
   watermark = default_watermark;
   comp_stall = default_comp_stall;

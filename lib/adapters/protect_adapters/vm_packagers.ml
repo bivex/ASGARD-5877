@@ -367,6 +367,8 @@ let make_stack_metrics
       [
         pass_switch "Superoperator Fusion" native_cfg.stack_vm.superoperators
           "disabled in configuration";
+        pass_switch "Handler Multiplicity & Metamorphic Synthesis" native_cfg.multiplicity.enabled
+          "disabled in configuration";
         pass_switch "Bytecode Amplification" true "";
         pass_switch "MBA Constant Synthesis" true "";
         pass_switch "Virtual CFG Flattening" true "";
@@ -580,6 +582,32 @@ module Stack_vm_packager : Vm_packager = struct
     if native_cfg.stack_vm.superoperators && native_cfg.superop.enabled then
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (pre): %s"
         (match pre_superop_stats with Some (_, st) -> Printf.sprintf "%d rules fused" st.fused_ops | None -> "none");
+
+    (* Phase 2a-mult: Handler Multiplicity & Metamorphic Synthesis *)
+    let mult_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 21)
+    in
+    let mult = native_cfg.multiplicity in
+    let mult_cfg = {
+      (Stack_vm.Stack_multiplicity_pass.default_multiplicity_config mult_seed) with
+      rate = mult.rate;
+      enabled = mult.enabled;
+    } in
+    let prog, mult_info =
+      if mult.enabled && mult.rate > 0 then begin
+        let prog_mult = Stack_vm.Stack_multiplicity_pass.apply_program mult_cfg ctx prog in
+        let info = Stack_vm.Stack_multiplicity_pass.multiplicity_stats prog prog_mult in
+        (prog_mult, info)
+      end else
+        (prog, "Disabled (config: multiplicity.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"2a-multiplicity" prog;
+    dump_bytecode_json ~phase:"2a-multiplicity" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-multiplicity" ~final:false prog;
+    if mult.enabled && mult.rate > 0 then
+      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a-mult] Handler Multiplicity: %s" mult_info;
 
     (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing)
        Pass Order Architecture: Bytecode_amplifier runs BEFORE Phase 2b (Stack_mba_pass) so that
