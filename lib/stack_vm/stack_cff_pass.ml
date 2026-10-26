@@ -205,6 +205,8 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
           (Printf.sprintf "cff_disp_%d" disp_id)
           [ PushReg vpc_slot
           ; PushImm token
+          ; Sub
+          ; PushImm 0L
           ; Cmp
           ; JccRel (bid, E)
           ; JmpRel fall_to

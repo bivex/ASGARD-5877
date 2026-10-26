@@ -12,29 +12,33 @@
          PushFlags ... PopFlags sandwiches.
       3. Def-Use Scratch Ring Entanglement: Ghost operations pass values through
          a multi-slot scratch ring (s_src -> s_dst), building interconnected
-         dataflow dependency graphs that defeat single-pass DCE without risking
-         address corruption.
-      4. Memory & Terminator Hygiene: Memory pointers on the stack are never
+         dataflow dependency graphs.
+      4. Dynamic Def-Use Webbing (Zero DCE Loss): When `entangle = true`, each
+         block weaves its scratch ring operations into live stack execution via
+         non-trivial zero knots:
+           Nor(r, Nor(r, r)) ≡ 0  for all r ∈ Z/2^64Z
+         This creates genuine reads of scratch ring slots on the live computation
+         path, preventing dataflow DCE / liveness scanners from discarding ghost
+         computations as isolated dead components.
+      5. Memory & Terminator Hygiene: Memory pointers on the stack are never
          perturbed; terminator pairs (JccRel + JmpRel) remain unbroken.
 *)
 
 open Stack_ir
-
-(* ── SplitMix64 PRNG ─────────────────────────────────────────────────── *)
-
-let splitmix64 s =
-  let s = Int64.add s 0x9E3779B97F4A7C15L in
-  let z = s in
-  let z = Int64.logxor z (Int64.shift_right_logical z 30) in
-  let z = Int64.mul z 0xBF58476D1CE4E5B9L in
-  let z = Int64.logxor z (Int64.shift_right_logical z 27) in
-  let z = Int64.mul z 0x94D049BB133111EBL in
-  let z = Int64.logxor z (Int64.shift_right_logical z 31) in
-  (s, z)
+open Random_visa_constants.Magic_numbers
 
 type ghost_rng = { mutable state : int64 }
 
 let make_rng seed = { state = seed }
+
+let splitmix64 s =
+  let open Int64 in
+  let s = add s golden_ratio_64 in
+  let z = s in
+  let z = mul (logxor z (shift_right_logical z 30)) splitmix64_gamma in
+  let z = mul (logxor z (shift_right_logical z 27)) splitmix64_mix in
+  let z = logxor z (shift_right_logical z 31) in
+  (s, z)
 
 let next_int64 rng =
   let s, z = splitmix64 rng.state in
@@ -49,7 +53,7 @@ let next_int rng n =
 
 let maybe rng prob = next_int rng 100 < prob
 
-(* ── Backward-compatible accumulator helper ──────────────────────────── *)
+(* ── Accumulator helper ────────────────────────────────────────────────── *)
 
 let entangle_with_accumulator ?(flags_live = false) ~(acc_slot : int) (delta : int64) : Stack_ir.stack_op list =
   if delta = 0L then []
@@ -84,7 +88,12 @@ type ghost_kind =
   (* Class D: Flag-Preserving Live-Stack Identity (Flags live, Depth >= 1) *)
   | GhostLiveFlagPreserved
 
-let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live =
+  (* Class E: Entangled Def-Use Webbing (Flags dead, Depth >= 1)
+     Uses Nor(r, Nor(r, r)) ≡ 0 to add 0 to the stack top while creating
+     a genuine read of a scratch-ring register, tying ghost registers to live flow. *)
+  | GhostEntangledWebbing
+
+let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live entangle =
   let n_scratch = Array.length scratch_ring in
   let s_src = scratch_ring.(!ring_idx mod n_scratch) in
   ring_idx := (!ring_idx + 1) mod n_scratch;
@@ -101,9 +110,14 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live =
         [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore |]
     else
       if stack_depth >= 1 then
-        [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore;
-           GhostArithShadow; GhostNorShadow; GhostAddRegImmChain;
-           GhostLiveAddZero; GhostLiveAddSubPair |]
+        if entangle then
+          [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore;
+             GhostArithShadow; GhostNorShadow; GhostAddRegImmChain;
+             GhostLiveAddZero; GhostLiveAddSubPair; GhostEntangledWebbing |]
+        else
+          [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore;
+             GhostArithShadow; GhostNorShadow; GhostAddRegImmChain;
+             GhostLiveAddZero; GhostLiveAddSubPair |]
       else
         [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore;
            GhostArithShadow; GhostNorShadow; GhostAddRegImmChain |]
@@ -111,7 +125,7 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live =
 
   let kind = candidates.(next_int rng (Array.length candidates)) in
   match kind with
-  (* Class A: Pure Context Operations (always safe) *)
+  (* Class A: Pure Context Operations *)
   | GhostSetRegImm ->
       let imm = next_int64 rng in
       [ SetRegImm (s_dst, imm) ]
@@ -152,10 +166,22 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live =
       let imm = next_int64 rng in
       [ PushFlags; AddImm imm; SubImm imm; PopFlags ]
 
+  (* Class E: Entangled Def-Use Webbing (flags dead, depth >= 1)
+     Stack top x -> x + Nor(s_src, Nor(s_src, s_src)) == x + 0 == x.
+     Zero stack delta, exact value preservation, live read of s_src. *)
+  | GhostEntangledWebbing ->
+      [
+        PushReg s_src;
+        PushReg s_src;
+        Nor;
+        PushReg s_src;
+        Nor;
+        Add;
+      ]
+
 (* ── Insertion Pass ───────────────────────────────────────────────────── *)
 
 let insert_ghosts_into_ops ?(entangle = true) ~scratch_ring rng ctx ops ghost_rate =
-  ignore entangle;
   let depth = ref 0 in
   let ring_idx = ref (next_int rng (Array.length scratch_ring)) in
   let result = ref [] in
@@ -164,7 +190,7 @@ let insert_ghosts_into_ops ?(entangle = true) ~scratch_ring rng ctx ops ghost_ra
   let idx = ref 0 in
 
   let emit_ghost_here flags_live =
-    let cluster = emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx !depth flags_live in
+    let cluster = emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx !depth flags_live entangle in
     List.iter (fun gop ->
       emit gop;
       depth := !depth + stack_delta gop
@@ -179,7 +205,6 @@ let insert_ghosts_into_ops ?(entangle = true) ~scratch_ring rng ctx ops ghost_ra
     if Stack_balance_pass.is_terminator op then begin
       if not !seen_terminator then begin
         seen_terminator := true;
-        (* Optional final scratch perturbation before terminator *)
         if not live.(i) && maybe rng ghost_rate then emit_ghost_here false
       end;
       emit op
