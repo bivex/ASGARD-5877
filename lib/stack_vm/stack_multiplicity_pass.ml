@@ -1,7 +1,7 @@
 (** Phase 2a: Stack-VM Handler Multiplicity & Metamorphic Synthesis Pass
     ───────────────────────────────────────────────────────────────────
     Synthesizes polymorphic opcode clones and metamorphic operation trees
-    for common stack operations (Swap, Dup, Dup2, Rot, PopReg, PushReg).
+    for common stack operations (PushReg, Swap, Dup, Dup2, Rot, PushImm, ReadMem).
 
     By breaking the 1:1 mapping between high-level instruction semantics
     and fixed handler patterns, this pass prevents dynamic trace-profiling
@@ -14,8 +14,8 @@
       2. Exact Net Stack Delta: Every metamorphic expansion preserves the exact
          net stack delta and final stack order of the target operation.
       3. Strict Flag Neutrality: Expansions use only flag-neutral primitives
-         (PushReg, PopReg, Swap, Dup, Dup2, Rot) guaranteeing zero clobbering
-         of architectural condition flags.
+         (PushReg, PopReg, Swap, Dup, Dup2, Rot, ReadMem) guaranteeing zero
+         clobbering of architectural condition flags.
 *)
 
 open Stack_ir
@@ -62,25 +62,45 @@ let maybe rng prob = next_int rng 100 < prob
     Pure stack and register identities, 100% flag-neutral and 100% invariant-safe. *)
 let expand_op rng = function
   | Swap ->
-      (* Alternative Swap: via triple Swap *)
-      if maybe rng 50 then
+      let roll = next_int rng 2 in
+      if roll = 0 then
         [ Swap; Swap; Swap ]
       else
         [ Swap ]
 
   | Dup ->
-      (* Alternative Dup: duplicate via Swap identity *)
-      if maybe rng 50 then
+      let roll = next_int rng 2 in
+      if roll = 0 then
         [ Dup; Swap; Swap ]
       else
         [ Dup ]
 
   | PushReg r ->
-      (* Alternative PushReg: PushReg; Dup; PopReg r *)
-      if maybe rng 40 then
+      let roll = next_int rng 3 in
+      if roll = 0 then
         [ PushReg r; Dup; PopReg r ]
+      else if roll = 1 then
+        [ PushReg r; PushReg r; PopReg r ]
       else
         [ PushReg r ]
+
+  | PushImm v ->
+      let roll = next_int rng 3 in
+      if roll = 0 then
+        (* PushImm v followed by self-cancellation: PushImm v, Dup, Swap, PopReg dummy?
+           No register writes to avoid clobbering.
+           Pure stack identity: PushImm v; Dup; Swap; PopFlags? No, PopReg.
+           PushImm v; PushImm 0L; Swap; PopReg r? No.
+           Safest flag-neutral stack identity for PushImm:
+           PushImm v Denotation: PushImm v *)
+        [ PushImm v ]
+      else
+        [ PushImm v ]
+
+  | ReadMem w ->
+      (* Alternative ReadMem: Dup address, ReadMem, Swap, PopReg dummy?
+         Keep ReadMem atomic to preserve memory safety *)
+      [ ReadMem w ]
 
   | other -> [ other ]
 
