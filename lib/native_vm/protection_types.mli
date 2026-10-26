@@ -180,6 +180,12 @@ type multiplicity_config = {
 }
 
 val default_multiplicity : multiplicity_config
+type pipelined_dispatch_config = {
+  enabled     : bool;
+  chaff_slots : int;
+}
+
+val default_pipelined_dispatch : pipelined_dispatch_config
 
 
 
@@ -225,6 +231,7 @@ type t = {
   ghost : ghost_config;
   avid : avid_config;
   multiplicity : multiplicity_config;
+  pipelined_dispatch : pipelined_dispatch_config;
   trampoline : trampoline_config;
   watermark : watermark_config;
   toolchain : toolchain_config;

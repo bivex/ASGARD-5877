@@ -306,6 +306,16 @@ let default_multiplicity = {
   enabled = true;
   rate    = 30;
 }
+type pipelined_dispatch_config = {
+  enabled     : bool [@default true];
+  (** Stage-2 dead-slot chaff region size; normalized to a power of two. *)
+  chaff_slots : int  [@default 4];
+} [@@deriving yojson]
+
+let default_pipelined_dispatch = {
+  enabled     = true;
+  chaff_slots = 4;
+}
 
 
 
@@ -461,6 +471,7 @@ type t = {
   ghost : ghost_config [@default default_ghost];
   avid : avid_config [@default default_avid];
   multiplicity : multiplicity_config [@default default_multiplicity];
+  pipelined_dispatch : pipelined_dispatch_config [@default default_pipelined_dispatch];
   trampoline : trampoline_config [@default default_trampoline];
   watermark : watermark_config [@default default_watermark];
   toolchain : toolchain_config [@default default_toolchain];

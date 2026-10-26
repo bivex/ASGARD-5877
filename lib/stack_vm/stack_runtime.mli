@@ -18,6 +18,11 @@ type runtime_config = {
   enable_address_bound : bool;
   comp_stall_params : (int * int64 * int64 * int64) option;
   host_stack_size_kb : int;
+  (** Pipelined Stage Dispatch plan ([None] = legacy centralized
+      dispatch-step macro; [Some plan] = decoupled per-handler
+      ASG_PIPELINED_PREFETCH / ASG_PIPELINED_DISPATCH epilogues with a
+      Stage-2 chaff XOR over the plan's dead ctx slots). *)
+  pipelined : Pipelined_dispatch_pass.dispatch_plan option;
 }
 
 val default_config : target_arch -> runtime_config
@@ -54,11 +59,13 @@ val emit_stack_block_tables_ast :
   Cpp_codegen.Cpp_ast.top_decl list
 
 val emit_stack_dispatch_stmts :
+  ?pipelined:Pipelined_dispatch_pass.dispatch_plan ->
   entry_bid:int ->
   (int * string * string) list ->
   Cpp_codegen.Cpp_ast.stmt list
 
 val emit_stack_dispatch_source :
+  ?pipelined:Pipelined_dispatch_pass.dispatch_plan ->
   entry_bid:int ->
   (int * string * string) list ->
   string

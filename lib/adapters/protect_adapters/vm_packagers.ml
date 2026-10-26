@@ -369,6 +369,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Handler Multiplicity & Metamorphic Synthesis" native_cfg.multiplicity.enabled
           "disabled in configuration";
+        pass_switch "Pipelined Stage Dispatch" native_cfg.pipelined_dispatch.enabled
+          "disabled in configuration";
         pass_switch "Bytecode Amplification" true "";
         pass_switch "MBA Constant Synthesis" true "";
         pass_switch "Virtual CFG Flattening" true "";
@@ -891,6 +893,30 @@ module Stack_vm_packager : Vm_packager = struct
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"7-balance (final)" ~final:true prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 7/7] Stack Balance Pass: verified and balanced exit delta = 0 across %d blocks"
       (Hashtbl.length prog.blocks);
+    (* Phase 8: Pipelined Stage Dispatch — decouple fetch/chaff/dispatch into
+       per-handler epilogues (no central dispatcher block).  Planned on the
+       finalized program: the Stage-2 chaff region must sit above every slot
+       any pass allocated. *)
+    let pipelined_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 40)
+    in
+    let pd = native_cfg.pipelined_dispatch in
+    let pipelined_plan =
+      Stack_vm.Pipelined_dispatch_pass.plan_dispatch
+        {
+          (Stack_vm.Pipelined_dispatch_pass.default_pipelined_config pipelined_seed) with
+          enabled = pd.enabled;
+          chaff_slots = pd.chaff_slots;
+        }
+        prog
+    in
+    Option.iter (Stack_vm.Pipelined_dispatch_pass.check_plan_invariants prog) pipelined_plan;
+    let pipelined_info = Stack_vm.Pipelined_dispatch_pass.pipelined_stats pipelined_plan in
+    note
+      (Printf.sprintf "    Pipelined Stage Dispatch   %s" pipelined_info);
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 8] Pipelined Stage Dispatch: %s" pipelined_info;
 
 
     let seed_key =
@@ -976,6 +1002,7 @@ module Stack_vm_packager : Vm_packager = struct
       enable_address_bound;
       comp_stall_params;
       host_stack_size_kb = native_cfg.stack_vm.host_stack_size_kb;
+      pipelined = pipelined_plan;
     } in
     let obfuscate_runtime = native_cfg.stack_vm.runtime_hardening in
     let cpp_runtime_source =

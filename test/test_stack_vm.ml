@@ -2442,6 +2442,132 @@ let test_handler_multiplicity () =
   let state_bc = run_bytecode enc in
   Alcotest.(check bool) "Bytecode with multiplicity halted" true state_bc.halted;
   Alcotest.(check int64) "Bytecode execution exact: reg[1]=65" 65L (get_reg state_bc 1)
+(* ── Pipelined Stage Dispatch: plan invariants, decoupled emission, and a
+   real compile-and-run of the decoupled dispatch (docs §6) ─────────────── *)
+let test_pipelined_stage_dispatch () =
+  (* 1. Plan derivation & soundness invariants *)
+  let b0 = make_block 0 "entry" [
+    PushImm 20L; PushImm 22L; Add; PopReg 0; Exit;     (* reg0 = 42 *)
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let cfg = Pipelined_dispatch_pass.default_pipelined_config 0x5877FEEDCAFE1337L in
+  Alcotest.(check bool) "disabled pass plans nothing" true
+    (Pipelined_dispatch_pass.plan_dispatch { cfg with enabled = false } prog = None);
+  let plan =
+    match Pipelined_dispatch_pass.plan_dispatch cfg prog with
+    | Some p -> p
+    | None -> Alcotest.fail "enabled pass must produce a plan"
+  in
+  Alcotest.(check bool) "chaff region starts above live slots" true
+    (plan.chaff_slot_base >= prog.context_slots);
+  Alcotest.(check int) "chaff region is a power of two" 0
+    (plan.chaff_slot_count land (plan.chaff_slot_count - 1));
+  Alcotest.(check bool) "ctx sizing covers the chaff region" true
+    (plan.ctx_slots_required >= plan.chaff_slot_base + plan.chaff_slot_count);
+  Pipelined_dispatch_pass.check_plan_invariants prog plan;
+  (try
+     Pipelined_dispatch_pass.check_plan_invariants prog
+       { plan with chaff_slot_base = prog.context_slots - 1 };
+     Alcotest.fail "overlapping chaff region must be rejected"
+   with Invalid_argument _ -> ());
+  Alcotest.(check int) "chaff slots normalize to a power of two" 4
+    (Pipelined_dispatch_pass.normalize_chaff_slots 3);
+  Alcotest.(check int) "chaff slots clamp to 16" 16
+    (Pipelined_dispatch_pass.normalize_chaff_slots 99);
+
+  (* 2. Decoupled emission: split primitives, priming pre-fetch, no
+     centralized re-entry step *)
+  let cases = [ (0x01, "PUSH_IMM", "h_push_imm"); (0x0A, "ADD", "h_add"); (0xFF, "EXIT", "h_exit") ] in
+  let src = Stack_runtime.emit_stack_dispatch_source ~pipelined:plan ~entry_bid:0 cases in
+  let has sub =
+    let n = String.length src and m = String.length sub in
+    let rec go i = i + m <= n && (String.sub src i m = sub || go (i + 1)) in
+    go 0
+  in
+  Alcotest.(check bool) "emits ASG_PIPELINED_PREFETCH primitive" true (has "ASG_PIPELINED_PREFETCH");
+  Alcotest.(check bool) "emits ASG_PIPELINED_DISPATCH primitive" true (has "ASG_PIPELINED_DISPATCH");
+  Alcotest.(check bool) "entry stub primes I_0 pre-fetch" true (has "ASG_PIPELINED_PREFETCH(op_primer)");
+  Alcotest.(check bool) "handler epilogue pre-fetches next opcode" true (has "ASG_PIPELINED_PREFETCH(op_");
+  Alcotest.(check bool) "no centralized dispatch-step macro" false (has "ASG_DISPATCH_STEP(");
+  Alcotest.(check bool) "chaff lands in the planned dead slots" true
+    (has (Printf.sprintf "vm->ctx[(%d) + " plan.chaff_slot_base));
+  let legacy = Stack_runtime.emit_stack_dispatch_source ~entry_bid:0 cases in
+  Alcotest.(check bool) "legacy path keeps the centralized step" true
+    (let sub = "ASG_DISPATCH_STEP()" in
+     let n = String.length legacy and m = String.length sub in
+     let rec go i = i + m <= n && (String.sub legacy i m = sub || go (i + 1)) in
+     go 0);
+
+  (* 3. Compile & run the pipelined runtime; the C++ VM must agree with the
+     OCaml reference on the final register state (spec §6.2 in miniature) *)
+  if Sys.command "command -v c++ >/dev/null 2>&1" <> 0 then
+    Printf.printf "SKIP pipelined compile: no C++ compiler on PATH\n%!"
+  else begin
+    let enc = Stack_encoder.encode_program ~seed_key:0x5EEDED1234L prog in
+    let st_ref = run_bytecode enc in
+    Alcotest.(check int64) "OCaml reference reg0" 42L (get_reg st_ref 0);
+    let rcfg =
+      { (Stack_runtime.default_config Stack_runtime.X86_64) with
+        pipelined = Some plan }
+    in
+    let hpp = Stack_runtime.generate_c_runtime ~enc rcfg prog in
+    Alcotest.(check bool) "generated runtime carries the pipelined primitives" true
+      (let sub = "ASG_PIPELINED_PREFETCH" in
+       let n = String.length hpp and m = String.length sub in
+       let rec go i = i + m <= n && (String.sub hpp i m = sub || go (i + 1)) in
+       go 0);
+    let bytes_to_words b =
+      let n = Bytes.length b in
+      let padded = (n + 7) land (lnot 7) in
+      Array.to_list (Array.init (padded / 8) (fun i ->
+        let w = ref 0L in
+        for j = 7 downto 0 do
+          let idx = i * 8 + j in
+          let byte = if idx < n then Char.code (Bytes.get b idx) else 0 in
+          w := Int64.logor (Int64.shift_left !w 8) (Int64.of_int byte)
+        done;
+        !w))
+    in
+    let runner = Stack_runtime.emit_runner_cpp (bytes_to_words enc.bytes) in
+    let dir = Filename.get_temp_dir_name () in
+    let hpp_path = Filename.concat dir "stack_vm_runtime.hpp" in
+    let cpp_path = Filename.concat dir "asgard_pipelined_runner.cpp" in
+    let bin_path = Filename.concat dir "asgard_pipelined_runner" in
+    let oc = open_out hpp_path in output_string oc hpp; close_out oc;
+    let oc = open_out cpp_path in output_string oc runner; close_out oc;
+    let rc =
+      let rc1 = Sys.command (Printf.sprintf "c++ -O0 -std=c++17 %s -o %s"
+                  (Filename.quote cpp_path) (Filename.quote bin_path)) in
+      if rc1 = 0 then 0
+      else Sys.command (Printf.sprintf "c++ -O0 -std=c++17 %s -ldl -o %s"
+                  (Filename.quote cpp_path) (Filename.quote bin_path))
+    in
+    Alcotest.(check bool) "pipelined runtime compiles" true (rc = 0);
+    if rc = 0 then begin
+      let out_path = bin_path ^ ".out" in
+      ignore (Sys.command
+        (Printf.sprintf "%s > %s 2>&1" (Filename.quote bin_path) (Filename.quote out_path)));
+      let out = In_channel.with_open_bin out_path In_channel.input_all in
+      let extract s =
+        let n = String.length s in
+        let rec go i =
+          if i + 8 > n then None
+          else if String.sub s i 8 = "Result: " then begin
+            let j = ref (i + 8) in
+            while !j < n && s.[!j] >= '0' && s.[!j] <= '9' do incr j done;
+            Some (String.sub s (i + 8) (!j - i - 8))
+          end else go (i + 1)
+        in
+        go 0
+      in
+      match extract out with
+      | Some digits ->
+        Alcotest.(check int64) "pipelined C++ result matches OCaml reference" 42L
+          (Int64.of_string digits)
+      | None -> Alcotest.fail (Printf.sprintf "no Result line in pipelined runner output:\n%s" out)
+    end
+  end
+
 
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
@@ -2486,6 +2612,7 @@ let tests = [
   ("P2: Formal Pass Contracts & Pipeline", `Quick, test_pass_contracts_and_pipeline);
   ("Avid Junk Operands Pass & Semantics", `Quick, test_avid_junk_operands);
   ("Handler Multiplicity & Metamorphic Synthesis", `Quick, test_handler_multiplicity);
+  ("Pipelined Stage Dispatch & Decoupled Execution", `Quick, test_pipelined_stage_dispatch);
 ]
 
 

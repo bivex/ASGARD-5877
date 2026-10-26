@@ -14,6 +14,12 @@ type runtime_config = {
   enable_address_bound : bool;
   comp_stall_params : (int * int64 * int64 * int64) option;
   host_stack_size_kb : int;
+  (** Pipelined Stage Dispatch plan (docs/Pipelined_stage_dispatch.md):
+      [None] emits the legacy centralized dispatch-step macro; [Some plan]
+      decouples the dispatch into per-handler ASG_PIPELINED_PREFETCH /
+      ASG_PIPELINED_DISPATCH epilogues with a Stage-2 chaff XOR over the
+      plan's dead ctx slots. *)
+  pipelined : Pipelined_dispatch_pass.dispatch_plan option;
 }
 
 let default_config = function
@@ -28,6 +34,7 @@ let default_config = function
       enable_address_bound = false;
       comp_stall_params = None;
       host_stack_size_kb = 1024;
+      pipelined = None;
     }
   | AArch64 -> {
       arch = AArch64;
@@ -40,6 +47,7 @@ let default_config = function
       enable_address_bound = false;
       comp_stall_params = None;
       host_stack_size_kb = 1024;
+      pipelined = None;
     }
   | RV64 -> {
       arch = RV64;
@@ -52,6 +60,7 @@ let default_config = function
       enable_address_bound = false;
       comp_stall_params = None;
       host_stack_size_kb = 1024;
+      pipelined = None;
     }
 
 let emit_entry_stub cfg total_slots =
@@ -245,6 +254,8 @@ let identifier_scramble_map seed =
   add_id "ASG_UNMASK_TAG_K1" "UT1";
   add_id "ASG_PAYLOAD_TAG" "PT";
   add_id "ASG_DISPATCH_STEP" "DS";
+  add_id "ASG_PIPELINED_PREFETCH" "PF";
+  add_id "ASG_PIPELINED_DISPATCH" "PD";
   tbl
 
 let is_ident_start = function
@@ -455,7 +466,11 @@ let emit_stack_block_tables_ast ~max_bid ~block_offsets ~block_keys ~tag_key0 ~t
     raw_top "#define ASG_UNMASK_TAG_K1() (g_stack_tag_keys[1] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(1) * UINT64_C(0x9E3779B97F4A7C15)))";
   ]
 
-let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) : Cpp_codegen.Cpp_ast.stmt list =
+let emit_stack_dispatch_stmts
+    ?(pipelined : Pipelined_dispatch_pass.dispatch_plan option)
+    ~entry_bid
+    (cases : (int * string * string) list)
+    : Cpp_codegen.Cpp_ast.stmt list =
   let open Cpp_codegen.Cpp_ast in
   let open Cpp_codegen.Cpp_dsl in
   let vip_decl =
@@ -465,6 +480,23 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
   List.iter (fun (op, _, _) -> Hashtbl.add used_opcodes op true) cases;
   let unused_opcodes = List.filter (fun op -> not (Hashtbl.mem used_opcodes op)) (List.init 256 (fun i -> i)) in
   let gnuc_stmts =
+    (* Pipelined Stage Dispatch: each handler ends its own epilogue with the
+       decoupled Stage-1 pre-fetch and Stage-3 dispatch of the *next*
+       opcode (docs/Pipelined_stage_dispatch.md); legacy mode keeps the
+       single centralized dispatch-step macro. *)
+    let epilogue_stmt op =
+      match pipelined with
+      | None -> raw "ASG_DISPATCH_STEP();"
+      | Some _ ->
+          (* Braced: the epilogue's goto lbl_exit must leave the scope of
+             the pre-fetched opcode instead of bypassing its initializer
+             within one scope, which C++ rejects. *)
+          raw
+            (Printf.sprintf
+               "{ ASG_PIPELINED_PREFETCH(op_%02X);\n\
+                \  ASG_PIPELINED_DISPATCH(op_%02X); }"
+               op op)
+    in
     let raw_table_init =
       init_list (
         List.init 256 (fun op ->
@@ -502,7 +534,7 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
         [
           label (Printf.sprintf "lbl_%02X" op);
           expr_stmt (call fn [ var "vm"; var "bytecode"; addr_of (var "vip") ]);
-          raw "ASG_DISPATCH_STEP();";
+          epilogue_stmt op;
         ]
       ) cases
     in
@@ -513,7 +545,7 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
           | 0 ->
               [
                 idx (var "vm" $-> "ctx") (i32 (op land 15)) ^= ((var "vm" $-> "vkey") +~ u64 (Int64.of_int op));
-                raw "ASG_DISPATCH_STEP();";
+                epilogue_stmt op;
               ]
           | 1 ->
               [
@@ -521,7 +553,7 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
                   idx (var "vm" $-> "vsp") (var "vm" $-> "vsp_idx") := ((var "vm" $-> "vkey") ^~ u64 (Int64.of_int op));
                   (var "vm" $-> "vsp_idx") += i32 1;
                 ];
-                raw "ASG_DISPATCH_STEP();";
+                epilogue_stmt op;
               ]
           | 2 ->
               [
@@ -529,23 +561,23 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
                   idx (var "vm" $-> "vsp") ((var "vm" $-> "vsp_idx") -~ i32 1) :=
                     (idx (var "vm" $-> "vsp") ((var "vm" $-> "vsp_idx") -~ i32 1) *~ u64 golden_ratio_64) +~ u64 (Int64.of_int op);
                 ];
-                raw "ASG_DISPATCH_STEP();";
+                epilogue_stmt op;
               ]
           | 3 ->
               [
                 (var "vm" $-> "cf") := (if op land 1 <> 0 then u8 1 else u8 0);
                 (var "vm" $-> "zf") := (if op land 2 <> 0 then u8 1 else u8 0);
-                raw "ASG_DISPATCH_STEP();";
+                epilogue_stmt op;
               ]
           | 4 ->
               [
                 expr_stmt (call "fetch_byte" [ var "vm"; var "bytecode"; addr_of (var "vip") ]);
-                raw "ASG_DISPATCH_STEP();";
+                epilogue_stmt op;
               ]
           | _ ->
               [
                 (var "vm" $-> "vkey") := ((var "vm" $-> "vkey") >>~ i32 7) ^~ ((var "vm" $-> "vkey") <<~ i32 57) ^~ u64 (Int64.of_int op);
-                raw "ASG_DISPATCH_STEP();";
+                epilogue_stmt op;
               ]
         in
         [ label (Printf.sprintf "lbl_%02X" op) ] @ decoy_body
@@ -561,13 +593,56 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
         \    } while (0)"
         cbrt3_fraction_64 salt_stack_dispatch_blind
     in
+    (* Pipelined Stage Dispatch primitives: Stage 1 decouples the opcode
+       pre-fetch into each handler epilogue, Stage 2 blinds the slot with a
+       constant-time chaff XOR over dead ctx slots (branchless mul/xor, no
+       software-flag or vsp writes), Stage 3 unmasks the pre-blinded
+       dispatch entry with the affine k_slot and jumps.  There is no shared
+       re-entry label: control never returns to a central dispatch block. *)
+    let pipelined_macro_str =
+      match pipelined with
+      | None -> None
+      | Some p ->
+          let base = p.Pipelined_dispatch_pass.chaff_slot_base in
+          let mask = p.Pipelined_dispatch_pass.chaff_slot_count - 1 in
+          Some
+            (Printf.sprintf
+               "#define ASG_PIPELINED_PREFETCH(opv) \\\n\
+               \        if (vm->halted || vip >= size) goto lbl_exit; \\\n\
+               \        const uint8_t opv = fetch_byte(vm, bytecode, &vip)\n\
+               \    #define ASG_PIPELINED_DISPATCH(opv) do { \\\n\
+               \        vm->ctx[(%d) + (((((uint64_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX)) >> 56) & (%d))] ^= vm->vkey + (uint64_t)(opv); \\\n\
+               \        uintptr_t k_slot = ((uintptr_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX); \\\n\
+               \        goto *(void*)(dispatch_table[opv] ^ k_slot); \\\n\
+               \    } while (0)"
+               base golden_ratio_64 p.Pipelined_dispatch_pass.chaff_salt mask
+               cbrt3_fraction_64 salt_stack_dispatch_blind)
+    in
+    let macro_defs =
+      match pipelined_macro_str with
+      | Some pm -> raw pm
+      | None -> raw step_macro_str
+    in
+    (* Priming pre-fetch of I_0 before entering the handler matrix
+       (Invariant 1: the entry stub owns the fetch the first handler's
+       epilogue would otherwise have performed). *)
+    let priming_stmts =
+      match pipelined with
+      | Some _ ->
+          [
+            raw
+              "{ ASG_PIPELINED_PREFETCH(op_primer);\n\
+               \  ASG_PIPELINED_DISPATCH(op_primer); }";
+          ]
+      | None -> [ raw "ASG_DISPATCH_STEP();" ]
+    in
     [
       dispatch_table_decl;
       ready_decl;
       init_loop;
-      raw step_macro_str;
-      raw "ASG_DISPATCH_STEP();";
+      macro_defs;
     ]
+    @ priming_stmts
     @ handler_blocks
     @ decoy_blocks
     @ [
@@ -576,7 +651,11 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
       goto "lbl_exit";
       label "lbl_exit";
       ret_void;
-      raw "#undef ASG_DISPATCH_STEP";
+      raw
+        (match pipelined with
+         | Some _ ->
+             "#undef ASG_PIPELINED_PREFETCH\n    #undef ASG_PIPELINED_DISPATCH"
+         | None -> "#undef ASG_DISPATCH_STEP");
     ]
   in
   let fallback_cases =
@@ -606,8 +685,12 @@ let emit_stack_dispatch_stmts ~entry_bid (cases : (int * string * string) list) 
     preproc_if_stmt "defined(__GNUC__) || defined(__clang__)" gnuc_stmts ~else_stmts:fallback_stmts;
   ]
 
-let emit_stack_dispatch_source ~entry_bid cases : string =
-  let stmts = emit_stack_dispatch_stmts ~entry_bid cases in
+let emit_stack_dispatch_source
+    ?(pipelined : Pipelined_dispatch_pass.dispatch_plan option)
+    ~entry_bid
+    (cases : (int * string * string) list)
+    : string =
+  let stmts = emit_stack_dispatch_stmts ?pipelined ~entry_bid cases in
   Cpp_codegen.Cpp_printer.string_of_stmts stmts
 
 let emit_h_call_extern arch : Cpp_codegen.Cpp_ast.top_decl =
@@ -1034,7 +1117,14 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
     emit_stack_block_tables_ast ~max_bid ~block_offsets:raw_block_offsets ~block_keys:raw_block_keys ~tag_key0:raw_tag_key0 ~tag_key1:raw_tag_key1 ()
   in
 
-  let context_slots = max 64 prog.context_slots in
+  (* With Pipelined Stage Dispatch the ctx array must also cover the
+     Stage-2 dead chaff region on top of every slot the program addresses. *)
+  let context_slots =
+    max 64
+      (match cfg.pipelined with
+       | Some p -> p.Pipelined_dispatch_pass.ctx_slots_required
+       | None -> prog.context_slots)
+  in
   let stack_vm_t_def =
     struct_def "stack_vm_t" [
       member_field (Array (UInt64, 4096)) "vsp";
@@ -1068,7 +1158,7 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
           (var "vm" $-> "vsp_idx") := i32 0;
           ret_void;
         ];
-      ] @ emit_stack_dispatch_stmts ~entry_bid:prog.entry_id raw_dispatch_cases)
+      ] @ emit_stack_dispatch_stmts ?pipelined:cfg.pipelined ~entry_bid:prog.entry_id raw_dispatch_cases)
   in
 
   let is_addr_bound = enc.addr_mask <> 0L in

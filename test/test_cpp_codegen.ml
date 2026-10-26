@@ -616,6 +616,33 @@ let () =
   assert (contains_str stack_disp_cpp "case 0x02: /* ADD */");
   assert (contains_str stack_disp_cpp "case 0xFF: /* EXIT */");
 
+  (* 38b. Pipelined Stage Dispatch: decoupled ASG_PIPELINED_PREFETCH /
+     ASG_PIPELINED_DISPATCH primitives, no centralized re-entry macro *)
+  let pipelined_plan =
+    let module S = Stack_vm.Stack_ir in
+    let plan_blk = S.make_block 0 "entry" [S.PushImm 42L; S.Exit] in
+    let plan_prog = S.make_program 0 [plan_blk] 16 in
+    match
+      Stack_vm.Pipelined_dispatch_pass.plan_dispatch
+        (Stack_vm.Pipelined_dispatch_pass.default_pipelined_config 0x5877C0DE1337L)
+        plan_prog
+    with
+    | Some p -> p
+    | None -> assert false
+  in
+  let piped_disp_cpp =
+    Stack_vm.Stack_runtime.emit_stack_dispatch_source
+      ~pipelined:pipelined_plan ~entry_bid:0 test_dispatch_cases
+  in
+  assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_PREFETCH(opv)");
+  assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_DISPATCH(opv)");
+  assert (contains_str piped_disp_cpp "ASG_PIPELINED_PREFETCH(op_primer);");
+  assert (contains_str piped_disp_cpp "ASG_PIPELINED_PREFETCH(op_01);");
+  assert (contains_str piped_disp_cpp "ASG_PIPELINED_DISPATCH(op_01);");
+  assert (not (contains_str piped_disp_cpp "ASG_DISPATCH_STEP("));
+  assert (contains_str piped_disp_cpp "#undef ASG_PIPELINED_PREFETCH");
+  Printf.printf "[PASS] Step 38b: Pipelined Stage Dispatch decoupled primitives validated.\n";
+
   let test_domain_salts = [| 0x11; 0x22 |] in
   let native_salt_stmt = Native_vm.Vm_runtime_emitter.emit_native_domain_salt_ast test_domain_salts in
   let native_salt_cpp = Cpp_codegen.Cpp_printer.string_of_stmt native_salt_stmt in
