@@ -363,7 +363,15 @@ let emit_stack_external_symbols_table_ast external_symbols : Cpp_codegen.Cpp_ast
         let len = String.length sym in
         let enc_bytes =
           List.init len (fun i ->
-            let k = (0x5A lxor ((i * 17 + 0x33) land 0xFF)) in
+            let k =
+              let seed_h = Int64.logand (Int64.of_int32 h) 0xFFFFFFFFL in
+              let k_val =
+                Int64.logxor
+                  (Int64.shift_right_logical (Int64.mul seed_h 0x5877A55AL) 16)
+                  (Int64.of_int ((i * 37 + 0x5A) lxor (len * 13)))
+              in
+              Int64.to_int (Int64.logand k_val 0xFFL)
+            in
             u8 (Char.code sym.[i] lxor k)
           )
         in
@@ -1052,8 +1060,9 @@ static void* asgard_resolve_by_api_hash(uint32_t target_hash) {
 
 static inline void asg_decrypt_sym(const asgard_ext_sym_t* sym, char* out_buf, size_t out_cap) {
     size_t n = sym->len < out_cap - 1 ? sym->len : out_cap - 1;
+    uint64_t seed_h = (uint64_t)sym->hash;
     for (size_t i = 0; i < n; i++) {
-        uint8_t k = (uint8_t)(0x5A ^ ((i * 17 + 0x33) & 0xFF));
+        uint8_t k = (uint8_t)(((seed_h * UINT64_C(0x5877A55A)) >> 16) ^ (uint64_t)((i * 37 + 0x5A) ^ ((size_t)sym->len * 13)));
         out_buf[i] = (char)(sym->enc_bytes[i] ^ k);
     }
     out_buf[n] = '\0';
