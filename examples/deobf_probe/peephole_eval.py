@@ -47,8 +47,11 @@ from collections import Counter
 
 PHASE_RE = re.compile(r"phase_(.+)\.json$")
 MAX_PASSES = 8
+MASK64 = 0xFFFFFFFFFFFFFFFF
 
 
+def is_mod_inv_64(a, b):
+    return isinstance(a, int) and isinstance(b, int) and (((a * b) & MASK64) == 1)
 def load_phase(path):
     with open(path) as fh:
         return json.load(fh)
@@ -239,6 +242,107 @@ def one_pass(ops, ev, greads, hits):
             hits["T2:cff:Sub_zero_cmp"] += 1
             i += 3
             continue
+        # ── Tier 3: Amplifier Ring Twists & Reversible Cascades ───────────
+        # v0: PushImm k, Mul, PushImm k_inv, Mul -> <nothing>
+        if name == "PushImm" and i + 3 < n and ops[i + 1][0] == "Mul" \
+                and ops[i + 2][0] == "PushImm" and ops[i + 3][0] == "Mul":
+            if is_mod_inv_64(ops[i][1][0], ops[i + 2][1][0]):
+                hits["T3:amplifier:ring_twist_v0"] += 1
+                i += 4
+                continue
+
+        # v2/3: PushImm k_inv, PushImm k, Mul, Mul -> <nothing>
+        if name == "PushImm" and i + 3 < n and ops[i + 1][0] == "PushImm" \
+                and ops[i + 2][0] == "Mul" and ops[i + 3][0] == "Mul":
+            if is_mod_inv_64(ops[i][1][0], ops[i + 1][1][0]):
+                hits["T3:amplifier:ring_twist_v2"] += 1
+                i += 4
+                continue
+
+        # v1: PushImm k1, Mul, PushImm k2, Mul, PushImm k_inv, Mul -> <nothing>
+        if name == "PushImm" and i + 5 < n and ops[i + 1][0] == "Mul" \
+                and ops[i + 2][0] == "PushImm" and ops[i + 3][0] == "Mul" \
+                and ops[i + 4][0] == "PushImm" and ops[i + 5][0] == "Mul":
+            k1, k2, k3 = ops[i][1][0], ops[i + 2][1][0], ops[i + 4][1][0]
+            if isinstance(k1, int) and isinstance(k2, int) and isinstance(k3, int) \
+                    and (((k1 * k2 * k3) & MASK64) == 1):
+                hits["T3:amplifier:ring_twist_v1"] += 1
+                i += 6
+                continue
+
+        # ── Tier 3: Constant Arithmetic Folding & MBA Reduction ──────────
+        # PushImm a, PushImm b, BinOp -> PushImm (a OP b)
+        if name == "PushImm" and i + 2 < n and ops[i + 1][0] == "PushImm" \
+                and ops[i + 2][0] in ("Add", "Sub", "Mul", "Nor", "Nand"):
+            a, b = ops[i][1][0], ops[i + 1][1][0]
+            binop = ops[i + 2][0]
+            if isinstance(a, int) and isinstance(b, int):
+                res = None
+                if binop == "Add": res = (a + b) & MASK64
+                elif binop == "Sub": res = (a - b) & MASK64
+                elif binop == "Mul": res = (a * b) & MASK64
+                elif binop == "Nor": res = (~(a | b)) & MASK64
+                elif binop == "Nand": res = (~(a & b)) & MASK64
+                if res is not None:
+                    out.append(("PushImm", (res,)))
+                    hits["T3:const_fold:" + binop] += 1
+                    i += 3
+                    continue
+
+        # ── Tier 3: Superoperator Immediate Constant Folding ─────────────
+        if name == "AddImmImm":
+            a, b = ops[i][1]
+            out.append(("PushImm", (((a + b) & MASK64),)))
+            hits["T3:superop:AddImmImm"] += 1
+            i += 1
+            continue
+
+        if name == "SubImmImm":
+            a, b = ops[i][1]
+            out.append(("PushImm", (((a - b) & MASK64),)))
+            hits["T3:superop:SubImmImm"] += 1
+            i += 1
+            continue
+
+        if name in ("AddImm", "SubImm") and ops[i][1] == (0,):
+            hits["T3:superop:ZeroImm"] += 1
+            i += 1
+            continue
+
+        if name == "PushImm" and i + 1 < n and ops[i + 1][0] == "AddImm":
+            a, b = ops[i][1][0], ops[i + 1][1][0]
+            if isinstance(a, int) and isinstance(b, int):
+                out.append(("PushImm", (((a + b) & MASK64),)))
+                hits["T3:superop:PushImm_AddImm"] += 1
+                i += 2
+                continue
+
+        if name == "PushImm" and i + 1 < n and ops[i + 1][0] == "SubImm":
+            a, b = ops[i][1][0], ops[i + 1][1][0]
+            if isinstance(a, int) and isinstance(b, int):
+                out.append(("PushImm", (((a - b) & MASK64),)))
+                hits["T3:superop:PushImm_SubImm"] += 1
+                i += 2
+                continue
+
+        # ── Tier 3: Opaque Zero Branch Deobfuscation (CFF / Spaghetti) ────
+        # [PushImm r1; PushImm r2; Mul; PushImm r3; Add;
+        #  PushImm r1; PushImm r2; Mul; PushImm r3; Add;
+        #  Sub; PushImm 0L; Cmp; JccRel (real, E); JmpRel decoy] -> JmpRel real
+        if name == "PushImm" and i + 13 < n \
+                and ops[i + 1][0] == "PushImm" and ops[i + 2][0] == "Mul" \
+                and ops[i + 3][0] == "PushImm" and ops[i + 4][0] == "Add" \
+                and ops[i + 5][0] == "PushImm" and ops[i + 6][0] == "PushImm" \
+                and ops[i + 7][0] == "Mul" and ops[i + 8][0] == "PushImm" \
+                and ops[i + 9][0] == "Add" and ops[i + 10][0] == "Sub" \
+                and ops[i + 11][0] == "PushImm" and ops[i + 11][1] == (0,) \
+                and ops[i + 12][0] == "Cmp" and ops[i + 13][0] == "JccRel":
+            real_target = ops[i + 13][1][0]
+            out.append(("JmpRel", (real_target,)))
+            hits["T3:cff:opaque_zero_branch"] += 1
+            i += 15 if (i + 14 < n and ops[i + 14][0] == "JmpRel") else 14
+            continue
+
 
         # ── Tier 1: Dead-Slot Junk Elimination ───────────────────────────
         if name == "PushImm":
@@ -335,14 +439,23 @@ def main(dirs):
         # Categorized Rule Summary
         t1_hits = sum(cnt for r, cnt in final[4].items() if r.startswith("T1:"))
         t2_hits = sum(cnt for r, cnt in final[4].items() if r.startswith("T2:"))
+        t3_hits = sum(cnt for r, cnt in final[4].items() if r.startswith("T3:"))
         print()
         print("ATTACK BREAKDOWN:")
         print("  • Tier 1 (Structural & Dead-Slot DCE): %d reductions" % t1_hits)
         print("  • Tier 2 (Semantic ALU, XOR & Knots): %d reductions" % t2_hits)
+        print("  • Tier 3 (Constant Folding, Ring Twists & Superops): %d reductions" % t3_hits)
         print()
-        print("RULE HIT COUNTS:")
-        for r, cnt in final[4].most_common():
+        print("RULE HIT COUNTS (Final Phase):")
+        for r, cnt in final[4].most_common(12):
             print("  %-32s : %d" % (r, cnt))
+        print()
+        print("INTERMEDIATE PHASE ATTACK SUMMARY:")
+        for name, n0, n1, rm, p_hits in rows:
+            if rm > 0:
+                top_p = ", ".join("%s:%d" % (k.split(":")[-1], v) for k, v in p_hits.most_common(3))
+                pct_p = 100.0 * rm / n0
+                print("  %-20s : -%6d ops (-%4.1f%%) [%s]" % (name, rm, pct_p, top_p))
         print()
 
 
