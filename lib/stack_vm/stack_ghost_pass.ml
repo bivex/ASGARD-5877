@@ -183,24 +183,15 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live e
      Variant 1: (s_src & ~s_dst) - (s_src & ~s_dst) == 0 via Nor
      Variant 2: Nor(s_dst, Nor(s_dst, s_dst)) == 0 *)
   | GhostEntangledWebbing ->
-      if next_int rng 2 = 0 then
-        [
-          PushReg s_src;
-          PushReg s_src;
-          Nor;
-          PushReg s_src;
-          Nor;
-          Add;
-        ]
-      else
-        [
-          PushReg s_dst;
-          PushReg s_dst;
-          Nor;
-          PushReg s_dst;
-          Nor;
-          Add;
-        ]
+      match next_int rng 4 with
+      | 0 ->
+          [ PushReg s_src; PushReg s_src; Nor; PushReg s_src; Nor; Add ]
+      | 1 ->
+          [ PushReg s_src; PushReg s_src; Nor; PushReg s_src; Nor; Sub ]
+      | 2 ->
+          [ PushReg s_dst; PushReg s_dst; Sub; Add ]
+      | _ ->
+          [ PushReg s_src; Dup; Nor; PushReg s_src; Add; PushImm 1L; Add; Add ]
 
 (* ── Insertion Pass ───────────────────────────────────────────────────── *)
 

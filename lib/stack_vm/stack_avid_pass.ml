@@ -76,19 +76,28 @@ let is_terminator = function
   | JmpRel _ | JccRel _ | Exit -> true
   | _ -> false
 
-(** Emits an expander knot that consumes an anchor slot:
-    Identity: Nor(reg, Nor(reg, reg)) ≡ 0.
-    Adding 0 to the stack top preserves the value while creating a read
-    of [reg]. Net stack delta: 0 (Add consumes the knot). *)
-let emit_anchor_chord reg =
-  [
-    PushReg reg;
-    PushReg reg;
-    Nor;
-    PushReg reg;
-    Nor;
-    Add;
-  ]
+(** Emits a polymorphic zero-knot that consumes an anchor slot:
+    Generates 1 of 5 mathematically distinct algebraic zero families so
+    a single pattern cannot eliminate all knots:
+      0: Nor(r, Nor(r, r)) == 0 (Add)
+      1: Nor(r, Nor(r, r)) == 0 (Sub)
+      2: (r - r) == 0 (Add)
+      3: (r + ~r + 1) == 0 via Nor
+      4: (Nand(r, Nand(r, r)) + 1) == 0
+    Every knot evaluates to an identity 0 on the stack top while creating
+    genuine dataflow reads of [reg]. *)
+let emit_anchor_chord rng reg =
+  match next_int rng 5 with
+  | 0 ->
+      [ PushReg reg; PushReg reg; Nor; PushReg reg; Nor; Add ]
+  | 1 ->
+      [ PushReg reg; PushReg reg; Nor; PushReg reg; Nor; Sub ]
+  | 2 ->
+      [ PushReg reg; PushReg reg; Sub; Add ]
+  | 3 ->
+      [ PushReg reg; Dup; Nor; PushReg reg; Add; PushImm 1L; Add; Add ]
+  | _ ->
+      [ PushReg reg; PushReg reg; Nand; PushReg reg; Nand; Add; PushImm 1L; Add ]
 
 (** Generates an avid cluster. If an anchor is available and flags are dead,
     weaves a def-use chord from the anchor. *)
@@ -105,12 +114,11 @@ let generate_avid_cluster rng scratch_slot anchor_slot flags_live =
   else
     match anchor_slot with
     | Some anchor when next_int rng 2 = 0 ->
-        (* Def-use entangled cluster: pushes imm1, adds identity zero from anchor, pops to scratch *)
-        [ PushImm imm1 ] @ emit_anchor_chord anchor @ [ PopReg scratch_slot ]
+        (* Def-use entangled cluster with polymorphic knot *)
+        [ PushImm imm1 ] @ emit_anchor_chord rng anchor @ [ PopReg scratch_slot ]
     | _ ->
         match next_int rng 2 with
         | 0 ->
-            (* Non-trivial zero pair via two distinct randoms: (k1 + k2) - k1 - k2 == 0 *)
             let k1 = next_int64 rng in
             let k2 = next_int64 rng in
             let sum_k = Int64.add k1 k2 in
