@@ -2425,6 +2425,14 @@ let test_handler_multiplicity () =
     PushImm 15L;
     Sub;
     PopReg 1;
+    (* Rot identity coverage: (7,9,8) → 7+9=16 → 16+8=24 *)
+    PushImm 7L;
+    PushImm 8L;
+    PushImm 9L;
+    Rot;
+    Add;
+    Add;
+    PopReg 3;
     Exit;
   ] in
   let prog = make_program 0 [b0] 8 in
@@ -2432,11 +2440,28 @@ let test_handler_multiplicity () =
   let prog_mult = Stack_multiplicity_pass.apply_program cfg ctx prog in
   Alcotest.(check bool) "Multiplicity expanded instructions" true
     (Hashtbl.find prog_mult.blocks 0 |> (fun b -> List.length b.ops > List.length b0.ops));
-  (* Semantic evaluation: 50 + 30 (with swap & pop) -> reg[1]=65, reg[2]=50 *)
+  (* rate is the honest expansion probability: at 100% every eligible op
+     (Swap/Dup/Rot/PushReg) must have been replaced by a longer variant *)
+  let variant_len = function
+    | Swap | Dup -> 3
+    | Rot -> 4
+    | PushReg _ -> 3
+    | _ -> 1
+  in
+  let expected_len = List.fold_left (fun acc op -> acc + variant_len op) 0 b0.ops in
+  Alcotest.(check int) "rate=100 expands every eligible op" expected_len
+    (List.length (Hashtbl.find prog_mult.blocks 0).ops);
+  Alcotest.(check bool) "rate=0 leaves the program untouched" true
+    (let cfg0 = { (Stack_multiplicity_pass.default_multiplicity_config 0x1L) with rate = 0 } in
+     let p0 = Stack_multiplicity_pass.apply_program cfg0 ctx prog in
+     List.length (Hashtbl.find p0.blocks 0).ops = List.length b0.ops);
+  (* Semantic evaluation: 50 + 30 (with swap & pop) -> reg[1]=65, reg[2]=50,
+     and the Rot identity keeps reg[3]=24 *)
   let state = run_program prog_mult in
   Alcotest.(check bool) "Multiplicity program halted" true state.halted;
   Alcotest.(check int64) "Computation exact: reg[1]=65" 65L (get_reg state 1);
   Alcotest.(check int64) "Computation exact: reg[2]=50" 50L (get_reg state 2);
+  Alcotest.(check int64) "Rot identity exact: reg[3]=24" 24L (get_reg state 3);
   (* Bytecode execution *)
   let enc = Stack_encoder.encode_program ~seed_key:0x1337A564D00FL prog_mult in
   let state_bc = run_bytecode enc in

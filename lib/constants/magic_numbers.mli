@@ -88,6 +88,10 @@ val salt_chunk_kdyn_seed : int64
 val salt_stack_vm_state : int64
 val salt_bridge_vector_seed : int64
 val salt_stack_dispatch_blind : int64
+val salt_avid_block_mul : int64
+val salt_avid_block_add : int64
+val salt_multiplicity_block_mul : int64
+val salt_multiplicity_block_add : int64
 val salt_deadcode : int64
 val sentinel_c0ffee_1 : int64
 val salt_egraph_scrambler : int64

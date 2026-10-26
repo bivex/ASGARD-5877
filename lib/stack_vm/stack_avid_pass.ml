@@ -18,6 +18,7 @@
 *)
 
 open Stack_ir
+open Random_visa_constants.Magic_numbers
 
 type avid_config = {
   enabled  : bool;
@@ -35,10 +36,10 @@ let default_avid_config seed = {
 
 let splitmix64 s =
   let open Int64 in
-  let s = add s 0x9E3779B97F4A7C15L in
+  let s = add s golden_ratio_64 in
   let z = s in
-  let z = mul (logxor z (shift_right_logical z 30)) 0xBF58476D1CE4E5B9L in
-  let z = mul (logxor z (shift_right_logical z 27)) 0x94D049BB133111EBL in
+  let z = mul (logxor z (shift_right_logical z 30)) splitmix64_gamma in
+  let z = mul (logxor z (shift_right_logical z 27)) splitmix64_mix in
   let z = logxor z (shift_right_logical z 31) in
   (s, z)
 
@@ -86,7 +87,13 @@ let generate_avid_cluster rng scratch_slot flags_live =
 let apply_block (cfg : avid_config) ctx (b : block) : block =
   if not cfg.enabled || cfg.rate <= 0 then b
   else
-    let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0x1337 + 0x5877))) in
+    let rng =
+      make_rng
+        (Int64.logxor cfg.seed
+           (Int64.of_int
+              (b.id * Int64.to_int salt_avid_block_mul
+               + Int64.to_int salt_avid_block_add)))
+    in
     let scratch_slot = Context_allocator.alloc_scratch ctx in
     let live = Stack_flag_liveness.analyze_list b.ops in
     let new_ops = ref [] in

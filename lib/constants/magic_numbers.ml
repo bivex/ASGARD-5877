@@ -159,6 +159,15 @@ let salt_canary_mid = 0xA5A5A5A51337BEEFL
 (* "A5A5A5A5" + "5A5A5A5A": the mask that encrypts the shadow stack. *)
 let salt_canary_stack = 0xA5A5A5A55A5A5A5AL
 
+(* Per-block seed domain separation for the Stack-VM junk passes: the
+   per-block RNG stream is seeded with `pass_seed xor (block_id * mul + add)`
+   so one pass seed yields independent streams per basic block.  "LEET" and
+   "XW" for avid (Phase 5b), pi digits for multiplicity (Phase 2a). *)
+let salt_avid_block_mul = 0x1337L
+let salt_avid_block_add = 0x5877L
+let salt_multiplicity_block_mul = 0x3141L
+let salt_multiplicity_block_add = 0x5926L
+
 (* The salt of the poison penalty that is applied when a canary check fails. *)
 let salt_poison_penalty = 0xCAA7E1D8718BF877L
 
@@ -239,7 +248,9 @@ let registry : entry list = [
     value = golden_ratio_64;
     source = "frac(phi^-1) * 2^64 - Knuth multiplicative hashing, xxHash PRIME64_1";
     used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/native_vm/vm_context_emitter.ml";
-                "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml" ] };
+                "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
+                "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml";
+                "lib/stack_vm/pipelined_dispatch_pass.ml" ] };
   { name = "sqrt2_fraction_64";
     value = sqrt2_fraction_64;
     source = "frac(sqrt(2)) * 2^64";
@@ -251,11 +262,13 @@ let registry : entry list = [
   { name = "splitmix64_gamma";
     value = splitmix64_gamma;
     source = "SplitMix64 finalizer increment 1 (Steele, Lea and Flood, OOPSLA 2014)";
-    used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml" ] };
+    used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
+                "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml" ] };
   { name = "splitmix64_mix";
     value = splitmix64_mix;
     source = "SplitMix64 finalizer increment 2 (Steele, Lea and Flood, OOPSLA 2014)";
-    used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml" ] };
+    used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
+                "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml" ] };
   { name = "fnv1a_64_prime";
     value = fnv1a_64_prime;
     source = "FNV-1a 64-bit prime, 2^40 + 2^8 + 0xB3";
@@ -400,6 +413,22 @@ let registry : entry list = [
     value = salt_bridge_vector_seed;
     source = "hex-speak salt '13375877'+'AABBCCDD' - Multi-VM bridge morphing seed";
     used_in = [ "bin/profile_bottlenecks.ml"; "test/test_multi_vm.ml" ] };
+  { name = "salt_avid_block_mul";
+    value = salt_avid_block_mul;
+    source = "hex-speak 'LEET' - avid pass per-block seed multiplier";
+    used_in = [ "lib/stack_vm/stack_avid_pass.ml" ] };
+  { name = "salt_avid_block_add";
+    value = salt_avid_block_add;
+    source = "hex-speak 'XW' - avid pass per-block seed additive salt";
+    used_in = [ "lib/stack_vm/stack_avid_pass.ml" ] };
+  { name = "salt_multiplicity_block_mul";
+    value = salt_multiplicity_block_mul;
+    source = "digits of pi (3.141...) - multiplicity pass per-block seed multiplier";
+    used_in = [ "lib/stack_vm/stack_multiplicity_pass.ml" ] };
+  { name = "salt_multiplicity_block_add";
+    value = salt_multiplicity_block_add;
+    source = "digits of pi (...5926) - multiplicity pass per-block seed additive salt";
+    used_in = [ "lib/stack_vm/stack_multiplicity_pass.ml" ] };
   { name = "salt_stack_dispatch_blind";
     value = salt_stack_dispatch_blind;
     source = "hex-speak salt '5877A564'+'CAFEBEEF' - Stack-VM dispatch table blinding";
