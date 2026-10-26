@@ -167,6 +167,14 @@ type ghost_config = {
   max_ghosts : int;
   entangle   : bool;
 }
+type avid_config = {
+  enabled  : bool;
+  rate     : int;
+  max_avid : int;
+}
+
+val default_avid : avid_config
+
 
 type trampoline_config = {
   chunk_size : int;
@@ -208,6 +216,7 @@ type t = {
   amplifier : amplifier_config;
   superop : superop_config;
   ghost : ghost_config;
+  avid : avid_config;
   trampoline : trampoline_config;
   watermark : watermark_config;
   toolchain : toolchain_config;

@@ -372,6 +372,8 @@ let make_stack_metrics
         pass_switch "Virtual CFG Flattening" true "";
         pass_switch "Spaghetti CFG Splitting" true "";
         pass_switch "Ghost Stack Padding" true "";
+        pass_switch "Avid Junk Operands" native_cfg.avid.enabled
+          "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
           "disabled in configuration";
         pass_switch "Stack Balance Repair" true "";
@@ -781,6 +783,39 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5-ghost" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5-ghost" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5/7] Ghost Stack Padding: %s" ghost_info;
+
+    (* Phase 5b: Avid Junk Operands Pass — insert variable-size avid junk operands *)
+    let avid_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 15)
+    in
+    let av = native_cfg.avid in
+    let avid_cfg = {
+      (Stack_vm.Stack_avid_pass.default_avid_config avid_seed) with
+      rate = av.rate;
+      max_avid = av.max_avid;
+      enabled = av.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Avid Junk Operands         rate=%d%% max_avid=%s seed=0x%016LX%s"
+         avid_cfg.rate
+         (if avid_cfg.max_avid <= 0 then "unlimited" else string_of_int avid_cfg.max_avid)
+         avid_cfg.seed
+         (if av.enabled then "" else " (DISABLED)"));
+    let prog, avid_info =
+      if av.enabled then begin
+        let prog_avid = Stack_vm.Stack_avid_pass.apply_program avid_cfg ctx prog in
+        let info = Stack_vm.Stack_avid_pass.avid_stats prog prog_avid in
+        (prog_avid, info)
+      end else
+        (prog, "Disabled (config: avid.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"5b-avid" prog;
+    dump_bytecode_json ~phase:"5b-avid" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5b-avid" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5b] Avid Junk Operands: %s" avid_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
       if native_cfg.stack_vm.state_feedback then

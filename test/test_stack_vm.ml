@@ -2387,6 +2387,32 @@ let test_bytecode_stall_execution () =
   Alcotest.(check int64) "Original entry executed (ctx[1]=42)" 42L (get_reg st 1);
   Alcotest.(check int64) "ctx[0] untouched (0)" 0L (get_reg st 0)
 
+let test_avid_junk_operands () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 123L;
+    PopReg 1;
+    PushReg 1;
+    PushImm 77L;
+    Add;
+    PopReg 2;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 8 in
+  let cfg = { (Stack_avid_pass.default_avid_config 0x1234567890ABCDEFL) with rate = 100 } in
+  let prog_avid = Stack_avid_pass.apply_program cfg ctx prog in
+  Alcotest.(check bool) "Avid pass expanded instruction count" true
+    (Hashtbl.find prog_avid.blocks 0 |> (fun b -> List.length b.ops > List.length b0.ops));
+  (* Semantic evaluation: result in reg 2 must still equal 123 + 77 = 200 *)
+  let state = run_program prog_avid in
+  Alcotest.(check bool) "Program with avid operands halted normally" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[2]=200" 200L (get_reg state 2);
+  (* Bytecode encryption and roundtrip execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x9876543210ABCDEFL prog_avid in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode with avid operands halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[2]=200" 200L (get_reg state_bc 2)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2428,6 +2454,7 @@ let tests = [
   ("P2: CFG Invariants & Slot Bounds", `Quick, test_cfg_invariants_and_slots);
   ("P2: Key Invariants at Merge Points", `Quick, test_key_invariants_at_merge);
   ("P2: Formal Pass Contracts & Pipeline", `Quick, test_pass_contracts_and_pipeline);
+  ("Avid Junk Operands Pass & Semantics", `Quick, test_avid_junk_operands);
 ]
 
 

@@ -286,6 +286,18 @@ let default_ghost = {
   max_ghosts = 0;
   entangle   = true;
 }
+type avid_config = {
+  enabled  : bool [@default true];
+  rate     : int  [@default 40];
+  max_avid : int  [@default 0];
+} [@@deriving yojson]
+
+let default_avid = {
+  enabled  = true;
+  rate     = 40;
+  max_avid = 0;
+}
+
 
 type trampoline_config = {
   (** Number of 64-bit words per fragmented bytecode chunk. Default 64. *)
@@ -437,6 +449,7 @@ type t = {
   amplifier : amplifier_config [@default default_amplifier];
   superop : superop_config [@default default_superop];
   ghost : ghost_config [@default default_ghost];
+  avid : avid_config [@default default_avid];
   trampoline : trampoline_config [@default default_trampoline];
   watermark : watermark_config [@default default_watermark];
   toolchain : toolchain_config [@default default_toolchain];
