@@ -1,28 +1,36 @@
 #!/usr/bin/env python3
-"""Attacker-grade peephole reducer over ASGARD Stack-VM phase dumps.
+"""Multi-Tier Attacker-Grade Peephole & SMT-Pattern Reducer for ASGARD Stack-VM.
 
-Question answered: does the emitted bytecode simplify?  The reducer knows
-only universal stack identities and dead-slot dataflow - no knowledge of
-the pass seeds - so it lower-bounds what a one-pass pattern deobfuscator
-(D810-style) recovers from the *decoded* program.
+Evaluates how much of a protected Stack-VM program can be simplified by
+automated deobfuscation tools at different capability tiers:
 
-Rules (applied leftmost-first to fixpoint):
-  Multiplicity inverses (always sound):
-    Swap,Swap,Swap                        -> Swap
-    Dup,Swap,Swap                         -> Dup
-    Rot,Rot,Rot,Rot                       -> Rot
-    PushReg r,[Dup|PushReg r],PopReg r    -> PushReg r
-  Junk inverses (sound only when slot s is dead after the pattern; dead is
-  "overwritten before any read in this block", plus a global tier for
-  slots no block ever reads - that is where allocator scratch lands):
-    PushImm v,PopReg s                    -> <nothing>
-    PushImm v,Dup,Sub,PopReg s            -> <nothing>
-    PushImm v,PushReg s,PopReg s,PopReg s -> <nothing>
-    SetRegImm s,a,AddRegImm s,b,PopReg s  -> <nothing>
+Tier 1: Structural & Dead-Slot Patterns (Local Peephole + Linear DCE)
+  - Multiplicity Structural Inverses:
+      Swap,Swap,Swap                        -> Swap
+      Dup,Swap,Swap                         -> Dup
+      Rot,Rot,Rot,Rot                       -> Rot
+      PushReg r,[Dup|PushReg r],PopReg r    -> PushReg r
+  - Dead-Slot Junk Elimination (provably dead slots in O(log n)):
+      PushImm v,PopReg s                    -> <nothing>
+      PushImm v,Dup,Sub,PopReg s            -> <nothing>
+      PushImm v,PushReg s,PopReg s,PopReg s -> <nothing>
+      SetRegImm s,a,AddRegImm s,b,PopReg s  -> <nothing>
 
-Implementation: linear left-to-right passes (no per-candidate forward
-scans); slot deadness is answered in O(log n) from per-slot event lists.
-Final programs exceed 10^6 ops, so pass count is capped and timed.
+Tier 2: Semantic ALU & Algebraic Zero-Knot Inverses (Z3/D810/SMT-grade)
+  - Add via Double-Negation Inverse:
+      PushImm 0L,Swap,Sub,Sub               -> Add
+  - Sub via Two's Complement Inverse:
+      Dup,Nor,Add,PushImm 1L,Add            -> Sub
+  - 5-NOR XOR Circuit Constant Folding:
+      PushImm v1,PushImm v2,Dup2,Nor,Dup,Rot,Nor,Swap,Rot,Nor,Nor,Dup,Nor
+                                            -> PushImm (v1 ^ v2)
+  - Zero-Knots & Algebraic Neutral Elements:
+      PushReg r,PushReg r,Nor,PushReg r,Nor,Add -> <nothing>  (r ^ ~r = -1; Nor(r, -1) = 0; +0 = id)
+      PushImm 0L,Add                        -> <nothing>
+      AddImm imm,SubImm imm                 -> <nothing>
+      PushFlags,AddImm imm,SubImm imm,PopFlags -> <nothing>
+  - Sub-Zero Difference Reductions:
+      Sub,PushImm 0L,Cmp                    -> Cmp
 
 Usage:
     python3 peephole_eval.py DUMP_DIR [DUMP_DIR ...]
@@ -46,10 +54,19 @@ def load_phase(path):
         return json.load(fh)
 
 
+def parse_arg(a):
+    if isinstance(a, str):
+        try:
+            return int(a, 0)
+        except ValueError:
+            return a
+    return a
+
+
 def ops_of(doc):
     out = {}
     for b in doc["blocks"]:
-        out[b["id"]] = [(o["op"], tuple(o["args"])) for o in b["ops"]]
+        out[b["id"]] = [(o["op"], tuple(parse_arg(x) for x in o["args"])) for o in b["ops"]]
     return out
 
 
@@ -100,8 +117,6 @@ class SlotEvents:
         """Slot dead at `pos` (rest-of-block only)."""
         evs = self.events.get(slot)
         if evs is None:
-            # untouched for the rest of the block: only the global tier
-            # can prove death (allocator scratch is never read anywhere)
             return slot not in global_reads
         i = bisect_left(evs, (pos, False))
         if i >= len(evs):
@@ -114,41 +129,147 @@ def one_pass(ops, ev, greads, hits):
     i, n = 0, len(ops)
     while i < n:
         name = ops[i][0]
+
+        # ── Tier 1: Multiplicity Structural Inverses ─────────────────────
         if name == "Swap" and i + 2 < n \
                 and ops[i + 1][0] == "Swap" and ops[i + 2][0] == "Swap":
-            out.append(ops[i]); hits["identity:Swap"] += 1; i += 3; continue
+            out.append(ops[i])
+            hits["T1:identity:Swap"] += 1
+            i += 3
+            continue
+
         if name == "Dup" and i + 2 < n \
                 and ops[i + 1][0] == "Swap" and ops[i + 2][0] == "Swap":
-            out.append(ops[i]); hits["identity:Dup"] += 1; i += 3; continue
+            out.append(ops[i])
+            hits["T1:identity:Dup"] += 1
+            i += 3
+            continue
+
         if name == "Rot" and i + 3 < n and ops[i + 1][0] == "Rot" \
                 and ops[i + 2][0] == "Rot" and ops[i + 3][0] == "Rot":
-            out.append(ops[i]); hits["identity:Rot"] += 1; i += 4; continue
+            out.append(ops[i])
+            hits["T1:identity:Rot"] += 1
+            i += 4
+            continue
+
         if name == "PushReg" and i + 2 < n:
             r = ops[i][1][0]
             mid, tail = ops[i + 1][0], ops[i + 2]
             if tail[0] == "PopReg" and tail[1][0] == r and \
                     (mid == "Dup" or (mid == "PushReg" and ops[i + 1][1][0] == r)):
-                out.append(ops[i]); hits["identity:PushReg"] += 1; i += 3
+                out.append(ops[i])
+                hits["T1:identity:PushReg"] += 1
+                i += 3
                 continue
+
+        # ── Tier 2: Semantic ALU Inverses ────────────────────────────────
+        # Add via double negation: PushImm 0L, Swap, Sub, Sub -> Add
+        if name == "PushImm" and ops[i][1] == (0,) and i + 3 < n \
+                and ops[i + 1][0] == "Swap" and ops[i + 2][0] == "Sub" \
+                and ops[i + 3][0] == "Sub":
+            out.append(("Add", ()))
+            hits["T2:semantic:Add_double_neg"] += 1
+            i += 4
+            continue
+
+        # Sub via two's complement: Dup, Nor, Add, PushImm 1L, Add -> Sub
+        if name == "Dup" and i + 4 < n \
+                and ops[i + 1][0] == "Nor" and ops[i + 2][0] == "Add" \
+                and ops[i + 3][0] == "PushImm" and ops[i + 3][1] == (1,) \
+                and ops[i + 4][0] == "Add":
+            out.append(("Sub", ()))
+            hits["T2:semantic:Sub_twos_comp"] += 1
+            i += 5
+            continue
+
+        # PushImm via 5-NOR XOR Circuit Constant Folding:
+        # PushImm v1, PushImm v2, Dup2, Nor, Dup, Rot, Nor, Swap, Rot, Nor, Nor, Dup, Nor -> PushImm (v1 ^ v2)
+        if name == "PushImm" and i + 12 < n and ops[i + 1][0] == "PushImm" \
+                and ops[i + 2][0] == "Dup2" and ops[i + 3][0] == "Nor" \
+                and ops[i + 4][0] == "Dup" and ops[i + 5][0] == "Rot" \
+                and ops[i + 6][0] == "Nor" and ops[i + 7][0] == "Swap" \
+                and ops[i + 8][0] == "Rot" and ops[i + 9][0] == "Nor" \
+                and ops[i + 10][0] == "Nor" and ops[i + 11][0] == "Dup" \
+                and ops[i + 12][0] == "Nor":
+            v1 = ops[i][1][0]
+            v2 = ops[i + 1][1][0]
+            folded_v = v1 ^ v2
+            out.append(("PushImm", (folded_v,)))
+            hits["T2:semantic:PushImm_5nor_xor"] += 1
+            i += 13
+            continue
+
+        # ── Tier 2: Zero-Knots & Algebraic Neutral Elements ──────────────
+        # Nor-based zero knot: PushReg r, PushReg r, Nor, PushReg r, Nor, Add -> <nothing>
+        if name == "PushReg" and i + 5 < n:
+            r = ops[i][1][0]
+            if ops[i + 1] == ops[i] and ops[i + 2][0] == "Nor" \
+                    and ops[i + 3] == ops[i] and ops[i + 4][0] == "Nor" \
+                    and ops[i + 5][0] == "Add":
+                hits["T2:knot:Nor_zero_knot"] += 1
+                i += 6
+                continue
+
+        # PushImm 0L, Add -> <nothing>
+        if name == "PushImm" and ops[i][1] == (0,) and i + 1 < n \
+                and ops[i + 1][0] == "Add":
+            hits["T2:neutral:Add_zero"] += 1
+            i += 2
+            continue
+
+        # AddImm imm, SubImm imm -> <nothing>
+        if name == "AddImm" and i + 1 < n and ops[i + 1][0] == "SubImm" \
+                and ops[i][1] == ops[i + 1][1]:
+            hits["T2:neutral:AddImm_SubImm"] += 1
+            i += 2
+            continue
+
+        # PushFlags, AddImm imm, SubImm imm, PopFlags -> <nothing>
+        if name == "PushFlags" and i + 3 < n and ops[i + 1][0] == "AddImm" \
+                and ops[i + 2][0] == "SubImm" and ops[i + 1][1] == ops[i + 2][1] \
+                and ops[i + 3][0] == "PopFlags":
+            hits["T2:neutral:Flag_AddSub"] += 1
+            i += 4
+            continue
+
+        # CFF Sub-Zero Difference: Sub, PushImm 0L, Cmp -> Cmp
+        if name == "Sub" and i + 2 < n and ops[i + 1][0] == "PushImm" \
+                and ops[i + 1][1] == (0,) and ops[i + 2][0] == "Cmp":
+            out.append(("Cmp", ()))
+            hits["T2:cff:Sub_zero_cmp"] += 1
+            i += 3
+            continue
+
+        # ── Tier 1: Dead-Slot Junk Elimination ───────────────────────────
         if name == "PushImm":
             if i + 1 < n and ops[i + 1][0] == "PopReg" \
                     and ev.dead(i + 2, ops[i + 1][1][0], greads):
-                hits["junk:PushImm+PopReg"] += 1; i += 2; continue
+                hits["T1:junk:PushImm+PopReg"] += 1
+                i += 2
+                continue
             if i + 3 < n and ops[i + 1][0] == "Dup" and ops[i + 2][0] == "Sub" \
                     and ops[i + 3][0] == "PopReg" \
                     and ev.dead(i + 4, ops[i + 3][1][0], greads):
-                hits["junk:PushImm+Dup+Sub"] += 1; i += 4; continue
+                hits["T1:junk:PushImm+Dup+Sub"] += 1
+                i += 4
+                continue
             if i + 3 < n and ops[i + 1][0] == "PushReg" \
                     and ops[i + 2][0] == "PopReg" and ops[i + 3][0] == "PopReg" \
                     and ops[i + 1][1][0] == ops[i + 2][1][0] == ops[i + 3][1][0] \
                     and ev.dead(i + 4, ops[i + 3][1][0], greads):
-                hits["junk:PushImm+PushReg"] += 1; i += 4; continue
+                hits["T1:junk:PushImm+PushReg"] += 1
+                i += 4
+                continue
+
         if name == "SetRegImm" and i + 2 < n \
                 and ops[i + 1][0] == "AddRegImm" \
                 and ops[i + 1][1][0] == ops[i][1][0] \
                 and ops[i + 2][0] == "PopReg" and ops[i + 2][1][0] == ops[i][1][0] \
                 and ev.dead(i + 3, ops[i][1][0], greads):
-            hits["junk:SetRegImm+AddRegImm"] += 1; i += 3; continue
+            hits["T1:junk:SetRegImm+AddRegImm"] += 1
+            i += 3
+            continue
+
         out.append(ops[i])
         i += 1
     return out
@@ -182,7 +303,7 @@ def main(dirs):
             print("no phase_*.json in %s" % d)
             continue
         print("=" * 78)
-        print("PEEPHOLE ATTACK  %s" % d)
+        print("MULTI-TIER DEOBFUSCATION PROBE  %s" % d)
         print("=" * 78)
         baseline = None
         rows = []
@@ -207,10 +328,21 @@ def main(dirs):
         final = rows[-1]
         pct = 100.0 * final[3] / final[1] if final[1] else 0.0
         print("-" * 78)
-        print("final phase %s: %d ops -> %d after one-pattern attack "
+        print("final phase %s: %d ops -> %d after multi-tier attack "
               "(%.1f%% junk recovered; residual vs 1-lowered baseline: +%d ops)"
               % (final[0], final[1], final[2], pct, final[2] - base))
-        print("rule hit counts: %s" % dict(final[4].most_common()))
+
+        # Categorized Rule Summary
+        t1_hits = sum(cnt for r, cnt in final[4].items() if r.startswith("T1:"))
+        t2_hits = sum(cnt for r, cnt in final[4].items() if r.startswith("T2:"))
+        print()
+        print("ATTACK BREAKDOWN:")
+        print("  • Tier 1 (Structural & Dead-Slot DCE): %d reductions" % t1_hits)
+        print("  • Tier 2 (Semantic ALU, XOR & Knots): %d reductions" % t2_hits)
+        print()
+        print("RULE HIT COUNTS:")
+        for r, cnt in final[4].most_common():
+            print("  %-32s : %d" % (r, cnt))
         print()
 
 
