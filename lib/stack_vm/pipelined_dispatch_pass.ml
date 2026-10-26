@@ -48,6 +48,14 @@ type dispatch_plan = {
   chaff_slot_base   : int;    (** First dead ctx slot of the chaff region *)
   chaff_slot_count  : int;    (** Region size, power of two in [1; 16] *)
   chaff_salt        : int64;  (** Per-build salt mixed into the slot hash *)
+  (* Per-build affine table mask: [dispatch_table[i] = raw[i] ^ K(i)] with
+     [K(i) = (i * mask_mult) ^ mask_add].  Every handler epilogue embeds
+     its own compile-time [K(i)] literal, so no two epilogues are
+     textually identical and the C compiler cannot tail-merge them back
+     into one shared indirect-branch trampoline (deobf_probe finding:
+     identical epilogues merged into a single hub with 257 in-edges). *)
+  mask_mult : int64;  (** odd *)
+  mask_add  : int64;
   ctx_slots_required : int;   (** ctx[] must have at least this many slots *)
 }
 
@@ -65,6 +73,14 @@ let derive_chaff_salt seed =
   let z = add seed M.golden_ratio_64 in
   logxor z (shift_right_logical z 32)
 
+(** Per-build affine mask pair for the dispatch table. *)
+let derive_mask_pair seed =
+  let open Int64 in
+  let module M = Random_visa_constants.Magic_numbers in
+  let a = derive_chaff_salt (logxor seed M.cbrt3_fraction_64) in
+  let b = derive_chaff_salt (logxor seed M.salt_stack_dispatch_blind) in
+  (logor a 1L (* odd: bijective over Z_2^64 *), b)
+
 (** Derive the Stage-2 chaff plan for a finalized program.  [None] when the
     pass is disabled.  The chaff region starts exactly at the program's
     context_slots: every slot a handler can address is strictly below it,
@@ -74,12 +90,23 @@ let plan_dispatch (cfg : pipelined_config) (prog : program) : dispatch_plan opti
   else
     let count = normalize_chaff_slots cfg.chaff_slots in
     let base = prog.context_slots in
+    let mask_mult, mask_add = derive_mask_pair cfg.seed in
     Some {
       chaff_slot_base    = base;
       chaff_slot_count   = count;
       chaff_salt         = derive_chaff_salt cfg.seed;
+      mask_mult;
+      mask_add;
       ctx_slots_required = base + count;
     }
+
+(** The compile-time mask literal epilogue [opcode] embeds.  Must agree
+    bit-for-bit with the runtime formula [(op * mask_mult) ^ mask_add] the
+    table initialization and the entry priming use (both uint64). *)
+let slot_mask (plan : dispatch_plan) (opcode : int) : int64 =
+  Int64.logxor
+    (Int64.mul plan.mask_mult (Int64.of_int opcode))
+    plan.mask_add
 
 (** Invariant audit of a plan against a program: the chaff region must not
     overlap any addressable slot, and the ctx sizing must cover it. *)

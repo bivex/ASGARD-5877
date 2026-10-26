@@ -2511,8 +2511,10 @@ let test_pipelined_stage_dispatch () =
   in
   Alcotest.(check bool) "emits ASG_PIPELINED_PREFETCH primitive" true (has "ASG_PIPELINED_PREFETCH");
   Alcotest.(check bool) "emits ASG_PIPELINED_DISPATCH primitive" true (has "ASG_PIPELINED_DISPATCH");
-  Alcotest.(check bool) "entry stub primes I_0 pre-fetch" true (has "ASG_PIPELINED_PREFETCH(op_primer)");
-  Alcotest.(check bool) "handler epilogue pre-fetches next opcode" true (has "ASG_PIPELINED_PREFETCH(op_");
+  Alcotest.(check bool) "entry stub primes I_0 pre-fetch" true
+    (has "ASG_PIPELINED_PREFETCH(op_primer);\n  ASG_PIPELINED_DISPATCH_RT(op_primer);");
+  Alcotest.(check bool) "handler epilogue pre-fetches and constant-dispatches next opcode" true
+    (has "ASG_PIPELINED_DISPATCH(op_");
   Alcotest.(check bool) "no centralized dispatch-step macro" false (has "ASG_DISPATCH_STEP(");
   Alcotest.(check bool) "chaff lands in the planned dead slots" true
     (has (Printf.sprintf "vm->ctx[(%d) + " plan.chaff_slot_base));

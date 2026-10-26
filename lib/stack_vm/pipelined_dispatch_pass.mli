@@ -15,6 +15,11 @@ type dispatch_plan = {
   chaff_slot_base    : int;
   chaff_slot_count   : int;
   chaff_salt         : int64;
+  (** Per-build affine table mask [K(i) = (i * mask_mult) ^ mask_add];
+      each epilogue embeds its own compile-time [K(i)] so identical-tail
+      merging by the C compiler is impossible. *)
+  mask_mult          : int64;
+  mask_add           : int64;
   ctx_slots_required : int;
 }
 
@@ -29,5 +34,10 @@ val plan_dispatch : pipelined_config -> program -> dispatch_plan option
 
 (** Audit a plan's soundness invariants against a program. *)
 val check_plan_invariants : program -> dispatch_plan -> unit
+
+(** Compile-time mask literal for one opcode's epilogue; agrees with the
+    runtime formula [(op * mask_mult) ^ mask_add] used by the table init
+    and the entry priming. *)
+val slot_mask : dispatch_plan -> int -> int64
 
 val pipelined_stats : dispatch_plan option -> string
