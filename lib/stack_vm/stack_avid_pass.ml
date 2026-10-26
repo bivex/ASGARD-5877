@@ -96,26 +96,27 @@ let generate_avid_cluster rng scratch_slot anchor_slot flags_live =
   let imm1 = next_int64 rng in
   let imm2 = next_int64 rng in
   if flags_live then
-    (* Pure flag-neutral cluster *)
-    match next_int rng 2 with
-    | 0 ->
-        [ PushImm imm1; PopReg scratch_slot ]
-    | _ ->
+    match anchor_slot with
+    | Some anchor ->
+        (* Flag-neutral def-use chord: swaps anchor copy, preserves stack top and flags *)
+        [ PushImm imm1; PushReg anchor; Swap; PopReg anchor; PopReg scratch_slot ]
+    | None ->
         [ PushImm imm1; PushReg scratch_slot; PopReg scratch_slot; PopReg scratch_slot ]
   else
-    (* Flags are dead: can use ALU-based avid clusters and anchor chords *)
     match anchor_slot with
-    | Some anchor when next_int rng 3 = 0 ->
+    | Some anchor when next_int rng 2 = 0 ->
         (* Def-use entangled cluster: pushes imm1, adds identity zero from anchor, pops to scratch *)
         [ PushImm imm1 ] @ emit_anchor_chord anchor @ [ PopReg scratch_slot ]
     | _ ->
-        match next_int rng 3 with
+        match next_int rng 2 with
         | 0 ->
-            [ PushImm imm1; PopReg scratch_slot ]
-        | 1 ->
-            [ SetRegImm (scratch_slot, imm1); AddRegImm (scratch_slot, imm2); PopReg scratch_slot ]
+            (* Non-trivial zero pair via two distinct randoms: (k1 + k2) - k1 - k2 == 0 *)
+            let k1 = next_int64 rng in
+            let k2 = next_int64 rng in
+            let sum_k = Int64.add k1 k2 in
+            [ PushImm sum_k; PushImm k1; Sub; PushImm k2; Sub; PopReg scratch_slot ]
         | _ ->
-            [ PushImm imm1; Dup; Sub; PopReg scratch_slot ]
+            [ SetRegImm (scratch_slot, imm1); AddRegImm (scratch_slot, imm2); PopReg scratch_slot ]
 
 let apply_block (cfg : avid_config) ctx (b : block) : block =
   if not cfg.enabled || cfg.rate <= 0 then b

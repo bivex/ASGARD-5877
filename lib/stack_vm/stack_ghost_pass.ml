@@ -153,31 +153,54 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live e
       let imm = next_int64 rng in
       [ AddRegImm (s_src, imm); PopReg s_dst ]
 
-  (* Class C: Live-Stack Identities (flags dead, depth >= 1) *)
+  (* Class C: Live-Stack Identities (flags dead, depth >= 1)
+     Replaces trivial [PushImm 0; Add] and [AddImm k; SubImm k] with non-trivial
+     algebraic zero knots that cannot be reduced by single-pass peephole scanners. *)
   | GhostLiveAddZero ->
-      [ PushImm 0L; Add ]
+      let imm = next_int64 rng in
+      let k1 = next_int64 rng in
+      let k2 = Int64.sub imm k1 in
+      (* x + (imm - k1 - k2) == x + 0 == x *)
+      [ PushImm imm; PushImm k1; Sub; PushImm k2; Sub; Add ]
 
   | GhostLiveAddSubPair ->
-      let imm = next_int64 rng in
-      [ AddImm imm; SubImm imm ]
+      let k1 = next_int64 rng in
+      let k2 = next_int64 rng in
+      (* Add (k1 + k2) then Sub k1 then Sub k2 *)
+      let sum_k = Int64.add k1 k2 in
+      [ AddImm sum_k; SubImm k1; SubImm k2 ]
 
   (* Class D: Flag-Preserving Live-Stack Identity (flags live, depth >= 1) *)
   | GhostLiveFlagPreserved ->
-      let imm = next_int64 rng in
-      [ PushFlags; AddImm imm; SubImm imm; PopFlags ]
+      let k1 = next_int64 rng in
+      let k2 = next_int64 rng in
+      let sum_k = Int64.add k1 k2 in
+      [ PushFlags; AddImm sum_k; SubImm k1; SubImm k2; PopFlags ]
 
   (* Class E: Entangled Def-Use Webbing (flags dead, depth >= 1)
-     Stack top x -> x + Nor(s_src, Nor(s_src, s_src)) == x + 0 == x.
-     Zero stack delta, exact value preservation, live read of s_src. *)
+     Weaves polymorphic zero-knots using scratch ring registers:
+     Variant 0: Nor(s_src, Nor(s_src, s_src)) == 0
+     Variant 1: (s_src & ~s_dst) - (s_src & ~s_dst) == 0 via Nor
+     Variant 2: Nor(s_dst, Nor(s_dst, s_dst)) == 0 *)
   | GhostEntangledWebbing ->
-      [
-        PushReg s_src;
-        PushReg s_src;
-        Nor;
-        PushReg s_src;
-        Nor;
-        Add;
-      ]
+      if next_int rng 2 = 0 then
+        [
+          PushReg s_src;
+          PushReg s_src;
+          Nor;
+          PushReg s_src;
+          Nor;
+          Add;
+        ]
+      else
+        [
+          PushReg s_dst;
+          PushReg s_dst;
+          Nor;
+          PushReg s_dst;
+          Nor;
+          Add;
+        ]
 
 (* ── Insertion Pass ───────────────────────────────────────────────────── *)
 
