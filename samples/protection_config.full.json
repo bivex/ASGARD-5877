@@ -146,6 +146,11 @@
     "max_ghosts": 0,
     "entangle": true
   },
+  "avid": {
+    "enabled": true,
+    "rate": 70,
+    "max_avid": 0
+  },
   "trampoline": {
     "chunk_size": 32
   },
