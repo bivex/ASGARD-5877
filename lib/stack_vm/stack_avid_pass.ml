@@ -87,23 +87,24 @@ let is_terminator = function
     Every knot evaluates to an identity 0 on the stack top while creating
     genuine dataflow reads of [reg]. *)
 let emit_anchor_chord rng reg =
-  match next_int rng 5 with
+  match next_int rng 4 with
   | 0 ->
-      [ PushReg reg; PushReg reg; Nor; PushReg reg; Nor; Add ]
+      (* x - (r - r) == x (flag-dead zero difference) *)
+      [ PushReg reg; PushReg reg; Sub; Sub ]
   | 1 ->
-      [ PushReg reg; PushReg reg; Nor; PushReg reg; Nor; Sub ]
-  | 2 ->
+      (* x + (r - r) == x *)
       [ PushReg reg; PushReg reg; Sub; Add ]
-  | 3 ->
+  | 2 ->
+      (* x + (r + ~r + 1) == x via Nor-inversion *)
       [ PushReg reg; Dup; Nor; PushReg reg; Add; PushImm 1L; Add; Add ]
   | _ ->
+      (* x + (Nand(r, Nand(r, r)) + 1) == x *)
       [ PushReg reg; PushReg reg; Nand; PushReg reg; Nand; Add; PushImm 1L; Add ]
 
 (** Generates an avid cluster. If an anchor is available and flags are dead,
     weaves a def-use chord from the anchor. *)
 let generate_avid_cluster rng scratch_slot anchor_slot flags_live =
   let imm1 = next_int64 rng in
-  let imm2 = next_int64 rng in
   if flags_live then
     match anchor_slot with
     | Some anchor ->
@@ -113,18 +114,16 @@ let generate_avid_cluster rng scratch_slot anchor_slot flags_live =
         [ PushImm imm1; PushReg scratch_slot; PopReg scratch_slot; PopReg scratch_slot ]
   else
     match anchor_slot with
-    | Some anchor when next_int rng 2 = 0 ->
-        (* Def-use entangled cluster with polymorphic knot *)
+    | Some anchor ->
+        (* Always weave polymorphic def-use chord when anchor is available *)
         [ PushImm imm1 ] @ emit_anchor_chord rng anchor @ [ PopReg scratch_slot ]
-    | _ ->
-        match next_int rng 2 with
-        | 0 ->
-            let k1 = next_int64 rng in
-            let k2 = next_int64 rng in
-            let sum_k = Int64.add k1 k2 in
-            [ PushImm sum_k; PushImm k1; Sub; PushImm k2; Sub; PopReg scratch_slot ]
-        | _ ->
-            [ SetRegImm (scratch_slot, imm1); AddRegImm (scratch_slot, imm2); PopReg scratch_slot ]
+    | None ->
+        let k1 = next_int64 rng in
+        let k2 = next_int64 rng in
+        let sum_k = Int64.add k1 k2 in
+        [ PushImm sum_k; PushImm k1; Sub; PushImm k2; Sub; PopReg scratch_slot ]
+
+
 
 let apply_block (cfg : avid_config) ctx (b : block) : block =
   if not cfg.enabled || cfg.rate <= 0 then b

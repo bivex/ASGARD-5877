@@ -183,16 +183,16 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live e
      Variant 1: (s_src & ~s_dst) - (s_src & ~s_dst) == 0 via Nor
      Variant 2: Nor(s_dst, Nor(s_dst, s_dst)) == 0 *)
   | GhostEntangledWebbing ->
-      match next_int rng 4 with
+      match next_int rng 3 with
       | 0 ->
-          [ PushReg s_src; PushReg s_src; Nor; PushReg s_src; Nor; Add ]
+          (* x - (r - r) == x (algebraic zero difference) *)
+          [ PushReg s_src; PushReg s_src; Sub; Sub ]
       | 1 ->
-          [ PushReg s_src; PushReg s_src; Nor; PushReg s_src; Nor; Sub ]
-      | 2 ->
+          (* x + (r - r) == x *)
           [ PushReg s_dst; PushReg s_dst; Sub; Add ]
       | _ ->
+          (* x + (r + ~r + 1) == x via Nor-inversion *)
           [ PushReg s_src; Dup; Nor; PushReg s_src; Add; PushImm 1L; Add; Add ]
-
 (* ── Insertion Pass ───────────────────────────────────────────────────── *)
 
 let insert_ghosts_into_ops ?(entangle = true) ~scratch_ring rng ctx ops ghost_rate =
