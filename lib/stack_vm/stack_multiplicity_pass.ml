@@ -9,13 +9,28 @@
           Rot  ≡ Rot^4
           PushReg r ≡ PushReg r·Dup·PopReg r
 
-      - Semantic ALU identities (active when condition flags are dead):
-          Add ≡ PushImm 0L · Swap · Sub · Sub    [a + b ≡ a - (-b)]
-          Sub ≡ Dup · Nor · Add · PushImm 1L · Add [a - b ≡ a + ~b + 1]
-          PushImm v ≡ PushImm v1 · PushImm v2 · 5-NOR XOR circuit [v1 ^ v2 = v]
+      - Mixed Boolean-Arithmetic (MBA) & Semantic ALU Identities (flags dead):
+          Add ≡ MBA De Morgan duality:
+                x + y ≡ - (Nor(x, y) + Nand(x, y) + 2)
+                Evaluated purely on stack via:
+                  Dup2, Nand, Rot, Rot, Nor, Add, PushImm 2L, Add, PushImm 0L, Swap, Sub
+          Sub ≡ Linear MBA Disjoint Projection:
+                x - y ≡ (x ∧ ¬y) - (¬x ∧ y)
+                Evaluated purely on stack via:
+                  Dup2, Swap, Dup, Nor, Nor, Rot, Swap, Rot, Dup, Nor, Rot, Nor, Sub
+          PushImm v ≡ 5-NOR XOR Circuit Decomposition:
+                v = v1 ^ v2 where v1 is random
+                Evaluated purely on stack via:
+                  PushImm v1, PushImm v2, Dup2, Nor, Dup, Rot, Nor, Swap, Rot, Nor, Nor, Dup, Nor
 
-    By requiring non-trivial boolean algebra and sign reasoning (SMT/Z3 level)
-    to deobfuscate, these expansions defeat local 1-pass pattern matchers.
+    Soundness Invariants:
+      1. SMT-Resilience: Replaces trivial single-pattern peephole targets with
+         multivariate boolean-arithmetic polynomials requiring full SMT/Z3 solvers
+         or e-graph saturation to reverse.
+      2. Flag-Safety: MBA expansions modify flags and are strictly gated by
+         [Stack_flag_liveness.analyze_list] so architectural flags are dead.
+      3. Zero Net Stack Delta: Every expansion preserves the exact stack delta
+         of the replaced operation (-1 for Add/Sub, +1 for PushImm, 0 for Swap/Rot).
 *)
 
 open Stack_ir
@@ -67,7 +82,7 @@ let maybe rng prob = next_int rng 100 < prob
       Dup; Rot; Nor;                    [b, d, v1]    where b = ~(d | v2)
       Swap; Rot; Nor;                   [a, b]        where a = ~(d | v1)
       Nor; Dup; Nor;                    [v]           where v = ~(a | b)
-    Net result: exactly [v] pushed, exactly 11 operations. *)
+    Net result: exactly [v] pushed, exactly 13 operations. *)
 let expand_push_imm_xor rng v =
   let v1 = next_int64 rng in
   let v2 = Int64.logxor v v1 in
@@ -85,6 +100,65 @@ let expand_push_imm_xor rng v =
     Nor;
     Dup;
     Nor;
+  ]
+
+(** MBA Add:
+    x + y ≡ - (Nor(x, y) + Nand(x, y) + 2)
+    Stack begins with [y, x] (y on top).
+    Trace:
+      Dup2          [y, x, y, x]
+      Nand          [Nand(x, y), y, x]
+      Rot; Rot      [y, x, Nand(x, y)]
+      Nor           [Nor(x, y), Nand(x, y)]
+      Add           [Nor + Nand]
+      PushImm 2L    [2, Nor + Nand]
+      Add           [Nor + Nand + 2]
+      PushImm 0L    [0, Nor + Nand + 2]
+      Swap; Sub     [ - (Nor + Nand + 2) ] = [ x + y ]
+    Net result: [x + y] on stack, 11 operations, net stack delta = -1. *)
+let expand_add_mba () =
+  [
+    Dup2;
+    Nand;
+    Rot;
+    Rot;
+    Nor;
+    Add;
+    PushImm 2L;
+    Add;
+    PushImm 0L;
+    Swap;
+    Sub;
+  ]
+
+(** MBA Sub:
+    x - y ≡ (x ∧ ¬y) - (¬x ∧ y)
+    Stack begins with [y, x] (y on top).
+    Trace:
+      Dup2          [y, x, y, x]
+      Swap; Dup     [x, x, y, y, x]
+      Nor           [~x, y, y, x]
+      Nor           [(x & ~y), y, x]
+      Rot; Swap; Rot [y, (x & ~y), x]
+      Dup; Nor      [~y, (x & ~y), x]
+      Rot; Nor      [(~x & y), (x & ~y)]
+      Sub           [ (x & ~y) - (~x & y) ] = [ x - y ]
+    Net result: [x - y] on stack, 13 operations, net stack delta = -1. *)
+let expand_sub_mba () =
+  [
+    Dup2;
+    Swap;
+    Dup;
+    Nor;
+    Nor;
+    Rot;
+    Swap;
+    Rot;
+    Dup;
+    Nor;
+    Rot;
+    Nor;
+    Sub;
   ]
 
 (** Metamorphic expansion of an op. [flag_dead] indicates whether condition
@@ -106,12 +180,18 @@ let expand_op rng flag_dead = function
         [ PushReg r; PushReg r; PopReg r ]
 
   | Add when flag_dead ->
-      (* a + b ≡ a - (-b) via PushImm 0L; Swap; Sub; Sub *)
-      [ PushImm 0L; Swap; Sub; Sub ]
+      if next_int rng 2 = 0 then
+        expand_add_mba ()
+      else
+        (* Alternate algebraic identity: a + b ≡ a - (-b) *)
+        [ PushImm 0L; Swap; Sub; Sub ]
 
   | Sub when flag_dead ->
-      (* a - b ≡ a + ~b + 1 via Dup; Nor; Add; PushImm 1L; Add *)
-      [ Dup; Nor; Add; PushImm 1L; Add ]
+      if next_int rng 2 = 0 then
+        expand_sub_mba ()
+      else
+        (* Alternate algebraic identity: a - b ≡ a + ~b + 1 *)
+        [ Dup; Nor; Add; PushImm 1L; Add ]
 
   | PushImm v when flag_dead ->
       expand_push_imm_xor rng v
