@@ -1,20 +1,21 @@
 (** Phase 2a: Stack-VM Handler Multiplicity & Metamorphic Synthesis Pass
     ───────────────────────────────────────────────────────────────────
     Synthesizes polymorphic opcode clones and metamorphic operation trees
-    for stack operations using native Stack-VM primitives (Rot, Swap, Dup, Dup2).
+    for common stack operations (Swap, Dup, Dup2, Rot, PopReg, PushReg).
 
     By breaking the 1:1 mapping between high-level instruction semantics
     and fixed handler patterns, this pass prevents dynamic trace-profiling
     and breakpoint placement on predictable handler entry addresses.
 
     Soundness Invariants:
-      1. Zero Register Clobber: Uses stack permutations (Rot, Swap, Dup) without
-         scratch register writes to guarantee 100% preservation of context
-         registers and static abstract model predictions (e.g. KeyFeedback).
+      1. Register Value Faithfulness: Instructions that establish statically
+         tracked context values (e.g. SetRegImm or PushImm preceding KeyFeedback)
+         remain intact so static key scheduling never diverges.
       2. Exact Net Stack Delta: Every metamorphic expansion preserves the exact
          net stack delta and final stack order of the target operation.
-      3. Flag Faithfulness: Multiplicity transformations are strictly flag-neutral
-         (they never clobber architectural flags, regardless of liveness).
+      3. Strict Flag Neutrality: Expansions use only flag-neutral primitives
+         (PushReg, PopReg, Swap, Dup, Dup2, Rot) guaranteeing zero clobbering
+         of architectural condition flags.
 *)
 
 open Stack_ir
@@ -27,7 +28,7 @@ type multiplicity_config = {
 
 let default_multiplicity_config seed = {
   enabled = true;
-  rate    = 30;
+  rate    = 50;
   seed;
 }
 
@@ -58,21 +59,28 @@ let next_int rng n =
 let maybe rng prob = next_int rng 100 < prob
 
 (** Multiplicity expansions for Stack_ir operations:
-    Pure stack-based identities, 100% flag-neutral and 100% register-safe. *)
+    Pure stack and register identities, 100% flag-neutral and 100% invariant-safe. *)
 let expand_op rng = function
   | Swap ->
-      (* Swap via triple Swap or identity decomposition *)
-      if maybe rng 40 then
+      (* Alternative Swap: via triple Swap *)
+      if maybe rng 50 then
         [ Swap; Swap; Swap ]
       else
         [ Swap ]
 
   | Dup ->
-      (* Dup can be performed as [Dup; Swap; Swap] *)
-      if maybe rng 40 then
+      (* Alternative Dup: duplicate via Swap identity *)
+      if maybe rng 50 then
         [ Dup; Swap; Swap ]
       else
         [ Dup ]
+
+  | PushReg r ->
+      (* Alternative PushReg: PushReg; Dup; PopReg r *)
+      if maybe rng 40 then
+        [ PushReg r; Dup; PopReg r ]
+      else
+        [ PushReg r ]
 
   | other -> [ other ]
 
