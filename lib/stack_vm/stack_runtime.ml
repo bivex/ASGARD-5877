@@ -619,13 +619,7 @@ let emit_stack_dispatch_stmts
           let mask = p.Pipelined_dispatch_pass.chaff_slot_count - 1 in
           Some
             (Printf.sprintf
-               "#if defined(__aarch64__)\n\
-               \    #define ASG_INDIRECT_JUMP(target) asm volatile(\"br %%0\" : : \"r\"(target))\n\
-               #elif defined(__x86_64__)\n\
-               \    #define ASG_INDIRECT_JUMP(target) asm volatile(\"jmp *%%0\" : : \"r\"(target))\n\
-               #else\n\
-               \    #define ASG_INDIRECT_JUMP(target) goto *(target)\n\
-               #endif\n\
+               "#define ASG_INDIRECT_JUMP(target) goto *(target)\n\
                #define ASG_PIPELINED_PREFETCH(opv) \\\n\
                \        if (vm->halted || vip >= size) goto lbl_exit; \\\n\
                \        const uint8_t opv = fetch_byte(vm, bytecode, &vip)\n\
