@@ -12,6 +12,7 @@
 *)
 
 open Stack_ir
+open Vm_ir.Flags
 
 (* ── SplitMix64 PRNG ─────────────────────────────────────────────────── *)
 let splitmix64 s =
@@ -137,7 +138,26 @@ let apply_program cfg prog =
           incr next_id;
           incr current_block_count;
           let (first_half, second_half) = split_ops_at k block.ops in
-          let b1 = { block with ops = first_half @ [ JmpRel new_bid ] } in
+          (* Opaque non-linear zero branch:
+             Instead of a single unconditional [JmpRel new_bid] that decompiler
+             DCE / CFG-mergers trivially stitch back together, synthesize a
+             non-linear polynomial zero check (r1*r2 + r3) - (r1*r2 + r3) == 0.
+             Takes JccRel(new_bid, E) in 100% of runtime executions,
+             while JmpRel(block.id) introduces a decoy loop edge that thwarts
+             pure topological basic block concatenation. *)
+          let r1 = Int64.logor (next_int64 rng) 1L in
+          let r2 = Int64.logor (next_int64 rng) 1L in
+          let r3 = next_int64 rng in
+          let jump_ops = [
+            PushImm r1; PushImm r2; Mul; PushImm r3; Add;
+            PushImm r1; PushImm r2; Mul; PushImm r3; Add;
+            Sub;
+            PushImm 0L;
+            Cmp;
+            JccRel (new_bid, E);
+            JmpRel block.id;
+          ] in
+          let b1 = { block with ops = first_half @ jump_ops } in
           let b2 = {
             id = new_bid;
             label = Printf.sprintf "%s_split_%d" block.label new_bid;
