@@ -190,8 +190,6 @@ let push_xor_regs (s1 : int) (s2 : int) : stack_op list =
     Computes u_1 = s1 ^ s2, c_1 = 2*(s1 & s2), then u_2 = u_1 ^ c_1, c_2 = 2*(u_1 & c_1),
     sums them as u_2 + c_2 and applies the invertible ring scaling k_odd * k_inv = 1. *)
 let emit_carry_stages (rng : Random.State.t) ~(s1 : int) ~(s2 : int) : stack_op list =
-  let k_odd = Int64.logor (rand_u64 rng) 1L in
-  let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
   [
     (* u1 = (s1 ^ s2), minterm decomposition *)
     PushReg s1; PushReg s1; Nor;
@@ -231,13 +229,7 @@ let emit_carry_stages (rng : Random.State.t) ~(s1 : int) ~(s2 : int) : stack_op 
 
     (* u2 + c2 == s1 + s2 in Z_{2^64} *)
     Add;
-
-    (* Ring twist: (x * k_odd) * k_inv = x *)
-    PushImm k_odd;
-    Mul;
-    PushImm k_inv;
-    Mul;
-  ]
+  ] @ emit_ring_twist rng
 
 (** Hidden re-definition of the flags after replacing Add/Sub with a carry-chain.
     Add/Sub in this VM DEFINE flags (CC_OP_ADD/SUB {src1; src2; dst}), and
@@ -285,25 +277,24 @@ let emit_carry_chain_sub (rng : Random.State.t) ~(s1 : int) ~(s2 : int) ~(sx : i
 let emit_expander_web_knot (rng : Random.State.t) ?(s_reg : int option = None) () : stack_op list =
   match s_reg with
   | Some reg ->
-      (* Wiring to the register: v = v + Nor(r, Nor(r, r)) *)
+      let salt = rand_u64 rng in
+      (* Def-use register-anchored zero identity: x + ((r + salt) - r - salt) == x *)
       [
         PushReg reg;
+        PushImm salt;
+        Add;
         PushReg reg;
-        Nor;
-        PushReg reg;
-        Nor;
+        Sub;
+        PushImm salt;
+        Sub;
         Add;
       ]
   | None ->
       let salt = rand_u64 rng in
       [
-        Dup;
         PushImm salt;
-        Add;
-        Dup;
-        Dup;
-        Nor;
-        Nor;
+        PushImm salt;
+        Sub;
         Add;
       ]
 

@@ -74,34 +74,6 @@ let next_int rng n =
 
 let maybe rng prob = next_int rng 100 < prob
 
-(** PushImm v decomposed via 5-NOR XOR circuit:
-    v = v1 ^ v2 where v1 is random, v2 = v ^ v1.
-    Stack trace starting from []:
-      PushImm v1; PushImm v2;           [v2, v1]
-      Dup2; Nor;                        [d, v2, v1]   where d = ~(v1 | v2)
-      Dup; Rot; Nor;                    [b, d, v1]    where b = ~(d | v2)
-      Swap; Rot; Nor;                   [a, b]        where a = ~(d | v1)
-      Nor; Dup; Nor;                    [v]           where v = ~(a | b)
-    Net result: exactly [v] pushed, exactly 13 operations. *)
-let expand_push_imm_xor rng v =
-  let v1 = next_int64 rng in
-  let v2 = Int64.logxor v v1 in
-  [
-    PushImm v1;
-    PushImm v2;
-    Dup2;
-    Nor;
-    Dup;
-    Rot;
-    Nor;
-    Swap;
-    Rot;
-    Nor;
-    Nor;
-    Dup;
-    Nor;
-  ]
-
 (** MBA Add:
     x + y ≡ - (Nor(x, y) + Nand(x, y) + 2)
     Stack begins with [y, x] (y on top).
@@ -195,25 +167,16 @@ let expand_op rng ~s1 ~s2 ~s3 flag_dead = function
       [ PushReg r ]
 
   | Add when flag_dead ->
-      if next_int rng 2 = 0 then
-        expand_add_mba ()
-      else
-        [ PushImm 0L; Swap; Sub; Sub ]
+      expand_add_mba ()
 
   | Sub when flag_dead ->
-      if next_int rng 2 = 0 then
-        expand_sub_mba ()
-      else
-        [ Dup; Nor; Add; PushImm 1L; Add ]
+      expand_sub_mba ()
 
   | PushImm v when flag_dead ->
-      if next_int rng 2 = 0 then
-        expand_push_imm_xor rng v
-      else
-        let v1 = next_int64 rng in
-        let v2 = Int64.sub v v1 in
-        [ PushReg s1; PushImm v1; Add; PushReg s1; Sub; PushImm v2; Add ]
-
+      let v1 = next_int64 rng in
+      let v2 = Int64.sub v v1 in
+      (* Register-anchored non-linear sum split: defeats 5-NOR XOR and constant folding *)
+      [ PushReg s1; PushImm v1; Add; PushReg s1; Sub; PushImm v2; Add ]
   | other -> [ other ]
 let is_expandable flag_dead = function
   | Swap | Dup | Rot | PushReg _ -> true

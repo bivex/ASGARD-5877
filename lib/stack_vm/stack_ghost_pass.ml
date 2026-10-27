@@ -74,7 +74,6 @@ type ghost_kind =
   | GhostSetRegImm
   | GhostScratchCopy
   | GhostRealRegShadow
-  | GhostImmStore
 
   (* Class B: Arithmetic & Logic Def-Use Chains (Flags dead, Stack-neutral) *)
   | GhostArithShadow
@@ -105,21 +104,21 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live e
   let candidates =
     if flags_live then
       if stack_depth >= 1 then
-        [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore; GhostLiveFlagPreserved |]
+        [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostLiveFlagPreserved |]
       else
-        [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore |]
+        [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow |]
     else
       if stack_depth >= 1 then
         if entangle then
-          [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore;
+          [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow;
              GhostArithShadow; GhostNorShadow; GhostAddRegImmChain;
              GhostLiveAddZero; GhostLiveAddSubPair; GhostEntangledWebbing |]
         else
-          [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore;
+          [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow;
              GhostArithShadow; GhostNorShadow; GhostAddRegImmChain;
              GhostLiveAddZero; GhostLiveAddSubPair |]
       else
-        [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow; GhostImmStore;
+        [| GhostSetRegImm; GhostScratchCopy; GhostRealRegShadow;
            GhostArithShadow; GhostNorShadow; GhostAddRegImmChain |]
   in
 
@@ -136,9 +135,6 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live e
   | GhostRealRegShadow ->
       [ PushReg real_r; PopReg s_dst ]
 
-  | GhostImmStore ->
-      let imm = next_int64 rng in
-      [ PushImm imm; PopReg s_dst ]
 
   (* Class B: ALU Chains through scratch ring (flags dead) *)
   | GhostArithShadow ->
