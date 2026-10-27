@@ -159,7 +159,7 @@ type mba_strategy = L1_AddSplit | L2_NorNot | L3_NandSelf | L4_AddNor | L5_Egrap
 
 (* ── Synthesize constant c using a chosen strategy ───────────────────── *)
 (** Returns a stack_op list with stack delta = +1 (equivalent to PushImm c). *)
-let synthesize_const ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config) rng c =
+let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config) rng c =
   let mask = next_int64 rng in
   (* Default rate 30 keeps the historical RNG stream (next_int rng 20) so
      builds and regression tests are bit-identical. *)
@@ -184,22 +184,36 @@ let synthesize_const ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config) 
   match strategy with
   | L1_AddSplit ->
     let addend = Int64.sub c mask in
-    [ PushImm mask; PushImm addend; Add ]
+    (match anchor with
+     | Some r ->
+         (* Def-use register-anchored split: defeats pure-constant folding *)
+         [ PushReg r; PushImm mask; Add; PushReg r; Sub; PushImm addend; Add ]
+     | None ->
+         [ PushImm mask; PushImm addend; Add ])
 
   | L2_NorNot ->
     let not_c = Int64.lognot c in
-    [ PushImm not_c; PushImm 0L; Nor ]
+    (match anchor with
+     | Some r ->
+         (* Zero synthesized via r - r: no literal 0L in bytecode *)
+         [ PushImm not_c; PushReg r; PushReg r; Sub; Nor ]
+     | None ->
+         [ PushImm not_c; PushImm 0L; Nor ])
 
   | L3_NandSelf ->
     let not_c = Int64.lognot c in
-    [ PushImm not_c; PushImm not_c; Nand ]
+    (* Push single constant and duplicate: no adjacent identical literals *)
+    [ PushImm not_c; Dup; Nand ]
 
   | L4_AddNor ->
     let a = mask in
     let diff = Int64.sub c a in
     let not_diff = Int64.lognot diff in
-    [ PushImm a; PushImm not_diff; PushImm 0L; Nor; Add ]
-
+    (match anchor with
+     | Some r ->
+         [ PushImm a; PushImm not_diff; PushReg r; PushReg r; Sub; Nor; Add ]
+     | None ->
+         [ PushImm a; PushImm not_diff; PushImm 0L; Nor; Add ])
   | L6_NullspaceZero ->
     (* Anti-Transformer Nullspace strategy:
        Emits a three-part sequence whose net value = c:
@@ -217,60 +231,56 @@ let synthesize_const ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config) 
     let r4 = Int64.sub (Int64.add r1 r2) r3 in
     let c1 = next_int64 rng in
     let c2 = Int64.sub c c1 in
-    [ PushImm r1; PushImm r2; Add;     (* → r1+r2 *)
-      PushImm r3; PushImm r4; Add;     (* → r3+r4 = r1+r2 *)
-      Sub;                              (* → 0 *)
-      PushImm c1; PushImm c2; Add;     (* → c *)
-      Add ]                            (* → 0 + c = c, delta = +1 *)
+    (match anchor with
+     | Some r ->
+         [ PushReg r; PushImm r1; Add; PushImm r2; Add;
+           PushImm r3; PushImm r4; Add;
+           Sub; PushReg r; Sub;
+           PushImm c1; PushImm c2; Add;
+           Add ]
+     | None ->
+         [ PushImm r1; PushImm r2; Add;
+           PushImm r3; PushImm r4; Add;
+           Sub;
+           PushImm c1; PushImm c2; Add;
+           Add ])
 
   | L5_Egraph ->
     (try synthesize_egraph ~budget:egraph_budget rng c
      with _ ->
        let not_c = Int64.lognot c in
-       [ PushImm not_c; PushImm 0L; Nor ])
-
-(* ── State-dependent noise around a synthesized constant ────────────────── *)
-(** A synthesized constant must not be distinguishable from the padding
-    the ghost pass injects: without a trace, an analyst has to be able
-    to take any "PushImm k" pair for noise.  We therefore prefix the
-    synthesis with exactly the shape the ghost pass uses
-    ([PushImm k; PopReg scratch]).
-
-    The value is unchanged: the pair is stack neutral (it pushes k and
-    writes it into a scratch slot) and it touches no flag, so the
-    constant, the flags and the key schedule are all unaffected.  What
-    changes is that a "mathematical" PushImm is no longer identifiable
-    by its surroundings. *)
-let noise_prefix rng scratch_slot =
-  let k = next_int64 rng in
-  [ PushImm k; PopReg scratch_slot ]
+       (match anchor with
+        | Some r -> [ PushImm not_c; PushReg r; PushReg r; Sub; Nor ]
+        | None -> [ PushImm not_c; PushImm 0L; Nor ]))
+let find_anchor ops =
+  List.find_map (function
+    | PushReg r | PopReg r | SetRegImm (r, _) | AddRegImm (r, _) -> Some r
+    | _ -> None
+  ) ops
 
 (* ── Per-block rewriter ──────────────────────────────────────────────── *)
 (** Rewrites PushImm instructions with probability [mba_rate].
     Flag-liveness aware: synthesis is skipped when flags are live after
     the PushImm (every strategy ends with an instruction that sets flags). *)
 let rewrite_block ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config)
-    ~rng ~scratch_slot mba_rate block =
+    ~rng ~scratch_slot:_ mba_rate block =
   let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
+  let anchor = find_anchor block.ops in
   let new_ops =
     List.concat_map (fun (i, op) ->
       match op with
       | PushImm c when (not live.(i + 1)) && maybe rng mba_rate ->
-          (* The synthesis is prefixed with the same shape of padding the
-             ghost pass injects (a PushImm/PopReg pair into a scratch
-             slot).  The value is unchanged and no flag is touched, but a
-             "mathematical" PushImm is no longer identifiable by its
-             surroundings: without a trace it cannot be told apart from
-             stack padding. *)
-          (match scratch_slot with
-           | Some slot -> noise_prefix rng slot
-           | None -> [])
-          @ synthesize_const ~egraph_rate ~egraph_budget rng c
+          synthesize_const ?anchor ~egraph_rate ~egraph_budget rng c
+      | AddImmImm (a, b) when (not live.(i + 1)) && maybe rng mba_rate ->
+          let c = Int64.add a b in
+          synthesize_const ?anchor ~egraph_rate ~egraph_budget rng c
+      | SubImmImm (a, b) when (not live.(i + 1)) && maybe rng mba_rate ->
+          let c = Int64.sub a b in
+          synthesize_const ?anchor ~egraph_rate ~egraph_budget rng c
       | _ -> [ op ]
     ) (List.mapi (fun i op -> (i, op)) block.ops)
   in
   { block with ops = new_ops }
-
 (* ── Public API ───────────────────────────────────────────────────────── *)
 
 type mba_config = {

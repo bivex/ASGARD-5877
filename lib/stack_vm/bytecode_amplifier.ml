@@ -137,27 +137,27 @@ let emit_ring_twist (rng : Random.State.t) : stack_op list =
   let variant = Random.State.int rng 4 in
   match variant with
   | 0 ->
-      (* Standard odd-twist: x * k_odd * k_inv == x *)
+      (* Standard odd-twist with flag-neutral stack permutation *)
       let k_odd = Int64.logor (rand_u64 rng) 1L in
       let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
-      [ PushImm k_odd; Mul; PushImm k_inv; Mul ]
+      [ PushImm k_odd; Mul; PushImm k_inv; Swap; Mul ]
   | 1 ->
-      (* Two-stage coprime cascade: x * k1 * k2 * (k1*k2)^-1 == x *)
+      (* Two-stage coprime cascade with flag-neutral stack permutation *)
       let k1 = Int64.logor (rand_u64 rng) 1L in
       let k2 = Int64.logor (rand_u64 rng) 1L in
       let k_prod = Int64.mul k1 k2 in
       let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_prod in
-      [ PushImm k1; Mul; PushImm k2; Mul; PushImm k_inv; Mul ]
+      [ PushImm k1; Mul; PushImm k2; Mul; PushImm k_inv; Swap; Mul ]
   | 2 ->
       (* Swap-interleaved inverse scaling *)
       let k_odd = Int64.logor (rand_u64 rng) 1L in
       let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
-      [ PushImm k_inv; PushImm k_odd; Mul; Mul ]
+      [ PushImm k_inv; PushImm k_odd; Swap; Mul; Mul ]
   | _ ->
-      (* Inverted evaluation order with split factors: Mul does not touch flags *)
+      (* Inverted evaluation order with split factors *)
       let k_odd = Int64.logor (rand_u64 rng) 1L in
       let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
-      [ PushImm k_odd; PushImm k_inv; Mul; Mul ]
+      [ PushImm k_odd; PushImm k_inv; Swap; Mul; Mul ]
 (* ------------------------------------------------------------------ *)
 (* Minterm basis (bridge to Nullspace_mba): NOR/NAND representations
    of disjoint minterms over a pair of registers. Each push leaves
