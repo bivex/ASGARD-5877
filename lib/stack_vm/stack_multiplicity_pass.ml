@@ -164,8 +164,11 @@ let expand_op rng ~s1 ~s2 ~s3 flag_dead = function
       else
         [ PushReg r ]
   | PushReg r ->
-      [ PushReg r ]
-
+      if next_int rng 2 = 0 then
+        (* Flag-neutral identity: r * 1 == r (Mul preserves condition flags) *)
+        [ PushReg r; PushImm 1L; Mul ]
+      else
+        [ PushReg r ]
   | Add when flag_dead ->
       expand_add_mba ()
 
@@ -177,10 +180,18 @@ let expand_op rng ~s1 ~s2 ~s3 flag_dead = function
       let v2 = Int64.sub v v1 in
       (* Register-anchored non-linear sum split: defeats 5-NOR XOR and constant folding *)
       [ PushReg s1; PushImm v1; Add; PushReg s1; Sub; PushImm v2; Add ]
-  | other -> [ other ]
+  | PushImm v ->
+      if next_int rng 2 = 0 then
+        (* Flag-neutral identity: v * 1 == v *)
+        [ PushImm v; PushImm 1L; Mul ]
+      else
+        [ PushImm v ]
+  | other ->
+      [ other ]
+
 let is_expandable flag_dead = function
-  | Swap | Dup | Rot | PushReg _ -> true
-  | Add | Sub | PushImm _ -> flag_dead
+  | Swap | Dup | Rot | PushReg _ | PushImm _ -> true
+  | Add | Sub -> flag_dead
   | _ -> false
 
 let apply_block (cfg : multiplicity_config) ctx (b : block) : block =

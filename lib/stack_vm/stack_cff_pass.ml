@@ -230,10 +230,10 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
           entry_of_s ((s + 1) mod n_shards)
       in
       let token = Hashtbl.find tokens bid in
-      let cmp_ops = match Random.State.int rng 4 with
+      let (g0, g1, g2, g3) = compute_hensel_coefficients token rng in
+      let cmp_ops = match Random.State.int rng 2 with
         | 0 ->
             (* Pass 13: Hensel Lifting Implicit Cubic Predicate *)
-            let (g0, g1, g2, g3) = compute_hensel_coefficients token rng in
             [
               PushImm g3;
               PushReg vpc_slot;
@@ -251,13 +251,27 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
               PushImm 0L;
               Cmp;
             ]
-        | 1 -> [ PushReg vpc_slot; PushImm token; Cmp ]
-        | 2 -> (* operand-symmetric: ZF(token-vpc) == ZF(vpc-token) *)
-            [ PushImm token; PushReg vpc_slot; Cmp ]
-        | _ -> (* difference-vs-anchored-zero: no literal 0L in stream *)
-            [ PushReg vpc_slot; PushImm token; Sub;
-              PushReg vpc_slot; PushReg vpc_slot; Sub;
-              Cmp ]
+        | _ ->
+            (* Pass 13: Metamorphic Hensel lifting with anchored-zero compare (no 0L literal) *)
+            [
+              PushImm g3;
+              PushReg vpc_slot;
+              Mul;
+              PushImm g2;
+              Add;
+              PushReg vpc_slot;
+              Mul;
+              PushImm g1;
+              Add;
+              PushReg vpc_slot;
+              Mul;
+              PushImm g0;
+              Add;
+              PushReg vpc_slot;
+              PushReg vpc_slot;
+              Sub;
+              Cmp;
+            ]
       in
       let term = match Random.State.int rng 2 with
         | 0 -> [ JccRel (bid, E); JmpRel fall_to ]

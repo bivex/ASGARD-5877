@@ -370,6 +370,7 @@ let make_stack_metrics
         pass_switch "Handler Multiplicity & Metamorphic Synthesis" native_cfg.multiplicity.enabled
           "disabled in configuration";
         pass_switch "Algebraic Flag Materialization" true "";
+        pass_switch "Affine Ring Domain Encoding" true "";
         pass_switch "Pipelined Stage Dispatch" native_cfg.pipelined_dispatch.enabled
           "disabled in configuration";
         pass_switch "Bytecode Amplification" true "";
@@ -598,6 +599,16 @@ module Stack_vm_packager : Vm_packager = struct
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (pre): %s"
         (match pre_superop_stats with Some (_, st) -> Printf.sprintf "%d rules fused" st.fused_ops | None -> "none");
 
+    (* Pass 9: End-to-End Affine Ring Domain Encoding *)
+    let domain_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
+    in
+    let prog =
+      Stack_vm.Stack_domain_enc_pass.apply_program
+        (Stack_vm.Stack_domain_enc_pass.default_domain_config domain_seed) ctx prog
+    in
     (* Phase 2a-mult: Handler Multiplicity & Metamorphic Synthesis *)
     let mult_seed =
       Int64.logxor

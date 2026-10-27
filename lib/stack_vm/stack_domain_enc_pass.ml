@@ -58,11 +58,58 @@ let homomorphic_mul_coeffs ~alpha1 ~beta1 ~alpha2 ~beta2 ~alpha3 ~beta3 =
   let m_0  = add beta3 (mul m_xy (mul beta1 beta2)) in
   (m_xy, m_x, m_y, m_0)
 
+type rng_state = { mutable state : int64 }
+
+let make_rng seed = { state = seed }
+
+let splitmix64 s =
+  let open Int64 in
+  let s = add s 0x9E3779B97F4A7C15L in
+  let z = s in
+  let z = mul (logxor z (shift_right_logical z 30)) 0xBF58476D1CE4E5B9L in
+  let z = mul (logxor z (shift_right_logical z 27)) 0x94D049BB133111EBL in
+  (s, logxor z (shift_right_logical z 31))
+
+let next_int64 rng =
+  let s, z = splitmix64 rng.state in
+  rng.state <- s;
+  z
+
+let next_int rng n =
+  if n <= 1 then 0
+  else
+    let v = Int64.to_int (Int64.logand (next_int64 rng) 0x7FFFFFFFL) in
+    v mod n
+
 let apply_block (cfg : domain_config) _ctx (b : block) : block =
   if not cfg.enabled then b
   else
-    (* Pass 9 provides domain encoding infrastructure across the IR *)
-    b
+    let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0x3141 + 0x5926))) in
+    let live = Stack_flag_liveness.analyze_list b.ops in
+    let new_ops = ref [] in
+    List.iteri (fun idx op ->
+      let flags_dead =
+        if idx + 1 < Array.length live then not live.(idx + 1)
+        else true
+      in
+      match op with
+      | PushImm v when flags_dead && next_int rng 100 < 40 ->
+          let alpha = Int64.logor (next_int64 rng) 1L in
+          let beta = next_int64 rng in
+          let v_enc = encode_val ~alpha ~beta v in
+          let inv = mod_inv_64 alpha in
+          let cluster = [
+            PushImm v_enc;
+            PushImm beta;
+            Sub;
+            PushImm inv;
+            Mul;
+          ] in
+          new_ops := List.rev cluster @ !new_ops
+      | other ->
+          new_ops := other :: !new_ops
+    ) b.ops;
+    { b with ops = List.rev !new_ops }
 
 let apply_program (cfg : domain_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled then prog
