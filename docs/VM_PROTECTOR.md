@@ -68,13 +68,23 @@ $$\forall P \in \mathcal{M}_{\mathrm{native}}, \quad \forall \sigma \in \Sigma_{
 
 ---
 
-## 2. Complete Mathematical Model of the 18 Hardening Passes
+## 2. Complete Mathematical Model of the 20 Hardening Passes & SMT Verification System
 
 Every pass is a semantics-preserving endomorphism over the Stack-IR program:
 $$\mathcal{T}_i: \mathcal{P}_{\mathrm{IR}} \longrightarrow \mathcal{P}_{\mathrm{IR}}'$$
 Operating over the abstract machine state:
 $$\Sigma = \langle \mathrm{VIP}, \mathrm{VSP}, \mathrm{VKEY}, \mathrm{VCTX}, \mathrm{VStack}, \mathrm{VMem}, \mathrm{VFlags} \rangle$$
 Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\mathrm{VCTX}[i] \in \mathbb{Z}_{2^{64}}$.
+
+---
+
+### Phase 0 (Pass C): Bit-Vector Semantic Normalization & Automated SMT Verifier (`stack_bv_verifier.ml`)
+* **Formula**: Machine-checked formal proof of observational equivalence across the entire 64-bit integer input space under `QF_BV`:
+  $$\forall \vec{x} \in BV_{64}^n: \quad \operatorname{Obs}(P, \vec{x}) = \operatorname{Obs}\big(\mathcal{T}_i(P), \vec{x}\big)$$
+* **Mechanism**: Symbolically executes both original and transformed Stack-IR clusters into bit-vector ASTs, translates into SMT-LIB2 format, and queries Z3:
+  $$\exists \vec{x}: \quad \operatorname{Obs}(P, \vec{x}) \ne \operatorname{Obs}\big(\mathcal{T}_i(P), \vec{x}\big)$$
+  * `unsat`: Mathematically proven identical for all $2^{64}$ inputs per variable ($0\%$ risk of silent data corruption).
+  * `sat`: Semantic divergence detected; automatically extracts concrete counterexample model values.
 
 ---
 
@@ -125,6 +135,16 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   Affine encoding operates as a closed algebraic island for polynomial rings $(+, -, \times)$. At boundaries with bitwise operations (`AND`, `OR`, `XOR`, `SHR`) or memory pointers (`ReadMem`, `WriteMem`), the bridge decodes via $\mathcal{D}_i(\hat{x}) = \alpha_i^{-1} (\hat{x} - \beta_i)$ or transitions to a Boolean-affine domain $\mathcal{B}_i(x) = x \oplus \mu_i$ via a 1-step MBA transducer:
   $$\mathcal{B}_i(x) = \big(\alpha_i^{-1} (\hat{x} - \beta_i)\big) \oplus \mu_i \pmod{2^{64}}$$
 * **Impact**: Eliminates plaintext constant signatures (AES S-Boxes, API hashes) from the instruction stream; prevents Term Slicing and GVN across differing domain encodings.
+
+---
+
+### Phase 2-rel (Pass A): Relational State Encoding (`stack_relational_pass.ml`)
+* **Formula**: Reversible Feistel round transformation coupling pairs of context slots $(r_x, r_y)$:
+  $$\text{Encoding}: \quad u = x, \qquad v = y \oplus \operatorname{ROL}(x, k)$$
+  $$\text{Decoding}: \quad x = u, \qquad y = v \oplus \operatorname{ROL}(u, k)$$
+  where $k \in [1, 63]$ is a fixed or state-derived rotation stride.
+* **Impact**: Eliminates independent register taint across memory dumps: analyzing an isolated register slot $r_y$ reveals zero information about $y$ without formally solving the relational link to $r_x$.
+* **SMT Proof**: Roundtrip identity $(v \oplus \operatorname{ROL}(u, k)) \oplus \operatorname{ROL}(u, k) \equiv y$ is proven `unsat` in Pass C verifier for all $2^{64} \times 2^{64}$ inputs.
 
 ---
 
