@@ -509,19 +509,6 @@ let emit_stack_dispatch_stmts
                 \  ASG_PIPELINED_DISPATCH(op_%02X, 0x%016LX); }"
                op op plan.Pipelined_dispatch_pass.mask_add)
     in
-    let raw_table_init =
-      init_list (
-        List.init 256 (fun op ->
-          desig_idx (u8 op) (label_addr (Printf.sprintf "lbl_%02X" op))
-        )
-      )
-    in
-    let raw_table_decl =
-      decl_var ~is_static:true
-        (Array (ConstPtr Void, 256))
-        "raw_dispatch_table"
-        ~init:raw_table_init
-    in
     let dispatch_table_decl =
       decl_var ~is_static:true
         (Array (UIntPtr, 256))
@@ -530,24 +517,27 @@ let emit_stack_dispatch_stmts
     let ready_decl =
       decl_var ~is_static:true Bool "dispatch_ready" ~init:(bool_lit false)
     in
+    let mask_for_op op =
+      match pipelined with
+      | Some p ->
+          Int64.logxor
+            (Int64.mul (Int64.of_int op) p.Pipelined_dispatch_pass.mask_mult)
+            p.Pipelined_dispatch_pass.mask_add
+      | None ->
+          Int64.logxor
+            (Int64.mul (Int64.of_int op) cbrt3_fraction_64)
+            salt_stack_dispatch_blind
+    in
+    let table_init_stmts =
+      List.init 256 (fun op ->
+        let k_slot_op = mask_for_op op in
+        idx (var "dispatch_table") (u8 op) :=
+          (c_cast UIntPtr (label_addr (Printf.sprintf "lbl_%02X" op)) ^~ u64 k_slot_op)
+      )
+    in
     let init_loop =
-      if_then (call "__builtin_expect" [ log_not (var "dispatch_ready"); i32 0 ]) [
-        raw_table_decl;
-        for_range "i" (u64 0L) (u64 256L)
-          [
-            (match pipelined with
-             | Some p ->
-                 let_u64 "k_slot"
-                   ((var "i" *~ u64 p.Pipelined_dispatch_pass.mask_mult)
-                    ^~ u64 p.Pipelined_dispatch_pass.mask_add)
-             | None ->
-                 let_u64 "k_slot"
-                   ((var "i" *~ u64 cbrt3_fraction_64)
-                    ^~ u64 salt_stack_dispatch_blind));
-            idx (var "dispatch_table") (var "i") := (c_cast UIntPtr (idx (var "raw_dispatch_table") (var "i")) ^~ var "k_slot");
-          ];
-        var "dispatch_ready" := bool_lit true;
-      ]
+      if_then (call "__builtin_expect" [ log_not (var "dispatch_ready"); i32 0 ])
+        (table_init_stmts @ [ var "dispatch_ready" := bool_lit true ])
     in
     let handler_blocks =
       List.concat_map (fun (op, _name, fn) ->
