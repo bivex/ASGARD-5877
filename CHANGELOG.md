@@ -6,6 +6,8 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-27
+
 ### Added
 - Implemented coverage-guided structure-aware Stack-VM fuzzer (`tools/vm_fuzz_harness/`): libFuzzer+ASan+UBSan harness whose input is *plaintext* bytecode encrypted under the real key schedule (SipHash-1-2 entry key + fmix64 rolling stream) so `stack_vm_run` dispatches valid handler sequences — reaching semantic handler edge cases (div-by-zero, stack underflow, slot OOB, shift counts > 63) that ciphertext tampering can never hit; plus a dependency-free standalone stress mode (verified 200k runs @ 1.2M exec/s, 0 invariant violations).
 - Add the deobfuscation probe harness (`examples/deobf_probe/`): `peephole_eval.py` runs a seed-blind one-pattern attack (universal stack identities + O(log n) dead-slot junk rules) over the per-phase JSON dumps and reports how much of each pass's output is pattern-reversible; `dispatch_topology.py` measures bytecode CFG hub concentration and detects machine-code epilogue re-centralization in the compiled runtime; `run_probe.sh` drives both over a doubly-protected `examples/license_check.c`. First findings recorded in the README: avid/multiplicity output is fully pattern-reversible (26.3% of the 1.08M-op final program; 0.0% with those passes off), the CFF bytecode CFG is dispersed (max in-degree 5.1%), and clang merges the per-handler dispatch epilogues into one shared `br` trampoline (257 predecessors), so the "0 CFG hubs" claim of the pipelined-dispatch spec does not survive codegen.
