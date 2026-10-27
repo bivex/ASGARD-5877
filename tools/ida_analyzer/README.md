@@ -19,9 +19,14 @@ Provides two interfaces:
 * **Shannon Entropy Scanner**:
   * Computes byte entropy per segment ($0.0$ to $8.0$).
   * Flags encrypted bytecode payloads ($H > 7.5$) and scrambled constants.
+* **Interactive Bytecode Visualizer GUI (`bytecode_gui.py` & `bytecode_decoder.py`)**:
+  * Dockable IDA Pro tab (`PluginForm`) built with PySide6.
+  * Rolling-key decryption engine reproducing Murmur3 fmix64 non-linear byte-rolling and dynamic SplitMix64 opcode permutation.
+  * Interactive instruction table with offset navigation, color-coded branches/calls/exits, and real-time mnemonic filtering.
+  * Reconstructed Virtual Basic Block tree with double-click navigation.
+  * Direct export of decoded virtual assembly to `.asm` and `.json`.
 * **Automated Audit Export**:
   * Generates structured `asgard_ida_audit.json` report.
-
 ---
 
 ## 2. Usage
@@ -43,19 +48,17 @@ ASGARD_IDA_OUT="protected_audit.json" \
 
 ### B. Interactive GUI Mode in IDA Pro
 
-1. Copy `asgard_analyzer.py` to your IDA plugins directory:
+1. Copy the plugin files to your IDA plugins directory:
    ```bash
-   cp tools/ida_analyzer/asgard_analyzer.py "/Applications/IDA Professional 9.3.app/Contents/MacOS/plugins/"
-   # Or user plugins directory:
-   cp tools/ida_analyzer/asgard_analyzer.py ~/.idapro/plugins/
+   cp tools/ida_analyzer/*.py ~/.idapro/plugins/
    ```
 2. Open target binary in IDA Pro.
 3. Press **`Ctrl+Alt+A`** (or go to **Edit $\to$ Plugins $\to$ ASGARD Binary Analyzer**).
-4. Review the structured report in the **Output Window** and read the generated `asgard_ida_audit.json`.
+4. The plugin prints the audit report to the **Output Window** and docks the **ASGARD Bytecode Visualizer** GUI tab.
+5. Enter the 64-bit rolling seed key (e.g. `0x2ED2232624AED846`), click **Decrypt & Disassemble**, and explore the virtual instructions and basic blocks.
 
 ### C. Building Native C++ Plugin (IDA 9.x SDK)
 
-```bash
 cd tools/ida_analyzer
 mkdir build && cd build
 cmake -DIDA_SDK_DIR="/Users/password9090/Desktop/test/ida-sdk" ..

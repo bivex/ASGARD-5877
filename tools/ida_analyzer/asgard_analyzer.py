@@ -45,6 +45,14 @@ try:
 except ImportError:
     IN_IDA = False
 
+try:
+    from tools.ida_analyzer.bytecode_gui import AsgardBytecodeForm
+except ImportError:
+    try:
+        from bytecode_gui import AsgardBytecodeForm
+    except ImportError:
+        AsgardBytecodeForm = None
+
 
 def shannon_entropy(data: bytes) -> float:
     """Calculates Shannon entropy in bits per byte (0.0 to 8.0)."""
@@ -265,7 +273,12 @@ class AsgardIdaPlugin(ida_idaapi.plugin_t if IN_IDA else object):
         analyzer.run()
         analyzer.print_report()
         analyzer.save_json()
-
+        if AsgardBytecodeForm and not ida_pro.is_daemon():
+            try:
+                gui = AsgardBytecodeForm()
+                gui.show()
+            except Exception as e:
+                print(f"[-] Bytecode visualizer note: {e}")
     def term(self):
         pass
 
