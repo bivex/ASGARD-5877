@@ -10,6 +10,11 @@ Offline attack harness evaluating bytecode resilience and dispatch dispersion of
 2. **Dispatch Topology (`dispatch_topology.py`)**:
    * **Bytecode layer**: rebuilds basic block CFG from phase dumps, measuring CFF hub concentration and dispatcher in-degree.
    * **Machine-code layer**: disassembles `stack_vm_run` in the native binary, verifying true indirect branch dispersion (in-degree = 1 per branch site) and ensuring compilers (Clang/GCC) have not tail-merged distinct handler epilogues into a centralized trampoline.
+3. **Triton-Style Symbolic Execution & SMT Solver (`triton_symbolic_eval.py`)**:
+   Models Triton DBA (Dynamic Binary Analysis) architecture over BitVector ASTs in Z3's QF_BV theory:
+   * Tracks 64-bit symbolic registers (`ctx[r]`), symbolic LIFO stack, and lazy condition flag formulas (`ZF`, `SF`, `CF`, `OF`).
+   * Solves branch conditions of `JccRel` terminators via SMT simplification to detect broken opaque predicates (Always-True / Always-False).
+   * Evaluates AST complexity, sub-node growth, and SMT constant folding of modified context registers at block exit.
 
 `run_probe.sh SEED` protects `examples/license_check.c` twice (full config vs baseline), executes the protected binary under valid and invalid license keys, and measures the resilience across all intermediate and final phases.
 
@@ -55,10 +60,12 @@ bash examples/deobf_probe/run_probe.sh 1337
 # Or evaluate existing phase dumps:
 python3 examples/deobf_probe/peephole_eval.py /tmp/asg_probe/dumpA
 
+# Run Triton symbolic execution & SMT deobfuscator:
+python3 examples/deobf_probe/triton_symbolic_eval.py /tmp/asg_probe/dumpA
+
 # Inspect binary dispatch topology:
 python3 examples/deobf_probe/dispatch_topology.py \
   --phase-json "/tmp/asg_probe/dumpA/phase_7-balance_(final).json" \
   --binary protected_arm64_out/protected_app
-```
 
 Dependencies: Python 3 stdlib only; `nm` + `otool`/`llvm-objdump` for machine code analysis; `bin/main.exe` for VM protection.
