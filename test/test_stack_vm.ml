@@ -2757,6 +2757,18 @@ let test_bv_semantic_verifier () =
   Alcotest.(check bool) "Divergence correctly detected with counterexample" true
     (match res_div with Stack_bv_verifier.Divergent _ -> true | _ -> false)
 
+let test_relational_state_encoding () =
+  let rx = 2 in
+  let ry = 3 in
+  let k = 29 in
+  let enc_ops = Stack_relational_pass.emit_relational_encode ~rx ~ry ~k in
+  let dec_ops = Stack_relational_pass.emit_relational_decode ~rx ~ry ~k in
+  let roundtrip_ops = enc_ops @ dec_ops in
+  let identity_ops = [] in
+  let res = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:identity_ops ~trans_ops:roundtrip_ops () in
+  Alcotest.(check bool) "Relational state encoding roundtrip formally proven equivalent via SMT QF_BV" true
+    (match res with Stack_bv_verifier.Equivalent -> true | _ -> false)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2808,6 +2820,7 @@ let tests = [
   ("Affine Ring Domain Encoding & Homomorphic Operations", `Quick, test_domain_encoding);
   ("Chinese Remainder Theorem Split-Path & Garner Reconstruction", `Quick, test_crt_split_path);
   ("Pass C: Bit-Vector Semantic Normalization & SMT Verifier", `Quick, test_bv_semantic_verifier);
+  ("Pass A: Relational State Encoding & Feistel Bijectivity", `Quick, test_relational_state_encoding);
 ]
 
 
