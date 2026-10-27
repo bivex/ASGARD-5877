@@ -209,6 +209,21 @@ let insert_ghosts_into_ops ?(entangle = true) ~scratch_ring rng ctx ops ghost_ra
     if Stack_balance_pass.is_terminator op then begin
       if not !seen_terminator then begin
         seen_terminator := true;
+        if op = Exit && entangle then begin
+          (* Def-use sink entanglement: dataflow-bind the program return value ctx[0]
+             to every slot in the scratch ring. Forces backward program slicers
+             to retain the entire transitive closure of ghost operations. *)
+          Array.iter (fun s ->
+            emit PushFlags;
+            emit (PushReg 0);
+            emit (PushReg s);
+            emit Add;
+            emit (PushReg s);
+            emit Sub;
+            emit (PopReg 0);
+            emit PopFlags
+          ) scratch_ring
+        end;
         if not live.(i) && maybe rng ghost_rate then emit_ghost_here false
       end;
       emit op

@@ -140,15 +140,24 @@ let apply_block (cfg : avid_config) ctx (b : block) : block =
     let new_ops = ref [] in
     let count = ref 0 in
     List.iteri (fun idx op ->
-      new_ops := op :: !new_ops;
-      if not (is_terminator op) && (cfg.max_avid <= 0 || !count < cfg.max_avid) then begin
-        if next_int rng 100 < cfg.rate then begin
-          let flags_live = live.(idx + 1) in
-          let target_slot = if !last_anchor = None then anchor_slot else scratch_slot in
-          let cluster = generate_avid_cluster rng target_slot !last_anchor flags_live in
-          last_anchor := Some target_slot;
-          new_ops := List.rev cluster @ !new_ops;
-          incr count
+      if op = Exit then begin
+        match !last_anchor with
+        | Some a ->
+            (* Dataflow sink entanglement: bind ctx[0] to the avid anchor slot *)
+            new_ops := Exit :: PopFlags :: PopReg 0 :: Sub :: PushReg a :: Add :: PushReg a :: PushReg 0 :: PushFlags :: !new_ops
+        | None ->
+            new_ops := op :: !new_ops
+      end else begin
+        new_ops := op :: !new_ops;
+        if not (is_terminator op) && (cfg.max_avid <= 0 || !count < cfg.max_avid) then begin
+          if next_int rng 100 < cfg.rate then begin
+            let flags_live = live.(idx + 1) in
+            let target_slot = if !last_anchor = None then anchor_slot else scratch_slot in
+            let cluster = generate_avid_cluster rng target_slot !last_anchor flags_live in
+            last_anchor := Some target_slot;
+            new_ops := List.rev cluster @ !new_ops;
+            incr count
+          end
         end
       end
     ) b.ops;
