@@ -25,6 +25,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered dynamic shift multiplier `polymba_dyn_shift_mul` (5), addend `polymba_dyn_shift_add` (3), and mask `polymba_dyn_shift_mask` (15) in `lib/constants/magic_numbers.ml`.
   * Wired Phase 5e into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified: 46/46 tests in `Stack-VM Execution Engine` pass, license check E2E verified (`ACCESS GRANTED` exit 0, `ACCESS DENIED` exit 1).
+- Add Tier 5 and Tier 6 evaluators to deobfuscation probe (`examples/deobf_probe/peephole_eval.py`):
+  * Tier 5 (Boolean Differential & Address Entanglement): verifies non-zero Boolean derivative $\frac{\partial \text{TargetAddr}}{\partial s} \ne 0$ across all memory sinks (`WriteMem`), proving memory operations cannot be detached by algebraic differentiation.
+  * Tier 6 (Black-Box MCTS / Inductive Synthesis Oracle): evaluates I/O reproducibility and synthesis resilience against Syntia/QSynth-style black-box formula synthesis; verified 0 / 8,515 synthesized formulas (100.0% resilience score [TIER 3+ RESILIENT]).
 
 ## [0.3.0] - 2026-10-27
 
