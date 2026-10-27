@@ -12,10 +12,10 @@ $$\mathcal{P} = \mathcal{R} \circ \mathcal{E} \circ \left( \prod_{i=N}^{1} \math
 
 ```mermaid
 flowchart TD
-    Src["Native Source / Assembly\n(ARM64 / x86_64 / RV64)"] --> Lift["1. Multi-Arch Lifter (L)\nLowering to Micro-IR"]
-    Lift --> IR["Turing-Complete Stack-IR\nProgram (Blocks, Context Slots)"]
+    Src["Native Source / Assembly<br/>(ARM64 / x86_64 / RV64)"] --> Lift["1. Multi-Arch Lifter (L)<br/>Lowering to Micro-IR"]
+    Lift --> IR["Turing-Complete Stack-IR<br/>Program (Blocks, Context Slots)"]
     
-    subgraph Passes ["2. Hardening Pipeline (T_1 ... T_14)"]
+    subgraph Passes [2. Hardening Pipeline]
         direction TB
         P1["Phase 1: Context Allocation & Epoch Shuffling"]
         P2["Phase 2: Superoperator Fusion & Multiplicity"]
@@ -29,13 +29,13 @@ flowchart TD
         P10["Phase 5e: Non-Linear PolyMBA Knots"]
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P12["Phase 7: Stack Balance Verification & Repair"]
-        P1->P2->P3->P4->P5->P6->P7->P8->P9->P10->P11->P12
+        P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9 --> P10 --> P11 --> P12
     end
     
-    IR --> Passes
-    Passes --> Enc["3. Compact Polymorphic Encoder (E)\nUnique Opcode & Field Permutations"]
-    Enc --> RT["4. Pipelined Stage Dispatch Runtime (R)\nDecoupled Epilogues & Affine Blinding"]
-    RT --> Bin["Protected Binary (protected_app)\nZero-Native Trampoline & Watermark"]
+    IR --> P1
+    P12 --> Enc["3. Compact Polymorphic Encoder (E)<br/>Unique Opcode & Field Permutations"]
+    Enc --> RT["4. Pipelined Stage Dispatch Runtime (R)<br/>Decoupled Epilogues & Affine Blinding"]
+    RT --> Bin["Protected Binary (protected_app)<br/>Zero-Native Trampoline & Watermark"]
 ```
 
 ### 1.1 Abstract Machine State Space
