@@ -21,7 +21,13 @@ try:
 except ImportError:
     HAS_GUI = False
 
-from .bytecode_decoder import StackVmDecoder
+try:
+    from bytecode_decoder import StackVmDecoder
+except ImportError:
+    try:
+        from tools.ida_analyzer.bytecode_decoder import StackVmDecoder
+    except ImportError:
+        StackVmDecoder = None
 
 
 class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
