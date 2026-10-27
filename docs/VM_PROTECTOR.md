@@ -159,16 +159,17 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 ---
 
 ### Phase 5c: Memory-Address Entanglement (`stack_mem_webbing_pass.ml`)
-* **Formula**: Defeats Boolean Differential Calculus by creating non-zero derivatives on physical RAM addresses:
-  $$\mathrm{offset}(s) = (s \land \text{0x78}) + 16 \in [16, 128]$$
-  $$\mathrm{addr} = \mathrm{SP} - \mathrm{offset}(s)$$
-  $$\mathrm{Memory}[\mathrm{addr}] \leftarrow s \quad (\text{WriteMem 8})$$
-  $$s' \leftarrow \mathrm{Memory}[\mathrm{addr}] \quad (\text{ReadMem 8})$$
-  $$s \leftarrow s + (s - s') \equiv s \pmod{2^{64}}$$
-* **Derivative**:
-  $$\frac{\partial \mathrm{TargetAddr}}{\partial s} \ne 0$$
-  Flipping any bit of $s$ physically modifies which memory address in RAM is targeted.
-
+* **Dual-Store Aliasing & D-Cache Line Isolation**:
+  Computes two provably distinct 8-byte aligned offsets within a single 64-byte L1D cache line $[\mathrm{SP} - 72 \dots \mathrm{SP} - 16]$:
+  $$a_1 = \mathrm{SP} - ((s \land \text{0x38}) + 16)$$
+  $$a_2 = \mathrm{SP} - (((s \oplus \text{0x18}) \land \text{0x38}) + 16)$$
+  $$\forall s \in \mathbb{Z}_{2^{64}}: \quad a_1 \ne a_2 \quad \text{and} \quad 16 \le (\mathrm{SP} - a_i) \le 72$$
+  * Stores decoy value to $a_2$: $\mathrm{Memory}[a_2] \leftarrow s \quad (\text{WriteMem 8})$
+  * Stores live value to $a_1$: $\mathrm{Memory}[a_1] \leftarrow s \quad (\text{WriteMem 8})$
+  * Reads live value from $a_1$: $s' \leftarrow \mathrm{Memory}[a_1] \quad (\text{ReadMem 8})$
+  * Self-verifying recovery: $s \leftarrow s + (s - s') \equiv s \pmod{2^{64}}$
+* **Store-to-Load Forwarding Defeat**: Because the write to $a_1$ intercepts the store buffer and $a_2 \ne a_1$ creates an unresolved aliasing constraint, SMT/DSE rewriters cannot apply McCarthy's $\mathrm{select}(\mathrm{store}(M, a, v), a) == v$ locally.
+* **Side-Channel Elimination**: All offsets strictly lie within the same 64-byte boundary ($72 - 16 = 56 \le 64$), eliminating cross-line L1D cache-bank timing leakage.
 ---
 
 ### Phase 5d: Stateful Transducer Coupling (`stack_transducer_pass.ml`)
@@ -214,10 +215,10 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$\mathrm{VKEY}_{k+1} = \mathrm{StepKey}(\mathrm{VKEY}_k, \mathrm{op}_{k+1})$$
   $$\text{Stage 2 (Chaffing)}: \quad \mathrm{slot}_{\mathrm{chaff}} = C_{\mathrm{base}} + \left( \frac{(\mathrm{op}_{k+1} \cdot C_{\mathrm{golden}}) \oplus \mathrm{Salt}}{2^{56}} \land \mathrm{Mask} \right)$$
   $$\mathrm{VCTX}[\mathrm{slot}_{\mathrm{chaff}}] \leftarrow \mathrm{VCTX}[\mathrm{slot}_{\mathrm{chaff}}] \oplus (\mathrm{VKEY}_{k+1} + \mathrm{op}_{k+1})$$
-  $$\text{Stage 3 (Decoupled Jump)}: \quad K_{\mathrm{slot}} = (\mathrm{op}_{k+1} \cdot C_{\mathrm{table}}) \oplus \mathrm{Salt}_{\mathrm{affine}}$$
+  $$\text{Stage 3 (Decoupled Jump)}: \quad K_{\mathrm{slot}} = (\mathrm{op}_{k+1} \cdot C_{\mathrm{table}}) \oplus \mathrm{Salt}_{\mathrm{affine}} \oplus \mathrm{addr\_key}$$
   $$\mathrm{Target} = \mathrm{DispatchTable}[\mathrm{op}_{k+1}] \oplus K_{\mathrm{slot}}$$
   $$\text{Jump}: \quad \text{goto } *\mathrm{Target} \quad \big(\text{or inline asm: } \text{br X11} \ / \ \text{jmp *RAX}\big)$$
-
+* **Dynamic Table Blinding**: $\mathrm{DispatchTable}[i] = (\& \&\text{lbl\_op}_i) \oplus K_{\mathrm{slot}} \oplus \mathrm{addr\_key}$. Because $\mathrm{addr\_key}$ is computed at startup by $\text{derive\_addr\_key}()$ from the runtime ASLR layout of all handlers in memory, static offline extraction of the 256 handler entrypoints from $\mathrm{.rodata}$ yields complete garbage without process execution.
 ## 5. Empirical Verification & Attack Resilience Profile
 
 Empirically measured via `examples/deobf_probe/run_probe.sh` over protected production binaries:
