@@ -234,6 +234,10 @@ let comp_stall_ergodic_c = 0x58771337CAFEBEEFL
 let comp_stall_two_adic_c3 = 0x13375877DEADBEEFL
 let comp_stall_two_adic_c2 = 0xCAFEBABE01000002L
 
+(* Memory-Address Entanglement constants: 8-byte aligned scratch offset window *)
+let mem_webbing_offset_mask = 0x78L
+let mem_webbing_base_offset = 16L
+
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -481,6 +485,14 @@ let registry : entry list = [
     value = comp_stall_two_adic_c2;
     source = "hex-speak CAFE + BABE + 01000002: degree 2 even coefficient for 2-adic Hensel-Newton solver";
     used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+  { name = "mem_webbing_offset_mask";
+    value = mem_webbing_offset_mask;
+    source = "bitmask 0x78 (01111000b): bounds scratch offset to 0..120, aligned to 8 bytes";
+    used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
+  { name = "mem_webbing_base_offset";
+    value = mem_webbing_base_offset;
+    source = "base offset 16 bytes: minimum offset below SP in stack memory webbing";
+    used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

@@ -176,6 +176,12 @@ type avid_config = {
 }
 
 val default_avid : avid_config
+type mem_webbing_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_mem_webbing : mem_webbing_config
 type multiplicity_config = {
   enabled : bool;
   rate    : int;
@@ -233,6 +239,7 @@ type t = {
   superop : superop_config;
   ghost : ghost_config;
   avid : avid_config;
+  mem_webbing : mem_webbing_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;
   trampoline : trampoline_config;

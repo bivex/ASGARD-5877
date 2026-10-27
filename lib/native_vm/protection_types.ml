@@ -306,6 +306,15 @@ let default_multiplicity = {
   enabled = true;
   rate    = 30;
 }
+type mem_webbing_config = {
+  enabled : bool [@default true];
+  rate    : int  [@default 40];
+} [@@deriving yojson]
+
+let default_mem_webbing = {
+  enabled = true;
+  rate    = 40;
+}
 type pipelined_dispatch_config = {
   enabled     : bool [@default true];
   (** Stage-2 dead-slot chaff region size; normalized to a power of two. *)
@@ -470,6 +479,7 @@ type t = {
   superop : superop_config [@default default_superop];
   ghost : ghost_config [@default default_ghost];
   avid : avid_config [@default default_avid];
+  mem_webbing : mem_webbing_config [@default default_mem_webbing];
   multiplicity : multiplicity_config [@default default_multiplicity];
   pipelined_dispatch : pipelined_dispatch_config [@default default_pipelined_dispatch];
   trampoline : trampoline_config [@default default_trampoline];

@@ -282,8 +282,12 @@ let apply_block ?scratch_ring ?entangle_slot cfg ctx block =
   in
   { block with ops = new_ops }
 
-let apply_program (cfg : ghost_config) ctx (prog : program) : program =
-  let scratch_ring = Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx) in
+let apply_program ?scratch_ring (cfg : ghost_config) ctx (prog : program) : program =
+  let scratch_ring =
+    match scratch_ring with
+    | Some r -> r
+    | None -> Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx)
+  in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
   Hashtbl.iter (fun id block ->
     Hashtbl.add new_blocks id (apply_block ~scratch_ring cfg ctx block)

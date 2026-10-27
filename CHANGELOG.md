@@ -6,6 +6,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+- Implement Stack-VM Memory-Address Entanglement pass (`lib/stack_vm/stack_mem_webbing_pass.ml`, `lib/stack_vm/stack_mem_webbing_pass.mli`):
+  * Routes scratch-ring def-use chains through physical memory loads and stores (`addr = SP - ((s & 0x78) + 16)`, `[addr] = s`, `s' = [addr]`, `s = s + (s - s')`), completely defeating Boolean Differential Calculus by guaranteeing a non-zero derivative $\frac{\partial \text{TargetAddr}}{\partial s} \ne 0$.
+  * Emits physical `WriteMem 8` (observable memory sink) and `ReadMem 8` memory roundtrips through the host thread-local stack frame with zero net stack delta and flag preservation, defeating black-box inductive program synthesis (Syntia/QSynth) via memory side effects.
+  * Added `mem_webbing_offset_mask` (0x78) and `mem_webbing_base_offset` (16) to `lib/constants/magic_numbers.ml` and registry.
+  * Wired Phase 5c into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified: 44/44 tests in `Stack-VM Execution Engine` pass, 11/11 in `Protection Config` pass, full license check E2E verified (`ACCESS GRANTED` exit 0, `ACCESS DENIED` exit 1).
+
 ## [0.3.0] - 2026-10-27
 
 ### Added

@@ -2587,6 +2587,36 @@ let test_pipelined_stage_dispatch () =
     end
   end
 
+let test_mem_webbing () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 100L;
+    PushImm 42L;
+    Add;
+    PopReg 1;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let ring = Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx) in
+  let sp_slot = Context_allocator.slot_of_reg ctx Vm_ir.Register.rsp in
+  let cfg = { (Stack_mem_webbing_pass.default_mem_webbing_config 0x58771337CAFE_L) with rate = 100 } in
+  let prog_mw = Stack_mem_webbing_pass.apply_program ~scratch_ring:ring ~sp_slot cfg ctx prog in
+  let b_mw = Hashtbl.find prog_mw.blocks 0 in
+  Alcotest.(check bool) "Memory webbing injected clusters" true
+    (List.length b_mw.ops > List.length b0.ops);
+  let has_write_mem = List.exists (function WriteMem _ -> true | _ -> false) b_mw.ops in
+  let has_read_mem = List.exists (function ReadMem _ -> true | _ -> false) b_mw.ops in
+  Alcotest.(check bool) "Block contains WriteMem" true has_write_mem;
+  Alcotest.(check bool) "Block contains ReadMem" true has_read_mem;
+  (* Semantic evaluation: 100 + 42 -> reg[1]=142; memory roundtrip preserves exact computation *)
+  let state = run_program prog_mw in
+  Alcotest.(check bool) "Memory webbed program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[1]=142" 142L (get_reg state 1);
+  (* Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x5877A564D00FL prog_mw in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[1]=142" 142L (get_reg state_bc 1)
 
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
@@ -2632,6 +2662,7 @@ let tests = [
   ("Avid Junk Operands Pass & Semantics", `Quick, test_avid_junk_operands);
   ("Handler Multiplicity & Metamorphic Synthesis", `Quick, test_handler_multiplicity);
   ("Pipelined Stage Dispatch & Decoupled Execution", `Quick, test_pipelined_stage_dispatch);
+  ("Memory-Address Entanglement Pass & RAM Roundtrip", `Quick, test_mem_webbing);
 ]
 
 
