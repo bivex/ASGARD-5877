@@ -186,6 +186,14 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
     | None -> exit_id
   in
 
+  (* Per-node metamorphic comparison shapes: a dynamic tracer hooking
+     ctx[vpc_slot] must not see one uniform "load vpc, compare, JccRel"
+     template across all dispatcher nodes.  Six shapes (3 operand layouts
+     x 2 branch polarities), all provably equivalent for the equality
+     test consumed by JccRel: ZF(vpc-token) == ZF(token-vpc) == 1 iff
+     vpc = token; the NE polarity swaps the taken/fallthrough edges
+     while preserving the runtime CFG exactly. *)
+  let rng = Random.State.make [| Int64.to_int (Int64.logand seed 0x7FFFFFFFL) |] in
   let comparison_blocks = ref [] in
   for s = 0 to n_shards - 1 do
     let ids = buckets.(s) in
@@ -199,15 +207,24 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
           entry_of_s ((s + 1) mod n_shards)
       in
       let token = Hashtbl.find tokens bid in
+      let cmp_ops = match Random.State.int rng 3 with
+        | 0 -> [ PushReg vpc_slot; PushImm token; Cmp ]
+        | 1 -> (* operand-symmetric: ZF(token-vpc) == ZF(vpc-token) *)
+            [ PushImm token; PushReg vpc_slot; Cmp ]
+        | _ -> (* difference-vs-anchored-zero: no literal 0L in stream *)
+            [ PushReg vpc_slot; PushImm token; Sub;
+              PushReg vpc_slot; PushReg vpc_slot; Sub;
+              Cmp ]
+      in
+      let term = match Random.State.int rng 2 with
+        | 0 -> [ JccRel (bid, E); JmpRel fall_to ]
+        | _ -> (* inverted polarity: equal falls through to JmpRel bid *)
+            [ JccRel (fall_to, NE); JmpRel bid ]
+      in
       let blk =
         make_block disp_id
           (Printf.sprintf "cff_disp_%d" disp_id)
-          [ PushReg vpc_slot
-          ; PushImm token
-          ; Cmp
-          ; JccRel (bid, E)
-          ; JmpRel fall_to
-          ]
+          (cmp_ops @ term)
       in
       comparison_blocks := blk :: !comparison_blocks
     ) ids

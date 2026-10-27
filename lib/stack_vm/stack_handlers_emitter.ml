@@ -977,6 +977,12 @@ let emit_h_key_feedback () : top_decl =
         [
           let_u64 "val" (idx vm_ctx (var "slot"));
           (var "vm" $-> "vkey") ^= call "feedback_hash" [var "val"];
+          (* NOTE: vsp_key must NOT be re-derived here.  VSP_MASK(slot) is
+             applied independently at push-time and pop-time; mutating the
+             whitening key while guest values are in flight desynchronises
+             decode (push mask != pop mask) and corrupts the stack machine.
+             Coupling vkey into guest-visible state requires a
+             lifetime-stable channel, not an in-place re-key. *)
         ]
         [
           vm_halted := i32 1;
