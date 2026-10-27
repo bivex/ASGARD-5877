@@ -10,8 +10,10 @@ type polymba_config = {
 
 val default_polymba_config : int64 -> polymba_config
 
-(** Emits a degree-2 quadratic cross-term zero knot:
-    ((s + 1)^2) - (s^2 + 2s + 1) == 0 *)
+(** Emits a degree >= 3 cubic Rivest permutation polynomial zero knot:
+    ((s + 1)^3) - (s^3 + 3s^2 + 3s + 1) == 0 *)
+val emit_cubic_rivest_knot : scratch_slot:int -> stack_op list
+
 val emit_quadratic_knot : scratch_slot:int -> stack_op list
 
 (** Emits a non-linear dynamic-shift zero knot:

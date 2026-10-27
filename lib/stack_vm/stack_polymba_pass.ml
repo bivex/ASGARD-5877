@@ -61,25 +61,50 @@ let next_int rng n =
     rng.state <- s;
     Int64.to_int (Int64.logand z 0x7FFFFFFFL) mod n
 
-(** Evaluates ((s + 1)^2) - (s^2 + 2s + 1) == 0 onto the stack *)
-let emit_quadratic_knot ~scratch_slot =
+(** Evaluates degree >= 3 cubic Rivest permutation polynomial zero-knot onto the stack:
+      Left:  (s + 1)^3
+      Right: s^3 + 3s^2 + 3s + 1
+      Zero:  Left - Right == 0 (mod 2^64)
+    Forces 8 multinomial terms expansion in E-graphs (SAMBA/Cobra/egg), saturating
+    the equivalence saturation budget and preventing polynomial canonicalization. *)
+let emit_cubic_rivest_knot ~scratch_slot =
   [
+    (* Left: (s + 1)^3 *)
     PushReg scratch_slot;
     PushImm 1L;
     Add;
     Dup;
+    Dup;
     Mul;
+    Mul;
+
+    (* Right: s^3 + 3s^2 + 3s + 1 *)
+    PushReg scratch_slot;
+    Dup;
+    Dup;
+    Mul;
+    Mul; (* s^3 *)
+
     PushReg scratch_slot;
     Dup;
     Mul;
+    PushImm 3L;
+    Mul; (* 3s^2 *)
+    Add; (* s^3 + 3s^2 *)
+
     PushReg scratch_slot;
-    PushImm 2L;
-    Mul;
-    Add;
+    PushImm 3L;
+    Mul; (* 3s *)
+    Add; (* s^3 + 3s^2 + 3s *)
+
     PushImm 1L;
-    Add;
+    Add; (* s^3 + 3s^2 + 3s + 1 *)
+
+    (* Left - Right == 0 (mod 2^64) *)
     Sub;
   ]
+
+let emit_quadratic_knot = emit_cubic_rivest_knot
 
 (** Evaluates asymmetric distributive shift knot onto the stack:
       Left:  (s * 5 + 3) << k
@@ -148,7 +173,7 @@ let apply_block (cfg : polymba_config) ~scratch_ring _ctx (b : block) : block =
           let s = scratch_ring.(!ring_idx) in
           ring_idx := (!ring_idx + 1) mod n_ring;
           let knot =
-            if next_int rng 2 = 0 then emit_quadratic_knot ~scratch_slot:s
+            if next_int rng 2 = 0 then emit_cubic_rivest_knot ~scratch_slot:s
             else emit_dyn_shift_knot ~scratch_slot:s
           in
           let cluster =
