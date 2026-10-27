@@ -97,6 +97,7 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
     $$x + y \equiv - \big( \text{Nor}(x, y) + \text{Nand}(x, y) + 2 \big) \pmod{2^{64}}$$
   * **MBA Subtraction**:
     $$x - y \equiv (x \land \neg y) - (\neg x \land y) \pmod{2^{64}}$$
+  * **Flag-Dead Precondition**: MBA expansions alter arithmetic flags (`CF`, `OF`, `AF`); they are strictly gated by `Stack_flag_liveness` to execute only when condition codes are dead.
   * **Stack Permutation Desugaring**:
     $$\text{Swap} \implies [s_1 \leftarrow \text{pop}(); \ s_2 \leftarrow \text{pop}(); \ \text{push}(s_1); \ \text{push}(s_2)]$$
 
@@ -123,9 +124,12 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 * **Formula**: Transforms basic blocks into state machine transitions routed through virtual program counter $\mathrm{vpc}$:
   $$B_i \implies [\dots; \ \mathrm{vpc} \leftarrow \mathrm{Token}_{i+1}; \ \text{JmpRel Dispatcher}]$$
 * **Metamorphic VPC Comparison**: Diversified into 6 shape variants to defeat dynamic tracing hooks:
-  $$\mathcal{S}_1: \text{ZF} \leftarrow (\mathrm{vpc} == \mathrm{Token}_k)$$
+  $$\mathcal{S}_1: \text{ZF} \leftarrow \text{Cmp}(\mathrm{vpc}, \mathrm{Token}_k)$$
   $$\mathcal{S}_2: \text{ZF} \leftarrow \big( (\mathrm{vpc} - \mathrm{Token}_k) == 0 \big)$$
-  $$\mathcal{S}_3: \text{ZF} \leftarrow \big( (\mathrm{vpc} - \mathrm{vpc}) == (\mathrm{Token}_k - \mathrm{Token}_k) \big)$$
+  $$\mathcal{S}_3: \text{ZF} \leftarrow \text{Cmp}\big( (\mathrm{vpc} - \mathrm{Token}_k), \ (\mathrm{vpc} - \mathrm{vpc}) \big) \quad \big[\text{comparison against anchored zero } 0 \equiv \mathrm{vpc} - \mathrm{vpc}\big]$$
+  $$\mathcal{S}_4: \text{ZF} \leftarrow \text{Cmp}(\mathrm{Token}_k, \mathrm{vpc}) \quad \big[\text{operand-symmetric}\big]$$
+  $$\mathcal{S}_5: \text{JccRel}(\mathrm{target}, \text{E}); \ \text{JmpRel}(\mathrm{fall})$$
+  $$\mathcal{S}_6: \text{JccRel}(\mathrm{fall}, \text{NE}); \ \text{JmpRel}(\mathrm{target}) \quad \big[\text{inverted branch polarity}\big]$$
 
 ---
 
@@ -169,9 +173,11 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 
 ### Phase 5d: Stateful Transducer Coupling (`stack_transducer_pass.ml`)
 * **Formula**: Converts pure ALU operations into stateful transducers to break inductive synthesis (Syntia / QSynth):
-  $$S_{k+1} = (S_k \cdot C_{\mathrm{mul}} + C_{\mathrm{add}}) \pmod{2^{64}}, \quad C_{\mathrm{mul}} \equiv 5 \pmod 8$$
+  $$S_{k+1} = (S_k \cdot C_{\mathrm{mul}} + C_{\mathrm{add}}) \pmod{2^{64}}$$
+  Where $C_{\mathrm{mul}} \equiv 5 \pmod 8$, $C_{\mathrm{add}} \equiv 1 \pmod 2$ ($\gcd(C_{\mathrm{add}}, 2^{64}) = 1$, strictly satisfying the Hull-Dobell theorem for maximal period $2^{64}$).
   * **Add**: $[B, A] \implies (B - S) + (A + S) \equiv A + B \pmod{2^{64}}$
   * **Sub**: $[B, A] \implies (A + S) - (B + S) \equiv A - B \pmod{2^{64}}$
+* **Flag-Dead Precondition**: To prevent distortion of condition codes (`CF`, `OF`, `AF`), transducer transformations are **strictly restricted** to instructions where downstream flags are dead ($\text{live}(\text{Flags}) == \text{false}$ via `Stack_flag_liveness`).
 * **Zero I/O Reproducibility**:
   $$\forall \langle A, B \rangle: \quad \mathrm{Out}_1(A, B, S_1) \ne \mathrm{Out}_2(A, B, S_2) \quad \text{for } S_1 \ne S_2$$
 
