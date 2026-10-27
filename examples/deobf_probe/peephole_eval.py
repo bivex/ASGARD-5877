@@ -400,6 +400,94 @@ def reduce_program(blocks):
     return out, total
 
 
+def op_stack_effects(name):
+    """Returns (pops, pushes) for Stack-VM operations."""
+    if name in ("PushImm", "PushImm32", "PushReg", "ResolveSym", "Setcc", "AddImm", "SubImm", "AddImmImm", "SubImmImm", "AddRegImm"):
+        return 0, 1
+    if name == "Dup":
+        return 1, 2
+    if name == "Dup2":
+        return 2, 4
+    if name == "Rot":
+        return 3, 3
+    if name == "Swap":
+        return 2, 2
+    if name in ("PopReg", "ReadMem", "PopFlags", "Cmov", "AddImm", "SubImm"):
+        return 1, 0
+    if name in ("WriteMem", "Add", "Sub", "Mul", "Nor", "Nand", "Shl", "Shr", "Sar", "Div", "Idiv", "Cmp", "Test"):
+        return 2, 0
+    return 0, 0
+
+
+def tier4_backward_slice(blocks, entry_id=0):
+    """
+    Tier 4 Backward Program Slicer (O(N) linear backward dataflow):
+    Computes the minimal semantic program preserving observable I/O and control flow.
+    Observable Sinks: CallExtern, ResolveSym, WriteMem, Exit (with return ctx[0]), JccRel, JmpRel.
+    Excludes internal VM rolling key ops (KeyFeedback, KeyAdjust) to model lifter-based devirtualization.
+    """
+    # 1. CFG Reachability
+    succs = {}
+    for bid, ops in blocks.items():
+        succs[bid] = []
+        for op in ops:
+            if op[0] in ("JmpRel", "JccRel"):
+                succs[bid].append(op[1][0])
+
+    reachable = set()
+    worklist = [entry_id]
+    while worklist:
+        curr = worklist.pop()
+        if curr not in reachable and curr in blocks:
+            reachable.add(curr)
+            for s in succs.get(curr, []):
+                worklist.append(s)
+
+    # 2. Linear Backward Slicing across reachable blocks
+    total_ops_count = sum(len(ops) for bid, ops in blocks.items())
+    kept_ops_count = 0
+    global_live_slots = {0}
+
+    for bid in reachable:
+        ops = blocks[bid]
+        marked = set()
+        stack_needed = 0
+        local_live_slots = set(global_live_slots)
+
+        for idx in range(len(ops) - 1, -1, -1):
+            name, args = ops[idx]
+            is_sink = name in ("CallExtern", "ResolveSym", "WriteMem", "Exit", "JccRel", "JmpRel")
+            needed = is_sink
+
+            if stack_needed > 0:
+                pushes = 1 if name in ("PushImm", "PushImm32", "PushReg", "ResolveSym", "Setcc", "AddImm", "SubImm", "AddImmImm", "SubImmImm", "AddRegImm") else (2 if name == "Dup" else (4 if name == "Dup2" else 0))
+                if pushes > 0:
+                    needed = True
+                    stack_needed = max(0, stack_needed - pushes)
+
+            if name in ("PopReg", "SetRegImm", "AddRegImm", "Cmov"):
+                r = args[0] if name != "Cmov" else args[1]
+                if r in local_live_slots:
+                    needed = True
+                    local_live_slots.remove(r)
+
+            if needed:
+                marked.add(idx)
+                pops = 1 if name in ("PopReg", "ReadMem", "PopFlags", "Cmov", "AddImm", "SubImm") else (2 if name in ("WriteMem", "Add", "Sub", "Mul", "Nor", "Nand", "Shl", "Shr", "Sar", "Div", "Idiv", "Cmp", "Test", "Swap") else (3 if name == "Rot" else 0))
+                stack_needed += pops
+                if name in ("PushReg", "AddRegImm"):
+                    local_live_slots.add(args[0])
+                    global_live_slots.add(args[0])
+
+        if not marked and ops:
+            marked.add(len(ops) - 1)
+        kept_ops_count += len(marked)
+
+    sliced_away = total_ops_count - kept_ops_count
+    pct = 100.0 * sliced_away / max(total_ops_count, 1)
+    return kept_ops_count, sliced_away, pct
+
+
 def main(dirs):
     for d in dirs:
         phases = sorted(glob.glob(os.path.join(d, "phase_*.json")))
@@ -456,6 +544,22 @@ def main(dirs):
                 top_p = ", ".join("%s:%d" % (k.split(":")[-1], v) for k, v in p_hits.most_common(3))
                 pct_p = 100.0 * rm / n0
                 print("  %-20s : -%6d ops (-%4.1f%%) [%s]" % (name, rm, pct_p, top_p))
+        print()
+
+        # ── Tier 4: Backward Program Slicing Evaluation ───────────────────────
+        print("-" * 78)
+        print("TIER 4: BACKWARD PROGRAM SLICING (LIFTER & I/O THREAT MODEL):")
+        final_doc = load_phase(phases[-1])
+        final_raw_blocks = ops_of(final_doc)
+        entry_id = final_doc.get("entry_id", 0)
+        s_kept, s_removed, s_pct = tier4_backward_slice(final_raw_blocks, entry_id)
+        print("  • Observable I/O Sinks: CallExtern, ResolveSym, WriteMem, Exit, JccRel, JmpRel")
+        print("  • Excluded from Seeds: KeyFeedback, KeyAdjust (simulating LLVM IR lifter)")
+        print("  • Slicing Reduction:   %d ops -> %d kept (-%d ops, %.1f%% sliced away)"
+              % (total_ops(final_raw_blocks), s_kept, s_removed, s_pct))
+        print("  • Semantic Residual:   %d ops (+%.1fx vs %d baseline ops)"
+              % (s_kept, float(s_kept) / max(base, 1), base))
+        print("=" * 78)
         print()
 
 
