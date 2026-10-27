@@ -234,8 +234,8 @@ let comp_stall_ergodic_c = 0x58771337CAFEBEEFL
 let comp_stall_two_adic_c3 = 0x13375877DEADBEEFL
 let comp_stall_two_adic_c2 = 0xCAFEBABE01000002L
 
-(* Memory-Address Entanglement constants: 8-byte aligned scratch offset window *)
-let mem_webbing_offset_mask = 0x78L
+(* Memory-Address Entanglement constants: 8-byte aligned scratch offset window within 64B cache line *)
+let mem_webbing_offset_mask = 0x38L
 let mem_webbing_base_offset = 16L
 
 (* Stateful Transducer constants: LCG full-period generator over Z_{2^64} *)
@@ -495,7 +495,7 @@ let registry : entry list = [
     used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
   { name = "mem_webbing_offset_mask";
     value = mem_webbing_offset_mask;
-    source = "bitmask 0x78 (01111000b): bounds scratch offset to 0..120, aligned to 8 bytes";
+    source = "bitmask 0x38 (00111000b): bounds scratch offset to 0..56, strictly within one 64B L1D cache line";
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "mem_webbing_base_offset";
     value = mem_webbing_base_offset;

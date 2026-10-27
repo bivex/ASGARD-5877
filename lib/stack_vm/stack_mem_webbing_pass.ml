@@ -51,26 +51,59 @@ let next_int rng n =
     Int64.to_int (Int64.logand z 0x7FFFFFFFL) mod n
 
 let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
+  (* Dual-store aliasing: computes two provably distinct 8-byte aligned
+     offsets within the same 64-byte L1D cache line [SP - 72 .. SP - 16]:
+       a1 = SP - ((s & 0x38) + 16)
+       a2 = SP - (((s ^ 0x18) & 0x38) + 16)
+     Stores decoy to a2, stores s to a1, then reads back from a1.
+     Because a2 != a1 always and the store to a1 intercepts the buffer,
+     McCarthy store-to-load forwarding cannot collapse the memory roundtrip locally. *)
   let inner = [
+    (* 1. Compute a1 = SP - ((s & 0x38) + 16) *)
     PushReg scratch_slot;
-    PushImm mem_webbing_offset_mask;
-    Nand;
-    Dup;
-    Nand;
-    PushImm mem_webbing_base_offset;
+    PushImm mem_webbing_offset_mask; (* 0x38 *)
+    Nand; Dup; Nand;
+    PushImm mem_webbing_base_offset; (* 16 *)
     Add;
     PushReg sp_slot;
     Swap;
-    Sub;
-    Dup;
+    Sub;                             (* [a1] *)
+
+    (* 2. Compute a2 = SP - (((s ^ 0x18) & 0x38) + 16) *)
     PushReg scratch_slot;
-    WriteMem 8;
-    ReadMem 8;
+    PushImm 0x18L;
+    Add;                             (* s + 0x18 *)
     PushReg scratch_slot;
-    Sub;
-    PushReg scratch_slot;
+    PushImm 0x18L;
+    Nand; Dup; Nand;                 (* s & 0x18 *)
+    Dup; Add;                        (* 2 * (s & 0x18) *)
+    Sub;                             (* (s + 0x18) - 2*(s & 0x18) = s ^ 0x18 *)
+    PushImm mem_webbing_offset_mask; (* 0x38 *)
+    Nand; Dup; Nand;                 (* (s ^ 0x18) & 0x38 *)
+    PushImm mem_webbing_base_offset; (* 16 *)
     Add;
-    PopReg scratch_slot;
+    PushReg sp_slot;
+    Swap;
+    Sub;                             (* [a2, a1] *)
+
+    (* 3. Decoy store to a2: [a2] := s *)
+    PushReg scratch_slot;            (* [s, a2, a1] *)
+    WriteMem 8;                      (* [a1] *)
+
+    (* 4. Store to a1: [a1] := s *)
+    Dup;                             (* [a1, a1] *)
+    PushReg scratch_slot;            (* [s, a1, a1] *)
+    WriteMem 8;                      (* [a1] *)
+
+    (* 5. Read from a1: read_s := [a1] *)
+    ReadMem 8;                       (* [read_s] *)
+
+    (* 6. Verify and preserve s: s := s + (s - read_s) == s *)
+    PushReg scratch_slot;            (* [s, read_s] *)
+    Sub;                             (* [read_s - s = 0] *)
+    PushReg scratch_slot;            (* [s, 0] *)
+    Add;                             (* [s + 0 = s] *)
+    PopReg scratch_slot;             (* [] *)
   ] in
   if flags_live then [ PushFlags ] @ inner @ [ PopFlags ]
   else inner

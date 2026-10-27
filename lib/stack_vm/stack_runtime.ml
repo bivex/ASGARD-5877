@@ -532,7 +532,9 @@ let emit_stack_dispatch_stmts
       List.init 256 (fun op ->
         let k_slot_op = mask_for_op op in
         idx (var "dispatch_table") (u8 op) :=
-          (c_cast UIntPtr (label_addr (Printf.sprintf "lbl_%02X" op)) ^~ u64 k_slot_op)
+          (c_cast UIntPtr (label_addr (Printf.sprintf "lbl_%02X" op))
+           ^~ u64 k_slot_op
+           ^~ c_cast UIntPtr (var "vm" $-> "addr_key"))
       )
     in
     let init_loop =
@@ -598,7 +600,7 @@ let emit_stack_dispatch_stmts
         "#define ASG_DISPATCH_STEP() do { \\\n\
         \        if (vm->halted || vip >= size) goto lbl_exit; \\\n\
         \        uint8_t op = fetch_byte(vm, bytecode, &vip); \\\n\
-        \        uintptr_t k_slot = ((uintptr_t)op * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX); \\\n\
+        \        uintptr_t k_slot = ((uintptr_t)op * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX) ^ (uintptr_t)(vm->addr_key); \\\n\
         \        goto *(void*)(dispatch_table[op] ^ k_slot); \\\n\
         \    } while (0)"
         cbrt3_fraction_64 salt_stack_dispatch_blind
@@ -623,13 +625,13 @@ let emit_stack_dispatch_stmts
                \        const uint8_t opv = fetch_byte(vm, bytecode, &vip)\n\
                \    #define ASG_PIPELINED_DISPATCH(opv, k) do { \\\n\
                \        vm->ctx[(%d) + (((((uint64_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX)) >> 56) & (%d))] ^= vm->vkey + (uint64_t)(opv); \\\n\
-               \        uintptr_t k_slot = ((uintptr_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(k); \\\n\
+               \        uintptr_t k_slot = ((uintptr_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(k) ^ (uintptr_t)(vm->addr_key); \\\n\
                \        void* target = (void*)(dispatch_table[(opv)] ^ k_slot); \\\n\
                \        ASG_INDIRECT_JUMP(target); \\\n\
                \    } while (0)\n\
                \    #define ASG_PIPELINED_DISPATCH_RT(opv) do { \\\n\
                \        vm->ctx[(%d) + (((((uint64_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX)) >> 56) & (%d))] ^= vm->vkey + (uint64_t)(opv); \\\n\
-               \        uintptr_t k_slot = ((uintptr_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX); \\\n\
+               \        uintptr_t k_slot = ((uintptr_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX) ^ (uintptr_t)(vm->addr_key); \\\n\
                \        void* target = (void*)(dispatch_table[opv] ^ k_slot); \\\n\
                \        ASG_INDIRECT_JUMP(target); \\\n\
                \    } while (0)"

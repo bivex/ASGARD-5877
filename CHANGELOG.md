@@ -29,6 +29,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Tier 5 (Boolean Differential & Address Entanglement): verifies non-zero Boolean derivative $\frac{\partial \text{TargetAddr}}{\partial s} \ne 0$ across all memory sinks (`WriteMem`), proving memory operations cannot be detached by algebraic differentiation.
   * Tier 6 (Black-Box MCTS / Inductive Synthesis Oracle): evaluates I/O reproducibility and synthesis resilience against Syntia/QSynth-style black-box formula synthesis; verified 0 / 8,515 synthesized formulas (100.0% resilience score [TIER 3+ RESILIENT]).
 
+### Fixed
+- Harden VM against architectural audit findings:
+  * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.
+  * Defeat McCarthy Store-to-Load Forwarding: implemented dual-store aliasing ($a_1 \ne a_2$) in `lib/stack_vm/stack_mem_webbing_pass.ml`, preventing local `select(store(M, a, v), a) == v` SMT reductions.
+  * Defeat static offline dispatch table unmasking: dynamically blinded `dispatch_table[op]` with runtime ASLR-derived `vm->addr_key` in `lib/stack_vm/stack_runtime.ml`.
+  * Fixed CFF Shape 3 formula and Hull-Dobell addend documentation in `docs/VM_PROTECTOR.md`.
 ## [0.3.0] - 2026-10-27
 
 ### Added
