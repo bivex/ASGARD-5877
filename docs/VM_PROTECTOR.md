@@ -64,7 +64,7 @@ $$\forall P \in \mathcal{M}_{\mathrm{native}}, \quad \forall \sigma \in \Sigma_{
 1. **Stack Neutrality**: $\forall B \in \text{Blocks}, \quad \Delta_{\mathrm{net}}(\text{VStack}) = 0$ on all intra-block exits.
 2. **Flag Equivalence**: For any conditional consumer $\mathcal{C} \in \{\text{JccRel}, \text{Setcc}, \text{Cmov}\}$, the materialized condition codes $\text{Flags}(\Sigma)$ match the hardware CPU flags of the unvirtualized baseline.
 3. **Dead-Slot Chaff Isolation**: Chaff/blinding operations operate on dedicated context slots $[C_{\mathrm{live}} \dots C_{\mathrm{live}} + 2^k - 1]$, strictly isolated from guest architectural state.
-4. **Linear Memory Bounding**: Memory-entanglement operations access strictly within the thread-local frame $[\text{SP} - 128 \dots \text{SP} - 16]$, preserving caller stack frames and thread safety.
+4. **Linear Memory Bounding**: Memory-entanglement operations access strictly within the thread-local frame $[\mathrm{SP} - 128 \dots \mathrm{SP} - 2]$ via $\mathrm{Base} = (\mathrm{SP} - 65) \land \sim\!\text{0x3F}$, preserving caller stack frames and System V AMD64 Red Zone compliance.
 
 ---
 
@@ -88,7 +88,7 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 ### Phase 1b (Pass 10): Branchless Bit-Blasted Flag Materialization (`stack_algebraic_flags_pass.ml`, `stack_handlers_emitter.ml`)
 * **Formula**: Eliminates native host `RFLAGS`/`NZCV` execution dependencies by materializing condition codes entirely through branchless algebraic bit-vector expressions in $\mathbb{Z}_{2^{64}}$:
   * **Zero Flag**:
-    $$\mathrm{ZF}(r) = \big( (r - 1) \land \neg r \big) \gg 63$$
+    $$\mathrm{ZF}(r) = \big( (r - 1) \land \neg r \big) \gg 63 \equiv \neg\big( r \lor (-r) \big) \gg 63$$
   * **Sign Flag**:
     $$\mathrm{SF}(r) = r \gg 63$$
   * **Carry / Borrow Flag**:
@@ -97,7 +97,14 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   * **Signed Overflow Flag**:
     $$\mathrm{OF}_{\mathrm{add}}(x, y, r) = \big( \neg(x \oplus y) \land (x \oplus r) \big) \gg 63$$
     $$\mathrm{OF}_{\mathrm{sub}}(x, y, r) = \big( (x \oplus y) \land (x \oplus r) \big) \gg 63$$
-* **Impact**: Replaces C++ conditional branches (`res == 0`, `res < 0`) in VM handlers with 100% branchless bitwise evaluations, unwinding `Flag-Dead Precondition` constraints across basic blocks.
+  * **Auxiliary Carry Flag (`AF`)**:
+    $$\mathrm{AF}(x, y, r) = \big( (x \oplus y \oplus r) \gg 4 \big) \land 1$$
+  * **Parity Flag (`PF`, via multiplicative bit-compression)**:
+    $$\mathrm{PF}(r) = \left( \left( \big( (r \oplus (r \gg 4)) \land \text{0xF} \big) \cdot \text{0x6996} \right) \gg \big( (r \oplus (r \gg 4)) \land \text{0xF} \big) \right) \land 1 \oplus 1$$
+    where $\text{0x6996}_{16} = \text{0110100110010110}_2$ is the 16-bit 4-bit nibble parity lookup table packed into a scalar constant.
+* **Conditional Branch Algebraic Flattening**:
+  $$\mathrm{NextVPC} = \mathrm{Flag} \cdot \mathrm{Token}_{\mathrm{true}} + (1 - \mathrm{Flag}) \cdot \mathrm{Token}_{\mathrm{false}} \pmod{2^{64}}$$
+* **Impact**: Replaces C++ conditional branches (`res == 0`, `res < 0`, `res < a`) in VM handlers with 100% branchless bitwise evaluations, unwinding `Flag-Dead Precondition` constraints across basic blocks.
 
 ---
 
@@ -106,12 +113,17 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$\mathcal{E}_i(x) = (\alpha_i \cdot x + \beta_i) \pmod{2^{64}}, \quad \alpha_i \equiv 1 \pmod 2$$
   $$\mathcal{D}_i(y) = \alpha_i^{-1} \cdot (y - \beta_i) \pmod{2^{64}}, \quad \alpha_i \cdot \alpha_i^{-1} \equiv 1 \pmod{2^{64}}$$
 * **Homomorphic Operations**:
-  * **Homomorphic Addition**:
+  * **Homomorphic Addition ($z = x + y$)**:
     $$\hat{z} = (C_1 \cdot \hat{x} + C_2 \cdot \hat{y} + C_0) \pmod{2^{64}}$$
-    where $C_1 = \alpha_3 \alpha_1^{-1}$, $C_2 = \alpha_3 \alpha_2^{-1}$, $C_0 = \beta_3 - C_1 \beta_1 - C_2 \beta_2 \pmod{2^{64}}$.
-  * **Homomorphic Multiplication**:
+    where $C_1 = \alpha_3 \alpha_1^{-1} \bmod 2^{64}$, $C_2 = \alpha_3 \alpha_2^{-1} \bmod 2^{64}$, $C_0 = (\beta_3 - C_1 \beta_1 - C_2 \beta_2) \bmod 2^{64}$.
+  * **Homomorphic Multiplication ($z = x \cdot y$)**:
     $$\hat{z} = (M_{xy} \cdot \hat{x} \cdot \hat{y} + M_x \cdot \hat{x} + M_y \cdot \hat{y} + M_0) \pmod{2^{64}}$$
-* **Domain Lowering Bridge**: Affine encoding operates as a closed algebraic island for polynomial rings $(+, -, \times)$. At boundaries with bitwise operations (`AND`, `OR`, `XOR`, `SHR`) or memory pointers (`ReadMem`, `WriteMem`), the bridge decodes via $\mathcal{D}_i(\hat{x}) = \alpha_i^{-1} (\hat{x} - \beta_i)$ or transitions to a Boolean-affine domain $\mathcal{B}_i(x) = x \oplus \mu_i$.
+    where:
+    $$M_{xy} = \alpha_3 \alpha_1^{-1} \alpha_2^{-1} \pmod{2^{64}}$$
+    $$M_x = -M_{xy} \beta_2 \pmod{2^{64}}, \quad M_y = -M_{xy} \beta_1 \pmod{2^{64}}, \quad M_0 = \beta_3 + M_{xy} \beta_1 \beta_2 \pmod{2^{64}}$$
+* **Domain Lowering Bridge**:
+  Affine encoding operates as a closed algebraic island for polynomial rings $(+, -, \times)$. At boundaries with bitwise operations (`AND`, `OR`, `XOR`, `SHR`) or memory pointers (`ReadMem`, `WriteMem`), the bridge decodes via $\mathcal{D}_i(\hat{x}) = \alpha_i^{-1} (\hat{x} - \beta_i)$ or transitions to a Boolean-affine domain $\mathcal{B}_i(x) = x \oplus \mu_i$ via a 1-step MBA transducer:
+  $$\mathcal{B}_i(x) = \big(\alpha_i^{-1} (\hat{x} - \beta_i)\big) \oplus \mu_i \pmod{2^{64}}$$
 * **Impact**: Eliminates plaintext constant signatures (AES S-Boxes, API hashes) from the instruction stream; prevents Term Slicing and GVN across differing domain encodings.
 
 ---
@@ -228,7 +240,14 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   * **Non-Associative Bit-Permutation MBA Knot (Pass 11)**:
     $$\mathrm{Knot}_{\mathrm{perm}}(s) = s - \Big( \mathrm{swap}_{32}\big( \mathrm{swap}_{32}(s) \oplus C \big) \oplus C \Big) \equiv 0 \pmod{2^{64}}$$
     Where $\mathrm{swap}_{32}(x) = (x \ll 32) \lor (x \gg 32)$ and $C = \texttt{0x5555555555555555}$. Because bit-permutations do not commute with coordinate-wise bit projections, linear MBA solvers fail with matrix rank divergence.
-
+  * **Dynamic Rotation MBA Identity ($\mathrm{ror}_k$)**:
+    $$x + y \equiv \mathrm{rol}_k\big(\mathrm{ror}_k(x) \oplus \mathrm{ror}_k(y)\big) + 2 \cdot \mathrm{rol}_k\big(\mathrm{ror}_k(x) \land \mathrm{ror}_k(y)\big) \pmod{2^{64}}$$
+    where $k = (s \land 63)$ is derived dynamically from register state.
+  * **Byte-Swap Automorphism Conjugation ($\mathrm{bswap}_{64}$)**:
+    $$x + y \equiv \mathrm{bswap}\big(\mathrm{bswap}(x) \oplus \mathrm{bswap}(y)\big) + 2 \cdot \mathrm{bswap}\big(\mathrm{bswap}(x) \land \mathrm{bswap}(y)\big) \pmod{2^{64}}$$
+  * **Frobenius Carryless Square Identity in $GF(2)[x]$**:
+    $$(x \oplus y) \otimes (x \oplus y) \equiv (x \otimes x) \oplus (y \otimes y)$$
+    $$\mathrm{Knot}_{\mathrm{GF2}}(x, y) = \big((x \oplus y) \otimes (x \oplus y)\big) - \big((x \otimes x) \oplus (y \otimes y)\big) \equiv 0 \pmod{2^{64}}$$
 ---
 
 ### Phase 5f: Chinese Remainder Theorem (CRT) Split-Path Execution (Pass 12, `stack_crt_pass.ml`)
