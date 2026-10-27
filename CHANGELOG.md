@@ -13,6 +13,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Added `mem_webbing_offset_mask` (0x78) and `mem_webbing_base_offset` (16) to `lib/constants/magic_numbers.ml` and registry.
   * Wired Phase 5c into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified: 44/44 tests in `Stack-VM Execution Engine` pass, 11/11 in `Protection Config` pass, full license check E2E verified (`ACCESS GRANTED` exit 0, `ACCESS DENIED` exit 1).
+- Implement Stack-VM Stateful Transducer pass (`lib/stack_vm/stack_transducer_pass.ml`, `lib/stack_vm/stack_transducer_pass.mli`):
+  * Couples pure ALU operations (`Add`, `Sub`) to an evolving internal transducer state register $S_{k+1} = S_k \times C_{\text{mul}} + C_{\text{add}} \pmod{2^{64}}$ via exact modular identities ($(B - S) + (A + S) == A + B$, $(A + S) - (B + S) == A - B$), defeating inductive program synthesis (Syntia/QSynth) by destroying black-box I/O reproducibility across isolated basic block executions.
+  * Preserves exact net stack delta (-1) and architectural flags by transforming only flag-dead instructions (`Stack_flag_liveness.analyze_list`).
+  * Registered Hull-Dobell multiplier `transducer_step_mul` (0x58771337CAFEBEED) and odd addend `transducer_step_add` (0x9E3779B97F4A7C15) in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 5d into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified: 45/45 tests in `Stack-VM Execution Engine` pass, license check E2E verified (`ACCESS GRANTED` exit 0, `ACCESS DENIED` exit 1).
 
 ## [0.3.0] - 2026-10-27
 

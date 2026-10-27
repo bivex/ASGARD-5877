@@ -238,6 +238,10 @@ let comp_stall_two_adic_c2 = 0xCAFEBABE01000002L
 let mem_webbing_offset_mask = 0x78L
 let mem_webbing_base_offset = 16L
 
+(* Stateful Transducer constants: LCG full-period generator over Z_{2^64} *)
+let transducer_step_mul = 0x58771337CAFEBEEDL
+let transducer_step_add = 0x9E3779B97F4A7C15L
+
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -493,6 +497,14 @@ let registry : entry list = [
     value = mem_webbing_base_offset;
     source = "base offset 16 bytes: minimum offset below SP in stack memory webbing";
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
+  { name = "transducer_step_mul";
+    value = transducer_step_mul;
+    source = "0x58771337CAFEBEED: Hull-Dobell mod 8 multiplier for stateful transducer";
+    used_in = [ "lib/stack_vm/stack_transducer_pass.ml" ] };
+  { name = "transducer_step_add";
+    value = transducer_step_add;
+    source = "0x9E3779B97F4A7C15: golden ratio odd addend for stateful transducer";
+    used_in = [ "lib/stack_vm/stack_transducer_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

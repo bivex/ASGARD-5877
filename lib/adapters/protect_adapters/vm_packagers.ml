@@ -380,6 +380,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Memory-Address Entanglement" native_cfg.mem_webbing.enabled
           "disabled in configuration";
+        pass_switch "Stateful Transducer Coupling" native_cfg.transducer.enabled
+          "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
           "disabled in configuration";
         pass_switch "Stack Balance Repair" true "";
@@ -888,6 +890,41 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5c-memweb" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5c-memweb" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5c] Memory-Address Entanglement: %s" mem_web_info;
+
+    (* Phase 5d: Stateful Transducer Pass — couple ALU expressions to evolving state register *)
+    let transducer_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
+    in
+    let tr = native_cfg.transducer in
+    let transducer_cfg = {
+      (Stack_vm.Stack_transducer_pass.default_transducer_config transducer_seed) with
+      rate = tr.rate;
+      enabled = tr.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Transducer Coupling        rate=%d%% seed=0x%016LX%s"
+         transducer_cfg.rate
+         transducer_cfg.seed
+         (if tr.enabled then "" else " (DISABLED)"));
+    let prog, transducer_info =
+      if tr.enabled then begin
+        let state_slot = Stack_vm.Context_allocator.alloc_scratch ctx in
+        let prog_tr =
+          Stack_vm.Stack_transducer_pass.apply_program
+            ~state_slot transducer_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_transducer_pass.transducer_stats prog prog_tr in
+        (prog_tr, info)
+      end else
+        (prog, "Disabled (config: transducer.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"5d-transducer" prog;
+    dump_bytecode_json ~phase:"5d-transducer" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5d-transducer" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5d] Transducer Coupling: %s" transducer_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
       if native_cfg.stack_vm.state_feedback then

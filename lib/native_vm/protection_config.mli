@@ -180,8 +180,13 @@ type mem_webbing_config = {
   enabled : bool;
   rate    : int;
 }
-
 val default_mem_webbing : mem_webbing_config
+type transducer_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_transducer : transducer_config
 type multiplicity_config = {
   enabled : bool;
   rate    : int;
@@ -240,6 +245,7 @@ type t = {
   ghost : ghost_config;
   avid : avid_config;
   mem_webbing : mem_webbing_config;
+  transducer : transducer_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;
   trampoline : trampoline_config;

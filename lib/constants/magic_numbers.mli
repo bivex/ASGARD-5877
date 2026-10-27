@@ -116,6 +116,8 @@ val comp_stall_two_adic_c3 : int64
 val comp_stall_two_adic_c2 : int64
 val mem_webbing_offset_mask : int64
 val mem_webbing_base_offset : int64
+val transducer_step_mul : int64
+val transducer_step_add : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

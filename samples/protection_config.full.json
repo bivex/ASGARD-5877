@@ -155,6 +155,10 @@
     "enabled": true,
     "rate": 60
   },
+  "transducer": {
+    "enabled": true,
+    "rate": 60
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 90

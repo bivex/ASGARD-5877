@@ -2618,6 +2618,34 @@ let test_mem_webbing () =
   Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
   Alcotest.(check int64) "Bytecode execution exact: reg[1]=142" 142L (get_reg state_bc 1)
 
+let test_transducer () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 120L;
+    PushImm 45L;
+    Add;          (* 120 + 45 = 165 *)
+    PushImm 25L;
+    Sub;          (* 165 - 25 = 140 *)
+    PopReg 1;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let state_slot = Context_allocator.alloc_scratch ctx in
+  let cfg = { (Stack_transducer_pass.default_transducer_config 0x58771337_L) with rate = 100 } in
+  let prog_tr = Stack_transducer_pass.apply_program ~state_slot cfg ctx prog in
+  let b_tr = Hashtbl.find prog_tr.blocks 0 in
+  Alcotest.(check bool) "Transducer expanded ALU ops" true
+    (List.length b_tr.ops > List.length b0.ops);
+  (* Semantic evaluation: (120 + 45) - 25 = 140; transducer coupling preserves exact result *)
+  let state = run_program prog_tr in
+  Alcotest.(check bool) "Transducer coupled program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[1]=140" 140L (get_reg state 1);
+  (* Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x1337CAFE5877L prog_tr in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[1]=140" 140L (get_reg state_bc 1)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2663,6 +2691,7 @@ let tests = [
   ("Handler Multiplicity & Metamorphic Synthesis", `Quick, test_handler_multiplicity);
   ("Pipelined Stage Dispatch & Decoupled Execution", `Quick, test_pipelined_stage_dispatch);
   ("Memory-Address Entanglement Pass & RAM Roundtrip", `Quick, test_mem_webbing);
+  ("Stateful Transducer Coupling & Dynamic Keyed Math", `Quick, test_transducer);
 ]
 
 

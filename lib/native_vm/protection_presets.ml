@@ -81,6 +81,7 @@ let default : t = {
   ghost = default_ghost;
   avid = default_avid;
   mem_webbing = default_mem_webbing;
+  transducer = default_transducer;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -195,6 +196,7 @@ let max_security : t = {
   ghost = { default_ghost with ghost_rate = 100 };
   avid = { default_avid with rate = 70 };
   mem_webbing = { default_mem_webbing with rate = 70 };
+  transducer = { default_transducer with rate = 75 };
   multiplicity = { default_multiplicity with rate = 60 };
   pipelined_dispatch = { default_pipelined_dispatch with chaff_slots = 8 };
   trampoline = default_trampoline;
@@ -304,6 +306,7 @@ let stealth : t = {
   ghost = default_ghost;
   avid = default_avid;
   mem_webbing = default_mem_webbing;
+  transducer = default_transducer;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -418,6 +421,7 @@ let edr_stealth : t = {
   ghost = default_ghost;
   avid = default_avid;
   mem_webbing = default_mem_webbing;
+  transducer = default_transducer;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -532,6 +536,7 @@ let minimal : t = {
   ghost = { default_ghost with enabled = false };
   avid = { default_avid with enabled = false };
   mem_webbing = { default_mem_webbing with enabled = false };
+  transducer = { default_transducer with enabled = false };
   multiplicity = { default_multiplicity with enabled = false };
   pipelined_dispatch = { default_pipelined_dispatch with enabled = false };
   trampoline = default_trampoline;
@@ -637,6 +642,7 @@ let high : t = {
   ghost = { default_ghost with ghost_rate = 90 };
   avid = { default_avid with rate = 60 };
   mem_webbing = { default_mem_webbing with rate = 60 };
+  transducer = { default_transducer with rate = 65 };
   multiplicity = { default_multiplicity with rate = 50 };
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
