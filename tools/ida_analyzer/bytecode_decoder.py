@@ -44,6 +44,32 @@ def step_key(key: int, byte_val: int) -> int:
     return fmix64((rotl64(key, 3) + (byte_val ^ 0x5A)) & MASK64)
 
 
+def siphash_block(k0: int, k1: int, m: int) -> int:
+    """SipHash-1-2 PRF for per-block entry key derivation."""
+    v0 = k0 ^ 0x736F6D6570736575
+    v1 = k1 ^ 0x646F72616E646F6D
+    v2 = k0 ^ 0x6C7967656E657261
+    v3 = k1 ^ 0x7465646279746573
+    v3 ^= m
+    v0 = (v0 + v1) & MASK64; v1 = rotl64(v1, 13); v1 ^= v0; v0 = rotl64(v0, 32)
+    v2 = (v2 + v3) & MASK64; v3 = rotl64(v3, 16); v3 ^= v2
+    v0 = (v0 + v3) & MASK64; v3 = rotl64(v3, 21); v3 ^= v0
+    v2 = (v2 + v1) & MASK64; v1 = rotl64(v1, 17); v1 ^= v2; v2 = rotl64(v2, 32)
+    v0 ^= m
+    v2 ^= 0xFF
+    for _ in range(2):
+        v0 = (v0 + v1) & MASK64; v1 = rotl64(v1, 13); v1 ^= v0; v0 = rotl64(v0, 32)
+        v2 = (v2 + v3) & MASK64; v3 = rotl64(v3, 16); v3 ^= v2
+        v0 = (v0 + v3) & MASK64; v3 = rotl64(v3, 21); v3 ^= v0
+        v2 = (v2 + v1) & MASK64; v1 = rotl64(v1, 17); v1 ^= v2; v2 = rotl64(v2, 32)
+    return (v0 ^ v1 ^ v2 ^ v3) & MASK64
+
+
+def derive_block_key(seed_key: int, block_id: int, block_offset: int) -> int:
+    k0 = (seed_key ^ 0x5877A564D00F0000) & MASK64
+    k1 = (seed_key ^ 0xD00F58770000A564) & MASK64
+    m = (block_id ^ block_offset) & MASK64
+    return siphash_block(k0, k1, m)
 def generate_opcode_map(seed: int) -> Tuple[Dict[int, str], Dict[str, int]]:
     """Generates the dynamic polymorphic 39-opcode permutation for this seed."""
     state = SALT_STACK_VM_STATE if seed == 0 else seed
@@ -95,7 +121,7 @@ class StackVmDecoder:
     def decode_stream(self, cipher_bytes: bytes, max_instructions: int = 10000) -> List[Dict[str, Any]]:
         instructions = []
         pos = 0
-        key = self.seed_key
+        key = derive_block_key(self.seed_key, 0, 0)
         n = len(cipher_bytes)
 
         def read_byte():
