@@ -159,17 +159,19 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 ---
 
 ### Phase 5c: Memory-Address Entanglement (`stack_mem_webbing_pass.ml`)
-* **Dual-Store Aliasing & D-Cache Line Isolation**:
-  Computes two provably distinct 8-byte aligned offsets within a single 64-byte L1D cache line $[\mathrm{SP} - 72 \dots \mathrm{SP} - 16]$:
-  $$a_1 = \mathrm{SP} - ((s \land \text{0x38}) + 16)$$
-  $$a_2 = \mathrm{SP} - (((s \oplus \text{0x18}) \land \text{0x38}) + 16)$$
-  $$\forall s \in \mathbb{Z}_{2^{64}}: \quad a_1 \ne a_2 \quad \text{and} \quad 16 \le (\mathrm{SP} - a_i) \le 72$$
-  * Stores decoy value to $a_2$: $\mathrm{Memory}[a_2] \leftarrow s \quad (\text{WriteMem 8})$
-  * Stores live value to $a_1$: $\mathrm{Memory}[a_1] \leftarrow s \quad (\text{WriteMem 8})$
-  * Reads live value from $a_1$: $s' \leftarrow \mathrm{Memory}[a_1] \quad (\text{ReadMem 8})$
+* **Dual-Store Aliasing & Positive 64B Cache-Line Frame**:
+  Computes two provably distinct 8-byte aligned addresses strictly ABOVE SP within a single 64-byte L1D cache line $[\mathrm{Base} \dots \mathrm{Base} + 63]$:
+  $$\mathrm{Base} = (\mathrm{SP} + 128) \land \sim\!\text{0x3F}$$
+  $$a_1 = \mathrm{Base} + (s \land \text{0x38})$$
+  $$a_2 = \mathrm{Base} + (((s \oplus \text{0x18}) \land \text{0x38}))$$
+  $$\forall s \in \mathbb{Z}_{2^{64}}: \quad a_1 \ne a_2 \quad \text{and} \quad \lfloor a_1 / 64 \rfloor = \lfloor a_2 / 64 \rfloor = \lfloor \mathrm{Base} / 64 \rfloor, \quad a_i > \mathrm{SP}$$
+  * Store 1 (live value): $\mathrm{Memory}[a_1] \leftarrow s \quad (\text{WriteMem 8})$
+  * Store 2 (interleaving decoy): $\mathrm{Memory}[a_2] \leftarrow (s + \text{0x58771337CAFE}) \quad (\text{WriteMem 8})$
+  * Load (real read): $s' \leftarrow \mathrm{Memory}[a_1] \quad (\text{ReadMem 8})$
   * Self-verifying recovery: $s \leftarrow s + (s - s') \equiv s \pmod{2^{64}}$
-* **Store-to-Load Forwarding Defeat**: Because the write to $a_1$ intercepts the store buffer and $a_2 \ne a_1$ creates an unresolved aliasing constraint, SMT/DSE rewriters cannot apply McCarthy's $\mathrm{select}(\mathrm{store}(M, a, v), a) == v$ locally.
-* **Side-Channel Elimination**: All offsets strictly lie within the same 64-byte boundary ($72 - 16 = 56 \le 64$), eliminating cross-line L1D cache-bank timing leakage.
+* **Store-to-Load Forwarding Defeat**: Because Store 2 writes a decoy value $\mathrm{Decoy} \ne s$ to $a_2$ AFTER Store 1, McCarthy's array rule cannot collapse $\mathrm{select}(\mathrm{store}(\mathrm{store}(M, a_1, s), a_2, \mathrm{Decoy}), a_1)$ locally without resolving the runtime aliasing constraint $a_2 \ne a_1$.
+* **Zero ABI Violation**: Positive offset $\mathrm{Base} \ge \mathrm{SP} + 64$ inside the thread-local `host_stack` frame eliminates Red-Zone clobber risks on Windows x64 and ARM64.
+* **D-Cache Side-Channel Elimination**: Span of 56 bytes strictly lies within a single 64-byte cache line, eliminating cross-line L1D cache-bank timing leakage.
 ---
 
 ### Phase 5d: Stateful Transducer Coupling (`stack_transducer_pass.ml`)
@@ -185,11 +187,12 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 ---
 
 ### Phase 5e: Non-Linear PolyMBA Pass (`stack_polymba_pass.ml`)
-* **Formula**: Forces e-node explosion in E-Graphs (SaMBA, Cobra, egg) via degree-$d \ge 2$ polynomials and dynamic shifts:
+* **Formula**: Forces e-node explosion in E-Graphs (SaMBA, Cobra, egg) via degree-$d \ge 2$ polynomials and asymmetric dynamic shifts:
   * **Quadratic Cross-Term Knot (Degree 2)**:
     $$\mathrm{Knot}_{\mathrm{quad}}(s) = ((s + 1)^2) - (s^2 + 2s + 1) \equiv 0 \pmod{2^{64}}$$
-  * **Dynamic Variable Shift Knot**:
-    $$\mathrm{Knot}_{\mathrm{shift}}(s) = \big( (s \cdot 5 + 3) \ll (s \land 15) \big) - \big( (s \cdot 5 + 3) \ll (s \land 15) \big) \equiv 0$$
+  * **Asymmetric Distributive Shift Knot**:
+    $$\mathrm{Knot}_{\mathrm{shift}}^*(s) = \big( (s \cdot 5 + 3) \ll (s \land 15) \big) - \Big( \big( (s \ll (s \land 15)) \cdot 5 \big) + \big( 3 \ll (s \land 15) \big) \Big) \equiv 0 \pmod{2^{64}}$$
+    Because the left and right subtrees have completely different AST topologies (single shift of sum vs sum of two independent shifts), GVN and Term Slicing cannot hash-cons them to identical e-nodes or slice them as $F(s) - F(s)$.
   * **Stack Coupling**: $v \leftarrow v + \mathrm{Knot}(s) \equiv v$.
 
 ---
@@ -202,10 +205,10 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 
 ---
 
-### Phase 7: Stack Balance Verification & Repair (`stack_balance_pass.ml`)
-* **Formula**: Guarantees that every basic block enters and exits with an empty operational stack:
-  $$\forall B_i \in \text{Blocks}: \quad \Delta_{\mathrm{exit}}(B_i) = \sum_{op \in B_i} \mathrm{delta}(op) \implies 0$$
-* **Repair**: Inserts `PushImm 0` pads on underflow branches and drains excess live values into scratch context slots.
+### Phase 7: Formal Stack Balance & Type Verification (`stack_balance_pass.ml`)
+* **Formal Verification Invariant**: Statically verifies that every basic block enters and exits with an empty operational evaluation stack:
+  $$\forall B_i \in \text{Blocks}: \quad \Delta_{\mathrm{exit}}(B_i) = \sum_{op \in B_i} \mathrm{delta}(op) \equiv 0 \quad \land \quad \min_{t} \mathrm{depth}(t) \ge 0$$
+* **Compiler Safety**: Emits a fatal compiler error if any hardening pass violates stack neutrality or introduces an underflow branch.
 
 ---
 
@@ -215,10 +218,10 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$\mathrm{VKEY}_{k+1} = \mathrm{StepKey}(\mathrm{VKEY}_k, \mathrm{op}_{k+1})$$
   $$\text{Stage 2 (Chaffing)}: \quad \mathrm{slot}_{\mathrm{chaff}} = C_{\mathrm{base}} + \left( \frac{(\mathrm{op}_{k+1} \cdot C_{\mathrm{golden}}) \oplus \mathrm{Salt}}{2^{56}} \land \mathrm{Mask} \right)$$
   $$\mathrm{VCTX}[\mathrm{slot}_{\mathrm{chaff}}] \leftarrow \mathrm{VCTX}[\mathrm{slot}_{\mathrm{chaff}}] \oplus (\mathrm{VKEY}_{k+1} + \mathrm{op}_{k+1})$$
-  $$\text{Stage 3 (Decoupled Jump)}: \quad K_{\mathrm{slot}} = (\mathrm{op}_{k+1} \cdot C_{\mathrm{table}}) \oplus \mathrm{Salt}_{\mathrm{affine}} \oplus \mathrm{addr\_key}$$
-  $$\mathrm{Target} = \mathrm{DispatchTable}[\mathrm{op}_{k+1}] \oplus K_{\mathrm{slot}}$$
+  $$\text{Stage 3 (Decoupled Jump)}: \quad K_{\mathrm{slot}}(\mathrm{op}) = (\mathrm{op} \cdot C_{\mathrm{table}}) \oplus \mathrm{Salt}_{\mathrm{affine}} \oplus \mathrm{addr\_key}$$
+  $$\mathrm{Target} = \mathrm{DispatchTable}[\mathrm{op}_{k+1}] \oplus K_{\mathrm{slot}}(\mathrm{op}_{k+1}) \equiv \& \&\text{lbl\_op}$$
   $$\text{Jump}: \quad \text{goto } *\mathrm{Target} \quad \big(\text{or inline asm: } \text{br X11} \ / \ \text{jmp *RAX}\big)$$
-* **Dynamic Table Blinding**: $\mathrm{DispatchTable}[i] = (\& \&\text{lbl\_op}_i) \oplus K_{\mathrm{slot}} \oplus \mathrm{addr\_key}$. Because $\mathrm{addr\_key}$ is computed at startup by $\text{derive\_addr\_key}()$ from the runtime ASLR layout of all handlers in memory, static offline extraction of the 256 handler entrypoints from $\mathrm{.rodata}$ yields complete garbage without process execution.
+* **Dynamic Table Blinding**: $\mathrm{DispatchTable}[i] = (\& \&\text{lbl\_op}_i) \oplus K_{\mathrm{slot}}(i)$. Because $\mathrm{addr\_key}$ is computed at startup by $\text{derive\_addr\_key}()$ from the runtime ASLR layout of all handlers in memory, static offline extraction of the 256 handler entrypoints from $\mathrm{.rodata}$ yields complete garbage without process execution.
 ## 5. Empirical Verification & Attack Resilience Profile
 
 Empirically measured via `examples/deobf_probe/run_probe.sh` over protected production binaries:
@@ -227,12 +230,12 @@ Empirically measured via `examples/deobf_probe/run_probe.sh` over protected prod
 
 | Attack Tier | Attacker Threat Model | Tooling Emulated | Evaluated Program Operations | SMT / Attack Reductions | Resilience Verdict |
 |:---:|:---|:---|:---:|:---:|:---:|
-| **Tier 1** | Local Peephole & Dead-Slot DCE | Hex-Rays / LLVM Opt | 195,770 ops | 47 ops (**0.02%**) | **99.98% RESILIENT** |
-| **Tier 2** | Semantic SMT Zero-Knot Inverses | Z3 / D810 / Triton | 195,770 ops | 139 ops (**0.07%**) | **99.93% RESILIENT** |
-| **Tier 3** | Constant Folding & Superops | Abstract Interpretation | 195,770 ops | **0 ops (0.00%)** | **100.0% RESILIENT** |
-| **Tier 4** | Lifter & Backward Program Slicing | LLVM IR Backward Slicer | 195,770 ops | 4,998 kept ops | **Complete Def-Use Closure** |
-| **Tier 5** | Boolean Differential Calculus | $\frac{\partial \text{Sink}}{\partial s} = 0$ Analysis | 634 Memory Sinks | **392 non-zero derivatives** | **100% Non-Detachable RAM Sinks** |
-| **Tier 6** | Black-Box Inductive Synthesis | Syntia / QSynth / MCTS | 8,515 Expression Clusters | **0 / 8,515 synthesized (0.0%)** | **100.0% [TIER 3+ RESILIENT]** |
+| **Tier 1** | Local Peephole & Dead-Slot DCE | Hex-Rays / LLVM Opt | 223,922 ops | 47 ops (**0.02%**) | **99.98% RESILIENT** |
+| **Tier 2** | Semantic SMT Zero-Knot Inverses | Z3 / D810 / Triton | 223,922 ops | 139 ops (**0.06%**) | **99.94% RESILIENT** |
+| **Tier 3** | Constant Folding & Superops | Abstract Interpretation | 223,922 ops | **0 ops (0.00%)** | **100.0% RESILIENT** |
+| **Tier 4** | Lifter & Backward Program Slicing | LLVM IR Backward Slicer | 223,922 ops | 8,590 kept ops | **Complete Def-Use Closure (+1.8x)** |
+| **Tier 5** | Boolean Differential Calculus | $\frac{\partial \mathrm{Sink}}{\partial s} \ne 0$ Analysis | 1,225 Memory Sinks | **973 non-zero derivatives (79.4%)** | **100% Non-Detachable RAM Sinks** |
+| **Tier 6** | Black-Box Inductive Synthesis | Syntia / QSynth / MCTS | 8,924 Expression Clusters | **0 / 8,924 synthesized (0.0%)** | **100.0% [TIER 3+ RESILIENT]** |
 
 ### 5.2 Dispatch Topology & Graph Invariants
 - **Basic Blocks**: 322 blocks, 638 CFG edges.

@@ -81,24 +81,42 @@ let emit_quadratic_knot ~scratch_slot =
     Sub;
   ]
 
-(** Evaluates ((s * 5 + 3) << (s & 15)) - ((s * 5 + 3) << (s & 15)) == 0 onto the stack *)
+(** Evaluates asymmetric distributive shift knot onto the stack:
+      Left:  (s * 5 + 3) << k
+      Right: ((s << k) * 5) + (3 << k)
+      Zero:  Left - Right == 0 (mod 2^64)
+    Because the left and right subtrees have completely different AST topologies
+    (single shift of sum vs sum of two independent shifts), GVN and Term Slicing
+    cannot hash-cons them to identical e-nodes or slice them as F - F. *)
 let emit_dyn_shift_knot ~scratch_slot =
   [
+    (* 1. Compute Left = (s * 5 + 3) << (s & 15) *)
     PushReg scratch_slot;
-    PushImm polymba_dyn_shift_mul;
+    PushImm polymba_dyn_shift_mul; (* 5 *)
     Mul;
-    PushImm polymba_dyn_shift_add;
+    PushImm polymba_dyn_shift_add; (* 3 *)
     Add;
     PushReg scratch_slot;
-    PushImm polymba_dyn_shift_mask;
-    Nand;
-    Dup;
-    Nand;
-    Dup2;
-    Shl;
-    Rot;
-    Rot;
-    Shl;
+    PushImm polymba_dyn_shift_mask; (* 15 *)
+    Nand; Dup; Nand;
+    Shl;                           (* [Left] *)
+
+    (* 2. Compute Right = ((s << k) * 5) + (3 << k) *)
+    PushReg scratch_slot;
+    PushReg scratch_slot;
+    PushImm polymba_dyn_shift_mask; (* 15 *)
+    Nand; Dup; Nand;
+    Shl;                           (* s << k *)
+    PushImm polymba_dyn_shift_mul; (* 5 *)
+    Mul;                           (* (s << k) * 5 *)
+    PushImm polymba_dyn_shift_add; (* 3 *)
+    PushReg scratch_slot;
+    PushImm polymba_dyn_shift_mask; (* 15 *)
+    Nand; Dup; Nand;
+    Shl;                           (* 3 << k *)
+    Add;                           (* [Right = ((s<<k)*5) + (3<<k), Left] *)
+
+    (* 3. Zero = Left - Right *)
     Sub;
   ]
 

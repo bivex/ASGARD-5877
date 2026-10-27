@@ -236,8 +236,10 @@ let comp_stall_two_adic_c2 = 0xCAFEBABE01000002L
 
 (* Memory-Address Entanglement constants: 8-byte aligned scratch offset window within 64B cache line *)
 let mem_webbing_offset_mask = 0x38L
-let mem_webbing_base_offset = 16L
-
+let mem_webbing_base_offset = 128L
+let mem_webbing_base_align_mask = 0xFFFFFFFFFFFFFFC0L
+let mem_webbing_alias_diff = 0x18L
+let mem_webbing_decoy_salt = 0x58771337CAFEL
 (* Stateful Transducer constants: LCG full-period generator over Z_{2^64} *)
 let transducer_step_mul = 0x58771337CAFEBEEDL
 let transducer_step_add = 0x9E3779B97F4A7C15L
@@ -499,7 +501,19 @@ let registry : entry list = [
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "mem_webbing_base_offset";
     value = mem_webbing_base_offset;
-    source = "base offset 16 bytes: minimum offset below SP in stack memory webbing";
+    source = "base offset 128 bytes: positive offset above SP in stack memory webbing";
+    used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
+  { name = "mem_webbing_base_align_mask";
+    value = mem_webbing_base_align_mask;
+    source = "0xFFFFFFFFFFFFFFC0 (~0x3F): aligns base pointer to 64-byte L1D cache line boundary";
+    used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
+  { name = "mem_webbing_alias_diff";
+    value = mem_webbing_alias_diff;
+    source = "0x18: bitwise difference ensuring a1 != a2 in dual-store aliasing";
+    used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
+  { name = "mem_webbing_decoy_salt";
+    value = mem_webbing_decoy_salt;
+    source = "0x58771337CAFE: decoy value salt stored to a2 in dual-store aliasing";
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "transducer_step_mul";
     value = transducer_step_mul;

@@ -1544,9 +1544,10 @@ let test_real_license_check_macro_stack_vm_e2e () =
     let toolchain = (module Toolchain_adapter : Toolchain) in
     let vm_packager = (module Vm_packager_adapters.Stack_vm_packager : Vm_packager) in
 
-    let cfg = Protect_adapters.Config_adapter.default in
+    let raw_cfg = Protect_adapters.Config_adapter.unwrap Protect_adapters.Config_adapter.default in
+    let test_cfg = raw_cfg in
+    let cfg = Protect_adapters.Config_adapter.wrap test_cfg in
     let rng = Random.State.make [| 0x5877 |] in
-
     match
       Random_visa_application.Protect_pipeline.run
         ~lifter

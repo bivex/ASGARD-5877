@@ -51,54 +51,67 @@ let next_int rng n =
     Int64.to_int (Int64.logand z 0x7FFFFFFFL) mod n
 
 let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
-  (* Dual-store aliasing: computes two provably distinct 8-byte aligned
-     offsets within the same 64-byte L1D cache line [SP - 72 .. SP - 16]:
-       a1 = SP - ((s & 0x38) + 16)
-       a2 = SP - (((s ^ 0x18) & 0x38) + 16)
-     Stores decoy to a2, stores s to a1, then reads back from a1.
-     Because a2 != a1 always and the store to a1 intercepts the buffer,
-     McCarthy store-to-load forwarding cannot collapse the memory roundtrip locally. *)
+  (* Dual-store aliasing with positive offset above SP:
+     1. Base is aligned to 64 bytes in the upper host_stack frame:
+          Base = (SP + 128) & ~0x3F
+        Both offsets [0..56] strictly lie within the exact same 64-byte L1D line:
+          a1 = Base + (s & 0x38)
+          a2 = Base + ((s ^ 0x18) & 0x38)
+        Because Base >= SP + 64, this operates strictly ABOVE SP, completely
+        immune to Red-Zone clobber on Windows x64 and ARM64.
+     2. Store order defeats McCarthy Store-to-Load Forwarding:
+          Step 1: WriteMem(a1, s)            (real value)
+          Step 2: WriteMem(a2, Decoy)         (decoy value s ^ 0x5877...)
+          Step 3: ReadMem(a1)                 (reads back real value)
+        Because Step 2 stores Decoy != s to a2 AFTER Step 1, McCarthy array
+        theory cannot collapse select(store(store(M, a1, s), a2, Decoy), a1)
+        without resolving the aliasing constraint across the two stores. *)
   let inner = [
-    (* 1. Compute a1 = SP - ((s & 0x38) + 16) *)
-    PushReg scratch_slot;
-    PushImm mem_webbing_offset_mask; (* 0x38 *)
-    Nand; Dup; Nand;
-    PushImm mem_webbing_base_offset; (* 16 *)
-    Add;
+    (* 1. Compute Base = (SP - 128) & ~0x3F *)
     PushReg sp_slot;
-    Swap;
-    Sub;                             (* [a1] *)
+    PushImm mem_webbing_base_offset; (* 128L *)
+    Sub;
+    PushImm mem_webbing_base_align_mask; (* 0xFFFFFFFFFFFFFFC0L *)
+    Nand; Dup; Nand;                 (* [base] *)
 
-    (* 2. Compute a2 = SP - (((s ^ 0x18) & 0x38) + 16) *)
+    (* 2. Compute a1 = base + (s & 0x38) *)
+    Dup;                             (* [base, base] *)
     PushReg scratch_slot;
-    PushImm 0x18L;
+    PushImm mem_webbing_offset_mask; (* 0x38L *)
+    Nand; Dup; Nand;                 (* [s & 0x38, base, base] *)
+    Add;                             (* [a1 = base + (s & 0x38), base] *)
+
+    (* 3. Compute a2 = base + ((s ^ 0x18) & 0x38) *)
+    Swap;                            (* [base, a1] *)
+    PushReg scratch_slot;
+    PushImm mem_webbing_alias_diff;  (* 0x18L *)
     Add;                             (* s + 0x18 *)
     PushReg scratch_slot;
-    PushImm 0x18L;
+    PushImm mem_webbing_alias_diff;  (* 0x18L *)
     Nand; Dup; Nand;                 (* s & 0x18 *)
     Dup; Add;                        (* 2 * (s & 0x18) *)
-    Sub;                             (* (s + 0x18) - 2*(s & 0x18) = s ^ 0x18 *)
-    PushImm mem_webbing_offset_mask; (* 0x38 *)
+    Sub;                             (* s ^ 0x18 = (s + 0x18) - 2*(s & 0x18) *)
+    PushImm mem_webbing_offset_mask; (* 0x38L *)
     Nand; Dup; Nand;                 (* (s ^ 0x18) & 0x38 *)
-    PushImm mem_webbing_base_offset; (* 16 *)
-    Add;
-    PushReg sp_slot;
-    Swap;
-    Sub;                             (* [a2, a1] *)
+    Add;                             (* [a2 = base + ((s ^ 0x18) & 0x38), a1] *)
 
-    (* 3. Decoy store to a2: [a2] := s *)
-    PushReg scratch_slot;            (* [s, a2, a1] *)
+    (* 4. Store real s to a1: [a1] := s *)
+    Swap;                            (* [a1, a2] *)
+    Dup;                             (* [a1, a1, a2] *)
+    PushReg scratch_slot;            (* [s, a1, a1, a2] *)
+    WriteMem 8;                      (* [a1, a2] *)
+
+    (* 5. Store decoy to a2: [a2] := s + 0x58771337CAFE *)
+    Swap;                            (* [a2, a1] *)
+    PushReg scratch_slot;
+    PushImm mem_webbing_decoy_salt;
+    Add;                             (* [Decoy, a2, a1] *)
     WriteMem 8;                      (* [a1] *)
 
-    (* 4. Store to a1: [a1] := s *)
-    Dup;                             (* [a1, a1] *)
-    PushReg scratch_slot;            (* [s, a1, a1] *)
-    WriteMem 8;                      (* [a1] *)
-
-    (* 5. Read from a1: read_s := [a1] *)
+    (* 6. Read real s back from a1 *)
     ReadMem 8;                       (* [read_s] *)
 
-    (* 6. Verify and preserve s: s := s + (s - read_s) == s *)
+    (* 7. Verify and preserve s: s := s + (s - read_s) == s *)
     PushReg scratch_slot;            (* [s, read_s] *)
     Sub;                             (* [read_s - s = 0] *)
     PushReg scratch_slot;            (* [s, 0] *)

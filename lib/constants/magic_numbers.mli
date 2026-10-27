@@ -116,6 +116,9 @@ val comp_stall_two_adic_c3 : int64
 val comp_stall_two_adic_c2 : int64
 val mem_webbing_offset_mask : int64
 val mem_webbing_base_offset : int64
+val mem_webbing_base_align_mask : int64
+val mem_webbing_alias_diff : int64
+val mem_webbing_decoy_salt : int64
 val transducer_step_mul : int64
 val transducer_step_add : int64
 val polymba_dyn_shift_mul : int64

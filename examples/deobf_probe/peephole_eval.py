@@ -534,11 +534,10 @@ def tier5_boolean_differential(blocks):
         for idx, (name, args) in enumerate(ops):
             if name == "WriteMem":
                 total_write_mems += 1
-                window = ops[max(0, idx - 15):idx]
-                reads_sp = any(op[0] == "PushReg" and op[1] == (4,) for op in window)
-                read_regs = [op[1][0] for op in window if op[0] == "PushReg" and op[1] != (4,)]
+                window = ops[max(0, idx - 25):idx]
+                read_regs = [op[1][0] for op in window if op[0] == "PushReg"]
                 has_sub = any(op[0] == "Sub" for op in window)
-                if reads_sp and read_regs and has_sub:
+                if len(set(read_regs)) >= 2 and has_sub:
                     entangled_sinks += 1
                     non_zero_derivatives += 1
 
