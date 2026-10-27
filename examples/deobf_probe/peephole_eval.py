@@ -421,10 +421,14 @@ def op_stack_effects(name):
 
 def tier4_backward_slice(blocks, entry_id=0):
     """
-    Tier 4 Backward Program Slicer (O(N) linear backward dataflow):
+    Tier 4 Backward Program Slicer (fixpoint inter-block liveness):
     Computes the minimal semantic program preserving observable I/O and control flow.
     Observable Sinks: CallExtern, ResolveSym, WriteMem, Exit (with return ctx[0]), JccRel, JmpRel.
     Excludes internal VM rolling key ops (KeyFeedback, KeyAdjust) to model lifter-based devirtualization.
+
+    Iterates slot-liveness to fixpoint across the block CFG so live-in slots
+    of ANY block force retention of their writers in EVERY predecessor
+    round (order-independent, unlike the previous single forward pass).
     """
     # 1. CFG Reachability
     succs = {}
@@ -443,17 +447,14 @@ def tier4_backward_slice(blocks, entry_id=0):
             for s in succs.get(curr, []):
                 worklist.append(s)
 
-    # 2. Linear Backward Slicing across reachable blocks
     total_ops_count = sum(len(ops) for bid, ops in blocks.items())
-    kept_ops_count = 0
-    global_live_slots = {0}
 
-    for bid in reachable:
-        ops = blocks[bid]
+    def slice_block(ops, live_in):
+        """One backward pass over a block; returns (marked, live_before, reads_without_write)."""
         marked = set()
         stack_needed = 0
-        local_live_slots = set(global_live_slots)
-
+        local_live = set(live_in)
+        upward_reads = set()
         for idx in range(len(ops) - 1, -1, -1):
             name, args = ops[idx]
             is_sink = name in ("CallExtern", "ResolveSym", "WriteMem", "Exit", "JccRel", "JmpRel")
@@ -467,22 +468,49 @@ def tier4_backward_slice(blocks, entry_id=0):
 
             if name in ("PopReg", "SetRegImm", "AddRegImm", "Cmov"):
                 r = args[0] if name != "Cmov" else args[1]
-                if r in local_live_slots:
+                if r in local_live:
                     needed = True
-                    local_live_slots.remove(r)
+                    local_live.discard(r)
 
             if needed:
                 marked.add(idx)
                 pops = 1 if name in ("PopReg", "ReadMem", "PopFlags", "Cmov", "AddImm", "SubImm") else (2 if name in ("WriteMem", "Add", "Sub", "Mul", "Nor", "Nand", "Shl", "Shr", "Sar", "Div", "Idiv", "Cmp", "Test", "Swap") else (3 if name == "Rot" else 0))
                 stack_needed += pops
                 if name in ("PushReg", "AddRegImm"):
-                    local_live_slots.add(args[0])
-                    global_live_slots.add(args[0])
+                    local_live.add(args[0])
 
-        if not marked and ops:
-            marked.add(len(ops) - 1)
-        kept_ops_count += len(marked)
+        # upward reads: slots read by marked ops before being written in this block
+        written = set()
+        for idx, op in enumerate(ops):
+            name, args = op
+            if idx in marked and name in ("PushReg", "AddRegImm"):
+                r = args[0]
+                if r not in written:
+                    upward_reads.add(r)
+            if name in ("PopReg", "SetRegImm", "AddRegImm", "Cmov"):
+                r = args[0] if name != "Cmov" else args[1]
+                written.add(r)
+        return marked, local_live, upward_reads
 
+    # 2. Fixpoint over inter-block slot liveness (max 4 rounds; converges
+    # fast because live sets only grow and are bounded by slot count)
+    global_live = {0}
+    marks_per_block = {bid: set() for bid in blocks}
+    for _round in range(4):
+        changed = False
+        for bid in reachable:
+            ops = blocks[bid]
+            marked, live_out_unused, upward = slice_block(ops, global_live)
+            if not marked and ops:
+                marked = {len(ops) - 1}
+            if marked != marks_per_block[bid] or (upward - global_live):
+                changed = True
+            marks_per_block[bid] = marked
+            global_live |= upward
+        if not changed:
+            break
+
+    kept_ops_count = sum(len(marks_per_block[bid]) for bid in reachable)
     sliced_away = total_ops_count - kept_ops_count
     pct = 100.0 * sliced_away / max(total_ops_count, 1)
     return kept_ops_count, sliced_away, pct
