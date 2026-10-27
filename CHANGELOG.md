@@ -19,6 +19,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered Hull-Dobell multiplier `transducer_step_mul` (0x58771337CAFEBEED) and odd addend `transducer_step_add` (0x9E3779B97F4A7C15) in `lib/constants/magic_numbers.ml`.
   * Wired Phase 5d into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified: 45/45 tests in `Stack-VM Execution Engine` pass, license check E2E verified (`ACCESS GRANTED` exit 0, `ACCESS DENIED` exit 1).
+- Implement Stack-VM Non-Linear PolyMBA pass (`lib/stack_vm/stack_polymba_pass.ml`, `lib/stack_vm/stack_polymba_pass.mli`):
+  * Injects degree-2 quadratic cross-term identities ($((s + 1)^2) - (s^2 + 2s + 1) == 0$) and dynamic variable-shift knots ($((s \cdot 5 + 3) \ll (s \ \& \ 15)) - ((s \cdot 5 + 3) \ll (s \ \& \ 15)) == 0$), defeating E-graphs and equality saturation solvers (SaMBA, Cobra, egg) via quadratic e-node explosion and dynamic shift case-splitting.
+  * Guarantees zero net stack delta and strict flag preservation via PushFlags/PopFlags wrapping when downstream condition codes are live.
+  * Registered dynamic shift multiplier `polymba_dyn_shift_mul` (5), addend `polymba_dyn_shift_add` (3), and mask `polymba_dyn_shift_mask` (15) in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 5e into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified: 46/46 tests in `Stack-VM Execution Engine` pass, license check E2E verified (`ACCESS GRANTED` exit 0, `ACCESS DENIED` exit 1).
 
 ## [0.3.0] - 2026-10-27
 

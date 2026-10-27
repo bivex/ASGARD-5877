@@ -242,6 +242,10 @@ let mem_webbing_base_offset = 16L
 let transducer_step_mul = 0x58771337CAFEBEEDL
 let transducer_step_add = 0x9E3779B97F4A7C15L
 
+(* Non-Linear PolyMBA constants: dynamic variable shift parameters *)
+let polymba_dyn_shift_mul = 5L
+let polymba_dyn_shift_add = 3L
+let polymba_dyn_shift_mask = 15L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -505,6 +509,18 @@ let registry : entry list = [
     value = transducer_step_add;
     source = "0x9E3779B97F4A7C15: golden ratio odd addend for stateful transducer";
     used_in = [ "lib/stack_vm/stack_transducer_pass.ml" ] };
+  { name = "polymba_dyn_shift_mul";
+    value = polymba_dyn_shift_mul;
+    source = "5: multiplier for non-linear dynamic-shift PolyMBA knot";
+    used_in = [ "lib/stack_vm/stack_polymba_pass.ml" ] };
+  { name = "polymba_dyn_shift_add";
+    value = polymba_dyn_shift_add;
+    source = "3: addend for non-linear dynamic-shift PolyMBA knot";
+    used_in = [ "lib/stack_vm/stack_polymba_pass.ml" ] };
+  { name = "polymba_dyn_shift_mask";
+    value = polymba_dyn_shift_mask;
+    source = "15: 4-bit mask (0..15) for non-linear dynamic variable shift";
+    used_in = [ "lib/stack_vm/stack_polymba_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

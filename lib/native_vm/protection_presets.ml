@@ -82,6 +82,7 @@ let default : t = {
   avid = default_avid;
   mem_webbing = default_mem_webbing;
   transducer = default_transducer;
+  polymba = default_polymba;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -197,6 +198,7 @@ let max_security : t = {
   avid = { default_avid with rate = 70 };
   mem_webbing = { default_mem_webbing with rate = 70 };
   transducer = { default_transducer with rate = 75 };
+  polymba = { default_polymba with rate = 70 };
   multiplicity = { default_multiplicity with rate = 60 };
   pipelined_dispatch = { default_pipelined_dispatch with chaff_slots = 8 };
   trampoline = default_trampoline;
@@ -307,6 +309,7 @@ let stealth : t = {
   avid = default_avid;
   mem_webbing = default_mem_webbing;
   transducer = default_transducer;
+  polymba = default_polymba;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -422,6 +425,7 @@ let edr_stealth : t = {
   avid = default_avid;
   mem_webbing = default_mem_webbing;
   transducer = default_transducer;
+  polymba = default_polymba;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -537,6 +541,7 @@ let minimal : t = {
   avid = { default_avid with enabled = false };
   mem_webbing = { default_mem_webbing with enabled = false };
   transducer = { default_transducer with enabled = false };
+  polymba = { default_polymba with enabled = false };
   multiplicity = { default_multiplicity with enabled = false };
   pipelined_dispatch = { default_pipelined_dispatch with enabled = false };
   trampoline = default_trampoline;
@@ -643,6 +648,7 @@ let high : t = {
   avid = { default_avid with rate = 60 };
   mem_webbing = { default_mem_webbing with rate = 60 };
   transducer = { default_transducer with rate = 65 };
+  polymba = { default_polymba with rate = 60 };
   multiplicity = { default_multiplicity with rate = 50 };
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;

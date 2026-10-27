@@ -382,6 +382,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Stateful Transducer Coupling" native_cfg.transducer.enabled
           "disabled in configuration";
+        pass_switch "PolyMBA Non-Linear Expansion" native_cfg.polymba.enabled
+          "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
           "disabled in configuration";
         pass_switch "Stack Balance Repair" true "";
@@ -925,6 +927,40 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5d-transducer" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5d-transducer" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5d] Transducer Coupling: %s" transducer_info;
+
+    (* Phase 5e: PolyMBA Non-Linear Expansion — inject degree-2 quadratic cross-terms & dynamic shifts *)
+    let polymba_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 25)
+    in
+    let pmb = native_cfg.polymba in
+    let polymba_cfg = {
+      (Stack_vm.Stack_polymba_pass.default_polymba_config polymba_seed) with
+      rate = pmb.rate;
+      enabled = pmb.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    PolyMBA Non-Linear         rate=%d%% seed=0x%016LX%s"
+         polymba_cfg.rate
+         polymba_cfg.seed
+         (if pmb.enabled then "" else " (DISABLED)"));
+    let prog, polymba_info =
+      if pmb.enabled then begin
+        let prog_pmb =
+          Stack_vm.Stack_polymba_pass.apply_program
+            ~scratch_ring:ghost_ring polymba_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_polymba_pass.polymba_stats prog prog_pmb in
+        (prog_pmb, info)
+      end else
+        (prog, "Disabled (config: polymba.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"5e-polymba" prog;
+    dump_bytecode_json ~phase:"5e-polymba" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5e-polymba" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5e] PolyMBA Non-Linear Expansion: %s" polymba_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
       if native_cfg.stack_vm.state_feedback then

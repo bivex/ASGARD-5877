@@ -185,6 +185,12 @@ type transducer_config = {
 }
 
 val default_transducer : transducer_config
+type polymba_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_polymba : polymba_config
 type multiplicity_config = {
   enabled : bool;
   rate    : int;
@@ -243,6 +249,7 @@ type t = {
   avid : avid_config;
   mem_webbing : mem_webbing_config;
   transducer : transducer_config;
+  polymba : polymba_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;
   trampoline : trampoline_config;

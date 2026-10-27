@@ -159,6 +159,10 @@
     "enabled": true,
     "rate": 60
   },
+  "polymba": {
+    "enabled": true,
+    "rate": 50
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 90

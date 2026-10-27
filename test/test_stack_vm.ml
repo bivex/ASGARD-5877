@@ -2646,6 +2646,32 @@ let test_transducer () =
   Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
   Alcotest.(check int64) "Bytecode execution exact: reg[1]=140" 140L (get_reg state_bc 1)
 
+let test_polymba () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 77L;
+    PushImm 33L;
+    Add;          (* 77 + 33 = 110 *)
+    PopReg 1;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let ring = Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx) in
+  let cfg = { (Stack_polymba_pass.default_polymba_config 0x5877A55AL) with rate = 100 } in
+  let prog_pmb = Stack_polymba_pass.apply_program ~scratch_ring:ring cfg ctx prog in
+  let b_pmb = Hashtbl.find prog_pmb.blocks 0 in
+  Alcotest.(check bool) "PolyMBA injected non-linear knots" true
+    (List.length b_pmb.ops > List.length b0.ops);
+  (* Semantic evaluation: 77 + 33 = 110; non-linear quadratic/shift knots preserve exact value *)
+  let state = run_program prog_pmb in
+  Alcotest.(check bool) "PolyMBA program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[1]=110" 110L (get_reg state 1);
+  (* Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x58771337CAFE_L prog_pmb in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[1]=110" 110L (get_reg state_bc 1)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2692,6 +2718,7 @@ let tests = [
   ("Pipelined Stage Dispatch & Decoupled Execution", `Quick, test_pipelined_stage_dispatch);
   ("Memory-Address Entanglement Pass & RAM Roundtrip", `Quick, test_mem_webbing);
   ("Stateful Transducer Coupling & Dynamic Keyed Math", `Quick, test_transducer);
+  ("PolyMBA Non-Linear Expansion & Variable Shift", `Quick, test_polymba);
 ]
 
 
