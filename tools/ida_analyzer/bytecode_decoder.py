@@ -366,20 +366,6 @@ class StackVmDecoder:
 
             elif name == "Exit":
                 delta = 0
-                raw_bytes = cipher_bytes[start_offset:pos]
-                instructions.append({
-                    "offset": start_offset,
-                    "opcode": op_code,
-                    "mnemonic": name,
-                    "handler": handler_name,
-                    "label": handler_lbl,
-                    "operands": ", ".join(operands),
-                    "delta": delta,
-                    "bytes": raw_bytes.hex(),
-                    "key": hex(cur_key),
-                })
-                break
-
             raw_bytes = cipher_bytes[start_offset:pos]
             instructions.append({
                 "offset": start_offset,

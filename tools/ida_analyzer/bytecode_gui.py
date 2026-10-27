@@ -6,6 +6,7 @@ rolling-key decryption, instruction stream inspection, and CFG navigation.
 """
 
 import os
+import re
 import json
 import collections
 from typing import Optional, List, Dict, Any
@@ -23,13 +24,14 @@ except ImportError:
     HAS_GUI = False
 
 try:
-    from bytecode_decoder import StackVmDecoder, OPCODE_SPECS
+    from bytecode_decoder import StackVmDecoder, OPCODE_SPECS, MASK64
 except ImportError:
     try:
-        from tools.ida_analyzer.bytecode_decoder import StackVmDecoder, OPCODE_SPECS
+        from tools.ida_analyzer.bytecode_decoder import StackVmDecoder, OPCODE_SPECS, MASK64
     except ImportError:
         StackVmDecoder = None
         OPCODE_SPECS = []
+        MASK64 = 0xFFFFFFFFFFFFFFFF
 
 
 class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
@@ -40,31 +42,33 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
         self.instructions: List[Dict[str, Any]] = []
         self.filtered_instructions: List[Dict[str, Any]] = []
         self.decoder: Optional[StackVmDecoder] = None
+        self.unmasked_offsets: Dict[int, int] = {}
+        self.unmasked_keys: Dict[int, int] = {}
 
     def OnCreate(self, form):
         if not HAS_GUI:
             return
 
-        # Get parent Qt widget from IDA form
         self.parent = self.FormToPyQtWidget(form)
         self.init_ui()
         self.auto_populate_sources()
+        self.load_block_tables()
 
     def init_ui(self):
         layout = QtWidgets.QVBoxLayout(self.parent)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        # ── Top Panel: Compact Controls ───────────────────────────────────────
+        # ── Top Panel: Controls ───────────────────────────────────────────────
         top_group = QtWidgets.QGroupBox("ASGARD-5877 Rolling-Key Decryption Controls")
         top_group.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
         top_layout = QtWidgets.QVBoxLayout(top_group)
         top_layout.setContentsMargins(10, 8, 10, 8)
         top_layout.setSpacing(6)
 
-        # Row 1: Seed Key & Source File
+        # Row 1: Seed Key & Payload File
         row1 = QtWidgets.QHBoxLayout()
-        row1.addWidget(QtWidgets.QLabel("<b>Seed Key (Hex):</b>"))
+        row1.addWidget(QtWidgets.QLabel("<b>Seed / Block Key:</b>"))
         self.seed_edit = QtWidgets.QLineEdit("0x2ED2232624AED846")
         self.seed_edit.setMaximumWidth(220)
         self.seed_edit.setFont(QtGui.QFont("Menlo", 12))
@@ -82,13 +86,27 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
         row1.addWidget(self.btn_browse)
         top_layout.addLayout(row1)
 
-        # Row 2: Actions & Segments
+        # Row 2: Block Selector & Limits
         row2 = QtWidgets.QHBoxLayout()
+        row2.addWidget(QtWidgets.QLabel("<b>Target Block:</b>"))
+        self.block_combo = QtWidgets.QComboBox()
+        self.block_combo.addItem("Block 0 (Entry Point, Offset 0)")
+        self.block_combo.currentIndexChanged.connect(self.on_block_combo_changed)
+        row2.addWidget(self.block_combo)
+
+        row2.addSpacing(10)
+        row2.addWidget(QtWidgets.QLabel("<b>Max Insns:</b>"))
+        self.limit_combo = QtWidgets.QComboBox()
+        self.limit_combo.addItems(["5,000", "20,000", "50,000", "100,000", "All (Unlimited)"])
+        self.limit_combo.setCurrentIndex(2)  # Default 50,000
+        row2.addWidget(self.limit_combo)
+
+        row2.addSpacing(15)
         self.btn_autodetect = QtWidgets.QPushButton("Auto-Detect Payload")
         self.btn_autodetect.clicked.connect(self.auto_populate_sources)
         row2.addWidget(self.btn_autodetect)
 
-        self.btn_from_segment = QtWidgets.QPushButton("Extract from Segment (__const)")
+        self.btn_from_segment = QtWidgets.QPushButton("Extract Segment (__const)")
         self.btn_from_segment.clicked.connect(self.on_extract_segment)
         row2.addWidget(self.btn_from_segment)
 
@@ -177,6 +195,57 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
 
         layout.addLayout(bottom_layout)
 
+    def load_block_tables(self):
+        """Extracts and unmasks the 582 block offsets and block keys from stack_vm_runtime.hpp."""
+        if not HAS_GUI:
+            return
+        input_file = idc.get_input_file_path() if HAS_GUI else ""
+        bin_dir = os.path.dirname(input_file) if input_file else ""
+        candidates = [
+            os.path.join(bin_dir, "stack_vm_runtime.hpp"),
+            os.path.join(bin_dir, "../protected_arm64_out/stack_vm_runtime.hpp"),
+            "protected_arm64_out/stack_vm_runtime.hpp",
+            "examples/ida_demo/multi_vm_runtime.hpp"
+        ]
+        hpp_path = next((c for c in candidates if os.path.exists(c)), None)
+        if not hpp_path:
+            return
+
+        try:
+            with open(hpp_path) as fh:
+                src = fh.read()
+            m_off = re.search(r"static const uint32_t (_asg_tbl_[0-9a-fA-F]+)\[(\d+)\]\s*=\s*\{([^}]+)\};", src)
+            m_key = re.search(r"static const uint64_t (_asg_tbl_[0-9a-fA-F]+)\[(\d+)\]\s*=\s*\{([^}]+)\};", src)
+            if m_off and m_key:
+                n_blocks = int(m_off.group(2))
+                raw_off = [int(x.strip().rstrip("Uu"), 0) for x in m_off.group(3).split(",") if x.strip()]
+                raw_k = [int(x.strip().rstrip("ULLull"), 0) for x in m_key.group(3).split(",") if x.strip()]
+
+                self.block_combo.blockSignals(True)
+                self.block_combo.clear()
+                self.block_combo.addItem("All Blocks / Stream (Offset 0)")
+
+                for i in range(min(n_blocks, len(raw_off))):
+                    mask32 = (0x5877A564 + i * 0x19E3779B) & 0xFFFFFFFF
+                    mask64 = (0xD00F5877A5640000 + i * 0x9E3779B97F4A7C15) & MASK64
+                    off = raw_off[i] ^ mask32
+                    k = raw_k[i] ^ mask64
+                    self.unmasked_offsets[i] = off
+                    self.unmasked_keys[i] = k
+                    self.block_combo.addItem(f"Block {i:3d} (Offset +0x{off:06X}, Key 0x{k:016X})")
+
+                self.block_combo.blockSignals(False)
+                self.status_label.setText(f"Loaded {n_blocks} block keys & offsets from {os.path.basename(hpp_path)}")
+        except Exception:
+            pass
+
+    def on_block_combo_changed(self, idx):
+        if idx > 0:
+            block_id = idx - 1
+            if block_id in self.unmasked_keys:
+                k = self.unmasked_keys[block_id]
+                self.seed_edit.setText(f"0x{k:016X}")
+
     def auto_populate_sources(self):
         """Auto-detects protected.vanguard in candidate directories."""
         if not HAS_GUI:
@@ -218,7 +287,7 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
             name = ida_segment.get_segm_name(seg)
             sz = seg.end_ea - seg.start_ea
             if "const" in name.lower() and sz > 10000:
-                self.source_edit.setText(f"segment:{name}:0x{seg.start_ea:X}:{min(sz, 1000000)}")
+                self.source_edit.setText(f"segment:{name}:0x{seg.start_ea:X}:{min(sz, 50000000)}")
                 self.status_label.setText(f"Targeting segment {name} at 0x{seg.start_ea:X} ({sz} bytes)")
                 return
         self.status_label.setText("Could not find __const segment in database.")
@@ -234,7 +303,7 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
 
         if os.path.exists(src):
             with open(src, "rb") as fh:
-                return fh.read(1000000)
+                return fh.read(55000000)
 
         # Fallback to direct IDA database segment
         qty = ida_segment.get_segm_qty()
@@ -245,7 +314,7 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
             name = ida_segment.get_segm_name(seg)
             sz = seg.end_ea - seg.start_ea
             if sz > 10000:
-                data = ida_bytes.get_bytes(seg.start_ea, min(sz, 1000000))
+                data = ida_bytes.get_bytes(seg.start_ea, min(sz, 50000000))
                 if data:
                     return data
         return None
@@ -268,8 +337,19 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
             self.status_label.setText("Error: StackVmDecoder not loaded.")
             return
 
+        limit_str = self.limit_combo.currentText().split()[0].replace(",", "")
+        max_insns = 1000000 if limit_str == "All" else int(limit_str)
+
+        # Offset handling if specific block chosen
+        sel_idx = self.block_combo.currentIndex()
+        if sel_idx > 0:
+            block_id = sel_idx - 1
+            if block_id in self.unmasked_offsets:
+                off = self.unmasked_offsets[block_id]
+                cipher_bytes = cipher_bytes[off:]
+
         self.decoder = StackVmDecoder(seed_key)
-        self.instructions = self.decoder.decode_stream(cipher_bytes, max_instructions=5000)
+        self.instructions = self.decoder.decode_stream(cipher_bytes, max_instructions=max_insns)
         self.filtered_instructions = list(self.instructions)
 
         self.populate_table()
@@ -303,7 +383,7 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
             self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(insn['operands']))
             self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(str(insn['delta'])))
 
-            # Column 5: Handler with click hint
+            # Column 5: Handler
             h_text = f"{insn['handler']} [{insn['label']}]"
             item_h = QtWidgets.QTableWidgetItem(h_text)
             item_h.setForeground(QtGui.QBrush(QtGui.QColor("#81C784")))
@@ -358,12 +438,10 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
         row = item.row()
         insn = self.filtered_instructions[row]
 
-        # Double click on Handler column -> Jump directly to handler machine code in IDA View!
         if item.column() == 5 or item.column() == 1:
             self.jump_to_handler_in_ida(insn["opcode"], insn["label"], insn["handler"])
             return
 
-        # Double click on Jump operands -> Filter by target block
         if "target_bid=" in insn["operands"]:
             target_str = insn["operands"].split("target_bid=")[1].split(",")[0].strip()
             self.filter_edit.setText(f"target_bid={target_str}")
@@ -381,21 +459,18 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
         if not HAS_GUI:
             return
 
-        # 1. Search for label symbol lbl_XX
         ea = idc.get_name_ea_simple(label)
         if ea != idc.BADADDR:
             jumpto(ea)
             self.status_label.setText(f"Jumped to label {label} at 0x{ea:X}")
             return
 
-        # 2. Search for handler function h_xxx
         ea = idc.get_name_ea_simple(handler_name)
         if ea != idc.BADADDR:
             jumpto(ea)
             self.status_label.setText(f"Jumped to function {handler_name} at 0x{ea:X}")
             return
 
-        # 3. Fallback: Search inside VM dispatcher function
         self.status_label.setText(f"Handler {label} ({handler_name}) is inlined inside VM dispatcher.")
 
     def apply_filter(self, text):
