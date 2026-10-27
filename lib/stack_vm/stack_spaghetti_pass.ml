@@ -145,12 +145,19 @@ let apply_program cfg prog =
              Takes JccRel(new_bid, E) in 100% of runtime executions,
              while JmpRel(block.id) introduces a decoy loop edge that thwarts
              pure topological basic block concatenation. *)
-          let r1 = Int64.logor (next_int64 rng) 1L in
+          let anchor =
+            match List.find_map (function
+              | PushReg r | PopReg r | SetRegImm (r, _) | AddRegImm (r, _) -> Some r
+              | _ -> None
+            ) block.ops with
+            | Some r -> r
+            | None -> 0
+          in
           let r2 = Int64.logor (next_int64 rng) 1L in
           let r3 = next_int64 rng in
           let jump_ops = [
-            PushImm r1; PushImm r2; Mul; PushImm r3; Add;
-            PushImm r1; PushImm r2; Mul; PushImm r3; Add;
+            PushReg anchor; PushImm r2; Mul; PushImm r3; Add;
+            PushReg anchor; PushImm r2; Mul; PushImm r3; Add;
             Sub;
             PushImm 0L;
             Cmp;

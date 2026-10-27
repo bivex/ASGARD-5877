@@ -103,18 +103,17 @@ let transform_block ?(rng = Random.State.make [| 0x5877 |]) vpc_slot entry_of de
   let go_disp target =
     let real_entry = entry_of target in
     let decoy_entry = decoy_entry_of target in
-    (* Non-Linear Opaque Zero Branch:
-       (r1 * r2 + r3) - (r1 * r2 + r3) == 0 in Z/2^64Z.
-       The 64-bit non-linear integer product (Mul) creates full carry chains,
-       defeating F2-linear Gaussian elimination and constant folding solvers.
-       Sets ZERO flag and takes JccRel(real_entry, E) in 100% of runtime executions,
-       while JmpRel(decoy_entry) creates 1:1 branch indistinguishability (BIS = 1.0). *)
-    let r1 = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
+    (* Non-Linear Register-Anchored Opaque Zero Branch:
+       (vpc * r2 + r3) - (vpc * r2 + r3) == 0 in Z/2^64Z.
+       Anchoring to runtime register vpc_slot prevents constant folding,
+       while 64-bit non-linear multiplication (Mul) creates full carry chains.
+       Guaranteed 100% runtime evaluation to 0, taking JccRel(real_entry, E)
+       with decoy JmpRel(decoy_entry) indistinguishability. *)
     let r2 = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
     let r3 = Random.State.int64 rng Int64.max_int in
     [
-      PushImm r1; PushImm r2; Mul; PushImm r3; Add;
-      PushImm r1; PushImm r2; Mul; PushImm r3; Add;
+      PushReg vpc_slot; PushImm r2; Mul; PushImm r3; Add;
+      PushReg vpc_slot; PushImm r2; Mul; PushImm r3; Add;
       Sub;
       PushImm 0L;
       Cmp;
@@ -205,8 +204,6 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
           (Printf.sprintf "cff_disp_%d" disp_id)
           [ PushReg vpc_slot
           ; PushImm token
-          ; Sub
-          ; PushImm 0L
           ; Cmp
           ; JccRel (bid, E)
           ; JmpRel fall_to
