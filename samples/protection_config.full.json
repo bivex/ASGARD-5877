@@ -1,38 +1,38 @@
 {
   "seed": 1337,
   "crypto": {
-    "rounds": 64,
-    "key_bits": 256
+    "rounds": 16,
+    "key_bits": 128
   },
   "bloat": {
-    "mode": "insane",
-    "target_size_budget_kb": 5000,
-    "junk_density": 1.5,
-    "density_cap_threshold1_kb": 0,
-    "density_cap_threshold2_kb": 0
+    "mode": "balanced",
+    "target_size_budget_kb": 200,
+    "junk_density": 0.2,
+    "density_cap_threshold1_kb": 100,
+    "density_cap_threshold2_kb": 200
   },
   "cff": {
     "enabled": true,
     "obfuscate_states": true,
-    "inject_opaque_predicates": true,
+    "inject_opaque_predicates": false,
     "input_tainted_transitions": true,
-    "split_rate": 100,
-    "hub_count": 6,
-    "pop_digest": true,
+    "split_rate": 30,
+    "hub_count": 1,
+    "pop_digest": false,
     "red_herring": true
   },
   "mba": {
     "enabled": true,
-    "depth": 4,
+    "depth": 2,
     "engine": "egraph",
-    "stack_synthesis_rate": 100,
-    "egraph_rate": 40,
-    "egraph_node_limit": 250,
-    "egraph_time_budget_ms": 120,
-    "egraph_iter_limit": 8,
-    "ir_max_depth": 6,
-    "ir_egraph_node_limit": 150,
-    "ir_egraph_time_budget_ms": 100
+    "stack_synthesis_rate": 30,
+    "egraph_rate": 20,
+    "egraph_node_limit": 80,
+    "egraph_time_budget_ms": 50,
+    "egraph_iter_limit": 3,
+    "ir_max_depth": 3,
+    "ir_egraph_node_limit": 60,
+    "ir_egraph_time_budget_ms": 40
   },
   "anti_pushan": {
     "enabled": true,
@@ -42,7 +42,7 @@
   "anti_tamper": {
     "enabled": true,
     "smc": true,
-    "smc_strict": true,
+    "smc_strict": false,
     "hardware_timing_probes": true,
     "memory_integrity_scanner": true,
     "anti_emulation": true,
@@ -50,7 +50,7 @@
     "direct_syscalls": true
   },
   "vm_runtime": {
-    "num_dispatch_domains": 16,
+    "num_dispatch_domains": 4,
     "enable_junk_instructions": true,
     "enable_super_operators": true,
     "stack_scrambling": true,
@@ -60,8 +60,8 @@
     "ephemeral_jit": false,
     "chameleon_handlers": true,
     "oblivious_memory": true,
-    "context_epochs": 8,
-    "oblivious_decoys": 7
+    "context_epochs": 2,
+    "oblivious_decoys": 2
   },
   "c_macro": {
     "enabled": true,
@@ -84,15 +84,15 @@
     "layout_randomization": true,
     "runtime_hardening": true,
     "compact_imm": true,
-    "feedback_rate": 100,
+    "feedback_rate": 50,
     "cff_couple_key": true,
     "opcode_polymorphism": true,
     "permute_registers": false,
-    "host_stack_size_kb": 2048
+    "host_stack_size_kb": 1024
   },
   "eh_shadowing": {
     "enabled": true,
-    "shadow_alloc_size": 64,
+    "shadow_alloc_size": 32,
     "interceptor_symbol": "tech_2601_interceptor"
   },
   "anti_vpc": {
@@ -103,36 +103,36 @@
   },
   "memory_chaffing": {
     "enabled": true,
-    "pool_size": 16384,
-    "chaff_ratio": 8.0
+    "pool_size": 1024,
+    "chaff_ratio": 1.0
   },
   "comp_stall": {
     "enabled": true,
-    "variant": "time_lock",
-    "n_iterations": 500,
-    "pow_difficulty": 20,
-    "tau_ux_sec": 0.5,
-    "emu_quota_instrs": 10000000,
+    "variant": "ergodic",
+    "n_iterations": 100,
+    "pow_difficulty": 10,
+    "tau_ux_sec": 0.1,
+    "emu_quota_instrs": 1000000,
     "seed": 1337
   },
   "spaghetti": {
     "enabled": true,
-    "split_rate": 100,
-    "max_extra_blocks": 0,
-    "max_splits_factor": 2,
-    "min_chunk": 1
+    "split_rate": 25,
+    "max_extra_blocks": 20,
+    "max_splits_factor": 1,
+    "min_chunk": 2
   },
   "amplifier": {
     "enabled": true,
-    "profile": "heavy",
-    "horner_degree": 6,
-    "bit_slice_lanes": 2,
-    "expander_chord_len": 6,
-    "expander_chord_rate": 85
+    "profile": "balanced",
+    "horner_degree": 2,
+    "bit_slice_lanes": 1,
+    "expander_chord_len": 4,
+    "expander_chord_rate": 25
   },
   "superop": {
     "enabled": true,
-    "fusion_rate": 100,
+    "fusion_rate": 50,
     "enable_add_imm": true,
     "enable_sub_imm": true,
     "enable_add_ii": true,
@@ -142,41 +142,41 @@
   },
   "ghost": {
     "enabled": true,
-    "ghost_rate": 100,
-    "max_ghosts": 0,
+    "ghost_rate": 25,
+    "max_ghosts": 20,
     "entangle": true
   },
   "avid": {
     "enabled": true,
-    "rate": 70,
-    "max_avid": 0
+    "rate": 20,
+    "max_avid": 15
   },
   "mem_webbing": {
     "enabled": true,
-    "rate": 60
+    "rate": 25
   },
   "transducer": {
     "enabled": true,
-    "rate": 60
+    "rate": 25
   },
   "polymba": {
     "enabled": true,
-    "rate": 50
+    "rate": 20
   },
   "multiplicity": {
     "enabled": true,
-    "rate": 90
+    "rate": 25
   },
   "pipelined_dispatch": {
     "enabled": true,
-    "chaff_slots": 8
+    "chaff_slots": 4
   },
   "trampoline": {
-    "chunk_size": 32
+    "chunk_size": 64
   },
   "watermark": {
     "payload_bits": 48,
-    "redundancy": 11
+    "redundancy": 5
   },
   "toolchain": {
     "opt_level": "-O3",
