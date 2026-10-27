@@ -80,44 +80,41 @@ let maybe rng prob = next_int rng 100 < prob
     Sub semantics: pops b_top then a_next, pushes a_next − b_top.
     For XOR: emit or_ops (→ or_val on stack), then and_ops on top
     (→ and_val = top, or_val = next), Sub → or_val − and_val = XOR. ✓ *)
-let rec lower_mba_to_stack (e : Mba_engine.Mba.expr) : stack_op list =
+let rec lower_mba_to_stack ?anchor (e : Mba_engine.Mba.expr) : stack_op list =
   match e with
-  | Mba_engine.Mba.Const c    -> [ PushImm c ]
-  | Mba_engine.Mba.Var _      -> [ PushImm 0L ]  (* closed term — shouldn't happen *)
-  | Mba_engine.Mba.Add (a, b) -> lower_mba_to_stack a @ lower_mba_to_stack b @ [ Add ]
-  | Mba_engine.Mba.Sub (a, b) -> lower_mba_to_stack a @ lower_mba_to_stack b @ [ Sub ]
-  | Mba_engine.Mba.Mul (a, b) -> lower_mba_to_stack a @ lower_mba_to_stack b @ [ Mul ]
-  | Mba_engine.Mba.And (a, b) -> lower_and a b
-  | Mba_engine.Mba.Or  (a, b) -> lower_or  a b
-  | Mba_engine.Mba.Xor (a, b) -> lower_xor a b
+  | Mba_engine.Mba.Const c ->
+      (match anchor with
+       | Some r -> [ PushReg r; PushImm c; Add; PushReg r; Sub ]
+       | None -> [ PushImm c ])
+  | Mba_engine.Mba.Var _      -> [ PushImm 0L ]
+  | Mba_engine.Mba.Add (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Add ]
+  | Mba_engine.Mba.Sub (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Sub ]
+  | Mba_engine.Mba.Mul (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Mul ]
+  | Mba_engine.Mba.And (a, b) -> lower_and ?anchor a b
+  | Mba_engine.Mba.Or  (a, b) -> lower_or  ?anchor a b
+  | Mba_engine.Mba.Xor (a, b) -> lower_xor ?anchor a b
   | Mba_engine.Mba.Not a ->
-      lower_mba_to_stack a @ lower_mba_to_stack a @ [ Nor ]
+      lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor a @ [ Nor ]
   | Mba_engine.Mba.Neg a ->
-      [ PushImm 0L ] @ lower_mba_to_stack a @ [ Sub ]
+      (match anchor with
+       | Some r -> [ PushReg r; PushReg r; Sub ] @ lower_mba_to_stack ?anchor a @ [ Sub ]
+       | None -> [ PushImm 0L ] @ lower_mba_to_stack ?anchor a @ [ Sub ])
 
-(* AND(a,b) = NOR(NOT(a), NOT(b)) = NOR(NOR(a,a), NOR(b,b))
-   Stack: la;la;Nor → [not_a] ; lb;lb;Nor → [not_a,not_b] ; Nor → [AND] ✓ *)
-and lower_and a b =
-  let la = lower_mba_to_stack a and lb = lower_mba_to_stack b in
+and lower_and ?anchor a b =
+  let la = lower_mba_to_stack ?anchor a and lb = lower_mba_to_stack ?anchor b in
   la @ la @ [ Nor ] @
   lb @ lb @ [ Nor ] @
   [ Nor ]
 
-(* OR(a,b) = NAND(NOT(a), NOT(b)) = NAND(NAND(a,a), NAND(b,b))
-   Stack: la;la;Nand → [not_a] ; lb;lb;Nand → [not_a,not_b] ; Nand → [OR] ✓ *)
-and lower_or a b =
-  let la = lower_mba_to_stack a and lb = lower_mba_to_stack b in
+and lower_or ?anchor a b =
+  let la = lower_mba_to_stack ?anchor a and lb = lower_mba_to_stack ?anchor b in
   la @ la @ [ Nand ] @
   lb @ lb @ [ Nand ] @
   [ Nand ]
 
-(* XOR(a,b) = OR(a,b) − AND(a,b)
-   After lower_or: stack = [..., or_val]
-   After lower_and: stack = [..., or_val, and_val]  (and_val is top)
-   Sub: or_val − and_val = XOR(a,b) ✓ *)
-and lower_xor a b =
-  lower_or a b @
-  lower_and a b @
+and lower_xor ?anchor a b =
+  lower_or ?anchor a b @
+  lower_and ?anchor a b @
   [ Sub ]
 
 (* ── E-graph budget for per-constant expansion ───────────────────────── *)
@@ -140,7 +137,7 @@ let egraph_config_of ~node_limit ~time_budget_ms ~iter_limit = {
 (** [synthesize_egraph rng c] expands [Mba.Const c] through the e-graph,
     extracts the maximally complex equivalent expression, and lowers it to
     stack ops.  Falls back to L2 on any error. *)
-let synthesize_egraph ?(budget = egraph_const_config) rng c =
+let synthesize_egraph ?anchor ?(budget = egraph_const_config) rng c =
   (* Derive a Random.State seed from the SplitMix state, advance rng *)
   let seed_word = Int64.to_int (Int64.logxor rng.state salt_egraph_scrambler) in
   let _ = next_int64 rng in  (* advance so next call gets a different seed *)
@@ -151,8 +148,10 @@ let synthesize_egraph ?(budget = egraph_const_config) rng c =
   match expr with
   | Mba_engine.Mba.Const _ ->
       let not_c = Int64.lognot c in
-      [ PushImm not_c; PushImm 0L; Nor ]
-  | _ -> lower_mba_to_stack expr
+      (match anchor with
+       | Some r -> [ PushImm not_c; PushReg r; PushReg r; Sub; Nor ]
+       | None -> [ PushImm not_c; PushImm 0L; Nor ])
+  | _ -> lower_mba_to_stack ?anchor expr
 
 (* ── MBA strategy type ───────────────────────────────────────────────── *)
 type mba_strategy = L1_AddSplit | L2_NorNot | L3_NandSelf | L4_AddNor | L5_Egraph | L6_NullspaceZero
@@ -233,10 +232,10 @@ let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_
     let c2 = Int64.sub c c1 in
     (match anchor with
      | Some r ->
-         [ PushReg r; PushImm r1; Add; PushImm r2; Add;
-           PushImm r3; PushImm r4; Add;
-           Sub; PushReg r; Sub;
-           PushImm c1; PushImm c2; Add;
+         [ PushReg r; PushImm r1; Add; PushReg r; Sub; PushImm r2; Add;
+           PushReg r; PushImm r3; Add; PushReg r; Sub; PushImm r4; Add;
+           Sub;
+           PushReg r; PushImm c1; Add; PushReg r; Sub; PushImm c2; Add;
            Add ]
      | None ->
          [ PushImm r1; PushImm r2; Add;
@@ -246,7 +245,7 @@ let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_
            Add ])
 
   | L5_Egraph ->
-    (try synthesize_egraph ~budget:egraph_budget rng c
+    (try synthesize_egraph ?anchor ~budget:egraph_budget rng c
      with _ ->
        let not_c = Int64.lognot c in
        (match anchor with
@@ -265,7 +264,7 @@ let find_anchor ops =
 let rewrite_block ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config)
     ~rng ~scratch_slot:_ mba_rate block =
   let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
-  let anchor = find_anchor block.ops in
+  let anchor = match find_anchor block.ops with Some r -> Some r | None -> Some 0 in
   let new_ops =
     List.concat_map (fun (i, op) ->
       match op with
