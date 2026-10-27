@@ -157,25 +157,19 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live e
      Replaces trivial [PushImm 0; Add] and [AddImm k; SubImm k] with non-trivial
      algebraic zero knots that cannot be reduced by single-pass peephole scanners. *)
   | GhostLiveAddZero ->
-      let imm = next_int64 rng in
-      let k1 = next_int64 rng in
-      let k2 = Int64.sub imm k1 in
-      (* x + (imm - k1 - k2) == x + 0 == x *)
-      [ PushImm imm; PushImm k1; Sub; PushImm k2; Sub; Add ]
+      let k = next_int64 rng in
+      (* Def-use register-anchored zero identity: x + ((r + k) - r - k) == x *)
+      [ PushReg real_r; PushImm k; Add; PushReg real_r; Sub; PushImm k; Sub; Add ]
 
   | GhostLiveAddSubPair ->
-      let k1 = next_int64 rng in
-      let k2 = next_int64 rng in
-      (* Add (k1 + k2) then Sub k1 then Sub k2 *)
-      let sum_k = Int64.add k1 k2 in
-      [ AddImm sum_k; SubImm k1; SubImm k2 ]
+      let k = next_int64 rng in
+      (* Register-interleaved additive identity: x + r + k - r - k == x *)
+      [ PushReg real_r; Add; PushImm k; Add; PushReg real_r; Sub; PushImm k; Sub ]
 
   (* Class D: Flag-Preserving Live-Stack Identity (flags live, depth >= 1) *)
   | GhostLiveFlagPreserved ->
-      let k1 = next_int64 rng in
-      let k2 = next_int64 rng in
-      let sum_k = Int64.add k1 k2 in
-      [ PushFlags; AddImm sum_k; SubImm k1; SubImm k2; PopFlags ]
+      (* Perturb flags with real register and restore without constant chains *)
+      [ PushFlags; PushReg real_r; Add; PushReg real_r; Sub; PopFlags ]
 
   (* Class E: Entangled Def-Use Webbing (flags dead, depth >= 1)
      Weaves polymorphic zero-knots using scratch ring registers:

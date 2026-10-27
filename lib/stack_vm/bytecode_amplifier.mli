@@ -53,7 +53,7 @@ val eval_horner_polynomial : t0:int64 -> coeffs:int64 list -> int64
 (** Generation of a chain of stack operations evaluating the Horner polynomial with t_0 masking.
     Stack delta = +1 (equivalent to PushImm target_const). *)
 val emit_horner_stack_insns :
-  Random.State.t -> target_const:int64 -> degree:int -> stack_op list
+  ?anchor:int -> Random.State.t -> target_const:int64 -> degree:int -> stack_op list
 
 (** Ring twist [PushImm k_odd; Mul; PushImm k_inv; Mul]:
     value- and flag-preserving (Mul is flag-neutral).

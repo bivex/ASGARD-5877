@@ -163,47 +163,64 @@ let expand_sub_mba () =
 
 (** Metamorphic expansion of an op. [flag_dead] indicates whether condition
     flags are dead after this instruction, permitting ALU-based expansions. *)
-let expand_op rng flag_dead = function
+let expand_op rng ~s1 ~s2 ~s3 flag_dead = function
   | Swap ->
-      [ Swap; Swap; Swap ]
+      if next_int rng 2 = 0 then
+        (* Desugar Swap via scratch slots: defeats Swap; Swap; Swap pattern matchers *)
+        [ PopReg s1; PopReg s2; PushReg s1; PushReg s2 ]
+      else
+        [ Swap ]
 
   | Dup ->
-      [ Dup; Swap; Swap ]
+      if next_int rng 2 = 0 then
+        (* Desugar Dup via scratch slot: defeats Dup; Swap; Swap pattern matchers *)
+        [ PopReg s1; PushReg s1; PushReg s1 ]
+      else
+        [ Dup ]
 
   | Rot ->
-      [ Rot; Rot; Rot; Rot ]
-
-  | PushReg r ->
       if next_int rng 2 = 0 then
-        [ PushReg r; Dup; PopReg r ]
+        (* Desugar Rot via scratch slots: defeats Rot*4 pattern matchers *)
+        [ PopReg s1; PopReg s2; PopReg s3; PushReg s2; PushReg s1; PushReg s3 ]
       else
-        [ PushReg r; PushReg r; PopReg r ]
+        [ Rot ]
+
+  | PushReg r when flag_dead ->
+      if next_int rng 2 = 0 then
+        (* Algebraic register identity: (r - r) + r == r *)
+        [ PushReg r; PushReg r; Sub; PushReg r; Add ]
+      else
+        [ PushReg r ]
+  | PushReg r ->
+      [ PushReg r ]
 
   | Add when flag_dead ->
       if next_int rng 2 = 0 then
         expand_add_mba ()
       else
-        (* Alternate algebraic identity: a + b ≡ a - (-b) *)
         [ PushImm 0L; Swap; Sub; Sub ]
 
   | Sub when flag_dead ->
       if next_int rng 2 = 0 then
         expand_sub_mba ()
       else
-        (* Alternate algebraic identity: a - b ≡ a + ~b + 1 *)
         [ Dup; Nor; Add; PushImm 1L; Add ]
 
   | PushImm v when flag_dead ->
-      expand_push_imm_xor rng v
+      if next_int rng 2 = 0 then
+        expand_push_imm_xor rng v
+      else
+        let v1 = next_int64 rng in
+        let v2 = Int64.sub v v1 in
+        [ PushReg s1; PushImm v1; Add; PushReg s1; Sub; PushImm v2; Add ]
 
   | other -> [ other ]
-
 let is_expandable flag_dead = function
   | Swap | Dup | Rot | PushReg _ -> true
   | Add | Sub | PushImm _ -> flag_dead
   | _ -> false
 
-let apply_block (cfg : multiplicity_config) _ctx (b : block) : block =
+let apply_block (cfg : multiplicity_config) ctx (b : block) : block =
   if not cfg.enabled || cfg.rate <= 0 then b
   else
     let rng =
@@ -213,12 +230,15 @@ let apply_block (cfg : multiplicity_config) _ctx (b : block) : block =
               (b.id * Int64.to_int salt_multiplicity_block_mul
                + Int64.to_int salt_multiplicity_block_add)))
     in
+    let s1 = Context_allocator.alloc_scratch ctx in
+    let s2 = Context_allocator.alloc_scratch ctx in
+    let s3 = Context_allocator.alloc_scratch ctx in
     let live = Stack_flag_liveness.analyze_list b.ops in
     let new_ops = ref [] in
     List.iteri (fun i op ->
       let flag_dead = not live.(i + 1) in
       if is_expandable flag_dead op && maybe rng cfg.rate then
-        let expanded = expand_op rng flag_dead op in
+        let expanded = expand_op rng ~s1 ~s2 ~s3 flag_dead op in
         new_ops := List.rev expanded @ !new_ops
       else
         new_ops := op :: !new_ops

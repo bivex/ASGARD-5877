@@ -76,57 +76,65 @@ let eval_horner_polynomial ~(t0 : int64) ~(coeffs : int64 list) : int64 =
 (** Generation of a chain of stack instructions evaluating the Horner polynomial on the stack.
     Stack delta = +1 (equivalent to PushImm target_const).
     At every step t_0 is masked via the identity (t_0 ^ m) + 2*(t_0 & m) - m. *)
-let emit_horner_step (rng : Random.State.t) ~(t0 : int64) ~(a_k : int64) : stack_op list =
+let emit_horner_step ?anchor (rng : Random.State.t) ~(t0 : int64) ~(a_k : int64) : stack_op list =
   let m = rand_u64 rng in
   let variant = Random.State.int rng 5 in
   let t0_eval =
-    match variant with
-    | 0 ->
-        (* Variant 0: Additive XOR-AND split: (t0 ^ m) + 2*(t0 & m) - m *)
-        let t0_xor_m = Int64.logxor t0 m in
-        let t0_and_m = Int64.shift_left (Int64.logand t0 m) 1 in
-        [ PushImm t0_xor_m; PushImm t0_and_m; Add; PushImm m; Sub ]
-    | 1 ->
-        (* Variant 1: Disjunctive OR-AND split: (t0 | m) + (t0 & m) - m *)
-        let t0_or_m = Int64.logor t0 m in
-        let t0_and_m = Int64.logand t0 m in
-        [ PushImm t0_or_m; PushImm t0_and_m; Add; PushImm m; Sub ]
-    | 2 ->
-        (* Variant 2: Subtractive 2*OR - XOR split: 2*(t0 | m) - (t0 ^ m) - m *)
-        let t0_2or_m = Int64.shift_left (Int64.logor t0 m) 1 in
-        let t0_xor_m = Int64.logxor t0 m in
-        [ PushImm t0_2or_m; PushImm t0_xor_m; Sub; PushImm m; Sub ]
-    | 3 ->
-        (* Variant 3: Direct modular additive partition: (t0 - m) + m *)
+    match anchor with
+    | Some r ->
         let t0_sub_m = Int64.sub t0 m in
-        [ PushImm t0_sub_m; PushImm m; Add ]
-    | _ ->
-        (* Variant 4: Pre-subtracted XOR split: ((t0 ^ m) - m) + 2*(t0 & m) *)
-        let t0_xor_m = Int64.logxor t0 m in
-        let t0_and_m = Int64.shift_left (Int64.logand t0 m) 1 in
-        [ PushImm t0_xor_m; PushImm m; Sub; PushImm t0_and_m; Add ]
+        [ PushReg r; PushImm t0_sub_m; Add; PushReg r; Sub; PushImm m; Add ]
+    | None ->
+        (match variant with
+         | 0 ->
+             let t0_xor_m = Int64.logxor t0 m in
+             let t0_and_m = Int64.shift_left (Int64.logand t0 m) 1 in
+             [ PushImm t0_xor_m; PushImm t0_and_m; Add; PushImm m; Sub ]
+         | 1 ->
+             let t0_or_m = Int64.logor t0 m in
+             let t0_and_m = Int64.logand t0 m in
+             [ PushImm t0_or_m; PushImm t0_and_m; Add; PushImm m; Sub ]
+         | 2 ->
+             let t0_2or_m = Int64.shift_left (Int64.logor t0 m) 1 in
+             let t0_xor_m = Int64.logxor t0 m in
+             [ PushImm t0_2or_m; PushImm t0_xor_m; Sub; PushImm m; Sub ]
+         | 3 ->
+             let t0_sub_m = Int64.sub t0 m in
+             [ PushImm t0_sub_m; PushImm m; Add ]
+         | _ ->
+             let t0_xor_m = Int64.logxor t0 m in
+             let t0_and_m = Int64.shift_left (Int64.logand t0 m) 1 in
+             [ PushImm t0_xor_m; PushImm m; Sub; PushImm t0_and_m; Add ])
   in
   let add_ak =
-    if Random.State.bool rng then
-      [ PushImm a_k; Add ]
-    else
-      let m_ak = rand_u64 rng in
-      [ PushImm (Int64.sub a_k m_ak); PushImm m_ak; Add; Add ]
+    match anchor with
+    | Some r ->
+        [ PushReg r; PushImm a_k; Add; PushReg r; Sub; Add ]
+    | None ->
+        if Random.State.bool rng then
+          [ PushImm a_k; Add ]
+        else
+          let m_ak = rand_u64 rng in
+          [ PushImm (Int64.sub a_k m_ak); PushImm m_ak; Add; Add ]
   in
   t0_eval @ [ Mul ] @ add_ak
 
 (** Generation of a chain of stack instructions evaluating the Horner polynomial on the stack.
     Stack delta = +1 (equivalent to PushImm target_const).
     Uses a randomized 5-variant metamorphic grammar per step, shattering deterministic DCE templates. *)
-let emit_horner_stack_insns (rng : Random.State.t) ~(target_const : int64) ~(degree : int)
+let emit_horner_stack_insns ?anchor (rng : Random.State.t) ~(target_const : int64) ~(degree : int)
     : stack_op list =
   let (t0, coeffs) = synth_horner_polynomial rng ~target_const ~degree in
   match coeffs with
   | [] -> [PushImm target_const]
   | a_d :: rest ->
-      let init_insns = [PushImm a_d] in
+      let init_insns =
+        match anchor with
+        | Some r -> [ PushReg r; PushImm a_d; Add; PushReg r; Sub ]
+        | None -> [ PushImm a_d ]
+      in
       let step_insns =
-        List.concat_map (fun a_k -> emit_horner_step rng ~t0 ~a_k) rest
+        List.concat_map (fun a_k -> emit_horner_step ?anchor rng ~t0 ~a_k) rest
       in
       init_insns @ step_insns
 
@@ -325,17 +333,15 @@ let amplify_block
       let flag_safe = not live.(i + 1) in
       match op with
       | PushImm c when flag_safe ->
-          let horner = emit_horner_stack_insns rng ~target_const:c ~degree:profile.horner_degree in
+          let anchor = Some (pick_anchor ()) in
+          let horner = emit_horner_stack_insns ?anchor rng ~target_const:c ~degree:profile.horner_degree in
           horner @ maybe_knot i
 
       | PushImm c ->
-          (* Flags are live: it is safe to wrap via PushFlags/PopFlags
-             (PushImm does not define flags, so restoring the pre-command
-             state is correct). *)
+          let anchor = Some (pick_anchor ()) in
           [PushFlags] @
-          emit_horner_stack_insns rng ~target_const:c ~degree:profile.horner_degree @
+          emit_horner_stack_insns ?anchor rng ~target_const:c ~degree:profile.horner_degree @
           [Swap; PopFlags]
-
       | Add when profile.bit_slice_lanes > 0 ->
           let carry = emit_carry_chain_add rng ~s1 ~s2 ~sx ~sy in
           if flag_safe then carry @ maybe_knot (i + 1)

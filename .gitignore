@@ -57,3 +57,4 @@ octave-workspace
 /examples/x87_fuzz/artifacts
 /scripts/artifacts
 /dist_arm64
+/_probe_dumps

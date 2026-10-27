@@ -118,11 +118,9 @@ let generate_avid_cluster rng scratch_slot anchor_slot flags_live =
         (* Always weave polymorphic def-use chord when anchor is available *)
         [ PushImm imm1 ] @ emit_anchor_chord rng anchor @ [ PopReg scratch_slot ]
     | None ->
-        let k1 = next_int64 rng in
-        let k2 = next_int64 rng in
-        let sum_k = Int64.add k1 k2 in
-        [ PushImm sum_k; PushImm k1; Sub; PushImm k2; Sub; PopReg scratch_slot ]
-
+        let k = next_int64 rng in
+        (* Register-anchored delta: (s + k) - s == k, draining into scratch *)
+        [ PushReg scratch_slot; PushImm k; Add; PushReg scratch_slot; Sub; PopReg scratch_slot ]
 
 
 let apply_block (cfg : avid_config) ctx (b : block) : block =
