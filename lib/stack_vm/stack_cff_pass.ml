@@ -194,6 +194,29 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
      vpc = token; the NE polarity swaps the taken/fallthrough edges
      while preserving the runtime CFG exactly. *)
   let rng = Random.State.make [| Int64.to_int (Int64.logand seed 0x7FFFFFFFL) |] in
+  let compute_hensel_coefficients tau rng =
+    let a1 =
+      let r = Int64.logxor (Int64.of_int (Random.State.bits rng))
+                (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 31) in
+      Int64.logor r 1L
+    in
+    let c2 =
+      Int64.logxor (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 31)
+    in
+    let c3 =
+      Int64.logxor (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 31)
+    in
+    let open Int64 in
+    let tau2 = mul tau tau in
+    let tau3 = mul tau2 tau in
+    let g0 = add (neg (mul a1 tau)) (sub (mul 2L (mul c2 tau2)) (mul 4L (mul c3 tau3))) in
+    let g1 = add (sub a1 (mul 4L (mul c2 tau))) (mul 12L (mul c3 tau2)) in
+    let g2 = sub (mul 2L c2) (mul 12L (mul c3 tau)) in
+    let g3 = mul 4L c3 in
+    (g0, g1, g2, g3)
+  in
   let comparison_blocks = ref [] in
   for s = 0 to n_shards - 1 do
     let ids = buckets.(s) in
@@ -207,9 +230,29 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
           entry_of_s ((s + 1) mod n_shards)
       in
       let token = Hashtbl.find tokens bid in
-      let cmp_ops = match Random.State.int rng 3 with
-        | 0 -> [ PushReg vpc_slot; PushImm token; Cmp ]
-        | 1 -> (* operand-symmetric: ZF(token-vpc) == ZF(vpc-token) *)
+      let cmp_ops = match Random.State.int rng 4 with
+        | 0 ->
+            (* Pass 13: Hensel Lifting Implicit Cubic Predicate *)
+            let (g0, g1, g2, g3) = compute_hensel_coefficients token rng in
+            [
+              PushImm g3;
+              PushReg vpc_slot;
+              Mul;
+              PushImm g2;
+              Add;
+              PushReg vpc_slot;
+              Mul;
+              PushImm g1;
+              Add;
+              PushReg vpc_slot;
+              Mul;
+              PushImm g0;
+              Add;
+              PushImm 0L;
+              Cmp;
+            ]
+        | 1 -> [ PushReg vpc_slot; PushImm token; Cmp ]
+        | 2 -> (* operand-symmetric: ZF(token-vpc) == ZF(vpc-token) *)
             [ PushImm token; PushReg vpc_slot; Cmp ]
         | _ -> (* difference-vs-anchored-zero: no literal 0L in stream *)
             [ PushReg vpc_slot; PushImm token; Sub;

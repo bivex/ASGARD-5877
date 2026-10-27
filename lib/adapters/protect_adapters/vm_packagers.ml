@@ -369,6 +369,7 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Handler Multiplicity & Metamorphic Synthesis" native_cfg.multiplicity.enabled
           "disabled in configuration";
+        pass_switch "Algebraic Flag Materialization" true "";
         pass_switch "Pipelined Stage Dispatch" native_cfg.pipelined_dispatch.enabled
           "disabled in configuration";
         pass_switch "Bytecode Amplification" true "";
@@ -544,6 +545,12 @@ module Stack_vm_packager : Vm_packager = struct
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"1-lowered" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 1/7] IR Lowering: %d blocks lowered to Stack-IR (%d context slots)"
       (Hashtbl.length prog.blocks) (Stack_vm.Context_allocator.total_slots ctx);
+
+    (* Pass 10: Branchless Bit-Blasted Flag Materialization *)
+    let prog =
+      Stack_vm.Stack_algebraic_flags_pass.apply_program
+        Stack_vm.Stack_algebraic_flags_pass.default_algebraic_flags_config ctx prog
+    in
 
     (* Phase 2a (Pre-amplification): Superoperator Fusion on original lowered program instructions *)
     let prog, pre_superop_stats =

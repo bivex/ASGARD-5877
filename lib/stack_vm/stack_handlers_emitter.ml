@@ -333,9 +333,9 @@ let emit_binary_op_handler name inner_body : top_decl =
 let emit_h_add () : top_decl =
   emit_binary_op_handler "h_add" [
     let_u64 "res" (var "a" +~ var "b");
-    vm_zf := cast UInt8 (var "res" ==~ u64 0L);
-    vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
-    vm_cf := cast UInt8 (var "res" <~ var "a");
+    vm_zf := cast UInt8 (((var "res" -~ u64 1L) &~ bit_not (var "res")) >>~ i32 63);
+    vm_sf := cast UInt8 (var "res" >>~ i32 63);
+    vm_cf := cast UInt8 ((((var "a" &~ var "b") |~ ((var "a" |~ var "b") &~ bit_not (var "res"))) >>~ i32 63) &~ u64 1L);
     vm_of := cast UInt8 (((bit_not (var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
     vm_pf := call "parity8" [var "res"];
     idx vm_vsp vm_vsp_idx := vsp_encode vm_vsp_idx (var "res");
@@ -345,9 +345,9 @@ let emit_h_add () : top_decl =
 let emit_h_sub () : top_decl =
   emit_binary_op_handler "h_sub" [
     let_u64 "res" (var "a" -~ var "b");
-    vm_zf := cast UInt8 (var "res" ==~ u64 0L);
-    vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
-    vm_cf := cast UInt8 (var "a" <~ var "b");
+    vm_zf := cast UInt8 (((var "res" -~ u64 1L) &~ bit_not (var "res")) >>~ i32 63);
+    vm_sf := cast UInt8 (var "res" >>~ i32 63);
+    vm_cf := cast UInt8 ((((bit_not (var "a") &~ var "b") |~ ((bit_not (var "a") |~ var "b") &~ var "res")) >>~ i32 63) &~ u64 1L);
     vm_of := cast UInt8 ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
     vm_pf := call "parity8" [var "res"];
     idx vm_vsp vm_vsp_idx := vsp_encode vm_vsp_idx (var "res");
@@ -587,9 +587,9 @@ let emit_h_cmp () : top_decl =
           vm_vsp_idx -= i32 1;
           let_u64 "a" (vsp_encode vm_vsp_idx (idx vm_vsp vm_vsp_idx));
           let_u64 "res" (var "a" -~ var "b");
-          vm_zf := cast UInt8 (var "res" ==~ u64 0L);
-          vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
-          vm_cf := cast UInt8 (var "a" <~ var "b");
+          vm_zf := cast UInt8 (((var "res" -~ u64 1L) &~ bit_not (var "res")) >>~ i32 63);
+          vm_sf := cast UInt8 (var "res" >>~ i32 63);
+          vm_cf := cast UInt8 ((((bit_not (var "a") &~ var "b") |~ ((bit_not (var "a") |~ var "b") &~ var "res")) >>~ i32 63) &~ u64 1L);
           vm_of := cast UInt8 ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
           vm_pf := call "parity8" [var "res"];
         ]
@@ -615,8 +615,8 @@ let emit_h_test () : top_decl =
           vm_vsp_idx -= i32 1;
           let_u64 "a" (vsp_encode vm_vsp_idx (idx vm_vsp vm_vsp_idx));
           let_u64 "res" (var "a" &~ var "b");
-          vm_zf := cast UInt8 (var "res" ==~ u64 0L);
-          vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
+          vm_zf := cast UInt8 (((var "res" -~ u64 1L) &~ bit_not (var "res")) >>~ i32 63);
+          vm_sf := cast UInt8 (var "res" >>~ i32 63);
           vm_cf := cast UInt8 (i32 0);
           vm_of := cast UInt8 (i32 0);
           vm_pf := call "parity8" [var "res"];

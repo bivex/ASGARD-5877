@@ -20,6 +20,10 @@ val emit_quadratic_knot : scratch_slot:int -> stack_op list
     ((s * 5 + 3) << (s & 15)) - ((s * 5 + 3) << (s & 15)) == 0 *)
 val emit_dyn_shift_knot : scratch_slot:int -> stack_op list
 
+(** Pass 11: Emits non-associative bit-permutation MBA zero knot:
+    s - (swap32(swap32(s) ^ C) ^ C) == 0 *)
+val emit_bit_perm_mba_knot : scratch_slot:int -> stack_op list
+
 val apply_block :
   polymba_config ->
   scratch_ring:int array ->

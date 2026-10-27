@@ -240,6 +240,7 @@ let mem_webbing_base_offset = 128L
 let mem_webbing_base_align_mask = 0xFFFFFFFFFFFFFFC0L
 let mem_webbing_alias_diff = 0x18L
 let mem_webbing_decoy_salt = 0x58771337CAFEL
+let mem_webbing_feistel_k_perm = 0x1F58D1L
 (* Stateful Transducer constants: LCG full-period generator over Z_{2^64} *)
 let transducer_step_mul = 0x58771337CAFEBEEDL
 let transducer_step_add = 0x9E3779B97F4A7C15L
@@ -248,6 +249,15 @@ let transducer_step_add = 0x9E3779B97F4A7C15L
 let polymba_dyn_shift_mul = 5L
 let polymba_dyn_shift_add = 3L
 let polymba_dyn_shift_mask = 15L
+
+(* Chinese Remainder Theorem (CRT) constants *)
+let crt_m1 = 0x0000000000400000L
+let crt_m2 = 0x00000000001FFFFFL
+let crt_m3 = 0x00000000001FFFFDL
+let crt_modulus = 0xFFFFE00000C00000L
+let crt_c1 = 0xAAAA96AAAB000001L
+let crt_c2 = 0xBFFFE60000C00000L
+let crt_c3 = 0x9555435555C00000L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -515,6 +525,10 @@ let registry : entry list = [
     value = mem_webbing_decoy_salt;
     source = "0x58771337CAFE: decoy value salt stored to a2 in dual-store aliasing";
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
+  { name = "mem_webbing_feistel_k_perm";
+    value = mem_webbing_feistel_k_perm;
+    source = "0x1F58D1 (24-bit permutation): derangement in F_{2^3} mapping each u in 0..7 to (u+1)%8 != u";
+    used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "transducer_step_mul";
     value = transducer_step_mul;
     source = "0x58771337CAFEBEED: Hull-Dobell mod 8 multiplier for stateful transducer";
@@ -535,6 +549,34 @@ let registry : entry list = [
     value = polymba_dyn_shift_mask;
     source = "15: 4-bit mask (0..15) for non-linear dynamic variable shift";
     used_in = [ "lib/stack_vm/stack_polymba_pass.ml" ] };
+  { name = "crt_m1";
+    value = crt_m1;
+    source = "2^22 (4194304): first pairwise coprime modulus for CRT split-path execution";
+    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
+  { name = "crt_m2";
+    value = crt_m2;
+    source = "2^21 - 1 (2097151): second coprime Mersenne modulus for CRT split-path execution";
+    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
+  { name = "crt_m3";
+    value = crt_m3;
+    source = "2^21 - 3 (2097149): third coprime modulus for CRT split-path execution";
+    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
+  { name = "crt_modulus";
+    value = crt_modulus;
+    source = "m1 * m2 * m3: combined CRT dynamic range modulus (~2^64)";
+    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
+  { name = "crt_c1";
+    value = crt_c1;
+    source = "M1 * (M1^-1 mod m1) mod M: first Garner reconstruction coefficient";
+    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
+  { name = "crt_c2";
+    value = crt_c2;
+    source = "M2 * (M2^-1 mod m2) mod M: second Garner reconstruction coefficient";
+    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
+  { name = "crt_c3";
+    value = crt_c3;
+    source = "M3 * (M3^-1 mod m3) mod M: third Garner reconstruction coefficient";
+    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

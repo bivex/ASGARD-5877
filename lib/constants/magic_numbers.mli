@@ -119,11 +119,19 @@ val mem_webbing_base_offset : int64
 val mem_webbing_base_align_mask : int64
 val mem_webbing_alias_diff : int64
 val mem_webbing_decoy_salt : int64
+val mem_webbing_feistel_k_perm : int64
 val transducer_step_mul : int64
 val transducer_step_add : int64
 val polymba_dyn_shift_mul : int64
 val polymba_dyn_shift_add : int64
 val polymba_dyn_shift_mask : int64
+val crt_m1 : int64
+val crt_m2 : int64
+val crt_m3 : int64
+val crt_modulus : int64
+val crt_c1 : int64
+val crt_c2 : int64
+val crt_c3 : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

@@ -145,6 +145,73 @@ let emit_dyn_shift_knot ~scratch_slot =
     Sub;
   ]
 
+(** Pass 11: Non-Associative Bit-Permutation MBA knot.
+    Evaluates:
+      s - (swap32(swap32(s) ^ C) ^ C) == 0 (mod 2^64)
+    where swap32(x) = (x << 32) | (x >> 32) is a cross-half bit permutation.
+    Because bit-permutations do not commute with coordinate-wise projections,
+    linear MBA solvers (SiMBA / GAMBA) fail with matrix rank divergence. *)
+let emit_bit_perm_mba_knot ~scratch_slot =
+  let c = 0x5555555555555555L in
+  [
+    (* 1. Push s *)
+    PushReg scratch_slot;
+
+    (* 2. swap32(s) *)
+    PushReg scratch_slot;
+    Dup;
+    PushImm 32L;
+    Shl;
+    Swap;
+    PushImm 32L;
+    Shr;
+    Add;
+
+    (* 3. W = swap32(s) ^ C = (swap32(s) + C) - 2*(swap32(s) & C) *)
+    PushImm c;
+    Add;
+    PushReg scratch_slot;
+    Dup;
+    PushImm 32L;
+    Shl;
+    Swap;
+    PushImm 32L;
+    Shr;
+    Add;
+    PushImm c;
+    Nand;
+    Dup;
+    Nand;
+    PushImm 2L;
+    Mul;
+    Sub;
+
+    (* 4. swap32(W) *)
+    Dup;
+    PushImm 32L;
+    Shl;
+    Swap;
+    PushImm 32L;
+    Shr;
+    Add;
+
+    (* 5. swap32(W) ^ C = (swap32(W) + C) - 2*(swap32(W) & C) *)
+    Dup;
+    PushImm c;
+    Add;
+    Swap;
+    PushImm c;
+    Nand;
+    Dup;
+    Nand;
+    PushImm 2L;
+    Mul;
+    Sub;
+
+    (* 6. s - reconstructed_s == 0 *)
+    Sub;
+  ]
+
 let is_terminator = function
   | JmpRel _ | JccRel _ | Exit -> true
   | _ -> false
@@ -173,8 +240,10 @@ let apply_block (cfg : polymba_config) ~scratch_ring _ctx (b : block) : block =
           let s = scratch_ring.(!ring_idx) in
           ring_idx := (!ring_idx + 1) mod n_ring;
           let knot =
-            if next_int rng 2 = 0 then emit_cubic_rivest_knot ~scratch_slot:s
-            else emit_dyn_shift_knot ~scratch_slot:s
+            match next_int rng 3 with
+            | 0 -> emit_cubic_rivest_knot ~scratch_slot:s
+            | 1 -> emit_dyn_shift_knot ~scratch_slot:s
+            | _ -> emit_bit_perm_mba_knot ~scratch_slot:s
           in
           let cluster =
             if flags_live then [ PushFlags ] @ knot @ [ Add; PopFlags ]

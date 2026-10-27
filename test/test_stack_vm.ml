@@ -2673,6 +2673,55 @@ let test_polymba () =
   Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
   Alcotest.(check int64) "Bytecode execution exact: reg[1]=110" 110L (get_reg state_bc 1)
 
+let test_algebraic_flags () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 100L;
+    PushImm 50L;
+    Sub;
+    PopReg 0;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 4 in
+  let cfg = Stack_algebraic_flags_pass.default_algebraic_flags_config in
+  let prog' = Stack_algebraic_flags_pass.apply_program cfg ctx prog in
+  Alcotest.(check bool) "algebraic flags preserves blocks" true
+    (Hashtbl.length prog'.blocks = Hashtbl.length prog.blocks);
+  let enc = Stack_encoder.encode_program ~seed_key:0x5877CAFEL prog' in
+  let st = run_bytecode enc in
+  Alcotest.(check int64) "execution exact 100 - 50 = 50" 50L (get_reg st 0)
+
+let test_domain_encoding () =
+  let a1 = 0x9E3779B97F4A7C15L in
+  let b1 = 0x123456789ABCDEF0L in
+  let a2 = 0x5877CAFE1337BEEFL in
+  let b2 = 0xFEDCBA9876543210L in
+  let a3 = Int64.logor 0xDEADBEEFCAFEBABEL 1L in
+  let b3 = 0x0123456789ABCDEFL in
+  let (c1, c2, c0) = Stack_domain_enc_pass.homomorphic_add_coeffs
+    ~alpha1:a1 ~beta1:b1 ~alpha2:a2 ~beta2:b2 ~alpha3:a3 ~beta3:b3 in
+  let x = 42L in
+  let y = 58L in
+  let z = Int64.add x y in
+  let x_enc = Stack_domain_enc_pass.encode_val ~alpha:a1 ~beta:b1 x in
+  let y_enc = Stack_domain_enc_pass.encode_val ~alpha:a2 ~beta:b2 y in
+  let z_enc = Int64.add (Int64.add (Int64.mul c1 x_enc) (Int64.mul c2 y_enc)) c0 in
+  let z_dec = Stack_domain_enc_pass.decode_val ~alpha:a3 ~beta:b3 z_enc in
+  Alcotest.(check int64) "homomorphic addition decodes exact" z z_dec;
+  let (m_xy, m_x, m_y, m_0) = Stack_domain_enc_pass.homomorphic_mul_coeffs
+    ~alpha1:a1 ~beta1:b1 ~alpha2:a2 ~beta2:b2 ~alpha3:a3 ~beta3:b3 in
+  let z_mul = Int64.mul x y in
+  let z_enc_mul = Int64.add (Int64.add (Int64.mul m_xy (Int64.mul x_enc y_enc)) (Int64.mul m_x x_enc)) (Int64.add (Int64.mul m_y y_enc) m_0) in
+  let z_dec_mul = Stack_domain_enc_pass.decode_val ~alpha:a3 ~beta:b3 z_enc_mul in
+  Alcotest.(check int64) "homomorphic multiplication decodes exact" z_mul z_dec_mul
+
+let test_crt_split_path () =
+  let v = 0x1234567890ABCDEFL in
+  let (z1, z2, z3) = Stack_crt_pass.split_val v in
+  let v_rec = Stack_crt_pass.reconstruct_val (z1, z2, z3) in
+  Alcotest.(check int64) "CRT split and Garner reconstruction roundtrip"
+    (Int64.unsigned_rem v Random_visa_constants.Magic_numbers.crt_modulus) v_rec
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2720,6 +2769,9 @@ let tests = [
   ("Memory-Address Entanglement Pass & RAM Roundtrip", `Quick, test_mem_webbing);
   ("Stateful Transducer Coupling & Dynamic Keyed Math", `Quick, test_transducer);
   ("PolyMBA Non-Linear Expansion & Variable Shift", `Quick, test_polymba);
+  ("Branchless Bit-Blasted Flag Materialization", `Quick, test_algebraic_flags);
+  ("Affine Ring Domain Encoding & Homomorphic Operations", `Quick, test_domain_encoding);
+  ("Chinese Remainder Theorem Split-Path & Garner Reconstruction", `Quick, test_crt_split_path);
 ]
 
 
