@@ -6,7 +6,7 @@ This document provides the formal mathematical foundation and complete architect
 
 ## 1. Top-Level Mathematical Model of the Virtualization Pipeline
 
-The protector is formalized as an end-to-end semantics-preserving functor $\mathcal{P}$ from native machine code $\mathcal{M}_{\text{native}}$ across target architectures ($\text{x86\_64}$, $\text{ARM64}$, $\text{RV64}$) to a decentralized, encrypted, multi-layered virtual execution system $\mathcal{M}_{\text{virtual}}$:
+The protector is formalized as an end-to-end semantics-preserving functor $\mathcal{P}$ from native machine code $\mathcal{M}_{\mathrm{native}}$ across target architectures (x86_64, ARM64, RV64) to a decentralized, encrypted, multi-layered virtual execution system $\mathcal{M}_{\mathrm{virtual}}$:
 
 $$\mathcal{P} = \mathcal{R} \circ \mathcal{E} \circ \left( \prod_{i=N}^{1} \mathcal{T}_i \right) \circ \mathcal{L}$$
 
@@ -56,11 +56,11 @@ Where:
 
 ### 1.2 Fundamental Soundness Invariants
 
-$$\forall P \in \mathcal{M}_{\text{native}}, \quad \forall \sigma \in \Sigma_{\text{native}}: \quad \llbracket \mathcal{P}(P) \rrbracket(\sigma) \equiv \llbracket P \rrbracket(\sigma)$$
+$$\forall P \in \mathcal{M}_{\mathrm{native}}, \quad \forall \sigma \in \Sigma_{\mathrm{native}}: \quad \llbracket \mathcal{P}(P) \rrbracket(\sigma) \equiv \llbracket P \rrbracket(\sigma)$$
 
-1. **Stack Neutrality**: $\forall B \in \text{Blocks}, \quad \Delta_{\text{net}}(\text{VStack}) = 0$ on all intra-block exits.
+1. **Stack Neutrality**: $\forall B \in \text{Blocks}, \quad \Delta_{\mathrm{net}}(\text{VStack}) = 0$ on all intra-block exits.
 2. **Flag Equivalence**: For any conditional consumer $\mathcal{C} \in \{\text{JccRel}, \text{Setcc}, \text{Cmov}\}$, the materialized condition codes $\text{Flags}(\Sigma)$ match the hardware CPU flags of the unvirtualized baseline.
-3. **Dead-Slot Chaff Isolation**: Chaff/blinding operations operate on dedicated context slots $[C_{\text{live}} \dots C_{\text{live}} + 2^k - 1]$, strictly isolated from guest architectural state.
+3. **Dead-Slot Chaff Isolation**: Chaff/blinding operations operate on dedicated context slots $[C_{\mathrm{live}} \dots C_{\mathrm{live}} + 2^k - 1]$, strictly isolated from guest architectural state.
 4. **Linear Memory Bounding**: Memory-entanglement operations access strictly within the thread-local frame $[\text{SP} - 128 \dots \text{SP} - 16]$, preserving caller stack frames and thread safety.
 
 ---
@@ -68,8 +68,8 @@ $$\forall P \in \mathcal{M}_{\text{native}}, \quad \forall \sigma \in \Sigma_{\t
 ## 2. Mathematical Formalization of Hardening Passes
 
 ### Phase 1: IR Lowering & Context Allocator Epochs (`lib/stack_vm/`)
-Native registers $R_{\text{arch}}$ are mapped onto context slots through an injective permutation $\pi_{\text{epoch}}: R_{\text{arch}} \to [0 \dots C-1]$:
-$$\text{ctx}[\pi_{\text{epoch}}(r)] = \text{val}(r)$$
+Native registers $R_{\mathrm{arch}}$ are mapped onto context slots through an injective permutation $\pi_{\mathrm{epoch}}: R_{\mathrm{arch}} \to [0 \dots C-1]$:
+$$\text{ctx}[\pi_{\mathrm{epoch}}(r)] = \text{val}(r)$$
 During compilation, `standard_registers` assigns dedicated slots for architecture GPRs (RAX..R15 / X0..X30), VM internals (`VIP`, `VSP`, `VKEY`), and temporary scratch channels (`vtmp0`..`vtmp3`).
 
 ### Phase 2a: Superoperator Fusion & Multiplicity (`stack_multiplicity_pass.ml`)
@@ -102,12 +102,12 @@ $$\text{Shape}_4: \text{JccRel}(\text{fall}, \text{NE}); \ \text{JmpRel}(\text{t
 
 ### Phase 4: Deterministic Spaghetti Block Splitting (`stack_spaghetti_pass.ml`)
 Partitions linear basic blocks into fragmented segments linked by non-linear polynomial zero branches:
-$$\text{Condition}: ((r_1 \cdot r_2 + r_3) - (r_1 \cdot r_2 + r_3)) == 0 \implies \text{JccRel}(\text{next\_bid}, \text{E})$$
+$$\text{Condition}: ((r_1 \cdot r_2 + r_3) - (r_1 \cdot r_2 + r_3)) == 0 \implies \text{JccRel}(\text{target}, \text{E})$$
 Embeds decoy backward loop edges, defeating topological block re-assembly in IDA Pro and Ghidra.
 
 ### Phase 5: Ghost Stack Padding & 4-Slot Def-Use Scratch Ring (`stack_ghost_pass.ml`)
 Injects semantically neutral instruction clusters maintaining a cyclic def-use chain across a 4-slot ring:
-$$s_{(i+1) \bmod 4} \leftarrow \mathcal{F}(s_{i \bmod 4}, r_{\text{live}})$$
+$$s_{(i+1) \bmod 4} \leftarrow \mathcal{F}(s_{i \bmod 4}, r_{\mathrm{live}})$$
 * **Class A**: Context moves (`SetRegImm`, `PushReg`, `PopReg`).
 * **Class B**: Multi-step ALU chains (`AddRegImm`, `Nor`, `Add`) when flags are dead.
 * **Class C/D**: Live-stack zero knots wrapped in flag-restoring sandwiches (`PushFlags ... PopFlags`).
@@ -142,10 +142,10 @@ Prevents static instruction length alignment and heuristic linear sweep disassem
 
 ### Phase 5c: Memory-Address Entanglement (`stack_mem_webbing_pass.ml`)
 **Mathematical Principle**: Eliminates the vulnerability where algebraic chords $((x + s) - s)$ have zero derivative with respect to $s$.
-$$\text{offset}(s) = (s \land \texttt{0x78}) + 16 \in [16 \dots 128]$$
+$$\text{offset}(s) = (s \land \text{0x78}) + 16 \in [16 \dots 128]$$
 $$\text{addr} = \text{SP} - \text{offset}(s)$$
-$$\text{Memory}[\text{addr}] \leftarrow s \quad (\texttt{WriteMem 8})$$
-$$s' \leftarrow \text{Memory}[\text{addr}] \quad (\texttt{ReadMem 8})$$
+$$\text{Memory}[\text{addr}] \leftarrow s \quad (\text{WriteMem 8})$$
+$$s' \leftarrow \text{Memory}[\text{addr}] \quad (\text{ReadMem 8})$$
 $$s \leftarrow s + (s - s') \equiv s$$
 
 * **Non-Zero Derivative**:
@@ -155,8 +155,8 @@ $$s \leftarrow s + (s - s') \equiv s$$
 
 ### Phase 5d: Stateful Transducer Coupling (`stack_transducer_pass.ml`)
 **Mathematical Principle**: Destroys black-box I/O reproducibility for inductive synthesizers (Syntia / QSynth) by converting pure ALU operations into stateful transducers.
-$$S_{k+1} = (S_k \cdot C_{\text{mul}} + C_{\text{add}}) \pmod{2^{64}}$$
-Where $C_{\text{mul}} = \texttt{0x58771337CAFEBEED}$ ($C_{\text{mul}} \equiv 5 \pmod 8$), $C_{\text{add}} = \texttt{0x9E3779B97F4A7C15}$ (Hull-Dobell maximal period over $\mathbb{Z}_{2^{64}}$).
+$$S_{k+1} = (S_k \cdot C_{\mathrm{mul}} + C_{\mathrm{add}}) \pmod{2^{64}}$$
+Where $C_{\mathrm{mul}} = \text{0x58771337CAFEBEED}$ ($C_{\mathrm{mul}} \equiv 5 \pmod 8$), $C_{\mathrm{add}} = \text{0x9E3779B97F4A7C15}$ (Hull-Dobell maximal period over $\mathbb{Z}_{2^{64}}$).
 
 ALU operations are split across the evolving state $S$:
 * **`Add` ($A + B$)**:
@@ -166,7 +166,7 @@ ALU operations are split across the evolving state $S$:
 **Synthesizer Defeat**: Re-running a basic block with identical inputs $\langle A, B \rangle$ produces different internal values because $S$ mutates continuously ($0\%$ I/O reproducibility).
 
 ### Phase 5e: Non-Linear PolyMBA Pass (`stack_polymba_pass.ml`)
-**Mathematical Principle**: Forces combinatorial explosion (OOM) in E-graphs and SMT $\text{QF\_BV}$ solvers:
+**Mathematical Principle**: Forces combinatorial explosion (OOM) in E-graphs and SMT QF_BV solvers:
 1. **Degree-2 Quadratic Cross-Term Knot**:
    $$((s + 1)^2) - (s^2 + 2s + 1) \equiv 0 \pmod{2^{64}}$$
    Distributing $(s+1)(s+1)$ produces cross-terms that explode the e-node class space $O(d^k)$.
