@@ -236,11 +236,11 @@ let comp_stall_two_adic_c2 = 0xCAFEBABE01000002L
 
 (* Memory-Address Entanglement constants: 8-byte aligned scratch offset window within 64B cache line *)
 let mem_webbing_offset_mask = 0x38L
-let mem_webbing_base_offset = 128L
+let mem_webbing_base_offset = 65L
 let mem_webbing_base_align_mask = 0xFFFFFFFFFFFFFFC0L
 let mem_webbing_alias_diff = 0x18L
 let mem_webbing_decoy_salt = 0x58771337CAFEL
-let mem_webbing_feistel_k_perm = 0x1F58D1L
+let mem_webbing_feistel_k_perm = 0x5053F3L
 (* Stateful Transducer constants: LCG full-period generator over Z_{2^64} *)
 let transducer_step_mul = 0x58771337CAFEBEEDL
 let transducer_step_add = 0x9E3779B97F4A7C15L
@@ -251,13 +251,16 @@ let polymba_dyn_shift_add = 3L
 let polymba_dyn_shift_mask = 15L
 
 (* Chinese Remainder Theorem (CRT) constants *)
-let crt_m1 = 0x0000000000400000L
-let crt_m2 = 0x00000000001FFFFFL
-let crt_m3 = 0x00000000001FFFFDL
-let crt_modulus = 0xFFFFE00000C00000L
-let crt_c1 = 0xAAAA96AAAB000001L
-let crt_c2 = 0xBFFFE60000C00000L
-let crt_c3 = 0x9555435555C00000L
+let crt_m1 = 0x20000L
+let crt_m2 = 0x1FFFFL
+let crt_m3 = 0x10001L
+let crt_m4 = 0xFFFFL
+let crt_inv_m1_mod_m2 = 0x1L
+let crt_inv_m1_mod_m3 = 0x8000L
+let crt_inv_m1_mod_m4 = 0x8000L
+let crt_inv_m2_mod_m3 = 0xAAABL
+let crt_inv_m2_mod_m4 = 0x1L
+let crt_inv_m3_mod_m4 = 0x8000L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -511,7 +514,7 @@ let registry : entry list = [
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "mem_webbing_base_offset";
     value = mem_webbing_base_offset;
-    source = "base offset 128 bytes: positive offset above SP in stack memory webbing";
+    source = "base offset 65 bytes: round up base calculation ensuring [Base..Base+56] lies strictly in [SP-128..SP-1]";
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "mem_webbing_base_align_mask";
     value = mem_webbing_base_align_mask;
@@ -527,7 +530,7 @@ let registry : entry list = [
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "mem_webbing_feistel_k_perm";
     value = mem_webbing_feistel_k_perm;
-    source = "0x1F58D1 (24-bit permutation): derangement in F_{2^3} mapping each u in 0..7 to (u+1)%8 != u";
+    source = "0x5053F3 (024051763_8): non-affine derangement permutation in F_{2^3} with maximum boolean non-linearity";
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "transducer_step_mul";
     value = transducer_step_mul;
@@ -551,31 +554,19 @@ let registry : entry list = [
     used_in = [ "lib/stack_vm/stack_polymba_pass.ml" ] };
   { name = "crt_m1";
     value = crt_m1;
-    source = "2^22 (4194304): first pairwise coprime modulus for CRT split-path execution";
+    source = "2^17 (131072): first pairwise coprime modulus for 4-moduli Garner CRT";
     used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
   { name = "crt_m2";
     value = crt_m2;
-    source = "2^21 - 1 (2097151): second coprime Mersenne modulus for CRT split-path execution";
+    source = "2^17 - 1 (131071): second coprime Mersenne modulus for 4-moduli Garner CRT";
     used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
   { name = "crt_m3";
     value = crt_m3;
-    source = "2^21 - 3 (2097149): third coprime modulus for CRT split-path execution";
+    source = "2^16 + 1 (65537): third Fermat coprime modulus for 4-moduli Garner CRT";
     used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
-  { name = "crt_modulus";
-    value = crt_modulus;
-    source = "m1 * m2 * m3: combined CRT dynamic range modulus (~2^64)";
-    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
-  { name = "crt_c1";
-    value = crt_c1;
-    source = "M1 * (M1^-1 mod m1) mod M: first Garner reconstruction coefficient";
-    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
-  { name = "crt_c2";
-    value = crt_c2;
-    source = "M2 * (M2^-1 mod m2) mod M: second Garner reconstruction coefficient";
-    used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
-  { name = "crt_c3";
-    value = crt_c3;
-    source = "M3 * (M3^-1 mod m3) mod M: third Garner reconstruction coefficient";
+  { name = "crt_m4";
+    value = crt_m4;
+    source = "2^16 - 1 (65535): fourth coprime modulus for 4-moduli Garner CRT (M > 2^65)";
     used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
 ]
 

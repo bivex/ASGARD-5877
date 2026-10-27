@@ -53,11 +53,11 @@ let next_int rng n =
 let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
   (* Pass 14: Non-Aliasing Feistel / Derangement Memory Entanglement
      1. Base is aligned to 64 bytes in the host stack frame:
-          Base = (SP - 128) & ~0x3F
+          Base = (SP - 65) & ~0x3F
         All 8 slots lie strictly within the exact same 64-byte L1D line:
           a1 = Base + (s & 0x38)
           a2 = Base + 8 * ((K_perm >> (3 * ((s >> 3) & 7))) & 7)
-        Where K_perm = 0x1F58D1 is a derangement permutation in F_{2^3}:
+        Where K_perm = 0x5053F3 is a non-affine derangement permutation in F_{2^3}:
           forall u in 0..7: (K_perm >> (3*u)) & 7 != u.
         Therefore a1 != a2 for all s, but the dynamic variable shift
         forces LLVM/Miasm BasicAA to return MayAlias.
@@ -70,7 +70,7 @@ let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
   let inner = [
     (* 1. Compute a1 = Base + (s & 0x38) *)
     PushReg sp_slot;
-    PushImm mem_webbing_base_offset; (* 128L *)
+    PushImm mem_webbing_base_offset; (* 65L *)
     Sub;
     PushImm mem_webbing_base_align_mask; (* 0xFFFFFFFFFFFFFFC0L *)
     Nand; Dup; Nand;                 (* [base] *)
@@ -85,7 +85,7 @@ let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
     WriteMem 8;                      (* [a1] *)
 
     (* 3. Compute a2 = Base + 8 * ((K_perm >> (3 * ((s >> 3) & 7))) & 7) *)
-    PushImm mem_webbing_feistel_k_perm; (* 0x1F58D1L *)
+    PushImm mem_webbing_feistel_k_perm; (* 0x5053F3L *)
     PushReg scratch_slot;
     PushImm 3L; Shr;
     PushImm 7L; Nand; Dup; Nand;     (* i0 = (s >> 3) & 7 *)
@@ -94,7 +94,7 @@ let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
     PushImm 7L; Nand; Dup; Nand;     (* j0 = (K_perm >> (3 * i0)) & 7 *)
     PushImm 3L; Shl;                 (* 8 * j0 *)
     PushReg sp_slot;
-    PushImm mem_webbing_base_offset; (* 128L *)
+    PushImm mem_webbing_base_offset; (* 65L *)
     Sub;
     PushImm mem_webbing_base_align_mask; (* 0xFFFFFFFFFFFFFFC0L *)
     Nand; Dup; Nand;                 (* [base, 8*j0, a1] *)

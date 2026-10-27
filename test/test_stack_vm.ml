@@ -2716,12 +2716,18 @@ let test_domain_encoding () =
   Alcotest.(check int64) "homomorphic multiplication decodes exact" z_mul z_dec_mul
 
 let test_crt_split_path () =
-  let v = 0x1234567890ABCDEFL in
-  let (z1, z2, z3) = Stack_crt_pass.split_val v in
-  let v_rec = Stack_crt_pass.reconstruct_val (z1, z2, z3) in
-  Alcotest.(check int64) "CRT split and Garner reconstruction roundtrip"
-    (Int64.unsigned_rem v Random_visa_constants.Magic_numbers.crt_modulus) v_rec
-
+  let x = (-1L) (* 0xFFFFFFFFFFFFFFFFL *) in
+  let y = 1L in
+  let (x1, x2, x3, x4) = Stack_crt_pass.split_val x in
+  let (y1, y2, y3, y4) = Stack_crt_pass.split_val y in
+  let open Int64 in
+  let z1 = unsigned_rem (add x1 y1) Random_visa_constants.Magic_numbers.crt_m1 in
+  let z2 = unsigned_rem (add x2 y2) Random_visa_constants.Magic_numbers.crt_m2 in
+  let z3 = unsigned_rem (add x3 y3) Random_visa_constants.Magic_numbers.crt_m3 in
+  let z4 = unsigned_rem (add x4 y4) Random_visa_constants.Magic_numbers.crt_m4 in
+  let sum_rec = Stack_crt_pass.reconstruct_val (z1, z2, z3, z4) in
+  Alcotest.(check int64) "CRT exact 64-bit overflow addition roundtrip (0xFF..FF + 1 == 0)"
+    0L sum_rec
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);

@@ -1,12 +1,12 @@
 (** Pass 12: Chinese Remainder Theorem (CRT) Split-Path Execution Pass
     ─────────────────────────────────────────────────────────────────
-    Splits computations across pairwise coprime moduli (m1, m2, m3)
-    where:
-      m1 = 2^22      = 4194304
-      m2 = 2^21 - 1  = 2097151
-      m3 = 2^21 - 3  = 2097149
-    with Garner reconstruction over M = m1 * m2 * m3:
-      z = (z1 * c1 + z2 * c2 + z3 * c3) mod M
+    Splits computations across pairwise coprime moduli (m1, m2, m3, m4)
+    where M = m1 * m2 * m3 * m4 > 2^65:
+      m1 = 2^17      = 131072
+      m2 = 2^17 - 1  = 131071
+      m3 = 2^16 + 1  = 65537
+      m4 = 2^16 - 1  = 65535
+    with Garner reconstruction over M > 2^65 and exact 64-bit overflow truncation.
 *)
 
 open Stack_ir
@@ -18,9 +18,9 @@ type crt_config = {
 
 val default_crt_config : int64 -> crt_config
 
-val split_val : int64 -> int64 * int64 * int64
+val split_val : int64 -> int64 * int64 * int64 * int64
 
-val reconstruct_val : int64 * int64 * int64 -> int64
+val reconstruct_val : int64 * int64 * int64 * int64 -> int64
 
 val apply_block :
   crt_config ->

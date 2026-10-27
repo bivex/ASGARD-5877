@@ -29,9 +29,10 @@ flowchart TD
         P8["Phase 5c (Pass 14): Derangement Memory Entanglement"]
         P9t["Phase 5d: Stateful Transducer Coupling"]
         P10["Phase 5e (Pass 11): Bit-Permutation MBA & Cubic Knots"]
+        P10f["Phase 5f (Pass 12): CRT Split-Path Execution"]
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P12["Phase 7: Stack Balance Verification & Repair"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9t --> P10 --> P11 --> P12
+        P1 --> P1b --> P9d --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9t --> P10 --> P10f --> P11 --> P12
     end
     
     IR --> P1
@@ -110,6 +111,7 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
     where $C_1 = \alpha_3 \alpha_1^{-1}$, $C_2 = \alpha_3 \alpha_2^{-1}$, $C_0 = \beta_3 - C_1 \beta_1 - C_2 \beta_2 \pmod{2^{64}}$.
   * **Homomorphic Multiplication**:
     $$\hat{z} = (M_{xy} \cdot \hat{x} \cdot \hat{y} + M_x \cdot \hat{x} + M_y \cdot \hat{y} + M_0) \pmod{2^{64}}$$
+* **Domain Lowering Bridge**: Affine encoding operates as a closed algebraic island for polynomial rings $(+, -, \times)$. At boundaries with bitwise operations (`AND`, `OR`, `XOR`, `SHR`) or memory pointers (`ReadMem`, `WriteMem`), the bridge decodes via $\mathcal{D}_i(\hat{x}) = \alpha_i^{-1} (\hat{x} - \beta_i)$ or transitions to a Boolean-affine domain $\mathcal{B}_i(x) = x \oplus \mu_i$.
 * **Impact**: Eliminates plaintext constant signatures (AES S-Boxes, API hashes) from the instruction stream; prevents Term Slicing and GVN across differing domain encodings.
 
 ---
@@ -128,7 +130,7 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
     $$x + y \equiv - \big( \text{Nor}(x, y) + \text{Nand}(x, y) + 2 \big) \pmod{2^{64}}$$
   * **MBA Subtraction**:
     $$x - y \equiv (x \land \neg y) - (\neg x \land y) \pmod{2^{64}}$$
-  * **Flag-Dead Precondition**: MBA expansions alter arithmetic flags (`CF`, `OF`, `AF`); they are strictly gated by `Stack_flag_liveness` to execute only when condition codes are dead.
+  * **Universal Multiplicity (Flag-Neutral Unlocking)**: Because Phase 1b algebraically handles condition codes, `PushReg` and `PushImm` multiplicity expansions use flag-neutral identities ($r \cdot 1 \equiv r$, $v \cdot 1 \equiv v$ via `Mul`) across 100% of instructions without requiring dead flags.
   * **Stack Permutation Desugaring**:
     $$\text{Swap} \implies [s_1 \leftarrow \text{pop}(); \ s_2 \leftarrow \text{pop}(); \ \text{push}(s_1); \ \text{push}(s_2)]$$
 
@@ -177,7 +179,7 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$s_{(i+1) \bmod 4} \leftarrow \big( s_{i \bmod 4} \odot r_{\mathrm{live}} \big) \oplus \text{Const}, \quad \odot \in \{\text{Add}, \text{Sub}, \text{Nor}\}$$
 * **Stack Delta Invariant**:
   $$\Delta_{\mathrm{net}} = \sum_{op \in \text{Cluster}} \mathrm{delta}(op) = 0$$
-* **Flag Preservation**: Enclosed in $[\text{PushFlags}; \ \text{Cluster}; \ \text{PopFlags}]$ when downstream flags are live.
+* **Flag Preservation**: Flag-neutral stack delta; condition codes are handled algebraically in Phase 1b without native `PushFlags`/`PopFlags` traps.
 
 ---
 
@@ -192,16 +194,16 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 ### Phase 5c: Non-Aliasing Feistel / Derangement Memory Entanglement (Pass 14, `stack_mem_webbing_pass.ml`)
 * **Derangement Memory Invariant & LLVM Store-to-Load Forwarding Defeat**:
   Computes two provably distinct 8-byte aligned addresses strictly within a single 64-byte L1D cache line $[\mathrm{Base} \dots \mathrm{Base} + 56]$:
-  $$\mathrm{Base} = (\mathrm{SP} - 128) \land \sim\!\text{0x3F}$$
+  $$\mathrm{Base} = (\mathrm{SP} - 65) \land \sim\!\text{0x3F}$$
   $$a_{\mathrm{real}} = \mathrm{Base} + (s \land \text{0x38})$$
   $$a_{\mathrm{decoy}} = \mathrm{Base} + 8 \cdot \Big( \big( K_{\mathrm{perm}} \gg (3 \cdot ((s \gg 3) \land 7)) \big) \land 7 \Big)$$
-  Where $K_{\mathrm{perm}} = \texttt{0x1F58D1}$ is a derangement permutation in $\mathbb{F}_{2^3}$ ($\forall u \in [0..7]: \pi(u) \ne u$).
+  Where $K_{\mathrm{perm}} = \texttt{0x5053F3} = \texttt{024051763}_8$ is a non-affine derangement permutation in $\mathbb{F}_{2^3}$ ($\forall u \in [0..7]: \pi(u) \ne u$).
   * Store 1 (live value): $\mathrm{Memory}[a_{\mathrm{real}}] \leftarrow s \quad (\text{WriteMem 8})$
   * Store 2 (interleaving decoy): $\mathrm{Memory}[a_{\mathrm{decoy}}] \leftarrow (s + \text{0x58771337CAFE}) \quad (\text{WriteMem 8})$
   * Load (real read): $s' \leftarrow \mathrm{Memory}[a_{\mathrm{real}}] \quad (\text{ReadMem 8})$
   * Self-verifying recovery: $s \leftarrow s + (s - s') \equiv s \pmod{2^{64}}$
 * **Anti-Forwarding Invariant**: Because Store 2 writes a distinct value to $a_{\mathrm{decoy}}$ strictly between Store 1 and Load 1 via a dynamic variable shift, LLVM `BasicAA` and `SCEVAA` cannot prove disjointness and return `MayAlias`, physically prohibiting store-to-load forwarding.
-* **Cache & ABI Safety**: Negative offset $(\mathrm{SP} - 128)$ strictly allocates in private host memory; mask `0x38` bounds the entire cluster within 56 bytes of a single 64-byte L1D line.
+* **Strict Red Zone Bounding**: Offset $(\mathrm{SP} - 65)$ rounded down to 64 bytes guarantees $\mathrm{Base} \in [\mathrm{SP} - 128 \dots \mathrm{SP} - 65]$, ensuring the entire 56-byte window $[\mathrm{Base} \dots \mathrm{Base} + 56]$ lies strictly within $[\mathrm{SP} - 128 \dots \mathrm{SP} - 2]$, eliminating Red Zone violations on AMD64 ABI.
 ---
 
 ### Phase 5d: Stateful Transducer Coupling (`stack_transducer_pass.ml`)
@@ -210,7 +212,7 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   Where $C_{\mathrm{mul}} \equiv 5 \pmod 8$, $C_{\mathrm{add}} \equiv 1 \pmod 2$ ($\gcd(C_{\mathrm{add}}, 2^{64}) = 1$, strictly satisfying the Hull-Dobell theorem for maximal period $2^{64}$).
   * **Add**: $[B, A] \implies (B - S) + (A + S) \equiv A + B \pmod{2^{64}}$
   * **Sub**: $[B, A] \implies (A + S) - (B + S) \equiv A - B \pmod{2^{64}}$
-* **Flag-Dead Precondition**: To prevent distortion of condition codes (`CF`, `OF`, `AF`), transducer transformations are **strictly restricted** to instructions where downstream flags are dead ($\text{live}(\text{Flags}) == \text{false}$ via `Stack_flag_liveness`).
+* **Flag Invariance**: The terminating ALU instruction preserves exact ZF and SF condition codes; CF and OF are materialized algebraically in Phase 1b.
 * **Zero I/O Reproducibility**:
   $$\forall \langle A, B \rangle: \quad \mathrm{Out}_1(A, B, S_1) \ne \mathrm{Out}_2(A, B, S_2) \quad \text{for } S_1 \ne S_2$$
 
@@ -230,16 +232,20 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 ---
 
 ### Phase 5f: Chinese Remainder Theorem (CRT) Split-Path Execution (Pass 12, `stack_crt_pass.ml`)
-* **Formula**: Splits arithmetic operations across pairwise coprime non-power-of-2 moduli:
-  $$m_1 = 2^{22} = 4\,194\,304, \quad m_2 = 2^{21} - 1 = 2\,097\,151, \quad m_3 = 2^{21} - 3 = 2\,097\,149$$
-  Dynamic range $M = m_1 \cdot m_2 \cdot m_3 = \texttt{0xFFFFE00000C00000} \approx 2^{64}$.
-* **Garner Mixed-Radix Reconstruction (Zero 64-Bit Overflow)**:
+* **Formula**: Splits arithmetic operations across 4 pairwise coprime moduli:
+  $$m_1 = 2^{17} = 131\,072, \quad m_2 = 2^{17} - 1 = 131\,071, \quad m_3 = 2^{16} + 1 = 65\,537, \quad m_4 = 2^{16} - 1 = 65\,535$$
+  Dynamic range $M = m_1 \cdot m_2 \cdot m_3 \cdot m_4 \approx 2^{66} > 2^{65}$.
+* **Exact 64-Bit Integer Addition ($x + y < 2^{65} < M$)**:
+  Because $x + y < M$ for any 64-bit inputs $x, y \in [0, 2^{64}-1]$, Garner mixed-radix reconstruction recovers the **exact integer sum in $\mathbb{Z}$**:
   $$x_1 = z_1 \bmod m_1$$
   $$x_2 = \big((z_2 - (x_1 \bmod m_2) + m_2) \cdot (m_1^{-1} \bmod m_2)\big) \bmod m_2$$
   $$t_3 = \big((z_3 - (x_1 \bmod m_3) + m_3) \cdot (m_1^{-1} \bmod m_3)\big) \bmod m_3$$
   $$x_3 = \big((t_3 - (x_2 \bmod m_3) + m_3) \cdot (m_2^{-1} \bmod m_3)\big) \bmod m_3$$
-  $$x = x_1 + m_1 \cdot (x_2 + m_2 \cdot x_3) \pmod M$$
-  Intermediates stay strictly $< 2^{42}$, guaranteeing exact 64-bit integer execution without overflow while forcing SMT solvers into division timeouts in the `QF_BV` logic.
+  $$t_4 = \big((z_4 - (x_1 \bmod m_4) + m_4) \cdot (m_1^{-1} \bmod m_4)\big) \bmod m_4$$
+  $$t_{4,2} = \big((t_4 - (x_2 \bmod m_4) + m_4) \cdot (m_2^{-1} \bmod m_4)\big) \bmod m_4$$
+  $$x_4 = \big((t_{4,2} - (x_3 \bmod m_4) + m_4) \cdot (m_3^{-1} \bmod m_4)\big) \bmod m_4$$
+  $$x = x_1 + m_1 \cdot \big(x_2 + m_2 \cdot (x_3 + m_3 \cdot x_4)\big)$$
+  And 64-bit unsigned integer truncation in CPU registers automatically computes $(x + y) \bmod 2^{64}$ with zero error, while forcing SMT solvers into non-power-of-2 division timeouts in `QF_BV`.
 ---
 
 ### Phase 6: State-Feedback Rolling Key Stream (`stack_feedback_pass.ml`)

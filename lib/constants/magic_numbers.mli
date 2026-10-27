@@ -128,10 +128,13 @@ val polymba_dyn_shift_mask : int64
 val crt_m1 : int64
 val crt_m2 : int64
 val crt_m3 : int64
-val crt_modulus : int64
-val crt_c1 : int64
-val crt_c2 : int64
-val crt_c3 : int64
+val crt_m4 : int64
+val crt_inv_m1_mod_m2 : int64
+val crt_inv_m1_mod_m3 : int64
+val crt_inv_m1_mod_m4 : int64
+val crt_inv_m2_mod_m3 : int64
+val crt_inv_m2_mod_m4 : int64
+val crt_inv_m3_mod_m4 : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
