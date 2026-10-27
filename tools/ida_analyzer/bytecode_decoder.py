@@ -70,8 +70,50 @@ def derive_block_key(seed_key: int, block_id: int, block_offset: int) -> int:
     k1 = (seed_key ^ 0xD00F58770000A564) & MASK64
     m = (block_id ^ block_offset) & MASK64
     return siphash_block(k0, k1, m)
-def generate_opcode_map(seed: int) -> Tuple[Dict[int, str], Dict[str, int]]:
-    """Generates the dynamic polymorphic 39-opcode permutation for this seed."""
+OPCODE_SPECS = [
+    ("PushImm", "h_push_imm"),
+    ("PushReg", "h_push_reg"),
+    ("PopReg", "h_pop_reg"),
+    ("ReadMem", "h_read_mem"),
+    ("WriteMem", "h_write_mem"),
+    ("Add", "h_add"),
+    ("Sub", "h_sub"),
+    ("Mul", "h_mul"),
+    ("Nor", "h_nor"),
+    ("Nand", "h_nand"),
+    ("Shl", "h_shl"),
+    ("Shr", "h_shr"),
+    ("Dup", "h_dup"),
+    ("Swap", "h_swap"),
+    ("PushFlags", "h_push_flags"),
+    ("PopFlags", "h_pop_flags"),
+    ("JmpRel", "h_jmp_rel"),
+    ("JccRel", "h_jcc_rel"),
+    ("KeyAdjust", "h_key_adjust"),
+    ("Exit", "h_exit"),
+    ("CallExtern", "h_call_extern"),
+    ("ResolveSym", "h_resolve_sym"),
+    ("Setcc", "h_setcc"),
+    ("Cmov", "h_cmov"),
+    ("Cmp", "h_cmp"),
+    ("Test", "h_test"),
+    ("Sar", "h_sar"),
+    ("Div", "h_div"),
+    ("Idiv", "h_idiv"),
+    ("PushImm32", "h_push_imm32"),
+    ("AddImm", "h_add_imm"),
+    ("SubImm", "h_sub_imm"),
+    ("AddImmImm", "h_add_ii"),
+    ("SubImmImm", "h_sub_ii"),
+    ("SetRegImm", "h_set_reg_imm"),
+    ("AddRegImm", "h_add_reg_imm"),
+    ("KeyFeedback", "h_key_feedback"),
+    ("Dup2", "h_dup2"),
+    ("Rot", "h_rot")
+]
+
+def generate_opcode_map(seed: int) -> Tuple[Dict[int, str], Dict[str, int], Dict[int, Dict[str, str]]]:
+    """Generates the dynamic polymorphic 39-opcode permutation and handler mappings for this seed."""
     state = SALT_STACK_VM_STATE if seed == 0 else seed
     pool = list(range(1, 255))
     for i in range(39):
@@ -81,19 +123,17 @@ def generate_opcode_map(seed: int) -> Tuple[Dict[int, str], Dict[str, int]]:
         j = i + offset
         pool[i], pool[j] = pool[j], pool[i]
 
-    op_names = [
-        "PushImm", "PushReg", "PopReg", "ReadMem", "WriteMem",
-        "Add", "Sub", "Mul", "Nor", "Nand", "Shl", "Shr",
-        "Dup", "Swap", "PushFlags", "PopFlags", "JmpRel", "JccRel",
-        "KeyAdjust", "Exit", "CallExtern", "ResolveSym", "Setcc",
-        "Cmov", "Cmp", "Test", "Sar", "Div", "Idiv", "PushImm32",
-        "AddImm", "SubImm", "AddImmImm", "SubImmImm", "SetRegImm",
-        "AddRegImm", "KeyFeedback", "Dup2", "Rot"
-    ]
-    code_to_name = {pool[i]: op_names[i] for i in range(39)}
-    name_to_code = {op_names[i]: pool[i] for i in range(39)}
-    return code_to_name, name_to_code
-
+    code_to_name = {pool[i]: OPCODE_SPECS[i][0] for i in range(39)}
+    name_to_code = {OPCODE_SPECS[i][0]: pool[i] for i in range(39)}
+    code_to_info = {
+        pool[i]: {
+            "mnemonic": OPCODE_SPECS[i][0],
+            "handler": OPCODE_SPECS[i][1],
+            "label": f"lbl_{pool[i]:02X}",
+        }
+        for i in range(39)
+    }
+    return code_to_name, name_to_code, code_to_info
 
 class FieldLayout:
     def __init__(self, seed: int):
@@ -115,8 +155,9 @@ class StackVmDecoder:
 
     def __init__(self, seed_key: int):
         self.seed_key = seed_key
-        self.op_map, self.rev_map = generate_opcode_map(seed_key)
+        self.op_map, self.rev_map, self.op_info = generate_opcode_map(seed_key)
         self.layout = FieldLayout(seed_key)
+        self.ctx_model: Dict[int, int] = {}
 
     def decode_stream(self, cipher_bytes: bytes, max_instructions: int = 10000) -> List[Dict[str, Any]]:
         instructions = []
@@ -167,10 +208,16 @@ class StackVmDecoder:
             if op_code is None:
                 break
 
-            name = self.op_map.get(op_code, f"unk_0x{op_code:02X}")
+            info = self.op_info.get(op_code, {
+                "mnemonic": f"unk_0x{op_code:02X}",
+                "handler": "unknown",
+                "label": f"lbl_{op_code:02X}",
+            })
+            name = info["mnemonic"]
+            handler_name = info["handler"]
+            handler_lbl = info["label"]
             operands = []
             delta = 0
-
             if name == "PushImm":
                 val = read_i64()
                 if val is not None:
@@ -324,6 +371,8 @@ class StackVmDecoder:
                     "offset": start_offset,
                     "opcode": op_code,
                     "mnemonic": name,
+                    "handler": handler_name,
+                    "label": handler_lbl,
                     "operands": ", ".join(operands),
                     "delta": delta,
                     "bytes": raw_bytes.hex(),
@@ -336,6 +385,8 @@ class StackVmDecoder:
                 "offset": start_offset,
                 "opcode": op_code,
                 "mnemonic": name,
+                "handler": handler_name,
+                "label": handler_lbl,
                 "operands": ", ".join(operands),
                 "delta": delta,
                 "bytes": raw_bytes.hex(),
