@@ -480,19 +480,38 @@ let embed_vm_trampoline
               Binary (BitAnd, (var "_kinfo" $. "kp_proc.p_flag"), var "P_TRACED"),
               u64 0L))
         ) [
-          (var "_penalty" ^= u64 salt_xwcafe_leetbeef);
+          (var "_penalty" ^= Binary (BitOr, (c_cast UInt64 (var "_kinfo" $. "kp_proc.p_flag") *~ u64 0x5877A55A1337L), u64 1L));
         ];
       ] ~elifs:[
         ("defined(__linux__)", [
+          decl_var (Array (Char, 18)) "_p_stat" ~init:(init_list [
+            cast Char (i32 (116 lxor 0x5B)); cast Char (i32 (43 lxor 0x5B));
+            cast Char (i32 (41 lxor 0x5B));  cast Char (i32 (52 lxor 0x5B));
+            cast Char (i32 (56 lxor 0x5B));  cast Char (i32 (116 lxor 0x5B));
+            cast Char (i32 (40 lxor 0x5B));  cast Char (i32 (62 lxor 0x5B));
+            cast Char (i32 (55 lxor 0x5B));  cast Char (i32 (61 lxor 0x5B));
+            cast Char (i32 (116 lxor 0x5B)); cast Char (i32 (40 lxor 0x5B));
+            cast Char (i32 (47 lxor 0x5B));  cast Char (i32 (58 lxor 0x5B));
+            cast Char (i32 (47 lxor 0x5B));  cast Char (i32 (46 lxor 0x5B));
+            cast Char (i32 (40 lxor 0x5B));  cast Char (i32 0);
+          ]);
+          decl_var (Array (Char, 11)) "_p_tpid" ~init:(init_list [
+            cast Char (i32 (99 lxor 0x37)); cast Char (i32 (69 lxor 0x37));
+            cast Char (i32 (86 lxor 0x37)); cast Char (i32 (84 lxor 0x37));
+            cast Char (i32 (82 lxor 0x37)); cast Char (i32 (69 lxor 0x37));
+            cast Char (i32 (103 lxor 0x37)); cast Char (i32 (94 lxor 0x37));
+            cast Char (i32 (83 lxor 0x37)); cast Char (i32 (13 lxor 0x37));
+            cast Char (i32 0);
+          ]);
           decl_var (Ptr (StructType "FILE")) "_fp_stat"
-            ~init:(call "fopen" [str_lit "/proc/self/status"; str_lit "r"]);
+            ~init:(call "fopen" [var "_p_stat"; str_lit "r"]);
           if_then (var "_fp_stat" <>~ nullptr) [
             decl_var (Array (Char, 128)) "_line";
             while_loop (call "fgets" [var "_line"; call "sizeof" [var "_line"]; var "_fp_stat"]) [
-              if_then (Binary (Eq, call "strncmp" [var "_line"; str_lit "TracerPid:"; i32 10], i32 0)) [
+              if_then (Binary (Eq, call "strncmp" [var "_line"; var "_p_tpid"; i32 10], i32 0)) [
                 decl_var Int32 "_pid" ~init:(call "atoi" [Binary (Add, var "_line", i32 10)]);
                 if_then (var "_pid" >~ i32 0) [
-                  (var "_penalty" ^= u64 salt_xwcafe_leetbeef);
+                  (var "_penalty" ^= Binary (BitOr, (c_cast UInt64 (var "_pid") *~ u64 0x5877A55A1337L), u64 1L));
                 ];
                 break_stmt;
               ];
