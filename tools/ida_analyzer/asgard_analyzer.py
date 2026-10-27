@@ -273,7 +273,13 @@ class AsgardIdaPlugin(ida_idaapi.plugin_t if IN_IDA else object):
         analyzer.run()
         analyzer.print_report()
         analyzer.save_json()
-        if AsgardBytecodeForm and not ida_pro.is_daemon():
+        is_gui = False
+        try:
+            import ida_kernwin
+            is_gui = ida_kernwin.is_idaq()
+        except Exception:
+            pass
+        if AsgardBytecodeForm and is_gui:
             try:
                 gui = AsgardBytecodeForm()
                 gui.show()
@@ -294,5 +300,11 @@ if __name__ == "__main__" and IN_IDA:
     analyzer.print_report()
     out_json = os.environ.get("ASGARD_IDA_OUT", "asgard_ida_audit.json")
     analyzer.save_json(out_json)
-    if "idat" in sys.executable or ida_pro.is_daemon():
+    is_gui = False
+    try:
+        import ida_kernwin
+        is_gui = ida_kernwin.is_idaq()
+    except Exception:
+        pass
+    if not is_gui:
         ida_pro.qexit(0)
