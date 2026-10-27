@@ -34,6 +34,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Implement Pass 11 Non-Associative Bit-Permutation MBA (`lib/stack_vm/stack_polymba_pass.ml`): implements cross-half bit-permutation (`swap32`) conjugate addition zero-knots $s - (\mathrm{swap}_{32}(\mathrm{swap}_{32}(s) \oplus C) \oplus C) \equiv 0 \pmod{2^{64}}$, breaking coordinate-wise projection in SiMBA and GAMBA solvers.
 - Implement Pass 9 End-to-End Affine Ring Domain Encoding (`lib/stack_vm/stack_domain_enc_pass.ml`): introduces Lagrange-Rivest affine quotient ring bijections $\mathcal{E}_i(x) = \alpha_i x + \beta_i \pmod{2^{64}}$ with homomorphic addition and multiplication over $\mathbb{Z}_{2^{64}}$ and Domain Lowering Bridge.
 - Implement Pass 12 Chinese Remainder Theorem Split-Path Execution (`lib/stack_vm/stack_crt_pass.ml`): splits arithmetic across 4 pairwise coprime moduli $(2^{17}, 2^{17}-1, 2^{16}+1, 2^{16}-1)$ ($M > 2^{65}$) with Garner reconstruction, guaranteeing exact 64-bit integer overflow truncation while forcing SMT solver timeouts in `QF_BV`.
+- Implement Pass C Bit-Vector Semantic Normalization & Automated SMT Verifier (`lib/stack_vm/stack_bv_verifier.ml`, `lib/stack_vm/stack_bv_verifier.mli`): formally proves semantics preservation ($\forall \vec{x} \in BV_{64}^n: \mathrm{Obs}(P, \vec{x}) = \mathrm{Obs}(T(P), \vec{x})$) between original and transformed Stack-IR clusters via Z3 SMT-LIB2 QF_BV unsatisfiability queries, extracting concrete counterexamples upon semantic divergence.
 
 ### Fixed
 - Harden VM against architectural audit findings:

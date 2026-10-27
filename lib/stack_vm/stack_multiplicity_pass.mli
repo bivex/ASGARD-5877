@@ -9,6 +9,9 @@ type multiplicity_config = {
 }
 
 val default_multiplicity_config : int64 -> multiplicity_config
+val expand_add_mba : unit -> stack_op list
+
+val expand_sub_mba : unit -> stack_op list
 
 val apply_block : multiplicity_config -> Context_allocator.t -> block -> block
 

@@ -2728,6 +2728,35 @@ let test_crt_split_path () =
   let sum_rec = Stack_crt_pass.reconstruct_val (z1, z2, z3, z4) in
   Alcotest.(check int64) "CRT exact 64-bit overflow addition roundtrip (0xFF..FF + 1 == 0)"
     0L sum_rec
+
+let test_bv_semantic_verifier () =
+  (* 1. Formal equivalence of Multiplicity MBA addition *)
+  let orig_add = [ PushReg 0; PushReg 1; Add ] in
+  let mba_add = [ PushReg 0; PushReg 1 ] @ Stack_multiplicity_pass.expand_add_mba () in
+  let res_add = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_add ~trans_ops:mba_add () in
+  Alcotest.(check bool) "MBA addition proven equivalent via SMT" true
+    (match res_add with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 2. Formal equivalence of Multiplicity MBA subtraction *)
+  let orig_sub = [ PushReg 0; PushReg 1; Sub ] in
+  let mba_sub = [ PushReg 0; PushReg 1 ] @ Stack_multiplicity_pass.expand_sub_mba () in
+  let res_sub = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_sub ~trans_ops:mba_sub () in
+  Alcotest.(check bool) "MBA subtraction proven equivalent via SMT" true
+    (match res_sub with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 3. PolyMBA cubic Rivest knot evaluates to 0 in QF_BV *)
+  let orig_knot = [ PushReg 0 ] in
+  let trans_knot = [ PushReg 0 ] @ Stack_polymba_pass.emit_cubic_rivest_knot ~scratch_slot:1 @ [ Add ] in
+  let res_knot = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_knot ~trans_ops:trans_knot () in
+  Alcotest.(check bool) "Cubic Rivest knot proven equivalent (zero delta) via SMT" true
+    (match res_knot with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 4. Intentional divergence detection: Add vs Sub *)
+  let buggy = [ PushReg 0; PushReg 1; Sub ] in
+  let res_div = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_add ~trans_ops:buggy () in
+  Alcotest.(check bool) "Divergence correctly detected with counterexample" true
+    (match res_div with Stack_bv_verifier.Divergent _ -> true | _ -> false)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2778,6 +2807,7 @@ let tests = [
   ("Branchless Bit-Blasted Flag Materialization", `Quick, test_algebraic_flags);
   ("Affine Ring Domain Encoding & Homomorphic Operations", `Quick, test_domain_encoding);
   ("Chinese Remainder Theorem Split-Path & Garner Reconstruction", `Quick, test_crt_split_path);
+  ("Pass C: Bit-Vector Semantic Normalization & SMT Verifier", `Quick, test_bv_semantic_verifier);
 ]
 
 
