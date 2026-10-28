@@ -214,6 +214,19 @@ static __attribute__((always_inline)) inline char* ASG_decrypt_str(char* buf, co
     }
 
 /* ------------------------------------------------------------------------- */
+/* 5b. LOOP UNROLLING & LINEARIZATION DIRECTIVES                            */
+/* ------------------------------------------------------------------------- */
+#if defined(__clang__)
+#define ASG_UNROLL _Pragma("clang loop unroll(full)")
+#define ASG_UNROLL_COUNT(n) _Pragma("clang loop unroll_count(" #n ")")
+#elif defined(__GNUC__)
+#define ASG_UNROLL _Pragma("GCC unroll 64")
+#define ASG_UNROLL_COUNT(n) _Pragma("GCC unroll " #n)
+#else
+#define ASG_UNROLL
+#define ASG_UNROLL_COUNT(n)
+#endif
+/* ------------------------------------------------------------------------- */
 
 /* 6. MARKER-BASED REGION PROTECTION (VMProtect Style SDK)                   */
 

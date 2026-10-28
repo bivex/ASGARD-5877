@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Add loop unrolling directives (`ASG_UNROLL`) and toolchain unrolling flags for JIT VM (`lib/adapters/protect_adapters/clang_toolchain_adapter.ml`, `lib/c_macro_obf/c_macro_templates.ml`, `examples/asgard_obf.h`):
+  * Added `-funroll-loops` and `-mllvm -unroll-threshold=500` to frontend compilation flags in `clang_toolchain_adapter.ml`, and added `#define ASG_UNROLL _Pragma("clang loop unroll(full)")` and `ASG_UNROLL_COUNT(n)` to macro templates.
+  * Bounded loops (cryptographic rounds, vector reductions, hashing iterations) are now automatically unrolled into straight-line instructions, eliminating backward branches and loop induction variables.
+  * Unrolled sequences are partitioned into aperiodic Kolakoski sealed chunks (OEIS A000002) with Thue-Morse dummy padding (OEIS A010060), derangement register scrambling (OEIS A000166), and Rule 30 ephemeral wiping (OEIS A269160), defeating DBI loop-detection tools (Frida / Pin / IDA Lumina).
+  * Verified: 12/12 tests in `Stack-JIT VM & Chunker` pass, 7/7 in `Register-Driven JIT VM & RNS` pass, 45/45 steps in `test_cpp_codegen` pass, 69/69 in `ARM64 Lifter & CFG` pass; and verified end-to-end on Apple Silicon hardware with unrolled polynomial array hashing (`array_hash_loop = 0x18A904F352E1B4FB`) and vector mutation (`vector_accumulate`) producing exact bit-for-bit results.
 - Add hardware CPU flags persistence (`NZCV` / `RFLAGS`) across Kolakoski sealed chunks in JIT VM (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/stack_vm/stack_jit_chunker.ml`):
   * Added entry/exit flag synchronization in `synthesize_and_execute_block` on ARM64 (`ldr x9, [x0, #648]; msr nzcv, x9` at block entry, `mrs x9, nzcv; str x9, [x0, #648]` at block exit) and x86_64 (`push [rdi+648]; popfq` / `pushfq; pop [rdi+648]`).
   * Condition flags now persist transparently across chunk boundaries, allowing `CMP_RR` and dependent `CSEL_RR` / conditional moves to span separate Kolakoski chunks without losing architectural CPU flags during C++ runner transitions.

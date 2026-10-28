@@ -39,9 +39,11 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
   let compiler = get_compiler_for_arch arch (not is_cpp) in
   let extra_flags =
     if is_cpp then
-      Cmd.(v "-std=c++20" % "-fno-jump-tables" % "-mllvm" % "-switch-to-lookup=false")
+      Cmd.(v "-std=c++20" % "-fno-jump-tables" % "-mllvm" % "-switch-to-lookup=false"
+           % "-funroll-loops" % "-mllvm" % "-unroll-threshold=500")
     else
-      Cmd.(v "-fno-jump-tables" % "-mllvm" % "-switch-to-lookup=false")
+      Cmd.(v "-fno-jump-tables" % "-mllvm" % "-switch-to-lookup=false"
+           % "-funroll-loops" % "-mllvm" % "-unroll-threshold=500")
   in
   Logger.debugf ~section:"TOOLCHAIN" "Compiling C/C++ source '%s' to assembly '%s' (%s)"
     c_source out_asm compiler;

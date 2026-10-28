@@ -138,6 +138,27 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
     raw_top ("#define " ^ p ^ "CFF_EXIT(state_var) do { \\\n    state_var = 0U; \\\n} while(0); break");
     raw_top ("#define " ^ p ^ "CFF_END() \\\n        default: \\\n            state_var = 0U; \\\n            break; \\\n        } \\\n    }");
   ] in
+  let loop_unroll_dsl = [
+    comment_top "/* ------------------------------------------------------------------------- */";
+    comment_top "/* 5b. LOOP UNROLLING & LINEARIZATION DIRECTIVES                            */";
+    comment_top "/* ------------------------------------------------------------------------- */";
+    preproc_if "defined(__clang__)"
+      [
+        raw_top ("#define " ^ p ^ "UNROLL _Pragma(\"clang loop unroll(full)\")");
+        raw_top ("#define " ^ p ^ "UNROLL_COUNT(n) _Pragma(\"clang loop unroll_count(\" #n \")\")");
+      ]
+      ~else_decls:[
+        preproc_if "defined(__GNUC__)"
+          [
+            raw_top ("#define " ^ p ^ "UNROLL _Pragma(\"GCC unroll 64\")");
+            raw_top ("#define " ^ p ^ "UNROLL_COUNT(n) _Pragma(\"GCC unroll \" #n)");
+          ]
+          ~else_decls:[
+            raw_top ("#define " ^ p ^ "UNROLL");
+            raw_top ("#define " ^ p ^ "UNROLL_COUNT(n)");
+          ]
+      ]
+  ] in
 
   let region_protection = [
     comment_top "/* ------------------------------------------------------------------------- */";
@@ -219,6 +240,7 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
   @ const_blinding
   @ opaque_predicates
   @ cff_dsl
+  @ loop_unroll_dsl
   @ region_protection
   @ api_hash_decls
 
