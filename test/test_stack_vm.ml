@@ -2755,7 +2755,14 @@ let test_bv_semantic_verifier () =
   let buggy = [ PushReg 0; PushReg 1; Sub ] in
   let res_div = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_add ~trans_ops:buggy () in
   Alcotest.(check bool) "Divergence correctly detected with counterexample" true
-    (match res_div with Stack_bv_verifier.Divergent _ -> true | _ -> false)
+    (match res_div with Stack_bv_verifier.Divergent _ -> true | _ -> false);
+
+  (* 5. Formal equivalence of Coupled Dual-Load Memory Butterfly in QF_ABV *)
+  let orig_mem = [] in
+  let butterfly_ops = Stack_mem_webbing_pass.generate_mem_web_cluster ~sp_slot:0 ~scratch_slot:1 ~ghost_slot:2 false in
+  let res_butterfly = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_mem ~trans_ops:butterfly_ops () in
+  Alcotest.(check bool) "Coupled Dual-Load Memory Butterfly proven equivalent via SMT QF_ABV" true
+    (match res_butterfly with Stack_bv_verifier.Equivalent -> true | _ -> false)
 
 let test_relational_state_encoding () =
   let rx = 2 in

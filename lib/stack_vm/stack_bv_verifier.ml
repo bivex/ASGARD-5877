@@ -21,7 +21,11 @@ let string_of_result = function
   | Stack_depth_mismatch { orig_depth; trans_depth } ->
       Printf.sprintf "Stack_depth_mismatch (orig=%d, trans=%d)" orig_depth trans_depth
 
-type bv_expr =
+type mem_expr =
+  | MemVar of string
+  | MemStore of mem_expr * bv_expr * bv_expr
+
+and bv_expr =
   | BVConst of int64
   | BVVar of string
   | BVAdd of bv_expr * bv_expr
@@ -34,9 +38,14 @@ type bv_expr =
   | BVShl of bv_expr * bv_expr
   | BVLshr of bv_expr * bv_expr
   | BVAshr of bv_expr * bv_expr
+  | BVSelect of mem_expr * bv_expr
 [@@warning "-37"]
 
-let rec smt_of_bv = function
+let rec smt_of_mem = function
+  | MemVar v -> v
+  | MemStore (m, a, v) -> Printf.sprintf "(store %s %s %s)" (smt_of_mem m) (smt_of_bv a) (smt_of_bv v)
+
+and smt_of_bv = function
   | BVConst c -> Printf.sprintf "#x%016LX" c
   | BVVar v -> v
   | BVAdd (a, b) -> Printf.sprintf "(bvadd %s %s)" (smt_of_bv a) (smt_of_bv b)
@@ -52,17 +61,21 @@ let rec smt_of_bv = function
       Printf.sprintf "(bvlshr %s (bvand %s #x000000000000003F))" (smt_of_bv a) (smt_of_bv b)
   | BVAshr (a, b) ->
       Printf.sprintf "(bvashr %s (bvand %s #x000000000000003F))" (smt_of_bv a) (smt_of_bv b)
+  | BVSelect (m, a) ->
+      Printf.sprintf "(select %s %s)" (smt_of_mem m) (smt_of_bv a)
 
 type sym_state = {
   mutable stack : bv_expr list;
   ctx : (int, bv_expr) Hashtbl.t;
   vars : (string, unit) Hashtbl.t;
+  mutable mem : mem_expr;
 }
 
 let create_sym_state () = {
   stack = [];
   ctx = Hashtbl.create 16;
   vars = Hashtbl.create 16;
+  mem = MemVar "initial_mem";
 }
 
 let get_reg_expr state r =
@@ -148,8 +161,21 @@ let exec_sym_op state = function
       | a :: b :: c :: rest -> state.stack <- c :: a :: b :: rest
       | _ -> ()
       end
+  | WriteMem _ ->
+      begin match state.stack with
+      | v :: a :: rest ->
+          state.stack <- rest;
+          state.mem <- MemStore (state.mem, a, v)
+      | _ -> ()
+      end
+  | ReadMem _ ->
+      begin match state.stack with
+      | a :: rest ->
+          state.stack <- BVSelect (state.mem, a) :: rest
+      | [] -> ()
+      end
   | _ ->
-      (* Memory / Jump / Exit handled separately *)
+      (* Jump / Exit / other non-effecting ops handled separately *)
       ()
 
 let exec_sym_ops ops =
@@ -205,7 +231,8 @@ let verify_ops_equivalence ?(timeout_sec = 10) ~orig_ops ~trans_ops () =
     Hashtbl.iter (fun v () -> Hashtbl.replace all_vars v ()) st_trans.vars;
 
     let buf = Buffer.create 1024 in
-    Buffer.add_string buf "(set-logic QF_BV)\n";
+    Buffer.add_string buf "(set-logic QF_ABV)\n";
+    Buffer.add_string buf "(declare-const initial_mem (Array (_ BitVec 64) (_ BitVec 64)))\n";
     Hashtbl.iter (fun v () ->
       Buffer.add_string buf (Printf.sprintf "(declare-const %s (_ BitVec 64))\n" v)
     ) all_vars;

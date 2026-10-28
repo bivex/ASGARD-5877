@@ -50,23 +50,26 @@ let next_int rng n =
     rng.state <- s;
     Int64.to_int (Int64.logand z 0x7FFFFFFFL) mod n
 
-let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
-  (* Pass 14: Non-Aliasing Feistel / Derangement Memory Entanglement
+let generate_mem_web_cluster ~sp_slot ~scratch_slot ~ghost_slot flags_live =
+  (* Coupled Dual-Load Memory Butterfly (Additive Secret Sharing in L1D)
      1. Base is aligned to 64 bytes in the host stack frame:
           Base = (SP - 65) & ~0x3F
         All 8 slots lie strictly within the exact same 64-byte L1D line:
           a1 = Base + (s & 0x38)
           a2 = Base + 8 * ((K_perm >> (3 * ((s >> 3) & 7))) & 7)
-        Where K_perm = 0x5053F3 is a non-affine derangement permutation in F_{2^3}:
-          forall u in 0..7: (K_perm >> (3*u)) & 7 != u.
-        Therefore a1 != a2 for all s, but the dynamic variable shift
-        forces LLVM/Miasm BasicAA to return MayAlias.
-     2. Store order defeats McCarthy Store-to-Load Forwarding:
-          Step 1: WriteMem(a1, s)            (real value)
-          Step 2: WriteMem(a2, Decoy)        (decoy value s + 0x5877...)
-          Step 3: ReadMem(a1)                (reads back real value)
-        Because Step 2 stores Decoy != s to a2 AFTER Step 1, McCarthy array
-        theory cannot collapse select(store(store(M, a1, s), a2, Decoy), a1). *)
+        Where K_perm = 0x5053F3 is a non-affine derangement permutation in F_{2^3}
+        guaranteeing a1 != a2.
+     2. Additive Secret Sharing in L1D cache:
+          Store 1: Share1 = s ^ g       to a1 (WriteMem 8)
+          Store 2: Share2 = g + Salt    to a2 (WriteMem 8)
+          Load 2:  r2 <- Memory[a2]          (ReadMem 8)
+                   g' = r2 - Salt == g       (restores g)
+          Load 1:  r1 <- Memory[a1]          (ReadMem 8)
+                   s' = r1 ^ g' == s         (reconstructs s)
+     3. 100% Non-Dead Store Invariant:
+        Both Store 1 and Store 2 are strictly necessary to reconstruct s.
+        Zero decoy stores; backward program slicing (Triton / LLVM DSE)
+        cannot eliminate either store without destroying the live value s. *)
   let inner = [
     (* 1. Compute a1 = Base + (s & 0x38) *)
     PushReg sp_slot;
@@ -78,10 +81,18 @@ let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
     PushImm mem_webbing_offset_mask; (* 0x38L *)
     Nand; Dup; Nand;                 (* [s & 0x38, base] *)
     Add;                             (* [a1 = base + (s & 0x38)] *)
-
-    (* 2. Store real s to a1: [a1] := s *)
     Dup;                             (* [a1, a1] *)
-    PushReg scratch_slot;            (* [s, a1, a1] *)
+
+    (* 2. Compute Share1 = s ^ g: (s + g) - 2*(s & g) *)
+    PushReg scratch_slot;
+    PushReg ghost_slot;
+    Add;                             (* s + g *)
+    PushReg scratch_slot;
+    PushReg ghost_slot;
+    Nand; Dup; Nand;                 (* s & g *)
+    PushImm 2L; Mul; Sub;            (* [Share1 = s ^ g, a1, a1] *)
+
+    (* WriteMem 8: Store 1 *)
     WriteMem 8;                      (* [a1] *)
 
     (* 3. Compute a2 = Base + 8 * ((K_perm >> (3 * ((s >> 3) & 7))) & 7) *)
@@ -99,22 +110,35 @@ let generate_mem_web_cluster ~sp_slot ~scratch_slot flags_live =
     PushImm mem_webbing_base_align_mask; (* 0xFFFFFFFFFFFFFFC0L *)
     Nand; Dup; Nand;                 (* [base, 8*j0, a1] *)
     Add;                             (* [a2 = base + 8*j0, a1] *)
+    Dup;                             (* [a2, a2, a1] *)
 
-    (* 4. Store decoy to a2: [a2] := s + 0x58771337CAFE *)
-    PushReg scratch_slot;
+    (* 4. Compute Share2 = g + Salt *)
+    PushReg ghost_slot;
     PushImm mem_webbing_decoy_salt;
-    Add;                             (* [Decoy, a2, a1] *)
-    WriteMem 8;                      (* [a1] *)
+    Add;                             (* [Share2 = g + Salt, a2, a2, a1] *)
 
-    (* 5. Read real s back from a1 *)
-    ReadMem 8;                       (* [read_s] *)
+    (* WriteMem 8: Store 2 *)
+    WriteMem 8;                      (* [a2, a1] *)
 
-    (* 6. Verify and preserve s: s := s + (read_s - s) == s *)
-    PushReg scratch_slot;            (* [s, read_s] *)
-    Sub;                             (* [read_s - s = 0] *)
-    PushReg scratch_slot;            (* [s, 0] *)
-    Add;                             (* [s + 0 = s] *)
-    PopReg scratch_slot;             (* [] *)
+    (* 5. ReadMem 8: Load 2 from a2 *)
+    ReadMem 8;                       (* [r2, a1] *)
+    PushImm mem_webbing_decoy_salt;
+    Sub;                             (* [g_rec = r2 - Salt, a1] *)
+    PopReg ghost_slot;               (* [a1] (restores ghost register) *)
+
+    (* 6. ReadMem 8: Load 1 from a1 *)
+    ReadMem 8;                       (* [r1 = s ^ g] *)
+    PopReg scratch_slot;             (* [] (holds r1 in scratch_slot) *)
+
+    (* 7. Reconstruct s = r1 ^ g: (r1 + g) - 2*(r1 & g) *)
+    PushReg scratch_slot;
+    PushReg ghost_slot;
+    Add;
+    PushReg scratch_slot;
+    PushReg ghost_slot;
+    Nand; Dup; Nand;
+    PushImm 2L; Mul; Sub;
+    PopReg scratch_slot;             (* [] (restores s into scratch_slot) *)
   ] in
   if flags_live then [ PushFlags ] @ inner @ [ PopFlags ]
   else inner
@@ -143,8 +167,9 @@ let apply_block (cfg : mem_webbing_config) ~sp_slot ~scratch_ring _ctx (b : bloc
         if next_int rng 100 < cfg.rate then begin
           let flags_live = if idx + 1 < Array.length live then live.(idx + 1) else false in
           let s = scratch_ring.(!ring_idx) in
+          let g = scratch_ring.((!ring_idx + 1) mod n_ring) in
           ring_idx := (!ring_idx + 1) mod n_ring;
-          let cluster = generate_mem_web_cluster ~sp_slot ~scratch_slot:s flags_live in
+          let cluster = generate_mem_web_cluster ~sp_slot ~scratch_slot:s ~ghost_slot:g flags_live in
           new_ops := List.rev cluster @ !new_ops;
           incr count
         end

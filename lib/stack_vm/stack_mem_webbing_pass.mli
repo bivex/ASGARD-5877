@@ -16,6 +16,7 @@ val default_mem_webbing_config : int64 -> mem_webbing_config
 val generate_mem_web_cluster :
   sp_slot:int ->
   scratch_slot:int ->
+  ghost_slot:int ->
   bool ->
   stack_op list
 
