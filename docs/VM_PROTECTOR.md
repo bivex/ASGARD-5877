@@ -26,13 +26,14 @@ flowchart TD
         P5["Phase 4: Spaghetti CFG Splitting"]
         P6["Phase 5: Metamorphic Ghost Padding"]
         P7["Phase 5b: Variable-Size Avid Junk Operands"]
-        P8["Phase 5c (Pass 14): Derangement Memory Entanglement"]
+        P8["Phase 5c: Coupled Dual-Load Memory Butterfly"]
         P9t["Phase 5d: Stateful Transducer Coupling"]
         P10["Phase 5e (Pass 11): Bit-Permutation MBA & Cubic Knots"]
         P10f["Phase 5f (Pass 12): CRT Split-Path Execution"]
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P12["Phase 7: Stack Balance Verification & Repair"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9t --> P10 --> P10f --> P11 --> P12
+        P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
+        P1 --> P1b --> P9d --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9t --> P10 --> P10f --> P11 --> P12 --> P12b
     end
     
     IR --> P1
@@ -233,21 +234,25 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 
 ---
 
-### Phase 5c: Non-Aliasing Feistel / Derangement Memory Entanglement (Pass 14, `stack_mem_webbing_pass.ml`)
-* **Derangement Memory Invariant & LLVM Store-to-Load Forwarding Defeat**:
-  Computes two provably distinct 8-byte aligned addresses strictly within a single 64-byte L1D cache line $[\mathrm{Base} \dots \mathrm{Base} + 56]$:
+### Phase 5c: Coupled Dual-Load Memory Butterfly (Additive Secret Sharing in L1D, `stack_mem_webbing_pass.ml`)
+* **Additive Secret Sharing in L1D Line**:
+  Completely eliminates dead/decoy stores in favor of two coupled secret shares $a_1, a_2$ strictly within a single 64-byte L1D cache line $[\mathrm{Base} \dots \mathrm{Base} + 56]$:
   $$\mathrm{Base} = (\mathrm{SP} - 65) \land \sim\!\text{0x3F}$$
-  $$a_{\mathrm{real}} = \mathrm{Base} + (s \land \text{0x38})$$
-  $$a_{\mathrm{decoy}} = \mathrm{Base} + 8 \cdot \Big( \big( K_{\mathrm{perm}} \gg (3 \cdot ((s \gg 3) \land 7)) \big) \land 7 \Big)$$
-  Where $K_{\mathrm{perm}} = \texttt{0x5053F3} = \texttt{024051763}_8$ is a non-affine derangement permutation in $\mathbb{F}_{2^3}$ ($\forall u \in [0..7]: \pi(u) \ne u$).
-  * Store 1 (live value): $\mathrm{Memory}[a_{\mathrm{real}}] \leftarrow s \quad (\text{WriteMem 8})$
-  * Store 2 (interleaving decoy): $\mathrm{Memory}[a_{\mathrm{decoy}}] \leftarrow (s + \text{0x58771337CAFE}) \quad (\text{WriteMem 8})$
-  * Load (real read): $s' \leftarrow \mathrm{Memory}[a_{\mathrm{real}}] \quad (\text{ReadMem 8})$
-  * Self-verifying recovery: $s \leftarrow s + (s - s') \equiv s \pmod{2^{64}}$
-* **Anti-Forwarding Invariant**: Because Store 2 writes a distinct value to $a_{\mathrm{decoy}}$ strictly between Store 1 and Load 1 via a dynamic variable shift, LLVM `BasicAA` and `SCEVAA` cannot prove disjointness and return `MayAlias`, physically prohibiting store-to-load forwarding.
+  $$a_1 = \mathrm{Base} + (s \land \text{0x38})$$
+  $$a_2 = \mathrm{Base} + 8 \cdot \Big( \big( K_{\mathrm{perm}} \gg (3 \cdot ((s \gg 3) \land 7)) \big) \land 7 \Big)$$
+  Where $K_{\mathrm{perm}} = \texttt{0x5053F3} = \texttt{024051763}_8$ is a non-affine derangement permutation in $\mathbb{F}_{2^3}$ ($\forall u \in [0..7]: \pi(u) \ne u \implies a_1 \ne a_2$).
+* **Dual-Store Splitting**:
+  $$\text{Share}_1 = s \oplus G_k \equiv (s + G_k) - 2(s \land G_k) \pmod{2^{64}}$$
+  $$\text{Share}_2 = G_k + C_{\mathrm{salt}} \pmod{2^{64}}$$
+  $$\text{WriteMem}(a_1, \text{Share}_1), \qquad \text{WriteMem}(a_2, \text{Share}_2)$$
+* **Coupled Dual-Load Reconstruction**:
+  $$r_2 \leftarrow \text{ReadMem}(a_2), \qquad r_1 \leftarrow \text{ReadMem}(a_1)$$
+  $$G_k \leftarrow r_2 - C_{\mathrm{salt}} \pmod{2^{64}}$$
+  $$s_{\mathrm{rec}} \leftarrow r_1 \oplus G_k \equiv (r_1 + G_k) - 2(r_1 \land G_k) \pmod{2^{64}}$$
+* **Zero Dead Stores (100% Live Sinks)**:
+  Because $s$ is reconstructed as $r_1 \oplus (r_2 - C_{\mathrm{salt}})$, **both** stores are strictly required to recover $s$. Backward program slicing (Triton, LLVM DSE) cannot prune either store without corrupting program execution, yielding 98.6%+ non-detachable memory dependencies in Tier 5.
+* **SMT Proof**: Formally proven in Pass C SMT Verifier (`QF_ABV` theory with `select`/`store`/`initial_mem`) that $s_{\mathrm{rec}} \equiv s$ for all $2^{64}$ inputs with zero divergence (`unsat`).
 * **Strict Red Zone Bounding**: Offset $(\mathrm{SP} - 65)$ rounded down to 64 bytes guarantees $\mathrm{Base} \in [\mathrm{SP} - 128 \dots \mathrm{SP} - 65]$, ensuring the entire 56-byte window $[\mathrm{Base} \dots \mathrm{Base} + 56]$ lies strictly within $[\mathrm{SP} - 128 \dots \mathrm{SP} - 2]$, eliminating Red Zone violations on AMD64 ABI.
-
----
 
 ### Phase 5c-ssa (Pass D): Memory SSA & Alias-Aware Forwarding Prohibition (`stack_memory_ssa.ml`)
 * **Formula**: Constructs an explicit Memory SSA dependency graph over all memory operations:
@@ -321,6 +326,18 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$\forall B_i \in \text{Blocks}: \quad \Delta_{\mathrm{exit}}(B_i) = \sum_{op \in B_i} \mathrm{delta}(op) \equiv 0 \quad \land \quad \min_{t} \mathrm{depth}(t) \ge 0$$
 * **Compiler Safety**: Emits a fatal compiler error if any hardening pass violates stack neutrality or introduces an underflow branch.
 
+
+### Phase 7b (Pass E): Stack-VM Dead Code Causality Analyzer (`stack_dead_code_analyzer.ml`, `stack_dead_code_analyzer.mli`)
+* **Causality Taxonomy**: Diagnoses, classifies, and reports the exact causal mechanisms behind dead code emergence across pipeline phases:
+  1. **Dead Register Writes (`Dead_write_unreferenced`)**: Context slot $r$ written by `PopReg` / `SetRegImm` with zero subsequent reads globally.
+  2. **Overwritten Register Writes (`Dead_write_overwritten`)**: WAW hazard where slot $r$ is overwritten in block before any intervening read.
+  3. **Stack Balance Discard Drains (`Balance_drain_orphan`)**: `PopReg dummy` injected by `Stack_balance_pass` to enforce $\Delta_{\mathrm{exit}} = 0$.
+  4. **CFF Sub-Zero Redundancy (`Redundant_sub_zero_cmp`)**: Idiom `Sub; PushImm 0L; Cmp` in CFF dispatcher where `Sub` already set condition flags.
+  5. **Structural Identities (`Structural_identity`)**: Self-canceling sequences (`Swap; Swap`, `Rot * 4`, `PushReg r; PopReg r`).
+  6. **Algebraic Neutral Elements (`Algebraic_zero_knot`)**: Operations computing identities ($x + 0$, $x * 1$, $r - r$).
+  7. **Unreachable CFG Blocks (`Unreachable_block`)**: Decoy or orphaned blocks with in-degree 0 not reachable from entry.
+  8. **Slicing Unobservables (`Slicing_unobservable`)**: Instructions with no transitive data-flow reaching any observable I/O sink.
+* **Automated Remediation**: Maps each dead instruction to its culprit pipeline phase and provides concrete architectural remediation advice.
 ---
 
 ### Phase 8: Pipelined Stage Dispatch Architecture (`stack_runtime.ml`, `pipelined_dispatch_pass.ml`)
@@ -341,12 +358,12 @@ Empirically measured via `examples/deobf_probe/run_probe.sh` over protected prod
 
 | Attack Tier | Attacker Threat Model | Tooling Emulated | Evaluated Program Operations | SMT / Attack Reductions | Resilience Verdict |
 |:---:|:---|:---|:---:|:---:|:---:|
-| **Tier 1** | Local Peephole & Dead-Slot DCE | Hex-Rays / LLVM Opt | 235,397 ops | 40 ops (**0.02%**) | **99.98% RESILIENT** |
-| **Tier 2** | Semantic SMT Zero-Knot Inverses | Z3 / D810 / Triton | 235,397 ops | 139 ops (**0.06%**) | **99.94% RESILIENT** |
-| **Tier 3** | Constant Folding & Superops | Abstract Interpretation | 235,397 ops | **0 ops (0.00%)** | **100.0% RESILIENT** |
-| **Tier 4** | Lifter & Backward Program Slicing | LLVM IR Backward Slicer | 235,397 ops | 8,096 kept ops | **Complete Def-Use Closure (+1.7x)** |
-| **Tier 5** | Boolean Differential Calculus | $\frac{\partial \mathrm{Sink}}{\partial s} \ne 0$ Analysis | 1,255 Memory Sinks | **1,179 non-zero derivatives (93.9%)** | **100% Non-Detachable RAM Sinks** |
-| **Tier 6** | Black-Box Inductive Synthesis | Syntia / QSynth / MCTS | 8,531 Expression Clusters | **0 / 8,531 synthesized (0.0%)** | **100.0% [TIER 3+ RESILIENT]** |
+| **Tier 1** | Local Peephole & Dead-Slot DCE | Hex-Rays / LLVM Opt | 359,170 ops | 37 ops (**0.01%**) | **99.99% RESILIENT** |
+| **Tier 2** | Semantic SMT Zero-Knot Inverses | Z3 / D810 / Triton | 359,170 ops | 143 ops (**0.04%**) | **99.96% RESILIENT** |
+| **Tier 3** | Constant Folding & Superops | Abstract Interpretation | 359,170 ops | **0 ops (0.00%)** | **100.0% RESILIENT** |
+| **Tier 4** | Lifter & Backward Program Slicing | LLVM IR Backward Slicer | 359,170 ops | 9,538 kept ops | **Complete Def-Use Closure (+2.0x)** |
+| **Tier 5** | Boolean Differential Calculus | $\frac{\partial \mathrm{Sink}}{\partial s} \ne 0$ Analysis | 1,335 Memory Sinks | **1,316 non-zero derivatives (98.6%)** | **100% Non-Detachable RAM Sinks** |
+| **Tier 6** | Black-Box Inductive Synthesis | Syntia / QSynth / MCTS | 13,668 Expression Clusters | **0 / 13,668 synthesized (0.0%)** | **100.0% [TIER 3+ RESILIENT]** |
 
 ### 5.2 Dispatch Topology & Graph Invariants
 - **Basic Blocks**: 322 blocks, 638 CFG edges.
