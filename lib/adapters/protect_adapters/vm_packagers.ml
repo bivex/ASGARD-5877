@@ -286,11 +286,10 @@ end
 module Stack_jit_packager : Vm_packager = struct
   let engine_kind = Jit
 
-  let package_single ~rng ~config (name, (ir : Vm_ir.Ir.func)) =
+  let package_single ~rng ~config ?(ext_syms = Hashtbl.create 16) (name, (ir : Vm_ir.Ir.func)) =
     let native_cfg : Protection_config.t = unwrap_config config in
     Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging function '%s' (IR -> Stack-IR -> sealed chunks)"
       name;
-    let ext_syms = Hashtbl.create 16 in
     let ctx = Stack_vm.Context_allocator.create ~permute:false () in
     let _ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms ir in
     let rec collect_trace visited cur_id =
@@ -319,6 +318,7 @@ module Stack_jit_packager : Vm_packager = struct
             ~enable_cff:false
             ~enable_mba:false
             ~mba_depth:0
+            ~external_symbols:(Stack_vm.Ir_to_stack.get_symbols_list ext_syms)
             ir
         in
         (jit_pkg, name)
@@ -329,6 +329,7 @@ module Stack_jit_packager : Vm_packager = struct
             ?config:(Some native_cfg)
             ~enable_cff:false
             ~enable_mba:false
+            ~external_symbols:(Stack_vm.Ir_to_stack.get_symbols_list ext_syms)
             ~chunks:tr.chunks
             ir
         in
@@ -341,16 +342,17 @@ module Stack_jit_packager : Vm_packager = struct
     let ir_funcs = unwrap_multi_ir func in
     if List.length ir_funcs > 1 then begin
       Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
-      let results = List.map (package_single ~rng ~config) ir_funcs in
+      let global_ext_syms = Hashtbl.create 16 in
+      let results = List.map (package_single ~rng ~config ~ext_syms:global_ext_syms) ir_funcs in
       let bytecodes = List.map (fun ((pkg : Rd_jit_vm.Rd_jit_emitter.rd_jit_package), name) -> (name, pkg.bytecode)) results in
-      let first_pkg = fst (List.hd results) in
+      let full_pkg = fst (List.hd (List.rev results)) in
       let first_name = snd (List.hd results) in
       {
-        cpp_runtime_source = inject_pipeline_hardening native_cfg first_name first_pkg.cpp_runtime_source;
-        runner_source = first_pkg.runner_source;
-        bytecode = first_pkg.bytecode;
+        cpp_runtime_source = inject_pipeline_hardening native_cfg first_name full_pkg.cpp_runtime_source;
+        runner_source = full_pkg.runner_source;
+        bytecode = (match bytecodes with (_, bc) :: _ -> bc | [] -> []);
         bytecodes;
-        metrics = convert_metrics ~engine_name:"Stack-JIT VM" ~config:native_cfg first_pkg.metrics;
+        metrics = convert_metrics ~engine_name:"Stack-JIT VM" ~config:native_cfg full_pkg.metrics;
         header_name = "jit_vm_runtime.hpp";
         rebind_address = None;
       }

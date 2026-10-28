@@ -94,7 +94,7 @@ let compile_native_binary ?(opt_level = "-O3") ?(extra_flags = []) ~is_c ~(sourc
         Cmd.(v opt_level % "-Wno-format-security"
              % "-fno-rtti" % "-fno-exceptions"
              % "-fno-unwind-tables" % "-fno-asynchronous-unwind-tables"
-             % "-fvisibility=hidden" % "-Wl,-dead_strip" % "-Wl,-x")
+             % "-fvisibility=hidden" % "-Wl,-dead_strip" % "-Wl,-export_dynamic")
       in
       List.fold_left (fun acc flag -> Cmd.(acc % flag)) base_opt extra_flags
     in

@@ -84,8 +84,8 @@ let test_chunker_context_registers () =
 let test_chunker_rejections () =
   check bool "Rejects JmpRel" true
     (Result.is_error (Stack_jit_chunker.translate_trace () [ JmpRel 1 ]));
-  check bool "Rejects CallExtern" true
-    (Result.is_error (Stack_jit_chunker.translate_trace () [ CallExtern 0 ]));
+  check bool "Rejects JccRel" true
+    (Result.is_error (Stack_jit_chunker.translate_trace () [ JccRel (1, Flags.E) ]));
   check bool "Rejects too many distinct context slots" true
     (Result.is_error
        (Stack_jit_chunker.translate_trace ()
@@ -98,6 +98,14 @@ let test_chunker_rejections () =
           [ PushImm 1L; PushImm 2L; PushImm 3L; PushImm 4L;
             PushImm 5L; PushImm 6L; PushImm 7L ]))
 
+let test_chunker_symbols () =
+  let ops = [ ResolveSym 0; PopReg 1; CallExtern 1 ] in
+  match Stack_jit_chunker.translate_trace () ops with
+  | Error err -> fail ("Symbols translation failed: " ^ err)
+  | Ok tr ->
+      let gprs = Array.make 16 0L in
+      Stack_jit_chunker.simulate_chunks tr.chunks gprs;
+      check int64 "Resolved symbol in slot 1" 0x1000L gprs.(1)
 let test_chunker_div_rot_dup2 () =
   let ops_div = [ PushImm 100L; PushImm 4L; Div ] in
   let ref_div = Stack_jit_chunker.reference_eval (Array.make 8 0L) ops_div in
@@ -290,6 +298,7 @@ let tests = [
   ("Stack-JIT Rejections of Unsupported Ops", `Quick, test_chunker_rejections);
   ("Stack-JIT Div, Rot, Dup2 Simulation", `Quick, test_chunker_div_rot_dup2);
   ("Stack-JIT Cmp & Cmov Simulation", `Quick, test_chunker_cmp_cmov_branchless);
+  ("Stack-JIT ResolveSym & CallExtern Simulation", `Quick, test_chunker_symbols);
   ("Stack-JIT Hardware E2E Execution", `Quick, test_stack_jit_e2e_compilation);
   ("Stack-JIT Hardware Div/Rem/Shift E2E", `Quick, test_stack_jit_div_rem_hardware_e2e);
   ("Stack-JIT C Macro Trampoline E2E", `Quick, test_stack_jit_c_macro_e2e);

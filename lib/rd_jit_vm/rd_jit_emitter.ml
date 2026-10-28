@@ -61,7 +61,7 @@ type sealed_chunk_ticket = {
   perm_idx   : int;
 }
 
-let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = false) ?(mba_depth = 2) ?chunks (func : Ir.func) : rd_jit_package =
+let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = false) ?(mba_depth = 2) ?external_symbols ?chunks (func : Ir.func) : rd_jit_package =
   let (enable_cff, enable_mba, mba_depth) =
     match config with
     | Some (c : Native_vm.Protection_config.t) ->
@@ -132,8 +132,9 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
   let sorted_other = List.sort (fun (a : Ir.basic_block) (b : Ir.basic_block) -> Int.compare a.id b.id) other_blocks in
   let sorted_blocks = entry_block :: sorted_other in
 
-  let external_symbols = ref [] in
+  let external_symbols = ref (match external_symbols with Some xs -> xs | None -> []) in
   let external_sym_tbl = Hashtbl.create 16 in
+  List.iteri (fun idx sym -> Hashtbl.replace external_sym_tbl sym idx) !external_symbols;
   let get_ext_sym_idx sym =
     match Hashtbl.find_opt external_sym_tbl sym with
     | Some idx -> idx
@@ -170,7 +171,8 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
       "NEG_R"; "LOAD_64"; "STORE_64"; "RET"; "EXIT";
       "SHL_RR"; "SHR_RR"; "SAR_RR"; "ROR_RR"; "DIV_RR"; "SDIV_RR"; "REM_RR";
       "CMP_RR"; "CSEL_RR"; "MULH_RR"; "SMULH_RR";
-      "LOAD_8"; "LOAD_16"; "LOAD_32"; "STORE_8"; "STORE_16"; "STORE_32" ]
+      "LOAD_8"; "LOAD_16"; "LOAD_32"; "STORE_8"; "STORE_16"; "STORE_32";
+      "RESOLVE_SYM" ]
   in
   let jit_op_code_tbl = Hashtbl.create 32 in
   List.iteri
@@ -572,8 +574,8 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
     metrics = base_pkg.metrics;
   }
 
-let compile_and_package ~rng ?config ?enable_cff ?enable_mba ?mba_depth func =
-  compile_and_package_core ~rng ?config ?enable_cff ?enable_mba ?mba_depth func
+let compile_and_package ~rng ?config ?enable_cff ?enable_mba ?mba_depth ?external_symbols func =
+  compile_and_package_core ~rng ?config ?enable_cff ?enable_mba ?mba_depth ?external_symbols func
 
-let compile_and_package_chunked ~rng ?config ?enable_cff ?enable_mba ?mba_depth ~chunks func =
-  compile_and_package_core ~rng ?config ?enable_cff ?enable_mba ?mba_depth ~chunks func
+let compile_and_package_chunked ~rng ?config ?enable_cff ?enable_mba ?mba_depth ?external_symbols ~chunks func =
+  compile_and_package_core ~rng ?config ?enable_cff ?enable_mba ?mba_depth ?external_symbols ~chunks func

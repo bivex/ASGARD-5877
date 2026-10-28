@@ -7,6 +7,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Add `RESOLVE_SYM` opcode, external function calls (`CALL_EXTERN`), tail-call lifting, and multi-function shared symbol resolution to JIT VM (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`, `lib/rd_jit_vm/rd_jit_emitter.mli`, `lib/stack_vm/stack_jit_chunker.ml`, `lib/arm64_lifter/arm64_branch.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/adapters/protect_adapters/clang_toolchain_adapter.ml`):
+  * Added `JIT_OP_RESOLVE_SYM` to `JITOpKind` with ARM64, x86_64, and interpreter implementations, resolving external and global symbols through `dlsym(RTLD_DEFAULT)` into target registers.
+  * Added stack-preserving `stp`/`ldp` frames around `asgard_rd_jit_call_extern` and `asgard_rd_jit_resolve_sym_to_reg` on ARM64 and push/pop on x86_64, preserving the context register `x0` across function calls.
+  * Supported `ResolveSym` and `CallExtern` in `stack_jit_chunker.ml` and added unit test in `test_stack_jit_vm.ml`.
+  * Lifted ARM64 unconditional branch to external symbol (`b <symbol>`) as tail call `[Ir.Call; Ir.Ret]`.
+  * Merged external symbols across all functions in multi-function mode into a unified `global_ext_syms` table in `vm_packagers.ml`, preventing symbol index collisions in shared runtime headers.
+  * Added `-Wl,-export_dynamic` to default toolchain linking in `clang_toolchain_adapter.ml` to ensure default-visibility tables and helper functions are dynamically discoverable by the JIT runtime.
+  * Verified: 12/12 tests in `Stack-JIT VM & Chunker` pass, 7/7 in `Register-Driven JIT VM & RNS` pass, 45/45 steps in `test_cpp_codegen` pass, 69/69 in `ARM64 Lifter & CFG` pass; and verified end-to-end on Apple Silicon hardware with global S-box table lookup and external C function tail calls producing exact bit-for-bit results.
 - Add sub-width memory operations (`LOAD_8`, `LOAD_16`, `LOAD_32`, `STORE_8`, `STORE_16`, `STORE_32`) and straight-line multi-block trace linearization to JIT VM (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`, `lib/stack_vm/stack_jit_chunker.ml`, `lib/stack_vm/ir_to_stack.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
   * Added 6 sub-width load/store opcodes to `JITOpKind` with ARM64 (`ldrb`/`strb`, `ldrh`/`strh`, `ldr w`/`str w`), x86_64 (`movzx`/`movb`, `movzx`/`movw`, `mov`/`movl`), and interpreter implementations, preventing memory over-writes during byte/short/int buffer mutations.
   * Mapped exact `ReadMem w` and `WriteMem w` in `stack_jit_chunker.ml` and memory operands with width tagging in `rd_jit_emitter.ml`.

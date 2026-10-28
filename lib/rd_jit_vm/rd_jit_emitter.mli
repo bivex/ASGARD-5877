@@ -18,6 +18,7 @@ val compile_and_package :
   ?enable_cff:bool ->
   ?enable_mba:bool ->
   ?mba_depth:int ->
+  ?external_symbols:string list ->
   Ir.func ->
   rd_jit_package
 
@@ -27,6 +28,7 @@ val compile_and_package_chunked :
   ?enable_cff:bool ->
   ?enable_mba:bool ->
   ?mba_depth:int ->
+  ?external_symbols:string list ->
   chunks:(string * int * int * int64) list list ->
   Ir.func ->
   rd_jit_package

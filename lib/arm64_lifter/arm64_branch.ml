@@ -23,6 +23,8 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Nop ]
 
   (* Branches & Calls *)
+  | ("b", [ OpLabel s ]) when not (String.starts_with ~prefix:"L" s || String.starts_with ~prefix:".L" s) ->
+      Some [ Ir.Call (Ir.Label s); Ir.Ret ]
   | ("b", [ target ]) ->
       Some [ Ir.Jmp (target_of_op target) ]
   | ("b.al", [ target ]) ->

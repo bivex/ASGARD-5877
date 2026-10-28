@@ -67,6 +67,7 @@ let jit_op_kind_decl () : top_decl =
       ("JIT_OP_STORE_8", None);
       ("JIT_OP_STORE_16", None);
       ("JIT_OP_STORE_32", None);
+      ("JIT_OP_RESOLVE_SYM", None);
     ];
   }
 
@@ -100,12 +101,10 @@ let rd_jit_types_decls () : top_decl list = [
   raw_top "typedef void (*JITBlockFn)(RD_JIT_Context* ctx);";
 ]
 
-let rd_jit_call_extern_decl () : top_decl =
-  func_decl ~attrs:[StaticFn; InlineFn] Void "asgard_rd_jit_call_extern"
-    [ (Ptr (StructType "RD_JIT_Context"), "ctx"); (UInt64, "sym_idx") ]
-    [
-      raw {|const size_t count = sizeof(g_rd_jit_external_symbols) / sizeof(g_rd_jit_external_symbols[0]);
-    if (!ctx || sym_idx >= count || g_rd_jit_external_symbols[sym_idx][0] == '\0') return;
+let rd_jit_resolve_symbol_decl () : top_decl =
+  raw_top {|static inline void* asgard_rd_jit_resolve_symbol(size_t sym_idx) {
+    const size_t count = sizeof(g_rd_jit_external_symbols) / sizeof(g_rd_jit_external_symbols[0]);
+    if (sym_idx >= count || g_rd_jit_external_symbols[sym_idx][0] == '\0') return nullptr;
     const char* sym_name = g_rd_jit_external_symbols[sym_idx];
     void* sym_ptr = nullptr;
 #if !defined(_WIN32) && !defined(_WIN64)
@@ -126,7 +125,22 @@ let rd_jit_call_extern_decl () : top_decl =
         sym_ptr = (void*)GetProcAddress(hMain, alt_name);
     }
 #endif
-    if (!sym_ptr) return;
+    return sym_ptr;
+}
+
+static inline void asgard_rd_jit_resolve_sym_to_reg(RD_JIT_Context* ctx, uint8_t dst, uint64_t sym_idx) {
+    if (!ctx) return;
+    void* p = asgard_rd_jit_resolve_symbol((size_t)sym_idx);
+    ctx->set_reg((size_t)dst, (uint64_t)(uintptr_t)p);
+}|}
+
+let rd_jit_call_extern_decl () : top_decl =
+  func_decl ~attrs:[StaticFn; InlineFn] Void "asgard_rd_jit_call_extern"
+    [ (Ptr (StructType "RD_JIT_Context"), "ctx"); (UInt64, "sym_idx") ]
+    [
+      raw {|void* sym_ptr = asgard_rd_jit_resolve_symbol((size_t)sym_idx);
+    if (!sym_ptr || !ctx) return;
+    const char* sym_name = g_rd_jit_external_symbols[sym_idx];
     const char* clean_name = (sym_name[0] == '_') ? sym_name + 1 : sym_name;
     const uint64_t a0 = ctx->gprs[0];
     const uint64_t a1 = ctx->gprs[1];
@@ -173,7 +187,7 @@ let rd_jit_call_extern_decl () : top_decl =
         ret = reinterpret_cast<extern_fn_t>(sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
     }
 #endif
-    ctx->gprs[0] = ret;|};
+    ctx->set_reg(0, ret);|};
     ]
 
 let emit_arm64_imm_decl () : top_decl =
@@ -261,11 +275,23 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
             case JIT_OP_CALL_EXTERN:
+                code[idx++] = 0xa9bf7bfd;
+                code[idx++] = 0xf81f0fe0;
                 emit_arm64_imm(code, idx, 1, in.imm);
-                code[idx++] = 0xf81f0ffe;
                 emit_arm64_imm(code, idx, 16, (uintptr_t)&asgard_rd_jit_call_extern);
                 code[idx++] = 0xd63f0000 | (16 << 5);
-                code[idx++] = 0xf84107fe;
+                code[idx++] = 0xf84107e0;
+                code[idx++] = 0xa8c17bfd;
+                break;
+            case JIT_OP_RESOLVE_SYM:
+                code[idx++] = 0xa9bf7bfd;
+                code[idx++] = 0xf81f0fe0;
+                emit_arm64_imm(code, idx, 1, (uint64_t)in.dst);
+                emit_arm64_imm(code, idx, 2, in.imm);
+                emit_arm64_imm(code, idx, 16, (uintptr_t)&asgard_rd_jit_resolve_sym_to_reg);
+                code[idx++] = 0xd63f0000 | (16 << 5);
+                code[idx++] = 0xf84107e0;
+                code[idx++] = 0xa8c17bfd;
                 break;
             case JIT_OP_XOR_RR:
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
@@ -518,11 +544,24 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
             case JIT_OP_CALL_EXTERN:
+                code[idx++] = 0x57;
                 code[idx++] = 0x48; code[idx++] = 0xbe; emit_u64(in.imm);
                 code[idx++] = 0x49; code[idx++] = 0xbb; emit_u64((uint64_t)(uintptr_t)&asgard_rd_jit_call_extern);
                 code[idx++] = 0x48; code[idx++] = 0x83; code[idx++] = 0xec; code[idx++] = 0x08;
                 code[idx++] = 0x41; code[idx++] = 0xff; code[idx++] = 0xd3;
                 code[idx++] = 0x48; code[idx++] = 0x83; code[idx++] = 0xc4; code[idx++] = 0x08;
+                code[idx++] = 0x5f;
+                break;
+            case JIT_OP_RESOLVE_SYM:
+                code[idx++] = 0x57;
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0xdf;
+                code[idx++] = 0x48; code[idx++] = 0xbe; emit_u64((uint64_t)in.dst);
+                code[idx++] = 0x48; code[idx++] = 0xba; emit_u64(in.imm);
+                code[idx++] = 0x49; code[idx++] = 0xbb; emit_u64((uint64_t)(uintptr_t)&asgard_rd_jit_resolve_sym_to_reg);
+                code[idx++] = 0x48; code[idx++] = 0x83; code[idx++] = 0xec; code[idx++] = 0x08;
+                code[idx++] = 0x41; code[idx++] = 0xff; code[idx++] = 0xd3;
+                code[idx++] = 0x48; code[idx++] = 0x83; code[idx++] = 0xc4; code[idx++] = 0x08;
+                code[idx++] = 0x5f;
                 break;
             case JIT_OP_XOR_RR:
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
@@ -739,6 +778,7 @@ let synthesize_and_execute_block_decl () : top_decl =
             case JIT_OP_SHR_RI: ctx.set_reg(in.dst, ctx.get_reg(in.dst) >> (in.imm & 63)); break;
             case JIT_OP_SAR_RI: ctx.set_reg(in.dst, (uint64_t)((int64_t)ctx.get_reg(in.dst) >> (in.imm & 63))); break;
             case JIT_OP_NOT_R: ctx.set_reg(in.dst, ~ctx.get_reg(in.dst)); break;
+            case JIT_OP_RESOLVE_SYM: asgard_rd_jit_resolve_sym_to_reg(&ctx, in.dst, in.imm); break;
             case JIT_OP_NEG_R: ctx.set_reg(in.dst, (uint64_t)(-(int64_t)ctx.get_reg(in.dst))); break;
             case JIT_OP_LOAD_8: {
                 uint64_t addr = ctx.get_reg(in.src) + in.imm;
@@ -991,6 +1031,7 @@ let synth_decls ?(external_symbols = []) () : top_decl list =
     preproc_if "!defined(_WIN32) && !defined(_WIN64)"
       [ include_sys "dlfcn.h" ]
       ~else_decls:[ include_sys "windows.h" ];
+    rd_jit_resolve_symbol_decl ();
     rd_jit_call_extern_decl ();
     emit_arm64_imm_decl ();
     synthesize_and_execute_block_decl ();

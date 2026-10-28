@@ -185,6 +185,12 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
           (match !stk with
            | _ :: _ :: tl -> stk := tl
            | _ -> failwith "stack_jit: underflow on WriteMem")
+      | ResolveSym sym_idx ->
+          stk := Int64.of_int (0x1000 + sym_idx * 8) :: !stk
+      | CallExtern _sym_idx ->
+          (match !stk with
+           | _ :: tl -> stk := 0L :: tl
+           | [] -> stk := [ 0L ])
       | AddImm v ->
           (match !stk with
            | a :: tl -> stk := Int64.add a v :: tl
@@ -269,6 +275,8 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
           | "CSEL_RR" -> gprs.(dst) <- gprs.(src)
           | "LOAD_8" | "LOAD_16" | "LOAD_32" | "LOAD_64" -> ()
           | "STORE_8" | "STORE_16" | "STORE_32" | "STORE_64" -> ()
+          | "RESOLVE_SYM" -> gprs.(dst) <- Int64.of_int (0x1000 + Int64.to_int imm * 8)
+          | "CALL_EXTERN" -> gprs.(0) <- 0L
           | s -> failwith ("stack_jit: simulate: unknown op " ^ s)))
         chunk)
     chunks
@@ -514,6 +522,17 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
                 decr flags_depth;
                 Ok ()
               end
+          | ResolveSym sym_idx ->
+              let* () = grow () in
+              let dst = stack_base + !depth - 1 in
+              push_item (jit "RESOLVE_SYM", dst, 0, Int64.of_int sym_idx);
+              Ok ()
+          | CallExtern sym_idx ->
+              push_item (jit "CALL_EXTERN", 0, 0, Int64.of_int sym_idx);
+              let* () = grow () in
+              let dst = stack_base + !depth - 1 in
+              push_item (jit "MOV_RR", dst, 0, 0L);
+              Ok ()
           | Exit ->
               push_item (jit "EXIT", 0, 0, 0L);
               Ok ()
