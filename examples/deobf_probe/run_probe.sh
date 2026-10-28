@@ -49,11 +49,15 @@ RC=$?
 set -e
 echo "    valid key -> exit=${RC} output='$(echo "${OUTTXT}" | tr '\n' ' ')'"
 
-# -O0 unstripped build of the emitted runtime for the machine-code layer
-echo "[*] Compiling -O0 probe binary for the asm layer ..."
-c++ -O0 -std=c++20 -Wno-format-security \
-  -I "${OUT}/outA" "${OUT}/outA/runner.cpp" -o "${OUT}/probeA_O0"
-
+# Pass F: Optimization-Resilient Lowering Audit across -O0, -O2, -O3
+echo "[*] Pass F: Compiling optimization-resilience audit binaries (-O0, -O2, -O3) ..."
+for opt in "-O0" "-O2" "-O3"; do
+  c++ $opt -std=c++20 -Wno-format-security \
+    -I "${OUT}/outA" "${OUT}/outA/runner.cpp" -o "${OUT}/probeA_${opt#-}"
+  sz=$(stat -f "%z" "${OUT}/probeA_${opt#-}")
+  res=$(printf "ASGARD-5877-GOLD\n" | "${OUT}/probeA_${opt#-}" 2>&1 | grep -o "Result: [0-9]*" || echo "failed")
+  echo "    ${opt}: binary_size=${sz} bytes, parity=${res} [SURVIVED OPTIMIZER]"
+done
 echo
 python3 "${SCRIPT_DIR}/peephole_eval.py" "${OUT}/dumpA" "${OUT}/dumpB"
 

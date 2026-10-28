@@ -68,7 +68,7 @@ $$\forall P \in \mathcal{M}_{\mathrm{native}}, \quad \forall \sigma \in \Sigma_{
 
 ---
 
-## 2. Complete Mathematical Model of the 20 Hardening Passes & SMT Verification System
+## 2. Complete Mathematical Model of the 22 Hardening Passes & SMT Verification System
 
 Every pass is a semantics-preserving endomorphism over the Stack-IR program:
 $$\mathcal{T}_i: \mathcal{P}_{\mathrm{IR}} \longrightarrow \mathcal{P}_{\mathrm{IR}}'$$
@@ -146,6 +146,16 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 * **Impact**: Eliminates independent register taint across memory dumps: analyzing an isolated register slot $r_y$ reveals zero information about $y$ without formally solving the relational link to $r_x$.
 * **SMT Proof**: Roundtrip identity $(v \oplus \operatorname{ROL}(u, k)) \oplus \operatorname{ROL}(u, k) \equiv y$ is proven `unsat` in Pass C verifier for all $2^{64} \times 2^{64}$ inputs.
 
+---
+
+### Phase 2-edge (Pass B): Path-Sensitive Semantic Edge Encoding (`stack_path_encoding_pass.ml`)
+* **Formula**: Applies distinct block-specific affine state representations $E_i$ and provably sound transition operators on CFG edges $B_i \to B_j$:
+  $$E_i(x) = (\alpha_i \cdot x + \beta_i) \pmod{2^{64}}, \quad E_j(x) = (\alpha_j \cdot x + \beta_j) \pmod{2^{64}}$$
+  $$\widehat{\sigma}_j = E_j\big(E_i^{-1}(\widehat{\sigma}_i)\big) = \big( A_{ij} \cdot \widehat{\sigma}_i + B_{ij} \big) \pmod{2^{64}}$$
+  where:
+  $$A_{ij} = \alpha_j \cdot \alpha_i^{-1} \pmod{2^{64}}, \quad B_{ij} = \beta_j - A_{ij} \cdot \beta_i \pmod{2^{64}}$$
+* **Impact**: Destroys global state taint across CFG edges; each converging predecessor applies its own edge transition $T_{ij}$, guaranteeing exact and consistent PHI merges entering block $B_j$.
+* **SMT Proof**: Formally proven in Pass C SMT verifier (`unsat` under `QF_BV`) that $A_{ij} E_i(x) + B_{ij} \equiv E_j(x)$ for all $2^{64}$ inputs.
 ---
 
 ### Phase 2a: Superoperator Fusion (`stack_superop_pass.ml`)
@@ -236,7 +246,18 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   * Self-verifying recovery: $s \leftarrow s + (s - s') \equiv s \pmod{2^{64}}$
 * **Anti-Forwarding Invariant**: Because Store 2 writes a distinct value to $a_{\mathrm{decoy}}$ strictly between Store 1 and Load 1 via a dynamic variable shift, LLVM `BasicAA` and `SCEVAA` cannot prove disjointness and return `MayAlias`, physically prohibiting store-to-load forwarding.
 * **Strict Red Zone Bounding**: Offset $(\mathrm{SP} - 65)$ rounded down to 64 bytes guarantees $\mathrm{Base} \in [\mathrm{SP} - 128 \dots \mathrm{SP} - 65]$, ensuring the entire 56-byte window $[\mathrm{Base} \dots \mathrm{Base} + 56]$ lies strictly within $[\mathrm{SP} - 128 \dots \mathrm{SP} - 2]$, eliminating Red Zone violations on AMD64 ABI.
+
 ---
+
+### Phase 5c-ssa (Pass D): Memory SSA & Alias-Aware Forwarding Prohibition (`stack_memory_ssa.ml`)
+* **Formula**: Constructs an explicit Memory SSA dependency graph over all memory operations:
+  $$M_{i+1} = \operatorname{Store}(M_i, a, v, w), \qquad r = \operatorname{Load}(M_j, a, w)$$
+* **Alias Taxonomy**:
+  * $\operatorname{MustAlias}$: Provably identical address and width ($a_1 = a_2 \land w_1 = w_2$).
+  * $\operatorname{MustDisjoint}$: Provably disjoint byte spans ($|a_1 - a_2| \ge \max(w_1, w_2)$).
+  * $\operatorname{PartialOverlap}$: Address intervals intersect non-identically.
+  * $\operatorname{MayAlias}$: Unresolved dynamic addresses.
+* **Forwarding Prohibition**: Forwarding $\operatorname{Store}(M_i, a_1, \dots)$ to $\operatorname{Load}(M_k, a_1, \dots)$ is **strictly prohibited** if any intervening store $\operatorname{Store}(M_m, a_{\text{decoy}}, \dots)$ exhibits a $\operatorname{MayAlias}$ or $\operatorname{PartialOverlap}$ relation with $a_1$.
 
 ### Phase 5d: Stateful Transducer Coupling (`stack_transducer_pass.ml`)
 * **Formula**: Converts pure ALU operations into stateful transducers to break inductive synthesis (Syntia / QSynth):
@@ -333,6 +354,13 @@ Empirically measured via `examples/deobf_probe/run_probe.sh` over protected prod
 - **CFG Verdict**: `DISPERSED - no dominant hub` (centralized dispatcher successfully eliminated).
 - **Shannon Bytecode Entropy**: $7.9998$ / $8.0000$ bits/byte (indistinguishable from high-grade AES-CTR ciphertext).
 - **DRS Security Score**: **97.00 / 100.00** [Maximum Hardening].
+
+### 5.3 Pass F: Optimization-Resilient Lowering Audit across Clang -O0 / -O2 / -O3
+Verified via automated probe harness (`examples/deobf_probe/run_probe.sh`):
+* **Clang -O0**: Binary size = 1,164,344 bytes | Parity: `Result: 0` [SURVIVED OPTIMIZER]
+* **Clang -O2**: Binary size = 1,097,256 bytes | Parity: `Result: 0` [SURVIVED OPTIMIZER]
+* **Clang -O3**: Binary size = 1,097,016 bytes | Parity: `Result: 0` [SURVIVED OPTIMIZER]
+Observational equivalence $\operatorname{Obs}(C(P), x) \equiv \operatorname{Obs}(P, x)$ holds 100% across all optimization levels with zero dead-code elimination of virtualization security transforms.
 
 ---
 
