@@ -94,13 +94,13 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         | Add -> [Add]
         | Adc ->
             (* dst = src1 + src2 + CF *)
-            let s_cf = Context_allocator.slot_of_reg ctx Register.vtmp2 in
+            let s_cf = Context_allocator.slot_of_reg ctx Register.vtmp0 in
             [ PushFlags; PushImm 1L ] @ Stack_logic_pass.expand_and_nor
             @ [ PopReg s_cf; Add; PushReg s_cf; Add ]
         | Sub -> [Sub]
         | Sbb ->
             (* dst = src1 - src2 - CF *)
-            let s_cf = Context_allocator.slot_of_reg ctx Register.vtmp2 in
+            let s_cf = Context_allocator.slot_of_reg ctx Register.vtmp0 in
             [ PushFlags; PushImm 1L ] @ Stack_logic_pass.expand_and_nor
             @ [ PopReg s_cf; Sub; PushReg s_cf; Sub ]
         | Mul | Imul -> [Mul]
@@ -110,23 +110,23 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         | And -> Stack_logic_pass.expand_and_nor
         | Or -> Stack_logic_pass.expand_or_nor
         | Xor ->
-            let s1 = Context_allocator.slot_of_reg ctx Register.vtmp2 in
-            let s2 = Context_allocator.slot_of_reg ctx Register.vtmp3 in
+            let s1 = Context_allocator.slot_of_reg ctx Register.vtmp0 in
+            let s2 = Context_allocator.slot_of_reg ctx Register.vtmp1 in
             Stack_logic_pass.expand_xor_nor s1 s2
         | Rol ->
             (* (x << n) | (x >> ((64 - n) mod 64)); Shl/Shr mask the count
                with 63, and (0 - n) mod 64 = (64 - n) mod 64, so n = 0
                degenerates to x | x = x — matching x86 ROL. *)
-            let sn = Context_allocator.slot_of_reg ctx Register.vtmp2 in
-            let sx = Context_allocator.slot_of_reg ctx Register.vtmp3 in
+            let sn = Context_allocator.slot_of_reg ctx Register.vtmp0 in
+            let sx = Context_allocator.slot_of_reg ctx Register.vtmp1 in
             [ PopReg sn; PopReg sx;
               PushReg sx; PushReg sn; Shl;
               PushReg sx; PushImm 0L; PushReg sn; Sub; Shr ]
             @ Stack_logic_pass.expand_or_nor
         | Ror ->
             (* (x >> n) | (x << ((64 - n) mod 64)) *)
-            let sn = Context_allocator.slot_of_reg ctx Register.vtmp2 in
-            let sx = Context_allocator.slot_of_reg ctx Register.vtmp3 in
+            let sn = Context_allocator.slot_of_reg ctx Register.vtmp0 in
+            let sx = Context_allocator.slot_of_reg ctx Register.vtmp1 in
             [ PopReg sn; PopReg sx;
               PushReg sx; PushReg sn; Shr;
               PushReg sx; PushImm 0L; PushReg sn; Sub; Shl ]

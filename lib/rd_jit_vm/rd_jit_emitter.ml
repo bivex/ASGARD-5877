@@ -37,6 +37,9 @@ let emit_rd_jit_main_def () : top_decl =
     raw "asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);";
     raw "asgard_rd_jit::RD_JIT_Context ctx;";
     expr_stmt (call "ctx.init" []);
+    raw "alignas(16) uint8_t spill_stack[4096];";
+    raw "uint64_t sp_val = (uint64_t)(uintptr_t)(&spill_stack[4096 - 128]);";
+    raw "ctx.set_reg(4, sp_val);";
     let_u64 "arg1" (ternary (var "argc" >~ i32 1) (c_cast UInt64 (call "atoll" [Index (var "argv", i32 1)])) (u64 42L));
     let_u64 "arg2" (ternary (var "argc" >~ i32 2) (c_cast UInt64 (call "atoll" [Index (var "argv", i32 2)])) (u64 58L));
     expr_stmt (call "ctx.set_reg" [i32 0; var "arg1"]);

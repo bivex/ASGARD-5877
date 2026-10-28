@@ -91,12 +91,11 @@ let test_chunker_rejections () =
        (Stack_jit_chunker.translate_trace ()
           [ PushReg 0; PushReg 1; PushReg 2; PushReg 3;
             PushReg 4; PushReg 5; PushReg 6; PushReg 7;
-            PushReg 8; PushReg 9; PushReg 10 ]));
+            PushReg 8; PushReg 9; PushReg 10; PushReg 11; PushReg 12 ]));
   check bool "Rejects stack window overflow" true
     (Result.is_error
        (Stack_jit_chunker.translate_trace ()
-          [ PushImm 1L; PushImm 2L; PushImm 3L; PushImm 4L;
-            PushImm 5L; PushImm 6L; PushImm 7L ]))
+          [ PushImm 1L; PushImm 2L; PushImm 3L; PushImm 4L; PushImm 5L ]))
 
 let test_chunker_symbols () =
   let ops = [ ResolveSym 0; PopReg 1; CallExtern 1 ] in

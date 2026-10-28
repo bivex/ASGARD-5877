@@ -967,6 +967,8 @@ let asgard_vm_call_decl () : top_decl =
             blobs[k] = &bc[pos];
             pos += tickets[k].word_count;
         }
+        alignas(16) uint8_t spill_stack[4096];
+        uint64_t sp_val = (uint64_t)(uintptr_t)(&spill_stack[4096 - 128]);
         asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);
         asgard_rd_jit::RD_JIT_Context ctx;
         ctx.init();
@@ -974,10 +976,12 @@ let asgard_vm_call_decl () : top_decl =
         ctx.set_reg(1, a1);
         ctx.set_reg(2, a2);
         ctx.set_reg(3, a3);
-        ctx.set_reg(4, a4);
-        ctx.set_reg(5, a5);
-        ctx.set_reg(6, a6);
-        ctx.set_reg(7, a7);
+        ctx.set_reg(4, sp_val);
+        ctx.set_reg(5, 0);
+        ctx.set_reg(6, a4);
+        ctx.set_reg(7, a5);
+        ctx.set_reg(8, a6);
+        ctx.set_reg(9, a7);
         asgard::nano_jit::execute_sealed_function(jit_buf, ctx, tickets, blobs, num_chunks, master);
         uint64_t res = ctx.get_rax();
         if (num_chunks > 64) {
@@ -992,11 +996,14 @@ let asgard_vm_call_decl () : top_decl =
     ctx.set_reg(1, a1);
     ctx.set_reg(2, a2);
     ctx.set_reg(3, a3);
-    ctx.set_reg(4, a4);
-    ctx.set_reg(5, a5);
-    ctx.set_reg(6, a6);
-    ctx.set_reg(7, a7);
-    execute_threaded(ctx, bc, len);
+    alignas(16) uint8_t spill_stack_th[4096];
+    uint64_t sp_val_th = (uint64_t)(uintptr_t)(&spill_stack_th[4096 - 128]);
+    ctx.set_reg(4, sp_val_th);
+    ctx.set_reg(5, 0);
+    ctx.set_reg(6, a4);
+    ctx.set_reg(7, a5);
+    ctx.set_reg(8, a6);
+    ctx.set_reg(9, a7);
     return ctx.get_rax();|};
     ]
 let asgard_vm_call_with_salt_decl () : top_decl =

@@ -33,9 +33,9 @@ type translation = {
   dummy_instrs : int;          (* Thue-Morse dummies *)
 }
 
-let ctx_slots = 10
-let stack_base = 10
-let max_stack_depth = 6
+let ctx_slots = 12
+let stack_base = 12
+let max_stack_depth = 4
 
 let op_prefix = "asgard_rd_jit::JIT_OP_"
 

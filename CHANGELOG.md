@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Add execution spill-stack buffer, 12-slot context window, and local stack variable support to JIT VM (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`, `lib/stack_vm/stack_jit_chunker.ml`, `lib/stack_vm/ir_to_stack.ml`, `test/test_stack_jit_vm.ml`):
+  * Allocated a 16-byte aligned 4096-byte execution `spill_stack` in `asgard_vm_call` and `emit_rd_jit_main_def`, initializing the stack pointer `ctx.gprs[4]` (register `RSP`) to point to the top of the buffer.
+  * Enabled safe execution of functions allocating local stack variables (`sub sp, sp, #imm`, stores/loads to `[sp + offset]`, post-indexed `ldr xN, [sp], #imm`), eliminating null pointer dereferences on stack accesses.
+  * Expanded context register window to 12 slots (`ctx_slots = 12`, `max_stack_depth = 4`) and reused `vtmp0`/`vtmp1` across all ALU expansions in `ir_to_stack.ml`, allowing complex functions with multiple arguments and local arrays to be packaged into Stack-JIT chunks.
+  * Verified: 12/12 tests in `Stack-JIT VM & Chunker` pass, 7/7 in `Register-Driven JIT VM & RNS` pass, 45/45 steps in `test_cpp_codegen` pass, 69/69 in `ARM64 Lifter & CFG` pass; and verified end-to-end on Apple Silicon hardware with local stack array manipulation (`stack_local_array(1, 2, 3, 4) = 78`) producing exact bit-for-bit results.
 - Add `RESOLVE_SYM` opcode, external function calls (`CALL_EXTERN`), tail-call lifting, and multi-function shared symbol resolution to JIT VM (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`, `lib/rd_jit_vm/rd_jit_emitter.mli`, `lib/stack_vm/stack_jit_chunker.ml`, `lib/arm64_lifter/arm64_branch.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/adapters/protect_adapters/clang_toolchain_adapter.ml`):
   * Added `JIT_OP_RESOLVE_SYM` to `JITOpKind` with ARM64, x86_64, and interpreter implementations, resolving external and global symbols through `dlsym(RTLD_DEFAULT)` into target registers.
   * Added stack-preserving `stp`/`ldp` frames around `asgard_rd_jit_call_extern` and `asgard_rd_jit_resolve_sym_to_reg` on ARM64 and push/pop on x86_64, preserving the context register `x0` across function calls.
