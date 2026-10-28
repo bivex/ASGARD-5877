@@ -3,16 +3,25 @@
    Typed C++20 / C11 EDSL Declarations *)
 
 open Cpp_codegen.Cpp_ast
+module Magic_numbers = Random_visa_constants.Magic_numbers
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
 
-let rns_moduli_decls () : top_decl list = [
-  comment_top "RNS-4 Moduli Definition (Pairwise coprime, Product > 2^64)";
-  global_var ~is_static:true ~is_const:true UInt64 "RNS_M1" ~init:(u64 4294967291L);
-  global_var ~is_static:true ~is_const:true UInt64 "RNS_M2" ~init:(u64 4294967279L);
-  global_var ~is_static:true ~is_const:true UInt64 "RNS_M3" ~init:(u64 4294967231L);
-  global_var ~is_static:true ~is_const:true UInt64 "RNS_M4" ~init:(u64 4294967197L);
-]
+let rns_moduli_decls () : top_decl list =
+  [
+    comment_top "RNS-4 Moduli Definition (Pairwise coprime, Product > 2^64)";
+    comment_top "/* OEIS A000931: Padovan (plastic constant psi) region fractions of the buffer */";
+    global_var ~is_static:true ~is_const:true UInt64 "RNS_M1"
+      ~init:(u64 Magic_numbers.rns_modulus_m1);
+    global_var ~is_static:true ~is_const:true UInt64 "RNS_M2"
+      ~init:(u64 Magic_numbers.rns_modulus_m2);
+    global_var ~is_static:true ~is_const:true UInt64 "RNS_M3"
+      ~init:(u64 Magic_numbers.rns_modulus_m3);
+    global_var ~is_static:true ~is_const:true UInt64 "RNS_M4"
+      ~init:(u64 Magic_numbers.rns_modulus_m4);
+    ConstexprGlobal (UInt64, "PADOVAN_CODE_FRAC", u64 Magic_numbers.padovan_code_frac_64);
+    ConstexprGlobal (UInt64, "PADOVAN_META_FRAC", u64 Magic_numbers.padovan_meta_frac_64);
+  ]
 
 let rns_register_def () : top_decl =
   StructDef {
@@ -95,6 +104,11 @@ let dual_mapped_jit_buffer_def () : top_decl =
     member_field (ConstPtr Void) "rx_buf";
     member_field SizeT "capacity";
     member_field Bool "uses_mach_remap";
+    (* OEIS A000931 - Padovan region bounds: code | metadata | spill arena
+       at geometric psi spacing (cap/psi^5 : cap/psi^4 : cap/psi^3); no
+       region boundary falls on a power-of-two or harmonic offset. *)
+    member_field SizeT "padovan_code_end_";
+    member_field SizeT "padovan_spill_begin_";
 
     member_public;
     member_constructor ~params:[(SizeT, "sz = 4096")]
@@ -103,11 +117,26 @@ let dual_mapped_jit_buffer_def () : top_decl =
         ("rw_buf", nullptr);
         ("rx_buf", nullptr);
         ("uses_mach_remap", bool_lit false);
+        ("padovan_code_end_", u64 0L);
+        ("padovan_spill_begin_", u64 0L);
       ]
       "DualMappedJITBuffer"
       [
         raw "size_t page_sz = 4096;";
         raw "capacity = (sz + page_sz - 1) & ~(page_sz - 1);";
+        (* OEIS A000931: code_end = floor(cap * PADOVAN_CODE_FRAC / 2^64);
+           spill_begin = code_end + floor(cap * PADOVAN_META_FRAC / 2^64). *)
+        var "padovan_code_end_" :=
+          c_cast SizeT
+            ((c_cast (StructType "__uint128_t") (var "capacity")
+              *~ c_cast (StructType "__uint128_t") (var "PADOVAN_CODE_FRAC"))
+             >>~ u64 64L);
+        var "padovan_spill_begin_" :=
+          (var "padovan_code_end_" +~
+           c_cast SizeT
+             ((c_cast (StructType "__uint128_t") (var "capacity")
+               *~ c_cast (StructType "__uint128_t") (var "PADOVAN_META_FRAC"))
+              >>~ u64 64L));
         raw {|#if defined(__APPLE__)
         vm_address_t rw_addr = 0;
         if (vm_allocate(mach_task_self(), &rw_addr, capacity, VM_FLAGS_ANYWHERE) == KERN_SUCCESS) {
@@ -173,6 +202,22 @@ let dual_mapped_jit_buffer_def () : top_decl =
     member_method ~attrs:[InlineFn] (ConstPtr Void) "get_exec_ptr" [] [
       ret (ternary (ne (var "rx_buf") nullptr) (var "rx_buf") (var "rw_buf"));
     ];
+    (* OEIS A000931 - Padovan-dispersed region accessors.  The code region
+       carries the W^X synthesis lifecycle above; the metadata region holds
+       the runtime copies of the derangement and Stern tables; the spill
+       region backs the sealed nano-arena (kept writable at all times). *)
+    member_method ~attrs:[InlineFn] ~is_const:true SizeT "code_region_bytes" [] [
+      ret (var "padovan_code_end_");
+    ];
+    member_method ~attrs:[InlineFn] ~is_const:true (Ptr Void) "metadata_region" [] [
+      ret (c_cast (Ptr Void)
+             ((c_cast (Ptr (StructType "char")) (var "rw_buf")) +~ var "padovan_code_end_"));
+    ];
+    member_method ~attrs:[InlineFn] ~is_const:true (Ptr Void) "arena_region" [] [
+      ret (c_cast (Ptr Void)
+             ((c_cast (Ptr (StructType "char")) (var "rw_buf"))
+              +~ ((var "padovan_spill_begin_" +~ u64 63L) &~ bit_not (u64 63L))));
+    ];
 
     member_method ~attrs:[InlineFn] Void "begin_synthesis" [] [
       raw {|if (!uses_mach_remap && rw_buf) {
@@ -181,7 +226,7 @@ let dual_mapped_jit_buffer_def () : top_decl =
                 pthread_jit_write_protect_np(0);
             }
 #endif
-            mprotect(rw_buf, capacity, PROT_READ | PROT_WRITE);
+            mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_WRITE);
         }|};
     ];
 
@@ -192,7 +237,7 @@ let dual_mapped_jit_buffer_def () : top_decl =
                 pthread_jit_write_protect_np(1);
             }
 #endif
-            mprotect(rw_buf, capacity, PROT_READ | PROT_EXEC);
+            mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_EXEC);
         }
 #if defined(__APPLE__)
         if (rw_buf && bytes_written > 0) sys_dcache_flush(rw_buf, bytes_written);
@@ -209,7 +254,7 @@ let dual_mapped_jit_buffer_def () : top_decl =
                 pthread_jit_write_protect_np(0);
             }
 #endif
-            mprotect(rw_buf, capacity, PROT_READ | PROT_WRITE);
+            mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_WRITE);
         }
         if (rw_buf && bytes > 0) {
             volatile uint8_t* p = (volatile uint8_t*)rw_buf;
