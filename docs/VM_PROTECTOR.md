@@ -22,8 +22,8 @@ flowchart TD
         P9d["Phase 2-pre (Pass 9): Affine Domain Encoding"]
         P2["Phase 2: Superoperator Fusion & Multiplicity"]
         P3["Phase 2b: Horner Amplification & E-Graph MBA"]
+        P3b["Phase 2c (Pass 16): Braided CFG Merging"]
         P4["Phase 3 (Pass 13): CFF with Hensel Implicit Predicates"]
-        P5["Phase 4: Spaghetti CFG Splitting"]
         P6["Phase 5: Metamorphic Ghost Padding"]
         P7["Phase 5b: Variable-Size Avid Junk Operands"]
         P7g["Phase 5g (Pass 15): T-Function Trace Closure"]
@@ -34,7 +34,7 @@ flowchart TD
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P11 --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P11 --> P12 --> P12b
     end
     
     IR --> P1
@@ -232,6 +232,21 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$\mathrm{Anchor}_{k+1} \leftarrow (\mathrm{Anchor}_k \cdot C_{\mathrm{gold}} + \mathrm{PseudoImm}) \pmod{2^{64}}$$
 * **Stack Roundtrip**:
   $$[\text{PushImm } \text{imm}; \ \text{PushReg } \mathrm{Anchor}; \ \text{Swap}; \ \text{PopReg } \mathrm{Anchor}; \ \text{PopReg Scratch}]$$
+
+### Phase 2c (Pass 16): Braided CFG Merging & Decoy Elimination (`stack_braid_pass.ml`)
+* **Goal**: Fuses pairs of real, isomorphic basic blocks $(B_A, B_B)$ into a single unified braided block $B_{\mathrm{braid}}$, completely eliminating decoy blocks while leaving 100% of execution routes live and verifiable against backward program slicing (Tier 4).
+* **Single-Bit Route Discriminant**:
+  Predecessors inject an invariant scalar token $\tau_A$ or $\tau_B = \tau_A + \delta$ (where $\delta$ is an odd constant) into a dedicated scratch slot $r_{\mathrm{route}}$:
+  $$d = ((r_{\mathrm{route}} - \tau_A) \times \delta^{-1}) \ \& \ 1 \pmod{2^{64}}$$
+  $$\bar{d} = 1 - d$$
+  When entering via path $A$, $d = 0, \bar{d} = 1$. When entering via path $B$, $d = 1, \bar{d} = 0$. Both values are computed branchlessly without conditionals.
+* **Branchless Multiplexed Operations**:
+  - **Register writes**: $\operatorname{PopReg } r \implies r \leftarrow \bar{d} \cdot v_{\mathrm{new}} + d \cdot r_{\mathrm{old}}$ (path $A$) or $r \leftarrow d \cdot v_{\mathrm{new}} + \bar{d} \cdot r_{\mathrm{old}}$ (path $B$).
+  - **Constant assignments**: $\operatorname{SetRegImm}(r, c_A) \text{ vs } \operatorname{SetRegImm}(r, c_B) \implies r \leftarrow c_A \bar{d} + c_B d$.
+* **Predecessor Retargeting Invariant**:
+  Retargets predecessor terminators while preserving `JccRel` / `JmpRel` adjacency, ensuring downstream CFF flattening recognizes conditional branch terminators without direct jump leakage.
+* **SMT Proof**: Formally proven in Z3 SMT `QF_BV` that multiplexed register updates preserve path-specific values across all inputs while keeping net stack delta zero and condition flags intact.
+---
 
 
 ### Phase 5g (Pass 15): T-Function Trace Invariant Closure (`stack_trace_closure_pass.ml`)

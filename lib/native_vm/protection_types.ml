@@ -220,6 +220,15 @@ let default_spaghetti = {
   max_splits_factor = 1;
   min_chunk         = 2;
 }
+type braid_config = {
+  enabled : bool [@default true];
+  rate    : int  [@default 25];
+} [@@deriving yojson]
+
+let default_braid = {
+  enabled = true;
+  rate    = 25;
+}
 
 type amplifier_config = {
   enabled : bool [@default true];
@@ -502,6 +511,7 @@ type t = {
   memory_chaffing : memory_chaffing_config [@default default_memory_chaffing];
   comp_stall : comp_stall_config [@default default_comp_stall];
   spaghetti : spaghetti_config [@default default_spaghetti];
+  braid : braid_config [@default default_braid];
   amplifier : amplifier_config [@default default_amplifier];
   superop : superop_config [@default default_superop];
   ghost : ghost_config [@default default_ghost];

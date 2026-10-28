@@ -122,6 +122,10 @@
     "max_splits_factor": 1,
     "min_chunk": 2
   },
+  "braid": {
+    "enabled": true,
+    "rate": 25
+  },
   "amplifier": {
     "enabled": true,
     "profile": "balanced",

@@ -2931,6 +2931,58 @@ let test_trace_closure_pass () =
   Alcotest.(check int64) "slot 0 preserved exactly" 11L (Stack_eval.get_reg st 0);
   Alcotest.(check int64) "slot 1 preserved exactly" 22L (Stack_eval.get_reg st 1)
 
+let test_braided_cfg_merging () =
+  let open Stack_braid_pass in
+  let tau_a = 0x123456789ABCDEF0L in
+  let delta = 0x58771337CAFEBEEFL in (* odd *)
+  let tau_b = Int64.add tau_a delta in
+  let inv = mod_inv_64 delta in
+
+  (* 1. Single-bit route discriminant evaluation *)
+  let eval_disc route_val =
+    let state = Stack_eval.create_state ~initial_ctx:[ (10, route_val) ] () in
+    let ops = emit_route_discriminant ~route_slot:10 ~tau_A:tau_a ~inv in
+    List.iter (Stack_eval.step_op state) ops;
+    match state.vstack with d :: _ -> d | [] -> -1L
+  in
+  Alcotest.(check int64) "Route discriminant d=0 for tau_A" 0L (eval_disc tau_a);
+  Alcotest.(check int64) "Route discriminant d=1 for tau_B" 1L (eval_disc tau_b);
+
+  (* 2. Z3 SMT QF_BV: Multiplexed pop on Path A when d=0 sets r = v_new *)
+  (* slot 10 = d (0L), slot 11 = d_bar (1L), slot 1 = r (old value), stack has reg_2 (v_new) *)
+  let pop_ops_a = emit_multiplexed_pop ~d_slot:10 ~d_bar_slot:11 ~target_slot:1 ~is_path_b:false in
+  let trans_ops_a = [ PushImm 0L; PopReg 10; PushImm 1L; PopReg 11; PushReg 2 ] @ pop_ops_a in
+  let ref_ops_a = [ PushImm 0L; PopReg 10; PushImm 1L; PopReg 11; PushReg 2; PopReg 1 ] in
+  let res_a = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:ref_ops_a ~trans_ops:trans_ops_a () in
+  Alcotest.(check bool) "Braided multiplexed pop (d=0) sets r = v_new via SMT" true
+    (match res_a with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 3. Z3 SMT QF_BV: Multiplexed pop on Path A when d=1 keeps r = r_old *)
+  let trans_ops_b = [ PushImm 1L; PopReg 10; PushImm 0L; PopReg 11; PushReg 2 ] @ pop_ops_a in
+  let ref_ops_b = [ PushImm 1L; PopReg 10; PushImm 0L; PopReg 11 ] in
+  let res_b = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:ref_ops_b ~trans_ops:trans_ops_b () in
+  Alcotest.(check bool) "Braided multiplexed pop (d=1) preserves r = r_old via SMT" true
+    (match res_b with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 4. End-to-end block braiding & execution *)
+  let b_a = make_block 1 "block_a" [ PushImm 100L; PopReg 1; Exit ] in
+  let b_b = make_block 2 "block_b" [ PushImm 200L; PopReg 2; Exit ] in
+  let b_pred_a = make_block 0 "entry" [ JmpRel 1 ] in
+  let prog = make_program 0 [ b_pred_a; b_a; b_b ] 64 in
+  let ctx_alloc = Context_allocator.create () in
+  let cfg = { enabled = true; rate = 100; seed = 0x5877L } in
+  let prog' = apply_program cfg ctx_alloc prog in
+  Alcotest.(check bool) "Block B removed from program" false
+    (Hashtbl.mem prog'.blocks 2);
+  Alcotest.(check bool) "Braided block created at id 1" true
+    (Hashtbl.mem prog'.blocks 1);
+  let errors = Stack_balance_pass.verify_program prog' in
+  Alcotest.(check bool) "Braided program keeps stack balance" true (errors = []);
+  let st = Stack_eval.run_program prog' in
+  Alcotest.(check bool) "Braided program halts normally at Exit" true st.halted;
+  Alcotest.(check int64) "Path A executed: r1=100" 100L (Stack_eval.get_reg st 1);
+  Alcotest.(check int64) "Path A preserved: r2=0" 0L (Stack_eval.get_reg st 2)
+
 
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
@@ -2988,6 +3040,7 @@ let tests = [
   ("Pass D: Memory SSA & Alias-Aware Forwarding Prohibition", `Quick, test_memory_ssa);
   ("T-Function Trace Closure & Nibble Invariance", `Quick, test_trace_closure_pass);
   ("Stack-VM Dead Code Causality Analyzer", `Quick, test_dead_code_analyzer);
+  ("Braided CFG Merging & Decoy Elimination", `Quick, test_braided_cfg_merging);
 ]
 
 

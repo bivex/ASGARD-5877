@@ -140,6 +140,12 @@ type spaghetti_config = {
   max_splits_factor : int;
   min_chunk         : int;
 }
+type braid_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_braid : braid_config
 
 type amplifier_config = {
   enabled             : bool;
@@ -249,6 +255,7 @@ type t = {
   memory_chaffing : memory_chaffing_config;
   comp_stall : comp_stall_config;
   spaghetti : spaghetti_config;
+  braid : braid_config;
   amplifier : amplifier_config;
   superop : superop_config;
   ghost : ghost_config;

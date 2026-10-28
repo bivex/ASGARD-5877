@@ -377,6 +377,8 @@ let make_stack_metrics
         pass_switch "MBA Constant Synthesis" true "";
         pass_switch "Virtual CFG Flattening" true "";
         pass_switch "Spaghetti CFG Splitting" true "";
+        pass_switch "Braided CFG Merging" native_cfg.braid.enabled
+          "disabled in configuration";
         pass_switch "Ghost Stack Padding" true "";
         pass_switch "Avid Junk Operands" native_cfg.avid.enabled
           "disabled in configuration";
@@ -746,6 +748,38 @@ module Stack_vm_packager : Vm_packager = struct
     if native_cfg.mba.enabled then
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2b] MBA Constant Synthesis: %s" mba_info;
 
+    (* Phase 2c (Pass 16): Braided CFG Merging — fuse pairs of live basic blocks into isomorphic braided nodes *)
+    let braid_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 29)
+    in
+    let br = native_cfg.braid in
+    let braid_cfg = {
+      (Stack_vm.Stack_braid_pass.default_braid_config braid_seed) with
+      rate = br.rate;
+      enabled = br.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Braided CFG Merging        rate=%d%% seed=0x%016LX%s"
+         braid_cfg.rate
+         braid_cfg.seed
+         (if br.enabled then "" else " (DISABLED)"));
+    let prog, braid_info =
+      if br.enabled && br.rate > 0 then begin
+        let prog_br = Stack_vm.Stack_braid_pass.apply_program braid_cfg ctx prog in
+        let info = Stack_vm.Stack_braid_pass.braid_stats prog prog_br in
+        (prog_br, info)
+      end else
+        (prog, "Disabled (config: braid.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"2c-braid" prog;
+    dump_bytecode_json ~phase:"2c-braid" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2c-braid" ~final:false prog;
+    if br.enabled && br.rate > 0 then
+      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2c] Braided CFG Merging: %s" braid_info;
+
     let real_blocks = Hashtbl.length prog.blocks in
     let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
 
@@ -806,6 +840,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"4-spaghetti" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"4-spaghetti" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 4/7] Spaghetti Block Splitting: %s" spaghetti_info;
+
     (* Phase 5: Ghost Stack Padding — inject neutral junk ops per block *)
     let ghost_seed =
       Int64.logxor

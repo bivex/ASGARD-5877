@@ -76,6 +76,7 @@ let default : t = {
   anti_vpc = default_anti_vpc;
   memory_chaffing = default_memory_chaffing;
   spaghetti = default_spaghetti;
+  braid = default_braid;
   amplifier = default_amplifier;
   superop = default_superop;
   ghost = default_ghost;
@@ -193,6 +194,7 @@ let max_security : t = {
     chaff_ratio = 4.0;
   };
   spaghetti = { default_spaghetti with max_splits_factor = 2 };
+  braid = { default_braid with rate = 50 };
   amplifier = default_amplifier;
   superop = default_superop;
   ghost = { default_ghost with ghost_rate = 100 };
@@ -305,6 +307,7 @@ let stealth : t = {
     chaff_ratio = 3.0;
   };
   spaghetti = default_spaghetti;
+  braid = default_braid;
   amplifier = default_amplifier;
   superop = default_superop;
   ghost = default_ghost;
@@ -422,6 +425,7 @@ let edr_stealth : t = {
     chaff_ratio = 1.0;
   };
   spaghetti = default_spaghetti;
+  braid = default_braid;
   amplifier = default_amplifier;
   superop = default_superop;
   ghost = default_ghost;
@@ -539,6 +543,7 @@ let minimal : t = {
     chaff_ratio = 0.0;
   };
   spaghetti = default_spaghetti;
+  braid = { default_braid with enabled = false };
   amplifier = { default_amplifier with enabled = false };
   superop = default_superop;
   ghost = { default_ghost with enabled = false };
@@ -647,6 +652,7 @@ let high : t = {
   anti_vpc = default_anti_vpc;
   memory_chaffing = default_memory_chaffing;
   spaghetti = default_spaghetti;
+  braid = { default_braid with rate = 40 };
   amplifier = default_amplifier;
   superop = default_superop;
   ghost = { default_ghost with ghost_rate = 90 };
