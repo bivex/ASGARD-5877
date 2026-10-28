@@ -616,33 +616,52 @@ let arena_execute_function_fn = func_decl ~attrs:[InlineFn] Void "execute_sealed
                      sizeof_expr (var "g_stern_alpha") ]);
       expr_stmt (call "arena_init" [var "arena"]);
       if_then (var "num_chunks" >~ i32 0) [
-        expr_stmt (call "remap_gprs"
-                     [ var "ctx";
-                       idx (var "meta") (i32 perm_identity_index);
-                       idx (var "meta") ((idx (var "tickets") (i32 0)) $. "perm_idx");
-                       idx (var "meta") (u64 5L) ]);
-        for_range "k" (i32 0) (var "num_chunks") [
-          if_then (var "k" >~ i32 0) [
-            expr_stmt (call "remap_gprs"
-                         [ var "ctx";
-                           idx (var "meta")
-                             ((idx (var "tickets") (var "k" -~ i32 1)) $. "perm_idx");
-                           idx (var "meta")
-                             ((idx (var "tickets") (var "k")) $. "perm_idx");
-                           idx (var "meta") ((var "k" &~ u64 63L) +~ u64 5L) ]);
-          ];
+        decl_var Int32 "k" ~init:(i32 0);
+        decl_var Int32 "last_k" ~init:(i32 0);
+        decl_var UInt64 "step_count" ~init:(u64 0L);
+        decl_var UInt64 "max_steps" ~init:(u64 10000000L);
+        while_loop ((var "k" >=~ i32 0)
+                    &&~ (c_cast SizeT (var "k") <~ var "num_chunks")
+                    &&~ (eq (var "ctx.exit_requested") (i32 0))
+                    &&~ (var "step_count" <~ var "max_steps")) [
+          if_then_else (var "step_count" ==~ u64 0L)
+            [
+              expr_stmt (call "remap_gprs"
+                           [ var "ctx";
+                             idx (var "meta") (i32 perm_identity_index);
+                             idx (var "meta") ((idx (var "tickets") (i32 0)) $. "perm_idx");
+                             idx (var "meta") (u64 5L) ]);
+            ]
+            [
+              expr_stmt (call "remap_gprs"
+                           [ var "ctx";
+                             idx (var "meta")
+                               ((idx (var "tickets") (var "last_k")) $. "perm_idx");
+                             idx (var "meta")
+                               ((idx (var "tickets") (var "k")) $. "perm_idx");
+                             idx (var "meta") ((var "step_count" &~ u64 63L) +~ u64 5L) ]);
+            ];
+          (var "ctx.next_chunk") := i32 (-1);
           expr_stmt (call "execute_sealed_chunk"
-                       [ var "jit"; var "ctx"; var "arena"; var "k";
+                       [ var "jit"; var "ctx"; var "arena"; c_cast UInt32 (var "k");
                          idx (var "tickets") (var "k");
                          idx (var "blobs") (var "k");
                          var "master" ]);
+          (var "last_k") := var "k";
+          (var "step_count") := (var "step_count" +~ u64 1L);
+          if_then (ne (var "ctx.exit_requested") (i32 0)) [
+            break_stmt;
+          ];
+          if_then_else (var "ctx.next_chunk" >=~ i32 0)
+            [ (var "k") := var "ctx.next_chunk"; ]
+            [ (var "k") := (var "k" +~ i32 1); ];
         ];
         expr_stmt (call "remap_gprs"
                      [ var "ctx";
                        idx (var "meta")
-                         ((idx (var "tickets") (var "num_chunks" -~ i32 1)) $. "perm_idx");
+                         ((idx (var "tickets") (var "last_k")) $. "perm_idx");
                        idx (var "meta") (i32 perm_identity_index);
-                       idx (var "meta") ((var "num_chunks" &~ u64 63L) +~ u64 5L) ]);
+                       idx (var "meta") ((var "step_count" &~ u64 63L) +~ u64 5L) ]);
       ];
     ]
 

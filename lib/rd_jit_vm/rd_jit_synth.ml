@@ -68,6 +68,8 @@ let jit_op_kind_decl () : top_decl =
       ("JIT_OP_STORE_16", None);
       ("JIT_OP_STORE_32", None);
       ("JIT_OP_RESOLVE_SYM", None);
+      ("JIT_OP_JMP", None);
+      ("JIT_OP_JCC", None);
     ];
   }
 
@@ -474,8 +476,27 @@ let synthesize_and_execute_block_decl () : top_decl =
                 break;
             }
             case JIT_OP_RET:
-            case JIT_OP_EXIT:
                 break;
+            case JIT_OP_EXIT:
+                code[idx++] = 0x52800029;
+                code[idx++] = 0xb9029c09;
+                break;
+            case JIT_OP_JMP: {
+                uint32_t target_chunk = (uint32_t)in.imm;
+                emit_arm64_imm(code, idx, 9, target_chunk);
+                code[idx++] = 0xb9029809;
+                break;
+            }
+            case JIT_OP_JCC: {
+                uint32_t target_chunk = (uint32_t)(in.imm & 0xFFFFFFFF);
+                uint32_t fallthrough_chunk = (uint32_t)((in.imm >> 32) & 0xFFFF);
+                uint32_t cond = (uint32_t)((in.imm >> 48) & 0xFFFF);
+                emit_arm64_imm(code, idx, 10, target_chunk);
+                emit_arm64_imm(code, idx, 11, fallthrough_chunk);
+                code[idx++] = 0x9a800000 | (11 << 16) | (cond << 12) | (10 << 5) | 9;
+                code[idx++] = 0xb9029809;
+                break;
+            }
             default:
                 break;
         }
@@ -753,8 +774,53 @@ let synthesize_and_execute_block_decl () : top_decl =
                 break;
             }
             case JIT_OP_RET:
-            case JIT_OP_EXIT:
                 break;
+            case JIT_OP_EXIT:
+                code[idx++] = 0xc7; code[idx++] = 0x87;
+                code[idx++] = 0x9c; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                code[idx++] = 0x01; code[idx++] = 0x00; code[idx++] = 0x00; code[idx++] = 0x00;
+                break;
+            case JIT_OP_JMP: {
+                uint32_t target_chunk = (uint32_t)in.imm;
+                code[idx++] = 0xc7; code[idx++] = 0x87;
+                code[idx++] = 0x98; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                code[idx++] = (uint8_t)(target_chunk & 0xFF);
+                code[idx++] = (uint8_t)((target_chunk >> 8) & 0xFF);
+                code[idx++] = (uint8_t)((target_chunk >> 16) & 0xFF);
+                code[idx++] = (uint8_t)((target_chunk >> 24) & 0xFF);
+                break;
+            }
+            case JIT_OP_JCC: {
+                uint32_t target_chunk = (uint32_t)(in.imm & 0xFFFFFFFF);
+                uint32_t fallthrough_chunk = (uint32_t)((in.imm >> 32) & 0xFFFF);
+                uint32_t cond = (uint32_t)((in.imm >> 48) & 0xFFFF);
+                code[idx++] = 0xb8;
+                code[idx++] = (uint8_t)(target_chunk & 0xFF);
+                code[idx++] = (uint8_t)((target_chunk >> 8) & 0xFF);
+                code[idx++] = (uint8_t)((target_chunk >> 16) & 0xFF);
+                code[idx++] = (uint8_t)((target_chunk >> 24) & 0xFF);
+                code[idx++] = 0xba;
+                code[idx++] = (uint8_t)(fallthrough_chunk & 0xFF);
+                code[idx++] = (uint8_t)((fallthrough_chunk >> 8) & 0xFF);
+                code[idx++] = (uint8_t)((fallthrough_chunk >> 16) & 0xFF);
+                code[idx++] = (uint8_t)((fallthrough_chunk >> 24) & 0xFF);
+                uint8_t cmov_op = 0x45;
+                switch (cond) {
+                    case 0: cmov_op = 0x44; break;
+                    case 1: cmov_op = 0x45; break;
+                    case 2: cmov_op = 0x43; break;
+                    case 3: cmov_op = 0x42; break;
+                    case 10: cmov_op = 0x4d; break;
+                    case 11: cmov_op = 0x4c; break;
+                    case 12: cmov_op = 0x4f; break;
+                    case 13: cmov_op = 0x4e; break;
+                    default: cmov_op = 0x44; break;
+                }
+                code[idx++] = 0x0f; code[idx++] = cmov_op; code[idx++] = 0xc2;
+                code[idx++] = 0x89; code[idx++] = 0x87;
+                code[idx++] = 0x98; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                break;
+            }
             default:
                 break;
         }
@@ -887,7 +953,29 @@ let synthesize_and_execute_block_decl () : top_decl =
                 ctx.set_reg(in.dst, take ? ctx.get_reg(in.src) : ctx.get_reg(src2));
                 break;
             }
-            default: break;
+            case JIT_OP_EXIT:
+                ctx.exit_requested = 1;
+                break;
+            case JIT_OP_JMP:
+                ctx.next_chunk = (int32_t)in.imm;
+                break;
+            case JIT_OP_JCC: {
+                uint32_t target_chunk = (uint32_t)(in.imm & 0xFFFFFFFF);
+                uint32_t fallthrough_chunk = (uint32_t)((in.imm >> 32) & 0xFFFF);
+                uint32_t cond = (uint32_t)((in.imm >> 48) & 0xFFFF);
+                bool take = false;
+                switch (cond) {
+                    case 0: take = (ctx.flags & 1) != 0; break;
+                    case 1: take = (ctx.flags & 1) == 0; break;
+                    case 2: take = (ctx.flags & 2) != 0; break;
+                    case 3: take = (ctx.flags & 2) == 0; break;
+                    case 10: take = ((ctx.flags & 4) == 0); break;
+                    case 11: take = ((ctx.flags & 4) != 0); break;
+                    default: take = (ctx.flags & 1) != 0; break;
+                }
+                ctx.next_chunk = take ? (int32_t)target_chunk : (int32_t)fallthrough_chunk;
+                break;
+            }
         }
     }
     return;

@@ -35,7 +35,13 @@ val max_stack_depth : int
 (** Translate a straight-line stack trace.  [scale] multiplies the
     Kolakoski run lengths (default [Nano_jit_slot.nano_kolakoski_scale]). *)
 val translate_trace :
-  ?scale:int -> unit -> stack_op list -> (translation, string) result
+  ?scale:int -> ?allow_branches:bool -> unit -> stack_op list -> (translation, string) result
+(* Translate an entire multi-block Stack-IR program (with loops, jumps, and
+   conditional branches) into Kolakoski chunks with dynamic JMP and JCC
+   transfer resolution. *)
+val translate_program :
+  ?scale:int -> unit -> program -> (translation, string) result
+
 
 (** Reference interpreter of the translatable subset over context
     registers and an int64 stack; returns the final stack (top first).

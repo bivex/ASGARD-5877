@@ -243,23 +243,18 @@ module Stack_jit_packager : Vm_packager = struct
       name;
     let ctx = Stack_vm.Context_allocator.create ~permute:false () in
     let _ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms ir in
-    let rec collect_trace visited cur_id =
-      if List.mem cur_id visited then []
-      else match Hashtbl.find_opt prog.blocks cur_id with
-      | None -> []
-      | Some b ->
-          let rec split_trailing_jmp acc = function
-            | [] -> (List.rev acc, None)
-            | [ Stack_vm.Stack_ir.JmpRel target ] -> (List.rev acc, Some target)
-            | x :: xs -> split_trailing_jmp (x :: acc) xs
-          in
-          let (body, next_opt) = split_trailing_jmp [] b.ops in
-          match next_opt with
-          | Some next_id -> body @ collect_trace (cur_id :: visited) next_id
-          | None -> body
+    let tr_res =
+      if Hashtbl.length prog.blocks <= 1 then
+        let entry_ops =
+          match Hashtbl.find_opt prog.blocks prog.entry_id with
+          | Some b -> b.ops
+          | None -> []
+        in
+        Stack_vm.Stack_jit_chunker.translate_trace () entry_ops
+      else
+        Stack_vm.Stack_jit_chunker.translate_program () prog
     in
-    let trace_ops = collect_trace [] prog.entry_id in
-    match Stack_vm.Stack_jit_chunker.translate_trace () trace_ops with
+    match tr_res with
     | Error reason ->
         Logger.warnf ~section:"STACK_JIT" "Stack-JIT chunking unfeasible for '%s' (%s); compiling with RD-JIT" name reason;
         let jit_pkg =

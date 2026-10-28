@@ -283,7 +283,8 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
 
 (* ---- translation ------------------------------------------------ *)
 
-let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
+let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
+    ?(allow_branches = false) ()
     (ops : stack_op list) : (translation, string) result =
   let ( let* ) = Result.bind in
   let depth = ref 0 in
@@ -536,6 +537,16 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
           | Exit ->
               push_item (jit "EXIT", 0, 0, 0L);
               Ok ()
+          | JmpRel target when allow_branches ->
+              push_item (jit "JMP", 0, 0, Int64.of_int target);
+              Ok ()
+          | JccRel (target, cond) when allow_branches ->
+              let imm =
+                Int64.logor (Int64.of_int target)
+                  (Int64.shift_left (Int64.of_int (cond_to_code cond)) 48)
+              in
+              push_item (jit "JCC", 0, 0, imm);
+              Ok ()
           | other -> unsupported (Stack_ir.op_to_string other)
         in
         match res with
@@ -594,3 +605,97 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
   in
   Ok { chunks; final_depth = !depth; max_depth = !max_depth;
        real_instrs = List.length real; dummy_instrs = dummies }
+let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
+    (prog : Stack_ir.program) : (translation, string) result =
+  let ( let* ) = Result.bind in
+  if Hashtbl.length prog.blocks <= 1 then
+    match Hashtbl.find_opt prog.blocks prog.entry_id with
+    | Some b -> translate_trace ~scale () b.ops
+    | None -> Error "stack_jit: entry block not found in program"
+  else
+    let entry_b =
+      match Hashtbl.find_opt prog.blocks prog.entry_id with
+      | Some b -> b
+      | None -> failwith "stack_jit: entry block not found"
+    in
+    let other_blocks =
+      Hashtbl.fold
+        (fun id b acc -> if id <> prog.entry_id then b :: acc else acc)
+        prog.blocks []
+    in
+    let sorted_other =
+      List.sort
+        (fun (a : Stack_ir.block) (b : Stack_ir.block) -> Int.compare a.id b.id)
+        other_blocks
+    in
+    let all_blocks = entry_b :: sorted_other in
+    let block_chunks = Hashtbl.create 16 in
+    let block_offsets = Hashtbl.create 16 in
+    let cur_chunk_offset = ref 0 in
+    let total_real = ref 0 in
+    let total_dummies = ref 0 in
+    let max_d = ref 0 in
+    let rec chunk_blocks = function
+      | [] -> Ok ()
+      | (b : Stack_ir.block) :: rest ->
+          let* res = translate_trace ~scale ~allow_branches:true () b.ops in
+          Hashtbl.replace block_offsets b.id !cur_chunk_offset;
+          Hashtbl.replace block_chunks b.id res.chunks;
+          cur_chunk_offset := !cur_chunk_offset + List.length res.chunks;
+          total_real := !total_real + res.real_instrs;
+          total_dummies := !total_dummies + res.dummy_instrs;
+          max_d := max !max_d res.max_depth;
+          chunk_blocks rest
+    in
+    let* () = chunk_blocks all_blocks in
+    let jmp_name = "asgard_rd_jit::JIT_OP_JMP" in
+    let jcc_name = "asgard_rd_jit::JIT_OP_JCC" in
+    let patch_chunk chunk_idx chunk =
+      List.map
+        (fun (op, dst, src, imm) ->
+          if op = jmp_name then
+            let target_block = Int64.to_int imm in
+            let target_chunk =
+              match Hashtbl.find_opt block_offsets target_block with
+              | Some c -> c
+              | None -> chunk_idx + 1
+            in
+            (op, dst, src, Int64.of_int target_chunk)
+          else if op = jcc_name then
+            let target_block = Int64.to_int (Int64.logand imm 0xFFFFFFFFL) in
+            let cond = Int64.shift_right_logical imm 48 in
+            let fallthrough_chunk = chunk_idx + 1 in
+            let target_chunk =
+              match Hashtbl.find_opt block_offsets target_block with
+              | Some c -> c
+              | None -> fallthrough_chunk
+            in
+            let patched_imm =
+              Int64.logor (Int64.of_int target_chunk)
+                (Int64.logor
+                   (Int64.shift_left (Int64.of_int fallthrough_chunk) 32)
+                   (Int64.shift_left cond 48))
+            in
+            (op, dst, src, patched_imm)
+          else (op, dst, src, imm))
+        chunk
+    in
+    let all_chunks = ref [] in
+    let global_idx = ref 0 in
+    List.iter
+      (fun (b : Stack_ir.block) ->
+        let b_chunks = Hashtbl.find block_chunks b.id in
+        List.iter
+          (fun c ->
+            let patched = patch_chunk !global_idx c in
+            incr global_idx;
+            all_chunks := patched :: !all_chunks)
+          b_chunks)
+      all_blocks;
+    Ok {
+      chunks = List.rev !all_chunks;
+      final_depth = 0;
+      max_depth = !max_d;
+      real_instrs = !total_real;
+      dummy_instrs = !total_dummies;
+    }

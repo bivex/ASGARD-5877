@@ -72,9 +72,13 @@ let rd_jit_context_def () : top_decl =
       member_field UInt64 "rip";
       member_field UInt64 "flags";
       member_field UInt64 "trace_digest";
+      member_field Int32 "next_chunk";
+      member_field Int32 "exit_requested";
       member_method ~attrs:[AlwaysInline] Void "init" [] [
         expr_stmt (call "memset" [var "this"; i32 0; call "sizeof" [deref (var "this")]]);
-        var "trace_digest" := u64 0x13375877AABBCCDDL;
+        var "trace_digest" := u64 Magic_numbers.rd_jit_trace_digest_init;
+        var "next_chunk" := i32 (-1);
+        var "exit_requested" := i32 0;
       ];
       member_method ~attrs:[AlwaysInline] Void "set_reg" [(SizeT, "idx"); (UInt64, "val")] [
         if_then (var "idx" <~ i32 16) [
