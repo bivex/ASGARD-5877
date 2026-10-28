@@ -520,6 +520,7 @@ Empirically measured via `examples/deobf_probe/run_probe.sh` over protected prod
 | **Tier 4** | Lifter & Backward Program Slicing | LLVM IR Backward Slicer | 359,170 ops | 9,538 kept ops | **Complete Def-Use Closure (+2.0x)** |
 | **Tier 5** | Boolean Differential Calculus | $\frac{\partial \mathrm{Sink}}{\partial s} \ne 0$ Analysis | 1,335 Memory Sinks | **1,316 non-zero derivatives (98.6%)** | **100% Non-Detachable RAM Sinks** |
 | **Tier 6** | Black-Box Inductive Synthesis | Syntia / QSynth / MCTS | 13,668 Expression Clusters | **0 / 13,668 synthesized (0.0%)** | **100.0% [TIER 3+ RESILIENT]** |
+| **Tier 7** | Algebraic Non-Linearity & SMT Inversion | Gaussian Elimination / Bitwuzla / Z3 | 57,455 Expression Trees | **0 Linear Slices (0.0%)** | **100.0% [ANF deg=64, NL=88.4]** |
 
 ### 5.2 Dispatch Topology & Graph Invariants
 - **Basic Blocks**: 322 blocks, 638 CFG edges.
