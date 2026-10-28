@@ -121,6 +121,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered `rule30_salt` and `rule30_init_key` in `lib/constants/magic_numbers.ml`.
   * Wired Phase 6e into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified across 65/65 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0.9% junk, Tier 6: 100.0% resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
+- Implement Pass 27 (Phase 6f): Native Micro-Handler Interleaving (`lib/stack_vm/stack_native_interleave_pass.ml`, `lib/stack_vm/stack_native_stub.ml`):
+  * Blurs the boundary between external handler routines in `.text` and bytecode data in `.rodata` by compiling and interleaving encrypted native machine-code stubs directly inside the bytecode stream.
+  * Fuses 4-op register ALU clusters (`[PushReg a; PushReg b; ALU; PopReg c]`) into a single `NativeEscape (kind, a, b, c, stub)` operation (fused 248 ops across the protected binary).
+  * Implemented multi-arch stub assembler supporting AArch64, x86-64, and RV64 executing directly on `vm->ctx` with zero net stack delta and flag preservation.
+  * Emitted dynamic RWX execution window with rotating cache-line isolation and `__clear_cache` coherence.
+  * Registered `native_interleave_salt` in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 6f into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified across 66/66 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0.9% junk, Tier 7: 84.8% non-linear, deg=64/64), and full license check E2E (`ACCESS GRANTED`, exit 0).
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.

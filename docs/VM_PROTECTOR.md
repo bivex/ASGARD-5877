@@ -40,9 +40,10 @@ flowchart TD
         P11c["Phase 6c (Pass 22): DRCC Register Window & Golomb-4 Spilling"]
         P11d["Phase 6d (Pass 23): Galois LFSR Memory Whitening & Anti-Snapshot Diffing"]
         P11e["Phase 6e (Pass 24): Wolfram Rule 30 Keystream Dispersion"]
+        P11f["Phase 6f (Pass 27): Native Micro-Handler Interleaving"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P11c --> P11d --> P11e --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P11c --> P11d --> P11e --> P11f --> P12 --> P12b
     end
     
     IR --> P1
@@ -461,6 +462,18 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 * **Continuous Cellular Automaton Diffusion**:
   Between operations, a dedicated keystream state slot evolves via $K_{t+1} = R_{30}(K_t) \oplus \operatorname{Salt}_{\text{rule30}}$, ensuring high-entropy pseudo-random dynamics that never repeat across basic block boundaries.
 * **SMT Proof**: Formally proven in Z3 SMT `QF_BV` (`test_stack_vm.ml`) that the Rule 30 zero-knot evaluates to `0L` for all $2^{64}$ bitvectors.
+
+### Phase 6f (Pass 27): Native Micro-Handler Interleaving (`stack_native_interleave_pass.ml`, `stack_native_stub.ml`)
+* **Goal**: Completely eliminates the classical architectural boundary between external handler routines in `.text` and bytecode data in `.rodata` by embedding encrypted native machine-code stubs directly inside the bytecode stream.
+* **Interleaved Micro-Handler Execution**:
+  Fuses 4-op register ALU clusters (`[PushReg a; PushReg b; ALU; PopReg c]`) into a single `NativeEscape (kind, a, b, c, stub)` operation:
+  1. The VM escape handler decrypts the native stub bytes on-the-fly directly from the rolling key stream into a small, rotating RWX trampoline window.
+  2. Instruction cache coherence is maintained via `__clear_cache`.
+  3. The native stub executes directly on `vm->ctx` without any intermediate stack pushes/pops:
+     $$\operatorname{ctx}[c] = \operatorname{ctx}[a] \odot \operatorname{ctx}[b], \quad \odot \in \{+, -, \times\}$$
+  4. Control immediately returns to the VM interpreter at the next virtual instruction pointer (`VIP`).
+* **Anti-Disassembly & Lifter Breakdown**:
+  Static disassemblers (IDA Pro, Ghidra) cannot separate data from code because native machine code bytes are interleaved within the encrypted variable-length bytecode stream and only decrypted transiently into memory.
 
 ---
 

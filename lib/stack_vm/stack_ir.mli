@@ -40,6 +40,7 @@ type stack_op =
   | SetRegImm of int * int64
   | AddRegImm of int * int64
   | KeyFeedback of int * int64
+  | NativeEscape of int * int * int * int * int list
 
 type block = {
   id : int;

@@ -300,6 +300,9 @@ let costas_field_layout_salt = 0xC057A51337B00F0L
 (* Wolfram Rule 30 Non-Linear Keystream (Phase 6e / Pass 24) constants — OEIS A269160 *)
 let rule30_salt = 0x5877A2691601337BL
 let rule30_init_key = 0x1337C0DE5877A269L
+
+(* Native Micro-Handler Interleaving (Phase 6f / Pass 27) constants *)
+let native_interleave_salt = 0x5877A17A1E5C0DE7L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -699,6 +702,10 @@ let registry : entry list = [
     value = rule30_init_key;
     source = "0x1337C0DE5877A269: initial seed for Wolfram Rule 30 keystream state slot";
     used_in = [ "lib/stack_vm/stack_rule30_pass.ml" ] };
+  { name = "native_interleave_salt";
+    value = native_interleave_salt;
+    source = "0x5877A17A1E5C0DE7: PRNG diversification salt for native micro-handler interleaving pass";
+    used_in = [ "lib/stack_vm/stack_native_interleave_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

@@ -43,6 +43,7 @@ type opcode_map = {
   op_key_feedback : int;
   op_dup2 : int;
   op_rot : int;
+  op_native_escape : int;
 }
 
 let default_opcode_map = {
@@ -85,6 +86,7 @@ let default_opcode_map = {
   op_key_feedback = 0x25;
   op_dup2 = 0x26;
   op_rot = 0x27;
+  op_native_escape = 0x28;
 }
 
 let splitmix64 state =
@@ -100,7 +102,7 @@ let splitmix64 state =
 let generate_opcode_map seed =
   let state = ref (if seed = 0L then salt_stack_vm_state else seed) in
   let pool = Array.init 254 (fun i -> i + 1) in
-  for i = 0 to 38 do
+  for i = 0 to 39 do
     let r = splitmix64 state in
     let range = 254 - i in
     let offset = Int64.to_int (Int64.rem (Int64.logand r 0x7FFFFFFFFFFFFFFFL) (Int64.of_int range)) in
@@ -149,6 +151,7 @@ let generate_opcode_map seed =
     op_key_feedback = pool.(36);
     op_dup2         = pool.(37);
     op_rot          = pool.(38);
+    op_native_escape = pool.(39);
   }
 
 type field_layout = {
@@ -308,6 +311,15 @@ let check_key_feedback_static ?(initial_ctx = []) ?(dispatcher_tokens = Hashtbl.
       | Stack_ir.ReadMem _ -> (match !st with _ :: rest -> st := None :: rest | [] -> ())
       | Stack_ir.WriteMem _ -> ignore (pop ()); ignore (pop ())
       | Stack_ir.AddImmImm _ | Stack_ir.SubImmImm _ -> push None
+      | Stack_ir.NativeEscape (kind, a, b, c, _) ->
+          let va = slot_value a in
+          let vb = slot_value b in
+          let res = match va, vb with
+            | Some x, Some y ->
+                Some (match kind with 0 -> Int64.add x y | 1 -> Int64.sub x y | _ -> Int64.mul x y)
+            | _ -> None
+          in
+          set_slot c res
       | Stack_ir.KeyAdjust _ | Stack_ir.Exit | Stack_ir.JmpRel _
       | Stack_ir.JccRel _ | Stack_ir.CallExtern _ | Stack_ir.ResolveSym _ -> ())
     ops
@@ -630,6 +642,15 @@ let encode_op_into ?(compact_imm = false) ?(layout = default_field_layout) op_ma
   | KeyFeedback (slot, _) ->
       Buffer.add_char buf (Char.chr op_map.op_key_feedback);
       add_i16 buf slot
+  | NativeEscape (kind, a, b, c, stub) ->
+      Buffer.add_char buf (Char.chr op_map.op_native_escape);
+      Buffer.add_char buf (Char.chr (kind land 0xFF));
+      add_i16 buf a;
+      add_i16 buf b;
+      add_i16 buf c;
+      let n = List.length stub in
+      add_i16 buf n;
+      List.iter (fun byte -> Buffer.add_char buf (Char.chr (byte land 0xFF))) stub
 
 let encode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?(compact_imm = false) op =
   let buf = Buffer.create 16 in
@@ -896,6 +917,19 @@ let decode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?c
            key := Int64.logxor !key (feedback_hash v);
            Some (KeyFeedback (slot, v))
        | None -> None)
+  | Some b when b = op_map.op_native_escape ->
+      (match read_byte cipher pos key, read_i16 cipher pos key,
+             read_i16 cipher pos key, read_i16 cipher pos key,
+             read_i16 cipher pos key with
+       | Some kind, Some a, Some b_slot, Some c, Some stub_len ->
+           let stub = ref [] in
+           for _ = 1 to stub_len do
+             match read_byte cipher pos key with
+             | Some byte -> stub := byte :: !stub
+             | None -> ()
+           done;
+           Some (NativeEscape (kind, a, b_slot, c, List.rev !stub))
+       | _ -> None)
   | Some _ -> None
 
 let decode_all ?op_map ?(layout = default_field_layout) ?block_keys ?block_offsets cipher seed_key =

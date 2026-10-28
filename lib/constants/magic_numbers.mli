@@ -160,6 +160,7 @@ val costas_field_layout_salt : int64
 (* OEIS A269160: Wolfram Rule 30 constants (Pass 24 / Phase 6e). *)
 val rule30_salt : int64
 val rule30_init_key : int64
+val native_interleave_salt : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

@@ -404,6 +404,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Wolfram Rule 30 Keystream" native_cfg.rule30.enabled
           "disabled in configuration";
+        pass_switch "Native Micro-Handler Interleaving" native_cfg.native_interleave.enabled
+          "disabled in configuration";
         pass_switch "Cross-Block Anti-DBI Traps" native_cfg.trap.enabled
           "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
@@ -1372,6 +1374,45 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"6e-rule30" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6e-rule30" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6e] Wolfram Rule 30 Keystream: %s" rule30_info;
+
+    (* Phase 6f (Pass 27): Native Micro-Handler Interleaving Pass *)
+    let ni_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 25)
+    in
+    let ni_cfg_user = native_cfg.native_interleave in
+    let stub_arch =
+      match native_cfg.arch with
+      | `X86_64 -> Stack_vm.Stack_native_stub.X86_64
+      | `AArch64 -> Stack_vm.Stack_native_stub.AArch64
+      | `RISCV -> Stack_vm.Stack_native_stub.RV64
+    in
+    let ni_cfg = {
+      (Stack_vm.Stack_native_interleave_pass.default_native_interleave_config ~arch:stub_arch ni_seed) with
+      rate = ni_cfg_user.rate;
+      enabled = ni_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Native Interleaving        rate=%d%% seed=0x%016LX%s"
+         ni_cfg.rate
+         ni_cfg.seed
+         (if ni_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, ni_info =
+      if ni_cfg_user.enabled then begin
+        let prog_ni =
+          Stack_vm.Stack_native_interleave_pass.apply_program ni_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_native_interleave_pass.native_interleave_stats prog prog_ni in
+        (prog_ni, info)
+      end else
+        (prog, "Disabled (config: native_interleave.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"6f-native_interleave" prog;
+    dump_bytecode_json ~phase:"6f-native_interleave" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6f-native_interleave" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6f] Native Micro-Handler Interleaving: %s" ni_info;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in

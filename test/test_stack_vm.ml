@@ -3313,6 +3313,46 @@ let test_rule30 () =
   let res_knot = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_knot ~trans_ops:trans_knot () in
   Alcotest.(check bool) "Wolfram Rule 30 zero-knot proven equivalent via SMT QF_BV" true
     (match res_knot with Stack_bv_verifier.Equivalent -> true | _ -> false)
+
+let test_native_interleave () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 100L;
+    PopReg 1;
+    PushImm 50L;
+    PopReg 2;
+    PushReg 1;
+    PushReg 2;
+    Add;
+    PopReg 3;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let cfg = { (Stack_native_interleave_pass.default_native_interleave_config ~arch:Stack_native_stub.AArch64 0x5877CAFEL) with rate = 100 } in
+  let prog_ni = Stack_native_interleave_pass.apply_program cfg ctx prog in
+  let b_ni = Hashtbl.find prog_ni.blocks 0 in
+  Alcotest.(check int) "Native interleave fused 4 ops into 1" 6 (List.length b_ni.ops);
+  let has_escape = List.exists (function NativeEscape _ -> true | _ -> false) b_ni.ops in
+  Alcotest.(check bool) "Block contains NativeEscape op" true has_escape;
+
+  (* Test multi-arch stub emission *)
+  let stub_a64 = Stack_native_stub.emit Stack_native_stub.AArch64 Stack_native_stub.kind_add 1 2 3 in
+  let stub_x64 = Stack_native_stub.emit Stack_native_stub.X86_64 Stack_native_stub.kind_add 1 2 3 in
+  let stub_rv = Stack_native_stub.emit Stack_native_stub.RV64 Stack_native_stub.kind_add 1 2 3 in
+  Alcotest.(check bool) "AArch64 stub within length limit" true (List.length stub_a64 <= Stack_native_stub.max_stub_len && List.length stub_a64 > 0);
+  Alcotest.(check bool) "X86_64 stub within length limit" true (List.length stub_x64 <= Stack_native_stub.max_stub_len && List.length stub_x64 > 0);
+  Alcotest.(check bool) "RV64 stub within length limit" true (List.length stub_rv <= Stack_native_stub.max_stub_len && List.length stub_rv > 0);
+
+  (* Test execution in interpreter *)
+  let state = run_program prog_ni in
+  Alcotest.(check bool) "Native interleave program halted" true state.halted;
+  Alcotest.(check int64) "Native interleave computed exact: reg[3]=150" 150L (get_reg state 3);
+
+  (* Test bytecode encode & decode roundtrip *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x17A15877L prog_ni in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[3]=150" 150L (get_reg state_bc 3)
 let test_costas_field_layout () =
   (* 1. Verify that generate_field_layout derives all 6 booleans deterministically *)
   let l1 = Stack_encoder.generate_field_layout 0x5877A008404L in
@@ -3447,6 +3487,7 @@ let tests = [
   ("Galois LFSR Memory Whitening", `Quick, test_whitening);
   ("Wolfram Rule 30 Keystream", `Quick, test_rule30);
   ("Costas Array Bytecode Field Permutation", `Quick, test_costas_field_layout);
+  ("Native Micro-Handler Interleaving", `Quick, test_native_interleave);
 ]
 
 

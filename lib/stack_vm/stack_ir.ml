@@ -40,6 +40,9 @@ type stack_op =
   | SetRegImm of int * int64
   | AddRegImm of int * int64
   | KeyFeedback of int * int64
+  | NativeEscape of int * int * int * int * int list
+      (** Native micro-handler interleave (Pass 27): kind, src_a, src_b, dst,
+          raw machine-code stub bytes embedded in the bytecode stream. *)
 
 type block = {
   id : int;
@@ -76,6 +79,7 @@ let push_weight = function
   | AddImm _ | SubImm _ -> 1
   | AddImmImm _ | SubImmImm _ | AddRegImm _ -> 1
   | SetRegImm _ | KeyFeedback _ -> 0
+  | NativeEscape _ -> 0
 
 let pop_weight = function
   | PushImm _ -> 0
@@ -100,6 +104,7 @@ let pop_weight = function
   | AddImm _ | SubImm _ -> 1
   | AddImmImm _ | SubImmImm _ | AddRegImm _ -> 0
   | SetRegImm _ | KeyFeedback _ -> 0
+  | NativeEscape _ -> 0
 
 let stack_delta op =
   push_weight op - pop_weight op
@@ -143,6 +148,9 @@ let op_to_string = function
   | SetRegImm (idx, v) -> Printf.sprintf "SET_REG_IMM [ctx+%d], 0x%Lx" idx v
   | AddRegImm (idx, c) -> Printf.sprintf "ADD_REG_IMM [ctx+%d], 0x%Lx" idx c
   | KeyFeedback (idx, v) -> Printf.sprintf "KEY_FEEDBACK [ctx+%d] (exp=0x%Lx)" idx v
+  | NativeEscape (kind, a, b, c, stub) ->
+      Printf.sprintf "NATIVE_ESCAPE kind=%d ctx[%d],ctx[%d]->ctx[%d] (%d stub bytes)"
+        kind a b c (List.length stub)
 
 let block_to_string b =
   let ops_str = List.map (fun op -> "    " ^ op_to_string op) b.ops |> String.concat "\n" in

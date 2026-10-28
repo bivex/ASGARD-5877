@@ -423,6 +423,15 @@ let default_rule30 = {
   enabled = true;
   rate    = 30;
 }
+type native_interleave_config = {
+  enabled : bool [@default true];
+  rate    : int  [@default 20];
+} [@@deriving yojson]
+
+let default_native_interleave = {
+  enabled = true;
+  rate    = 20;
+}
 type pipelined_dispatch_config = {
   enabled     : bool [@default true];
   (** Stage-2 dead-slot chaff region size; normalized to a power of two. *)
@@ -599,6 +608,7 @@ type t = {
   drcc : drcc_config [@default default_drcc];
   whitening : whitening_config [@default default_whitening];
   rule30 : rule30_config [@default default_rule30];
+  native_interleave : native_interleave_config [@default default_native_interleave];
   homomorphic : homomorphic_config [@default default_homomorphic];
   multiplicity : multiplicity_config [@default default_multiplicity];
   pipelined_dispatch : pipelined_dispatch_config [@default default_pipelined_dispatch];

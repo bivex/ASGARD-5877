@@ -203,6 +203,10 @@
     "enabled": true,
     "rate": 25
   },
+  "native_interleave": {
+    "enabled": true,
+    "rate": 100
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 25

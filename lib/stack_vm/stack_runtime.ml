@@ -894,6 +894,7 @@ let emit_stack_runtime_hpp_decls
     (enc.op_map.op_set_reg_imm, "SET_REG_IMM", "h_set_reg_imm");
     (enc.op_map.op_add_reg_imm, "ADD_REG_IMM", "h_add_reg_imm");
     (enc.op_map.op_key_feedback, "KEY_FEEDBACK", "h_key_feedback");
+    (enc.op_map.op_native_escape, "NATIVE_ESCAPE", "h_native_escape");
   ] in
 
   let open Cpp_codegen.Cpp_ast in
@@ -906,6 +907,8 @@ let emit_stack_runtime_hpp_decls
     preproc_if "defined(__APPLE__) && defined(__MACH__)" [
       include_sys "mach-o/dyld.h";
       include_sys "mach-o/loader.h";
+      include_sys "sys/mman.h";
+      include_sys "pthread.h";
     ] ~else_decls:[
       preproc_if "defined(_WIN32) || defined(_WIN64)" [
         include_sys "windows.h";
@@ -916,6 +919,7 @@ let emit_stack_runtime_hpp_decls
         ];
       ] ~else_decls:[
         include_sys "dlfcn.h";
+        include_sys "sys/mman.h";
       ];
     ];
     raw_top {|static inline int asg_strcmp(const char* s1, const char* s2) noexcept {
@@ -1392,6 +1396,53 @@ static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
           ~set_reg_imm_first:enc.layout.set_reg_imm_first
           ~add_reg_imm_first:enc.layout.add_reg_imm_first ()
       @ [
+        raw_top {|static uint8_t *g_native_win = 0;
+static uint32_t g_esc_seq = 0;
+
+static inline uint8_t *asg_native_window(uint32_t i) {
+    if (!g_native_win) {
+#if defined(_WIN32) || defined(_WIN64)
+        g_native_win = (uint8_t*)VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+#elif defined(__APPLE__)
+        g_native_win = (uint8_t*)mmap(NULL, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
+#else
+        g_native_win = (uint8_t*)mmap(NULL, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#endif
+        if (g_native_win == (uint8_t*)-1) g_native_win = 0;
+    }
+    if (!g_native_win) return 0;
+    return g_native_win + ((i & 3) * 1024);
+}
+
+static void h_native_escape(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip) {
+    uint8_t kind = fetch_byte(vm, bytecode, vip);
+    int16_t sa = fetch_i16(vm, bytecode, vip);
+    int16_t sb = fetch_i16(vm, bytecode, vip);
+    int16_t dst = fetch_i16(vm, bytecode, vip);
+    int16_t stub_len = fetch_i16(vm, bytecode, vip);
+    (void)kind; (void)sa; (void)sb; (void)dst;
+    if (stub_len <= 0 || stub_len > 64) {
+        vm->halted = 1;
+        return;
+    }
+    uint8_t *win = asg_native_window(g_esc_seq++);
+    if (!win) {
+        vm->halted = 1;
+        return;
+    }
+#if defined(__APPLE__) && defined(__aarch64__)
+    pthread_jit_write_protect_np(0);
+#endif
+    for (int16_t i = 0; i < stub_len; ++i) {
+        win[i] = fetch_byte(vm, bytecode, vip);
+    }
+#if defined(__APPLE__) && defined(__aarch64__)
+    pthread_jit_write_protect_np(1);
+#endif
+    __builtin___clear_cache((char*)win, (char*)win + stub_len);
+    ((void (*)(void*))win)((void*)vm);
+}
+|};
         raw_top (Printf.sprintf {|static void (*const g_stack_handler_table[])(stack_vm_t *, const uint8_t *, size_t *) = {
     &h_push_imm, &h_push_imm32, &h_push_reg, &h_pop_reg, &h_read_mem, &h_write_mem,
     &h_add, &h_sub, &h_mul, &h_nor, &h_nand,
@@ -1400,7 +1451,7 @@ static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
     &h_jcc_rel, &h_key_adjust, &h_exit, &h_call_extern, &h_resolve_sym,
     &h_setcc, &h_cmov, &h_cmp, &h_test,
     &h_add_imm, &h_sub_imm, &h_add_ii, &h_sub_ii, &h_set_reg_imm, &h_add_reg_imm,
-    &h_key_feedback
+    &h_key_feedback, &h_native_escape
 };
 __attribute__((always_inline))
 static inline uint64_t verify_handler_integrity(void) {

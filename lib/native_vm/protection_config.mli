@@ -247,6 +247,12 @@ type rule30_config = {
 }
 
 val default_rule30 : rule30_config
+type native_interleave_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_native_interleave : native_interleave_config
 type homomorphic_config = {
   enabled : bool;
   rate    : int;
@@ -322,6 +328,7 @@ type t = {
   drcc : drcc_config;
   whitening : whitening_config;
   rule30 : rule30_config;
+  native_interleave : native_interleave_config;
   homomorphic : homomorphic_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;

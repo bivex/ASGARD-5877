@@ -62,6 +62,7 @@ let op_name (op : stack_op) : string =
   | SetRegImm _ -> "SetRegImm"
   | AddRegImm _ -> "AddRegImm"
   | KeyFeedback _ -> "KeyFeedback"
+  | NativeEscape _ -> "NativeEscape"
 
 (* Flag classification, mirroring Stack_flag_liveness exactly. *)
 let flag_class_of (op : stack_op) : string =
@@ -85,6 +86,8 @@ let op_to_json (op : stack_op) : Yojson.Safe.t =
     | AddImmImm (a, b) | SubImmImm (a, b) -> `List [ int64_to_json a; int64_to_json b ]
     | SetRegImm (s, v) | AddRegImm (s, v) | KeyFeedback (s, v) ->
         `List [ `Int s; int64_to_json v ]
+    | NativeEscape (kind, a, b, c, stub) ->
+        `List [ `Int kind; `Int a; `Int b; `Int c; `List (List.map (fun x -> `Int x) stub) ]
     | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv
     | Dup | Dup2 | Rot | Swap | PushFlags | PopFlags | Exit | Cmp | Test -> `List []
   in

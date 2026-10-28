@@ -40,6 +40,7 @@ type opcode_map = {
   op_key_feedback : int;
   op_dup2 : int;
   op_rot : int;
+  op_native_escape : int;
 }
 
 val default_opcode_map : opcode_map

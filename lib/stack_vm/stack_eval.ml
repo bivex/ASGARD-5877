@@ -321,6 +321,15 @@ let step_op state = function
       let v = get_reg state slot in
       let h = Stack_encoder.feedback_hash v in
       state.vkey <- Int64.logxor state.vkey h
+  | NativeEscape (kind, a, b, c, _stub) ->
+      let va = get_reg state a in
+      let vb = get_reg state b in
+      let res = match kind with
+        | 0 -> Int64.add va vb
+        | 1 -> Int64.sub va vb
+        | _ -> Int64.mul va vb
+      in
+      set_reg state c res
 
 let run_program ?(max_steps = 100000) ?initial_ctx prog =
   let state = create_state ?initial_ctx () in
