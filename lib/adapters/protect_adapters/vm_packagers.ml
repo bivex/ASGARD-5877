@@ -245,7 +245,7 @@ module Jit_vm_packager : Vm_packager = struct
       Rd_jit_vm.Rd_jit_emitter.compile_and_package
         ~rng
         ?config:(Some native_cfg)
-        ~enable_cff:native_cfg.cff.enabled
+        ~enable_cff:false
         ~enable_mba:native_cfg.mba.enabled
         ~mba_depth:native_cfg.mba.depth
         ir
@@ -316,7 +316,7 @@ module Multi_vm_packager : Vm_packager = struct
     let mv_pkg =
       Multi_vm.Multi_vm_emitter.compile_and_package
         ~rng
-        ~enable_cff:native_cfg.cff.enabled
+        ~enable_cff:false
         ~enable_mba:native_cfg.mba.enabled
         ~mba_depth:native_cfg.mba.depth
         ~config:native_cfg

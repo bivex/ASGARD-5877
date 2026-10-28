@@ -2,6 +2,8 @@ open Alcotest
 open Stack_vm
 open Stack_ir
 open Rd_jit_vm
+open Random_visa_ports
+open Protect_ports
 
 let contains_sub (s : string) (sub : string) : bool =
   let n = String.length s and m = String.length sub in
@@ -135,6 +137,63 @@ let test_stack_jit_e2e_compilation () =
              (* 22647 * 42 + 4919 = 956093 (0xe96bd) *)
              let expected = "Result (REG 0): 956093 (0xe96bd)" in
              check bool "Exact result 956093" true (contains_sub out_str expected)))
+let test_stack_jit_c_macro_e2e () =
+  let c_code = {|
+#include <stdio.h>
+#include "asgard_obf.h"
+
+int compute(int a, int b) {
+    ASGARD_BEGIN_VIRTUALIZE("compute");
+    return a + b * 2;
+}
+
+int main() {
+    printf("compute(10, 20) = %d\n", compute(10, 20));
+    return 0;
+}
+|} in
+  Test_helpers.with_temp_dir (fun temp_dir ->
+    let c_file = Filename.concat temp_dir "test_macro.c" in
+    let obf_hdr = Filename.concat temp_dir "asgard_obf.h" in
+    let orig_hdr = "examples/asgard_obf.h" in
+    Test_helpers.write_file_string c_file c_code;
+    if Sys.file_exists orig_hdr then
+      Test_helpers.write_file_string obf_hdr (Test_helpers.read_file_string orig_hdr);
+    let out_dir = Filename.concat temp_dir "out" in
+    let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
+    let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
+    let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
+    let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
+    let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+    let lifter = (module Arm64_adapter : Lifter) in
+    let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
+    let trampoline_engine = (module Trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
+    let toolchain = (module Toolchain_adapter : Toolchain) in
+    let vm_packager = (module Vm_packager_adapters.Stack_jit_packager : Vm_packager) in
+    let raw_cfg = Protect_adapters.Config_adapter.unwrap Protect_adapters.Config_adapter.default in
+    let cfg = Protect_adapters.Config_adapter.wrap raw_cfg in
+    let rng = Random.State.make [| 5877 |] in
+    match
+      Random_visa_application.Protect_pipeline.run
+        ~lifter
+        ~c_macro_obfuscator
+        ~vm_packager
+        ~trampoline_engine
+        ~toolchain
+        ~rng
+        ~config:cfg
+        ~input_file:c_file
+        ~out_dir
+        ~compile:true
+        ()
+    with
+    | Error err -> fail ("Pipeline failed: " ^ err)
+    | Ok _ ->
+        let app_bin = Filename.concat out_dir "protected_app" in
+        check bool "protected_app exists" true (Sys.file_exists app_bin);
+        let run_st, out_str = Test_helpers.run_command_capture app_bin in
+        check bool "Run status is 0" true (run_st = Unix.WEXITED 0);
+        check bool "Output is compute(10, 20) = 50" true (contains_sub out_str "compute(10, 20) = 50"))
 
 let tests = [
   ("Stack-JIT Basic Arithmetic Simulation", `Quick, test_chunker_basic_arithmetic);
@@ -144,4 +203,5 @@ let tests = [
   ("Stack-JIT Context Registers Simulation", `Quick, test_chunker_context_registers);
   ("Stack-JIT Rejections of Unsupported Ops", `Quick, test_chunker_rejections);
   ("Stack-JIT Hardware E2E Execution", `Quick, test_stack_jit_e2e_compilation);
+  ("Stack-JIT C Macro Trampoline E2E", `Quick, test_stack_jit_c_macro_e2e);
 ]

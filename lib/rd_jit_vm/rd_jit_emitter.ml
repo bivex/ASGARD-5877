@@ -3,6 +3,8 @@ include Rd_jit_types
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
+module Magic_numbers = Random_visa_constants.Magic_numbers
+
 
 let emit_rd_jit_runtime_decls ~external_symbols =
   let sym_entries =
@@ -18,8 +20,9 @@ let emit_rd_jit_runtime_decls ~external_symbols =
   in
   Rd_jit_buffer.header_decls ()
   @ [ sym_decl ]
-  @ Rd_jit_synth.header_decls ~external_symbols ()
+  @ Rd_jit_synth.synth_decls ~external_symbols ()
   @ Nano_jit_slot.build_nano_arena_ast ()
+  @ Rd_jit_synth.vm_bridge_decls ()
 
 let emit_rd_jit_runtime_header ~external_symbols =
   render_top_decls (emit_rd_jit_runtime_decls ~external_symbols)
@@ -458,11 +461,31 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
     ^ render_top_decl (emit_rd_jit_main_def ())
     ^ "\n" in
 
+  let serialize_jit_bytecode () : int64 list =
+    let magic = Magic_numbers.jit_bytecode_magic in
+    let num_chunks = Int64.of_int (List.length sealed_chunks) in
+    let header = [ magic; master_key; num_chunks ] in
+    let chunks_bc =
+      List.concat_map
+        (fun (cipher_words, t) ->
+          [
+            t.nonce;
+            Int64.of_int t.word_count;
+            Int64.of_int t.instr_count;
+            Int64.of_int t.perm_idx;
+          ]
+          @ cipher_words)
+        sealed_chunks
+    in
+    header @ chunks_bc
+  in
+  let jit_bytecode = serialize_jit_bytecode () in
+
   {
     cpp_runtime_source = rd_jit_hdr;
     runner_source = runner_cpp;
     rns_moduli = (Rns.m1, Rns.m2, Rns.m3, Rns.m4);
-    bytecode = base_pkg.bytecode;
+    bytecode = jit_bytecode;
     metrics = base_pkg.metrics;
   }
 

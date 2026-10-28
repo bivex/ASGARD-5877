@@ -82,6 +82,21 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
           (match !stk with
            | b :: a :: tl -> stk := Int64.lognot (Int64.logor a b) :: tl
            | _ -> failwith "stack_jit: underflow on Nor")
+      | Shl ->
+          (match !stk with
+           | count :: a :: tl ->
+               stk := Int64.shift_left a (Int64.to_int count land 63) :: tl
+           | _ -> failwith "stack_jit: underflow on Shl")
+      | Shr ->
+          (match !stk with
+           | count :: a :: tl ->
+               stk := Int64.shift_right_logical a (Int64.to_int count land 63) :: tl
+           | _ -> failwith "stack_jit: underflow on Shr")
+      | Sar ->
+          (match !stk with
+           | count :: a :: tl ->
+               stk := Int64.shift_right a (Int64.to_int count land 63) :: tl
+           | _ -> failwith "stack_jit: underflow on Sar")
       | AddImm v ->
           (match !stk with
            | a :: tl -> stk := Int64.add a v :: tl
@@ -126,6 +141,9 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
           | "SUB_RI" -> gprs.(dst) <- Int64.sub gprs.(dst) imm
           | "MUL_RR" -> gprs.(dst) <- Int64.mul gprs.(dst) gprs.(src)
           | "MUL_RI" -> gprs.(dst) <- Int64.mul gprs.(dst) imm
+          | "SHL_RI" -> gprs.(dst) <- Int64.shift_left gprs.(dst) (Int64.to_int imm land 63)
+          | "SHR_RI" -> gprs.(dst) <- Int64.shift_right_logical gprs.(dst) (Int64.to_int imm land 63)
+          | "SAR_RI" -> gprs.(dst) <- Int64.shift_right gprs.(dst) (Int64.to_int imm land 63)
           | "AND_RR" -> gprs.(dst) <- Int64.logand gprs.(dst) gprs.(src)
           | "OR_RR" -> gprs.(dst) <- Int64.logor gprs.(dst) gprs.(src)
           | "XOR_RR" -> gprs.(dst) <- Int64.logxor gprs.(dst) gprs.(src)
@@ -144,35 +162,29 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
   let max_depth = ref 0 in
   let flags_depth = ref 0 in
   let ctx_map = Hashtbl.create 8 in
-  let rev_map = Hashtbl.create 8 in
+  let scratch_alloc = ref (ctx_slots - 1) in
   let map_ctx_slot r =
     if r < 0 then Error (Printf.sprintf "stack_jit: negative context slot %d" r)
-    else
-      match Hashtbl.find_opt ctx_map r with
-      | Some s -> Ok s
-      | None ->
-          let preferred =
-            if r < ctx_slots && not (Hashtbl.mem rev_map r) then Some r
-            else None
-          in
-          let s_opt =
-            match preferred with
-            | Some s -> Some s
-            | None ->
-                let rec find s =
-                  if s >= ctx_slots then None
-                  else if Hashtbl.mem rev_map s then find (s + 1)
-                  else Some s
-                in
-                find 0
-          in
-          match s_opt with
-          | Some s ->
+    else match Hashtbl.find_opt ctx_map r with
+    | Some s -> Ok s
+    | None ->
+        if r < ctx_slots then begin
+          Hashtbl.replace ctx_map r r;
+          Ok r
+        end else begin
+          let rec find s =
+            if s < 0 then
+              Error (Printf.sprintf "stack_jit: too many context/scratch slots in trace (limit is %d)" ctx_slots)
+            else if Hashtbl.fold (fun _ v acc -> acc || v = s) ctx_map false then
+              find (s - 1)
+            else begin
+              scratch_alloc := s - 1;
               Hashtbl.replace ctx_map r s;
-              Hashtbl.replace rev_map s r;
               Ok s
-          | None ->
-              Error (Printf.sprintf "stack_jit: trace uses too many distinct context slots (limit is %d)" ctx_slots)
+            end
+          in
+          find !scratch_alloc
+        end
   in
   let out = ref [] in
   let push_item item = out := item :: !out in
@@ -195,6 +207,18 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
       decr depth;
       Ok ()
     end
+  in
+  let shift_imm op =
+    if !depth < 2 then Error ("stack_jit: underflow on " ^ op)
+    else match !out with
+    | (mov_ri, slot_b, 0, imm) :: rest_out
+      when mov_ri = jit "MOV_RI" && slot_b = stack_base + !depth - 1 ->
+        out := rest_out;
+        push_item (jit op, stack_base + !depth - 2, 0, imm);
+        decr depth;
+        Ok ()
+    | _ ->
+        unsupported (op ^ " with non-immediate shift count")
   in
   let rec walk = function
     | [] -> Ok ()
@@ -230,6 +254,9 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
               let* () = binary "OR_RR" in
               push_item (jit "NOT_R", stack_base + !depth - 1, 0, 0L);
               Ok ()
+          | Shl -> shift_imm "SHL_RI"
+          | Shr -> shift_imm "SHR_RI"
+          | Sar -> shift_imm "SAR_RI"
           | AddImm v ->
               if !depth < 1 then Error "stack_jit: underflow on AddImm"
               else begin

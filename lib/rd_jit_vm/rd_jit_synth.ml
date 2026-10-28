@@ -291,14 +291,14 @@ let synthesize_and_execute_block_decl () : top_decl =
                 uint32_t shift = (uint32_t)(in.imm & 63);
                 uint32_t immr = (64 - shift) & 63;
                 uint32_t imms = 63 - shift;
-                code[idx++] = 0x93400000 | (1 << 22) | (immr << 16) | (imms << 10) | (9 << 5) | 9;
+                code[idx++] = 0xd3400000 | (1 << 22) | (immr << 16) | (imms << 10) | (9 << 5) | 9;
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
             }
             case JIT_OP_SHR_RI: {
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 uint32_t shift = (uint32_t)(in.imm & 63);
-                code[idx++] = 0x93400000 | (1 << 22) | (shift << 16) | (63 << 10) | (9 << 5) | 9;
+                code[idx++] = 0xd3400000 | (1 << 22) | (shift << 16) | (63 << 10) | (9 << 5) | 9;
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
             }
@@ -607,7 +607,28 @@ let asgard_vm_call_decl () : top_decl =
       (UInt64, "a7 = 0");
       (UInt8, "macro_salt = 0") ]
     [
-      raw {|VMContext ctx;
+      raw {|if (bc != nullptr && len >= 3 && bc[0] == 0x58774A4954303031ULL) {
+        uint64_t master = bc[1];
+        size_t num_chunks = (size_t)bc[2];
+        asgard::nano_jit::NanoTicket tickets_buf[64];
+        const uint64_t* blobs_buf[64];
+        asgard::nano_jit::NanoTicket* tickets = tickets_buf;
+        const uint64_t** blobs = blobs_buf;
+        if (num_chunks > 64) {
+            tickets = (asgard::nano_jit::NanoTicket*)malloc(num_chunks * sizeof(asgard::nano_jit::NanoTicket));
+            blobs = (const uint64_t**)malloc(num_chunks * sizeof(const uint64_t*));
+        }
+        size_t pos = 3;
+        for (size_t k = 0; k < num_chunks && pos + 4 <= len; ++k) {
+            tickets[k].nonce = bc[pos++];
+            tickets[k].word_count = (uint32_t)bc[pos++];
+            tickets[k].instr_count = (uint32_t)bc[pos++];
+            tickets[k].perm_idx = (uint32_t)bc[pos++];
+            blobs[k] = &bc[pos];
+            pos += tickets[k].word_count;
+        }
+        asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);
+        asgard_rd_jit::RD_JIT_Context ctx;
         ctx.init();
         ctx.set_reg(0, a0);
         ctx.set_reg(1, a1);
@@ -617,8 +638,26 @@ let asgard_vm_call_decl () : top_decl =
         ctx.set_reg(5, a5);
         ctx.set_reg(6, a6);
         ctx.set_reg(7, a7);
-        execute_threaded(ctx, bc, len);
-        return ctx.get_rax();|};
+        asgard::nano_jit::execute_sealed_function(jit_buf, ctx, tickets, blobs, num_chunks, master);
+        uint64_t res = ctx.get_rax();
+        if (num_chunks > 64) {
+            free(tickets);
+            free(blobs);
+        }
+        return res;
+    }
+    VMContext ctx;
+    ctx.init();
+    ctx.set_reg(0, a0);
+    ctx.set_reg(1, a1);
+    ctx.set_reg(2, a2);
+    ctx.set_reg(3, a3);
+    ctx.set_reg(4, a4);
+    ctx.set_reg(5, a5);
+    ctx.set_reg(6, a6);
+    ctx.set_reg(7, a7);
+    execute_threaded(ctx, bc, len);
+    return ctx.get_rax();|};
     ]
 let asgard_vm_call_with_salt_decl () : top_decl =
   func_decl ~attrs:[StaticFn; InlineFn] UInt64 "asgard_vm_call_with_salt"
@@ -642,11 +681,12 @@ let asgard_vm_call_with_salt_decl () : top_decl =
       ]);
     ]
 
-let header_decls ?(external_symbols = []) () : top_decl list =
+let synth_decls ?(external_symbols = []) () : top_decl list =
   ignore external_symbols;
   rd_jit_types_decls ()
   @ [
     include_sys "stdio.h";
+    include_sys "stdlib.h";
     include_sys "string.h";
     preproc_if "!defined(_WIN32) && !defined(_WIN64)"
       [ include_sys "dlfcn.h" ]
@@ -657,13 +697,19 @@ let header_decls ?(external_symbols = []) () : top_decl list =
     execute_jit_function_decl ();
     execute_ephemeral_block_decl ();
     raw_top "} // namespace asgard_rd_jit";
-    namespace_def "vanguard_threaded_vm" [
-      raw_top "typedef asgard_rd_jit::RD_JIT_Context VMContext;";
-      execute_threaded_decl ();
-      asgard_vm_call_decl ();
-      asgard_vm_call_with_salt_decl ();
-    ];
   ]
+
+let vm_bridge_decls () : top_decl list = [
+  namespace_def "vanguard_threaded_vm" [
+    raw_top "typedef asgard_rd_jit::RD_JIT_Context VMContext;";
+    execute_threaded_decl ();
+    asgard_vm_call_decl ();
+    asgard_vm_call_with_salt_decl ();
+  ];
+]
+
+let header_decls ?(external_symbols = []) () : top_decl list =
+  synth_decls ~external_symbols () @ vm_bridge_decls ()
 
 let header ?(external_symbols = []) () : string =
   render_top_decls (header_decls ~external_symbols ())

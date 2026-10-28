@@ -196,6 +196,9 @@ val padovan_meta_frac_64 : int64
 (** Initial trace digest of the RD-JIT context. *)
 val rd_jit_trace_digest_init : int64
 
+(** Magic sentinel identifying serialized JIT sealed chunks in bytecode buffer. *)
+val jit_bytecode_magic : int64
+
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
 

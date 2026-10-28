@@ -348,6 +348,9 @@ let padovan_meta_frac_64 = 0x5320B74ECA44AC00L (* floor(2^64 / psi^4) = floor((p
 
 (* Initial trace digest of the RD-JIT context (hex-speak sentinel). *)
 let rd_jit_trace_digest_init = 0x13375877AABBCCDDL
+
+(* Magic sentinel identifying serialized JIT sealed chunks in bytecode buffer ("\x77\x58JIT001"). *)
+let jit_bytecode_magic = 0x58774A4954303031L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -826,6 +829,10 @@ let registry : entry list = [
     value = rd_jit_trace_digest_init;
     source = "0x13375877AABBCCDD: hex-speak initial trace digest of the RD-JIT context";
     used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+  { name = "jit_bytecode_magic";
+    value = jit_bytecode_magic;
+    source = "0x58774A4954303031: ASCII 'wXJIT001' sentinel identifying serialized JIT sealed chunks in bytecode buffer";
+    used_in = [ "lib/rd_jit_vm/rd_jit_emitter.ml"; "lib/rd_jit_vm/rd_jit_synth.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =
