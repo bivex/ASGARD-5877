@@ -30,8 +30,7 @@ module Transport_Verified
 module M = FStar.Math.Lemmas
 open FStar.UInt
 open FStar.UInt64
-open FStar.Mul
-
+open FStar.List.Tot
 (* ------------------------------------------------------------------ *)
 (* 0. Arithmetic helpers                                               *)
 (* ------------------------------------------------------------------ *)
@@ -42,6 +41,7 @@ let two_64 : pos = 0x10000000000000000
 
 let mul_mod (a : u64) (b : u64) : u64 = (a * b) % two_64
 let add_mod (a : u64) (b : u64) : u64 = (a + b) % two_64
+let sub_mod (a : u64) (b : u64) : u64 = (a - b + two_64) % two_64
 let xor64  (a : u64) (b : u64) : u64 = (logxor #64 a b)
 let land64 (a : u64) (b : u64) : u64 = (logand #64 a b)
 
@@ -80,8 +80,7 @@ let moser_pack (v : u64) : u64 =
   let y_plane = land64 v m_odd  in
   (* For the formal model we use the plane words directly;
      the compact/spread steps are inverses by construction below. *)
-  x_plane + (mul_mod y_plane 1)           (* placeholder: full bit-ops model *)
-
+  add_mod x_plane (mul_mod y_plane 1)           (* placeholder: full bit-ops model *)
 (*
   moser_unpack(w):
     X = spread(w land 0x00000000FFFFFFFF) -- low 32b -> even positions
@@ -91,8 +90,7 @@ let moser_pack (v : u64) : u64 =
 let moser_unpack (w : u64) : u64 =
   let x_half = land64 w 0x00000000FFFFFFFF in
   let y_half = (w / 0x100000000) % 0x100000000 in  (* lsr 32, model only *)
-  x_half + (mul_mod y_half 1)
-
+  add_mod x_half (mul_mod y_half 1)
 (*
   Roundtrip theorem: moser_unpack (moser_pack v) = v.
 
@@ -153,7 +151,7 @@ let is_odd (a : u64) : bool = (a % 2 = 1)
   is exact.
 *)
 let nr_step (alpha : u64) (x : u64) : u64 =
-  mul_mod x (add_mod 2 (two_64 - mul_mod alpha x))
+  mul_mod x (sub_mod 2 (mul_mod alpha x))
 
 let nr_inv5 (alpha : u64) : u64 =
   let x0 = nr_step alpha alpha in    (* 2 correct bits *)
@@ -180,22 +178,12 @@ let odd_unit_inverse (alpha : u64) (_ : is_odd alpha = true)
 let stern_net_identity (v : u64) (alpha : u64) (_ : is_odd alpha = true)
     : Lemma (mul_mod (mul_mod v alpha) (nr_inv5 alpha) = v)
   =
-  (* mul_mod is associative and commutative mod 2^64; the result follows
-     from odd_unit_inverse: v * alpha * alpha^-1 = v * 1 = v. *)
   let inv = nr_inv5 alpha in
-  (* alpha * inv = 1 by odd_unit_inverse; so v * alpha * inv = v * 1 = v *)
-  calc (=) {
-    mul_mod (mul_mod v alpha) inv;
-    = { (* mul_mod is associative mod 2^64 *) () }
-    mul_mod v (mul_mod alpha inv);
-    = { odd_unit_inverse alpha () }
-    mul_mod v 1;
-    = { () }
-    v % two_64;
-    = { () }
-    v;
-  }
-
+  odd_unit_inverse alpha ();
+  M.lemma_mod_mul_distr_l (v * alpha) inv two_64;
+  assert (((v * alpha) * inv) == v * (alpha * inv));
+  M.lemma_mod_mul_distr_r v (alpha * inv) two_64;
+  M.small_mod v two_64
 (* ------------------------------------------------------------------ *)
 (* 3. Fix-free permutation bijectivity (OEIS A000166)                 *)
 (* ------------------------------------------------------------------ *)
@@ -215,21 +203,27 @@ let stern_net_identity (v : u64) (alpha : u64) (_ : is_odd alpha = true)
 let nibble (packed : u64) (i : nat {i < 16}) : nat =
   (packed / (pow2 (4 * i))) % 16
 
+let indices16 : list (i:nat{i < 16}) =
+  [0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15]
+
+let rec no_duplicates (l : list nat) : bool =
+  match l with
+  | [] -> true
+  | x :: rest -> for_all (fun y -> x <> y) rest && no_duplicates rest
+
 (*
   A packed word encodes a valid permutation of {0..15} iff the 16 nibbles
   are a permutation: each value 0..15 appears exactly once.
-  (We model this as a list-based injectivity check.)
 *)
 let is_permutation16 (packed : u64) : bool =
-  let ns = List.Tot.map (nibble packed) (List.Tot.init 16 (fun i -> i)) in
-  List.Tot.length (List.Tot.no_repeats_p ns) = 1  (* placeholder predicate *)
+  let ns = map (nibble packed) indices16 in
+  no_duplicates ns
 
 (*
   Fix-free property: pi(i) != i for every slot.
 *)
 let is_fix_free (packed : u64) : bool =
-  List.Tot.for_all (fun i -> nibble packed i <> i) (List.Tot.init 16 (fun i -> i))
-
+  for_all (fun (i:nat{i < 16}) -> nibble packed i <> i) indices16
 (*
   Bijectivity of nibble extraction (perm_apply is a bijection):
   For a packed permutation p, the map (i -> nibble p i) is injective on {0..15}.
@@ -251,13 +245,13 @@ let compose_perm (p q : u64) (i : nat {i < 16}) : nat =
 
 let identity16 : u64 = 0x76543210FEDCBA98   (* nibble i = i for i in 0..15 *)
 
-let compose_identity (p p_inv : u64)
-    (_ : is_permutation16 p = true)
-    (_ : is_permutation16 p_inv = true)
-    (_ : forall (i : nat). i < 16 ==> nibble p_inv (nibble p i) = i)
-    (i : nat) (_ : i < 16)
-    : Lemma (compose_perm p p_inv i = i)
-  = ()
+val compose_identity : p:u64 -> p_inv:u64 -> i:nat ->
+  Lemma (requires is_permutation16 p = true /\
+                  is_permutation16 p_inv = true /\
+                  i < 16 /\
+                  (forall (j : nat). j < 16 ==> nibble p_inv (nibble p j) == j))
+        (ensures compose_perm p p_inv i == i)
+let compose_identity p p_inv i = ()
 
 (* ------------------------------------------------------------------ *)
 (* 4. A001511 Ruler function: fractal invalidation schedule           *)

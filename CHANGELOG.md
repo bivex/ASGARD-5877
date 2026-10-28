@@ -7,6 +7,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- Fix F* type checking, algebraic lemmas, and permutation definitions in `fstar/Transport_Verified.fst` (`fstar/Transport_Verified.fst`, `fstar/Transport_Verified.ml`):
+  * Corrected lemma binder syntax in `compose_identity` to use explicit `requires`/`ensures` clauses.
+  * Added `sub_mod` helper for modular two's-complement arithmetic and aligned `nr_step` Newton-Raphson inverse with modular subtraction.
+  * Discharged non-linear modular associativity in `stern_net_identity` using `FStar.Math.Lemmas` (`lemma_mod_mul_distr_l`, `lemma_mod_mul_distr_r`, `small_mod`).
+  * Replaced invalid `List.Tot.init` calls in `is_permutation16` and `is_fix_free` with a 16-element bounded index list and recursive duplicate detector.
+  * Extracted erased OCaml module `fstar/Transport_Verified.ml` via F* codegen.
 - Correct x86_64 JIT arithmetic shift and bitwise negation operand loading in `rd_jit_synth.ml` (`lib/rd_jit_vm/rd_jit_synth.ml`):
   * Fixed `JIT_OP_SHL_RI`, `JIT_OP_SHR_RI`, `JIT_OP_SAR_RI`, `JIT_OP_NOT_R`, and `JIT_OP_NEG_R` in the x86-64 native emission path to load from the source operand offset (`src_off`) instead of the destination offset (`dst_off`), preserving non-aliasing register source values across shift and negation operations.
   * Updated `asgard_vm_call` declarations with target architecture detection and x86-64 System V AMD64 ABI context register setup (RDI/RSI/RDX/RCX/R8/R9 parameter registers and 16-byte aligned execution spill stack).
