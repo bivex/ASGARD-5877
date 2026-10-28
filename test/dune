@@ -49,6 +49,7 @@
   test_helpers
   test_watermark
   test_logger
+  test_stack_jit_vm
   run_tests)
  (libraries
   random_visa_domain
