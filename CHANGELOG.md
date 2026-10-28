@@ -7,6 +7,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Unify `Jit_vm_packager` with `Stack_jit_packager` in `vm_packagers.ml` (`lib/adapters/protect_adapters/vm_packagers.ml`):
+  * Mapped `--engine=jit` directly to the fully-hardened Stack-JIT engine, providing unified support for non-colliding context slots, sub-width memory ops, persistent CPU flags, spill stack, and multi-function packaging under `--engine=jit`.
+  * Verified: 12/12 tests in `Stack-JIT VM & Chunker` pass, 7/7 in `Register-Driven JIT VM & RNS` pass, 45/45 steps in `test_cpp_codegen` pass, 69/69 in `ARM64 Lifter & CFG` pass; `run_license_check_jit.sh` verified on hardware (`ACCESS GRANTED`, token 0x1337 matches); and 4-function multi-pattern test verified under `--engine=jit` on Apple Silicon hardware with exact results.
 - Add loop unrolling directives (`ASG_UNROLL`) and toolchain unrolling flags for JIT VM (`lib/adapters/protect_adapters/clang_toolchain_adapter.ml`, `lib/c_macro_obf/c_macro_templates.ml`, `examples/asgard_obf.h`):
   * Added `-funroll-loops` and `-mllvm -unroll-threshold=500` to frontend compilation flags in `clang_toolchain_adapter.ml`, and added `#define ASG_UNROLL _Pragma("clang loop unroll(full)")` and `ASG_UNROLL_COUNT(n)` to macro templates.
   * Bounded loops (cryptographic rounds, vector reductions, hashing iterations) are now automatically unrolled into straight-line instructions, eliminating backward branches and loop induction variables.

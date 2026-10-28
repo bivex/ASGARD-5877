@@ -233,55 +233,6 @@ module Threaded_vm_packager : Vm_packager = struct
     end
 end
 
-module Jit_vm_packager : Vm_packager = struct
-  let engine_kind = Jit
-
-  let package_single ~rng ~config (name, (ir : Vm_ir.Ir.func)) =
-    let native_cfg : Protection_config.t = unwrap_config config in
-    Logger.infof ~section:"JIT_VM" "RD-JIT VM: packaging function '%s' (CFF=%b, MBA=%b, depth=%d)"
-      name native_cfg.cff.enabled native_cfg.mba.enabled native_cfg.mba.depth;
-    let jit_pkg =
-      Rd_jit_vm.Rd_jit_emitter.compile_and_package
-        ~rng
-        ?config:(Some native_cfg)
-        ~enable_cff:false
-        ~enable_mba:native_cfg.mba.enabled
-        ~mba_depth:native_cfg.mba.depth
-        ir
-    in
-    (jit_pkg, name)
-
-  let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
-    let native_cfg : Protection_config.t = unwrap_config config in
-    let ir_funcs = unwrap_multi_ir func in
-    if List.length ir_funcs > 1 then begin
-      Logger.infof ~section:"JIT_VM" "RD-JIT VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
-      let results = List.map (package_single ~rng ~config) ir_funcs in
-      let bytecodes = List.map (fun ((pkg : Rd_jit_vm.Rd_jit_emitter.rd_jit_package), name) -> (name, pkg.bytecode)) results in
-      let first_pkg = fst (List.hd results) in
-      let first_name = snd (List.hd results) in
-      {
-        cpp_runtime_source = inject_pipeline_hardening native_cfg first_name first_pkg.cpp_runtime_source;
-        runner_source = first_pkg.runner_source;
-        bytecode = first_pkg.bytecode;
-        bytecodes;
-        metrics = convert_metrics ~engine_name:"Register-Driven JIT-VM" ~config:native_cfg first_pkg.metrics;
-        header_name = "jit_vm_runtime.hpp";
-        rebind_address = None;
-      }
-    end else begin
-      let (pkg, name) = package_single ~rng ~config (List.hd ir_funcs) in
-      {
-        cpp_runtime_source = inject_pipeline_hardening native_cfg name pkg.cpp_runtime_source;
-        runner_source = pkg.runner_source;
-        bytecode = pkg.bytecode;
-        bytecodes = [ (name, pkg.bytecode) ];
-        metrics = convert_metrics ~engine_name:"Register-Driven JIT-VM" ~config:native_cfg pkg.metrics;
-        header_name = "jit_vm_runtime.hpp";
-        rebind_address = None;
-      }
-    end
-end
 
 module Stack_jit_packager : Vm_packager = struct
   let engine_kind = Jit
@@ -368,6 +319,12 @@ module Stack_jit_packager : Vm_packager = struct
         rebind_address = None;
       }
     end
+end
+module Jit_vm_packager : Vm_packager = struct
+  let engine_kind = Jit
+
+  let package ~rng ~config ?constants (func : ir_func) : package_result =
+    Stack_jit_packager.package ~rng ~config ?constants func
 end
 
 module Multi_vm_packager : Vm_packager = struct
