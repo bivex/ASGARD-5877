@@ -84,8 +84,9 @@ def slot_reads_writes(op):
         reads.add(args[0])
     elif name == "PopReg":
         writes.add(args[0])
-    elif name == "SetRegImm":
-        writes.add(args[0])
+    elif name == "Cmov":
+        reads.add(args[1])
+        writes.add(args[1])
     elif name == "AddRegImm":
         reads.add(args[0])
         writes.add(args[0])

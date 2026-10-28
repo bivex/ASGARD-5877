@@ -56,10 +56,11 @@ let repair_block ctx block =
     if leftover <= 0 then
       { block with ops = padded_ops }
     else
-      (* Step 3: Stack has leftover elements: insert PopReg dummy before terminator *)
-      let dummies = List.init leftover (fun _ ->
-        PopReg (Context_allocator.alloc_scratch ctx)
-      ) in
+      (* Step 3: Stack has leftover elements: insert flag-neutral anchored drains before terminator *)
+      let dummies = List.concat (List.init leftover (fun _ ->
+        let dummy = Context_allocator.alloc_scratch ctx in
+        [ PopReg dummy; PushReg dummy; PushImm 1L; Mul; PopReg dummy ]
+      )) in
       let rec split acc = function
         | [] -> (List.rev acc, [])
         | op :: rest when is_terminator op -> (List.rev acc, op :: rest)

@@ -181,11 +181,7 @@ let expand_op rng ~s1 ~s2 ~s3 flag_dead = function
       (* Register-anchored non-linear sum split: defeats 5-NOR XOR and constant folding *)
       [ PushReg s1; PushImm v1; Add; PushReg s1; Sub; PushImm v2; Add ]
   | PushImm v ->
-      if next_int rng 2 = 0 then
-        (* Flag-neutral identity: v * 1 == v *)
-        [ PushImm v; PushImm 1L; Mul ]
-      else
-        [ PushImm v ]
+      [ PushImm v ]
   | other ->
       [ other ]
 

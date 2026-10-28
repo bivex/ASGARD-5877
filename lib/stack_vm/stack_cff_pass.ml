@@ -114,8 +114,6 @@ let transform_block ?(rng = Random.State.make [| 0x5877 |]) vpc_slot entry_of de
     [
       PushReg vpc_slot; PushImm r2; Mul; PushImm r3; Add;
       PushReg vpc_slot; PushImm r2; Mul; PushImm r3; Add;
-      Sub;
-      PushImm 0L;
       Cmp;
       JccRel (real_entry, E);
       JmpRel decoy_entry;
@@ -248,7 +246,9 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
               Mul;
               PushImm g0;
               Add;
-              PushImm 0L;
+              PushReg vpc_slot;
+              PushReg vpc_slot;
+              Sub;
               Cmp;
             ]
         | _ ->

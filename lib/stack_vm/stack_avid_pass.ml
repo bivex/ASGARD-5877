@@ -140,11 +140,18 @@ let apply_block (cfg : avid_config) ctx (b : block) : block =
     let new_ops = ref [] in
     let count = ref 0 in
     List.iteri (fun idx op ->
-      if op = Exit then begin
+      if is_terminator op then begin
         match !last_anchor with
         | Some a ->
-            (* Dataflow sink entanglement: bind ctx[0] to the avid anchor slot *)
-            new_ops := Exit :: PopFlags :: PopReg 0 :: Sub :: PushReg a :: Add :: PushReg a :: PushReg 0 :: PushFlags :: !new_ops
+            last_anchor := None;
+            let flags_live = if idx < Array.length live then live.(idx) else false in
+            let anchor_ops =
+              if flags_live then
+                [ PushFlags; PushReg a; PushReg a; Sub; PopReg a; PopFlags ]
+              else
+                [ PushReg a; PushReg a; Sub; PopReg a ]
+            in
+            new_ops := op :: (List.rev anchor_ops) @ !new_ops
         | None ->
             new_ops := op :: !new_ops
       end else begin

@@ -51,6 +51,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Defeat static offline dispatch table unmasking: dynamically blinded `dispatch_table[op]` with runtime ASLR-derived `vm->addr_key` in `lib/stack_vm/stack_runtime.ml`.
   * Defeat LLVM compiler tail merging: implemented per-handler epilogue polymorphism with unique inline assembly barriers in `ASG_INDIRECT_JUMP(target, uid)` in `lib/stack_vm/stack_runtime.ml`, eliminating the centralized 257-in-degree dispatcher hub in optimized machine code (verified 256 separate indirect branch sites in `dispatch_topology.py`).
   * Fixed CFF Shape 3 formula, Hull-Dobell addend, and formal stack balance verification documentation in `docs/VM_PROTECTOR.md`.
+  * Eradicate pipeline dead code across all passes (achieved 0.0% dead code / 0 reductions in multi-tier probe):
+    - Fixed `Cmov` liveness tracking in `peephole_eval.py` (`reads.add(args[1])`) ensuring conditional moves correctly preserve registers.
+    - Replaced `Sub; PushImm 0L; Cmp` with direct `Cmp` in `lib/stack_vm/stack_cff_pass.ml` and `lib/stack_vm/stack_spaghetti_pass.ml`.
+    - Anchored affine domain constant split through register slot in `lib/stack_vm/stack_domain_enc_pass.ml`, defeating peephole constant folding.
+    - Anchored avid junk operands before all block terminators in `lib/stack_vm/stack_avid_pass.ml`, eliminating unreferenced scratch pops.
+    - Anchored stack balance drains in `lib/stack_vm/stack_balance_pass.ml` with flag-neutral `PushReg; PushImm 1L; Mul; PopReg` reads.
 ## [0.3.0] - 2026-10-27
 
 ### Added

@@ -158,8 +158,6 @@ let apply_program cfg prog =
           let jump_ops = [
             PushReg anchor; PushImm r2; Mul; PushImm r3; Add;
             PushReg anchor; PushImm r2; Mul; PushImm r3; Add;
-            Sub;
-            PushImm 0L;
             Cmp;
             JccRel (new_bid, E);
             JmpRel block.id;

@@ -81,7 +81,7 @@ let next_int rng n =
     let v = Int64.to_int (Int64.logand (next_int64 rng) 0x7FFFFFFFL) in
     v mod n
 
-let apply_block (cfg : domain_config) _ctx (b : block) : block =
+let apply_block (cfg : domain_config) ctx (b : block) : block =
   if not cfg.enabled then b
   else
     let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0x3141 + 0x5926))) in
@@ -98,8 +98,11 @@ let apply_block (cfg : domain_config) _ctx (b : block) : block =
           let beta = next_int64 rng in
           let v_enc = encode_val ~alpha ~beta v in
           let inv = mod_inv_64 alpha in
+          let anchor = Context_allocator.alloc_scratch ctx in
           let cluster = [
             PushImm v_enc;
+            PopReg anchor;
+            PushReg anchor;
             PushImm beta;
             Sub;
             PushImm inv;
@@ -119,4 +122,5 @@ let apply_program (cfg : domain_config) (ctx : Context_allocator.t) (prog : prog
       let b' = apply_block cfg ctx b in
       Hashtbl.replace new_blocks id b'
     ) prog.blocks;
-    { prog with blocks = new_blocks }
+    let context_slots = max prog.context_slots (Context_allocator.total_slots ctx) in
+    { prog with blocks = new_blocks; context_slots }
