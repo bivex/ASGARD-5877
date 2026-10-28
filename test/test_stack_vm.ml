@@ -3041,6 +3041,42 @@ let test_finite_field () =
     List.iter (Stack_eval.step_op st) knot_ops;
     Alcotest.(check int64) "Mersenne-31 quadratic knot evaluates to 0" 0L (List.hd st.vstack)
   ) test_vals
+let test_sink_barrier () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 42L;
+    PopReg 0;
+    PushImm 100L;
+    PushImm 200L;
+    Cmp;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let ring = Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx) in
+  let cfg = { (Stack_sink_barrier_pass.default_sink_barrier_config 0x58771337L) with rate = 100 } in
+  let prog_sb = Stack_sink_barrier_pass.apply_program ~scratch_ring:ring cfg ctx prog in
+  let b_sb = Hashtbl.find prog_sb.blocks 0 in
+  Alcotest.(check bool) "Sink barrier pass injected barrier clusters" true
+    (List.length b_sb.ops > List.length b0.ops);
+
+  (* 1. Semantic evaluation in VM interpreter *)
+  let state = run_program prog_sb in
+  Alcotest.(check bool) "Sink barrier program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[0]=42" 42L (get_reg state 0);
+
+  (* 2. Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x5877A564CAFEL prog_sb in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[0]=42" 42L (get_reg state_bc 0);
+
+  (* 3. Formal verification of Algebraic barrier knot via SMT QF_BV *)
+  let orig_alg = [ PushReg 0 ] in
+  let trans_alg = [ PushReg 0 ] @ Stack_sink_barrier_pass.emit_algebraic_barrier_knot ~scratch_slot:1 @ [ Add ] in
+  let res_alg = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_alg ~trans_ops:trans_alg () in
+  Alcotest.(check bool) "Algebraic barrier knot proven equivalent (zero delta) via SMT QF_BV" true
+    (match res_alg with Stack_bv_verifier.Equivalent -> true | _ -> false)
+
 
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
@@ -3100,6 +3136,7 @@ let tests = [
   ("Stack-VM Dead Code Causality Analyzer", `Quick, test_dead_code_analyzer);
   ("Braided CFG Merging & Decoy Elimination", `Quick, test_braided_cfg_merging);
   ("Mixed-Characteristic Finite Field Arithmetic & Knots", `Quick, test_finite_field);
+  ("I/O Sink Entanglement & Slicing Barrier", `Quick, test_sink_barrier);
 ]
 
 

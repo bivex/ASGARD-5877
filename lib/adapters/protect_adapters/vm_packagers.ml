@@ -392,6 +392,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Mixed-Characteristic Finite Field" native_cfg.finite_field.enabled
           "disabled in configuration";
+        pass_switch "I/O Sink Slicing Barrier" native_cfg.sink_barrier.enabled
+          "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
           "disabled in configuration";
         pass_switch "Stack Balance Repair" true "";
@@ -1085,6 +1087,40 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5h-finite_field" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5h-finite_field" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5h] Mixed-Characteristic Finite Field: %s" ff_info;
+
+    (* Phase 5i (Pass 18): I/O Sink Entanglement & Slicing Barrier — bind intermediate state to observable sinks *)
+    let sb_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 19)
+    in
+    let sb_cfg_user = native_cfg.sink_barrier in
+    let sb_cfg = {
+      (Stack_vm.Stack_sink_barrier_pass.default_sink_barrier_config sb_seed) with
+      rate = sb_cfg_user.rate;
+      enabled = sb_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    I/O Sink Slicing Barrier   rate=%d%% seed=0x%016LX%s"
+         sb_cfg.rate
+         sb_cfg.seed
+         (if sb_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, sb_info =
+      if sb_cfg_user.enabled then begin
+        let prog_sb =
+          Stack_vm.Stack_sink_barrier_pass.apply_program
+            ~scratch_ring:ghost_ring sb_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_sink_barrier_pass.sink_barrier_stats prog prog_sb in
+        (prog_sb, info)
+      end else
+        (prog, "Disabled (config: sink_barrier.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"5i-sink_barrier" prog;
+    dump_bytecode_json ~phase:"5i-sink_barrier" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5i-sink_barrier" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5i] I/O Sink Slicing Barrier: %s" sb_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
       if native_cfg.stack_vm.state_feedback then

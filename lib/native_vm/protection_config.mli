@@ -211,6 +211,12 @@ type finite_field_config = {
 }
 
 val default_finite_field : finite_field_config
+type sink_barrier_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_sink_barrier : sink_barrier_config
 type multiplicity_config = {
   enabled : bool;
   rate    : int;
@@ -274,6 +280,7 @@ type t = {
   transducer : transducer_config;
   polymba : polymba_config;
   finite_field : finite_field_config;
+  sink_barrier : sink_barrier_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;
   trampoline : trampoline_config;

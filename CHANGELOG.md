@@ -56,6 +56,13 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered Mersenne-31 and $\mathrm{GF}(2^{64})$ constants (`finite_field_m31`, `finite_field_m31_mask`, `finite_field_m31_mul`, `finite_field_m31_inv`, `finite_field_gf64_poly`, `finite_field_gf64_const`) in `lib/constants/magic_numbers.ml`.
   * Wired Phase 5h into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified across 57/57 Stack-VM Execution Engine tests, deobfuscation probe (Tier 1–3: 0.0% junk recovered, Tier 6: 100.0% synthesis resilience), and full license check E2E.
+
+- Implement Pass 18 (Phase 5i): I/O Sink Entanglement & Slicing Barrier (`lib/stack_vm/stack_sink_barrier_pass.ml`, `lib/stack_vm/stack_sink_barrier_pass.mli`):
+  * Binds intermediate state registers, ghost accumulators, and PolyMBA scratch slots directly into observable I/O sinks (`WriteMem` address/value operands, `CallExtern` argument registers, `Exit` return code `ctx[0]`, and `Cmp` branch operands), defeating Tier 4 backward program slicing (Triton / LLVM DSE / IDA Hex-Rays).
+  * Emits algebraic self-inverse barriers ($(s + C) - (s \land C) - (s \lor C) \equiv 0 \pmod{2^{64}}$) with zero net stack delta, formally proven equivalent in Z3 SMT `QF_BV`.
+  * Emits Mersenne-31 invertibility barriers with complete flag-liveness protection via `PushFlags ... PopFlags`.
+  * Wired Phase 5i into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified across 58/58 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0 reductions, Tier 5: 81.0% non-zero Boolean derivatives, Tier 6: 100.0% inductive synthesis resilience), and full license check E2E.
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.

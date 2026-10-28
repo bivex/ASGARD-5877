@@ -86,6 +86,7 @@ let default : t = {
   transducer = default_transducer;
   polymba = default_polymba;
   finite_field = default_finite_field;
+  sink_barrier = default_sink_barrier;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -205,6 +206,7 @@ let max_security : t = {
   transducer = { default_transducer with rate = 75 };
   polymba = { default_polymba with rate = 70 };
   finite_field = { default_finite_field with rate = 70 };
+  sink_barrier = { default_sink_barrier with rate = 75 };
   multiplicity = { default_multiplicity with rate = 60 };
   pipelined_dispatch = { default_pipelined_dispatch with chaff_slots = 8 };
   trampoline = default_trampoline;
@@ -319,6 +321,7 @@ let stealth : t = {
   transducer = default_transducer;
   polymba = default_polymba;
   finite_field = default_finite_field;
+  sink_barrier = default_sink_barrier;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -438,6 +441,7 @@ let edr_stealth : t = {
   transducer = default_transducer;
   polymba = default_polymba;
   finite_field = default_finite_field;
+  sink_barrier = default_sink_barrier;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -557,6 +561,7 @@ let minimal : t = {
   transducer = { default_transducer with enabled = false };
   polymba = { default_polymba with enabled = false };
   finite_field = { default_finite_field with enabled = false };
+  sink_barrier = { default_sink_barrier with enabled = false };
   multiplicity = { default_multiplicity with enabled = false };
   pipelined_dispatch = { default_pipelined_dispatch with enabled = false };
   trampoline = default_trampoline;
@@ -667,6 +672,7 @@ let high : t = {
   transducer = { default_transducer with rate = 65 };
   polymba = { default_polymba with rate = 60 };
   finite_field = { default_finite_field with rate = 60 };
+  sink_barrier = { default_sink_barrier with rate = 65 };
   multiplicity = { default_multiplicity with rate = 50 };
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;

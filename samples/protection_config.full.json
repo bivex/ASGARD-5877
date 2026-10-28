@@ -175,6 +175,10 @@
     "enabled": true,
     "rate": 20
   },
+  "sink_barrier": {
+    "enabled": true,
+    "rate": 25
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 25

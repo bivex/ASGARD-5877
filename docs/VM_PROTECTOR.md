@@ -32,10 +32,11 @@ flowchart TD
         P10["Phase 5e (Pass 11): Bit-Permutation MBA & Cubic Knots"]
         P10f["Phase 5f (Pass 12): CRT Split-Path Execution"]
         P10h["Phase 5h (Pass 17): Mixed-Characteristic Finite Field"]
+        P10i["Phase 5i (Pass 18): I/O Sink Entanglement Barrier"]
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P11 --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P11 --> P12 --> P12b
     end
     
     IR --> P1
@@ -363,6 +364,19 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 * **Mersenne-31 Quadratic Cross-Term Frobenius Knot**:
   $$K_{\mathrm{Frob}}(s) = \operatorname{fold}_{31}\big((s_0 + c)^2\big) - \operatorname{fold}_{31}\big(s_0^2 + 2cs_0 + c^2\big) \equiv 0$$
 ---
+### Phase 5i (Pass 18): I/O Sink Entanglement & Slicing Barrier (`stack_sink_barrier_pass.ml`)
+* **Goal**: Defeats Tier 4 backward program slicing (Triton symbolic backward slicing, LLVM dead store elimination, IDA Hex-Rays AST simplification) by mathematically binding intermediate state registers and accumulator chains directly into every observable I/O sink:
+  1. **Memory Sinks (`WriteMem`)**: Entangles both `[address]` and `[value]` operands with intermediate scratch registers via zero-knots.
+  2. **External Sinks (`CallExtern`)**: Entangles live FFI argument registers (`ctx[0]..ctx[2]`) with intermediate scratch registers prior to native invocation.
+  3. **Termination Sinks (`Exit`)**: Entangles exit return register `ctx[0]` with scratch registers, forcing the backward slicer to retain writers of intermediate state.
+  4. **Branch Sinks (`Cmp`)**: Entangles comparison operands prior to `Cmp`, making branch conditions depend on intermediate registers in the Program Dependence Graph (PDG).
+* **Algebraic Barrier Zero-Knot**:
+  $$K_{\mathrm{alg}}(s) = (s + C) - (s \land C) - (s \lor C) \equiv 0 \pmod{2^{64}}$$
+  Proven equivalent in Z3 SMT `QF_BV`.
+* **Mersenne-31 Invertibility Barrier**:
+  $$K_{M_{31}}(s) = (s \ \& \ \texttt{0x7FFFFFFE}) - \operatorname{fold}_{31}\Big( \operatorname{fold}_{31}\big((s \ \& \ \texttt{0x7FFFFFFE}) \cdot a\big) \cdot a^{-1} \Big) \equiv 0$$
+---
+
 
 
 ### Phase 6: State-Feedback Rolling Key Stream (`stack_feedback_pass.ml`)
