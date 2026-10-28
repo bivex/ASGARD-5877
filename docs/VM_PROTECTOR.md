@@ -1,6 +1,6 @@
 # ASGARD-5877: Virtual Machine Code Protector (VM-Protector)
 
-This document provides the formal mathematical foundation and complete architectural specification of the **ASGARD-5877 Virtual Machine Code Protector**, implemented in pure OCaml 5 with C++20 Direct Threaded Code runtime generation.
+This document provides the formal mathematical foundation and complete architectural specification of the **ASGARD-5877 Virtual Machine Code Protector**, implemented in pure OCaml 5 with C++20 Direct Threaded Code runtime generation. Combinatorial, number-theoretic, and cellular-automata sequences supporting the pipeline are detailed in [OEIS Mathematical Sequences](OEIS_MATHEMATICAL_SEQUENCES.md).
 
 ---
 

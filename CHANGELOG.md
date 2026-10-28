@@ -88,6 +88,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Wired Phase 2d into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Fixed `Stack_trace_closure_pass` by resetting accumulator `g_slot = 0` at block entry when trace closure is active, preventing cross-block nibble trace drift and stack pointer misalignment.
   * Verified across 61/61 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 1.1% junk recovered, Tier 6: 100.0% synthesis resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
+
+- Document OEIS integer sequences in VM protector architecture (`docs/OEIS_MATHEMATICAL_SEQUENCES.md`):
+  * Catalogs Beatty-Wythoff state partitioning (A000201/A001950), optimal Golomb ruler cache-collision avoidance (A003022), Wolfram Rule 30 non-linear keystream (A269160), Thue-Morse aperiodic stalling (A010060), Costas array opcode field dispersion (A008404), GF(2^64) primitive polynomials (A011260), and Mersenne exponents (A000043).
+  * Defines offline build determinism and `magic_numbers.ml` registration policy for sequence-derived constants.
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.
