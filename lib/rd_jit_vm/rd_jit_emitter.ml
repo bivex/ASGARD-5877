@@ -19,6 +19,7 @@ let emit_rd_jit_runtime_decls ~external_symbols =
   Rd_jit_buffer.header_decls ()
   @ [ sym_decl ]
   @ Rd_jit_synth.header_decls ~external_symbols ()
+  @ Nano_jit_slot.build_nano_arena_ast ()
 
 let emit_rd_jit_runtime_header ~external_symbols =
   render_top_decls (emit_rd_jit_runtime_decls ~external_symbols)
@@ -29,7 +30,7 @@ let emit_rd_jit_main_def () : top_decl =
     raw "std::cout << \"  * Architecture: Register-Driven RISC (No Stack Emulation)\\n\";";
     raw "std::cout << \"  * Arithmetic: RNS-4 Modular Residue Splitting (M > 2^64)\\n\";";
     raw "std::cout << \"  * Memory Protection: Dual-Mapped W^X Ephemeral Buffer\\n\";";
-    raw "std::cout << \"  * Blocks: \" << num_jit_blocks << \" dynamic JIT synthesis block(s)\\n\";";
+    raw "std::cout << \"  * Sealed Chunks: \" << g_num_nano_chunks << \" Kolakoski-fissioned nano-slot chunk(s)\\n\";";
     raw "asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);";
     raw "asgard_rd_jit::RD_JIT_Context ctx;";
     expr_stmt (call "ctx.init" []);
@@ -38,7 +39,7 @@ let emit_rd_jit_main_def () : top_decl =
     expr_stmt (call "ctx.set_reg" [i32 0; var "arg1"]);
     expr_stmt (call "ctx.set_reg" [i32 1; var "arg2"]);
     raw "auto t0 = std::chrono::high_resolution_clock::now();";
-    raw "asgard_rd_jit::execute_jit_function(jit_buf, ctx, jit_blocks, num_jit_blocks);";
+    raw "asgard::nano_jit::execute_sealed_function(jit_buf, ctx, g_nano_tickets, g_nano_blobs, g_num_nano_chunks, g_nano_master);";
     raw "auto t1 = std::chrono::high_resolution_clock::now();";
     raw "double elapsed_us = std::chrono::duration<double, std::micro>(t1 - t0).count();";
     let_u64 "res" (call "ctx.get_reg" [i32 0]);
@@ -48,6 +49,14 @@ let emit_rd_jit_main_def () : top_decl =
     raw "std::cout << \"  * JIT Cycle Time: \" << elapsed_us << \" us\\n\";";
     ret (i32 0);
   ]
+
+(* Per-chunk sealing ticket emitted into the runner next to its ciphertext. *)
+type sealed_chunk_ticket = {
+  nonce      : int64;
+  word_count : int;
+  instr_count : int;
+  perm_idx   : int;
+}
 
 let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false) ?(mba_depth = 2) (func : Ir.func) : rd_jit_package =
   let (enable_cff, enable_mba, mba_depth) =
@@ -143,108 +152,288 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
           (Ir.alu_op_to_string op) (Register.to_string dst) (Ir.operand_to_string src1))
   in
 
-  let (block_instr_decls, block_entries) =
-    List.mapi
-      (fun idx (b : Ir.basic_block) ->
-        let instrs = Native_vm.Vm_transform.canonicalize_3addr_alu b.instrs in
-        let instr_exprs =
-          List.map
-            (fun instr ->
-              let (op, dst, src, imm) =
-                match instr with
-                | Ir.Nop -> ("asgard_rd_jit::JIT_OP_NOP", 0, 0, 0L)
-                | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->
-                    ("asgard_rd_jit::JIT_OP_MOV_RR", Native_vm.Vm_transform.reg_to_index d mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-                | Ir.Mov { dst = Ir.Reg d; src = Ir.Imm imm } ->
-                    ("asgard_rd_jit::JIT_OP_MOV_RI", Native_vm.Vm_transform.reg_to_index d mod 16, 0, imm)
-                | Ir.Alu { op = (Ir.Add | Ir.Adc); dst; src1; src2 = Ir.Reg s; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Add ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_ADD_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-                | Ir.Alu { op = (Ir.Add | Ir.Adc); dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Add ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_ADD_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Alu { op = (Ir.Sub | Ir.Sbb); dst; src1; src2 = Ir.Reg s; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Sub ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_SUB_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-                | Ir.Alu { op = (Ir.Sub | Ir.Sbb); dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Sub ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_SUB_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst; src1; src2 = Ir.Reg s; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Imul ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_MUL_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-                | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Imul ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_MUL_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Alu { op = Ir.Xor; dst; src1; src2 = Ir.Reg s; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Xor ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_XOR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-                | Ir.Alu { op = Ir.Xor; dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Xor ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_XOR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Alu { op = Ir.And; dst; src1; src2 = Ir.Reg s; _ } ->
-                    assert_src1_eq_dst ~op:Ir.And ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_AND_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-                | Ir.Alu { op = Ir.And; dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.And ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_AND_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Reg s; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_OR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
-                | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_OR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Alu { op = Ir.Shl; dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Shl ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_SHL_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Alu { op = Ir.Shr; dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Shr ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_SHR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Alu { op = Ir.Sar; dst; src1; src2 = Ir.Imm imm; _ } ->
-                    assert_src1_eq_dst ~op:Ir.Sar ~dst ~src1;
-                    ("asgard_rd_jit::JIT_OP_SAR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
-                | Ir.Unary { op = Ir.Not; dst; src = _; _ } ->
-                    ("asgard_rd_jit::JIT_OP_NOT_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
-                | Ir.Unary { op = Ir.Neg; dst; src = _; _ } ->
-                    ("asgard_rd_jit::JIT_OP_NEG_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
-                | Ir.Mov { dst = Ir.Reg d; src = Ir.Mem { base = Some b; disp; _ } } ->
-                    ("asgard_rd_jit::JIT_OP_LOAD_64", Native_vm.Vm_transform.reg_to_index d mod 16, Native_vm.Vm_transform.reg_to_index b mod 16, disp)
-                | Ir.Mov { dst = Ir.Mem { base = Some b; disp; _ }; src = Ir.Reg s } ->
-                    ("asgard_rd_jit::JIT_OP_STORE_64", Native_vm.Vm_transform.reg_to_index b mod 16, Native_vm.Vm_transform.reg_to_index s mod 16, disp)
-                | Ir.Call (Ir.Label sym) ->
-                    let sym_idx = get_ext_sym_idx sym in
-                    ("asgard_rd_jit::JIT_OP_CALL_EXTERN", 0, 0, Int64.of_int sym_idx)
-                | Ir.Ret -> ("asgard_rd_jit::JIT_OP_RET", 0, 0, 0L)
-                | Ir.Vm_exit -> ("asgard_rd_jit::JIT_OP_EXIT", 0, 0, 0L)
-                | _ -> ("asgard_rd_jit::JIT_OP_NOP", 0, 0, 0L)
-              in
-              init_list [ var op; i32 dst; i32 src; u64 imm ])
-            instrs
-        in
-        let count = List.length instr_exprs in
-        let decl =
-          global_var ~is_static:true ~is_const:true
-            (Array (StructType "asgard_rd_jit::JITInstr", 0))
-            (Printf.sprintf "jit_block_%d_instrs" idx)
-            ~init:(init_list instr_exprs)
-        in
-        let entry = init_list [ i32 idx; i32 count; var (Printf.sprintf "jit_block_%d_instrs" idx) ] in
-        (decl, entry))
-      sorted_blocks
-    |> List.split
+  (* ---- Sealed nano-chunk pipeline ---------------------------------
+     OEIS A000002 (Kolakoski fission), A010060 (Thue-Morse dummy opcodes),
+     A000166 (derangement operand remap), A000695 (Moser-de Bruijn
+     immediate blinding), transport sealing towards the A269160 arena. *)
+
+  (* Serialization table mirroring the JITOpKind enum order of
+     Rd_jit_synth.jit_op_kind_decl; the correspondence is locked by the
+     RD-JIT test suite (enum order vs. this table). *)
+  let jit_op_order =
+    [ "NOP"; "MOV_RR"; "MOV_RI"; "ADD_RR"; "ADD_RI"; "SUB_RR"; "SUB_RI";
+      "MUL_RR"; "MUL_RI"; "CALL_EXTERN"; "XOR_RR"; "XOR_RI"; "AND_RR";
+      "AND_RI"; "OR_RR"; "OR_RI"; "SHL_RI"; "SHR_RI"; "SAR_RI"; "NOT_R";
+      "NEG_R"; "LOAD_64"; "STORE_64"; "RET"; "EXIT" ]
+  in
+  let jit_op_code_tbl = Hashtbl.create 32 in
+  List.iteri
+    (fun i suffix -> Hashtbl.replace jit_op_code_tbl suffix i)
+    jit_op_order;
+  let jit_op_code (op : string) : int =
+    let prefix = "asgard_rd_jit::JIT_OP_" in
+    let suffix =
+      String.sub op (String.length prefix) (String.length op - String.length prefix)
+    in
+    match Hashtbl.find_opt jit_op_code_tbl suffix with
+    | Some c -> c
+    | None -> failwith ("rd_jit_emitter: unknown JIT opcode " ^ op)
   in
 
-  let jit_blocks_decl =
+  let jit_op_nop = "asgard_rd_jit::JIT_OP_NOP" in
+  let jit_op_extern = "asgard_rd_jit::JIT_OP_CALL_EXTERN" in
+
+  let map_instr (instr : Ir.instr) : string * int * int * int64 =
+    match instr with
+    | Ir.Nop -> (jit_op_nop, 0, 0, 0L)
+    | Ir.Mov { dst = Ir.Reg d; src = Ir.Reg s } ->
+        ("asgard_rd_jit::JIT_OP_MOV_RR", Native_vm.Vm_transform.reg_to_index d mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Mov { dst = Ir.Reg d; src = Ir.Imm imm } ->
+        ("asgard_rd_jit::JIT_OP_MOV_RI", Native_vm.Vm_transform.reg_to_index d mod 16, 0, imm)
+    | Ir.Alu { op = (Ir.Add | Ir.Adc); dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Add ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_ADD_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = (Ir.Add | Ir.Adc); dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Add ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_ADD_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = (Ir.Sub | Ir.Sbb); dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Sub ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SUB_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = (Ir.Sub | Ir.Sbb); dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Sub ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SUB_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Imul ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_MUL_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = (Ir.Mul | Ir.Imul); dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Imul ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_MUL_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = Ir.Xor; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Xor ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_XOR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Xor; dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Xor ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_XOR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = Ir.And; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.And ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_AND_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.And; dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.And ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_AND_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_OR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Or; dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Or ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_OR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = Ir.Shl; dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Shl ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SHL_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = Ir.Shr; dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Shr ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SHR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = Ir.Sar; dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Sar ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SAR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Unary { op = Ir.Not; dst; src = _; _ } ->
+        ("asgard_rd_jit::JIT_OP_NOT_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+    | Ir.Unary { op = Ir.Neg; dst; src = _; _ } ->
+        ("asgard_rd_jit::JIT_OP_NEG_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+    | Ir.Mov { dst = Ir.Reg d; src = Ir.Mem { base = Some b; disp; _ } } ->
+        ("asgard_rd_jit::JIT_OP_LOAD_64", Native_vm.Vm_transform.reg_to_index d mod 16,
+         Native_vm.Vm_transform.reg_to_index b mod 16, disp)
+    | Ir.Mov { dst = Ir.Mem { base = Some b; disp; _ }; src = Ir.Reg s } ->
+        ("asgard_rd_jit::JIT_OP_STORE_64", Native_vm.Vm_transform.reg_to_index b mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, disp)
+    | Ir.Call (Ir.Label sym) ->
+        let sym_idx = get_ext_sym_idx sym in
+        (jit_op_extern, 0, 0, Int64.of_int sym_idx)
+    | Ir.Ret -> ("asgard_rd_jit::JIT_OP_RET", 0, 0, 0L)
+    | Ir.Vm_exit -> ("asgard_rd_jit::JIT_OP_EXIT", 0, 0, 0L)
+    | _ -> (jit_op_nop, 0, 0, 0L)
+  in
+
+  let all_instrs =
+    List.concat_map
+      (fun (b : Ir.basic_block) ->
+        let instrs = Native_vm.Vm_transform.canonicalize_3addr_alu b.instrs in
+        List.map map_instr instrs)
+      sorted_blocks
+  in
+
+  (* OEIS A010060: a dummy opcode is generated at stream position n iff
+     t_n = popcount(n) mod 2 = 1; the synthesized machine code then carries
+     aperiodic no-op padding no loop summarizer can align. *)
+  let thue_morse_stream =
+    let pos = ref 0 in
+    let out = ref [] in
+    List.iter
+      (fun item ->
+        if Nano_jit_slot.thue_morse !pos then begin
+          Stdlib.(out := (jit_op_nop, 0, 0, 0L) :: !out);
+          incr pos
+        end;
+        Stdlib.(out := item :: !out);
+        incr pos)
+      all_instrs;
+    List.rev !out
+  in
+
+  (* OEIS A000002: chunk target sizes are the run lengths of the Kolakoski
+     word scaled by nano_kolakoski_scale (2 or 4 instructions). *)
+  let kolakoski_word = Nano_jit_slot.kolakoski 256 in
+  let kolakoski_chunks =
+    let run_idx = ref 0 in
+    let cur = ref [] in
+    let acc = ref [] in
+    let flush () =
+      if !cur <> [] then begin
+        let chunk = List.rev !cur in
+        let has_extern = List.exists (fun (op, _, _, _) -> op = jit_op_extern) chunk in
+        Stdlib.(acc := (chunk, has_extern) :: !acc);
+        Stdlib.(cur := []);
+        incr run_idx
+      end
+    in
+    List.iter
+      (fun item ->
+        let target =
+          kolakoski_word.(!run_idx mod Array.length kolakoski_word)
+          * Nano_jit_slot.nano_kolakoski_scale
+        in
+        if List.length !cur >= target
+           || List.length !cur >= Nano_jit_slot.nano_max_chunk_instrs
+        then flush ();
+        Stdlib.(cur := item :: !cur))
+      thue_morse_stream;
+    flush ();
+    match List.rev !acc with
+    | [] -> [ ([ (jit_op_nop, 0, 0, 0L) ], false) ]
+    | chunks -> chunks
+  in
+
+  let master_key = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+  let draw64 () = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
+
+  let put_u64_le (b : bytes) (off : int) (v : int64) =
+    for i = 0 to 7 do
+      Bytes.set b (off + i)
+        (Char.chr
+           (Int64.to_int
+              (Int64.logand (Int64.shift_right_logical v (8 * i)) 0xFFL)))
+    done
+  in
+  let get_u64_le (b : bytes) (off : int) : int64 =
+    let v = ref 0L in
+    for i = 7 downto 0 do
+      Stdlib.(v :=
+        Int64.logor (Int64.shift_left !v 8)
+          (Int64.of_int (Char.code (Bytes.get b (off + i)))));
+    done;
+    !v
+  in
+
+  (* OEIS A000166: chunk k permutes its virtual-register operands with the
+     fix-free permutation pi_k (identity at external-call ABI boundaries),
+     and every immediate crosses the seal as a Moser-de Bruijn (A000695)
+     carry-free X + 2Y pair. *)
+  let sealed_chunks =
+    List.mapi
+      (fun k (chunk, has_extern) ->
+        let perm_idx =
+          if has_extern then Nano_jit_slot.perm_identity_index
+          else k mod (Array.length Nano_jit_slot.derangement_tables)
+        in
+        let packed = Nano_jit_slot.perm_tables.(perm_idx) in
+        let remap_idx i = Nano_jit_slot.perm_apply packed i in
+        let words =
+          List.map
+            (fun (op, dst, src, imm) ->
+              let w0 =
+                Int64.logor
+                  (Int64.logor
+                     (Int64.of_int (jit_op_code op))
+                     (Int64.shift_left (Int64.of_int (remap_idx dst)) 8))
+                  (Int64.shift_left (Int64.of_int (remap_idx src)) 16)
+              in
+              let w1 = Nano_jit_slot.moser_pack imm in
+              (w0, w1))
+            chunk
+        in
+        let plain = Bytes.create (16 * List.length words) in
+        List.iteri
+          (fun i (w0, w1) ->
+            put_u64_le plain (16 * i) w0;
+            put_u64_le plain ((16 * i) + 8) w1)
+          words;
+        let nonce = Int64.logxor (draw64 ()) (Int64.of_int ((k + 1) * 64775)) in
+        let seal =
+          Nano_jit_slot.seal_nano_block ~block_id:k ~raw_code:plain
+            ~master_key ~nonce
+        in
+        let cipher = seal.encrypted_bytes in
+        let cipher_words =
+          List.init (List.length words) (fun i -> get_u64_le cipher (16 * i))
+        in
+        let ticket =
+          { nonce;
+            word_count = 2 * List.length words;
+            instr_count = List.length chunk;
+            perm_idx }
+        in
+        (cipher_words, ticket))
+      kolakoski_chunks
+  in
+
+  let master_decl =
+    global_var ~is_static:true ~is_const:true UInt64 "g_nano_master"
+      ~init:(u64 master_key)
+  in
+  let blob_decls =
+    List.mapi
+      (fun k (cipher_words, _) ->
+        global_var ~is_static:true ~is_const:true (Array (UInt64, 0))
+          (Printf.sprintf "jit_blob_%d" k)
+          ~init:(init_list (List.map u64 cipher_words)))
+      sealed_chunks
+  in
+  let blobs_ptr_decl =
+    global_var ~is_static:true ~is_const:true (Array (Ptr UInt64, 0))
+      "g_nano_blobs"
+      ~init:(init_list
+               (List.mapi
+                  (fun k _ -> var (Printf.sprintf "jit_blob_%d" k))
+                  sealed_chunks))
+  in
+  let tickets_decl =
     global_var ~is_static:true ~is_const:true
-      (Array (StructType "asgard_rd_jit::JITBlock", 0))
-      "jit_blocks"
-      ~init:(init_list block_entries)
+      (Array (StructType "asgard::nano_jit::NanoTicket", 0))
+      "g_nano_tickets"
+      ~init:(init_list
+               (List.map
+                  (fun (_, t) ->
+                    init_list
+                      [ u64 t.nonce;
+                        u32 (Int32.of_int t.word_count);
+                        u32 (Int32.of_int t.instr_count);
+                        u32 (Int32.of_int t.perm_idx) ])
+                  sealed_chunks))
   in
-  let num_jit_blocks_decl =
-    global_var ~is_static:true ~is_const:true SizeT "num_jit_blocks"
-      ~init:(sizeof_expr (var "jit_blocks") /~ sizeof_expr (Index (var "jit_blocks", i32 0)))
+  let num_chunks_decl =
+    global_var ~is_static:true ~is_const:true SizeT "g_num_nano_chunks"
+      ~init:(sizeof_expr (var "g_nano_tickets")
+             /~ sizeof_expr (Index (var "g_nano_tickets", i32 0)))
   in
-  let all_jit_decls = block_instr_decls @ [ jit_blocks_decl; num_jit_blocks_decl ] in
-  let jit_descriptors_code = render_top_decls all_jit_decls in
+  let sealed_descriptors_code =
+    render_top_decls (master_decl :: (blob_decls @ [ blobs_ptr_decl; tickets_decl; num_chunks_decl ]))
+  in
 
   let rd_jit_hdr = emit_rd_jit_runtime_header ~external_symbols:!external_symbols in
 
@@ -258,8 +447,8 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
 #endif\n\
 #include <iostream>\n\
 #include <chrono>\n\n\
-// JIT Block Descriptors\n"
-    ^ jit_descriptors_code
+// Sealed Nano-Chunk Descriptors (OEIS A000002 fission, A000695 blinding)\n"
+    ^ sealed_descriptors_code
     ^ "\n\n"
     ^ render_top_decl (emit_rd_jit_main_def ())
     ^ "\n" in
