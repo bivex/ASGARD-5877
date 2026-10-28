@@ -275,6 +275,9 @@ let trap_step_mul = 0x5877A55ACA1337B9L
 let trap_step_add = 0x1337CAFEBEEF5877L
 let trap_token_mul = 0x9E3779B97F4A7C15L
 let trap_salt_init = 0xCAFE58771337BABEL
+
+(* Dual-Rail Complement Arithmetic (Phase 5j / Pass 21) constants *)
+let dual_rail_salt = 0x5877DEADBEEFCAFEL
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -622,6 +625,10 @@ let registry : entry list = [
     value = trap_salt_init;
     source = "0xCAFE58771337BABE: initial salt for execution path digest register";
     used_in = [ "lib/stack_vm/stack_trap_pass.ml" ] };
+  { name = "dual_rail_salt";
+    value = dual_rail_salt;
+    source = "0x5877DEADBEEFCAFE: PRNG diversification salt for dual-rail complement pass";
+    used_in = [ "lib/stack_vm/stack_dual_rail_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

@@ -394,6 +394,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "I/O Sink Slicing Barrier" native_cfg.sink_barrier.enabled
           "disabled in configuration";
+        pass_switch "Dual-Rail Complement Invariance" native_cfg.dual_rail.enabled
+          "disabled in configuration";
         pass_switch "Cross-Block Anti-DBI Traps" native_cfg.trap.enabled
           "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
@@ -1123,6 +1125,38 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5i-sink_barrier" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5i-sink_barrier" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5i] I/O Sink Slicing Barrier: %s" sb_info;
+    (* Phase 5j (Pass 21): Dual-Rail Complement Arithmetic & Invariant Checkpoints *)
+    let dr_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 17)
+    in
+    let dr_cfg_user = native_cfg.dual_rail in
+    let dr_cfg = {
+      (Stack_vm.Stack_dual_rail_pass.default_dual_rail_config dr_seed) with
+      rate = dr_cfg_user.rate;
+      enabled = dr_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Dual-Rail Invariance       rate=%d%% seed=0x%016LX%s"
+         dr_cfg.rate
+         dr_cfg.seed
+         (if dr_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, dr_info =
+      if dr_cfg_user.enabled then begin
+        let prog_dr =
+          Stack_vm.Stack_dual_rail_pass.apply_program dr_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_dual_rail_pass.dual_rail_stats prog prog_dr in
+        (prog_dr, info)
+      end else
+        (prog, "Disabled (config: dual_rail.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"5j-dual_rail" prog;
+    dump_bytecode_json ~phase:"5j-dual_rail" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5j-dual_rail" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5j] Dual-Rail Complement Invariance: %s" dr_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
       if native_cfg.stack_vm.state_feedback then

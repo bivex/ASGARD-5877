@@ -223,6 +223,12 @@ type trap_config = {
 }
 
 val default_trap : trap_config
+type dual_rail_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_dual_rail : dual_rail_config
 type multiplicity_config = {
   enabled : bool;
   rate    : int;
@@ -288,6 +294,7 @@ type t = {
   finite_field : finite_field_config;
   sink_barrier : sink_barrier_config;
   trap : trap_config;
+  dual_rail : dual_rail_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;
   trampoline : trampoline_config;

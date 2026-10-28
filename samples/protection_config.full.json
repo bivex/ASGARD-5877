@@ -183,6 +183,10 @@
     "enabled": true,
     "rate": 25
   },
+  "dual_rail": {
+    "enabled": true,
+    "rate": 25
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 25

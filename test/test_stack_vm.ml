@@ -3118,6 +3118,49 @@ let test_trap_engine () =
   let res_trap = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_trap ~trans_ops:trans_trap () in
   Alcotest.(check bool) "Anti-DBI path trap knot proven equivalent (zero delta) via SMT QF_BV" true
     (match res_trap with Stack_bv_verifier.Equivalent -> true | _ -> false)
+let test_dual_rail () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 42L;
+    PopReg 1;
+    PushReg 1;
+    PushImm 58L;
+    Add;          (* 42 + 58 = 100 *)
+    PopReg 2;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let cfg = { (Stack_dual_rail_pass.default_dual_rail_config 0x5877BABEL) with rate = 100 } in
+  let prog_dr = Stack_dual_rail_pass.apply_program cfg ctx prog in
+  let b_dr = Hashtbl.find prog_dr.blocks 0 in
+  Alcotest.(check bool) "Dual-rail pass injected checkpoints and shadow slots" true
+    (List.length b_dr.ops > List.length b0.ops);
+
+  (* 1. Semantic evaluation in VM interpreter *)
+  let state = run_program prog_dr in
+  Alcotest.(check bool) "Dual-rail program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[2]=100" 100L (get_reg state 2);
+
+  (* 2. Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x58771337BEEFL prog_dr in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[2]=100" 100L (get_reg state_bc 2);
+
+  (* 3. Formal verification of Sum Invariant Zero-Knot via SMT QF_BV *)
+  let orig_sum = [ PushReg 0 ] in
+  let trans_sum = [ PushReg 0; PushReg 0; PushReg 0; Dup; Nand; Add; PushImm 1L; Add; Add ] in
+  let res_sum = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_sum ~trans_ops:trans_sum () in
+  Alcotest.(check bool) "Dual-rail sum invariant knot proven equivalent (zero delta) via SMT QF_BV" true
+    (match res_sum with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 4. Formal verification of Orthogonality Invariant Zero-Knot via SMT QF_BV *)
+  let orig_ortho = [ PushReg 0 ] in
+  let trans_ortho = [ PushReg 0; PushReg 0; PushReg 0; Dup; Nand; Nand; Dup; Nand; Add ] in
+  let res_ortho = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_ortho ~trans_ops:trans_ortho () in
+  Alcotest.(check bool) "Dual-rail orthogonality knot proven equivalent (zero delta) via SMT QF_BV" true
+    (match res_ortho with Stack_bv_verifier.Equivalent -> true | _ -> false)
+
 
 
 
@@ -3181,6 +3224,7 @@ let tests = [
   ("Mixed-Characteristic Finite Field Arithmetic & Knots", `Quick, test_finite_field);
   ("I/O Sink Entanglement & Slicing Barrier", `Quick, test_sink_barrier);
   ("Cross-Block Path Digest & Anti-DBI Traps", `Quick, test_trap_engine);
+  ("Dual-Rail Complement Arithmetic & Invariant Checkpoints", `Quick, test_dual_rail);
 ]
 
 

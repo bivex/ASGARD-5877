@@ -33,11 +33,12 @@ flowchart TD
         P10f["Phase 5f (Pass 12): CRT Split-Path Execution"]
         P10h["Phase 5h (Pass 17): Mixed-Characteristic Finite Field"]
         P10i["Phase 5i (Pass 18): I/O Sink Entanglement Barrier"]
+        P10j["Phase 5j (Pass 21): Dual-Rail Complement Invariance"]
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P11b["Phase 6b (Pass 19): Cross-Block Path Traps"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P11 --> P11b --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P12 --> P12b
     end
     
     IR --> P1
@@ -376,6 +377,20 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   Proven equivalent in Z3 SMT `QF_BV`.
 * **Mersenne-31 Invertibility Barrier**:
   $$K_{M_{31}}(s) = (s \ \& \ \texttt{0x7FFFFFFE}) - \operatorname{fold}_{31}\Big( \operatorname{fold}_{31}\big((s \ \& \ \texttt{0x7FFFFFFE}) \cdot a\big) \cdot a^{-1} \Big) \equiv 0$$
+### Phase 5j (Pass 21): Dual-Rail Complement Arithmetic & Invariant Checkpoints (`stack_dual_rail_pass.ml`)
+* **Goal**: Provides resistance against hardware and hypervisor fault injection attacks (EMFI, clock glitching, register forcing, instruction skipping) by shadowing context registers with dedicated dual-rail complement pairs $(r, \bar{r})$:
+  $$\bar{r} = \operatorname{NOT}(r) = -1 - r \pmod{2^{64}}$$
+* **Dual-Rail Invariants**:
+  - **Sum Invariant**: $r + \bar{r} + 1 \equiv 0 \pmod{2^{64}}$.
+  - **Orthogonality Invariant**: $r \land \bar{r} \equiv 0$.
+  - **Span Invariant**: $r \lor \bar{r} \equiv \texttt{0xFFFFFFFFFFFFFFFF} = -1\text{L}$.
+* **Dynamic Fault Checkpoints**:
+  Injects invariant zero-knots directly into live stack operands:
+  $$K_{\mathrm{sum}}(r, \bar{r}) = r + \bar{r} + 1 \equiv 0 \pmod{2^{64}}$$
+  $$K_{\mathrm{ortho}}(r, \bar{r}) = r \land \bar{r} \equiv 0 \pmod{2^{64}}$$
+  Formally proven equivalent in Z3 SMT `QF_BV`. Any physical bit-flip or emulation glitch destroys the identity, causing silent calculation corruption.
+---
+
 ---
 
 

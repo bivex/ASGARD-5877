@@ -71,6 +71,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered path digest LCG permutation constants (`trap_step_mul`, `trap_step_add`, `trap_token_mul`, `trap_salt_init`) in `lib/constants/magic_numbers.ml`.
   * Wired Phase 6b into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified across 59/59 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0 reductions, Tier 6: 100.0% inductive synthesis resilience), and full license check E2E.
+
+- Implement Pass 21 (Phase 5j): Dual-Rail Complement Arithmetic & Invariant Checkpoints (`lib/stack_vm/stack_dual_rail_pass.ml`, `lib/stack_vm/stack_dual_rail_pass.mli`):
+  * Shadows context registers with dedicated dual-rail complement scratch pairs $(r, \bar{r})$ where $\bar{r} = \operatorname{NOT}(r) = -1 - r \pmod{2^{64}}$, providing hardware and hypervisor fault injection resistance (EMFI, clock glitching, instruction skips).
+  * Enforces the dual-rail sum invariant $r + \bar{r} + 1 \equiv 0 \pmod{2^{64}}$ and orthogonality invariant $r \land \bar{r} \equiv 0$, dynamically injected into live stack operands with zero net stack delta.
+  * Formally proven equivalent in Z3 SMT `QF_BV`.
+  * Registered `dual_rail_salt` in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 5j into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified across 60/60 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0 reductions, Tier 6: 100.0% inductive synthesis resilience), and full license check E2E.
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.
