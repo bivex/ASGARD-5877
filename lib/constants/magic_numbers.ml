@@ -281,6 +281,13 @@ let dual_rail_salt = 0x5877DEADBEEFCAFEL
 
 (* Homomorphic Ciphertext Operand Blinding (Phase 2d / Pass 20) constants *)
 let homomorphic_salt = 0x5877CAFE58771337L
+
+(* DRCC Top-Of-Stack Window & A003022 Golomb Spilling (Phase 5k / Pass 22) constants *)
+let drcc_salt = 0x5877A0030221337BL
+let golomb_ruler_g0 = 0L
+let golomb_ruler_g1 = 1L
+let golomb_ruler_g2 = 4L
+let golomb_ruler_g3 = 6L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -636,6 +643,26 @@ let registry : entry list = [
     value = homomorphic_salt;
     source = "0x5877CAFE58771337: diversification salt for homomorphic operand blinding pass";
     used_in = [ "lib/stack_vm/stack_homomorphic_pass.ml" ] };
+  { name = "drcc_salt";
+    value = drcc_salt;
+    source = "0x5877A0030221337B: PRNG diversification salt for DRCC register window pass";
+    used_in = [ "lib/stack_vm/stack_drcc_pass.ml" ] };
+  { name = "golomb_ruler_g0";
+    value = golomb_ruler_g0;
+    source = "OEIS A003022: mark 0 of optimal 4-mark Golomb ruler {0, 1, 4, 6}";
+    used_in = [ "lib/stack_vm/stack_drcc_pass.ml" ] };
+  { name = "golomb_ruler_g1";
+    value = golomb_ruler_g1;
+    source = "OEIS A003022: mark 1 of optimal 4-mark Golomb ruler {0, 1, 4, 6}";
+    used_in = [ "lib/stack_vm/stack_drcc_pass.ml" ] };
+  { name = "golomb_ruler_g2";
+    value = golomb_ruler_g2;
+    source = "OEIS A003022: mark 2 of optimal 4-mark Golomb ruler {0, 1, 4, 6}";
+    used_in = [ "lib/stack_vm/stack_drcc_pass.ml" ] };
+  { name = "golomb_ruler_g3";
+    value = golomb_ruler_g3;
+    source = "OEIS A003022: mark 3 of optimal 4-mark Golomb ruler {0, 1, 4, 6}";
+    used_in = [ "lib/stack_vm/stack_drcc_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

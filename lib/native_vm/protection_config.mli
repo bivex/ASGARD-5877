@@ -229,6 +229,12 @@ type dual_rail_config = {
 }
 
 val default_dual_rail : dual_rail_config
+type drcc_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_drcc : drcc_config
 type homomorphic_config = {
   enabled : bool;
   rate    : int;
@@ -301,6 +307,7 @@ type t = {
   sink_barrier : sink_barrier_config;
   trap : trap_config;
   dual_rail : dual_rail_config;
+  drcc : drcc_config;
   homomorphic : homomorphic_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;

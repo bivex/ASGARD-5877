@@ -191,6 +191,10 @@
     "enabled": true,
     "rate": 25
   },
+  "drcc": {
+    "enabled": true,
+    "rate": 25
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 25

@@ -92,6 +92,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Document OEIS integer sequences in VM protector architecture (`docs/OEIS_MATHEMATICAL_SEQUENCES.md`):
   * Catalogs Beatty-Wythoff state partitioning (A000201/A001950), optimal Golomb ruler cache-collision avoidance (A003022), Wolfram Rule 30 non-linear keystream (A269160), Thue-Morse aperiodic stalling (A010060), Costas array opcode field dispersion (A008404), GF(2^64) primitive polynomials (A011260), and Mersenne exponents (A000043).
   * Defines offline build determinism and `magic_numbers.ml` registration policy for sequence-derived constants.
+
+- Implement Pass 22 (Phase 6c): DRCC Top-Of-Stack Physical Register Window & A003022 Golomb Spilling (`lib/stack_vm/stack_drcc_pass.ml`, `lib/stack_vm/stack_drcc_pass.mli`):
+  * Eliminates predictable memory-indexed stack patterns (`vsp[vsp_idx - 1]`) by caching the top-of-stack operand window into physical GPR scratch registers (`tos0`, `tos1`).
+  * Directs binary ALU operations (`Add`, `Sub`, `Mul`, `Nand`, `Nor`) through register window clusters with pairwise difference-free algebraic zero-knots from the optimal 4-mark Golomb ruler $G_4 = \{0, 1, 4, 6\}$ (OEIS [A003022](https://oeis.org/A003022)), where $\Delta \in \{1, 2, 3, 4, 5, 6\}$.
+  * Formally proven in Z3 SMT `QF_BV` (`test/test_stack_vm.ml`).
+  * Registered `drcc_salt` and Golomb-4 ruler marks (`golomb_ruler_g0`..`g3`) in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 6c into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified across 62/62 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0.3% junk recovered, Tier 5: 92.1% coverage, Tier 6: 100.0% synthesis resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.

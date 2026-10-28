@@ -91,6 +91,7 @@ flowchart TD
 * **Application in ASGARD-5877**:
   * **Coupled Secret Sharing in Memory Webbing (Phase 5c)**: Memory offsets allocated in the thread-local `host_stack` are constructed as scaled multiples of Golomb marks:
     $$\mathrm{addr}_i = \mathrm{Base} + 8 \cdot a_i$$
+  * **DRCC Top-Of-Stack Register Window & Golomb-4 Invariants (Phase 6c / Pass 22)**: The 4-mark ruler $G_4 = \{0, 1, 4, 6\}$ provides the pairwise difference set $\Delta \in \{1, 2, 3, 4, 5, 6\}$. Register-cached ALU operations apply asymmetric Golomb zero-knots $\big((s + \Delta) - (s \land \Delta)\big) - (s \lor \Delta) \equiv 0 \pmod{2^{64}}$, ensuring that each register window spill and fill transition exhibits an unrepeatable algebraic difference profile.
   * **Microarchitectural & SMT Defense**: Because no two pairs $(a_j, a_i)$ share the same distance:
     1. **Zero D-Cache Line Collisions**: Memory access streams cannot produce identical cache set conflict patterns, neutralizing *Flush+Reload* and *Prime+Probe* side-channel analysis.
     2. **SMT Memory Disambiguation Breakdown**: In SMT solvers with array theory (QF_ABV), expressions of the form $\operatorname{select}(\operatorname{store}(M, a_i, v), a_j)$ can never reduce via equality conditions ($a_i = a_j \iff i = j$), preventing symbolic simplification of memory roundtrips.

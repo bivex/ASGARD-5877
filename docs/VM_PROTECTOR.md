@@ -37,9 +37,10 @@ flowchart TD
         P10j["Phase 5j (Pass 21): Dual-Rail Complement Invariance"]
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P11b["Phase 6b (Pass 19): Cross-Block Path Traps"]
+        P11c["Phase 6c (Pass 22): DRCC Register Window & Golomb-4 Spilling"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P11c --> P12 --> P12b
     end
     
     IR --> P1
@@ -426,6 +427,16 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   Proven equivalent in Z3 SMT `QF_BV`.
 * **Silent Desynchronization**: If an adversary bypasses security check blocks or hooks handlers, $H$ diverges, resulting in corrupted stack offsets and invalid opcode aborts downstream.
 ---
+
+### Phase 6c (Pass 22): DRCC Top-Of-Stack Physical Register Window & A003022 Golomb Spilling (`stack_drcc_pass.ml`)
+* **Goal**: Defeats decompiler stack-frame recovery (IDA Pro / Hex-Rays Microcode stack analysis) by replacing anonymous memory-indexed stack operations (`vsp[vsp_idx - 1]`) with Direct Register Cached Computation (DRCC) across a physical Top-Of-Stack register window $(tos_0, tos_1)$.
+* **A003022 Optimal Golomb Ruler Invariant Knots**:
+  Spill and fill transitions across the window are structured with marks from the optimal 4-mark Golomb ruler $G_4 = \{0, 1, 4, 6\}$ (**OEIS [A003022](https://oeis.org/A003022)**). Injects algebraic zero-knots using pairwise ruler differences $\Delta \in \{1, 2, 3, 4, 5, 6\}$:
+  $$K_{\mathrm{golomb}}(s, \Delta) = \Big((s + \Delta) - (s \land \Delta)\Big) - (s \lor \Delta) \equiv 0 \pmod{2^{64}}$$
+  Because all pairwise differences in $G_4$ are distinct, every injected DRCC window sequence exhibits an asymmetric algebraic signature, preventing term unification in AST simplification passes.
+* **Register-Cached ALU Evaluation**:
+  Binary operations (`Add`, `Sub`, `Mul`, `Nand`, `Nor`) pop operands directly into $(tos_0, tos_1)$, apply the difference-free Golomb knot, and evaluate register-to-register, eliminating anonymous memory access from decompiled output.
+* **SMT Proof**: Formally proven in Z3 SMT `QF_BV` (`test_stack_vm.ml`) that the DRCC binary cluster preserves bit-identical semantics across all $2^{64}$ inputs with exact net stack delta $-1$.
 
 ---
 

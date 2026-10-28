@@ -3202,7 +3202,50 @@ let test_homomorphic () =
   Alcotest.(check bool) "Homomorphic operand blinding proven equivalent via SMT QF_BV" true
     (match res_homo with Stack_bv_verifier.Equivalent -> true | _ -> false)
 
+let test_drcc () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 75L;
+    PushImm 25L;
+    Add;
+    PopReg 1;
+    PushReg 1;
+    PushImm 30L;
+    Sub;
+    PopReg 2;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let cfg = { (Stack_drcc_pass.default_drcc_config 0x5877CAFEL) with rate = 100 } in
+  let prog_drcc = Stack_drcc_pass.apply_program cfg ctx prog in
+  let b_drcc = Hashtbl.find prog_drcc.blocks 0 in
+  Alcotest.(check bool) "DRCC pass transformed blocks" true (List.length b_drcc.ops > List.length b0.ops);
+  let state = run_program prog_drcc in
+  Alcotest.(check bool) "DRCC program halted" true state.halted;
+  Alcotest.(check int64) "DRCC execution exact: reg[2]=70" 70L (get_reg state 2);
+  let enc = Stack_encoder.encode_program ~seed_key:0x58771337BEEFL prog_drcc in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[2]=70" 70L (get_reg state_bc 2);
 
+  (* 3. Formal verification of A003022 Golomb zero-knot via SMT QF_BV *)
+  let delta = 4L in
+  let knot = Stack_drcc_pass.emit_golomb_zero_knot ~slot:1 ~delta in
+  let orig_knot = [ PushReg 1 ] in
+  let trans_knot = [ PushReg 1 ] @ knot @ [ Add ] in
+  let res_knot = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_knot ~trans_ops:trans_knot () in
+  Alcotest.(check bool) "A003022 Golomb zero-knot proven equivalent via SMT QF_BV" true
+    (match res_knot with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 4. Formal verification of DRCC binary cluster via SMT QF_BV *)
+  let orig_bin = [ PushReg 1; PushReg 2; Add ] in
+  let trans_bin =
+    [ PushReg 1; PushReg 2 ]
+    @ Stack_drcc_pass.emit_drcc_binary_cluster ~tos0:2 ~tos1:1 ~delta:3L ~op:Add ~flags_live:false
+  in
+  let res_bin = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_bin ~trans_ops:trans_bin () in
+  Alcotest.(check bool) "DRCC binary cluster proven equivalent via SMT QF_BV" true
+    (match res_bin with Stack_bv_verifier.Equivalent -> true | _ -> false)
 
 
 let tests = [
@@ -3267,6 +3310,7 @@ let tests = [
   ("Cross-Block Path Digest & Anti-DBI Traps", `Quick, test_trap_engine);
   ("Dual-Rail Complement Arithmetic & Invariant Checkpoints", `Quick, test_dual_rail);
   ("Homomorphic Ciphertext Operand Blinding", `Quick, test_homomorphic);
+  ("DRCC Register Window & Golomb-4 Spilling", `Quick, test_drcc);
 ]
 
 

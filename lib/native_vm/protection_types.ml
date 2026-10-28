@@ -396,6 +396,15 @@ let default_homomorphic = {
   enabled = true;
   rate    = 35;
 }
+type drcc_config = {
+  enabled : bool [@default true];
+  rate    : int  [@default 35];
+} [@@deriving yojson]
+
+let default_drcc = {
+  enabled = true;
+  rate    = 35;
+}
 type pipelined_dispatch_config = {
   enabled     : bool [@default true];
   (** Stage-2 dead-slot chaff region size; normalized to a power of two. *)
@@ -569,6 +578,7 @@ type t = {
   sink_barrier : sink_barrier_config [@default default_sink_barrier];
   trap : trap_config [@default default_trap];
   dual_rail : dual_rail_config [@default default_dual_rail];
+  drcc : drcc_config [@default default_drcc];
   homomorphic : homomorphic_config [@default default_homomorphic];
   multiplicity : multiplicity_config [@default default_multiplicity];
   pipelined_dispatch : pipelined_dispatch_config [@default default_pipelined_dispatch];

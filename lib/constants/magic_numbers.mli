@@ -147,6 +147,11 @@ val trap_token_mul : int64
 val trap_salt_init : int64
 val dual_rail_salt : int64
 val homomorphic_salt : int64
+val drcc_salt : int64
+val golomb_ruler_g0 : int64
+val golomb_ruler_g1 : int64
+val golomb_ruler_g2 : int64
+val golomb_ruler_g3 : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

@@ -398,6 +398,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Dual-Rail Complement Invariance" native_cfg.dual_rail.enabled
           "disabled in configuration";
+        pass_switch "DRCC Register Window & Golomb-4 Spilling" native_cfg.drcc.enabled
+          "disabled in configuration";
         pass_switch "Cross-Block Anti-DBI Traps" native_cfg.trap.enabled
           "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
@@ -1193,6 +1195,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5j-dual_rail" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5j-dual_rail" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5j] Dual-Rail Complement Invariance: %s" dr_info;
+
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
       if native_cfg.stack_vm.state_feedback then
@@ -1266,6 +1269,39 @@ module Stack_vm_packager : Vm_packager = struct
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6b-trap" ~final:false prog;
     if trap_cfg_user.enabled then
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6b] Cross-Block Path Traps: %s" trap_info;
+
+    (* Phase 6c (Pass 22): DRCC Top-Of-Stack Physical Register Window & A003022 Golomb Spilling *)
+    let drcc_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 19)
+    in
+    let drcc_cfg_user = native_cfg.drcc in
+    let drcc_cfg = {
+      (Stack_vm.Stack_drcc_pass.default_drcc_config drcc_seed) with
+      rate = drcc_cfg_user.rate;
+      enabled = drcc_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    DRCC Register Window       rate=%d%% seed=0x%016LX%s"
+         drcc_cfg.rate
+         drcc_cfg.seed
+         (if drcc_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, drcc_info =
+      if drcc_cfg_user.enabled then begin
+        let prog_drcc =
+          Stack_vm.Stack_drcc_pass.apply_program drcc_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_drcc_pass.drcc_stats prog prog_drcc in
+        (prog_drcc, info)
+      end else
+        (prog, "Disabled (config: drcc.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"6c-drcc" prog;
+    dump_bytecode_json ~phase:"6c-drcc" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6c-drcc" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6c] DRCC Register Window & Golomb-4 Spilling: %s" drcc_info;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
