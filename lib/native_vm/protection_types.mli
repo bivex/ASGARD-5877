@@ -203,6 +203,12 @@ type polymba_config = {
 }
 
 val default_polymba : polymba_config
+type finite_field_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_finite_field : finite_field_config
 type multiplicity_config = {
   enabled : bool;
   rate    : int;
@@ -264,6 +270,7 @@ type t = {
   trace_closure : trace_closure_config;
   transducer : transducer_config;
   polymba : polymba_config;
+  finite_field : finite_field_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;
   trampoline : trampoline_config;

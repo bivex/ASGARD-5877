@@ -85,6 +85,7 @@ let default : t = {
   trace_closure = default_trace_closure;
   transducer = default_transducer;
   polymba = default_polymba;
+  finite_field = default_finite_field;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -203,6 +204,7 @@ let max_security : t = {
   trace_closure = { default_trace_closure with rate = 70 };
   transducer = { default_transducer with rate = 75 };
   polymba = { default_polymba with rate = 70 };
+  finite_field = { default_finite_field with rate = 70 };
   multiplicity = { default_multiplicity with rate = 60 };
   pipelined_dispatch = { default_pipelined_dispatch with chaff_slots = 8 };
   trampoline = default_trampoline;
@@ -316,6 +318,7 @@ let stealth : t = {
   trace_closure = default_trace_closure;
   transducer = default_transducer;
   polymba = default_polymba;
+  finite_field = default_finite_field;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -434,6 +437,7 @@ let edr_stealth : t = {
   trace_closure = default_trace_closure;
   transducer = default_transducer;
   polymba = default_polymba;
+  finite_field = default_finite_field;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -552,6 +556,7 @@ let minimal : t = {
   trace_closure = { default_trace_closure with enabled = false };
   transducer = { default_transducer with enabled = false };
   polymba = { default_polymba with enabled = false };
+  finite_field = { default_finite_field with enabled = false };
   multiplicity = { default_multiplicity with enabled = false };
   pipelined_dispatch = { default_pipelined_dispatch with enabled = false };
   trampoline = default_trampoline;
@@ -661,6 +666,7 @@ let high : t = {
   trace_closure = { default_trace_closure with rate = 60 };
   transducer = { default_transducer with rate = 65 };
   polymba = { default_polymba with rate = 60 };
+  finite_field = { default_finite_field with rate = 60 };
   multiplicity = { default_multiplicity with rate = 50 };
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;

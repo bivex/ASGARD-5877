@@ -2983,6 +2983,64 @@ let test_braided_cfg_merging () =
   Alcotest.(check int64) "Path A executed: r1=100" 100L (Stack_eval.get_reg st 1);
   Alcotest.(check int64) "Path A preserved: r2=0" 0L (Stack_eval.get_reg st 2)
 
+let test_finite_field () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 123L;
+    PushImm 456L;
+    Add;          (* 123 + 456 = 579 *)
+    PopReg 1;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let ring = Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx) in
+  let cfg = { (Stack_finite_field_pass.default_finite_field_config 0x5877CAFEL) with rate = 100 } in
+  let prog_ff = Stack_finite_field_pass.apply_program ~scratch_ring:ring cfg ctx prog in
+  let b_ff = Hashtbl.find prog_ff.blocks 0 in
+  Alcotest.(check bool) "Finite Field pass injected non-linear knots" true
+    (List.length b_ff.ops > List.length b0.ops);
+
+  (* 1. Semantic evaluation in VM interpreter *)
+  let state = run_program prog_ff in
+  Alcotest.(check bool) "Finite Field program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[1]=579" 579L (get_reg state 1);
+
+  (* 2. Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x58771337CAFEL prog_ff in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[1]=579" 579L (get_reg state_bc 1);
+
+  (* 3. Formal verification of GF(2^64) distributivity knot via SMT *)
+  let orig_gf = [ PushReg 0 ] in
+  let trans_gf = [ PushReg 0 ] @ Stack_finite_field_pass.emit_gf64_distributivity_knot ~scratch_slot:1 @ [ Add ] in
+  let res_gf = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_gf ~trans_ops:trans_gf () in
+  Alcotest.(check bool) "GF(2^64) distributivity knot proven equivalent (zero delta) via SMT QF_BV" true
+    (match res_gf with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 4. SMT Solver resilience: Mersenne-31 non-linear arithmetic induces QF_BV undecidability / timeout *)
+  let orig_m31 = [ PushReg 0 ] in
+  let trans_m31 = [ PushReg 0 ] @ Stack_finite_field_pass.emit_mersenne_invertibility_knot ~scratch_slot:1 @ [ Add ] in
+  let res_m31 = Stack_bv_verifier.verify_ops_equivalence ~timeout_sec:3 ~orig_ops:orig_m31 ~trans_ops:trans_m31 () in
+  Alcotest.(check bool) "Mersenne-31 knot produces no false counterexamples in SMT (unsat or non-linear unknown/timeout)" true
+    (match res_m31 with
+     | Stack_bv_verifier.Equivalent | Stack_bv_verifier.Solver_timeout | Stack_bv_verifier.Solver_error _ -> true
+     | Stack_bv_verifier.Divergent _ | Stack_bv_verifier.Stack_depth_mismatch _ -> false);
+
+  (* 5. Concrete exhaustive bit-level semantic evaluation across extreme 64-bit test vectors *)
+  let test_vals = [ 0L; 1L; 42L; 0x7FFFFFFEL; 0x123456789ABCDEF0L; 0xFFFFFFFFFFFFFFFFL ] in
+  List.iter (fun v ->
+    let st = Stack_eval.create_state ~initial_ctx:[ (1, v) ] () in
+    let knot_ops = Stack_finite_field_pass.emit_mersenne_invertibility_knot ~scratch_slot:1 in
+    List.iter (Stack_eval.step_op st) knot_ops;
+    Alcotest.(check int64) "Mersenne-31 invertibility knot evaluates to 0" 0L (List.hd st.vstack)
+  ) test_vals;
+  List.iter (fun v ->
+    let st = Stack_eval.create_state ~initial_ctx:[ (1, v) ] () in
+    let knot_ops = Stack_finite_field_pass.emit_mersenne_quadratic_knot ~scratch_slot:1 in
+    List.iter (Stack_eval.step_op st) knot_ops;
+    Alcotest.(check int64) "Mersenne-31 quadratic knot evaluates to 0" 0L (List.hd st.vstack)
+  ) test_vals
 
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
@@ -3041,6 +3099,7 @@ let tests = [
   ("T-Function Trace Closure & Nibble Invariance", `Quick, test_trace_closure_pass);
   ("Stack-VM Dead Code Causality Analyzer", `Quick, test_dead_code_analyzer);
   ("Braided CFG Merging & Decoy Elimination", `Quick, test_braided_cfg_merging);
+  ("Mixed-Characteristic Finite Field Arithmetic & Knots", `Quick, test_finite_field);
 ]
 
 

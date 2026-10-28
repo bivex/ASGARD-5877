@@ -31,10 +31,11 @@ flowchart TD
         P9t["Phase 5d: Stateful Transducer Coupling"]
         P10["Phase 5e (Pass 11): Bit-Permutation MBA & Cubic Knots"]
         P10f["Phase 5f (Pass 12): CRT Split-Path Execution"]
+        P10h["Phase 5h (Pass 17): Mixed-Characteristic Finite Field"]
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P11 --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P11 --> P12 --> P12b
     end
     
     IR --> P1
@@ -344,6 +345,25 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$x = x_1 + m_1 \cdot \big(x_2 + m_2 \cdot (x_3 + m_3 \cdot x_4)\big)$$
   And 64-bit unsigned integer truncation in CPU registers automatically computes $(x + y) \bmod 2^{64}$ with zero error, while forcing SMT solvers into non-power-of-2 division timeouts in `QF_BV`.
 ---
+### Phase 5h (Pass 17): Mixed-Characteristic Finite Field Arithmetic (`stack_finite_field_pass.ml`)
+* **Goal**: Defeats automated SMT bit-vector decision procedures (`QF_BV`) and equality saturation solvers by intertwining computations across three incompatible algebraic structures:
+  1. Ring $\mathbb{Z}_{2^{64}}$ (characteristic 2, non-field ring with nilpotents and non-invertible even elements).
+  2. Mersenne Prime Field $\mathbb{F}_{M_{31}} = \mathbb{Z}/(2^{31}-1)\mathbb{Z}$ (prime characteristic $p = 2^{31}-1$, finite field where every non-zero element has a multiplicative inverse).
+  3. Galois Field $\mathrm{GF}(2^{64})$ with primitive polynomial $P(x) = x^{64} + x^4 + x^3 + x + 1$ (characteristic 2 field with carry-less polynomial multiplication).
+* **Branchless Mersenne-31 Modular Folding**:
+  Since $2^{31} \equiv 1 \pmod{2^{31}-1}$, any integer $X < 2^{62}$ is reduced modulo $M_{31}$ without division:
+  $$\operatorname{fold}_{31}(X) = (X \ \& \ M_{31}) + (X \gg 31)$$
+  Applied twice, this completely reduces products $s_0 \cdot a < 2^{62} < 2^{64}$ with zero 64-bit integer overflow.
+* **Mersenne Multiplicative Invertibility Knot**:
+  $$K_{M_{31}}(s) = (s \ \& \ \texttt{0x7FFFFFFE}) - \operatorname{fold}_{31}\Big( \operatorname{fold}_{31}\big((s \ \& \ \texttt{0x7FFFFFFE}) \cdot a\big) \cdot a^{-1} \Big) \equiv 0$$
+  Because $\gcd(2^{64}, 2^{31}-1) = 1$, bit-vector SMT solvers cannot apply modular congruences and time out / return `unknown`.
+* **Galois Field $\mathrm{GF}(2^{64})$ Polynomial Distributivity Knot**:
+  $$K_{\mathrm{GF}}(s) = \operatorname{xtime}(s \oplus C) \oplus \operatorname{xtime}(s) \oplus \operatorname{xtime}(C) \equiv 0$$
+  Where $\operatorname{xtime}(u) = (u \ll 1) \oplus ((u \gg 63) \cdot \texttt{0x1B})$. Formally proven equivalent in Z3 SMT `QF_BV`.
+* **Mersenne-31 Quadratic Cross-Term Frobenius Knot**:
+  $$K_{\mathrm{Frob}}(s) = \operatorname{fold}_{31}\big((s_0 + c)^2\big) - \operatorname{fold}_{31}\big(s_0^2 + 2cs_0 + c^2\big) \equiv 0$$
+---
+
 
 ### Phase 6: State-Feedback Rolling Key Stream (`stack_feedback_pass.ml`)
 * **Formula**: Cryptographically couples bytecode decryption key $\mathrm{VKEY}$ to dynamic register state:

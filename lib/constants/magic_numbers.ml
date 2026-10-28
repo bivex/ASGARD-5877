@@ -261,6 +261,14 @@ let crt_inv_m1_mod_m4 = 0x8000L
 let crt_inv_m2_mod_m3 = 0xAAABL
 let crt_inv_m2_mod_m4 = 0x1L
 let crt_inv_m3_mod_m4 = 0x8000L
+
+(* Mixed-Characteristic Finite Field Arithmetic (Phase 5h / Pass 17) constants *)
+let finite_field_m31 = 0x7FFFFFFFL
+let finite_field_m31_mask = 0x7FFFFFFEL
+let finite_field_m31_mul = 0x58771337L
+let finite_field_m31_inv = 0x1484AA6DL
+let finite_field_gf64_poly = 0x1BL
+let finite_field_gf64_const = 0x5877CAFE1337BEEFL
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -568,6 +576,30 @@ let registry : entry list = [
     value = crt_m4;
     source = "2^16 - 1 (65535): fourth coprime modulus for 4-moduli Garner CRT (M > 2^65)";
     used_in = [ "lib/stack_vm/stack_crt_pass.ml" ] };
+  { name = "finite_field_m31";
+    value = finite_field_m31;
+    source = "2^31 - 1 (2147483647): 8th Mersenne prime field modulus F_M31";
+    used_in = [ "lib/stack_vm/stack_finite_field_pass.ml" ] };
+  { name = "finite_field_m31_mask";
+    value = finite_field_m31_mask;
+    source = "0x7FFFFFFE: 31-bit even input mask strictly < 2^31 - 1";
+    used_in = [ "lib/stack_vm/stack_finite_field_pass.ml" ] };
+  { name = "finite_field_m31_mul";
+    value = finite_field_m31_mul;
+    source = "0x58771337: non-zero multiplier in F_M31";
+    used_in = [ "lib/stack_vm/stack_finite_field_pass.ml" ] };
+  { name = "finite_field_m31_inv";
+    value = finite_field_m31_inv;
+    source = "0x1484AA6D: modular inverse of finite_field_m31_mul modulo 2^31 - 1";
+    used_in = [ "lib/stack_vm/stack_finite_field_pass.ml" ] };
+  { name = "finite_field_gf64_poly";
+    value = finite_field_gf64_poly;
+    source = "0x1B: x^4 + x^3 + x + 1 irreducible polynomial low-bits for GF(2^64)";
+    used_in = [ "lib/stack_vm/stack_finite_field_pass.ml" ] };
+  { name = "finite_field_gf64_const";
+    value = finite_field_gf64_const;
+    source = "0x5877CAFE1337BEEF: linear polynomial expansion constant in GF(2^64)";
+    used_in = [ "lib/stack_vm/stack_finite_field_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

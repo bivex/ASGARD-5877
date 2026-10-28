@@ -49,6 +49,13 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Retargets predecessors while preserving `JccRel` / `JmpRel` adjacency to guarantee complete transparency across CFF flattening and downstream phases.
   * Formally proven in Z3 SMT QF_BV (`test/test_stack_vm.ml`); verified across 56/56 Stack-VM Execution Engine tests including end-to-end license check verification (`ACCESS GRANTED` exit 0, `ACCESS DENIED` exit 1).
 
+- Implement Pass 17 (Phase 5h): Mixed-Characteristic Finite Field Arithmetic (`lib/stack_vm/stack_finite_field_pass.ml`, `lib/stack_vm/stack_finite_field_pass.mli`):
+  * Injects non-linear zero knots across three incompatible algebraic structures: ring $\mathbb{Z}_{2^{64}}$ (char 2), Mersenne prime field $\mathbb{F}_{M_{31}} = \mathbb{Z}/(2^{31}-1)\mathbb{Z}$ (char 2147483647), and Galois field $\mathrm{GF}(2^{64})$ with primitive polynomial $x^{64} + x^4 + x^3 + x + 1$.
+  * Emits branchless Mersenne-31 modular folding $(p \ \& \ M_{31}) + (p \gg 31)$ and multiplicative invertibility knots ($s_0 - \operatorname{fold}_{31}(\operatorname{fold}_{31}(s_0 \cdot a) \cdot a^{-1}) \equiv 0$), completely escaping 64-bit integer overflow and breaking SMT QF_BV bit-vector normalization into non-linear integer timeouts / unknown.
+  * Emits $\mathrm{GF}(2^{64})$ polynomial distributivity knots ($\operatorname{xtime}(s \oplus C) \oplus \operatorname{xtime}(s) \oplus \operatorname{xtime}(C) \equiv 0$), formally proven equivalent in Z3 SMT `QF_BV`.
+  * Registered Mersenne-31 and $\mathrm{GF}(2^{64})$ constants (`finite_field_m31`, `finite_field_m31_mask`, `finite_field_m31_mul`, `finite_field_m31_inv`, `finite_field_gf64_poly`, `finite_field_gf64_const`) in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 5h into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified across 57/57 Stack-VM Execution Engine tests, deobfuscation probe (Tier 1–3: 0.0% junk recovered, Tier 6: 100.0% synthesis resilience), and full license check E2E.
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.

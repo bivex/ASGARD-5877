@@ -390,6 +390,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "PolyMBA Non-Linear Expansion" native_cfg.polymba.enabled
           "disabled in configuration";
+        pass_switch "Mixed-Characteristic Finite Field" native_cfg.finite_field.enabled
+          "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
           "disabled in configuration";
         pass_switch "Stack Balance Repair" true "";
@@ -1049,6 +1051,40 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5e-polymba" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5e-polymba" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5e] PolyMBA Non-Linear Expansion: %s" polymba_info;
+
+    (* Phase 5h (Pass 17): Mixed-Characteristic Finite Field Arithmetic — inject Mersenne-31 and GF(2^64) knots *)
+    let ff_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 21)
+    in
+    let ff_cfg_user = native_cfg.finite_field in
+    let ff_cfg = {
+      (Stack_vm.Stack_finite_field_pass.default_finite_field_config ff_seed) with
+      rate = ff_cfg_user.rate;
+      enabled = ff_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Finite Field Arithmetic    rate=%d%% seed=0x%016LX%s"
+         ff_cfg.rate
+         ff_cfg.seed
+         (if ff_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, ff_info =
+      if ff_cfg_user.enabled then begin
+        let prog_ff =
+          Stack_vm.Stack_finite_field_pass.apply_program
+            ~scratch_ring:ghost_ring ff_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_finite_field_pass.finite_field_stats prog prog_ff in
+        (prog_ff, info)
+      end else
+        (prog, "Disabled (config: finite_field.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"5h-finite_field" prog;
+    dump_bytecode_json ~phase:"5h-finite_field" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5h-finite_field" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5h] Mixed-Characteristic Finite Field: %s" ff_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog, feedback_info =
       if native_cfg.stack_vm.state_feedback then

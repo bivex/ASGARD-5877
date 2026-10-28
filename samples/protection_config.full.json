@@ -171,6 +171,10 @@
     "enabled": true,
     "rate": 20
   },
+  "finite_field": {
+    "enabled": true,
+    "rate": 20
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 25

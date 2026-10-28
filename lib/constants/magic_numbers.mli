@@ -135,6 +135,12 @@ val crt_inv_m1_mod_m4 : int64
 val crt_inv_m2_mod_m3 : int64
 val crt_inv_m2_mod_m4 : int64
 val crt_inv_m3_mod_m4 : int64
+val finite_field_m31 : int64
+val finite_field_m31_mask : int64
+val finite_field_m31_mul : int64
+val finite_field_m31_inv : int64
+val finite_field_gf64_poly : int64
+val finite_field_gf64_const : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
