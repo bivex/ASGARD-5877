@@ -2860,6 +2860,78 @@ let test_dead_code_analyzer () =
   let p_diff = Stack_dead_code_analyzer.format_pipeline_diff [("Phase 1", prog); ("Phase 2", prog)] in
   Alcotest.(check bool) "Pipeline diff non-empty" true (String.length p_diff > 50)
 
+let test_trace_closure_pass () =
+  let open Stack_trace_closure_pass in
+  (* 1. T-function is a bijection on Z_{2^64} (cycle length > 1) *)
+  let t0 = t_function 0L in
+  Alcotest.(check bool) "T(0) = 5 (0 + (0|5))" true (t0 = 5L);
+
+  (* 2. Nibble trace determinism: mu_{k+1} = T(mu_k) & 0xF *)
+  let mu = nibble_trace 0L 16 in
+  Alcotest.(check bool) "mu_0 = 0" true (mu.(0) = 0L);
+  let rec trace_ok k =
+    k >= 16 || (Int64.logand (t_function mu.(k)) 0xFL = mu.(k + 1) && trace_ok (k + 1))
+  in
+  Alcotest.(check bool) "nibble trace follows pure T recursion" true (trace_ok 0);
+
+  (* 3. Z3 QF_BV theorem: emit_t_step preserves the pure low nibble,
+        i.e. G' & 0xF == T(G) & 0xF for ALL 2^64 accumulator states. *)
+  let step_ops = emit_t_step ~g_slot:5 ~live_slot:6 ~c_odd:0x9E3779B97F4A7C15L in
+  let trans_ops = step_ops @ [ PushImm 0xFL; Nand; Dup; Nand ] in
+  (* reference: T(G) & 0xF = (G + G^2 + 5 - (G^2 & 5)) & 0xF *)
+  let ref_ops = [
+    PushReg 5; Dup; Mul; PushImm 5L; Add; PushReg 5; Add;
+    PushReg 5; Dup; Mul; PushImm 5L; Nand; Dup; Nand; Sub;
+    PushImm 0xFL; Nand; Dup; Nand;
+  ] in
+  let res = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:ref_ops ~trans_ops () in
+  Alcotest.(check bool)
+    "T-function nibble invariance proven via SMT (G' & 0xF == T(G) & 0xF)"
+    true
+    (match res with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 4. Z3: pre_canonical perturbation matches reference v + (G & 0xF) - mu *)
+  let pre_ops = pre_canonical ~g_slot:5 ~mu_k:5L in
+  let pre_trans = [ PushReg 7 ] @ pre_ops in
+  let pre_ref = [
+    PushReg 7;
+    PushReg 5; PushImm 0xFL; Nand; Dup; Nand;
+    PushImm 5L; Sub;
+    Add;
+  ] in
+  let res2 = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:pre_ref ~trans_ops:pre_trans () in
+  Alcotest.(check bool)
+    "pre-write entanglement matches reference v + nib - mu"
+    true
+    (match res2 with Stack_bv_verifier.Equivalent -> true | _ -> false);
+
+  (* 5. Concrete evaluation: the closure roundtrip is value-preserving
+        on the reference evaluator when the nibble invariant holds. *)
+  let state2 = Stack_eval.create_state ~initial_ctx:[ (5, 0x1234567890ABCDE5L); (6, 0xDEADBEEFCAFEBABEL) ] () in
+  let v = 42L in
+  Stack_eval.step_op state2 (PushImm v);
+  List.iter (Stack_eval.step_op state2) pre_ops;
+  let v_out = match state2.vstack with x :: _ -> x | [] -> 0L in
+  Alcotest.(check bool) "pre entangle preserves value (nibble=mu)" true (v_out = v);
+
+  (* 6. Full program application keeps balance and runs *)
+  let b0 = make_block 0 "entry" [
+    PushImm 11L; PopReg 0;               (* live write (slot 0 in writes) *)
+    PushImm 22L; PopReg 1;
+    Exit;
+  ] in
+  let prog = make_program 0 [ b0 ] 64 in
+  let ctx_alloc = Context_allocator.create () in
+  let cfg = { (default_trace_closure_config 0x5877CAFEL) with rate = 100 } in
+  let prog' = Stack_trace_closure_pass.apply_program cfg ctx_alloc prog in
+  let errors = Stack_balance_pass.verify_program prog' in
+  Alcotest.(check bool) "trace closure keeps stack balance" true (errors = []);
+  let st = Stack_eval.run_program prog' in
+  Alcotest.(check bool) "trace closure program halted normally at Exit" true st.halted;
+  Alcotest.(check int64) "slot 0 preserved exactly" 11L (Stack_eval.get_reg st 0);
+  Alcotest.(check int64) "slot 1 preserved exactly" 22L (Stack_eval.get_reg st 1)
+
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2914,6 +2986,7 @@ let tests = [
   ("Pass A: Relational State Encoding & Feistel Bijectivity", `Quick, test_relational_state_encoding);
   ("Pass B: Path-Sensitive Semantic Edge Encoding", `Quick, test_path_sensitive_encoding);
   ("Pass D: Memory SSA & Alias-Aware Forwarding Prohibition", `Quick, test_memory_ssa);
+  ("T-Function Trace Closure & Nibble Invariance", `Quick, test_trace_closure_pass);
   ("Stack-VM Dead Code Causality Analyzer", `Quick, test_dead_code_analyzer);
 ]
 

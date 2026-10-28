@@ -181,6 +181,12 @@ type mem_webbing_config = {
   rate    : int;
 }
 val default_mem_webbing : mem_webbing_config
+type trace_closure_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_trace_closure : trace_closure_config
 type transducer_config = {
   enabled : bool;
   rate    : int;
@@ -251,6 +257,7 @@ type t = {
   ghost : ghost_config;
   avid : avid_config;
   mem_webbing : mem_webbing_config;
+  trace_closure : trace_closure_config;
   transducer : transducer_config;
   polymba : polymba_config;
   multiplicity : multiplicity_config;

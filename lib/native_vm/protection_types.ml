@@ -324,6 +324,15 @@ let default_transducer = {
   enabled = true;
   rate    = 50;
 }
+type trace_closure_config = {
+  enabled : bool [@default true];
+  rate    : int  [@default 25];
+} [@@deriving yojson]
+
+let default_trace_closure = {
+  enabled = true;
+  rate    = 25;
+}
 type polymba_config = {
   enabled : bool [@default true];
   rate    : int  [@default 40];
@@ -498,6 +507,7 @@ type t = {
   ghost : ghost_config [@default default_ghost];
   avid : avid_config [@default default_avid];
   mem_webbing : mem_webbing_config [@default default_mem_webbing];
+  trace_closure : trace_closure_config [@default default_trace_closure];
   transducer : transducer_config [@default default_transducer];
   polymba : polymba_config [@default default_polymba];
   multiplicity : multiplicity_config [@default default_multiplicity];

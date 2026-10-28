@@ -81,6 +81,7 @@ let default : t = {
   ghost = default_ghost;
   avid = default_avid;
   mem_webbing = default_mem_webbing;
+  trace_closure = default_trace_closure;
   transducer = default_transducer;
   polymba = default_polymba;
   multiplicity = default_multiplicity;
@@ -197,6 +198,7 @@ let max_security : t = {
   ghost = { default_ghost with ghost_rate = 100 };
   avid = { default_avid with rate = 70 };
   mem_webbing = { default_mem_webbing with rate = 70 };
+  trace_closure = { default_trace_closure with rate = 70 };
   transducer = { default_transducer with rate = 75 };
   polymba = { default_polymba with rate = 70 };
   multiplicity = { default_multiplicity with rate = 60 };
@@ -308,6 +310,7 @@ let stealth : t = {
   ghost = default_ghost;
   avid = default_avid;
   mem_webbing = default_mem_webbing;
+  trace_closure = default_trace_closure;
   transducer = default_transducer;
   polymba = default_polymba;
   multiplicity = default_multiplicity;
@@ -424,6 +427,7 @@ let edr_stealth : t = {
   ghost = default_ghost;
   avid = default_avid;
   mem_webbing = default_mem_webbing;
+  trace_closure = default_trace_closure;
   transducer = default_transducer;
   polymba = default_polymba;
   multiplicity = default_multiplicity;
@@ -540,6 +544,7 @@ let minimal : t = {
   ghost = { default_ghost with enabled = false };
   avid = { default_avid with enabled = false };
   mem_webbing = { default_mem_webbing with enabled = false };
+  trace_closure = { default_trace_closure with enabled = false };
   transducer = { default_transducer with enabled = false };
   polymba = { default_polymba with enabled = false };
   multiplicity = { default_multiplicity with enabled = false };
@@ -647,6 +652,7 @@ let high : t = {
   ghost = { default_ghost with ghost_rate = 90 };
   avid = { default_avid with rate = 60 };
   mem_webbing = { default_mem_webbing with rate = 60 };
+  trace_closure = { default_trace_closure with rate = 60 };
   transducer = { default_transducer with rate = 65 };
   polymba = { default_polymba with rate = 60 };
   multiplicity = { default_multiplicity with rate = 50 };

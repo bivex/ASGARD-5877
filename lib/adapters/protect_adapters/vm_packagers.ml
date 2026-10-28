@@ -382,6 +382,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Memory-Address Entanglement" native_cfg.mem_webbing.enabled
           "disabled in configuration";
+        pass_switch "T-Function Trace Closure" native_cfg.trace_closure.enabled
+          "disabled in configuration";
         pass_switch "Stateful Transducer Coupling" native_cfg.transducer.enabled
           "disabled in configuration";
         pass_switch "PolyMBA Non-Linear Expansion" native_cfg.polymba.enabled
@@ -875,6 +877,39 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5b-avid" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5b-avid" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5b] Avid Junk Operands: %s" avid_info;
+
+    (* Phase 5g (Pass 15): T-Function Trace Invariant Closure — close the
+       Live -> Ghost -> Live dataflow cycle so backward slicing (Tier 4)
+       must retain the ghost/avid accumulator chains. *)
+    let trace_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 13)
+    in
+    let tc = native_cfg.trace_closure in
+    let trace_cfg = {
+      (Stack_vm.Stack_trace_closure_pass.default_trace_closure_config trace_seed) with
+      rate = tc.rate;
+      enabled = tc.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    T-Function Trace Closure   rate=%d%% seed=0x%016LX%s"
+         trace_cfg.rate
+         trace_cfg.seed
+         (if tc.enabled then "" else " (DISABLED)"));
+    let prog, trace_info =
+      if tc.enabled then begin
+        let prog_tc = Stack_vm.Stack_trace_closure_pass.apply_program trace_cfg ctx prog in
+        let info = Stack_vm.Stack_trace_closure_pass.trace_closure_stats prog prog_tc in
+        (prog_tc, info)
+      end else
+        (prog, "Disabled (config: trace_closure.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"5g-trace" prog;
+    dump_bytecode_json ~phase:"5g-trace" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5g-trace" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5g] T-Function Trace Closure: %s" trace_info;
 
     (* Phase 5c: Memory-Address Entanglement Pass — bind scratch ring through physical RAM loads & stores *)
     let mem_web_seed =

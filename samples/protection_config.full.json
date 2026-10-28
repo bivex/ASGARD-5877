@@ -155,6 +155,10 @@
     "enabled": true,
     "rate": 25
   },
+  "trace_closure": {
+    "enabled": true,
+    "rate": 25
+  },
   "transducer": {
     "enabled": true,
     "rate": 25

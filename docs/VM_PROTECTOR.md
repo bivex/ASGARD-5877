@@ -26,6 +26,7 @@ flowchart TD
         P5["Phase 4: Spaghetti CFG Splitting"]
         P6["Phase 5: Metamorphic Ghost Padding"]
         P7["Phase 5b: Variable-Size Avid Junk Operands"]
+        P7g["Phase 5g (Pass 15): T-Function Trace Closure"]
         P8["Phase 5c: Coupled Dual-Load Memory Butterfly"]
         P9t["Phase 5d: Stateful Transducer Coupling"]
         P10["Phase 5e (Pass 11): Bit-Permutation MBA & Cubic Knots"]
@@ -33,7 +34,7 @@ flowchart TD
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P8 --> P9t --> P10 --> P10f --> P11 --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P11 --> P12 --> P12b
     end
     
     IR --> P1
@@ -232,6 +233,22 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 * **Stack Roundtrip**:
   $$[\text{PushImm } \text{imm}; \ \text{PushReg } \mathrm{Anchor}; \ \text{Swap}; \ \text{PopReg } \mathrm{Anchor}; \ \text{PopReg Scratch}]$$
 
+
+### Phase 5g (Pass 15): T-Function Trace Invariant Closure (`stack_trace_closure_pass.ml`)
+* **Goal**: Closes the $\text{Live} \to \text{Ghost} \to \text{Live}$ dataflow cycle, preventing Tier 4 backward program slicing from pruning the ghost and avid computation subtrees.
+* **Klimov-Shamir T-Function with Split Entropy**:
+  A dedicated accumulator slot $G$ evolves through the Klimov-Shamir T-function bijection $T(x) = x + (x^2 \lor 5) \pmod{2^{64}}$ with 16-aligned live entropy injection:
+  $$\mathrm{raw}_{k+1} = T(G_k) + 16 \cdot \big((r_{\mathrm{live}} \oplus G_k) \cdot C_{\mathrm{odd}}\big) \pmod{2^{64}}$$
+  $$G_{k+1} = \mathrm{raw}_{k+1} \pmod{2^{64}}$$
+* **Nibble Invariance Theorem**:
+  Because the entropy product $16 \cdot \dots \equiv 0 \pmod{16}$, the low 4 bits are mathematically decoupled from $r_{\mathrm{live}}$:
+  $$G_{k+1} \land \text{0xF} = T(G_k) \land \text{0xF} \equiv \mu_{k+1}$$
+  The sequence $\mu_k = T^k(G_0) \land \text{0xF}$ is a pure, deterministic recursion computed statically by the compiler at pass generation time, while bits $[4..63]$ of $G$ chaotically absorb live register entropy.
+* **Pre-Write Value Entanglement (Sink Injection)**:
+  Immediately before an operand is written to a live register ($\operatorname{PopReg } r_{\mathrm{live}}$), the value $v$ on the stack is perturbed:
+  $$v' = v + (G_k \land \text{0xF}) - \mu_k \pmod{2^{64}}$$
+  At runtime, $(G_k \land \text{0xF}) \equiv \mu_k$, so $v' \equiv v$ bit-identically. However, in the Program Dependence Graph (PDG), a genuine def-use edge $G_k \to v' \to r_{\mathrm{live}}$ is established, forcing backward program slicers to retain the entire accumulator and ghost network.
+* **SMT Proof**: Formally proven in Z3 SMT `QF_BV` (`unsat` in `test_stack_vm.ml`) that the low nibble of $G_{k+1}$ matches $T(G_k) \land \text{0xF}$ across all $2^{64}$ inputs.
 ---
 
 ### Phase 5c: Coupled Dual-Load Memory Butterfly (Additive Secret Sharing in L1D, `stack_mem_webbing_pass.ml`)
