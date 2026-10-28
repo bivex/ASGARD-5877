@@ -166,16 +166,66 @@ flowchart TD
     $$s_0 - \operatorname{fold}_{31}\Big(\operatorname{fold}_{31}(s_0 \cdot a) \cdot a^{-1}\Big) \equiv 0 \pmod{M_{31}}$$
   * Because $M_{31}$ is not a power of two, bit-vector solvers (QF_BV) cannot use standard word truncation; they must introduce non-linear integer division constraints, leading to solver timeouts.
 
+
+---
+
+### 3.8 Fractal Tiered Invalidation: Ruler Function (RD-JIT)
+* **OEIS Identifier**: [A001511](https://oeis.org/A001511) — the 2-adic valuation $v_2(2n)$: $1, 2, 1, 3, 1, 2, 1, 4, \dots$
+* **Application**: After execution step $t$, the sealed nano-arena always wipes the active slot and re-wipes every slot of fractal level $\le \mathrm{A001511}(t) = 1 + \mathrm{ctz}(t)$ with a fresh Rule 30 gamma (`lib/rd_jit_vm/nano_jit_slot.ml`, `arena_after_chunk`).
+* **Defense**: Level-1 slots are wiped every step, level-2 every 2nd, level-3 every 4th: a process snapshot at any $t$ retains only a fractal fragment of the executed code, and hot loops never accumulate whole in memory.
+
+---
+
+### 3.9 Kolakoski Self-Describing Fission (RD-JIT)
+* **OEIS Identifier**: [A000002](https://oeis.org/A000002) — the Kolakoski word $1, 2, 2, 1, 1, 2, 1, 2, 2, 1, \dots$ whose run lengths equal the word itself.
+* **Application**: The RD-JIT emitter splits the virtual-opcode stream into native chunks whose target sizes are Kolakoski run lengths scaled by 2 (2 or 4 instructions per chunk, `lib/rd_jit_vm/rd_jit_emitter.ml`).
+* **Defense**: Chunk boundaries are self-descriptive but aperiodic: disassemblers and diff tools find no fixed micro-handler size to align on.
+
+---
+
+### 3.10 Moser-de Bruijn Carry-Free Operand Blinding (RD-JIT)
+* **OEIS Identifier**: [A000695](https://oeis.org/A000695) — sums of distinct powers of 4 (bits on even positions only).
+* **Mathematical Theory**: Every $N \in \mathbb{N}$ decomposes uniquely as $N = X + 2Y$ with $X, Y \in \mathrm{A000695}$; the bit planes of $X$ and $2Y$ are disjoint, so $X + 2Y = X \oplus 2Y$ — no carries ever cross the planes.
+* **Application**: Every immediate operand crosses the chunk seal packed as the pair of compacted planes (`moser_pack`/`moser_unblind`), and the runtime recombines them by bit spreading; ADD and XOR recombination are interchangeable.
+* **Defense**: Differential analysis of operand fields cannot distinguish carry-propagating from carry-free encodings.
+
+---
+
+### 3.11 Derangement Register Shuffle (RD-JIT)
+* **OEIS Identifier**: [A000166](https://oeis.org/A000166) — subfactorials (count of fix-free permutations).
+* **Application**: Chunk $k$ permutes its virtual-register operands with a nibble-packed fix-free permutation $\pi_k$ of the 16-entry gprs file (four registered derangements, identity at external-call ABI boundaries); between chunks the runtime re-permutes the register file (`remap_gprs`), so $\pi_k(i) \ne i$ for every slot in every adjacent pair of chunks.
+* **Defense**: No physical register slot keeps its virtual meaning in two adjacent JIT chunks, breaking type/constant propagation in decompilers.
+
+---
+
+### 3.12 Stern Diatomic Affine Transfer (RD-JIT)
+* **OEIS Identifier**: [A002487](https://oeis.org/A002487) — Stern's diatomic series with $\gcd(a(n), a(n{+}1)) = 1$.
+* **Application**: Inter-chunk transfers cross the shuffle window affine-encrypted with $\alpha_n = 2a(n)+1$ (odd, hence a unit of $\mathbb{Z}_{2^{64}}$); $\alpha_n^{-1}$ is computed in the runtime by five Newton-Raphson iterations, without division tables.
+* **Defense**: Each chunk boundary runs in its own numeric ring; the masked transfer window carries no linear relation to the live register values.
+
+---
+
+### 3.13 Padovan Buffer Dispersion (RD-JIT)
+* **OEIS Identifier**: [A000931](https://oeis.org/A000931) — Padovan sequence, plastic constant $\psi \approx 1.3247$ ($\psi^3 = \psi + 1$).
+* **Application**: The dual-mapped JIT buffer is partitioned as code : metadata : spill $= \psi^{-5} : \psi^{-4} : \psi^{-3}$ of capacity (fixed-point multiplies by the registered fractions); the W^X synthesis lifecycle is scoped to the code region, the derangement/Stern tables live in the metadata region, and the sealed nano-arena is backed by the spill region.
+* **Defense**: No region boundary lands on a power-of-two or harmonic offset, eliminating pseudo-periodic TLB/L2/L3 aliasing between code, metadata, and arena traffic.
+
 ---
 
 ## 4. Summary Table of Integrated Sequences
 
-| OEIS ID | Name / Description | Algebraic Structure | ASGARD-5877 Phase / Subsystem | Defense Mechanism |
+| **OEIS ID** | Name / Description | Algebraic Structure | ASGARD-5877 Phase / Subsystem | Defense Mechanism |
 |---|---|---|---|---|
-| **A000201** / **A001950** | Lower / Upper Wythoff Beatty Sequences | $\lfloor n\phi \rfloor$, $\lfloor n\phi^2 \rfloor$ | Phase 3 (CFF), Phase 4b (Braid) | Disjoint real vs. decoy VPC state allocation |
-| **A003022** | Optimal Golomb Rulers | Distinct pairwise differences | Phase 5c (Memory Webbing) | Zero-collision L1D cache addresses & SMT array disambiguation |
-| **A269160** | Wolfram's Rule 30 Cellular Automaton | $n \oplus (2n \lor 4n)$ | Phase 6 (State-Feedback Rolling Key) | SAT clause explosion in backward symbolic execution |
-| **A010060** | Thue-Morse Sequence | $\operatorname{popcount}(n) \pmod 2$ | Phase 5 (Computational Stalling) | Aperiodic loop control defeating loop summarization |
+| **A000201** / **A001950** | Lower / Upper Wythoff Beatty Sequences | $\lfloor n\phi \rfloor$, $\lfloor n\phi^2 \rfloor$ | Phase 3 (CFF), Phase 4b (Braid), RD-JIT nano-arena | Disjoint real vs. decoy VPC state allocation; branchless slot legitimacy |
+| **A003022** | Optimal Golomb Rulers | Distinct pairwise differences | Phase 5c (Memory Webbing), RD-JIT nano-arena slots | Zero-collision L1D cache addresses & SMT array disambiguation |
+| **A269160** | Wolfram's Rule 30 Cellular Automaton | $n \oplus (2n \lor 4n)$ | Phase 6 (State-Feedback Rolling Key), RD-JIT slot wipe | SAT clause explosion in backward symbolic execution |
+| **A010060** | Thue-Morse Sequence | $\operatorname{popcount}(n) \bmod 2$ | Phase 5 (Computational Stalling), RD-JIT dummy opcodes | Aperiodic loop control defeating loop summarization |
 | **A008404** | Costas Arrays | 2D distinct distance vectors | Bytecode Polymorphic Encoder | Elimination of 2D byte n-gram correlations |
-| **A011260** | Primitive Polynomials over $\mathrm{GF}(2)$ | $x^{64} + x^4 + x^3 + x + 1$ | Phase 5h & Phase 6d (Memory Whitening) | Characteristic-2 Galois ring operations & continuous LFSR snapshot diff resistance |
-| **A000043** | Mersenne Prime Exponents | $M_p = 2^p - 1$ | Phase 5h & Phase 5i (I/O Sink Barrier) | Non-power-of-two modular folding forcing integer SMT timeouts |
+| **A011260** | Primitive Polynomials over $\mathrm{GF}(2)$ | $x^{64} + x^4 + x^3 + x + 1$ | Phase 5h & 6d (Memory Whitening) | Characteristic-2 Galois ring operations & LFSR snapshot diff resistance |
+| **A000043** | Mersenne Prime Exponents | $M_p = 2^p - 1$ | Phase 5h & 5i (I/O Sink Barrier) | Non-power-of-two modular folding forcing integer SMT timeouts |
+| **A001511** | Ruler Function $v_2(2n)$ | $1 + \mathrm{ctz}(t)$ | RD-JIT fractal invalidation | Fractal memory residue: hot loops never accumulate whole |
+| **A000002** | Kolakoski Word | Self-describing run lengths | RD-JIT chunk fission | Aperiodic, self-descriptive chunk boundaries |
+| **A000695** | Moser-de Bruijn Sequence | $N = X + 2Y$, $X + 2Y = X \oplus 2Y$ | RD-JIT operand blinding | Carry-free planes; ADD/XOR interchangeable |
+| **A000166** | Derangements $!n$ | Fix-free permutations | RD-JIT register shuffle | No slot keeps its meaning across adjacent chunks |
+| **A002487** | Stern's Diatomic Series | $\gcd(a(n), a(n{+}1)) = 1$ | RD-JIT affine transfer | Per-boundary ring; NR-inverse without division tables |
+| **A000931** | Padovan / Plastic Constant | $\psi^3 = \psi + 1$ | RD-JIT buffer dispersion | Non-harmonic code/metadata/spill region offsets |
