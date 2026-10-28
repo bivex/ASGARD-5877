@@ -2821,6 +2821,45 @@ let test_memory_ssa () =
   in
   Alcotest.(check bool) "Forwarding blocked by MayAlias decoy store" false can_fwd
 
+let test_dead_code_analyzer () =
+  let b0 = make_block 0 "entry" [
+    PushImm 10L;
+    PushImm 20L;
+    Sub;
+    PushImm 0L; (* Dead CFF comparison *)
+    Cmp;
+    Swap;
+    Swap;       (* Dead structural identity *)
+    PushImm 0L;
+    Add;        (* Dead algebraic zero knot *)
+    PushImm 99L;
+    PopReg 80;  (* Dead stack-to-slot drain / balance drain *)
+    PushReg 1;
+    PopReg 2;
+    Exit;
+  ] in
+  let b_unreach = make_block 99 "unreachable_decoy" [
+    PushImm 123L;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0; b_unreach] 100 in
+  let diag = Stack_dead_code_analyzer.analyze_program prog in
+
+  Alcotest.(check bool) "Dead instructions detected" true (diag.summary.dead_ops_count > 0);
+  Alcotest.(check bool) "Unreachable block 99 detected" true (List.mem 99 diag.summary.unreachable_blocks);
+
+  let has_cat name = List.exists (fun (cat, _) -> cat = name) diag.summary.by_category in
+  Alcotest.(check bool) "CFF Sub-Zero detected" true (has_cat "CFF Sub-Zero Redundancy");
+  Alcotest.(check bool) "Structural identity detected" true (has_cat "Structural Identity");
+  Alcotest.(check bool) "Algebraic zero knot detected" true (has_cat "Algebraic Neutral Element");
+  Alcotest.(check bool) "Stack balance discard drain detected" true (has_cat "Stack Balance Discard Drain");
+
+  let report = Stack_dead_code_analyzer.format_diagnosis_report ~verbose:true diag in
+  Alcotest.(check bool) "Report non-empty" true (String.length report > 100);
+
+  let p_diff = Stack_dead_code_analyzer.format_pipeline_diff [("Phase 1", prog); ("Phase 2", prog)] in
+  Alcotest.(check bool) "Pipeline diff non-empty" true (String.length p_diff > 50)
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2875,6 +2914,7 @@ let tests = [
   ("Pass A: Relational State Encoding & Feistel Bijectivity", `Quick, test_relational_state_encoding);
   ("Pass B: Path-Sensitive Semantic Edge Encoding", `Quick, test_path_sensitive_encoding);
   ("Pass D: Memory SSA & Alias-Aware Forwarding Prohibition", `Quick, test_memory_ssa);
+  ("Stack-VM Dead Code Causality Analyzer", `Quick, test_dead_code_analyzer);
 ]
 
 
