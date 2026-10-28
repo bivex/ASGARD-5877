@@ -2021,6 +2021,8 @@ let test_field_layout_randomization () =
     cmov_slot_first = true;
     set_reg_imm_first = true;
     add_reg_imm_first = true;
+    add_ii_b_first = true;
+    sub_ii_b_first = true;
   } in
 
   (* SetRegImm: slot 0x0102, imm 0x1122334455667788L *)
@@ -3279,6 +3281,73 @@ let test_whitening () =
   Alcotest.(check bool) "Galois LFSR zero-knot proven equivalent via SMT QF_BV" true
     (match res_knot with Stack_bv_verifier.Equivalent -> true | _ -> false)
 
+let test_costas_field_layout () =
+  (* 1. Verify that generate_field_layout derives all 6 booleans deterministically *)
+  let l1 = Stack_encoder.generate_field_layout 0x5877A008404L in
+  let l2 = Stack_encoder.generate_field_layout 0x5877A008404L in
+  Alcotest.(check bool) "deterministic add_ii_b_first" l1.add_ii_b_first l2.add_ii_b_first;
+  Alcotest.(check bool) "deterministic sub_ii_b_first" l1.sub_ii_b_first l2.sub_ii_b_first;
+
+  (* 2. Test AddImmImm and SubImmImm with swapped layout *)
+  let swapped_layout = {
+    Stack_encoder.default_field_layout with
+    add_ii_b_first = true;
+    sub_ii_b_first = true;
+  } in
+  let canonical_layout = Stack_encoder.default_field_layout in
+
+  (* Encode AddImmImm 100L 42L *)
+  let op_add = AddImmImm (100L, 42L) in
+  let enc_add_can = Stack_encoder.encode_op ~layout:canonical_layout op_add in
+  let enc_add_swp = Stack_encoder.encode_op ~layout:swapped_layout op_add in
+  let can_first = Bytes.get_int64_le enc_add_can 1 in
+  let swp_first = Bytes.get_int64_le enc_add_swp 1 in
+  Alcotest.(check int64) "canonical AddImmImm has 100L first" 100L can_first;
+  Alcotest.(check int64) "swapped AddImmImm has 42L first" 42L swp_first;
+
+  (* Encode SubImmImm 200L 75L *)
+  let op_sub = SubImmImm (200L, 75L) in
+  let enc_sub_can = Stack_encoder.encode_op ~layout:canonical_layout op_sub in
+  let enc_sub_swp = Stack_encoder.encode_op ~layout:swapped_layout op_sub in
+  let can_sub_first = Bytes.get_int64_le enc_sub_can 1 in
+  let swp_sub_first = Bytes.get_int64_le enc_sub_swp 1 in
+  Alcotest.(check int64) "canonical SubImmImm has 200L first" 200L can_sub_first;
+  Alcotest.(check int64) "swapped SubImmImm has 75L first" 75L swp_sub_first;
+
+  (* 3. Execution equivalence: both programs compute identical results *)
+  let b0 = make_block 0 "entry" [
+    AddImmImm (100L, 42L);
+    PopReg 0;
+    SubImmImm (200L, 75L);
+    PopReg 1;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 8 in
+  let enc_can = Stack_encoder.encode_program ~layout:canonical_layout ~seed_key:0xCAFE1337L prog in
+  let enc_swp = Stack_encoder.encode_program ~layout:swapped_layout ~seed_key:0xCAFE1337L prog in
+  let st_can = run_bytecode enc_can in
+  let st_swp = run_bytecode enc_swp in
+  Alcotest.(check int64) "canonical AddImmImm result = 142" 142L (get_reg st_can 0);
+  Alcotest.(check int64) "swapped AddImmImm result = 142" 142L (get_reg st_swp 0);
+  Alcotest.(check int64) "canonical SubImmImm result = 125" 125L (get_reg st_can 1);
+  Alcotest.(check int64) "swapped SubImmImm result = 125" 125L (get_reg st_swp 1);
+  Alcotest.(check bool) "canonical halts" true st_can.halted;
+  Alcotest.(check bool) "swapped halts" true st_swp.halted;
+
+  (* 4. Costas Array Order-6 Property verification *)
+  (* Verify that pairwise difference vectors are distinct across Costas arrays *)
+  let costas_sample = [| 0; 1; 4; 3; 5; 2 |] in
+  let diffs = Hashtbl.create 30 in
+  let distinct = ref true in
+  for i = 0 to Array.length costas_sample - 1 do
+    for j = i + 1 to Array.length costas_sample - 1 do
+      let dx = j - i in
+      let dy = costas_sample.(j) - costas_sample.(i) in
+      if Hashtbl.mem diffs (dx, dy) then distinct := false
+      else Hashtbl.add diffs (dx, dy) ()
+    done
+  done;
+  Alcotest.(check bool) "Costas order-6 array has distinct difference vectors" true !distinct
 
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
@@ -3344,6 +3413,7 @@ let tests = [
   ("Homomorphic Ciphertext Operand Blinding", `Quick, test_homomorphic);
   ("DRCC Register Window & Golomb-4 Spilling", `Quick, test_drcc);
   ("Galois LFSR Memory Whitening", `Quick, test_whitening);
+  ("Costas Array Bytecode Field Permutation", `Quick, test_costas_field_layout);
 ]
 
 

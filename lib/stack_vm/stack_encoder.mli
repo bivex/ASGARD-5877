@@ -51,6 +51,8 @@ type field_layout = {
   cmov_slot_first   : bool;  (** true: [slot: i16] [cond: u8];   false: [cond: u8] [slot: i16] *)
   set_reg_imm_first : bool;  (** true: [imm: i64] [slot: i16];   false: [slot: i16] [imm: i64] *)
   add_reg_imm_first : bool;  (** true: [imm: i64] [slot: i16];   false: [slot: i16] [imm: i64] *)
+  add_ii_b_first    : bool;  (** true: encode [b:i64][a:i64] for AddImmImm *)
+  sub_ii_b_first    : bool;  (** true: encode [b:i64][a:i64] for SubImmImm *)
 }
 
 val default_field_layout : field_layout

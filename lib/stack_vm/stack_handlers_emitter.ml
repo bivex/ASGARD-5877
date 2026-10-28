@@ -679,20 +679,22 @@ let emit_h_sub_imm () : top_decl =
     ];
   }
 
-let emit_h_add_ii () : top_decl =
+(* AddImmImm: commutative, so b_first only affects byte ordering, not the runtime result *)
+let emit_h_add_ii ?(b_first = false) () : top_decl =
+  ignore b_first;
   FuncDecl {
     attrs = [StaticFn];
     ret_type = Void;
     name = "h_add_ii";
     params = vm_handler_params;
     body = [
-      let_u64 "a" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
-      let_u64 "b" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
-      let_u64 "res" (var "a" +~ var "b");
+      let_u64 "first"  (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      let_u64 "second" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      let_u64 "res" (var "first" +~ var "second");
       vm_zf := cast UInt8 (var "res" ==~ u64 0L);
       vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
-      vm_cf := cast UInt8 (var "res" <~ var "a");
-      vm_of := cast UInt8 (((bit_not (var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
+      vm_cf := cast UInt8 (var "res" <~ var "first");
+      vm_of := cast UInt8 (((bit_not (var "first" ^~ var "second") &~ (var "first" ^~ var "res")) >>~ i32 63) &~ u64 1L);
       vm_pf := call "parity8" [var "res"];
       if_then_else (vm_vsp_idx <~ i32 4096)
         [
@@ -705,20 +707,27 @@ let emit_h_add_ii () : top_decl =
     ];
   }
 
-let emit_h_sub_ii () : top_decl =
+(* SubImmImm: canonical [a][b] → fetch first=a, second=b, res = first-second = a-b.
+   When b_first=true: [b][a] → fetch first=b, second=a; must compute second-first = a-b to
+   preserve the correct a-b result. *)
+let emit_h_sub_ii ?(b_first = false) () : top_decl =
+  let lhs, rhs =
+    if b_first then (var "second", var "first")
+    else (var "first", var "second")
+  in
   FuncDecl {
     attrs = [StaticFn];
     ret_type = Void;
     name = "h_sub_ii";
     params = vm_handler_params;
     body = [
-      let_u64 "a" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
-      let_u64 "b" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
-      let_u64 "res" (var "a" -~ var "b");
+      let_u64 "first"  (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      let_u64 "second" (cast UInt64 (call "fetch_i64" [var "vm"; var "bytecode"; var "vip"]));
+      let_u64 "res" (lhs -~ rhs);
       vm_zf := cast UInt8 (var "res" ==~ u64 0L);
       vm_sf := cast UInt8 (cast Int64 (var "res") <~ i64 0L);
-      vm_cf := cast UInt8 (var "a" <~ var "b");
-      vm_of := cast UInt8 ((((var "a" ^~ var "b") &~ (var "a" ^~ var "res")) >>~ i32 63) &~ u64 1L);
+      vm_cf := cast UInt8 (lhs <~ rhs);
+      vm_of := cast UInt8 ((((lhs ^~ rhs) &~ (lhs ^~ var "res")) >>~ i32 63) &~ u64 1L);
       vm_pf := call "parity8" [var "res"];
       if_then_else (vm_vsp_idx <~ i32 4096)
         [
@@ -731,13 +740,13 @@ let emit_h_sub_ii () : top_decl =
     ];
   }
 
-let emit_superop_handlers () : top_decl list = [
+let emit_superop_handlers ?(add_ii_b_first = false) ?(sub_ii_b_first = false) () : top_decl list = [
   emit_h_cmp ();
   emit_h_test ();
   emit_h_add_imm ();
   emit_h_sub_imm ();
-  emit_h_add_ii ();
-  emit_h_sub_ii ();
+  emit_h_add_ii ~b_first:add_ii_b_first ();
+  emit_h_sub_ii ~b_first:sub_ii_b_first ();
 ]
 
 let emit_h_jmp_rel () : top_decl =

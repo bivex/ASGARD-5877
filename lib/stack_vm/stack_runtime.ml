@@ -1385,7 +1385,9 @@ static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
       @ Stack_handlers_emitter.emit_control_handlers ~jcc_target_first:enc.layout.jcc_target_first ()
       @ [ emit_h_call_extern cfg.arch ]
       @ Stack_handlers_emitter.emit_cond_handlers ~cmov_slot_first:enc.layout.cmov_slot_first ()
-      @ Stack_handlers_emitter.emit_superop_handlers ()
+      @ Stack_handlers_emitter.emit_superop_handlers
+          ~add_ii_b_first:enc.layout.add_ii_b_first
+          ~sub_ii_b_first:enc.layout.sub_ii_b_first ()
       @ Stack_handlers_emitter.emit_reg_imm_handlers
           ~set_reg_imm_first:enc.layout.set_reg_imm_first
           ~add_reg_imm_first:enc.layout.add_reg_imm_first ()

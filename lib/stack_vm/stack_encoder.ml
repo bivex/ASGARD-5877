@@ -156,6 +156,8 @@ type field_layout = {
   cmov_slot_first   : bool;  (** true: [slot: i16] [cond: u8];   false: [cond: u8] [slot: i16] *)
   set_reg_imm_first : bool;  (** true: [imm: i64] [slot: i16];   false: [slot: i16] [imm: i64] *)
   add_reg_imm_first : bool;  (** true: [imm: i64] [slot: i16];   false: [slot: i16] [imm: i64] *)
+  add_ii_b_first    : bool;  (** true: encode [b:i64][a:i64] for AddImmImm; AddImmImm is commutative, result identical *)
+  sub_ii_b_first    : bool;  (** true: encode [b:i64][a:i64] for SubImmImm; decoder reads same order, stack semantics unchanged *)
 }
 
 let default_field_layout = {
@@ -163,24 +165,48 @@ let default_field_layout = {
   cmov_slot_first   = false;
   set_reg_imm_first = false;
   add_reg_imm_first = false;
+  add_ii_b_first    = false;
+  sub_ii_b_first    = false;
 }
 
 let generate_field_layout seed =
-  let state = ref (Int64.logxor (if seed = 0L then salt_stack_vm_state else seed) 0xA5A5_5A5A_0FF0_F00FL) in
+  (* Costas arrays of order 6 (OEIS A008404): 40 total, all pairwise displacement vectors distinct.
+     bool_i = perm[i] >= 3 (top half of {0..5} = {3,4,5}) *)
+  let costas6 = [|
+    [|0;1;4;3;5;2|]; [|0;1;5;3;2;4|]; [|0;2;1;4;5;3|]; [|0;2;1;5;3;4|];
+    [|0;2;5;3;4;1|]; [|0;3;2;4;5;1|]; [|0;3;4;2;1;5|]; [|0;3;5;4;1;2|];
+    [|0;4;2;3;5;1|]; [|0;4;2;5;1;3|]; [|0;4;3;1;2;5|]; [|0;4;3;5;1;2|];
+    [|0;4;5;1;3;2|]; [|0;4;5;2;1;3|]; [|0;5;1;3;4;2|]; [|0;5;2;1;3;4|];
+    [|0;5;2;3;1;4|]; [|0;5;2;4;3;1|]; [|0;5;3;2;4;1|]; [|1;2;0;4;3;5|];
+    [|1;2;4;3;0;5|]; [|1;2;5;0;4;3|]; [|1;3;0;5;4;2|]; [|1;3;2;0;4;5|];
+    [|1;3;2;5;0;4|]; [|1;3;4;0;5;2|]; [|1;3;4;2;5;0|]; [|1;4;0;5;2;3|];
+    [|1;4;0;5;3;2|]; [|1;4;2;3;0;5|]; [|1;4;2;3;5;0|]; [|1;4;3;5;2;0|];
+    [|1;5;0;3;2;4|]; [|1;5;3;2;4;0|]; [|1;5;3;4;0;2|]; [|1;5;4;2;3;0|];
+    [|2;0;1;4;3;5|]; [|2;0;4;3;5;1|]; [|2;0;4;5;1;3|]; [|2;0;5;1;4;3|];
+  |] in
+  let open Int64 in
+  let state = ref (logxor (if seed = 0L then salt_stack_vm_state else seed)
+                          costas_field_layout_salt) in
   let r = splitmix64 state in
+  let idx = to_int (rem (logand r 0x7FFFFFFFFFFFFFFFL) 40L) in
+  let perm = costas6.(idx) in
   {
-    jcc_target_first  = Int64.logand r 1L <> 0L;
-    cmov_slot_first   = Int64.logand r 2L <> 0L;
-    set_reg_imm_first = Int64.logand r 4L <> 0L;
-    add_reg_imm_first = Int64.logand r 8L <> 0L;
+    jcc_target_first  = perm.(0) >= 3;
+    cmov_slot_first   = perm.(1) >= 3;
+    set_reg_imm_first = perm.(2) >= 3;
+    add_reg_imm_first = perm.(3) >= 3;
+    add_ii_b_first    = perm.(4) >= 3;
+    sub_ii_b_first    = perm.(5) >= 3;
   }
 
 let format_field_layout layout =
-  Printf.sprintf "JccRel={%s}, Cmov={%s}, SetRegImm={%s}, AddRegImm={%s}"
+  Printf.sprintf "JccRel={%s}, Cmov={%s}, SetRegImm={%s}, AddRegImm={%s}, AddII={%s}, SubII={%s}"
     (if layout.jcc_target_first then "TargetFirst" else "CondFirst")
     (if layout.cmov_slot_first then "SlotFirst" else "CondFirst")
     (if layout.set_reg_imm_first then "ImmFirst" else "SlotFirst")
     (if layout.add_reg_imm_first then "ImmFirst" else "SlotFirst")
+    (if layout.add_ii_b_first then "BFirst" else "AFirst")
+    (if layout.sub_ii_b_first then "BFirst" else "AFirst")
 
 let feedback_hash v =
   let open Int64 in
@@ -567,12 +593,22 @@ let encode_op_into ?(compact_imm = false) ?(layout = default_field_layout) op_ma
       add_i64 buf v
   | AddImmImm (a, b) ->
       Buffer.add_char buf (Char.chr op_map.op_add_ii);
-      add_i64 buf a;
-      add_i64 buf b
+      if layout.add_ii_b_first then begin
+        add_i64 buf b;
+        add_i64 buf a
+      end else begin
+        add_i64 buf a;
+        add_i64 buf b
+      end
   | SubImmImm (a, b) ->
       Buffer.add_char buf (Char.chr op_map.op_sub_ii);
-      add_i64 buf a;
-      add_i64 buf b
+      if layout.sub_ii_b_first then begin
+        add_i64 buf b;
+        add_i64 buf a
+      end else begin
+        add_i64 buf a;
+        add_i64 buf b
+      end
   | SetRegImm (idx, v) ->
       Buffer.add_char buf (Char.chr op_map.op_set_reg_imm);
       if layout.set_reg_imm_first then begin
@@ -819,16 +855,20 @@ let decode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?c
       (match read_i64 cipher pos key with Some v -> Some (SubImm v) | None -> None)
   | Some b when b = op_map.op_add_ii ->
       (match read_i64 cipher pos key with
-       | Some a ->
+       | Some first ->
            (match read_i64 cipher pos key with
-            | Some b -> Some (AddImmImm (a, b))
+            | Some second ->
+                let a, b = if layout.add_ii_b_first then second, first else first, second in
+                Some (AddImmImm (a, b))
             | None -> None)
        | None -> None)
   | Some b when b = op_map.op_sub_ii ->
       (match read_i64 cipher pos key with
-       | Some a ->
+       | Some first ->
            (match read_i64 cipher pos key with
-            | Some b -> Some (SubImmImm (a, b))
+            | Some second ->
+                let a, b = if layout.sub_ii_b_first then second, first else first, second in
+                Some (SubImmImm (a, b))
             | None -> None)
        | None -> None)
   | Some b when b = op_map.op_set_reg_imm ->

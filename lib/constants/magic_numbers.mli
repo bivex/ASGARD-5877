@@ -155,6 +155,8 @@ val golomb_ruler_g3 : int64
 val whitening_salt : int64
 val whitening_init_key : int64
 val whitening_lfsr_poly : int64
+(* OEIS A008404: Costas array field permutation PRNG salt (Pass 26 / Phase 8b). *)
+val costas_field_layout_salt : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

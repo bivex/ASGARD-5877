@@ -293,6 +293,9 @@ let golomb_ruler_g3 = 6L
 let whitening_salt = 0x5877A0112601337AL
 let whitening_init_key = 0x9E3779B97F4A7C15L
 let whitening_lfsr_poly = 0x1BL
+
+(* Costas Array Field Permutation (Phase 8b / Pass 26) constants — OEIS A008404 *)
+let costas_field_layout_salt = 0xC057A51337B00F0L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -680,6 +683,10 @@ let registry : entry list = [
     value = whitening_lfsr_poly;
     source = "OEIS A011260: primitive polynomial x^64 + x^4 + x^3 + x + 1 mod 2^64 over GF(2)";
     used_in = [ "lib/stack_vm/stack_whitening_pass.ml" ] };
+  { name = "costas_field_layout_salt";
+    value = costas_field_layout_salt;
+    source = "0x0C057A51337B00F0: OEIS A008404 Costas array field permutation PRNG salt for Pass 26 bytecode field layout";
+    used_in = [ "lib/stack_vm/stack_encoder.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

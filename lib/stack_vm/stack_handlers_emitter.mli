@@ -32,8 +32,8 @@ val emit_h_cmp : unit -> top_decl
 val emit_h_test : unit -> top_decl
 val emit_h_add_imm : unit -> top_decl
 val emit_h_sub_imm : unit -> top_decl
-val emit_h_add_ii : unit -> top_decl
-val emit_h_sub_ii : unit -> top_decl
+val emit_h_add_ii : ?b_first:bool -> unit -> top_decl
+val emit_h_sub_ii : ?b_first:bool -> unit -> top_decl
 
 val emit_h_jmp_rel : unit -> top_decl
 val emit_h_jcc_rel : ?target_first:bool -> unit -> top_decl
@@ -53,7 +53,7 @@ val emit_dup_swap_handlers : unit -> top_decl list
 val emit_mem_handlers : unit -> top_decl list
 val emit_alu_handlers : unit -> top_decl list
 val emit_flags_handlers : unit -> top_decl list
-val emit_superop_handlers : unit -> top_decl list
+val emit_superop_handlers : ?add_ii_b_first:bool -> ?sub_ii_b_first:bool -> unit -> top_decl list
 val emit_control_handlers : ?jcc_target_first:bool -> unit -> top_decl list
 val emit_cond_handlers : ?cmov_slot_first:bool -> unit -> top_decl list
 val emit_reg_imm_handlers : ?set_reg_imm_first:bool -> ?add_reg_imm_first:bool -> unit -> top_decl list

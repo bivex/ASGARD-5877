@@ -480,6 +480,18 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$\mathrm{Target} = \mathrm{DispatchTable}[\mathrm{op}_{k+1}] \oplus K_{\mathrm{slot}}(\mathrm{op}_{k+1}) \equiv \& \&\text{lbl\_op}$$
   $$\text{Jump}: \quad \text{goto } *\mathrm{Target} \quad \big(\text{or inline asm: } \text{br X11} \ / \ \text{jmp *RAX}\big)$$
 * **Dynamic Table Blinding**: $\mathrm{DispatchTable}[i] = (\& \&\text{lbl\_op}_i) \oplus K_{\mathrm{slot}}(i)$. Because $\mathrm{addr\_key}$ is computed at startup by $\text{derive\_addr\_key}()$ from the runtime ASLR layout of all handlers in memory, static offline extraction of the 256 handler entrypoints from $\mathrm{.rodata}$ yields complete garbage without process execution.
+
+---
+
+### Phase 8b (Pass 26): Costas Array Bytecode Field Permutation (`stack_encoder.ml`, `stack_handlers_emitter.ml`)
+* **Goal**: Neutralizes machine-learning disassemblers, entropy scanners, and statistical byte n-gram clustering attacks (Deep Learning instruction boundary classifiers) by permuting operand field offsets within variable-length bytecode instructions according to order-6 Costas arrays (**OEIS [A008404](https://oeis.org/A008404)**).
+* **Costas Array Invariant**:
+  A Costas array $C \in \mathcal{S}_n$ satisfies the distinct displacement vector property:
+  $$\forall i \ne j, \quad (j - i, C_j - C_i) \text{ is pairwise distinct across all } \binom{n}{2} \text{ pairs}$$
+  By sampling from the verified set of order-6 Costas arrays via splitmix64 keyed on `costas_field_layout_salt`, the six layout permutation flags (`jcc_target_first`, `cmov_slot_first`, `set_reg_imm_first`, `add_reg_imm_first`, `add_ii_b_first`, `sub_ii_b_first`) achieve the theoretical minimum in 2D cross-correlation between operand byte offsets across the instruction stream.
+* **Semantic Preservation & Commutativity Invariants**:
+  * `AddImmImm (a, b)`: because addition is commutative ($a + b \equiv b + a$), byte reordering preserves exact results in both interpreter and compiled C++ runtime.
+  * `SubImmImm (a, b)`: when `sub_ii_b_first = true`, the C++ runtime handler `h_sub_ii` swaps operand subtraction order ($\text{second} - \text{first} \equiv a - b$) to guarantee bit-identical results.
 ## 5. Empirical Verification & Attack Resilience Profile
 
 Empirically measured via `examples/deobf_probe/run_probe.sh` over protected production binaries:

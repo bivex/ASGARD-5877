@@ -133,10 +133,10 @@ flowchart TD
   A Costas array of order $n$ is an $n \times n$ permutation matrix in which all $\binom{n}{2}$ displacement vectors between pairs of 1s are distinct:
   $$\forall i \ne j: \quad (j - i, \pi(j) - \pi(i)) \text{ is unique}$$
 * **Application in ASGARD-5877**:
-  * **Instruction Encoder Field Permutation**: Each Stack-VM bytecode instruction consists of multiple logical fields:
-    $$\langle \text{Opcode}, \text{Immediate}, \text{Condition}, \text{Context Slot}, \text{Chaff/Entropy} \rangle$$
-  * By permuting field offsets across instructions according to Costas permutations, 2D cross-correlation between adjacent byte offsets drops to the theoretical minimum. Machine learning disassemblers and frequency-based taint engines cannot identify instruction boundaries through statistical byte clustering.
-
+  * **Pass 26 (Phase 8b): Order-6 Costas Bytecode Field Permutation (`stack_encoder.ml`)**:
+    Bytecode instructions with multi-field operands (`JccRel`, `Cmov`, `SetRegImm`, `AddRegImm`, `AddImmImm`, `SubImmImm`) have their operand field order governed by a 6-tuple of boolean flags derived from verified order-6 Costas arrays.
+  * Because the 40 order-6 Costas arrays guarantee that all $\binom{6}{2} = 15$ displacement vectors $(\Delta x, \Delta y)$ are pairwise distinct, the 2D cross-correlation between operand byte offsets across the instruction stream drops to the theoretical minimum. Deep learning disassemblers and n-gram statistical classifiers cannot detect instruction boundaries or field alignments.
+  * **SubImmImm Invariant Preservation**: Swapped operand order in `SubImmImm` is compensated in the C++ runtime handler `h_sub_ii` by evaluating $\text{second} - \text{first} \equiv a - b$, guaranteeing semantic equivalence.
 ---
 
 ### 3.6 Primitive Polynomials over GF(2): Maximum-Period Galois Automorphisms

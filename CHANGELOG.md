@@ -107,6 +107,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered `whitening_salt`, `whitening_init_key`, and `whitening_lfsr_poly` in `lib/constants/magic_numbers.ml`.
   * Wired Phase 6d into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified across 63/63 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 1.0% junk recovered, Tier 5: 77.9% address coverage, Tier 6: 100.0% synthesis resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
+- Implement Pass 26 (Phase 8b): Order-6 Costas Array Bytecode Field Permutation (`lib/stack_vm/stack_encoder.ml`, `lib/stack_vm/stack_handlers_emitter.ml`):
+  * Neutralizes machine-learning disassemblers and statistical byte n-gram clustering attacks by permuting operand field offsets within multi-field instructions according to verified order-6 Costas arrays (OEIS [A008404](https://oeis.org/A008404)).
+  * Extended `field_layout` with `add_ii_b_first` and `sub_ii_b_first` flags, dynamically sampled from the 40 order-6 Costas permutations via splitmix64 PRNG keyed by `costas_field_layout_salt`.
+  * Enforced algebraic commutativity on `AddImmImm` ($a + b \equiv b + a$) and sign compensation on `SubImmImm` in runtime handler `h_sub_ii` ($\text{second} - \text{first} \equiv a - b$) to guarantee bit-identical semantics across all execution modes.
+  * Registered `costas_field_layout_salt` in `lib/constants/magic_numbers.ml`.
+  * Verified across 64/64 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 1.0% junk, Tier 6: 100.0% resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.
