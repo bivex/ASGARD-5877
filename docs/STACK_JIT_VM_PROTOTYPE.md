@@ -27,14 +27,14 @@ by a lockstep bisimulation.
 
 | AFP entry | What it formalizes | Role in SJIT |
 |---|---|---|
-| [Jinja](https://www.isa-afp.org/entry/Jinja.html) (2005) | Unified model of source language, virtual machine and compiler; compiler correctness | Shape of the end-to-end agreement theorem (source stack program vs. native execution) |
-| [JinjaThreads](https://www.isa-afp.org/entry/JinjaThreads.html) (2007) | Weak bisimilarity between source semantics and defensive VM | Bisimulation style for the tier boundary |
-| [VeriComp](https://www.isa-afp.org/entry/VeriComp.html) (2020) | Generic verified-compiler framework (`Simulation` locale) | The locale structure of the simulation proofs |
-| [Interpreter_Optimizations](https://www.isa-afp.org/entry/Interpreter_Optimizations.html) (2020) | Std -> Inca lockstep bisimulation (`norm_instr`, `rel_fundefs`, `match`, `backward_lockstep_simulation`, `forward_lockstep_simulation`) and Inca -> Ubx unboxing | Direct template for SJIT tiering: erasure of optimized instructions and lockstep state agreement |
-| [Stern_Brocot](https://www.isa-afp.org/entry/Stern_Brocot.html) (2015) | `fusc` (Stern's diatomic sequence, OEIS A002487), `stern_brocot_coprime` (every tree entry `coprime m n`), step recurrence `(n,d) -> (d, n + d - 2*(n mod d))` | Generates the odd affine factors `alpha_n = 2*fusc(n) + 1`; coprimality grounds their invertibility mod 2^64 |
-| [Derangements](https://www.isa-afp.org/entry/Derangements.html) (2015) | `derangements S = {p. p permutes S & !x in S. p x ~= x}`, `count_derangements` (OEIS A000166), `derangements_inv` | The fix-free register-window permutations and the closure of the shuffle under inverse |
-| [Combinatorics_Words](https://www.isa-afp.org/entry/Combinatorics_Words.html) (2021) | Word periodicity, morphisms | Nearest anchor for the aperiodicity arguments (A010060, A000002); cube-freeness of the Kolakoski word is literature (Carpi 1994, via [OEIS A000002](https://oeis.org/A000002)), not yet AFP-formalized - listed as an obligation in section 7 |
-| [Linear_Recurrences](https://www.isa-afp.org/entry/Linear_Recurrences.html) (2017), [Continued_Fractions](https://www.isa-afp.org/entry/Continued_Fractions.html) (2024) | Golden ratio as a quadratic irrational; periodic continued fractions | Irrationality of phi, the hypothesis of the Rayleigh-Beatty partition disjointness used by the arena |
+| [Jinja](https://isa-afp.org/entries/Jinja.html) (2005) | Unified model of source language, virtual machine and compiler; the compiler is proven to preserve semantics and well-typedness | Shape of the end-to-end agreement theorem (source stack program vs. native execution) |
+| [JinjaThreads](https://isa-afp.org/entries/JinjaThreads.html) (2007) | Weak bisimilarity between source semantics and defensive VM | Bisimulation style for the tier boundary |
+| [VeriComp](https://isa-afp.org/entries/VeriComp.html) (2020) | Generic verified-compiler framework (`Simulation` locale) | The locale structure of the simulation proofs |
+| [Interpreter_Optimizations](https://isa-afp.org/entries/Interpreter_Optimizations.html) (2020) | Std -> Inca lockstep bisimulation (`norm_instr`, `rel_fundefs`, `match`, `backward_lockstep_simulation`, `forward_lockstep_simulation`) and the Inca -> Ubx unboxing tier | Direct template for SJIT tiering: erasure of optimized instructions and lockstep state agreement |
+| [Stern_Brocot](https://isa-afp.org/entries/Stern_Brocot.html) (2015) | `fusc` and `fusc'` corecursive streams; `stern_brocot_coprime` (every tree entry `(m, n)` satisfies `coprime m n`); `step (n,d) = (d, n + d - 2*(n mod d))` | Generates the odd affine factors `alpha_n = 2*fusc(n) + 1`; coprimality of consecutive terms follows from `fusc_simps` (`stl fusc = fusc'`, i.e. `fusc (n+1) = fusc' n`), `fusc_fusc'_iterate` and `stern_brocot_loopless` (the pair `(fusc n, fusc' n)` is the n-th entry of the linearized tree), and `stern_brocot_coprime` |
+| [Derangements](https://isa-afp.org/entries/Derangements.html) (2015) | `derangements S = {p. p permutes S & !x in S. p x ~= x}`, `count_derangements` (OEIS A000166), `derangements_inv: d : derangements S ==> inv d : derangements S` | The fix-free register-window permutations and the closure of the shuffle under inverse |
+| [Combinatorics_Words](https://isa-afp.org/entries/Combinatorics_Words.html) (2021) | Word periodicity (`Periodicity_Lemma`, Fine-Wilf style; `Lyndon_Schutzenberger`) and morphisms (`Morphisms`) | Nearest anchor for the aperiodicity arguments (A010060, A000002); cube-freeness of the Kolakoski word is literature (Carpi 1994, via [OEIS A000002](https://oeis.org/A000002)), not yet AFP-formalized - listed as an obligation in section 7 |
+| [Linear_Recurrences](https://isa-afp.org/entries/Linear_Recurrences.html) (2017), [Continued_Fractions](https://isa-afp.org/entries/Continued_Fractions.html) (2024) | Golden-ratio closed form of Fibonacci recurrences; the classic result that periodic continued fractions are precisely the quadratic irrationals | Irrationality of phi, the hypothesis of the Rayleigh-Beatty partition disjointness used by the arena |
 
 ## 3. OEIS foundation
 
@@ -48,7 +48,7 @@ by a lockstep bisimulation.
 | [A000201](https://oeis.org/A000201) / [A001950](https://oeis.org/A001950) Beatty-Wythoff | `floor(n*phi)`, `floor(n*phi^2)` partition N+ | Real-vs-honeypot arena units; branchless slot legitimacy | Linear_Recurrences / Continued_Fractions (irrationality of phi) |
 | [A000695](https://oeis.org/A000695) Moser-de Bruijn | Unique `N = X + 2Y`, `X + 2Y = X xor 2Y` | Carry-free immediate blinding across the seal | none (bit-plane disjointness, proved by roundtrip tests) |
 | [A000166](https://oeis.org/A000166) Derangements | `!n` fix-free permutations | Stack-cache window shuffle between chunks | Derangements |
-| [A002487](https://oeis.org/A002487) Stern diatomic | `gcd(fusc(n), fusc(n+1)) = 1` | Odd affine transfer factors `alpha_n = 2*fusc(n)+1` | Stern_Brocot (`stern_brocot_coprime`, `fusc`) |
+| [A002487](https://oeis.org/A002487) Stern diatomic | `gcd(fusc(n), fusc(n+1)) = 1` | Odd affine transfer factors `alpha_n = 2*fusc(n)+1` | Stern_Brocot (`fusc`, lemma chain of section 2) |
 | [A000931](https://oeis.org/A000931) Padovan | `psi^3 = psi + 1` | Code/metadata/spill region dispersion of the buffer | none (arithmetic identity) |
 
 All constants are registered in `lib/constants/magic_numbers.ml` per
@@ -110,8 +110,10 @@ Golomb-spaced slot offsets (the same difference-free spacing the
    inverse-closure argument.
 5. **Transfer (A002487).**  The inter-chunk window crosses the shuffle
    affine-masked with `alpha_k = 2*fusc(k) + 1`; `stern_brocot_coprime`
-   (AFP) gives `gcd(fusc k, fusc (k+1)) = 1`, hence `alpha_k` odd, hence a
-   unit of `Z_2^64`, inverted by five Newton-Raphson iterations.
+   (AFP) gives `coprime (fusc k) (fusc' k)`, and `fusc_simps` gives
+   `fusc' k = fusc (k+1)`, so `gcd(fusc k, fusc (k+1)) = 1`: `alpha_k` is
+   odd, hence a unit of `Z_2^64`, inverted by five Newton-Raphson
+   iterations.
 6. **Blinding and sealing (A000695, A269160).**  Immediates seal as
    carry-free `X + 2Y` plane pairs; the wipe is the existing Rule 30
    fractal cascade.  Both are bit-identical to the RD-JIT controller.
