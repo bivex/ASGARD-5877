@@ -199,6 +199,10 @@
     "enabled": true,
     "rate": 25
   },
+  "rule30": {
+    "enabled": true,
+    "rate": 25
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 25

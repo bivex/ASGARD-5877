@@ -3281,6 +3281,38 @@ let test_whitening () =
   Alcotest.(check bool) "Galois LFSR zero-knot proven equivalent via SMT QF_BV" true
     (match res_knot with Stack_bv_verifier.Equivalent -> true | _ -> false)
 
+let test_rule30 () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 300L;
+    PopReg 1;
+    PushReg 1;
+    PushImm 50L;
+    Add;
+    PopReg 2;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let cfg = { (Stack_rule30_pass.default_rule30_config 0x5877CAFEL) with rate = 100 } in
+  let prog_rule30 = Stack_rule30_pass.apply_program cfg ctx prog in
+  let b_rule30 = Hashtbl.find prog_rule30.blocks 0 in
+  Alcotest.(check bool) "Rule 30 pass transformed blocks" true (List.length b_rule30.ops > List.length b0.ops);
+  let state = run_program prog_rule30 in
+  Alcotest.(check bool) "Rule 30 program halted" true state.halted;
+  Alcotest.(check int64) "Rule 30 execution exact: reg[2]=350" 350L (get_reg state 2);
+  let enc = Stack_encoder.encode_program ~seed_key:0x5877A2691601L prog_rule30 in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[2]=350" 350L (get_reg state_bc 2);
+
+  (* 3. Formal verification of Wolfram Rule 30 zero-knot via SMT QF_BV *)
+  let s_val = 0x5877A2691601337BL in
+  let knot = Stack_rule30_pass.emit_rule30_zero_knot ~rule30_slot:1 ~s_val in
+  let orig_knot = [ PushReg 1 ] in
+  let trans_knot = [ PushReg 1 ] @ knot @ [ Add ] in
+  let res_knot = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_knot ~trans_ops:trans_knot () in
+  Alcotest.(check bool) "Wolfram Rule 30 zero-knot proven equivalent via SMT QF_BV" true
+    (match res_knot with Stack_bv_verifier.Equivalent -> true | _ -> false)
 let test_costas_field_layout () =
   (* 1. Verify that generate_field_layout derives all 6 booleans deterministically *)
   let l1 = Stack_encoder.generate_field_layout 0x5877A008404L in
@@ -3413,6 +3445,7 @@ let tests = [
   ("Homomorphic Ciphertext Operand Blinding", `Quick, test_homomorphic);
   ("DRCC Register Window & Golomb-4 Spilling", `Quick, test_drcc);
   ("Galois LFSR Memory Whitening", `Quick, test_whitening);
+  ("Wolfram Rule 30 Keystream", `Quick, test_rule30);
   ("Costas Array Bytecode Field Permutation", `Quick, test_costas_field_layout);
 ]
 

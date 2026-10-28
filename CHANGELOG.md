@@ -113,6 +113,13 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Enforced algebraic commutativity on `AddImmImm` ($a + b \equiv b + a$) and sign compensation on `SubImmImm` in runtime handler `h_sub_ii` ($\text{second} - \text{first} \equiv a - b$) to guarantee bit-identical semantics across all execution modes.
   * Registered `costas_field_layout_salt` in `lib/constants/magic_numbers.ml`.
   * Verified across 64/64 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 1.0% junk, Tier 6: 100.0% resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
+- Implement Pass 24 (Phase 6e): Wolfram Rule 30 Non-Linear Keystream & Cellular Automaton Diffusion (`lib/stack_vm/stack_rule30_pass.ml`, `lib/stack_vm/stack_rule30_pass.mli`):
+  * Defeats SAT/SMT bit-vector decision procedures (QF_BV), Gaussian elimination over $\mathbb{F}_2$, and symbolic execution engines (angr, Triton, Miasm) by continuously evolving the keystream state via bit-parallel Wolfram Rule 30 updates ($R_{30}(x) = \operatorname{rotl}_{64}(x, 1) \oplus (x \lor \operatorname{rotr}_{64}(x, 1))$) based on OEIS [A269160](https://oeis.org/A269160) and [A030101](https://oeis.org/A030101).
+  * Injects non-linear invariant zero-knots $(R_{30}(v) \oplus \operatorname{rotl}(v, 1)) \oplus (v \lor \operatorname{rotr}(v, 1)) \equiv 0 \pmod{2^{64}}$ across guest register reads (`PushReg`), with strict preservation of condition codes and base registers.
+  * Formally proven in Z3 SMT `QF_BV` (`test/test_stack_vm.ml`).
+  * Registered `rule30_salt` and `rule30_init_key` in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 6e into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified across 65/65 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0.9% junk, Tier 6: 100.0% resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.

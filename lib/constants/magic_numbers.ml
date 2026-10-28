@@ -296,6 +296,10 @@ let whitening_lfsr_poly = 0x1BL
 
 (* Costas Array Field Permutation (Phase 8b / Pass 26) constants — OEIS A008404 *)
 let costas_field_layout_salt = 0xC057A51337B00F0L
+
+(* Wolfram Rule 30 Non-Linear Keystream (Phase 6e / Pass 24) constants — OEIS A269160 *)
+let rule30_salt = 0x5877A2691601337BL
+let rule30_init_key = 0x1337C0DE5877A269L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -687,6 +691,14 @@ let registry : entry list = [
     value = costas_field_layout_salt;
     source = "0x0C057A51337B00F0: OEIS A008404 Costas array field permutation PRNG salt for Pass 26 bytecode field layout";
     used_in = [ "lib/stack_vm/stack_encoder.ml" ] };
+  { name = "rule30_salt";
+    value = rule30_salt;
+    source = "0x5877A2691601337B: OEIS A269160 Wolfram Rule 30 cellular automaton PRNG salt";
+    used_in = [ "lib/stack_vm/stack_rule30_pass.ml" ] };
+  { name = "rule30_init_key";
+    value = rule30_init_key;
+    source = "0x1337C0DE5877A269: initial seed for Wolfram Rule 30 keystream state slot";
+    used_in = [ "lib/stack_vm/stack_rule30_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

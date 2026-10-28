@@ -107,9 +107,9 @@ flowchart TD
   On 64-bit integer registers with circular boundary conditions, this is computed bit-parallel in three instructions:
   $$\operatorname{step}(x) = \operatorname{rotl}_{64}(x, 1) \oplus \big(x \lor \operatorname{rotr}_{64}(x, 1)\big)$$
 * **Application in ASGARD-5877**:
-  * **Non-Linear State-Feedback Rolling Key (Phase 6)**: Linear feedback shift registers (LFSR) and LCG generators are solvable by Berlekamp-Massey or Gaussian elimination. Combining affine LCG steps with bit-parallel Rule 30 introduces high non-linearity.
-  * **SMT Bit-Vector Inversion Resistance**: In SAT-based bit-vector reasoning, the non-linear coupling of $\operatorname{OR}$ and $\operatorname{XOR}$ prevents linear Gaussian reduction across key steps, causing clause count explosion during bounded model checking.
-
+  * **Pass 24 (Phase 6e): Wolfram Rule 30 Non-Linear Keystream & Cellular Automaton Diffusion (`stack_rule30_pass.ml`)**:
+    Evolves a dedicated keystream state slot $K_t$ via bit-parallel Rule 30 updates ($K_{t+1} = R_{30}(K_t) \oplus \operatorname{Salt}_{\text{rule30}}$) and injects invariant zero-knots $(R_{30}(v) \oplus \operatorname{rotl}(v, 1)) \oplus (v \lor \operatorname{rotr}(v, 1)) \equiv 0 \pmod{2^{64}}$ across guest register reads.
+  * **SMT Bit-Vector Inversion Resistance**: In SAT-based bit-vector reasoning, the non-linear coupling of $\operatorname{OR}$ and $\operatorname{XOR}$ prevents linear Gaussian reduction across key steps, causing exponential clause count explosion during bounded model checking.
 ---
 
 ### 3.4 Thue-Morse Sequence: Infinite Aperiodic Computational Stalling

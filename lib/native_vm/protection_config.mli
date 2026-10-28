@@ -241,6 +241,12 @@ type whitening_config = {
 }
 
 val default_whitening : whitening_config
+type rule30_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_rule30 : rule30_config
 type homomorphic_config = {
   enabled : bool;
   rate    : int;
@@ -315,6 +321,7 @@ type t = {
   dual_rail : dual_rail_config;
   drcc : drcc_config;
   whitening : whitening_config;
+  rule30 : rule30_config;
   homomorphic : homomorphic_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;

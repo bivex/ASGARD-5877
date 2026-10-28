@@ -402,6 +402,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Galois LFSR Memory Whitening" native_cfg.whitening.enabled
           "disabled in configuration";
+        pass_switch "Wolfram Rule 30 Keystream" native_cfg.rule30.enabled
+          "disabled in configuration";
         pass_switch "Cross-Block Anti-DBI Traps" native_cfg.trap.enabled
           "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
@@ -1337,6 +1339,39 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"6d-whitening" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6d-whitening" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6d] Galois LFSR Memory Whitening: %s" whitening_info;
+
+    (* Phase 6e (Pass 24): Wolfram Rule 30 Non-Linear Keystream & Cellular Automaton Diffusion *)
+    let rule30_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
+    in
+    let rule30_cfg_user = native_cfg.rule30 in
+    let rule30_cfg = {
+      (Stack_vm.Stack_rule30_pass.default_rule30_config rule30_seed) with
+      rate = rule30_cfg_user.rate;
+      enabled = rule30_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Wolfram Rule 30 Keystream  rate=%d%% seed=0x%016LX%s"
+         rule30_cfg.rate
+         rule30_cfg.seed
+         (if rule30_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, rule30_info =
+      if rule30_cfg_user.enabled then begin
+        let prog_rule30 =
+          Stack_vm.Stack_rule30_pass.apply_program rule30_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_rule30_pass.rule30_stats prog prog_rule30 in
+        (prog_rule30, info)
+      end else
+        (prog, "Disabled (config: rule30.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"6e-rule30" prog;
+    dump_bytecode_json ~phase:"6e-rule30" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6e-rule30" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6e] Wolfram Rule 30 Keystream: %s" rule30_info;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in

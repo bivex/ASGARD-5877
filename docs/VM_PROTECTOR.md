@@ -39,9 +39,10 @@ flowchart TD
         P11b["Phase 6b (Pass 19): Cross-Block Path Traps"]
         P11c["Phase 6c (Pass 22): DRCC Register Window & Golomb-4 Spilling"]
         P11d["Phase 6d (Pass 23): Galois LFSR Memory Whitening & Anti-Snapshot Diffing"]
+        P11e["Phase 6e (Pass 24): Wolfram Rule 30 Keystream Dispersion"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P11c --> P11d --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P11c --> P11d --> P11e --> P12 --> P12b
     end
     
     IR --> P1
@@ -449,7 +450,20 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   Between operations, an dedicated whitening context slot evolves via $W_{k+1} = \mathrm{xtime}(W_k) \oplus \mathrm{Salt}_{\mathrm{whitening}}$, guaranteeing that internal memory representations continuously mutate even while the guest application processes constant inputs.
 * **SMT Proof**: Formally proven in Z3 SMT `QF_BV` (`test_stack_vm.ml`) that the Galois zero-knot evaluates to `0L` for all $2^{64}$ bitvectors.
 
+### Phase 6e (Pass 24): Wolfram Rule 30 Non-Linear Keystream & Cellular Automaton Diffusion (`stack_rule30_pass.ml`)
+* **Goal**: Defeats automated SMT bit-vector decision procedures (`QF_BV`), Gaussian elimination over $\mathbb{F}_2$, and symbolic execution engines (angr, Triton, Miasm) by continuously evolving keystream state through Wolfram's elementary 1D cellular automaton Rule 30 (**OEIS [A269160](https://oeis.org/A269160)**, **[A030101](https://oeis.org/A030101)**).
+* **Rule 30 Bit-Parallel Update**:
+  $$R_{30}(x) = \operatorname{rotl}_{64}(x, 1) \oplus \big(x \lor \operatorname{rotr}_{64}(x, 1)\big)$$
+* **Invariant Zero-Knots**:
+  Injects algebraic zero-knots based on the exact definition of Rule 30:
+  $$\Big(R_{30}(v) \oplus \operatorname{rotl}_{64}(v, 1)\Big) \oplus \big(v \lor \operatorname{rotr}_{64}(v, 1)\big) \equiv 0 \pmod{2^{64}}$$
+  Because Rule 30 non-linearly couples bitwise $\operatorname{OR}$ and $\operatorname{XOR}$ across adjacent bit positions, SAT/SMT bit-vector solvers cannot apply linear affine Gaussian reduction, forcing exponential clause count explosion during bounded model checking.
+* **Continuous Cellular Automaton Diffusion**:
+  Between operations, a dedicated keystream state slot evolves via $K_{t+1} = R_{30}(K_t) \oplus \operatorname{Salt}_{\text{rule30}}$, ensuring high-entropy pseudo-random dynamics that never repeat across basic block boundaries.
+* **SMT Proof**: Formally proven in Z3 SMT `QF_BV` (`test_stack_vm.ml`) that the Rule 30 zero-knot evaluates to `0L` for all $2^{64}$ bitvectors.
+
 ---
+
 
 ### Phase 7: Formal Stack Balance & Type Verification (`stack_balance_pass.ml`)
 * **Formal Verification Invariant**: Statically verifies that every basic block enters and exits with an empty operational evaluation stack:
