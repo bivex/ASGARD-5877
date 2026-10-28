@@ -61,6 +61,12 @@ let jit_op_kind_decl () : top_decl =
       ("JIT_OP_CSEL_RR", None);
       ("JIT_OP_MULH_RR", None);
       ("JIT_OP_SMULH_RR", None);
+      ("JIT_OP_LOAD_8", None);
+      ("JIT_OP_LOAD_16", None);
+      ("JIT_OP_LOAD_32", None);
+      ("JIT_OP_STORE_8", None);
+      ("JIT_OP_STORE_16", None);
+      ("JIT_OP_STORE_32", None);
     ];
   }
 
@@ -330,15 +336,29 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0xcb0903e9;
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
+            case JIT_OP_LOAD_8:
+            case JIT_OP_LOAD_16:
+            case JIT_OP_LOAD_32:
             case JIT_OP_LOAD_64:
                 code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
                 if (in.imm != 0) {
                     emit_arm64_imm(code, idx, 11, in.imm);
                     code[idx++] = 0x8b0b014a;
                 }
-                code[idx++] = 0xf9400149;
+                if (in.op == asgard_rd_jit::JIT_OP_LOAD_8) {
+                    code[idx++] = 0x39400149;
+                } else if (in.op == asgard_rd_jit::JIT_OP_LOAD_16) {
+                    code[idx++] = 0x79400149;
+                } else if (in.op == asgard_rd_jit::JIT_OP_LOAD_32) {
+                    code[idx++] = 0xb9400149;
+                } else {
+                    code[idx++] = 0xf9400149;
+                }
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
+            case JIT_OP_STORE_8:
+            case JIT_OP_STORE_16:
+            case JIT_OP_STORE_32:
             case JIT_OP_STORE_64:
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 10;
                 if (in.imm != 0) {
@@ -346,7 +366,15 @@ let synthesize_and_execute_block_decl () : top_decl =
                     code[idx++] = 0x8b0b014a;
                 }
                 code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 9;
-                code[idx++] = 0xf9000149;
+                if (in.op == asgard_rd_jit::JIT_OP_STORE_8) {
+                    code[idx++] = 0x39000149;
+                } else if (in.op == asgard_rd_jit::JIT_OP_STORE_16) {
+                    code[idx++] = 0x79000149;
+                } else if (in.op == asgard_rd_jit::JIT_OP_STORE_32) {
+                    code[idx++] = 0xb9000149;
+                } else {
+                    code[idx++] = 0xf9000149;
+                }
                 break;
             case JIT_OP_SHL_RR:
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
@@ -557,15 +585,29 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x48; code[idx++] = 0xf7; code[idx++] = 0xd8;
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
+            case JIT_OP_LOAD_8:
+            case JIT_OP_LOAD_16:
+            case JIT_OP_LOAD_32:
             case JIT_OP_LOAD_64:
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
                 if (in.imm != 0) {
                     code[idx++] = 0x48; code[idx++] = 0xb8; emit_u64(in.imm);
                     code[idx++] = 0x48; code[idx++] = 0x01; code[idx++] = 0xc2;
                 }
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x02;
+                if (in.op == asgard_rd_jit::JIT_OP_LOAD_8) {
+                    code[idx++] = 0x48; code[idx++] = 0x0f; code[idx++] = 0xb6; code[idx++] = 0x02;
+                } else if (in.op == asgard_rd_jit::JIT_OP_LOAD_16) {
+                    code[idx++] = 0x48; code[idx++] = 0x0f; code[idx++] = 0xb7; code[idx++] = 0x02;
+                } else if (in.op == asgard_rd_jit::JIT_OP_LOAD_32) {
+                    code[idx++] = 0x8b; code[idx++] = 0x02;
+                } else {
+                    code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x02;
+                }
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
+            case JIT_OP_STORE_8:
+            case JIT_OP_STORE_16:
+            case JIT_OP_STORE_32:
             case JIT_OP_STORE_64:
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = dst_off;
                 if (in.imm != 0) {
@@ -573,7 +615,15 @@ let synthesize_and_execute_block_decl () : top_decl =
                     code[idx++] = 0x48; code[idx++] = 0x01; code[idx++] = 0xc2;
                 }
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
-                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x02;
+                if (in.op == asgard_rd_jit::JIT_OP_STORE_8) {
+                    code[idx++] = 0x88; code[idx++] = 0x02;
+                } else if (in.op == asgard_rd_jit::JIT_OP_STORE_16) {
+                    code[idx++] = 0x66; code[idx++] = 0x89; code[idx++] = 0x02;
+                } else if (in.op == asgard_rd_jit::JIT_OP_STORE_32) {
+                    code[idx++] = 0x89; code[idx++] = 0x02;
+                } else {
+                    code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x02;
+                }
                 break;
             case JIT_OP_SHL_RR:
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
@@ -690,9 +740,39 @@ let synthesize_and_execute_block_decl () : top_decl =
             case JIT_OP_SAR_RI: ctx.set_reg(in.dst, (uint64_t)((int64_t)ctx.get_reg(in.dst) >> (in.imm & 63))); break;
             case JIT_OP_NOT_R: ctx.set_reg(in.dst, ~ctx.get_reg(in.dst)); break;
             case JIT_OP_NEG_R: ctx.set_reg(in.dst, (uint64_t)(-(int64_t)ctx.get_reg(in.dst))); break;
+            case JIT_OP_LOAD_8: {
+                uint64_t addr = ctx.get_reg(in.src) + in.imm;
+                ctx.set_reg(in.dst, (uint64_t)*reinterpret_cast<const uint8_t*>(addr));
+                break;
+            }
+            case JIT_OP_LOAD_16: {
+                uint64_t addr = ctx.get_reg(in.src) + in.imm;
+                ctx.set_reg(in.dst, (uint64_t)*reinterpret_cast<const uint16_t*>(addr));
+                break;
+            }
+            case JIT_OP_LOAD_32: {
+                uint64_t addr = ctx.get_reg(in.src) + in.imm;
+                ctx.set_reg(in.dst, (uint64_t)*reinterpret_cast<const uint32_t*>(addr));
+                break;
+            }
             case JIT_OP_LOAD_64: {
                 uint64_t addr = ctx.get_reg(in.src) + in.imm;
                 ctx.set_reg(in.dst, *reinterpret_cast<const uint64_t*>(addr));
+                break;
+            }
+            case JIT_OP_STORE_8: {
+                uint64_t addr = ctx.get_reg(in.dst) + in.imm;
+                *reinterpret_cast<uint8_t*>(addr) = (uint8_t)ctx.get_reg(in.src);
+                break;
+            }
+            case JIT_OP_STORE_16: {
+                uint64_t addr = ctx.get_reg(in.dst) + in.imm;
+                *reinterpret_cast<uint16_t*>(addr) = (uint16_t)ctx.get_reg(in.src);
+                break;
+            }
+            case JIT_OP_STORE_32: {
+                uint64_t addr = ctx.get_reg(in.dst) + in.imm;
+                *reinterpret_cast<uint32_t*>(addr) = (uint32_t)ctx.get_reg(in.src);
                 break;
             }
             case JIT_OP_STORE_64: {

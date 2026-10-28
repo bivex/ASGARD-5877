@@ -30,13 +30,13 @@ let store_to_operand ctx opnd =
   match opnd with
   | Reg r -> [PopReg (Context_allocator.slot_of_reg ctx r)]
   | Mem m ->
-      let scratch_val = Context_allocator.alloc_scratch ctx in
+      let scratch_val = Context_allocator.slot_of_reg ctx Register.vtmp1 in
       let addr_ops = lower_mem_addr ctx m in
       [PopReg scratch_val] @
       addr_ops @
       [PushReg scratch_val; WriteMem (width_to_bytes m.width)]
   | Imm _ ->
-      let dummy = Context_allocator.alloc_scratch ctx in
+      let dummy = Context_allocator.slot_of_reg ctx Register.vtmp1 in
       [PopReg dummy]
 
 let get_ext_sym_idx ext_syms sym =

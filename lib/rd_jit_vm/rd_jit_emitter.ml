@@ -169,7 +169,8 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
       "AND_RI"; "OR_RR"; "OR_RI"; "SHL_RI"; "SHR_RI"; "SAR_RI"; "NOT_R";
       "NEG_R"; "LOAD_64"; "STORE_64"; "RET"; "EXIT";
       "SHL_RR"; "SHR_RR"; "SAR_RR"; "ROR_RR"; "DIV_RR"; "SDIV_RR"; "REM_RR";
-      "CMP_RR"; "CSEL_RR"; "MULH_RR"; "SMULH_RR" ]
+      "CMP_RR"; "CSEL_RR"; "MULH_RR"; "SMULH_RR";
+      "LOAD_8"; "LOAD_16"; "LOAD_32"; "STORE_8"; "STORE_16"; "STORE_32" ]
   in
   let jit_op_code_tbl = Hashtbl.create 32 in
   List.iteri
@@ -310,11 +311,23 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
         ("asgard_rd_jit::JIT_OP_NOT_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
     | Ir.Unary { op = Ir.Neg; dst; src = _; _ } ->
         ("asgard_rd_jit::JIT_OP_NEG_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
-    | Ir.Mov { dst = Ir.Reg d; src = Ir.Mem { base = Some b; disp; _ } } ->
-        ("asgard_rd_jit::JIT_OP_LOAD_64", Native_vm.Vm_transform.reg_to_index d mod 16,
+    | Ir.Mov { dst = Ir.Reg d; src = Ir.Mem { base = Some b; disp; width; _ } } ->
+        let op = match width with
+          | Register.B8 -> "asgard_rd_jit::JIT_OP_LOAD_8"
+          | Register.B16 -> "asgard_rd_jit::JIT_OP_LOAD_16"
+          | Register.B32 -> "asgard_rd_jit::JIT_OP_LOAD_32"
+          | _ -> "asgard_rd_jit::JIT_OP_LOAD_64"
+        in
+        (op, Native_vm.Vm_transform.reg_to_index d mod 16,
          Native_vm.Vm_transform.reg_to_index b mod 16, disp)
-    | Ir.Mov { dst = Ir.Mem { base = Some b; disp; _ }; src = Ir.Reg s } ->
-        ("asgard_rd_jit::JIT_OP_STORE_64", Native_vm.Vm_transform.reg_to_index b mod 16,
+    | Ir.Mov { dst = Ir.Mem { base = Some b; disp; width; _ }; src = Ir.Reg s } ->
+        let op = match width with
+          | Register.B8 -> "asgard_rd_jit::JIT_OP_STORE_8"
+          | Register.B16 -> "asgard_rd_jit::JIT_OP_STORE_16"
+          | Register.B32 -> "asgard_rd_jit::JIT_OP_STORE_32"
+          | _ -> "asgard_rd_jit::JIT_OP_STORE_64"
+        in
+        (op, Native_vm.Vm_transform.reg_to_index b mod 16,
          Native_vm.Vm_transform.reg_to_index s mod 16, disp)
     | Ir.Call (Ir.Label sym) ->
         let sym_idx = get_ext_sym_idx sym in

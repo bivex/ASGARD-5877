@@ -267,8 +267,8 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
               gprs.(dst) <- (if gprs.(src) = 0L then 0L else Int64.unsigned_rem gprs.(dst) gprs.(src))
           | "CMP_RR" -> ()
           | "CSEL_RR" -> gprs.(dst) <- gprs.(src)
-          | "LOAD_64" -> ()
-          | "STORE_64" -> ()
+          | "LOAD_8" | "LOAD_16" | "LOAD_32" | "LOAD_64" -> ()
+          | "STORE_8" | "STORE_16" | "STORE_32" | "STORE_64" -> ()
           | s -> failwith ("stack_jit: simulate: unknown op " ^ s)))
         chunk)
     chunks
@@ -430,19 +430,31 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
               push_item (jit "CSEL_RR", dst, tmp, Int64.of_int (cond_to_code cond lor (dst lsl 8)));
               decr depth;
               Ok ()
-          | ReadMem _ ->
+          | ReadMem w ->
               if !depth < 1 then Error "stack_jit: underflow on ReadMem"
               else begin
                 let slot = stack_base + !depth - 1 in
-                push_item (jit "LOAD_64", slot, slot, 0L);
+                let op = match w with
+                  | 1 -> jit "LOAD_8"
+                  | 2 -> jit "LOAD_16"
+                  | 4 -> jit "LOAD_32"
+                  | _ -> jit "LOAD_64"
+                in
+                push_item (op, slot, slot, 0L);
                 Ok ()
               end
-          | WriteMem _ ->
+          | WriteMem w ->
               if !depth < 2 then Error "stack_jit: underflow on WriteMem"
               else begin
                 let src = stack_base + !depth - 1 in
                 let dst = stack_base + !depth - 2 in
-                push_item (jit "STORE_64", dst, src, 0L);
+                let op = match w with
+                  | 1 -> jit "STORE_8"
+                  | 2 -> jit "STORE_16"
+                  | 4 -> jit "STORE_32"
+                  | _ -> jit "STORE_64"
+                in
+                push_item (op, dst, src, 0L);
                 depth := !depth - 2;
                 Ok ()
               end
