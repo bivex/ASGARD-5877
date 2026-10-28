@@ -58,7 +58,7 @@ type sealed_chunk_ticket = {
   perm_idx   : int;
 }
 
-let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false) ?(mba_depth = 2) (func : Ir.func) : rd_jit_package =
+let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = false) ?(mba_depth = 2) ?chunks (func : Ir.func) : rd_jit_package =
   let (enable_cff, enable_mba, mba_depth) =
     match config with
     | Some (c : Native_vm.Protection_config.t) ->
@@ -268,55 +268,60 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
       sorted_blocks
   in
 
-  (* OEIS A010060: a dummy opcode is generated at stream position n iff
-     t_n = popcount(n) mod 2 = 1; the synthesized machine code then carries
-     aperiodic no-op padding no loop summarizer can align. *)
-  let thue_morse_stream =
-    let pos = ref 0 in
-    let out = ref [] in
-    List.iter
-      (fun item ->
-        if Nano_jit_slot.thue_morse !pos then begin
-          Stdlib.(out := (jit_op_nop, 0, 0, 0L) :: !out);
-          incr pos
-        end;
-        Stdlib.(out := item :: !out);
-        incr pos)
-      all_instrs;
-    List.rev !out
-  in
-
-  (* OEIS A000002: chunk target sizes are the run lengths of the Kolakoski
-     word scaled by nano_kolakoski_scale (2 or 4 instructions). *)
-  let kolakoski_word = Nano_jit_slot.kolakoski 256 in
   let kolakoski_chunks =
-    let run_idx = ref 0 in
-    let cur = ref [] in
-    let acc = ref [] in
-    let flush () =
-      if !cur <> [] then begin
-        let chunk = List.rev !cur in
-        let has_extern = List.exists (fun (op, _, _, _) -> op = jit_op_extern) chunk in
-        Stdlib.(acc := (chunk, has_extern) :: !acc);
-        Stdlib.(cur := []);
-        incr run_idx
-      end
-    in
-    List.iter
-      (fun item ->
-        let target =
-          kolakoski_word.(!run_idx mod Array.length kolakoski_word)
-          * Nano_jit_slot.nano_kolakoski_scale
+    match chunks with
+    | Some cs ->
+        List.map
+          (fun chunk ->
+            let has_extern = List.exists (fun (op, _, _, _) -> op = jit_op_extern) chunk in
+            (chunk, has_extern))
+          cs
+    | None ->
+        (* OEIS A010060: a dummy opcode is generated at stream position n iff
+           t_n = popcount(n) mod 2 = 1; the synthesized machine code then carries
+           aperiodic no-op padding no loop summarizer can align. *)
+        let pos = ref 0 in
+        let out = ref [] in
+        List.iter
+          (fun item ->
+            if Nano_jit_slot.thue_morse !pos then begin
+              Stdlib.(out := (jit_op_nop, 0, 0, 0L) :: !out);
+              incr pos
+            end;
+            Stdlib.(out := item :: !out);
+            incr pos)
+          all_instrs;
+        let thue_morse_stream = List.rev !out in
+        (* OEIS A000002: chunk target sizes are the run lengths of the Kolakoski
+           word scaled by nano_kolakoski_scale (2 or 4 instructions). *)
+        let kolakoski_word = Nano_jit_slot.kolakoski 256 in
+        let run_idx = ref 0 in
+        let cur = ref [] in
+        let acc = ref [] in
+        let flush () =
+          if !cur <> [] then begin
+            let chunk = List.rev !cur in
+            let has_extern = List.exists (fun (op, _, _, _) -> op = jit_op_extern) chunk in
+            Stdlib.(acc := (chunk, has_extern) :: !acc);
+            Stdlib.(cur := []);
+            incr run_idx
+          end
         in
-        if List.length !cur >= target
-           || List.length !cur >= Nano_jit_slot.nano_max_chunk_instrs
-        then flush ();
-        Stdlib.(cur := item :: !cur))
-      thue_morse_stream;
-    flush ();
-    match List.rev !acc with
-    | [] -> [ ([ (jit_op_nop, 0, 0, 0L) ], false) ]
-    | chunks -> chunks
+        List.iter
+          (fun item ->
+            let target =
+              kolakoski_word.(!run_idx mod Array.length kolakoski_word)
+              * Nano_jit_slot.nano_kolakoski_scale
+            in
+            if List.length !cur >= target
+               || List.length !cur >= Nano_jit_slot.nano_max_chunk_instrs
+            then flush ();
+            Stdlib.(cur := item :: !cur))
+          thue_morse_stream;
+        flush ();
+        match List.rev !acc with
+        | [] -> [ ([ (jit_op_nop, 0, 0, 0L) ], false) ]
+        | chunks -> chunks
   in
 
   let master_key = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
@@ -460,3 +465,9 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
     bytecode = base_pkg.bytecode;
     metrics = base_pkg.metrics;
   }
+
+let compile_and_package ~rng ?config ?enable_cff ?enable_mba ?mba_depth func =
+  compile_and_package_core ~rng ?config ?enable_cff ?enable_mba ?mba_depth func
+
+let compile_and_package_chunked ~rng ?config ?enable_cff ?enable_mba ?mba_depth ~chunks func =
+  compile_and_package_core ~rng ?config ?enable_cff ?enable_mba ?mba_depth ~chunks func

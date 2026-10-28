@@ -20,3 +20,13 @@ val compile_and_package :
   ?mba_depth:int ->
   Ir.func ->
   rd_jit_package
+
+val compile_and_package_chunked :
+  rng:Random.State.t ->
+  ?config:Native_vm.Protection_config.t ->
+  ?enable_cff:bool ->
+  ?enable_mba:bool ->
+  ?mba_depth:int ->
+  chunks:(string * int * int * int64) list list ->
+  Ir.func ->
+  rd_jit_package
