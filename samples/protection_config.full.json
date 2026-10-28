@@ -179,6 +179,10 @@
     "enabled": true,
     "rate": 25
   },
+  "trap": {
+    "enabled": true,
+    "rate": 25
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 25

@@ -217,6 +217,12 @@ type sink_barrier_config = {
 }
 
 val default_sink_barrier : sink_barrier_config
+type trap_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_trap : trap_config
 type multiplicity_config = {
   enabled : bool;
   rate    : int;
@@ -281,6 +287,7 @@ type t = {
   polymba : polymba_config;
   finite_field : finite_field_config;
   sink_barrier : sink_barrier_config;
+  trap : trap_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;
   trampoline : trampoline_config;

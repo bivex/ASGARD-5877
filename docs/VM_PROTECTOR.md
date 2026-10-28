@@ -34,9 +34,10 @@ flowchart TD
         P10h["Phase 5h (Pass 17): Mixed-Characteristic Finite Field"]
         P10i["Phase 5i (Pass 18): I/O Sink Entanglement Barrier"]
         P11["Phase 6: State-Feedback Rolling Key Stream"]
+        P11b["Phase 6b (Pass 19): Cross-Block Path Traps"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P11 --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P11 --> P11b --> P12 --> P12b
     end
     
     IR --> P1
@@ -384,6 +385,17 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
   $$\mathrm{VKEY}_{k+1} = \mathrm{VKEY}_k \oplus \mathrm{Hash}_{\mathrm{splitmix64}}(\mathrm{VCTX}[\mathrm{slot}_k])$$
   $$\mathrm{Hash}(v) = \mathrm{fold64}(v \times C_{\mathrm{golden}} \oplus (v \gg 32))$$
 * **Integrity**: Any runtime context tampering or register hooking desynchronizes the keystream, causing illegal opcode faults.
+
+### Phase 6b (Pass 19): Cross-Block Execution Path Integrity & Anti-DBI Traps (`stack_trap_pass.ml`)
+* **Goal**: Cryptographically detects and silences dynamic binary instrumentation (Frida hooks, QBDI dynamic instrumentation, GDB/LLDB breakpoints/single-stepping) by maintaining an evolving path Message Authentication Code (MAC) across every basic block transition:
+  $$H_{k+1} = \big(H_k \cdot C_{\mathrm{trap\_mul}} + \operatorname{Token}(B_i)\big) \pmod{2^{64}}$$
+  Where $C_{\mathrm{trap\_mul}} = \texttt{0x5877A55ACA1337B9L}$ is an odd prime multiplier in $\mathbb{Z}_{2^{64}}$ and $\operatorname{Token}(B_i) = (B_i.\text{id} \cdot C_{\mathrm{golden}} + C_{\mathrm{salt}}) \pmod{2^{64}}$.
+* **Dynamic Anti-DBI Path Traps**:
+  Injects algebraic path assertion knots directly into stack operands and context writes:
+  $$K_{\mathrm{path}}(H) = (H + C) - (H \land C) - (H \lor C) \equiv 0 \pmod{2^{64}}$$
+  Proven equivalent in Z3 SMT `QF_BV`.
+* **Silent Desynchronization**: If an adversary bypasses security check blocks or hooks handlers, $H$ diverges, resulting in corrupted stack offsets and invalid opcode aborts downstream.
+---
 
 ---
 

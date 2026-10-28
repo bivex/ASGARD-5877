@@ -87,6 +87,7 @@ let default : t = {
   polymba = default_polymba;
   finite_field = default_finite_field;
   sink_barrier = default_sink_barrier;
+  trap = default_trap;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -207,6 +208,7 @@ let max_security : t = {
   polymba = { default_polymba with rate = 70 };
   finite_field = { default_finite_field with rate = 70 };
   sink_barrier = { default_sink_barrier with rate = 75 };
+  trap = { default_trap with rate = 70 };
   multiplicity = { default_multiplicity with rate = 60 };
   pipelined_dispatch = { default_pipelined_dispatch with chaff_slots = 8 };
   trampoline = default_trampoline;
@@ -322,6 +324,7 @@ let stealth : t = {
   polymba = default_polymba;
   finite_field = default_finite_field;
   sink_barrier = default_sink_barrier;
+  trap = default_trap;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -442,6 +445,7 @@ let edr_stealth : t = {
   polymba = default_polymba;
   finite_field = default_finite_field;
   sink_barrier = default_sink_barrier;
+  trap = default_trap;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -562,6 +566,7 @@ let minimal : t = {
   polymba = { default_polymba with enabled = false };
   finite_field = { default_finite_field with enabled = false };
   sink_barrier = { default_sink_barrier with enabled = false };
+  trap = { default_trap with enabled = false };
   multiplicity = { default_multiplicity with enabled = false };
   pipelined_dispatch = { default_pipelined_dispatch with enabled = false };
   trampoline = default_trampoline;
@@ -673,6 +678,7 @@ let high : t = {
   polymba = { default_polymba with rate = 60 };
   finite_field = { default_finite_field with rate = 60 };
   sink_barrier = { default_sink_barrier with rate = 65 };
+  trap = { default_trap with rate = 60 };
   multiplicity = { default_multiplicity with rate = 50 };
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;

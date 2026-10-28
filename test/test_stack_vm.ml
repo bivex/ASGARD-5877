@@ -3076,6 +3076,49 @@ let test_sink_barrier () =
   let res_alg = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_alg ~trans_ops:trans_alg () in
   Alcotest.(check bool) "Algebraic barrier knot proven equivalent (zero delta) via SMT QF_BV" true
     (match res_alg with Stack_bv_verifier.Equivalent -> true | _ -> false)
+let test_trap_engine () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    PushImm 100L;
+    PopReg 1;
+    JmpRel 1;
+  ] in
+  let b1 = make_block 1 "target" [
+    PushReg 1;
+    PushImm 50L;
+    Add;          (* 100 + 50 = 150 *)
+    PopReg 2;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0; b1] 16 in
+  let cfg = { (Stack_trap_pass.default_trap_config 0x5877BABEL) with rate = 100 } in
+  let prog_trap = Stack_trap_pass.apply_program cfg ctx prog in
+  let b0_trap = Hashtbl.find prog_trap.blocks 0 in
+  let b1_trap = Hashtbl.find prog_trap.blocks 1 in
+  Alcotest.(check bool) "Trap pass injected path updates in entry" true
+    (List.length b0_trap.ops > List.length b0.ops);
+  Alcotest.(check bool) "Trap pass injected path updates in target" true
+    (List.length b1_trap.ops > List.length b1.ops);
+
+  (* 1. Semantic evaluation in VM interpreter *)
+  let state = run_program prog_trap in
+  Alcotest.(check bool) "Trap engine program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[1]=100" 100L (get_reg state 1);
+  Alcotest.(check int64) "Computation exact: reg[2]=150" 150L (get_reg state 2);
+
+  (* 2. Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x58771337BEEFL prog_trap in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[2]=150" 150L (get_reg state_bc 2);
+
+  (* 3. Formal verification of Anti-DBI Path Trap Zero-Knot via SMT QF_BV *)
+  let orig_trap = [ PushReg 0 ] in
+  let trans_trap = [ PushReg 0 ] @ Stack_trap_pass.emit_trap_knot ~digest_slot:1 @ [ Add ] in
+  let res_trap = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_trap ~trans_ops:trans_trap () in
+  Alcotest.(check bool) "Anti-DBI path trap knot proven equivalent (zero delta) via SMT QF_BV" true
+    (match res_trap with Stack_bv_verifier.Equivalent -> true | _ -> false)
+
 
 
 let tests = [
@@ -3137,6 +3180,7 @@ let tests = [
   ("Braided CFG Merging & Decoy Elimination", `Quick, test_braided_cfg_merging);
   ("Mixed-Characteristic Finite Field Arithmetic & Knots", `Quick, test_finite_field);
   ("I/O Sink Entanglement & Slicing Barrier", `Quick, test_sink_barrier);
+  ("Cross-Block Path Digest & Anti-DBI Traps", `Quick, test_trap_engine);
 ]
 
 

@@ -394,6 +394,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "I/O Sink Slicing Barrier" native_cfg.sink_barrier.enabled
           "disabled in configuration";
+        pass_switch "Cross-Block Anti-DBI Traps" native_cfg.trap.enabled
+          "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
           "disabled in configuration";
         pass_switch "Stack Balance Repair" true "";
@@ -1160,6 +1162,40 @@ module Stack_vm_packager : Vm_packager = struct
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6-feedback" ~final:false prog;
     if native_cfg.stack_vm.state_feedback then
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6/7] State-Feedback Rolling Key: %s" feedback_info;
+
+    (* Phase 6b (Pass 19): Cross-Block Execution Path Integrity & Anti-DBI Traps *)
+    let trap_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 23)
+    in
+    let trap_cfg_user = native_cfg.trap in
+    let trap_cfg = {
+      (Stack_vm.Stack_trap_pass.default_trap_config trap_seed) with
+      rate = trap_cfg_user.rate;
+      enabled = trap_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Anti-DBI Path Traps        rate=%d%% seed=0x%016LX%s"
+         trap_cfg.rate
+         trap_cfg.seed
+         (if trap_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, trap_info =
+      if trap_cfg_user.enabled then begin
+        let prog_trap =
+          Stack_vm.Stack_trap_pass.apply_program trap_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_trap_pass.trap_stats prog prog_trap in
+        (prog_trap, info)
+      end else
+        (prog, "Disabled (config: trap.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"6b-trap" prog;
+    dump_bytecode_json ~phase:"6b-trap" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6b-trap" ~final:false prog;
+    if trap_cfg_user.enabled then
+      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6b] Cross-Block Path Traps: %s" trap_info;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in

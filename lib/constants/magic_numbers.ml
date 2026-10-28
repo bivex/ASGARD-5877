@@ -269,6 +269,12 @@ let finite_field_m31_mul = 0x58771337L
 let finite_field_m31_inv = 0x1484AA6DL
 let finite_field_gf64_poly = 0x1BL
 let finite_field_gf64_const = 0x5877CAFE1337BEEFL
+
+(* Cross-Block Execution Path Integrity & Anti-DBI Traps (Phase 6b / Pass 19) constants *)
+let trap_step_mul = 0x5877A55ACA1337B9L
+let trap_step_add = 0x1337CAFEBEEF5877L
+let trap_token_mul = 0x9E3779B97F4A7C15L
+let trap_salt_init = 0xCAFE58771337BABEL
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -600,6 +606,22 @@ let registry : entry list = [
     value = finite_field_gf64_const;
     source = "0x5877CAFE1337BEEF: linear polynomial expansion constant in GF(2^64)";
     used_in = [ "lib/stack_vm/stack_finite_field_pass.ml" ] };
+  { name = "trap_step_mul";
+    value = trap_step_mul;
+    source = "0x5877A55ACA1337B9: odd prime multiplier for cross-block path digest LCG permutation";
+    used_in = [ "lib/stack_vm/stack_trap_pass.ml" ] };
+  { name = "trap_step_add";
+    value = trap_step_add;
+    source = "0x1337CAFEBEEF5877: odd addend for cross-block path digest accumulator";
+    used_in = [ "lib/stack_vm/stack_trap_pass.ml" ] };
+  { name = "trap_token_mul";
+    value = trap_token_mul;
+    source = "0x9E3779B97F4A7C15: golden ratio multiplier for basic block token derivation";
+    used_in = [ "lib/stack_vm/stack_trap_pass.ml" ] };
+  { name = "trap_salt_init";
+    value = trap_salt_init;
+    source = "0xCAFE58771337BABE: initial salt for execution path digest register";
+    used_in = [ "lib/stack_vm/stack_trap_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

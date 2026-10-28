@@ -141,6 +141,10 @@ val finite_field_m31_mul : int64
 val finite_field_m31_inv : int64
 val finite_field_gf64_poly : int64
 val finite_field_gf64_const : int64
+val trap_step_mul : int64
+val trap_step_add : int64
+val trap_token_mul : int64
+val trap_salt_init : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
