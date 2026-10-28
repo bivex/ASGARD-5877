@@ -2,6 +2,13 @@ open Alcotest
 open Vm_ir
 open Rd_jit_vm
 
+let contains_sub (s : string) (sub : string) : bool =
+  let n = String.length s and m = String.length sub in
+  if m = 0 then true
+  else
+    let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
+    go 0
+
 let test_rd_jit_rns_moduli () =
   let (m1, m2, m3, m4) = (Rns.m1, Rns.m2, Rns.m3, Rns.m4) in
   check bool "m1 > 0" true (m1 > 0L);
@@ -70,8 +77,10 @@ let test_rd_jit_multi_op_arithmetic_e2e () =
         check int "RD JIT Multi-Op Compilation status == 0" 0 status;
         let run_st, out_str = Test_helpers.run_command_capture bin_file in
         check bool "RD JIT Multi-Op Run status == 0" true (run_st = Unix.WEXITED 0);
-        (* 50 + 30 = 80, 80 - 15 = 65 *)
-        check bool "Contains Result 65" true (String.length out_str > 0 && (try ignore (String.index out_str ':'); true with _ -> false)))
+        (* 50 + 30 = 80, 80 - 15 = 65: the sealed pipeline must reproduce
+           the exact value of REG 0, not merely produce output. *)
+        let expected = "Result (REG 0): 65 (0x41)" in
+        check bool "Exact REG 0 result 65" true (contains_sub out_str expected))
 
 let test_rd_jit_call_extern_e2e () =
   let block = {
@@ -99,7 +108,7 @@ let test_rd_jit_call_extern_e2e () =
       let log_file = Filename.concat tmp_dir "out.log" in
       check int "RD-JIT extern execution" 0 (Sys.command (Printf.sprintf "%s > %s 2>&1" bin_file log_file));
       let output = Test_helpers.read_file_string log_file in
-      check bool "RD-JIT extern result" true (String.contains output ':' && String.contains output '7'))
+      check bool "RD-JIT extern result" true (contains_sub output "Result (REG 0): 7 (0x7)"))
 
 let test_nano_oeis_invariants () =
   let module N = Rd_jit_vm.Nano_jit_slot in
@@ -143,13 +152,6 @@ let test_nano_oeis_invariants () =
   in
   check bool "Golomb distances distinct" true
     (List.length diffs = List.length (List.sort_uniq compare diffs))
-
-let contains_sub (s : string) (sub : string) : bool =
-  let n = String.length s and m = String.length sub in
-  if m = 0 then true
-  else
-    let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
-    go 0
 
 let test_nano_sealed_package_shape () =
   let rng = Random.State.make [| 2601 |] in

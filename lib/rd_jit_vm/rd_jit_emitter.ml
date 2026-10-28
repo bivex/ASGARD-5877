@@ -380,7 +380,7 @@ let compile_and_package ~rng ?config ?(enable_cff = false) ?(enable_mba = false)
         in
         let cipher = seal.encrypted_bytes in
         let cipher_words =
-          List.init (List.length words) (fun i -> get_u64_le cipher (16 * i))
+          List.init (2 * List.length words) (fun j -> get_u64_le cipher (8 * j))
         in
         let ticket =
           { nonce;
