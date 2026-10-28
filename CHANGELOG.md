@@ -46,6 +46,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Defeat McCarthy Store-to-Load Forwarding: implemented below-SP dual-store aliasing ($a_1 \ne a_2$) with interleaved decoy store in `lib/stack_vm/stack_mem_webbing_pass.ml`, preventing local `select(store(M, a, v), a) == v` SMT reductions and eliminating guest stack frame collisions.
   * Defeat GVN term-slicing on dynamic shifts & E-graph saturation: implemented asymmetric distributive shift knot $((s*5)+3)\ll k - ((s\ll k)*5 + (3\ll k))$ and degree $\ge 3$ cubic Rivest permutation knot $((s+1)^3) - (s^3+3s^2+3s+1)$ in `lib/stack_vm/stack_polymba_pass.ml`.
   * Defeat static offline dispatch table unmasking: dynamically blinded `dispatch_table[op]` with runtime ASLR-derived `vm->addr_key` in `lib/stack_vm/stack_runtime.ml`.
+  * Defeat LLVM compiler tail merging: implemented per-handler epilogue polymorphism with unique inline assembly barriers in `ASG_INDIRECT_JUMP(target, uid)` in `lib/stack_vm/stack_runtime.ml`, eliminating the centralized 257-in-degree dispatcher hub in optimized machine code (verified 256 separate indirect branch sites in `dispatch_topology.py`).
   * Fixed CFF Shape 3 formula, Hull-Dobell addend, and formal stack balance verification documentation in `docs/VM_PROTECTOR.md`.
 ## [0.3.0] - 2026-10-27
 

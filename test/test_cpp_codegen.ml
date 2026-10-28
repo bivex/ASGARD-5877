@@ -635,10 +635,10 @@ let () =
       ~pipelined:pipelined_plan ~entry_bid:0 test_dispatch_cases
   in
   assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_PREFETCH(opv)");
-  assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_DISPATCH(opv, k)");
-  assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_DISPATCH_RT(opv)");
+  assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_DISPATCH(opv, k, uid)");
+  assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_DISPATCH_RT(opv, uid)");
   assert (contains_str piped_disp_cpp "ASG_PIPELINED_PREFETCH(op_primer);");
-  assert (contains_str piped_disp_cpp "ASG_PIPELINED_DISPATCH_RT(op_primer);");
+  assert (contains_str piped_disp_cpp "ASG_PIPELINED_DISPATCH_RT(op_primer, primer);");
   assert (contains_str piped_disp_cpp "ASG_PIPELINED_PREFETCH(op_01);");
   assert (contains_str piped_disp_cpp "ASG_PIPELINED_DISPATCH(op_01,");
   assert (not (contains_str piped_disp_cpp "ASG_DISPATCH_STEP("));

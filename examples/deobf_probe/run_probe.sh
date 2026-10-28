@@ -63,6 +63,6 @@ python3 "${SCRIPT_DIR}/peephole_eval.py" "${OUT}/dumpA" "${OUT}/dumpB"
 
 FINAL_JSON="${OUT}/dumpA/phase_7-balance_(final).json"
 python3 "${SCRIPT_DIR}/dispatch_topology.py" \
-  --phase-json "${FINAL_JSON}" --binary "${OUT}/probeA_O0"
+  --phase-json "${FINAL_JSON}" --binary "${OUT}/probeA_O2"
 
 echo "artifacts: ${OUT}"

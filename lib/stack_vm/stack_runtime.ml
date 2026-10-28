@@ -506,8 +506,8 @@ let emit_stack_dispatch_stmts
           raw
             (Printf.sprintf
                "{ ASG_PIPELINED_PREFETCH(op_%02X);\n\
-                \  ASG_PIPELINED_DISPATCH(op_%02X, 0x%016LX); }"
-               op op plan.Pipelined_dispatch_pass.mask_add)
+                \  ASG_PIPELINED_DISPATCH(op_%02X, 0x%016LX, op_%02X); }"
+               op op plan.Pipelined_dispatch_pass.mask_add op)
     in
     let dispatch_table_decl =
       decl_var ~is_static:true
@@ -619,21 +619,28 @@ let emit_stack_dispatch_stmts
           let mask = p.Pipelined_dispatch_pass.chaff_slot_count - 1 in
           Some
             (Printf.sprintf
-               "#define ASG_INDIRECT_JUMP(target) goto *(target)\n\
+               "#if defined(__GNUC__) || defined(__clang__)\n\
+                #define ASG_INDIRECT_JUMP(target, uid) do { \\\n\
+               \        __asm__ volatile (\"# asg_epilogue_\" #uid : \"+r\"(target)); \\\n\
+               \        goto *(target); \\\n\
+               \    } while (0)\n\
+                #else\n\
+                #define ASG_INDIRECT_JUMP(target, uid) goto *(target)\n\
+                #endif\n\
                #define ASG_PIPELINED_PREFETCH(opv) \\\n\
                \        if (vm->halted || vip >= size) goto lbl_exit; \\\n\
                \        const uint8_t opv = fetch_byte(vm, bytecode, &vip)\n\
-               \    #define ASG_PIPELINED_DISPATCH(opv, k) do { \\\n\
+               \    #define ASG_PIPELINED_DISPATCH(opv, k, uid) do { \\\n\
                \        vm->ctx[(%d) + (((((uint64_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX)) >> 56) & (%d))] ^= vm->vkey + (uint64_t)(opv); \\\n\
                \        uintptr_t k_slot = ((uintptr_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(k) ^ (uintptr_t)(vm->addr_key); \\\n\
                \        void* target = (void*)(dispatch_table[(opv)] ^ k_slot); \\\n\
-               \        ASG_INDIRECT_JUMP(target); \\\n\
+               \        ASG_INDIRECT_JUMP(target, uid); \\\n\
                \    } while (0)\n\
-               \    #define ASG_PIPELINED_DISPATCH_RT(opv) do { \\\n\
+               \    #define ASG_PIPELINED_DISPATCH_RT(opv, uid) do { \\\n\
                \        vm->ctx[(%d) + (((((uint64_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX)) >> 56) & (%d))] ^= vm->vkey + (uint64_t)(opv); \\\n\
                \        uintptr_t k_slot = ((uintptr_t)(opv) * UINT64_C(0x%016LX)) ^ UINT64_C(0x%016LX) ^ (uintptr_t)(vm->addr_key); \\\n\
                \        void* target = (void*)(dispatch_table[opv] ^ k_slot); \\\n\
-               \        ASG_INDIRECT_JUMP(target); \\\n\
+               \        ASG_INDIRECT_JUMP(target, uid); \\\n\
                \    } while (0)"
                base golden_ratio_64 p.Pipelined_dispatch_pass.chaff_salt mask
                p.Pipelined_dispatch_pass.mask_mult
@@ -654,7 +661,7 @@ let emit_stack_dispatch_stmts
           [
             raw
               "{ ASG_PIPELINED_PREFETCH(op_primer);\n\
-               \  ASG_PIPELINED_DISPATCH_RT(op_primer); }";
+               \  ASG_PIPELINED_DISPATCH_RT(op_primer, primer); }";
           ]
       | None -> [ raw "ASG_DISPATCH_STEP();" ]
     in
