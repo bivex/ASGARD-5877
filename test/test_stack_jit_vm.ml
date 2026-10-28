@@ -2,6 +2,7 @@ open Alcotest
 open Stack_vm
 open Stack_ir
 open Rd_jit_vm
+open Vm_ir
 open Random_visa_ports
 open Protect_ports
 
@@ -81,10 +82,10 @@ let test_chunker_context_registers () =
       check int64 "Context slot 1 is 42" 42L gprs.(1)
 
 let test_chunker_rejections () =
-  check bool "Rejects Div" true
-    (Result.is_error (Stack_jit_chunker.translate_trace () [ PushImm 10L; PushImm 2L; Div ]));
   check bool "Rejects JmpRel" true
     (Result.is_error (Stack_jit_chunker.translate_trace () [ JmpRel 1 ]));
+  check bool "Rejects CallExtern" true
+    (Result.is_error (Stack_jit_chunker.translate_trace () [ CallExtern 0 ]));
   check bool "Rejects too many distinct context slots" true
     (Result.is_error
        (Stack_jit_chunker.translate_trace ()
@@ -95,6 +96,90 @@ let test_chunker_rejections () =
        (Stack_jit_chunker.translate_trace ()
           [ PushImm 1L; PushImm 2L; PushImm 3L; PushImm 4L;
             PushImm 5L; PushImm 6L; PushImm 7L; PushImm 8L; PushImm 9L ]))
+
+let test_chunker_div_rot_dup2 () =
+  let ops_div = [ PushImm 100L; PushImm 4L; Div ] in
+  let ref_div = Stack_jit_chunker.reference_eval (Array.make 8 0L) ops_div in
+  check (list int64) "Reference div 100/4" [ 25L ] ref_div;
+  (match Stack_jit_chunker.translate_trace () ops_div with
+   | Error err -> fail ("Div translation failed: " ^ err)
+   | Ok tr ->
+       let gprs = Array.make 16 0L in
+       Stack_jit_chunker.simulate_chunks tr.chunks gprs;
+       check int64 "Result 100/4 is 25" 25L gprs.(0));
+  let ops_rot = [ PushImm 0x1234567800000000L; PushImm 16L; Rot ] in
+  let ref_rot = Stack_jit_chunker.reference_eval (Array.make 8 0L) ops_rot in
+  (match Stack_jit_chunker.translate_trace () ops_rot with
+   | Error err -> fail ("Rot translation failed: " ^ err)
+   | Ok tr ->
+       let gprs = Array.make 16 0L in
+       Stack_jit_chunker.simulate_chunks tr.chunks gprs;
+       check int64 "Rot matches reference" (List.hd ref_rot) gprs.(0));
+  let ops_dup2 = [ PushImm 11L; PushImm 22L; Dup2; Add; PopReg 1; Add ] in
+  let regs = Array.make 8 0L in
+  let ref_dup2 = Stack_jit_chunker.reference_eval regs ops_dup2 in
+  (match Stack_jit_chunker.translate_trace () ops_dup2 with
+   | Error err -> fail ("Dup2 translation failed: " ^ err)
+   | Ok tr ->
+       let gprs = Array.make 16 0L in
+       Stack_jit_chunker.simulate_chunks tr.chunks gprs;
+       check int64 "Dup2 final top matches" (List.hd ref_dup2) gprs.(0);
+       check int64 "Reg 1 is 11+22=33" 33L gprs.(1))
+
+let test_chunker_cmp_cmov_branchless () =
+  let ops = [ PushImm 10L; PushImm 20L; Cmp; PushImm 99L; Cmov (Flags.L, 1) ] in
+  let regs = Array.make 8 0L in
+  let _ = Stack_jit_chunker.reference_eval regs ops in
+  check int64 "Reference cmov sets reg 1 to 99" 99L regs.(1);
+  match Stack_jit_chunker.translate_trace () ops with
+  | Error err -> fail ("Cmp/Cmov translation failed: " ^ err)
+  | Ok tr ->
+      let gprs = Array.make 16 0L in
+      Stack_jit_chunker.simulate_chunks tr.chunks gprs;
+      check int64 "Simulated cmov sets gprs.(1) to 99" 99L gprs.(1)
+
+let test_stack_jit_div_rem_hardware_e2e () =
+  let asm = {|
+    mov x0, #100
+    mov x1, #7
+    udiv x2, x0, x1
+    msub x0, x2, x1, x0
+    lsl x0, x0, #3
+    ret
+  |} in
+  match Arm64_lifter.lift_function asm with
+  | Error err -> fail ("Failed to lift ARM64: " ^ err)
+  | Ok func ->
+      let ext_syms = Hashtbl.create 16 in
+      let ctx = Context_allocator.create ~permute:false () in
+      let _ctx, prog = Ir_to_stack.lower_func ~ctx ~ext_syms func in
+      let entry = Hashtbl.find prog.blocks prog.entry_id in
+      (match Stack_jit_chunker.translate_trace () entry.ops with
+       | Error err -> fail ("Stack-JIT translation failed: " ^ err)
+       | Ok tr ->
+           let rng = Random.State.make [| 99991111 |] in
+           let pkg =
+             Rd_jit_emitter.compile_and_package_chunked
+               ~rng
+               ~enable_cff:false
+               ~enable_mba:false
+               ~chunks:tr.chunks
+               func
+           in
+           Test_helpers.with_temp_dir (fun temp_dir ->
+             let hdr_file = Filename.concat temp_dir "jit_vm_runtime.hpp" in
+             Test_helpers.write_file_string hdr_file pkg.cpp_runtime_source;
+             let runner_file = Filename.concat temp_dir "runner.cpp" in
+             Test_helpers.write_file_string runner_file pkg.runner_source;
+             let bin_file = Filename.concat temp_dir "stack_jit_div_app" in
+             let cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" temp_dir runner_file bin_file in
+             let status = Sys.command cmd in
+             check int "Stack-JIT div/rem compilation status == 0" 0 status;
+             let run_st, out_str = Test_helpers.run_command_capture bin_file in
+             check bool "Stack-JIT div/rem run status == 0" true (run_st = Unix.WEXITED 0);
+             (* (100 % 7) << 3 = 2 << 3 = 16 (0x10) *)
+             let expected = "Result (REG 0): 16 (0x10)" in
+             check bool "Exact result 16" true (contains_sub out_str expected)))
 
 let test_stack_jit_e2e_compilation () =
   let asm = {|
@@ -202,6 +287,9 @@ let tests = [
   ("Stack-JIT Dup/Swap Simulation", `Quick, test_chunker_dup_swap);
   ("Stack-JIT Context Registers Simulation", `Quick, test_chunker_context_registers);
   ("Stack-JIT Rejections of Unsupported Ops", `Quick, test_chunker_rejections);
+  ("Stack-JIT Div, Rot, Dup2 Simulation", `Quick, test_chunker_div_rot_dup2);
+  ("Stack-JIT Cmp & Cmov Simulation", `Quick, test_chunker_cmp_cmov_branchless);
   ("Stack-JIT Hardware E2E Execution", `Quick, test_stack_jit_e2e_compilation);
+  ("Stack-JIT Hardware Div/Rem/Shift E2E", `Quick, test_stack_jit_div_rem_hardware_e2e);
   ("Stack-JIT C Macro Trampoline E2E", `Quick, test_stack_jit_c_macro_e2e);
 ]

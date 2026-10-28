@@ -167,7 +167,9 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
     [ "NOP"; "MOV_RR"; "MOV_RI"; "ADD_RR"; "ADD_RI"; "SUB_RR"; "SUB_RI";
       "MUL_RR"; "MUL_RI"; "CALL_EXTERN"; "XOR_RR"; "XOR_RI"; "AND_RR";
       "AND_RI"; "OR_RR"; "OR_RI"; "SHL_RI"; "SHR_RI"; "SAR_RI"; "NOT_R";
-      "NEG_R"; "LOAD_64"; "STORE_64"; "RET"; "EXIT" ]
+      "NEG_R"; "LOAD_64"; "STORE_64"; "RET"; "EXIT";
+      "SHL_RR"; "SHR_RR"; "SAR_RR"; "ROR_RR"; "DIV_RR"; "SDIV_RR"; "REM_RR";
+      "CMP_RR"; "CSEL_RR" ]
   in
   let jit_op_code_tbl = Hashtbl.create 32 in
   List.iteri
@@ -185,6 +187,25 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
 
   let jit_op_nop = "asgard_rd_jit::JIT_OP_NOP" in
   let jit_op_extern = "asgard_rd_jit::JIT_OP_CALL_EXTERN" in
+
+  let cond_to_arm64_code = function
+    | Flags.E -> 0
+    | Flags.NE -> 1
+    | Flags.B -> 2
+    | Flags.AE -> 3
+    | Flags.S -> 4
+    | Flags.NS -> 5
+    | Flags.O -> 6
+    | Flags.NO -> 7
+    | Flags.A -> 8
+    | Flags.BE -> 9
+    | Flags.GE -> 10
+    | Flags.L -> 11
+    | Flags.G -> 12
+    | Flags.LE -> 13
+    | Flags.ALWAYS -> 14
+    | _ -> 0
+  in
 
   let map_instr (instr : Ir.instr) : string * int * int * int64 =
     match instr with
@@ -245,6 +266,37 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
     | Ir.Alu { op = Ir.Sar; dst; src1; src2 = Ir.Imm imm; _ } ->
         assert_src1_eq_dst ~op:Ir.Sar ~dst ~src1;
         ("asgard_rd_jit::JIT_OP_SAR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Alu { op = Ir.Shl; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Shl ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SHL_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Shr; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Shr ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SHR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Sar; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Sar ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SAR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Ror; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Ror ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_ROR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Div; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Div ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_DIV_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Idiv; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Idiv ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SDIV_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Cmp { src1 = Ir.Reg s1; src2 = Ir.Reg s2 } ->
+        ("asgard_rd_jit::JIT_OP_CMP_RR", Native_vm.Vm_transform.reg_to_index s1 mod 16,
+         Native_vm.Vm_transform.reg_to_index s2 mod 16, 0L)
+    | Ir.Cmov { cond; dst; src = Ir.Reg s } ->
+        let c = cond_to_arm64_code cond in
+        ("asgard_rd_jit::JIT_OP_CSEL_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, Int64.of_int c)
     | Ir.Unary { op = Ir.Not; dst; src = _; _ } ->
         ("asgard_rd_jit::JIT_OP_NOT_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
     | Ir.Unary { op = Ir.Neg; dst; src = _; _ } ->

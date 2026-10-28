@@ -20,6 +20,7 @@
    caller falls back to another engine. *)
 
 open Stack_ir
+open Vm_ir
 
 type jit_item = string * int * int * int64
 (* (JIT_OP_* symbol, dst slot, src slot, immediate) *)
@@ -43,6 +44,24 @@ let nop_item : jit_item = (jit "NOP", 0, 0, 0L)
 
 let unsupported what =
   Error ("stack_jit: unsupported stack op: " ^ what)
+
+let cond_to_code = function
+  | Flags.E -> 0
+  | Flags.NE -> 1
+  | Flags.B -> 2
+  | Flags.AE -> 3
+  | Flags.S -> 4
+  | Flags.NS -> 5
+  | Flags.O -> 6
+  | Flags.NO -> 7
+  | Flags.A -> 8
+  | Flags.BE -> 9
+  | Flags.GE -> 10
+  | Flags.L -> 11
+  | Flags.G -> 12
+  | Flags.LE -> 13
+  | Flags.ALWAYS -> 14
+  | _ -> 0
 
 
 (* ---- reference interpreter of the translatable subset ----------- *)
@@ -97,6 +116,50 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
            | count :: a :: tl ->
                stk := Int64.shift_right a (Int64.to_int count land 63) :: tl
            | _ -> failwith "stack_jit: underflow on Sar")
+      | Div ->
+          (match !stk with
+           | b :: a :: tl -> stk := (if b = 0L then 0L else Int64.unsigned_div a b) :: tl
+           | _ -> failwith "stack_jit: underflow on Div")
+      | Idiv ->
+          (match !stk with
+           | b :: a :: tl -> stk := (if b = 0L then 0L else Int64.div a b) :: tl
+           | _ -> failwith "stack_jit: underflow on Idiv")
+      | Rot ->
+          (match !stk with
+           | b :: a :: tl ->
+               let s = Int64.to_int b land 63 in
+               let res = if s = 0 then a else Int64.logor (Int64.shift_right_logical a s) (Int64.shift_left a (64 - s)) in
+               stk := res :: tl
+           | _ -> failwith "stack_jit: underflow on Rot")
+      | Dup2 ->
+          (match !stk with
+           | b :: a :: tl -> stk := b :: a :: b :: a :: tl
+           | _ -> failwith "stack_jit: underflow on Dup2")
+      | Cmp ->
+          (match !stk with
+           | _ :: _ :: tl -> stk := tl
+           | _ -> failwith "stack_jit: underflow on Cmp")
+      | Test ->
+          (match !stk with
+           | _ :: _ :: tl -> stk := tl
+           | _ -> failwith "stack_jit: underflow on Test")
+      | Cmov (_cond, r) ->
+          (match !stk with
+           | v :: tl ->
+               stk := tl;
+               if r >= 0 && r < Array.length regs then regs.(r) <- v
+           | [] -> failwith "stack_jit: underflow on Cmov")
+      | Setcc _cond ->
+          stk := 1L :: !stk
+      | SetRegImm (r, v) ->
+          if r >= 0 && r < Array.length regs then regs.(r) <- v
+      | AddRegImm (r, v) ->
+          if r >= 0 && r < Array.length regs then regs.(r) <- Int64.add regs.(r) v
+      | ReadMem _ -> ()
+      | WriteMem _ ->
+          (match !stk with
+           | _ :: _ :: tl -> stk := tl
+           | _ -> failwith "stack_jit: underflow on WriteMem")
       | AddImm v ->
           (match !stk with
            | a :: tl -> stk := Int64.add a v :: tl
@@ -131,7 +194,7 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
     (fun chunk ->
       List.iter
         (fun (op, dst, src, imm) ->
-          match suffix op with
+          (match suffix op with
           | "NOP" -> ()
           | "MOV_RR" -> gprs.(dst) <- gprs.(src)
           | "MOV_RI" -> gprs.(dst) <- imm
@@ -149,7 +212,20 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
           | "XOR_RR" -> gprs.(dst) <- Int64.logxor gprs.(dst) gprs.(src)
           | "NOT_R" -> gprs.(dst) <- Int64.lognot gprs.(dst)
           | "EXIT" -> ()
-          | s -> failwith ("stack_jit: simulate: unknown op " ^ s))
+          | "ROR_RR" ->
+              let s = Int64.to_int gprs.(src) land 63 in
+              gprs.(dst) <- (if s = 0 then gprs.(dst) else Int64.logor (Int64.shift_right_logical gprs.(dst) s) (Int64.shift_left gprs.(dst) (64 - s)))
+          | "DIV_RR" ->
+              gprs.(dst) <- (if gprs.(src) = 0L then 0L else Int64.unsigned_div gprs.(dst) gprs.(src))
+          | "SDIV_RR" ->
+              gprs.(dst) <- (if gprs.(src) = 0L then 0L else Int64.div gprs.(dst) gprs.(src))
+          | "REM_RR" ->
+              gprs.(dst) <- (if gprs.(src) = 0L then 0L else Int64.unsigned_rem gprs.(dst) gprs.(src))
+          | "CMP_RR" -> ()
+          | "CSEL_RR" -> gprs.(dst) <- gprs.(src)
+          | "LOAD_64" -> ()
+          | "STORE_64" -> ()
+          | s -> failwith ("stack_jit: simulate: unknown op " ^ s)))
         chunk)
     chunks
 
@@ -208,17 +284,17 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
       Ok ()
     end
   in
-  let shift_imm op =
-    if !depth < 2 then Error ("stack_jit: underflow on " ^ op)
+  let shift_op op_rr op_ri =
+    if !depth < 2 then Error ("stack_jit: underflow on shift")
     else match !out with
     | (mov_ri, slot_b, 0, imm) :: rest_out
       when mov_ri = jit "MOV_RI" && slot_b = stack_base + !depth - 1 ->
         out := rest_out;
-        push_item (jit op, stack_base + !depth - 2, 0, imm);
+        push_item (jit op_ri, stack_base + !depth - 2, 0, imm);
         decr depth;
         Ok ()
     | _ ->
-        unsupported (op ^ " with non-immediate shift count")
+        binary op_rr
   in
   let rec walk = function
     | [] -> Ok ()
@@ -254,9 +330,80 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
               let* () = binary "OR_RR" in
               push_item (jit "NOT_R", stack_base + !depth - 1, 0, 0L);
               Ok ()
-          | Shl -> shift_imm "SHL_RI"
-          | Shr -> shift_imm "SHR_RI"
-          | Sar -> shift_imm "SAR_RI"
+          | Shl -> shift_op "SHL_RR" "SHL_RI"
+          | Shr -> shift_op "SHR_RR" "SHR_RI"
+          | Sar -> shift_op "SAR_RR" "SAR_RI"
+          | Div -> binary "DIV_RR"
+          | Idiv -> binary "SDIV_RR"
+          | Rot -> binary "ROR_RR"
+          | Dup2 ->
+              if !depth < 2 then Error "stack_jit: underflow on Dup2"
+              else begin
+                let* () = grow () in
+                push_item (jit "MOV_RR", stack_base + !depth - 1, stack_base + !depth - 3, 0L);
+                let* () = grow () in
+                push_item (jit "MOV_RR", stack_base + !depth - 1, stack_base + !depth - 3, 0L);
+                Ok ()
+              end
+          | Cmp ->
+              if !depth < 2 then Error "stack_jit: underflow on Cmp"
+              else begin
+                push_item (jit "CMP_RR", stack_base + !depth - 2, stack_base + !depth - 1, 0L);
+                depth := !depth - 2;
+                Ok ()
+              end
+          | Test ->
+              if !depth < 2 then Error "stack_jit: underflow on Test"
+              else begin
+                let a = stack_base + !depth - 2 and b = stack_base + !depth - 1 in
+                push_item (jit "AND_RR", a, b, 0L);
+                push_item (jit "CMP_RR", a, a, 0L);
+                depth := !depth - 2;
+                Ok ()
+              end
+          | Cmov (cond, r) ->
+              if !depth < 1 then Error "stack_jit: underflow on Cmov"
+              else begin
+                let* s = map_ctx_slot r in
+                let v = stack_base + !depth - 1 in
+                push_item (jit "CSEL_RR", s, v, Int64.of_int (cond_to_code cond));
+                decr depth;
+                Ok ()
+              end
+          | Setcc cond ->
+              let* () = grow () in
+              let dst = stack_base + !depth - 1 in
+              let* () = grow () in
+              let tmp = stack_base + !depth - 1 in
+              push_item (jit "MOV_RI", dst, 0, 0L);
+              push_item (jit "MOV_RI", tmp, 0, 1L);
+              push_item (jit "CSEL_RR", dst, tmp, Int64.of_int (cond_to_code cond));
+              decr depth;
+              Ok ()
+          | ReadMem _ ->
+              if !depth < 1 then Error "stack_jit: underflow on ReadMem"
+              else begin
+                let slot = stack_base + !depth - 1 in
+                push_item (jit "LOAD_64", slot, slot, 0L);
+                Ok ()
+              end
+          | WriteMem _ ->
+              if !depth < 2 then Error "stack_jit: underflow on WriteMem"
+              else begin
+                let src = stack_base + !depth - 1 in
+                let dst = stack_base + !depth - 2 in
+                push_item (jit "STORE_64", dst, src, 0L);
+                depth := !depth - 2;
+                Ok ()
+              end
+          | SetRegImm (r, imm) ->
+              let* s = map_ctx_slot r in
+              push_item (jit "MOV_RI", s, 0, imm);
+              Ok ()
+          | AddRegImm (r, imm) ->
+              let* s = map_ctx_slot r in
+              push_item (jit "ADD_RI", s, 0, imm);
+              Ok ()
           | AddImm v ->
               if !depth < 1 then Error "stack_jit: underflow on AddImm"
               else begin
