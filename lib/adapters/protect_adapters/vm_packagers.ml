@@ -236,11 +236,10 @@ end
 module Jit_vm_packager : Vm_packager = struct
   let engine_kind = Jit
 
-  let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
-    let ir : Vm_ir.Ir.func = unwrap_ir func in
+  let package_single ~rng ~config (name, (ir : Vm_ir.Ir.func)) =
     let native_cfg : Protection_config.t = unwrap_config config in
     Logger.infof ~section:"JIT_VM" "RD-JIT VM: packaging function '%s' (CFF=%b, MBA=%b, depth=%d)"
-      ir.name native_cfg.cff.enabled native_cfg.mba.enabled native_cfg.mba.depth;
+      name native_cfg.cff.enabled native_cfg.mba.enabled native_cfg.mba.depth;
     let jit_pkg =
       Rd_jit_vm.Rd_jit_emitter.compile_and_package
         ~rng
@@ -250,26 +249,47 @@ module Jit_vm_packager : Vm_packager = struct
         ~mba_depth:native_cfg.mba.depth
         ir
     in
-    Logger.debugf ~section:"JIT_VM" "RD-JIT VM packaging complete: %d bytecode words" (List.length jit_pkg.bytecode);
-    {
-      cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name jit_pkg.cpp_runtime_source;
-      runner_source = jit_pkg.runner_source;
-      bytecode = jit_pkg.bytecode;
-      bytecodes = [ (ir.name, jit_pkg.bytecode) ];
-      metrics = convert_metrics ~engine_name:"Register-Driven JIT-VM" ~config:native_cfg jit_pkg.metrics;
-      header_name = "jit_vm_runtime.hpp";
-      rebind_address = None;
-    }
+    (jit_pkg, name)
+
+  let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
+    let native_cfg : Protection_config.t = unwrap_config config in
+    let ir_funcs = unwrap_multi_ir func in
+    if List.length ir_funcs > 1 then begin
+      Logger.infof ~section:"JIT_VM" "RD-JIT VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
+      let results = List.map (package_single ~rng ~config) ir_funcs in
+      let bytecodes = List.map (fun ((pkg : Rd_jit_vm.Rd_jit_emitter.rd_jit_package), name) -> (name, pkg.bytecode)) results in
+      let first_pkg = fst (List.hd results) in
+      let first_name = snd (List.hd results) in
+      {
+        cpp_runtime_source = inject_pipeline_hardening native_cfg first_name first_pkg.cpp_runtime_source;
+        runner_source = first_pkg.runner_source;
+        bytecode = first_pkg.bytecode;
+        bytecodes;
+        metrics = convert_metrics ~engine_name:"Register-Driven JIT-VM" ~config:native_cfg first_pkg.metrics;
+        header_name = "jit_vm_runtime.hpp";
+        rebind_address = None;
+      }
+    end else begin
+      let (pkg, name) = package_single ~rng ~config (List.hd ir_funcs) in
+      {
+        cpp_runtime_source = inject_pipeline_hardening native_cfg name pkg.cpp_runtime_source;
+        runner_source = pkg.runner_source;
+        bytecode = pkg.bytecode;
+        bytecodes = [ (name, pkg.bytecode) ];
+        metrics = convert_metrics ~engine_name:"Register-Driven JIT-VM" ~config:native_cfg pkg.metrics;
+        header_name = "jit_vm_runtime.hpp";
+        rebind_address = None;
+      }
+    end
 end
 
 module Stack_jit_packager : Vm_packager = struct
   let engine_kind = Jit
 
-  let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
-    let ir : Vm_ir.Ir.func = unwrap_ir func in
+  let package_single ~rng ~config (name, (ir : Vm_ir.Ir.func)) =
     let native_cfg : Protection_config.t = unwrap_config config in
     Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging function '%s' (IR -> Stack-IR -> sealed chunks)"
-      ir.name;
+      name;
     let ext_syms = Hashtbl.create 16 in
     let ctx = Stack_vm.Context_allocator.create ~permute:false () in
     let _ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms ir in
@@ -280,8 +300,17 @@ module Stack_jit_packager : Vm_packager = struct
     in
     match Stack_vm.Stack_jit_chunker.translate_trace () entry.ops with
     | Error reason ->
-        Logger.warnf ~section:"STACK_JIT" "Stack-JIT chunking unfeasible (%s); falling back to RD-JIT" reason;
-        Jit_vm_packager.package ~rng ~config func
+        Logger.warnf ~section:"STACK_JIT" "Stack-JIT chunking unfeasible for '%s' (%s); compiling with RD-JIT" name reason;
+        let jit_pkg =
+          Rd_jit_vm.Rd_jit_emitter.compile_and_package
+            ~rng
+            ?config:(Some native_cfg)
+            ~enable_cff:false
+            ~enable_mba:false
+            ~mba_depth:0
+            ir
+        in
+        (jit_pkg, name)
     | Ok tr ->
         let jit_pkg =
           Rd_jit_vm.Rd_jit_emitter.compile_and_package_chunked
@@ -292,17 +321,40 @@ module Stack_jit_packager : Vm_packager = struct
             ~chunks:tr.chunks
             ir
         in
-        Logger.debugf ~section:"STACK_JIT" "Stack-JIT VM packaging complete: %d sealed chunk(s), %d real instrs"
-          (List.length tr.chunks) tr.real_instrs;
-        {
-          cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name jit_pkg.cpp_runtime_source;
-          runner_source = jit_pkg.runner_source;
-          bytecode = jit_pkg.bytecode;
-          bytecodes = [ (ir.name, jit_pkg.bytecode) ];
-          metrics = convert_metrics ~engine_name:"Stack-JIT VM" ~config:native_cfg jit_pkg.metrics;
-          header_name = "jit_vm_runtime.hpp";
-          rebind_address = None;
-        }
+        Logger.debugf ~section:"STACK_JIT" "Stack-JIT VM packaging complete for '%s': %d sealed chunk(s), %d real instrs"
+          name (List.length tr.chunks) tr.real_instrs;
+        (jit_pkg, name)
+
+  let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
+    let native_cfg : Protection_config.t = unwrap_config config in
+    let ir_funcs = unwrap_multi_ir func in
+    if List.length ir_funcs > 1 then begin
+      Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
+      let results = List.map (package_single ~rng ~config) ir_funcs in
+      let bytecodes = List.map (fun ((pkg : Rd_jit_vm.Rd_jit_emitter.rd_jit_package), name) -> (name, pkg.bytecode)) results in
+      let first_pkg = fst (List.hd results) in
+      let first_name = snd (List.hd results) in
+      {
+        cpp_runtime_source = inject_pipeline_hardening native_cfg first_name first_pkg.cpp_runtime_source;
+        runner_source = first_pkg.runner_source;
+        bytecode = first_pkg.bytecode;
+        bytecodes;
+        metrics = convert_metrics ~engine_name:"Stack-JIT VM" ~config:native_cfg first_pkg.metrics;
+        header_name = "jit_vm_runtime.hpp";
+        rebind_address = None;
+      }
+    end else begin
+      let (pkg, name) = package_single ~rng ~config (List.hd ir_funcs) in
+      {
+        cpp_runtime_source = inject_pipeline_hardening native_cfg name pkg.cpp_runtime_source;
+        runner_source = pkg.runner_source;
+        bytecode = pkg.bytecode;
+        bytecodes = [ (name, pkg.bytecode) ];
+        metrics = convert_metrics ~engine_name:"Stack-JIT VM" ~config:native_cfg pkg.metrics;
+        header_name = "jit_vm_runtime.hpp";
+        rebind_address = None;
+      }
+    end
 end
 
 module Multi_vm_packager : Vm_packager = struct

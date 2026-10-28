@@ -90,12 +90,13 @@ let test_chunker_rejections () =
     (Result.is_error
        (Stack_jit_chunker.translate_trace ()
           [ PushReg 0; PushReg 1; PushReg 2; PushReg 3;
-            PushReg 4; PushReg 5; PushReg 6; PushReg 7; PushReg 8 ]));
+            PushReg 4; PushReg 5; PushReg 6; PushReg 7;
+            PushReg 8; PushReg 9; PushReg 10 ]));
   check bool "Rejects stack window overflow" true
     (Result.is_error
        (Stack_jit_chunker.translate_trace ()
           [ PushImm 1L; PushImm 2L; PushImm 3L; PushImm 4L;
-            PushImm 5L; PushImm 6L; PushImm 7L; PushImm 8L; PushImm 9L ]))
+            PushImm 5L; PushImm 6L; PushImm 7L ]))
 
 let test_chunker_div_rot_dup2 () =
   let ops_div = [ PushImm 100L; PushImm 4L; Div ] in

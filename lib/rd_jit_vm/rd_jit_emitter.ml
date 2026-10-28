@@ -169,7 +169,7 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
       "AND_RI"; "OR_RR"; "OR_RI"; "SHL_RI"; "SHR_RI"; "SAR_RI"; "NOT_R";
       "NEG_R"; "LOAD_64"; "STORE_64"; "RET"; "EXIT";
       "SHL_RR"; "SHR_RR"; "SAR_RR"; "ROR_RR"; "DIV_RR"; "SDIV_RR"; "REM_RR";
-      "CMP_RR"; "CSEL_RR" ]
+      "CMP_RR"; "CSEL_RR"; "MULH_RR"; "SMULH_RR" ]
   in
   let jit_op_code_tbl = Hashtbl.create 32 in
   List.iteri
@@ -282,6 +282,14 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
         assert_src1_eq_dst ~op:Ir.Ror ~dst ~src1;
         ("asgard_rd_jit::JIT_OP_ROR_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
          Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Mulh; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Mulh ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_MULH_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
+    | Ir.Alu { op = Ir.Imulh; dst; src1; src2 = Ir.Reg s; _ } ->
+        assert_src1_eq_dst ~op:Ir.Imulh ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_SMULH_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
+         Native_vm.Vm_transform.reg_to_index s mod 16, 0L)
     | Ir.Alu { op = Ir.Div; dst; src1; src2 = Ir.Reg s; _ } ->
         assert_src1_eq_dst ~op:Ir.Div ~dst ~src1;
         ("asgard_rd_jit::JIT_OP_DIV_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
@@ -295,8 +303,9 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
          Native_vm.Vm_transform.reg_to_index s2 mod 16, 0L)
     | Ir.Cmov { cond; dst; src = Ir.Reg s } ->
         let c = cond_to_arm64_code cond in
-        ("asgard_rd_jit::JIT_OP_CSEL_RR", Native_vm.Vm_transform.reg_to_index dst mod 16,
-         Native_vm.Vm_transform.reg_to_index s mod 16, Int64.of_int c)
+        let d = Native_vm.Vm_transform.reg_to_index dst mod 16 in
+        let s_idx = Native_vm.Vm_transform.reg_to_index s mod 16 in
+        ("asgard_rd_jit::JIT_OP_CSEL_RR", d, s_idx, Int64.of_int (c lor (d lsl 8)))
     | Ir.Unary { op = Ir.Not; dst; src = _; _ } ->
         ("asgard_rd_jit::JIT_OP_NOT_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
     | Ir.Unary { op = Ir.Neg; dst; src = _; _ } ->
@@ -416,16 +425,25 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
         let words =
           List.map
             (fun (op, dst, src, imm) ->
+              let opc = jit_op_code op in
+              let imm' =
+                if op = "asgard_rd_jit::JIT_OP_CSEL_RR" then
+                  let cond = Int64.logand imm 0xFFL in
+                  let src2 = Int64.to_int (Int64.shift_right_logical imm 8) land 0xFF in
+                  let src2' = remap_idx src2 in
+                  Int64.logor cond (Int64.shift_left (Int64.of_int src2') 8)
+                else imm
+              in
               let w0 =
                 Int64.logor
                   (Int64.logor
-                     (Int64.of_int (jit_op_code op))
+                     (Int64.of_int opc)
                      (Int64.shift_left (Int64.of_int (remap_idx dst)) 8))
                   (Int64.shift_left (Int64.of_int (remap_idx src)) 16)
               in
-              let w1 = Nano_jit_slot.moser_pack imm in
-              (w0, w1))
-            chunk
+              let w1 = Nano_jit_slot.moser_pack imm' in
+            (w0, w1))
+          chunk
         in
         let plain = Bytes.create (16 * List.length words) in
         List.iteri

@@ -33,9 +33,9 @@ type translation = {
   dummy_instrs : int;          (* Thue-Morse dummies *)
 }
 
-let ctx_slots = 8
-let stack_base = 8
-let max_stack_depth = 8
+let ctx_slots = 10
+let stack_base = 10
+let max_stack_depth = 6
 
 let op_prefix = "asgard_rd_jit::JIT_OP_"
 
@@ -93,6 +93,31 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
           (match !stk with
            | b :: a :: tl -> stk := (Int64.mul a b) :: tl
            | _ -> failwith "stack_jit: underflow on Mul")
+      | Mulh ->
+          (match !stk with
+           | b :: a :: tl ->
+               let a1 = Int64.shift_right_logical a 32 and a0 = Int64.logand a 0xFFFFFFFFL in
+               let b1 = Int64.shift_right_logical b 32 and b0 = Int64.logand b 0xFFFFFFFFL in
+               let p0 = Int64.mul a0 b0 in
+               let p1 = Int64.add (Int64.mul a1 b0) (Int64.shift_right_logical p0 32) in
+               let p2 = Int64.add (Int64.mul a0 b1) (Int64.logand p1 0xFFFFFFFFL) in
+               let hi = Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32) in
+               stk := hi :: tl
+           | _ -> failwith "stack_jit: underflow on Mulh")
+      | Imulh ->
+          (match !stk with
+           | b :: a :: tl ->
+               let a1 = Int64.shift_right_logical a 32 and a0 = Int64.logand a 0xFFFFFFFFL in
+               let b1 = Int64.shift_right_logical b 32 and b0 = Int64.logand b 0xFFFFFFFFL in
+               let p0 = Int64.mul a0 b0 in
+               let p1 = Int64.add (Int64.mul a1 b0) (Int64.shift_right_logical p0 32) in
+               let p2 = Int64.add (Int64.mul a0 b1) (Int64.logand p1 0xFFFFFFFFL) in
+               let u_hi = Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32) in
+               let adj_a = if a < 0L then b else 0L in
+               let adj_b = if b < 0L then a else 0L in
+               let hi = Int64.sub (Int64.sub u_hi adj_a) adj_b in
+               stk := hi :: tl
+           | _ -> failwith "stack_jit: underflow on Imulh")
       | Nand ->
           (match !stk with
            | b :: a :: tl -> stk := Int64.lognot (Int64.logand a b) :: tl
@@ -204,6 +229,25 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
           | "SUB_RI" -> gprs.(dst) <- Int64.sub gprs.(dst) imm
           | "MUL_RR" -> gprs.(dst) <- Int64.mul gprs.(dst) gprs.(src)
           | "MUL_RI" -> gprs.(dst) <- Int64.mul gprs.(dst) imm
+          | "MULH_RR" ->
+              let a = gprs.(dst) and b = gprs.(src) in
+              let a1 = Int64.shift_right_logical a 32 and a0 = Int64.logand a 0xFFFFFFFFL in
+              let b1 = Int64.shift_right_logical b 32 and b0 = Int64.logand b 0xFFFFFFFFL in
+              let p0 = Int64.mul a0 b0 in
+              let p1 = Int64.add (Int64.mul a1 b0) (Int64.shift_right_logical p0 32) in
+              let p2 = Int64.add (Int64.mul a0 b1) (Int64.logand p1 0xFFFFFFFFL) in
+              gprs.(dst) <- Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32)
+          | "SMULH_RR" ->
+              let a = gprs.(dst) and b = gprs.(src) in
+              let a1 = Int64.shift_right_logical a 32 and a0 = Int64.logand a 0xFFFFFFFFL in
+              let b1 = Int64.shift_right_logical b 32 and b0 = Int64.logand b 0xFFFFFFFFL in
+              let p0 = Int64.mul a0 b0 in
+              let p1 = Int64.add (Int64.mul a1 b0) (Int64.shift_right_logical p0 32) in
+              let p2 = Int64.add (Int64.mul a0 b1) (Int64.logand p1 0xFFFFFFFFL) in
+              let u_hi = Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32) in
+              let adj_a = if a < 0L then b else 0L in
+              let adj_b = if b < 0L then a else 0L in
+              gprs.(dst) <- Int64.sub (Int64.sub u_hi adj_a) adj_b
           | "SHL_RI" -> gprs.(dst) <- Int64.shift_left gprs.(dst) (Int64.to_int imm land 63)
           | "SHR_RI" -> gprs.(dst) <- Int64.shift_right_logical gprs.(dst) (Int64.to_int imm land 63)
           | "SAR_RI" -> gprs.(dst) <- Int64.shift_right gprs.(dst) (Int64.to_int imm land 63)
@@ -238,29 +282,33 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
   let max_depth = ref 0 in
   let flags_depth = ref 0 in
   let ctx_map = Hashtbl.create 8 in
-  let scratch_alloc = ref (ctx_slots - 1) in
+  let used_slots = Hashtbl.create 8 in
+  List.iter
+    (function
+     | PushReg r | PopReg r | Cmov (_, r) | SetRegImm (r, _) | AddRegImm (r, _) ->
+         if r >= 0 && r < ctx_slots then begin
+           Hashtbl.replace ctx_map r r;
+           Hashtbl.replace used_slots r ()
+         end
+     | _ -> ())
+    ops;
   let map_ctx_slot r =
     if r < 0 then Error (Printf.sprintf "stack_jit: negative context slot %d" r)
     else match Hashtbl.find_opt ctx_map r with
     | Some s -> Ok s
     | None ->
-        if r < ctx_slots then begin
-          Hashtbl.replace ctx_map r r;
-          Ok r
-        end else begin
-          let rec find s =
-            if s < 0 then
-              Error (Printf.sprintf "stack_jit: too many context/scratch slots in trace (limit is %d)" ctx_slots)
-            else if Hashtbl.fold (fun _ v acc -> acc || v = s) ctx_map false then
-              find (s - 1)
-            else begin
-              scratch_alloc := s - 1;
-              Hashtbl.replace ctx_map r s;
-              Ok s
-            end
-          in
-          find !scratch_alloc
-        end
+        let rec find s =
+          if s < 0 then
+            Error (Printf.sprintf "stack_jit: too many context/scratch slots in trace (limit is %d)" ctx_slots)
+          else if Hashtbl.mem used_slots s then
+            find (s - 1)
+          else begin
+            Hashtbl.replace used_slots s ();
+            Hashtbl.replace ctx_map r s;
+            Ok s
+          end
+        in
+        find (ctx_slots - 1)
   in
   let out = ref [] in
   let push_item item = out := item :: !out in
@@ -321,6 +369,8 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
           | Add -> binary "ADD_RR"
           | Sub -> binary "SUB_RR"
           | Mul -> binary "MUL_RR"
+          | Mulh -> binary "MULH_RR"
+          | Imulh -> binary "SMULH_RR"
           | Nand ->
               (* res = ~(a & b): AND then NOT, in place on a's slot. *)
               let* () = binary "AND_RR" in
@@ -366,7 +416,7 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
               else begin
                 let* s = map_ctx_slot r in
                 let v = stack_base + !depth - 1 in
-                push_item (jit "CSEL_RR", s, v, Int64.of_int (cond_to_code cond));
+                push_item (jit "CSEL_RR", s, v, Int64.of_int (cond_to_code cond lor (s lsl 8)));
                 decr depth;
                 Ok ()
               end
@@ -377,7 +427,7 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
               let tmp = stack_base + !depth - 1 in
               push_item (jit "MOV_RI", dst, 0, 0L);
               push_item (jit "MOV_RI", tmp, 0, 1L);
-              push_item (jit "CSEL_RR", dst, tmp, Int64.of_int (cond_to_code cond));
+              push_item (jit "CSEL_RR", dst, tmp, Int64.of_int (cond_to_code cond lor (dst lsl 8)));
               decr depth;
               Ok ()
           | ReadMem _ ->
@@ -493,6 +543,7 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
     let run_idx = ref 0 in
     let cur = ref [] in
     let acc = ref [] in
+    let in_flag_window = ref false in
     let flush () =
       if !cur <> [] then begin
         acc := List.rev !cur :: !acc;
@@ -502,11 +553,16 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
     in
     List.iter
       (fun item ->
+        let is_cmp = match item with (op, _, _, _) -> String.ends_with ~suffix:"CMP_RR" op in
+        let is_csel = match item with (op, _, _, _) -> String.ends_with ~suffix:"CSEL_RR" op in
+        if is_cmp && (List.length !cur >= 4 || List.length !cur + 4 > cap) then flush ();
         let target =
           kolakoski_word.(!run_idx mod Array.length kolakoski_word) * scale
         in
-        if List.length !cur >= target || List.length !cur >= cap then flush ();
-        Stdlib.(cur := item :: !cur))
+        if (not !in_flag_window) && (List.length !cur >= target || List.length !cur >= cap) then flush ();
+        if is_cmp then in_flag_window := true;
+        Stdlib.(cur := item :: !cur);
+        if is_csel then in_flag_window := false)
       padded;
     flush ();
     List.rev !acc

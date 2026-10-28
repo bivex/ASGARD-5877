@@ -148,6 +148,33 @@ let step_op state = function
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
        | _ -> state.halted <- true)
+  | Mulh ->
+      (match state.vstack with
+       | op2 :: op1 :: rest ->
+           let a1 = Int64.shift_right_logical op1 32 and a0 = Int64.logand op1 0xFFFFFFFFL in
+           let b1 = Int64.shift_right_logical op2 32 and b0 = Int64.logand op2 0xFFFFFFFFL in
+           let p0 = Int64.mul a0 b0 in
+           let p1 = Int64.add (Int64.mul a1 b0) (Int64.shift_right_logical p0 32) in
+           let p2 = Int64.add (Int64.mul a0 b1) (Int64.logand p1 0xFFFFFFFFL) in
+           let res = Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32) in
+           state.vstack <- res :: rest;
+           state.vsp <- Int64.add state.vsp 8L
+       | _ -> state.halted <- true)
+  | Imulh ->
+      (match state.vstack with
+       | op2 :: op1 :: rest ->
+           let a1 = Int64.shift_right_logical op1 32 and a0 = Int64.logand op1 0xFFFFFFFFL in
+           let b1 = Int64.shift_right_logical op2 32 and b0 = Int64.logand op2 0xFFFFFFFFL in
+           let p0 = Int64.mul a0 b0 in
+           let p1 = Int64.add (Int64.mul a1 b0) (Int64.shift_right_logical p0 32) in
+           let p2 = Int64.add (Int64.mul a0 b1) (Int64.logand p1 0xFFFFFFFFL) in
+           let u_hi = Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32) in
+           let adj_a = if op1 < 0L then op2 else 0L in
+           let adj_b = if op2 < 0L then op1 else 0L in
+           let res = Int64.sub (Int64.sub u_hi adj_a) adj_b in
+           state.vstack <- res :: rest;
+           state.vsp <- Int64.add state.vsp 8L
+       | _ -> state.halted <- true)
   | Nor ->
       (match state.vstack with
        | op2 :: op1 :: rest ->

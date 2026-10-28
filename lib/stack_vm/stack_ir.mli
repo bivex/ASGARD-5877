@@ -10,6 +10,8 @@ type stack_op =
   | Add
   | Sub
   | Mul
+  | Mulh
+  | Imulh
   | Nor
   | Nand
   | Shl

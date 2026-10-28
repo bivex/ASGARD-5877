@@ -59,6 +59,8 @@ let jit_op_kind_decl () : top_decl =
       ("JIT_OP_REM_RR", None);
       ("JIT_OP_CMP_RR", None);
       ("JIT_OP_CSEL_RR", None);
+      ("JIT_OP_MULH_RR", None);
+      ("JIT_OP_SMULH_RR", None);
     ];
   }
 
@@ -394,11 +396,25 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
                 code[idx++] = 0xeb0a013f;
                 break;
-            case JIT_OP_CSEL_RR: {
-                uint32_t cond = (uint32_t)(in.imm & 0xF);
+            case JIT_OP_MULH_RR:
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
-                code[idx++] = 0x9a890149 | (cond << 12);
+                code[idx++] = 0x9bca7d29;
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
+            case JIT_OP_SMULH_RR:
+                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
+                code[idx++] = 0x9b4a7d29;
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
+            case JIT_OP_CSEL_RR: {
+                uint32_t cond = (uint32_t)(in.imm & 0xF);
+                uint8_t src2 = (uint8_t)((in.imm >> 8) & 0xFF);
+                uint8_t src2_off = src2 * 8;
+                code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
+                code[idx++] = 0xf9400000 | (src2_off / 8 << 10) | (0 << 5) | 11;
+                code[idx++] = 0x9a800000 | (11 << 16) | (cond << 12) | (10 << 5) | 9;
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
             }
@@ -609,6 +625,19 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
                 code[idx++] = 0x48; code[idx++] = 0x39; code[idx++] = 0xd0;
                 break;
+            case JIT_OP_MULH_RR:
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x77; code[idx++] = src_off;
+                code[idx++] = 0x48; code[idx++] = 0xf7; code[idx++] = 0xe6;
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x57; code[idx++] = dst_off;
+                break;
+            case JIT_OP_SMULH_RR:
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                code[idx++] = 0x48; code[idx++] = 0x99;
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x77; code[idx++] = src_off;
+                code[idx++] = 0x48; code[idx++] = 0xf7; code[idx++] = 0xee;
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x57; code[idx++] = dst_off;
+                break;
             case JIT_OP_CSEL_RR: {
                 uint8_t cond_byte = 0x44;
                 switch (in.imm & 0xF) {
@@ -620,7 +649,9 @@ let synthesize_and_execute_block_decl () : top_decl =
                     case 13: cond_byte = 0x4e; break;
                     default: cond_byte = 0x44; break;
                 }
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                uint8_t src2 = (uint8_t)((in.imm >> 8) & 0xFF);
+                uint8_t src2_off = src2 * 8;
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src2_off;
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
                 code[idx++] = 0x48; code[idx++] = 0x0f; code[idx++] = cond_byte; code[idx++] = 0xc2;
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
@@ -699,8 +730,21 @@ let synthesize_and_execute_block_decl () : top_decl =
                 ctx.flags = (a == b ? 1 : 0) | (a < b ? 2 : 0) | ((int64_t)a < (int64_t)b ? 4 : 0);
                 break;
             }
+            case JIT_OP_MULH_RR: {
+                uint64_t a = ctx.get_reg(in.dst);
+                uint64_t b = ctx.get_reg(in.src);
+                ctx.set_reg(in.dst, (uint64_t)(((__uint128_t)a * (__uint128_t)b) >> 64));
+                break;
+            }
+            case JIT_OP_SMULH_RR: {
+                int64_t a = (int64_t)ctx.get_reg(in.dst);
+                int64_t b = (int64_t)ctx.get_reg(in.src);
+                ctx.set_reg(in.dst, (uint64_t)(((__int128_t)a * (__int128_t)b) >> 64));
+                break;
+            }
             case JIT_OP_CSEL_RR: {
                 uint32_t cond = (uint32_t)(in.imm & 0xF);
+                uint8_t src2 = (uint8_t)((in.imm >> 8) & 0xFF);
                 bool take = false;
                 switch (cond) {
                     case 0: take = (ctx.flags & 1) != 0; break;
@@ -710,7 +754,7 @@ let synthesize_and_execute_block_decl () : top_decl =
                     case 11: take = ((ctx.flags & 4) != 0); break;
                     default: take = (ctx.flags & 1) != 0; break;
                 }
-                ctx.set_reg(in.dst, take ? ctx.get_reg(in.dst) : ctx.get_reg(in.src));
+                ctx.set_reg(in.dst, take ? ctx.get_reg(in.src) : ctx.get_reg(src2));
                 break;
             }
             default: break;

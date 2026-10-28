@@ -32,6 +32,8 @@ let op_name (op : stack_op) : string =
   | Add -> "Add"
   | Sub -> "Sub"
   | Mul -> "Mul"
+  | Mulh -> "Mulh"
+  | Imulh -> "Imulh"
   | Nor -> "Nor"
   | Nand -> "Nand"
   | Shl -> "Shl"
@@ -88,7 +90,7 @@ let op_to_json (op : stack_op) : Yojson.Safe.t =
         `List [ `Int s; int64_to_json v ]
     | NativeEscape (kind, a, b, c, stub) ->
         `List [ `Int kind; `Int a; `Int b; `Int c; `List (List.map (fun x -> `Int x) stub) ]
-    | Add | Sub | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv
+    | Add | Sub | Mul | Mulh | Imulh | Nor | Nand | Shl | Shr | Sar | Div | Idiv
     | Dup | Dup2 | Rot | Swap | PushFlags | PopFlags | Exit | Cmp | Test -> `List []
   in
   `Assoc
