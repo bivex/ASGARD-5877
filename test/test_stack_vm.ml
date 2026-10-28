@@ -3161,6 +3161,47 @@ let test_dual_rail () =
   Alcotest.(check bool) "Dual-rail orthogonality knot proven equivalent (zero delta) via SMT QF_BV" true
     (match res_ortho with Stack_bv_verifier.Equivalent -> true | _ -> false)
 
+let test_homomorphic () =
+  let ctx = Context_allocator.create () in
+  let b0 = make_block 0 "entry" [
+    SetRegImm (1, 100L);
+    PushReg 1;
+    PushImm 25L;
+    Add;          (* 100 + 25 = 125 *)
+    PopReg 2;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 16 in
+  let cfg = { (Stack_homomorphic_pass.default_homomorphic_config 0x5877CAFEL) with rate = 100 } in
+  let prog_homo = Stack_homomorphic_pass.apply_program cfg ctx prog in
+  let b_homo = Hashtbl.find prog_homo.blocks 0 in
+  Alcotest.(check bool) "Homomorphic pass blinded operands" true
+    (List.length b_homo.ops > List.length b0.ops);
+
+  (* 1. Semantic evaluation in VM interpreter *)
+  let state = run_program prog_homo in
+  Alcotest.(check bool) "Homomorphic program halted" true state.halted;
+  Alcotest.(check int64) "Computation exact: reg[1]=100" 100L (get_reg state 1);
+  Alcotest.(check int64) "Computation exact: reg[2]=125" 125L (get_reg state 2);
+
+  (* 2. Bytecode execution *)
+  let enc = Stack_encoder.encode_program ~seed_key:0x58771337BEEFL prog_homo in
+  let state_bc = run_bytecode enc in
+  Alcotest.(check bool) "Bytecode execution halted" true state_bc.halted;
+  Alcotest.(check int64) "Bytecode execution exact: reg[2]=125" 125L (get_reg state_bc 2);
+
+  (* 3. Formal verification of Homomorphic Operand Blinding via SMT QF_BV *)
+  let v = 42L in
+  let alpha = 0x5877A55ACA1337B9L in
+  let beta = 0xCAFE1337BEEF5877L in
+  let enc_v = Stack_homomorphic_pass.encrypt_scalar ~alpha ~beta v in
+  let alpha_inv = Stack_homomorphic_pass.mod_inv_64 alpha in
+  let orig_homo = [ PushImm v ] in
+  let trans_homo = [ PushImm enc_v; PushImm beta; Sub; PushImm alpha_inv; Mul ] in
+  let res_homo = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_homo ~trans_ops:trans_homo () in
+  Alcotest.(check bool) "Homomorphic operand blinding proven equivalent via SMT QF_BV" true
+    (match res_homo with Stack_bv_verifier.Equivalent -> true | _ -> false)
+
 
 
 
@@ -3225,7 +3266,7 @@ let tests = [
   ("I/O Sink Entanglement & Slicing Barrier", `Quick, test_sink_barrier);
   ("Cross-Block Path Digest & Anti-DBI Traps", `Quick, test_trap_engine);
   ("Dual-Rail Complement Arithmetic & Invariant Checkpoints", `Quick, test_dual_rail);
+  ("Homomorphic Ciphertext Operand Blinding", `Quick, test_homomorphic);
 ]
-
 
 

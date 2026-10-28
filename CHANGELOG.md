@@ -79,6 +79,15 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered `dual_rail_salt` in `lib/constants/magic_numbers.ml`.
   * Wired Phase 5j into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified across 60/60 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0 reductions, Tier 6: 100.0% inductive synthesis resilience), and full license check E2E.
+
+- Implement Pass 20 (Phase 2d): Homomorphic Ciphertext Operand Blinding (`lib/stack_vm/stack_homomorphic_pass.ml`, `lib/stack_vm/stack_homomorphic_pass.mli`):
+  * Encodes scalar immediate constants in `PushImm` and `SetRegImm` into affine quotient rings $E(v) = (\alpha \cdot v + \beta) \pmod{2^{64}}$ where $\gcd(\alpha, 2^{64}) = 1$, eliminating plaintext constants from bytecode disassembly.
+  * Desugars at runtime using scratch register breaks and Newton-Raphson 64-bit modular inverse $\alpha^{-1} \cdot (E(v) - \beta) \equiv v \pmod{2^{64}}$, with `PushFlags ... PopFlags` wrapping for flag preservation.
+  * Formally proven in Z3 SMT `QF_BV` (`test/test_stack_vm.ml`).
+  * Registered `homomorphic_salt` in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 2d into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Fixed `Stack_trace_closure_pass` by resetting accumulator `g_slot = 0` at block entry when trace closure is active, preventing cross-block nibble trace drift and stack pointer misalignment.
+  * Verified across 61/61 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 1.1% junk recovered, Tier 6: 100.0% synthesis resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.

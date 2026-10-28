@@ -379,6 +379,8 @@ let make_stack_metrics
         pass_switch "Spaghetti CFG Splitting" true "";
         pass_switch "Braided CFG Merging" native_cfg.braid.enabled
           "disabled in configuration";
+        pass_switch "Homomorphic Ciphertext Blinding" native_cfg.homomorphic.enabled
+          "disabled in configuration";
         pass_switch "Ghost Stack Padding" true "";
         pass_switch "Avid Junk Operands" native_cfg.avid.enabled
           "disabled in configuration";
@@ -788,6 +790,40 @@ module Stack_vm_packager : Vm_packager = struct
     if br.enabled && br.rate > 0 then
       Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2c] Braided CFG Merging: %s" braid_info;
 
+
+    (* Phase 2d (Pass 20): Homomorphic Ciphertext Operand Blinding *)
+    let homo_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 15)
+    in
+    let homo_cfg_user = native_cfg.homomorphic in
+    let homo_cfg = {
+      (Stack_vm.Stack_homomorphic_pass.default_homomorphic_config homo_seed) with
+      rate = homo_cfg_user.rate;
+      enabled = homo_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Homomorphic Blinding       rate=%d%% seed=0x%016LX%s"
+         homo_cfg.rate
+         homo_cfg.seed
+         (if homo_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, homo_info =
+      if homo_cfg_user.enabled then begin
+        let prog_homo =
+          Stack_vm.Stack_homomorphic_pass.apply_program homo_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_homomorphic_pass.homomorphic_stats prog prog_homo in
+        (prog_homo, info)
+      end else
+        (prog, "Disabled (config: homomorphic.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"2d-homomorphic" prog;
+    dump_bytecode_json ~phase:"2d-homomorphic" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2d-homomorphic" ~final:false prog;
+    if homo_cfg_user.enabled then
+      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2d] Homomorphic Operand Blinding: %s" homo_info;
     let real_blocks = Hashtbl.length prog.blocks in
     let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
 

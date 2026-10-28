@@ -233,7 +233,13 @@ let apply_block (cfg : trace_closure_config) ~(g_slot : int) ~(live_writes : int
         incr i
       end
     done;
-    { b with ops = List.rev !new_ops }
+    let ops =
+      if !step > 0 then
+        [ PushImm 0L; PopReg g_slot ] @ List.rev !new_ops
+      else
+        List.rev !new_ops
+    in
+    { b with ops }
 
 let apply_program (cfg : trace_closure_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled then prog

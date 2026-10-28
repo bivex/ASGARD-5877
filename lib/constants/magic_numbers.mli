@@ -146,6 +146,7 @@ val trap_step_add : int64
 val trap_token_mul : int64
 val trap_salt_init : int64
 val dual_rail_salt : int64
+val homomorphic_salt : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

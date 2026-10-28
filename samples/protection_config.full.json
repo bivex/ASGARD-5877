@@ -126,6 +126,10 @@
     "enabled": true,
     "rate": 25
   },
+  "homomorphic": {
+    "enabled": true,
+    "rate": 25
+  },
   "amplifier": {
     "enabled": true,
     "profile": "balanced",

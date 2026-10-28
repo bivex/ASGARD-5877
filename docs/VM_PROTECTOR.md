@@ -23,6 +23,7 @@ flowchart TD
         P2["Phase 2: Superoperator Fusion & Multiplicity"]
         P3["Phase 2b: Horner Amplification & E-Graph MBA"]
         P3b["Phase 2c (Pass 16): Braided CFG Merging"]
+        P3c["Phase 2d (Pass 20): Homomorphic Ciphertext Operand Blinding"]
         P4["Phase 3 (Pass 13): CFF with Hensel Implicit Predicates"]
         P6["Phase 5: Metamorphic Ghost Padding"]
         P7["Phase 5b: Variable-Size Avid Junk Operands"]
@@ -38,7 +39,7 @@ flowchart TD
         P11b["Phase 6b (Pass 19): Cross-Block Path Traps"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P12 --> P12b
     end
     
     IR --> P1
@@ -252,6 +253,20 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 * **SMT Proof**: Formally proven in Z3 SMT `QF_BV` that multiplexed register updates preserve path-specific values across all inputs while keeping net stack delta zero and condition flags intact.
 ---
 
+
+### Phase 2d (Pass 20): Homomorphic Ciphertext Operand Blinding (`stack_homomorphic_pass.ml`)
+* **Goal**: Eliminates plaintext scalar immediate constants (`PushImm`, `SetRegImm`) from bytecode disassembly and static constant carving, preventing automated symbolic taint tracing and pattern matching.
+* **Affine Quotient Ring Encryption**:
+  Raw constants $v$ are replaced with affine ciphertext values $E(v)$:
+  $$E(v) = (\alpha \cdot v + \beta) \pmod{2^{64}}$$
+  where $\gcd(\alpha, 2^{64}) = 1$ ($\alpha$ is an odd 64-bit integer), and $\beta$ is a pseudo-random blinding salt derived from `homomorphic_salt`.
+* **Peephole-Resistant Desugaring**:
+  Reconstructed at runtime via modular inverse $\alpha^{-1}$ computed by 64-bit Newton-Raphson iteration:
+  $$\alpha^{-1} \cdot (E(v) - \beta) \equiv v \pmod{2^{64}}$$
+  Interleaved with scratch register breaks to defeat AST expression re-folding:
+  $$\text{PushImm } E(v) \to \text{PushImm } \beta \to \text{Sub} \to \text{PushImm } \alpha^{-1} \to \text{Mul}$$
+  Safely wrapped in `PushFlags ... PopFlags` when condition codes are live downstream.
+* **SMT Proof**: Formally proven in Z3 SMT `QF_BV` (`test_stack_vm.ml`) that the desugared reconstruction preserves the exact 64-bit scalar $v$ for all $2^{64}$ inputs.
 
 ### Phase 5g (Pass 15): T-Function Trace Invariant Closure (`stack_trace_closure_pass.ml`)
 * **Goal**: Closes the $\text{Live} \to \text{Ghost} \to \text{Live}$ dataflow cycle, preventing Tier 4 backward program slicing from pruning the ghost and avid computation subtrees.

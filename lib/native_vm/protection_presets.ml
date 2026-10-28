@@ -89,6 +89,7 @@ let default : t = {
   sink_barrier = default_sink_barrier;
   trap = default_trap;
   dual_rail = default_dual_rail;
+  homomorphic = default_homomorphic;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -211,6 +212,7 @@ let max_security : t = {
   sink_barrier = { default_sink_barrier with rate = 75 };
   trap = { default_trap with rate = 70 };
   dual_rail = { default_dual_rail with rate = 70 };
+  homomorphic = { default_homomorphic with rate = 70 };
   multiplicity = { default_multiplicity with rate = 60 };
   pipelined_dispatch = { default_pipelined_dispatch with chaff_slots = 8 };
   trampoline = default_trampoline;
@@ -328,6 +330,7 @@ let stealth : t = {
   sink_barrier = default_sink_barrier;
   trap = default_trap;
   dual_rail = default_dual_rail;
+  homomorphic = default_homomorphic;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -450,6 +453,7 @@ let edr_stealth : t = {
   sink_barrier = default_sink_barrier;
   trap = default_trap;
   dual_rail = default_dual_rail;
+  homomorphic = default_homomorphic;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
@@ -572,6 +576,7 @@ let minimal : t = {
   sink_barrier = { default_sink_barrier with enabled = false };
   trap = { default_trap with enabled = false };
   dual_rail = { default_dual_rail with enabled = false };
+  homomorphic = { default_homomorphic with enabled = false };
   multiplicity = { default_multiplicity with enabled = false };
   pipelined_dispatch = { default_pipelined_dispatch with enabled = false };
   trampoline = default_trampoline;
@@ -685,6 +690,7 @@ let high : t = {
   sink_barrier = { default_sink_barrier with rate = 65 };
   trap = { default_trap with rate = 60 };
   dual_rail = { default_dual_rail with rate = 60 };
+  homomorphic = { default_homomorphic with rate = 60 };
   multiplicity = { default_multiplicity with rate = 50 };
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;

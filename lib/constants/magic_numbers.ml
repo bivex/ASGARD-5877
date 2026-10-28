@@ -278,6 +278,9 @@ let trap_salt_init = 0xCAFE58771337BABEL
 
 (* Dual-Rail Complement Arithmetic (Phase 5j / Pass 21) constants *)
 let dual_rail_salt = 0x5877DEADBEEFCAFEL
+
+(* Homomorphic Ciphertext Operand Blinding (Phase 2d / Pass 20) constants *)
+let homomorphic_salt = 0x5877CAFE58771337L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -629,6 +632,10 @@ let registry : entry list = [
     value = dual_rail_salt;
     source = "0x5877DEADBEEFCAFE: PRNG diversification salt for dual-rail complement pass";
     used_in = [ "lib/stack_vm/stack_dual_rail_pass.ml" ] };
+  { name = "homomorphic_salt";
+    value = homomorphic_salt;
+    source = "0x5877CAFE58771337: diversification salt for homomorphic operand blinding pass";
+    used_in = [ "lib/stack_vm/stack_homomorphic_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =
