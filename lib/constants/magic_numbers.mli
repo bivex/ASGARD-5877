@@ -162,6 +162,40 @@ val rule30_salt : int64
 val rule30_init_key : int64
 val native_interleave_salt : int64
 
+(** OEIS A003022: marks of the optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}
+    placing the active slots of the RD-JIT nano-arena. *)
+val golomb5_m0 : int64
+val golomb5_m1 : int64
+val golomb5_m2 : int64
+val golomb5_m3 : int64
+val golomb5_m4 : int64
+
+(** Honeypot fill of the Beatty-classified (OEIS A001950) nano-arena units:
+    ARM64 BRK #0 / x86-64 INT3 tiled to 64 bits. *)
+val honeypot_trap_word_arm64 : int64
+val honeypot_trap_word_x86 : int64
+
+(** RNS-4 moduli of the RD-JIT register file (primes below 2^32). *)
+val rns_modulus_m1 : int64
+val rns_modulus_m2 : int64
+val rns_modulus_m3 : int64
+val rns_modulus_m4 : int64
+
+(** OEIS A000166: fix-free permutations of the 16-entry RD-JIT gprs file,
+    nibble-packed (nibble i = pi(i)). *)
+val derangement16_rot1 : int64
+val derangement16_rev : int64
+val derangement16_swap : int64
+val derangement16_rot7 : int64
+
+(** OEIS A000931: Padovan (plastic constant) 64-bit fixed-point region
+    fractions of the dual-mapped JIT buffer. *)
+val padovan_code_frac_64 : int64
+val padovan_meta_frac_64 : int64
+
+(** Initial trace digest of the RD-JIT context. *)
+val rd_jit_trace_digest_init : int64
+
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
 

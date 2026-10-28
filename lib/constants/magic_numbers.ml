@@ -303,6 +303,51 @@ let rule30_init_key = 0x1337C0DE5877A269L
 
 (* Native Micro-Handler Interleaving (Phase 6f / Pass 27) constants *)
 let native_interleave_salt = 0x5877A17A1E5C0DE7L
+
+(* RD-JIT Sealed Nano-Arena & Inter-Block Hardening constants.
+   OEIS provenance per docs/OEIS_MATHEMATICAL_SEQUENCES.md. *)
+
+(* OEIS A003022: marks of the optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}
+   (length 11).  The active slots of the RD-JIT nano-arena are placed at
+   arena_base + 128 * mark, so all pairwise byte distances between live slots
+   are distinct (no repeated L1D cache-line delta, no SMT array aliasing). *)
+let golomb5_m0 = 0L
+let golomb5_m1 = 1L
+let golomb5_m2 = 4L
+let golomb5_m3 = 9L
+let golomb5_m4 = 11L
+
+(* Honeypot fill of the Beatty-classified (OEIS A001950) arena units: ARM64
+   BRK #0 (0xD4200000) and x86-64 INT3 (0xCC) tiled into a 64-bit word. *)
+let honeypot_trap_word_arm64 = 0xD4200000D4200000L
+let honeypot_trap_word_x86 = 0xCCCCCCCCCCCCCCCCL
+
+(* RNS-4 moduli of the RD-JIT register file: the four largest primes below
+   2^32, pairwise coprime, product > 2^64 (lib/rd_jit_vm/rd_jit_buffer.ml). *)
+let rns_modulus_m1 = 4294967291L
+let rns_modulus_m2 = 4294967279L
+let rns_modulus_m3 = 4294967231L
+let rns_modulus_m4 = 4294967197L
+
+(* OEIS A000166 (derangements): four fix-free permutations of the 16-entry
+   RD-JIT gprs file, packed one nibble per slot (nibble i = pi(i)).  Chunk k
+   permutes its virtual-register operands with table[k mod 4], so no gprs
+   slot keeps its meaning across two adjacent JIT chunks. *)
+let derangement16_rot1 = 0x0FEDCBA987654321L (* pi(i) = (i+1) mod 16 *)
+let derangement16_rev = 0x0123456789ABCDEFL  (* pi(i) = 15 - i *)
+let derangement16_swap = 0xEFCDAB8967452301L (* pi(i) = i xor 1 *)
+let derangement16_rot7 = 0x6543210FEDCBA987L (* pi(i) = (i+7) mod 16 *)
+
+(* OEIS A000931 (Padovan / plastic constant psi = 1.3247179572447...):
+   64-bit fixed-point region fractions of the dual-mapped JIT buffer.
+   1 + psi + psi^2 = psi^5, so code = cap/psi^5, metadata = cap/psi^4 and
+   spill = cap/psi^3 = cap/(psi+1) partition the buffer with geometric psi
+   spacing: no region boundary lands on a power-of-two or harmonic offset. *)
+let padovan_code_frac_64 = 0x3EC05656FD59CC00L (* floor(2^64 / psi^5) *)
+let padovan_meta_frac_64 = 0x5320B74ECA44AC00L (* floor(2^64 / psi^4) = floor((psi-1) * 2^64) *)
+
+(* Initial trace digest of the RD-JIT context (hex-speak sentinel). *)
+let rd_jit_trace_digest_init = 0x13375877AABBCCDDL
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -319,7 +364,8 @@ let registry : entry list = [
     used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/native_vm/vm_context_emitter.ml";
                 "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
                 "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml";
-                "lib/stack_vm/pipelined_dispatch_pass.ml" ] };
+                "lib/stack_vm/pipelined_dispatch_pass.ml";
+                "lib/rd_jit_vm/nano_jit_slot.ml" ] };
   { name = "sqrt2_fraction_64";
     value = sqrt2_fraction_64;
     source = "frac(sqrt(2)) * 2^64";
@@ -332,12 +378,14 @@ let registry : entry list = [
     value = splitmix64_gamma;
     source = "SplitMix64 finalizer increment 1 (Steele, Lea and Flood, OOPSLA 2014)";
     used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
-                "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml" ] };
+                "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml";
+                "lib/rd_jit_vm/nano_jit_slot.ml" ] };
   { name = "splitmix64_mix";
     value = splitmix64_mix;
     source = "SplitMix64 finalizer increment 2 (Steele, Lea and Flood, OOPSLA 2014)";
     used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
-                "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml" ] };
+                "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml";
+                "lib/rd_jit_vm/nano_jit_slot.ml" ] };
   { name = "fnv1a_64_prime";
     value = fnv1a_64_prime;
     source = "FNV-1a 64-bit prime, 2^40 + 2^8 + 0xB3";
@@ -697,15 +745,87 @@ let registry : entry list = [
   { name = "rule30_salt";
     value = rule30_salt;
     source = "0x5877A2691601337B: OEIS A269160 Wolfram Rule 30 cellular automaton PRNG salt";
-    used_in = [ "lib/stack_vm/stack_rule30_pass.ml" ] };
+    used_in = [ "lib/stack_vm/stack_rule30_pass.ml"; "lib/rd_jit_vm/nano_jit_slot.ml" ] };
   { name = "rule30_init_key";
     value = rule30_init_key;
     source = "0x1337C0DE5877A269: initial seed for Wolfram Rule 30 keystream state slot";
-    used_in = [ "lib/stack_vm/stack_rule30_pass.ml" ] };
+    used_in = [ "lib/stack_vm/stack_rule30_pass.ml"; "lib/rd_jit_vm/nano_jit_slot.ml" ] };
   { name = "native_interleave_salt";
     value = native_interleave_salt;
     source = "0x5877A17A1E5C0DE7: PRNG diversification salt for native micro-handler interleaving pass";
     used_in = [ "lib/stack_vm/stack_native_interleave_pass.ml" ] };
+  { name = "golomb5_m0";
+    value = golomb5_m0;
+    source = "OEIS A003022: mark 0 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+  { name = "golomb5_m1";
+    value = golomb5_m1;
+    source = "OEIS A003022: mark 1 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+  { name = "golomb5_m2";
+    value = golomb5_m2;
+    source = "OEIS A003022: mark 2 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+  { name = "golomb5_m3";
+    value = golomb5_m3;
+    source = "OEIS A003022: mark 3 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+  { name = "golomb5_m4";
+    value = golomb5_m4;
+    source = "OEIS A003022: mark 4 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+  { name = "honeypot_trap_word_arm64";
+    value = honeypot_trap_word_arm64;
+    source = "0xD4200000D4200000: ARM64 BRK #0 tiled to 64 bits - honeypot fill of Beatty (OEIS A001950) nano-arena units";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+  { name = "honeypot_trap_word_x86";
+    value = honeypot_trap_word_x86;
+    source = "0xCCCCCCCCCCCCCCCC: x86-64 INT3 tiled to 64 bits - honeypot fill of Beatty (OEIS A001950) nano-arena units";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+  { name = "rns_modulus_m1";
+    value = rns_modulus_m1;
+    source = "4294967291 = 2^32 - 5, largest prime below 2^32: RNS-4 modulus 1 of the RD-JIT register file";
+    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+  { name = "rns_modulus_m2";
+    value = rns_modulus_m2;
+    source = "4294967279 = 2^32 - 17, prime: RNS-4 modulus 2 of the RD-JIT register file";
+    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+  { name = "rns_modulus_m3";
+    value = rns_modulus_m3;
+    source = "4294967231 = 2^32 - 65, prime: RNS-4 modulus 3 of the RD-JIT register file";
+    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+  { name = "rns_modulus_m4";
+    value = rns_modulus_m4;
+    source = "4294967197 = 2^32 - 99, prime: RNS-4 modulus 4 of the RD-JIT register file";
+    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+  { name = "derangement16_rot1";
+    value = derangement16_rot1;
+    source = "OEIS A000166: fix-free permutation pi(i) = (i+1) mod 16 of the RD-JIT gprs file, nibble-packed";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml"; "lib/rd_jit_vm/rd_jit_emitter.ml" ] };
+  { name = "derangement16_rev";
+    value = derangement16_rev;
+    source = "OEIS A000166: fix-free permutation pi(i) = 15 - i of the RD-JIT gprs file, nibble-packed";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml"; "lib/rd_jit_vm/rd_jit_emitter.ml" ] };
+  { name = "derangement16_swap";
+    value = derangement16_swap;
+    source = "OEIS A000166: fix-free permutation pi(i) = i xor 1 of the RD-JIT gprs file, nibble-packed";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml"; "lib/rd_jit_vm/rd_jit_emitter.ml" ] };
+  { name = "derangement16_rot7";
+    value = derangement16_rot7;
+    source = "OEIS A000166: fix-free permutation pi(i) = (i+7) mod 16 of the RD-JIT gprs file, nibble-packed";
+    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml"; "lib/rd_jit_vm/rd_jit_emitter.ml" ] };
+  { name = "padovan_code_frac_64";
+    value = padovan_code_frac_64;
+    source = "OEIS A000931: floor(2^64 / psi^5) with psi the plastic constant - code-region fraction of the Padovan-dispersed JIT buffer";
+    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+  { name = "padovan_meta_frac_64";
+    value = padovan_meta_frac_64;
+    source = "OEIS A000931: floor(2^64 / psi^4) = floor((psi-1) * 2^64) - metadata-region fraction of the Padovan-dispersed JIT buffer";
+    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+  { name = "rd_jit_trace_digest_init";
+    value = rd_jit_trace_digest_init;
+    source = "0x13375877AABBCCDD: hex-speak initial trace digest of the RD-JIT context";
+    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =
