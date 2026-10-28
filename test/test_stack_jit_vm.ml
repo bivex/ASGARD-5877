@@ -348,6 +348,37 @@ int main() {
         let run_st, out_str = Test_helpers.run_command_capture app_bin in
         check bool "Run status is 0" true (run_st = Unix.WEXITED 0);
         check bool "Output is loop_accumulate(5) = 30" true (contains_sub out_str "loop_accumulate(5) = 30"))
+let test_chunker_ruler_a001511 () =
+  (* OEIS A001511: A001511(t) = 1 + ctz(t) = 1 + v2(2t) *)
+  let module C = Stack_jit_chunker in
+  (* Known values: A001511(1)=1, A001511(2)=2, A001511(3)=1, A001511(4)=3,
+     A001511(5)=1, A001511(6)=2, A001511(7)=1, A001511(8)=4 *)
+  let expected = [| 1; 2; 1; 3; 1; 2; 1; 4; 1; 2; 1; 3; 1; 2; 1; 5 |] in
+  let computed = Array.init 16 (fun i -> C.ruler_a001511 (i + 1)) in
+  check bool "A001511 first 16 terms" true (computed = expected);
+  (* Level-k wipes happen at every t divisible by 2^(k-1) *)
+  for k = 1 to 5 do
+    for mult = 1 to 8 do
+      let t = mult * (1 lsl (k - 1)) in
+      check bool (Printf.sprintf "A001511(%d) >= %d" t k) true
+        (C.ruler_a001511 t >= k)
+    done
+  done;
+  (* invalidation_schedule for a small translation is computed correctly *)
+  (match C.translate_trace () [ PushImm 1L; PushImm 2L; Add ] with
+   | Error e -> fail ("Translate failed: " ^ e)
+   | Ok tr ->
+       let n = List.length tr.chunks in
+       check bool "invalidation_schedule length = num_chunks" true
+         (Array.length tr.invalidation_schedule = n);
+       (* Every entry is a positive integer (level >= 1) *)
+       check bool "all wipe levels >= 1" true
+         (Array.for_all (fun v -> v >= 1) tr.invalidation_schedule);
+       (* First chunk k=0 -> A001511(1)=1, second k=1 -> A001511(2)=2 (if exists) *)
+       if n >= 1 then
+         check int "schedule[0] = A001511(1) = 1" 1 tr.invalidation_schedule.(0);
+       if n >= 2 then
+         check int "schedule[1] = A001511(2) = 2" 2 tr.invalidation_schedule.(1))
 
 let tests = [
   ("Stack-JIT Basic Arithmetic Simulation", `Quick, test_chunker_basic_arithmetic);
@@ -363,4 +394,5 @@ let tests = [
   ("Stack-JIT Hardware Div/Rem/Shift E2E", `Quick, test_stack_jit_div_rem_hardware_e2e);
   ("Stack-JIT C Macro Trampoline E2E", `Quick, test_stack_jit_c_macro_e2e);
   ("Stack-JIT Dynamic Loop & Branching E2E", `Quick, test_stack_jit_loop_branch_e2e);
+  ("Stack-JIT A001511 Ruler & Invalidation Schedule", `Quick, test_chunker_ruler_a001511);
 ]

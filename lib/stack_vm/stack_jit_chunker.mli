@@ -26,11 +26,18 @@ type translation = {
   max_depth : int;             (** live-depth high-water mark *)
   real_instrs : int;           (** emitted instructions, dummies excluded *)
   dummy_instrs : int;          (** Thue-Morse dummy count *)
+  invalidation_schedule : int array;
+  (** OEIS A001511 fractal tiered invalidation schedule: entry [k] = 1 + ctz(k+1),
+      the wipe level threshold applied by the arena after executing chunk k. *)
 }
 
 val ctx_slots : int
 val stack_base : int
 val max_stack_depth : int
+(* OEIS A001511: ruler function A001511(t) = 1 + ctz(t) for t >= 1.
+   Gives the fractal wipe level for execution step [t] in the RD-JIT
+   arena: all slots of level <= A001511(t) are re-wiped after chunk t. *)
+val ruler_a001511 : int -> int
 
 (** Translate a straight-line stack trace.  [scale] multiplies the
     Kolakoski run lengths (default [Nano_jit_slot.nano_kolakoski_scale]). *)

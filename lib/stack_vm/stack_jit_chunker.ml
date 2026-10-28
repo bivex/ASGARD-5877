@@ -31,6 +31,10 @@ type translation = {
   max_depth : int;             (* live-depth high-water mark *)
   real_instrs : int;           (* emitted instructions, dummies excluded *)
   dummy_instrs : int;          (* Thue-Morse dummies *)
+  (* OEIS A001511: fractal tiered invalidation schedule.
+     invalidation_schedule.(k) = A001511(k+1) = 1 + ctz(k+1) for chunk k.
+     The runtime wipes all arena slots of level <= this value after step k. *)
+  invalidation_schedule : int array;
 }
 
 let ctx_slots = 12
@@ -280,6 +284,20 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
           | s -> failwith ("stack_jit: simulate: unknown op " ^ s)))
         chunk)
     chunks
+
+(* OEIS A001511 - Ruler function: A001511(t) = 1 + ctz(t) for t >= 1.
+   Returns the fractal wipe level for execution step t: the RD-JIT arena
+   wipes all active slots of level <= ruler_a001511(t) after chunk t. *)
+let ruler_a001511 (t : int) : int =
+  assert (t >= 1);
+  let rec ctz n = if n land 1 = 1 then 0 else 1 + ctz (n lsr 1) in
+  1 + ctz t
+
+(* Build the per-chunk A001511 invalidation schedule for [n] chunks.
+   schedule.(k) = ruler_a001511(k+1): the wipe level after chunk k. *)
+let make_invalidation_schedule (n : int) : int array =
+  if n = 0 then [||]
+  else Array.init n (fun k -> ruler_a001511 (k + 1))
 
 (* ---- translation ------------------------------------------------ *)
 
@@ -603,8 +621,10 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     flush ();
     List.rev !acc
   in
+  let n_chunks = List.length chunks in
   Ok { chunks; final_depth = !depth; max_depth = !max_depth;
-       real_instrs = List.length real; dummy_instrs = dummies }
+       real_instrs = List.length real; dummy_instrs = dummies;
+       invalidation_schedule = make_invalidation_schedule n_chunks }
 let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
     (prog : Stack_ir.program) : (translation, string) result =
   let ( let* ) = Result.bind in
@@ -698,4 +718,5 @@ let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
       max_depth = !max_d;
       real_instrs = !total_real;
       dummy_instrs = !total_dummies;
+      invalidation_schedule = make_invalidation_schedule (List.length !all_chunks);
     }
