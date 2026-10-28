@@ -2769,6 +2769,51 @@ let test_relational_state_encoding () =
   Alcotest.(check bool) "Relational state encoding roundtrip formally proven equivalent via SMT QF_BV" true
     (match res with Stack_bv_verifier.Equivalent -> true | _ -> false)
 
+let test_path_sensitive_encoding () =
+  let seed = 0x5877CAFEBEEF1337L in
+  let src_enc = Stack_path_encoding_pass.compute_block_encoding ~seed ~block_id:1 in
+  let dst_enc = Stack_path_encoding_pass.compute_block_encoding ~seed ~block_id:2 in
+  let (a, b) = Stack_path_encoding_pass.compute_edge_transition ~src_enc ~dst_enc in
+  let slot = 0 in
+  let direct_dst_ops = [
+    PushReg slot;
+    PushImm dst_enc.alpha;
+    Mul;
+    PushImm dst_enc.beta;
+    Add;
+    PopReg slot;
+  ] in
+  let trans_ops = [
+    PushReg slot;
+    PushImm src_enc.alpha;
+    Mul;
+    PushImm src_enc.beta;
+    Add;
+    PopReg slot;
+  ] @ Stack_path_encoding_pass.emit_edge_transition ~slot ~a ~b in
+  let res = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:direct_dst_ops ~trans_ops () in
+  Alcotest.(check bool) "Path-sensitive edge transition formally proven equivalent via SMT QF_BV" true
+    (match res with Stack_bv_verifier.Equivalent -> true | _ -> false)
+
+let test_memory_ssa () =
+  let a1 = Some 0x1000L in
+  let a2 = Some 0x1008L in
+  let a3 = Some 0x1004L in
+  Alcotest.(check bool) "MustAlias detected" true
+    (Stack_memory_ssa.classify_alias ~addr1:a1 ~width1:8 ~addr2:a1 ~width2:8 = Stack_memory_ssa.MustAlias);
+  Alcotest.(check bool) "MustDisjoint detected" true
+    (Stack_memory_ssa.classify_alias ~addr1:a1 ~width1:8 ~addr2:a2 ~width2:8 = Stack_memory_ssa.MustDisjoint);
+  Alcotest.(check bool) "PartialOverlap detected" true
+    (Stack_memory_ssa.classify_alias ~addr1:a1 ~width1:8 ~addr2:a3 ~width2:8 = Stack_memory_ssa.PartialOverlap);
+  Alcotest.(check bool) "MayAlias on dynamic addresses" true
+    (Stack_memory_ssa.classify_alias ~addr1:a1 ~width1:8 ~addr2:None ~width2:8 = Stack_memory_ssa.MayAlias);
+  let can_fwd = Stack_memory_ssa.can_forward_store_to_load
+    ~store_addr:a1 ~store_width:8
+    ~load_addr:a1 ~load_width:8
+    ~intervening_stores:[ (None, 8) ]
+  in
+  Alcotest.(check bool) "Forwarding blocked by MayAlias decoy store" false can_fwd
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -2821,6 +2866,8 @@ let tests = [
   ("Chinese Remainder Theorem Split-Path & Garner Reconstruction", `Quick, test_crt_split_path);
   ("Pass C: Bit-Vector Semantic Normalization & SMT Verifier", `Quick, test_bv_semantic_verifier);
   ("Pass A: Relational State Encoding & Feistel Bijectivity", `Quick, test_relational_state_encoding);
+  ("Pass B: Path-Sensitive Semantic Edge Encoding", `Quick, test_path_sensitive_encoding);
+  ("Pass D: Memory SSA & Alias-Aware Forwarding Prohibition", `Quick, test_memory_ssa);
 ]
 
 
