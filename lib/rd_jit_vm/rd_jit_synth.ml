@@ -606,27 +606,27 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
             case JIT_OP_SHL_RI:
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
                 code[idx++] = 0x48; code[idx++] = 0xc1; code[idx++] = 0xe0; code[idx++] = (uint8_t)(in.imm & 63);
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
             case JIT_OP_SHR_RI:
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
                 code[idx++] = 0x48; code[idx++] = 0xc1; code[idx++] = 0xe8; code[idx++] = (uint8_t)(in.imm & 63);
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
             case JIT_OP_SAR_RI:
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
                 code[idx++] = 0x48; code[idx++] = 0xc1; code[idx++] = 0xf8; code[idx++] = (uint8_t)(in.imm & 63);
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
             case JIT_OP_NOT_R:
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
                 code[idx++] = 0x48; code[idx++] = 0xf7; code[idx++] = 0xd0;
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
             case JIT_OP_NEG_R:
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
                 code[idx++] = 0x48; code[idx++] = 0xf7; code[idx++] = 0xd8;
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
@@ -982,6 +982,7 @@ let asgard_vm_call_decl () : top_decl =
         asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);
         asgard_rd_jit::RD_JIT_Context ctx;
         ctx.init();
+#if defined(__aarch64__)
         ctx.set_reg(0, a0);
         ctx.set_reg(1, a1);
         ctx.set_reg(2, a2);
@@ -992,6 +993,16 @@ let asgard_vm_call_decl () : top_decl =
         ctx.set_reg(7, a5);
         ctx.set_reg(8, a6);
         ctx.set_reg(9, a7);
+#else
+        ctx.set_reg(7, a0); // RDI
+        ctx.set_reg(6, a1); // RSI
+        ctx.set_reg(2, a2); // RDX
+        ctx.set_reg(1, a3); // RCX
+        ctx.set_reg(8, a4); // R8
+        ctx.set_reg(9, a5); // R9
+        ctx.set_reg(4, sp_val); // RSP
+        ctx.set_reg(5, 0);      // RBP
+#endif
         asgard::nano_jit::execute_sealed_function(jit_buf, ctx, tickets, blobs, num_chunks, master);
         uint64_t res = ctx.get_rax();
         if (num_chunks > 64) {
@@ -1002,6 +1013,7 @@ let asgard_vm_call_decl () : top_decl =
     }
     VMContext ctx;
     ctx.init();
+#if defined(__aarch64__)
     ctx.set_reg(0, a0);
     ctx.set_reg(1, a1);
     ctx.set_reg(2, a2);
@@ -1014,6 +1026,18 @@ let asgard_vm_call_decl () : top_decl =
     ctx.set_reg(7, a5);
     ctx.set_reg(8, a6);
     ctx.set_reg(9, a7);
+#else
+    alignas(16) uint8_t spill_stack_th[4096];
+    uint64_t sp_val_th = (uint64_t)(uintptr_t)(&spill_stack_th[4096 - 128]);
+    ctx.set_reg(7, a0);
+    ctx.set_reg(6, a1);
+    ctx.set_reg(2, a2);
+    ctx.set_reg(1, a3);
+    ctx.set_reg(8, a4);
+    ctx.set_reg(9, a5);
+    ctx.set_reg(4, sp_val_th);
+    ctx.set_reg(5, 0);
+#endif
     return ctx.get_rax();|};
     ]
 let asgard_vm_call_with_salt_decl () : top_decl =

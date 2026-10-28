@@ -369,7 +369,7 @@ let run
                         else runner_path
                       in
                       let is_c_target = is_c_src && not (String.ends_with ~suffix:".cpp" comp_src) in
-                      (match T.compile_native_binary ~opt_level:native_cfg.toolchain.opt_level ~extra_flags:native_cfg.toolchain.extra_flags ~is_c:is_c_target ~source_file:comp_src ~out_binary:bin_path ~include_dir:out_dir () with
+                      (match T.compile_native_binary ?arch:(Some L.target_arch) ~opt_level:native_cfg.toolchain.opt_level ~extra_flags:native_cfg.toolchain.extra_flags ~is_c:is_c_target ~source_file:comp_src ~out_binary:bin_path ~include_dir:out_dir () with
                       | Ok () ->
                           Logger.infof ~loc:__LOC__ ~section:"TOOLCHAIN" "Native binary compiled: %s" bin_path;
                           let exec_res =

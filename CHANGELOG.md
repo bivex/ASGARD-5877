@@ -6,6 +6,13 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+- Correct x86_64 JIT arithmetic shift and bitwise negation operand loading in `rd_jit_synth.ml` (`lib/rd_jit_vm/rd_jit_synth.ml`):
+  * Fixed `JIT_OP_SHL_RI`, `JIT_OP_SHR_RI`, `JIT_OP_SAR_RI`, `JIT_OP_NOT_R`, and `JIT_OP_NEG_R` in the x86-64 native emission path to load from the source operand offset (`src_off`) instead of the destination offset (`dst_off`), preserving non-aliasing register source values across shift and negation operations.
+  * Updated `asgard_vm_call` declarations with target architecture detection and x86-64 System V AMD64 ABI context register setup (RDI/RSI/RDX/RCX/R8/R9 parameter registers and 16-byte aligned execution spill stack).
+- Support cross-compilation target architecture in `Clang_toolchain_adapter` (`lib/adapters/protect_adapters/clang_toolchain_adapter.ml`, `lib/ports/protect_ports.ml`, `lib/application/protect_pipeline.ml`):
+  * Added optional `?arch` parameter to `compile_native_binary` in `Toolchain` port and Clang adapter, automatically passing `-target x86_64-apple-darwin` or `-target arm64-apple-darwin` matching the lifter target when building protected runner binaries on heterogeneous hosts.
+
 ### Added
 - Unify `Jit_vm_packager` with `Stack_jit_packager` in `vm_packagers.ml` (`lib/adapters/protect_adapters/vm_packagers.ml`):
   * Mapped `--engine=jit` directly to the fully-hardened Stack-JIT engine, providing unified support for non-colliding context slots, sub-width memory ops, persistent CPU flags, spill stack, and multi-function packaging under `--engine=jit`.

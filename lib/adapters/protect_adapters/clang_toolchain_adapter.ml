@@ -57,7 +57,14 @@ let compile_to_asm ~arch ~(c_source : string) ~(out_asm : string) ~(include_dir 
   | Ok (`Signaled s) -> Error (Printf.sprintf "%s -S terminated by signal %d" compiler s)
   | Error (`Msg msg) -> Error (Printf.sprintf "%s -S execution error: %s" compiler msg)
 
-let compile_native_binary ?(opt_level = "-O3") ?(extra_flags = []) ~is_c ~(source_file : string) ~(out_binary : string) ~(include_dir : string) () : (unit, error) result =
+let compile_native_binary ?arch ?(opt_level = "-O3") ?(extra_flags = []) ~is_c ~(source_file : string) ~(out_binary : string) ~(include_dir : string) () : (unit, error) result =
+  let target_args =
+    match arch with
+    | Some X86_64 -> Cmd.(v "-target" % "x86_64-apple-darwin")
+    | Some Arm64 -> Cmd.(v "-target" % "arm64-apple-darwin")
+    | Some Riscv64 -> Cmd.(v "-target" % "riscv64-linux-gnu")
+    | None -> Cmd.empty
+  in
   let is_debug =
     match Sys.getenv_opt "ASGARD_DEBUG_SYMBOLS" with
     | Some "1" | Some "true" | Some "yes" -> true
@@ -74,11 +81,11 @@ let compile_native_binary ?(opt_level = "-O3") ?(extra_flags = []) ~is_c ~(sourc
   if is_debug then begin
     let obj_file = Filename.chop_extension source_file ^ ".o" in
     let compile_obj_cmd =
-      Cmd.(v compiler %% base_args % "-g" % "-O1" % "-Wno-format-security" %% inc_args % "-c" % source_file % "-o" % obj_file)
+      Cmd.(v compiler %% target_args %% base_args % "-g" % "-O1" % "-Wno-format-security" %% inc_args % "-c" % source_file % "-o" % obj_file)
     in
     match OS.Cmd.run_status compile_obj_cmd with
     | Ok (`Exited 0) ->
-        let link_cmd = Cmd.(v compiler %% base_args % "-g" % obj_file % "-o" % out_binary) in
+        let link_cmd = Cmd.(v compiler %% target_args %% base_args % "-g" % obj_file % "-o" % out_binary) in
         (match OS.Cmd.run_status link_cmd with
         | Ok (`Exited 0) ->
             let dsym_cmd = Cmd.(v "dsymutil" % out_binary) in
@@ -101,7 +108,7 @@ let compile_native_binary ?(opt_level = "-O3") ?(extra_flags = []) ~is_c ~(sourc
       List.fold_left (fun acc flag -> Cmd.(acc % flag)) base_opt extra_flags
     in
     let compile_cmd =
-      Cmd.(v compiler %% base_args %% opt_args %% inc_args % source_file % "-o" % out_binary)
+      Cmd.(v compiler %% target_args %% base_args %% opt_args %% inc_args % source_file % "-o" % out_binary)
     in
     match OS.Cmd.run_status compile_cmd with
     | Ok (`Exited 0) ->

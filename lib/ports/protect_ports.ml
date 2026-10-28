@@ -128,6 +128,7 @@ module type Toolchain = sig
     (unit, error) result
 
   val compile_native_binary :
+    ?arch:target_arch ->
     ?opt_level:string ->
     ?extra_flags:string list ->
     is_c:bool ->
