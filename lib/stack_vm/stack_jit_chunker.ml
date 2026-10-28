@@ -574,7 +574,6 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
     let run_idx = ref 0 in
     let cur = ref [] in
     let acc = ref [] in
-    let in_flag_window = ref false in
     let flush () =
       if !cur <> [] then begin
         acc := List.rev !cur :: !acc;
@@ -584,16 +583,11 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
     in
     List.iter
       (fun item ->
-        let is_cmp = match item with (op, _, _, _) -> String.ends_with ~suffix:"CMP_RR" op in
-        let is_csel = match item with (op, _, _, _) -> String.ends_with ~suffix:"CSEL_RR" op in
-        if is_cmp && (List.length !cur >= 4 || List.length !cur + 4 > cap) then flush ();
         let target =
           kolakoski_word.(!run_idx mod Array.length kolakoski_word) * scale
         in
-        if (not !in_flag_window) && (List.length !cur >= target || List.length !cur >= cap) then flush ();
-        if is_cmp then in_flag_window := true;
-        Stdlib.(cur := item :: !cur);
-        if is_csel then in_flag_window := false)
+        if List.length !cur >= target || List.length !cur >= cap then flush ();
+        Stdlib.(cur := item :: !cur))
       padded;
     flush ();
     List.rev !acc

@@ -221,7 +221,8 @@ let synthesize_and_execute_block_decl () : top_decl =
 #if defined(__aarch64__)
     uint32_t* code = (uint32_t*)jit.get_write_ptr();
     size_t idx = 0;
-
+    code[idx++] = 0xf9414409;
+    code[idx++] = 0xd51b4209;
     for (uint32_t i = 0; i < block.count; ++i) {
         const JITInstr& in = block.instrs[i];
         uint8_t dst_off = in.dst * 8;
@@ -479,12 +480,17 @@ let synthesize_and_execute_block_decl () : top_decl =
                 break;
         }
     }
+    code[idx++] = 0xd53b4209;
+    code[idx++] = 0xf9014409;
     code[idx++] = 0xd65f03c0;
     code_bytes = idx * sizeof(uint32_t);
 #elif defined(__x86_64__)
     uint8_t* code = (uint8_t*)jit.get_write_ptr();
     size_t idx = 0;
-
+    code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x87;
+    code[idx++] = 0x88; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+    code[idx++] = 0x50;
+    code[idx++] = 0x9d;
     auto emit_u64 = [&](uint64_t v) {
         for (int b = 0; b < 8; ++b) {
             code[idx++] = (uint8_t)((v >> (b * 8)) & 0xFF);
@@ -753,6 +759,10 @@ let synthesize_and_execute_block_decl () : top_decl =
                 break;
         }
     }
+    code[idx++] = 0x9c;
+    code[idx++] = 0x58;
+    code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x87;
+    code[idx++] = 0x88; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
     code[idx++] = 0xc3;
     code_bytes = idx;
 #else

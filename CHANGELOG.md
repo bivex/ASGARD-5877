@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Add hardware CPU flags persistence (`NZCV` / `RFLAGS`) across Kolakoski sealed chunks in JIT VM (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/stack_vm/stack_jit_chunker.ml`):
+  * Added entry/exit flag synchronization in `synthesize_and_execute_block` on ARM64 (`ldr x9, [x0, #648]; msr nzcv, x9` at block entry, `mrs x9, nzcv; str x9, [x0, #648]` at block exit) and x86_64 (`push [rdi+648]; popfq` / `pushfq; pop [rdi+648]`).
+  * Condition flags now persist transparently across chunk boundaries, allowing `CMP_RR` and dependent `CSEL_RR` / conditional moves to span separate Kolakoski chunks without losing architectural CPU flags during C++ runner transitions.
+  * Eliminated artificial flag-window constraints in `stack_jit_chunker.ml`, ensuring every chunk strictly respects the 128-byte (8-instruction) nano-slot limit without slot overflows.
+  * Verified: 12/12 tests in `Stack-JIT VM & Chunker` pass, 7/7 in `Register-Driven JIT VM & RNS` pass, 45/45 steps in `test_cpp_codegen` pass, 69/69 in `ARM64 Lifter & CFG` pass; and verified end-to-end on Apple Silicon hardware with multi-branch conditional execution (`branchy_math` with 3 divergent modes) producing exact results across all branches.
 - Add execution spill-stack buffer, 12-slot context window, and local stack variable support to JIT VM (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`, `lib/stack_vm/stack_jit_chunker.ml`, `lib/stack_vm/ir_to_stack.ml`, `test/test_stack_jit_vm.ml`):
   * Allocated a 16-byte aligned 4096-byte execution `spill_stack` in `asgard_vm_call` and `emit_rd_jit_main_def`, initializing the stack pointer `ctx.gprs[4]` (register `RSP`) to point to the top of the buffer.
   * Enabled safe execution of functions allocating local stack variables (`sub sp, sp, #imm`, stores/loads to `[sp + offset]`, post-indexed `ldr xN, [sp], #imm`), eliminating null pointer dereferences on stack accesses.
