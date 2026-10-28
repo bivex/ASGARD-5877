@@ -262,6 +262,49 @@ module Jit_vm_packager : Vm_packager = struct
     }
 end
 
+module Stack_jit_packager : Vm_packager = struct
+  let engine_kind = Jit
+
+  let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
+    let ir : Vm_ir.Ir.func = unwrap_ir func in
+    let native_cfg : Protection_config.t = unwrap_config config in
+    Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging function '%s' (IR -> Stack-IR -> sealed chunks)"
+      ir.name;
+    let ext_syms = Hashtbl.create 16 in
+    let ctx = Stack_vm.Context_allocator.create ~permute:false () in
+    let _ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms ir in
+    let entry =
+      match Hashtbl.find_opt prog.blocks prog.entry_id with
+      | Some b -> b
+      | None -> { id = prog.entry_id; label = "entry"; ops = [] }
+    in
+    match Stack_vm.Stack_jit_chunker.translate_trace () entry.ops with
+    | Error reason ->
+        Logger.warnf ~section:"STACK_JIT" "Stack-JIT chunking unfeasible (%s); falling back to RD-JIT" reason;
+        Jit_vm_packager.package ~rng ~config func
+    | Ok tr ->
+        let jit_pkg =
+          Rd_jit_vm.Rd_jit_emitter.compile_and_package_chunked
+            ~rng
+            ?config:(Some native_cfg)
+            ~enable_cff:false
+            ~enable_mba:false
+            ~chunks:tr.chunks
+            ir
+        in
+        Logger.debugf ~section:"STACK_JIT" "Stack-JIT VM packaging complete: %d sealed chunk(s), %d real instrs"
+          (List.length tr.chunks) tr.real_instrs;
+        {
+          cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name jit_pkg.cpp_runtime_source;
+          runner_source = jit_pkg.runner_source;
+          bytecode = jit_pkg.bytecode;
+          bytecodes = [ (ir.name, jit_pkg.bytecode) ];
+          metrics = convert_metrics ~engine_name:"Stack-JIT VM" ~config:native_cfg jit_pkg.metrics;
+          header_name = "jit_vm_runtime.hpp";
+          rebind_address = None;
+        }
+end
+
 module Multi_vm_packager : Vm_packager = struct
   let engine_kind = MultiVm
 

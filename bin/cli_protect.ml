@@ -8,6 +8,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
   if dump_bytecode then Unix.putenv "ASGARD_DUMP_BYTECODE" "1";
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
+    else if engine = "stack_jit" || engine = "stack-jit" then "stack_jit"
     else if engine = "stack" then "stack"
     else if enable_multi_vm || engine = "multi_vm" || engine = "multi-vm" || engine = "multi" then "multi_vm"
     else "threaded"
@@ -59,6 +60,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
   let vm_packager =
     match resolved_engine with
     | "jit" -> (module Vm_packager_adapters.Jit_vm_packager : Vm_packager)
+    | "stack_jit" -> (module Vm_packager_adapters.Stack_jit_packager : Vm_packager)
     | "stack" -> (module Vm_packager_adapters.Stack_vm_packager : Vm_packager)
     | "multi_vm" -> (module Vm_packager_adapters.Multi_vm_packager : Vm_packager)
     | _ -> (module Vm_packager_adapters.Threaded_vm_packager : Vm_packager)
@@ -125,7 +127,7 @@ let protect_cmd =
     Arg.(value & flag & info [ "multi-vm" ] ~doc)
   in
   let engine =
-    let doc = "Virtual machine execution engine: threaded, stack, multi_vm, or jit" in
+    let doc = "Virtual machine execution engine: threaded, stack, stack_jit, multi_vm, or jit" in
     Arg.(value & opt string "threaded" & info [ "engine" ] ~docv:"ENGINE" ~doc)
   in
   let jit =
