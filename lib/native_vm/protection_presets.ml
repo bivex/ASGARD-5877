@@ -90,6 +90,7 @@ let default : t = {
   trap = default_trap;
   dual_rail = default_dual_rail;
   drcc = default_drcc;
+  whitening = default_whitening;
   homomorphic = default_homomorphic;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
@@ -214,6 +215,7 @@ let max_security : t = {
   trap = { default_trap with rate = 70 };
   dual_rail = { default_dual_rail with rate = 70 };
   drcc = { default_drcc with rate = 70 };
+  whitening = { default_whitening with rate = 70 };
   homomorphic = { default_homomorphic with rate = 70 };
   multiplicity = { default_multiplicity with rate = 60 };
   pipelined_dispatch = { default_pipelined_dispatch with chaff_slots = 8 };
@@ -333,6 +335,7 @@ let stealth : t = {
   trap = default_trap;
   dual_rail = default_dual_rail;
   drcc = default_drcc;
+  whitening = default_whitening;
   homomorphic = default_homomorphic;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
@@ -457,6 +460,7 @@ let edr_stealth : t = {
   trap = default_trap;
   dual_rail = default_dual_rail;
   drcc = default_drcc;
+  whitening = default_whitening;
   homomorphic = default_homomorphic;
   multiplicity = default_multiplicity;
   pipelined_dispatch = default_pipelined_dispatch;
@@ -581,6 +585,7 @@ let minimal : t = {
   trap = { default_trap with enabled = false };
   dual_rail = { default_dual_rail with enabled = false };
   drcc = { default_drcc with enabled = false };
+  whitening = { default_whitening with enabled = false };
   homomorphic = { default_homomorphic with enabled = false };
   multiplicity = { default_multiplicity with enabled = false };
   pipelined_dispatch = { default_pipelined_dispatch with enabled = false };
@@ -696,6 +701,7 @@ let high : t = {
   trap = { default_trap with rate = 60 };
   dual_rail = { default_dual_rail with rate = 60 };
   drcc = { default_drcc with rate = 60 };
+  whitening = { default_whitening with rate = 60 };
   homomorphic = { default_homomorphic with rate = 60 };
   multiplicity = { default_multiplicity with rate = 50 };
   pipelined_dispatch = default_pipelined_dispatch;

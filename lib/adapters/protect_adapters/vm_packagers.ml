@@ -400,6 +400,8 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "DRCC Register Window & Golomb-4 Spilling" native_cfg.drcc.enabled
           "disabled in configuration";
+        pass_switch "Galois LFSR Memory Whitening" native_cfg.whitening.enabled
+          "disabled in configuration";
         pass_switch "Cross-Block Anti-DBI Traps" native_cfg.trap.enabled
           "disabled in configuration";
         pass_switch "State-Feedback Rolling Key" native_cfg.stack_vm.state_feedback
@@ -1302,6 +1304,39 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"6c-drcc" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6c-drcc" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6c] DRCC Register Window & Golomb-4 Spilling: %s" drcc_info;
+
+    (* Phase 6d (Pass 23): Galois LFSR Non-Linear Whitening & Memory Diffing Resistance *)
+    let whitening_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 21)
+    in
+    let whitening_cfg_user = native_cfg.whitening in
+    let whitening_cfg = {
+      (Stack_vm.Stack_whitening_pass.default_whitening_config whitening_seed) with
+      rate = whitening_cfg_user.rate;
+      enabled = whitening_cfg_user.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Galois LFSR Whitening      rate=%d%% seed=0x%016LX%s"
+         whitening_cfg.rate
+         whitening_cfg.seed
+         (if whitening_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog, whitening_info =
+      if whitening_cfg_user.enabled then begin
+        let prog_whitening =
+          Stack_vm.Stack_whitening_pass.apply_program whitening_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_whitening_pass.whitening_stats prog prog_whitening in
+        (prog_whitening, info)
+      end else
+        (prog, "Disabled (config: whitening.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"6d-whitening" prog;
+    dump_bytecode_json ~phase:"6d-whitening" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6d-whitening" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6d] Galois LFSR Memory Whitening: %s" whitening_info;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in

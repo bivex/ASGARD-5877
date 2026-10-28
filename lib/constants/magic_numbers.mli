@@ -152,6 +152,9 @@ val golomb_ruler_g0 : int64
 val golomb_ruler_g1 : int64
 val golomb_ruler_g2 : int64
 val golomb_ruler_g3 : int64
+val whitening_salt : int64
+val whitening_init_key : int64
+val whitening_lfsr_poly : int64
 
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list

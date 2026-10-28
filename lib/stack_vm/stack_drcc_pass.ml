@@ -125,12 +125,14 @@ let apply_block (cfg : drcc_config) ~tos0 ~tos1 (b : block) : block =
     in
     let live = Stack_flag_liveness.analyze_list b.ops in
     let new_ops = ref [] in
+    let budget = ref 4 in
 
     List.iteri (fun idx op ->
       let flags_live = if idx + 1 < Array.length live then live.(idx + 1) else false in
       let pick_delta () = golomb_diffs.(next_int rng (Array.length golomb_diffs)) in
       match op with
-      | (Add | Sub | Mul | Nand | Nor) when next_int rng 100 < cfg.rate ->
+      | (Add | Sub | Mul | Nand | Nor) when !budget > 0 && next_int rng 100 < cfg.rate ->
+          decr budget;
           let delta = pick_delta () in
           let cluster = emit_drcc_binary_cluster ~tos0 ~tos1 ~delta ~op ~flags_live in
           new_ops := List.rev cluster @ !new_ops

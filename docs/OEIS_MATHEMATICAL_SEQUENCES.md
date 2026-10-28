@@ -56,8 +56,7 @@ flowchart TD
     A003022 -->|"Zero-Collision Memory Deltas"| Web["Phase 5c: Memory Webbing"]
     A269160 -->|"Non-Affine Keystream"| Roll["Phase 6: Rolling Key Stream"]
     A010060 -->|"Aperiodic Branch Routing"| Stall["Phase 5: Computational Stalling"]
-    A011260 -->|"Galois Multiplications"| FF["Phase 5h: Mixed-Characteristic Fields"]
-    A000043 -->|"M31 Modular Folding"| Slicing["Phase 5i: I/O Sink Barriers"]
+    A011260 -->|"Galois Multiplications & Memory Whitening"| FF["Phase 5h / Phase 6d: Mixed Fields & LFSR Whitening"]
 ```
 
 ---
@@ -178,5 +177,5 @@ flowchart TD
 | **A269160** | Wolfram's Rule 30 Cellular Automaton | $n \oplus (2n \lor 4n)$ | Phase 6 (State-Feedback Rolling Key) | SAT clause explosion in backward symbolic execution |
 | **A010060** | Thue-Morse Sequence | $\operatorname{popcount}(n) \pmod 2$ | Phase 5 (Computational Stalling) | Aperiodic loop control defeating loop summarization |
 | **A008404** | Costas Arrays | 2D distinct distance vectors | Bytecode Polymorphic Encoder | Elimination of 2D byte n-gram correlations |
-| **A011260** | Primitive Polynomials over $\mathrm{GF}(2)$ | $x^{64} + x^4 + x^3 + x + 1$ | Phase 5h (Finite Field Arithmetic) | Intertwined characteristic-2 Galois ring operations |
+| **A011260** | Primitive Polynomials over $\mathrm{GF}(2)$ | $x^{64} + x^4 + x^3 + x + 1$ | Phase 5h & Phase 6d (Memory Whitening) | Characteristic-2 Galois ring operations & continuous LFSR snapshot diff resistance |
 | **A000043** | Mersenne Prime Exponents | $M_p = 2^p - 1$ | Phase 5h & Phase 5i (I/O Sink Barrier) | Non-power-of-two modular folding forcing integer SMT timeouts |

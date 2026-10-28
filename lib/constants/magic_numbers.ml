@@ -288,6 +288,11 @@ let golomb_ruler_g0 = 0L
 let golomb_ruler_g1 = 1L
 let golomb_ruler_g2 = 4L
 let golomb_ruler_g3 = 6L
+
+(* Galois LFSR Memory Whitening (Phase 5l / Pass 23) constants *)
+let whitening_salt = 0x5877A0112601337AL
+let whitening_init_key = 0x9E3779B97F4A7C15L
+let whitening_lfsr_poly = 0x1BL
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -663,6 +668,18 @@ let registry : entry list = [
     value = golomb_ruler_g3;
     source = "OEIS A003022: mark 3 of optimal 4-mark Golomb ruler {0, 1, 4, 6}";
     used_in = [ "lib/stack_vm/stack_drcc_pass.ml" ] };
+  { name = "whitening_salt";
+    value = whitening_salt;
+    source = "0x5877A0112601337A: PRNG diversification salt for Galois LFSR memory whitening pass";
+    used_in = [ "lib/stack_vm/stack_whitening_pass.ml" ] };
+  { name = "whitening_init_key";
+    value = whitening_init_key;
+    source = "0x9E3779B97F4A7C15: golden ratio fractional part initial seed for whitening stream";
+    used_in = [ "lib/stack_vm/stack_whitening_pass.ml" ] };
+  { name = "whitening_lfsr_poly";
+    value = whitening_lfsr_poly;
+    source = "OEIS A011260: primitive polynomial x^64 + x^4 + x^3 + x + 1 mod 2^64 over GF(2)";
+    used_in = [ "lib/stack_vm/stack_whitening_pass.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

@@ -100,6 +100,13 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Registered `drcc_salt` and Golomb-4 ruler marks (`golomb_ruler_g0`..`g3`) in `lib/constants/magic_numbers.ml`.
   * Wired Phase 6c into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
   * Verified across 62/62 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 0.3% junk recovered, Tier 5: 92.1% coverage, Tier 6: 100.0% synthesis resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
+- Implement Pass 23 (Phase 6d): Galois LFSR Memory Whitening & Anti-Snapshot Diffing (`lib/stack_vm/stack_whitening_pass.ml`, `lib/stack_vm/stack_whitening_pass.mli`):
+  * Defeats dynamic snapshot memory diffing (Cheat Engine / Frida memory scans) by continuously evolving a dedicated whitening register via $\mathrm{GF}(2^{64})$ polynomial multiplication with primitive polynomial $x^{64} + x^4 + x^3 + x + 1$ (OEIS [A011260](https://oeis.org/A011260)).
+  * Injects Galois distributivity invariant zero-knots $\mathrm{xtime}(s \oplus W) \oplus \mathrm{xtime}(s) \oplus \mathrm{xtime}(W) \equiv 0 \pmod{P(x)}$ across guest register reads (`PushReg`), with strict preservation of condition codes and guest base registers (SP/FP).
+  * Formally proven in Z3 SMT `QF_BV` (`test/test_stack_vm.ml`).
+  * Registered `whitening_salt`, `whitening_init_key`, and `whitening_lfsr_poly` in `lib/constants/magic_numbers.ml`.
+  * Wired Phase 6d into `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/native_vm/protection_presets.ml`, and `samples/protection_config.full.json`.
+  * Verified across 63/63 Stack-VM Execution Engine tests, multi-tier deobfuscation probe (Tier 1–3: 1.0% junk recovered, Tier 5: 77.9% address coverage, Tier 6: 100.0% synthesis resilience), and full license check E2E (`ACCESS GRANTED`, exit 0).
 ### Fixed
 - Harden VM against architectural audit findings:
   * Mitigate D-Cache side-channel: clamped `mem_webbing_offset_mask` from 0x78 to 0x38 in `lib/constants/magic_numbers.ml` and `lib/stack_vm/stack_mem_webbing_pass.ml`, ensuring memory offsets ([16, 72]) strictly lie within a single 64-byte L1D cache line.

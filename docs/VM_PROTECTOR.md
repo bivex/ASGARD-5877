@@ -38,9 +38,10 @@ flowchart TD
         P11["Phase 6: State-Feedback Rolling Key Stream"]
         P11b["Phase 6b (Pass 19): Cross-Block Path Traps"]
         P11c["Phase 6c (Pass 22): DRCC Register Window & Golomb-4 Spilling"]
+        P11d["Phase 6d (Pass 23): Galois LFSR Memory Whitening & Anti-Snapshot Diffing"]
         P12["Phase 7: Stack Balance Verification & Repair"]
         P12b["Phase 7b (Pass E): Dead Code Causality Analyzer"]
-        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P11c --> P12 --> P12b
+        P1 --> P1b --> P9d --> P2 --> P3 --> P3b --> P3c --> P4 --> P5 --> P6 --> P7 --> P7g --> P8 --> P9t --> P10 --> P10f --> P10h --> P10i --> P10j --> P11 --> P11b --> P11c --> P11d --> P12 --> P12b
     end
     
     IR --> P1
@@ -437,6 +438,16 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 * **Register-Cached ALU Evaluation**:
   Binary operations (`Add`, `Sub`, `Mul`, `Nand`, `Nor`) pop operands directly into $(tos_0, tos_1)$, apply the difference-free Golomb knot, and evaluate register-to-register, eliminating anonymous memory access from decompiled output.
 * **SMT Proof**: Formally proven in Z3 SMT `QF_BV` (`test_stack_vm.ml`) that the DRCC binary cluster preserves bit-identical semantics across all $2^{64}$ inputs with exact net stack delta $-1$.
+
+### Phase 6d (Pass 23): Galois LFSR Memory Whitening & Anti-Snapshot Diffing (`stack_whitening_pass.ml`)
+* **Goal**: Defeats dynamic snapshot memory diffing (e.g. Cheat Engine / Frida memory scans looking for static key values or flags in RAM) by continuously whitening VM context and stack memory through a Galois Field $\mathrm{GF}(2^{64})$ non-linear linear-feedback shift register (LFSR) with primitive polynomial $x^{64} + x^4 + x^3 + x + 1$ (**OEIS [A011260](https://oeis.org/A011260)**).
+* **Galois Distributivity Invariant Zero-Knots**:
+  Injects algebraic zero-knots based on the exact linearity and distributivity of multiplication in $\mathrm{GF}(2)$ field arithmetic:
+  $$\mathrm{xtime}(s \oplus W) \oplus \mathrm{xtime}(s) \oplus \mathrm{xtime}(W) \equiv 0 \pmod{P(x)}$$
+  where $\mathrm{xtime}(u) = (u \ll 1) \oplus ((u \gg 63) \cdot \texttt{0x1B})$. The zero-knot is evaluated entirely through bitwise primitives (`Dup2`, `Nand`, `Nor`, `Swap`, `Sub`, `Shl`, `Shr`) with zero net stack delta and strict register conservation.
+* **Continuous Context Whitening**:
+  Between operations, an dedicated whitening context slot evolves via $W_{k+1} = \mathrm{xtime}(W_k) \oplus \mathrm{Salt}_{\mathrm{whitening}}$, guaranteeing that internal memory representations continuously mutate even while the guest application processes constant inputs.
+* **SMT Proof**: Formally proven in Z3 SMT `QF_BV` (`test_stack_vm.ml`) that the Galois zero-knot evaluates to `0L` for all $2^{64}$ bitvectors.
 
 ---
 

@@ -195,6 +195,10 @@
     "enabled": true,
     "rate": 25
   },
+  "whitening": {
+    "enabled": true,
+    "rate": 25
+  },
   "multiplicity": {
     "enabled": true,
     "rate": 25

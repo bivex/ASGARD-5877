@@ -233,6 +233,12 @@ type drcc_config = {
 }
 
 val default_drcc : drcc_config
+type whitening_config = {
+  enabled : bool;
+  rate    : int;
+}
+
+val default_whitening : whitening_config
 type homomorphic_config = {
   enabled : bool;
   rate    : int;
@@ -305,6 +311,7 @@ type t = {
   trap : trap_config;
   dual_rail : dual_rail_config;
   drcc : drcc_config;
+  whitening : whitening_config;
   homomorphic : homomorphic_config;
   multiplicity : multiplicity_config;
   pipelined_dispatch : pipelined_dispatch_config;
