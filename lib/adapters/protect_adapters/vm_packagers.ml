@@ -243,17 +243,8 @@ module Stack_jit_packager : Vm_packager = struct
       name;
     let ctx = Stack_vm.Context_allocator.create ~permute:false () in
     let _ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms ir in
-    let tr_res =
-      if Hashtbl.length prog.blocks <= 1 then
-        let entry_ops =
-          match Hashtbl.find_opt prog.blocks prog.entry_id with
-          | Some b -> b.ops
-          | None -> []
-        in
-        Stack_vm.Stack_jit_chunker.translate_trace () entry_ops
-      else
-        Stack_vm.Stack_jit_chunker.translate_program () prog
-    in
+    Logger.infof ~section:"STACK_JIT" "Function '%s' has %d blocks (entry=%d)" name (Hashtbl.length prog.blocks) prog.entry_id;
+    let tr_res = Stack_vm.Stack_jit_chunker.translate_program () prog in
     match tr_res with
     | Error reason ->
         Logger.warnf ~section:"STACK_JIT" "Stack-JIT chunking unfeasible for '%s' (%s); compiling with RD-JIT" name reason;

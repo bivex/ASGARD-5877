@@ -945,7 +945,10 @@ let synthesize_and_execute_block_decl () : top_decl =
                 switch (cond) {
                     case 0: take = (ctx.flags & 1) != 0; break;
                     case 1: take = (ctx.flags & 1) == 0; break;
-                    case 2: take = (ctx.flags & 2) != 0; break;
+                    case 2: take = (ctx.flags & 2) == 0; break;
+                    case 3: take = (ctx.flags & 2) != 0; break;
+                    case 8: take = (ctx.flags & 1) == 0 && (ctx.flags & 2) == 0; break;
+                    case 9: take = (ctx.flags & 1) != 0 || (ctx.flags & 2) != 0; break;
                     case 10: take = ((ctx.flags & 4) == 0); break;
                     case 11: take = ((ctx.flags & 4) != 0); break;
                     default: take = (ctx.flags & 1) != 0; break;
@@ -967,8 +970,10 @@ let synthesize_and_execute_block_decl () : top_decl =
                 switch (cond) {
                     case 0: take = (ctx.flags & 1) != 0; break;
                     case 1: take = (ctx.flags & 1) == 0; break;
-                    case 2: take = (ctx.flags & 2) != 0; break;
-                    case 3: take = (ctx.flags & 2) == 0; break;
+                    case 2: take = (ctx.flags & 2) == 0; break;
+                    case 3: take = (ctx.flags & 2) != 0; break;
+                    case 8: take = (ctx.flags & 1) == 0 && (ctx.flags & 2) == 0; break;
+                    case 9: take = (ctx.flags & 1) != 0 || (ctx.flags & 2) != 0; break;
                     case 10: take = ((ctx.flags & 4) == 0); break;
                     case 11: take = ((ctx.flags & 4) != 0); break;
                     default: take = (ctx.flags & 1) != 0; break;

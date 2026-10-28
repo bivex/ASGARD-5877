@@ -52,8 +52,8 @@ let unsupported what =
 let cond_to_code = function
   | Flags.E -> 0
   | Flags.NE -> 1
-  | Flags.B -> 2
-  | Flags.AE -> 3
+  | Flags.AE -> 2
+  | Flags.B -> 3
   | Flags.S -> 4
   | Flags.NS -> 5
   | Flags.O -> 6
@@ -373,6 +373,15 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
   in
   let rec walk = function
     | [] -> Ok ()
+    | JccRel (target, cond) :: JmpRel false_target :: rest when allow_branches ->
+        let imm =
+          Int64.logor (Int64.of_int target)
+            (Int64.logor
+               (Int64.shift_left (Int64.of_int false_target) 32)
+               (Int64.shift_left (Int64.of_int (cond_to_code cond)) 48))
+        in
+        push_item (jit "JCC", 0, 0, imm);
+        walk rest
     | op :: rest ->
         let res =
           match op with
@@ -434,7 +443,8 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
               else begin
                 let a = stack_base + !depth - 2 and b = stack_base + !depth - 1 in
                 push_item (jit "AND_RR", a, b, 0L);
-                push_item (jit "CMP_RR", a, a, 0L);
+                push_item (jit "MOV_RI", b, 0, 0L);
+                push_item (jit "CMP_RR", a, b, 0L);
                 depth := !depth - 2;
                 Ok ()
               end
@@ -630,7 +640,7 @@ let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
   let ( let* ) = Result.bind in
   if Hashtbl.length prog.blocks <= 1 then
     match Hashtbl.find_opt prog.blocks prog.entry_id with
-    | Some b -> translate_trace ~scale () b.ops
+    | Some b -> translate_trace ~scale ~allow_branches:true () b.ops
     | None -> Error "stack_jit: entry block not found in program"
   else
     let entry_b =
@@ -683,8 +693,13 @@ let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
             (op, dst, src, Int64.of_int target_chunk)
           else if op = jcc_name then
             let target_block = Int64.to_int (Int64.logand imm 0xFFFFFFFFL) in
+            let false_block = Int64.to_int (Int64.logand (Int64.shift_right_logical imm 32) 0xFFFFL) in
             let cond = Int64.shift_right_logical imm 48 in
-            let fallthrough_chunk = chunk_idx + 1 in
+            let fallthrough_chunk =
+              match Hashtbl.find_opt block_offsets false_block with
+              | Some c -> c
+              | None -> chunk_idx + 1
+            in
             let target_chunk =
               match Hashtbl.find_opt block_offsets target_block with
               | Some c -> c
