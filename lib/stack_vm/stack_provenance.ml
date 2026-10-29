@@ -303,11 +303,10 @@ let calculate_drs_breakdown
     ~(native_cfg : Protection_config.t)
     ~(prog : program)
     ~(enc : Stack_encoder.encrypted_bytecode)
-    ~(real_ops : int)
+    ~real_ops:(_ : int)
     ~(real_blocks : int) : drs_breakdown =
   let final_blocks = Hashtbl.length prog.blocks in
   let _ = enc in
-  let _ = real_ops in
 
   (* 1. CFG Recovery Barrier (0..25) *)
   let cff_base = if native_cfg.cff.enabled then 10.0 else 0.0 in
