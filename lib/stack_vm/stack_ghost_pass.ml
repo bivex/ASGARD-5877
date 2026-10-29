@@ -92,6 +92,13 @@ type ghost_kind =
      a genuine read of a scratch-ring register, tying ghost registers to live flow. *)
   | GhostEntangledWebbing
 
+let emit_de_morgan_zero reg k =
+  [
+    PushReg reg; PushImm k; Add;
+    PushReg reg; PushImm k; Nand; Dup; Nand; Sub;
+    PushReg reg; PushImm k; Nor; Dup; Nor; Sub;
+  ]
+
 let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live entangle =
   let n_scratch = Array.length scratch_ring in
   let s_src = scratch_ring.(!ring_idx mod n_scratch) in
@@ -154,34 +161,32 @@ let emit_ghost_cluster rng ~scratch_ring ~ctx ~ring_idx stack_depth flags_live e
      algebraic zero knots that cannot be reduced by single-pass peephole scanners. *)
   | GhostLiveAddZero ->
       let k = next_int64 rng in
-      (* Def-use register-anchored zero identity: x + ((r + k) - r - k) == x *)
-      [ PushReg real_r; PushImm k; Add; PushReg real_r; Sub; PushImm k; Sub; Add ]
+      (* Non-linear De Morgan zero knot: x + (((r+k) - (r&k)) - (r|k)) == x *)
+      emit_de_morgan_zero real_r k @ [ Add ]
 
   | GhostLiveAddSubPair ->
       let k = next_int64 rng in
-      (* Register-interleaved additive identity: x + r + k - r - k == x *)
-      [ PushReg real_r; Add; PushImm k; Add; PushReg real_r; Sub; PushImm k; Sub ]
+      (* Non-linear De Morgan zero knot: x - (((r+k) - (r&k)) - (r|k)) == x *)
+      emit_de_morgan_zero real_r k @ [ Sub ]
 
   (* Class D: Flag-Preserving Live-Stack Identity (flags live, depth >= 1) *)
   | GhostLiveFlagPreserved ->
-      (* Perturb flags with real register and restore without constant chains *)
-      [ PushFlags; PushReg real_r; Add; PushReg real_r; Sub; PopFlags ]
+      (* Flag-neutral read and zeroing via Mul 0L: preserves both flags and operand value *)
+      [ PushFlags; Swap; PushReg real_r; PushImm 0L; Mul; Add; Swap; PopFlags ]
 
   (* Class E: Entangled Def-Use Webbing (flags dead, depth >= 1)
-     Weaves polymorphic zero-knots using scratch ring registers:
-     Variant 0: Nor(s_src, Nor(s_src, s_src)) == 0
-     Variant 1: (s_src & ~s_dst) - (s_src & ~s_dst) == 0 via Nor
-     Variant 2: Nor(s_dst, Nor(s_dst, s_dst)) == 0 *)
+     Weaves polymorphic non-linear zero-knots using scratch ring registers:
+     Variant 0: De Morgan zero knot on s_src (Sub)
+     Variant 1: De Morgan zero knot on s_dst (Add)
+     Variant 2: (s_src + ~s_src + 1) == 0 via Nor *)
   | GhostEntangledWebbing ->
+      let k = next_int64 rng in
       match next_int rng 3 with
       | 0 ->
-          (* x - (r - r) == x (algebraic zero difference) *)
-          [ PushReg s_src; PushReg s_src; Sub; Sub ]
+          emit_de_morgan_zero s_src k @ [ Sub ]
       | 1 ->
-          (* x + (r - r) == x *)
-          [ PushReg s_dst; PushReg s_dst; Sub; Add ]
+          emit_de_morgan_zero s_dst k @ [ Add ]
       | _ ->
-          (* x + (r + ~r + 1) == x via Nor-inversion *)
           [ PushReg s_src; Dup; Nor; PushReg s_src; Add; PushImm 1L; Add; Add ]
 (* ── Insertion Pass ───────────────────────────────────────────────────── *)
 

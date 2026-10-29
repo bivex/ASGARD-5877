@@ -12,6 +12,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Updated the showcase script to build with the all-on configuration.
   * Verified on Apple Silicon: 26/26 board passes ON, 77/77 showcase assertions exact, DRS 93.6/100.0 (Tier 3+), Composite DRS v2 100.0/100.0.
 ### Fixed
+- De-linearize ghost padding live-stack identities and webbing zero-knots (`lib/stack_vm/stack_ghost_pass.ml`):
+  * Replaced linear register cancellation `(r + k) - r - k` in `GhostLiveAddZero` and `GhostLiveAddSubPair` with non-linear De Morgan zero knots (`((r + k) - (r & k)) - (r | k) == 0L`), eliminating trivial algebraic constant folding.
+  * Fixed `GhostLiveFlagPreserved` under live condition codes: replaced flag-clobbering `(F + r) - r` with flag-neutral `PushFlags; Swap; PushReg real_r; PushImm 0L; Mul; Add; Swap; PopFlags`, preserving both CPU flags and operand value.
+  * Eliminated trivial `s - s = 0` differences in `GhostEntangledWebbing` variants 0 and 1, replacing them with De Morgan zero knots on scratch ring registers.
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, 7/7 `Register-Driven JIT`, and 77/77 SJIT showcase assertions on Apple Silicon hardware.
 - Eliminate redundant mprotect syscalls, zero-wiping leakage, and step exhaustion in Nano-JIT (`lib/rd_jit_vm/rd_jit_buffer.ml`, `lib/rd_jit_vm/nano_jit_slot.ml`):
   * Gated `mprotect` calls in `DualMappedJITBuffer.begin_synthesis`, `commit_and_flush`, and `atomic_zeroize` with `#else` on Darwin arm64 when `pthread_jit_write_protect_np` is available, eliminating two kernel transitions and TLB shootdowns per executed nano-chunk.
   * Replaced plain zero-filling in `atomic_zeroize` with non-linear Rule 30 cellular automaton gamma words (`gamma = (gamma << 1) ^ (gamma | (gamma >> 1))`), preventing memory dumpers from observing contiguous zero-filled staging holes.
