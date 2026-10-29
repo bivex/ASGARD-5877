@@ -236,14 +236,6 @@ let step_op state = function
            state.vstack <- res :: rest;
            state.vsp <- Int64.add state.vsp 8L
        | _ -> state.halted <- true)
-  | Xor ->
-      (match state.vstack with
-       | op2 :: op1 :: rest ->
-           let res = Int64.logxor op1 op2 in
-           state.flags <- CC_OP_LOGIC { dst = res; width = B64 };
-           state.vstack <- res :: rest;
-           state.vsp <- Int64.add state.vsp 8L
-       | _ -> state.halted <- true)
   | Dup ->
       (match state.vstack with
        | top :: _ ->

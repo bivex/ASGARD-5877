@@ -26,34 +26,17 @@ let expand_and_nor = [
   Nor; (* ~x NOR ~y = x AND y *)
 ]
 
-let expand_xor_nor scratch_x scratch_y = [
-  PopReg scratch_x;
-  PopReg scratch_y;
-  PushReg scratch_y;
-  Dup;
-  Nor; (* ~y *)
-  PushReg scratch_x;
-  Dup;
-  Nor; (* ~x *)
-  Nor; (* x AND y *)
-  PushReg scratch_y;
-  PushReg scratch_x;
-  Nor; (* x NOR y *)
-  Nor; (* (x AND y) NOR (x NOR y) = x XOR y *)
-]
-let expand_xor_nor_pure = [
+let expand_xor_nor _ _ = [
   Dup2;
-  Nor;
+  Nand;
+  Dup;
+  Nand;
+  Swap;
   Rot;
-  Swap;
-  Dup;
-  Nor;
-  Swap;
-  Dup;
-  Nor;
   Nor;
   Nor;
 ]
+let expand_xor_nor_pure = expand_xor_nor
 
 let expand_not_nand = [
   Dup;

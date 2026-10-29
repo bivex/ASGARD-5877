@@ -110,7 +110,7 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         | Sar -> [Sar]
         | And -> Stack_logic_pass.expand_and_nor
         | Or -> Stack_logic_pass.expand_or_nor
-        | Xor -> [Xor]
+        | Xor -> Stack_logic_pass.expand_xor_nor 0 0
         | Rol ->
             (* (x << n) | (x >> ((64 - n) mod 64)); Shl/Shr mask the count
                with 63, and (0 - n) mod 64 = (64 - n) mod 64, so n = 0

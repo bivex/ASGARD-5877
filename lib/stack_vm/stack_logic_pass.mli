@@ -13,7 +13,7 @@ val expand_not_nor : stack_op list
 val expand_or_nor : stack_op list
 val expand_and_nor : stack_op list
 val expand_xor_nor : int -> int -> stack_op list
-val expand_xor_nor_pure : stack_op list
+val expand_xor_nor_pure : int -> int -> stack_op list
 
 val expand_not_nand : stack_op list
 val expand_and_nand : stack_op list

@@ -130,10 +130,6 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
           (match !stk with
            | b :: a :: tl -> stk := Int64.lognot (Int64.logor a b) :: tl
            | _ -> failwith "stack_jit: underflow on Nor")
-      | Xor ->
-          (match !stk with
-           | b :: a :: tl -> stk := Int64.logxor a b :: tl
-           | _ -> failwith "stack_jit: underflow on Xor")
       | Shl ->
           (match !stk with
            | count :: a :: tl ->
@@ -159,10 +155,12 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
            | _ -> failwith "stack_jit: underflow on Idiv")
       | Rot ->
           (match !stk with
-           | b :: a :: tl ->
+           | a :: b :: c :: tl ->
+               stk := c :: a :: b :: tl
+           | [ b; a ] ->
                let s = Int64.to_int b land 63 in
                let res = if s = 0 then a else Int64.logor (Int64.shift_right_logical a s) (Int64.shift_left a (64 - s)) in
-               stk := res :: tl
+               stk := [ res ]
            | _ -> failwith "stack_jit: underflow on Rot")
       | Dup2 ->
           (match !stk with
@@ -531,8 +529,22 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Sar -> shift_op "SAR_RR" "SAR_RI"
           | Div -> binary "DIV_RR"
           | Idiv -> binary "SDIV_RR"
-          | Xor -> binary "XOR_RR"
-          | Rot -> shift_op "ROR_RR" "ROR_RI"
+          | Rot ->
+              if !depth >= 3 then begin
+                let t0 = stack_base + !depth - 3
+                and t1 = stack_base + !depth - 2
+                and t2 = stack_base + !depth - 1 in
+                push_item (jit "XOR_RR", t0, t2, 0L);
+                push_item (jit "XOR_RR", t2, t0, 0L);
+                push_item (jit "XOR_RR", t0, t2, 0L);
+                push_item (jit "XOR_RR", t0, t1, 0L);
+                push_item (jit "XOR_RR", t1, t0, 0L);
+                push_item (jit "XOR_RR", t0, t1, 0L);
+                Ok ()
+              end else if !depth >= 2 then begin
+                shift_op "ROR_RR" "ROR_RI"
+              end else
+                Error "stack_jit: underflow on Rot"
           | Bswap -> unary "BSWAP_R"
           | Clz -> unary "CLZ_R"
           | Ctz -> unary "CTZ_R"
