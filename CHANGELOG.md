@@ -36,6 +36,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Added optional `?arch` parameter to `compile_native_binary` in `Toolchain` port and Clang adapter, automatically passing `-target x86_64-apple-darwin` or `-target arm64-apple-darwin` matching the lifter target when building protected runner binaries on heterogeneous hosts.
 
 ### Added
+- Connect safe Bucket 1 protection passes to Stack-JIT packager (`lib/adapters/protect_adapters/vm_packagers.ml`, `lib/stack_vm/stack_ir.ml`, `lib/stack_vm/stack_superop_pass.ml`):
+  * Added `apply_jit_pass_pipeline` to `Stack_jit_packager.package_single`, executing Branchless Algebraic Flag Materialization, Superoperator fusion (AddImm, SubImm, SetRegImm, AddRegImm), Stack Balance Repair, and Stack Phase Guard invariant checks before native trace chunking.
+  * Corrected `AddRegImm` push_weight from 1 to 0 in `lib/stack_vm/stack_ir.ml`, matching its in-place context slot mutation semantics (`ctx[slot] += imm`) without evaluation stack pushes.
+  * Fixed `AddRegImm` fusion pattern in `lib/stack_vm/stack_superop_pass.ml` to require `:: PopReg r2 :: rest when r = r2`, preventing stack underflow when `PushReg r; PushImm c; Add` leaves intermediate results on the evaluation stack.
+  * Verified: 16/16 `Stack-JIT VM & Chunker`, 77/77 assertions on 19 virtualized routines in `sjit_showcase` on Apple Silicon hardware, 66/66 `Stack-VM Execution Engine`, and 69/69 `ARM64 Lifter & CFG`.
 - Add immediate-form ALU opcodes `CMP_RI` and `ROR_RI` with chunker peepholes (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`, `lib/stack_vm/stack_jit_chunker.ml`, `test/test_stack_jit_vm.ml`):
   * Added `JIT_OP_CMP_RI` (enum code 50) and `JIT_OP_ROR_RI` (enum code 51) with matching serialization table entries in `rd_jit_emitter.ml`.
   * ARM64 native emission: `cmp x9, #imm12` (`0xF1000000 | imm12<<10 | Rn<<5 | 31`) with `emit_arm64_imm` + `cmp x9, x10` fallback for non-encodable immediates; `ror x9, x9, #imm6` via the EXTR form (`0x93C00000 | Rm<<16 | imm6<<10 | Rn<<5 | Rd`) with a rotate-by-zero fast path.

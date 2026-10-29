@@ -89,8 +89,8 @@ let push_weight = function
   | Cmp -> 0
   | Test -> 0
   | AddImm _ | SubImm _ -> 1
-  | AddImmImm _ | SubImmImm _ | AddRegImm _ -> 1
-  | SetRegImm _ | KeyFeedback _ -> 0
+  | AddImmImm _ | SubImmImm _ -> 1
+  | SetRegImm _ | AddRegImm _ | KeyFeedback _ -> 0
   | Bswap | Clz | Ctz | Rbit | Popcnt -> 1
   | NativeEscape _ -> 0
 

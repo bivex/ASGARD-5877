@@ -237,12 +237,42 @@ end
 module Stack_jit_packager : Vm_packager = struct
   let engine_kind = Jit
 
+  let apply_jit_pass_pipeline ~rng:_ ~(native_cfg : Protection_config.t) _ctx prog =
+    (* Pass 10: Algebraic flags *)
+    let prog =
+      Stack_vm.Stack_algebraic_flags_pass.apply_program
+        Stack_vm.Stack_algebraic_flags_pass.default_algebraic_flags_config _ctx prog
+    in
+    (* Pass 2a: Superoperator fusion *)
+    let prog =
+      if native_cfg.stack_vm.superoperators && native_cfg.superop.enabled then
+        let sup = native_cfg.superop in
+        let superop_cfg =
+          { (Stack_vm.Stack_superop_pass.default_superop_config 0x5877L) with
+            fusion_rate = sup.fusion_rate;
+            enable_add_imm = sup.enable_add_imm;
+            enable_sub_imm = sup.enable_sub_imm;
+            enable_add_ii = sup.enable_add_ii;
+            enable_sub_ii = sup.enable_sub_ii;
+            enable_set_reg_imm = sup.enable_set_reg_imm;
+            enable_add_reg_imm = sup.enable_add_reg_imm;
+          }
+        in
+        Stack_vm.Stack_superop_pass.apply_program superop_cfg prog
+      else prog
+    in
+    (* Stack balance pass: ensures exit stack delta is 0 across all blocks *)
+    let prog = Stack_vm.Stack_balance_pass.repair_program _ctx prog in
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"sjit-passes" ~final:false prog;
+    prog
+
   let package_single ~rng ~config ?(ext_syms = Hashtbl.create 16) (name, (ir : Vm_ir.Ir.func)) =
     let native_cfg : Protection_config.t = unwrap_config config in
     Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging function '%s' (IR -> Stack-IR -> sealed chunks)"
       name;
     let ctx = Stack_vm.Context_allocator.create ~permute:false () in
     let _ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms ir in
+    let prog = apply_jit_pass_pipeline ~rng ~native_cfg ctx prog in
     Logger.infof ~section:"STACK_JIT" "Function '%s' has %d blocks (entry=%d)" name (Hashtbl.length prog.blocks) prog.entry_id;
     let tr_res = Stack_vm.Stack_jit_chunker.translate_program () prog in
     match tr_res with

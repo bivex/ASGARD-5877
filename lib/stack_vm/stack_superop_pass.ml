@@ -91,9 +91,9 @@ let apply_block cfg block =
           SubImmImm (a, b) :: aux rest
         else
           PushImm a :: aux (PushImm b :: Sub :: rest)
-    | PushReg r :: PushImm c :: Add :: rest when cfg.enable_add_reg_imm && maybe rng cfg.fusion_rate ->
+    | PushReg r :: PushImm c :: Add :: PopReg r2 :: rest when r = r2 && cfg.enable_add_reg_imm && maybe rng cfg.fusion_rate ->
         AddRegImm (r, c) :: aux rest
-    | PushImm c :: PushReg r :: Add :: rest when cfg.enable_add_reg_imm && maybe rng cfg.fusion_rate ->
+    | PushImm c :: PushReg r :: Add :: PopReg r2 :: rest when r = r2 && cfg.enable_add_reg_imm && maybe rng cfg.fusion_rate ->
         AddRegImm (r, c) :: aux rest
     | PushImm c :: PopReg r :: rest when cfg.enable_set_reg_imm && maybe rng cfg.fusion_rate ->
         SetRegImm (r, c) :: aux rest
