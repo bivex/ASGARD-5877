@@ -346,13 +346,14 @@ let run_differential ~(seed : int) (ops : stack_op list) : bool =
     Printf.eprintf "  repro: seed=%d\n  ops=[%s]\n" seed (trace_to_string ops);
   all_ok
 
+let trace_of_seed (seed : int) : stack_op list =
+  let rng = Random.State.make [| seed |] in
+  gen_ops rng ~len:(8 + Random.State.int rng 40)
+
 let prop_differential =
   QCheck.Test.make
     ~name:"stack_jit_fuzz_differential_trace_vs_chunks" ~count:1000 QCheck.int
-    (fun seed ->
-      let rng = Random.State.make [| seed |] in
-      let ops = gen_ops rng ~len:(8 + Random.State.int rng 40) in
-      run_differential ~seed ops)
+    (fun seed -> run_differential ~seed (trace_of_seed seed))
 
 (* ------------------------------------------------------------------ *)
 (* Property 2: multi-block program jump patching                       *)
@@ -536,5 +537,120 @@ let prop_robustness =
       robust_case ~seed ~label:"default" ~allow_branches:false ops
       && robust_case ~seed ~label:"allow_branches" ~allow_branches:true ops)
 
+(* ------------------------------------------------------------------ *)
+(* Deterministic regression replay                                     *)
+(* ------------------------------------------------------------------ *)
+
+(* QCheck samples a fresh random seed per run, so a counterexample is
+   only observable through the seed printed in the failure output.  These
+   handwritten traces pin each bug the campaign found (they go red if any
+   fix is reverted), the seed list replays every counterexample seed
+   captured during the campaign, and SJIT_FUZZ_REPLAY="s1,s2,..." replays
+   any newly reported seed exactly:
+
+     SJIT_FUZZ_REPLAY=<seed> run_tests.exe test "Stack-JIT" 19           *)
+
+let pin_traces : (string * stack_op list) list =
+  [ ( "addregimm-pushes-and-leaves-register",
+      (* fused PushReg+AddImm: stack [22; 15], register 1 stays 10 *)
+      [ SetRegImm (1, 10L); AddRegImm (1, 5L); AddRegImm (1, 7L) ] );
+    ( "callextern-returns-zero-into-slot0",
+      (* reg0 <- 0xF0..F0, call clobbers slot 0 with 0 and pushes it,
+         so the Add yields 0xF0..F0 + 0, not 2 * 0xF0..F0 *)
+      [ PushImm 0xF0F0F0F0F0F0F0F0L; Cmov (Flags.ALWAYS, 0); CallExtern 0;
+        PushReg 0; Add ] );
+    ( "shift-by-register-count",
+      (* count comes from a register: SHL_RR with count & 63 = 4 *)
+      [ SetRegImm (2, 4L); PushImm 0xFFL; PushReg 2; Shl ] ) ]
+
+(* A jump to a trailing empty block patches to chunk index n_chunks - the
+   arena's past-the-end halt (execute_sealed_function, k < num_chunks). *)
+let pin_program () : Stack_ir.program =
+  let blocks = Hashtbl.create 3 in
+  Hashtbl.replace blocks 0 (Stack_ir.make_block 0 "b0" [ PushImm 5L; JmpRel 2 ]);
+  Hashtbl.replace blocks 1 (Stack_ir.make_block 1 "b1" [ Exit ]);
+  Hashtbl.replace blocks 2 (Stack_ir.make_block 2 "b2" []);
+  { entry_id = 0; blocks; context_slots = C.ctx_slots }
+
+(* Every seed that produced a counterexample during the fuzz campaign
+   (AddRegImm depth corruption, CallExtern slot-0 staleness, program
+   JMP/JCC past-the-end halt). *)
+let regression_seeds : int list =
+  [ 2859343975888491635; 1429671987944245818; 1250962989451215091;
+    625481494725607546; 312740747362803773; 273648153942453302;
+    3200443008385864437; 3200443006895542026; (-1255454074270668600);
+    3402412065866005812; (-553988316402202730); (-2895258771272862432);
+    (-2158051594160398426); 275362227604612325;
+    2737435048197119166; 2736098409989991667; 2736098409988747434;
+    3261261766892098765; 3261261766880234364; 3159347336665227041 ]
+
+let replay_seed (seed : int) : bool =
+  let ok_diff = run_differential ~seed (trace_of_seed seed) in
+  let rng = Random.State.make [| seed |] in
+  let ok_prog =
+    match C.translate_program () (gen_program rng) with
+    | Ok _ -> true
+    | Error e ->
+        Printf.eprintf "[stack-jit-fuzz] replay seed=%d program rejected: %s\n" seed e;
+        false
+  in
+  let rng = Random.State.make [| seed |] in
+  let soup = List.init (Random.State.int rng 25) (fun _ -> any_op rng) in
+  ok_diff && ok_prog
+  && robust_case ~seed ~label:"replay-default" ~allow_branches:false soup
+  && robust_case ~seed ~label:"replay-branches" ~allow_branches:true soup
+
+let test_regression_replay () =
+  let pin_ok =
+    List.for_all
+      (fun (name, ops) ->
+         if run_differential ~seed:0 ops then true
+         else begin
+           Printf.eprintf "[stack-jit-fuzz] regression pin failed: %s\n  ops=[%s]\n"
+             name (trace_to_string ops);
+           false
+         end)
+      pin_traces
+  in
+  let halt_ok =
+    match C.translate_program () (pin_program ()) with
+    | Error e ->
+        Printf.eprintf "[stack-jit-fuzz] halt-pin program rejected: %s\n" e;
+        false
+    | Ok tr ->
+        let n = List.length tr.chunks in
+        let jmps =
+          List.filter
+            (fun (op, _, _, _) -> suffix op = "JMP")
+            (List.concat tr.chunks)
+        in
+        let halt_encoded =
+          match jmps with
+          | [ (_, _, _, imm) ] -> Int64.to_int imm = n
+          | _ -> false
+        in
+        if not halt_encoded then
+          Printf.eprintf
+            "[stack-jit-fuzz] halt-pin: expected JMP -> n_chunks=%d, got %d jump(s)\n"
+            n (List.length jmps);
+        halt_encoded
+  in
+  let extra =
+    match Sys.getenv_opt "SJIT_FUZZ_REPLAY" with
+    | Some s when String.trim s <> "" ->
+        List.map (fun x -> int_of_string (String.trim x)) (String.split_on_char ',' s)
+    | _ -> []
+  in
+  let bad =
+    List.filter (fun seed -> not (replay_seed seed)) (regression_seeds @ extra)
+  in
+  Alcotest.(check bool) "regression pins green" true pin_ok;
+  Alcotest.(check bool) "past-the-end halt pin green" true halt_ok;
+  Alcotest.(check bool) "replay seeds green" true (bad = []);
+  if bad <> [] then
+    Printf.eprintf "[stack-jit-fuzz] replay failed for seeds: %s\n"
+      (String.concat ", " (List.map string_of_int bad))
+
 let tests =
   List.map QCheck_alcotest.to_alcotest [ prop_differential; prop_program; prop_robustness ]
+  @ [ Alcotest.test_case "stack_jit_fuzz_regression_replay" `Quick test_regression_replay ]
