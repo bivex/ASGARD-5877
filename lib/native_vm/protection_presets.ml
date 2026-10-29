@@ -77,7 +77,11 @@ let default : t = {
   memory_chaffing = default_memory_chaffing;
   spaghetti = default_spaghetti;
   braid = default_braid;
-  amplifier = default_amplifier;
+  (* Amplifier profile: "light" (Horner 2). The previous "heavy" default
+     (Horner 6, +281% ops, bit-slice 2 lanes) combined with the other
+     Tier-2 passes made even a 60-line C main run the packager for many
+     minutes. high/max_security presets keep the heavy profile. *)
+  amplifier = { default_amplifier with profile = "light" };
   superop = default_superop;
   ghost = default_ghost;
   avid = default_avid;

@@ -12,13 +12,60 @@ let is_dump_enabled () =
   | Some s when s <> "" && s <> "0" -> true
   | _ -> false
 
+(* Per-pass wall-clock timing for the Stack-VM packager pipeline.
+   Activated by env ASGARD_PHASE_TIMING:
+     - "1" (or any other non-empty, non-"0", non-path value) -> stderr
+     - a filesystem path -> append to that file (test harnesses capture
+       stderr, so a file is the reliable channel under Alcotest)
+   One line per phase boundary: the elapsed time is attributed to the pass
+   that just completed (the one between the previous boundary and this
+   one).  Zero overhead when disabled. *)
+let phase_timing_target () : string option =
+  match Sys.getenv_opt "ASGARD_PHASE_TIMING" with
+  | Some s when s <> "" && s <> "0" ->
+      (* A value containing '/' or '.' is treated as a path. *)
+      Some (if String.contains s '/' || String.contains s '.' then s else "")
+  | _ -> None
+
+let phase_timing_emit (msg : string) =
+  match phase_timing_target () with
+  | None -> ()
+  | Some "" -> Printf.eprintf "%s\n%!" msg
+  | Some path ->
+      let oc = open_out_gen [ Open_append; Open_creat ] 0o644 path in
+      output_string oc (msg ^ "\n");
+      close_out oc
+
+let phase_timing_prev : (string * float) option ref = ref None
+let phase_timing_start : float ref = ref 0.0
+
+let tick_phase_timing ~phase =
+  if phase_timing_target () <> None then begin
+    let now = Unix.gettimeofday () in
+    (match !phase_timing_prev with
+     | Some (prev_phase, t0) ->
+         phase_timing_emit (Printf.sprintf "[PHASE TIMING] %-18s took %8.2fs (cumulative %8.2fs)"
+                              prev_phase (now -. t0) (now -. !phase_timing_start))
+     | None ->
+         phase_timing_start := now;
+         phase_timing_emit "[PHASE TIMING] pipeline start");
+    (* "1-lowered" is the first boundary of every packaging run: reset the
+       cumulative clock so multi-function programs time each run. *)
+    (if phase = "1-lowered" && !phase_timing_prev <> None then begin
+         phase_timing_start := now;
+         phase_timing_emit "[PHASE TIMING] === new packaging run ==="
+       end);
+    phase_timing_prev := Some (phase, now)
+  end
 let dump_bytecode_trace ~phase (prog : Stack_vm.Stack_ir.program) =
+  tick_phase_timing ~phase;
   if is_dump_enabled () then begin
     let sep = String.make 72 '=' in
     Printf.eprintf "\n%s\n[ASGARD BYTECODE TRACE] phase: %s\n%s\n%s\n%!"
       sep phase sep
       (Stack_vm.Stack_ir.program_to_string prog)
   end
+
 
 (* Machine-readable phase dump, consumed by the MATLAB pipeline
    compatibility analyzer (scripts/pipeline_compat.m).
