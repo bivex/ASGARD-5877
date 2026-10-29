@@ -17,7 +17,8 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Discharged non-linear modular associativity in `stern_net_identity` using `FStar.Math.Lemmas` (`lemma_mod_mul_distr_l`, `lemma_mod_mul_distr_r`, `small_mod`).
   * Replaced invalid `List.Tot.init` calls in `is_permutation16` and `is_fix_free` with a 16-element bounded index list and recursive duplicate detector.
   * Extracted erased OCaml module `fstar/Transport_Verified.ml` via F* codegen.
-- Correct x86_64 JIT arithmetic shift and bitwise negation operand loading in `rd_jit_synth.ml` (`lib/rd_jit_vm/rd_jit_synth.ml`):
+- Correct x86_64 JIT condition codes, arithmetic shift, and negation operand loading in `rd_jit_synth.ml` (`lib/rd_jit_vm/rd_jit_synth.ml`):
+  * Added missing condition code cases (`CMOVAE` 0x43, `CMOVB` 0x42, `CMOVA` 0x47, `CMOVBE` 0x46) to both `JIT_OP_CSEL_RR` and `JIT_OP_JCC` in the x86-64 native emission path, preventing fallback to equality testing on unsigned conditional branches and moves.
   * Fixed `JIT_OP_SHL_RI`, `JIT_OP_SHR_RI`, `JIT_OP_SAR_RI`, `JIT_OP_NOT_R`, and `JIT_OP_NEG_R` in the x86-64 native emission path to load from the source operand offset (`src_off`) instead of the destination offset (`dst_off`), preserving non-aliasing register source values across shift and negation operations.
   * Updated `asgard_vm_call` declarations with target architecture detection and x86-64 System V AMD64 ABI context register setup (RDI/RSI/RDX/RCX/R8/R9 parameter registers and 16-byte aligned execution spill stack).
 - Support cross-compilation target architecture in `Clang_toolchain_adapter` (`lib/adapters/protect_adapters/clang_toolchain_adapter.ml`, `lib/ports/protect_ports.ml`, `lib/application/protect_pipeline.ml`):

@@ -757,12 +757,16 @@ let synthesize_and_execute_block_decl () : top_decl =
             case JIT_OP_CSEL_RR: {
                 uint8_t cond_byte = 0x44;
                 switch (in.imm & 0xF) {
-                    case 0: cond_byte = 0x44; break;
-                    case 1: cond_byte = 0x45; break;
-                    case 10: cond_byte = 0x4d; break;
-                    case 11: cond_byte = 0x4c; break;
-                    case 12: cond_byte = 0x4f; break;
-                    case 13: cond_byte = 0x4e; break;
+                    case 0: cond_byte = 0x44; break; // E
+                    case 1: cond_byte = 0x45; break; // NE
+                    case 2: cond_byte = 0x43; break; // AE
+                    case 3: cond_byte = 0x42; break; // B
+                    case 8: cond_byte = 0x47; break; // A
+                    case 9: cond_byte = 0x46; break; // BE
+                    case 10: cond_byte = 0x4d; break; // GE
+                    case 11: cond_byte = 0x4c; break; // L
+                    case 12: cond_byte = 0x4f; break; // G
+                    case 13: cond_byte = 0x4e; break; // LE
                     default: cond_byte = 0x44; break;
                 }
                 uint8_t src2 = (uint8_t)((in.imm >> 8) & 0xFF);
@@ -806,14 +810,16 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = (uint8_t)((fallthrough_chunk >> 24) & 0xFF);
                 uint8_t cmov_op = 0x45;
                 switch (cond) {
-                    case 0: cmov_op = 0x44; break;
-                    case 1: cmov_op = 0x45; break;
-                    case 2: cmov_op = 0x43; break;
-                    case 3: cmov_op = 0x42; break;
-                    case 10: cmov_op = 0x4d; break;
-                    case 11: cmov_op = 0x4c; break;
-                    case 12: cmov_op = 0x4f; break;
-                    case 13: cmov_op = 0x4e; break;
+                    case 0: cmov_op = 0x44; break; // E
+                    case 1: cmov_op = 0x45; break; // NE
+                    case 2: cmov_op = 0x43; break; // AE
+                    case 3: cmov_op = 0x42; break; // B
+                    case 8: cmov_op = 0x47; break; // A
+                    case 9: cmov_op = 0x46; break; // BE
+                    case 10: cmov_op = 0x4d; break; // GE
+                    case 11: cmov_op = 0x4c; break; // L
+                    case 12: cmov_op = 0x4f; break; // G
+                    case 13: cmov_op = 0x4e; break; // LE
                     default: cmov_op = 0x44; break;
                 }
                 code[idx++] = 0x0f; code[idx++] = cmov_op; code[idx++] = 0xc2;
