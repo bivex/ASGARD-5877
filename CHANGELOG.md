@@ -7,6 +7,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Coalesced scratch slot allocations and wired Stateful Transducer pass into JIT pipeline (`lib/stack_vm/stack_avid_pass.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
+  * `stack_avid_pass.ml`: unified scratch and anchor slot allocation to once per program instead of per basic block, preventing context slot exhaustion beyond the 12-slot JIT limit.
+  * `vm_packagers.ml`: wired `Stack_transducer_pass` (stateful accumulator coupling $[B, A] \to (B-S) + (A+S)$) into `apply_jit_pass_pipeline`.
+  * Verified: 16/16 `Stack-JIT VM & Chunker`, 7/7 `Register-Driven JIT`, 66/66 `Stack-VM Execution Engine`, 77/77 SJIT showcase assertions, and 2/2 license validation checks on Apple Silicon.
 - Implemented dual-domain flags architecture (`NZCV` vs `vflags`) and JIT flag bridge (`lib/rd_jit_vm/`):
   * `rd_jit_buffer.ml`: added dedicated `vflags` field to `RD_JIT_Context` at offset 672 (0x2A0), preserving `trace_digest` at offset 656.
   * `rd_jit_synth.ml`, `rd_jit_emitter.ml`: added `JIT_OP_PUSH_FLAGS` and `JIT_OP_POP_FLAGS` opcodes for ARM64, x86-64, and C++ fallback interpreter.

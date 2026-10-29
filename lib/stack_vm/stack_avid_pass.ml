@@ -130,7 +130,7 @@ let generate_avid_cluster rng scratch_slot anchor_slot flags_live =
           PopReg scratch_slot ]
 
 
-let apply_block (cfg : avid_config) ctx (b : block) : block =
+let apply_block_internal ?(scratch_slot = 10) ?(anchor_slot = 11) (cfg : avid_config) (b : block) : block =
   if not cfg.enabled || cfg.rate <= 0 then b
   else
     let rng =
@@ -140,8 +140,6 @@ let apply_block (cfg : avid_config) ctx (b : block) : block =
               (b.id * Int64.to_int salt_avid_block_mul
                + Int64.to_int salt_avid_block_add)))
     in
-    let scratch_slot = Context_allocator.alloc_scratch ctx in
-    let anchor_slot = Context_allocator.alloc_scratch ctx in
     let last_anchor = ref None in
     let live = Stack_flag_liveness.analyze_list b.ops in
     let new_ops = ref [] in
@@ -151,11 +149,6 @@ let apply_block (cfg : avid_config) ctx (b : block) : block =
         match !last_anchor with
         | Some a ->
             last_anchor := None;
-            (* Flag-neutral drain everywhere: Mul does not produce flags in
-               this VM, so read-and-zero is safe both in the interpreter
-               (flags materialized on the vstack) and in the JIT chunker
-               (PushFlags/PopFlags are native no-ops there, so a
-               flag-clobbering drain would corrupt a following JccRel). *)
             let anchor_ops = [ PushReg a; PushImm 0L; Mul; PopReg a ] in
             new_ops := op :: (List.rev anchor_ops) @ !new_ops
         | None ->
@@ -176,12 +169,19 @@ let apply_block (cfg : avid_config) ctx (b : block) : block =
     ) b.ops;
     { b with ops = List.rev !new_ops }
 
+let apply_block (cfg : avid_config) ctx (b : block) : block =
+  let scratch_slot = Context_allocator.alloc_scratch ctx in
+  let anchor_slot = Context_allocator.alloc_scratch ctx in
+  apply_block_internal ~scratch_slot ~anchor_slot cfg b
+
 let apply_program (cfg : avid_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled || cfg.rate <= 0 then prog
   else
+    let scratch_slot = Context_allocator.alloc_scratch ctx in
+    let anchor_slot = Context_allocator.alloc_scratch ctx in
     let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
     Hashtbl.iter (fun id b ->
-      Hashtbl.add new_blocks id (apply_block cfg ctx b)
+      Hashtbl.add new_blocks id (apply_block_internal ~scratch_slot ~anchor_slot cfg b)
     ) prog.blocks;
     let context_slots = max prog.context_slots (Context_allocator.total_slots ctx) in
     { prog with blocks = new_blocks; context_slots }
