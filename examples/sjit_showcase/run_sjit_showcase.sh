@@ -30,11 +30,12 @@ mkdir -p "${BUILD_DIR}"
 SRC_FILE="${SCRIPT_DIR}/sjit_showcase.c"
 APP_BIN="${BUILD_DIR}/protected_app"
 
-echo "[*] Virtualizing all 19 functions with Stack-JIT engine (--engine=jit)..."
+echo "[*] Virtualizing all 19 functions with Stack-JIT engine (--engine=jit), ALL passes ON..."
 "${MAIN_EXE}" protect-arm64 \
     -i "${SRC_FILE}" \
     -o "${BUILD_DIR}" \
     --engine=jit \
+    --config "${SCRIPT_DIR}/sjit_full_config.json" \
     -s 5877
 
 echo ""

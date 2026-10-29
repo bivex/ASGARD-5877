@@ -6,6 +6,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+- Enable the full protection pass set for the Stack-JIT showcase (`examples/sjit_showcase/sjit_full_config.json`, `examples/sjit_showcase/run_sjit_showcase.sh`):
+  * Added `sjit_full_config.json` (derived from `samples/protection_config.full.json`) enabling every SJIT-relevant pass: Ephemeral JIT Micro-Handlers, Address Binding, Computational Stalling, and Stack String Encryption (ASG_STR) on top of the previously active set; `c_macro.signal_dispatch` and `c_macro.nanomites` stay off because the macro-nanomite splitter breaks compilation of macro-heavy sources (undeclared-identifier errors inside expanded `CHECK` macros).
+  * Updated the showcase script to build with the all-on configuration.
+  * Verified on Apple Silicon: 26/26 board passes ON, 77/77 showcase assertions exact, DRS 93.6/100.0 (Tier 3+), Composite DRS v2 100.0/100.0.
 ### Fixed
 - Fix trace-closure entanglement target and de-linearize transducer/avid junk identities (`lib/stack_vm/stack_trace_closure_pass.ml`, `lib/stack_vm/stack_transducer_pass.ml`, `lib/stack_vm/stack_avid_pass.ml`):
   * `Stack_trace_closure` pre-write cluster at flag-live sites perturbed the saved flag word instead of the pending value `v`, so the PDG edge `G → v'` vanished and backward slicers could still prune the accumulator chain. The cluster is now bracketed `[ PushFlags; Swap ] … [ Swap; PopFlags ]` so the zero perturbation always lands on the value.

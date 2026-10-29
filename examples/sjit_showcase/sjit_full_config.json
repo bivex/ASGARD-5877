@@ -1,0 +1,229 @@
+{
+ "seed": 1337,
+ "crypto": {
+  "rounds": 16,
+  "key_bits": 128
+ },
+ "bloat": {
+  "mode": "balanced",
+  "target_size_budget_kb": 200,
+  "junk_density": 0.2,
+  "density_cap_threshold1_kb": 100,
+  "density_cap_threshold2_kb": 200
+ },
+ "cff": {
+  "enabled": true,
+  "obfuscate_states": true,
+  "inject_opaque_predicates": false,
+  "input_tainted_transitions": true,
+  "split_rate": 30,
+  "hub_count": 1,
+  "pop_digest": false,
+  "red_herring": true
+ },
+ "mba": {
+  "enabled": true,
+  "depth": 2,
+  "engine": "egraph",
+  "stack_synthesis_rate": 30,
+  "egraph_rate": 20,
+  "egraph_node_limit": 80,
+  "egraph_time_budget_ms": 50,
+  "egraph_iter_limit": 3,
+  "ir_max_depth": 3,
+  "ir_egraph_node_limit": 60,
+  "ir_egraph_time_budget_ms": 40
+ },
+ "anti_pushan": {
+  "enabled": true,
+  "running_key": true,
+  "address_bound": true
+ },
+ "anti_tamper": {
+  "enabled": true,
+  "smc": true,
+  "smc_strict": false,
+  "hardware_timing_probes": true,
+  "memory_integrity_scanner": true,
+  "anti_emulation": true,
+  "nanomites": true,
+  "direct_syscalls": true
+ },
+ "vm_runtime": {
+  "num_dispatch_domains": 4,
+  "enable_junk_instructions": true,
+  "enable_super_operators": true,
+  "stack_scrambling": true,
+  "memory_sanitization": true,
+  "vector_isa": true,
+  "egraph_expansion": true,
+  "ephemeral_jit": true,
+  "chameleon_handlers": true,
+  "oblivious_memory": true,
+  "context_epochs": 2,
+  "oblivious_decoys": 2
+ },
+ "c_macro": {
+  "enabled": true,
+  "macro_prefix": "ASG_",
+  "obfuscate_strings": true,
+  "obfuscate_constants": true,
+  "obfuscate_arithmetic": true,
+  "opaque_predicates": true,
+  "api_hashing": true,
+  "anti_debug": true,
+  "signal_dispatch": false,
+  "nanomites": false,
+  "timing_guard": true,
+  "timing_threshold_ticks": 50000000
+ },
+ "stack_vm": {
+  "enabled": true,
+  "superoperators": true,
+  "state_feedback": true,
+  "layout_randomization": true,
+  "runtime_hardening": true,
+  "compact_imm": true,
+  "feedback_rate": 50,
+  "cff_couple_key": true,
+  "opcode_polymorphism": true,
+  "permute_registers": false,
+  "host_stack_size_kb": 1024
+ },
+ "eh_shadowing": {
+  "enabled": true,
+  "shadow_alloc_size": 32,
+  "interceptor_symbol": "tech_2601_interceptor"
+ },
+ "anti_vpc": {
+  "enabled": true,
+  "scramble_vpc": true,
+  "split_vpc": true,
+  "entropy_whitening": true
+ },
+ "memory_chaffing": {
+  "enabled": true,
+  "pool_size": 1024,
+  "chaff_ratio": 1.0
+ },
+ "comp_stall": {
+  "enabled": true,
+  "variant": "ergodic",
+  "n_iterations": 100,
+  "pow_difficulty": 10,
+  "tau_ux_sec": 0.1,
+  "emu_quota_instrs": 1000000,
+  "seed": 1337
+ },
+ "spaghetti": {
+  "enabled": true,
+  "split_rate": 25,
+  "max_extra_blocks": 20,
+  "max_splits_factor": 1,
+  "min_chunk": 2
+ },
+ "braid": {
+  "enabled": true,
+  "rate": 25
+ },
+ "homomorphic": {
+  "enabled": true,
+  "rate": 25
+ },
+ "amplifier": {
+  "enabled": true,
+  "profile": "balanced",
+  "horner_degree": 2,
+  "bit_slice_lanes": 1,
+  "expander_chord_len": 4,
+  "expander_chord_rate": 25
+ },
+ "superop": {
+  "enabled": true,
+  "fusion_rate": 50,
+  "enable_add_imm": true,
+  "enable_sub_imm": true,
+  "enable_add_ii": true,
+  "enable_sub_ii": true,
+  "enable_set_reg_imm": true,
+  "enable_add_reg_imm": true
+ },
+ "ghost": {
+  "enabled": true,
+  "ghost_rate": 25,
+  "max_ghosts": 20,
+  "entangle": true
+ },
+ "avid": {
+  "enabled": true,
+  "rate": 20,
+  "max_avid": 15
+ },
+ "mem_webbing": {
+  "enabled": true,
+  "rate": 25
+ },
+ "trace_closure": {
+  "enabled": true,
+  "rate": 25
+ },
+ "transducer": {
+  "enabled": true,
+  "rate": 25
+ },
+ "polymba": {
+  "enabled": true,
+  "rate": 20
+ },
+ "finite_field": {
+  "enabled": true,
+  "rate": 20
+ },
+ "sink_barrier": {
+  "enabled": true,
+  "rate": 25
+ },
+ "trap": {
+  "enabled": true,
+  "rate": 25
+ },
+ "dual_rail": {
+  "enabled": true,
+  "rate": 25
+ },
+ "drcc": {
+  "enabled": true,
+  "rate": 25
+ },
+ "whitening": {
+  "enabled": true,
+  "rate": 25
+ },
+ "rule30": {
+  "enabled": true,
+  "rate": 25
+ },
+ "native_interleave": {
+  "enabled": true,
+  "rate": 100
+ },
+ "multiplicity": {
+  "enabled": true,
+  "rate": 25
+ },
+ "pipelined_dispatch": {
+  "enabled": true,
+  "chaff_slots": 4
+ },
+ "trampoline": {
+  "chunk_size": 64
+ },
+ "watermark": {
+  "payload_bits": 48,
+  "redundancy": 5
+ },
+ "toolchain": {
+  "opt_level": "-O3",
+  "extra_flags": []
+ }
+}
