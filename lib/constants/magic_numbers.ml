@@ -351,6 +351,9 @@ let rd_jit_trace_digest_init = 0x13375877AABBCCDDL
 
 (* Magic sentinel identifying serialized JIT sealed chunks in bytecode buffer ("\x77\x58JIT001"). *)
 let jit_bytecode_magic = 0x58774A4954303031L
+
+(* Magic salt for Matula-Goebel nested VM topology digest (ASCII "NESTVM11"). *)
+let nested_topology_salt = 0x4E455354564D3131L
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -833,6 +836,10 @@ let registry : entry list = [
     value = jit_bytecode_magic;
     source = "0x58774A4954303031: ASCII 'wXJIT001' sentinel identifying serialized JIT sealed chunks in bytecode buffer";
     used_in = [ "lib/rd_jit_vm/rd_jit_emitter.ml"; "lib/rd_jit_vm/rd_jit_synth.ml" ] };
+  { name = "nested_topology_salt";
+    value = nested_topology_salt;
+    source = "0x4E455354564D3131: ASCII 'NESTVM11' 64-bit salt for Matula-Goebel nested VM topology digest";
+    used_in = [ "lib/multi_vm/nested_stack.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

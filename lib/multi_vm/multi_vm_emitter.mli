@@ -35,6 +35,7 @@ val compile_and_package :
   ?enable_cff:bool ->
   ?enable_mba:bool ->
   ?mba_depth:int ->
+  ?nested_config:Nested_stack.nested_config ->
   ?config:Native_vm.Protection_config.t ->
   ?constants:(string * string) list ->
   Ir.func ->

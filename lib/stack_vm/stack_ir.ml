@@ -55,6 +55,10 @@ type stack_op =
   | NativeEscape of int * int * int * int * int list
       (** Native micro-handler interleave (Pass 27): kind, src_a, src_b, dst,
           raw machine-code stub bytes embedded in the bytecode stream. *)
+  | EnterVM of int
+      (** Multi-VM nested stack: enter tier [t]. Stack delta is 0. *)
+  | ExitVM of int
+      (** Multi-VM nested stack: exit tier [t]. Stack delta is 0. *)
 
 type block = {
   id : int;
@@ -93,6 +97,7 @@ let push_weight = function
   | SetRegImm _ | KeyFeedback _ -> 0
   | Bswap | Clz | Ctz | Rbit | Popcnt -> 1
   | NativeEscape _ -> 0
+  | EnterVM _ | ExitVM _ -> 0
 
 let pop_weight = function
   | PushImm _ -> 0
@@ -119,6 +124,7 @@ let pop_weight = function
   | SetRegImm _ | KeyFeedback _ -> 0
   | Bswap | Clz | Ctz | Rbit | Popcnt -> 1
   | NativeEscape _ -> 0
+  | EnterVM _ | ExitVM _ -> 0
 
 let stack_delta op =
   push_weight op - pop_weight op
@@ -172,6 +178,8 @@ let op_to_string = function
   | NativeEscape (kind, a, b, c, stub) ->
       Printf.sprintf "NATIVE_ESCAPE kind=%d ctx[%d],ctx[%d]->ctx[%d] (%d stub bytes)"
         kind a b c (List.length stub)
+  | EnterVM t -> Printf.sprintf "ENTER_VM tier=%d" t
+  | ExitVM t -> Printf.sprintf "EXIT_VM tier=%d" t
 
 let block_to_string b =
   let ops_str = List.map (fun op -> "    " ^ op_to_string op) b.ops |> String.concat "\n" in

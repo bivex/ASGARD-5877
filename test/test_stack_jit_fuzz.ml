@@ -97,7 +97,8 @@ let op_effect (d : int) (op : stack_op) : int * int =
   | Swap | ReadMem _ | AddImm _ | SubImm _ | Bswap | Clz | Ctz | Rbit | Popcnt
   | SetRegImm _ | Exit | PushFlags | PopFlags ->
       (0, 0)
-  | JmpRel _ | JccRel _ | KeyAdjust _ | KeyFeedback _ | NativeEscape _ ->
+  | JmpRel _ | JccRel _ | KeyAdjust _ | KeyFeedback _ | NativeEscape _
+  | EnterVM _ | ExitVM _ ->
       (0, 0)
 
 let depth_model_from (d0 : int) (ops : stack_op list) : int * int =

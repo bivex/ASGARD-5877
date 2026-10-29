@@ -412,6 +412,9 @@ let step_op state = function
         | _ -> Int64.mul va vb
       in
       set_reg state c res
+  | EnterVM _ | ExitVM _ ->
+      (* Multi-VM nested stack brackets: value-stack no-op in reference evaluator *)
+      ()
 
 let run_program ?(max_steps = 100000) ?initial_ctx prog =
   let state = create_state ?initial_ctx () in

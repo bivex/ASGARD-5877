@@ -324,7 +324,8 @@ let check_key_feedback_static ?(initial_ctx = []) ?(dispatcher_tokens = Hashtbl.
           in
           set_slot c res
       | Stack_ir.KeyAdjust _ | Stack_ir.Exit | Stack_ir.JmpRel _
-      | Stack_ir.JccRel _ | Stack_ir.CallExtern _ | Stack_ir.ResolveSym _ -> ())
+      | Stack_ir.JccRel _ | Stack_ir.CallExtern _ | Stack_ir.ResolveSym _
+      | Stack_ir.EnterVM _ | Stack_ir.ExitVM _ -> ())
     ops
 
 type encrypted_bytecode = {
@@ -657,6 +658,9 @@ let encode_op_into ?(compact_imm = false) ?(layout = default_field_layout) op_ma
       let n = List.length stub in
       add_i16 buf n;
       List.iter (fun byte -> Buffer.add_char buf (Char.chr (byte land 0xFF))) stub
+  | EnterVM _ | ExitVM _ ->
+      (* Multi-VM nested stack brackets: consumed during nesting; no-op in flat bytecode *)
+      ()
 
 let encode_op ?(op_map = default_opcode_map) ?(layout = default_field_layout) ?(compact_imm = false) op =
   let buf = Buffer.create 16 in

@@ -39,6 +39,58 @@ let verify_program prog =
   ) prog.blocks;
   !errors
 
+let check_nesting (prog : program) : string list =
+  let entry_block = Hashtbl.find_opt prog.blocks prog.entry_id in
+  let other_blocks =
+    Hashtbl.fold
+      (fun id b acc -> if id <> prog.entry_id then b :: acc else acc)
+      prog.blocks []
+  in
+  let sorted_other =
+    List.sort (fun (a : block) (b : block) -> Int.compare a.id b.id) other_blocks
+  in
+  let ordered_blocks =
+    match entry_block with
+    | Some eb -> eb :: sorted_other
+    | None -> sorted_other
+  in
+  let stack = ref [] in
+  let errors = ref [] in
+  List.iter
+    (fun (b : block) ->
+      List.iter
+        (function
+          | EnterVM tier -> stack := (tier, b.id) :: !stack
+          | ExitVM tier -> (
+              match !stack with
+              | [] ->
+                  errors :=
+                    Printf.sprintf
+                      "Block %d '%s': ExitVM tier=%d with empty nesting stack"
+                      b.id b.label tier
+                    :: !errors
+              | (top_tier, enter_b) :: rest ->
+                  if top_tier <> tier then
+                    errors :=
+                      Printf.sprintf
+                        "Block %d '%s': ExitVM tier=%d mismatches innermost EnterVM tier=%d (opened in block %d)"
+                        b.id b.label tier top_tier enter_b
+                      :: !errors;
+                  stack := rest)
+          | _ -> ())
+        b.ops)
+    ordered_blocks;
+  (match !stack with
+  | [] -> ()
+  | unclosed ->
+      List.iter
+        (fun (tier, enter_b) ->
+          errors :=
+            Printf.sprintf "Unclosed EnterVM tier=%d opened in block %d" tier enter_b
+            :: !errors)
+        unclosed);
+  List.rev !errors
+
 let is_terminator = function
   | JmpRel _ | JccRel _ | Exit -> true
   | _ -> false

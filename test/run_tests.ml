@@ -82,6 +82,7 @@ let () =
     ("Build-Seed Watermarking", Test_watermark.tests);
     ("Structured Logger", Test_logger.tests);
     ("Stack-JIT VM & Chunker", Test_stack_jit_vm.tests @ Test_stack_jit_fuzz.tests);
+    ("Multi-VM Nested Stack", Test_multi_vm_nested.suite);
   ])
 
 

@@ -116,7 +116,8 @@ let emit_multi_vm_header_source ~bridge_cpp ~asgard_multi_vm_source ~base_runtim
   Cpp_codegen.Cpp_printer.render_top_decls
     (emit_multi_vm_header_decls ~bridge_cpp ~asgard_multi_vm_source ~base_runtime_source ())
 
-let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_depth = 2) ?config ?constants (f : Ir.func) : multi_vm_package =
+let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_depth = 2) ?(nested_config = Nested_stack.default_nested_config) ?config ?constants (f : Ir.func) : multi_vm_package =
+  ignore nested_config;
   let bridge = Bridge.generate_bridge rng in
   let partition = Partitioner.partition_function f in
   let (bridged_func, actual_transitions) = inject_bridge_transitions bridge partition f in

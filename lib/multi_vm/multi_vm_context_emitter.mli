@@ -8,5 +8,6 @@ val emit_shared_vm_context : unit -> top_decl
 val emit_bridge_switch_to_flow : unit -> top_decl
 val emit_bridge_switch_to_math : unit -> top_decl
 
+val emit_nested_stack_decls : unit -> top_decl list
 val emit_asgard_multi_vm_namespace : unit -> top_decl
 val emit_asgard_multi_vm_source : unit -> string

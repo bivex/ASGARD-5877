@@ -7,6 +7,13 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented Multi-VM nested stack (VM-in-VM) architecture and OEIS combinatorial primitives (`lib/multi_vm/`, `lib/stack_vm/`, `lib/constants/`):
+  * `lib/multi_vm/nested_stack.ml`: implemented OEIS A000108 (Catalan numbers and Dyck word lexicographical ranking/checksum), A004001 (Hofstadter-Conway $10,000 sequence self-referential tier dispatch), A005228/A030124 (Hofstadter Figure-Figure complementary partition for tier vs honeypot slots), A061775 (Matula-Goebel bijective tree encoding for nesting topology digest with SplitMix64 mixing), and A287654/A249569 (Meta-Fibonacci chaotic inter-tier handoff jitter).
+  * `lib/stack_vm/stack_ir.ml`: added `EnterVM of int` and `ExitVM of int` nesting bracket opcodes with zero data-stack delta, preserving reference evaluator semantics.
+  * `lib/stack_vm/stack_balance_pass.ml`: added `check_nesting` enforcing Dyck well-nestedness across static block sequences.
+  * `lib/multi_vm/multi_vm_context_emitter.ml`: emitted C++20 typed EDSL AST for `g_nested_dispatch_a004001`, `nested_tier_of_step`, `g_nested_topology_salt`, and `nested_topology_digest`.
+  * `lib/constants/magic_numbers.ml`: registered `nested_topology_salt` (`0x4E455354564D3131L`, ASCII "NESTVM11").
+  * Verified: 10/10 new tests in `Multi-VM Nested Stack`, 8/8 `Multi-VM & Direct Zero-Bridge`, 66/66 `Stack-VM Execution Engine`, 20/20 `Stack-JIT VM & Chunker`, 45/45 `test_cpp_codegen`, and 2/2 license validation checks on Apple Silicon.
 - Added a deterministic QCheck differential fuzzer for the Stack-JIT chunker (`test/test_stack_jit_fuzz.ml`, registered into the `Stack-JIT VM & Chunker` suite):
   * Generates well-formed straight-line Stack-IR traces from a seeded PRNG (underflow-free, 4-slot window, identity-mapped context registers, interesting 64-bit immediates) and proves `translate_trace` + `simulate_chunks` equal to `reference_eval` on result slot 0, all context registers and the stack-window slots, at three Kolakoski scales.
   * Checks translation bookkeeping (real/dummy accounting, chunk capacity, A001511 schedule length, final/max depth against an independent depth model), patches multi-block programs' JMP/JCC targets into the chunk index space (incl. the past-the-end halt), and fuzzes `translate_trace` for total robustness on arbitrary op soup (never raises, simulates anything without control flow).

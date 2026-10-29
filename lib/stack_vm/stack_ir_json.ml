@@ -70,6 +70,8 @@ let op_name (op : stack_op) : string =
   | Rbit -> "Rbit"
   | Popcnt -> "Popcnt"
   | NativeEscape _ -> "NativeEscape"
+  | EnterVM _ -> "EnterVM"
+  | ExitVM _ -> "ExitVM"
 
 (* Flag classification, mirroring Stack_flag_liveness exactly. *)
 let flag_class_of (op : stack_op) : string =
@@ -95,6 +97,7 @@ let op_to_json (op : stack_op) : Yojson.Safe.t =
         `List [ `Int s; int64_to_json v ]
     | NativeEscape (kind, a, b, c, stub) ->
         `List [ `Int kind; `Int a; `Int b; `Int c; `List (List.map (fun x -> `Int x) stub) ]
+    | EnterVM t | ExitVM t -> `List [ `Int t ]
     | Add | Sub | Mul | Mulh | Imulh | Nor | Nand | Shl | Shr | Sar | Div | Idiv
     | Dup | Dup2 | Rot | Swap | PushFlags | PopFlags | Exit | Cmp | Test
     | Bswap | Clz | Ctz | Rbit | Popcnt -> `List []

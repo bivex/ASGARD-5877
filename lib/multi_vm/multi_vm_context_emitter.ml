@@ -80,6 +80,57 @@ let emit_bridge_switch_to_math () : top_decl =
       ]);
     ]
 
+
+let emit_nested_dispatch_table () : top_decl =
+  let elements =
+    Array.to_list (Array.map (fun v -> LitInt v) Nested_stack.a004001_table)
+  in
+  global_var ~is_static:true ~is_const:true
+    (Array (UInt16, 256))
+    "g_nested_dispatch_a004001"
+    ~init:(init_list elements)
+
+let emit_nested_tier_of_step () : top_decl =
+  func_decl
+    ~attrs:[StaticFn; AlwaysInline]
+    UInt32
+    "nested_tier_of_step"
+    [(UInt32, "step"); (UInt32, "depth")]
+    [
+      if_then_else (var "depth" <=~ u32 1l)
+        [ ret (u32 0l) ]
+        [
+          let_u32 "idx" (var "step" %~ u32 256l);
+          let_u32 "term" (cast UInt32 (idx (var "g_nested_dispatch_a004001") (var "idx")));
+          ret (var "term" %~ var "depth");
+        ];
+    ]
+
+let emit_nested_topology_salt () : top_decl =
+  global_var ~is_static:true ~is_const:true
+    UInt64
+    "g_nested_topology_salt"
+    ~init:(u64 Random_visa_constants.Magic_numbers.nested_topology_salt)
+
+let emit_nested_topology_digest () : top_decl =
+  func_decl
+    ~attrs:[StaticFn; AlwaysInline]
+    UInt64
+    "nested_topology_digest"
+    [(UInt32, "matula_num"); (UInt64, "salt")]
+    [
+      let_u64 "z" ((cast UInt64 (var "matula_num")) ^~ ((var "salt") *~ (u64 Random_visa_constants.Magic_numbers.splitmix64_gamma)));
+      var "z" := ((var "z") ^~ ((var "z") >>~ (u64 30L))) *~ (u64 Random_visa_constants.Magic_numbers.splitmix64_mix);
+      var "z" := ((var "z") ^~ ((var "z") >>~ (u64 27L))) *~ (u64 0x94D049BB133111EBL);
+      ret ((var "z") ^~ ((var "z") >>~ (u64 31L)));
+    ]
+
+let emit_nested_stack_decls () : top_decl list = [
+  emit_nested_dispatch_table ();
+  emit_nested_tier_of_step ();
+  emit_nested_topology_salt ();
+  emit_nested_topology_digest ();
+]
 let emit_asgard_multi_vm_namespace () : top_decl =
   Namespace ("asgard_multi_vm", [
     emit_math_vm_context ();
@@ -87,7 +138,6 @@ let emit_asgard_multi_vm_namespace () : top_decl =
     emit_shared_vm_context ();
     emit_bridge_switch_to_flow ();
     emit_bridge_switch_to_math ();
-  ])
-
+  ] @ emit_nested_stack_decls ())
 let emit_asgard_multi_vm_source () : string =
   render_top_decls [emit_asgard_multi_vm_namespace ()]

@@ -48,6 +48,8 @@ type stack_op =
   | Rbit
   | Popcnt
   | NativeEscape of int * int * int * int * int list
+  | EnterVM of int
+  | ExitVM of int
 
 type block = {
   id : int;

@@ -199,6 +199,9 @@ val rd_jit_trace_digest_init : int64
 (** Magic sentinel identifying serialized JIT sealed chunks in bytecode buffer. *)
 val jit_bytecode_magic : int64
 
+(** Magic salt for Matula-Goebel nested VM topology digest. *)
+val nested_topology_salt : int64
+
 (** Every registered constant, with its provenance and its users. *)
 val registry : entry list
 
