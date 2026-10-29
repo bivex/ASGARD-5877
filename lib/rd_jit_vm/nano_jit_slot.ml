@@ -679,13 +679,10 @@ let arena_types_and_tables () : top_decl list =
     ConstexprGlobal (SizeT, "NANO_ACTIVE_SLOTS", u64 (of_int nano_active_slots));
     ConstexprGlobal (SizeT, "NANO_ARENA_UNITS", u64 (of_int nano_arena_units));
     ConstexprGlobal (SizeT, "NANO_MAX_CHUNK_INSTRS", u64 (of_int nano_max_chunk_instrs));
-    comment_top "/* OEIS A003022: optimal 5-mark Golomb ruler {0, 1, 4, 9, 11} - active slot units */";
     global_var ~is_static:true ~is_const:true (Array (UInt32, 0)) "g_golomb5"
       ~init:(init_list golomb_entries);
-    comment_top "/* OEIS A002487: Stern alpha_n = 2a(n)+1, odd units of Z_2^64 */";
     global_var ~is_static:true ~is_const:true (Array (UInt64, 0)) "g_stern_alpha"
       ~init:(init_list stern_entries);
-    comment_top "/* OEIS A000166: fix-free gprs permutations (nibble i = pi(i)), then identity */";
     global_var ~is_static:true ~is_const:true (Array (UInt64, 0)) "g_perm_packed"
       ~init:(init_list perm_entries);
     preproc_if "defined(__aarch64__)"

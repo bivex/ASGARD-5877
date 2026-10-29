@@ -9,8 +9,7 @@ open Cpp_codegen.Cpp_printer
 
 let rns_moduli_decls () : top_decl list =
   [
-    comment_top "RNS-4 Moduli Definition (Pairwise coprime, Product > 2^64)";
-    comment_top "/* OEIS A000931: Padovan (plastic constant psi) region fractions of the buffer */";
+
     global_var ~is_static:true ~is_const:true UInt64 "RNS_M1"
       ~init:(u64 Magic_numbers.rns_modulus_m1);
     global_var ~is_static:true ~is_const:true UInt64 "RNS_M2"
@@ -295,10 +294,7 @@ let dual_mapped_jit_buffer_def () : top_decl =
 let header_decls () : top_decl list =
   [
     pragma "once";
-    comment_top "/* ========================================================================= */";
-    comment_top "/* ASGARD-5877: REGISTER-DRIVEN JUST-IN-TIME (RD JIT) VIRTUAL MACHINE       */";
-    comment_top "/* Dual-Mapping W^X Memory Manager & Ephemeral Native Code Synthesis         */";
-    comment_top "/* ========================================================================= */";
+
     include_sys "stdint.h";
     include_sys "stdbool.h";
     include_sys "string.h";

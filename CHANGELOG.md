@@ -16,6 +16,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Enable the full protection pass set for the Stack-JIT showcase (`examples/sjit_showcase/sjit_full_config.json`, `examples/sjit_showcase/run_sjit_showcase.sh`):
   * Added `sjit_full_config.json` enabling every single pass across all layers: Ephemeral JIT Micro-Handlers, Address Binding, Computational Stalling, Stack String Encryption (ASG_STR), C-Macro Dynamic Nanomites, and Signal Dispatch.
   * Verified on Apple Silicon: 28/28 passes active, 77/77 showcase assertions exact, DRS 93.7/100.0, Composite DRS v2 100.0/100.0.
+### Changed
+- Hardened JIT bytecode magic verification and stripped all informational comments from emitted C++ runtime (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/nano_jit_slot.ml`, `lib/rd_jit_vm/rd_jit_buffer.ml`):
+  * Applied volatile XOR constant blinding to the `0x58774A4954303031ULL` (`wXJIT001`) sentinel in `asgard_vm_call`, preventing Clang/Hex-Rays constant folding and signature scanning in IDA Pro.
+  * Removed all top-level OEIS sequence commentary (A003022, A002487, A000166, A000931) and protector banners from the generated C++ headers, leaving zero protector/OEIS artifacts in decompiled code.
+  * Verified in IDA Pro 9.3 via `idasql`: exact 0 literal occurrences of the JIT magic in executable text, 77/77 SJIT showcase assertions pass on Apple Silicon hardware.
 ### Fixed
 - Correct ABI argument register mapping and eliminate bogus stack passing for variadics in JIT external calls (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`):
   * Corrected ARM64 (`x0..x3, x4..x7` -> `gprs[0..3, 6..9]`) and x86-64 (`RDI, RSI, RDX, RCX, R8, R9` -> `gprs[7, 6, 2, 1, 8, 9]`) argument slot mapping in `asgard_rd_jit_call_extern`, preventing RSP/RBP slot clobbering.

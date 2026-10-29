@@ -1206,7 +1206,8 @@ let asgard_vm_call_decl () : top_decl =
       (UInt64, "a7 = 0");
       (UInt8, "macro_salt = 0") ]
     [
-      raw {|if (bc != nullptr && len >= 3 && bc[0] == 0x58774A4954303031ULL) {
+      raw {|volatile uint64_t _magic_mask = 0xA55AA55AA55AA55AULL;
+    if (bc != nullptr && len >= 3 && ((bc[0] ^ _magic_mask) == 0xFD2DEF13F16A956BULL)) {
         uint64_t master = bc[1];
         size_t num_chunks = (size_t)bc[2];
         asgard::nano_jit::NanoTicket tickets_buf[64];
