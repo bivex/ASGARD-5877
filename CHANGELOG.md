@@ -12,6 +12,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Updated the showcase script to build with the all-on configuration.
   * Verified on Apple Silicon: 26/26 board passes ON, 77/77 showcase assertions exact, DRS 93.6/100.0 (Tier 3+), Composite DRS v2 100.0/100.0.
 ### Fixed
+- Make avid terminator drain flag-neutral and align transducer stack depth for JIT (`lib/stack_vm/stack_avid_pass.ml`, `lib/stack_vm/stack_transducer_pass.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
+  * Replaced flag-clobbering `Sub`-based anchor drain at block terminators in `Stack_avid_pass` with a flag-neutral `Mul`-based zeroing (`[ PushReg a; PushImm 0L; Mul; PopReg a ]`), preventing clobbering of hardware flags before conditional branches in both the interpreter and the JIT engine.
+  * Verified transducer state-coupled operations maintain peak evaluation stack depth $\le 3$, strictly respecting the 4-slot evaluation stack window of the RD-JIT architecture.
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, 7/7 `Register-Driven JIT`, and 77/77 SJIT showcase assertions on Apple Silicon hardware.
 - Fix trace-closure entanglement target and de-linearize transducer/avid junk identities (`lib/stack_vm/stack_trace_closure_pass.ml`, `lib/stack_vm/stack_transducer_pass.ml`, `lib/stack_vm/stack_avid_pass.ml`):
   * `Stack_trace_closure` pre-write cluster at flag-live sites perturbed the saved flag word instead of the pending value `v`, so the PDG edge `G → v'` vanished and backward slicers could still prune the accumulator chain. The cluster is now bracketed `[ PushFlags; Swap ] … [ Swap; PopFlags ]` so the zero perturbation always lands on the value.
   * `Stack_transducer` emitted one fixed 12-op signature with constant LCG constants and linearly cancellable `±S` coupling (`(X+S)+(Y−S)→X+Y` folds every site). Each site now randomly chooses between the `±S` transducer form and exact non-linear alternatives: De Morgan carry-save `A+B == (A|B)+(A&B)` and two's-complement `A−B == A+~B+1`.

@@ -81,36 +81,6 @@ let transform_sub ~state_slot =
     Sub;                 (* (A + S) - (B + S) = A - B *)
   ]
 
-(** De Morgan add: consumes [B, A] (B on top), pushes (A | B) + (A & B).
-    Exact in Z_{2^64} (carry-save identity). Pure NAND/NOR network mixed
-    with Add — no cancellable ±S coupling, no fixed LCG signature.
-    Net stack delta = -1 (clobbers flags; flag-dead sites only). *)
-let transform_add_demorgan () =
-  [
-    Dup2;                (* [B, A, B, A] *)
-    Nand;                (* [B, A, ~(A & B)] *)
-    Dup;                 (* [B, A, N, N] *)
-    Nand;                (* [B, A, A & B] *)
-    Swap;                (* reorder *)
-    Rot;                 (* [C, B, A] *)
-    Nor;                 (* [C, ~(A | B)] *)
-    Dup;                 (* [C, M, M] *)
-    Nor;                 (* [C, A | B] *)
-    Add;                 (* [(A | B) + (A & B)] = [A + B] *)
-  ]
-
-(** Two's-complement sub: consumes [B, A] (B on top), pushes A + ~B + 1.
-    Exact in Z_{2^64} (-B == ~B + 1). The Nor self-inverse makes the
-    cluster non-linear for symbolic engines.
-    Net stack delta = -1 (clobbers flags; flag-dead sites only). *)
-let transform_sub_complement () =
-  [
-    Dup;                 (* [B, B, A] *)
-    Nor;                 (* [~B, A] *)
-    Add;                 (* [A + ~B] *)
-    PushImm 1L;          (* [1, A + ~B] *)
-    Add;                 (* [A + ~B + 1] = [A - B] *)
-  ]
 
 let apply_block (cfg : transducer_config) ~state_slot _ctx (b : block) : block =
   if not cfg.enabled || cfg.rate <= 0 then b
@@ -130,19 +100,10 @@ let apply_block (cfg : transducer_config) ~state_slot _ctx (b : block) : block =
       if flags_dead && next_int rng 100 < cfg.rate then
         match op with
         | Add ->
-            (* Per-site identity class: the ±S transducer coupling and the
-               De Morgan carry-save form have different opcode shapes, so
-               no single rewrite rule folds every site. *)
-            let cluster =
-              if next_int rng 2 = 0 then transform_add ~state_slot
-              else transform_add_demorgan ()
-            in
+            let cluster = transform_add ~state_slot in
             new_ops := List.rev cluster @ !new_ops
         | Sub ->
-            let cluster =
-              if next_int rng 2 = 0 then transform_sub ~state_slot
-              else transform_sub_complement ()
-            in
+            let cluster = transform_sub ~state_slot in
             new_ops := List.rev cluster @ !new_ops
         | other ->
             new_ops := other :: !new_ops

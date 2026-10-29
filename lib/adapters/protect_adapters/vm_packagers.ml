@@ -237,11 +237,19 @@ end
 module Stack_jit_packager : Vm_packager = struct
   let engine_kind = Jit
 
-  let apply_jit_pass_pipeline ~rng:_ ~(native_cfg : Protection_config.t) _ctx prog =
-    (* Pass 10: Algebraic flags *)
+  (* SJIT-compatible hardening pipeline.
+
+     The JIT chunker compiles Stack-IR to native chunks where
+     PushFlags/PopFlags are depth-tracked no-ops: passes that rely on
+     PushFlags wrapping to protect live flags (ghost, braid, trap,
+     dual-rail, trace-closure, whitening, ...) are NOT safe here. Only
+     flag-dead-gated or flag-neutral passes are wired in, mirroring the
+     stack-engine configuration for each. *)
+  let apply_jit_pass_pipeline ~rng:_ ~(native_cfg : Protection_config.t) ctx prog =
+    (* Pass 10: Algebraic flags (skeleton pass, kept for pipeline parity) *)
     let prog =
       Stack_vm.Stack_algebraic_flags_pass.apply_program
-        Stack_vm.Stack_algebraic_flags_pass.default_algebraic_flags_config _ctx prog
+        Stack_vm.Stack_algebraic_flags_pass.default_algebraic_flags_config ctx prog
     in
     (* Pass 2a: Superoperator fusion *)
     let prog =
@@ -262,7 +270,7 @@ module Stack_jit_packager : Vm_packager = struct
       else prog
     in
     (* Stack balance pass: ensures exit stack delta is 0 across all blocks *)
-    let prog = Stack_vm.Stack_balance_pass.repair_program _ctx prog in
+    let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"sjit-passes" ~final:false prog;
     prog
 

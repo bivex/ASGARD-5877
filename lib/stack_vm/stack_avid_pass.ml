@@ -151,13 +151,12 @@ let apply_block (cfg : avid_config) ctx (b : block) : block =
         match !last_anchor with
         | Some a ->
             last_anchor := None;
-            let flags_live = if idx < Array.length live then live.(idx) else false in
-            let anchor_ops =
-              if flags_live then
-                [ PushFlags; PushReg a; PushReg a; Sub; PopReg a; PopFlags ]
-              else
-                [ PushReg a; PushReg a; Sub; PopReg a ]
-            in
+            (* Flag-neutral drain everywhere: Mul does not produce flags in
+               this VM, so read-and-zero is safe both in the interpreter
+               (flags materialized on the vstack) and in the JIT chunker
+               (PushFlags/PopFlags are native no-ops there, so a
+               flag-clobbering drain would corrupt a following JccRel). *)
+            let anchor_ops = [ PushReg a; PushImm 0L; Mul; PopReg a ] in
             new_ops := op :: (List.rev anchor_ops) @ !new_ops
         | None ->
             new_ops := op :: !new_ops
