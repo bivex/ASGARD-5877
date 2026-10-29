@@ -460,12 +460,13 @@ let emit_context_decls ?(context_epochs = 4) ~key_seed ~reg_perm ~stride ~offset
 
     member_raw ("    inline void morph_flow_to_math(uint64_t target_digest = 0) noexcept {
 #if defined(ASGARD_MULTI_VM_ENABLED)
-        uint64_t dig = target_digest ? target_digest : (bridge_rol64(trace_digest, 51) ^ " ^
+        uint64_t dig = target_digest ? target_digest : bridge_rol64(trace_digest ^ " ^
         (to_c_literal salt_xwcafe) ^
-        ");
+        ", 51);
         uint64_t regs[16];
         for (int i = 0; i < 16; ++i) regs[i] = get_reg(i);
         in_place_morph_flow_to_math(bridge_state, regs, dig);
+        for (int i = 0; i < 16; ++i) set_reg(i, regs[i]);
         trace_digest = dig;
 #else
         (void)target_digest;

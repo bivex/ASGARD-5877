@@ -227,6 +227,27 @@ let test_cpp_codegen_nested_runtime () =
   check bool "contains g_nested_topology_salt" true (contains_sub source "g_nested_topology_salt");
   check bool "contains nested_topology_digest" true (contains_sub source "nested_topology_digest")
 
+let test_lift_verify_license () =
+  let asm = {|
+    mov x8, #19524
+    movk x8, #18255, lsl #16
+    movk x8, #14125, lsl #32
+    movk x8, #14391, lsl #48
+    cmp x1, x8
+    mov x8, #11573
+    movk x8, #21060, lsl #16
+    movk x8, #18241, lsl #32
+    movk x8, #16723, lsl #48
+    ccmp x0, x8, #0, eq
+    mov w8, #23962
+    csel x0, x8, xzr, eq
+    ret
+  |} in
+  match Arm64_lifter.lift_function asm with
+  | Error err -> fail ("Failed to lift: " ^ err)
+  | Ok func ->
+      check bool "has blocks" true (Hashtbl.length func.cfg.blocks >= 1)
+
 let suite = [
   ("Catalan Numbers C_0..C_6", `Quick, test_catalan_numbers);
   ("Dyck Word Well-Nestedness", `Quick, test_dyck_word_well_nestedness);
@@ -238,4 +259,5 @@ let suite = [
   ("Stack_balance_pass check_nesting", `Quick, test_stack_balance_nesting);
   ("Bisimulation Erasure Differential", `Quick, test_bisimulation_erasure);
   ("C++ Codegen Nested Runtime EDSL", `Quick, test_cpp_codegen_nested_runtime);
+  ("Lift verify_license", `Quick, test_lift_verify_license);
 ]

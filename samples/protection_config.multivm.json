@@ -1,0 +1,214 @@
+{
+  "seed": 1337,
+  "crypto": {
+    "rounds": 16,
+    "key_bits": 128
+  },
+  "bloat": {
+    "mode": "balanced",
+    "target_size_budget_kb": 200,
+    "junk_density": 0.2,
+    "density_cap_threshold1_kb": 100,
+    "density_cap_threshold2_kb": 200
+  },
+  "cff": {
+    "enabled": false,
+    "obfuscate_states": true,
+    "inject_opaque_predicates": false,
+    "input_tainted_transitions": true,
+    "split_rate": 30,
+    "hub_count": 1,
+    "pop_digest": false,
+    "red_herring": true
+  },
+  "mba": {
+    "enabled": true,
+    "depth": 2,
+    "engine": "egraph",
+    "stack_synthesis_rate": 30,
+    "egraph_rate": 20,
+    "egraph_node_limit": 80,
+    "egraph_time_budget_ms": 50,
+    "egraph_iter_limit": 3,
+    "ir_max_depth": 3,
+    "ir_egraph_node_limit": 60,
+    "ir_egraph_time_budget_ms": 40
+  },
+  "anti_pushan": {
+    "enabled": true,
+    "running_key": true,
+    "address_bound": true
+  },
+  "anti_tamper": {
+    "enabled": true,
+    "layer1_code_digest": true,
+    "layer2_checksum": true,
+    "layer3_smc": true,
+    "strict_mode": false,
+    "smc_region_size": 256,
+    "smc_write_frequency": 64
+  },
+  "stack_security": {
+    "scramble_depth": 16,
+    "slot_randomization": true,
+    "canary_density": 4,
+    "anti_dumper_wipe": true,
+    "stack_pivot_guard": true,
+    "memory_sanitization": true
+  },
+  "opaque_predicates": {
+    "algebraic_density": 0.2,
+    "geometric_density": 0.1,
+    "context_bound_density": 0.15,
+    "two_way_branches": true
+  },
+  "code_layout": {
+    "basic_block_shuffling": true,
+    "inter_procedural_dispatch": true,
+    "cold_block_splitting": true,
+    "loop_rotation": true,
+    "anti_disassembly_bytes": true
+  },
+  "anti_analysis": {
+    "anti_debug_timing": true,
+    "anti_debug_ptrace": true,
+    "anti_debug_hardware_bp": true,
+    "anti_emulation_tick_drift": true,
+    "anti_hook_integrity": true,
+    "nanomites": true
+  },
+  "c_macro_obf": {
+    "enabled": true,
+    "constant_blinding": true,
+    "stack_strings": true,
+    "mixed_boolean_arithmetic": true,
+    "opaque_predicates": true,
+    "api_hashing": true,
+    "hardware_timing_probes": true,
+    "dynamic_nanomites": true,
+    "string_encryption": true,
+    "control_flow_flattening": true,
+    "anti_debug_guards": true,
+    "nanomite_density": 10,
+    "timing_threshold_cycles": 50000000,
+    "mba_expansion_depth": 2
+  },
+  "vm_runtime": {
+    "enable_running_key": true,
+    "enable_address_bound": true,
+    "enable_timing_probes": true,
+    "enable_nanomites": true,
+    "enable_egraph_expansion": true,
+    "enable_ephemeral_jit": false,
+    "enable_stack_scramble": true,
+    "enable_mem_sanitize": true,
+    "enable_junk_instructions": true,
+    "num_domains": 4,
+    "macro_salt": 0
+  },
+  "super_operators": {
+    "enabled": true,
+    "patterns": [
+      "FUSED_MOV_ADD_RRI",
+      "FUSED_ADD_IMUL_RRI",
+      "FUSED_ADD_XOR_RRI",
+      "FUSED_SUB_XOR_RRI",
+      "FUSED_XOR_ADD_RRI",
+      "FUSED_AND_OR_RRI",
+      "FUSED_SHL_ADD_RRI",
+      "FUSED_CMP_CMOV"
+    ],
+    "max_pattern_len": 4
+  },
+  "metamorphic": {
+    "enabled": true,
+    "family_derivation": true,
+    "ring_mutation": true,
+    "equivalence_classes": 16,
+    "isa_entropy_bits": 4,
+    "semantic_preservation_depth": 3,
+    "polymorphic_expansion": true,
+    "ring_poly_depth": 2
+  },
+  "comp_stall": {
+    "enabled": false,
+    "iterations": 100000,
+    "variant": "hardened",
+    "seed": 1337,
+    "dynamic_branching": true,
+    "opaque_fallthrough": true
+  },
+  "tech_2601": {
+    "enabled": true,
+    "abi_protection": true,
+    "shadow_stack": true,
+    "state_restoration": true,
+    "meta_dispatch": true,
+    "cross_boundary_verify": true,
+    "exception_filter": true
+  },
+  "tech_2603": {
+    "enabled": true,
+    "modular_inversion": true,
+    "affine_transform": true,
+    "superoperator_feedback": true,
+    "sparse_lut": true,
+    "bytecode_coupling": true,
+    "anti_dse_barrier": true
+  },
+  "tech_2608": {
+    "enabled": true,
+    "chaff_synthesis": true,
+    "chaff_pool_size": 32,
+    "chaff_churn_rate": 0.25,
+    "trace_dispersion": true,
+    "entropy_threshold": 7.5,
+    "anti_symbolic_dead_ends": true
+  },
+  "stack_vm": {
+    "enabled": true,
+    "spaghetti_cfg": true,
+    "ghost_padding": true,
+    "superoperators": true,
+    "vsp_white_noise": true,
+    "homomorphic_cipher": true,
+    "affine_ring": true,
+    "crt_zero_knots": true,
+    "state_feedback": true,
+    "dead_code_elimination": true,
+    "trace_closure": true,
+    "algebraic_flags": true,
+    "dual_rail": true,
+    "path_encoding": true,
+    "cff_interlock": true,
+    "sink_barrier": true,
+    "poly_mba": true,
+    "bytecode_amplifier": true,
+    "finite_field": true,
+    "avid_pass": true,
+    "rule30_keystream": true,
+    "transducer": true,
+    "relational_involution": true
+  },
+  "arm64_carry": {
+    "enabled": true
+  },
+  "oblivious_mem": {
+    "enabled": false,
+    "pool_size_kb": 64,
+    "decoy_access_ratio": 0.25,
+    "secure_unaligned": true,
+    "trace_decorrelation": true
+  },
+  "trampoline": {
+    "chunk_size": 64
+  },
+  "watermark": {
+    "payload_bits": 48,
+    "redundancy": 5
+  },
+  "toolchain": {
+    "opt_level": "-O1",
+    "extra_flags": []
+  }
+}

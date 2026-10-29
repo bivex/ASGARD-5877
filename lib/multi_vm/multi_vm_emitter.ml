@@ -83,6 +83,7 @@ let emit_multi_vm_runner_main_def ~math_blocks ~flow_blocks ~inter_vm_transition
     expr_stmt (call "base_ctx.init" []);
     let_u64 "init_rdi" (ternary (var "argc" >~ i32 1) (c_cast UInt64 (call "atoll" [Index (var "argv", i32 1)])) (u64 42L));
     expr_stmt (call "base_ctx.set_rdi" [var "init_rdi"]);
+    expr_stmt (call "base_ctx.set_rax" [var "init_rdi"]);
     raw "auto t0 = std::chrono::high_resolution_clock::now();";
     expr_stmt (call "vanguard_threaded_vm::execute_threaded" [var "base_ctx"; var "embedded_bytecode"; var "embedded_bytecode_len"]);
     raw "auto t1 = std::chrono::high_resolution_clock::now();";

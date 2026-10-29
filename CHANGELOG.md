@@ -7,6 +7,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Added separate Multi-VM Nested Stack license validator and pipeline (`examples/license_check_multivm.c`, `build_license_multivm.sh`, `check_license_multivm.sh`, `samples/protection_config.multivm.json`):
+  * `examples/license_check_multivm.c`: pure computational verification running inside the Heterogeneous Dual-VM (`verify_license_nested`) with native IO harness, verifying 128-bit key words and computing `0x5D9A` token.
+  * `samples/protection_config.multivm.json`: configured `toolchain.opt_level = "-O1"` to prevent LLVM -O3 optimizer timeouts on large multi-VM C++ headers.
+  * `build_license_multivm.sh` & `check_license_multivm.sh`: dedicated build and verification pipeline for Multi-VM protected binaries.
+  * `lib/native_vm/vm_context_emitter.ml`: fixed affine zero-bridge inverse morphing by writing recovered registers back into context via `set_reg`, and corrected rotation inverse precedence `bridge_rol64(trace_digest ^ salt, 51)`.
+  * Verified: 2/2 license validation checks in `check_license_multivm.sh`, 2/2 in `check_license.sh`, and 11/11 in `Multi-VM Nested Stack` suite.
 - Implemented Multi-VM nested stack (VM-in-VM) architecture and OEIS combinatorial primitives (`lib/multi_vm/`, `lib/stack_vm/`, `lib/constants/`):
   * `lib/multi_vm/nested_stack.ml`: implemented OEIS A000108 (Catalan numbers and Dyck word lexicographical ranking/checksum), A004001 (Hofstadter-Conway $10,000 sequence self-referential tier dispatch), A005228/A030124 (Hofstadter Figure-Figure complementary partition for tier vs honeypot slots), A061775 (Matula-Goebel bijective tree encoding for nesting topology digest with SplitMix64 mixing), and A287654/A249569 (Meta-Fibonacci chaotic inter-tier handoff jitter).
   * `lib/stack_vm/stack_ir.ml`: added `EnterVM of int` and `ExitVM of int` nesting bracket opcodes with zero data-stack delta, preserving reference evaluator semantics.
