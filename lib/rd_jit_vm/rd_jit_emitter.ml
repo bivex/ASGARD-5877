@@ -215,6 +215,21 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
     | _ -> 0
   in
 
+  let label_to_block_id = Hashtbl.create 16 in
+  List.iter
+    (fun (b : Ir.basic_block) -> Hashtbl.replace label_to_block_id b.label b.id)
+    sorted_blocks;
+  let resolve_target = function
+    | Ir.BlockId id -> id
+    | Ir.Label sym ->
+        (match Hashtbl.find_opt label_to_block_id sym with
+         | Some id -> id
+         | None ->
+             (try Scanf.sscanf sym "block_%d" (fun id -> id)
+              with _ -> failwith ("rd_jit_emitter: unresolved target label " ^ sym)))
+    | Ir.TargetImm imm -> Int64.to_int imm
+    | Ir.TargetReg _ -> failwith "rd_jit_emitter: indirect branch TargetReg unsupported"
+  in
   let map_instr (instr : Ir.instr) : string * int * int * int64 =
     match instr with
     | Ir.Nop -> (jit_op_nop, 0, 0, 0L)
@@ -341,15 +356,36 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
         (jit_op_extern, 0, 0, Int64.of_int sym_idx)
     | Ir.Ret -> ("asgard_rd_jit::JIT_OP_RET", 0, 0, 0L)
     | Ir.Vm_exit -> ("asgard_rd_jit::JIT_OP_EXIT", 0, 0, 0L)
+    | Ir.Unary { op = Ir.Bswap; dst; _ } ->
+        ("asgard_rd_jit::JIT_OP_BSWAP_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+    | Ir.Unary { op = Ir.Clz; dst; _ } ->
+        ("asgard_rd_jit::JIT_OP_CLZ_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+    | Ir.Unary { op = Ir.Ctz; dst; _ } ->
+        ("asgard_rd_jit::JIT_OP_CTZ_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+    | Ir.Unary { op = Ir.Rbit; dst; _ } ->
+        ("asgard_rd_jit::JIT_OP_RBIT_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+    | Ir.Unary { op = Ir.Popcnt; dst; _ } ->
+        ("asgard_rd_jit::JIT_OP_POPCNT_R", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, 0L)
+    | Ir.Cmp { src1 = Ir.Reg s1; src2 = Ir.Imm imm } ->
+        ("asgard_rd_jit::JIT_OP_CMP_RI", Native_vm.Vm_transform.reg_to_index s1 mod 16, 0, imm)
+    | Ir.Alu { op = Ir.Ror; dst; src1; src2 = Ir.Imm imm; _ } ->
+        assert_src1_eq_dst ~op:Ir.Ror ~dst ~src1;
+        ("asgard_rd_jit::JIT_OP_ROR_RI", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, imm)
+    | Ir.Jmp target ->
+        let tid = resolve_target target in
+        ("asgard_rd_jit::JIT_OP_JMP", 0, 0, Int64.of_int tid)
+    | Ir.Jcc { cond; target_true; target_false } ->
+        let tid = resolve_target target_true in
+        let fid = resolve_target target_false in
+        let c = cond_to_arm64_code cond in
+        let imm =
+          Int64.logor (Int64.of_int tid)
+            (Int64.logor
+               (Int64.shift_left (Int64.of_int fid) 32)
+               (Int64.shift_left (Int64.of_int c) 48))
+        in
+        ("asgard_rd_jit::JIT_OP_JCC", 0, 0, imm)
     | _ -> (jit_op_nop, 0, 0, 0L)
-  in
-
-  let all_instrs =
-    List.concat_map
-      (fun (b : Ir.basic_block) ->
-        let instrs = Native_vm.Vm_transform.canonicalize_3addr_alu b.instrs in
-        List.map map_instr instrs)
-      sorted_blocks
   in
 
   let kolakoski_chunks =
@@ -361,53 +397,131 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
             (chunk, has_extern))
           cs
     | None ->
-        (* OEIS A010060: a dummy opcode is generated at stream position n iff
-           t_n = popcount(n) mod 2 = 1; the synthesized machine code then carries
-           aperiodic no-op padding no loop summarizer can align. *)
-        let pos = ref 0 in
-        let out = ref [] in
-        List.iter
-          (fun item ->
-            if Nano_jit_slot.thue_morse !pos then begin
-              Stdlib.(out := (jit_op_nop, 0, 0, 0L) :: !out);
-              incr pos
-            end;
-            Stdlib.(out := item :: !out);
-            incr pos)
-          all_instrs;
-        let thue_morse_stream = List.rev !out in
-        (* OEIS A000002: chunk target sizes are the run lengths of the Kolakoski
-           word scaled by nano_kolakoski_scale (2 or 4 instructions). *)
+        let block_chunks = Hashtbl.create 16 in
+        let block_offsets = Hashtbl.create 16 in
+        let cur_chunk_offset = ref 0 in
         let kolakoski_word = Nano_jit_slot.kolakoski 256 in
         let run_idx = ref 0 in
-        let cur = ref [] in
-        let acc = ref [] in
-        let flush () =
-          if !cur <> [] then begin
-            let chunk = List.rev !cur in
-            let has_extern = List.exists (fun (op, _, _, _) -> op = jit_op_extern) chunk in
-            Stdlib.(acc := (chunk, has_extern) :: !acc);
-            Stdlib.(cur := []);
-            incr run_idx
-          end
-        in
-        List.iter
-          (fun item ->
-            let target =
-              kolakoski_word.(!run_idx mod Array.length kolakoski_word)
-              * Nano_jit_slot.nano_kolakoski_scale
-            in
-            if List.length !cur >= target
-               || List.length !cur >= Nano_jit_slot.nano_max_chunk_instrs
-            then flush ();
-            Stdlib.(cur := item :: !cur))
-          thue_morse_stream;
-        flush ();
-        match List.rev !acc with
-        | [] -> [ ([ (jit_op_nop, 0, 0, 0L) ], false) ]
-        | chunks -> chunks
-  in
+        let pos = ref 0 in
 
+        List.iteri
+          (fun b_idx (b : Ir.basic_block) ->
+            Hashtbl.replace block_offsets b.id !cur_chunk_offset;
+            let instrs = Native_vm.Vm_transform.canonicalize_3addr_alu b.instrs in
+            let mapped = List.map map_instr instrs in
+            let has_term =
+              match List.rev b.instrs with
+              | (Ir.Jmp _ | Ir.Jcc _ | Ir.Ret | Ir.Vm_exit | Ir.Trap _) :: _ -> true
+              | _ -> false
+            in
+            let mapped =
+              if not has_term && b_idx + 1 < List.length sorted_blocks then
+                let next_b = List.nth sorted_blocks (b_idx + 1) in
+                mapped @ [ ("asgard_rd_jit::JIT_OP_JMP", 0, 0, Int64.of_int next_b.id) ]
+              else mapped
+            in
+            let cur = ref [] in
+            let b_acc = ref [] in
+            let flush () =
+              if !cur <> [] then begin
+                let chunk = List.rev !cur in
+                let has_extern = List.exists (fun (op, _, _, _) -> op = jit_op_extern) chunk in
+                Stdlib.(b_acc := (chunk, has_extern) :: !b_acc);
+                Stdlib.(cur := []);
+                incr run_idx;
+                incr cur_chunk_offset
+              end
+            in
+            List.iter
+              (fun item ->
+                if Nano_jit_slot.thue_morse !pos then begin
+                  let target =
+                    kolakoski_word.(!run_idx mod Array.length kolakoski_word)
+                    * Nano_jit_slot.nano_kolakoski_scale
+                  in
+                  if List.length !cur >= target
+                     || List.length !cur >= Nano_jit_slot.nano_max_chunk_instrs
+                  then flush ();
+                  Stdlib.(cur := (jit_op_nop, 0, 0, 0L) :: !cur);
+                  incr pos
+                end;
+                let target =
+                  kolakoski_word.(!run_idx mod Array.length kolakoski_word)
+                  * Nano_jit_slot.nano_kolakoski_scale
+                in
+                if List.length !cur >= target
+                   || List.length !cur >= Nano_jit_slot.nano_max_chunk_instrs
+                then flush ();
+                Stdlib.(cur := item :: !cur);
+                incr pos)
+              mapped;
+            flush ();
+            let b_res =
+              match List.rev !b_acc with
+              | [] ->
+                  incr cur_chunk_offset;
+                  [ ([ (jit_op_nop, 0, 0, 0L) ], false) ]
+              | cs -> cs
+            in
+            Hashtbl.replace block_chunks b.id b_res)
+          sorted_blocks;
+
+        let jmp_name = "asgard_rd_jit::JIT_OP_JMP" in
+        let jcc_name = "asgard_rd_jit::JIT_OP_JCC" in
+        let patch_chunk chunk_idx (chunk, has_ext) =
+          let patched =
+            List.map
+              (fun (op, dst, src, imm) ->
+                if op = jmp_name then
+                  let target_block = Int64.to_int imm in
+                  let target_chunk =
+                    match Hashtbl.find_opt block_offsets target_block with
+                    | Some c -> c
+                    | None -> chunk_idx + 1
+                  in
+                  (op, dst, src, Int64.of_int target_chunk)
+                else if op = jcc_name then
+                  let target_block = Int64.to_int (Int64.logand imm 0xFFFFFFFFL) in
+                  let false_block = Int64.to_int (Int64.logand (Int64.shift_right_logical imm 32) 0xFFFFL) in
+                  let cond = Int64.shift_right_logical imm 48 in
+                  let fallthrough_chunk =
+                    match Hashtbl.find_opt block_offsets false_block with
+                    | Some c -> c
+                    | None -> chunk_idx + 1
+                  in
+                  let target_chunk =
+                    match Hashtbl.find_opt block_offsets target_block with
+                    | Some c -> c
+                    | None -> fallthrough_chunk
+                  in
+                  let patched_imm =
+                    Int64.logor (Int64.of_int target_chunk)
+                      (Int64.logor
+                         (Int64.shift_left (Int64.of_int fallthrough_chunk) 32)
+                         (Int64.shift_left cond 48))
+                  in
+                  (op, dst, src, patched_imm)
+                else (op, dst, src, imm))
+              chunk
+          in
+          (patched, has_ext)
+        in
+        let all_patched_chunks = ref [] in
+        let global_idx = ref 0 in
+        List.iter
+          (fun (b : Ir.basic_block) ->
+            let chunks_of_b = Hashtbl.find block_chunks b.id in
+            List.iter
+              (fun c_pair ->
+                let patched_pair = patch_chunk !global_idx c_pair in
+                incr global_idx;
+                Stdlib.(all_patched_chunks := patched_pair :: !all_patched_chunks))
+              chunks_of_b)
+          sorted_blocks;
+        match List.rev !all_patched_chunks with
+        | [] -> [ ([ (jit_op_nop, 0, 0, 0L) ], false) ]
+        | cs -> cs
+  in
   let master_key = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
   let draw64 () = Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL in
 

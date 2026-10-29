@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented native multi-block CFG chunking, branch target patching, and bitwise opcode mapping for the pure IR JIT pipeline (`lib/rd_jit_vm/rd_jit_emitter.ml`):
+  * Added multi-block Kolakoski fission (OEIS A000002) and Thue-Morse dummy padding (OEIS A010060) directly over VM-IR basic blocks, replacing single-stream instruction flattening.
+  * Added resolution and patching of `Ir.Jmp` and `Ir.Jcc` targets to JIT chunk indices, preserving control flow across arbitrarily branched CFGs without Stack-IR lowering.
+  * Added opcode mapping for bitwise and immediate operations: `JIT_OP_BSWAP_R`, `JIT_OP_CLZ_R`, `JIT_OP_CTZ_R`, `JIT_OP_RBIT_R`, `JIT_OP_POPCNT_R`, `JIT_OP_CMP_RI`, `JIT_OP_ROR_RI`, `JIT_OP_JMP`, and `JIT_OP_JCC`.
+  * Verified: 7/7 `Register-Driven JIT`, 45/45 Cpp Codegen steps, 77/77 SJIT showcase assertions, and full license check on Apple Silicon hardware.
 - Enable the full protection pass set for the Stack-JIT showcase (`examples/sjit_showcase/sjit_full_config.json`, `examples/sjit_showcase/run_sjit_showcase.sh`):
   * Added `sjit_full_config.json` enabling every single pass across all layers: Ephemeral JIT Micro-Handlers, Address Binding, Computational Stalling, Stack String Encryption (ASG_STR), C-Macro Dynamic Nanomites, and Signal Dispatch.
   * Verified on Apple Silicon: 28/28 passes active, 77/77 showcase assertions exact, DRS 93.7/100.0, Composite DRS v2 100.0/100.0.
