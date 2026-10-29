@@ -42,6 +42,16 @@ type stack_op =
   | SetRegImm of int * int64
   | AddRegImm of int * int64
   | KeyFeedback of int * int64
+  | Bswap
+      (** Byte-swap / endianness reversal of the top-of-stack 64-bit word. *)
+  | Clz
+      (** Count leading zeros of the top-of-stack word (64 => 0 for x=0). *)
+  | Ctz
+      (** Count trailing zeros of the top-of-stack word (64 => 0 for x=0). *)
+  | Rbit
+      (** Reverse all 64 bits of the top-of-stack word. *)
+  | Popcnt
+      (** Hardware population count of the top-of-stack word. *)
   | NativeEscape of int * int * int * int * int list
       (** Native micro-handler interleave (Pass 27): kind, src_a, src_b, dst,
           raw machine-code stub bytes embedded in the bytecode stream. *)
@@ -81,6 +91,7 @@ let push_weight = function
   | AddImm _ | SubImm _ -> 1
   | AddImmImm _ | SubImmImm _ | AddRegImm _ -> 1
   | SetRegImm _ | KeyFeedback _ -> 0
+  | Bswap | Clz | Ctz | Rbit | Popcnt -> 1
   | NativeEscape _ -> 0
 
 let pop_weight = function
@@ -106,6 +117,7 @@ let pop_weight = function
   | AddImm _ | SubImm _ -> 1
   | AddImmImm _ | SubImmImm _ | AddRegImm _ -> 0
   | SetRegImm _ | KeyFeedback _ -> 0
+  | Bswap | Clz | Ctz | Rbit | Popcnt -> 1
   | NativeEscape _ -> 0
 
 let stack_delta op =
@@ -152,6 +164,11 @@ let op_to_string = function
   | SetRegImm (idx, v) -> Printf.sprintf "SET_REG_IMM [ctx+%d], 0x%Lx" idx v
   | AddRegImm (idx, c) -> Printf.sprintf "ADD_REG_IMM [ctx+%d], 0x%Lx" idx c
   | KeyFeedback (idx, v) -> Printf.sprintf "KEY_FEEDBACK [ctx+%d] (exp=0x%Lx)" idx v
+  | Bswap -> "BSWAP"
+  | Clz -> "CLZ"
+  | Ctz -> "CTZ"
+  | Rbit -> "RBIT"
+  | Popcnt -> "POPCNT"
   | NativeEscape (kind, a, b, c, stub) ->
       Printf.sprintf "NATIVE_ESCAPE kind=%d ctx[%d],ctx[%d]->ctx[%d] (%d stub bytes)"
         kind a b c (List.length stub)

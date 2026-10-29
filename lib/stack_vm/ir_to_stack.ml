@@ -148,7 +148,11 @@ let lower_instr ?(label_to_block = Hashtbl.create 0) ?(ext_syms = Hashtbl.create
         | Neg -> [PushImm 0L; Swap; Sub]
         | Inc -> [PushImm 1L; Add]
         | Dec -> [PushImm 1L; Sub]
-        | _ -> []
+        | Bswap -> [Bswap]
+        | Clz -> [Clz]
+        | Ctz -> [Ctz]
+        | Rbit -> [Rbit]
+        | Popcnt -> [Popcnt]
       in
       let dst_slot = Context_allocator.slot_of_reg ctx dst in
       if set_flags then

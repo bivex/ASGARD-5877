@@ -311,6 +311,9 @@ let check_key_feedback_static ?(initial_ctx = []) ?(dispatcher_tokens = Hashtbl.
       | Stack_ir.ReadMem _ -> (match !st with _ :: rest -> st := None :: rest | [] -> ())
       | Stack_ir.WriteMem _ -> ignore (pop ()); ignore (pop ())
       | Stack_ir.AddImmImm _ | Stack_ir.SubImmImm _ -> push None
+      | Stack_ir.Bswap | Stack_ir.Clz | Stack_ir.Ctz | Stack_ir.Rbit | Stack_ir.Popcnt ->
+          ignore (pop ());
+          push None
       | Stack_ir.NativeEscape (kind, a, b, c, _) ->
           let va = slot_value a in
           let vb = slot_value b in
@@ -549,6 +552,8 @@ let encode_op_into ?(compact_imm = false) ?(layout = default_field_layout) op_ma
   | Sub -> Buffer.add_char buf (Char.chr op_map.op_sub)
   | Mul -> Buffer.add_char buf (Char.chr op_map.op_mul)
   | Mulh | Imulh -> failwith "Mulh/Imulh not supported in interpreted bytecode (JIT only)"
+  | Bswap | Clz | Ctz | Rbit | Popcnt ->
+      failwith "Bswap/Clz/Ctz/Rbit/Popcnt not supported in interpreted bytecode (JIT only)"
   | Nor -> Buffer.add_char buf (Char.chr op_map.op_nor)
   | Nand -> Buffer.add_char buf (Char.chr op_map.op_nand)
   | Shl -> Buffer.add_char buf (Char.chr op_map.op_shl)

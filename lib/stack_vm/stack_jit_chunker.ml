@@ -216,6 +216,61 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
           (match !stk with
            | b :: a :: tl -> stk := a :: b :: tl
            | _ -> failwith "stack_jit: underflow on Swap")
+      | Bswap ->
+          (match !stk with
+           | a :: tl ->
+               stk :=
+                 Int64.logor
+                   (Int64.logor
+                      (Int64.shift_left (Int64.logand a 0x00000000000000FFL) 56)
+                      (Int64.shift_left (Int64.logand a 0x000000000000FF00L) 40))
+                   (Int64.logor
+                      (Int64.logor
+                         (Int64.shift_left (Int64.logand a 0x0000000000FF0000L) 24)
+                         (Int64.shift_left (Int64.logand a 0x00000000FF000000L) 8))
+                      (Int64.logor
+                         (Int64.logor
+                            (Int64.shift_right_logical (Int64.logand a 0x000000FF00000000L) 8)
+                            (Int64.shift_right_logical (Int64.logand a 0x0000FF0000000000L) 24))
+                         (Int64.logor
+                            (Int64.shift_right_logical (Int64.logand a 0x00FF000000000000L) 40)
+                            (Int64.shift_right_logical (Int64.logand a 0xFF00000000000000L) 56))))
+                 :: tl
+           | _ -> failwith "stack_jit: underflow on Bswap")
+      | Clz ->
+          (match !stk with
+           | a :: tl ->
+               let rec go c =
+                 if c >= 64 then 64
+                 else if Int64.logand a (Int64.shift_left 1L (63 - c)) <> 0L then c
+                 else go (c + 1)
+               in
+               stk := Int64.of_int (go 0) :: tl
+           | _ -> failwith "stack_jit: underflow on Clz")
+      | Ctz ->
+          (match !stk with
+           | a :: tl ->
+               if a = 0L then stk := 64L :: tl
+               else begin
+                 let rec go c v = if Int64.logand v 1L = 0L then go (c + 1) (Int64.shift_right_logical v 1) else c in
+                 stk := Int64.of_int (go 0 a) :: tl
+               end
+           | _ -> failwith "stack_jit: underflow on Ctz")
+      | Rbit ->
+          (match !stk with
+           | a :: tl ->
+               let rec go i acc =
+                 if i >= 64 then acc
+                 else go (i + 1) (Int64.logor (Int64.shift_left acc 1) (Int64.logand (Int64.shift_right_logical a i) 1L))
+               in
+               stk := go 0 0L :: tl
+           | _ -> failwith "stack_jit: underflow on Rbit")
+      | Popcnt ->
+          (match !stk with
+           | a :: tl ->
+               let rec go c v = if v = 0L then c else go (c + 1) (Int64.logand v (Int64.sub v 1L)) in
+               stk := Int64.of_int (go 0 a) :: tl
+           | _ -> failwith "stack_jit: underflow on Popcnt")
       | other -> failwith (Printf.sprintf "stack_jit: reference: %s" (Stack_ir.op_to_string other)))
     ops;
   !stk
@@ -265,6 +320,44 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
           | "OR_RR" -> gprs.(dst) <- Int64.logor gprs.(dst) gprs.(src)
           | "XOR_RR" -> gprs.(dst) <- Int64.logxor gprs.(dst) gprs.(src)
           | "NOT_R" -> gprs.(dst) <- Int64.lognot gprs.(dst)
+          | "BSWAP_R" ->
+              let a = gprs.(dst) in
+              gprs.(dst) <-
+                Int64.logor
+                  (Int64.logor
+                     (Int64.shift_left (Int64.logand a 0x00000000000000FFL) 56)
+                     (Int64.shift_left (Int64.logand a 0x000000000000FF00L) 40))
+                  (Int64.logor
+                     (Int64.logor
+                        (Int64.shift_left (Int64.logand a 0x0000000000FF0000L) 24)
+                        (Int64.shift_left (Int64.logand a 0x00000000FF000000L) 8))
+                     (Int64.logor
+                        (Int64.logor
+                           (Int64.shift_right_logical (Int64.logand a 0x000000FF00000000L) 8)
+                           (Int64.shift_right_logical (Int64.logand a 0x0000FF0000000000L) 24))
+                        (Int64.logor
+                           (Int64.shift_right_logical (Int64.logand a 0x00FF000000000000L) 40)
+                           (Int64.shift_right_logical (Int64.logand a 0xFF00000000000000L) 56))))
+          | "CLZ_R" ->
+              let a = gprs.(dst) in
+              let rec go c = if c >= 64 then 64 else if Int64.logand a (Int64.shift_left 1L (63 - c)) <> 0L then c else go (c + 1) in
+              gprs.(dst) <- Int64.of_int (go 0)
+          | "CTZ_R" ->
+              if gprs.(dst) = 0L then gprs.(dst) <- 64L
+              else begin
+                let rec go c v = if Int64.logand v 1L = 0L then go (c + 1) (Int64.shift_right_logical v 1) else c in
+                gprs.(dst) <- Int64.of_int (go 0 gprs.(dst))
+              end
+          | "RBIT_R" ->
+              let a = gprs.(dst) in
+              let rec go i acc =
+                if i >= 64 then acc
+                else go (i + 1) (Int64.logor (Int64.shift_left acc 1) (Int64.logand (Int64.shift_right_logical a i) 1L))
+              in
+              gprs.(dst) <- go 0 0L
+          | "POPCNT_R" ->
+              let rec go c v = if v = 0L then c else go (c + 1) (Int64.logand v (Int64.sub v 1L)) in
+              gprs.(dst) <- Int64.of_int (go 0 gprs.(dst))
           | "EXIT" -> ()
           | "ROR_RR" ->
               let s = Int64.to_int gprs.(src) land 63 in
@@ -371,6 +464,15 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     | _ ->
         binary op_rr
   in
+  let unary op =
+    if !depth < 1 then Error ("stack_jit: underflow on " ^ op)
+    else begin
+      (* top-of-stack slot: src = dst = stack_base + depth - 1 (in place). *)
+      let slot = stack_base + !depth - 1 in
+      push_item (jit op, slot, slot, 0L);
+      Ok ()
+    end
+  in
   let rec walk = function
     | [] -> Ok ()
     | JccRel (target, cond) :: JmpRel false_target :: rest when allow_branches ->
@@ -422,6 +524,11 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Div -> binary "DIV_RR"
           | Idiv -> binary "SDIV_RR"
           | Rot -> binary "ROR_RR"
+          | Bswap -> unary "BSWAP_R"
+          | Clz -> unary "CLZ_R"
+          | Ctz -> unary "CTZ_R"
+          | Rbit -> unary "RBIT_R"
+          | Popcnt -> unary "POPCNT_R"
           | Dup2 ->
               if !depth < 2 then Error "stack_jit: underflow on Dup2"
               else begin

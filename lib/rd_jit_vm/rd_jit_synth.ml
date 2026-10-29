@@ -70,6 +70,11 @@ let jit_op_kind_decl () : top_decl =
       ("JIT_OP_RESOLVE_SYM", None);
       ("JIT_OP_JMP", None);
       ("JIT_OP_JCC", None);
+      ("JIT_OP_BSWAP_R", None);
+      ("JIT_OP_CLZ_R", None);
+      ("JIT_OP_CTZ_R", None);
+      ("JIT_OP_RBIT_R", None);
+      ("JIT_OP_POPCNT_R", None);
     ];
   }
 
@@ -365,6 +370,37 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0xcb0903e9;
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
+            case JIT_OP_BSWAP_R:
+                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                code[idx++] = 0xdac00c00 | (9 << 5) | 9;   /* rev x9, x9 */
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
+            case JIT_OP_CLZ_R:
+                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
+                code[idx++] = 0xdac01000 | (10 << 5) | 9;  /* clz x9, x10 */
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
+            case JIT_OP_CTZ_R:
+                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
+                code[idx++] = 0xdac00000 | (10 << 5) | 10; /* rbit x10, x10 */
+                code[idx++] = 0xdac01000 | (10 << 5) | 9;  /* clz x9, x10 */
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
+            case JIT_OP_RBIT_R:
+                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                code[idx++] = 0xdac00000 | (9 << 5) | 9;   /* rbit x9, x9 */
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
+            case JIT_OP_POPCNT_R:
+                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                code[idx++] = 0x9e670120;                  /* fmov d0, x9 */
+                code[idx++] = 0x0e205800;                  /* cnt v0.8b, v0.8b */
+                code[idx++] = 0x2e303800;                  /* uaddlv h0, v0.8b */
+                code[idx++] = 0x9e660009;                  /* fmov x9, d0 */
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
             case JIT_OP_LOAD_8:
             case JIT_OP_LOAD_16:
             case JIT_OP_LOAD_32:
@@ -651,6 +687,37 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x48; code[idx++] = 0xf7; code[idx++] = 0xd8;
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
+            case JIT_OP_BSWAP_R:
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
+                code[idx++] = 0x49; code[idx++] = 0x0f; code[idx++] = 0xc9;   /* bswap r9 */
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
+                break;
+            case JIT_OP_CLZ_R:
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
+                code[idx++] = 0xf3; code[idx++] = 0x4d; code[idx++] = 0x0f; code[idx++] = 0xbd; code[idx++] = 0xca; /* lzcnt r9, r10 */
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
+                break;
+            case JIT_OP_CTZ_R:
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
+                code[idx++] = 0xf3; code[idx++] = 0x4d; code[idx++] = 0x0f; code[idx++] = 0xbc; code[idx++] = 0xca; /* tzcnt r9, r10 */
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
+                break;
+            case JIT_OP_RBIT_R:
+                /* rbit r9, src via reverse-iteration loop (clobbers rax/r10, flags) */
+                code[idx++] = 0x4c; code[idx++] = 0x89; code[idx++] = 0xc8;   /* mov rax, r9 */
+                code[idx++] = 0x45; code[idx++] = 0x31; code[idx++] = 0xc9;   /* xor r9d, r9d */
+                code[idx++] = 0x41; code[idx++] = 0xba; code[idx++] = 0x40; code[idx++] = 0x00; code[idx++] = 0x00; code[idx++] = 0x00; /* mov r10d, 64 */
+                code[idx++] = 0x48; code[idx++] = 0xd1; code[idx++] = 0xe8;   /* 1: shr rax, 1 */
+                code[idx++] = 0x4d; code[idx++] = 0x11; code[idx++] = 0xc9;   /* adc r9, r9 */
+                code[idx++] = 0x41; code[idx++] = 0xff; code[idx++] = 0xca;   /* dec r10d */
+                code[idx++] = 0x75; code[idx++] = 0xf5;                       /* jne 1b */
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
+                break;
+            case JIT_OP_POPCNT_R:
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
+                code[idx++] = 0xf3; code[idx++] = 0x4d; code[idx++] = 0x0f; code[idx++] = 0xb8; code[idx++] = 0xca; /* popcnt r9, r10 */
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
+                break;
             case JIT_OP_LOAD_8:
             case JIT_OP_LOAD_16:
             case JIT_OP_LOAD_32:
@@ -862,6 +929,44 @@ let synthesize_and_execute_block_decl () : top_decl =
             case JIT_OP_NOT_R: ctx.set_reg(in.dst, ~ctx.get_reg(in.dst)); break;
             case JIT_OP_RESOLVE_SYM: asgard_rd_jit_resolve_sym_to_reg(&ctx, in.dst, in.imm); break;
             case JIT_OP_NEG_R: ctx.set_reg(in.dst, (uint64_t)(-(int64_t)ctx.get_reg(in.dst))); break;
+            case JIT_OP_BSWAP_R: {
+                uint64_t v = ctx.get_reg(in.src);
+                v = ((v & 0x00000000000000FFULL) << 56) | ((v & 0x000000000000FF00ULL) << 40) |
+                    ((v & 0x0000000000FF0000ULL) << 24) | ((v & 0x00000000FF000000ULL) <<  8) |
+                    ((v & 0x000000FF00000000ULL) >>  8) | ((v & 0x0000FF0000000000ULL) >> 24) |
+                    ((v & 0x00FF000000000000ULL) >> 40) | ((v & 0xFF00000000000000ULL) >> 56);
+                ctx.set_reg(in.dst, v);
+                break;
+            }
+            case JIT_OP_CLZ_R: {
+                uint64_t v = ctx.get_reg(in.src);
+                int c = 0;
+                while (c < 64 && (v & (0x8000000000000000ULL >> c)) == 0) c++;
+                ctx.set_reg(in.dst, (uint64_t)c);
+                break;
+            }
+            case JIT_OP_CTZ_R: {
+                uint64_t v = ctx.get_reg(in.src);
+                if (v == 0) { ctx.set_reg(in.dst, 64); break; }
+                int c = 0;
+                while ((v & 1ULL) == 0) { v >>= 1; c++; }
+                ctx.set_reg(in.dst, (uint64_t)c);
+                break;
+            }
+            case JIT_OP_RBIT_R: {
+                uint64_t v = ctx.get_reg(in.src);
+                uint64_t r = 0;
+                for (int i = 0; i < 64; i++) { r = (r << 1) | (v & 1ULL); v >>= 1; }
+                ctx.set_reg(in.dst, r);
+                break;
+            }
+            case JIT_OP_POPCNT_R: {
+                uint64_t v = ctx.get_reg(in.src);
+                int c = 0;
+                while (v) { v &= v - 1ULL; c++; }
+                ctx.set_reg(in.dst, (uint64_t)c);
+                break;
+            }
             case JIT_OP_LOAD_8: {
                 uint64_t addr = ctx.get_reg(in.src) + in.imm;
                 ctx.set_reg(in.dst, (uint64_t)*reinterpret_cast<const uint8_t*>(addr));

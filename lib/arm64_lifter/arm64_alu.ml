@@ -880,7 +880,16 @@ let lift (mnemonic : string) (ops : raw_op list) : Ir.instr list option =
       Some [ Ir.Nop ]
   | (("cnt" | "cnt.8b" | "cnt.16b"), [ OpReg dst; OpReg src ]) ->
       Some [ Ir.Unary { op = Ir.Popcnt; dst; src = Reg src; set_flags = false } ]
+  | (("cnt" | "cnt.8b" | "cnt.16b"), [ OpVec vd; OpVec vs ]) ->
+      let dst = Register.Fpr (vd.reg, Register.B64) in
+      let src = Register.Fpr (vs.reg, Register.B64) in
+      Some [ Ir.Unary { op = Ir.Popcnt; dst; src = Reg src; set_flags = false } ]
   | (("uaddlv" | "uaddlv.8b" | "uaddlv.16b"), [ OpReg dst; OpReg src ]) ->
       Some [ Ir.Mov { dst = Reg dst; src = Reg src } ]
+  | (("uaddlv" | "uaddlv.8b" | "uaddlv.16b"), [ (OpVec _ | OpReg _); (OpVec _ | OpReg _) ]) ->
+      (* Horizontal byte-sum: by construction the preceding Popcnt on the
+         same vector register already produced the final scalar count, so
+         this is a no-op in the scalar IR model. *)
+      Some [ Ir.Nop ]
 
   | _ -> None

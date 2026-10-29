@@ -348,6 +348,61 @@ let step_op state = function
       let v = get_reg state slot in
       let h = Stack_encoder.feedback_hash v in
       state.vkey <- Int64.logxor state.vkey h
+  | Bswap ->
+      (match state.vstack with
+       | a :: rest ->
+           state.vstack <-
+             Int64.logor
+               (Int64.logor
+                  (Int64.shift_left (Int64.logand a 0x00000000000000FFL) 56)
+                  (Int64.shift_left (Int64.logand a 0x000000000000FF00L) 40))
+               (Int64.logor
+                  (Int64.logor
+                     (Int64.shift_left (Int64.logand a 0x0000000000FF0000L) 24)
+                     (Int64.shift_left (Int64.logand a 0x00000000FF000000L) 8))
+                  (Int64.logor
+                     (Int64.logor
+                        (Int64.shift_right_logical (Int64.logand a 0x000000FF00000000L) 8)
+                        (Int64.shift_right_logical (Int64.logand a 0x0000FF0000000000L) 24))
+                     (Int64.logor
+                        (Int64.shift_right_logical (Int64.logand a 0x00FF000000000000L) 40)
+                        (Int64.shift_right_logical (Int64.logand a 0xFF00000000000000L) 56))))
+             :: rest
+       | _ -> state.halted <- true)
+  | Clz ->
+      (match state.vstack with
+       | a :: rest ->
+           let rec go c =
+             if c >= 64 then 64
+             else if Int64.logand a (Int64.shift_left 1L (63 - c)) <> 0L then c
+             else go (c + 1)
+           in
+           state.vstack <- Int64.of_int (go 0) :: rest
+       | _ -> state.halted <- true)
+  | Ctz ->
+      (match state.vstack with
+       | a :: rest ->
+           if a = 0L then state.vstack <- 64L :: rest
+           else begin
+             let rec go c v = if Int64.logand v 1L = 0L then go (c + 1) (Int64.shift_right_logical v 1) else c in
+             state.vstack <- Int64.of_int (go 0 a) :: rest
+           end
+       | _ -> state.halted <- true)
+  | Rbit ->
+      (match state.vstack with
+       | a :: rest ->
+           let rec go i acc =
+             if i >= 64 then acc
+             else go (i + 1) (Int64.logor (Int64.shift_left acc 1) (Int64.logand (Int64.shift_right_logical a i) 1L))
+           in
+           state.vstack <- go 0 0L :: rest
+       | _ -> state.halted <- true)
+  | Popcnt ->
+      (match state.vstack with
+       | a :: rest ->
+           let rec go c v = if v = 0L then c else go (c + 1) (Int64.logand v (Int64.sub v 1L)) in
+           state.vstack <- Int64.of_int (go 0 a) :: rest
+       | _ -> state.halted <- true)
   | NativeEscape (kind, a, b, c, _stub) ->
       let va = get_reg state a in
       let vb = get_reg state b in

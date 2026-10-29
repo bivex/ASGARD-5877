@@ -348,6 +348,50 @@ int main() {
         let run_st, out_str = Test_helpers.run_command_capture app_bin in
         check bool "Run status is 0" true (run_st = Unix.WEXITED 0);
         check bool "Output is loop_accumulate(5) = 30" true (contains_sub out_str "loop_accumulate(5) = 30"))
+
+let test_chunker_bit_manip_ops () =
+  (* OEIS-backed Group A: Bswap / Clz / Ctz / Rbit / Popcnt end-to-end
+     through translate_trace + simulate_chunks, cross-checked against
+     the reference Stack-IR evaluator. *)
+  let run_one name ops expected =
+    let ref_stk = Stack_jit_chunker.reference_eval (Array.make 8 0L) ops in
+    check int64 (name ^ " reference") expected (List.hd ref_stk);
+    match Stack_jit_chunker.translate_trace () ops with
+    | Error err -> fail (name ^ " translation failed: " ^ err)
+    | Ok tr ->
+        let gprs = Array.make 16 0L in
+        Stack_jit_chunker.simulate_chunks tr.chunks gprs;
+        check int64 (name ^ " simulated") expected gprs.(0)
+  in
+  (* Bswap: byte reversal of 0x1234567890ABCDEF -> 0xEFCDAB9078563412 *)
+  run_one "Bswap"
+    [ PushImm 0x1234567890ABCDEFL; Bswap ]
+    0xEFCDAB9078563412L;
+  (* Bswap of 0 is 0 *)
+  run_one "Bswap(0)" [ PushImm 0L; Bswap ] 0L;
+  (* Clz: 0xFF has 56 leading zeros; 0 has 64 *)
+  run_one "Clz(0xFF)" [ PushImm 0xFFL; Clz ] 56L;
+  run_one "Clz(0)" [ PushImm 0L; Clz ] 64L;
+  run_one "Clz(1)" [ PushImm 1L; Clz ] 63L;
+  (* Ctz: 0x10 = 16 has 4 trailing zeros; 0 has 64 per spec *)
+  run_one "Ctz(0x10)" [ PushImm 0x10L; Ctz ] 4L;
+  run_one "Ctz(0)" [ PushImm 0L; Ctz ] 64L;
+  run_one "Ctz(0x5877)" [ PushImm 0x5877L; Ctz ] 0L;
+  (* Rbit: reversing bits of 1 gives 0x8000000000000000 *)
+  run_one "Rbit(1)" [ PushImm 1L; Rbit ] 0x8000000000000000L;
+  (* Rbit is an involution: Rbit(Rbit(x)) = x *)
+  run_one "Rbit(Rbit(x))"
+    [ PushImm 0x5877CAFE1337BEEFL; Rbit; Rbit ]
+    0x5877CAFE1337BEEFL;
+  (* Popcnt: 0xFFFF has 16 bits; 0 has 0 *)
+  run_one "Popcnt(0xFFFF)" [ PushImm 0xFFFFL; Popcnt ] 16L;
+  run_one "Popcnt(0)" [ PushImm 0L; Popcnt ] 0L;
+  run_one "Popcnt(0xFFFFFFFFFFFFFFFF)"
+    [ PushImm (-1L); Popcnt ] 64L;
+  (* A001511 step: ctz(8) = 3 -> ruler level 4 *)
+  run_one "Ctz(8) feeds A001511"
+    [ PushImm 8L; Ctz ] 3L
+
 let test_chunker_ruler_a001511 () =
   (* OEIS A001511: A001511(t) = 1 + ctz(t) = 1 + v2(2t) *)
   let module C = Stack_jit_chunker in
@@ -395,4 +439,5 @@ let tests = [
   ("Stack-JIT C Macro Trampoline E2E", `Quick, test_stack_jit_c_macro_e2e);
   ("Stack-JIT Dynamic Loop & Branching E2E", `Quick, test_stack_jit_loop_branch_e2e);
   ("Stack-JIT A001511 Ruler & Invalidation Schedule", `Quick, test_chunker_ruler_a001511);
+  ("Stack-JIT Bswap/Clz/Ctz/Rbit/Popcnt Simulation", `Quick, test_chunker_bit_manip_ops);
 ]

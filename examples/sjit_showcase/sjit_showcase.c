@@ -321,6 +321,73 @@ uint64_t siphash_round(uint64_t v0, uint64_t v1, uint64_t v2, uint64_t v3)
     ASGARD_END();
     return res;
 }
+
+/* ------------------------------------------------------------------ */
+/* 15. Hardware byte-swap (rev / bswap)                                */
+/* ------------------------------------------------------------------ */
+uint64_t byte_swap64(uint64_t x)
+{
+    ASGARD_BEGIN_VIRTUALIZE("byte_swap64");
+    uint64_t res = __builtin_bswap64(x);
+    __asm__ volatile("" : "+r"(res));
+    ASGARD_END();
+    return res;
+}
+
+/* ------------------------------------------------------------------ */
+/* 16. Count leading zeros (clz / lzcnt)                               */
+/* ------------------------------------------------------------------ */
+uint64_t leading_zeros64(uint64_t x)
+{
+    ASGARD_BEGIN_VIRTUALIZE("leading_zeros64");
+    /* Guarded: __builtin_clzll(0) is UB, so keep the caller contract x != 0
+       but clamp defensively before the intrinsic. */
+    uint64_t n = (x == 0ULL) ? 64ULL : (uint64_t)__builtin_clzll(x);
+    __asm__ volatile("" : "+r"(n));
+    ASGARD_END();
+    return n;
+}
+
+/* ------------------------------------------------------------------ */
+/* 17. Count trailing zeros (rbit+clz / tzcnt)                         */
+/* ------------------------------------------------------------------ */
+uint64_t trailing_zeros64(uint64_t x)
+{
+    ASGARD_BEGIN_VIRTUALIZE("trailing_zeros64");
+    uint64_t n = (x == 0ULL) ? 64ULL : (uint64_t)__builtin_ctzll(x);
+    __asm__ volatile("" : "+r"(n));
+    ASGARD_END();
+    return n;
+}
+
+/* ------------------------------------------------------------------ */
+/* 18. Full 64-bit bit reversal (rbit)                                 */
+/* ------------------------------------------------------------------ */
+uint64_t reverse_bits64(uint64_t x)
+{
+    ASGARD_BEGIN_VIRTUALIZE("reverse_bits64");
+    uint64_t res = 0ULL;
+    for (int i = 0; i < 64; i++) {
+        res = (res << 1) | (x & 1ULL);
+        x >>= 1;
+    }
+    __asm__ volatile("" : "+r"(res));
+    ASGARD_END();
+    return res;
+}
+
+/* ------------------------------------------------------------------ */
+/* 19. Hardware population count (cnt-chain / popcnt)                  */
+/* ------------------------------------------------------------------ */
+uint64_t hamming_weight64(uint64_t x)
+{
+    ASGARD_BEGIN_VIRTUALIZE("hamming_weight64");
+    uint64_t n = (uint64_t)__builtin_popcountll(x);
+    __asm__ volatile("" : "+r"(n));
+    ASGARD_END();
+    return n;
+}
+
 /* ------------------------------------------------------------------ */
 /* Reference implementations for bit-for-bit assertion validation    */
 /* ------------------------------------------------------------------ */
@@ -427,6 +494,34 @@ static uint64_t ref_siphash(uint64_t v0, uint64_t v1, uint64_t v2, uint64_t v3) 
     return v0 ^ v1 ^ v2 ^ v3;
 }
 
+static uint64_t ref_bswap(uint64_t x) { return __builtin_bswap64(x); }
+
+static uint64_t ref_clz(uint64_t x) {
+    if (x == 0ULL) return 64ULL;
+    uint64_t c = 0;
+    while ((x & 0x8000000000000000ULL) == 0) { x <<= 1; c++; }
+    return c;
+}
+
+static uint64_t ref_ctz(uint64_t x) {
+    if (x == 0ULL) return 64ULL;
+    uint64_t c = 0;
+    while ((x & 1ULL) == 0) { x >>= 1; c++; }
+    return c;
+}
+
+static uint64_t ref_rbit(uint64_t x) {
+    uint64_t r = 0;
+    for (int i = 0; i < 64; i++) { r = (r << 1) | (x & 1ULL); x >>= 1; }
+    return r;
+}
+
+static uint64_t ref_popcnt(uint64_t x) {
+    uint64_t c = 0;
+    while (x) { x &= x - 1ULL; c++; }
+    return c;
+}
+
 /* ------------------------------------------------------------------ */
 /* Main test harness                                                  */
 /* ------------------------------------------------------------------ */
@@ -448,7 +543,7 @@ int main(void)
 
     printf("====================================================================\n");
     printf("  🛡️  ASGARD-5877: Stack-JIT (SJIT) Big C++ Showcase & Bug Stress\n");
-    printf("  14 Virtualized Functions in Sealed Nano-Arena:\n");
+    printf("  19 Virtualized Functions in Sealed Nano-Arena:\n");
     printf("    * A000002 Kolakoski Fission     * A010060 Thue-Morse Dummy Padding\n");
     printf("    * A000166 Derangement Shuffling * A002487 Stern Affine Masking\n");
     printf("    * A000695 Moser-de Bruijn Imm   * A003022 Golomb Ruler Slots\n");
@@ -566,11 +661,47 @@ int main(void)
     CHECK("siphash(FFFF, AAAA, 5555, 1234)",
           siphash_round(0xFFFFFFFFFFFFFFFFULL, 0xAAAAAAAAAAAAAAAAULL, 0x5555555555555555ULL, 0x1234567890ABCDEFULL),
           ref_siphash(0xFFFFFFFFFFFFFFFFULL, 0xAAAAAAAAAAAAAAAAULL, 0x5555555555555555ULL, 0x1234567890ABCDEFULL));
+
+    /* ---- 15. Hardware byte-swap ---- */
+    printf("\n[15] byte_swap64 (rev / bswap Hardware Endianness Swap)\n");
+    CHECK("bswap(0x1234567890ABCDEF)", byte_swap64(0x1234567890ABCDEFULL), ref_bswap(0x1234567890ABCDEFULL));
+    CHECK("bswap(0x5877CAFE1337BEEF)", byte_swap64(0x5877CAFE1337BEEFULL), ref_bswap(0x5877CAFE1337BEEFULL));
+    CHECK("bswap(0)",                  byte_swap64(0ULL),                  ref_bswap(0ULL));
+    CHECK("bswap(0xFF)",               byte_swap64(0xFFULL),               ref_bswap(0xFFULL));
+
+    /* ---- 16. Count leading zeros ---- */
+    printf("\n[16] leading_zeros64 (clz / lzcnt Hardware Normalize)\n");
+    CHECK("clz(1)",              leading_zeros64(1ULL),              ref_clz(1ULL));
+    CHECK("clz(0x5877)",         leading_zeros64(0x5877ULL),         ref_clz(0x5877ULL));
+    CHECK("clz(0x8000000000000000)", leading_zeros64(0x8000000000000000ULL), ref_clz(0x8000000000000000ULL));
+    CHECK("clz(0xFFFFFFFFFFFFFFFF)", leading_zeros64(0xFFFFFFFFFFFFFFFFULL), ref_clz(0xFFFFFFFFFFFFFFFFULL));
+
+    /* ---- 17. Count trailing zeros ---- */
+    printf("\n[17] trailing_zeros64 (rbit+clz / tzcnt Hardware v2 Scan)\n");
+    CHECK("ctz(1)",              trailing_zeros64(1ULL),              ref_ctz(1ULL));
+    CHECK("ctz(0x5877)",         trailing_zeros64(0x5877ULL),         ref_ctz(0x5877ULL));
+    CHECK("ctz(0x8000000000000000)", trailing_zeros64(0x8000000000000000ULL), ref_ctz(0x8000000000000000ULL));
+    CHECK("ctz(0x58770000)",     trailing_zeros64(0x58770000ULL),     ref_ctz(0x58770000ULL));
+
+    /* ---- 18. Bit reversal ---- */
+    printf("\n[18] reverse_bits64 (rbit Hardware 64-bit Permutation)\n");
+    CHECK("rbit(1)",                 reverse_bits64(1ULL),                 ref_rbit(1ULL));
+    CHECK("rbit(0x1234567890ABCDEF)",reverse_bits64(0x1234567890ABCDEFULL),ref_rbit(0x1234567890ABCDEFULL));
+    CHECK("rbit(0x5877CAFE1337BEEF)",reverse_bits64(0x5877CAFE1337BEEFULL),ref_rbit(0x5877CAFE1337BEEFULL));
+    CHECK("rbit(0)",                 reverse_bits64(0ULL),                 ref_rbit(0ULL));
+
+    /* ---- 19. Population count ---- */
+    printf("\n[19] hamming_weight64 (cnt-chain / popcnt Hardware Hamming)\n");
+    CHECK("popcnt(0)",                   hamming_weight64(0ULL),                   ref_popcnt(0ULL));
+    CHECK("popcnt(0x5877585758575857)",  hamming_weight64(0x5877585758575857ULL),  ref_popcnt(0x5877585758575857ULL));
+    CHECK("popcnt(0xFFFFFFFFFFFFFFFF)",  hamming_weight64(0xFFFFFFFFFFFFFFFFULL),  ref_popcnt(0xFFFFFFFFFFFFFFFFULL));
+    CHECK("popcnt(0xDEADBEEFCAFE1337)",  hamming_weight64(0xDEADBEEFCAFE1337ULL),  ref_popcnt(0xDEADBEEFCAFE1337ULL));
+
     /* ---- Summary ---- */
     printf("\n====================================================================\n");
     printf("  Results: %d PASS, %d FAIL out of %d assertions\n", pass, fail, pass + fail);
     if (fail == 0) {
-        printf("  🎉 ALL 14 VIRTUALIZED ROUTINES EXECUTED WITH 100%% EXACT PRECISION\n");
+        printf("  🎉 ALL 19 VIRTUALIZED ROUTINES EXECUTED WITH 100%% EXACT PRECISION\n");
         printf("  Stack-JIT Sealing & Dynamic Nano-Chunks VERIFIED on Hardware\n");
     } else {
         printf("  💥 FAILURES DETECTED\n");
