@@ -41,6 +41,19 @@ let expand_xor_nor scratch_x scratch_y = [
   Nor; (* x NOR y *)
   Nor; (* (x AND y) NOR (x NOR y) = x XOR y *)
 ]
+let expand_xor_nor_pure = [
+  Dup2;
+  Nor;
+  Rot;
+  Swap;
+  Dup;
+  Nor;
+  Swap;
+  Dup;
+  Nor;
+  Nor;
+  Nor;
+]
 
 let expand_not_nand = [
   Dup;

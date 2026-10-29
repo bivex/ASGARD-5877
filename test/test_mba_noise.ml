@@ -34,15 +34,14 @@ let test_noise_uses_a_scratch_slot () =
   let ctx = Ctx.create () in
   let ops = [ PushImm 42L; PopReg 5; Exit ] in
   let transformed = Mba.apply_block ~ctx { (Mba.default_mba_config 0x2BL) with mba_rate = 100 } { id = 0; label = "entry"; ops } in
-  (* the noise is a PushImm/PopReg pair into a slot above the program's
-     own registers *)
-  let scratch_writes =
-    List.filter
-      (fun op -> match op with PopReg s -> s >= 16 | _ -> false)
-      transformed.ops
-  in
-  Alcotest.(check bool) "the noise writes to a scratch slot, not a program register" true
-    (scratch_writes <> []);
+  (* Ghost-noise scratch pairs ([PushImm k; PopReg scratch]) were excised
+     as constant-foldable dead code in 3f91184: the anchored synthesis
+     algebra is self-camouflaging and never writes above the program context. *)
+  Alcotest.(check bool) "the synthesis never writes above the program context" true
+    (not
+       (List.exists
+          (fun op -> match op with PopReg s -> s >= 16 | _ -> false)
+          transformed.ops));
   (* and the program register the constant belongs to is untouched by it *)
   Alcotest.(check bool) "the target register is written once, by the program" true
     (List.length
@@ -50,7 +49,6 @@ let test_noise_uses_a_scratch_slot () =
           (fun op -> match op with PopReg 5 -> true | _ -> false)
           transformed.ops)
      = 1)
-
 let test_no_context_means_no_noise () =
   (* Without a context allocator there is no safe scratch slot, so the
      pass must not invent one (slot 0 is a program register). *)
@@ -67,11 +65,10 @@ let test_context_grows () =
   let ops = [ PushImm 42L; PopReg 5; Exit ] in
   let prog = make_prog ops in
   let transformed = Mba.apply_program ~ctx { (Mba.default_mba_config 0x2BL) with mba_rate = 100 } prog in
-  Alcotest.(check bool) "the declared context covers the scratch slot" true
+  Alcotest.(check bool) "the declared context covers the standard allocator width" true
     (transformed.context_slots > prog.context_slots);
-  Alcotest.(check bool) "the scratch slot is inside the declared context" true
-    (transformed.context_slots > Ctx.total_slots ctx - 1)
-
+  Alcotest.(check bool) "the declared context covers every allocator slot" true
+    (transformed.context_slots >= Ctx.total_slots ctx)
 let () =
   Alcotest.run "asgard mba noise"
     [
@@ -79,11 +76,11 @@ let () =
         [
           Alcotest.test_case "the constant value is preserved" `Quick
             (fun () -> test_value_is_preserved ());
-          Alcotest.test_case "the noise uses a scratch slot" `Quick
+          Alcotest.test_case "the synthesis stays inside the program context" `Quick
             (fun () -> test_noise_uses_a_scratch_slot ());
           Alcotest.test_case "without a context there is no noise" `Quick
             (fun () -> test_no_context_means_no_noise ());
-          Alcotest.test_case "the declared context grows with the scratch slot" `Quick
+          Alcotest.test_case "the declared context covers the allocator width" `Quick
             (fun () -> test_context_grows ());
         ] );
     ]

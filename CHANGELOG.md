@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- Fix CFF tainted transitions and JIT register clobbering by adding native `Xor` opcode to `Stack_ir` (`lib/stack_vm/stack_ir.ml`, `lib/stack_vm/stack_ir.mli`, `lib/stack_vm/ir_to_stack.ml`, `lib/stack_vm/stack_eval.ml`, `lib/stack_vm/stack_jit_chunker.ml`, `lib/rd_jit_vm/rd_jit_synth.ml`, `test/test_mba_noise.ml`):
+  * Added `Xor` directly to `Stack_ir.stack_op`, mapping `Ir.Alu Xor` 1-to-1 to `[Xor]` (`XOR_RR` in Stack-JIT and `Int64.logxor` in `Stack_eval`), eliminating the scratch-based `expand_xor_nor` expansion that popped into `vtmp0`/`vtmp2` and clobbered the CFF dispatcher state in `cff_tainted_stack_vm` and ARM64 architectural registers in JIT loops.
+  * Added missing `ctx.flags` evaluation to `JIT_OP_CMP_RI` in the C++ interpreter (`rd_jit_synth.ml`), ensuring conditional branches and `CSEL` observe updated flags after compare-immediate instructions.
+  * Updated `test_mba_noise.ml` to reflect the excision of dead `[PushImm k; PopReg scratch]` pairs from commit `3f91184`, asserting that constant synthesis stays within the program context and that the declared context covers the allocator width.
+  * Verified: 4/4 `asgard mba noise`, 26/26 `Anti-Analysis (MBA & CFF)` (including `cff_tainted_stack_vm`), 16/16 `Stack-JIT VM & Chunker`, 7/7 `Register-Driven JIT VM & RNS`, 69/69 `ARM64 Lifter & CFG`, 45/45 `test_cpp_codegen`, and 77/77 showcase assertions on Apple Silicon hardware.
 - Fix ARM64 condition code mapping and conditional branch fusion in `Stack_jit_chunker` (`lib/stack_vm/stack_jit_chunker.ml`, `lib/rd_jit_vm/rd_jit_synth.ml`):
   * Swapped `Flags.B` (below / carry clear, mapped to ARM64 `CC/LO` code 3) and `Flags.AE` (above or equal / carry set, mapped to ARM64 `CS/HS` code 2), fixing divergent unsigned branch evaluation in loops. Added `HI` (code 8) and `LS` (code 9) condition cases to RD-JIT interpreter fallback.
   * Fixed `Test` opcode lowering in `stack_jit_chunker.ml` to compare the bitwise-AND result with zero (`MOV_RI b, 0L; CMP_RR a, b`) instead of self-comparing `a` with `a`, correctly establishing the zero flag (`ZF=1` iff `a & b == 0`) for `TEST` instructions.

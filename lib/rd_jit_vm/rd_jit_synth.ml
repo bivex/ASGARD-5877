@@ -1064,9 +1064,12 @@ let synthesize_and_execute_block_decl () : top_decl =
                 ctx.set_reg(in.dst, s == 0 ? v : (v >> s) | (v << (64 - s)));
                 break;
             }
-            case JIT_OP_CMP_RI:
-                /* Flags-only op: nothing to store in the value window. */
+            case JIT_OP_CMP_RI: {
+                uint64_t a = ctx.get_reg(in.dst);
+                uint64_t b = in.imm;
+                ctx.flags = (a == b ? 1 : 0) | (a < b ? 2 : 0) | ((int64_t)a < (int64_t)b ? 4 : 0);
                 break;
+            }
             case JIT_OP_DIV_RR: {
                 uint64_t d = ctx.get_reg(in.src);
                 ctx.set_reg(in.dst, d == 0 ? 0 : ctx.get_reg(in.dst) / d);

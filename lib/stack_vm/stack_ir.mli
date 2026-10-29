@@ -19,6 +19,7 @@ type stack_op =
   | Sar
   | Div
   | Idiv
+  | Xor
   | Dup
   | Dup2
   | Rot

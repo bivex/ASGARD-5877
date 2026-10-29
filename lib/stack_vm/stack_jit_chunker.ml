@@ -130,6 +130,10 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
           (match !stk with
            | b :: a :: tl -> stk := Int64.lognot (Int64.logor a b) :: tl
            | _ -> failwith "stack_jit: underflow on Nor")
+      | Xor ->
+          (match !stk with
+           | b :: a :: tl -> stk := Int64.logxor a b :: tl
+           | _ -> failwith "stack_jit: underflow on Xor")
       | Shl ->
           (match !stk with
            | count :: a :: tl ->
@@ -527,6 +531,7 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Sar -> shift_op "SAR_RR" "SAR_RI"
           | Div -> binary "DIV_RR"
           | Idiv -> binary "SDIV_RR"
+          | Xor -> binary "XOR_RR"
           | Rot -> shift_op "ROR_RR" "ROR_RI"
           | Bswap -> unary "BSWAP_R"
           | Clz -> unary "CLZ_R"
@@ -653,13 +658,16 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Swap ->
               if !depth < 2 then Error "stack_jit: underflow on Swap"
               else begin
-                (* a = top-1 slot, b = top slot; free temp = slot above top. *)
+                (* a = top-1 slot, b = top slot.  XOR-swap avoids the third
+                   temp slot above the stack top, which can overflow the
+                   16-slot window when Dup2-based expansions (pure XOR)
+                   raise the depth.  a and b are always distinct slots, so
+                   the degenerate a = b case of XOR-swap cannot occur. *)
                 let a = stack_base + !depth - 2
-                and b = stack_base + !depth - 1
-                and t = stack_base + !depth in
-                push_item (jit "MOV_RR", t, b, 0L);
-                push_item (jit "MOV_RR", b, a, 0L);
-                push_item (jit "MOV_RR", a, t, 0L);
+                and b = stack_base + !depth - 1 in
+                push_item (jit "XOR_RR", a, b, 0L);
+                push_item (jit "XOR_RR", b, a, 0L);
+                push_item (jit "XOR_RR", a, b, 0L);
                 Ok ()
               end
           | PushFlags ->

@@ -19,6 +19,7 @@ type stack_op =
   | Sar
   | Div
   | Idiv
+  | Xor
   | Dup
   | Dup2
   | Rot
@@ -74,7 +75,7 @@ let push_weight = function
   | PopReg _ -> 0
   | ReadMem _ -> 1
   | WriteMem _ -> 0
-  | Add | Sub | Mul | Mulh | Imulh | Nor | Nand | Shl | Shr | Sar | Div | Idiv -> 1
+  | Add | Sub | Mul | Mulh | Imulh | Nor | Nand | Shl | Shr | Sar | Div | Idiv | Xor -> 1
   | Dup -> 2
   | Dup2 -> 4
   | Rot -> 3
@@ -100,7 +101,7 @@ let pop_weight = function
   | PopReg _ -> 1
   | ReadMem _ -> 1
   | WriteMem _ -> 2
-  | Add | Sub | Mul | Mulh | Imulh | Nor | Nand | Shl | Shr | Sar | Div | Idiv -> 2
+  | Add | Sub | Mul | Mulh | Imulh | Nor | Nand | Shl | Shr | Sar | Div | Idiv | Xor -> 2
   | Dup -> 1
   | Dup2 -> 2
   | Rot -> 3
@@ -141,6 +142,7 @@ let op_to_string = function
   | Sar -> "SAR"
   | Div -> "DIV"
   | Idiv -> "IDIV"
+  | Xor -> "XOR"
   | Dup -> "DUP"
   | Dup2 -> "DUP2"
   | Rot -> "ROT"

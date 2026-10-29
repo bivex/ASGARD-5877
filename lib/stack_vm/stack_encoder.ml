@@ -290,7 +290,7 @@ let check_key_feedback_static ?(initial_ctx = []) ?(dispatcher_tokens = Hashtbl.
           ignore (pop ());
           push None
       | Stack_ir.Add | Stack_ir.Sub | Stack_ir.Mul | Stack_ir.Mulh | Stack_ir.Imulh | Stack_ir.Nor | Stack_ir.Nand
-      | Stack_ir.Shl | Stack_ir.Shr | Stack_ir.Sar | Stack_ir.Div | Stack_ir.Idiv ->
+      | Stack_ir.Shl | Stack_ir.Shr | Stack_ir.Sar | Stack_ir.Div | Stack_ir.Idiv | Stack_ir.Xor ->
           ignore (pop ());
           ignore (pop ());
           push None
@@ -551,7 +551,7 @@ let encode_op_into ?(compact_imm = false) ?(layout = default_field_layout) op_ma
   | Add -> Buffer.add_char buf (Char.chr op_map.op_add)
   | Sub -> Buffer.add_char buf (Char.chr op_map.op_sub)
   | Mul -> Buffer.add_char buf (Char.chr op_map.op_mul)
-  | Mulh | Imulh -> failwith "Mulh/Imulh not supported in interpreted bytecode (JIT only)"
+  | Mulh | Imulh | Xor -> failwith "Mulh/Imulh/Xor not supported in interpreted bytecode (JIT only)"
   | Bswap | Clz | Ctz | Rbit | Popcnt ->
       failwith "Bswap/Clz/Ctz/Rbit/Popcnt not supported in interpreted bytecode (JIT only)"
   | Nor -> Buffer.add_char buf (Char.chr op_map.op_nor)
