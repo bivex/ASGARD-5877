@@ -776,14 +776,23 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
               let* s_a = map_ctx_slot a in
               let* s_b = map_ctx_slot b in
               let* s_c = map_ctx_slot c in
-              if s_a <> s_c then push_item (jit "MOV_RR", s_c, s_a, 0L);
               let op =
                 match kind with
                 | 1 -> jit "SUB_RR"
                 | 2 -> jit "MUL_RR"
                 | _ -> jit "ADD_RR"
               in
-              push_item (op, s_c, s_b, 0L);
+              if s_a = s_c then
+                push_item (op, s_c, s_b, 0L)
+              else if s_b = s_c then begin
+                let tmp = 10 in
+                push_item (jit "MOV_RR", tmp, s_a, 0L);
+                push_item (op, tmp, s_b, 0L);
+                push_item (jit "MOV_RR", s_c, tmp, 0L)
+              end else begin
+                push_item (jit "MOV_RR", s_c, s_a, 0L);
+                push_item (op, s_c, s_b, 0L)
+              end;
               Ok ()
           | other -> unsupported (Stack_ir.op_to_string other)
         in

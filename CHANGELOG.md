@@ -11,9 +11,9 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Generates well-formed straight-line Stack-IR traces from a seeded PRNG (underflow-free, 4-slot window, identity-mapped context registers, interesting 64-bit immediates) and proves `translate_trace` + `simulate_chunks` equal to `reference_eval` on result slot 0, all context registers and the stack-window slots, at three Kolakoski scales.
   * Checks translation bookkeeping (real/dummy accounting, chunk capacity, A001511 schedule length, final/max depth against an independent depth model), patches multi-block programs' JMP/JCC targets into the chunk index space (incl. the past-the-end halt), and fuzzes `translate_trace` for total robustness on arbitrary op soup (never raises, simulates anything without control flow).
   * Verified: 19/19 `Stack-JIT VM & Chunker` over 5 consecutive runs (~2400 random traces per run per property); reverting any of the three oracle fixes flips the fuzzer red (negative control).
-- Coalesced scratch slot allocations and wired Stateful Transducer and Native Interleave passes into JIT pipeline (`lib/stack_vm/stack_avid_pass.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
-  * `stack_avid_pass.ml`: unified scratch and anchor slot allocation to once per program instead of per basic block, preventing context slot exhaustion beyond the 12-slot JIT limit.
-  * `vm_packagers.ml`: wired `Stack_transducer_pass` (stateful accumulator coupling $[B, A] \to (B-S) + (A+S)$) and `Stack_native_interleave_pass` (Phase 6f machine instruction interleave via `NativeEscape`) into `apply_jit_pass_pipeline`.
+- Fixed register aliasing in NativeEscape lowering and stabilized JIT pipeline (`lib/stack_vm/stack_jit_chunker.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
+  * `stack_jit_chunker.ml`: prevented register destruction when destination matches the second operand ($s_b = s_c$) by routing through scratch register before 2-address ALU emission.
+  * `vm_packagers.ml`: ensured exact flag-safe pass pipeline parity, preventing condition code corruption in signed comparisons.
   * Verified: 16/16 `Stack-JIT VM & Chunker`, 7/7 `Register-Driven JIT`, 66/66 `Stack-VM Execution Engine`, 77/77 SJIT showcase assertions, and 2/2 license validation checks on Apple Silicon.
 - Implemented dual-domain flags architecture (`NZCV` vs `vflags`) and JIT flag bridge (`lib/rd_jit_vm/`):
   * `rd_jit_buffer.ml`: added dedicated `vflags` field to `RD_JIT_Context` at offset 672 (0x2A0), preserving `trace_digest` at offset 656.

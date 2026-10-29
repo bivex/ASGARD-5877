@@ -281,26 +281,7 @@ module Stack_jit_packager : Vm_packager = struct
         Stack_vm.Stack_superop_pass.apply_program superop_cfg prog
       else prog
     in
-    (* Phase 5d: Stateful Transducer Pass *)
-    let prog =
-      if native_cfg.transducer.enabled then
-        let trans_cfg = { (Stack_vm.Stack_transducer_pass.default_transducer_config seed) with
-          rate = native_cfg.transducer.rate;
-          enabled = native_cfg.transducer.enabled;
-        } in
-        Stack_vm.Stack_transducer_pass.apply_program trans_cfg ctx prog
-      else prog
-    in
-    (* Phase 6f: Native Micro-Handler Interleaving Pass *)
-    let prog =
-      if native_cfg.native_interleave.enabled then
-        let ni_cfg = { (Stack_vm.Stack_native_interleave_pass.default_native_interleave_config seed) with
-          rate = native_cfg.native_interleave.rate;
-          enabled = native_cfg.native_interleave.enabled;
-        } in
-        Stack_vm.Stack_native_interleave_pass.apply_program ni_cfg ctx prog
-      else prog
-    in
+
     (* Stack balance pass: ensures exit stack delta is 0 across all blocks *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"sjit-passes" ~final:false prog;
