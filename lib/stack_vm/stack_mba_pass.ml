@@ -195,9 +195,18 @@ let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_
     let addend = Int64.sub c mask in
     (match anchor with
      | Some r ->
-         (* Additive split + non-linear register-anchored De Morgan zero knot *)
-         let k = next_int64 rng in
-         [ PushImm mask; PushImm addend; Add ] @ emit_mba_anchored_zero r k @ [ Add ]
+         let a = mask in
+         let not_a = Int64.lognot a in
+         let b = addend in
+         (* (r | a) - (r & ~a) == a in Z_{2^64}; a + b == c.
+            Peak stack depth increase = 3, fits strictly inside JIT 4-slot window. *)
+         [
+           PushReg r; PushImm a; Nor; Dup; Nor;
+           PushReg r; PushImm not_a; Nand; Dup; Nand;
+           Sub;
+           PushImm b;
+           Add;
+         ]
      | None ->
          [ PushImm mask; PushImm addend; Add ])
 
