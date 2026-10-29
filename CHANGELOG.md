@@ -48,6 +48,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Removed all top-level OEIS sequence commentary (A003022, A002487, A000166, A000931) and protector banners from the generated C++ headers, leaving zero protector/OEIS artifacts in decompiled code.
   * Verified in IDA Pro 9.3 via `idasql`: exact 0 literal occurrences of the JIT magic in executable text, 77/77 SJIT showcase assertions pass on Apple Silicon hardware.
 ### Fixed
+- Corrected three Stack-JIT chunker oracle divergences surfaced by the new differential fuzzer (`lib/stack_vm/stack_jit_chunker.ml`):
+  * `reference_eval`'s `AddRegImm` now pushes `reg + imm` and leaves the register intact, matching the evaluator (`stack_eval.ml`), `push_weight`, and `translate_trace` (it previously mutated the register and pushed nothing, corrupting stack depth).
+  * `reference_eval`'s `CallExtern` now writes the return value (0) into context slot 0 and pushes it, matching the chunk semantics (`translate_trace` + `simulate_chunks`); it previously left slot 0 stale.
+  * `simulate_chunks` learned `SHL_RR`/`SHR_RR`/`SAR_RR` (register-count shifts emitted by `translate_trace` and implemented by the JIT runtime), instead of raising "unknown op".
+  * Verified: 19/19 `Stack-JIT VM & Chunker` (5 consecutive runs) and 66/66 `Stack-VM Execution Engine`.
 - Correct ABI argument register mapping and eliminate bogus stack passing for variadics in JIT external calls (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`):
   * Corrected ARM64 (`x0..x3, x4..x7` -> `gprs[0..3, 6..9]`) and x86-64 (`RDI, RSI, RDX, RCX, R8, R9` -> `gprs[7, 6, 2, 1, 8, 9]`) argument slot mapping in `asgard_rd_jit_call_extern`, preventing RSP/RBP slot clobbering.
   * Eliminated bogus Darwin ARM64 variadic stack read (`stk[0]..stk[7]`) for `printf`/`fprintf`/`sprintf`/`snprintf` in favor of standard AAPCS64 register arguments (`a0..a7`).

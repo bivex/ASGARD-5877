@@ -185,7 +185,10 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
       | SetRegImm (r, v) ->
           if r >= 0 && r < Array.length regs then regs.(r) <- v
       | AddRegImm (r, v) ->
-          if r >= 0 && r < Array.length regs then regs.(r) <- Int64.add regs.(r) v
+          (* Fused [PushReg; AddImm]: pushes reg+imm and leaves the register
+             intact, matching the evaluator (stack_eval.ml) and the chunker. *)
+          let base = if r >= 0 && r < Array.length regs then regs.(r) else 0L in
+          stk := Int64.add base v :: !stk
       | ReadMem _ -> ()
       | WriteMem _ ->
           (match !stk with
@@ -194,9 +197,11 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
       | ResolveSym sym_idx ->
           stk := Int64.of_int (0x1000 + sym_idx * 8) :: !stk
       | CallExtern _sym_idx ->
-          (match !stk with
-           | _ :: tl -> stk := 0L :: tl
-           | [] -> stk := [ 0L ])
+          (* Chunk semantics (translate_trace + simulate_chunks): the
+             call's return value (0) lands in window slot 0 and is pushed
+             on top; the argument stack is left intact. *)
+          if Array.length regs > 0 then regs.(0) <- 0L;
+          stk := 0L :: !stk
       | AddImm v ->
           (match !stk with
            | a :: tl -> stk := Int64.add a v :: tl
@@ -318,6 +323,9 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
           | "SHL_RI" -> gprs.(dst) <- Int64.shift_left gprs.(dst) (Int64.to_int imm land 63)
           | "SHR_RI" -> gprs.(dst) <- Int64.shift_right_logical gprs.(dst) (Int64.to_int imm land 63)
           | "SAR_RI" -> gprs.(dst) <- Int64.shift_right gprs.(dst) (Int64.to_int imm land 63)
+          | "SHL_RR" -> gprs.(dst) <- Int64.shift_left gprs.(dst) (Int64.to_int gprs.(src) land 63)
+          | "SHR_RR" -> gprs.(dst) <- Int64.shift_right_logical gprs.(dst) (Int64.to_int gprs.(src) land 63)
+          | "SAR_RR" -> gprs.(dst) <- Int64.shift_right gprs.(dst) (Int64.to_int gprs.(src) land 63)
           | "AND_RR" -> gprs.(dst) <- Int64.logand gprs.(dst) gprs.(src)
           | "OR_RR" -> gprs.(dst) <- Int64.logor gprs.(dst) gprs.(src)
           | "XOR_RR" -> gprs.(dst) <- Int64.logxor gprs.(dst) gprs.(src)
