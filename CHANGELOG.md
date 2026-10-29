@@ -17,6 +17,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Added `sjit_full_config.json` enabling every single pass across all layers: Ephemeral JIT Micro-Handlers, Address Binding, Computational Stalling, Stack String Encryption (ASG_STR), C-Macro Dynamic Nanomites, and Signal Dispatch.
   * Verified on Apple Silicon: 28/28 passes active, 77/77 showcase assertions exact, DRS 93.7/100.0, Composite DRS v2 100.0/100.0.
 ### Fixed
+- Correct ABI argument register mapping and eliminate bogus stack passing for variadics in JIT external calls (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`):
+  * Corrected ARM64 (`x0..x3, x4..x7` -> `gprs[0..3, 6..9]`) and x86-64 (`RDI, RSI, RDX, RCX, R8, R9` -> `gprs[7, 6, 2, 1, 8, 9]`) argument slot mapping in `asgard_rd_jit_call_extern`, preventing RSP/RBP slot clobbering.
+  * Eliminated bogus Darwin ARM64 variadic stack read (`stk[0]..stk[7]`) for `printf`/`fprintf`/`sprintf`/`snprintf` in favor of standard AAPCS64 register arguments (`a0..a7`).
+  * Added `Ir.Load_symbol` opcode translation to `JIT_OP_RESOLVE_SYM` in `Rd_jit_emitter.map_instr`.
+  * Verified: 7/7 `Register-Driven JIT`, 16/16 `Stack-JIT VM & Chunker`, 45/45 Cpp Codegen steps, 77/77 SJIT showcase assertions, and full license check on Apple Silicon hardware.
 - Fix C-macro nanomite parsing and scope escape bugs (`lib/c_macro_obf/c_nanomites.ml`):
   * Added preprocessor continuation line handling (`\`) to directive parsing, preventing multiline `#define` macros (such as `CHECK`) from having their inner `if` statements falsely lifted into external functions.
   * Skipped leading block comments (`/* ... */`) in `split_leading_directives`, ensuring `#include` headers (such as `<stdio.h>`) are placed before the nanomite branch preamble so library functions (`printf`) are declared.

@@ -390,9 +390,11 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
                (Int64.shift_left (Int64.of_int c) 48))
         in
         ("asgard_rd_jit::JIT_OP_JCC", 0, 0, imm)
+    | Ir.Load_symbol { dst; sym; addend = _ } ->
+        let sym_idx = get_ext_sym_idx sym in
+        ("asgard_rd_jit::JIT_OP_RESOLVE_SYM", Native_vm.Vm_transform.reg_to_index dst mod 16, 0, Int64.of_int sym_idx)
     | _ -> (jit_op_nop, 0, 0, 0L)
   in
-
   let kolakoski_chunks =
     match chunks with
     | Some cs ->

@@ -151,34 +151,26 @@ let rd_jit_call_extern_decl () : top_decl =
     if (!sym_ptr || !ctx) return;
     const char* sym_name = g_rd_jit_external_symbols[sym_idx];
     const char* clean_name = (sym_name[0] == '_') ? sym_name + 1 : sym_name;
+#if defined(__aarch64__)
     const uint64_t a0 = ctx->gprs[0];
     const uint64_t a1 = ctx->gprs[1];
     const uint64_t a2 = ctx->gprs[2];
     const uint64_t a3 = ctx->gprs[3];
-    const uint64_t a4 = ctx->gprs[4];
-    const uint64_t a5 = ctx->gprs[5];
-    const uint64_t a6 = ctx->gprs[6];
-    const uint64_t a7 = ctx->gprs[7];
-    const uint64_t* stk = reinterpret_cast<const uint64_t*>(ctx->gprs[4]);
-    uint64_t ret = 0;
-#if defined(__APPLE__) && defined(__aarch64__)
-    if (strcmp(clean_name, "printf") == 0) {
-        typedef int (*printf_fn_t)(const char*, ...);
-        ret = (uint64_t)reinterpret_cast<printf_fn_t>(sym_ptr)((const char*)a0, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
-    } else if (strcmp(clean_name, "fprintf") == 0 || strcmp(clean_name, "dprintf") == 0) {
-        typedef int (*fprintf_fn_t)(void*, const char*, ...);
-        ret = (uint64_t)reinterpret_cast<fprintf_fn_t>(sym_ptr)((void*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
-    } else if (strcmp(clean_name, "sprintf") == 0) {
-        typedef int (*sprintf_fn_t)(char*, const char*, ...);
-        ret = (uint64_t)reinterpret_cast<sprintf_fn_t>(sym_ptr)((char*)a0, (const char*)a1, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
-    } else if (strcmp(clean_name, "snprintf") == 0) {
-        typedef int (*snprintf_fn_t)(char*, size_t, const char*, ...);
-        ret = (uint64_t)reinterpret_cast<snprintf_fn_t>(sym_ptr)((char*)a0, (size_t)a1, (const char*)a2, stk[0], stk[1], stk[2], stk[3], stk[4], stk[5], stk[6], stk[7]);
-    } else {
-        typedef uint64_t (*extern_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
-        ret = reinterpret_cast<extern_fn_t>(sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
-    }
+    const uint64_t a4 = ctx->gprs[6];
+    const uint64_t a5 = ctx->gprs[7];
+    const uint64_t a6 = ctx->gprs[8];
+    const uint64_t a7 = ctx->gprs[9];
 #else
+    const uint64_t a0 = ctx->gprs[7];
+    const uint64_t a1 = ctx->gprs[6];
+    const uint64_t a2 = ctx->gprs[2];
+    const uint64_t a3 = ctx->gprs[1];
+    const uint64_t a4 = ctx->gprs[8];
+    const uint64_t a5 = ctx->gprs[9];
+    const uint64_t a6 = 0;
+    const uint64_t a7 = 0;
+#endif
+    uint64_t ret = 0;
     if (strcmp(clean_name, "printf") == 0) {
         typedef int (*printf_fn_t)(const char*, ...);
         ret = (uint64_t)reinterpret_cast<printf_fn_t>(sym_ptr)((const char*)a0, a1, a2, a3, a4, a5, a6, a7);
@@ -195,7 +187,6 @@ let rd_jit_call_extern_decl () : top_decl =
         typedef uint64_t (*extern_fn_t)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
         ret = reinterpret_cast<extern_fn_t>(sym_ptr)(a0, a1, a2, a3, a4, a5, a6, a7);
     }
-#endif
     ctx->set_reg(0, ret);|};
     ]
 
