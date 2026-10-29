@@ -42,12 +42,12 @@ val ruler_a001511 : int -> int
 (** Translate a straight-line stack trace.  [scale] multiplies the
     Kolakoski run lengths (default [Nano_jit_slot.nano_kolakoski_scale]). *)
 val translate_trace :
-  ?scale:int -> ?allow_branches:bool -> unit -> stack_op list -> (translation, string) result
+  ?scale:int -> ?allow_branches:bool -> ?allow_spill:bool -> unit -> stack_op list -> (translation, string) result
 (* Translate an entire multi-block Stack-IR program (with loops, jumps, and
    conditional branches) into Kolakoski chunks with dynamic JMP and JCC
    transfer resolution. *)
 val translate_program :
-  ?scale:int -> unit -> program -> (translation, string) result
+  ?scale:int -> ?allow_spill:bool -> unit -> program -> (translation, string) result
 
 
 (** Reference interpreter of the translatable subset over context

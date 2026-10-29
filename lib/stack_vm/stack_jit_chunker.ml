@@ -401,10 +401,12 @@ let make_invalidation_schedule (n : int) : int array =
 (* ---- translation ------------------------------------------------ *)
 
 let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
-    ?(allow_branches = false) ()
+    ?(allow_branches = false)
+    ?(allow_spill = false) ()
     (ops : stack_op list) : (translation, string) result =
   let ( let* ) = Result.bind in
-  let depth = ref 0 in
+  let vdepth = ref 0 in
+  let spilled = ref 0 in
   let max_depth = ref 0 in
   let flags_depth = ref 0 in
   let ctx_map = Hashtbl.create 8 in
@@ -438,43 +440,87 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
   in
   let out = ref [] in
   let push_item item = out := item :: !out in
-  let grow () =
-    incr depth;
-    if !depth > max_stack_depth then
+  let check_push_depth () =
+    if not allow_spill && (!vdepth - !spilled) >= max_stack_depth then
       Error (Printf.sprintf "stack_jit: live depth %d exceeds the %d-slot stack window"
-               !depth max_stack_depth)
-    else (
-      if !depth > !max_depth then max_depth := !depth;
-      Ok ()
-    )
+               (!vdepth + 1) max_stack_depth)
+    else Ok ()
   in
-  let binary op =
-    if !depth < 2 then Error ("stack_jit: underflow on " ^ op)
+  let stack_base = 12 in
+  let max_stack_depth = 4 in
+  let r_rsp = 4 in (* ctx.gprs[4] — pointer into spill_stack *)
+
+  let phys_slot (d : int) : int =
+    stack_base + (d mod max_stack_depth)
+  in
+
+  let spill_offset (idx : int) : int64 =
+    Int64.of_int (-8 * (idx + 1))
+  in
+
+  let push_slot () =
+    let live_in_regs = !vdepth - !spilled in
+    if live_in_regs >= max_stack_depth then begin
+      let oldest_phys = phys_slot !spilled in
+      let off = spill_offset !spilled in
+      push_item (jit "STORE_64", r_rsp, oldest_phys, off);
+      incr spilled
+    end;
+    let target = phys_slot !vdepth in
+    incr vdepth;
+    if !vdepth > !max_depth then max_depth := !vdepth;
+    target
+  in
+
+  let pop_slot () =
+    if !vdepth <= 0 then failwith "stack_jit: stack underflow on pop"
     else begin
-      (* stack semantics: pops b (top), pops a (deeper), pushes a OP b;
-         2-address form: dst = slot of a = stack_base + depth - 2. *)
-      push_item (jit op, stack_base + !depth - 2, stack_base + !depth - 1, 0L);
-      decr depth;
+      decr vdepth;
+      let target = phys_slot !vdepth in
+      if !vdepth < !spilled then begin
+        decr spilled;
+        let off = spill_offset !spilled in
+        push_item (jit "LOAD_64", target, r_rsp, off)
+      end;
+      target
+    end
+  in
+
+  let tos_slot () =
+    if !vdepth <= 0 then failwith "stack_jit: stack underflow on tos"
+    else phys_slot (!vdepth - 1)
+  in
+
+  let sub_tos_slot () =
+    if !vdepth < 2 then failwith "stack_jit: stack underflow on sub_tos"
+    else phys_slot (!vdepth - 2)
+  in
+
+  let binary op =
+    if !vdepth < 2 then Error ("stack_jit: underflow on " ^ op)
+    else begin
+      let b = pop_slot () in
+      let a = tos_slot () in
+      push_item (jit op, a, b, 0L);
       Ok ()
     end
   in
   let shift_op op_rr op_ri =
-    if !depth < 2 then Error ("stack_jit: underflow on shift")
+    if !vdepth < 2 then Error ("stack_jit: underflow on shift")
     else match !out with
     | (mov_ri, slot_b, 0, imm) :: rest_out
-      when mov_ri = jit "MOV_RI" && slot_b = stack_base + !depth - 1 ->
+      when mov_ri = jit "MOV_RI" && slot_b = tos_slot () ->
         out := rest_out;
-        push_item (jit op_ri, stack_base + !depth - 2, 0, imm);
-        decr depth;
+        ignore (pop_slot ());
+        push_item (jit op_ri, tos_slot (), 0, imm);
         Ok ()
     | _ ->
         binary op_rr
   in
   let unary op =
-    if !depth < 1 then Error ("stack_jit: underflow on " ^ op)
+    if !vdepth < 1 then Error ("stack_jit: underflow on " ^ op)
     else begin
-      (* top-of-stack slot: src = dst = stack_base + depth - 1 (in place). *)
-      let slot = stack_base + !depth - 1 in
+      let slot = tos_slot () in
       push_item (jit op, slot, slot, 0L);
       Ok ()
     end
@@ -494,20 +540,22 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
         let res =
           match op with
           | PushImm v ->
-              let* () = grow () in
-              push_item (jit "MOV_RI", stack_base + !depth - 1, 0, v);
+              let* () = check_push_depth () in
+              let dst = push_slot () in
+              push_item (jit "MOV_RI", dst, 0, v);
               Ok ()
           | PushReg r ->
               let* s = map_ctx_slot r in
-              let* () = grow () in
-              push_item (jit "MOV_RR", stack_base + !depth - 1, s, 0L);
+              let* () = check_push_depth () in
+              let dst = push_slot () in
+              push_item (jit "MOV_RR", dst, s, 0L);
               Ok ()
           | PopReg r ->
-              if !depth < 1 then Error "stack_jit: underflow on PopReg"
+              if !vdepth < 1 then Error "stack_jit: underflow on PopReg"
               else begin
                 let* s = map_ctx_slot r in
-                push_item (jit "MOV_RR", s, stack_base + !depth - 1, 0L);
-                decr depth;
+                let src = pop_slot () in
+                push_item (jit "MOV_RR", s, src, 0L);
                 Ok ()
               end
           | Add -> binary "ADD_RR"
@@ -518,11 +566,11 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Nand ->
               (* res = ~(a & b): AND then NOT, in place on a's slot. *)
               let* () = binary "AND_RR" in
-              push_item (jit "NOT_R", stack_base + !depth - 1, 0, 0L);
+              push_item (jit "NOT_R", tos_slot (), 0, 0L);
               Ok ()
           | Nor ->
               let* () = binary "OR_RR" in
-              push_item (jit "NOT_R", stack_base + !depth - 1, 0, 0L);
+              push_item (jit "NOT_R", tos_slot (), 0, 0L);
               Ok ()
           | Shl -> shift_op "SHL_RR" "SHL_RI"
           | Shr -> shift_op "SHR_RR" "SHR_RI"
@@ -530,10 +578,10 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Div -> binary "DIV_RR"
           | Idiv -> binary "SDIV_RR"
           | Rot ->
-              if !depth >= 3 then begin
-                let t0 = stack_base + !depth - 3
-                and t1 = stack_base + !depth - 2
-                and t2 = stack_base + !depth - 1 in
+              if !vdepth >= 3 then begin
+                let t0 = phys_slot (!vdepth - 3)
+                and t1 = sub_tos_slot ()
+                and t2 = tos_slot () in
                 push_item (jit "XOR_RR", t0, t2, 0L);
                 push_item (jit "XOR_RR", t2, t0, 0L);
                 push_item (jit "XOR_RR", t0, t2, 0L);
@@ -541,7 +589,7 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
                 push_item (jit "XOR_RR", t1, t0, 0L);
                 push_item (jit "XOR_RR", t0, t1, 0L);
                 Ok ()
-              end else if !depth >= 2 then begin
+              end else if !vdepth >= 2 then begin
                 shift_op "ROR_RR" "ROR_RI"
               end else
                 Error "stack_jit: underflow on Rot"
@@ -551,63 +599,63 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Rbit -> unary "RBIT_R"
           | Popcnt -> unary "POPCNT_R"
           | Dup2 ->
-              if !depth < 2 then Error "stack_jit: underflow on Dup2"
+              if !vdepth < 2 then Error "stack_jit: underflow on Dup2"
               else begin
-                let* () = grow () in
-                push_item (jit "MOV_RR", stack_base + !depth - 1, stack_base + !depth - 3, 0L);
-                let* () = grow () in
-                push_item (jit "MOV_RR", stack_base + !depth - 1, stack_base + !depth - 3, 0L);
+                let src1 = sub_tos_slot () in
+                let src2 = tos_slot () in
+                let* () = check_push_depth () in
+                let dst1 = push_slot () in
+                push_item (jit "MOV_RR", dst1, src1, 0L);
+                let* () = check_push_depth () in
+                let dst2 = push_slot () in
+                push_item (jit "MOV_RR", dst2, src2, 0L);
                 Ok ()
               end
           | Cmp ->
-              if !depth < 2 then Error "stack_jit: underflow on Cmp"
+              if !vdepth < 2 then Error "stack_jit: underflow on Cmp"
               else begin
-                let a = stack_base + !depth - 2 and b = stack_base + !depth - 1 in
+                let b = pop_slot () in
+                let a = pop_slot () in
                 (match !out with
-                 (* Peephole: [MOV_RI b, imm][CMP_RR a, b] -> [CMP_RI a, imm].
-                    Saves one window slot and one native load per literal compare. *)
                  | (mov_ri, top, 0, imm) :: rest_out
                    when mov_ri = jit "MOV_RI" && top = b ->
                    out := rest_out;
                    push_item (jit "CMP_RI", a, 0, imm)
                  | _ ->
                    push_item (jit "CMP_RR", a, b, 0L));
-                depth := !depth - 2;
                 Ok ()
               end
           | Test ->
-              if !depth < 2 then Error "stack_jit: underflow on Test"
+              if !vdepth < 2 then Error "stack_jit: underflow on Test"
               else begin
-                let a = stack_base + !depth - 2 and b = stack_base + !depth - 1 in
+                let b = pop_slot () in
+                let a = pop_slot () in
                 push_item (jit "AND_RR", a, b, 0L);
-                (* AND-result vs zero folds to CMP_RI; MOV_RI scratch elided. *)
                 push_item (jit "CMP_RI", a, 0, 0L);
-                depth := !depth - 2;
                 Ok ()
               end
           | Cmov (cond, r) ->
-              if !depth < 1 then Error "stack_jit: underflow on Cmov"
+              if !vdepth < 1 then Error "stack_jit: underflow on Cmov"
               else begin
                 let* s = map_ctx_slot r in
-                let v = stack_base + !depth - 1 in
+                let v = pop_slot () in
                 push_item (jit "CSEL_RR", s, v, Int64.of_int (cond_to_code cond lor (s lsl 8)));
-                decr depth;
                 Ok ()
               end
           | Setcc cond ->
-              let* () = grow () in
-              let dst = stack_base + !depth - 1 in
-              let* () = grow () in
-              let tmp = stack_base + !depth - 1 in
+              let* () = check_push_depth () in
+              let dst = push_slot () in
+              let* () = check_push_depth () in
+              let tmp = push_slot () in
               push_item (jit "MOV_RI", dst, 0, 0L);
               push_item (jit "MOV_RI", tmp, 0, 1L);
               push_item (jit "CSEL_RR", dst, tmp, Int64.of_int (cond_to_code cond lor (dst lsl 8)));
-              decr depth;
+              ignore (pop_slot ());
               Ok ()
           | ReadMem w ->
-              if !depth < 1 then Error "stack_jit: underflow on ReadMem"
+              if !vdepth < 1 then Error "stack_jit: underflow on ReadMem"
               else begin
-                let slot = stack_base + !depth - 1 in
+                let slot = tos_slot () in
                 let op = match w with
                   | 1 -> jit "LOAD_8"
                   | 2 -> jit "LOAD_16"
@@ -618,10 +666,10 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
                 Ok ()
               end
           | WriteMem w ->
-              if !depth < 2 then Error "stack_jit: underflow on WriteMem"
+              if !vdepth < 2 then Error "stack_jit: underflow on WriteMem"
               else begin
-                let src = stack_base + !depth - 1 in
-                let dst = stack_base + !depth - 2 in
+                let src = pop_slot () in
+                let dst = pop_slot () in
                 let op = match w with
                   | 1 -> jit "STORE_8"
                   | 2 -> jit "STORE_16"
@@ -629,7 +677,6 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
                   | _ -> jit "STORE_64"
                 in
                 push_item (op, dst, src, 0L);
-                depth := !depth - 2;
                 Ok ()
               end
           | SetRegImm (r, imm) ->
@@ -638,48 +685,47 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
               Ok ()
           | AddRegImm (r, imm) ->
               let* s = map_ctx_slot r in
-              let* () = grow () in
-              let dst = stack_base + !depth - 1 in
+              let* () = check_push_depth () in
+              let dst = push_slot () in
               push_item (jit "MOV_RR", dst, s, 0L);
               push_item (jit "ADD_RI", dst, 0, imm);
               Ok ()
           | AddImm v ->
-              if !depth < 1 then Error "stack_jit: underflow on AddImm"
+              if !vdepth < 1 then Error "stack_jit: underflow on AddImm"
               else begin
-                push_item (jit "ADD_RI", stack_base + !depth - 1, 0, v);
+                push_item (jit "ADD_RI", tos_slot (), 0, v);
                 Ok ()
               end
           | SubImm v ->
-              if !depth < 1 then Error "stack_jit: underflow on SubImm"
+              if !vdepth < 1 then Error "stack_jit: underflow on SubImm"
               else begin
-                push_item (jit "SUB_RI", stack_base + !depth - 1, 0, v);
+                push_item (jit "SUB_RI", tos_slot (), 0, v);
                 Ok ()
               end
           | AddImmImm (a, b) ->
-              let* () = grow () in
-              push_item (jit "MOV_RI", stack_base + !depth - 1, 0, Int64.add a b);
+              let* () = check_push_depth () in
+              let dst = push_slot () in
+              push_item (jit "MOV_RI", dst, 0, Int64.add a b);
               Ok ()
           | SubImmImm (a, b) ->
-              let* () = grow () in
-              push_item (jit "MOV_RI", stack_base + !depth - 1, 0, Int64.sub a b);
+              let* () = check_push_depth () in
+              let dst = push_slot () in
+              push_item (jit "MOV_RI", dst, 0, Int64.sub a b);
               Ok ()
           | Dup ->
-              if !depth < 1 then Error "stack_jit: underflow on Dup"
+              if !vdepth < 1 then Error "stack_jit: underflow on Dup"
               else begin
-                let* () = grow () in
-                push_item (jit "MOV_RR", stack_base + !depth - 1, stack_base + !depth - 2, 0L);
+                let src = tos_slot () in
+                let* () = check_push_depth () in
+                let dst = push_slot () in
+                push_item (jit "MOV_RR", dst, src, 0L);
                 Ok ()
               end
           | Swap ->
-              if !depth < 2 then Error "stack_jit: underflow on Swap"
+              if !vdepth < 2 then Error "stack_jit: underflow on Swap"
               else begin
-                (* a = top-1 slot, b = top slot.  XOR-swap avoids the third
-                   temp slot above the stack top, which can overflow the
-                   16-slot window when Dup2-based expansions (pure XOR)
-                   raise the depth.  a and b are always distinct slots, so
-                   the degenerate a = b case of XOR-swap cannot occur. *)
-                let a = stack_base + !depth - 2
-                and b = stack_base + !depth - 1 in
+                let a = sub_tos_slot () in
+                let b = tos_slot () in
                 push_item (jit "XOR_RR", a, b, 0L);
                 push_item (jit "XOR_RR", b, a, 0L);
                 push_item (jit "XOR_RR", a, b, 0L);
@@ -695,14 +741,14 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
                 Ok ()
               end
           | ResolveSym sym_idx ->
-              let* () = grow () in
-              let dst = stack_base + !depth - 1 in
+              let* () = check_push_depth () in
+              let dst = push_slot () in
               push_item (jit "RESOLVE_SYM", dst, 0, Int64.of_int sym_idx);
               Ok ()
           | CallExtern sym_idx ->
               push_item (jit "CALL_EXTERN", 0, 0, Int64.of_int sym_idx);
-              let* () = grow () in
-              let dst = stack_base + !depth - 1 in
+              let* () = check_push_depth () in
+              let dst = push_slot () in
               push_item (jit "MOV_RR", dst, 0, 0L);
               Ok ()
           | Exit ->
@@ -718,6 +764,19 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
               in
               push_item (jit "JCC", 0, 0, imm);
               Ok ()
+          | NativeEscape (kind, a, b, c, _stub) ->
+              let* s_a = map_ctx_slot a in
+              let* s_b = map_ctx_slot b in
+              let* s_c = map_ctx_slot c in
+              if s_a <> s_c then push_item (jit "MOV_RR", s_c, s_a, 0L);
+              let op =
+                match kind with
+                | 1 -> jit "SUB_RR"
+                | 2 -> jit "MUL_RR"
+                | _ -> jit "ADD_RR"
+              in
+              push_item (op, s_c, s_b, 0L);
+              Ok ()
           | other -> unsupported (Stack_ir.op_to_string other)
         in
         match res with
@@ -730,8 +789,8 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     else Ok ()
   in
   (* Epilogue: the observable result is the stack top, moved to slot 0. *)
-  (if !depth > 0 then
-     push_item (jit "MOV_RR", 0, stack_base + !depth - 1, 0L));
+  (if !vdepth > 0 then
+     push_item (jit "MOV_RR", 0, tos_slot (), 0L));
   let real = List.rev !out in
   (* OEIS A010060: dummy at output position n iff t_n = 1. *)
   let padded =
@@ -775,15 +834,16 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     List.rev !acc
   in
   let n_chunks = List.length chunks in
-  Ok { chunks; final_depth = !depth; max_depth = !max_depth;
+       Ok { chunks; final_depth = !vdepth; max_depth = !max_depth;
        real_instrs = List.length real; dummy_instrs = dummies;
        invalidation_schedule = make_invalidation_schedule n_chunks }
-let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
+let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
+    ?(allow_spill = true) ()
     (prog : Stack_ir.program) : (translation, string) result =
   let ( let* ) = Result.bind in
   if Hashtbl.length prog.blocks <= 1 then
     match Hashtbl.find_opt prog.blocks prog.entry_id with
-    | Some b -> translate_trace ~scale ~allow_branches:true () b.ops
+    | Some b -> translate_trace ~scale ~allow_branches:true ~allow_spill () b.ops
     | None -> Error "stack_jit: entry block not found in program"
   else
     let entry_b =
@@ -811,7 +871,7 @@ let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale) ()
     let rec chunk_blocks = function
       | [] -> Ok ()
       | (b : Stack_ir.block) :: rest ->
-          let* res = translate_trace ~scale ~allow_branches:true () b.ops in
+          let* res = translate_trace ~scale ~allow_branches:true ~allow_spill () b.ops in
           Hashtbl.replace block_offsets b.id !cur_chunk_offset;
           Hashtbl.replace block_chunks b.id res.chunks;
           cur_chunk_offset := !cur_chunk_offset + List.length res.chunks;

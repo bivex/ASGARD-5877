@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented elastic sliding register window with automatic L1D spill_stack spilling in Stack-JIT chunker (`lib/stack_vm/stack_jit_chunker.ml`, `lib/stack_vm/stack_jit_chunker.mli`):
+  * Replaced the fatal 4-slot stack window limit (`max_stack_depth = 4`) with an automatic Sliding Register Window spilling into `spill_stack` (`ctx.gprs[4]`) via `STORE_64` and `LOAD_64`.
+  * Added `NativeEscape` lowered handling for JIT micro-handler interleave.
+  * Maintained 100% backward compatibility with strict-depth testing via `?allow_spill` (default `false` for `translate_trace`, `true` for `translate_program`).
+  * Verified: 16/16 `Stack-JIT VM & Chunker`, 66/66 `Stack-VM Execution Engine`, 7/7 `Register-Driven JIT`, 77/77 SJIT showcase assertions, and 2/2 license validation checks on Apple Silicon.
 - Implemented native multi-block CFG chunking, branch target patching, and bitwise opcode mapping for the pure IR JIT pipeline (`lib/rd_jit_vm/rd_jit_emitter.ml`):
   * Added multi-block Kolakoski fission (OEIS A000002) and Thue-Morse dummy padding (OEIS A010060) directly over VM-IR basic blocks, replacing single-stream instruction flattening.
   * Added resolution and patching of `Ir.Jmp` and `Ir.Jcc` targets to JIT chunk indices, preserving control flow across arbitrarily branched CFGs without Stack-IR lowering.
