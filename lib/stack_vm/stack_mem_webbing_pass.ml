@@ -10,8 +10,9 @@
          flags are live at the injection site.
       3. Value Invariance: Value of scratch_slot is mathematically preserved:
          s := s + (s - Memory[SP - offset(s)]) == s.
-      4. Safe Memory Window: Memory access is bounded to [SP - 136 .. SP - 16],
-         aligned to 8 bytes, well within the allocated thread-local host_stack.
+      4. Safe Memory Window: Memory access is bounded to [SP - 262208 .. SP - 262144],
+         aligned to 8 bytes, well within the allocated 1MB thread-local host_stack,
+         isolated from user call-frames and alloca buffers by a 256KB margin.
       5. Non-Zero Boolean Derivative: Address of WriteMem physically shifts
          with s, defeating static algebraic cancellation.
 *)

@@ -236,7 +236,7 @@ let comp_stall_two_adic_c2 = 0xCAFEBABE01000002L
 
 (* Memory-Address Entanglement constants: 8-byte aligned scratch offset window within 64B cache line *)
 let mem_webbing_offset_mask = 0x38L
-let mem_webbing_base_offset = 65L
+let mem_webbing_base_offset = 262144L
 let mem_webbing_base_align_mask = 0xFFFFFFFFFFFFFFC0L
 let mem_webbing_alias_diff = 0x18L
 let mem_webbing_decoy_salt = 0x58771337CAFEL
@@ -607,7 +607,7 @@ let registry : entry list = [
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "mem_webbing_base_offset";
     value = mem_webbing_base_offset;
-    source = "base offset 65 bytes: round up base calculation ensuring [Base..Base+56] lies strictly in [SP-128..SP-1]";
+    source = "base offset 256KB: isolates VM memory webbing scratch buffer from user stack frame and alloca allocations while staying inside 1MB host_stack";
     used_in = [ "lib/stack_vm/stack_mem_webbing_pass.ml" ] };
   { name = "mem_webbing_base_align_mask";
     value = mem_webbing_base_align_mask;
