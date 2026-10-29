@@ -223,10 +223,17 @@ let apply_block (cfg : trace_closure_config) ~(g_slot : int) ~(live_writes : int
         incr step;
         let pre, post = generate_closure_pair ~g_slot ~live_slot:r ~mu_k ~c_odd in
         new_ops := op :: !new_ops;                       (* original push: [.., v] *)
-        let guarded l = if flags_live then [ PushFlags ] @ l @ [ PopFlags ] else l in
-        new_ops := List.rev_append (guarded pre) !new_ops; (* [.., v'] *)
+        (* The pre-cluster must perturb the PENDING VALUE v, not the flag
+           word: bracket it with Swap so the zero perturbation lands on v
+           and the PDG edge G -> v' survives at flag-live sites. The post
+           cluster is a pure push/pop step and needs no swap. *)
+        let guarded_pre =
+          if flags_live then [ PushFlags; Swap ] @ pre @ [ Swap; PopFlags ] else pre in
+        let guarded_post =
+          if flags_live then [ PushFlags ] @ post @ [ PopFlags ] else post in
+        new_ops := List.rev_append guarded_pre !new_ops;  (* [.., v'] *)
         new_ops := ops_arr.(idx + 1) :: !new_ops;          (* original PopReg r *)
-        new_ops := List.rev_append (guarded post) !new_ops;(* accumulator step, net 0 *)
+        new_ops := List.rev_append guarded_post !new_ops;  (* accumulator step, net 0 *)
         i := !i + 2
       end else begin
         new_ops := op :: !new_ops;

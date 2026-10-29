@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- Fix trace-closure entanglement target and de-linearize transducer/avid junk identities (`lib/stack_vm/stack_trace_closure_pass.ml`, `lib/stack_vm/stack_transducer_pass.ml`, `lib/stack_vm/stack_avid_pass.ml`):
+  * `Stack_trace_closure` pre-write cluster at flag-live sites perturbed the saved flag word instead of the pending value `v`, so the PDG edge `G → v'` vanished and backward slicers could still prune the accumulator chain. The cluster is now bracketed `[ PushFlags; Swap ] … [ Swap; PopFlags ]` so the zero perturbation always lands on the value.
+  * `Stack_transducer` emitted one fixed 12-op signature with constant LCG constants and linearly cancellable `±S` coupling (`(X+S)+(Y−S)→X+Y` folds every site). Each site now randomly chooses between the `±S` transducer form and exact non-linear alternatives: De Morgan carry-save `A+B == (A|B)+(A&B)` and two's-complement `A−B == A+~B+1`.
+  * `Stack_avid` anchor-less junk used the foldable `(s+k)−s` pattern; replaced with the De Morgan zero knot `((s+k)−(s&k))−(s|k) == 0` mixing Add/Nand/Nor/Sub reads of the scratch slot.
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, 2/2 `Null-Space MBA Synthesis`, full E2E license validation (DRS 97.00/100.0; transducer +49308 steps, avid +14428 ops, trace closure +174 steps), and 77/77 SJIT showcase assertions on Apple Silicon hardware.
 - Activate dynamic dual-rail evolution and enforce deterministic feedback injection (`lib/stack_vm/stack_dual_rail_pass.ml`, `lib/stack_vm/stack_feedback_pass.ml`):
   * Dual-rail complement pairs in `Stack_dual_rail_pass` were initialized once at program entry and never evolved, so invariant checkpoints verified compile-time constants that SMT solvers constant-fold away. Each checkpoint now first evolves the rail (`rail_true += step; rail_comp = NOT(rail_true)` via `emit_dual_evolve`) so the sum/orthogonality knots verify genuinely dynamic state.
   * Fixed live-flag operand entanglement in `Stack_dual_rail_pass` (same defect as `Stack_trap_pass`): the checkpoint cluster is now `[ PushFlags; Swap ] @ evolve @ knot @ [ Add; Swap; PopFlags ]`, coupling the data operand to the rails instead of adding the zero-knot to the saved flag word.

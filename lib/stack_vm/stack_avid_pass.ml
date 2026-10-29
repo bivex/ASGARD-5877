@@ -118,9 +118,16 @@ let generate_avid_cluster rng scratch_slot anchor_slot flags_live =
         (* Always weave polymorphic def-use chord when anchor is available *)
         [ PushImm imm1 ] @ emit_anchor_chord rng anchor @ [ PopReg scratch_slot ]
     | None ->
+        (* De Morgan zero knot on the scratch slot:
+           ((s + k) - (s & k)) - (s | k) == 0  in Z_{2^64}.
+           Mixed Add/Nand/Nor/Sub reads with no linear cancellation;
+           drains the zero into scratch. Net delta = 0, flag-clobbering
+           (flag-dead sites only). *)
         let k = next_int64 rng in
-        (* Register-anchored delta: (s + k) - s == k, draining into scratch *)
-        [ PushReg scratch_slot; PushImm k; Add; PushReg scratch_slot; Sub; PopReg scratch_slot ]
+        [ PushReg scratch_slot; PushImm k; Add;
+          PushReg scratch_slot; PushImm k; Nand; Dup; Nand; Sub;
+          PushReg scratch_slot; PushImm k; Nor; Dup; Nor; Sub;
+          PopReg scratch_slot ]
 
 
 let apply_block (cfg : avid_config) ctx (b : block) : block =
