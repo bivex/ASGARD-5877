@@ -68,11 +68,26 @@ let emit_relational_encode ~rx ~ry ~k =
 let emit_relational_decode ~rx ~ry ~k =
   emit_feistel_step ~rx ~ry ~k
 
-let apply_block (cfg : relational_config) _ctx (b : block) : block =
+let apply_block (cfg : relational_config) (ctx : Context_allocator.t) (b : block) : block =
   if not cfg.enabled then b
   else
-    b
-
+    let n = Context_allocator.total_slots ctx in
+    if n < 2 then b
+    else
+      let rx = 0 in
+      let ry = 1 in
+      let k = cfg.shift_k in
+      let feistel_knot = emit_feistel_step ~rx ~ry ~k in
+      let rec insert acc = function
+        | [] -> List.rev acc
+        | (JmpRel _ as t) :: rest ->
+            insert (t :: List.rev_append feistel_knot acc) rest
+        | (JccRel _ as t) :: rest ->
+            insert (t :: List.rev_append feistel_knot acc) rest
+        | op :: rest ->
+            insert (op :: acc) rest
+      in
+      { b with ops = insert [] b.ops }
 let apply_program (cfg : relational_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled then prog
   else

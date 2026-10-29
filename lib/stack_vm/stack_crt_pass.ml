@@ -42,17 +42,45 @@ let reconstruct_val (z1, z2, z3, z4) =
   let diff4_3 = unsigned_rem (add (sub t4_2 (unsigned_rem x3 crt_m4)) crt_m4) crt_m4 in
   let x4 = unsigned_rem (mul diff4_3 crt_inv_m3_mod_m4) crt_m4 in
   add x1 (mul crt_m1 (add x2 (mul crt_m2 (add x3 (mul crt_m3 x4)))))
-let apply_block (cfg : crt_config) _ctx (b : block) : block =
+let apply_block_internal ~scratch_slot (b : block) : block =
+  let liveness = Stack_flag_liveness.analyze_list b.ops in
+  let rec loop acc ops idx =
+    match ops with
+    | [] -> List.rev acc
+    | (Add as op) :: r_ops ->
+        let flags_live = if idx + 1 < Array.length liveness then liveness.(idx + 1) else false in
+        if not flags_live then
+          let crt_knot = [
+            Dup;
+            PushImm 65537L;
+            Nand; Dup; Nand;
+            PopReg scratch_slot;
+            PushReg scratch_slot;
+            PushReg scratch_slot;
+            Sub;
+            Add;
+          ] in
+          loop (List.rev_append crt_knot (op :: acc)) r_ops (idx + 1)
+        else
+          loop (op :: acc) r_ops (idx + 1)
+    | op :: r_ops ->
+        loop (op :: acc) r_ops (idx + 1)
+  in
+  { b with ops = loop [] b.ops 0 }
+
+let apply_block (cfg : crt_config) (ctx : Context_allocator.t) (b : block) : block =
   if not cfg.enabled then b
   else
-    b
+    let scratch_slot = Context_allocator.alloc_scratch ctx in
+    apply_block_internal ~scratch_slot b
 
 let apply_program (cfg : crt_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled then prog
   else
+    let scratch_slot = Context_allocator.alloc_scratch ctx in
     let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
     Hashtbl.iter (fun id b ->
-      let b' = apply_block cfg ctx b in
+      let b' = apply_block_internal ~scratch_slot b in
       Hashtbl.replace new_blocks id b'
     ) prog.blocks;
-    { prog with blocks = new_blocks }
+    { prog with blocks = new_blocks; context_slots = Context_allocator.total_slots ctx }

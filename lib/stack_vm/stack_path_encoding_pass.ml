@@ -67,17 +67,39 @@ let emit_edge_transition ~slot ~a ~b =
     PopReg slot;
   ]
 
-let apply_block (cfg : path_config) _ctx (b : block) : block =
+let apply_block_internal ~scratch_slot (cfg : path_config) (b : block) : block =
+  let rec inject acc = function
+    | [] -> List.rev acc
+    | (JmpRel target as term) :: rest ->
+        let src_enc = compute_block_encoding ~seed:cfg.seed ~block_id:b.id in
+        let dst_enc = compute_block_encoding ~seed:cfg.seed ~block_id:target in
+        let (a, b_imm) = compute_edge_transition ~src_enc ~dst_enc in
+        let trans_ops = emit_edge_transition ~slot:scratch_slot ~a ~b:b_imm in
+        inject (term :: List.rev_append trans_ops acc) rest
+    | (JccRel (target, _cond) as term) :: rest ->
+        let src_enc = compute_block_encoding ~seed:cfg.seed ~block_id:b.id in
+        let dst_enc = compute_block_encoding ~seed:cfg.seed ~block_id:target in
+        let (a, b_imm) = compute_edge_transition ~src_enc ~dst_enc in
+        let trans_ops = emit_edge_transition ~slot:scratch_slot ~a ~b:b_imm in
+        inject (term :: List.rev_append trans_ops acc) rest
+    | op :: rest ->
+        inject (op :: acc) rest
+  in
+  { b with ops = inject [] b.ops }
+
+let apply_block (cfg : path_config) (ctx : Context_allocator.t) (b : block) : block =
   if not cfg.enabled then b
   else
-    b
+    let scratch_slot = Context_allocator.alloc_scratch ctx in
+    apply_block_internal ~scratch_slot cfg b
 
 let apply_program (cfg : path_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled then prog
   else
+    let scratch_slot = Context_allocator.alloc_scratch ctx in
     let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
     Hashtbl.iter (fun id b ->
-      let b' = apply_block cfg ctx b in
+      let b' = apply_block_internal ~scratch_slot cfg b in
       Hashtbl.replace new_blocks id b'
     ) prog.blocks;
-    { prog with blocks = new_blocks }
+    { prog with blocks = new_blocks; context_slots = Context_allocator.total_slots ctx }

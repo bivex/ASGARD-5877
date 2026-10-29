@@ -66,3 +66,61 @@ let build_block_memory_ssa (b : block) : memory_ssa_graph =
     current_version = !cur_ver;
     accesses = List.rev !accesses;
   }
+
+let enforce_alias_barriers ~(scratch_slot : int) (b : block) : block =
+  let liveness = Stack_flag_liveness.analyze_list b.ops in
+  let rec rewrite acc ops idx =
+    match ops with
+    | [] -> List.rev acc
+    | (WriteMem _ as wm) :: rest_ops ->
+        let flags_live = if idx + 1 < Array.length liveness then liveness.(idx + 1) else false in
+        let k = Random_visa_constants.Magic_numbers.mem_webbing_offset_mask in
+        let zero_knot = [
+          PushReg scratch_slot;
+          PushImm k;
+          Add;
+          PushReg scratch_slot;
+          PushImm k;
+          Dup2; Nand; Dup; Nand;
+          Sub;
+          PushReg scratch_slot;
+          PushImm k;
+          Dup2; Nor; Dup; Nor;
+          Sub;
+          Add;
+        ] in
+        let wrapped =
+          if flags_live then
+            [ PushFlags; Swap ] @ zero_knot @ [ Swap; PopFlags; wm ]
+          else
+            zero_knot @ [ wm ]
+        in
+        rewrite (List.rev_append wrapped acc) rest_ops (idx + 1)
+    | op :: rest_ops ->
+        rewrite (op :: acc) rest_ops (idx + 1)
+  in
+  { b with ops = rewrite [] b.ops 0 }
+
+type memory_ssa_config = {
+  enabled : bool;
+}
+
+let default_memory_ssa_config = {
+  enabled = true;
+}
+
+let apply_block (cfg : memory_ssa_config) (ctx : Context_allocator.t) (b : block) : block =
+  if not cfg.enabled then b
+  else
+    let scratch_slot = Context_allocator.alloc_scratch ctx in
+    enforce_alias_barriers ~scratch_slot b
+
+let apply_program (cfg : memory_ssa_config) (ctx : Context_allocator.t) (prog : program) : program =
+  if not cfg.enabled then prog
+  else
+    let scratch_slot = Context_allocator.alloc_scratch ctx in
+    let new_tbl = Hashtbl.create (Hashtbl.length prog.blocks) in
+    Hashtbl.iter (fun id blk ->
+      Hashtbl.add new_tbl id (enforce_alias_barriers ~scratch_slot blk)
+    ) prog.blocks;
+    { prog with blocks = new_tbl; context_slots = Context_allocator.total_slots ctx }

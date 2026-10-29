@@ -49,3 +49,21 @@ val can_forward_store_to_load :
   load_addr:int64 option -> load_width:int ->
   intervening_stores:(int64 option * int) list ->
   bool
+
+type memory_ssa_config = {
+  enabled : bool;
+}
+
+val default_memory_ssa_config : memory_ssa_config
+
+val apply_block :
+  memory_ssa_config ->
+  Context_allocator.t ->
+  block ->
+  block
+
+val apply_program :
+  memory_ssa_config ->
+  Context_allocator.t ->
+  program ->
+  program
