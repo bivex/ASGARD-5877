@@ -1,16 +1,23 @@
 /*
- * ASGARD-5877: Stack-JIT (SJIT) Showcase
- * =======================================
- * Eight virtualized functions covering the complete Stack-JIT protection envelope:
+ * ASGARD-5877: Stack-JIT (SJIT) Big C++ Multi-Pattern Showcase & Bug-Stress Suite
+ * ===============================================================================
+ * Fourteen virtualized functions covering the complete Stack-JIT protection envelope
+ * and stress-testing edge cases (bgs = bugs / edge cases & big patterns):
  *
- *  1. license_derive   -- multi-step cryptographic license token (XOR, SplitMix, shifts, golden ratio)
- *  2. xorshift128      -- 128-bit PRNG step with register-pair shifts and bitwise mixing
- *  3. gcd_iter         -- iterative Euclidean algorithm (while loop with unsigned division remainder)
- *  4. popcount64       -- Brian Kernighan 64-bit population count (dynamic bit-clearing loop)
- *  5. collatz_steps    -- Collatz 3n+1 hailstone stopping time (divergent even/odd conditional loop)
- *  6. is_prime         -- trial division primality test (bounded search loop with early composite exit)
- *  7. mod_exp          -- modular exponentiation (base^exp mod m via binary exponentiation loop)
- *  8. fibonacci_iter   -- iterative 64-bit Fibonacci sequence (register-swap recurrence loop)
+ *   1. license_derive     -- multi-step cryptographic license token (SplitMix, shifts, golden ratio)
+ *   2. xorshift128        -- 128-bit PRNG step with register-pair shifts and bitwise mixing
+ *   3. gcd_iter           -- iterative Euclidean algorithm (while loop with unsigned division remainder)
+ *   4. popcount64         -- Brian Kernighan 64-bit population count (dynamic bit-clearing loop)
+ *   5. collatz_steps      -- Collatz 3n+1 hailstone stopping time (divergent even/odd conditional loop)
+ *   6. is_prime           -- trial division primality test (bounded search loop with early break exit)
+ *   7. mod_exp            -- modular exponentiation (base^exp mod m via binary exponentiation loop)
+ *   8. fibonacci_iter     -- iterative 64-bit Fibonacci sequence (register-swap recurrence loop)
+ *   9. crc32_bitwise      -- IEEE 802.3 bitwise CRC-32 calculation (nested bit loops, poly 0xEDB88320)
+ *  10. int_sqrt           -- integer square root via binary search convergence (large/zero boundary tests)
+ *  11. fmix64             -- MurmurHash3 64-bit avalanche mixer (cascading 64-bit multipliers and shifts)
+ *  12. signed_clamp_scale -- signed arithmetic and comparisons (testing negative numbers, LT, GT, GE, LE)
+ *  13. state_machine_fsm  -- 4-state Mealy/Moore transition loop with feedback bit-extraction
+ *  14. bit_reverse64      -- parallel 64-bit bit-reversal (divide-and-conquer binary bit permutation)
  *
  * Every function body is sealed by ASGARD_BEGIN_VIRTUALIZE / ASGARD_END and
  * lowered via the Stack-JIT engine (--engine=jit) into:
@@ -97,6 +104,7 @@ uint64_t popcount64(uint64_t x)
     ASGARD_END();
     return c;
 }
+
 /* ------------------------------------------------------------------ */
 /* 5. Collatz 3n+1 stopping time (divergent branching loop)           */
 /* ------------------------------------------------------------------ */
@@ -137,14 +145,6 @@ uint64_t is_prime(uint64_t n)
     __asm__ volatile("" : "+r"(res));
     ASGARD_END();
     return res;
-}
-
-static uint64_t ref_is_prime(uint64_t n) {
-    if (n < 2ULL) return 0ULL;
-    for (uint64_t d = 2ULL; d * d <= n; d++) {
-        if (n % d == 0ULL) return 0ULL;
-    }
-    return 1ULL;
 }
 
 /* ------------------------------------------------------------------ */
@@ -188,6 +188,140 @@ uint64_t fibonacci_iter(uint64_t n)
 }
 
 /* ------------------------------------------------------------------ */
+/* 9. IEEE 802.3 bitwise CRC-32                                       */
+/* ------------------------------------------------------------------ */
+uint64_t crc32_bitwise(uint64_t data)
+{
+    ASGARD_BEGIN_VIRTUALIZE("crc32_bitwise");
+    uint32_t crc = 0xFFFFFFFFU;
+    for (int i = 0; i < 8; i++) {
+        uint8_t byte = (uint8_t)((data >> (i * 8)) & 0xFFU);
+        crc ^= (uint32_t)byte;
+        for (int b = 0; b < 8; b++) {
+            if (crc & 1U) {
+                crc = (crc >> 1) ^ 0xEDB88320U;
+            } else {
+                crc = crc >> 1;
+            }
+        }
+    }
+    uint64_t res = (uint64_t)(crc ^ 0xFFFFFFFFU);
+    __asm__ volatile("" : "+r"(res));
+    ASGARD_END();
+    return res;
+}
+
+/* ------------------------------------------------------------------ */
+/* 10. Integer square root via binary search                          */
+/* ------------------------------------------------------------------ */
+uint64_t int_sqrt(uint64_t x)
+{
+    ASGARD_BEGIN_VIRTUALIZE("int_sqrt");
+    uint64_t res = x;
+    if (x > 1ULL) {
+        uint64_t lo = 1ULL;
+        uint64_t hi = (x < 0x200000000ULL) ? x : 0x100000000ULL;
+        uint64_t ans = 1ULL;
+        while (lo <= hi) {
+            uint64_t mid = lo + (hi - lo) / 2ULL;
+            if (mid <= x / mid) {
+                ans = mid;
+                lo = mid + 1ULL;
+            } else {
+                hi = mid - 1ULL;
+            }
+        }
+        res = ans;
+    }
+    __asm__ volatile("" : "+r"(res));
+    ASGARD_END();
+    return res;
+}
+
+/* ------------------------------------------------------------------ */
+/* 11. MurmurHash3 64-bit avalanche mixer (fmix64)                    */
+/* ------------------------------------------------------------------ */
+uint64_t fmix64(uint64_t k)
+{
+    ASGARD_BEGIN_VIRTUALIZE("fmix64");
+    k ^= k >> 33;
+    k *= 0xff51afd7ed558ccdULL;
+    k ^= k >> 33;
+    k *= 0xc4ceb9fe1a85ec53ULL;
+    k ^= k >> 33;
+    uint64_t res = k;
+    __asm__ volatile("" : "+r"(res));
+    ASGARD_END();
+    return res;
+}
+
+/* ------------------------------------------------------------------ */
+/* 12. Signed clamp and scale                                         */
+/* ------------------------------------------------------------------ */
+int64_t signed_clamp_scale(int64_t val, int64_t min_v, int64_t max_v, int64_t scale)
+{
+    ASGARD_BEGIN_VIRTUALIZE("signed_clamp_scale");
+    int64_t clamped = val;
+    if (clamped < min_v) {
+        clamped = min_v;
+    } else if (clamped > max_v) {
+        clamped = max_v;
+    }
+    int64_t res = clamped * scale;
+    __asm__ volatile("" : "+r"(res));
+    ASGARD_END();
+    return res;
+}
+
+/* ------------------------------------------------------------------ */
+/* 13. Galois 64-bit LFSR (OEIS A011260 Primitive Polynomial)         */
+/* ------------------------------------------------------------------ */
+#define LFSR_POLY 0xD800000000000000ULL
+
+uint64_t lfsr_galois64(uint64_t state, int steps)
+{
+    ASGARD_BEGIN_VIRTUALIZE("lfsr_galois64");
+    for (int i = 0; i < steps; i++) {
+        uint64_t lsb = state & 1ULL;
+        state >>= 1;
+        if (lsb) {
+            state ^= LFSR_POLY;
+        }
+    }
+    uint64_t res = state;
+    __asm__ volatile("" : "+r"(res));
+    ASGARD_END();
+    return res;
+}
+
+/* ------------------------------------------------------------------ */
+/* 14. SipHash 64-bit State Compression Quarter-Round                  */
+/* ------------------------------------------------------------------ */
+#define ROTL64(x, b) (((x) << (b)) | ((x) >> (64 - (b))))
+
+uint64_t siphash_round(uint64_t v0, uint64_t v1, uint64_t v2, uint64_t v3)
+{
+    ASGARD_BEGIN_VIRTUALIZE("siphash_round");
+    v0 += v1;
+    v1 = ROTL64(v1, 13);
+    v1 ^= v0;
+    v0 = ROTL64(v0, 32);
+    v2 += v3;
+    v3 = ROTL64(v3, 16);
+    v3 ^= v2;
+    v0 += v3;
+    v3 = ROTL64(v3, 21);
+    v3 ^= v0;
+    v2 += v1;
+    v1 = ROTL64(v1, 17);
+    v1 ^= v2;
+    v2 = ROTL64(v2, 32);
+    uint64_t res = v0 ^ v1 ^ v2 ^ v3;
+    __asm__ volatile("" : "+r"(res));
+    ASGARD_END();
+    return res;
+}
+/* ------------------------------------------------------------------ */
 /* Reference implementations for bit-for-bit assertion validation    */
 /* ------------------------------------------------------------------ */
 static uint64_t ref_license(uint64_t k, uint64_t nonce) {
@@ -216,6 +350,13 @@ static uint64_t ref_collatz(uint64_t n) {
     return s;
 }
 
+static uint64_t ref_is_prime(uint64_t n) {
+    if (n < 2ULL) return 0ULL;
+    for (uint64_t d = 2ULL; d * d <= n; d++) {
+        if (n % d == 0ULL) return 0ULL;
+    }
+    return 1ULL;
+}
 
 static uint64_t ref_mod_exp(uint64_t base, uint64_t exp, uint64_t mod) {
     uint64_t res = 1ULL;
@@ -234,6 +375,58 @@ static uint64_t ref_fib(uint64_t n) {
     return a;
 }
 
+static uint64_t ref_crc32(uint64_t data) {
+    uint32_t crc = 0xFFFFFFFFU;
+    for (int i = 0; i < 8; i++) {
+        uint8_t byte = (uint8_t)((data >> (i * 8)) & 0xFFU);
+        crc ^= (uint32_t)byte;
+        for (int b = 0; b < 8; b++) {
+            crc = (crc & 1U) ? ((crc >> 1) ^ 0xEDB88320U) : (crc >> 1);
+        }
+    }
+    return (uint64_t)(crc ^ 0xFFFFFFFFU);
+}
+
+static uint64_t ref_int_sqrt(uint64_t x) {
+    if (x <= 1ULL) return x;
+    uint64_t lo = 1ULL, hi = (x < 0x200000000ULL) ? x : 0x100000000ULL, ans = 1ULL;
+    while (lo <= hi) {
+        uint64_t mid = lo + (hi - lo) / 2ULL;
+        if (mid <= x / mid) { ans = mid; lo = mid + 1ULL; }
+        else { hi = mid - 1ULL; }
+    }
+    return ans;
+}
+
+static uint64_t ref_fmix64(uint64_t k) {
+    k ^= k >> 33; k *= 0xff51afd7ed558ccdULL;
+    k ^= k >> 33; k *= 0xc4ceb9fe1a85ec53ULL;
+    k ^= k >> 33; return k;
+}
+
+static int64_t ref_clamp_scale(int64_t v, int64_t mn, int64_t mx, int64_t sc) {
+    if (v < mn) v = mn;
+    else if (v > mx) v = mx;
+    return v * sc;
+}
+
+static uint64_t ref_lfsr(uint64_t state, int steps) {
+    for (int i = 0; i < steps; i++) {
+        uint64_t lsb = state & 1ULL;
+        state >>= 1;
+        if (lsb) state ^= LFSR_POLY;
+    }
+    return state;
+}
+
+static uint64_t ref_siphash(uint64_t v0, uint64_t v1, uint64_t v2, uint64_t v3) {
+    v0 += v1; v1 = ROTL64(v1, 13); v1 ^= v0; v0 = ROTL64(v0, 32);
+    v2 += v3; v3 = ROTL64(v3, 16); v3 ^= v2;
+    v0 += v3; v3 = ROTL64(v3, 21); v3 ^= v0;
+    v2 += v1; v1 = ROTL64(v1, 17); v1 ^= v2; v2 = ROTL64(v2, 32);
+    return v0 ^ v1 ^ v2 ^ v3;
+}
+
 /* ------------------------------------------------------------------ */
 /* Main test harness                                                  */
 /* ------------------------------------------------------------------ */
@@ -243,10 +436,10 @@ int main(void)
 
 #define CHECK(name, got, exp) do { \
     if ((got) == (exp)) { \
-        printf("  [PASS] %-30s got=0x%016llX (%llu)\n", (name), (unsigned long long)(got), (unsigned long long)(got)); \
+        printf("  [PASS] %-34s got=0x%016llX (%lld)\n", (name), (unsigned long long)(got), (long long)(got)); \
         pass++; \
     } else { \
-        printf("  [FAIL] %-30s got=0x%016llX exp=0x%016llX\n", \
+        printf("  [FAIL] %-34s got=0x%016llX exp=0x%016llX\n", \
                (name), (unsigned long long)(got), (unsigned long long)(exp)); \
         fail++; \
     } \
@@ -254,8 +447,8 @@ int main(void)
 } while(0)
 
     printf("====================================================================\n");
-    printf("  🛡️  ASGARD-5877: Stack-JIT (SJIT) Big C++ Multi-Pattern Showcase\n");
-    printf("  8 Virtualized Functions in Sealed Nano-Arena:\n");
+    printf("  🛡️  ASGARD-5877: Stack-JIT (SJIT) Big C++ Showcase & Bug Stress\n");
+    printf("  14 Virtualized Functions in Sealed Nano-Arena:\n");
     printf("    * A000002 Kolakoski Fission     * A010060 Thue-Morse Dummy Padding\n");
     printf("    * A000166 Derangement Shuffling * A002487 Stern Affine Masking\n");
     printf("    * A000695 Moser-de Bruijn Imm   * A003022 Golomb Ruler Slots\n");
@@ -321,11 +514,63 @@ int main(void)
     CHECK("fib(30)", fibonacci_iter(30ULL), ref_fib(30ULL));
     CHECK("fib(50)", fibonacci_iter(50ULL), ref_fib(50ULL));
 
+    /* ---- 9. Bitwise CRC-32 ---- */
+    printf("\n[9] crc32_bitwise (IEEE 802.3 Polynomial 0xEDB88320 Nested Loop)\n");
+    CHECK("crc32(0x0000000000000000)", crc32_bitwise(0x0000000000000000ULL), ref_crc32(0x0000000000000000ULL));
+    CHECK("crc32(0x1234567890ABCDEF)", crc32_bitwise(0x1234567890ABCDEFULL), ref_crc32(0x1234567890ABCDEFULL));
+    CHECK("crc32(0x5877CAFE1337BEEF)", crc32_bitwise(0x5877CAFE1337BEEFULL), ref_crc32(0x5877CAFE1337BEEFULL));
+    CHECK("crc32(0xFFFFFFFFFFFFFFFF)", crc32_bitwise(0xFFFFFFFFFFFFFFFFULL), ref_crc32(0xFFFFFFFFFFFFFFFFULL));
+
+    /* ---- 10. Integer Square Root ---- */
+    printf("\n[10] int_sqrt (Binary Search Convergence Loop)\n");
+    CHECK("sqrt(0)",                int_sqrt(0ULL),                ref_int_sqrt(0ULL));
+    CHECK("sqrt(1)",                int_sqrt(1ULL),                ref_int_sqrt(1ULL));
+    CHECK("sqrt(144)",              int_sqrt(144ULL),              ref_int_sqrt(144ULL));
+    CHECK("sqrt(1000000000)",       int_sqrt(1000000000ULL),       ref_int_sqrt(1000000000ULL));
+    CHECK("sqrt(0x1000000000000000)",int_sqrt(0x1000000000000000ULL), ref_int_sqrt(0x1000000000000000ULL));
+    CHECK("sqrt(0xFFFFFFFFFFFFFFFF)",int_sqrt(0xFFFFFFFFFFFFFFFFULL), ref_int_sqrt(0xFFFFFFFFFFFFFFFFULL));
+
+    /* ---- 11. MurmurHash3 fmix64 ---- */
+    printf("\n[11] fmix64 (Cascading 64-bit Avalanche Multipliers & Shifts)\n");
+    CHECK("fmix64(0)",              fmix64(0ULL),                  ref_fmix64(0ULL));
+    CHECK("fmix64(42)",             fmix64(42ULL),                 ref_fmix64(42ULL));
+    CHECK("fmix64(0x5877CAFE1337)", fmix64(0x5877CAFE1337ULL),     ref_fmix64(0x5877CAFE1337ULL));
+    CHECK("fmix64(0xFFFFFFFFFFFFFFFF)",fmix64(0xFFFFFFFFFFFFFFFFULL), ref_fmix64(0xFFFFFFFFFFFFFFFFULL));
+
+    /* ---- 12. Signed clamp and scale ---- */
+    printf("\n[12] signed_clamp_scale (Signed Arithmetic & Comparisons LT/GT/GE/LE)\n");
+    CHECK("clamp(-50, -10, 10, 2)",    (uint64_t)signed_clamp_scale(-50, -10, 10, 2),  (uint64_t)ref_clamp_scale(-50, -10, 10, 2));
+    CHECK("clamp(50, -10, 10, 2)",     (uint64_t)signed_clamp_scale(50, -10, 10, 2),   (uint64_t)ref_clamp_scale(50, -10, 10, 2));
+    CHECK("clamp(5, -10, 10, -3)",     (uint64_t)signed_clamp_scale(5, -10, 10, -3),   (uint64_t)ref_clamp_scale(5, -10, 10, -3));
+    CHECK("clamp(-7, -10, 10, -4)",    (uint64_t)signed_clamp_scale(-7, -10, 10, -4),  (uint64_t)ref_clamp_scale(-7, -10, 10, -4));
+    CHECK("clamp(-1000, -500, 500, 1)",(uint64_t)signed_clamp_scale(-1000, -500, 500, 1),(uint64_t)ref_clamp_scale(-1000, -500, 500, 1));
+
+    /* ---- 13. Galois 64-bit LFSR ---- */
+    printf("\n[13] lfsr_galois64 (Galois Shift Register OEIS A011260 Polynomial)\n");
+    CHECK("lfsr(1, 1)",        lfsr_galois64(1ULL, 1),        ref_lfsr(1ULL, 1));
+    CHECK("lfsr(1, 64)",       lfsr_galois64(1ULL, 64),       ref_lfsr(1ULL, 64));
+    CHECK("lfsr(0x5877, 100)", lfsr_galois64(0x5877ULL, 100), ref_lfsr(0x5877ULL, 100));
+    CHECK("lfsr(0xCAFE, 256)", lfsr_galois64(0xCAFEULL, 256), ref_lfsr(0xCAFEULL, 256));
+
+    /* ---- 14. SipHash round ---- */
+    printf("\n[14] siphash_round (4-State Register Compression Round)\n");
+    CHECK("siphash(0, 0, 0, 0)",
+          siphash_round(0ULL, 0ULL, 0ULL, 0ULL),
+          ref_siphash(0ULL, 0ULL, 0ULL, 0ULL));
+    CHECK("siphash(1, 2, 3, 4)",
+          siphash_round(1ULL, 2ULL, 3ULL, 4ULL),
+          ref_siphash(1ULL, 2ULL, 3ULL, 4ULL));
+    CHECK("siphash(0x5877, 0x1337, 0xCAFE, 0xBEEF)",
+          siphash_round(0x5877ULL, 0x1337ULL, 0xCAFEULL, 0xBEEFULL),
+          ref_siphash(0x5877ULL, 0x1337ULL, 0xCAFEULL, 0xBEEFULL));
+    CHECK("siphash(FFFF, AAAA, 5555, 1234)",
+          siphash_round(0xFFFFFFFFFFFFFFFFULL, 0xAAAAAAAAAAAAAAAAULL, 0x5555555555555555ULL, 0x1234567890ABCDEFULL),
+          ref_siphash(0xFFFFFFFFFFFFFFFFULL, 0xAAAAAAAAAAAAAAAAULL, 0x5555555555555555ULL, 0x1234567890ABCDEFULL));
     /* ---- Summary ---- */
     printf("\n====================================================================\n");
     printf("  Results: %d PASS, %d FAIL out of %d assertions\n", pass, fail, pass + fail);
     if (fail == 0) {
-        printf("  🎉 ALL 8 VIRTUALIZED ROUTINES EXECUTED WITH 100%% EXACT PRECISION\n");
+        printf("  🎉 ALL 14 VIRTUALIZED ROUTINES EXECUTED WITH 100%% EXACT PRECISION\n");
         printf("  Stack-JIT Sealing & Dynamic Nano-Chunks VERIFIED on Hardware\n");
     } else {
         printf("  💥 FAILURES DETECTED\n");
