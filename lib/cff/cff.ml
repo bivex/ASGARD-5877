@@ -473,7 +473,29 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
   else
     let max_id = List.fold_left (fun acc (b : Ir.basic_block) -> max acc b.id) 0 sorted_orig in
     let entry_block_id = max_id + 1 in
-    let trap_block_id = max_id + 2 in
+    let disp_base_id = max_id + 2 in
+    let next_fresh_id = ref (disp_base_id + 1) in
+    let trap_blocks = ref [] in
+    let make_trap_block ~reason =
+      let t_id = !next_fresh_id in
+      incr next_fresh_id;
+      let label = Printf.sprintf "%s_tk_%d" func.name t_id in
+      let dummy_c = Random.State.int64 rng Int64.max_int in
+      let trap_instrs = match Random.State.int rng 3 with
+        | 0 ->
+            [ Ir.Alu { op = Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm dummy_c; set_flags = false };
+              Ir.Trap reason ]
+        | 1 ->
+            [ Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm dummy_c };
+              Ir.Alu { op = Sub; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp1; src2 = Ir.Imm 1L; set_flags = true };
+              Ir.Trap reason ]
+        | _ ->
+            [ Ir.Trap reason ]
+      in
+      let blk = Ir.make_block ~id:t_id ~label ~instrs:trap_instrs in
+      trap_blocks := blk :: !trap_blocks;
+      t_id
+    in
 
     let input_reg_opt = select_input_reg func in
     let pinned_reg_opt =
@@ -526,8 +548,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
        state_i = poly_unhash64_dyn hparams coded_i
        And populate state_pool mapping bid -> state list *)
     let num_hubs = max 1 (min options.hub_count total_disp) in
-    let disp_base_id = max_id + 3 in
-    let next_fresh_id = ref (disp_base_id + num_hubs) in
+    next_fresh_id := disp_base_id + num_hubs;
     let thunk_blocks = ref [] in
 
     let hub_slots = Array.init num_hubs (fun h ->
@@ -602,8 +623,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
     in
     let entry_block = Ir.make_block ~id:entry_block_id ~label:(func.name ^ "_cff_entry") ~instrs:entry_instrs in
 
-    (* Trap Block *)
-    let trap_block = Ir.make_block ~id:trap_block_id ~label:(func.name ^ "_cff_trap") ~instrs:[ Ir.Trap "CFF State Violation" ] in
+    (* Trap Blocks are now dynamically instantiated per-site via make_trap_block *)
 
     (* Binary Decision Tree Construction *)
     let tree_blocks = ref [] in
@@ -677,11 +697,12 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
       let (low_h, high_h) = hub_slots.(h) in
       let hub_id = disp_base_id + h in
       let tree_root_target = build_tree low_h high_h in
+      let trap_target = Ir.BlockId (make_trap_block ~reason:"CFF Range Check Violation") in
       let bound_cond, bound_t, bound_f =
         if Random.State.bool rng then
-          (Flags.AE, Ir.BlockId trap_block_id, tree_root_target)
+          (Flags.AE, trap_target, tree_root_target)
         else
-          (Flags.B, tree_root_target, Ir.BlockId trap_block_id)
+          (Flags.B, tree_root_target, trap_target)
       in
       let range_len = high_h - low_h + 1 in
       let range_check =
@@ -832,8 +853,9 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
           if options.inject_opaque_predicates && b.id <> func.cfg.entry_id then
             let body_id = !next_fresh_id in
             incr next_fresh_id;
+            let trap_id = make_trap_block ~reason:"CFF State Violation" in
             let pred_block =
-              inject_opaque_predicate ~next_block_id:body_id ~rng ~trap_block_id
+              inject_opaque_predicate ~next_block_id:body_id ~rng ~trap_block_id:trap_id
                 { b with instrs = [] }
             in
             let body_block = Ir.make_block ~id:body_id ~label:(b.label ^ "_body") ~instrs:new_instrs in
@@ -843,7 +865,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         sorted_orig
     in
 
-    let all_blocks = (entry_block :: trap_block :: !hub_blocks @ !tree_blocks @ !thunk_blocks) @ transformed_blocks in
+    let all_blocks = (entry_block :: !trap_blocks @ !hub_blocks @ !tree_blocks @ !thunk_blocks) @ transformed_blocks in
     let new_func = Ir.make_func ~name:func.name ~entry_id:entry_block_id ~blocks:all_blocks in
     Ok new_func
 

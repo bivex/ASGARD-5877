@@ -456,7 +456,7 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Bytecode Amplification" true "";
         pass_switch "MBA Constant Synthesis" true "";
-        pass_switch "Virtual CFG Flattening" true "";
+        pass_switch "Virtual CFG Flattening" native_cfg.cff.enabled "disabled in configuration";
         pass_switch "Spaghetti CFG Splitting" true "";
         pass_switch "Braided CFG Merging" native_cfg.braid.enabled
           "disabled in configuration";
@@ -917,6 +917,7 @@ module Stack_vm_packager : Vm_packager = struct
     let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
 
     (* Phase 3: Virtual CFG Flattening — route jumps through VPC dispatcher *)
+    let cff_dispatcher_opt = ref None in
     let cff_seed =
       Int64.logxor
         (Int64.of_int (Random.State.bits rng))
@@ -928,13 +929,15 @@ module Stack_vm_packager : Vm_packager = struct
     } in
     note
       (Printf.sprintf
-         "    Virtual CFG Flattening     hubs=%d split_rate=%d opaque_predicates=%s seed=0x%016LX"
+         "    Virtual CFG Flattening     hubs=%d split_rate=%d opaque_predicates=%s seed=0x%016LX%s"
          native_cfg.cff.hub_count native_cfg.cff.split_rate
          (if native_cfg.cff.inject_opaque_predicates then "on" else "off")
-         cff_cfg.seed);
+         cff_cfg.seed
+         (if native_cfg.cff.enabled then "" else " (DISABLED)"));
     let prog_cff, cff_dispatcher = Stack_vm.Stack_cff_pass.apply_program_with_info cff_cfg ctx prog in
     let cff_info = Stack_vm.Stack_cff_pass.cff_stats prog prog_cff in
     let prog = prog_cff in
+    cff_dispatcher_opt := Some cff_dispatcher;
     dump_bytecode_trace ~phase:"3-cff" prog;
     dump_bytecode_json ~phase:"3-cff" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"3-cff" ~final:false prog;
@@ -1303,10 +1306,15 @@ module Stack_vm_packager : Vm_packager = struct
            provably holds the token of that block.  The encryptor needs
            the same state to reproduce the key schedule. *)
         let prog_feedback =
-          Stack_vm.Stack_feedback_pass.apply_program
-            ~vpc_slot:cff_dispatcher.vpc_slot
-            ~block_tokens:cff_dispatcher.block_tokens
-            feedback_cfg prog
+          match !cff_dispatcher_opt with
+          | Some disp ->
+              Stack_vm.Stack_feedback_pass.apply_program
+                ~vpc_slot:disp.vpc_slot
+                ~block_tokens:disp.block_tokens
+                feedback_cfg prog
+          | None ->
+              Stack_vm.Stack_feedback_pass.apply_program
+                feedback_cfg prog
         in
         let feedback_stat = Stack_vm.Stack_feedback_pass.feedback_stats prog prog_feedback in
         let info =
@@ -1540,11 +1548,17 @@ module Stack_vm_packager : Vm_packager = struct
     in
     (* The encryptor has to know the dispatcher state to accept the VPC
        couplings: the token of every CFF block, and the VPC slot. *)
-    let dispatcher_tokens = Hashtbl.create (Hashtbl.length cff_dispatcher.block_tokens) in
-    Hashtbl.iter
-      (fun id token ->
-        Hashtbl.replace dispatcher_tokens id (cff_dispatcher.vpc_slot, token))
-      cff_dispatcher.block_tokens;
+    let dispatcher_tokens =
+      match !cff_dispatcher_opt with
+      | Some disp ->
+          let dt = Hashtbl.create (Hashtbl.length disp.block_tokens) in
+          Hashtbl.iter
+            (fun id token -> Hashtbl.replace dt id (disp.vpc_slot, token))
+            disp.block_tokens;
+          dt
+      | None ->
+          Hashtbl.create 0
+    in
     let polymorphic = native_cfg.stack_vm.opcode_polymorphism in
     let enc =
       Stack_vm.Stack_encoder.encode_program ~seed_key ?layout ~polymorphic ~compact_imm

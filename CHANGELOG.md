@@ -7,6 +7,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- Eliminate CFF common trap sink in-degree vulnerability and strengthen Stack-CFF opaque predicates (`lib/cff/cff.ml`, `lib/stack_vm/stack_cff_pass.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
+  * Replaced the centralized single `trap_block_id` in `Cff.flatten_func` with dynamically generated, site-isolated trap blocks (`make_trap_block`) having in-degree 1, randomized neutral labels (`func_tk_id`), and diversified opcode bodies, defeating polynomial in-degree graph analysis against opaque predicate sinks.
+  * Replaced the trivial syntactic identity predicate in `Stack_cff_pass.go_disp` (`X == X`) with an algebraic zero-knot identity (`((vpc + c) - (vpc & c)) - (vpc | c) == 0L`), eliminating linear CSE/GVN foldability.
+  * Guaranteed decoy branches in `Stack_cff_pass.decoy_entry_of` never route prematurely to `exit_id` on functions with small block counts.
+  * Enforced deterministic, reproducible block traversal in `Stack_cff_pass.apply_program_with_info` by sorting blocks by ID before iterating over PRNG states.
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, 16/16 `Stack-JIT VM & Chunker`, and 77/77 showcase assertions on Apple Silicon hardware.
 - Fix flag preservation in bytecode amplifier and stack sink barrier (`lib/stack_vm/bytecode_amplifier.ml`, `lib/stack_vm/stack_sink_barrier_pass.ml`, `samples/protection_config.full.json`):
   * Guarded `emit_ring_twist` in `Bytecode_amplifier` with `flag_safe` check (`if flag_safe then [ op ] @ emit_ring_twist rng else [ op ]`), preventing arithmetic `Mul` instructions in metamorphic twists from clobbering live `ZF/SF` flags produced by preceding logical instructions (`Nor`, `Nand`, `Shl`, `Shr`).
   * Eliminated stack-desynchronizing `PushFlags` wrappers around `WriteMem` operands in `Stack_sink_barrier_pass`, ensuring operand order `[value, address]` is preserved without shifting into RFLAGS.

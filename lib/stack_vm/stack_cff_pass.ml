@@ -104,24 +104,25 @@ let transform_block ?(rng = Random.State.make [| 0x5877 |]) vpc_slot entry_of de
     let real_entry = entry_of target in
     let decoy_entry = decoy_entry_of target in
     (* Non-Linear Register-Anchored Opaque Zero Branch:
-       (vpc * r2 + r3) - (vpc * r2 + r3) == 0 in Z/2^64Z.
-       Anchoring to runtime register vpc_slot prevents constant folding,
-       while 64-bit non-linear multiplication (Mul) creates full carry chains.
-       Guaranteed 100% runtime evaluation to 0, taking JccRel(real_entry, E)
-       with decoy JmpRel(decoy_entry) indistinguishability. *)
-    let r2 = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
-    let r3 = Random.State.int64 rng Int64.max_int in
+       ((vpc + c) - (vpc & c)) - (vpc | c) == 0 in Z/2^64Z.
+       Evaluates distinct arithmetic and De Morgan bitwise logic (Add, Nand, Nor, Sub),
+       shattering linear CSE / GVN folding. Guaranteed 100% runtime evaluation to 0,
+       taking JccRel(real_entry, E) with decoy JmpRel(decoy_entry). *)
+    let c = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
     [
-      PushReg vpc_slot; PushImm r2; Mul; PushImm r3; Add;
-      PushReg vpc_slot; PushImm r2; Mul; PushImm r3; Add;
+      PushReg vpc_slot; PushImm c; Add;
+      PushReg vpc_slot; PushImm c; Nand; Dup; Nand; Sub;
+      PushReg vpc_slot; PushImm c; Nor; Dup; Nor; Sub;
+      PushImm 0L;
       Cmp;
       JccRel (real_entry, E);
       JmpRel decoy_entry;
     ] in
   let new_ops = match term with
-    | Exit_term | No_term | Jcc_only _ ->
+    | Exit_term | No_term ->
       block.ops
-
+    | Jcc_only (t, c) ->
+      failwith (Printf.sprintf "stack_cff: isolated JccRel (%d, %s) in block %d without fallthrough JmpRel violates terminator pair invariant" t (Flags.condition_to_string c) block.id)
     | Jmp_term target ->
       (match Hashtbl.find_opt tokens target with
        | Some token -> body @ set_vpc token @ go_disp target
@@ -291,7 +292,9 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
     match Hashtbl.find_opt tokens target with
     | Some tok ->
       let s = hash_shard_id ~salt:seed tok n_shards in
-      entry_of_s ((s + max 1 (n_shards / 2)) mod n_shards)
+      let decoy_s = (s + max 1 (n_shards / 2)) mod n_shards in
+      let dec = entry_of_s decoy_s in
+      if dec = exit_id then entry_of_s s else dec
     | None -> exit_id
   in
   let exit_block = make_block exit_id "cff_exit" [ Exit ] in
@@ -345,7 +348,11 @@ let apply_program_with_info cfg ctx prog =
   (* 5. Transform every real block's terminators with sharded entry routing *)
   let new_real_blocks = Hashtbl.create n_real in
   let rng = Random.State.make [| Int64.to_int func_salt |] in
-  Hashtbl.iter (fun id b ->
+  let sorted_blocks =
+    Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
+    |> List.sort (fun (id1, _) (id2, _) -> Int.compare id1 id2)
+  in
+  List.iter (fun (id, b) ->
     let b' = transform_block ~rng vpc_slot entry_of decoy_entry_of tokens b in
     (* 5b. Couple the rolling key to the VPC at the entry of every block
        the dispatcher can reach.  There the VPC provably holds that
@@ -364,7 +371,7 @@ let apply_program_with_info cfg ctx prog =
       else b'
     in
     Hashtbl.replace new_real_blocks id b'
-  ) prog.blocks;
+  ) sorted_blocks;
 
   (* 6. Assemble the new program *)
   let all_blocks = Hashtbl.create (n_real + List.length disp_blocks) in
