@@ -136,6 +136,73 @@ let try_parse_if src pos rng_state seed_ref prefix =
                 done;
                 !found
               in
+              let has_undeclared_mutations body =
+                let blen = String.length body in
+                let is_id_start c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c = '_' in
+                let is_id_part c = is_id_start c || (c >= '0' && c <= '9') in
+                let type_keywords = [
+                  "int"; "uint64_t"; "uint32_t"; "uint16_t"; "uint8_t";
+                  "int64_t"; "int32_t"; "int16_t"; "int8_t"; "size_t";
+                  "char"; "bool"; "long"; "float"; "double"; "void"; "auto"
+                ] in
+                let declared = Hashtbl.create 8 in
+                let bi = ref 0 in
+                while !bi < blen do
+                  if is_id_start body.[!bi] then begin
+                    let start_pos = !bi in
+                    while !bi < blen && is_id_part body.[!bi] do incr bi done;
+                    let word = String.sub body start_pos (!bi - start_pos) in
+                    if List.mem word type_keywords then begin
+                      while !bi < blen && (body.[!bi] = ' ' || body.[!bi] = '\t' || body.[!bi] = '*' || body.[!bi] = '\n' || body.[!bi] = '\r') do
+                        incr bi
+                      done;
+                      if !bi < blen && is_id_start body.[!bi] then begin
+                        let var_start = !bi in
+                        while !bi < blen && is_id_part body.[!bi] do incr bi done;
+                        let var_name = String.sub body var_start (!bi - var_start) in
+                        Hashtbl.replace declared var_name ()
+                      end
+                    end
+                  end else incr bi
+                done;
+                let has_ext = ref false in
+                bi := 0;
+                while !bi < blen && not !has_ext do
+                  if is_id_start body.[!bi] then begin
+                    let start_pos = !bi in
+                    while !bi < blen && is_id_part body.[!bi] do incr bi done;
+                    let var_name = String.sub body start_pos (!bi - start_pos) in
+                    if not (List.mem var_name ["return"; "if"; "else"; "while"; "for"; "do"; "switch"; "case"]) then begin
+                      let j = ref !bi in
+                      while !j < blen && (body.[!j] = ' ' || body.[!j] = '\t' || body.[!j] = '\n' || body.[!j] = '\r') do
+                        incr j
+                      done;
+                      if !j < blen then begin
+                        let c1 = body.[!j] in
+                        let c2 = if !j + 1 < blen then body.[!j + 1] else ' ' in
+                        let is_assign =
+                          (c1 = '=' && c2 <> '=') ||
+                          (c1 = '+' && c2 = '+') ||
+                          (c1 = '-' && c2 = '-') ||
+                          (c1 = '+' && c2 = '=') ||
+                          (c1 = '-' && c2 = '=') ||
+                          (c1 = '*' && c2 = '=') ||
+                          (c1 = '/' && c2 = '=') ||
+                          (c1 = '%' && c2 = '=') ||
+                          (c1 = '&' && c2 = '=') ||
+                          (c1 = '|' && c2 = '=') ||
+                          (c1 = '^' && c2 = '=')
+                        in
+                        if is_assign && not (Hashtbl.mem declared var_name) then
+                          has_ext := true
+                      end
+                    end
+                  end else incr bi
+                done;
+                !has_ext
+              in
+              if has_undeclared_mutations then_body || has_undeclared_mutations else_body then None
+              else
               let has_return = contains_return then_body || contains_return else_body in
               Some ({
                 ns_id         = id;
@@ -215,8 +282,19 @@ let lift_ifs_to_nanomites ?(config = default_config) src =
       done
     end
     else if c = '#' then begin
-      while !i < len && src.[!i] <> '\n' do
-        Buffer.add_char buf src.[!i]; incr i
+      let in_directive = ref true in
+      while !i < len && !in_directive do
+        let sc = src.[!i] in
+        Buffer.add_char buf sc;
+        incr i;
+        if sc = '\n' then begin
+          let p = ref (!i - 2) in
+          while !p >= 0 && (src.[!p] = ' ' || src.[!p] = '\t' || src.[!p] = '\r') do
+            decr p
+          done;
+          if !p < 0 || src.[!p] <> '\\' then
+            in_directive := false
+        end
       done
     end
     else if (not !in_marker) && c = 'i' && !i + 1 < len && src.[!i + 1] = 'f' then begin
@@ -305,17 +383,37 @@ let split_leading_directives src =
   let len = String.length src in
   let i = ref 0 in
   let end_of_directives = ref 0 in
-  (* Walk through any leading lines that are blank or start with '#' *)
+  (* Walk through any leading comments, blank lines, or preprocessor lines *)
   let continue_scan = ref true in
   while !continue_scan && !i < len do
-    (* skip whitespace/blank lines *)
     while !i < len && (src.[!i] = ' ' || src.[!i] = '\t' || src.[!i] = '\n' || src.[!i] = '\r') do
       incr i
     done;
-    if !i < len && src.[!i] = '#' then begin
-      (* consume until end of line *)
+    if !i + 1 < len && src.[!i] = '/' && src.[!i + 1] = '/' then begin
       while !i < len && src.[!i] <> '\n' do incr i done;
-      if !i < len then incr i;  (* consume the newline *)
+      if !i < len then incr i;
+      end_of_directives := !i
+    end
+    else if !i + 1 < len && src.[!i] = '/' && src.[!i + 1] = '*' then begin
+      i := !i + 2;
+      while !i + 1 < len && not (src.[!i] = '*' && src.[!i + 1] = '/') do incr i done;
+      if !i + 1 < len then i := !i + 2;
+      end_of_directives := !i
+    end
+    else if !i < len && src.[!i] = '#' then begin
+      let in_directive = ref true in
+      while !i < len && !in_directive do
+        let sc = src.[!i] in
+        incr i;
+        if sc = '\n' then begin
+          let p = ref (!i - 2) in
+          while !p >= 0 && (src.[!p] = ' ' || src.[!p] = '\t' || src.[!p] = '\r') do
+            decr p
+          done;
+          if !p < 0 || src.[!p] <> '\\' then
+            in_directive := false
+        end
+      done;
       end_of_directives := !i
     end else
       continue_scan := false

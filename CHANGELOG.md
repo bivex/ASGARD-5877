@@ -8,9 +8,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ### Added
 - Enable the full protection pass set for the Stack-JIT showcase (`examples/sjit_showcase/sjit_full_config.json`, `examples/sjit_showcase/run_sjit_showcase.sh`):
-  * Added `sjit_full_config.json` (derived from `samples/protection_config.full.json`) enabling every SJIT-relevant pass: Ephemeral JIT Micro-Handlers, Address Binding, Computational Stalling, and Stack String Encryption (ASG_STR) on top of the previously active set; `c_macro.signal_dispatch` and `c_macro.nanomites` stay off because the macro-nanomite splitter breaks compilation of macro-heavy sources (undeclared-identifier errors inside expanded `CHECK` macros).
-  * Updated the showcase script to build with the all-on configuration.
-  * Verified on Apple Silicon: 26/26 board passes ON, 77/77 showcase assertions exact, DRS 93.6/100.0 (Tier 3+), Composite DRS v2 100.0/100.0.
+  * Added `sjit_full_config.json` enabling every single pass across all layers: Ephemeral JIT Micro-Handlers, Address Binding, Computational Stalling, Stack String Encryption (ASG_STR), C-Macro Dynamic Nanomites, and Signal Dispatch.
+  * Verified on Apple Silicon: 28/28 passes active, 77/77 showcase assertions exact, DRS 93.7/100.0, Composite DRS v2 100.0/100.0.
+### Fixed
+- Fix C-macro nanomite parsing and scope escape bugs (`lib/c_macro_obf/c_nanomites.ml`):
+  * Added preprocessor continuation line handling (`\`) to directive parsing, preventing multiline `#define` macros (such as `CHECK`) from having their inner `if` statements falsely lifted into external functions.
+  * Skipped leading block comments (`/* ... */`) in `split_leading_directives`, ensuring `#include` headers (such as `<stdio.h>`) are placed before the nanomite branch preamble so library functions (`printf`) are declared.
+  * Added local mutation scope analysis (`has_undeclared_mutations`): if statements that assign to or mutate caller-local variables not declared in the block are kept inline, preventing `void branch_fn(void)` compilation errors from undeclared identifiers.
+  * Verified: 13/13 `C Macro Obfuscation`, 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, and 77/77 SJIT showcase assertions with `c_macro.nanomites: true` on Apple Silicon hardware.
 ### Fixed
 - De-linearize ghost padding live-stack identities and webbing zero-knots (`lib/stack_vm/stack_ghost_pass.ml`):
   * Replaced linear register cancellation `(r + k) - r - k` in `GhostLiveAddZero` and `GhostLiveAddSubPair` with non-linear De Morgan zero knots (`((r + k) - (r & k)) - (r | k) == 0L`), eliminating trivial algebraic constant folding.
