@@ -246,10 +246,22 @@ module Stack_jit_packager : Vm_packager = struct
      flag-dead-gated or flag-neutral passes are wired in, mirroring the
      stack-engine configuration for each. *)
   let apply_jit_pass_pipeline ~rng:_ ~(native_cfg : Protection_config.t) ctx prog =
-    (* Pass 10: Algebraic flags (skeleton pass, kept for pipeline parity) *)
+    let seed = match native_cfg.seed with Some s -> Int64.of_int s | None -> 0x5877L in
+    (* Pass 10: Algebraic flags *)
     let prog =
       Stack_vm.Stack_algebraic_flags_pass.apply_program
         Stack_vm.Stack_algebraic_flags_pass.default_algebraic_flags_config ctx prog
+    in
+
+    (* Pass 3: Chinese Remainder Theorem (CRT) *)
+    let prog =
+      let crt_cfg = Stack_vm.Stack_crt_pass.default_crt_config seed in
+      Stack_vm.Stack_crt_pass.apply_program crt_cfg ctx prog
+    in
+    (* Pass 5: Memory SSA alias barriers *)
+    let prog =
+      let mem_ssa_cfg = Stack_vm.Stack_memory_ssa.default_memory_ssa_config in
+      Stack_vm.Stack_memory_ssa.apply_program mem_ssa_cfg ctx prog
     in
     (* Pass 2a: Superoperator fusion *)
     let prog =

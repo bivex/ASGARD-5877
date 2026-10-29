@@ -68,32 +68,34 @@ let emit_relational_encode ~rx ~ry ~k =
 let emit_relational_decode ~rx ~ry ~k =
   emit_feistel_step ~rx ~ry ~k
 
+let apply_block_internal ~rx ~ry ~k (b : block) : block =
+  let feistel_knot = emit_feistel_step ~rx ~ry ~k in
+  let rec insert acc = function
+    | [] -> List.rev acc
+    | (JmpRel _ as t) :: rest ->
+        insert (t :: List.rev_append feistel_knot acc) rest
+    | (JccRel _ as t) :: rest ->
+        insert (t :: List.rev_append feistel_knot acc) rest
+    | op :: rest ->
+        insert (op :: acc) rest
+  in
+  { b with ops = insert [] b.ops }
+
 let apply_block (cfg : relational_config) (ctx : Context_allocator.t) (b : block) : block =
   if not cfg.enabled then b
   else
-    let n = Context_allocator.total_slots ctx in
-    if n < 2 then b
-    else
-      let rx = 0 in
-      let ry = 1 in
-      let k = cfg.shift_k in
-      let feistel_knot = emit_feistel_step ~rx ~ry ~k in
-      let rec insert acc = function
-        | [] -> List.rev acc
-        | (JmpRel _ as t) :: rest ->
-            insert (t :: List.rev_append feistel_knot acc) rest
-        | (JccRel _ as t) :: rest ->
-            insert (t :: List.rev_append feistel_knot acc) rest
-        | op :: rest ->
-            insert (op :: acc) rest
-      in
-      { b with ops = insert [] b.ops }
+    let rx = Context_allocator.alloc_scratch ctx in
+    let ry = Context_allocator.alloc_scratch ctx in
+    apply_block_internal ~rx ~ry ~k:cfg.shift_k b
+
 let apply_program (cfg : relational_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled then prog
   else
+    let rx = Context_allocator.alloc_scratch ctx in
+    let ry = Context_allocator.alloc_scratch ctx in
     let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
     Hashtbl.iter (fun id b ->
-      let b' = apply_block cfg ctx b in
+      let b' = apply_block_internal ~rx ~ry ~k:cfg.shift_k b in
       Hashtbl.replace new_blocks id b'
     ) prog.blocks;
-    { prog with blocks = new_blocks }
+    { prog with blocks = new_blocks; context_slots = Context_allocator.total_slots ctx }

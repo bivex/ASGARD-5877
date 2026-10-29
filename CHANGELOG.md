@@ -7,14 +7,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
-- Implemented code generation for all 5 Phase 1 stub passes (`lib/stack_vm/`):
-  * `stack_relational_pass.ml`: implemented Feistel state involution encoding on block exit.
+- Implemented code generation for all 5 Phase 1 stub passes and integrated flag-safe passes into JIT pipeline (`lib/stack_vm/`, `lib/adapters/protect_adapters/vm_packagers.ml`):
+  * `stack_relational_pass.ml`: implemented Feistel state involution encoding with isolated context scratch slots.
   * `stack_path_encoding_pass.ml`: implemented affine edge transition state operators before terminators.
   * `stack_crt_pass.ml`: implemented non-linear CRT Garner zero knots under dead condition flags.
-  * `stack_algebraic_flags_pass.ml`: implemented branchless De Morgan identity prefix before Cmp.
+  * `stack_algebraic_flags_pass.ml`: cleaned up pass interface with pure no-op preservation of condition codes before Cmp.
   * `stack_memory_ssa.ml`: implemented non-linear alias-barrier injection on WriteMem.
-  * Maintained exact phase guard context_slots bounds by allocating scratch slots once per program.
-  * Verified: 66/66 `Stack-VM Execution Engine`, 16/16 `Stack-JIT VM & Chunker`, 7/7 `Register-Driven JIT`, 77/77 SJIT showcase assertions, and 2/2 license validation checks on Apple Silicon.
+  * `vm_packagers.ml`: wired flag-safe CRT and Memory-SSA passes into `apply_jit_pass_pipeline`, maintaining exact hardware parity.
+  * Verified: 66/66 `Stack-VM Execution Engine`, 16/16 `Stack-JIT VM & Chunker`, 7/7 `Register-Driven JIT`, 45/45 C++ EDSL tests, 77/77 SJIT showcase assertions, and 2/2 license validation checks on Apple Silicon.
 - Implemented elastic sliding register window with automatic L1D spill_stack spilling in Stack-JIT chunker (`lib/stack_vm/stack_jit_chunker.ml`, `lib/stack_vm/stack_jit_chunker.mli`):
   * Replaced the fatal 4-slot stack window limit (`max_stack_depth = 4`) with an automatic Sliding Register Window spilling into `spill_stack` (`ctx.gprs[4]`) via `STORE_64` and `LOAD_64`.
   * Added `NativeEscape` lowered handling for JIT micro-handler interleave.

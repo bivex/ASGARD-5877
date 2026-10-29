@@ -88,38 +88,9 @@ let emit_eval_condition_algebraic cond ~cf_slot ~zf_slot ~sf_slot ~of_slot =
       (* General condition evaluation *)
       [ PushReg zf_slot ]
 
-let materialize_sub_zf_ knot_slot =
-  [
-    PushReg knot_slot;
-    PushImm 1L;
-    Mul;
-    PopReg knot_slot;
-  ]
 
-let apply_block_internal ~scratch_slot (b : block) : block =
-  let rec transform acc = function
-    | [] -> List.rev acc
-    | Cmp :: rest ->
-        let prefix = materialize_sub_zf_ scratch_slot in
-        transform (Cmp :: List.rev_append prefix acc) rest
-    | op :: rest ->
-        transform (op :: acc) rest
-  in
-  { b with ops = transform [] b.ops }
+let apply_block (_cfg : algebraic_flags_config) (_ctx : Context_allocator.t) (b : block) : block =
+  b
 
-let apply_block (cfg : algebraic_flags_config) (ctx : Context_allocator.t) (b : block) : block =
-  if not cfg.enabled then b
-  else
-    let scratch_slot = Context_allocator.alloc_scratch ctx in
-    apply_block_internal ~scratch_slot b
-
-let apply_program (cfg : algebraic_flags_config) (ctx : Context_allocator.t) (prog : program) : program =
-  if not cfg.enabled then prog
-  else
-    let scratch_slot = Context_allocator.alloc_scratch ctx in
-    let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-    Hashtbl.iter (fun id b ->
-      let b' = apply_block_internal ~scratch_slot b in
-      Hashtbl.replace new_blocks id b'
-    ) prog.blocks;
-    { prog with blocks = new_blocks; context_slots = Context_allocator.total_slots ctx }
+let apply_program (_cfg : algebraic_flags_config) (_ctx : Context_allocator.t) (prog : program) : program =
+  prog
