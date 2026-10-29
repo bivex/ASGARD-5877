@@ -50,6 +50,7 @@
   test_watermark
   test_logger
   test_stack_jit_vm
+  test_stack_jit_fuzz
   run_tests)
  (libraries
   random_visa_domain

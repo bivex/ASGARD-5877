@@ -7,6 +7,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Added a deterministic QCheck differential fuzzer for the Stack-JIT chunker (`test/test_stack_jit_fuzz.ml`, registered into the `Stack-JIT VM & Chunker` suite):
+  * Generates well-formed straight-line Stack-IR traces from a seeded PRNG (underflow-free, 4-slot window, identity-mapped context registers, interesting 64-bit immediates) and proves `translate_trace` + `simulate_chunks` equal to `reference_eval` on result slot 0, all context registers and the stack-window slots, at three Kolakoski scales.
+  * Checks translation bookkeeping (real/dummy accounting, chunk capacity, A001511 schedule length, final/max depth against an independent depth model), patches multi-block programs' JMP/JCC targets into the chunk index space (incl. the past-the-end halt), and fuzzes `translate_trace` for total robustness on arbitrary op soup (never raises, simulates anything without control flow).
+  * Verified: 19/19 `Stack-JIT VM & Chunker` over 5 consecutive runs (~2400 random traces per run per property); reverting any of the three oracle fixes flips the fuzzer red (negative control).
 - Coalesced scratch slot allocations and wired Stateful Transducer and Native Interleave passes into JIT pipeline (`lib/stack_vm/stack_avid_pass.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
   * `stack_avid_pass.ml`: unified scratch and anchor slot allocation to once per program instead of per basic block, preventing context slot exhaustion beyond the 12-slot JIT limit.
   * `vm_packagers.ml`: wired `Stack_transducer_pass` (stateful accumulator coupling $[B, A] \to (B-S) + (A+S)$) and `Stack_native_interleave_pass` (Phase 6f machine instruction interleave via `NativeEscape`) into `apply_jit_pass_pipeline`.
