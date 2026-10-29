@@ -450,7 +450,7 @@ let make_stack_metrics
           "disabled in configuration";
         pass_switch "Handler Multiplicity & Metamorphic Synthesis" native_cfg.multiplicity.enabled
           "disabled in configuration";
-        pass_switch "Algebraic Flag Materialization" true "";
+        pass_switch "Algebraic Flag Materialization" false "disabled (skeleton pass)";
         pass_switch "Affine Ring Domain Encoding" true "";
         pass_switch "Pipelined Stage Dispatch" native_cfg.pipelined_dispatch.enabled
           "disabled in configuration";

@@ -131,7 +131,7 @@ let apply_block (cfg : trap_config) ~digest_slot _ctx (b : block) : block =
           let flags_live = if idx + 1 < Array.length live then live.(idx + 1) else false in
           let knot = emit_trap_knot ~digest_slot in
           let cluster =
-            if flags_live then [ PushFlags ] @ knot @ [ Add; PopFlags ]
+            if flags_live then [ PushFlags; Swap ] @ knot @ [ Add; Swap; PopFlags ]
             else knot @ [ Add ]
           in
           new_ops := List.rev cluster @ !new_ops;

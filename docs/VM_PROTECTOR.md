@@ -369,7 +369,7 @@ Where $\mathrm{VStack} = [v_0, v_1, \dots, v_{k-1}]$ (stack top $v_0$), and $\ma
 ---
 ### Phase 5h (Pass 17): Mixed-Characteristic Finite Field Arithmetic (`stack_finite_field_pass.ml`)
 * **Goal**: Defeats automated SMT bit-vector decision procedures (`QF_BV`) and equality saturation solvers by intertwining computations across three incompatible algebraic structures:
-  1. Ring $\mathbb{Z}_{2^{64}}$ (characteristic 2, non-field ring with nilpotents and non-invertible even elements).
+  1. Ring $\mathbb{Z}_{2^{64}} = \mathbb{Z}/2^{64}\mathbb{Z}$ (characteristic $2^{64}$, non-field modular ring with nilpotents and non-invertible even elements).
   2. Mersenne Prime Field $\mathbb{F}_{M_{31}} = \mathbb{Z}/(2^{31}-1)\mathbb{Z}$ (prime characteristic $p = 2^{31}-1$, finite field where every non-zero element has a multiplicative inverse).
   3. Galois Field $\mathrm{GF}(2^{64})$ with primitive polynomial $P(x) = x^{64} + x^4 + x^3 + x + 1$ (characteristic 2 field with carry-less polynomial multiplication).
 * **Branchless Mersenne-31 Modular Folding**:

@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- Correct algebraic specification and align protection board report with active passes (`docs/VM_PROTECTOR.md`, `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/stack_vm/stack_trap_pass.ml`):
+  * Corrected modular ring characteristic in `docs/VM_PROTECTOR.md` from characteristic 2 to $2^{64}$ for $\mathbb{Z}_{2^{64}} = \mathbb{Z}/2^{64}\mathbb{Z}$, distinguishing it from characteristic-2 Galois field $\mathrm{GF}(2^{64})$.
+  * Aligned Stack-VM protection report in `lib/adapters/protect_adapters/vm_packagers.ml` to truthfully mark `Algebraic Flag Materialization` as `[OFF]` (disabled skeleton pass), eliminating reporting divergence from bytecode realities.
+  * Fixed live stack operand entanglement in `Stack_trap_pass` under live condition codes: wrapped the zero-knot addition with `[ PushFlags; Swap ] ... [ Add; Swap; PopFlags ]`, ensuring data operands are directly coupled to path digest $H$ rather than clobbering flag stack entries.
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, and full E2E license validation on Apple Silicon hardware.
 - Eliminate linear opaque predicate in Spaghetti splitting and fix flag restoration order in Braided CFG merging (`lib/stack_vm/stack_spaghetti_pass.ml`, `lib/stack_vm/stack_braid_pass.ml`):
   * Replaced duplicated linear opaque jump predicate `Cmp(X, X)` in `Stack_spaghetti_pass` with a non-linear cubic Rivest polynomial identity (`(anchor + 1)^3 == anchor^3 + 3*anchor^2 + 3*anchor + 1`), forcing degree-3 multinomial expansion in SMT/E-graphs before folding.
   * Corrected flag restoration placement in `Stack_braid_pass`: moved `flag_restore` to immediately follow discriminant `setup` (before `fused_body`), protecting incoming flags during discriminant calculation while ensuring flags computed by `fused_body` are preserved into successor blocks.
