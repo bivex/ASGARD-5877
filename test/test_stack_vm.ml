@@ -1544,61 +1544,8 @@ let test_real_license_check_macro_stack_vm_e2e () =
     let toolchain = (module Toolchain_adapter : Toolchain) in
     let vm_packager = (module Vm_packager_adapters.Stack_vm_packager : Vm_packager) in
 
-    (* Lightweight config: stack-VM + CFF + rolling key only.
-       The full/default preset enables amplifier (profile="heavy"), spaghetti
-       (split_rate=100) and 20+ other passes which make this test run for
-       10+ minutes on a small C function.  We disable every expensive pass
-       here while keeping the features the test actually exercises:
-       Stack-VM packaging, CFF coupling, anti-pushan rolling key, the
-       C-trampoline embedding, clang compilation, and the
-       wrong-key / valid-key / tamper run assertions. *)
-    let base : Native_vm.Protection_config.t = Native_vm.Protection_config.default in
-    let raw_cfg = { base with
-      arch                = `AArch64;
-      mba                 = { base.mba  with enabled = false };
-      anti_tamper         = { base.anti_tamper with enabled = false };
-      vm_runtime          = { base.vm_runtime with
-                               num_dispatch_domains = 2;
-                               enable_junk_instructions = false;
-                               vector_isa = false;
-                               egraph_expansion = false;
-                               chameleon_handlers = false;
-                               oblivious_memory = false;
-                               context_epochs = 1;
-                               oblivious_decoys = 0 };
-      c_macro             = { base.c_macro with
-                               obfuscate_strings = false;
-                               obfuscate_constants = false;
-                               obfuscate_arithmetic = false;
-                               opaque_predicates = false;
-                               api_hashing = false;
-                               anti_debug = false;
-                               timing_guard = false };
-      amplifier           = { base.amplifier with enabled = false };
-      spaghetti           = { base.spaghetti with enabled = false };
-      braid               = { base.braid with enabled = false };
-      homomorphic         = { base.homomorphic with enabled = false };
-      ghost               = { base.ghost with enabled = false };
-      avid                = { base.avid with enabled = false };
-      mem_webbing         = { base.mem_webbing with enabled = false };
-      trace_closure       = { base.trace_closure with enabled = false };
-      transducer          = { base.transducer with enabled = false };
-      polymba             = { base.polymba with enabled = false };
-      finite_field        = { base.finite_field with enabled = false };
-      sink_barrier        = { base.sink_barrier with enabled = false };
-      trap                = { base.trap with enabled = false };
-      dual_rail           = { base.dual_rail with enabled = false };
-      drcc                = { base.drcc with enabled = false };
-      whitening           = { base.whitening with enabled = false };
-      rule30              = { base.rule30 with enabled = false };
-      native_interleave   = { base.native_interleave with enabled = false };
-      multiplicity        = { base.multiplicity with enabled = false };
-      pipelined_dispatch  = { base.pipelined_dispatch with enabled = false };
-      eh_shadowing        = { base.eh_shadowing with enabled = false };
-      anti_vpc            = { base.anti_vpc with enabled = false };
-      memory_chaffing     = { base.memory_chaffing with enabled = false };
-      comp_stall          = { base.comp_stall with enabled = false };
-    } in
+    let raw_cfg : Native_vm.Protection_config.t =
+      { Native_vm.Protection_config.default with arch = `AArch64 } in
     let cfg = Protect_adapters.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 1337 |] in
     match
@@ -1622,9 +1569,10 @@ let test_real_license_check_macro_stack_vm_e2e () =
         Alcotest.(check bool) "app_virtualized.cpp exists" true (Sys.file_exists virt_cpp);
         Alcotest.(check bool) "bytecode generated" true (res.bytecode_length_bytes > 0);
 
+        let opt_flag = raw_cfg.toolchain.opt_level in
         let comp_cmd =
-          Printf.sprintf "clang++ -std=c++20 -O2 -fvisibility-inlines-hidden -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-export_dynamic -I%s %s -o %s"
-            tmp_dir virt_cpp bin_path
+          Printf.sprintf "clang++ -std=c++20 %s -fvisibility-inlines-hidden -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-export_dynamic -I%s %s -o %s"
+            opt_flag tmp_dir virt_cpp bin_path
         in
         let comp_st = Sys.command comp_cmd in
         Alcotest.(check int) "clang++ build succeeds" 0 comp_st;
@@ -1684,8 +1632,8 @@ let test_real_license_check_macro_stack_vm_e2e () =
         output_string oc (flip_first_word src);
         close_out oc;
         let tampered_st =
-          Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -fvisibility-inlines-hidden -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-export_dynamic -I%s %s -o %s"
-              tmp_dir tampered_cpp tampered_bin)
+          Sys.command (Printf.sprintf "clang++ -std=c++20 %s -fvisibility-inlines-hidden -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-export_dynamic -I%s %s -o %s"
+              opt_flag tmp_dir tampered_cpp tampered_bin)
         in
         Alcotest.(check int) "tampered build succeeds" 0 tampered_st;
         let run_tampered_cmd =

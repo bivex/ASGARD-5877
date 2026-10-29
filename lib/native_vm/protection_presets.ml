@@ -70,7 +70,7 @@ let default : t = {
   c_macro = {
     enabled = true;
     macro_prefix = "ASG_";
-    obfuscate_strings = true;
+    obfuscate_strings = false;
     obfuscate_constants = true;
     obfuscate_arithmetic = true;
     opaque_predicates = true;
@@ -113,7 +113,7 @@ let default : t = {
   trampoline = default_trampoline;
   watermark = { default_watermark with redundancy = 5 };
   comp_stall = default_comp_stall;
-  toolchain = default_toolchain;
+  toolchain = { default_toolchain with opt_level = "-O1" };
 }
 
 let max_security : t = {
