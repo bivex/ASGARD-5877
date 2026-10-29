@@ -279,9 +279,10 @@ let test_pass_config_presets () =
   (* max_security: max ghost + doubled spaghetti ceiling *)
   Alcotest.(check int) "max_security ghost_rate 100" 100 max_security.ghost.ghost_rate;
   Alcotest.(check int) "max_security spaghetti factor 2" 2 max_security.spaghetti.max_splits_factor;
-  (* default/stealth/edr_stealth keep base defaults *)
-  Alcotest.(check int) "default ghost_rate 80" 80 default.ghost.ghost_rate;
-  Alcotest.(check string) "default amplifier heavy" "heavy" default.amplifier.profile;
+  (* default is balanced-minimal: light amplifier, halved pass rates;
+     stealth/edr_stealth keep base defaults *)
+  Alcotest.(check int) "default ghost_rate 30" 30 default.ghost.ghost_rate;
+  Alcotest.(check string) "default amplifier light" "light" default.amplifier.profile;
   Alcotest.(check string) "stealth amplifier heavy" "heavy" stealth.amplifier.profile;
   ; let edr = match Protection_config.from_preset "edr_stealth" with Ok c -> c | Error e -> Alcotest.fail e in
     Alcotest.(check int) "edr_stealth ghost_rate 80" 80 edr.ghost.ghost_rate

@@ -1,16 +1,26 @@
 open Protection_types
 
+(* Default preset — "Tier-2 balanced-minimal": every protection layer is
+   active, each at its lowest effective intensity.  Knob policy:
+     - capability switches stay on (every layer present),
+     - vector_isa, chameleon handlers (4 domains) and egraph expansion stay on
+       as they are required for correct multi-function execution,
+     - per-pass rates sit at roughly half the previous values, enough to
+       always inject at least one construct per pass on small functions,
+     - crypto strength (rounds/key bits) is untouched — it is a security
+       boundary, not an intensity knob.
+   `high` / `max_security` keep the previous full-strength values. *)
 let default : t = {
   arch = `X86_64;
   seed = None;
   crypto = { rounds = 16; key_bits = 128 };
-  bloat = { mode = `Balanced; target_size_budget_kb = Some 1000; junk_density = 0.5; density_cap_threshold1_kb = 200; density_cap_threshold2_kb = 500 };
+  bloat = { mode = `Balanced; target_size_budget_kb = Some 256; junk_density = 0.2; density_cap_threshold1_kb = 100; density_cap_threshold2_kb = 200 };
   cff = {
     enabled = true;
     obfuscate_states = true;
     inject_opaque_predicates = false;
     input_tainted_transitions = true;
-    split_rate = 30;
+    split_rate = 20;
     hub_count = 1;
     pop_digest = false;
     red_herring = true;
@@ -19,14 +29,14 @@ let default : t = {
     enabled = true;
     depth = 2;
     engine = `Egraph;
-    stack_synthesis_rate = 100;
-    egraph_rate = 30;
-    egraph_node_limit = 120;
-    egraph_time_budget_ms = 80;
-    egraph_iter_limit = 5;
-    ir_max_depth = 4;
-    ir_egraph_node_limit = 80;
-    ir_egraph_time_budget_ms = 50;
+    stack_synthesis_rate = 30;
+    egraph_rate = 20;
+    egraph_node_limit = 80;
+    egraph_time_budget_ms = 50;
+    egraph_iter_limit = 3;
+    ir_max_depth = 2;
+    ir_egraph_node_limit = 60;
+    ir_egraph_time_budget_ms = 40;
   };
   anti_pushan = {
     enabled = true;
@@ -54,8 +64,8 @@ let default : t = {
     ephemeral_jit = false;
     chameleon_handlers = true;
     oblivious_memory = true;
-    context_epochs = 4;
-    oblivious_decoys = 3;
+    context_epochs = 2;
+    oblivious_decoys = 2;
   };
   c_macro = {
     enabled = true;
@@ -74,34 +84,34 @@ let default : t = {
   stack_vm = default_stack_vm;
   eh_shadowing = default_eh_shadowing;
   anti_vpc = default_anti_vpc;
-  memory_chaffing = default_memory_chaffing;
-  spaghetti = default_spaghetti;
-  braid = default_braid;
+  memory_chaffing = { default_memory_chaffing with pool_size = 1024; chaff_ratio = 1.0 };
+  spaghetti = { default_spaghetti with split_rate = 25 };
+  braid = { default_braid with rate = 15 };
   (* Amplifier profile: "light" (Horner 2). The previous "heavy" default
      (Horner 6, +281% ops, bit-slice 2 lanes) combined with the other
      Tier-2 passes made even a 60-line C main run the packager for many
      minutes. high/max_security presets keep the heavy profile. *)
   amplifier = { default_amplifier with profile = "light" };
-  superop = default_superop;
-  ghost = default_ghost;
-  avid = default_avid;
-  mem_webbing = default_mem_webbing;
-  trace_closure = default_trace_closure;
-  transducer = default_transducer;
-  polymba = default_polymba;
-  finite_field = default_finite_field;
-  sink_barrier = default_sink_barrier;
-  trap = default_trap;
-  dual_rail = default_dual_rail;
-  drcc = default_drcc;
-  whitening = default_whitening;
-  rule30 = default_rule30;
-  native_interleave = default_native_interleave;
-  homomorphic = default_homomorphic;
-  multiplicity = default_multiplicity;
+  superop = { default_superop with fusion_rate = 50 };
+  ghost = { default_ghost with ghost_rate = 30 };
+  avid = { default_avid with rate = 20 };
+  mem_webbing = { default_mem_webbing with rate = 25 };
+  trace_closure = { default_trace_closure with rate = 15 };
+  transducer = { default_transducer with rate = 25 };
+  polymba = { default_polymba with rate = 20 };
+  finite_field = { default_finite_field with rate = 20 };
+  sink_barrier = { default_sink_barrier with rate = 25 };
+  trap = { default_trap with rate = 20 };
+  dual_rail = { default_dual_rail with rate = 20 };
+  drcc = { default_drcc with rate = 20 };
+  whitening = { default_whitening with rate = 20 };
+  rule30 = { default_rule30 with rate = 20 };
+  native_interleave = { default_native_interleave with rate = 10 };
+  homomorphic = { default_homomorphic with rate = 20 };
+  multiplicity = { default_multiplicity with rate = 15 };
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
-  watermark = default_watermark;
+  watermark = { default_watermark with redundancy = 5 };
   comp_stall = default_comp_stall;
   toolchain = default_toolchain;
 }

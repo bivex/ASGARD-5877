@@ -1568,11 +1568,15 @@ module Stack_vm_packager : Vm_packager = struct
     in
     dump_bytecode_trace ~phase:"6f-native_interleave" prog;
     dump_bytecode_json ~phase:"6f-native_interleave" prog;
+    tick_phase_timing ~phase:"6f-guard";
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6f-native_interleave" ~final:false prog;
+    tick_phase_timing ~phase:"6f-guard-done";
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6f] Native Micro-Handler Interleaving: %s" ni_info;
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
+    tick_phase_timing ~phase:"7-repair-enter";
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
+    tick_phase_timing ~phase:"7-repaired";
     dump_bytecode_trace ~phase:"7-balance (final)" prog;
     dump_bytecode_json ~phase:"7-balance (final)" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"7-balance (final)" ~final:true prog;
