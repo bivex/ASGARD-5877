@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented dual-domain flags architecture (`NZCV` vs `vflags`) and JIT flag bridge (`lib/rd_jit_vm/`):
+  * `rd_jit_buffer.ml`: added dedicated `vflags` field to `RD_JIT_Context` at offset 672 (0x2A0), preserving `trace_digest` at offset 656.
+  * `rd_jit_synth.ml`, `rd_jit_emitter.ml`: added `JIT_OP_PUSH_FLAGS` and `JIT_OP_POP_FLAGS` opcodes for ARM64, x86-64, and C++ fallback interpreter.
+  * Synthesized non-clobbering ARM64 flag bridge using `mrs x10, NZCV` and bitwise blending with `vflags`, keeping hardware condition flags intact during virtual stack saves.
+  * Verified: 45/45 C++ EDSL tests, 7/7 `Register-Driven JIT`, 16/16 `Stack-JIT VM & Chunker`, 66/66 `Stack-VM Execution Engine`, 77/77 SJIT showcase assertions, and 2/2 license validation checks on Apple Silicon.
 - Implemented code generation for all 5 Phase 1 stub passes and integrated flag-safe passes into JIT pipeline (`lib/stack_vm/`, `lib/adapters/protect_adapters/vm_packagers.ml`):
   * `stack_relational_pass.ml`: implemented Feistel state involution encoding with isolated context scratch slots.
   * `stack_path_encoding_pass.ml`: implemented affine edge transition state operators before terminators.

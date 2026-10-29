@@ -77,6 +77,8 @@ let jit_op_kind_decl () : top_decl =
       ("JIT_OP_POPCNT_R", None);
       ("JIT_OP_CMP_RI", None);
       ("JIT_OP_ROR_RI", None);
+      ("JIT_OP_PUSH_FLAGS", None);
+      ("JIT_OP_POP_FLAGS", None);
     ];
   }
 
@@ -544,6 +546,16 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0xb9029809;
                 break;
             }
+            case JIT_OP_PUSH_FLAGS:
+                code[idx++] = 0xf9415009;
+                code[idx++] = 0xd53b420a;
+                code[idx++] = 0xca0a0129;
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
+            case JIT_OP_POP_FLAGS:
+                code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 9;
+                code[idx++] = 0xf9015009;
+                break;
             default:
                 break;
         }
@@ -927,6 +939,19 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x98; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
                 break;
             }
+            case JIT_OP_PUSH_FLAGS:
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x87;
+                code[idx++] = 0xa0; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                code[idx++] = 0x9c;
+                code[idx++] = 0x41; code[idx++] = 0x5a;
+                code[idx++] = 0x4c; code[idx++] = 0x31; code[idx++] = 0xd0;
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
+                break;
+            case JIT_OP_POP_FLAGS:
+                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
+                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x87;
+                code[idx++] = 0xa0; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                break;
             default:
                 break;
         }
@@ -1137,6 +1162,12 @@ let synthesize_and_execute_block_decl () : top_decl =
                 ctx.next_chunk = take ? (int32_t)target_chunk : (int32_t)fallthrough_chunk;
                 break;
             }
+            case JIT_OP_PUSH_FLAGS:
+                ctx.set_reg(in.dst, ctx.vflags ^ (ctx.flags << 28));
+                break;
+            case JIT_OP_POP_FLAGS:
+                ctx.vflags = ctx.get_reg(in.src);
+                break;
         }
     }
     return;
