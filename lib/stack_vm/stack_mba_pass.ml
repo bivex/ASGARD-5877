@@ -80,11 +80,21 @@ let maybe rng prob = next_int rng 100 < prob
     Sub semantics: pops b_top then a_next, pushes a_next − b_top.
     For XOR: emit or_ops (→ or_val on stack), then and_ops on top
     (→ and_val = top, or_val = next), Sub → or_val − and_val = XOR. ✓ *)
+let emit_mba_anchored_zero r k =
+  [
+    PushReg r; PushImm k; Add;
+    PushReg r; PushImm k; Nand; Dup; Nand; Sub;
+    PushReg r; PushImm k; Nor; Dup; Nor; Sub;
+  ]
+
 let rec lower_mba_to_stack ?anchor (e : Mba_engine.Mba.expr) : stack_op list =
   match e with
   | Mba_engine.Mba.Const c ->
       (match anchor with
-       | Some r -> [ PushReg r; PushImm c; Add; PushReg r; Sub ]
+       | Some r ->
+           let a = salt_egraph_scrambler in
+           let b = Int64.sub c a in
+           [ PushImm a; PushImm b; Add ] @ emit_mba_anchored_zero r salt_xwcafe_leetbeef @ [ Add ]
        | None -> [ PushImm c ])
   | Mba_engine.Mba.Var _      -> [ PushImm 0L ]
   | Mba_engine.Mba.Add (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Add ]
@@ -97,7 +107,7 @@ let rec lower_mba_to_stack ?anchor (e : Mba_engine.Mba.expr) : stack_op list =
       lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor a @ [ Nor ]
   | Mba_engine.Mba.Neg a ->
       (match anchor with
-       | Some r -> [ PushReg r; PushReg r; Sub ] @ lower_mba_to_stack ?anchor a @ [ Sub ]
+       | Some r -> emit_mba_anchored_zero r salt_xwcafe_leetbeef @ lower_mba_to_stack ?anchor a @ [ Sub ]
        | None -> [ PushImm 0L ] @ lower_mba_to_stack ?anchor a @ [ Sub ])
 
 and lower_and ?anchor a b =
@@ -149,7 +159,7 @@ let synthesize_egraph ?anchor ?(budget = egraph_const_config) rng c =
   | Mba_engine.Mba.Const _ ->
       let not_c = Int64.lognot c in
       (match anchor with
-       | Some r -> [ PushImm not_c; PushReg r; PushReg r; Sub; Nor ]
+       | Some r -> PushImm not_c :: emit_mba_anchored_zero r salt_egraph_scrambler @ [ Nor ]
        | None -> [ PushImm not_c; PushImm 0L; Nor ])
   | _ -> lower_mba_to_stack ?anchor expr
 
@@ -185,8 +195,9 @@ let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_
     let addend = Int64.sub c mask in
     (match anchor with
      | Some r ->
-         (* Def-use register-anchored split: defeats pure-constant folding *)
-         [ PushReg r; PushImm mask; Add; PushReg r; Sub; PushImm addend; Add ]
+         (* Additive split + non-linear register-anchored De Morgan zero knot *)
+         let k = next_int64 rng in
+         [ PushImm mask; PushImm addend; Add ] @ emit_mba_anchored_zero r k @ [ Add ]
      | None ->
          [ PushImm mask; PushImm addend; Add ])
 
@@ -194,8 +205,8 @@ let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_
     let not_c = Int64.lognot c in
     (match anchor with
      | Some r ->
-         (* Zero synthesized via r - r: no literal 0L in bytecode *)
-         [ PushImm not_c; PushReg r; PushReg r; Sub; Nor ]
+         (* Zero synthesized via non-linear De Morgan zero knot: no literal 0L or r - r *)
+         PushImm not_c :: emit_mba_anchored_zero r mask @ [ Nor ]
      | None ->
          [ PushImm not_c; PushImm 0L; Nor ])
 
@@ -210,7 +221,7 @@ let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_
     let not_diff = Int64.lognot diff in
     (match anchor with
      | Some r ->
-         [ PushImm a; PushImm not_diff; PushReg r; PushReg r; Sub; Nor; Add ]
+         [ PushImm a; PushImm not_diff ] @ emit_mba_anchored_zero r mask @ [ Nor; Add ]
      | None ->
          [ PushImm a; PushImm not_diff; PushImm 0L; Nor; Add ])
   | L6_NullspaceZero ->
@@ -232,11 +243,8 @@ let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_
     let c2 = Int64.sub c c1 in
     (match anchor with
      | Some r ->
-         [ PushReg r; PushImm r1; Add; PushReg r; Sub; PushImm r2; Add;
-           PushReg r; PushImm r3; Add; PushReg r; Sub; PushImm r4; Add;
-           Sub;
-           PushReg r; PushImm c1; Add; PushReg r; Sub; PushImm c2; Add;
-           Add ]
+         emit_mba_anchored_zero r r1 @
+         [ PushImm c1; PushImm c2; Add; Add ]
      | None ->
          [ PushImm r1; PushImm r2; Add;
            PushImm r3; PushImm r4; Add;
@@ -249,7 +257,7 @@ let synthesize_const ?anchor ?(egraph_rate = 30) ?(egraph_budget = egraph_const_
      with _ ->
        let not_c = Int64.lognot c in
        (match anchor with
-        | Some r -> [ PushImm not_c; PushReg r; PushReg r; Sub; Nor ]
+        | Some r -> PushImm not_c :: emit_mba_anchored_zero r mask @ [ Nor ]
         | None -> [ PushImm not_c; PushImm 0L; Nor ]))
 let find_anchor ops =
   List.find_map (function
@@ -264,7 +272,7 @@ let find_anchor ops =
 let rewrite_block ?(egraph_rate = 30) ?(egraph_budget = egraph_const_config)
     ~rng ~scratch_slot:_ mba_rate block =
   let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
-  let anchor = match find_anchor block.ops with Some r -> Some r | None -> Some 0 in
+  let anchor = find_anchor block.ops in
   let new_ops =
     List.concat_map (fun (i, op) ->
       match op with

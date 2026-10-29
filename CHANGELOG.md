@@ -7,6 +7,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- Eliminate linear cancellation and transparent zeros in Stack-MBA constant synthesis (`lib/stack_vm/stack_mba_pass.ml`):
+  * Replaced linear register cancellation `(r + mask) - r` and syntactically obvious `r - r` zeros in strategies L1, L2, L4, and L6 with non-linear De Morgan zero knots (`((r + k) - (r & k)) - (r | k) == 0L`), defeating automated peephole simplifiers, linear solvers, and rewrite engines.
+  * Eliminated silent fallback to `slot 0` when `find_anchor` returns `None`, ensuring blocks without register accesses do not read program registers (such as RAX) without context allocation.
+  * Verified: 4/4 `asgard mba noise`, 6/6 `asgard mba mod64 crosscheck`, 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, and full E2E license validation on Apple Silicon hardware.
 - Eliminate CFF common trap sink in-degree vulnerability and strengthen Stack-CFF opaque predicates (`lib/cff/cff.ml`, `lib/stack_vm/stack_cff_pass.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
   * Replaced the centralized single `trap_block_id` in `Cff.flatten_func` with dynamically generated, site-isolated trap blocks (`make_trap_block`) having in-degree 1, randomized neutral labels (`func_tk_id`), and diversified opcode bodies, defeating polynomial in-degree graph analysis against opaque predicate sinks.
   * Replaced the trivial syntactic identity predicate in `Stack_cff_pass.go_disp` (`X == X`) with an algebraic zero-knot identity (`((vpc + c) - (vpc & c)) - (vpc | c) == 0L`), eliminating linear CSE/GVN foldability.
