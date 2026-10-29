@@ -12,7 +12,6 @@
 *)
 
 open Stack_ir
-open Vm_ir.Flags
 
 (* ── SplitMix64 PRNG ─────────────────────────────────────────────────── *)
 let splitmix64 s =
@@ -153,13 +152,15 @@ let apply_program cfg prog =
             | Some r -> r
             | None -> 0
           in
-          let r2 = Int64.logor (next_int64 rng) 1L in
-          let r3 = next_int64 rng in
           let jump_ops = [
-            PushReg anchor; PushImm r2; Mul; PushImm r3; Add;
-            PushReg anchor; PushImm r2; Mul; PushImm r3; Add;
+            (* Non-linear cubic Rivest knot: (anchor + 1)^3 == anchor^3 + 3*anchor^2 + 3*anchor + 1 in Z_{2^64} *)
+            PushReg anchor; PushImm 1L; Add; Dup; Dup; Mul; Mul;
+            PushReg anchor; Dup; Dup; Mul; Mul;
+            PushReg anchor; Dup; Mul; PushImm 3L; Mul; Add;
+            PushReg anchor; PushImm 3L; Mul; Add;
+            PushImm 1L; Add;
             Cmp;
-            JccRel (new_bid, E);
+            JccRel (new_bid, Vm_ir.Flags.E);
             JmpRel block.id;
           ] in
           let b1 = { block with ops = first_half @ jump_ops } in

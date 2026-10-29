@@ -7,6 +7,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- Eliminate linear opaque predicate in Spaghetti splitting and fix flag restoration order in Braided CFG merging (`lib/stack_vm/stack_spaghetti_pass.ml`, `lib/stack_vm/stack_braid_pass.ml`):
+  * Replaced duplicated linear opaque jump predicate `Cmp(X, X)` in `Stack_spaghetti_pass` with a non-linear cubic Rivest polynomial identity (`(anchor + 1)^3 == anchor^3 + 3*anchor^2 + 3*anchor + 1`), forcing degree-3 multinomial expansion in SMT/E-graphs before folding.
+  * Corrected flag restoration placement in `Stack_braid_pass`: moved `flag_restore` to immediately follow discriminant `setup` (before `fused_body`), protecting incoming flags during discriminant calculation while ensuring flags computed by `fused_body` are preserved into successor blocks.
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, and full E2E license validation on Apple Silicon hardware.
 - Eliminate linear cancellation and transparent zeros in Stack-MBA constant synthesis (`lib/stack_vm/stack_mba_pass.ml`):
   * Replaced linear register cancellation `(r + mask) - r` and syntactically obvious `r - r` zeros in strategies L1, L2, L4, and L6 with non-linear De Morgan zero knots (`((r + k) - (r & k)) - (r | k) == 0L`), defeating automated peephole simplifiers, linear solvers, and rewrite engines.
   * Eliminated silent fallback to `slot 0` when `find_anchor` returns `None`, ensuring blocks without register accesses do not read program registers (such as RAX) without context allocation.

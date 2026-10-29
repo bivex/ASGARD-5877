@@ -236,9 +236,8 @@ let braid_blocks ~route_slot ~d_slot ~d_bar_slot ~flag_slot ~tau_A ~inv ~(b_a : 
   let epilogue =
     match succ_a, succ_b with
     | Some sa, Some sb when sa = sb ->
-        flag_restore @ [ JmpRel sa ]
+        [ JmpRel sa ]
     | Some sa, Some sb ->
-        flag_restore @
         [
           PushReg d_slot;
           PushImm 0L;
@@ -247,7 +246,6 @@ let braid_blocks ~route_slot ~d_slot ~d_bar_slot ~flag_slot ~tau_A ~inv ~(b_a : 
           JmpRel sb;
         ]
     | Some sa, None ->
-        flag_restore @
         [
           PushReg d_slot;
           PushImm 0L;
@@ -256,7 +254,6 @@ let braid_blocks ~route_slot ~d_slot ~d_bar_slot ~flag_slot ~tau_A ~inv ~(b_a : 
           Exit;
         ]
     | None, Some sb ->
-        flag_restore @
         [
           PushReg d_slot;
           PushImm 0L;
@@ -265,12 +262,12 @@ let braid_blocks ~route_slot ~d_slot ~d_bar_slot ~flag_slot ~tau_A ~inv ~(b_a : 
           Exit;
         ]
     | None, None ->
-        flag_restore @ [ Exit ]
+        [ Exit ]
   in
   {
     id = b_a.id;
     label = Printf.sprintf "braid_%d_%d" b_a.id b_b.id;
-    ops = flag_save @ setup @ fused_body @ epilogue;
+    ops = flag_save @ setup @ flag_restore @ fused_body @ epilogue;
   }
 let is_eligible ~jcc_targets (b : block) =
   let has_writemem = List.exists (function WriteMem _ -> true | _ -> false) b.ops in
