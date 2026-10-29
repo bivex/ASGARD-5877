@@ -638,7 +638,10 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
               Ok ()
           | AddRegImm (r, imm) ->
               let* s = map_ctx_slot r in
-              push_item (jit "ADD_RI", s, 0, imm);
+              let* () = grow () in
+              let dst = stack_base + !depth - 1 in
+              push_item (jit "MOV_RR", dst, s, 0L);
+              push_item (jit "ADD_RI", dst, 0, imm);
               Ok ()
           | AddImm v ->
               if !depth < 1 then Error "stack_jit: underflow on AddImm"
