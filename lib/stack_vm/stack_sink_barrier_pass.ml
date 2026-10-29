@@ -154,19 +154,13 @@ let apply_block (cfg : sink_barrier_config) ?scratch_ring _ctx (b : block) : blo
       List.iteri (fun idx op ->
         let flags_live = if idx < Array.length live then live.(idx) else false in
         match op with
-        | WriteMem _ when !depth >= 2 && next_int rng 100 < cfg.rate ->
-            (* Stack: [..., value, address] *)
+        | WriteMem _ when !depth >= 2 && not flags_live && next_int rng 100 < cfg.rate ->
+            (* Stack: [..., value, address]. When flags are dead, entangle operands cleanly. *)
             let k_addr = pick_knot () in
             let k_val = pick_knot () in
             let barrier =
-              if flags_live then
-                [ PushFlags ] @
-                k_addr @ [ Add ] @
-                [ Swap ] @ k_val @ [ Add; Swap ] @
-                [ PopFlags ]
-              else
-                k_addr @ [ Add ] @
-                [ Swap ] @ k_val @ [ Add; Swap ]
+              k_addr @ [ Add ] @
+              [ Swap ] @ k_val @ [ Add; Swap ]
             in
             new_ops := List.rev barrier @ !new_ops;
             new_ops := op :: !new_ops;

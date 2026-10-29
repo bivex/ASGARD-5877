@@ -346,8 +346,8 @@ let amplify_block
       (* Bridge to Metamorphic_ring: the original command stays, on top of it —
          a flag-neutral ring twist. Always applicable. *)
       | Mul | Nor | Nand | Shl | Shr | Sar | Div | Idiv ->
-          [ op ] @ emit_ring_twist rng
-
+          if flag_safe then [ op ] @ emit_ring_twist rng
+          else [ op ]
       | PopReg r ->
           let anchor = anchors.(!anchor_j mod k_anchors) in
           incr anchor_j;

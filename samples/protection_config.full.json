@@ -66,7 +66,7 @@
   "c_macro": {
     "enabled": true,
     "macro_prefix": "ASG_",
-    "obfuscate_strings": true,
+    "obfuscate_strings": false,
     "obfuscate_constants": true,
     "obfuscate_arithmetic": true,
     "opaque_predicates": true,
