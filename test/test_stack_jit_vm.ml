@@ -392,6 +392,61 @@ let test_chunker_bit_manip_ops () =
   run_one "Ctz(8) feeds A001511"
     [ PushImm 8L; Ctz ] 3L
 
+let test_chunker_imm_peepholes () =
+  (* Group B peepholes: [MOV_RI imm][CMP_RR] -> [CMP_RI] and
+     Rot-by-immediate -> [ROR_RI]; correctness via reference parity,
+     firing via direct inspection of the emitted chunk items. *)
+  let module C = Stack_jit_chunker in
+  let suffix op =
+    String.sub op (String.length "asgard_rd_jit::JIT_OP_") (String.length op - String.length "asgard_rd_jit::JIT_OP_")
+  in
+  (* 1. Rot by immediate folds to ROR_RI and matches the reference. *)
+  let ops_rot = [ PushImm 0x1234567800000001L; PushImm 12L; Rot ] in
+  let ref_rot = List.hd (C.reference_eval (Array.make 8 0L) ops_rot) in
+  (match C.translate_trace () ops_rot with
+   | Error e -> fail ("Rot imm translation failed: " ^ e)
+   | Ok tr ->
+       let all_items = List.concat tr.chunks in
+       check bool "Rot-by-imm folds to ROR_RI" true
+         (List.exists (fun (op, _, _, _) -> suffix op = "ROR_RI") all_items);
+       let gprs = Array.make 16 0L in
+       C.simulate_chunks tr.chunks gprs;
+       check int64 "ROR_RI simulation matches reference" ref_rot gprs.(0));
+  (* 2. Cmp with immediate folds to CMP_RI (peephole fires). *)
+  let ops_cmp = [ PushImm 42L; PushImm 7L; Cmp ] in
+  (match C.translate_trace () ops_cmp with
+   | Error e -> fail ("Cmp imm translation failed: " ^ e)
+   | Ok tr ->
+       let all_items = List.concat tr.chunks in
+       check bool "Cmp-by-imm folds to CMP_RI" true
+         (List.exists (fun (op, _, _, _) -> suffix op = "CMP_RI") all_items));
+  (* 3. Cmp between two registers keeps CMP_RR (no fold). *)
+  let ops_cmp_rr = [ PushImm 42L; Dup; Cmp ] in
+  (match C.translate_trace () ops_cmp_rr with
+   | Error e -> fail ("Cmp rr translation failed: " ^ e)
+   | Ok tr ->
+       let all_items = List.concat tr.chunks in
+       check bool "Cmp reg-vs-reg keeps CMP_RR" true
+         (List.exists (fun (op, _, _, _) -> suffix op = "CMP_RR") all_items));
+  (* 4. CMP_RI flag path feeding Cmov: reference evaluator models the
+     compare-vs-immediate flags; simulator covers the value path.
+     Collatz guard shape: n <= 1 (unsigned BE) selects the fallback 99. *)
+  let ops_cmov =
+    [ PushImm 5L; PushImm 1L; Cmp; PushImm 99L; Cmov (Flags.BE, 1) ]
+  in
+  let regs4 = Array.make 8 0L in
+  let _ = C.reference_eval regs4 ops_cmov in
+  (match C.translate_trace () ops_cmov with
+   | Error e -> fail ("Cmov-after-CMP_RI translation failed: " ^ e)
+   | Ok tr ->
+       let all_items = List.concat tr.chunks in
+       check bool "Cmp-by-imm folds to CMP_RI before Cmov" true
+         (List.exists (fun (op, _, _, _) -> suffix op = "CMP_RI") all_items);
+       let gprs = Array.make 16 0L in
+       C.simulate_chunks tr.chunks gprs;
+       (* n = 5 > 1 so BE is not taken: reg 1 keeps the pushed 99 via Csel. *)
+       check int64 "Cmov value path intact after CMP_RI fold" 99L gprs.(1))
+
 let test_chunker_ruler_a001511 () =
   (* OEIS A001511: A001511(t) = 1 + ctz(t) = 1 + v2(2t) *)
   let module C = Stack_jit_chunker in
@@ -440,4 +495,5 @@ let tests = [
   ("Stack-JIT Dynamic Loop & Branching E2E", `Quick, test_stack_jit_loop_branch_e2e);
   ("Stack-JIT A001511 Ruler & Invalidation Schedule", `Quick, test_chunker_ruler_a001511);
   ("Stack-JIT Bswap/Clz/Ctz/Rbit/Popcnt Simulation", `Quick, test_chunker_bit_manip_ops);
+  ("Stack-JIT CMP_RI & ROR_RI Immediate Peepholes", `Quick, test_chunker_imm_peepholes);
 ]

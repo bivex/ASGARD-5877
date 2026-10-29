@@ -369,7 +369,11 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
           | "REM_RR" ->
               gprs.(dst) <- (if gprs.(src) = 0L then 0L else Int64.unsigned_rem gprs.(dst) gprs.(src))
           | "CMP_RR" -> ()
+          | "CMP_RI" -> ()
           | "CSEL_RR" -> gprs.(dst) <- gprs.(src)
+          | "ROR_RI" ->
+              let s = Int64.to_int imm land 63 in
+              gprs.(dst) <- (if s = 0 then gprs.(dst) else Int64.logor (Int64.shift_right_logical gprs.(dst) s) (Int64.shift_left gprs.(dst) (64 - s)))
           | "LOAD_8" | "LOAD_16" | "LOAD_32" | "LOAD_64" -> ()
           | "STORE_8" | "STORE_16" | "STORE_32" | "STORE_64" -> ()
           | "RESOLVE_SYM" -> gprs.(dst) <- Int64.of_int (0x1000 + Int64.to_int imm * 8)
@@ -523,7 +527,7 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Sar -> shift_op "SAR_RR" "SAR_RI"
           | Div -> binary "DIV_RR"
           | Idiv -> binary "SDIV_RR"
-          | Rot -> binary "ROR_RR"
+          | Rot -> shift_op "ROR_RR" "ROR_RI"
           | Bswap -> unary "BSWAP_R"
           | Clz -> unary "CLZ_R"
           | Ctz -> unary "CTZ_R"
@@ -541,7 +545,16 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
           | Cmp ->
               if !depth < 2 then Error "stack_jit: underflow on Cmp"
               else begin
-                push_item (jit "CMP_RR", stack_base + !depth - 2, stack_base + !depth - 1, 0L);
+                let a = stack_base + !depth - 2 and b = stack_base + !depth - 1 in
+                (match !out with
+                 (* Peephole: [MOV_RI b, imm][CMP_RR a, b] -> [CMP_RI a, imm].
+                    Saves one window slot and one native load per literal compare. *)
+                 | (mov_ri, top, 0, imm) :: rest_out
+                   when mov_ri = jit "MOV_RI" && top = b ->
+                   out := rest_out;
+                   push_item (jit "CMP_RI", a, 0, imm)
+                 | _ ->
+                   push_item (jit "CMP_RR", a, b, 0L));
                 depth := !depth - 2;
                 Ok ()
               end
@@ -550,8 +563,8 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
               else begin
                 let a = stack_base + !depth - 2 and b = stack_base + !depth - 1 in
                 push_item (jit "AND_RR", a, b, 0L);
-                push_item (jit "MOV_RI", b, 0, 0L);
-                push_item (jit "CMP_RR", a, b, 0L);
+                (* AND-result vs zero folds to CMP_RI; MOV_RI scratch elided. *)
+                push_item (jit "CMP_RI", a, 0, 0L);
                 depth := !depth - 2;
                 Ok ()
               end

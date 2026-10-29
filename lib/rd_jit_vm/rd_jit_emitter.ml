@@ -176,7 +176,8 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
       "CMP_RR"; "CSEL_RR"; "MULH_RR"; "SMULH_RR";
       "LOAD_8"; "LOAD_16"; "LOAD_32"; "STORE_8"; "STORE_16"; "STORE_32";
       "RESOLVE_SYM"; "JMP"; "JCC";
-      "BSWAP_R"; "CLZ_R"; "CTZ_R"; "RBIT_R"; "POPCNT_R" ]
+      "BSWAP_R"; "CLZ_R"; "CTZ_R"; "RBIT_R"; "POPCNT_R";
+      "CMP_RI"; "ROR_RI" ]
   in
   let jit_op_code_tbl = Hashtbl.create 32 in
   List.iteri

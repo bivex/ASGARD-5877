@@ -75,6 +75,8 @@ let jit_op_kind_decl () : top_decl =
       ("JIT_OP_CTZ_R", None);
       ("JIT_OP_RBIT_R", None);
       ("JIT_OP_POPCNT_R", None);
+      ("JIT_OP_CMP_RI", None);
+      ("JIT_OP_ROR_RI", None);
     ];
   }
 
@@ -465,6 +467,15 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x9aca2d29;
                 code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 break;
+            case JIT_OP_ROR_RI: {
+                uint32_t rot = (uint32_t)(in.imm & 63);
+                if (rot == 0) break;
+                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                /* ror x9, x9, #rot (EXTR Xd,Xn,Xn,#imm): 0x93C00000|Rm<<16|imm6<<10|Rn<<5|Rd */
+                code[idx++] = 0x93c00000 | (9 << 16) | (rot << 10) | (9 << 5) | 9;
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                break;
+            }
             case JIT_OP_DIV_RR:
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
@@ -488,6 +499,15 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
                 code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
                 code[idx++] = 0xeb0a013f;
+                break;
+            case JIT_OP_CMP_RI:
+                code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                if (in.imm >= 0 && in.imm < 4096) {
+                    code[idx++] = 0xf1000000 | ((uint32_t)in.imm << 10) | (9 << 5) | 31; /* cmp x9, #imm12 */
+                } else {
+                    emit_arm64_imm(code, idx, 10, in.imm);
+                    code[idx++] = 0xeb0a013f;
+                }
                 break;
             case JIT_OP_MULH_RR:
                 code[idx++] = 0xf9400000 | (dst_off / 8 << 10) | (0 << 5) | 9;
@@ -782,6 +802,14 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x48; code[idx++] = 0xd3; code[idx++] = 0xc8;
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
+            case JIT_OP_ROR_RI: {
+                uint8_t rot = (uint8_t)(in.imm & 63);
+                if (rot == 0) break;
+                code[idx++] = 0x4c; code[idx++] = 0x8b; code[idx++] = 0x4f; code[idx++] = dst_off; /* mov r9, [rdi+dst] */
+                code[idx++] = 0x49; code[idx++] = 0xc1; code[idx++] = 0xc9; code[idx++] = rot;     /* ror r9, imm8 */
+                code[idx++] = 0x4c; code[idx++] = 0x89; code[idx++] = 0x4f; code[idx++] = dst_off; /* mov [rdi+dst], r9 */
+                break;
+            }
             case JIT_OP_DIV_RR:
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
                 code[idx++] = 0x48; code[idx++] = 0x31; code[idx++] = 0xd2;
@@ -807,6 +835,20 @@ let synthesize_and_execute_block_decl () : top_decl =
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x57; code[idx++] = src_off;
                 code[idx++] = 0x48; code[idx++] = 0x39; code[idx++] = 0xd0;
+                break;
+            case JIT_OP_CMP_RI:
+                code[idx++] = 0x4c; code[idx++] = 0x8b; code[idx++] = 0x4f; code[idx++] = dst_off; /* mov r9, [rdi+dst] */
+                if (in.imm >= -2147483648LL && in.imm <= 2147483647LL) {
+                    code[idx++] = 0x49; code[idx++] = 0x81; code[idx++] = 0xf9; /* cmp r9, imm32 */
+                    code[idx++] = (uint8_t)(in.imm & 0xFF);
+                    code[idx++] = (uint8_t)((in.imm >> 8) & 0xFF);
+                    code[idx++] = (uint8_t)((in.imm >> 16) & 0xFF);
+                    code[idx++] = (uint8_t)((in.imm >> 24) & 0xFF);
+                } else {
+                    code[idx++] = 0x49; code[idx++] = 0xba; /* movabs r10, imm64 */
+                    emit_u64(in.imm);
+                    code[idx++] = 0x4d; code[idx++] = 0x39; code[idx++] = 0xd1; /* cmp r9, r10 */
+                }
                 break;
             case JIT_OP_MULH_RR:
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = dst_off;
@@ -1016,6 +1058,15 @@ let synthesize_and_execute_block_decl () : top_decl =
                 ctx.set_reg(in.dst, s == 0 ? v : (v >> s) | (v << (64 - s)));
                 break;
             }
+            case JIT_OP_ROR_RI: {
+                uint64_t v = ctx.get_reg(in.dst);
+                uint64_t s = (uint64_t)in.imm & 63;
+                ctx.set_reg(in.dst, s == 0 ? v : (v >> s) | (v << (64 - s)));
+                break;
+            }
+            case JIT_OP_CMP_RI:
+                /* Flags-only op: nothing to store in the value window. */
+                break;
             case JIT_OP_DIV_RR: {
                 uint64_t d = ctx.get_reg(in.src);
                 ctx.set_reg(in.dst, d == 0 ? 0 : ctx.get_reg(in.dst) / d);
