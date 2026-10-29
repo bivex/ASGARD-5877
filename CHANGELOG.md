@@ -17,6 +17,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Added `sjit_full_config.json` enabling every single pass across all layers: Ephemeral JIT Micro-Handlers, Address Binding, Computational Stalling, Stack String Encryption (ASG_STR), C-Macro Dynamic Nanomites, and Signal Dispatch.
   * Verified on Apple Silicon: 28/28 passes active, 77/77 showcase assertions exact, DRS 93.7/100.0, Composite DRS v2 100.0/100.0.
 ### Changed
+- Modularized `sjit_showcase` test harness into 4 sub-groups to eliminate Hex-Rays 64 KB decompiler limit (`examples/sjit_showcase/sjit_showcase.c`):
+  * Split monolithic 121 KB `main` into `test_group_crypto_prng`, `test_group_math_loops`, `test_group_algorithms`, and `test_group_bitwise` (all <= 37 KB).
+  * Eliminated Hex-Rays "100004828: too big function" failure, producing clean, structured decompilation in IDA Pro 9.3 out of the box.
+  * Verified: 77/77 SJIT showcase assertions exact on Apple Silicon hardware.
 - Hardened JIT bytecode magic verification and stripped all informational comments from emitted C++ runtime (`lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/nano_jit_slot.ml`, `lib/rd_jit_vm/rd_jit_buffer.ml`):
   * Applied volatile XOR constant blinding to the `0x58774A4954303031ULL` (`wXJIT001`) sentinel in `asgard_vm_call`, preventing Clang/Hex-Rays constant folding and signature scanning in IDA Pro.
   * Removed all top-level OEIS sequence commentary (A003022, A002487, A000166, A000931) and protector banners from the generated C++ headers, leaving zero protector/OEIS artifacts in decompiled code.

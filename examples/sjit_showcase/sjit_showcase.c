@@ -523,12 +523,8 @@ static uint64_t ref_popcnt(uint64_t x) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Main test harness                                                  */
+/* Main test harness sub-groups (modularized for clean IDA analysis)   */
 /* ------------------------------------------------------------------ */
-int main(void)
-{
-    int pass = 0, fail = 0;
-
 #define CHECK(name, got, exp) do { \
     if ((got) == (exp)) { \
         printf("  [PASS] %-34s got=0x%016llX (%lld)\n", (name), (unsigned long long)(got), (long long)(got)); \
@@ -541,17 +537,8 @@ int main(void)
     fflush(stdout); \
 } while(0)
 
-    printf("====================================================================\n");
-    printf("  🛡️  ASGARD-5877: Stack-JIT (SJIT) Big C++ Showcase & Bug Stress\n");
-    printf("  19 Virtualized Functions in Sealed Nano-Arena:\n");
-    printf("    * A000002 Kolakoski Fission     * A010060 Thue-Morse Dummy Padding\n");
-    printf("    * A000166 Derangement Shuffling * A002487 Stern Affine Masking\n");
-    printf("    * A000695 Moser-de Bruijn Imm   * A003022 Golomb Ruler Slots\n");
-    printf("    * A000201 Beatty-Wythoff Arena  * A001511 Ruler / A269160 Wipe\n");
-    printf("    * A000931 Padovan Dispersion\n");
-    printf("====================================================================\n\n");
-    fflush(stdout);
-
+static void test_group_crypto_prng(int* pass_p, int* fail_p) {
+    int pass = 0, fail = 0;
     /* ---- 1. License derivation ---- */
     printf("[1] license_derive (SplitMix64 + Golden Ratio + Blinding)\n");
     CHECK("license(0x5877, 0)",       license_derive(0x5877ULL, 0ULL),       ref_license(0x5877ULL, 0ULL));
@@ -579,7 +566,12 @@ int main(void)
     CHECK("popcount(0xFFFFFFFFFFFFFFFF)",popcount64(0xFFFFFFFFFFFFFFFFULL),ref_popcount(0xFFFFFFFFFFFFFFFFULL));
     CHECK("popcount(0x5877585758575857)",popcount64(0x5877585758575857ULL), ref_popcount(0x5877585758575857ULL));
     CHECK("popcount(0xAAAAAAAAAAAAAAAA)",popcount64(0xAAAAAAAAAAAAAAAAULL), ref_popcount(0xAAAAAAAAAAAAAAAAULL));
+    *pass_p += pass;
+    *fail_p += fail;
+}
 
+static void test_group_math_loops(int* pass_p, int* fail_p) {
+    int pass = 0, fail = 0;
     /* ---- 5. Collatz stopping time ---- */
     printf("\n[5] collatz_steps (3n+1 Hailstone Divergent Branching Loop)\n");
     CHECK("collatz(1)",   collatz_steps(1ULL),   ref_collatz(1ULL));
@@ -608,7 +600,12 @@ int main(void)
     CHECK("fib(10)", fibonacci_iter(10ULL), ref_fib(10ULL));
     CHECK("fib(30)", fibonacci_iter(30ULL), ref_fib(30ULL));
     CHECK("fib(50)", fibonacci_iter(50ULL), ref_fib(50ULL));
+    *pass_p += pass;
+    *fail_p += fail;
+}
 
+static void test_group_algorithms(int* pass_p, int* fail_p) {
+    int pass = 0, fail = 0;
     /* ---- 9. Bitwise CRC-32 ---- */
     printf("\n[9] crc32_bitwise (IEEE 802.3 Polynomial 0xEDB88320 Nested Loop)\n");
     CHECK("crc32(0x0000000000000000)", crc32_bitwise(0x0000000000000000ULL), ref_crc32(0x0000000000000000ULL));
@@ -646,7 +643,12 @@ int main(void)
     CHECK("lfsr(1, 64)",       lfsr_galois64(1ULL, 64),       ref_lfsr(1ULL, 64));
     CHECK("lfsr(0x5877, 100)", lfsr_galois64(0x5877ULL, 100), ref_lfsr(0x5877ULL, 100));
     CHECK("lfsr(0xCAFE, 256)", lfsr_galois64(0xCAFEULL, 256), ref_lfsr(0xCAFEULL, 256));
+    *pass_p += pass;
+    *fail_p += fail;
+}
 
+static void test_group_bitwise(int* pass_p, int* fail_p) {
+    int pass = 0, fail = 0;
     /* ---- 14. SipHash round ---- */
     printf("\n[14] siphash_round (4-State Register Compression Round)\n");
     CHECK("siphash(0, 0, 0, 0)",
@@ -696,6 +698,29 @@ int main(void)
     CHECK("popcnt(0x5877585758575857)",  hamming_weight64(0x5877585758575857ULL),  ref_popcnt(0x5877585758575857ULL));
     CHECK("popcnt(0xFFFFFFFFFFFFFFFF)",  hamming_weight64(0xFFFFFFFFFFFFFFFFULL),  ref_popcnt(0xFFFFFFFFFFFFFFFFULL));
     CHECK("popcnt(0xDEADBEEFCAFE1337)",  hamming_weight64(0xDEADBEEFCAFE1337ULL),  ref_popcnt(0xDEADBEEFCAFE1337ULL));
+    *pass_p += pass;
+    *fail_p += fail;
+}
+
+int main(void)
+{
+    int pass = 0, fail = 0;
+
+    printf("====================================================================\n");
+    printf("  🛡️  ASGARD-5877: Stack-JIT (SJIT) Big C++ Showcase & Bug Stress\n");
+    printf("  19 Virtualized Functions in Sealed Nano-Arena:\n");
+    printf("    * A000002 Kolakoski Fission     * A010060 Thue-Morse Dummy Padding\n");
+    printf("    * A000166 Derangement Shuffling * A002487 Stern Affine Masking\n");
+    printf("    * A000695 Moser-de Bruijn Imm   * A003022 Golomb Ruler Slots\n");
+    printf("    * A000201 Beatty-Wythoff Arena  * A001511 Ruler / A269160 Wipe\n");
+    printf("    * A000931 Padovan Dispersion\n");
+    printf("====================================================================\n\n");
+    fflush(stdout);
+
+    test_group_crypto_prng(&pass, &fail);
+    test_group_math_loops(&pass, &fail);
+    test_group_algorithms(&pass, &fail);
+    test_group_bitwise(&pass, &fail);
 
     /* ---- Summary ---- */
     printf("\n====================================================================\n");
