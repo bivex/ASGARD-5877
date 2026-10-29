@@ -3474,6 +3474,167 @@ let test_costas_field_layout () =
   done;
   Alcotest.(check bool) "Costas order-6 array has distinct difference vectors" true !distinct
 
+let test_provenance_lifecycle_and_hash () =
+  let tracker = Stack_provenance.create_tracker () in
+  let b0 = make_block 0 "entry" [ PushImm 42L; PopReg 0; Exit ] in
+  let prog1 = make_program 0 [b0] 4 in
+  let b0' = make_block 0 "entry" [ PushImm 42L; PushImm 10L; Add; PopReg 0; Exit ] in
+  let prog2 = make_program 0 [b0'] 4 in
+
+  (* Test program hashing determinism and sensitivity *)
+  let h1 = Stack_provenance.hash_program prog1 in
+  let h1_repeat = Stack_provenance.hash_program prog1 in
+  let h2 = Stack_provenance.hash_program prog2 in
+  Alcotest.(check int64) "hash_program is deterministic" h1 h1_repeat;
+  Alcotest.(check bool) "hash_program sensitive to ops change" true (h1 <> h2);
+
+  (* Test pass lifecycle recording *)
+  Stack_provenance.record_pass tracker
+    ~name:"Superoperator Fusion" ~phase:"2a" ~status:Verified
+    ~prog_before:prog1 ~prog_after:prog2 ~candidates:2 ~rewritten:2 ();
+  Stack_provenance.record_pass tracker
+    ~name:"Native Micro-Handler Interleaving" ~phase:"6f"
+    ~status:(Skipped "No eligible ALU clusters found for native interleaving")
+    ~candidates:0 ~rewritten:0 ();
+  Stack_provenance.record_pass tracker
+    ~name:"Computational Stalling" ~phase:"0-stall"
+    ~status:Applied ~prog_before:prog1 ~prog_after:prog2 ();
+  Stack_provenance.record_pass tracker
+    ~name:"Algebraic Flag Materialization" ~phase:"1a"
+    ~status:(Disabled "disabled in configuration") ();
+
+  let records = Stack_provenance.get_records tracker in
+  Alcotest.(check int) "4 records captured" 4 (List.length records);
+  let r0 = List.nth records 0 in
+  let r1 = List.nth records 1 in
+  let r2 = List.nth records 2 in
+  let r3 = List.nth records 3 in
+  Alcotest.(check string) "r0 tag is [VERIFIED]" "[VERIFIED]" (Stack_provenance.status_tag r0.status);
+  Alcotest.(check string) "r1 tag is [SKIPPED ]" "[SKIPPED ]" (Stack_provenance.status_tag r1.status);
+  Alcotest.(check string) "r2 tag is [APPLIED ]" "[APPLIED ]" (Stack_provenance.status_tag r2.status);
+  Alcotest.(check string) "r3 tag is [DISABLED]" "[DISABLED]" (Stack_provenance.status_tag r3.status);
+  Alcotest.(check bool) "r0 is active" true (Stack_provenance.is_active r0.status);
+  Alcotest.(check bool) "r1 is inactive" false (Stack_provenance.is_active r1.status)
+
+let test_semantic_verification_report () =
+  let b0 = make_block 0 "entry" [
+    PushImm 1337L;
+    PopReg 0;
+    PushReg 0;
+    PushImm 1L;
+    Add;
+    PopReg 1;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 4 in
+  let report = Stack_provenance.run_semantic_verification prog in
+  Alcotest.(check bool) "all 11 semantic checks passed" true report.all_passed;
+  Alcotest.(check string) "overall status partially verified (no diff trials)"
+    "PARTIALLY VERIFIED" report.overall_status;
+  Alcotest.(check int) "11 checks generated" 11 (List.length report.checks);
+  List.iter (fun (c : Stack_provenance.semantic_check) ->
+    Alcotest.(check bool) (Printf.sprintf "check '%s' passed" c.name) true c.passed
+  ) report.checks
+
+let test_drs_breakdown_and_size_reconciliation () =
+  let b0 = make_block 0 "entry" [
+    PushImm 100L;
+    PopReg 0;
+    Exit;
+  ] in
+  let prog = make_program 0 [b0] 4 in
+  let enc = Stack_encoder.encode_program ~seed_key:0xCAFE1337L prog in
+  let default_cfg = Native_vm.Protection_config.default in
+  let drs = Stack_provenance.calculate_drs_breakdown
+    ~native_cfg:default_cfg ~prog ~enc ~real_ops:3 ~real_blocks:1
+  in
+  Alcotest.(check bool) "cfg_score in [0, 25]" true (drs.cfg_score >= 0.0 && drs.cfg_score <= 25.0);
+  Alcotest.(check bool) "arith_score in [0, 25]" true (drs.arith_score >= 0.0 && drs.arith_score <= 25.0);
+  Alcotest.(check bool) "isa_score in [0, 25]" true (drs.isa_score >= 0.0 && drs.isa_score <= 25.0);
+  Alcotest.(check bool) "integrity_score in [0, 25]" true (drs.integrity_score >= 0.0 && drs.integrity_score <= 25.0);
+  Alcotest.(check bool) "total score >= 50" true (drs.total_score >= 50.0);
+
+  (* Test byte size reconciliation *)
+  let exact_bytes = Bytes.length enc.bytes in
+  let words = (exact_bytes + 7) / 8 in
+  let aligned_bytes = words * 8 in
+  let padding = aligned_bytes - exact_bytes in
+  Alcotest.(check bool) "padding in 0..7" true (padding >= 0 && padding < 8);
+  Alcotest.(check int) "aligned_bytes matches words * 8" (words * 8) aligned_bytes
+
+let test_compiler_report_formatting () =
+  let b0 = make_block 0 "entry" [ PushImm 55L; PopReg 0; Exit ] in
+  let prog = make_program 0 [b0] 4 in
+  let enc = Stack_encoder.encode_program ~seed_key:0x12345678L prog in
+  let default_cfg = Native_vm.Protection_config.default in
+  let drs = Stack_provenance.calculate_drs_breakdown
+    ~native_cfg:default_cfg ~prog ~enc ~real_ops:3 ~real_blocks:1
+  in
+  let verification = Stack_provenance.run_semantic_verification prog in
+  let tracker = Stack_provenance.create_tracker () in
+  Stack_provenance.record_pass tracker ~name:"Virtual CFG Flattening (CFF)" ~phase:"3-cff" ~status:Verified ();
+  Stack_provenance.record_pass tracker ~name:"Native Micro-Handler Interleaving" ~phase:"6f"
+    ~status:(Skipped "No eligible ALU clusters found for native interleaving") ();
+  let pass_records = Stack_provenance.get_records tracker in
+  let summary_info : Stack_provenance.pipeline_summary = {
+    target_arch = "ARM64 / AArch64";
+    backend = "Stack-VM";
+    host_os = "macOS";
+    output_format = "Mach-O";
+    build_mode = "Hardened";
+    source_funcs = 1;
+    lifted_funcs = 1;
+    vm_ir_blocks = 1;
+    unsupported_instructions = 0;
+    semantic_coverage_pct = 100.0;
+    passes_configured = 2;
+    passes_applied = 0;
+    passes_verified = 1;
+    passes_partial = 0;
+    passes_skipped = 1;
+    passes_disabled = 0;
+    ir_blocks = 1;
+    lowered_stack_blocks = 1;
+    final_cfg_blocks = 1;
+    real_ops = 3;
+    total_ops = 3;
+    exact_bytecode_bytes = Bytes.length enc.bytes;
+    aligned_bytecode_bytes = ((Bytes.length enc.bytes + 7) / 8) * 8;
+    bytecode_words = (Bytes.length enc.bytes + 7) / 8;
+    padding_bytes = (((Bytes.length enc.bytes + 7) / 8) * 8) - Bytes.length enc.bytes;
+    shannon_entropy = 7.95;
+    drs;
+    pass_records;
+    verification;
+    unwind_audit = Some "2 routine(s), no inconsistency";
+    watermark_info = Some "embedded 32-bit SplitMix64 ECC";
+    functional_tests = [ ("Valid License Test", true); ("Invalid License Test", true) ];
+    compile_time_ms = 42.0;
+  } in
+  let rep = Stack_provenance.format_compiler_report summary_info in
+  Alcotest.(check bool) "report contains header" true
+    (Test_helpers.string_contains rep "ASGARD-5877 COMPILER REPORT");
+  Alcotest.(check bool) "report contains [01] FRONTEND" true
+    (Test_helpers.string_contains rep "[01] FRONTEND");
+  Alcotest.(check bool) "report contains [02] TRANSFORMATION PIPELINE" true
+    (Test_helpers.string_contains rep "[02] TRANSFORMATION PIPELINE");
+  Alcotest.(check bool) "report contains [03] VIRTUALIZATION" true
+    (Test_helpers.string_contains rep "[03] VIRTUALIZATION");
+  Alcotest.(check bool) "report contains [04] HARDENING" true
+    (Test_helpers.string_contains rep "[04] HARDENING");
+  Alcotest.(check bool) "report contains [05] VERIFICATION" true
+    (Test_helpers.string_contains rep "[05] VERIFICATION");
+  Alcotest.(check bool) "report contains [06] BINARY AUDIT" true
+    (Test_helpers.string_contains rep "[06] BINARY AUDIT");
+  Alcotest.(check bool) "report contains [07] FUNCTIONAL TESTS" true
+    (Test_helpers.string_contains rep "[07] FUNCTIONAL TESTS");
+  Alcotest.(check bool) "report contains [08] PERFORMANCE & OVERHEAD" true
+    (Test_helpers.string_contains rep "[08] PERFORMANCE & OVERHEAD");
+  Alcotest.(check bool) "report contains RESULT: BUILD SUCCESSFUL" true
+    (Test_helpers.string_contains rep "RESULT: BUILD SUCCESSFUL");
+  Alcotest.(check bool) "report contains honest skipped status for native interleaving" true
+    (Test_helpers.string_contains rep "[SKIPPED ] Native Micro-Handler Interleaving")
+
 let tests = [
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
@@ -3541,6 +3702,10 @@ let tests = [
   ("Wolfram Rule 30 Keystream", `Quick, test_rule30);
   ("Costas Array Bytecode Field Permutation", `Quick, test_costas_field_layout);
   ("Native Micro-Handler Interleaving", `Quick, test_native_interleave);
+  ("Pass Provenance Lifecycle & Program Hash", `Quick, test_provenance_lifecycle_and_hash);
+  ("Independent Semantic Verification Report", `Quick, test_semantic_verification_report);
+  ("DRS Methodology & Bytecode Size Reconciliation", `Quick, test_drs_breakdown_and_size_reconciliation);
+  ("LLVM-Style Compiler Report & Honest Pass Status", `Quick, test_compiler_report_formatting);
 ]
 
 

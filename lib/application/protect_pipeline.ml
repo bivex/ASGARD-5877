@@ -145,7 +145,7 @@ let run
             in
             Logger.stepf ~loc:__LOC__ ~section:"PACKAGER" ~step:3 ~total:8 "Packaging VM bytecode and synthesizing handlers (engine=%s)..." engine_str;
             let pkg = P.package ~rng ~config ~constants lifted_func in
-            Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "Bytecode packaging complete: %d words (%d bytes), runtime header='%s'"
+            Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "Bytecode packaging complete: %d words (%d bytes storage footprint), runtime header='%s'"
               (List.length pkg.bytecode) (List.length pkg.bytecode * 8) pkg.header_name;
 
             (* 4. Write C++ runtime header *)
@@ -417,38 +417,6 @@ let run
               | _ -> None
             in
 
-            (* Address binding report: runtime integrity binding active when configured *)
-            let metrics =
-              if native_cfg.anti_pushan.address_bound then
-                let sep = "===============================================" in
-                let summary = pkg.metrics.formatted_summary in
-                let n = String.length summary in
-                let sep_len = String.length sep in
-                let body =
-                  if n > sep_len then String.sub summary 0 (n - sep_len) else summary
-                in
-                { pkg.metrics with
-                  formatted_summary =
-                    body
-                    ^ Printf.sprintf "- Address Binding: Active (Runtime Integrity Binding)\n%s" sep }
-              else
-                pkg.metrics
-            in
-            let metrics =
-              match unwind_audit with
-              | None -> metrics
-              | Some line ->
-                  let sep = "===============================================" in
-                  let summary = metrics.formatted_summary in
-                  let n = String.length summary in
-                  let sep_len = String.length sep in
-                  let body =
-                    if n > sep_len then String.sub summary 0 (n - sep_len) else summary
-                  in
-                  { metrics with
-                    formatted_summary =
-                      body ^ Printf.sprintf "- Mach-O Compact Unwind: %s\n%s" line sep }
-            in
             let wm_id_opt =
               match Protect_ports.watermark config with
               | Some payload ->
@@ -491,37 +459,30 @@ let run
                   Some wid
               | None -> None
             in
-            let metrics =
+            let wm_info_str =
               match wm_id_opt with
-              | None -> metrics
               | Some wid ->
-                  let sep = "===============================================" in
-                  let summary = metrics.formatted_summary in
-                  let n = String.length summary in
-                  let sep_len = String.length sep in
-                  let body =
-                    if n > sep_len then String.sub summary 0 (n - sep_len) else summary
-                  in
-                  { metrics with
-                    formatted_summary =
-                      body
-                      ^ Printf.sprintf "- Build-Seed Watermark: Active (Client ID: 0x%016LX, Derivation Key: 0x%016LX)\n%s"
-                          wid.raw_bits wid.derivation_key sep }
+                  let pbits = native_cfg.watermark.payload_bits in
+                  let red = native_cfg.watermark.redundancy in
+                  Some (Printf.sprintf "embedded %d-bit payload (%dx redundancy, Client ID: 0x%016LX, Derivation Key: 0x%016LX)"
+                          pbits red wid.raw_bits wid.derivation_key)
+              | None -> None
             in
             let output_target = match bin_artifact with Some b -> b | None -> hdr_path in
-            let sep = "===============================================" in
-            let summary = metrics.formatted_summary in
-            let n = String.length summary in
-            let sep_len = String.length sep in
-            let body =
-              if n > sep_len then String.sub summary 0 (n - sep_len) else summary
+            let functional_tests =
+              match exec_result with
+              | Some (code, _) -> [ ("Binary Execution Smoke Test", code = 0) ]
+              | None -> []
             in
-            let metrics =
-              { metrics with
-                formatted_summary =
-                  body
-                  ^ Printf.sprintf "- Protected File: %s -> %s\n%s" input_file output_target sep }
+            let finalized_summary =
+              Stack_vm.Stack_provenance.finalize_report
+                ?unwind_audit
+                ?watermark:wm_info_str
+                ~functional_tests
+                ~output_target
+                pkg.metrics.formatted_summary
             in
+            let metrics = { pkg.metrics with formatted_summary = finalized_summary } in
             Logger.infof ~loc:__LOC__ ~section:"PIPELINE" "Protected file: '%s' -> '%s'" input_file output_target;
             Logger.infof ~loc:__LOC__ ~section:"PIPELINE" "Protection completed successfully for '%s' (Aggregated DRS: %.1f/100.0)"
               input_file metrics.drs_score;

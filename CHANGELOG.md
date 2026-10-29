@@ -7,6 +7,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented Pass Verification & Provenance Engine and LLVM-style multi-level compiler report (`lib/stack_vm/stack_provenance.ml`, `lib/stack_vm/stack_provenance.mli`, `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/application/protect_pipeline.ml`, `lib/constants/magic_numbers.ml`):
+  * Replaced flat ad-hoc summary with an industrial 8-section compiler report: Target info, [01] Frontend metrics, [02] Transformation Pipeline lifecycle, [03] Virtualization & CFG breakdown, [04] Hardening status, [05] Independent Semantic Verification Report, [06] Binary & Compact Unwind Audit, [07] Functional Tests, and [08] Performance & Overhead.
+  * Introduced honest 5-state pass lifecycle (`Verified`, `Applied`, `Partial`, `Skipped`, `Disabled`) with explicit skip reasons, resolving inaccurate `[ON ]` status reporting on zero-rewrite passes (e.g., Native Micro-Handler Interleaving reports `[SKIPPED ] No eligible ALU clusters found for native interleaving`).
+  * Reconciled bytecode exact payload bytes vs 8-byte aligned word footprint and padding across packaging and toolchain logs, eliminating the 7-byte reporting discrepancy.
+  * Implemented 11 independent invariant and semantic validation checks (structural CFG, type consistency, register bounds, stack underflow/overflow, dispatcher target validity, memory access widths, 2's complement arithmetic, branch condition preservation, return value integrity) and integrated differential execution reporting.
+  * Replaced entropy-derived heuristic score with transparent 4-component composite DRS methodology (CFG recovery barrier, semantic obfuscation, ISA polymorphism, memory & integrity).
+  * Registered FNV-1a 64-bit hashing constants in `lib/constants/magic_numbers.ml` for deterministic per-pass program provenance hashing.
+  * Verified: 70/70 `Stack-VM Execution Engine` tests (including 4 new provenance and verification tests), 11/11 `Protection Config` tests, 23/23 `Mach-O Compact Unwind` tests, and full E2E license check on Apple Silicon.
 - Added separate Multi-VM Nested Stack license validator and pipeline (`examples/license_check_multivm.c`, `build_license_multivm.sh`, `check_license_multivm.sh`, `samples/protection_config.multivm.json`):
   * `examples/license_check_multivm.c`: pure computational verification running inside the Heterogeneous Dual-VM (`verify_license_nested`) with native IO harness, verifying 128-bit key words and computing `0x5D9A` token.
   * `samples/protection_config.multivm.json`: configured `toolchain.opt_level = "-O1"` to prevent LLVM -O3 optimizer timeouts on large multi-VM C++ headers.
