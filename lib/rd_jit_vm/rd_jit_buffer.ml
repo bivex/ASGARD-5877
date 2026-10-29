@@ -228,9 +228,12 @@ let dual_mapped_jit_buffer_def () : top_decl =
 #if defined(__APPLE__) && defined(__aarch64__)
             if (__builtin_available(macOS 11.0, *)) {
                 pthread_jit_write_protect_np(0);
+            } else {
+                mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_WRITE);
             }
-#endif
+#else
             mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_WRITE);
+#endif
         }|};
     ];
 
@@ -239,9 +242,12 @@ let dual_mapped_jit_buffer_def () : top_decl =
 #if defined(__APPLE__) && defined(__aarch64__)
             if (__builtin_available(macOS 11.0, *)) {
                 pthread_jit_write_protect_np(1);
+            } else {
+                mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_EXEC);
             }
-#endif
+#else
             mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_EXEC);
+#endif
         }
 #if defined(__APPLE__)
         if (rw_buf && bytes_written > 0) sys_dcache_flush(rw_buf, bytes_written);
@@ -256,19 +262,31 @@ let dual_mapped_jit_buffer_def () : top_decl =
 #if defined(__APPLE__) && defined(__aarch64__)
             if (__builtin_available(macOS 11.0, *)) {
                 pthread_jit_write_protect_np(0);
+            } else {
+                mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_WRITE);
             }
-#endif
+#else
             mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_WRITE);
+#endif
         }
         if (rw_buf && bytes > 0) {
-            volatile uint8_t* p = (volatile uint8_t*)rw_buf;
-            for (size_t i = 0; i < bytes; ++i) p[i] = 0;
+            volatile uint32_t* p = (volatile uint32_t*)rw_buf;
+            size_t words = (bytes + 3) / 4;
+            uint32_t gamma = 0x5877A55AU;
+            for (size_t i = 0; i < words; ++i) {
+                gamma = (gamma << 1) ^ (gamma | (gamma >> 1));
+                p[i] = gamma;
+            }
         }
         if (!uses_mach_remap && rw_buf) {
 #if defined(__APPLE__) && defined(__aarch64__)
             if (__builtin_available(macOS 11.0, *)) {
                 pthread_jit_write_protect_np(1);
+            } else {
+                mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_EXEC);
             }
+#else
+            mprotect(rw_buf, padovan_code_end_, PROT_READ | PROT_EXEC);
 #endif
         }|};
     ];

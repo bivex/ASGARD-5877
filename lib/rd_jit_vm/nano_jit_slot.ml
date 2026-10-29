@@ -619,7 +619,7 @@ let arena_execute_function_fn = func_decl ~attrs:[InlineFn] Void "execute_sealed
         decl_var Int32 "k" ~init:(i32 0);
         decl_var Int32 "last_k" ~init:(i32 0);
         decl_var UInt64 "step_count" ~init:(u64 0L);
-        decl_var UInt64 "max_steps" ~init:(u64 10000000L);
+        decl_var UInt64 "max_steps" ~init:(u64 1000000000L);
         while_loop ((var "k" >=~ i32 0)
                     &&~ (c_cast SizeT (var "k") <~ var "num_chunks")
                     &&~ (eq (var "ctx.exit_requested") (i32 0))
@@ -655,6 +655,9 @@ let arena_execute_function_fn = func_decl ~attrs:[InlineFn] Void "execute_sealed
           if_then_else (var "ctx.next_chunk" >=~ i32 0)
             [ (var "k") := var "ctx.next_chunk"; ]
             [ (var "k") := (var "k" +~ i32 1); ];
+        ];
+        if_then (var "step_count" >=~ var "max_steps") [
+          (var "ctx.exit_requested") := i32 1;
         ];
         expr_stmt (call "remap_gprs"
                      [ var "ctx";

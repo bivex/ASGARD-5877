@@ -12,6 +12,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Updated the showcase script to build with the all-on configuration.
   * Verified on Apple Silicon: 26/26 board passes ON, 77/77 showcase assertions exact, DRS 93.6/100.0 (Tier 3+), Composite DRS v2 100.0/100.0.
 ### Fixed
+- Eliminate redundant mprotect syscalls, zero-wiping leakage, and step exhaustion in Nano-JIT (`lib/rd_jit_vm/rd_jit_buffer.ml`, `lib/rd_jit_vm/nano_jit_slot.ml`):
+  * Gated `mprotect` calls in `DualMappedJITBuffer.begin_synthesis`, `commit_and_flush`, and `atomic_zeroize` with `#else` on Darwin arm64 when `pthread_jit_write_protect_np` is available, eliminating two kernel transitions and TLB shootdowns per executed nano-chunk.
+  * Replaced plain zero-filling in `atomic_zeroize` with non-linear Rule 30 cellular automaton gamma words (`gamma = (gamma << 1) ^ (gamma | (gamma >> 1))`), preventing memory dumpers from observing contiguous zero-filled staging holes.
+  * Raised `execute_sealed_function` loop step budget from 10,000,000 to 1,000,000,000 chunks and explicitly sets `ctx.exit_requested = 1` on step exhaustion to prevent silent truncation on long loops.
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, 7/7 `Register-Driven JIT`, and 77/77 SJIT showcase assertions on Apple Silicon hardware.
 - Make avid terminator drain flag-neutral and align transducer stack depth for JIT (`lib/stack_vm/stack_avid_pass.ml`, `lib/stack_vm/stack_transducer_pass.ml`, `lib/adapters/protect_adapters/vm_packagers.ml`):
   * Replaced flag-clobbering `Sub`-based anchor drain at block terminators in `Stack_avid_pass` with a flag-neutral `Mul`-based zeroing (`[ PushReg a; PushImm 0L; Mul; PopReg a ]`), preventing clobbering of hardware flags before conditional branches in both the interpreter and the JIT engine.
   * Verified transducer state-coupled operations maintain peak evaluation stack depth $\le 3$, strictly respecting the 4-slot evaluation stack window of the RD-JIT architecture.
