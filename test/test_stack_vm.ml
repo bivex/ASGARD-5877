@@ -1544,10 +1544,14 @@ let test_real_license_check_macro_stack_vm_e2e () =
     let toolchain = (module Toolchain_adapter : Toolchain) in
     let vm_packager = (module Vm_packager_adapters.Stack_vm_packager : Vm_packager) in
 
-    let raw_cfg = Protect_adapters.Config_adapter.unwrap Protect_adapters.Config_adapter.default in
-    let test_cfg = raw_cfg in
+    let raw_cfg =
+      match Protect_adapters.Config_adapter.from_file "samples/protection_config.full.json" with
+      | Ok c -> Protect_adapters.Config_adapter.unwrap c
+      | Error _ -> Protect_adapters.Config_adapter.unwrap Protect_adapters.Config_adapter.default
+    in
+    let test_cfg = { raw_cfg with arch = `AArch64 } in
     let cfg = Protect_adapters.Config_adapter.wrap test_cfg in
-    let rng = Random.State.make [| 0x5877 |] in
+    let rng = Random.State.make [| 1337 |] in
     match
       Random_visa_application.Protect_pipeline.run
         ~lifter
@@ -1570,14 +1574,14 @@ let test_real_license_check_macro_stack_vm_e2e () =
         Alcotest.(check bool) "bytecode generated" true (res.bytecode_length_bytes > 0);
 
         let comp_cmd =
-          Printf.sprintf "clang++ -std=c++20 -O0 -I%s -Wno-format-security %s -o %s"
+          Printf.sprintf "clang++ -std=c++20 -O2 -fvisibility-inlines-hidden -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-export_dynamic -I%s %s -o %s"
             tmp_dir virt_cpp bin_path
         in
         let comp_st = Sys.command comp_cmd in
         Alcotest.(check int) "clang++ build succeeds" 0 comp_st;
 
         (* Test 1: Wrong Key -> ACCESS DENIED, exit code 1 *)
-        let run_wrong_cmd = Printf.sprintf "printf 'WRONG_KEY\\n' | %s" bin_path in
+        let run_wrong_cmd = Printf.sprintf "printf 'WRONG_KEY\\n' | %s 2>&1" bin_path in
         let status_wrong, out_wrong = Test_helpers.run_command_capture run_wrong_cmd in
         Alcotest.(check bool) "wrong key exits 1" true (status_wrong = Unix.WEXITED 1);
         Alcotest.(check bool) "output contains ACCESS DENIED" true
@@ -1631,7 +1635,7 @@ let test_real_license_check_macro_stack_vm_e2e () =
         output_string oc (flip_first_word src);
         close_out oc;
         let tampered_st =
-          Sys.command (Printf.sprintf "clang++ -std=c++20 -O0 -I%s -Wno-format-security %s -o %s"
+          Sys.command (Printf.sprintf "clang++ -std=c++20 -O2 -fvisibility-inlines-hidden -Wno-format-security -fno-rtti -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables -fvisibility=hidden -Wl,-dead_strip -Wl,-export_dynamic -I%s %s -o %s"
               tmp_dir tampered_cpp tampered_bin)
         in
         Alcotest.(check int) "tampered build succeeds" 0 tampered_st;
