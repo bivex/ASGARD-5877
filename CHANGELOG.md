@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Fixed
+- Activate dynamic dual-rail evolution and enforce deterministic feedback injection (`lib/stack_vm/stack_dual_rail_pass.ml`, `lib/stack_vm/stack_feedback_pass.ml`):
+  * Dual-rail complement pairs in `Stack_dual_rail_pass` were initialized once at program entry and never evolved, so invariant checkpoints verified compile-time constants that SMT solvers constant-fold away. Each checkpoint now first evolves the rail (`rail_true += step; rail_comp = NOT(rail_true)` via `emit_dual_evolve`) so the sum/orthogonality knots verify genuinely dynamic state.
+  * Fixed live-flag operand entanglement in `Stack_dual_rail_pass` (same defect as `Stack_trap_pass`): the checkpoint cluster is now `[ PushFlags; Swap ] @ evolve @ knot @ [ Add; Swap; PopFlags ]`, coupling the data operand to the rails instead of adding the zero-knot to the saved flag word.
+  * Enforced deterministic, reproducible `KeyFeedback` placement in `Stack_feedback_pass.apply_program` by sorting blocks by ID before consuming PRNG states over `Hashtbl.iter` (bucket-order dependent).
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)`, 66/66 `Stack-VM Execution Engine`, full E2E license validation (DRS 97.00/100.0, dual-rail checkpoints +4336, feedback checkpoints 214), and byte-identical `protected.vanguard` across two pinned-seed builds (SHA-1 `2f1b250b…`) on Apple Silicon hardware.
 - Correct algebraic specification and align protection board report with active passes (`docs/VM_PROTECTOR.md`, `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/stack_vm/stack_trap_pass.ml`):
   * Corrected modular ring characteristic in `docs/VM_PROTECTOR.md` from characteristic 2 to $2^{64}$ for $\mathbb{Z}_{2^{64}} = \mathbb{Z}/2^{64}\mathbb{Z}$, distinguishing it from characteristic-2 Galois field $\mathrm{GF}(2^{64})$.
   * Aligned Stack-VM protection report in `lib/adapters/protect_adapters/vm_packagers.ml` to truthfully mark `Algebraic Flag Materialization` as `[OFF]` (disabled skeleton pass), eliminating reporting divergence from bytecode realities.

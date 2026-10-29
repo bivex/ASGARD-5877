@@ -61,6 +61,11 @@ let next_int rng n =
     rng.state <- s;
     Int64.to_int (Int64.logand z 0x7FFFFFFFL) mod n
 
+let next_int64 rng =
+  let s, z = splitmix64 rng.state in
+  rng.state <- s;
+  z
+
 let is_terminator = function
   | JmpRel _ | JccRel _ | Exit -> true
   | _ -> false
@@ -75,6 +80,21 @@ let emit_dual_update ~reg ~dual_slot =
     Nand;
     PopReg dual_slot;
   ]
+
+(** Emits a dynamic dual-rail evolution step:
+      rail_true  <- rail_true + step
+      rail_comp  <- NOT(rail_true)   (via the homomorphic complement update)
+    Both invariants (sum & orthogonality) are re-established for the NEW
+    rail value, so the checkpoint knots that follow verify dynamic state
+    instead of compile-time constants an SMT solver can fold away.
+    Net stack delta = 0 (clobbers flags; caller must guard). *)
+let emit_dual_evolve ~reg ~dual_slot ~step =
+  [
+    PushReg reg;
+    PushImm step;
+    Add;
+    PopReg reg;
+  ] @ emit_dual_update ~reg ~dual_slot
 
 (** Emits sum invariant zero-knot:
     PushReg reg; PushReg dual_slot; Add; PushImm 1L; Add;
@@ -135,13 +155,15 @@ let apply_block (cfg : dual_rail_config) ?pairs (ctx : Context_allocator.t) (b :
           let flags_live = if idx + 1 < Array.length live then live.(idx + 1) else false in
           let (r, dual_slot) = pairs.(!pair_idx) in
           pair_idx := (!pair_idx + 1) mod n_pairs;
+          let step = Int64.logor (next_int64 rng) 1L in
+          let evolve = emit_dual_evolve ~reg:r ~dual_slot ~step in
           let knot =
             if next_int rng 2 = 0 then emit_sum_invariant_knot ~reg:r ~dual_slot
             else emit_ortho_invariant_knot ~reg:r ~dual_slot
           in
           let cluster =
-            if flags_live then [ PushFlags ] @ knot @ [ Add; PopFlags ]
-            else knot @ [ Add ]
+            if flags_live then [ PushFlags; Swap ] @ evolve @ knot @ [ Add; Swap; PopFlags ]
+            else evolve @ knot @ [ Add ]
           in
           new_ops := List.rev cluster @ !new_ops;
           incr count

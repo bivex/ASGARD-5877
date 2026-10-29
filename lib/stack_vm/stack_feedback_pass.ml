@@ -99,7 +99,15 @@ let apply_block cfg ~rng block =
 let apply_program ?(vpc_slot = -1) ?(block_tokens = Hashtbl.create 0) cfg prog =
   let rng = make_rng cfg.seed in
   let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-  Hashtbl.iter (fun id b ->
+  (* Deterministic block traversal: Hashtbl iteration order is
+     bucket-dependent, so sort by block id before consuming PRNG states —
+     the injected KeyFeedback placement must be reproducible for a fixed
+     seed (same fix as Stack_cff_pass). *)
+  let sorted_blocks =
+    Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
+    |> List.sort (fun (id1, _) (id2, _) -> Int.compare id1 id2)
+  in
+  List.iter (fun (id, b) ->
     let b' = apply_block cfg ~rng b in
     let b' =
       if vpc_slot >= 0 && id <> prog.entry_id then
@@ -109,7 +117,7 @@ let apply_program ?(vpc_slot = -1) ?(block_tokens = Hashtbl.create 0) cfg prog =
       else b'
     in
     Hashtbl.replace new_blocks id b'
-  ) prog.blocks;
+  ) sorted_blocks;
   { prog with blocks = new_blocks }
 
 let feedback_stats prog_before prog_after =
