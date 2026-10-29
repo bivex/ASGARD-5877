@@ -72,6 +72,11 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
     | None -> (enable_cff, enable_mba, mba_depth)
   in
 
+  let mba_func =
+    if enable_mba then
+      Vm_ir.Dynamic_mba.transform ~density:0.4 ~rng func
+    else func
+  in
   let target_func =
     if enable_cff then
       (* POP digest transform and the pop_digest option must be gated
@@ -108,12 +113,12 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
             }
       in
       let pop_func =
-        if pop_enabled then Cff.Pop_coupler.apply_pop_transform ~rng func else func
+        if pop_enabled then Cff.Pop_coupler.apply_pop_transform ~rng mba_func else mba_func
       in
       match Cff.flatten_func ~options:cff_opts ~rng pop_func with
       | Ok f -> f
-      | Error _ -> func
-    else func
+      | Error _ -> mba_func
+    else mba_func
   in
 
   let base_pkg =
