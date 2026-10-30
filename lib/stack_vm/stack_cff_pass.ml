@@ -148,13 +148,28 @@ let transform_block ?(rng = Random.State.make [| 0x5877 |]) vpc_slot entry_of de
     prematurely exiting, eliminating the single dispatcher entry bottleneck. *)
 let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
   let n_real = List.length real_ids in
-  let n_shards = min 16 (max 2 (n_real / 4)) in
+  let n_shards = max 1 (min n_real (min 16 (max 2 (n_real / 3)))) in
   let buckets = Array.make n_shards [] in
-  List.iter (fun bid ->
-    let tok = Hashtbl.find tokens bid in
-    let s = hash_shard_id ~salt:seed tok n_shards in
-    buckets.(s) <- bid :: buckets.(s)
-  ) real_ids;
+  let block_shard = Hashtbl.create n_real in
+  (* Balanced bin packing via deterministic pseudorandom ranking:
+     distributes real blocks across shards round-robin without collision,
+     guaranteeing every shard has at least 1 block (zero empty shards). *)
+  let sorted_ids =
+    List.sort
+      (fun a b ->
+        let tok_a = Hashtbl.find tokens a in
+        let tok_b = Hashtbl.find tokens b in
+        let ha = hash_shard_id ~salt:seed tok_a 1000003 in
+        let hb = hash_shard_id ~salt:seed tok_b 1000003 in
+        compare (ha, a) (hb, b))
+      real_ids
+  in
+  List.iteri
+    (fun idx bid ->
+      let s = idx mod n_shards in
+      buckets.(s) <- bid :: buckets.(s);
+      Hashtbl.replace block_shard bid s)
+    sorted_ids;
   for s = 0 to n_shards - 1 do
     buckets.(s) <- List.sort compare buckets.(s)
   done;
@@ -167,22 +182,14 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
   done;
   let exit_id = !next in
 
-  let entry_of_s s =
-    let rec find i count =
-      if count >= n_shards then exit_id
-      else if buckets.(i) <> [] then entry_base.(i)
-      else find ((i + 1) mod n_shards) (count + 1)
-    in
-    if buckets.(s) <> [] then entry_base.(s)
-    else find ((s + 1) mod n_shards) 1
-  in
+  (* Invariant: each shard s in [0..n_shards-1] has at least 1 block,
+     so entry_base.(s) is unconditionally the valid entry of shard s. *)
+  let entry_of_s s = entry_base.(s mod n_shards) in
 
   let entry_of target =
-    match Hashtbl.find_opt tokens target with
-    | Some tok ->
-      let s = hash_shard_id ~salt:seed tok n_shards in
-      entry_of_s s
-    | None -> exit_id
+    match Hashtbl.find_opt block_shard target with
+    | Some s -> entry_of_s s
+    | None -> entry_of_s 0
   in
 
   (* Per-node metamorphic comparison shapes: a dynamic tracer hooking
@@ -224,6 +231,7 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
       let disp_id = entry_base.(s) + i in
       let fall_to =
         if i + 1 < n_in_s then entry_base.(s) + i + 1
+        else if n_shards <= 1 then exit_id
         else
           (* Circular expander ring transition to next non-empty shard *)
           entry_of_s ((s + 1) mod n_shards)
@@ -289,13 +297,14 @@ let build_dispatcher_chain ~seed vpc_slot tokens real_ids base_id =
   done;
 
   let decoy_entry_of target =
-    match Hashtbl.find_opt tokens target with
-    | Some tok ->
-      let s = hash_shard_id ~salt:seed tok n_shards in
-      let decoy_s = (s + max 1 (n_shards / 2)) mod n_shards in
-      let dec = entry_of_s decoy_s in
-      if dec = exit_id then entry_of_s s else dec
-    | None -> exit_id
+    match Hashtbl.find_opt block_shard target with
+    | Some s ->
+        if n_shards <= 1 then entry_of_s 0
+        else
+          let step = if n_shards = 2 then 1 else max 1 (n_shards / 2) in
+          let decoy_s = (s + step) mod n_shards in
+          entry_of_s decoy_s
+    | None -> entry_of_s 0
   in
   let exit_block = make_block exit_id "cff_exit" [ Exit ] in
   (List.rev !comparison_blocks @ [ exit_block ], entry_of, decoy_entry_of)

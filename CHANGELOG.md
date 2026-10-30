@@ -111,6 +111,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
   * Removed all top-level OEIS sequence commentary (A003022, A002487, A000166, A000931) and protector banners from the generated C++ headers, leaving zero protector/OEIS artifacts in decompiled code.
   * Verified in IDA Pro 9.3 via `idasql`: exact 0 literal occurrences of the JIT magic in executable text, 77/77 SJIT showcase assertions pass on Apple Silicon hardware.
 ### Fixed
+- Fixed Stack-CFF expander dispatcher shard partitioning and decoy edge leakage (`lib/stack_vm/stack_cff_pass.ml`):
+  * Replaced independent modulo hashing in `build_dispatcher_chain` with balanced round-robin bin packing over deterministic pseudorandom priority order, guaranteeing every shard receives $\ge 1$ real block and eliminating empty buckets.
+  * Corrected decoy dispatcher entry point routing (`decoy_entry_of`): decoy edges now deterministically transition to an alternate non-empty shard ($s_{\text{decoy}} \neq s_{\text{real}}$), eliminating bogus fallthrough branches to `exit_id` in small functions and preventing static in-degree anomaly spikes on `cff_exit`.
+  * Verified: 71/71 `Stack-VM Execution Engine` tests pass, and all 19 showcase routines execute exact on Apple Silicon hardware (DRS 93.7/100.0).
 - Fixed Stack-JIT VM multi-block translation, register window capacity, and JIT control transfer (`lib/stack_vm/stack_jit_chunker.ml`, `lib/stack_vm/stack_jit_chunker.mli`, `lib/rd_jit_vm/rd_jit_synth.ml`, `lib/rd_jit_vm/rd_jit_emitter.ml`, `test/test_stack_jit_vm.ml`, `test/test_stack_jit_fuzz.ml`):
   * Reconciled RD-JIT GPR slot allocation (`stack_jit_chunker.ml`, `rd_jit_buffer.ml`): expanded `max_stack_depth` from 4 to 8 physical evaluation registers (`stack_base = 56`, matching `rd_jit_gprs_count = 64`), eliminating stack spill artifacts in high-depth functions (`siphash_round`).
   * Fixed multi-block CFG entry depth fixpoint convergence in `translate_program` (`stack_jit_chunker.ml`): bounded fixpoint iterations to block count $|V|$ and capped depth propagation at 64, preventing infinite cycles on cyclic control-flow graphs with net positive stack deltas.
