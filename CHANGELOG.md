@@ -6,6 +6,8 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
 ### Fixed
 - Fixed multi-function execution in Stack-VM runtime by replacing global block-offset and key tables with per-stream metadata (`lib/stack_vm/stack_runtime.ml`, `lib/stack_vm/stack_runtime.mli`, `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/stack_vm/stack_handlers_emitter.ml`):
   * Added multi-stream dispatch registry (`g_stack_streams`) mapping each packaged function's payload tag to its own masked block-offset/key tables, entry block ID, and block count.

@@ -1,7 +1,7 @@
 (lang dune 3.0)
 (using menhir 2.1)
 (name random_visa)
-(version 0.3.0)
+(version 0.4.0)
 (generate_opam_files true)
 (package
  (name random_visa)
