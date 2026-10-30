@@ -7,6 +7,12 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented neural VM opcode and superoperator synthesizer for ASGARD architecture (`scripts/neural_opcode_synth.py`):
+  * Built a Trajectory Balance GFlowNet (TB-GFlowNet) over an autoregressive Transformer policy network to search for sound, non-linear VM instruction sequences in $\mathbb{Z}_{2^{64}}$.
+  * Enforced ASGARD Stack-JIT architectural invariants (peak stack depth $\le 4$, zero stack underflow, net delta $= -1$ for binary ops) via strict per-step action masking.
+  * Integrated a formal Z3 SMT BitVec(64) oracle proving exact algebraic equivalence over all $2^{128}$ input pairs after concrete 64-bit reject filtering.
+  * Added an anti-peephole symbolic collapse filter detecting and penalizing trivial linear cancellations (e.g. $(x+c)-c$) through `z3.simplify` equivalence checks.
+  * Vectorized parallel batch rollout across trajectories with joint gradient clipping across policy parameters and $\log Z$, exporting discovered primitives to typed OCaml `stack_op list` EDSL combinators.
 - Implemented parallel multi-function packaging in Stack-JIT VM (`lib/adapters/protect_adapters/vm_packagers.ml`, `lib/ports/domain_pool.ml`, `lib/native_vm/mba_par.ml`, `test/test_stack_jit_vm.ml`):
   * Replaced sequential `List.map package_single` in `Stack_jit_packager.package` with `Domain_pool.parallel_for ~min_n:2` across Domainslib worker domains, pre-collecting `global_ext_syms` in a sequential scan to prevent concurrent Hashtbl data races while maintaining deterministic per-function PRNG seeding (`Random.State.make [| seed; idx * 0x5877; 0x1337 |]`).
   * Unified process-wide Domainslib pool across modules (`lib/native_vm/mba_par.ml`): `Mba_par.global_pool ()` now shares `Random_visa_ports.Domain_pool.global_pool ()`, preventing duplicate pool creation and `Multi_channel.register_domain` assertion failures.
