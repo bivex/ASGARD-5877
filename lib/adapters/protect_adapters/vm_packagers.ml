@@ -1450,51 +1450,6 @@ module Stack_vm_packager : Vm_packager = struct
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5j-dual_rail" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5j] Dual-Rail Complement Invariance: %s" dr_info;
 
-    (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
-    let prog, feedback_info =
-      if native_cfg.stack_vm.state_feedback then
-        let feedback_seed =
-          Int64.logxor
-            (Int64.of_int (Random.State.bits rng))
-            (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
-        in
-        let feedback_cfg =
-          { (Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed) with
-            feedback_rate = native_cfg.stack_vm.feedback_rate }
-        in
-        note
-          (Printf.sprintf "    State-Feedback Rolling Key rate=%d%% seed=0x%016LX"
-             feedback_cfg.feedback_rate feedback_cfg.seed);
-        (* The VPC coupling: the state-feedback pass couples the rolling
-           key to the VPC at the entry of every CFF block, where the VPC
-           provably holds the token of that block.  The encryptor needs
-           the same state to reproduce the key schedule. *)
-        let prog_feedback =
-          match !cff_dispatcher_opt with
-          | Some disp ->
-              Stack_vm.Stack_feedback_pass.apply_program
-                ~vpc_slot:disp.vpc_slot
-                ~block_tokens:disp.block_tokens
-                feedback_cfg prog
-          | None ->
-              Stack_vm.Stack_feedback_pass.apply_program
-                feedback_cfg prog
-        in
-        let feedback_stat = Stack_vm.Stack_feedback_pass.feedback_stats prog prog_feedback in
-        let info =
-          Printf.sprintf "%d dynamic checkpoints injected (register-coupled cipher stream)"
-            feedback_stat.feedback_injected
-        in
-        (prog_feedback, info)
-      else
-        (prog, "Disabled (Static Cipher Stream)")
-    in
-    dump_bytecode_trace ~phase:"6-feedback" prog;
-    dump_bytecode_json ~phase:"6-feedback" prog;
-    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6-feedback" ~final:false prog;
-    if native_cfg.stack_vm.state_feedback then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6/7] State-Feedback Rolling Key: %s" feedback_info;
-
     (* Phase 6b (Pass 19): Cross-Block Execution Path Integrity & Anti-DBI Traps *)
     let trap_seed =
       Int64.logxor
@@ -1688,6 +1643,51 @@ module Stack_vm_packager : Vm_packager = struct
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6f-native_interleave" ~final:false prog;
     tick_phase_timing ~phase:"6f-guard-done";
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6f] Native Micro-Handler Interleaving: %s" ni_info;
+    (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
+    let prog, feedback_info =
+      if native_cfg.stack_vm.state_feedback then
+        let feedback_seed =
+          Int64.logxor
+            (Int64.of_int (Random.State.bits rng))
+            (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
+        in
+        let feedback_cfg =
+          { (Stack_vm.Stack_feedback_pass.default_feedback_config feedback_seed) with
+            feedback_rate = native_cfg.stack_vm.feedback_rate }
+        in
+        note
+          (Printf.sprintf "    State-Feedback Rolling Key rate=%d%% seed=0x%016LX"
+             feedback_cfg.feedback_rate feedback_cfg.seed);
+        (* The VPC coupling: the state-feedback pass couples the rolling
+           key to the VPC at the entry of every CFF block, where the VPC
+           provably holds the token of that block.  The encryptor needs
+           the same state to reproduce the key schedule. *)
+        let prog_feedback =
+          match !cff_dispatcher_opt with
+          | Some disp ->
+              Stack_vm.Stack_feedback_pass.apply_program
+                ~vpc_slot:disp.vpc_slot
+                ~block_tokens:disp.block_tokens
+                feedback_cfg prog
+          | None ->
+              Stack_vm.Stack_feedback_pass.apply_program
+                feedback_cfg prog
+        in
+        let feedback_stat = Stack_vm.Stack_feedback_pass.feedback_stats prog prog_feedback in
+        let info =
+          Printf.sprintf "%d dynamic checkpoints injected (register-coupled cipher stream)"
+            feedback_stat.feedback_injected
+        in
+        (prog_feedback, info)
+      else
+        (prog, "Disabled (Static Cipher Stream)")
+    in
+    dump_bytecode_trace ~phase:"6-feedback" prog;
+    dump_bytecode_json ~phase:"6-feedback" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6-feedback" ~final:false prog;
+    if native_cfg.stack_vm.state_feedback then
+      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6/7] State-Feedback Rolling Key: %s" feedback_info;
+
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
     tick_phase_timing ~phase:"7-repair-enter";
