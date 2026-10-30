@@ -114,7 +114,10 @@ let apply_block cfg block =
     | op :: rest ->
         op :: aux rest
   in
-  { block with ops = aux block.ops }
+  let fused_handcoded = aux block.ops in
+  let gen_rng = Stack_superop_generated.make_rng (Int64.logxor cfg.seed (Int64.of_int (block.id lxor 0x5170_0002))) in
+  let final_ops = Stack_superop_generated.fuse_generated_superops gen_rng ~fusion_rate:cfg.fusion_rate fused_handcoded in
+  { block with ops = final_ops }
 
 let apply_program cfg prog =
   let block_ids =
