@@ -314,10 +314,7 @@ def emit_subexpr(e: Expr, ctx: CodegenCtx, src_reg_name: str, c_operand: str) ->
     if isinstance(e, Not):
         inner_reg = emit_subexpr(e.inner, ctx, src_reg_name, c_operand)
         dst = ctx.alloc()
-        # NOT via NAND(v, v): dst = ~(v & v) = ~v -- replace with the real
-        # Unary-Not IR instruction if lib/vm_ir/ir.ml defines one; kept as
-        # NAND-with-self here only because that's confirmed available.
-        ctx.lines.append(f"Alu {{ op = Nand; dst = {dst}; src1 = Reg {inner_reg}; src2 = Reg {inner_reg}; set_flags = false }};")
+        ctx.lines.append(f"Unary {{ op = Not; dst = {dst}; src = Reg {inner_reg}; set_flags = false }};")
         ctx.release(inner_reg)
         return dst
     # Bin
@@ -418,6 +415,7 @@ def export_ocaml(classes: Dict[str, Dict], out_path: str):
         "   was built to avoid (see cff.ml's single trap_block_id / go_disp). *)",
         "",
         "open Vm_ir",
+        "open Register",
         "",
         "type predicate_variant =",
     ]
