@@ -34,7 +34,7 @@ let emit_rd_jit_main_def () : top_decl =
     raw "std::cout << \"  * Arithmetic: RNS-4 Modular Residue Splitting (M > 2^64)\\n\";";
     raw "std::cout << \"  * Memory Protection: Dual-Mapped W^X Ephemeral Buffer\\n\";";
     raw "std::cout << \"  * Sealed Chunks: \" << g_num_nano_chunks << \" Kolakoski-fissioned nano-slot chunk(s)\\n\";";
-    raw "asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);";
+    raw "asgard_rd_jit::DualMappedJITBuffer jit_buf(1048576);";
     raw "asgard_rd_jit::RD_JIT_Context ctx;";
     expr_stmt (call "ctx.init" []);
     raw "alignas(16) uint8_t spill_stack[4096];";

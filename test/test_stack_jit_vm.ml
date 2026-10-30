@@ -284,7 +284,9 @@ int main() {
     | Ok _ ->
         let app_bin = Filename.concat out_dir "protected_app" in
         check bool "protected_app exists" true (Sys.file_exists app_bin);
+        let _ = Sys.command (Printf.sprintf "lldb --batch -o 'run' -o 'bt' -- %s > /tmp/crash_bt.txt 2>&1" app_bin) in
         let run_st, out_str = Test_helpers.run_command_capture app_bin in
+        Printf.eprintf "DEBUG_MACRO_OUT: status=%s out=%s\n%!" (match run_st with Unix.WEXITED n -> Printf.sprintf "exit %d" n | Unix.WSIGNALED s -> Printf.sprintf "signal %d" s | _ -> "other") out_str;
         check bool "Run status is 0" true (run_st = Unix.WEXITED 0);
         check bool "Output is compute(10, 20) = 50" true (contains_sub out_str "compute(10, 20) = 50"))
 let test_stack_jit_loop_branch_e2e () =

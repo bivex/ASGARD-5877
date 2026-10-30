@@ -115,7 +115,7 @@ let dual_mapped_jit_buffer_def () : top_decl =
     member_field SizeT "padovan_spill_begin_";
 
     member_public;
-    member_constructor ~params:[(SizeT, "sz = 4096")]
+    member_constructor ~params:[(SizeT, "sz = 1048576")]
       ~init_list:[
         ("capacity", var "sz");
         ("rw_buf", nullptr);

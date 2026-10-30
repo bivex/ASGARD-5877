@@ -1219,7 +1219,7 @@ let execute_threaded_decl () : top_decl =
       (ConstPtr UInt64, "bc");
       (SizeT, "len") ]
     [
-      raw "asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);";
+      raw "asgard_rd_jit::DualMappedJITBuffer jit_buf(1048576);";
       raw "asgard_rd_jit::execute_ephemeral_block(jit_buf, ctx, ctx.get_reg(0), ctx.get_reg(1));";
     ]
 
@@ -1260,7 +1260,7 @@ let asgard_vm_call_decl () : top_decl =
         }
         alignas(16) uint8_t spill_stack[4096];
         uint64_t sp_val = (uint64_t)(uintptr_t)(&spill_stack[4096 - 128]);
-        asgard_rd_jit::DualMappedJITBuffer jit_buf(4096);
+        asgard_rd_jit::DualMappedJITBuffer jit_buf(1048576);
         asgard_rd_jit::RD_JIT_Context ctx;
         ctx.init();
 #if defined(__aarch64__)

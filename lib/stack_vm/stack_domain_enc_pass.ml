@@ -81,7 +81,7 @@ let next_int rng n =
     let v = Int64.to_int (Int64.logand (next_int64 rng) 0x7FFFFFFFL) in
     v mod n
 
-let apply_block (cfg : domain_config) ctx (b : block) : block =
+let apply_block_internal ~anchor (cfg : domain_config) (b : block) : block =
   if not cfg.enabled then b
   else
     let rng = make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * 0x3141 + 0x5926))) in
@@ -98,7 +98,6 @@ let apply_block (cfg : domain_config) ctx (b : block) : block =
           let beta = next_int64 rng in
           let v_enc = encode_val ~alpha ~beta v in
           let inv = mod_inv_64 alpha in
-          let anchor = Context_allocator.alloc_scratch ctx in
           let cluster = [
             PushImm v_enc;
             PopReg anchor;
@@ -114,13 +113,27 @@ let apply_block (cfg : domain_config) ctx (b : block) : block =
     ) b.ops;
     { b with ops = List.rev !new_ops }
 
+let apply_block (cfg : domain_config) ctx (b : block) : block =
+  let anchor = Context_allocator.alloc_scratch ctx in
+  apply_block_internal ~anchor cfg b
+
 let apply_program (cfg : domain_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled then prog
   else
-    let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-    Hashtbl.iter (fun id b ->
-      let b' = apply_block cfg ctx b in
-      Hashtbl.replace new_blocks id b'
-    ) prog.blocks;
+    let anchor = Context_allocator.alloc_scratch ctx in
+    let sorted =
+      Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
+      |> List.sort (fun (a, _) (b, _) -> compare a b)
+      |> Array.of_list
+    in
+    let n = Array.length sorted in
+    let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
+    let pool = Random_visa_ports.Domain_pool.global_pool () in
+    Random_visa_ports.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
+      let (id, b) = sorted.(i) in
+      out.(i) <- (id, apply_block_internal ~anchor cfg b)
+    );
+    let new_blocks = Hashtbl.create n in
+    Array.iter (fun (id, b) -> Hashtbl.replace new_blocks id b) out;
     let context_slots = max prog.context_slots (Context_allocator.total_slots ctx) in
     { prog with blocks = new_blocks; context_slots }

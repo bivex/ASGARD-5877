@@ -292,7 +292,7 @@ module Stack_jit_packager : Vm_packager = struct
      dual-rail, trace-closure, whitening, ...) are NOT safe here. Only
      flag-dead-gated or flag-neutral passes are wired in, mirroring the
      stack-engine configuration for each. *)
-  let apply_jit_pass_pipeline ~rng:_ ~(native_cfg : Protection_config.t) ctx prog =
+  let apply_jit_pass_pipeline ~rng ~(native_cfg : Protection_config.t) ctx prog =
     let seed = match native_cfg.seed with Some s -> Int64.of_int s | None -> 0x5877L in
     (* Pass 10: Algebraic flags *)
     let prog =
@@ -310,7 +310,7 @@ module Stack_jit_packager : Vm_packager = struct
       let mem_ssa_cfg = Stack_vm.Stack_memory_ssa.default_memory_ssa_config in
       Stack_vm.Stack_memory_ssa.apply_program mem_ssa_cfg ctx prog
     in
-    (* Pass 2a: Superoperator fusion *)
+    (* Pass 2a: Superoperator fusion (pre) *)
     let prog =
       if native_cfg.stack_vm.superoperators && native_cfg.superop.enabled then
         let sup = native_cfg.superop in
@@ -329,6 +329,32 @@ module Stack_jit_packager : Vm_packager = struct
       else prog
     in
 
+    (* Pass 9: End-to-End Affine Ring Domain Encoding *)
+    let prog =
+      let domain_seed =
+        Int64.logxor (Int64.of_int (Random.State.bits rng))
+          (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
+      in
+      Stack_vm.Stack_domain_enc_pass.apply_program
+        (Stack_vm.Stack_domain_enc_pass.default_domain_config domain_seed) ctx prog
+    in
+
+    (* Phase 2a-mult: Handler Multiplicity & Metamorphic Synthesis *)
+    let prog =
+      let mult = native_cfg.multiplicity in
+      if mult.enabled && mult.rate > 0 then
+        let mult_seed =
+          Int64.logxor (Int64.of_int (Random.State.bits rng))
+            (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 21)
+        in
+        let mult_cfg = {
+          (Stack_vm.Stack_multiplicity_pass.default_multiplicity_config mult_seed) with
+          rate = mult.rate;
+          enabled = mult.enabled;
+        } in
+        Stack_vm.Stack_multiplicity_pass.apply_program mult_cfg ctx prog
+      else prog
+    in
     (* Stack balance pass: ensures exit stack delta is 0 across all blocks *)
     let prog = Stack_vm.Stack_balance_pass.repair_program ctx prog in
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"sjit-passes" ~final:false prog;

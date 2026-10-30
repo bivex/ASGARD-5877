@@ -304,6 +304,7 @@ let amplify_block
     ~(scratch_base : int)
     (block : block) : block =
   let live = Stack_flag_liveness.analyze_arr (Array.of_list block.ops) in
+  let is_zero_scratch = profile.bit_slice_lanes = 0 && profile.expander_chord_len = 0 in
   let s1 = scratch_base in
   let s2 = scratch_base + 1 in
   let sx = scratch_base + 2 in
@@ -324,15 +325,18 @@ let amplify_block
       let flag_safe = not live.(i + 1) in
       match op with
       | PushImm c when flag_safe ->
-          let anchor = Some (pick_anchor ()) in
+          let anchor = if profile.expander_chord_len > 0 then Some (pick_anchor ()) else None in
           let horner = emit_horner_stack_insns ?anchor rng ~target_const:c ~degree:profile.horner_degree in
           horner @ maybe_knot i
 
       | PushImm c ->
-          let anchor = Some (pick_anchor ()) in
-          [PushFlags] @
-          emit_horner_stack_insns ?anchor rng ~target_const:c ~degree:profile.horner_degree @
-          [Swap; PopFlags]
+          let anchor = if profile.expander_chord_len > 0 then Some (pick_anchor ()) else None in
+          if is_zero_scratch then
+            emit_horner_stack_insns ?anchor rng ~target_const:c ~degree:profile.horner_degree
+          else
+            [PushFlags] @
+            emit_horner_stack_insns ?anchor rng ~target_const:c ~degree:profile.horner_degree @
+            [Swap; PopFlags]
       | Add when profile.bit_slice_lanes > 0 ->
           let carry = emit_carry_chain_add rng ~s1 ~s2 ~sx ~sy in
           if flag_safe then carry @ maybe_knot (i + 1)
@@ -363,31 +367,31 @@ let amplify_stack_program
     ?ctx
     ~(profile : amplification_profile)
     (prog : program) : program =
+  let is_zero_scratch = profile.bit_slice_lanes = 0 && profile.expander_chord_len = 0 in
   let scratch_base =
-    match ctx with
-    | Some c ->
-        let s = Context_allocator.alloc_scratch c in
-        for _ = 2 to 16 do
-          ignore (Context_allocator.alloc_scratch c)
-        done;
-        s
-    | None -> max 64 prog.context_slots
+    if is_zero_scratch then 0
+    else
+      match ctx with
+      | Some c ->
+          let s = Context_allocator.alloc_scratch c in
+          for _ = 2 to 16 do
+            ignore (Context_allocator.alloc_scratch c)
+          done;
+          s
+      | None -> max 64 prog.context_slots
   in
   let new_context_slots =
-    match ctx with
-    | Some c ->
-        Context_allocator.reserve_slots c (scratch_base + 16);
-        (* The declared context must never shrink below what the input
-           program already used: prog.context_slots is the size the
-           program was built for, while total_slots c is the allocator's
-           own counter.  They coincide after Ir_to_stack.lower_func, but
-           relying on that coupling would silently produce out-of-range
-           register accesses for any caller that does not keep them in
-           sync (the Stack_ir.InvalidContextSlot invariant would fire
-           and the emitted handlers would read past the context). *)
-        max (scratch_base + 16)
-          (max (Context_allocator.total_slots c) prog.context_slots)
-    | None -> max (scratch_base + 16) prog.context_slots
+    if is_zero_scratch then
+      match ctx with
+      | Some c -> max (Context_allocator.total_slots c) prog.context_slots
+      | None -> prog.context_slots
+    else
+      match ctx with
+      | Some c ->
+          Context_allocator.reserve_slots c (scratch_base + 16);
+          max (scratch_base + 16)
+            (max (Context_allocator.total_slots c) prog.context_slots)
+      | None -> max (scratch_base + 16) prog.context_slots
   in
   (* Determinism: block order is fixed by id so block_rng seeds are stable
      regardless of Hashtbl.iter order or parallel scheduling. *)

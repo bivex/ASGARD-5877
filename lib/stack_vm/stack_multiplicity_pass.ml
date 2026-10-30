@@ -103,34 +103,24 @@ let expand_add_mba () =
     Sub;
   ]
 
-(** MBA Sub:
-    x - y ≡ (x ∧ ¬y) - (¬x ∧ y)
+(** MBA Sub (Two's Complement Inversion):
+    x - y ≡ x + (~y + 1)
     Stack begins with [y, x] (y on top).
     Trace:
-      Dup2          [y, x, y, x]
-      Swap; Dup     [x, x, y, y, x]
-      Nor           [~x, y, y, x]
-      Nor           [(x & ~y), y, x]
-      Rot; Swap; Rot [y, (x & ~y), x]
-      Dup; Nor      [~y, (x & ~y), x]
-      Rot; Nor      [(~x & y), (x & ~y)]
-      Sub           [ (x & ~y) - (~x & y) ] = [ x - y ]
-    Net result: [x - y] on stack, 13 operations, net stack delta = -1. *)
+      Dup           [y, y, x]             (depth 3)
+      Nor           [~y, x]               (depth 2)
+      PushImm 1L    [1, ~y, x]            (depth 3)
+      Add           [-y, x]               (depth 2)
+      Add           [x - y]               (depth 1)
+    Peak stack depth = 3 (strictly respects the 4-slot JIT evaluation window).
+    5 operations, net stack delta = -1. *)
 let expand_sub_mba () =
   [
-    Dup2;
-    Swap;
     Dup;
     Nor;
-    Nor;
-    Rot;
-    Swap;
-    Rot;
-    Dup;
-    Nor;
-    Rot;
-    Nor;
-    Sub;
+    PushImm 1L;
+    Add;
+    Add;
   ]
 
 (** Metamorphic expansion of an op. [flag_dead] indicates whether condition
@@ -186,11 +176,10 @@ let expand_op rng ~s1 ~s2 ~s3 flag_dead = function
       [ other ]
 
 let is_expandable flag_dead = function
-  | Swap | Dup | Rot | PushReg _ | PushImm _ -> true
-  | Add | Sub -> flag_dead
+  | Swap | Dup | Rot | PushReg _ | PushImm _ | Add | Sub -> flag_dead
   | _ -> false
 
-let apply_block (cfg : multiplicity_config) ctx (b : block) : block =
+let apply_block_internal ~s1 ~s2 ~s3 (cfg : multiplicity_config) (b : block) : block =
   if not cfg.enabled || cfg.rate <= 0 then b
   else
     let rng =
@@ -200,9 +189,6 @@ let apply_block (cfg : multiplicity_config) ctx (b : block) : block =
               (b.id * Int64.to_int salt_multiplicity_block_mul
                + Int64.to_int salt_multiplicity_block_add)))
     in
-    let s1 = Context_allocator.alloc_scratch ctx in
-    let s2 = Context_allocator.alloc_scratch ctx in
-    let s3 = Context_allocator.alloc_scratch ctx in
     let live = Stack_flag_liveness.analyze_list b.ops in
     let new_ops = ref [] in
     List.iteri (fun i op ->
@@ -214,14 +200,32 @@ let apply_block (cfg : multiplicity_config) ctx (b : block) : block =
         new_ops := op :: !new_ops
     ) b.ops;
     { b with ops = List.rev !new_ops }
+let apply_block (cfg : multiplicity_config) ctx (b : block) : block =
+  let s1 = Context_allocator.alloc_scratch ctx in
+  let s2 = Context_allocator.alloc_scratch ctx in
+  let s3 = Context_allocator.alloc_scratch ctx in
+  apply_block_internal ~s1 ~s2 ~s3 cfg b
 
 let apply_program (cfg : multiplicity_config) (ctx : Context_allocator.t) (prog : program) : program =
   if not cfg.enabled || cfg.rate <= 0 then prog
   else
-    let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-    Hashtbl.iter (fun id b ->
-      Hashtbl.add new_blocks id (apply_block cfg ctx b)
-    ) prog.blocks;
+    let s1 = Context_allocator.alloc_scratch ctx in
+    let s2 = Context_allocator.alloc_scratch ctx in
+    let s3 = Context_allocator.alloc_scratch ctx in
+    let sorted =
+      Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
+      |> List.sort (fun (a, _) (b, _) -> compare a b)
+      |> Array.of_list
+    in
+    let n = Array.length sorted in
+    let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
+    let pool = Random_visa_ports.Domain_pool.global_pool () in
+    Random_visa_ports.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
+      let (id, b) = sorted.(i) in
+      out.(i) <- (id, apply_block_internal ~s1 ~s2 ~s3 cfg b)
+    );
+    let new_blocks = Hashtbl.create n in
+    Array.iter (fun (id, b) -> Hashtbl.replace new_blocks id b) out;
     let context_slots = max prog.context_slots (Context_allocator.total_slots ctx) in
     { prog with blocks = new_blocks; context_slots }
 
