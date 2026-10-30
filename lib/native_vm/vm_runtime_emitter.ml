@@ -399,18 +399,7 @@ let emit_native_runtime_hpp_decls
   in
 
   let domain_salts =
-    let used = Hashtbl.create num_domains in
-    Hashtbl.replace used 0 ();
-    Array.init num_domains (fun d ->
-      if d = 0 then 0
-      else
-        let rec pick () =
-          let s = (Random.State.int rng 255) + 1 in
-          if Hashtbl.mem used s then pick ()
-          else (Hashtbl.replace used s (); s)
-        in
-        pick ()
-    )
+    Domain_salt_optimizer.optimize_domain_salts ~rng ~num_domains ()
   in
 
   let raw_dispatch_domains =

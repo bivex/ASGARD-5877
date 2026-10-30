@@ -516,6 +516,28 @@ int check_license(const char* key) {
     Alcotest.(check bool) "contains active bytecode selection" true
       (string_contains virt_content "_active_bc" && string_contains virt_content "embedded_bytecode_decoy"))
 
+let test_domain_salt_optimizer () =
+  let rng = Random.State.make [| 20261030 |] in
+  let num_domains = 4 in
+  let salts = Native_vm.Domain_salt_optimizer.optimize_domain_salts ~rng ~num_domains () in
+  Alcotest.(check int) "generates requested domain count" num_domains (Array.length salts);
+  let tbl = Hashtbl.create num_domains in
+  Array.iter (fun s ->
+    Alcotest.(check bool) "salt is in 1..255" true (s >= 1 && s <= 255);
+    Alcotest.(check bool) "salt is unique" false (Hashtbl.mem tbl s);
+    Hashtbl.replace tbl s ()
+  ) salts;
+  let unpermuted_var =
+    Native_vm.Domain_salt_optimizer.calculate_frequency_variance
+      ~domain_salts:[| 0; 0; 0; 0 |] ()
+  in
+  let optimized_var =
+    Native_vm.Domain_salt_optimizer.calculate_frequency_variance
+      ~domain_salts:salts ()
+  in
+  Alcotest.(check bool) "optimized salts flatten slot frequency variance" true
+    (optimized_var < unpermuted_var)
+
 
 
 let tests = [
@@ -534,4 +556,5 @@ let tests = [
   Alcotest.test_case "honeypot_decoy_dispatcher" `Quick test_honeypot_decoy_dispatcher;
   Alcotest.test_case "self_escalating_pressure_manifold" `Slow test_self_escalating_pressure_manifold;
   Alcotest.test_case "decoy_synth_and_manifold_routing" `Quick test_decoy_synth_and_manifold_routing;
+  Alcotest.test_case "domain_salt_optimizer" `Quick test_domain_salt_optimizer;
 ]
