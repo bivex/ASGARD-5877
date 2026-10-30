@@ -300,11 +300,20 @@ let apply_program ?scratch_ring (cfg : finite_field_config) (ctx : Context_alloc
       | Some r -> r
       | None -> Array.init 4 (fun _ -> Context_allocator.alloc_scratch ctx)
     in
-    let new_blocks = Hashtbl.create (Hashtbl.length prog.blocks) in
-    Hashtbl.iter (fun id b ->
-      let b' = apply_block cfg ~scratch_ring ctx b in
-      Hashtbl.add new_blocks id b'
-    ) prog.blocks;
+    let sorted =
+      Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
+      |> List.sort (fun (a, _) (b, _) -> compare a b)
+      |> Array.of_list
+    in
+    let n = Array.length sorted in
+    let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
+    let pool = Random_visa_ports.Domain_pool.global_pool () in
+    Random_visa_ports.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
+      let (id, b) = sorted.(i) in
+      out.(i) <- (id, apply_block cfg ~scratch_ring ctx b)
+    );
+    let new_blocks = Hashtbl.create n in
+    Array.iter (fun (id, b) -> Hashtbl.replace new_blocks id b) out;
     let context_slots = max prog.context_slots (Context_allocator.total_slots ctx) in
     { prog with blocks = new_blocks; context_slots }
 

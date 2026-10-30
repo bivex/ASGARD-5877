@@ -1215,41 +1215,6 @@ module Stack_vm_packager : Vm_packager = struct
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5g-trace" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5g] T-Function Trace Closure: %s" trace_info;
 
-    (* Phase 5c: Memory-Address Entanglement Pass — bind scratch ring through physical RAM loads & stores *)
-    let mem_web_seed =
-      Int64.logxor
-        (Int64.of_int (Random.State.bits rng))
-        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 19)
-    in
-    let mw = native_cfg.mem_webbing in
-    let mem_web_cfg = {
-      (Stack_vm.Stack_mem_webbing_pass.default_mem_webbing_config mem_web_seed) with
-      rate = mw.rate;
-      enabled = mw.enabled;
-    } in
-    note
-      (Printf.sprintf
-         "    Memory-Address Webbing     rate=%d%% seed=0x%016LX%s"
-         mem_web_cfg.rate
-         mem_web_cfg.seed
-         (if mw.enabled then "" else " (DISABLED)"));
-    let prog, mem_web_info =
-      if mw.enabled then begin
-        let sp_slot = Stack_vm.Context_allocator.slot_of_reg ctx Vm_ir.Register.rsp in
-        let prog_mw =
-          Stack_vm.Stack_mem_webbing_pass.apply_program
-            ~scratch_ring:ghost_ring ~sp_slot mem_web_cfg ctx prog
-        in
-        let info = Stack_vm.Stack_mem_webbing_pass.mem_webbing_stats prog prog_mw in
-        (prog_mw, info)
-      end else
-        (prog, "Disabled (config: mem_webbing.enabled=false)")
-    in
-    dump_bytecode_trace ~phase:"5c-memweb" prog;
-    dump_bytecode_json ~phase:"5c-memweb" prog;
-    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5c-memweb" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5c] Memory-Address Entanglement: %s" mem_web_info;
-
     (* Phase 5d: Stateful Transducer Pass — couple ALU expressions to evolving state register *)
     let transducer_seed =
       Int64.logxor
@@ -1352,6 +1317,41 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"5h-finite_field" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5h-finite_field" ~final:false prog;
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5h] Mixed-Characteristic Finite Field: %s" ff_info;
+    (* Phase 5c: Memory-Address Entanglement Pass — bind scratch ring through physical RAM loads & stores *)
+    let mem_web_seed =
+      Int64.logxor
+        (Int64.of_int (Random.State.bits rng))
+        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 19)
+    in
+    let mw = native_cfg.mem_webbing in
+    let mem_web_cfg = {
+      (Stack_vm.Stack_mem_webbing_pass.default_mem_webbing_config mem_web_seed) with
+      rate = mw.rate;
+      enabled = mw.enabled;
+    } in
+    note
+      (Printf.sprintf
+         "    Memory-Address Webbing     rate=%d%% seed=0x%016LX%s"
+         mem_web_cfg.rate
+         mem_web_cfg.seed
+         (if mw.enabled then "" else " (DISABLED)"));
+    let prog, mem_web_info =
+      if mw.enabled then begin
+        let sp_slot = Stack_vm.Context_allocator.slot_of_reg ctx Vm_ir.Register.rsp in
+        let prog_mw =
+          Stack_vm.Stack_mem_webbing_pass.apply_program
+            ~scratch_ring:ghost_ring ~sp_slot mem_web_cfg ctx prog
+        in
+        let info = Stack_vm.Stack_mem_webbing_pass.mem_webbing_stats prog prog_mw in
+        (prog_mw, info)
+      end else
+        (prog, "Disabled (config: mem_webbing.enabled=false)")
+    in
+    dump_bytecode_trace ~phase:"5c-memweb" prog;
+    dump_bytecode_json ~phase:"5c-memweb" prog;
+    Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5c-memweb" ~final:false prog;
+    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5c] Memory-Address Entanglement: %s" mem_web_info;
+
 
     (* Phase 5i (Pass 18): I/O Sink Entanglement & Slicing Barrier — bind intermediate state to observable sinks *)
     let sb_seed =
