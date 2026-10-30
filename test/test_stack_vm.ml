@@ -3626,7 +3626,27 @@ let test_stack_budget_regulator () =
   Alcotest.(check int) "essential pass never throttled" 100 r_ess;
   Alcotest.(check (float 0.001)) "essential scale is 1.0" 1.0 s_ess
 
+let test_stack_zero_knots () =
+  let rng = Random.State.make [| 0x13375877 |] in
+  Array.iter (fun variant ->
+    let knot_ops =
+      Stack_zero_knots.emit_zero_knot ~variant ~rng ~reg:1 ~salt:0xDEADBEEFCAFE1337L ()
+    in
+    let delta = List.fold_left (fun acc op -> acc + stack_delta op) 0 knot_ops in
+    Alcotest.(check int) "zero knot pushes exactly 1 value" 1 delta;
+    let d = ref 0 in
+    List.iter (fun op ->
+      d := !d + stack_delta op;
+      Alcotest.(check bool) "zero knot never underflows" true (!d >= 0)
+    ) knot_ops;
+    let b = make_block 0 "entry" ([ SetRegImm (1, 42L) ] @ knot_ops @ [ PopReg 0; Exit ]) in
+    let prog = make_program 0 [b] 4 in
+    let st = Stack_eval.run_program prog in
+    Alcotest.(check int64) "zero knot evaluates to 0L" 0L (get_reg st 0)
+  ) Stack_zero_knots.all_variants
+
 let tests = [
+  ("Stack Zero Knots Formal Invariants", `Quick, test_stack_zero_knots);
   ("Stack Budget Regulator", `Quick, test_stack_budget_regulator);
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);

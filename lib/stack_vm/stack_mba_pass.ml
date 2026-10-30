@@ -81,11 +81,8 @@ let maybe rng prob = next_int rng 100 < prob
     For XOR: emit or_ops (→ or_val on stack), then and_ops on top
     (→ and_val = top, or_val = next), Sub → or_val − and_val = XOR. ✓ *)
 let emit_mba_anchored_zero r k =
-  [
-    PushReg r; PushImm k; Add;
-    PushReg r; PushImm k; Nand; Dup; Nand; Sub;
-    PushReg r; PushImm k; Nor; Dup; Nor; Sub;
-  ]
+  let rng = Random.State.make [| Int64.to_int (Int64.logand k 0x7FFFFFFFL); r |] in
+  Stack_zero_knots.emit_zero_knot ~rng ~reg:r ~salt:k ()
 
 let rec lower_mba_to_stack ?anchor (e : Mba_engine.Mba.expr) : stack_op list =
   match e with

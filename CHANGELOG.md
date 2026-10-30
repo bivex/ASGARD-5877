@@ -7,6 +7,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented Z3-Verified Non-Linear Zero-Knot Synthesizer and Shared Pass Library (`scripts/zero_knot_synth.py`, `lib/stack_vm/stack_zero_knots.ml`, `lib/stack_vm/stack_zero_knots.mli`, `lib/stack_vm/stack_sink_barrier_pass.ml`, `lib/stack_vm/stack_mba_pass.ml`, `lib/stack_vm/stack_polymba_pass.ml`, `test/test_stack_vm.ml`):
+  * Built `scripts/zero_knot_synth.py` formally proving 8 non-linear zero-knot families in $\mathbb{Z}_{2^{64}}$ via Z3 BitVec(64) UNSAT oracles and anti-peephole `z3.simplify(expr) != 0` filtering (De Morgan Add/Sub, Or/And Sum, Disjoint Null Intersection, Shannon Bit Projection, Rivest Cubic Multinomial, Rivest Quartic Difference, Mersenne-31 Carrier Rings, and Nilpotent Dual-Representation XOR Subtraction).
+  * Built shared `Stack_zero_knots` library with invariant verification (net stack delta unconditionally $+1$, $\min_{\text{depth}} \ge 0$, evaluation to $0\text{L}$) and replaced repetitive linear zero-constructors across `stack_sink_barrier_pass.ml`, `stack_mba_pass.ml`, and `stack_polymba_pass.ml`.
+  * Verified: 72/72 `Stack-VM Execution Engine` tests pass (including dedicated unit test `test_stack_zero_knots`), 21/21 `Stack-JIT VM & Chunker` pass, and all 19 showcase routines execute exact on Apple Silicon hardware (DRS 93.7/100.0).
 - Implemented Z3-Verified Non-Linear Opaque Predicate Synthesizer and Catalog (`scripts/cff_opaque_synth.py`, `lib/cff/cff_opaque_catalog.ml`, `lib/cff/cff.ml`, `lib/stack_vm/stack_cff_pass.ml`):
   * Built `scripts/cff_opaque_synth.py` (v2) with an `Expr` AST driving both formal Z3 BitVec(64) UNSAT proving and mechanical liveness-aware OCaml codegen, eliminating codegen-vs-proof drift.
   * Added equivalence-class deduplication over canonicalized Z3 simplification s-expressions, discovering 159 distinct equivalence classes and 299 sound syntactic variants from 116,736 heterogeneous candidate expressions.

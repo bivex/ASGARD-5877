@@ -240,9 +240,12 @@ let apply_block (cfg : polymba_config) ~scratch_ring _ctx (b : block) : block =
           let s = scratch_ring.(!ring_idx) in
           ring_idx := (!ring_idx + 1) mod n_ring;
           let knot =
-            match next_int rng 3 with
-            | 0 -> emit_cubic_rivest_knot ~scratch_slot:s
-            | 1 -> emit_dyn_shift_knot ~scratch_slot:s
+            match next_int rng 4 with
+            | 0 ->
+                let seed_arr = [| next_int rng 1000000; s |] in
+                Stack_zero_knots.emit_zero_knot ~rng:(Random.State.make seed_arr) ~reg:s ()
+            | 1 -> emit_cubic_rivest_knot ~scratch_slot:s
+            | 2 -> emit_dyn_shift_knot ~scratch_slot:s
             | _ -> emit_bit_perm_mba_knot ~scratch_slot:s
           in
           let cluster =

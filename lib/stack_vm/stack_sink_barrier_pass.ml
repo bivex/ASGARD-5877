@@ -147,10 +147,9 @@ let apply_block (cfg : sink_barrier_config) ?scratch_ring _ctx (b : block) : blo
       let pick_knot () =
         let s = scratch_ring.(!ring_idx) in
         ring_idx := (!ring_idx + 1) mod n_ring;
-        if next_int rng 2 = 0 then emit_algebraic_barrier_knot ~scratch_slot:s
-        else emit_mersenne_barrier_knot ~scratch_slot:s
+        let rng_std = Random.State.make [| next_int rng 1000000; s |] in
+        Stack_zero_knots.emit_zero_knot ~rng:rng_std ~reg:s ()
       in
-
       List.iteri (fun idx op ->
         let flags_live = if idx < Array.length live then live.(idx) else false in
         match op with
