@@ -354,15 +354,38 @@ let apply_program ?ctx cfg prog =
     | Some c ->
         Array.init n (fun _ -> Some (Context_allocator.alloc_scratch c))
   in
+  (* Adaptive function-wide E-graph budgeting: bounds total e-graph work
+     across all constant sites to prevent the 1000x multiplicative explosion
+     when many constants exist (e.g. post-Amplifier). *)
+  let total_constants =
+    Array.fold_left (fun acc (_, (b : block)) ->
+      acc + List.fold_left (fun c_acc -> function
+        | PushImm _ | AddImmImm _ | SubImmImm _ -> c_acc + 1
+        | _ -> c_acc
+      ) 0 b.ops
+    ) 0 sorted
+  in
+  let adaptive_egraph_budget =
+    let base_budget = egraph_budget_of cfg in
+    if total_constants <= 8 then base_budget
+    else
+      let target_nodes = max 20 (min cfg.egraph_node_limit (cfg.egraph_node_limit * 8 / max 1 total_constants)) in
+      let target_time_ms = max 5 (min cfg.egraph_time_budget_ms (cfg.egraph_time_budget_ms * 8 / max 1 total_constants)) in
+      let target_iters = if total_constants > 50 then min 2 cfg.egraph_iter_limit else cfg.egraph_iter_limit in
+      egraph_config_of
+        ~node_limit:target_nodes
+        ~time_budget_ms:target_time_ms
+        ~iter_limit:target_iters
+  in
   let pool = Random_visa_ports.Domain_pool.global_pool () in
   let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
-  Random_visa_ports.Domain_pool.parallel_for pool ~n
+  Random_visa_ports.Domain_pool.parallel_for ~min_n:2 pool ~n
     (fun i ->
       let (id, b) = sorted.(i) in
       let scratch_slot = scratch_slots.(i) in
       out.(i) <- (id, rewrite_block
         ~egraph_rate:cfg.egraph_rate
-        ~egraph_budget:(egraph_budget_of cfg)
+        ~egraph_budget:adaptive_egraph_budget
         ~rng:(make_rng (Int64.logxor cfg.seed (Int64.of_int (b.id * Int64.to_int block_id_multiplier))))
         ~scratch_slot cfg.mba_rate b));
   let new_blocks = Hashtbl.create n in
