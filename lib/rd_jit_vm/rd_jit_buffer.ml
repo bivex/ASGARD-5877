@@ -60,13 +60,22 @@ let rns_register_def () : top_decl =
       ];
     ];
   }
+(* Single source of truth for the runtime register-file layout.  The raw
+   JIT assembly in Rd_jit_synth addresses gprs as [base + slot*8] and the
+   condition word at [base + rd_jit_flags_off]; both derive from these
+   sizes so struct and emitted code cannot drift apart. *)
+let rd_jit_gprs_count = 64
+let rd_jit_rns_size = 32 (* four uint64 moduli lanes *)
+let rd_jit_vregs_count = 16
+let rd_jit_flags_off =
+  8 * rd_jit_gprs_count + rd_jit_rns_size * rd_jit_vregs_count + 8 (* rip *)
 
 let rd_jit_context_def () : top_decl =
   StructDef {
     align_as = None;
     name = "RD_JIT_Context";
     members = [
-      member_field (Array (UInt64, 16)) "gprs";
+      member_field (Array (UInt64, rd_jit_gprs_count)) "gprs";
       member_field (Array (StructType "RNS_Register", 16)) "vregs";
       member_field UInt64 "rip";
       member_field UInt64 "flags";
@@ -81,13 +90,15 @@ let rd_jit_context_def () : top_decl =
         var "exit_requested" := i32 0;
       ];
       member_method ~attrs:[AlwaysInline] Void "set_reg" [(SizeT, "idx"); (UInt64, "val")] [
-        if_then (var "idx" <~ i32 16) [
+        if_then (var "idx" <~ i32 rd_jit_gprs_count) [
           idx (var "gprs") (var "idx") := var "val";
-          expr_stmt (call "vregs[idx].set" [var "val"]);
+          if_then (var "idx" <~ i32 16) [
+            expr_stmt (call "vregs[idx].set" [var "val"]);
+          ];
         ];
       ];
       member_method ~attrs:[AlwaysInline] ~is_const:true UInt64 "get_reg" [(SizeT, "idx")] [
-        if_then (var "idx" <~ i32 16) [
+        if_then (var "idx" <~ i32 rd_jit_gprs_count) [
           ret (idx (var "gprs") (var "idx"));
         ];
         ret (u64 0L);

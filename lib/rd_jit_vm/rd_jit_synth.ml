@@ -223,12 +223,15 @@ let synthesize_and_execute_block_decl () : top_decl =
 #if defined(__aarch64__)
     uint32_t* code = (uint32_t*)jit.get_write_ptr();
     size_t idx = 0;
-    code[idx++] = 0xf9414409;
+    size_t flags_off_ = __builtin_offsetof(asgard_rd_jit::RD_JIT_Context, flags);
+    size_t next_chunk_off_ = __builtin_offsetof(asgard_rd_jit::RD_JIT_Context, next_chunk);
+    size_t exit_req_off_ = __builtin_offsetof(asgard_rd_jit::RD_JIT_Context, exit_requested);
+    code[idx++] = 0xf9400000u | (uint32_t)((flags_off_ / 8) << 10) | 9u; /* ldr x9,[x0,flags] */
     code[idx++] = 0xd51b4209;
     for (uint32_t i = 0; i < block.count; ++i) {
         const JITInstr& in = block.instrs[i];
-        uint8_t dst_off = in.dst * 8;
-        uint8_t src_off = in.src * 8;
+        uint32_t dst_off = (uint32_t)in.dst * 8;
+        uint32_t src_off = (uint32_t)in.src * 8;
         switch (in.op) {
             case JIT_OP_NOP:
                 code[idx++] = 0xd503201f;
@@ -516,8 +519,8 @@ let synthesize_and_execute_block_decl () : top_decl =
                 break;
             case JIT_OP_CSEL_RR: {
                 uint32_t cond = (uint32_t)(in.imm & 0xF);
-                uint8_t src2 = (uint8_t)((in.imm >> 8) & 0xFF);
-                uint8_t src2_off = src2 * 8;
+                uint32_t src2 = (uint32_t)((in.imm >> 8) & 0xFF);
+                uint32_t src2_off = src2 * 8;
                 code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 10;
                 code[idx++] = 0xf9400000 | (src2_off / 8 << 10) | (0 << 5) | 11;
                 code[idx++] = 0x9a800000 | (11 << 16) | (cond << 12) | (10 << 5) | 9;
@@ -527,13 +530,13 @@ let synthesize_and_execute_block_decl () : top_decl =
             case JIT_OP_RET:
                 break;
             case JIT_OP_EXIT:
-                code[idx++] = 0x52800029;
-                code[idx++] = 0xb9029c09;
+                code[idx++] = 0x52800029;                                               /* mov w9, #1 */
+                code[idx++] = 0xb9000000u | (uint32_t)((exit_req_off_ / 4) << 10) | 9u; /* str w9, [x0, exit_requested] */
                 break;
             case JIT_OP_JMP: {
                 uint32_t target_chunk = (uint32_t)in.imm;
                 emit_arm64_imm(code, idx, 9, target_chunk);
-                code[idx++] = 0xb9029809;
+                code[idx++] = 0xb9000000u | (uint32_t)((next_chunk_off_ / 4) << 10) | 9u; /* str w9, [x0, next_chunk] */
                 break;
             }
             case JIT_OP_JCC: {
@@ -542,33 +545,41 @@ let synthesize_and_execute_block_decl () : top_decl =
                 uint32_t cond = (uint32_t)((in.imm >> 48) & 0xFFFF);
                 emit_arm64_imm(code, idx, 10, target_chunk);
                 emit_arm64_imm(code, idx, 11, fallthrough_chunk);
-                code[idx++] = 0x9a800000 | (11 << 16) | (cond << 12) | (10 << 5) | 9;
-                code[idx++] = 0xb9029809;
+                code[idx++] = 0x9a800000 | (11 << 16) | (cond << 12) | (10 << 5) | 9;  /* csel x9, x10, x11, cond */
+                code[idx++] = 0xb9000000u | (uint32_t)((next_chunk_off_ / 4) << 10) | 9u; /* str w9, [x0, next_chunk] */
                 break;
             }
             case JIT_OP_PUSH_FLAGS:
-                code[idx++] = 0xf9415009;
-                code[idx++] = 0xd53b420a;
-                code[idx++] = 0xca0a0129;
-                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9;
+                /* dst = NZCV: save the condition state through a register
+                   slot so it can cross dataflow and chunk boundaries. */
+                code[idx++] = 0xd53b4209;                                       /* mrs x9, nzcv */
+                code[idx++] = 0xf9000000 | (dst_off / 8 << 10) | (0 << 5) | 9; /* str x9, [x0, dst] */
                 break;
             case JIT_OP_POP_FLAGS:
-                code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 9;
-                code[idx++] = 0xf9015009;
+                code[idx++] = 0xf9400000 | (src_off / 8 << 10) | (0 << 5) | 9; /* ldr x9, [x0, src] */
+                code[idx++] = 0xd51b4209;                                       /* msr nzcv, x9 */
                 break;
             default:
                 break;
         }
     }
-    code[idx++] = 0xd53b4209;
-    code[idx++] = 0xf9014409;
+    code[idx++] = 0xd53b4209;                                              /* mrs x9, nzcv */
+    code[idx++] = 0xf9000000u | (uint32_t)((flags_off_ / 8) << 10) | 9u; /* str x9,[x0,flags] */
     code[idx++] = 0xd65f03c0;
     code_bytes = idx * sizeof(uint32_t);
 #elif defined(__x86_64__)
     uint8_t* code = (uint8_t*)jit.get_write_ptr();
     size_t idx = 0;
-    code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x87;
-    code[idx++] = 0x88; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+    uint32_t flags_off_ = (uint32_t)__builtin_offsetof(asgard_rd_jit::RD_JIT_Context, flags);
+    uint32_t next_chunk_off_ = (uint32_t)__builtin_offsetof(asgard_rd_jit::RD_JIT_Context, next_chunk);
+    uint32_t exit_req_off_ = (uint32_t)__builtin_offsetof(asgard_rd_jit::RD_JIT_Context, exit_requested);
+    auto emit_off = [&](uint32_t o) {
+        code[idx++] = (uint8_t)(o & 0xFF);
+        code[idx++] = (uint8_t)((o >> 8) & 0xFF);
+        code[idx++] = (uint8_t)((o >> 16) & 0xFF);
+        code[idx++] = (uint8_t)((o >> 24) & 0xFF);
+    };
+    code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x87; emit_off(flags_off_);
     code[idx++] = 0x50;
     code[idx++] = 0x9d;
     auto emit_u64 = [&](uint64_t v) {
@@ -579,6 +590,9 @@ let synthesize_and_execute_block_decl () : top_decl =
 
     for (uint32_t i = 0; i < block.count; ++i) {
         const JITInstr& in = block.instrs[i];
+        /* disp8 addressing reaches slots 0..15 only; refuse larger slot
+           windows loudly instead of corrupting them silently. */
+        if (in.dst > 15 || in.src > 15) __builtin_trap();
         uint8_t dst_off = in.dst * 8;
         uint8_t src_off = in.src * 8;
         switch (in.op) {
@@ -892,14 +906,12 @@ let synthesize_and_execute_block_decl () : top_decl =
             case JIT_OP_RET:
                 break;
             case JIT_OP_EXIT:
-                code[idx++] = 0xc7; code[idx++] = 0x87;
-                code[idx++] = 0x9c; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                code[idx++] = 0xc7; code[idx++] = 0x87; emit_off(exit_req_off_);
                 code[idx++] = 0x01; code[idx++] = 0x00; code[idx++] = 0x00; code[idx++] = 0x00;
                 break;
             case JIT_OP_JMP: {
                 uint32_t target_chunk = (uint32_t)in.imm;
-                code[idx++] = 0xc7; code[idx++] = 0x87;
-                code[idx++] = 0x98; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                code[idx++] = 0xc7; code[idx++] = 0x87; emit_off(next_chunk_off_);
                 code[idx++] = (uint8_t)(target_chunk & 0xFF);
                 code[idx++] = (uint8_t)((target_chunk >> 8) & 0xFF);
                 code[idx++] = (uint8_t)((target_chunk >> 16) & 0xFF);
@@ -935,22 +947,20 @@ let synthesize_and_execute_block_decl () : top_decl =
                     default: cmov_op = 0x44; break;
                 }
                 code[idx++] = 0x0f; code[idx++] = cmov_op; code[idx++] = 0xc2;
-                code[idx++] = 0x89; code[idx++] = 0x87;
-                code[idx++] = 0x98; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                code[idx++] = 0x89; code[idx++] = 0x87; emit_off(next_chunk_off_);
                 break;
             }
             case JIT_OP_PUSH_FLAGS:
-                code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x87;
-                code[idx++] = 0xa0; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                /* dst = RFLAGS: pushfq; pop rax; mov [rdi+dst], rax */
                 code[idx++] = 0x9c;
-                code[idx++] = 0x41; code[idx++] = 0x5a;
-                code[idx++] = 0x4c; code[idx++] = 0x31; code[idx++] = 0xd0;
+                code[idx++] = 0x58;
                 code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x47; code[idx++] = dst_off;
                 break;
             case JIT_OP_POP_FLAGS:
+                /* mov rax,[rdi+src]; push rax; popfq */
                 code[idx++] = 0x48; code[idx++] = 0x8b; code[idx++] = 0x47; code[idx++] = src_off;
-                code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x87;
-                code[idx++] = 0xa0; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+                code[idx++] = 0x50;
+                code[idx++] = 0x9d;
                 break;
             default:
                 break;
@@ -958,8 +968,7 @@ let synthesize_and_execute_block_decl () : top_decl =
     }
     code[idx++] = 0x9c;
     code[idx++] = 0x58;
-    code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x87;
-    code[idx++] = 0x88; code[idx++] = 0x02; code[idx++] = 0x00; code[idx++] = 0x00;
+    code[idx++] = 0x48; code[idx++] = 0x89; code[idx++] = 0x87; emit_off(flags_off_);
     code[idx++] = 0xc3;
     code_bytes = idx;
 #else
@@ -1163,10 +1172,10 @@ let synthesize_and_execute_block_decl () : top_decl =
                 break;
             }
             case JIT_OP_PUSH_FLAGS:
-                ctx.set_reg(in.dst, ctx.vflags ^ (ctx.flags << 28));
+                ctx.set_reg(in.dst, ctx.flags);
                 break;
             case JIT_OP_POP_FLAGS:
-                ctx.vflags = ctx.get_reg(in.src);
+                ctx.flags = ctx.get_reg(in.src);
                 break;
         }
     }

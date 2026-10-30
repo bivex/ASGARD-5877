@@ -175,7 +175,8 @@ let perm_tables : int64 array =
 let perm_identity_index = 4
 
 let perm_apply (packed : int64) (i : int) : int =
-  to_int (logand (shift_right_logical packed (4 * i)) 0xFL)
+  if i < 0 || i >= 16 then i
+  else to_int (logand (shift_right_logical packed (4 * i)) 0xFL)
 
 (* OEIS A010060 - Thue-Morse: t_n = popcount(n) mod 2. *)
 let thue_morse (n : int) : bool =

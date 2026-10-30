@@ -10,6 +10,7 @@
 # ==============================================================================
 set -euo pipefail
 
+export PATH="/Users/password9090/.opam/default/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
@@ -18,10 +19,8 @@ echo "🛡️  ASGARD-5877: Stack-JIT (SJIT) 19-Function Showcase Pipeline"
 echo "=================================================================="
 
 MAIN_EXE="${ROOT_DIR}/_build/default/bin/main.exe"
-if [[ ! -x "${MAIN_EXE}" ]]; then
-    echo "[*] Compiling ASGARD-5877 toolchain via Dune..."
-    (cd "${ROOT_DIR}" && eval "$(opam env)" && dune build bin/main.exe)
-fi
+echo "[*] Compiling ASGARD-5877 toolchain via Dune..."
+(cd "${ROOT_DIR}" && /Users/password9090/.opam/default/bin/dune build bin/main.exe)
 
 BUILD_DIR="${SCRIPT_DIR}/build"
 rm -rf "${BUILD_DIR}"

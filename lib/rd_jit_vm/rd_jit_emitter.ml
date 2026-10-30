@@ -204,8 +204,8 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
   let cond_to_arm64_code = function
     | Flags.E -> 0
     | Flags.NE -> 1
-    | Flags.B -> 2
-    | Flags.AE -> 3
+    | Flags.B -> 3
+    | Flags.AE -> 2
     | Flags.S -> 4
     | Flags.NS -> 5
     | Flags.O -> 6
@@ -422,9 +422,12 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
               | _ -> false
             in
             let mapped =
-              if not has_term && b_idx + 1 < List.length sorted_blocks then
-                let next_b = List.nth sorted_blocks (b_idx + 1) in
-                mapped @ [ ("asgard_rd_jit::JIT_OP_JMP", 0, 0, Int64.of_int next_b.id) ]
+              if not has_term then
+                if b_idx + 1 < List.length sorted_blocks then
+                  let next_b = List.nth sorted_blocks (b_idx + 1) in
+                  mapped @ [ ("asgard_rd_jit::JIT_OP_JMP", 0, 0, Int64.of_int next_b.id) ]
+                else
+                  mapped @ [ ("asgard_rd_jit::JIT_OP_EXIT", 0, 0, 0L) ]
               else mapped
             in
             let cur = ref [] in
@@ -556,11 +559,8 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
      carry-free X + 2Y pair. *)
   let sealed_chunks =
     List.mapi
-      (fun k (chunk, has_extern) ->
-        let perm_idx =
-          if has_extern then Nano_jit_slot.perm_identity_index
-          else k mod (Array.length Nano_jit_slot.derangement_tables)
-        in
+      (fun k (chunk, _has_extern) ->
+        let perm_idx = Nano_jit_slot.perm_identity_index in
         let packed = Nano_jit_slot.perm_tables.(perm_idx) in
         let remap_idx i = Nano_jit_slot.perm_apply packed i in
         let words =

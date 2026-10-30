@@ -37,7 +37,7 @@ let op_prefix = "asgard_rd_jit::JIT_OP_"
 let suffix (op : string) : string =
   String.sub op (String.length op_prefix) (String.length op - String.length op_prefix)
 
-let window_size = 16
+let window_size = C.stack_base + C.max_stack_depth
 
 (* ------------------------------------------------------------------ *)
 (* PRNG value pools                                                    *)
@@ -67,7 +67,9 @@ let shift_count (rng : Random.State.t) : int64 =
   if Random.State.bool rng then Int64.of_int (Random.State.int rng 130)
   else shift_counts.(Random.State.int rng (Array.length shift_counts))
 
-let reg (rng : Random.State.t) : int = Random.State.int rng C.ctx_slots
+let reg (rng : Random.State.t) : int =
+  let r = Random.State.int rng (C.ctx_slots - 1) in
+  if r >= 4 then r + 1 else r
 
 let cond (rng : Random.State.t) : Flags.condition =
   conds.(Random.State.int rng (Array.length conds))
@@ -95,8 +97,9 @@ let op_effect (d : int) (op : stack_op) : int * int =
   | Cmp | Test | WriteMem _ -> (-2, 0)
   | Rot -> if d >= 3 then (0, 0) else (-1, 0)
   | Swap | ReadMem _ | AddImm _ | SubImm _ | Bswap | Clz | Ctz | Rbit | Popcnt
-  | SetRegImm _ | Exit | PushFlags | PopFlags ->
-      (0, 0)
+  | SetRegImm _ | Exit -> (0, 0)
+  | PushFlags -> (1, 0)
+  | PopFlags -> (-1, 0)
   | JmpRel _ | JccRel _ | KeyAdjust _ | KeyFeedback _ | NativeEscape _
   | EnterVM _ | ExitVM _ ->
       (0, 0)
@@ -178,8 +181,8 @@ let choice_pool : (int * int * (Random.State.t -> stack_op list)) array =
      (1, 3, fun r -> shift_unit r);
      (0, 4, fun r -> [ SetRegImm (reg r, imm r) ]);
      (0, 4, fun _r -> [ Exit ]);
-     (0, 4, fun _r -> [ PushFlags ]);
-     (0, 4, fun _r -> [ PopFlags ]) |]
+     (0, 3, fun _r -> [ PushFlags ]);
+     (1, 4, fun _r -> [ PopFlags ]) |]
 
 let flags_delta (op : stack_op) : int =
   match op with PushFlags -> 1 | PopFlags -> -1 | _ -> 0
@@ -198,7 +201,10 @@ let gen_step ~(flags_open : int) (rng : Random.State.t) (d : int) : stack_op lis
       let (_, _, gen) = pool.(Random.State.int rng (Array.length pool)) in
       let step = gen rng in
       let opens = List.fold_left (fun a op -> a + flags_delta op) 0 step in
-      if flags_open + opens < 0 || flags_open + opens > 2 || not (fits_window d step)
+      let d', _ = depth_model_from d step in
+      if flags_open + opens < 0 || flags_open + opens > 2
+         || d' < flags_open + opens
+         || not (fits_window d step)
       then go ()
       else Some step
     end

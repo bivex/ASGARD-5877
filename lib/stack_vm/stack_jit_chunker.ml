@@ -37,9 +37,9 @@ type translation = {
   invalidation_schedule : int array;
 }
 
-let ctx_slots = 12
-let stack_base = 12
-let max_stack_depth = 4
+let ctx_slots = 56
+let stack_base = 56
+let max_stack_depth = 8
 
 let op_prefix = "asgard_rd_jit::JIT_OP_"
 
@@ -212,8 +212,11 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
            | [] -> failwith "stack_jit: underflow on SubImm")
       | AddImmImm (a, b) -> stk := Int64.add a b :: !stk
       | SubImmImm (a, b) -> stk := Int64.sub a b :: !stk
-      | PushFlags -> ()
-      | PopFlags -> ()
+      | PushFlags -> stk := 0L :: !stk
+      | PopFlags ->
+          (match !stk with
+           | _ :: tl -> stk := tl
+           | [] -> failwith "stack_jit: underflow on PopFlags")
       | Exit -> ()
       | Dup ->
           (match !stk with
@@ -282,10 +285,12 @@ let reference_eval (regs : int64 array) (ops : stack_op list) : int64 list =
     ops;
   !stk
 
-(* ---- chunk simulation on the 16-slot window --------------------- *)
+(* ---- chunk simulation on the full slot window --------------------- *)
+let simulate_slots = stack_base + max_stack_depth (* 60 with current constants *)
 
 let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
-  Array.fill gprs 0 (Array.length gprs) 0L;
+  let g = Array.make simulate_slots 0L in
+  let n = min (Array.length gprs) simulate_slots in
   let suffix op = String.sub op (String.length op_prefix) (String.length op - String.length op_prefix) in
   List.iter
     (fun chunk ->
@@ -293,24 +298,24 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
         (fun (op, dst, src, imm) ->
           (match suffix op with
           | "NOP" -> ()
-          | "MOV_RR" -> gprs.(dst) <- gprs.(src)
-          | "MOV_RI" -> gprs.(dst) <- imm
-          | "ADD_RR" -> gprs.(dst) <- Int64.add gprs.(dst) gprs.(src)
-          | "ADD_RI" -> gprs.(dst) <- Int64.add gprs.(dst) imm
-          | "SUB_RR" -> gprs.(dst) <- Int64.sub gprs.(dst) gprs.(src)
-          | "SUB_RI" -> gprs.(dst) <- Int64.sub gprs.(dst) imm
-          | "MUL_RR" -> gprs.(dst) <- Int64.mul gprs.(dst) gprs.(src)
-          | "MUL_RI" -> gprs.(dst) <- Int64.mul gprs.(dst) imm
+          | "MOV_RR" -> g.(dst) <- g.(src)
+          | "MOV_RI" -> g.(dst) <- imm
+          | "ADD_RR" -> g.(dst) <- Int64.add g.(dst) g.(src)
+          | "ADD_RI" -> g.(dst) <- Int64.add g.(dst) imm
+          | "SUB_RR" -> g.(dst) <- Int64.sub g.(dst) g.(src)
+          | "SUB_RI" -> g.(dst) <- Int64.sub g.(dst) imm
+          | "MUL_RR" -> g.(dst) <- Int64.mul g.(dst) g.(src)
+          | "MUL_RI" -> g.(dst) <- Int64.mul g.(dst) imm
           | "MULH_RR" ->
-              let a = gprs.(dst) and b = gprs.(src) in
+              let a = g.(dst) and b = g.(src) in
               let a1 = Int64.shift_right_logical a 32 and a0 = Int64.logand a 0xFFFFFFFFL in
               let b1 = Int64.shift_right_logical b 32 and b0 = Int64.logand b 0xFFFFFFFFL in
               let p0 = Int64.mul a0 b0 in
               let p1 = Int64.add (Int64.mul a1 b0) (Int64.shift_right_logical p0 32) in
               let p2 = Int64.add (Int64.mul a0 b1) (Int64.logand p1 0xFFFFFFFFL) in
-              gprs.(dst) <- Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32)
+              g.(dst) <- Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32)
           | "SMULH_RR" ->
-              let a = gprs.(dst) and b = gprs.(src) in
+              let a = g.(dst) and b = g.(src) in
               let a1 = Int64.shift_right_logical a 32 and a0 = Int64.logand a 0xFFFFFFFFL in
               let b1 = Int64.shift_right_logical b 32 and b0 = Int64.logand b 0xFFFFFFFFL in
               let p0 = Int64.mul a0 b0 in
@@ -319,20 +324,20 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
               let u_hi = Int64.add (Int64.add (Int64.mul a1 b1) (Int64.shift_right_logical p1 32)) (Int64.shift_right_logical p2 32) in
               let adj_a = if a < 0L then b else 0L in
               let adj_b = if b < 0L then a else 0L in
-              gprs.(dst) <- Int64.sub (Int64.sub u_hi adj_a) adj_b
-          | "SHL_RI" -> gprs.(dst) <- Int64.shift_left gprs.(dst) (Int64.to_int imm land 63)
-          | "SHR_RI" -> gprs.(dst) <- Int64.shift_right_logical gprs.(dst) (Int64.to_int imm land 63)
-          | "SAR_RI" -> gprs.(dst) <- Int64.shift_right gprs.(dst) (Int64.to_int imm land 63)
-          | "SHL_RR" -> gprs.(dst) <- Int64.shift_left gprs.(dst) (Int64.to_int gprs.(src) land 63)
-          | "SHR_RR" -> gprs.(dst) <- Int64.shift_right_logical gprs.(dst) (Int64.to_int gprs.(src) land 63)
-          | "SAR_RR" -> gprs.(dst) <- Int64.shift_right gprs.(dst) (Int64.to_int gprs.(src) land 63)
-          | "AND_RR" -> gprs.(dst) <- Int64.logand gprs.(dst) gprs.(src)
-          | "OR_RR" -> gprs.(dst) <- Int64.logor gprs.(dst) gprs.(src)
-          | "XOR_RR" -> gprs.(dst) <- Int64.logxor gprs.(dst) gprs.(src)
-          | "NOT_R" -> gprs.(dst) <- Int64.lognot gprs.(dst)
+              g.(dst) <- Int64.sub (Int64.sub u_hi adj_a) adj_b
+          | "SHL_RI" -> g.(dst) <- Int64.shift_left g.(dst) (Int64.to_int imm land 63)
+          | "SHR_RI" -> g.(dst) <- Int64.shift_right_logical g.(dst) (Int64.to_int imm land 63)
+          | "SAR_RI" -> g.(dst) <- Int64.shift_right g.(dst) (Int64.to_int imm land 63)
+          | "SHL_RR" -> g.(dst) <- Int64.shift_left g.(dst) (Int64.to_int g.(src) land 63)
+          | "SHR_RR" -> g.(dst) <- Int64.shift_right_logical g.(dst) (Int64.to_int g.(src) land 63)
+          | "SAR_RR" -> g.(dst) <- Int64.shift_right g.(dst) (Int64.to_int g.(src) land 63)
+          | "AND_RR" -> g.(dst) <- Int64.logand g.(dst) g.(src)
+          | "OR_RR" -> g.(dst) <- Int64.logor g.(dst) g.(src)
+          | "XOR_RR" -> g.(dst) <- Int64.logxor g.(dst) g.(src)
+          | "NOT_R" -> g.(dst) <- Int64.lognot g.(dst)
           | "BSWAP_R" ->
-              let a = gprs.(dst) in
-              gprs.(dst) <-
+              let a = g.(dst) in
+              g.(dst) <-
                 Int64.logor
                   (Int64.logor
                      (Int64.shift_left (Int64.logand a 0x00000000000000FFL) 56)
@@ -349,48 +354,51 @@ let simulate_chunks (chunks : jit_item list list) (gprs : int64 array) : unit =
                            (Int64.shift_right_logical (Int64.logand a 0x00FF000000000000L) 40)
                            (Int64.shift_right_logical (Int64.logand a 0xFF00000000000000L) 56))))
           | "CLZ_R" ->
-              let a = gprs.(dst) in
+              let a = g.(dst) in
               let rec go c = if c >= 64 then 64 else if Int64.logand a (Int64.shift_left 1L (63 - c)) <> 0L then c else go (c + 1) in
-              gprs.(dst) <- Int64.of_int (go 0)
+              g.(dst) <- Int64.of_int (go 0)
           | "CTZ_R" ->
-              if gprs.(dst) = 0L then gprs.(dst) <- 64L
+              if g.(dst) = 0L then g.(dst) <- 64L
               else begin
                 let rec go c v = if Int64.logand v 1L = 0L then go (c + 1) (Int64.shift_right_logical v 1) else c in
-                gprs.(dst) <- Int64.of_int (go 0 gprs.(dst))
+                g.(dst) <- Int64.of_int (go 0 g.(dst))
               end
           | "RBIT_R" ->
-              let a = gprs.(dst) in
+              let a = g.(dst) in
               let rec go i acc =
                 if i >= 64 then acc
                 else go (i + 1) (Int64.logor (Int64.shift_left acc 1) (Int64.logand (Int64.shift_right_logical a i) 1L))
               in
-              gprs.(dst) <- go 0 0L
+              g.(dst) <- go 0 0L
           | "POPCNT_R" ->
               let rec go c v = if v = 0L then c else go (c + 1) (Int64.logand v (Int64.sub v 1L)) in
-              gprs.(dst) <- Int64.of_int (go 0 gprs.(dst))
+              g.(dst) <- Int64.of_int (go 0 g.(dst))
           | "EXIT" -> ()
           | "ROR_RR" ->
-              let s = Int64.to_int gprs.(src) land 63 in
-              gprs.(dst) <- (if s = 0 then gprs.(dst) else Int64.logor (Int64.shift_right_logical gprs.(dst) s) (Int64.shift_left gprs.(dst) (64 - s)))
+              let s = Int64.to_int g.(src) land 63 in
+              g.(dst) <- (if s = 0 then g.(dst) else Int64.logor (Int64.shift_right_logical g.(dst) s) (Int64.shift_left g.(dst) (64 - s)))
           | "DIV_RR" ->
-              gprs.(dst) <- (if gprs.(src) = 0L then 0L else Int64.unsigned_div gprs.(dst) gprs.(src))
+              g.(dst) <- (if g.(src) = 0L then 0L else Int64.unsigned_div g.(dst) g.(src))
           | "SDIV_RR" ->
-              gprs.(dst) <- (if gprs.(src) = 0L then 0L else Int64.div gprs.(dst) gprs.(src))
+              g.(dst) <- (if g.(src) = 0L then 0L else Int64.div g.(dst) g.(src))
           | "REM_RR" ->
-              gprs.(dst) <- (if gprs.(src) = 0L then 0L else Int64.unsigned_rem gprs.(dst) gprs.(src))
+              g.(dst) <- (if g.(src) = 0L then 0L else Int64.unsigned_rem g.(dst) g.(src))
           | "CMP_RR" -> ()
           | "CMP_RI" -> ()
-          | "CSEL_RR" -> gprs.(dst) <- gprs.(src)
+          | "CSEL_RR" -> g.(dst) <- g.(src)
+          | "PUSH_FLAGS" -> g.(dst) <- 0L
+          | "POP_FLAGS" -> ()
           | "ROR_RI" ->
               let s = Int64.to_int imm land 63 in
-              gprs.(dst) <- (if s = 0 then gprs.(dst) else Int64.logor (Int64.shift_right_logical gprs.(dst) s) (Int64.shift_left gprs.(dst) (64 - s)))
+              g.(dst) <- (if s = 0 then g.(dst) else Int64.logor (Int64.shift_right_logical g.(dst) s) (Int64.shift_left g.(dst) (64 - s)))
           | "LOAD_8" | "LOAD_16" | "LOAD_32" | "LOAD_64" -> ()
           | "STORE_8" | "STORE_16" | "STORE_32" | "STORE_64" -> ()
-          | "RESOLVE_SYM" -> gprs.(dst) <- Int64.of_int (0x1000 + Int64.to_int imm * 8)
-          | "CALL_EXTERN" -> gprs.(0) <- 0L
+          | "RESOLVE_SYM" -> g.(dst) <- Int64.of_int (0x1000 + Int64.to_int imm * 8)
+          | "CALL_EXTERN" -> g.(0) <- 0L
           | s -> failwith ("stack_jit: simulate: unknown op " ^ s)))
         chunk)
-    chunks
+    chunks;
+  Array.blit g 0 gprs 0 n
 
 (* OEIS A001511 - Ruler function: A001511(t) = 1 + ctz(t) for t >= 1.
    Returns the fractal wipe level for execution step t: the RD-JIT arena
@@ -410,19 +418,23 @@ let make_invalidation_schedule (n : int) : int array =
 
 let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     ?(allow_branches = false)
-    ?(allow_spill = false) ()
+    ?(allow_spill = false)
+    ?(entry_depth = 0)
+    ?(epilogue = true)
+    ?ctx_map ?used_slots ()
     (ops : stack_op list) : (translation, string) result =
   let ( let* ) = Result.bind in
-  let vdepth = ref 0 in
-  let spilled = ref 0 in
+  let vdepth = ref entry_depth in
+  let spilled = ref (max 0 (entry_depth - max_stack_depth)) in
   let max_depth = ref 0 in
-  let flags_depth = ref 0 in
-  let ctx_map = Hashtbl.create 8 in
-  let used_slots = Hashtbl.create 8 in
+  let ctx_map = match ctx_map with Some m -> m | None -> Hashtbl.create 8 in
+  let used_slots = match used_slots with Some u -> u | None -> Hashtbl.create 8 in
+  let r_rsp = 4 in (* ctx.gprs[4] — pointer into spill_stack, strictly reserved *)
+  Hashtbl.replace used_slots r_rsp ();
   List.iter
     (function
      | PushReg r | PopReg r | Cmov (_, r) | SetRegImm (r, _) | AddRegImm (r, _) ->
-         if r >= 0 && r < ctx_slots then begin
+         if r >= 0 && r < ctx_slots && r <> r_rsp && not (Hashtbl.mem ctx_map r) then begin
            Hashtbl.replace ctx_map r r;
            Hashtbl.replace used_slots r ()
          end
@@ -454,8 +466,6 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
                (!vdepth + 1) max_stack_depth)
     else Ok ()
   in
-  let stack_base = 12 in
-  let max_stack_depth = 4 in
   let r_rsp = 4 in (* ctx.gprs[4] — pointer into spill_stack *)
 
   let phys_slot (d : int) : int =
@@ -740,12 +750,16 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
                 Ok ()
               end
           | PushFlags ->
-              incr flags_depth;
+              (* materialised condition word becomes a real stack slot *)
+              let* () = check_push_depth () in
+              let dst = push_slot () in
+              push_item (jit "PUSH_FLAGS", dst, 0, 0L);
               Ok ()
           | PopFlags ->
-              if !flags_depth <= 0 then Error "stack_jit: unbalanced PopFlags"
+              if !vdepth < 1 then Error "stack_jit: underflow on PopFlags"
               else begin
-                decr flags_depth;
+                let src = pop_slot () in
+                push_item (jit "POP_FLAGS", 0, src, 0L);
                 Ok ()
               end
           | ResolveSym sym_idx ->
@@ -801,13 +815,18 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
         | Ok () -> walk rest
   in
   let* () = walk ops in
-  let* () =
-    if !flags_depth <> 0 then Error "stack_jit: unclosed PushFlags at end of trace"
-    else Ok ()
-  in
-  (* Epilogue: the observable result is the stack top, moved to slot 0. *)
-  (if !vdepth > 0 then
-     push_item (jit "MOV_RR", 0, tos_slot (), 0L));
+  (* Canonical exit window: reload spilled values until exactly
+     max(0, vdepth-4) remain in memory, so a successor block entering at
+     this depth sees the live top-of-stack in physical slots. *)
+  let want_spilled = max 0 (!vdepth - max_stack_depth) in
+  while !spilled > want_spilled do
+    decr spilled;
+    push_item (jit "LOAD_64", phys_slot !spilled, r_rsp, spill_offset !spilled)
+  done;
+  (* Epilogue (single-trace mode): the observable result is the stack top,
+     moved to slot 0.  Multi-block programs return via PopReg instead. *)
+  if epilogue && !vdepth > 0 then
+    push_item (jit "MOV_RR", 0, tos_slot (), 0L);
   let real = List.rev !out in
   (* OEIS A010060: dummy at output position n iff t_n = 1. *)
   let padded =
@@ -879,6 +898,102 @@ let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
         other_blocks
     in
     let all_blocks = entry_b :: sorted_other in
+    let global_ctx_map = Hashtbl.create 16 in
+    let global_used_slots = Hashtbl.create 16 in
+    let r_rsp = 4 in
+    Hashtbl.replace global_used_slots r_rsp ();
+    List.iter (fun (b : Stack_ir.block) ->
+      List.iter (function
+        | PushReg r | PopReg r | Cmov (_, r) | SetRegImm (r, _) | AddRegImm (r, _) ->
+            if r >= 0 && r < ctx_slots && r <> r_rsp then begin
+              Hashtbl.replace global_ctx_map r r;
+              Hashtbl.replace global_used_slots r ()
+            end
+        | _ -> ()) b.ops
+    ) all_blocks;
+    let map_reg_global r =
+      if Hashtbl.mem global_ctx_map r then Ok ()
+      else
+        let rec find s =
+          if s < 0 then
+            Error (Printf.sprintf "stack_jit: too many context/scratch slots in trace (limit is %d)" ctx_slots)
+          else if Hashtbl.mem global_used_slots s then
+            find (s - 1)
+          else begin
+            Hashtbl.replace global_used_slots s ();
+            Hashtbl.replace global_ctx_map r s;
+            Ok ()
+          end
+        in
+        find (ctx_slots - 1)
+    in
+    let rec collect_regs_loop = function
+      | [] -> Ok ()
+      | (b : Stack_ir.block) :: rest ->
+          let rec loop_ops = function
+            | [] -> Ok ()
+            | (PushReg r | PopReg r | Cmov (_, r) | SetRegImm (r, _) | AddRegImm (r, _)) :: ops_rest ->
+                let* () = map_reg_global r in
+                loop_ops ops_rest
+            | _ :: ops_rest -> loop_ops ops_rest
+          in
+          let* () = loop_ops b.ops in
+          collect_regs_loop rest
+    in
+    let* () = collect_regs_loop all_blocks in
+    (* Cross-block stack state: the reference evaluator's vstack persists
+       across block transitions, so each block's model must start at the
+       depth its predecessors leave behind.  Collect every branch edge
+       with the (relative) depth at the branch point, then run a fixpoint
+       from the entry block.  A merge with two different depths is an
+       ambiguous program and is rejected; blocks never reached keep a
+       self-consistent depth derived from their own walk minimum (they
+       never execute, but must still lower without underflow). *)
+    let block_edges (b : Stack_ir.block) : (int * int) list =
+      let rec go d = function
+        | [] -> []
+        | JmpRel t :: rest -> (t, d) :: go d rest
+        | JccRel (t, _) :: JmpRel f :: rest -> (t, d) :: (f, d) :: go d rest
+        | JccRel (t, _) :: rest -> (t, d) :: (b.id, d) :: go d rest
+        | Exit :: rest -> go d rest
+        | op :: rest -> go (d + Stack_ir.stack_delta op) rest
+      in
+      go 0 b.ops
+    in
+    let rel_edges = List.map (fun b -> (b, block_edges b)) all_blocks in
+    let entry_depths = Hashtbl.create 16 in
+    Hashtbl.replace entry_depths prog.entry_id 0;
+    let changed = ref true in
+    let iters = ref 0 in
+    let max_iters = List.length all_blocks in
+    while !changed && !iters < max_iters do
+      incr iters;
+      changed := false;
+      List.iter
+        (fun (b, edges) ->
+          match Hashtbl.find_opt entry_depths b.id with
+          | None -> ()
+          | Some d0 ->
+              List.iter
+                (fun (t, rd) ->
+                  let ad = min 64 (d0 + rd) in
+                  match Hashtbl.find_opt entry_depths t with
+                  | None -> Hashtbl.replace entry_depths t ad; changed := true
+                  | Some e when e < ad ->
+                      Hashtbl.replace entry_depths t ad; changed := true
+                  | _ -> ())
+                edges)
+        rel_edges
+    done;
+    let walk_minimum (b : Stack_ir.block) =
+      let rec go m d = function
+        | [] -> m
+        | op :: rest ->
+            let d' = d + Stack_ir.stack_delta op in
+            go (min m d') d' rest
+      in
+      go 0 0 b.ops
+    in
     let block_chunks = Hashtbl.create 16 in
     let block_offsets = Hashtbl.create 16 in
     let cur_chunk_offset = ref 0 in
@@ -888,7 +1003,18 @@ let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     let rec chunk_blocks = function
       | [] -> Ok ()
       | (b : Stack_ir.block) :: rest ->
-          let* res = translate_trace ~scale ~allow_branches:true ~allow_spill () b.ops in
+          let entry_d =
+            match Hashtbl.find_opt entry_depths b.id with
+            | Some d -> max d (- walk_minimum b)
+            | None -> max 0 (- walk_minimum b)
+          in
+          let* res =
+            match translate_trace ~scale ~allow_branches:true ~allow_spill
+                    ~entry_depth:entry_d ~epilogue:false
+                    ~ctx_map:global_ctx_map ~used_slots:global_used_slots () b.ops with
+            | Ok r -> Ok r
+            | Error e -> Error (Printf.sprintf "%s (in block %d)" e b.id)
+          in
           Hashtbl.replace block_offsets b.id !cur_chunk_offset;
           Hashtbl.replace block_chunks b.id res.chunks;
           cur_chunk_offset := !cur_chunk_offset + List.length res.chunks;

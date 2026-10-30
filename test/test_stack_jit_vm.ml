@@ -95,7 +95,7 @@ let test_chunker_rejections () =
   check bool "Rejects stack window overflow" true
     (Result.is_error
        (Stack_jit_chunker.translate_trace ()
-          [ PushImm 1L; PushImm 2L; PushImm 3L; PushImm 4L; PushImm 5L ]))
+          (List.init (Stack_jit_chunker.max_stack_depth + 1) (fun i -> PushImm (Int64.of_int (i + 1))))))
 
 let test_chunker_symbols () =
   let ops = [ ResolveSym 0; PopReg 1; CallExtern 1 ] in

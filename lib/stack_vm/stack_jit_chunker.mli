@@ -1,18 +1,19 @@
 (** Stack JIT VM chunker (SJIT tier-1 lowering, docs/STACK_JIT_VM_PROTOTYPE.md).
 
-    Translates a straight-line Stack-IR trace into JIT chunks executed by
-    the RD-JIT sealed native tier: window layout (context slots [0..7],
-    stack positions [8..15]), Kolakoski fission (OEIS A000002) and
-    Thue-Morse dummy padding (OEIS A010060), with a result epilogue that
-    moves the final stack top to window slot 0.
+    Translates Stack-IR traces and programs into JIT chunks executed by
+    the RD-JIT sealed native tier: window layout (context slots
+    [0..ctx_slots-1], stack positions [stack_base..stack_base+3] with
+    spilling through the reserved spill-pointer slot), Kolakoski fission
+    (OEIS A000002) and Thue-Morse dummy padding (OEIS A010060), with a
+    result epilogue that moves the final stack top to window slot 0.
 
-    Translatable subset (semantics per the handlers of
-    [stack_handlers_emitter.ml]): [PushImm], [PushReg], [PopReg], [Add],
-    [Sub], [Mul], [Nand], [Nor], [Dup], [Swap], [AddImm], [SubImm],
-    [AddImmImm], [SubImmImm].  [Sub] pops [b] (top) then [a] (deeper) and
-    pushes [a - b]; [Nand]/[Nor] lower to AND/OR followed by NOT.  Shifts,
-    division, flags, branches, memory and escapes are rejected with a
-    reason so the caller can fall back to another engine. *)
+    The translatable subset covers the arithmetic, logical, shift,
+    memory, call and flag operations of Stack-IR; [Cmp]/[Test] materialise
+    NZCV in the JIT code, [PushFlags]/[PopFlags] move the condition word
+    through a real stack slot, and branches lower to chunk-hopping
+    [JIT_OP_JMP]/[JIT_OP_JCC] patched to chunk indices.  Unsupported ops
+    are rejected with a reason so the caller can fall back to another
+    engine. *)
 
 open Stack_ir
 
@@ -40,12 +41,18 @@ val max_stack_depth : int
 val ruler_a001511 : int -> int
 
 (** Translate a straight-line stack trace.  [scale] multiplies the
-    Kolakoski run lengths (default [Nano_jit_slot.nano_kolakoski_scale]). *)
+    Kolakoski run lengths (default [Nano_jit_slot.nano_kolakoski_scale]).
+    [entry_depth] models stack values inherited from predecessors (the
+    successor sees the top of the physical window); [epilogue=false]
+    suppresses the result move to slot 0 for multi-block callers. *)
 val translate_trace :
-  ?scale:int -> ?allow_branches:bool -> ?allow_spill:bool -> unit -> stack_op list -> (translation, string) result
+  ?scale:int -> ?allow_branches:bool -> ?allow_spill:bool -> ?entry_depth:int ->
+  ?epilogue:bool -> ?ctx_map:(int, int) Hashtbl.t -> ?used_slots:(int, unit) Hashtbl.t ->
+  unit -> stack_op list -> (translation, string) result
 (* Translate an entire multi-block Stack-IR program (with loops, jumps, and
    conditional branches) into Kolakoski chunks with dynamic JMP and JCC
-   transfer resolution. *)
+   transfer resolution.  Cross-block stack state is honoured: each block's
+   model starts at the entry depth its predecessors leave behind. *)
 val translate_program :
   ?scale:int -> ?allow_spill:bool -> unit -> program -> (translation, string) result
 
