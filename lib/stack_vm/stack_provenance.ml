@@ -250,7 +250,7 @@ let run_semantic_verification
     List.iter (function
       | Shl | Shr | Sar -> ()
       | ReadMem w | WriteMem w ->
-          if not (List.mem w [ 1; 2; 4; 8 ]) then operand_ok := false
+          if not (List.mem w [ 1; 2; 4; 8; 16 ]) then operand_ok := false
       | _ -> ()
     ) b.ops
   ) prog.blocks;

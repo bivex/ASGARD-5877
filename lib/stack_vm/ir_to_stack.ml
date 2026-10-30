@@ -24,7 +24,14 @@ let lower_operand ctx = function
   | Reg r -> [PushReg (Context_allocator.slot_of_reg ctx r)]
   | Mem m ->
       let addr_ops = lower_mem_addr ctx m in
-      addr_ops @ [ReadMem (width_to_bytes m.width)]
+      let w =
+        match width_to_bytes m.width with
+        | 1 -> 1
+        | 2 -> 2
+        | 4 -> 4
+        | _ -> 8
+      in
+      addr_ops @ [ReadMem w]
 
 let store_to_operand ctx opnd =
   match opnd with
@@ -32,9 +39,26 @@ let store_to_operand ctx opnd =
   | Mem m ->
       let scratch_val = Context_allocator.slot_of_reg ctx Register.vtmp1 in
       let addr_ops = lower_mem_addr ctx m in
-      [PopReg scratch_val] @
-      addr_ops @
-      [PushReg scratch_val; WriteMem (width_to_bytes m.width)]
+      let w = width_to_bytes m.width in
+      if w <= 8 then
+        let w_enc = match w with 1 -> 1 | 2 -> 2 | 4 -> 4 | _ -> 8 in
+        [PopReg scratch_val] @
+        addr_ops @
+        [PushReg scratch_val; WriteMem w_enc]
+      else
+        let scratch_addr = Context_allocator.slot_of_reg ctx Register.vtmp2 in
+        let extra_words = (w / 8) - 1 in
+        let rec zero_tail off =
+          if off > extra_words then []
+          else
+            [PushReg scratch_addr; PushImm (Int64.of_int (off * 8)); Add; PushImm 0L; WriteMem 8]
+            @ zero_tail (off + 1)
+        in
+        [PopReg scratch_val] @
+        addr_ops @
+        [PopReg scratch_addr;
+         PushReg scratch_addr; PushReg scratch_val; WriteMem 8]
+        @ zero_tail 1
   | Imm _ ->
       let dummy = Context_allocator.slot_of_reg ctx Register.vtmp1 in
       [PopReg dummy]

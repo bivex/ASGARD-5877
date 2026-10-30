@@ -1639,6 +1639,7 @@ let test_real_license_check_macro_stack_vm_e2e () =
         let run_tampered_cmd =
           Printf.sprintf "printf 'ASGARD-5877-GOLD\\n' | %s" tampered_bin in
         let status_t, out_t = Test_helpers.run_command_capture run_tampered_cmd in
+
         Alcotest.(check bool) "tampered image exits exactly like a wrong key" true
           (status_t = Unix.WEXITED 1);
         Alcotest.(check bool) "tampered image grants nothing" true
@@ -2499,7 +2500,7 @@ let test_pipelined_stage_dispatch () =
   (* 2. Decoupled emission: split primitives, priming pre-fetch, no
      centralized re-entry step *)
   let cases = [ (0x01, "PUSH_IMM", "h_push_imm"); (0x0A, "ADD", "h_add"); (0xFF, "EXIT", "h_exit") ] in
-  let src = Stack_runtime.emit_stack_dispatch_source ~pipelined:plan ~entry_bid:0 cases in
+  let src = Stack_runtime.emit_stack_dispatch_source ~pipelined:plan cases in
   let has sub =
     let n = String.length src and m = String.length sub in
     let rec go i = i + m <= n && (String.sub src i m = sub || go (i + 1)) in
@@ -2514,7 +2515,7 @@ let test_pipelined_stage_dispatch () =
   Alcotest.(check bool) "no centralized dispatch-step macro" false (has "ASG_DISPATCH_STEP(");
   Alcotest.(check bool) "chaff lands in the planned dead slots" true
     (has (Printf.sprintf "vm->ctx[(%d) + " plan.chaff_slot_base));
-  let legacy = Stack_runtime.emit_stack_dispatch_source ~entry_bid:0 cases in
+  let legacy = Stack_runtime.emit_stack_dispatch_source cases in
   Alcotest.(check bool) "legacy path keeps the centralized step" true
     (let sub = "ASG_DISPATCH_STEP()" in
      let n = String.length legacy and m = String.length sub in

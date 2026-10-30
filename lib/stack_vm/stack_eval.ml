@@ -64,7 +64,7 @@ let read_mem_word state addr width =
 
 let write_mem_word state addr value width =
   for i = 0 to width - 1 do
-    let b = Int64.to_int (Int64.logand (Int64.shift_right_logical value (i * 8)) 0xFFL) in
+    let b = if i < 8 then Int64.to_int (Int64.logand (Int64.shift_right_logical value (i * 8)) 0xFFL) else 0 in
     write_mem_byte state (Int64.add addr (Int64.of_int i)) b
   done
 

@@ -699,11 +699,10 @@ let make_stack_metrics
 module Stack_vm_packager : Vm_packager = struct
   let engine_kind = Stack
 
-  let package ~rng ~config ?constants (func : ir_func) : package_result =
-    let ir : Vm_ir.Ir.func = unwrap_ir func in
+  let package_single ~rng ~config ?constants ?shared_seed_key ?shared_op_map ?shared_ext_syms ((target_name, ir) : string * Vm_ir.Ir.func) =
     let native_cfg : Protection_config.t = unwrap_config config in
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "Stack-VM: hardening function '%s' (%d IR blocks)"
-      ir.name (Hashtbl.length ir.cfg.blocks);
+      target_name (Hashtbl.length ir.cfg.blocks);
     let tracker = Stack_vm.Stack_provenance.create_tracker () in
     let t_start = Unix.gettimeofday () in
     (* The effective parameters of every pass, collected while the phases
@@ -732,7 +731,7 @@ module Stack_vm_packager : Vm_packager = struct
         | Error _ -> ir
       else ir
     in
-    let ext_syms = Hashtbl.create 16 in
+    let ext_syms = match shared_ext_syms with Some h -> h | None -> Hashtbl.create 16 in
     let ctx = Stack_vm.Context_allocator.create ~permute:native_cfg.stack_vm.permute_registers () in
     let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
@@ -744,9 +743,10 @@ module Stack_vm_packager : Vm_packager = struct
       Stack_vm.Stack_provenance.record_pass tracker
         ~name ~phase ~status ~seed ?details ~prog_before ~prog_after ()
     in
+    let is_main = target_name = "main" || target_name = "_main" in
     (* Bytecode Computational Stalling: runs exclusively inside VM bytecode *)
     let prog =
-      if native_cfg.comp_stall.enabled then
+      if native_cfg.comp_stall.enabled && is_main then
         let iters =
           if native_cfg.comp_stall.n_iterations <= 0 then
             Native_vm.Protection_types.default_comp_stall.n_iterations
@@ -1853,9 +1853,12 @@ module Stack_vm_packager : Vm_packager = struct
 
 
     let seed_key =
-      Int64.logxor
-        (Int64.of_int (Random.State.bits rng))
-        (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 32)
+      match shared_seed_key with
+      | Some k -> k
+      | None ->
+          Int64.logxor
+            (Int64.of_int (Random.State.bits rng))
+            (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 32)
     in
     let compact_imm = native_cfg.stack_vm.compact_imm in
     let layout =
@@ -1878,6 +1881,7 @@ module Stack_vm_packager : Vm_packager = struct
     let polymorphic = native_cfg.stack_vm.opcode_polymorphism in
     let enc =
       Stack_vm.Stack_encoder.encode_program ~seed_key ?layout ~polymorphic ~compact_imm
+        ?op_map:shared_op_map
         ~dispatcher_tokens prog
     in
     let bc_words = bytes_to_words enc.bytes in
@@ -2030,14 +2034,67 @@ module Stack_vm_packager : Vm_packager = struct
     let rebind_address = None in
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "Stack-VM packaging complete: %d words (%d bytes payload, %d bytes storage footprint)"
       (List.length bc_words) (Bytes.length enc.bytes) (List.length bc_words * 8);
-    {
+    ({
       cpp_runtime_source = inject_pipeline_hardening native_cfg target_func.name cpp_runtime_source;
       runner_source;
       bytecode = bc_words;
-      bytecodes = [ ("target_func", bc_words) ];
+      bytecodes = [ (target_name, bc_words) ];
       metrics;
       header_name = "stack_vm_runtime.hpp";
       rebind_address;
-    }
+    }, enc.payload_tag, prog, enc, runtime_cfg, sanitized_external_symbols, sanitized_constants, obfuscate_runtime)
+
+  let package ~rng ~config ?constants (func : ir_func) : package_result =
+    let native_cfg : Protection_config.t = unwrap_config config in
+    let ir_funcs = unwrap_multi_ir func in
+    if List.length ir_funcs > 1 then begin
+      Logger.infof ~section:"STACK_VM" "Stack-VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
+      let seed_key =
+        Int64.logxor
+          (Int64.of_int (Random.State.bits rng))
+          (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 32)
+      in
+      let polymorphic = native_cfg.stack_vm.opcode_polymorphism in
+      let shared_op_map =
+        if polymorphic then Stack_vm.Stack_encoder.generate_opcode_map seed_key
+        else Stack_vm.Stack_encoder.default_opcode_map
+      in
+      let global_ext_syms = Hashtbl.create 32 in
+      let results =
+        List.mapi
+          (fun i (name, ir) ->
+            let fn_rng = Random.State.make [| Random.State.bits rng; i * 0x5877; 0x1337 |] in
+            package_single ~rng:fn_rng ~config ?constants ~shared_seed_key:seed_key ~shared_op_map ~shared_ext_syms:global_ext_syms (name, ir))
+          ir_funcs
+      in
+      let bytecodes = List.concat (List.map (fun (pkg, _, _, _, _, _, _, _) -> pkg.bytecodes) results) in
+      let primary_pkg, _, primary_prog, primary_enc, primary_cfg, ext_syms, consts, obf =
+        match List.find_opt (fun (pkg, _, _, _, _, _, _, _) -> match pkg.bytecodes with (n, _) :: _ -> n = "main" || n = "_main" | [] -> false) results with
+        | Some p -> p
+        | None -> List.hd results
+      in
+      (* One dispatch stream per function: the runtime resolves the stream
+         (block tables + entry) from the payload tag of the bytecode each
+         wrapper hands in, so every function jumps through its own tables. *)
+      let streams = List.map (fun (_, _, prog, enc, _, _, _, _) -> (enc, prog)) results in
+      let cpp_runtime_source =
+        Stack_vm.Stack_runtime.generate_c_runtime
+          ~external_symbols:ext_syms
+          ?constants:consts
+          ~streams
+          ~obfuscate_runtime:obf
+          ~enc:primary_enc
+          primary_cfg
+          primary_prog
+      in
+      { primary_pkg with
+        cpp_runtime_source = inject_pipeline_hardening native_cfg primary_pkg.header_name cpp_runtime_source;
+        bytecodes;
+      }
+    end else begin
+      let (name, ir) = match ir_funcs with (n, f) :: _ -> (n, f) | [] -> ("main", unwrap_ir func) in
+      let (pkg, _, _, _, _, _, _, _) = package_single ~rng ~config ?constants (name, ir) in
+      pkg
+    end
 end
 

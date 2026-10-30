@@ -6,6 +6,13 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+- Fixed multi-function execution in Stack-VM runtime by replacing global block-offset and key tables with per-stream metadata (`lib/stack_vm/stack_runtime.ml`, `lib/stack_vm/stack_runtime.mli`, `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/stack_vm/stack_handlers_emitter.ml`):
+  * Added multi-stream dispatch registry (`g_stack_streams`) mapping each packaged function's payload tag to its own masked block-offset/key tables, entry block ID, and block count.
+  * Replaced global `ASG_UNMASK_OFFSET` and `ASG_UNMASK_KEY` macros in jump and dispatch handlers with stream-parameterized `ASG_STREAM_OFF` and `ASG_STREAM_KEY` macros resolving via `vm->meta`, eliminating cross-stream block offset collisions and out-of-bounds dispatch termination.
+  * Replaced undefined weak extern `asgard_resolve_local_func` with auto-registering constructor hook (`g_asgard_local_resolver`) in `lib/adapters/protect_adapters/c_trampoline_adapter.ml` and `lib/stack_vm/stack_runtime.ml`, resolving Darwin `ld` undefined symbol link errors in standalone test harnesses.
+  * Updated trampoline body return logic in `lib/adapters/protect_adapters/c_trampoline_adapter.ml` so that internal functions return 0 on authentication failure while `main` preserves non-zero error exit codes.
+
 ### Added
 - Implemented LLDB Bytecode Debugger Plugin for ASGARD virtual architectures (`tools/lldb/asgard_lldb.py`, `tools/lldb/test_asgard_lldb.py`, `tools/lldb/README.md`):
   * Developed a full-featured LLDB Python debugger extension providing inspection, live virtual register unmasking, bytecode disassembly, virtual single-stepping, breakpoints, execution tracing, and state export for both Native Threaded VM (`vanguard_threaded_vm`) and Stack VM (`stack_vm_t`).

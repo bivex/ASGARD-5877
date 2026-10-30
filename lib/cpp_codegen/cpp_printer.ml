@@ -508,6 +508,9 @@ let rec pp_top_decl fmt = function
   | Namespace (ns, decls) ->
       fprintf fmt "namespace %s {@[<v 0>@,@,%a@]@,@,} // namespace %s"
         ns (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@,@,") pp_top_decl) decls ns
+  | ExternC decls ->
+      fprintf fmt "extern \"C\" {@[<v 0>@,@,%a@]@,@,} // extern \"C\""
+        (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@,@,") pp_top_decl) decls
   | RawTop s ->
       fprintf fmt "%s" s
   | CommentTop s ->

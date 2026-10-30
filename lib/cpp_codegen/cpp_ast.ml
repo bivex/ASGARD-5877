@@ -218,3 +218,4 @@ type top_decl =
   | Typedef of ctype * string
   | RawTop of string
   | CommentTop of string
+  | ExternC of top_decl list

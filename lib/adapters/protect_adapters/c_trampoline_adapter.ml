@@ -563,8 +563,16 @@ let embed_vm_trampoline
         call "vanguard_threaded_vm::asgard_vm_call_with_salt" (u8 macro_salt :: base_call_args)
     in
 
+    let is_main = fn_name = "main" || fn_name = "_main" in
     let ret_stmts =
       if is_void then [ expr_stmt call_expr; ret_void ]
+      else if is_main then [
+        let_u64 "_r" call_expr;
+        if_then (call "__builtin_expect" [ var "asgard_stack_vm::g_last_auth_failed"; i32 0 ]) [
+          ret (i32 1);
+        ];
+        ret (c_cast (StructType ret_type) (var "_r"));
+      ]
       else if is_ptr then [ ret (c_cast (StructType ret_type) (c_cast UIntPtr call_expr)) ]
       else [ ret (c_cast (StructType ret_type) call_expr) ]
     in
@@ -580,6 +588,35 @@ let embed_vm_trampoline
     ] @ ret_stmts in
     let rendered = string_of_stmts all_stmts in
     "\n    " ^ String.concat "\n    " (String.split_on_char '\n' (String.trim rendered)) ^ "\n"
+  in
+  let emit_local_resolver_ast fns =
+    let open Cpp_codegen.Cpp_ast in
+    let open Cpp_codegen.Cpp_dsl in
+    let checks =
+      List.map (fun fn ->
+        let name = fn.fn_name in
+        let name_with_score = "_" ^ name in
+        let cond =
+          Binary (LogOr,
+            Binary (Eq, call "strcmp" [var "name"; str_lit name], i32 0),
+            Binary (Eq, call "strcmp" [var "name"; str_lit name_with_score], i32 0))
+        in
+        if_then cond [ ret (reinterpret_cast (Ptr Void) (var name)) ]
+      ) fns
+    in
+    let body =
+      [ if_then (log_not (var "name")) [ ret nullptr ] ]
+      @ checks
+      @ [ ret nullptr ]
+    in
+    let fn_decl =
+      func_decl ~attrs:[] (Ptr Void) "asgard_resolve_local_func" [ (ConstPtr Char, "name") ] body
+    in
+    let init_decl =
+      func_decl ~attrs:[StaticFn; Constructor] Void "_asgard_init_local_resolver" []
+        [ expr_stmt (call "asgard_set_local_resolver" [ var "asgard_resolve_local_func" ]) ]
+    in
+    [ extern_c [ fn_decl ]; init_decl ]
   in
 
   match marked_fns with
@@ -611,7 +648,8 @@ let embed_vm_trampoline
       let before_body = String.sub c_src 0 (single_fn.open_brace_idx + 1) in
       let after_body = String.sub c_src single_fn.close_brace_idx (len - single_fn.close_brace_idx) in
       let trampoline_body = build_trampoline_body false "embedded_bytecode" single_fn.ret_type single_fn.args_to_pass single_fn.fn_name in
-      let full_out = bc_header ^ before_body ^ trampoline_body ^ after_body in
+      let resolver_str = Cpp_codegen.Cpp_printer.render_top_decls (emit_local_resolver_ast [ single_fn ]) in
+      let full_out = bc_header ^ before_body ^ trampoline_body ^ after_body ^ "\n" ^ resolver_str ^ "\n" in
       let oc = open_out out_path in
       output_string oc full_out;
       close_out oc
@@ -669,6 +707,10 @@ let embed_vm_trampoline
       ) multi_fns;
 
       Buffer.add_string body_buf (String.sub c_src !last_pos (len - !last_pos));
+      let resolver_str = Cpp_codegen.Cpp_printer.render_top_decls (emit_local_resolver_ast multi_fns) in
+      Buffer.add_string body_buf "\n";
+      Buffer.add_string body_buf resolver_str;
+      Buffer.add_string body_buf "\n";
       let oc = open_out out_path in
       output_string oc (Buffer.contents body_buf);
       close_out oc;

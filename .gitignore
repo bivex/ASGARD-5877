@@ -58,3 +58,4 @@ octave-workspace
 /scripts/artifacts
 /dist_arm64
 /_probe_dumps
+/binaries/crackme_arm64

@@ -107,6 +107,8 @@ let rec scramble_top_decl (rng : Random.State.t) (d : top_decl) : top_decl =
       UnionDef { s with members = List.map (scramble_struct_member rng) s.members }
   | Namespace (ns, decls) ->
       Namespace (ns, List.map (scramble_top_decl rng) decls)
+  | ExternC decls ->
+      ExternC (List.map (scramble_top_decl rng) decls)
   | ConstexprGlobal (ty, name, e) ->
       ConstexprGlobal (ty, name, scramble_expr rng e)
   | GlobalVar g ->

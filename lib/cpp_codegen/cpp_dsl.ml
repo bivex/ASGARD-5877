@@ -146,6 +146,7 @@ let enum_decl ?underlying_ty name items : top_decl = EnumDecl { name; underlying
 let func_decl ?(attrs=[]) ret_type name params body : top_decl = FuncDecl { attrs; ret_type; name; params; body }
 let func_proto ?(attrs=[]) ret_type name params : top_decl = FuncProto { attrs; ret_type; name; params; body = [] }
 let typedef ty name : top_decl = Typedef (ty, name)
+let extern_c decls : top_decl = ExternC decls
 let pragma s : top_decl = Pragma s
 let macro_def ?value name : top_decl = MacroDef (name, value)
 let macro_def_raw ?value name : top_decl = MacroDefRaw (name, value)

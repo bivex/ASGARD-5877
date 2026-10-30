@@ -532,20 +532,30 @@ let () =
   Printf.printf "[PASS] Step 34: Native VM address-bound block spans tables emitted using typed AST.\n";
 
   (* 35. Stack-VM block tables AST *)
-  let stack_tables_decls = Stack_vm.Stack_runtime.emit_stack_block_tables_ast
-    ~max_bid:2
-    ~block_offsets:[ 0x1000L; 0x2000L; 0x3000L ]
-    ~block_keys:[ 0xCAFEBABEL; 0xDEADBEEFL; 0x1337BEEFL ]
-    ~tag_key0:0x58775877L
-    ~tag_key1:0x92929292L
-    ()
+  let stack_tables_decls =
+    let module S = Stack_vm.Stack_ir in
+    let enc_of ops =
+      let blk = S.make_block 0 "entry" ops in
+      let prog = S.make_program 0 [ blk ] 16 in
+      (Stack_vm.Stack_encoder.encode_program ~seed_key:0x5EEDED1234L prog, prog)
+    in
+    Stack_vm.Stack_runtime.emit_stack_block_tables_ast
+      ~streams:[
+        enc_of [ S.PushImm 0x1000L; S.Exit ];
+        enc_of [ S.PushImm 0x2000L; S.Exit ];
+        enc_of [ S.PushImm 0x3000L; S.Exit ];
+      ]
+      ~tag_key0:0x58775877L
+      ~tag_key1:0x92929292L
+      ()
   in
   let stack_tables_cpp = render_top_decls stack_tables_decls in
   (match Cpp_codegen.Cpp_validator.validate_cpp_syntax stack_tables_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Stack-VM block tables validation failed: " ^ err));
-  assert (contains_str stack_tables_cpp "g_stack_block_offsets");
-  assert (contains_str stack_tables_cpp "g_stack_block_keys");
+  assert (contains_str stack_tables_cpp "g_stack_block_offsets_0");
+  assert (contains_str stack_tables_cpp "g_stack_block_keys_2");
+  assert (contains_str stack_tables_cpp "g_stack_streams");
   assert (contains_str stack_tables_cpp "g_stack_tag_keys");
   Printf.printf "[PASS] Step 35: Stack-VM block tables emitted using typed AST.\n";
 
@@ -608,7 +618,8 @@ let () =
     (0x02, "ADD", "h_add");
     (0xFF, "EXIT", "h_exit");
   ] in
-  let stack_disp_cpp = Stack_vm.Stack_runtime.emit_stack_dispatch_source ~entry_bid:0 test_dispatch_cases in
+  let stack_disp_cpp = Stack_vm.Stack_runtime.emit_stack_dispatch_source test_dispatch_cases in
+
   assert (contains_str stack_disp_cpp "dispatch_table[256]");
   assert (not (contains_str stack_disp_cpp "raw_dispatch_table"));
   assert (contains_str stack_disp_cpp "lbl_default:");
@@ -632,7 +643,7 @@ let () =
   in
   let piped_disp_cpp =
     Stack_vm.Stack_runtime.emit_stack_dispatch_source
-      ~pipelined:pipelined_plan ~entry_bid:0 test_dispatch_cases
+      ~pipelined:pipelined_plan test_dispatch_cases
   in
   assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_PREFETCH(opv)");
   assert (contains_str piped_disp_cpp "#define ASG_PIPELINED_DISPATCH(opv, k, uid)");

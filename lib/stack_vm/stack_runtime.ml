@@ -235,21 +235,22 @@ let identifier_scramble_map seed =
   let helpers = [
     "fetch_byte"; "fetch_i16"; "fetch_i32"; "fetch_i64";
     "read_byte"; "step_key"; "feedback_hash"; "eval_cond"; "parity8";
-    "asg_siphash12"; "asg_payload_tag"; "asg_payload_auth_ok";
+    "asg_siphash12"; "asg_payload_tag"; "asg_payload_stream_idx";
     "asg_mem_access_ok"; "asg_mem_check_range";
   ] in
   List.iter (fun h -> add_id h "fn") helpers;
   let globals = [
     "g_stack_handler_table"; "g_stack_block_offsets";
-    "g_stack_block_keys"; "g_stack_tag_keys";
+    "g_stack_block_keys"; "g_stack_tag_keys"; "g_stack_streams";
   ] in
   List.iter (fun g -> add_id g "tbl") globals;
   add_id "stack_vm_t" "stk";
+  add_id "asgard_stream_meta_t" "sm";
   add_id "VSP_ENCODE" "VE";
   add_id "VSP_MASK" "VM";
   add_id "asg_vsp_mask" "AVM";
-  add_id "ASG_UNMASK_OFFSET" "UMO";
-  add_id "ASG_UNMASK_KEY" "UMK";
+  add_id "ASG_STREAM_OFF" "USO";
+  add_id "ASG_STREAM_KEY" "USK";
   add_id "ASG_UNMASK_TAG_K0" "UT0";
   add_id "ASG_UNMASK_TAG_K1" "UT1";
   add_id "ASG_PAYLOAD_TAG" "PT";
@@ -448,42 +449,106 @@ let emit_stack_constants_tables_ast constants : Cpp_codegen.Cpp_ast.top_decl lis
     in
     cdata_decls @ [ table_decl ]
 
-let emit_stack_block_tables_ast ~max_bid ~block_offsets ~block_keys ~tag_key0 ~tag_key1 () : Cpp_codegen.Cpp_ast.top_decl list =
+let emit_stack_block_tables_ast
+    ~(streams : (Stack_encoder.encrypted_bytecode * Stack_ir.program) list)
+    ~tag_key0 ~tag_key1 () : Cpp_codegen.Cpp_ast.top_decl list =
   let open Cpp_codegen.Cpp_ast in
   let open Cpp_codegen.Cpp_dsl in
-  let count = max_bid + 1 in
-  let offsets_exprs = List.map (fun off -> u32 (Int64.to_int32 off)) block_offsets in
-  let keys_exprs = List.map u64 block_keys in
-  let tag_keys_exprs = [ u64 tag_key0; u64 tag_key1 ] in
+  (* One table pair per packaged function: every stream carries its own
+     masked block offsets/keys and its own entry block id.  The dispatch
+     handlers resolve jumps through the stream the VM is currently
+     executing ([vm->meta]), never through a single global table. *)
+  let stream_max_bid (enc : Stack_encoder.encrypted_bytecode) =
+    Hashtbl.fold (fun id _ acc -> max id acc) enc.Stack_encoder.block_offsets 0
+  in
+  let stream_table_decls =
+    List.concat_map (fun ((i : int), (enc, _)) ->
+      let max_bid = stream_max_bid enc in
+      let count = max_bid + 1 in
+      let mask32 bid =
+        Int64.logxor
+          (Int64.of_int
+             (Hashtbl.find_opt enc.Stack_encoder.block_offsets bid
+             |> Option.value ~default:0))
+          (Int64.logand
+             (Int64.add 0x5877A564L (Int64.mul (Int64.of_int bid) 0x19E3779BL))
+             0xFFFFFFFFL)
+      in
+      let mask64 bid =
+        Int64.logxor
+          (Hashtbl.find_opt enc.Stack_encoder.block_keys bid
+           |> Option.value ~default:enc.Stack_encoder.seed_key)
+          (Int64.add 0xD00F5877A5640000L
+             (Int64.mul (Int64.of_int bid) 0x9E3779B97F4A7C15L))
+      in
+      let offsets =
+        List.init count (fun bid -> u32 (Int64.to_int32 (mask32 bid)))
+      in
+      let keys = List.init count (fun bid -> u64 (mask64 bid)) in
+      [
+        global_var ~is_static:true ~is_const:true
+          (Array (UInt32, count))
+          (Printf.sprintf "g_stack_block_offsets_%d" i)
+          ~init:(init_list offsets);
+        global_var ~is_static:true ~is_const:true
+          (Array (UInt64, count))
+          (Printf.sprintf "g_stack_block_keys_%d" i)
+          ~init:(init_list keys);
+      ]
+    ) (List.mapi (fun i s -> (i, s)) streams)
+  in
+  let registry_entries =
+    List.mapi (fun i ((enc : Stack_encoder.encrypted_bytecode), prog) ->
+      init_list [
+        var (Printf.sprintf "g_stack_block_offsets_%d" i);
+        var (Printf.sprintf "g_stack_block_keys_%d" i);
+        i32 prog.Stack_ir.entry_id;
+        i32 (stream_max_bid enc + 1);
+      ]
+    ) streams
+  in
   [
-    raw_top "#define ASG_UNMASK_OFFSET(bid) ((uint32_t)(g_stack_block_offsets[(bid)] ^ (uint32_t)(0x5877A564UL + (uint32_t)(bid) * 0x19E3779BUL)))";
-    raw_top "#define ASG_UNMASK_KEY(bid) (g_stack_block_keys[(bid)] ^ (UINT64_C(0xD00F5877A5640000) + (uint64_t)(bid) * UINT64_C(0x9E3779B97F4A7C15)))";
+    comment_top
+      "Per-stream dispatch metadata: masked block offsets/keys and the entry block of every packaged function";
+    raw_top
+      "struct asgard_stream_meta_t { const uint32_t* offs; const uint64_t* keys; int32_t entry_bid; int32_t n_blocks; };";
+    raw_top
+      "#define ASG_STREAM_OFF(sm, bid) ((uint32_t)((sm)->offs[(bid)] ^ (uint32_t)(0x5877A564UL + (uint32_t)(bid) * 0x19E3779BUL)))";
+    raw_top
+      "#define ASG_STREAM_KEY(sm, bid) ((sm)->keys[(bid)] ^ (UINT64_C(0xD00F5877A5640000) + (uint64_t)(bid) * UINT64_C(0x9E3779B97F4A7C15)))";
+  ]
+  @ stream_table_decls
+  @ [
     global_var ~is_static:true ~is_const:true
-      (Array (UInt32, count))
-      "g_stack_block_offsets"
-      ~init:(init_list offsets_exprs);
-    global_var ~is_static:true ~is_const:true
-      (Array (UInt64, count))
-      "g_stack_block_keys"
-      ~init:(init_list keys_exprs);
-    comment_top "Payload-tag key halves, masked with the same address-binding scheme as the block keys above";
+      (Array (StructType "asgard_stream_meta_t", List.length streams))
+      "g_stack_streams"
+      ~init:(init_list registry_entries);
+    comment_top
+      "Payload-tag key halves, masked with the same address-binding scheme as the block keys above";
     global_var ~is_static:true ~is_const:true
       (Array (UInt64, 2))
       "g_stack_tag_keys"
-      ~init:(init_list tag_keys_exprs);
-    raw_top "#define ASG_UNMASK_TAG_K0() (g_stack_tag_keys[0] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(0) * UINT64_C(0x9E3779B97F4A7C15)))";
-    raw_top "#define ASG_UNMASK_TAG_K1() (g_stack_tag_keys[1] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(1) * UINT64_C(0x9E3779B97F4A7C15)))";
+      ~init:(init_list [ u64 tag_key0; u64 tag_key1 ]);
+    raw_top
+      "#define ASG_UNMASK_TAG_K0() (g_stack_tag_keys[0] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(0) * UINT64_C(0x9E3779B97F4A7C15)))";
+    raw_top
+      "#define ASG_UNMASK_TAG_K1() (g_stack_tag_keys[1] ^ (UINT64_C(0xD00F5877A5640000) + UINT64_C(1) * UINT64_C(0x9E3779B97F4A7C15)))";
   ]
 
 let emit_stack_dispatch_stmts
     ?(pipelined : Pipelined_dispatch_pass.dispatch_plan option)
-    ~entry_bid
     (cases : (int * string * string) list)
     : Cpp_codegen.Cpp_ast.stmt list =
   let open Cpp_codegen.Cpp_ast in
   let open Cpp_codegen.Cpp_dsl in
+  (* The entry block comes from the stream the VM is executing: in
+     multi-function packaging every function carries its own entry id. *)
   let vip_decl =
-    decl_var SizeT "vip" ~init:(call "ASG_UNMASK_OFFSET" [ i32 entry_bid ])
+    decl_var SizeT "vip"
+      ~init:(call "ASG_STREAM_OFF" [
+          var "vm" $-> "meta";
+          (var "vm" $-> "meta") $-> "entry_bid";
+        ])
   in
   let used_opcodes = Hashtbl.create 256 in
   List.iter (fun (op, _, _) -> Hashtbl.add used_opcodes op true) cases;
@@ -716,10 +781,9 @@ let emit_stack_dispatch_stmts
 
 let emit_stack_dispatch_source
     ?(pipelined : Pipelined_dispatch_pass.dispatch_plan option)
-    ~entry_bid
     (cases : (int * string * string) list)
     : string =
-  let stmts = emit_stack_dispatch_stmts ?pipelined ~entry_bid cases in
+  let stmts = emit_stack_dispatch_stmts ?pipelined cases in
   Cpp_codegen.Cpp_printer.string_of_stmts stmts
 
 let emit_h_call_extern arch : Cpp_codegen.Cpp_ast.top_decl =
@@ -807,6 +871,7 @@ let emit_h_call_extern arch : Cpp_codegen.Cpp_ast.top_decl =
 let emit_stack_runtime_hpp_decls
     ?(external_symbols = [])
     ?(constants = [])
+    ?streams
     ?enc
     cfg
     prog : Cpp_codegen.Cpp_ast.top_decl list =
@@ -814,34 +879,18 @@ let emit_stack_runtime_hpp_decls
     | Some e -> e
     | None -> Stack_encoder.encode_program prog
   in
-  let max_bid = Hashtbl.fold (fun id _ acc -> max id acc) enc.block_offsets 0 in
-  let mask32 i =
-    let base = 0x5877A564L in
-    let stride = Int64.mul (Int64.of_int i) 0x19E3779BL in
-    Int64.logand (Int64.add base stride) 0xFFFFFFFFL
+  (* Every packaged function is a dispatch stream of its own: its encoded
+     block offsets/keys and entry block id live in [g_stack_streams], and
+     the VM picks the stream by matching the payload tag of the bytecode
+     it was handed.  Single-function packaging degenerates to one entry. *)
+  let stream_list = match streams with
+    | None | Some [] -> [ (enc, prog) ]
+    | Some s -> s
   in
   let mask64 i =
     let base = 0xD00F5877A5640000L in
     let stride = Int64.mul (Int64.of_int i) 0x9E3779B97F4A7C15L in
     Int64.add base stride
-  in
-  let raw_block_offsets =
-    let l = ref [] in
-    for i = 0 to max_bid do
-      let off = match Hashtbl.find_opt enc.block_offsets i with Some o -> o | None -> 0 in
-      let masked_off = Int64.logxor (Int64.of_int off) (mask32 i) in
-      l := masked_off :: !l
-    done;
-    List.rev !l
-  in
-  let raw_block_keys =
-    let l = ref [] in
-    for i = 0 to max_bid do
-      let k = match Hashtbl.find_opt enc.block_keys i with Some k -> k | None -> enc.seed_key in
-      let masked_k = Int64.logxor k (mask64 i) in
-      l := masked_k :: !l
-    done;
-    List.rev !l
   in
   let raw_tag_key i =
     match Hashtbl.find_opt enc.tag_keys i with
@@ -1071,6 +1120,12 @@ static inline void asg_decrypt_sym(const asgard_ext_sym_t* sym, char* out_buf, s
     out_buf[n] = '\0';
 }
 
+typedef void* (*asgard_local_resolver_fn_t)(const char* name);
+static asgard_local_resolver_fn_t g_asgard_local_resolver = nullptr;
+static inline void asgard_set_local_resolver(asgard_local_resolver_fn_t fn) {
+    g_asgard_local_resolver = fn;
+}
+
 static void* asgard_resolve_sym_idx(int32_t sym_idx) {
     if (sym_idx < 0 || (size_t)sym_idx >= sizeof(g_external_symbols) / sizeof(g_external_symbols[0])) {
         return nullptr;
@@ -1094,6 +1149,10 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
     char dec_name[64];
     asg_decrypt_sym(sym, dec_name, sizeof(dec_name));
     if (!sym_ptr) sym_ptr = asgard_resolve_constant_name(dec_name);
+    if (!sym_ptr && g_asgard_local_resolver) {
+        sym_ptr = g_asgard_local_resolver(dec_name);
+        if (!sym_ptr && dec_name[0] == '_') sym_ptr = g_asgard_local_resolver(dec_name + 1);
+    }
 
 #if defined(__APPLE__) && defined(__MACH__)
     if (!sym_ptr) {
@@ -1148,16 +1207,21 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
   ] in
 
   let block_tables_decls =
-    emit_stack_block_tables_ast ~max_bid ~block_offsets:raw_block_offsets ~block_keys:raw_block_keys ~tag_key0:raw_tag_key0 ~tag_key1:raw_tag_key1 ()
+    emit_stack_block_tables_ast ~streams:stream_list ~tag_key0:raw_tag_key0 ~tag_key1:raw_tag_key1 ()
   in
 
   (* With Pipelined Stage Dispatch the ctx array must also cover the
-     Stage-2 dead chaff region on top of every slot the program addresses. *)
+     Stage-2 dead chaff region on top of every slot the program addresses;
+     in multi-function packaging it must cover every stream's slots. *)
   let context_slots =
+    let program_slots =
+      List.fold_left (fun acc (_, p) -> max acc p.context_slots)
+        prog.context_slots stream_list
+    in
     max 64
       (match cfg.pipelined with
-       | Some p -> p.Pipelined_dispatch_pass.ctx_slots_required
-       | None -> prog.context_slots)
+       | Some p -> max p.Pipelined_dispatch_pass.ctx_slots_required program_slots
+       | None -> program_slots)
   in
   let stack_vm_t_def =
     struct_def "stack_vm_t" [
@@ -1167,6 +1231,8 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
       member_field UInt64 "vkey";
       member_field UInt64 "vsp_key";
       member_field UInt64 "addr_key";
+      member_field UInt64 "extra_key";
+      member_field (ConstPtr (StructType "asgard_stream_meta_t")) "meta";
       member_field SizeT "bc_size";
       member_field UInt8 "zf";
       member_field UInt8 "sf";
@@ -1184,7 +1250,13 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
       ([
         (var "vm" $-> "bc_size") := var "size";
         var "g_last_auth_failed" := i32 0;
-        if_then (log_not (call "asg_payload_auth_ok" [ var "bytecode"; var "size"; var "vm" $-> "addr_key" ])) [
+        decl_var Int32 "stream_idx"
+          ~init:(call "asg_payload_stream_idx" [
+              var "bytecode"; var "size"; var "vm" $-> "addr_key";
+            ]);
+        (* Fail closed on an unknown payload: the stream tables stay
+           untouched and the caller observes the auth sentinel. *)
+        if_then (var "stream_idx" <~ i32 0) [
           var "g_last_auth_failed" := i32 1;
           (var "vm" $-> "auth_failed") := i32 1;
           (var "vm" $-> "halted") := i32 1;
@@ -1192,7 +1264,23 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
           (var "vm" $-> "vsp_idx") := i32 0;
           ret_void;
         ];
-      ] @ emit_stack_dispatch_stmts ?pipelined:cfg.pipelined ~entry_bid:prog.entry_id raw_dispatch_cases)
+        (* From here on every jump and the entry offset resolve through the
+           identified stream, never through a global table. *)
+        (var "vm" $-> "meta") := addr_of (idx (var "g_stack_streams") (var "stream_idx"));
+        (var "vm" $-> "vkey") :=
+          call "ASG_STREAM_KEY" [
+            var "vm" $-> "meta";
+            (var "vm" $-> "meta") $-> "entry_bid";
+          ];
+      ] @ (
+        if enc.addr_mask <> 0L then
+          [ (var "vm" $-> "vkey") ^= (var "vm" $-> "addr_key") ]
+        else []
+      ) @ [
+        (var "vm" $-> "vkey") ^= (var "vm" $-> "extra_key");
+        raw "vm->vsp_key = vm->vkey ^ UINT64_C(0x9E3779B97F4A7C15);";
+      ]
+      @ emit_stack_dispatch_stmts ?pipelined:cfg.pipelined raw_dispatch_cases)
   in
 
   let is_addr_bound = enc.addr_mask <> 0L in
@@ -1210,20 +1298,23 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
         (if is_addr_bound then
            block [
              (var "vm" $. "addr_key") := call "derive_addr_key" [];
-             (var "vm" $. "vkey") := call "ASG_UNMASK_KEY" [ i32 prog.entry_id ] ^~ (var "vm" $. "addr_key");
            ]
          else
-           block [
-             (var "vm" $. "vkey") := call "ASG_UNMASK_KEY" [ i32 prog.entry_id ];
-           ]);
+           block []);
+        (* The rolling key itself is initialised inside stack_vm_run once
+           the payload tag has identified the stream: the entry block key
+           differs per function.  The stream-independent key contributions
+           (hardware differential, handler integrity) are staged here. *)
+        decl_var UInt64 "ek" ~init:(u64 0L);
         (if cfg.enable_hw_binding then
            raw
-             "vm.vkey ^= asgard_anti_emulation::evaluate_emulation_differential();"
+             "ek ^= asgard_anti_emulation::evaluate_emulation_differential();"
          else raw "");
         (if cfg.enable_address_bound then
            raw
-             "vm.vkey ^= asgard_stack_vm::verify_handler_integrity();"
+             "ek ^= asgard_stack_vm::verify_handler_integrity();"
          else raw "");
+        (var "vm" $. "extra_key") := var "ek";
         raw "vm.vsp_key = vm.vkey ^ UINT64_C(0x9E3779B97F4A7C15);";
         decl_var ~align_as:16 ~is_static:true ~is_thread_local:true (Array (UInt8, max 64 cfg.host_stack_size_kb * 1024)) "host_stack";
         let_u64 "sp_val" (c_cast UInt64 (var "host_stack" +~ sizeof_expr (var "host_stack") -~ u64 8192L));
@@ -1373,7 +1464,7 @@ static inline int eval_cond(const stack_vm_t *vm, uint8_t cond) {
 }
 
 static inline int asg_mem_access_ok(uint64_t addr, uint8_t w) {
-    if (w != 1 && w != 2 && w != 4 && w != 8) return 0;
+    if (w != 1 && w != 2 && w != 4 && w != 8 && w != 16) return 0;
     if (addr == 0) return 0;
     if ((addr & (uint64_t)(w - 1)) != 0) return 0;
     if (!asg_addr_canonical(addr)) return 0;
@@ -1517,14 +1608,43 @@ static uint64_t asg_payload_tag(uint64_t k0, uint64_t k1, const uint8_t *bc, siz
     }
     return acc;
 }
-
-static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t addr_key) {
-    if (size == 0 || (size & 7) != 0) return 0;
+|};
+        (* The tag chain identifies WHICH stream was handed in: the index
+           returned here indexes g_stack_streams, so the check order must
+           follow the registry order exactly. *)
+        (let stream_tags = List.map (fun (e, _) -> e.Stack_encoder.payload_tag) stream_list in
+         let stream_idx_src =
+           match stream_tags with
+           | [ single ] ->
+               Printf.sprintf
+                 {|static inline int asg_payload_stream_idx(const uint8_t *bc, size_t size, uint64_t addr_key) {
+    if (size == 0 || (size & 7) != 0) return -1;
     uint64_t k0 = ASG_UNMASK_TAG_K0() ^ addr_key;
     uint64_t k1 = ASG_UNMASK_TAG_K1() ^ addr_key;
-    uint64_t diff = asg_payload_tag(k0, k1, bc, size) ^ ASG_PAYLOAD_TAG;
-    return ((diff | (0 - diff)) >> 63) == 0;
-}|};
+    uint64_t diff = asg_payload_tag(k0, k1, bc, size) ^ UINT64_C(0x%016LX);
+    return (((diff | (0 - diff)) >> 63) == 0) ? 0 : -1;
+}|}
+                 single
+           | _ ->
+               let tag_chain =
+                 String.concat "\n    "
+                   (List.mapi
+                      (fun i t ->
+                        Printf.sprintf "if (tag == UINT64_C(0x%016LX)) return %d;" t i)
+                      stream_tags)
+               in
+               Printf.sprintf
+                 {|static inline int asg_payload_stream_idx(const uint8_t *bc, size_t size, uint64_t addr_key) {
+    if (size == 0 || (size & 7) != 0) return -1;
+    uint64_t k0 = ASG_UNMASK_TAG_K0() ^ addr_key;
+    uint64_t k1 = ASG_UNMASK_TAG_K1() ^ addr_key;
+    uint64_t tag = asg_payload_tag(k0, k1, bc, size);
+    %s
+    return -1;
+}|}
+                 tag_chain
+         in
+         raw_top stream_idx_src);
         global_var ~is_static:true ~is_thread_local:true ~init:(i32 0) Int32 "g_last_auth_failed";
         run_func;
         call_func;
@@ -1548,9 +1668,7 @@ static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t a
             var "a0"; var "a1"; var "a2"; var "a3";
             var "a4"; var "a5"; var "a6"; var "a7";
           ]);
-          if_then (call "__builtin_expect" [ var "asgard_stack_vm::g_last_auth_failed"; i32 0 ]) [
-            ret (u64 1L);
-          ];
+
           ret (var "res");
         ];
       func_decl ~attrs:[StaticFn; InlineFn] UInt64 "asgard_vm_call_with_salt"
@@ -1581,6 +1699,7 @@ static inline int asg_payload_auth_ok(const uint8_t *bc, size_t size, uint64_t a
 let generate_c_runtime
     ?(external_symbols = [])
     ?(constants = [])
+    ?streams
     ?(obfuscate_runtime = false)
     ?enc
     cfg
@@ -1589,7 +1708,10 @@ let generate_c_runtime
     | Some e -> e
     | None -> Stack_encoder.encode_program prog
   in
-  let decls = emit_stack_runtime_hpp_decls ~external_symbols ~constants ~enc cfg prog in
+  let decls =
+    emit_stack_runtime_hpp_decls
+      ~external_symbols ~constants ?streams ~enc cfg prog
+  in
   (* The emulation differential probe (CPUID / timer consistency).  It is
      mixed into the decryption key, so the header has to carry it. *)
   let hw_binding_header =

@@ -759,10 +759,10 @@ let emit_h_jmp_rel () : top_decl =
       decl_var Int32 "target_bid" ~init:(call "fetch_i32" [var "vm"; var "bytecode"; var "vip"]);
       if_then_else
         ((var "target_bid" >=~ i32 0) &&~
-         (cast SizeT (var "target_bid") <~ (sizeof (var "g_stack_block_offsets") /~ sizeof (idx (var "g_stack_block_offsets") (i32 0)))))
+         (cast SizeT (var "target_bid") <~ cast SizeT ((var "vm" $-> "meta") $-> "n_blocks")))
         [
-          deref (var "vip") := call "ASG_UNMASK_OFFSET" [var "target_bid"];
-          (var "vm" $-> "vkey") := (call "ASG_UNMASK_KEY" [var "target_bid"] ^~ (var "vm" $-> "addr_key"));
+          deref (var "vip") := call "ASG_STREAM_OFF" [ var "vm" $-> "meta"; var "target_bid" ];
+          (var "vm" $-> "vkey") := (call "ASG_STREAM_KEY" [ var "vm" $-> "meta"; var "target_bid" ] ^~ (var "vm" $-> "addr_key"));
         ]
         [
           vm_halted := i32 1;
@@ -790,10 +790,10 @@ let emit_h_jcc_rel ?(target_first = true) () : top_decl =
         [
           if_then_else
             ((var "target_bid" >=~ i32 0) &&~
-             (cast SizeT (var "target_bid") <~ (sizeof (var "g_stack_block_offsets") /~ sizeof (idx (var "g_stack_block_offsets") (i32 0)))))
+             (cast SizeT (var "target_bid") <~ cast SizeT ((var "vm" $-> "meta") $-> "n_blocks")))
             [
-              deref (var "vip") := call "ASG_UNMASK_OFFSET" [var "target_bid"];
-              (var "vm" $-> "vkey") := (call "ASG_UNMASK_KEY" [var "target_bid"] ^~ (var "vm" $-> "addr_key"));
+              deref (var "vip") := call "ASG_STREAM_OFF" [ var "vm" $-> "meta"; var "target_bid" ];
+              (var "vm" $-> "vkey") := (call "ASG_STREAM_KEY" [ var "vm" $-> "meta"; var "target_bid" ] ^~ (var "vm" $-> "addr_key"));
             ]
             [
               vm_halted := i32 1;

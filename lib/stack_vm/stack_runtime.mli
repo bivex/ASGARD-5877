@@ -50,9 +50,7 @@ val emit_stack_constants_tables_ast :
   Cpp_codegen.Cpp_ast.top_decl list
 
 val emit_stack_block_tables_ast :
-  max_bid:int ->
-  block_offsets:int64 list ->
-  block_keys:int64 list ->
+  streams:(Stack_encoder.encrypted_bytecode * program) list ->
   tag_key0:int64 ->
   tag_key1:int64 ->
   unit ->
@@ -60,13 +58,11 @@ val emit_stack_block_tables_ast :
 
 val emit_stack_dispatch_stmts :
   ?pipelined:Pipelined_dispatch_pass.dispatch_plan ->
-  entry_bid:int ->
   (int * string * string) list ->
   Cpp_codegen.Cpp_ast.stmt list
 
 val emit_stack_dispatch_source :
   ?pipelined:Pipelined_dispatch_pass.dispatch_plan ->
-  entry_bid:int ->
   (int * string * string) list ->
   string
 
@@ -75,6 +71,7 @@ val emit_h_call_extern : target_arch -> Cpp_codegen.Cpp_ast.top_decl
 val emit_stack_runtime_hpp_decls :
   ?external_symbols:string list ->
   ?constants:(string * string) list ->
+  ?streams:(Stack_encoder.encrypted_bytecode * program) list ->
   ?enc:Stack_encoder.encrypted_bytecode ->
   runtime_config ->
   program ->
@@ -83,11 +80,13 @@ val emit_stack_runtime_hpp_decls :
 val generate_c_runtime :
   ?external_symbols:string list ->
   ?constants:(string * string) list ->
+  ?streams:(Stack_encoder.encrypted_bytecode * program) list ->
   ?obfuscate_runtime:bool ->
   ?enc:Stack_encoder.encrypted_bytecode ->
   runtime_config ->
   program ->
   string
+
 
 val emit_stack_runner_main_def : unit -> Cpp_codegen.Cpp_ast.top_decl
 
