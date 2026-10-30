@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented Dynamic Budget Regulator and Trajectory Balance GFlowNet Pass Scheduler (`lib/stack_vm/stack_budget_regulator.ml`, `lib/stack_vm/stack_budget_regulator.mli`, `lib/adapters/protect_adapters/vm_packagers.ml`, `scripts/budget_scheduler_synth.py`, `scripts/budget_schedules.json`, `test/test_stack_vm.ml`):
+  * Built `Stack_budget_regulator` tracking cumulative Stack-IR instruction/operand byte footprint against `target_size_budget_kb`, dynamically classifying passes into `ExpansionPass`, `StructuralPass`, and `EssentialPass`.
+  * Implemented 3-zone continuous throttling: full nominal rate in comfort zone ($\le 50\%$ budget), quadratic/linear dampening in throttling zone ($50\% - 85\%$), and strict zero-expansion cutoff with structural survival floor in ceiling zone ($> 85\%$), preventing multiplicative pass explosion across the 25 Stack-VM / Stack-JIT phases.
+  * Built `scripts/budget_scheduler_synth.py` using Trajectory Balance GFlowNet over discrete pass rate vectors, training with exponential log-barrier budget penalties and synthesizing Pareto-optimal rate schedules for standard presets (`compact_100kb`, `balanced_256kb`, `heavy_2500kb`) with 0% budget overflow.
+  * Verified: 71/71 `Stack-VM Execution Engine` tests pass (including dedicated unit test `test_stack_budget_regulator`), 21/21 `Stack-JIT VM & Chunker` pass, and all 19 showcase routines execute exact on Apple Silicon hardware.
 - Implemented neural VM opcode and superoperator synthesizer for ASGARD architecture (`scripts/neural_opcode_synth.py`):
   * Built a Trajectory Balance GFlowNet (TB-GFlowNet) over an autoregressive Transformer policy network to search for sound, non-linear VM instruction sequences in $\mathbb{Z}_{2^{64}}$.
   * Enforced ASGARD Stack-JIT architectural invariants (peak stack depth $\le 4$, zero stack underflow, net delta $= -1$ for binary ops) via strict per-step action masking.

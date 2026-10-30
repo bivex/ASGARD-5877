@@ -3586,7 +3586,48 @@ let test_compiler_report_formatting () =
   Alcotest.(check bool) "report contains honest skipped status for native interleaving" true
     (Test_helpers.string_contains rep "[SKIPPED ] Native Micro-Handler Interleaving")
 
+let test_stack_budget_regulator () =
+  let reg_unlimited = Stack_budget_regulator.create ~budget_kb:None in
+  let b0 = make_block 0 "b0" [ PushImm 1L; PushImm 2L; Add; PopReg 0 ] in
+  let prog = make_program 0 [b0] 2 in
+  let r1, s1 =
+    Stack_budget_regulator.throttle_rate reg_unlimited
+      ~pass_name:"Ghost" ~kind:Stack_budget_regulator.ExpansionPass
+      ~nominal_rate:80 ~prog
+  in
+  Alcotest.(check int) "unlimited rate is unchanged" 80 r1;
+  Alcotest.(check (float 0.001)) "unlimited scale is 1.0" 1.0 s1;
+  Alcotest.(check (float 0.001)) "unlimited headroom is 1.0" 1.0
+    (Stack_budget_regulator.check_budget_headroom reg_unlimited ~prog);
+  let reg_tight = Stack_budget_regulator.create ~budget_kb:(Some 1) in
+  let big_ops = List.init 100 (fun i -> [ PushImm (Int64.of_int i); PopReg 1 ]) |> List.concat in
+  let b_big = make_block 0 "b_big" big_ops in
+  let prog_big = make_program 0 [b_big] 2 in
+  let size = Stack_budget_regulator.estimate_program_bytes prog_big in
+  Alcotest.(check bool) "estimated size exceeds 1KB" true (size > 1024);
+  let r_exp, s_exp =
+    Stack_budget_regulator.throttle_rate reg_tight
+      ~pass_name:"Ghost" ~kind:Stack_budget_regulator.ExpansionPass
+      ~nominal_rate:80 ~prog:prog_big
+  in
+  Alcotest.(check int) "expansion pass throttled to 0 when budget exceeded" 0 r_exp;
+  Alcotest.(check (float 0.001)) "expansion scale is 0.0" 0.0 s_exp;
+  let r_struct, _ =
+    Stack_budget_regulator.throttle_rate reg_tight
+      ~pass_name:"CFF" ~kind:Stack_budget_regulator.StructuralPass
+      ~nominal_rate:80 ~prog:prog_big
+  in
+  Alcotest.(check bool) "structural pass kept alive at floor" true (r_struct > 0);
+  let r_ess, s_ess =
+    Stack_budget_regulator.throttle_rate reg_tight
+      ~pass_name:"Balance" ~kind:Stack_budget_regulator.EssentialPass
+      ~nominal_rate:100 ~prog:prog_big
+  in
+  Alcotest.(check int) "essential pass never throttled" 100 r_ess;
+  Alcotest.(check (float 0.001)) "essential scale is 1.0" 1.0 s_ess
+
 let tests = [
+  ("Stack Budget Regulator", `Quick, test_stack_budget_regulator);
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
   ("Atomic_mem & Fp_conv Stack-VM Lowering", `Quick, test_atomic_mem_and_fp_conv_stack);

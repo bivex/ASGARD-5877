@@ -736,7 +736,10 @@ module Stack_vm_packager : Vm_packager = struct
     let ctx = Stack_vm.Context_allocator.create ~permute:native_cfg.stack_vm.permute_registers () in
     let ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms target_func in
     let external_symbols = Stack_vm.Ir_to_stack.get_symbols_list ext_syms in
-
+    let budget_reg =
+      Stack_vm.Stack_budget_regulator.create
+        ~budget_kb:native_cfg.bloat.target_size_budget_kb
+    in
     (* Bytecode Computational Stalling: runs exclusively inside VM bytecode *)
     let prog =
       if native_cfg.comp_stall.enabled then
@@ -863,10 +866,15 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 21)
     in
     let mult = native_cfg.multiplicity in
+    let eff_mult_rate, _ =
+      Stack_vm.Stack_budget_regulator.throttle_rate budget_reg
+        ~pass_name:"Handler Multiplicity" ~kind:ExpansionPass
+        ~nominal_rate:mult.rate ~prog
+    in
     let mult_cfg = {
       (Stack_vm.Stack_multiplicity_pass.default_multiplicity_config mult_seed) with
-      rate = mult.rate;
-      enabled = mult.enabled;
+      rate = eff_mult_rate;
+      enabled = mult.enabled && eff_mult_rate > 0;
     } in
     let prog, mult_info =
       if mult.enabled && mult.rate > 0 then begin
@@ -906,7 +914,10 @@ module Stack_vm_packager : Vm_packager = struct
       expander_chord_len =
         (if amp.expander_chord_len > 0 then amp.expander_chord_len else amp_base.expander_chord_len);
       expander_chord_rate =
-        (if amp.expander_chord_rate > 0 then amp.expander_chord_rate else amp_base.expander_chord_rate);
+        (let raw = if amp.expander_chord_rate > 0 then amp.expander_chord_rate else amp_base.expander_chord_rate in
+         fst (Stack_vm.Stack_budget_regulator.throttle_rate budget_reg
+                ~pass_name:"Amplifier Chords" ~kind:ExpansionPass
+                ~nominal_rate:raw ~prog));
     } in
     note
       (Printf.sprintf
@@ -1124,9 +1135,14 @@ module Stack_vm_packager : Vm_packager = struct
       else if sp.max_splits_factor > 0 then cur_b * sp.max_splits_factor
       else max 64 (min 512 (cur_b / 2))   (* legacy heuristic *)
     in
+    let eff_split_rate, _ =
+      Stack_vm.Stack_budget_regulator.throttle_rate budget_reg
+        ~pass_name:"Spaghetti CFG Splitting" ~kind:ExpansionPass
+        ~nominal_rate:(if sp.enabled then sp.split_rate else 0) ~prog
+    in
     let spaghetti_cfg = {
       (Stack_vm.Stack_spaghetti_pass.default_spaghetti_config spaghetti_seed) with
-      split_rate = (if sp.enabled then sp.split_rate else 0);
+      split_rate = eff_split_rate;
       max_blocks = cur_b + max_splits;
       min_chunk  = sp.min_chunk;
     } in
@@ -1148,9 +1164,14 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 17)
     in
     let g = native_cfg.ghost in
+    let eff_ghost_rate, _ =
+      Stack_vm.Stack_budget_regulator.throttle_rate budget_reg
+        ~pass_name:"Ghost Stack Padding" ~kind:ExpansionPass
+        ~nominal_rate:g.ghost_rate ~prog
+    in
     let ghost_cfg = {
       (Stack_vm.Stack_ghost_pass.default_ghost_config ghost_seed) with
-      ghost_rate = g.ghost_rate;
+      ghost_rate = eff_ghost_rate;
       max_ghosts = g.max_ghosts;
       entangle = g.entangle;
     } in
@@ -1187,11 +1208,16 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 15)
     in
     let av = native_cfg.avid in
+    let eff_avid_rate, _ =
+      Stack_vm.Stack_budget_regulator.throttle_rate budget_reg
+        ~pass_name:"Avid Junk Operands" ~kind:ExpansionPass
+        ~nominal_rate:av.rate ~prog
+    in
     let avid_cfg = {
       (Stack_vm.Stack_avid_pass.default_avid_config avid_seed) with
-      rate = av.rate;
+      rate = eff_avid_rate;
       max_avid = av.max_avid;
-      enabled = av.enabled;
+      enabled = av.enabled && eff_avid_rate > 0;
     } in
     note
       (Printf.sprintf

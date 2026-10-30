@@ -1,0 +1,83 @@
+{
+  "compact_100kb": {
+    "budget_kb": 100.0,
+    "final_kb": 4.7,
+    "drs_score": 45.0,
+    "rates": {
+      "0-stall": 25,
+      "1a-algebraic-flags": 25,
+      "2a-pre-superop": 25,
+      "2a-domain-enc": 25,
+      "2a-multiplicity": 25,
+      "2-amplifier": 25,
+      "2a-post-superop": 25,
+      "2b-mba": 25,
+      "2c-braid": 25,
+      "2d-homomorphic": 25,
+      "3-cff": 25,
+      "4-spaghetti": 25,
+      "5-ghost": 25,
+      "5b-avid": 25,
+      "5d-transducer": 25,
+      "5e-polymba": 25,
+      "5h-finite-field": 100,
+      "5c-memweb": 100,
+      "5i-sink-barrier": 100,
+      "6-balance": 100
+    }
+  },
+  "balanced_256kb": {
+    "budget_kb": 256.0,
+    "final_kb": 8.9,
+    "drs_score": 45.0,
+    "rates": {
+      "0-stall": 25,
+      "1a-algebraic-flags": 25,
+      "2a-pre-superop": 25,
+      "2a-domain-enc": 25,
+      "2a-multiplicity": 25,
+      "2-amplifier": 25,
+      "2a-post-superop": 25,
+      "2b-mba": 25,
+      "2c-braid": 25,
+      "2d-homomorphic": 25,
+      "3-cff": 25,
+      "4-spaghetti": 25,
+      "5-ghost": 25,
+      "5b-avid": 25,
+      "5d-transducer": 25,
+      "5e-polymba": 25,
+      "5h-finite-field": 100,
+      "5c-memweb": 100,
+      "5i-sink-barrier": 100,
+      "6-balance": 100
+    }
+  },
+  "heavy_2500kb": {
+    "budget_kb": 2500.0,
+    "final_kb": 17.7,
+    "drs_score": 45.0,
+    "rates": {
+      "0-stall": 25,
+      "1a-algebraic-flags": 25,
+      "2a-pre-superop": 25,
+      "2a-domain-enc": 25,
+      "2a-multiplicity": 25,
+      "2-amplifier": 25,
+      "2a-post-superop": 25,
+      "2b-mba": 25,
+      "2c-braid": 25,
+      "2d-homomorphic": 25,
+      "3-cff": 25,
+      "4-spaghetti": 25,
+      "5-ghost": 25,
+      "5b-avid": 25,
+      "5d-transducer": 25,
+      "5e-polymba": 25,
+      "5h-finite-field": 100,
+      "5c-memweb": 100,
+      "5i-sink-barrier": 100,
+      "6-balance": 100
+    }
+  }
+}
