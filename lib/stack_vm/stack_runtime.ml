@@ -1120,6 +1120,7 @@ static inline void asg_decrypt_sym(const asgard_ext_sym_t* sym, char* out_buf, s
     out_buf[n] = '\0';
 }
 
+#define ASGARD_HAS_LOCAL_RESOLVER 1
 typedef void* (*asgard_local_resolver_fn_t)(const char* name);
 static asgard_local_resolver_fn_t g_asgard_local_resolver = nullptr;
 static inline void asgard_set_local_resolver(asgard_local_resolver_fn_t fn) {

@@ -613,8 +613,10 @@ let embed_vm_trampoline
       func_decl ~attrs:[] (Ptr Void) "asgard_resolve_local_func" [ (ConstPtr Char, "name") ] body
     in
     let init_decl =
-      func_decl ~attrs:[StaticFn; Constructor] Void "_asgard_init_local_resolver" []
-        [ expr_stmt (call "asgard_set_local_resolver" [ var "asgard_resolve_local_func" ]) ]
+      preproc_ifdef "ASGARD_HAS_LOCAL_RESOLVER" [
+        func_decl ~attrs:[StaticFn; Constructor] Void "_asgard_init_local_resolver" []
+          [ expr_stmt (call "asgard_set_local_resolver" [ var "asgard_resolve_local_func" ]) ]
+      ]
     in
     [ extern_c [ fn_decl ]; init_decl ]
   in
