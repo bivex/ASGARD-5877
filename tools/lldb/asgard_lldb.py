@@ -699,13 +699,14 @@ class AsgardSession:
             # Check for vanguard_threaded_vm::VMContext (Native VM)
             ctx_var = f.FindVariable("ctx")
             if ctx_var and ctx_var.IsValid():
-                addr = ctx_var.GetLoadAddress()
-                if addr != lldb.LLDB_INVALID_ADDRESS:
+                addr = ctx_var.GetValueAsUnsigned()
+                if addr == 0 or addr == lldb.LLDB_INVALID_ADDRESS:
+                    addr = ctx_var.GetLoadAddress()
+                if addr and addr != lldb.LLDB_INVALID_ADDRESS:
                     # Validate canaries
                     buf = self.read_bytes(addr, 16)
                     if buf and struct.unpack_from("<Q", buf, 0)[0] == CANARY_VAL:
                         return "native", addr, {"frame": f, "ctx_var": ctx_var}
-
             # Check for stack_vm_t (Stack VM)
             vm_var = f.FindVariable("vm")
             if vm_var and vm_var.IsValid():
@@ -793,11 +794,22 @@ def cmd_asg_status(debugger, command, result, internal_dict):
             result.SetError(f"[-] Failed reading Native VMContext at 0x{addr:X}")
             return
         frame = meta["frame"]
-        vip_var = frame.FindVariable("vIP_idx")
-        vip = vip_var.GetValueAsUnsigned() if vip_var and vip_var.IsValid() else 0
-        bc_var = frame.FindVariable("count")
-        bc_len = bc_var.GetValueAsUnsigned() if bc_var and bc_var.IsValid() else 0
-
+        thread = frame.GetThread()
+        vip = 0
+        for f in thread.frames:
+            vip_var = f.FindVariable("vIP_idx")
+            if vip_var and vip_var.IsValid():
+                vip = vip_var.GetValueAsUnsigned()
+                break
+        bc_len = 0
+        for f in thread.frames:
+            for cnt_name in ("count", "bc_len", "size"):
+                cnt_var = f.FindVariable(cnt_name)
+                if cnt_var and cnt_var.IsValid():
+                    bc_len = cnt_var.GetValueAsUnsigned()
+                    break
+            if bc_len != 0:
+                break
         canary_str = "\033[32mOK (0xCAFEBABE13375877)\033[0m" if state.valid_canaries else "\033[31mCORRUPTED\033[0m"
         trap_str = "\033[31mTRAPPED\033[0m" if state.trapped else "\033[32mACTIVE\033[0m"
 
@@ -1019,9 +1031,16 @@ def cmd_asg_disas(debugger, command, result, internal_dict):
             result.SetError("[-] Failed reading Native VM state.")
             return
 
-        vip_var = frame.FindVariable("vIP_idx")
-        cur_vip = explicit_vip if explicit_vip is not None else (vip_var.GetValueAsUnsigned() if vip_var and vip_var.IsValid() else 0)
-
+        cur_vip = explicit_vip
+        if cur_vip is None:
+            thread = frame.GetThread()
+            for f in thread.frames:
+                vip_var = f.FindVariable("vIP_idx")
+                if vip_var and vip_var.IsValid():
+                    cur_vip = vip_var.GetValueAsUnsigned()
+                    break
+            if cur_vip is None:
+                cur_vip = 0
         # Locate bytecode buffer across frames or global variables
         target = session.get_target()
         bc_addr = None
