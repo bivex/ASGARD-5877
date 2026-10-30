@@ -7,6 +7,11 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented LLDB Bytecode Debugger Plugin for ASGARD virtual architectures (`tools/lldb/asgard_lldb.py`, `tools/lldb/test_asgard_lldb.py`, `tools/lldb/README.md`):
+  * Developed a full-featured LLDB Python debugger extension providing inspection, live virtual register unmasking, bytecode disassembly, virtual single-stepping, breakpoints, execution tracing, and state export for both Native Threaded VM (`vanguard_threaded_vm`) and Stack VM (`stack_vm_t`).
+  * Implemented exact cryptographic keystream evaluation and unmasking: Native VM affine register permutation ($\pi \in S_{32}$ via coprime multipliers $A, B$), per-slot canary masks, SplitMix64 positional PRF (`key64_for_offset`), and Anti-Pushan rolling key advancement (`advance_key_step`); Stack VM SipHash-1-2 block KDF, Costas-6 layout parsing, and VSP stack whitening (`asg_vsp_mask`).
+  * Added custom LLDB interactive commands: `asg-help`, `asg-status`, `asg-regs` (`asg-r`), `asg-stack` (`asg-vsp`), `asg-fpu`, `asg-disas` (`asg-d`), `asg-step` (`asg-s`), `asg-next` (`asg-n`), `asg-break` (`asg-b`), `asg-trace`, `asg-set-reg`, and `asg-export`.
+  * Built dedicated unit test suite (`tools/lldb/test_asgard_lldb.py`) verifying all cryptographic algorithms, unmasking, and mutation roundtrips; verified live debugging on compiled ASGARD VM binaries under LLDB batch mode.
 - Implemented Z3-Verified Non-Linear Zero-Knot Synthesizer and Shared Pass Library (`scripts/zero_knot_synth.py`, `lib/stack_vm/stack_zero_knots.ml`, `lib/stack_vm/stack_zero_knots.mli`, `lib/stack_vm/stack_sink_barrier_pass.ml`, `lib/stack_vm/stack_mba_pass.ml`, `lib/stack_vm/stack_polymba_pass.ml`, `test/test_stack_vm.ml`):
   * Built `scripts/zero_knot_synth.py` (v2) with an `Expr` AST driving both formal Z3 BitVec(64) UNSAT proving and mechanical Stack-IR bytecode emission, eliminating proof-versus-codegen divergence.
   * Added closed-loop stack-machine concrete verification against 100 randomized input pairs, rigorous peak/min depth bound checks, and multi-tactic anti-peephole rejection, synthesizing 25 proven non-linear zero-knot families.
