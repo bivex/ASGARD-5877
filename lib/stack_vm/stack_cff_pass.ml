@@ -346,32 +346,31 @@ let apply_program_with_info cfg ctx prog =
   in
 
   (* 5. Transform every real block's terminators with sharded entry routing *)
-  let new_real_blocks = Hashtbl.create n_real in
-  let rng = Random.State.make [| Int64.to_int func_salt |] in
   let sorted_blocks =
     Hashtbl.fold (fun id b acc -> (id, b) :: acc) prog.blocks []
     |> List.sort (fun (id1, _) (id2, _) -> Int.compare id1 id2)
+    |> Array.of_list
   in
-  List.iter (fun (id, b) ->
-    let b' = transform_block ~rng vpc_slot entry_of decoy_entry_of tokens b in
-    (* 5b. Couple the rolling key to the VPC at the entry of every block
-       the dispatcher can reach.  There the VPC provably holds that
-       block's token, so the coupled value is statically known and the
-       encryptor can reproduce the key schedule.  The coupling therefore
-       makes the key depend on the path the program took: a block
-       harvested in isolation carries no key of its own.
-
-       The coupling is the FIRST operation of the block, so a later
-       splitting pass cannot separate it from the state it relies on. *)
-    let b' =
+  let n = Array.length sorted_blocks in
+  let out = Array.make n (0, { (snd sorted_blocks.(0)) with ops = [] }) in
+  let pool = Random_visa_ports.Domain_pool.global_pool () in
+  Random_visa_ports.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
+    let (id, b) = sorted_blocks.(i) in
+    let block_rng =
+      Random.State.make [| Int64.to_int func_salt; id * 0x5877 + 0x1337 |]
+    in
+    let b' = transform_block ~rng:block_rng vpc_slot entry_of decoy_entry_of tokens b in
+    let b'' =
       if cfg.couple_key && id <> prog.entry_id then
         match Hashtbl.find_opt tokens id with
         | Some token -> { b' with ops = KeyFeedback (vpc_slot, token) :: b'.ops }
         | None -> b'
       else b'
     in
-    Hashtbl.replace new_real_blocks id b'
-  ) sorted_blocks;
+    out.(i) <- (id, b'')
+  );
+  let new_real_blocks = Hashtbl.create n in
+  Array.iter (fun (id, b) -> Hashtbl.replace new_real_blocks id b) out;
 
   (* 6. Assemble the new program *)
   let all_blocks = Hashtbl.create (n_real + List.length disp_blocks) in

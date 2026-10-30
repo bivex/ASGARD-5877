@@ -1067,10 +1067,15 @@ module Stack_vm_packager : Vm_packager = struct
          (if native_cfg.cff.inject_opaque_predicates then "on" else "off")
          cff_cfg.seed
          (if native_cfg.cff.enabled then "" else " (DISABLED)"));
-    let prog_cff, cff_dispatcher = Stack_vm.Stack_cff_pass.apply_program_with_info cff_cfg ctx prog in
-    let cff_info = Stack_vm.Stack_cff_pass.cff_stats prog prog_cff in
-    let prog = prog_cff in
-    cff_dispatcher_opt := Some cff_dispatcher;
+    let prog, cff_info =
+      if native_cfg.cff.enabled then begin
+        let prog_cff, cff_dispatcher = Stack_vm.Stack_cff_pass.apply_program_with_info cff_cfg ctx prog in
+        let cff_info = Stack_vm.Stack_cff_pass.cff_stats prog prog_cff in
+        cff_dispatcher_opt := Some cff_dispatcher;
+        (prog_cff, cff_info)
+      end else
+        (prog, "Disabled (config: cff.enabled=false)")
+    in
     dump_bytecode_trace ~phase:"3-cff" prog;
     dump_bytecode_json ~phase:"3-cff" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"3-cff" ~final:false prog;
