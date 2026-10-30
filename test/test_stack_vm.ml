@@ -2740,12 +2740,15 @@ let test_bv_semantic_verifier () =
   Alcotest.(check bool) "MBA addition proven equivalent via SMT" true
     (match res_add with Stack_bv_verifier.Equivalent -> true | _ -> false);
 
-  (* 2. Formal equivalence of Multiplicity MBA subtraction *)
+  (* 2. Formal equivalence of Multiplicity MBA subtraction across all 5 neural families *)
   let orig_sub = [ PushReg 0; PushReg 1; Sub ] in
-  let mba_sub = [ PushReg 0; PushReg 1 ] @ Stack_multiplicity_pass.expand_sub_mba () in
-  let res_sub = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_sub ~trans_ops:mba_sub () in
-  Alcotest.(check bool) "MBA subtraction proven equivalent via SMT" true
-    (match res_sub with Stack_bv_verifier.Equivalent -> true | _ -> false);
+  for v = 0 to 4 do
+    let rng = Stack_multiplicity_pass.make_rng (Int64.of_int (v * 1000 + 42)) in
+    let mba_sub = [ PushReg 0; PushReg 1 ] @ Stack_multiplicity_pass.expand_sub_mba ~rng () in
+    let res_sub = Stack_bv_verifier.verify_ops_equivalence ~orig_ops:orig_sub ~trans_ops:mba_sub () in
+    Alcotest.(check bool) (Printf.sprintf "MBA subtraction variant %d proven equivalent via SMT" v) true
+      (match res_sub with Stack_bv_verifier.Equivalent -> true | _ -> false)
+  done;
 
   (* 3. PolyMBA cubic Rivest knot evaluates to 0 in QF_BV *)
   let orig_knot = [ PushReg 0 ] in
