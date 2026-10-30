@@ -372,13 +372,52 @@ module Stack_jit_packager : Vm_packager = struct
           name (List.length tr.chunks) tr.real_instrs;
         (jit_pkg, name)
 
+  let pre_collect_ext_syms (ir_funcs : (string * Vm_ir.Ir.func) list) =
+    let ext_syms = Hashtbl.create 16 in
+    let add_sym sym =
+      if not (Hashtbl.mem ext_syms sym) then
+        let idx = Hashtbl.length ext_syms in
+        Hashtbl.replace ext_syms sym idx
+    in
+    List.iter (fun (_, (f : Vm_ir.Ir.func)) ->
+      let label_to_block = Hashtbl.create (Hashtbl.length f.cfg.blocks) in
+      Hashtbl.iter (fun id b ->
+        Hashtbl.replace label_to_block b.Vm_ir.Ir.label id
+      ) f.cfg.blocks;
+      Hashtbl.iter (fun _ (b : Vm_ir.Ir.basic_block) ->
+        List.iter (function
+          | Vm_ir.Ir.Call (Label sym) ->
+              if not (Hashtbl.mem label_to_block sym) then add_sym sym
+          | Vm_ir.Ir.Call (TargetImm imm) ->
+              add_sym (Printf.sprintf "0x%Lx" imm)
+          | Vm_ir.Ir.Call (TargetReg r) ->
+              add_sym (Vm_ir.Register.to_string r)
+          | Vm_ir.Ir.Load_symbol { sym; _ } ->
+              add_sym sym
+          | _ -> ()
+        ) b.instrs
+      ) f.cfg.blocks
+    ) ir_funcs;
+    ext_syms
+
   let package ~rng ~config ?constants:_ (func : ir_func) : package_result =
     let native_cfg : Protection_config.t = unwrap_config config in
     let ir_funcs = unwrap_multi_ir func in
     if List.length ir_funcs > 1 then begin
-      Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
-      let global_ext_syms = Hashtbl.create 16 in
-      let results = List.map (package_single ~rng ~config ~ext_syms:global_ext_syms) ir_funcs in
+      Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging %d functions in multi-function mode (parallel Domain_pool)" (List.length ir_funcs);
+      let global_ext_syms = pre_collect_ext_syms ir_funcs in
+      let n = List.length ir_funcs in
+      let ir_funcs_arr = Array.of_list ir_funcs in
+      let parent_seeds = Array.init n (fun _ -> Random.State.bits rng) in
+      let results_arr = Array.make n None in
+      let pool = Random_visa_ports.Domain_pool.global_pool () in
+      Random_visa_ports.Domain_pool.parallel_for ~min_n:2 pool ~n (fun i ->
+        let (name, ir) = ir_funcs_arr.(i) in
+        let fn_rng = Random.State.make [| parent_seeds.(i); i * 0x5877; 0x1337 |] in
+        let res = package_single ~rng:fn_rng ~config ~ext_syms:global_ext_syms (name, ir) in
+        results_arr.(i) <- Some res
+      );
+      let results = Array.to_list (Array.map Option.get results_arr) in
       let bytecodes = List.map (fun ((pkg : Rd_jit_vm.Rd_jit_emitter.rd_jit_package), name) -> (name, pkg.bytecode)) results in
       let full_pkg = fst (List.hd (List.rev results)) in
       let first_name = snd (List.hd results) in

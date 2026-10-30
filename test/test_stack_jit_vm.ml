@@ -478,6 +478,74 @@ let test_chunker_ruler_a001511 () =
          check int "schedule[0] = A001511(1) = 1" 1 tr.invalidation_schedule.(0);
        if n >= 2 then
          check int "schedule[1] = A001511(2) = 2" 2 tr.invalidation_schedule.(1))
+let test_stack_jit_multi_function_parallel_e2e () =
+  let c_code = {|
+#include <stdio.h>
+#include "asgard_obf.h"
+
+int func_add(int a, int b) {
+    ASGARD_BEGIN_VIRTUALIZE("func_add");
+    return a + b;
+}
+
+int func_sub(int a, int b) {
+    ASGARD_BEGIN_VIRTUALIZE("func_sub");
+    return a - b;
+}
+
+int func_mul(int a, int b) {
+    ASGARD_BEGIN_VIRTUALIZE("func_mul");
+    return a * b;
+}
+
+int main() {
+    printf("res: add=%d sub=%d mul=%d\n", func_add(10, 20), func_sub(50, 15), func_mul(6, 7));
+    return 0;
+}
+|} in
+  Test_helpers.with_temp_dir (fun temp_dir ->
+    let c_file = Filename.concat temp_dir "test_multi.c" in
+    let obf_hdr = Filename.concat temp_dir "asgard_obf.h" in
+    let orig_hdr = "examples/asgard_obf.h" in
+    Test_helpers.write_file_string c_file c_code;
+    if Sys.file_exists orig_hdr then
+      Test_helpers.write_file_string obf_hdr (Test_helpers.read_file_string orig_hdr);
+    let out_dir = Filename.concat temp_dir "out" in
+    let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
+    let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
+    let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
+    let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
+    let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+    let lifter = (module Arm64_adapter : Lifter) in
+    let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
+    let trampoline_engine = (module Trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
+    let toolchain = (module Toolchain_adapter : Toolchain) in
+    let vm_packager = (module Vm_packager_adapters.Stack_jit_packager : Vm_packager) in
+    let raw_cfg = Protect_adapters.Config_adapter.unwrap Protect_adapters.Config_adapter.default in
+    let cfg = Protect_adapters.Config_adapter.wrap raw_cfg in
+    let rng = Random.State.make [| 5877 |] in
+    match
+      Random_visa_application.Protect_pipeline.run
+        ~lifter
+        ~c_macro_obfuscator
+        ~vm_packager
+        ~trampoline_engine
+        ~toolchain
+        ~rng
+        ~config:cfg
+        ~input_file:c_file
+        ~out_dir
+        ~compile:true
+        ()
+    with
+    | Error err -> fail ("Pipeline failed: " ^ err)
+    | Ok _ ->
+        let app_bin = Filename.concat out_dir "protected_app" in
+        check bool "protected_app exists" true (Sys.file_exists app_bin);
+        let run_st, out_str = Test_helpers.run_command_capture app_bin in
+        check bool "Run status is 0" true (run_st = Unix.WEXITED 0);
+        check bool "Output is res: add=30 sub=35 mul=42" true
+          (contains_sub out_str "res: add=30 sub=35 mul=42"))
 
 let tests = [
   ("Stack-JIT Basic Arithmetic Simulation", `Quick, test_chunker_basic_arithmetic);
@@ -496,4 +564,5 @@ let tests = [
   ("Stack-JIT A001511 Ruler & Invalidation Schedule", `Quick, test_chunker_ruler_a001511);
   ("Stack-JIT Bswap/Clz/Ctz/Rbit/Popcnt Simulation", `Quick, test_chunker_bit_manip_ops);
   ("Stack-JIT CMP_RI & ROR_RI Immediate Peepholes", `Quick, test_chunker_imm_peepholes);
+  ("Stack-JIT Multi-Function Parallel E2E", `Quick, test_stack_jit_multi_function_parallel_e2e);
 ]

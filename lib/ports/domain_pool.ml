@@ -31,9 +31,10 @@ let global_pool () =
 let warm () = ignore (global_pool ())
 
 (** [parallel_for pool ~n body] dispatches [body] over [0..n-1] in parallel
-    when [n >= min_parallel_n], otherwise runs sequentially on the main domain. *)
-let parallel_for pool ~n body =
-  if n < min_parallel_n then
+    when [n >= min_n] (defaults to [min_parallel_n = 64]), otherwise runs
+    sequentially on the main domain. *)
+let parallel_for ?(min_n = min_parallel_n) pool ~n body =
+  if n < min_n then
     for i = 0 to n - 1 do body i done
   else
     Domainslib.Task.run pool (fun () ->

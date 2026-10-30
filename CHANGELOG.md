@@ -7,6 +7,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented parallel multi-function packaging in Stack-JIT VM (`lib/adapters/protect_adapters/vm_packagers.ml`, `lib/ports/domain_pool.ml`, `lib/native_vm/mba_par.ml`, `test/test_stack_jit_vm.ml`):
+  * Replaced sequential `List.map package_single` in `Stack_jit_packager.package` with `Domain_pool.parallel_for ~min_n:2` across Domainslib worker domains, pre-collecting `global_ext_syms` in a sequential scan to prevent concurrent Hashtbl data races while maintaining deterministic per-function PRNG seeding (`Random.State.make [| seed; idx * 0x5877; 0x1337 |]`).
+  * Unified process-wide Domainslib pool across modules (`lib/native_vm/mba_par.ml`): `Mba_par.global_pool ()` now shares `Random_visa_ports.Domain_pool.global_pool ()`, preventing duplicate pool creation and `Multi_channel.register_domain` assertion failures.
+  * Added `test_stack_jit_multi_function_parallel_e2e` (`test/test_stack_jit_vm.ml`): verified concurrent packaging and native execution of 3 virtualized routines (`func_add`, `func_sub`, `func_mul`) producing exact results in 0.52s.
 - Implemented Pass Verification & Provenance Engine and LLVM-style multi-level compiler report (`lib/stack_vm/stack_provenance.ml`, `lib/stack_vm/stack_provenance.mli`, `lib/adapters/protect_adapters/vm_packagers.ml`, `lib/application/protect_pipeline.ml`, `lib/constants/magic_numbers.ml`):
   * Replaced flat ad-hoc summary with an industrial 8-section compiler report: Target info, [01] Frontend metrics, [02] Transformation Pipeline lifecycle, [03] Virtualization & CFG breakdown, [04] Hardening status, [05] Independent Semantic Verification Report, [06] Binary & Compact Unwind Audit, [07] Functional Tests, and [08] Performance & Overhead.
   * Introduced honest 5-state pass lifecycle (`Verified`, `Applied`, `Partial`, `Skipped`, `Disabled`) with explicit skip reasons, resolving inaccurate `[ON ]` status reporting on zero-rewrite passes (e.g., Native Micro-Handler Interleaving reports `[SKIPPED ] No eligible ALU clusters found for native interleaving`).
