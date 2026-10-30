@@ -740,6 +740,10 @@ module Stack_vm_packager : Vm_packager = struct
       Stack_vm.Stack_budget_regulator.create
         ~budget_kb:native_cfg.bloat.target_size_budget_kb
     in
+    let record_step ?(seed = 0L) ~name ~phase ?(status = Stack_vm.Stack_provenance.Applied) ?details prog_before prog_after =
+      Stack_vm.Stack_provenance.record_pass tracker
+        ~name ~phase ~status ~seed ?details ~prog_before ~prog_after ()
+    in
     (* Bytecode Computational Stalling: runs exclusively inside VM bytecode *)
     let prog =
       if native_cfg.comp_stall.enabled then
@@ -855,10 +859,13 @@ module Stack_vm_packager : Vm_packager = struct
         (Int64.of_int (Random.State.bits rng))
         (Int64.shift_left (Int64.of_int (Random.State.bits rng)) 27)
     in
+    let prog_before_domain = prog in
     let prog =
       Stack_vm.Stack_domain_enc_pass.apply_program
         (Stack_vm.Stack_domain_enc_pass.default_domain_config domain_seed) ctx prog
     in
+    record_step ~seed:domain_seed ~name:"Affine Ring Domain Encoding" ~phase:"2a-domain-enc"
+      ~status:Stack_vm.Stack_provenance.Verified prog_before_domain prog;
     (* Phase 2a-mult: Handler Multiplicity & Metamorphic Synthesis *)
     let mult_seed =
       Int64.logxor
@@ -876,6 +883,7 @@ module Stack_vm_packager : Vm_packager = struct
       rate = eff_mult_rate;
       enabled = mult.enabled && eff_mult_rate > 0;
     } in
+    let prog_before_mult = prog in
     let prog, mult_info =
       if mult.enabled && mult.rate > 0 then begin
         let prog_mult = Stack_vm.Stack_multiplicity_pass.apply_program mult_cfg ctx prog in
@@ -884,6 +892,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: multiplicity.enabled=false)")
     in
+    record_step ~seed:mult_seed ~name:"Handler Multiplicity" ~phase:"2a-multiplicity"
+      ~status:(if mult.enabled && eff_mult_rate > 0 then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_mult prog;
     dump_bytecode_trace ~phase:"2a-multiplicity" prog;
     dump_bytecode_json ~phase:"2a-multiplicity" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-multiplicity" ~final:false prog;
@@ -925,6 +936,7 @@ module Stack_vm_packager : Vm_packager = struct
          amp_profile.horner_degree amp_profile.bit_slice_lanes amp_profile.expander_chord_len
          amp_profile.expander_chord_rate amp.profile
          (if amp.enabled then "" else ", DISABLED") max_block_size);
+    let prog_before_amp = prog in
     let prog, amplifier_info =
       if amp.enabled then begin
         let prog_amplified = Stack_vm.Bytecode_amplifier.amplify_stack_program rng ~ctx ~profile:amp_profile prog in
@@ -934,6 +946,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: amplifier.enabled=false)")
     in
+    record_step ~name:"Bytecode Amplification" ~phase:"2-amplified"
+      ~status:(if amp.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_amp prog;
     dump_bytecode_trace ~phase:"2-amplified" prog;
     dump_bytecode_json ~phase:"2-amplified" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2-amplified" ~final:false prog;
@@ -1003,6 +1018,7 @@ module Stack_vm_packager : Vm_packager = struct
          mba_cfg.egraph_node_limit mba_cfg.egraph_time_budget_ms mba_cfg.egraph_iter_limit
          mba_cfg.seed
          (if native_cfg.mba.enabled then "" else " (DISABLED by mba.enabled=false)"));
+    let prog_before_mba = prog in
     let prog, mba_info =
       if native_cfg.mba.enabled then begin
         let prog_mba = Stack_vm.Stack_mba_pass.apply_program ~ctx mba_cfg prog in
@@ -1011,6 +1027,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: mba.enabled=false)")
     in
+    record_step ~seed:mba_seed ~name:"MBA Constant Synthesis" ~phase:"2b-mba"
+      ~status:(if native_cfg.mba.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_mba prog;
     dump_bytecode_trace ~phase:"2b-mba" prog;
     dump_bytecode_json ~phase:"2b-mba" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2b-mba" ~final:false prog;
@@ -1035,6 +1054,7 @@ module Stack_vm_packager : Vm_packager = struct
          braid_cfg.rate
          braid_cfg.seed
          (if br.enabled then "" else " (DISABLED)"));
+    let prog_before_braid = prog in
     let prog, braid_info =
       if br.enabled && br.rate > 0 then begin
         let prog_br = Stack_vm.Stack_braid_pass.apply_program braid_cfg ctx prog in
@@ -1043,6 +1063,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: braid.enabled=false)")
     in
+    record_step ~seed:braid_seed ~name:"Braided CFG Merging" ~phase:"2c-braid"
+      ~status:(if br.enabled && br.rate > 0 then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_braid prog;
     dump_bytecode_trace ~phase:"2c-braid" prog;
     dump_bytecode_json ~phase:"2c-braid" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2c-braid" ~final:false prog;
@@ -1068,6 +1091,7 @@ module Stack_vm_packager : Vm_packager = struct
          homo_cfg.rate
          homo_cfg.seed
          (if homo_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog_before_homo = prog in
     let prog, homo_info =
       if homo_cfg_user.enabled then begin
         let prog_homo =
@@ -1078,6 +1102,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: homomorphic.enabled=false)")
     in
+    record_step ~seed:homo_seed ~name:"Homomorphic Operand Blinding" ~phase:"2d-homomorphic"
+      ~status:(if homo_cfg_user.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_homo prog;
     dump_bytecode_trace ~phase:"2d-homomorphic" prog;
     dump_bytecode_json ~phase:"2d-homomorphic" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2d-homomorphic" ~final:false prog;
@@ -1104,6 +1131,7 @@ module Stack_vm_packager : Vm_packager = struct
          (if native_cfg.cff.inject_opaque_predicates then "on" else "off")
          cff_cfg.seed
          (if native_cfg.cff.enabled then "" else " (DISABLED)"));
+    let prog_before_cff = prog in
     let prog, cff_info =
       if native_cfg.cff.enabled then begin
         let prog_cff, cff_dispatcher = Stack_vm.Stack_cff_pass.apply_program_with_info cff_cfg ctx prog in
@@ -1113,6 +1141,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: cff.enabled=false)")
     in
+    record_step ~seed:cff_seed ~name:"Virtual CFG Flattening" ~phase:"3-cff"
+      ~status:(if native_cfg.cff.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_cff prog;
     dump_bytecode_trace ~phase:"3-cff" prog;
     dump_bytecode_json ~phase:"3-cff" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"3-cff" ~final:false prog;
@@ -1149,9 +1180,13 @@ module Stack_vm_packager : Vm_packager = struct
     note
       (Printf.sprintf "    Spaghetti CFG Splitting    split_rate=%d max_blocks=%d min_chunk=%d seed=0x%016LX"
          spaghetti_cfg.split_rate spaghetti_cfg.max_blocks spaghetti_cfg.min_chunk spaghetti_cfg.seed);
+    let prog_before_spaghetti = prog in
     let prog_spaghetti = Stack_vm.Stack_spaghetti_pass.apply_program spaghetti_cfg prog in
     let spaghetti_info = Stack_vm.Stack_spaghetti_pass.spaghetti_stats prog prog_spaghetti in
     let prog = prog_spaghetti in
+    record_step ~seed:spaghetti_seed ~name:"Spaghetti Block Splitting" ~phase:"4-spaghetti"
+      ~status:(if sp.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_spaghetti prog;
     dump_bytecode_trace ~phase:"4-spaghetti" prog;
     dump_bytecode_json ~phase:"4-spaghetti" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"4-spaghetti" ~final:false prog;
@@ -1186,6 +1221,7 @@ module Stack_vm_packager : Vm_packager = struct
     let ghost_ring =
       Array.init 4 (fun _ -> Stack_vm.Context_allocator.alloc_scratch ctx)
     in
+    let prog_before_ghost = prog in
     let prog, ghost_info =
       if g.enabled then begin
         let prog_ghost =
@@ -1196,6 +1232,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: ghost.enabled=false)")
     in
+    record_step ~seed:ghost_seed ~name:"Ghost Stack Padding" ~phase:"5-ghost"
+      ~status:(if g.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_ghost prog;
     dump_bytecode_trace ~phase:"5-ghost" prog;
     dump_bytecode_json ~phase:"5-ghost" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5-ghost" ~final:false prog;
@@ -1226,6 +1265,7 @@ module Stack_vm_packager : Vm_packager = struct
          (if avid_cfg.max_avid <= 0 then "unlimited" else string_of_int avid_cfg.max_avid)
          avid_cfg.seed
          (if av.enabled then "" else " (DISABLED)"));
+    let prog_before_avid = prog in
     let prog, avid_info =
       if av.enabled then begin
         let prog_avid = Stack_vm.Stack_avid_pass.apply_program avid_cfg ctx prog in
@@ -1234,6 +1274,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: avid.enabled=false)")
     in
+    record_step ~seed:avid_seed ~name:"Avid Junk Operands" ~phase:"5b-avid"
+      ~status:(if av.enabled && eff_avid_rate > 0 then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_avid prog;
     dump_bytecode_trace ~phase:"5b-avid" prog;
     dump_bytecode_json ~phase:"5b-avid" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5b-avid" ~final:false prog;
@@ -1259,6 +1302,7 @@ module Stack_vm_packager : Vm_packager = struct
          trace_cfg.rate
          trace_cfg.seed
          (if tc.enabled then "" else " (DISABLED)"));
+    let prog_before_trace = prog in
     let prog, trace_info =
       if tc.enabled then begin
         let prog_tc = Stack_vm.Stack_trace_closure_pass.apply_program trace_cfg ctx prog in
@@ -1267,6 +1311,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: trace_closure.enabled=false)")
     in
+    record_step ~seed:trace_seed ~name:"T-Function Trace Closure" ~phase:"5g-trace"
+      ~status:(if tc.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_trace prog;
     dump_bytecode_trace ~phase:"5g-trace" prog;
     dump_bytecode_json ~phase:"5g-trace" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5g-trace" ~final:false prog;
@@ -1290,6 +1337,7 @@ module Stack_vm_packager : Vm_packager = struct
          transducer_cfg.rate
          transducer_cfg.seed
          (if tr.enabled then "" else " (DISABLED)"));
+    let prog_before_tr = prog in
     let prog, transducer_info =
       if tr.enabled then begin
         let state_slot = Stack_vm.Context_allocator.alloc_scratch ctx in
@@ -1302,6 +1350,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: transducer.enabled=false)")
     in
+    record_step ~seed:transducer_seed ~name:"Transducer Coupling" ~phase:"5d-transducer"
+      ~status:(if tr.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_tr prog;
     dump_bytecode_trace ~phase:"5d-transducer" prog;
     dump_bytecode_json ~phase:"5d-transducer" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5d-transducer" ~final:false prog;
@@ -1325,6 +1376,7 @@ module Stack_vm_packager : Vm_packager = struct
          polymba_cfg.rate
          polymba_cfg.seed
          (if pmb.enabled then "" else " (DISABLED)"));
+    let prog_before_pmb = prog in
     let prog, polymba_info =
       if pmb.enabled then begin
         let prog_pmb =
@@ -1336,6 +1388,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: polymba.enabled=false)")
     in
+    record_step ~seed:polymba_seed ~name:"PolyMBA Non-Linear Expansion" ~phase:"5e-polymba"
+      ~status:(if pmb.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_pmb prog;
     dump_bytecode_trace ~phase:"5e-polymba" prog;
     dump_bytecode_json ~phase:"5e-polymba" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5e-polymba" ~final:false prog;
@@ -1359,6 +1414,7 @@ module Stack_vm_packager : Vm_packager = struct
          ff_cfg.rate
          ff_cfg.seed
          (if ff_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog_before_ff = prog in
     let prog, ff_info =
       if ff_cfg_user.enabled then begin
         let prog_ff =
@@ -1370,6 +1426,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: finite_field.enabled=false)")
     in
+    record_step ~seed:ff_seed ~name:"Mixed-Characteristic Finite Field" ~phase:"5h-finite_field"
+      ~status:(if ff_cfg_user.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_ff prog;
     dump_bytecode_trace ~phase:"5h-finite_field" prog;
     dump_bytecode_json ~phase:"5h-finite_field" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5h-finite_field" ~final:false prog;
@@ -1392,6 +1451,7 @@ module Stack_vm_packager : Vm_packager = struct
          mem_web_cfg.rate
          mem_web_cfg.seed
          (if mw.enabled then "" else " (DISABLED)"));
+    let prog_before_mw = prog in
     let prog, mem_web_info =
       if mw.enabled then begin
         let sp_slot = Stack_vm.Context_allocator.slot_of_reg ctx Vm_ir.Register.rsp in
@@ -1404,6 +1464,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: mem_webbing.enabled=false)")
     in
+    record_step ~seed:mem_web_seed ~name:"Memory-Address Webbing" ~phase:"5c-memweb"
+      ~status:(if mw.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_mw prog;
     dump_bytecode_trace ~phase:"5c-memweb" prog;
     dump_bytecode_json ~phase:"5c-memweb" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5c-memweb" ~final:false prog;
@@ -1428,6 +1491,7 @@ module Stack_vm_packager : Vm_packager = struct
          sb_cfg.rate
          sb_cfg.seed
          (if sb_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog_before_sb = prog in
     let prog, sb_info =
       if sb_cfg_user.enabled then begin
         let prog_sb =
@@ -1439,6 +1503,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: sink_barrier.enabled=false)")
     in
+    record_step ~seed:sb_seed ~name:"I/O Sink Slicing Barrier" ~phase:"5i-sink_barrier"
+      ~status:(if sb_cfg_user.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_sb prog;
     dump_bytecode_trace ~phase:"5i-sink_barrier" prog;
     dump_bytecode_json ~phase:"5i-sink_barrier" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5i-sink_barrier" ~final:false prog;
@@ -1461,6 +1528,7 @@ module Stack_vm_packager : Vm_packager = struct
          dr_cfg.rate
          dr_cfg.seed
          (if dr_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog_before_dr = prog in
     let prog, dr_info =
       if dr_cfg_user.enabled then begin
         let prog_dr =
@@ -1471,6 +1539,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: dual_rail.enabled=false)")
     in
+    record_step ~seed:dr_seed ~name:"Dual-Rail Complement Invariance" ~phase:"5j-dual_rail"
+      ~status:(if dr_cfg_user.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_dr prog;
     dump_bytecode_trace ~phase:"5j-dual_rail" prog;
     dump_bytecode_json ~phase:"5j-dual_rail" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5j-dual_rail" ~final:false prog;
@@ -1494,6 +1565,7 @@ module Stack_vm_packager : Vm_packager = struct
          trap_cfg.rate
          trap_cfg.seed
          (if trap_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog_before_trap = prog in
     let prog, trap_info =
       if trap_cfg_user.enabled then begin
         let prog_trap =
@@ -1504,6 +1576,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: trap.enabled=false)")
     in
+    record_step ~seed:trap_seed ~name:"Anti-DBI Path Traps" ~phase:"6b-trap"
+      ~status:(if trap_cfg_user.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_trap prog;
     dump_bytecode_trace ~phase:"6b-trap" prog;
     dump_bytecode_json ~phase:"6b-trap" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6b-trap" ~final:false prog;
@@ -1528,6 +1603,7 @@ module Stack_vm_packager : Vm_packager = struct
          drcc_cfg.rate
          drcc_cfg.seed
          (if drcc_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog_before_drcc = prog in
     let prog, drcc_info =
       if drcc_cfg_user.enabled then begin
         let prog_drcc =
@@ -1538,6 +1614,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: drcc.enabled=false)")
     in
+    record_step ~seed:drcc_seed ~name:"DRCC Register Window & Golomb-4 Spilling" ~phase:"6c-drcc"
+      ~status:(if drcc_cfg_user.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_drcc prog;
     dump_bytecode_trace ~phase:"6c-drcc" prog;
     dump_bytecode_json ~phase:"6c-drcc" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6c-drcc" ~final:false prog;
@@ -1561,6 +1640,7 @@ module Stack_vm_packager : Vm_packager = struct
          whitening_cfg.rate
          whitening_cfg.seed
          (if whitening_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog_before_wh = prog in
     let prog, whitening_info =
       if whitening_cfg_user.enabled then begin
         let prog_whitening =
@@ -1571,6 +1651,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: whitening.enabled=false)")
     in
+    record_step ~seed:whitening_seed ~name:"Galois LFSR Memory Whitening" ~phase:"6d-whitening"
+      ~status:(if whitening_cfg_user.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_wh prog;
     dump_bytecode_trace ~phase:"6d-whitening" prog;
     dump_bytecode_json ~phase:"6d-whitening" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6d-whitening" ~final:false prog;
@@ -1594,6 +1677,7 @@ module Stack_vm_packager : Vm_packager = struct
          rule30_cfg.rate
          rule30_cfg.seed
          (if rule30_cfg_user.enabled then "" else " (DISABLED)"));
+    let prog_before_r30 = prog in
     let prog, rule30_info =
       if rule30_cfg_user.enabled then begin
         let prog_rule30 =
@@ -1604,6 +1688,9 @@ module Stack_vm_packager : Vm_packager = struct
       end else
         (prog, "Disabled (config: rule30.enabled=false)")
     in
+    record_step ~seed:rule30_seed ~name:"Wolfram Rule 30 Keystream" ~phase:"6e-rule30"
+      ~status:(if rule30_cfg_user.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_r30 prog;
     dump_bytecode_trace ~phase:"6e-rule30" prog;
     dump_bytecode_json ~phase:"6e-rule30" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6e-rule30" ~final:false prog;
@@ -1670,8 +1757,9 @@ module Stack_vm_packager : Vm_packager = struct
     tick_phase_timing ~phase:"6f-guard-done";
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6f] Native Micro-Handler Interleaving: %s" ni_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
+    let prog_before_feedback = prog in
     let prog, feedback_info =
-      if native_cfg.stack_vm.state_feedback then
+      if native_cfg.stack_vm.state_feedback then begin
         let feedback_seed =
           Int64.logxor
             (Int64.of_int (Random.State.bits rng))
@@ -1705,9 +1793,12 @@ module Stack_vm_packager : Vm_packager = struct
             feedback_stat.feedback_injected
         in
         (prog_feedback, info)
-      else
+      end else
         (prog, "Disabled (Static Cipher Stream)")
     in
+    record_step ~name:"State-Feedback Rolling Key" ~phase:"6-feedback"
+      ~status:(if native_cfg.stack_vm.state_feedback then Stack_vm.Stack_provenance.Verified else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog_before_feedback prog;
     dump_bytecode_trace ~phase:"6-feedback" prog;
     dump_bytecode_json ~phase:"6-feedback" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6-feedback" ~final:false prog;
@@ -1756,6 +1847,9 @@ module Stack_vm_packager : Vm_packager = struct
     note
       (Printf.sprintf "    Pipelined Stage Dispatch   %s" pipelined_info);
     Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 8] Pipelined Stage Dispatch: %s" pipelined_info;
+    record_step ~seed:pipelined_seed ~name:"Pipelined Stage Dispatch" ~phase:"8-pipelined"
+      ~status:(if pd.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
+      prog prog;
 
 
     let seed_key =
