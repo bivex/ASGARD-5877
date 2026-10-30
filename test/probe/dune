@@ -1,0 +1,56 @@
+(executable
+ (name multivm_semantics_test)
+ (libraries multi_vm arm64_lifter vm_ir native_vm cff mba_engine random_visa_cpp_emitter unix str)
+ (flags (:standard -w -a)))
+(executable
+ (name partition_probe)
+ (libraries multi_vm arm64_lifter vm_ir unix)
+ (flags (:standard -w -a)))
+(executable
+ (name pipeline_replicate)
+ (libraries multi_vm arm64_lifter vm_ir native_vm cff mba_engine random_visa_cpp_emitter random_visa.protect_adapters random_visa_ports unix)
+ (flags (:standard -w -a)))
+(executable
+ (name json_bisect)
+ (libraries native_vm yojson)
+ (flags (:standard -w -a)))
+(executable
+ (name roundtrip_bisect)
+ (libraries multi_vm arm64_lifter vm_ir native_vm cff mba_engine random_visa_cpp_emitter unix str)
+ (flags (:standard -w -a)))
+(executable
+ (name full_pipeline_probe)
+ (libraries multi_vm arm64_lifter vm_ir random_visa.protect_adapters random_visa_ports unix)
+ (flags (:standard -w -a)))
+(executable
+ (name verify_json)
+ (libraries native_vm)
+ (flags (:standard -w -a)))
+(executable
+ (name isolate_bridge)
+ (libraries multi_vm arm64_lifter vm_ir native_vm unix)
+ (flags (:standard -w -a)))
+(executable
+ (name branch_bisect)
+ (libraries multi_vm arm64_lifter vm_ir native_vm cff mba_engine random_visa_cpp_emitter unix str)
+ (flags (:standard -w -a)))
+(executable
+ (name ir_dump)
+ (libraries multi_vm arm64_lifter vm_ir unix)
+ (flags (:standard -w -a)))
+(executable
+ (name junk_position)
+ (libraries multi_vm arm64_lifter vm_ir native_vm unix)
+ (flags (:standard -w -a)))
+(executable
+ (name seed5_dump)
+ (libraries multi_vm arm64_lifter vm_ir native_vm unix)
+ (flags (:standard -w -a)))
+(executable
+ (name junk_only)
+ (libraries multi_vm arm64_lifter vm_ir native_vm cff mba_engine random_visa_cpp_emitter unix str)
+ (flags (:standard -w -a)))
+(executable
+ (name bc_diff)
+ (libraries multi_vm arm64_lifter vm_ir native_vm unix)
+ (flags (:standard -w -a)))

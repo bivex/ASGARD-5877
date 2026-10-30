@@ -135,8 +135,21 @@ let test_multi_vm_branch_transitions_e2e () =
         let cmd = Printf.sprintf "clang++ -std=c++20 -O0 -I%s %s -o %s" temp_dir runner_file bin_file in
         let status = Sys.command cmd in
         check int "Compilation status == 0" 0 status;
-        let run_st, _ = Test_helpers.run_command_capture bin_file in
-        check bool "Run status == 0" true (run_st = Unix.WEXITED 0))
+        let (run_st, out) = Test_helpers.run_command_capture bin_file in
+        check bool "Run status == 0" true (run_st = Unix.WEXITED 0);
+        (* The bridged CFG must compute the native result exactly:
+           42 > 40 -> .Lgreater -> 42 + 8 = 50. A broken bridge pairing
+           (reversed block order, unpaired morph, or junk-split pair)
+           returns garbage instead. *)
+        let rax_line =
+          List.fold_left
+            (fun acc line ->
+              if String.length line >= 16 && String.sub line 0 16 = "  Result (RAX): " then
+                String.trim (String.sub line 16 (String.length line - 16))
+              else acc)
+            ""
+            (String.split_on_char '\n' out) in
+        check string "Bridge roundtrip preserves semantics (RAX == 50)" "50 (0x32)" rax_line)
 
 let test_ocamlgraph_mincut_partitioning_and_dot () =
   let asm = {|

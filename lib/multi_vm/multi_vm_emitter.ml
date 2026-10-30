@@ -22,7 +22,7 @@ let inject_bridge_transitions (bridge : Bridge.affine_bridge) (partition : Parti
         | (Ir.Vm_exit as ex) :: rest ->
             List.rev (ex :: Ir.Bridge_to_math digest :: Ir.Bridge_to_flow digest :: rest)
         | other ->
-            other @ [ Ir.Bridge_to_flow digest; Ir.Bridge_to_math digest ]
+            List.rev other @ [ Ir.Bridge_to_flow digest; Ir.Bridge_to_math digest ]
       in
       Hashtbl.replace new_blocks id { b with instrs }
     ) f.cfg.blocks;
@@ -38,7 +38,6 @@ let inject_bridge_transitions (bridge : Bridge.affine_bridge) (partition : Parti
     let new_blocks = Hashtbl.create (Hashtbl.length f.cfg.blocks) in
     Hashtbl.iter (fun id (b : Ir.basic_block) ->
       let cur_eng = Hashtbl.find_opt block_engine id in
-      let is_math = cur_eng = Some Partitioner.Engine_Math in
       let rev_acc = ref [] in
       List.iter (fun (instr : Ir.instr) ->
         match instr with
@@ -46,10 +45,12 @@ let inject_bridge_transitions (bridge : Bridge.affine_bridge) (partition : Parti
             let target_eng = Hashtbl.find_opt block_engine target_id in
             if target_eng <> cur_eng && cur_eng <> None && target_eng <> None then begin
               incr trans_count;
-              if is_math then
-                rev_acc := Ir.Bridge_to_flow digest :: !rev_acc
-              else
-                rev_acc := Ir.Bridge_to_math digest :: !rev_acc
+              (* Adjacent morph/unmorph pair: exact identity roundtrip on the
+                 register file. Order is fixed by the runtime semantics --
+                 morph_math_to_flow stashes regs into bridge_state and must
+                 run BEFORE morph_flow_to_math restores them -- independent
+                 of the engine class of the current block. *)
+              rev_acc := Ir.Bridge_to_math digest :: Ir.Bridge_to_flow digest :: !rev_acc
             end;
             rev_acc := instr :: !rev_acc
         | Ir.Jcc { cond = _; target_true = BlockId tid; target_false = BlockId fid } ->
@@ -57,10 +58,8 @@ let inject_bridge_transitions (bridge : Bridge.affine_bridge) (partition : Parti
             let f_eng = Hashtbl.find_opt block_engine fid in
             if (t_eng <> cur_eng || f_eng <> cur_eng) && cur_eng <> None then begin
               incr trans_count;
-              if is_math then
-                rev_acc := Ir.Bridge_to_flow digest :: !rev_acc
-              else
-                rev_acc := Ir.Bridge_to_math digest :: !rev_acc
+              (* Same adjacent-pair invariant as the Jmp case above. *)
+              rev_acc := Ir.Bridge_to_math digest :: Ir.Bridge_to_flow digest :: !rev_acc
             end;
             rev_acc := instr :: !rev_acc
         | _ -> rev_acc := instr :: !rev_acc
@@ -123,7 +122,13 @@ let compile_and_package ~rng ?(enable_cff = true) ?(enable_mba = true) ?(mba_dep
   let partition = Partitioner.partition_function f in
   let (bridged_func, actual_transitions) = inject_bridge_transitions bridge partition f in
   let updated_partition = { partition with inter_vm_transitions = actual_transitions } in
-
+  (match Sys.getenv_opt "ASGARD_MULTI_VM_DUMP_IR" with
+   | Some dir ->
+       let path = Filename.concat dir (Printf.sprintf "%s_bridged.ir" f.name) in
+       let oc = open_out path in
+       output_string oc (Ir.func_to_string bridged_func);
+       close_out oc
+   | None -> ());
   let base_pkg =
     Native_vm.Vm_emitter.compile_and_package
       ~rng

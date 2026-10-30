@@ -398,7 +398,12 @@ let extract_real_regs instrs =
 let generate_junk_instrs rng ~real_regs =
   let vdst = Register.Vreg (Register.VX26, Register.B64) in
   let imm = Int64.of_int32 (Random.State.int32 rng Int32.max_int) in
-  match Random.State.int rng 5 with
+  let variant =
+    match Sys.getenv_opt "ASGARD_JUNK_VARIANT" with
+    | Some v -> (match int_of_string_opt v with Some n when n >= 0 && n <= 4 -> n | _ -> Random.State.int rng 5)
+    | None -> Random.State.int rng 5
+  in
+  match variant with
   | 0 ->
       [ Ir.Mov { dst = Ir.Reg vdst; src = Ir.Imm imm } ]
   | 1 ->
@@ -440,6 +445,19 @@ let inject_junk_instructions ?(density = 0.5) ~rng instrs =
       | [] -> []
       | [Ir.Ret] -> [Ir.Ret]
       | [Ir.Vm_exit] -> [Ir.Vm_exit]
+      (* Bridge morph/unmorph pairs are exact identity roundtrips on the
+         register file; junk inserted between the stash and the restore
+         breaks the pairing invariant and corrupts the register state. *)
+      | (Ir.Bridge_to_flow _ as b1) :: (Ir.Bridge_to_math _ as b2) :: rest ->
+          b1 :: b2 :: aux rest
+      (* The restore must stay adjacent to a following conditional branch:
+         the pair rides on a Cmp->Jcc lazy-flag chain and any instruction
+         materialized between the restore and the branch consumer can
+         disturb it. *)
+      | (Ir.Bridge_to_math _ as b) :: (Ir.Jcc _ as jcc) :: rest ->
+          b :: jcc :: aux rest
+      | (Ir.Cmp _ as cmp) :: (Ir.Bridge_to_flow _ as b1) :: rest ->
+          cmp :: b1 :: aux rest
       | (Ir.Cmp _ as cmp) :: (Ir.Cmov _ as cmov) :: rest ->
           let junk = gen_junk () in
           cmp :: cmov :: (junk @ aux rest)

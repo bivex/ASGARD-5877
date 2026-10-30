@@ -29,6 +29,7 @@ let is_zero_register (r : Register.t) =
   match r with
   | Register.Vreg (Register.VZERO, _) -> true
   | _ -> false
+let emitter_dump_mutex = Mutex.create ()
 
 let compile_and_package_multi
     ~rng
@@ -57,6 +58,7 @@ let compile_and_package_multi
      SUB-family flag writers, x86 reads CF = borrow.  The tag bit travels in
      the word's extra_bits area alongside set_flags. *)
   let arm64_carry = Protection_config.arm64_carry_enabled config in
+
 
   (* Generate randomized bijective register permutation π ∈ S_32 *)
   let reg_perm = Array.init 32 (fun i -> i) in
@@ -336,6 +338,23 @@ let compile_and_package_multi
         in
         let instrs = canonicalize_3addr_alu instrs in
         let instrs = if enable_junk then inject_junk_instructions ~density:junk_density ~rng:brng instrs else instrs in
+        (match Sys.getenv_opt "ASGARD_VM_EMITTER_DUMP" with
+         | Some path ->
+             let lines =
+               Array.make (List.length instrs + 1) None in
+             List.iteri (fun k (ins : Ir.instr) ->
+               lines.(k) <- Some (Ir.instr_to_string ins)) instrs;
+             lines.(List.length instrs) <- Some (Printf.sprintf "-- end block %d --" b.id);
+             let buf = Buffer.create 256 in
+             Array.iter (function
+               | Some l -> Buffer.add_string buf (Printf.sprintf "B%d: %s\n" b.id l)
+               | None -> ()) lines;
+             Mutex.lock emitter_dump_mutex;
+             let oc = open_out_gen [Open_append; Open_creat] 0o644 path in
+             output_string oc (Buffer.contents buf);
+             close_out oc;
+             Mutex.unlock emitter_dump_mutex
+         | None -> ());
         let fused  = if enable_super_ops then fuse_block_instructions instrs
                      else List.map (fun i -> Raw i) instrs in
         results.(i) <- (b.id, fused))
