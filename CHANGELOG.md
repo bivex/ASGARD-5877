@@ -7,6 +7,10 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Implemented Z3-Verified Non-Linear Opaque Predicate Synthesizer and Catalog (`scripts/cff_opaque_synth.py`, `lib/cff/cff_opaque_catalog.ml`, `lib/cff/cff.ml`, `lib/stack_vm/stack_cff_pass.ml`):
+  * Built `scripts/cff_opaque_synth.py` using formal Z3 BitVec(64) UNSAT proving and anti-peephole `z3.simplify(expr) != 0` rejection to synthesize 8 distinct non-linear zero-identities $E(x, c) \equiv 0 \pmod{2^{64}}$ combining modular arithmetic and bitwise logic (De Morgan Add/Sub, Dual Sum, Disjoint Null Intersection, Boolean 3-Way Cycle, Shannon Projection, Affine Chords, Karnaugh Splitting, Nilpotent Invariants).
+  * Integrated `Cff_opaque_catalog` into CFF basic block guards (`lib/cff/cff.ml`) and diversified Stack-CFF dispatcher predicate emission (`lib/stack_vm/stack_cff_pass.ml`), replacing repetitive linear checks with diversified non-collapsing invariants.
+  * Verified: 26/26 `Anti-Analysis (MBA & CFF)` tests pass, 71/71 `Stack-VM Execution Engine` tests pass, and all 19 showcase routines execute exact on Apple Silicon hardware (DRS 93.7/100.0).
 - Implemented Dispatch Table Domain Salt & Permutation Optimizer against frequency analysis (`lib/native_vm/domain_salt_optimizer.ml`, `lib/native_vm/domain_salt_optimizer.mli`, `lib/native_vm/vm_runtime_emitter.ml`, `test/test_native_vm.ml`):
   * Replaced static zero-indexed domain salt allocation (`domain_salts.(0) = 0`) with a simulated annealing local search optimizer choosing distinct non-zero salts $s_d \in [1, 255]$ for each dispatch domain.
   * Formulated spectral flatness objective minimizing slot access frequency variance $\text{Var}_j \sum_d P(j \oplus s_d)$ while maximizing pairwise Hamming distance between domain masks, flattening memory access patterns across the 256 dispatch table slots to defeat side-channel and opcode frequency analysis.

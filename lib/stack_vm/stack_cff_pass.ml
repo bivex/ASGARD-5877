@@ -103,21 +103,48 @@ let transform_block ?(rng = Random.State.make [| 0x5877 |]) vpc_slot entry_of de
   let go_disp target =
     let real_entry = entry_of target in
     let decoy_entry = decoy_entry_of target in
-    (* Non-Linear Register-Anchored Opaque Zero Branch:
-       ((vpc + c) - (vpc & c)) - (vpc | c) == 0 in Z/2^64Z.
-       Evaluates distinct arithmetic and De Morgan bitwise logic (Add, Nand, Nor, Sub),
-       shattering linear CSE / GVN folding. Guaranteed 100% runtime evaluation to 0,
-       taking JccRel(real_entry, E) with decoy JmpRel(decoy_entry). *)
     let c = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
-    [
-      PushReg vpc_slot; PushImm c; Add;
-      PushReg vpc_slot; PushImm c; Nand; Dup; Nand; Sub;
-      PushReg vpc_slot; PushImm c; Nor; Dup; Nor; Sub;
+    let c_not = Int64.lognot c in
+    let pred_ops =
+      match Random.State.int rng 4 with
+      | 0 ->
+          (* De Morgan Add/Sub: ((vpc + c) - (vpc & c)) - (vpc | c) == 0 *)
+          [
+            PushReg vpc_slot; PushImm c; Add;
+            PushReg vpc_slot; PushImm c; Nand; Dup; Nand; Sub;
+            PushReg vpc_slot; PushImm c; Nor; Dup; Nor; Sub;
+          ]
+      | 1 ->
+          (* De Morgan Or/And Sum: ((vpc | c) + (vpc & c)) - (vpc + c) == 0 *)
+          [
+            PushReg vpc_slot; PushImm c; Nor; Dup; Nor;
+            PushReg vpc_slot; PushImm c; Nand; Dup; Nand; Add;
+            PushReg vpc_slot; PushImm c; Add; Sub;
+          ]
+      | 2 ->
+          (* Shannon projection split: ((vpc & c) + (vpc & ~c)) - vpc == 0 *)
+          [
+            PushReg vpc_slot; PushImm c; Nand; Dup; Nand;
+            PushReg vpc_slot; PushImm c_not; Nand; Dup; Nand; Add;
+            PushReg vpc_slot; Sub;
+          ]
+      | _ ->
+          (* Disjoint bit-space nullity: (vpc & c) & (vpc ^ c) == 0 *)
+          [
+            PushReg vpc_slot; PushImm c; Nand; Dup; Nand;
+            PushReg vpc_slot; PushImm c; Nor; Dup; Nor;
+            PushReg vpc_slot; PushImm c; Nand; Dup; Nand;
+            Sub;
+            Nand; Dup; Nand;
+          ]
+    in
+    pred_ops @ [
       PushImm 0L;
       Cmp;
       JccRel (real_entry, E);
       JmpRel decoy_entry;
-    ] in
+    ]
+  in
   let new_ops = match term with
     | Exit_term | No_term ->
       block.ops

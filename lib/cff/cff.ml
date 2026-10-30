@@ -27,47 +27,18 @@ let inject_opaque_predicate ?next_block_id ~rng ~trap_block_id (b : Ir.basic_blo
     | Some id -> Ir.BlockId id
     | None -> (if b.label <> "" then Ir.Label b.label else Ir.BlockId b.id)
   in
-  let variant = Random.State.int rng 3 in
-  let opaque_check =
-    match variant with
-    | 0 ->
-        (* Invariant 1 (Parity): (x & (x + 1)) & 1 == 0 for all integers *)
-        [
-          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
-          Ir.Alu { op = Ir.Add; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = false };
-          Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-          Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = true };
-          Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
-          Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
-        ]
-    | 1 ->
-        (* Invariant 2 (Klimov-Shamir 2-adic): (x * (x + 1)) & 1 == 0 for all integers *)
-        [
-          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
-          Ir.Alu { op = Ir.Add; dst = Register.vtmp1; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = false };
-          Ir.Alu { op = Ir.Mul; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-          Ir.Alu { op = Ir.And; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 1L; set_flags = true };
-          Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
-          Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
-        ]
-    | _ ->
-        (* Invariant 3 (Nilpotent Boolean MBA identity): ((x ^ c) ^ (x | c)) ^ (x & c) == 0 *)
-        let c = salt_stack_vm_state in
-        [
-          Ir.Mov { dst = Ir.Reg Register.vtmp0; src = Ir.Reg Register.rax };
-          Ir.Mov { dst = Ir.Reg Register.vtmp1; src = Ir.Imm c };
-          Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.vtmp0 };
-          Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-          Ir.Alu { op = Ir.Or; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-          Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = false };
-          Ir.Mov { dst = Ir.Reg Register.vtmp2; src = Ir.Reg Register.rax };
-          Ir.Alu { op = Ir.And; dst = Register.vtmp2; src1 = Ir.Reg Register.vtmp2; src2 = Ir.Reg Register.vtmp1; set_flags = false };
-          Ir.Alu { op = Ir.Xor; dst = Register.vtmp0; src1 = Ir.Reg Register.vtmp0; src2 = Ir.Reg Register.vtmp2; set_flags = true };
-          Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
-          Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
-        ]
+  let all_v = Cff_opaque_catalog.all_variants in
+  let variant = all_v.(Random.State.int rng (Array.length all_v)) in
+  let c = Int64.logor (Random.State.int64 rng Int64.max_int) 1L in
+  let pred_instrs =
+    Cff_opaque_catalog.emit_ir_predicate
+      ~variant ~src_reg:Register.rax ~dst_reg:Register.vtmp0 ~c
   in
-  { b with instrs = opaque_check @ b.instrs }
+  let cmp_and_branch = [
+    Ir.Cmp { src1 = Ir.Reg Register.vtmp0; src2 = Ir.Imm 0L };
+    Ir.Jcc { cond = Flags.NE; target_true = Ir.BlockId trap_block_id; target_false = target_next };
+  ] in
+  { b with instrs = pred_instrs @ cmp_and_branch @ b.instrs }
 
 module Node = struct
   type t = int
