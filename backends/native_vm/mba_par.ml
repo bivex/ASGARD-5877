@@ -5,4 +5,4 @@
     for small inputs.  Pool size = recommended_domain_count - 1 (leaving
     one domain for the main thread). *)
 
-let global_pool () = Random_visa_ports.Domain_pool.global_pool ()
+let global_pool () = Runtime_services.Domain_pool.global_pool ()

@@ -408,7 +408,7 @@ let amplify_stack_program
      amplify_block calls in parallel.  Each block uses its own
      deterministic RNG (seeded from parent_seeds.(i) + id), so there is
      no shared mutable state between tasks. *)
-  let pool = Random_visa_ports.Domain_pool.global_pool () in
+  let pool = Runtime_services.Domain_pool.global_pool () in
   let indexed = Array.init n (fun i ->
     let (id, b) = sorted_blocks.(i) in
     let block_rng = Random.State.make [|
@@ -419,7 +419,7 @@ let amplify_stack_program
     (id, block_rng, b))
   in
   let out = Array.make n (0, { (snd sorted_blocks.(0)) with ops = [] }) in
-  Random_visa_ports.Domain_pool.parallel_for pool ~n
+  Runtime_services.Domain_pool.parallel_for pool ~n
     (fun i ->
       let (id, block_rng, b) = indexed.(i) in
       out.(i) <- (id, amplify_block block_rng ~profile ~scratch_base b));

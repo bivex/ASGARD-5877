@@ -21,4 +21,5 @@
   random_visa_constants
   yojson
   bos
-  unix))
+  unix
+  runtime_services))

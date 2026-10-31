@@ -374,9 +374,9 @@ let apply_program ?ctx cfg prog =
         ~time_budget_ms:target_time_ms
         ~iter_limit:target_iters
   in
-  let pool = Random_visa_ports.Domain_pool.global_pool () in
+  let pool = Runtime_services.Domain_pool.global_pool () in
   let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
-  Random_visa_ports.Domain_pool.parallel_for ~min_n:2 pool ~n
+  Runtime_services.Domain_pool.parallel_for ~min_n:2 pool ~n
     (fun i ->
       let (id, b) = sorted.(i) in
       let scratch_slot = scratch_slots.(i) in

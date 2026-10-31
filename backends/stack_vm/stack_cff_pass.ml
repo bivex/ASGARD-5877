@@ -389,8 +389,8 @@ let apply_program_with_info cfg ctx prog =
   in
   let n = Array.length sorted_blocks in
   let out = Array.make n (0, { (snd sorted_blocks.(0)) with ops = [] }) in
-  let pool = Random_visa_ports.Domain_pool.global_pool () in
-  Random_visa_ports.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
+  let pool = Runtime_services.Domain_pool.global_pool () in
+  Runtime_services.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
     let (id, b) = sorted_blocks.(i) in
     let block_rng =
       Random.State.make [| Int64.to_int func_salt; id * 0x5877 + 0x1337 |]

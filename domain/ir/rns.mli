@@ -15,13 +15,18 @@ val m2 : int64
 val m3 : int64
 val m4 : int64
 
+(** Garner mixed-radix precomputed inverses: inv_mi mod mj, consumed by the
+    RNS C++ codegen and the decoded-CRT reconstruction. *)
+val inv_m1_mod_m2 : int64
+val inv_m1_mod_m3 : int64
+val inv_m1_mod_m4 : int64
+val inv_m2_mod_m3 : int64
+val inv_m2_mod_m4 : int64
+val inv_m3_mod_m4 : int64
+
 val encode : int64 -> rns_val
 val decode : rns_val -> int64
 
 val add : rns_val -> rns_val -> rns_val
 val sub : rns_val -> rns_val -> rns_val
 val mul : rns_val -> rns_val -> rns_val
-
-(** Emits standalone C++20 Residue Number System header implementing Garner CRT. *)
-val emit_cpp_rns_ast : unit -> Cpp_codegen.Cpp_ast.top_decl list
-val emit_cpp_rns_header : unit -> string

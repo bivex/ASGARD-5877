@@ -1,7 +1,6 @@
 (* lib/stack_vm/stack_budget_regulator.ml
    ASGARD-5877: Dynamic budget regulator for Stack-VM pass pipeline *)
 
-open Random_visa_ports
 open Stack_ir
 
 type pass_kind =
@@ -71,7 +70,7 @@ let throttle_rate (reg : t) ~pass_name ~kind ~nominal_rate ~(prog : Stack_ir.pro
           max 0 (min 100 (int_of_float (Float.round (float_of_int nominal_rate *. scale))))
         in
         if effective_rate < nominal_rate then
-          Logger.debugf ~loc:__LOC__ ~section:"BUDGET"
+          Runtime_services.Logger.debugf ~loc:__LOC__ ~section:"BUDGET"
             "Pass '%s' throttled: %d%% -> %d%% (size: %.1f KB / budget: %.1f KB, ratio: %.1f%%)"
             pass_name nominal_rate effective_rate (cur_bytes /. 1024.0) (b_bytes /. 1024.0)
             (ratio *. 100.0);

@@ -83,7 +83,7 @@ let dump_bytecode_json ~phase (prog : Stack_vm.Stack_ir.program) =
       let json = Stack_vm.Stack_ir_json.program_to_json ~phase prog in
       (try Yojson.Safe.to_file path json
        with e ->
-         Logger.errorf ~section:"STACK_VM" "JSON phase dump failed (%s): %s" path
+         Runtime_services.Logger.errorf ~section:"STACK_VM" "JSON phase dump failed (%s): %s" path
            (Printexc.to_string e))
   | _ -> ()
 
@@ -200,10 +200,10 @@ module Threaded_vm_packager : Vm_packager = struct
     let seed = Vm_ir.Seed.create ~master_seed:(Random.State.int64 rng Int64.max_int) () in
     match Vm_ir.Ir_pipeline.compile ~seed ~verify_equivalence:true f with
     | Ok res ->
-        Logger.debugf ~section:"PACKAGER" "Function '%s': IR pipeline optimization & diversification succeeded" f.name;
+        Runtime_services.Logger.debugf ~section:"PACKAGER" "Function '%s': IR pipeline optimization & diversification succeeded" f.name;
         res.diversified_func
     | Error err ->
-        Logger.warnf ~section:"PACKAGER" "Transform func failed on '%s': %s (retrying with unverified pipeline)" f.name err;
+        Runtime_services.Logger.warnf ~section:"PACKAGER" "Transform func failed on '%s': %s (retrying with unverified pipeline)" f.name err;
         match Vm_ir.Ir_pipeline.compile ~seed ~verify_equivalence:false f with
         | Ok res -> res.diversified_func
         | Error _ ->
@@ -213,13 +213,13 @@ module Threaded_vm_packager : Vm_packager = struct
     let native_cfg : Protection_config.t = unwrap_config config in
     let ir_funcs = unwrap_multi_ir func in
     if List.length ir_funcs > 1 then begin
-      Logger.infof ~section:"PACKAGER" "Threaded-VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
+      Runtime_services.Logger.infof ~section:"PACKAGER" "Threaded-VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
       let diversified_funcs = List.map (fun (name, f) ->
-        Logger.debugf ~section:"PACKAGER" "Diversifying function '%s'..." name;
+        Runtime_services.Logger.debugf ~section:"PACKAGER" "Diversifying function '%s'..." name;
         (name, transform_func ~rng f)
       ) ir_funcs in
       let pkg = Native_vm.Vm_emitter.compile_and_package_multi ~rng ~config:native_cfg ?constants diversified_funcs in
-      Logger.debugf ~section:"PACKAGER" "Threaded-VM multi-function packaging complete: %d bytecode words" (List.length pkg.bytecode);
+      Runtime_services.Logger.debugf ~section:"PACKAGER" "Threaded-VM multi-function packaging complete: %d bytecode words" (List.length pkg.bytecode);
       {
         cpp_runtime_source = inject_pipeline_hardening native_cfg "multi_func" pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
@@ -231,43 +231,43 @@ module Threaded_vm_packager : Vm_packager = struct
       }
     end else begin
       let raw_ir : Vm_ir.Ir.func = unwrap_ir func in
-      Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "Threaded-VM: packaging function '%s'" raw_ir.name;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "Threaded-VM: packaging function '%s'" raw_ir.name;
       if native_cfg.cff.enabled then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Control-Flow Flattening (CFF) active: state dispatcher synthesized";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Control-Flow Flattening (CFF) active: state dispatcher synthesized";
       if native_cfg.mba.enabled then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Mixed Boolean-Arithmetic (MBA) active (depth=%d)" native_cfg.mba.depth;
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Mixed Boolean-Arithmetic (MBA) active (depth=%d)" native_cfg.mba.depth;
       if native_cfg.vm_runtime.enable_super_operators then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Superoperator Fusion active: fused ALU/memory sequences";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Superoperator Fusion active: fused ALU/memory sequences";
       if native_cfg.vm_runtime.stack_scrambling then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Stack Scrambling active: randomized frame layout";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Stack Scrambling active: randomized frame layout";
       if native_cfg.vm_runtime.chameleon_handlers then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Chameleon Handlers active: %d dispatch domains" native_cfg.vm_runtime.num_dispatch_domains;
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Chameleon Handlers active: %d dispatch domains" native_cfg.vm_runtime.num_dispatch_domains;
       if native_cfg.vm_runtime.oblivious_memory then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Oblivious Memory & Entanglement active";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Oblivious Memory & Entanglement active";
       if native_cfg.vm_runtime.egraph_expansion then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ E-Graph Equality Expansion active";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ E-Graph Equality Expansion active";
       if native_cfg.vm_runtime.enable_junk_instructions then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Junk Bytecode Injection active";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Junk Bytecode Injection active";
       if native_cfg.vm_runtime.ephemeral_jit then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Ephemeral JIT Micro-Handlers active";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Ephemeral JIT Micro-Handlers active";
       if native_cfg.vm_runtime.memory_sanitization then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Memory Sanitization active";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Memory Sanitization active";
       if native_cfg.anti_pushan.running_key then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Anti-Pushan: positional rolling PRF key stream active";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Anti-Pushan: positional rolling PRF key stream active";
       if native_cfg.anti_tamper.enabled then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Anti-Tamper active: timing=%b, scanner=%b, anti_emu=%b, nanomites=%b, syscalls=%b"
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ Anti-Tamper active: timing=%b, scanner=%b, anti_emu=%b, nanomites=%b, syscalls=%b"
           native_cfg.anti_tamper.hardware_timing_probes native_cfg.anti_tamper.memory_integrity_scanner native_cfg.anti_tamper.anti_emulation native_cfg.anti_tamper.nanomites native_cfg.anti_tamper.direct_syscalls;
       if native_cfg.eh_shadowing.enabled then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2601] EH Shadowing: ABI shadow frame active (%d bytes)" native_cfg.eh_shadowing.shadow_alloc_size;
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2601] EH Shadowing: ABI shadow frame active (%d bytes)" native_cfg.eh_shadowing.shadow_alloc_size;
       if native_cfg.anti_vpc.enabled then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2603] Anti-VPC Tracking: non-linear dispatch active";
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2603] Anti-VPC Tracking: non-linear dispatch active";
       if native_cfg.memory_chaffing.enabled then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d)" native_cfg.memory_chaffing.pool_size;
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d)" native_cfg.memory_chaffing.pool_size;
       if native_cfg.comp_stall.enabled then
-        Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)" native_cfg.comp_stall.n_iterations native_cfg.comp_stall.pow_difficulty;
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)" native_cfg.comp_stall.n_iterations native_cfg.comp_stall.pow_difficulty;
       let ir : Vm_ir.Ir.func = transform_func ~rng raw_ir in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
-      Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  └─ Threaded-VM packaging complete: %d bytecode words" (List.length pkg.bytecode);
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  └─ Threaded-VM packaging complete: %d bytecode words" (List.length pkg.bytecode);
       {
         cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name pkg.cpp_runtime_source;
         runner_source = pkg.runner_source;
@@ -362,16 +362,16 @@ module Stack_jit_packager : Vm_packager = struct
 
   let package_single ~rng ~config ?(ext_syms = Hashtbl.create 16) (name, (ir : Vm_ir.Ir.func)) =
     let native_cfg : Protection_config.t = unwrap_config config in
-    Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging function '%s' (IR -> Stack-IR -> sealed chunks)"
+    Runtime_services.Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging function '%s' (IR -> Stack-IR -> sealed chunks)"
       name;
     let ctx = Stack_vm.Context_allocator.create ~permute:false () in
     let _ctx, prog = Stack_vm.Ir_to_stack.lower_func ~ctx ~ext_syms ir in
     let prog = apply_jit_pass_pipeline ~rng ~native_cfg ctx prog in
-    Logger.infof ~section:"STACK_JIT" "Function '%s' has %d blocks (entry=%d)" name (Hashtbl.length prog.blocks) prog.entry_id;
+    Runtime_services.Logger.infof ~section:"STACK_JIT" "Function '%s' has %d blocks (entry=%d)" name (Hashtbl.length prog.blocks) prog.entry_id;
     let tr_res = Stack_vm.Stack_jit_chunker.translate_program () prog in
     match tr_res with
     | Error reason ->
-        Logger.warnf ~section:"STACK_JIT" "Stack-JIT chunking unfeasible for '%s' (%s); compiling with RD-JIT" name reason;
+        Runtime_services.Logger.warnf ~section:"STACK_JIT" "Stack-JIT chunking unfeasible for '%s' (%s); compiling with RD-JIT" name reason;
         let jit_pkg =
           Rd_jit_vm.Rd_jit_emitter.compile_and_package
             ~rng
@@ -394,7 +394,7 @@ module Stack_jit_packager : Vm_packager = struct
             ~chunks:tr.chunks
             ir
         in
-        Logger.debugf ~section:"STACK_JIT" "Stack-JIT VM packaging complete for '%s': %d sealed chunk(s), %d real instrs"
+        Runtime_services.Logger.debugf ~section:"STACK_JIT" "Stack-JIT VM packaging complete for '%s': %d sealed chunk(s), %d real instrs"
           name (List.length tr.chunks) tr.real_instrs;
         (jit_pkg, name)
 
@@ -430,14 +430,14 @@ module Stack_jit_packager : Vm_packager = struct
     let native_cfg : Protection_config.t = unwrap_config config in
     let ir_funcs = unwrap_multi_ir func in
     if List.length ir_funcs > 1 then begin
-      Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging %d functions in multi-function mode (parallel Domain_pool)" (List.length ir_funcs);
+      Runtime_services.Logger.infof ~section:"STACK_JIT" "Stack-JIT VM: packaging %d functions in multi-function mode (parallel Domain_pool)" (List.length ir_funcs);
       let global_ext_syms = pre_collect_ext_syms ir_funcs in
       let n = List.length ir_funcs in
       let ir_funcs_arr = Array.of_list ir_funcs in
       let parent_seeds = Array.init n (fun _ -> Random.State.bits rng) in
       let results_arr = Array.make n None in
-      let pool = Random_visa_ports.Domain_pool.global_pool () in
-      Random_visa_ports.Domain_pool.parallel_for ~min_n:2 pool ~n (fun i ->
+      let pool = Runtime_services.Domain_pool.global_pool () in
+      Runtime_services.Domain_pool.parallel_for ~min_n:2 pool ~n (fun i ->
         let (name, ir) = ir_funcs_arr.(i) in
         let fn_rng = Random.State.make [| parent_seeds.(i); i * 0x5877; 0x1337 |] in
         let res = package_single ~rng:fn_rng ~config ~ext_syms:global_ext_syms (name, ir) in
@@ -482,7 +482,7 @@ module Multi_vm_packager : Vm_packager = struct
   let package ~rng ~config ?constants (func : ir_func) : package_result =
     let ir : Vm_ir.Ir.func = unwrap_ir func in
     let native_cfg : Protection_config.t = unwrap_config config in
-    Logger.infof ~section:"MULTI_VM" "Multi-VM: packaging function '%s' with affine zero-bridge (CFF=%b, MBA=%b)"
+    Runtime_services.Logger.infof ~section:"MULTI_VM" "Multi-VM: packaging function '%s' with affine zero-bridge (CFF=%b, MBA=%b)"
       ir.name native_cfg.cff.enabled native_cfg.mba.enabled;
     let mv_pkg =
       Multi_vm.Multi_vm_emitter.compile_and_package
@@ -494,7 +494,7 @@ module Multi_vm_packager : Vm_packager = struct
         ?constants
         ir
     in
-    Logger.debugf ~section:"MULTI_VM" "Multi-VM packaging complete: %d bytecode words" (List.length mv_pkg.bytecode);
+    Runtime_services.Logger.debugf ~section:"MULTI_VM" "Multi-VM packaging complete: %d bytecode words" (List.length mv_pkg.bytecode);
     {
       cpp_runtime_source = inject_pipeline_hardening native_cfg ir.name mv_pkg.cpp_runtime_source;
       runner_source = mv_pkg.runner_source;
@@ -701,7 +701,7 @@ module Stack_vm_packager : Vm_packager = struct
 
   let package_single ~rng ~config ?constants ?shared_seed_key ?shared_op_map ?shared_ext_syms ((target_name, ir) : string * Vm_ir.Ir.func) =
     let native_cfg : Protection_config.t = unwrap_config config in
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "Stack-VM: hardening function '%s' (%d IR blocks)"
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "Stack-VM: hardening function '%s' (%d IR blocks)"
       target_name (Hashtbl.length ir.cfg.blocks);
     let tracker = Stack_vm.Stack_provenance.create_tracker () in
     let t_start = Unix.gettimeofday () in
@@ -759,7 +759,7 @@ module Stack_vm_packager : Vm_packager = struct
                | None -> Random_visa_constants.Magic_numbers.comp_stall_chebyshev_salt
         in
         let variant = native_cfg.comp_stall.variant in
-        Logger.infof ~loc:__LOC__ ~section:"STACK_VM"
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM"
           "  ├─ [Bytecode-Stall] Injecting dynamical stall into bytecode (N=%d, variant=%s, seed=0x%016LX)"
           iters variant seed;
         let prog_stalled = Stack_vm.Stack_stall_pass.apply_stall ~ctx ~config:{ n_iterations = iters; seed; variant } prog in
@@ -790,7 +790,7 @@ module Stack_vm_packager : Vm_packager = struct
       ~prog_after:prog
       ~details:(Printf.sprintf "%d blocks lowered to Stack-IR (%d context slots)"
                   (Hashtbl.length prog.blocks) (Stack_vm.Context_allocator.total_slots ctx)) ();
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 1/7] IR Lowering: %d blocks lowered to Stack-IR (%d context slots)"
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 1/7] IR Lowering: %d blocks lowered to Stack-IR (%d context slots)"
       (Hashtbl.length prog.blocks) (Stack_vm.Context_allocator.total_slots ctx);
 
     (* Pass 10: Branchless Bit-Blasted Flag Materialization *)
@@ -850,7 +850,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"2a-pre-superop" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-pre-superop" ~final:false prog;
     if native_cfg.stack_vm.superoperators && native_cfg.superop.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (pre): %s"
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (pre): %s"
         (match pre_superop_stats with Some (_, st) -> Printf.sprintf "%d rules fused" st.fused_ops | None -> "none");
 
     (* Pass 9: End-to-End Affine Ring Domain Encoding *)
@@ -899,7 +899,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"2a-multiplicity" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-multiplicity" ~final:false prog;
     if mult.enabled && mult.rate > 0 then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a-mult] Handler Multiplicity: %s" mult_info;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a-mult] Handler Multiplicity: %s" mult_info;
 
     (* Phase 2: Mathematical Bytecode Amplification (Horner Polynomials, Carry-Chain, Def-Use Webbing)
        Pass Order Architecture: Bytecode_amplifier runs BEFORE Phase 2b (Stack_mba_pass) so that
@@ -952,7 +952,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"2-amplified" prog;
     dump_bytecode_json ~phase:"2-amplified" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2-amplified" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2/7] Bytecode Amplification: %s" amplifier_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2/7] Bytecode Amplification: %s" amplifier_info;
 
     (* Phase 2a (Post-amplification): Superoperator Fusion on synthesized constants *)
     let prog, superop_info =
@@ -995,7 +995,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"2a-post-superop" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2a-post-superop" ~final:false prog;
     if native_cfg.stack_vm.superoperators && native_cfg.superop.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (post): %s" superop_info;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2a] Superoperator Fusion (post): %s" superop_info;
 
     (* Phase 2b: MBA Constant Synthesis — replace PushImm with NOR/NAND/ADD sequences *)
     let mba_seed =
@@ -1034,7 +1034,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"2b-mba" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2b-mba" ~final:false prog;
     if native_cfg.mba.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2b] MBA Constant Synthesis: %s" mba_info;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2b] MBA Constant Synthesis: %s" mba_info;
 
     (* Phase 2c (Pass 16): Braided CFG Merging — fuse pairs of live basic blocks into isomorphic braided nodes *)
     let braid_seed =
@@ -1070,7 +1070,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"2c-braid" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2c-braid" ~final:false prog;
     if br.enabled && br.rate > 0 then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2c] Braided CFG Merging: %s" braid_info;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2c] Braided CFG Merging: %s" braid_info;
 
 
     (* Phase 2d (Pass 20): Homomorphic Ciphertext Operand Blinding *)
@@ -1109,7 +1109,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"2d-homomorphic" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"2d-homomorphic" ~final:false prog;
     if homo_cfg_user.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2d] Homomorphic Operand Blinding: %s" homo_info;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 2d] Homomorphic Operand Blinding: %s" homo_info;
     let real_blocks = Hashtbl.length prog.blocks in
     let real_ops = Hashtbl.fold (fun _ (b : Stack_vm.Stack_ir.block) acc -> acc + List.length b.ops) prog.blocks 0 in
 
@@ -1148,7 +1148,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"3-cff" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"3-cff" ~final:false prog;
     if native_cfg.cff.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 3/7] Virtual CFG Flattening: %s" cff_info;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 3/7] Virtual CFG Flattening: %s" cff_info;
 
     (* Phase 4: Spaghetti Control-Flow Splitting — split blocks after CFF *)
     let spaghetti_seed =
@@ -1190,7 +1190,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"4-spaghetti" prog;
     dump_bytecode_json ~phase:"4-spaghetti" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"4-spaghetti" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 4/7] Spaghetti Block Splitting: %s" spaghetti_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 4/7] Spaghetti Block Splitting: %s" spaghetti_info;
 
     (* Phase 5: Ghost Stack Padding — inject neutral junk ops per block *)
     let ghost_seed =
@@ -1238,7 +1238,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5-ghost" prog;
     dump_bytecode_json ~phase:"5-ghost" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5-ghost" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5/7] Ghost Stack Padding: %s" ghost_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5/7] Ghost Stack Padding: %s" ghost_info;
 
     (* Phase 5b: Avid Junk Operands Pass — insert variable-size avid junk operands *)
     let avid_seed =
@@ -1280,7 +1280,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5b-avid" prog;
     dump_bytecode_json ~phase:"5b-avid" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5b-avid" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5b] Avid Junk Operands: %s" avid_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5b] Avid Junk Operands: %s" avid_info;
 
     (* Phase 5g (Pass 15): T-Function Trace Invariant Closure — close the
        Live -> Ghost -> Live dataflow cycle so backward slicing (Tier 4)
@@ -1317,7 +1317,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5g-trace" prog;
     dump_bytecode_json ~phase:"5g-trace" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5g-trace" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5g] T-Function Trace Closure: %s" trace_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5g] T-Function Trace Closure: %s" trace_info;
 
     (* Phase 5d: Stateful Transducer Pass — couple ALU expressions to evolving state register *)
     let transducer_seed =
@@ -1356,7 +1356,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5d-transducer" prog;
     dump_bytecode_json ~phase:"5d-transducer" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5d-transducer" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5d] Transducer Coupling: %s" transducer_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5d] Transducer Coupling: %s" transducer_info;
 
     (* Phase 5e: PolyMBA Non-Linear Expansion — inject degree-2 quadratic cross-terms & dynamic shifts *)
     let polymba_seed =
@@ -1394,7 +1394,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5e-polymba" prog;
     dump_bytecode_json ~phase:"5e-polymba" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5e-polymba" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5e] PolyMBA Non-Linear Expansion: %s" polymba_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5e] PolyMBA Non-Linear Expansion: %s" polymba_info;
 
     (* Phase 5h (Pass 17): Mixed-Characteristic Finite Field Arithmetic — inject Mersenne-31 and GF(2^64) knots *)
     let ff_seed =
@@ -1432,7 +1432,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5h-finite_field" prog;
     dump_bytecode_json ~phase:"5h-finite_field" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5h-finite_field" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5h] Mixed-Characteristic Finite Field: %s" ff_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5h] Mixed-Characteristic Finite Field: %s" ff_info;
     (* Phase 5c: Memory-Address Entanglement Pass — bind scratch ring through physical RAM loads & stores *)
     let mem_web_seed =
       Int64.logxor
@@ -1470,7 +1470,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5c-memweb" prog;
     dump_bytecode_json ~phase:"5c-memweb" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5c-memweb" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5c] Memory-Address Entanglement: %s" mem_web_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5c] Memory-Address Entanglement: %s" mem_web_info;
 
 
     (* Phase 5i (Pass 18): I/O Sink Entanglement & Slicing Barrier — bind intermediate state to observable sinks *)
@@ -1509,7 +1509,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5i-sink_barrier" prog;
     dump_bytecode_json ~phase:"5i-sink_barrier" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5i-sink_barrier" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5i] I/O Sink Slicing Barrier: %s" sb_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5i] I/O Sink Slicing Barrier: %s" sb_info;
     (* Phase 5j (Pass 21): Dual-Rail Complement Arithmetic & Invariant Checkpoints *)
     let dr_seed =
       Int64.logxor
@@ -1545,7 +1545,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"5j-dual_rail" prog;
     dump_bytecode_json ~phase:"5j-dual_rail" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"5j-dual_rail" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5j] Dual-Rail Complement Invariance: %s" dr_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 5j] Dual-Rail Complement Invariance: %s" dr_info;
 
     (* Phase 6b (Pass 19): Cross-Block Execution Path Integrity & Anti-DBI Traps *)
     let trap_seed =
@@ -1583,7 +1583,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"6b-trap" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6b-trap" ~final:false prog;
     if trap_cfg_user.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6b] Cross-Block Path Traps: %s" trap_info;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6b] Cross-Block Path Traps: %s" trap_info;
 
     (* Phase 6c (Pass 22): DRCC Top-Of-Stack Physical Register Window & A003022 Golomb Spilling *)
     let drcc_seed =
@@ -1620,7 +1620,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"6c-drcc" prog;
     dump_bytecode_json ~phase:"6c-drcc" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6c-drcc" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6c] DRCC Register Window & Golomb-4 Spilling: %s" drcc_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6c] DRCC Register Window & Golomb-4 Spilling: %s" drcc_info;
 
     (* Phase 6d (Pass 23): Galois LFSR Non-Linear Whitening & Memory Diffing Resistance *)
     let whitening_seed =
@@ -1657,7 +1657,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"6d-whitening" prog;
     dump_bytecode_json ~phase:"6d-whitening" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6d-whitening" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6d] Galois LFSR Memory Whitening: %s" whitening_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6d] Galois LFSR Memory Whitening: %s" whitening_info;
 
     (* Phase 6e (Pass 24): Wolfram Rule 30 Non-Linear Keystream & Cellular Automaton Diffusion *)
     let rule30_seed =
@@ -1694,7 +1694,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"6e-rule30" prog;
     dump_bytecode_json ~phase:"6e-rule30" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6e-rule30" ~final:false prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6e] Wolfram Rule 30 Keystream: %s" rule30_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6e] Wolfram Rule 30 Keystream: %s" rule30_info;
 
     (* Phase 6f (Pass 27): Native Micro-Handler Interleaving Pass *)
     let ni_seed =
@@ -1755,7 +1755,7 @@ module Stack_vm_packager : Vm_packager = struct
     tick_phase_timing ~phase:"6f-guard";
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6f-native_interleave" ~final:false prog;
     tick_phase_timing ~phase:"6f-guard-done";
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6f] Native Micro-Handler Interleaving: %s" ni_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6f] Native Micro-Handler Interleaving: %s" ni_info;
     (* Phase 6: State-Feedback Rolling Key — couple cipher stream to register state *)
     let prog_before_feedback = prog in
     let prog, feedback_info =
@@ -1803,7 +1803,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_json ~phase:"6-feedback" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"6-feedback" ~final:false prog;
     if native_cfg.stack_vm.state_feedback then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6/7] State-Feedback Rolling Key: %s" feedback_info;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 6/7] State-Feedback Rolling Key: %s" feedback_info;
 
 
     (* Phase 7: Stack Balance Pass — enforce block balance delta = 0 *)
@@ -1821,7 +1821,7 @@ module Stack_vm_packager : Vm_packager = struct
     dump_bytecode_trace ~phase:"7-balance (final)" prog;
     dump_bytecode_json ~phase:"7-balance (final)" prog;
     Stack_vm.Stack_phase_guard.check_phase_invariants ~phase:"7-balance (final)" ~final:true prog;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 7/7] Stack Balance Pass: verified and balanced exit delta = 0 across %d blocks"
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 7/7] Stack Balance Pass: verified and balanced exit delta = 0 across %d blocks"
       (Hashtbl.length prog.blocks);
     (* Phase 8: Pipelined Stage Dispatch — decouple fetch/chaff/dispatch into
        per-handler epilogues (no central dispatcher block).  Planned on the
@@ -1846,7 +1846,7 @@ module Stack_vm_packager : Vm_packager = struct
     let pipelined_info = Stack_vm.Pipelined_dispatch_pass.pipelined_stats pipelined_plan in
     note
       (Printf.sprintf "    Pipelined Stage Dispatch   %s" pipelined_info);
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 8] Pipelined Stage Dispatch: %s" pipelined_info;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Phase 8] Pipelined Stage Dispatch: %s" pipelined_info;
     record_step ~seed:pipelined_seed ~name:"Pipelined Stage Dispatch" ~phase:"8-pipelined"
       ~status:(if pd.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration")
       prog prog;
@@ -1889,25 +1889,25 @@ module Stack_vm_packager : Vm_packager = struct
       if compact_imm then "Hybrid {i32, i64} (Compact Polymorphic)"
       else "Fixed i64 (Uniform 8-byte)"
     in
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] Opcode Polymorphism: %s & %s applied"
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] Opcode Polymorphism: %s & %s applied"
       (if polymorphic then "Enabled" else "Disabled") imm_width_info;
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] Field Layout Randomization: %s"
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] Field Layout Randomization: %s"
       (if native_cfg.stack_vm.layout_randomization then "Randomized per-instruction layout" else "Default canonical layout");
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] VSP Stack Value Whitening & Anti-Pushan Rolling Key (seed=0x%016LX)" seed_key;
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Encoder] VSP Stack Value Whitening & Anti-Pushan Rolling Key (seed=0x%016LX)" seed_key;
     if native_cfg.stack_vm.runtime_hardening then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Runtime] C++ Runtime Hardening: identifier scrambling & comment stripping enabled";
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Runtime] C++ Runtime Hardening: identifier scrambling & comment stripping enabled";
     if native_cfg.anti_tamper.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Security] Anti-Tamper & SMC active (timing_probes=%b, scanner=%b, anti_emu=%b, nanomites=%b, syscalls=%b)"
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Security] Anti-Tamper & SMC active (timing_probes=%b, scanner=%b, anti_emu=%b, nanomites=%b, syscalls=%b)"
         native_cfg.anti_tamper.hardware_timing_probes native_cfg.anti_tamper.memory_integrity_scanner native_cfg.anti_tamper.anti_emulation native_cfg.anti_tamper.nanomites native_cfg.anti_tamper.direct_syscalls;
     if native_cfg.eh_shadowing.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Tech-2601] EH Shadowing: ABI shadow frame active (%d bytes)" native_cfg.eh_shadowing.shadow_alloc_size;
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Tech-2601] EH Shadowing: ABI shadow frame active (%d bytes)" native_cfg.eh_shadowing.shadow_alloc_size;
     if native_cfg.anti_vpc.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Tech-2603] Anti-VPC Tracking: affine non-linear dispatch active";
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Tech-2603] Anti-VPC Tracking: affine non-linear dispatch active";
     if native_cfg.memory_chaffing.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d, ratio=%.1f)"
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d, ratio=%.1f)"
         native_cfg.memory_chaffing.pool_size native_cfg.memory_chaffing.chaff_ratio;
     if native_cfg.comp_stall.enabled then
-      Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)"
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)"
         native_cfg.comp_stall.n_iterations native_cfg.comp_stall.pow_difficulty;
 
     let is_internal_sym name =
@@ -2032,7 +2032,7 @@ module Stack_vm_packager : Vm_packager = struct
         ~real_ops ~real_blocks prog enc
     in
     let rebind_address = None in
-    Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "Stack-VM packaging complete: %d words (%d bytes payload, %d bytes storage footprint)"
+    Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "Stack-VM packaging complete: %d words (%d bytes payload, %d bytes storage footprint)"
       (List.length bc_words) (Bytes.length enc.bytes) (List.length bc_words * 8);
     ({
       cpp_runtime_source = inject_pipeline_hardening native_cfg target_func.name cpp_runtime_source;
@@ -2048,7 +2048,7 @@ module Stack_vm_packager : Vm_packager = struct
     let native_cfg : Protection_config.t = unwrap_config config in
     let ir_funcs = unwrap_multi_ir func in
     if List.length ir_funcs > 1 then begin
-      Logger.infof ~section:"STACK_VM" "Stack-VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
+      Runtime_services.Logger.infof ~section:"STACK_VM" "Stack-VM: packaging %d functions in multi-function mode" (List.length ir_funcs);
       let seed_key =
         Int64.logxor
           (Int64.of_int (Random.State.bits rng))

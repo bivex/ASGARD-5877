@@ -1,4 +1,3 @@
-open Random_visa_ports
 
 (** Invariant guard for the protection pipeline.
 
@@ -67,7 +66,7 @@ let check_phase_invariants ~(phase : string) ~(final : bool) (prog : program) : 
       Printf.sprintf "[asgard] phase %s broke the program invariants:\n      %s"
         phase (String.concat "\n      " parts)
     in
-    Logger.error ~section:"PHASE_GUARD" msg;
+    Runtime_services.Logger.error ~section:"PHASE_GUARD" msg;
     failwith msg
   end;
   if stack_errs <> [] then begin
@@ -78,7 +77,7 @@ let check_phase_invariants ~(phase : string) ~(final : bool) (prog : program) : 
         (if final then " (fatal)" else " (repaired by the balance pass)")
         (report stack_errs)
     in
-    if final then Logger.error ~section:"PHASE_GUARD" msg
-    else Logger.warn ~section:"PHASE_GUARD" msg;
+    if final then Runtime_services.Logger.error ~section:"PHASE_GUARD" msg
+    else Runtime_services.Logger.warn ~section:"PHASE_GUARD" msg;
     if final then failwith msg
   end

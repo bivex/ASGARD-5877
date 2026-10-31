@@ -82,7 +82,7 @@ let run_protect input_file out_dir seed config_file preset enable_cff enable_mba
       ()
   with
   | Error err ->
-      Logger.errorf ~section:"CLI" "VM Protection failed: %s" err;
+      Runtime_services.Logger.errorf ~section:"CLI" "VM Protection failed: %s" err;
       `Error (false, err)
   | Ok res ->
       print_endline res.metrics.formatted_summary;
@@ -183,7 +183,7 @@ let run_c_obf input out_file out_header seed strings consts mba_depth compile =
   with
   | Ok () -> `Ok ()
   | Error msg ->
-      Logger.errorf ~section:"C_MACRO" "C Macro Obfuscation failed: %s" msg;
+      Runtime_services.Logger.errorf ~section:"C_MACRO" "C Macro Obfuscation failed: %s" msg;
       `Error (false, msg)
 
 let c_obf_cmd =
@@ -227,7 +227,7 @@ let run_init_config out_file preset =
   match Protect_adapters.Config_adapter.init_config ~out_file ~preset with
   | Ok () -> `Ok ()
   | Error err ->
-      Logger.errorf ~section:"CONFIG" "Preset error: %s" err;
+      Runtime_services.Logger.errorf ~section:"CONFIG" "Preset error: %s" err;
       `Error (false, err)
 
 let init_config_cmd =

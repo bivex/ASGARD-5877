@@ -78,7 +78,7 @@ let run_protect_riscv input_file out_dir seed config_file preset enable_cff enab
       ()
   with
   | Error err ->
-      Logger.errorf ~section:"CLI" "RISC-V VM Protection failed: %s" err;
+      Runtime_services.Logger.errorf ~section:"CLI" "RISC-V VM Protection failed: %s" err;
       `Error (false, err)
   | Ok res ->
       print_endline res.metrics.formatted_summary;

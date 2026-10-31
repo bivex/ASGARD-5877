@@ -162,8 +162,8 @@ let apply_program (cfg : whitening_config) (ctx : Context_allocator.t) (prog : p
     in
     let n = Array.length sorted in
     let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
-    let pool = Random_visa_ports.Domain_pool.global_pool () in
-    Random_visa_ports.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
+    let pool = Runtime_services.Domain_pool.global_pool () in
+    Runtime_services.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
       let (id, b) = sorted.(i) in
       let b' = apply_block cfg ~whitening_slot b in
       let b'' =

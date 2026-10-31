@@ -1,5 +1,5 @@
 open Alcotest
-open Random_visa_ports.Logger
+open Runtime_services.Logger
 
 let test_level_conversions () =
   check string "Debug to string" "DEBUG" (level_to_string Debug);

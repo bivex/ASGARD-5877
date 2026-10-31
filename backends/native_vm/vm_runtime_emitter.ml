@@ -381,8 +381,8 @@ let emit_native_runtime_hpp_decls
   let num_domains = policy.num_domains in
   let word_layout = Vm_ir.Rolling_key.layout_of_seed key_seed in
 
-  let rns_header = Vm_ir.Rns.emit_cpp_rns_header () in
-  let branchless_vip_header = Vm_ir.Branchless_vip.emit_branchless_vip_cpp_header () in
+  let rns_header = Isa_codegen.Rns_codegen.emit_cpp_rns_header () in
+  let branchless_vip_header = Isa_codegen.Branchless_vip_codegen.emit_branchless_vip_cpp_header () in
   let direct_syscalls_header = if policy.enable_direct_syscalls then Hardened_runtime.emit_direct_syscalls_header () else "" in
   let anti_emulation_header = if policy.enable_anti_emu then Hardened_runtime.emit_anti_emulation_probes () else "" in
   let dual_mapping_header = Hardened_runtime.emit_dual_mapping_header () in

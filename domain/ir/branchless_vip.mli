@@ -36,9 +36,3 @@ val compute_vip_and_key_branchless :
   target_vip:int64 -> fallthrough_vip:int64 ->
   base_key:int64 -> key_delta_taken:int64 -> key_delta_fallthrough:int64 ->
   int64 * int64
-
-(** Construction of a typed C++20 AST for the Branchless VIP dispatcher *)
-val build_branchless_vip_ast : ?default_variant:int -> unit -> Cpp_codegen.Cpp_ast.top_decl list
-
-(** Generation of a C++20 header for the Branchless VIP dispatcher *)
-val emit_branchless_vip_cpp_header : unit -> string

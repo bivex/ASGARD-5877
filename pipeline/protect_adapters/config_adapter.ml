@@ -62,7 +62,7 @@ let resolve_with_watermark
         match from_file path with
         | Ok c -> c
         | Error err ->
-            Logger.warnf ~section:"CONFIG" "%s, using default" err;
+            Runtime_services.Logger.warnf ~section:"CONFIG" "%s, using default" err;
             default)
     | None -> (
         match preset with
@@ -70,7 +70,7 @@ let resolve_with_watermark
             match from_preset p with
             | Ok c -> c
             | Error err ->
-                Logger.warnf ~section:"PRESET" "%s, using default" err;
+                Runtime_services.Logger.warnf ~section:"PRESET" "%s, using default" err;
                 default)
         | None -> default)
   in

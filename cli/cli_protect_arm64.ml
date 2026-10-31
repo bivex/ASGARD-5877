@@ -94,7 +94,7 @@ let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enab
       ()
   with
   | Error err ->
-      Logger.errorf ~section:"CLI" "ARM64 VM Protection failed: %s" err;
+      Runtime_services.Logger.errorf ~section:"CLI" "ARM64 VM Protection failed: %s" err;
       `Error (false, err)
   | Ok res ->
       print_endline res.metrics.formatted_summary;

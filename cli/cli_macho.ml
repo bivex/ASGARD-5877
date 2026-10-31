@@ -1,4 +1,3 @@
-open Random_visa_ports
 
 open Cmdliner
 open Macho
@@ -9,7 +8,7 @@ open Macho
 let run_macho_unwind input repair_to =
   match Macho_image.of_file input with
   | exception Macho_image.Parse_error msg ->
-      Logger.errorf ~section:"MACHO" "macho-unwind: %s" msg;
+      Runtime_services.Logger.errorf ~section:"MACHO" "macho-unwind: %s" msg;
       `Error (false, msg)
   | img ->
       let report = Macho_unwind.check img in
@@ -21,10 +20,10 @@ let run_macho_unwind input repair_to =
       | Some path ->
           (match Macho_unwind.repair_to_file img report path with
           | Error err ->
-              Logger.errorf ~section:"MACHO" "macho-unwind: %s" err;
+              Runtime_services.Logger.errorf ~section:"MACHO" "macho-unwind: %s" err;
               `Error (false, err)
           | Ok () ->
-              Logger.infof ~section:"MACHO" "repaired image written to %s" path;
+              Runtime_services.Logger.infof ~section:"MACHO" "repaired image written to %s" path;
               (* the repair is only useful when it settles the image, so the
                  repaired copy is checked again before the command reports
                  success *)

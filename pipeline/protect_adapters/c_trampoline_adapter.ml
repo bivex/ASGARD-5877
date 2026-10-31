@@ -623,7 +623,7 @@ let embed_vm_trampoline
 
   match marked_fns with
   | [] ->
-      Logger.warn ~section:"TRAMPOLINE" "No functions marked with ASGARD_BEGIN / ASGARD_END found; embedding raw bytecode only";
+      Runtime_services.Logger.warn ~section:"TRAMPOLINE" "No functions marked with ASGARD_BEGIN / ASGARD_END found; embedding raw bytecode only";
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let decoy_bc_formatted = format_fragmented_bytecode "embedded_bytecode_decoy" effective_decoy_bc in
       let bc_header =
@@ -635,11 +635,11 @@ let embed_vm_trampoline
       close_out oc
 
   | [ single_fn ] when (match bytecodes with Some bcs -> List.length bcs <= 1 | None -> true) ->
-      Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "Embedding zero-native trampoline for function '%s' (ret=%s, args='%s')"
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "Embedding zero-native trampoline for function '%s' (ret=%s, args='%s')"
         single_fn.fn_name single_fn.ret_type single_fn.args_to_pass;
-      Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  ├─ Zero-Native Dispatch: 56-byte inline jump stub replaces function body";
-      Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  ├─ Fragmented Bytecode Storage: word chunks guarded with canary & entropy seeds";
-      Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  └─ Decoy VM Manifold: dual dummy bytecode stream embedded (%d words)" (List.length effective_decoy_bc);
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  ├─ Zero-Native Dispatch: 56-byte inline jump stub replaces function body";
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  ├─ Fragmented Bytecode Storage: word chunks guarded with canary & entropy seeds";
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  └─ Decoy VM Manifold: dual dummy bytecode stream embedded (%d words)" (List.length effective_decoy_bc);
       (* Backward-compatible single function path *)
       let bc_formatted = format_fragmented_bytecode "embedded_bytecode" bytecode in
       let decoy_bc_formatted = format_fragmented_bytecode "embedded_bytecode_decoy" effective_decoy_bc in
@@ -657,11 +657,11 @@ let embed_vm_trampoline
       close_out oc
 
   | multi_fns ->
-      Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "Embedding zero-native trampolines for %d functions: [%s]"
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "Embedding zero-native trampolines for %d functions: [%s]"
         (List.length multi_fns) (String.concat ", " (List.map (fun f -> f.fn_name) multi_fns));
-      Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  ├─ Zero-Native Dispatch: per-function jump stubs with isolated macro salts";
-      Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  ├─ Fragmented Bytecode Storage: word chunks guarded with canary & entropy seeds";
-      Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  └─ Decoy VM Manifold: dual dummy bytecode stream embedded (%d words)" (List.length effective_decoy_bc);
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  ├─ Zero-Native Dispatch: per-function jump stubs with isolated macro salts";
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  ├─ Fragmented Bytecode Storage: word chunks guarded with canary & entropy seeds";
+      Runtime_services.Logger.infof ~loc:__LOC__ ~section:"TRAMPOLINE" "  └─ Decoy VM Manifold: dual dummy bytecode stream embedded (%d words)" (List.length effective_decoy_bc);
       (* Multi-function path *)
       let bcs_list = match bytecodes with Some bcs -> bcs | None -> [] in
       let find_bc_for_fn idx fn_name =
@@ -716,7 +716,7 @@ let embed_vm_trampoline
       let oc = open_out out_path in
       output_string oc (Buffer.contents body_buf);
       close_out oc;
-      Logger.debugf ~section:"TRAMPOLINE" "Virtualized source with trampolines written to '%s' (decoy_words=%d)"
+      Runtime_services.Logger.debugf ~section:"TRAMPOLINE" "Virtualized source with trampolines written to '%s' (decoy_words=%d)"
         out_path (List.length effective_decoy_bc);
 
 module C_trampoline_engine : Protect_ports.Trampoline_engine = struct

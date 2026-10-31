@@ -87,7 +87,7 @@ let test_mealy_state_and_cpp_header () =
   let rng = Random.State.make [| 0x42 |] in
   let spec = Isa.gen_non_separable_isa_spec rng in
   let basis = Isa.synth_orthogonal_alu_basis rng ~op1_id:10 ~op2_id:20 in
-  let header = Isa.emit_cpp20_decoder_header spec basis in
+  let header = Isa_codegen.Metamorphic_isa_codegen.emit_cpp20_decoder_header spec basis in
   Alcotest.(check bool) "header non-empty" true (String.length header > 100);
   let s0 = 0x1234567890ABCDEFL in
   let s1 = Isa.step_mealy_grammar_state ~state:s0 ~insn_word:0xFEEDFACEL ~data_invariant:0xCAFEBABEL in

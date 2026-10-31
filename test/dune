@@ -56,6 +56,8 @@
  (libraries
   random_visa_domain
   random_visa_ports
+  runtime_services
+  isa_codegen
   random_visa_application
   random_visa.protect_adapters
   random_visa_sail_export
@@ -111,6 +113,8 @@
  (modules test_cpp_codegen)
  (libraries
   cpp_codegen
+  isa_codegen
+  random_visa_compiler_adapter
   vm_ir
   native_vm
   multi_vm

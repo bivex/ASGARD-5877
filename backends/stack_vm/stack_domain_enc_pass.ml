@@ -128,8 +128,8 @@ let apply_program (cfg : domain_config) (ctx : Context_allocator.t) (prog : prog
     in
     let n = Array.length sorted in
     let out = Array.make n (0, { (snd sorted.(0)) with ops = [] }) in
-    let pool = Random_visa_ports.Domain_pool.global_pool () in
-    Random_visa_ports.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
+    let pool = Runtime_services.Domain_pool.global_pool () in
+    Runtime_services.Domain_pool.parallel_for ~min_n:4 pool ~n (fun i ->
       let (id, b) = sorted.(i) in
       out.(i) <- (id, apply_block_internal ~anchor cfg b)
     );

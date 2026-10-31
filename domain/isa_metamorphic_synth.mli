@@ -86,10 +86,3 @@ val step_mealy_grammar_state :
 
 (** Determination of the byte length (3, 5, 8) of the next instruction from the Mealy automaton state *)
 val next_insn_byte_width : state:int64 -> int
-
-(** Construction of a typed C++20 AST for the metamorphic ISA decoder *)
-val build_metamorphic_isa_ast :
-  isa_radix_spec -> alu_basis_pair -> Cpp_codegen.Cpp_ast.top_decl list
-
-(** Emission of a C++20 header with the decoder and synthetic handlers for the given specification *)
-val emit_cpp20_decoder_header : isa_radix_spec -> alu_basis_pair -> string

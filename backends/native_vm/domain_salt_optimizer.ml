@@ -1,7 +1,6 @@
 (* lib/native_vm/domain_salt_optimizer.ml
    ASGARD-5877: Dispatch Table Domain Salt & Permutation Optimizer *)
 
-open Random_visa_ports
 
 let popcount8 (x : int) : int =
   let x = x - ((x lsr 1) land 0x55) in
@@ -127,7 +126,7 @@ let optimize_domain_salts
       end
     done;
 
-    Logger.debugf ~loc:__LOC__ ~section:"DOMAIN_SALT"
+    Runtime_services.Logger.debugf ~loc:__LOC__ ~section:"DOMAIN_SALT"
       "Optimized %d domain salts: [%s] (spectral score: %.4f)"
       k
       (String.concat "; " (List.map (Printf.sprintf "0x%02X") (Array.to_list best_salts)))

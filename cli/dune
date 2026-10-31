@@ -7,6 +7,7 @@
   cmdliner
   random_visa_domain
   random_visa_ports
+  runtime_services
   random_visa_application
   random_visa_sail_export
   random_visa_sail_parser

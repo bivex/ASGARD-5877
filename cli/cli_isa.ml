@@ -58,7 +58,7 @@ let run_generate name n out_dir profile_name seed vlen compile_and_test =
       ()
   with
   | Error err ->
-      Random_visa_ports.Logger.errorf ~section:"ISA" "Error: %s" (Errors.to_string err);
+      Runtime_services.Logger.errorf ~section:"ISA" "Error: %s" (Errors.to_string err);
       `Error (false, Errors.to_string err)
   | Ok res ->
       Printf.printf "Successfully synthesized V-ISA '%s' (%d instructions)\n" res.spec_name res.instruction_count;
@@ -70,7 +70,7 @@ let run_generate name n out_dir profile_name seed vlen compile_and_test =
           Printf.printf "Compilation: SUCCESS\n";
           Printf.printf "Verification output:\n%s\n" res.execution_output
         end else begin
-          Random_visa_ports.Logger.errorf ~section:"ISA" "Compilation / verification failed:\n%s" res.compiler_output
+          Runtime_services.Logger.errorf ~section:"ISA" "Compilation / verification failed:\n%s" res.compiler_output
         end
       end;
       `Ok ()
