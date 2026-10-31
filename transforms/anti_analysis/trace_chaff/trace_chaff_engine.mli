@@ -39,5 +39,5 @@ val evaluate_trace_metrics :
   memory_event list ->
   (tech_2608_metrics, tech_2608_error) result
 
-val emit_tech_2608_cpp_header : unit -> string
+val emit_trace_chaff_cpp_header : unit -> string
 (** Emits standalone C++20 header source (<asg_trace_chaff.hpp>) for runtime integration. *)

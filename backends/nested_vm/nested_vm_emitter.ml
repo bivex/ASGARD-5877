@@ -6,7 +6,7 @@ type nested_vm_package = {
   cpp_runtime_source : string;
   runner_source : string;
   bytecode : int64 list;
-  metrics : Native_vm.Metrics.metrics_report;
+  metrics : Protection_metrics.Metrics.metrics_report;
 }
 
 let inject_bridge_transitions (bridge : Bridge.affine_bridge) (partition : Partitioner.partition_report) (f : Ir.func) : Ir.func * int =

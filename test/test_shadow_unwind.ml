@@ -327,7 +327,7 @@ let test_packager_integration () =
   let wrapped_ir = Protect_ports.wrap_ir ir_fn in
 
   (* Case 1: eh_shadowing enabled *)
-  let cfg_enabled = Native_vm.Protection_config.default in
+  let cfg_enabled = Protection_config.default in
   let wrapped_cfg_enabled = Protect_pipeline.Config_adapter.wrap cfg_enabled in
   let pkg_enabled = Protect_pipeline.Vm_packagers.Threaded_vm_packager.package ~rng ~config:wrapped_cfg_enabled wrapped_ir in
   check bool "Package includes Tech-2601 header when enabled" true
@@ -336,7 +336,7 @@ let test_packager_integration () =
     (Test_helpers.string_contains pkg_enabled.cpp_runtime_source "[ASGARD Tech-2601]");
 
   (* Case 2: eh_shadowing disabled *)
-  let cfg_disabled = Native_vm.Protection_config.minimal in
+  let cfg_disabled = Protection_config.minimal in
   let wrapped_cfg_disabled = Protect_pipeline.Config_adapter.wrap cfg_disabled in
   let pkg_disabled = Protect_pipeline.Vm_packagers.Threaded_vm_packager.package ~rng ~config:wrapped_cfg_disabled wrapped_ir in
   check bool "Package omits Tech-2601 header when disabled" false

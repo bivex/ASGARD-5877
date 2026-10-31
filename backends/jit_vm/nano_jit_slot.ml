@@ -20,7 +20,6 @@ module Magic_numbers = Random_visa_constants.Magic_numbers
 
 let nano_slot_bytes = 128
 let nano_slot_words = 16
-let nano_max_chunk_instrs = 8
 let golomb5_marks = [|
   Magic_numbers.golomb5_m0;
   Magic_numbers.golomb5_m1;
@@ -29,7 +28,6 @@ let golomb5_marks = [|
   Magic_numbers.golomb5_m4 |]
 let nano_active_slots = Array.length golomb5_marks
 let nano_arena_units = 12 (* units 0..11 cover the G5 span and its honeypots *)
-let nano_kolakoski_scale = 2
 
 (* ------------------------------------------------------------------ *)
 (* OEIS generators (OCaml side, mirrored by the emitted C++ runtime)   *)
@@ -96,32 +94,10 @@ let moser_pack (v : int64) : int64 =
 let moser_unpack (w : int64) : int64 =
   logor (morton_spread w) (shift_left (morton_spread (shift_right_logical w 32)) 1)
 
-(* OEIS A000002 - Kolakoski self-describing word 1,2,2,1,1,2,1,2,2,1,...
-   whose run lengths equal the word itself.  Chunk fission sizes come from
-   its run lengths scaled by [nano_kolakoski_scale]: chunk boundaries are
-   self-descriptive but aperiodic. *)
-let kolakoski (n : int) : int array =
-  if n <= 0 then [||]
-  else if n = 1 then [| 1 |]
-  else
-    let buf = Array.make (Stdlib.max n 16) 0 in
-    buf.(0) <- 1;
-    buf.(1) <- 2;
-    buf.(2) <- 2;
-    let r = ref 2 in
-    let i = ref 3 in
-    while !i < n do
-      let v = if !r mod 2 = 0 then 1 else 2 in
-      let len = buf.(!r) in
-      for _ = 1 to len do
-        if !i < n then begin
-          buf.(!i) <- v;
-          incr i
-        end
-      done;
-      incr r
-    done;
-    Array.sub buf 0 n
+(* OEIS A000002/A010060 generators (kolakoski, thue_morse) and the fission
+   scale live in the shared base Sequences module: both VM backends draw
+   chunk boundaries from the identical generators. *)
+
 
 (* OEIS A002487 - Stern's diatomic series: a(0)=0, a(1)=1, a(2n)=a(n),
    a(2n+1)=a(n)+a(n+1); consecutive terms are coprime.  alpha_n = 2a(n)+1
@@ -178,17 +154,6 @@ let perm_apply (packed : int64) (i : int) : int =
   if i < 0 || i >= 16 then i
   else to_int (logand (shift_right_logical packed (4 * i)) 0xFL)
 
-(* OEIS A010060 - Thue-Morse: t_n = popcount(n) mod 2. *)
-let thue_morse (n : int) : bool =
-  let rec bits x acc =
-    if x = 0 then acc
-    else bits (x land (x - 1)) (acc lxor 1)  (* clear the lowest set bit *)
-  in
-  bits n 0 = 1
-
-(* ------------------------------------------------------------------ *)
-(* Sealing (packaging side)                                            *)
-(* ------------------------------------------------------------------ *)
 
 type nano_block_ticket = {
   block_id        : int;
@@ -530,7 +495,7 @@ let arena_after_chunk_fn = func_decl ~attrs:[AlwaysInline; NoExcept] Void
           expr_stmt (call "wipe_slot" [var "arena"; var "s"; var "t"]);
         ];
       ];
-      for_range "i" (i32 0) (i32 nano_max_chunk_instrs) [
+      for_range "i" (i32 0) (i32 Magic_numbers.nano_chunk_instr_cap) [
         ((idx (var "arena.staging") (var "i")) $. "op") := u8 0;
         ((idx (var "arena.staging") (var "i")) $. "dst") := u8 0;
         ((idx (var "arena.staging") (var "i")) $. "src") := u8 0;
@@ -679,7 +644,7 @@ let arena_types_and_tables () : top_decl list =
     ConstexprGlobal (SizeT, "NANO_SLOT_WORDS", u64 (of_int nano_slot_words));
     ConstexprGlobal (SizeT, "NANO_ACTIVE_SLOTS", u64 (of_int nano_active_slots));
     ConstexprGlobal (SizeT, "NANO_ARENA_UNITS", u64 (of_int nano_arena_units));
-    ConstexprGlobal (SizeT, "NANO_MAX_CHUNK_INSTRS", u64 (of_int nano_max_chunk_instrs));
+    ConstexprGlobal (SizeT, "NANO_MAX_CHUNK_INSTRS", u64 (of_int Magic_numbers.nano_chunk_instr_cap));
     global_var ~is_static:true ~is_const:true (Array (UInt32, 0)) "g_golomb5"
       ~init:(init_list golomb_entries);
     global_var ~is_static:true ~is_const:true (Array (UInt64, 0)) "g_stern_alpha"
@@ -706,7 +671,7 @@ let arena_types_and_tables () : top_decl list =
         fields = [
           (Array (UInt64, nano_arena_units * nano_slot_words), "words");
           (UInt32, "step");
-          (Array (StructType "asgard_rd_jit::JITInstr", nano_max_chunk_instrs), "staging");
+          (Array (StructType "asgard_rd_jit::JITInstr", Magic_numbers.nano_chunk_instr_cap), "staging");
         ];
       };
   ]

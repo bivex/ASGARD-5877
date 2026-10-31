@@ -220,3 +220,7 @@ val to_hex_literal32 : int64 -> string
 
 (** ["0x9E3779B97F4A7C15L"] - the OCaml spelling of a 64-bit constant. *)
 val to_ocaml_literal : int64 -> string
+
+(** Instructions per translated chunk; shared by the RD-JIT nano-arena and the
+    stack-VM chunker so both split traces at the same granularity. *)
+val nano_chunk_instr_cap : int

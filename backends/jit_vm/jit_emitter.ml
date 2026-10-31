@@ -67,7 +67,7 @@ type sealed_chunk_ticket = {
 let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = false) ?(mba_depth = 2) ?external_symbols ?chunks (func : Ir.func) : jit_package =
   let (enable_cff, enable_mba, mba_depth) =
     match config with
-    | Some (c : Native_vm.Protection_config.t) ->
+    | Some (c : Protection_config.t) ->
         (c.cff.enabled || enable_cff, c.mba.enabled || enable_mba, if mba_depth <> 2 then mba_depth else c.mba.depth)
     | None -> (enable_cff, enable_mba, mba_depth)
   in
@@ -407,7 +407,7 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
         let block_chunks = Hashtbl.create 16 in
         let block_offsets = Hashtbl.create 16 in
         let cur_chunk_offset = ref 0 in
-        let kolakoski_word = Nano_jit_slot.kolakoski 256 in
+        let kolakoski_word = Sequences.kolakoski 256 in
         let run_idx = ref 0 in
         let pos = ref 0 in
 
@@ -444,23 +444,23 @@ let compile_and_package_core ~rng ?config ?(enable_cff = false) ?(enable_mba = f
             in
             List.iter
               (fun item ->
-                if Nano_jit_slot.thue_morse !pos then begin
+                if Sequences.thue_morse !pos then begin
                   let target =
                     kolakoski_word.(!run_idx mod Array.length kolakoski_word)
-                    * Nano_jit_slot.nano_kolakoski_scale
+                    * Sequences.kolakoski_scale
                   in
                   if List.length !cur >= target
-                     || List.length !cur >= Nano_jit_slot.nano_max_chunk_instrs
+                     || List.length !cur >= Magic_numbers.nano_chunk_instr_cap
                   then flush ();
                   Stdlib.(cur := (jit_op_nop, 0, 0, 0L) :: !cur);
                   incr pos
                 end;
                 let target =
                   kolakoski_word.(!run_idx mod Array.length kolakoski_word)
-                  * Nano_jit_slot.nano_kolakoski_scale
+                  * Sequences.kolakoski_scale
                 in
                 if List.length !cur >= target
-                   || List.length !cur >= Nano_jit_slot.nano_max_chunk_instrs
+                   || List.length !cur >= Magic_numbers.nano_chunk_instr_cap
                 then flush ();
                 Stdlib.(cur := item :: !cur);
                 incr pos)

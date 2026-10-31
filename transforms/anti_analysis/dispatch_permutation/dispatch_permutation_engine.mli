@@ -57,5 +57,5 @@ val emit_split_vpc_def : unit -> Cpp_codegen.Cpp_ast.top_decl
 val emit_nonlinear_vpc_dispatcher_def : unit -> Cpp_codegen.Cpp_ast.top_decl
 (** Emits typed AST for NonLinearVPCDispatcher template struct definition. *)
 
-val emit_tech_2603_cpp_header : unit -> string
+val emit_dispatch_permutation_cpp_header : unit -> string
 (** Emits standalone C++20 header source (<asg_dispatch_permutation.hpp>) for runtime integration. *)

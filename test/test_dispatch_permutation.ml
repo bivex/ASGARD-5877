@@ -161,7 +161,7 @@ let test_cpp_runtime_execution () =
   | Ok plan ->
       Test_helpers.with_temp_dir (fun tmp_dir ->
         let hdr_path = Filename.concat tmp_dir "asg_dispatch_permutation.hpp" in
-        Test_helpers.write_file_string hdr_path (emit_tech_2603_cpp_header ());
+        Test_helpers.write_file_string hdr_path (emit_dispatch_permutation_cpp_header ());
 
         let cpp_src = Printf.sprintf {|
 #include <iostream>

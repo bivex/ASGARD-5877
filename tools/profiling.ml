@@ -178,7 +178,7 @@ let () =
       Landmark.enter lm_e2e_macro;
       let hdr_path = Filename.concat tmp_prof_dir "asgard_obf.h" in
       let obf_c_path = Filename.concat tmp_prof_dir "app_obf.c" in
-      let cfg = Native_vm.Protection_config.default in
+      let cfg = Protection_config.default in
       let macro_cfg : C_macro_obf.config = {
         seed = 0x5877;
         mba_depth = cfg.mba.depth;

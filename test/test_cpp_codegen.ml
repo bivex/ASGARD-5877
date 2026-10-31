@@ -1,3 +1,4 @@
+open Protection_config
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
@@ -391,7 +392,7 @@ let () =
   Printf.printf "[PASS] Step 23: Residue Number System (RNS-4) Garner CRT emitted using typed AST.\n";
 
   (* 24. Tech-2603 Anti-VPC-Tracking C++20 Header AST *)
-  let tech_2603_cpp = Dispatch_permutation.Dispatch_permutation_engine.emit_tech_2603_cpp_header () in
+  let tech_2603_cpp = Dispatch_permutation.Dispatch_permutation_engine.emit_dispatch_permutation_cpp_header () in
   (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax tech_2603_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2603 header syntax validation failed: " ^ err));
@@ -399,7 +400,7 @@ let () =
   Printf.printf "[PASS] Step 24: Tech-2603 Anti-VPC-Tracking runtime emitted using typed AST.\n";
 
   (* 25. Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pool C++20 Header AST *)
-  let tech_2608_cpp = Trace_chaff.Trace_chaff_engine.emit_tech_2608_cpp_header () in
+  let tech_2608_cpp = Trace_chaff.Trace_chaff_engine.emit_trace_chaff_cpp_header () in
   (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax tech_2608_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2608 header syntax validation failed: " ^ err));
@@ -898,16 +899,16 @@ let () =
    | Error err -> failwith ("Oblivious memory header C++ syntax validation failed: " ^ err));
 
   (* Validate that generated Native VM context & handlers with oblivious memory enabled compiles *)
-  assert (Native_vm.Protection_types.oblivious_memory_enabled None);
-  assert (Native_vm.Protection_types.oblivious_memory_enabled (Some Native_vm.Protection_presets.default));
+  assert (Protection_types.oblivious_memory_enabled None);
+  assert (Protection_types.oblivious_memory_enabled (Some Protection_presets.default));
   let disabled_cfg = {
-    Native_vm.Protection_presets.default with
+    Protection_presets.default with
     vm_runtime = {
-      Native_vm.Protection_presets.default.vm_runtime with
+      Protection_presets.default.vm_runtime with
       oblivious_memory = false;
     };
   } in
-  assert (not (Native_vm.Protection_types.oblivious_memory_enabled (Some disabled_cfg)));
+  assert (not (Protection_types.oblivious_memory_enabled (Some disabled_cfg)));
   Printf.printf "[PASS] Step 45: Oblivious Memory layout and Decoy Access Engine verified with crash-safe boundary loads and dual stores.\n"
 
 

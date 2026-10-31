@@ -110,24 +110,8 @@ let run_project src_dir inputs out_bin seed enable_cff enable_mba mba_depth comp
               if regions <> [] then begin
                 total_markers := !total_markers + List.length regions;
                 let vm_hdr_filename = base ^ "_threaded_vm.hpp" in
-                let eh_hdr_path = Filename.concat build_dir "asg_shadow_unwind.hpp" in
-                if not (Sys.file_exists eh_hdr_path) then begin
-                  let oc_eh = open_out eh_hdr_path in
-                  output_string oc_eh Shadow_unwind.Shadow_unwind_engine.runtime_header_source;
-                  close_out oc_eh
-                end;
-                let vpc_hdr_path = Filename.concat build_dir "asg_dispatch_permutation.hpp" in
-                if not (Sys.file_exists vpc_hdr_path) then begin
-                  let oc_vpc = open_out vpc_hdr_path in
-                  output_string oc_vpc (Dispatch_permutation.Dispatch_permutation_engine.emit_tech_2603_cpp_header ());
-                  close_out oc_vpc
-                end;
-                let chaff_hdr_path = Filename.concat build_dir "asg_trace_chaff.hpp" in
-                if not (Sys.file_exists chaff_hdr_path) then begin
-                  let oc_chaff = open_out chaff_hdr_path in
-                  output_string oc_chaff (Trace_chaff.Trace_chaff_engine.emit_tech_2608_cpp_header ());
-                  close_out oc_chaff
-                end;
+                Protect_pipeline.Anti_analysis_headers.write_runtime_headers ~out_dir:build_dir
+                  ~eh:true ~vpc:true ~chaff:true ~stall:false ~skip_existing:true;
 
                 let const_pool = X86_lifter.Lifter.extract_const_pool lines in
                 let lifted_funcs =

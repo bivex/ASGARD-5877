@@ -4,8 +4,8 @@
     verification pipelines.
 *)
 
+open Protection_config
 open Stack_ir
-open Native_vm
 open Random_visa_constants.Magic_numbers
 
 type pass_status =

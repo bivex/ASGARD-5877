@@ -120,7 +120,7 @@ let string_contains haystack needle =
 (* ── Test 6: C++ header emission ────────────────────────────────────────── *)
 
 let test_cpp_header_emission () =
-  let hdr = emit_comp_stall_cpp_header () in
+  let hdr = emit_emulation_stall_cpp_header () in
   (try
      let oc = open_out "lib/emulation_stall/asg_emulation_stall.hpp" in
      output_string oc hdr;

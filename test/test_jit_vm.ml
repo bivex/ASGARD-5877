@@ -112,12 +112,13 @@ let test_rd_jit_call_extern_e2e () =
 
 let test_nano_oeis_invariants () =
   let module N = Jit_vm.Nano_jit_slot in
+  let module S = Sequences in
   (* A000002: Kolakoski word *)
   check bool "Kolakoski prefix" true
-    (N.kolakoski 20 = [| 1; 2; 2; 1; 1; 2; 1; 2; 2; 1; 2; 2; 1; 1; 2; 1; 1; 2; 2; 1 |]);
+    (S.kolakoski 20 = [| 1; 2; 2; 1; 1; 2; 1; 2; 2; 1; 2; 2; 1; 1; 2; 1; 1; 2; 2; 1 |]);
   (* A010060: Thue-Morse parity *)
   check bool "Thue-Morse prefix" true
-    ([| false; true; true; false; true |] = Array.init 5 N.thue_morse);
+    ([| false; true; true; false; true |] = Array.init 5 S.thue_morse);
   (* A000695: Moser-de Bruijn roundtrip is exact *)
   let rng = Random.State.make [| 58775 |] in
   let roundtrip_ok = ref true in

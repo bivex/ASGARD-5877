@@ -5,7 +5,7 @@ type jit_package = {
   runner_source : string;
   rns_moduli : int64 * int64 * int64 * int64;
   bytecode : int64 list;
-  metrics : Native_vm.Metrics.metrics_report;
+  metrics : Protection_metrics.Metrics.metrics_report;
 }
 
 val emit_rd_jit_runtime_decls : external_symbols:string list -> Cpp_codegen.Cpp_ast.top_decl list
@@ -14,7 +14,7 @@ val emit_rd_jit_main_def : unit -> Cpp_codegen.Cpp_ast.top_decl
 
 val compile_and_package :
   rng:Random.State.t ->
-  ?config:Native_vm.Protection_config.t ->
+  ?config:Protection_config.t ->
   ?enable_cff:bool ->
   ?enable_mba:bool ->
   ?mba_depth:int ->
@@ -24,7 +24,7 @@ val compile_and_package :
 
 val compile_and_package_chunked :
   rng:Random.State.t ->
-  ?config:Native_vm.Protection_config.t ->
+  ?config:Protection_config.t ->
   ?enable_cff:bool ->
   ?enable_mba:bool ->
   ?mba_depth:int ->

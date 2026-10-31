@@ -178,7 +178,7 @@ Elimination of string concatenation vulnerabilities (`Printf.sprintf`, `Buffer.a
 - [x] Migrated Residue Number System (RNS-4) Garner CRT ([`lib/vm_ir/rns.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rns.ml)):
   - Converted header `asgard_rns` with modulus constants, inversions, struct `RNSVal`, and functions `encode`, `add`, `sub`, `mul`, `decode` to typed EDSL (`emit_cpp_rns_ast`).
 - [x] Migrated Tech-2603 and Tech-2608 headers ([`lib/dispatch_permutation/tech_2603_engine.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/dispatch_permutation/tech_2603_engine.ml), [`lib/trace_chaff/tech_2608_engine.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/trace_chaff/tech_2608_engine.ml)):
-  - Converted `ChaffMemoryPool` to `template_struct_def`, and header generators `emit_tech_2603_cpp_header` and `emit_tech_2608_cpp_header` to `render_top_decls`.
+  - Converted `ChaffMemoryPool` to `template_struct_def`, and header generators `emit_dispatch_permutation_cpp_header` and `emit_trace_chaff_cpp_header` to `render_top_decls`.
 - [x] Verification: Steps 1..27 in `test_cpp_codegen.ml`, `C++ Emulator E2E`, `C11 Emulator E2E`, `Multi-VM & Direct Zero-Bridge` (8/8), `Register-Driven JIT VM & RNS` (5/5), `C Macro Obfuscation` (12/12), `Tech-2603` (7/7), `Tech-2608` (4/4) — 100% PASS.
 
 ### Stage 5.5: EDSL SDK Expansion and VM Runners Migration (`HEAD`)

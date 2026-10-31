@@ -1,3 +1,4 @@
+open Protection_config
 open X86_lifter
 open Native_vm
 open Vm_ir
@@ -18,7 +19,7 @@ func_compute:
   | Ok func ->
       let pkg = Vm_emitter.compile_and_package ~rng func in
       Alcotest.(check bool) "bytecode not empty" true (List.length pkg.bytecode > 0);
-      Alcotest.(check bool) "DRS score calculated" true (Metrics.devirtualization_resistance_score pkg.metrics > 20.0);
+      Alcotest.(check bool) "DRS score calculated" true (Protection_metrics.Metrics.devirtualization_resistance_score pkg.metrics > 20.0);
       with_temp_dir (fun tmp_dir ->
         let bin_path = compile_and_prepare_vm tmp_dir pkg in
         let bc_path = Filename.concat tmp_dir "code.vanguard" in
@@ -52,7 +53,7 @@ func_cff_test:
   | Error e -> Alcotest.fail e
   | Ok func ->
       let pkg = Vm_emitter.compile_and_package ~rng ~enable_cff:true func in
-      Alcotest.(check bool) "flattening depth >= 3" true (Metrics.flattening_depth pkg.metrics >= 3);
+      Alcotest.(check bool) "flattening depth >= 3" true (Protection_metrics.Metrics.flattening_depth pkg.metrics >= 3);
       with_temp_dir (fun tmp_dir ->
         let bin_path = compile_and_prepare_vm tmp_dir pkg in
         let bc_path = Filename.concat tmp_dir "code.vanguard" in
@@ -89,7 +90,7 @@ func_cff_opaque:
 
       } in
       let pkg = Vm_emitter.compile_and_package ~rng ~config func in
-      Alcotest.(check bool) "flattening depth >= 3" true (Metrics.flattening_depth pkg.metrics >= 3);
+      Alcotest.(check bool) "flattening depth >= 3" true (Protection_metrics.Metrics.flattening_depth pkg.metrics >= 3);
       with_temp_dir (fun tmp_dir ->
         let bin_path = compile_and_prepare_vm tmp_dir pkg in
         let bc_path = Filename.concat tmp_dir "code.vanguard" in

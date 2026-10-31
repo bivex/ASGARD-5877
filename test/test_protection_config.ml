@@ -1,3 +1,4 @@
+open Protection_config
 open Native_vm
 open X86_lifter
 
@@ -114,7 +115,7 @@ func_cfg_test:
       let pkg_max = Vm_emitter.compile_and_package ~rng ~config:config_max func in
       Alcotest.(check bool) "max_security bytecode emitted" true (List.length pkg_max.bytecode > 0);
       Alcotest.(check bool) "max_security DRS >= default DRS" true
-        (Native_vm.Metrics.devirtualization_resistance_score pkg_max.metrics >= Native_vm.Metrics.devirtualization_resistance_score pkg.metrics)
+        (Protection_metrics.Metrics.devirtualization_resistance_score pkg_max.metrics >= Protection_metrics.Metrics.devirtualization_resistance_score pkg.metrics)
 
 let test_junk_density_scaling () =
   let rng = Random.State.make [| 1337 |] in

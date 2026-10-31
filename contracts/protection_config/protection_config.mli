@@ -2,6 +2,13 @@
     Controls what transformations (CFF, MBA/E-graph, Anti-Pushan, SMC, MEM-SBOM,
     Junk code, Dispatch Domains) are enabled or disabled for a target binary. *)
 
+(* Re-export the sibling modules so the wrapped library exposes them under
+   [Protection_config.<Module>] as well (the library contains a module with
+   the same name, so dune does not generate a wrapper). *)
+module Protection_types = Protection_types
+module Protection_presets = Protection_presets
+module Protection_json = Protection_json
+
 type mba_engine = [ `Egraph | `Poly | `Ncfg | `Gpu_metal | `Nullspace ]
 
 type mba_config = {
@@ -354,6 +361,11 @@ val max_security : t
 val stealth : t
 
 val from_preset : string -> (t, string) result
+
+(** [with_gpu_mba_engine gpu_available cfg] switches the MBA engine to
+    `Gpu_metal when the host exposes a GPU device.  Wiring-layer concern:
+    presets themselves never probe hardware. *)
+val with_gpu_mba_engine : bool -> t -> t
 
 val from_json_string : string -> (t, string) result
 

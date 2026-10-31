@@ -1,6 +1,6 @@
 open Contracts
 open Protect_ports
-open Native_vm
+open Protection_config
 
 (* Bytecode trace utility.
    Activated by env ASGARD_DUMP_BYTECODE=1 (or any non-empty value).
@@ -130,18 +130,18 @@ let make_native_pass_board (engine_name : string) (cfg : Protection_config.t) : 
     engine_name
     (String.concat "\n" passes)
 
-let convert_metrics ?(engine_name = "Threaded-VM") ?config (m : Native_vm.Metrics.metrics_report) : Protect_ports.metrics_report =
+let convert_metrics ?(engine_name = "Threaded-VM") ?config (m : Protection_metrics.Metrics.metrics_report) : Protect_ports.metrics_report =
   let header =
     match config with
     | Some cfg -> make_native_pass_board engine_name cfg
     | None -> ""
   in
   {
-    cyclomatic_complexity = Native_vm.Metrics.cyclomatic_complexity m;
-    shannon_entropy = Native_vm.Metrics.shannon_entropy m;
-    uniform_entropy = Native_vm.Metrics.shannon_entropy m /. 8.0;
-    drs_score = Native_vm.Metrics.devirtualization_resistance_score m;
-    formatted_summary = header ^ Native_vm.Metrics.report_to_string m;
+    cyclomatic_complexity = Protection_metrics.Metrics.cyclomatic_complexity m;
+    shannon_entropy = Protection_metrics.Metrics.shannon_entropy m;
+    uniform_entropy = Protection_metrics.Metrics.shannon_entropy m /. 8.0;
+    drs_score = Protection_metrics.Metrics.devirtualization_resistance_score m;
+    formatted_summary = header ^ Protection_metrics.Metrics.report_to_string m;
   }
 
 let inject_tech_2601 (config : Protection_config.t) (func_name : string) (cpp_source : string) : string =
@@ -749,7 +749,7 @@ module Stack_vm_packager : Vm_packager = struct
       if native_cfg.emulation_stall.enabled && is_main then
         let iters =
           if native_cfg.emulation_stall.n_iterations <= 0 then
-            Native_vm.Protection_types.default_comp_stall.n_iterations
+            Protection_types.default_comp_stall.n_iterations
           else native_cfg.emulation_stall.n_iterations
         in
         let seed =

@@ -1,6 +1,6 @@
+open Protection_config
 open Contracts
 open Protect_ports
-open Native_vm
 
 let wrap ?watermark (cfg : Protection_config.t) : protection_config =
   wrap_config

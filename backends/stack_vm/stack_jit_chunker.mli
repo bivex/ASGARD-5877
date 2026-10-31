@@ -41,7 +41,7 @@ val max_stack_depth : int
 val ruler_a001511 : int -> int
 
 (** Translate a straight-line stack trace.  [scale] multiplies the
-    Kolakoski run lengths (default [Nano_jit_slot.nano_kolakoski_scale]).
+    Kolakoski run lengths (default [Sequences.kolakoski_scale]).
     [entry_depth] models stack values inherited from predecessors (the
     successor sees the top of the physical window); [epilogue=false]
     suppresses the result move to slot 0 for multi-block callers. *)

@@ -29,6 +29,7 @@
 open Stack_vm
 open Stack_ir
 open Vm_ir
+module Magic_numbers = Random_visa_constants.Magic_numbers
 
 module C = Stack_jit_chunker
 
@@ -295,7 +296,7 @@ let check_translation ~(seed : int) ~(tag : string) (ops : stack_op list)
       let n_dummy_items =
         List.length (List.filter (fun (op, _, _, _) -> suffix op = "NOP") items)
       in
-      let cap = Jit_vm.Nano_jit_slot.nano_max_chunk_instrs in
+      let cap = Magic_numbers.nano_chunk_instr_cap in
       let chunk_bad =
         List.filter (fun c -> c = [] || List.length c > cap) tr.chunks
       in
@@ -420,7 +421,7 @@ let prop_program =
                      target_bad := (op, t) :: !target_bad
                | _ -> ())
             items;
-          let cap = Jit_vm.Nano_jit_slot.nano_max_chunk_instrs in
+          let cap = Magic_numbers.nano_chunk_instr_cap in
           let chunk_bad = List.filter (fun c -> c = [] || List.length c > cap) tr.chunks in
           verify ~seed ~ctx:"program"
             [ ( "jump-patch-targets",

@@ -5,6 +5,7 @@
  (modules main cli_isa cli_vanguard cli_protect cli_protect_arm64 cli_protect_riscv cli_project cli_macho cli_watermark)
  (libraries
   cmdliner
+  protection_config
   domain
   contracts
   runtime_services
@@ -33,45 +34,3 @@
   fpath
   unix))
 
-(executable
- (name profile_bottlenecks)
- (modules profile_bottlenecks)
- (libraries
-  landmarks
-  vm_ir
-  x86_lifter
-  arm64_lifter
-  nested_vm
-  mba_engine
-  control_flow
-  native_vm
-  c_macro_obf
-  protect_pipeline
-  bos
-  fpath))
-
-(executable
- (name gen_crackme_vm)
- (modules gen_crackme_vm)
- (libraries
-  vm_ir
-  x86_lifter
-  arm64_lifter
-  nested_vm
-  mba_engine
-  control_flow
-  native_vm
-  c_macro_obf))
-
-(executable
- (name gen_crypto_crackme)
- (modules gen_crypto_crackme)
- (libraries
-  vm_ir
-  x86_lifter
-  arm64_lifter
-  nested_vm
-  mba_engine
-  control_flow
-  native_vm
-  c_macro_obf))

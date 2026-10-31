@@ -13,10 +13,8 @@
 (** Geometry of the sealed arena. *)
 val nano_slot_bytes : int
 val nano_slot_words : int
-val nano_max_chunk_instrs : int
 val nano_active_slots : int
 val nano_arena_units : int
-val nano_kolakoski_scale : int
 val golomb5_marks : int64 array
 
 (** OEIS A269160: Rule 30 step on a 64-bit ring. *)
@@ -32,8 +30,6 @@ val wipe_gamma_word : int64 -> int64 -> int -> int64
 val moser_pack : int64 -> int64
 val moser_unpack : int64 -> int64
 
-(** OEIS A000002: first [n] terms of the Kolakoski word. *)
-val kolakoski : int -> int array
 
 (** OEIS A002487: Stern alpha_n = 2a(n)+1 (64 odd units of Z_2^64). *)
 val stern_alphas : int64 array
@@ -47,8 +43,6 @@ val perm_tables : int64 array
 val perm_identity_index : int
 val perm_apply : int64 -> int -> int
 
-(** OEIS A010060: Thue-Morse parity of [n]. *)
-val thue_morse : int -> bool
 
 type nano_block_ticket = {
   block_id      : int;

@@ -26,7 +26,7 @@ let run
   let () = Runtime_services.Domain_pool.warm () in
   let module L = (val lifter : Lifter) in
   let module P = (val vm_packager : Vm_packager) in
-  let native_cfg : Native_vm.Protection_config.t = unwrap_config config in
+  let native_cfg : Protection_config.t = unwrap_config config in
 
   if not (Sys.file_exists input_file) then begin
     Runtime_services.Logger.errorf ~loc:__LOC__ ~section:"PIPELINE" "Input file not found: %s" input_file;
@@ -164,29 +164,11 @@ let run
             if native_cfg.emulation_stall.enabled then
               Runtime_services.Logger.infof ~loc:__LOC__ ~section:"CODEGEN" "  └─ [Comp-Stall] Emitted Computational Stalling header (asg_emulation_stall.hpp)";
 
-            (* 4a. Write Tech-2601 Exception Handling Shadowing runtime header *)
-            let eh_hdr_path = Filename.concat out_dir "asg_shadow_unwind.hpp" in
-            let oc_eh = open_out eh_hdr_path in
-            output_string oc_eh Shadow_unwind.Shadow_unwind_engine.runtime_header_source;
-            close_out oc_eh;
-
-            (* 4c. Write Tech-2603 Anti-VPC-Tracking runtime header *)
-            let vpc_hdr_path = Filename.concat out_dir "asg_dispatch_permutation.hpp" in
-            let oc_vpc = open_out vpc_hdr_path in
-            output_string oc_vpc (Dispatch_permutation.Dispatch_permutation_engine.emit_tech_2603_cpp_header ());
-            close_out oc_vpc;
-
-            (* 4d. Write Tech-2608 Anti-Trace-Synthesis runtime header *)
-            let chaff_hdr_path = Filename.concat out_dir "asg_trace_chaff.hpp" in
-            let oc_chaff = open_out chaff_hdr_path in
-            output_string oc_chaff (Trace_chaff.Trace_chaff_engine.emit_tech_2608_cpp_header ());
-            close_out oc_chaff;
-
-            (* 4e. Write Computational Stalling runtime header *)
-            let stall_hdr_path = Filename.concat out_dir "asg_emulation_stall.hpp" in
-            let oc_stall = open_out stall_hdr_path in
-            output_string oc_stall (Emulation_stall.Emulation_stall_engine.emit_comp_stall_cpp_header ());
-            close_out oc_stall;
+            (* 4a-4e. Anti-analysis runtime headers via the adapter layer *)
+            Protect_pipeline.Anti_analysis_headers.write_runtime_headers ~out_dir
+              ~eh:native_cfg.eh_shadowing.enabled ~vpc:native_cfg.anti_vpc.enabled
+              ~chaff:native_cfg.memory_chaffing.enabled ~stall:native_cfg.emulation_stall.enabled
+              ~skip_existing:false;
 
             (* 4b. Address binding (Anti-VMPredator): active via runtime handler integrity *)
             if native_cfg.anti_pushan.address_bound then

@@ -278,7 +278,7 @@ compute_token:
       check bool "cpp runtime contains asgard_vm_call" true
         (String.contains pkg.cpp_runtime_source 'a' && String.contains pkg.cpp_runtime_source 's');
       check bool "DRS score > 20" true
-        (Native_vm.Metrics.devirtualization_resistance_score pkg.metrics > 20.0)
+        (Protection_metrics.Metrics.devirtualization_resistance_score pkg.metrics > 20.0)
 
 let test_riscv_zbb_bitmanip () =
   let asm = {|

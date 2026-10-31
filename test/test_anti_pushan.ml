@@ -1,3 +1,4 @@
+open Protection_config
 open X86_lifter
 open Native_vm
 

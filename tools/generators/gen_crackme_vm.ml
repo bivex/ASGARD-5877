@@ -74,5 +74,5 @@ let () =
           done)
         pkg.bytecode;
       close_out oc_b;
-      print_endline (Metrics.report_to_string pkg.metrics);
+      print_endline (Protection_metrics.Metrics.report_to_string pkg.metrics);
       Printf.printf "Successfully emitted VM header & bytecode (%d bytes)\n" (List.length pkg.bytecode * 8)

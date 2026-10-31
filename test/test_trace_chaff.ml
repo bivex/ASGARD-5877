@@ -82,7 +82,7 @@ let test_trace_injection_and_metrics () =
 let test_cpp_chaff_pool_execution () =
   Test_helpers.with_temp_dir (fun tmp_dir ->
     let hdr_path = Filename.concat tmp_dir "asg_trace_chaff.hpp" in
-    Test_helpers.write_file_string hdr_path (emit_tech_2608_cpp_header ());
+    Test_helpers.write_file_string hdr_path (emit_trace_chaff_cpp_header ());
 
     let cpp_src = {|
 #include <iostream>

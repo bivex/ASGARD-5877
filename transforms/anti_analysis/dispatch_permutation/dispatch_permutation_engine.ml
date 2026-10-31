@@ -351,7 +351,7 @@ let emit_nonlinear_vpc_dispatcher_def () : top_decl =
   ]
 
 (* ── Standalone C++20 Header Emitter ──────────────────────────────────────── *)
-let emit_tech_2603_cpp_header () : string =
+let emit_dispatch_permutation_cpp_header () : string =
   let decls = [
     comment_top "============================================================================";
     comment_top "ASGARD-5877: Tech-2603 (arXiv:2603.18355)";

@@ -6,7 +6,7 @@ type nested_vm_package = {
   cpp_runtime_source : string;
   runner_source : string;
   bytecode : int64 list;
-  metrics : Native_vm.Metrics.metrics_report;
+  metrics : Protection_metrics.Metrics.metrics_report;
 }
 
 val emit_multi_vm_header_decls :
@@ -36,7 +36,7 @@ val compile_and_package :
   ?enable_mba:bool ->
   ?mba_depth:int ->
   ?nested_config:Nested_stack.nested_config ->
-  ?config:Native_vm.Protection_config.t ->
+  ?config:Protection_config.t ->
   ?constants:(string * string) list ->
   Ir.func ->
   nested_vm_package

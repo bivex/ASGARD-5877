@@ -1,0 +1,17 @@
+(executable
+ (name profiling)
+ (modules profiling)
+ (libraries
+  landmarks
+  protection_config
+  vm_ir
+  x86_lifter
+  arm64_lifter
+  nested_vm
+  mba_engine
+  control_flow
+  native_vm
+  c_macro_obf
+  protect_pipeline
+  bos
+  fpath))

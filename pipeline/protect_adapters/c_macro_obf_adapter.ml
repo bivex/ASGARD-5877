@@ -1,6 +1,6 @@
+open Protection_config
 open Contracts
 open Protect_ports
-open Native_vm
 
 let transform_source ~(config : protection_config) ~(in_file : string) ~(out_c_file : string) ~(out_header_file : string) ~(rng : Random.State.t) : (unit, error) result =
   let raw_cfg : Protection_config.t = unwrap_config config in

@@ -5,7 +5,7 @@ type vm_package = {
   bytecodes : (string * int64 list) list;
   cpp_runtime_source : string;
   runner_source : string;
-  metrics : Metrics.metrics_report;
+  metrics : Protection_metrics.Metrics.metrics_report;
 }
 
 val compile_and_package :

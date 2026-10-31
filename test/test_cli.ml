@@ -2,9 +2,9 @@ let run_cmd = Test_helpers.run_command_capture
 
 let get_bin () =
   let candidates = [
-    "../bin/main.exe";
-    "./_build/default/bin/main.exe";
-    "bin/main.exe";
+    "../cli/main.exe";
+    "./_build/default/cli/main.exe";
+    "cli/main.exe";
   ] in
   match List.find_opt Sys.file_exists candidates with
   | Some p -> p

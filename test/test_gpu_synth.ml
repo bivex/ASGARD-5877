@@ -81,7 +81,7 @@ func_gpu_test:
   match X86_lifter.Lifter.lift_function asm with
   | Error e -> fail e
   | Ok func ->
-      let config = Native_vm.Protection_config.max_security in
+      let config = Protection_config.max_security in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config func in
       check bool "Bytecode generated" true (List.length pkg.bytecode > 0);
       check bool "C++ runtime contains GPU MBA matrix" true

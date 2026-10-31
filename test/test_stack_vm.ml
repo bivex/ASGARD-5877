@@ -1544,8 +1544,8 @@ let test_real_license_check_macro_stack_vm_e2e () =
     let toolchain = (module Toolchain_adapter : Toolchain) in
     let vm_packager = (module Vm_packager_adapters.Stack_vm_packager : Vm_packager) in
 
-    let raw_cfg : Native_vm.Protection_config.t =
-      { Native_vm.Protection_config.default with arch = `AArch64 } in
+    let raw_cfg : Protection_config.t =
+      { Protection_config.default with arch = `AArch64 } in
     let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 1337 |] in
     match
@@ -3496,7 +3496,7 @@ let test_drs_breakdown_and_size_reconciliation () =
   ] in
   let prog = make_program 0 [b0] 4 in
   let enc = Stack_encoder.encode_program ~seed_key:0xCAFE1337L prog in
-  let default_cfg = Native_vm.Protection_config.default in
+  let default_cfg = Protection_config.default in
   let drs = Stack_provenance.calculate_drs_breakdown
     ~native_cfg:default_cfg ~prog ~enc ~real_ops:3 ~real_blocks:1
   in
@@ -3518,7 +3518,7 @@ let test_compiler_report_formatting () =
   let b0 = make_block 0 "entry" [ PushImm 55L; PopReg 0; Exit ] in
   let prog = make_program 0 [b0] 4 in
   let enc = Stack_encoder.encode_program ~seed_key:0x12345678L prog in
-  let default_cfg = Native_vm.Protection_config.default in
+  let default_cfg = Protection_config.default in
   let drs = Stack_provenance.calculate_drs_breakdown
     ~native_cfg:default_cfg ~prog ~enc ~real_ops:3 ~real_blocks:1
   in

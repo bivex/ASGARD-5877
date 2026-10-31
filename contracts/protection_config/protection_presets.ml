@@ -134,7 +134,7 @@ let max_security : t = {
   mba = {
     enabled = true;
     depth = 4;
-    engine = (if Gpu_synth.is_gpu_available () then `Gpu_metal else `Egraph);
+    engine = `Egraph;
     stack_synthesis_rate = 100;
     egraph_rate = 30;
     egraph_node_limit = 120;
@@ -748,3 +748,8 @@ let from_preset name =
   | "stealth" | "covert" -> Ok stealth
   | "edr" | "edr_stealth" | "av_clean" | "whitelist" -> Ok edr_stealth
   | other -> Error (Printf.sprintf "Unknown protection preset '%s'. Available: min (0), default/medium (2), high (3), max (4), stealth, edr_stealth" other)
+
+(** GPU selection hook.  Presets stay deterministic values: hardware probing
+    is a side effect and is applied by the wiring layer through this helper. *)
+let with_gpu_mba_engine (gpu_available : bool) (cfg : t) : t =
+  if gpu_available then { cfg with mba = { cfg.mba with engine = `Gpu_metal } } else cfg

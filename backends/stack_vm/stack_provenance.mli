@@ -6,7 +6,6 @@
 *)
 
 open Stack_ir
-open Native_vm
 
 type pass_status =
   | Verified

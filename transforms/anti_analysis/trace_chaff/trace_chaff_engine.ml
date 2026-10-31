@@ -217,7 +217,7 @@ let emit_chaff_memory_pool_def () : top_decl =
   ]
 
 (* ── Standalone C++20 Header Emitter ──────────────────────────────────────── *)
-let emit_tech_2608_cpp_header () : string =
+let emit_trace_chaff_cpp_header () : string =
   let decls = [
     comment_top "============================================================================";
     comment_top "ASGARD-5877: Tech-2608 (arXiv:2608.20628)";

@@ -548,7 +548,7 @@ let emit_two_adic_newton_def () : top_decl =
         [ ret ((var "result" ^~ var "expected_x_star") ==~ u64 0L) ];
     ]
 
-let emit_comp_stall_cpp_header () : string =
+let emit_emulation_stall_cpp_header () : string =
   let decls = [
     comment_top "============================================================================";
     comment_top "ASGARD-5877: Computational Stalling (CPU-bound Anti-Emulation)";

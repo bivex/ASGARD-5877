@@ -1,9 +1,9 @@
 open Contracts
 open Protect_ports
 
-val wrap : ?watermark:int64 -> Native_vm.Protection_config.t -> protection_config
+val wrap : ?watermark:int64 -> Protection_config.t -> protection_config
 
-val unwrap : protection_config -> Native_vm.Protection_config.t
+val unwrap : protection_config -> Protection_config.t
 
 val default : protection_config
 

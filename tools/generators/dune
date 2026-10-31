@@ -1,0 +1,29 @@
+(executable
+ (name gen_crackme_vm)
+ (modules gen_crackme_vm)
+ (libraries
+  vm_ir
+  protection_config
+  protection_metrics
+  x86_lifter
+  arm64_lifter
+  nested_vm
+  mba_engine
+  control_flow
+  native_vm
+  c_macro_obf))
+
+(executable
+ (name gen_crypto_crackme)
+ (modules gen_crypto_crackme)
+ (libraries
+  vm_ir
+  protection_config
+  protection_metrics
+  x86_lifter
+  arm64_lifter
+  nested_vm
+  mba_engine
+  control_flow
+  native_vm
+  c_macro_obf))

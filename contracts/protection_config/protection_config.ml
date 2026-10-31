@@ -1,3 +1,7 @@
+module Protection_types = Protection_types
+module Protection_presets = Protection_presets
+module Protection_json = Protection_json
+
 include Protection_types
 include Protection_presets
 

@@ -1,5 +1,4 @@
 open Vm_ir
-open Native_vm
 
 let test_shannon_entropy_high_and_low () =
   let sample_bytecode = [
@@ -9,15 +8,15 @@ let test_shannon_entropy_high_and_low () =
     0xCAFEBABE11223344L;
     0xDEADBEEF55667788L;
   ] in
-  let entropy = Metrics.calculate_shannon_entropy sample_bytecode in
+  let entropy = Protection_metrics.Metrics.calculate_shannon_entropy sample_bytecode in
   Alcotest.(check bool) "entropy is high (> 4.0)" true (entropy > 4.0);
 
   let low_entropy_bytecode = [ 0L; 0L; 0L; 0L ] in
-  let low_entropy = Metrics.calculate_shannon_entropy low_entropy_bytecode in
+  let low_entropy = Protection_metrics.Metrics.calculate_shannon_entropy low_entropy_bytecode in
   Alcotest.(check bool) "low entropy is 0" true (low_entropy = 0.0)
 
 let test_shannon_entropy_empty () =
-  let empty_entropy = Metrics.calculate_shannon_entropy [] in
+  let empty_entropy = Protection_metrics.Metrics.calculate_shannon_entropy [] in
   Alcotest.(check bool) "empty bytecode entropy is 0.0" true (empty_entropy = 0.0)
 
 let test_shannon_entropy_uniform_byte_distribution () =
@@ -31,7 +30,7 @@ let test_shannon_entropy_uniform_byte_distribution () =
     done;
     words := !word :: !words
   done;
-  let entropy = Metrics.calculate_shannon_entropy (List.rev !words) in
+  let entropy = Protection_metrics.Metrics.calculate_shannon_entropy (List.rev !words) in
   Alcotest.(check bool) "uniform 256 bytes has entropy ~ 8.0" true (abs_float (entropy -. 8.0) < 1e-6)
 
 let test_cfg_complexity_linear () =
@@ -41,7 +40,7 @@ let test_cfg_complexity_linear () =
   Hashtbl.replace blocks 0 b0;
   Hashtbl.replace blocks 1 b1;
   let func = { Ir.name = "linear"; cfg = { Ir.entry_id = 0; blocks } } in
-  let c = Metrics.calculate_cfg_complexity func in
+  let c = Protection_metrics.Metrics.calculate_cfg_complexity func in
   Alcotest.(check int) "linear CFG complexity is 1" 1 c
 
 let test_cfg_complexity_diamond () =
@@ -55,7 +54,7 @@ let test_cfg_complexity_diamond () =
   Hashtbl.replace blocks 2 b2;
   Hashtbl.replace blocks 3 b3;
   let func = { Ir.name = "diamond"; cfg = { Ir.entry_id = 0; blocks } } in
-  let c = Metrics.calculate_cfg_complexity func in
+  let c = Protection_metrics.Metrics.calculate_cfg_complexity func in
   Alcotest.(check int) "diamond CFG complexity is 2" 2 c
 
 let test_calculate_metrics_and_report_to_string () =
@@ -63,18 +62,18 @@ let test_calculate_metrics_and_report_to_string () =
   let blocks = Hashtbl.create 1 in
   Hashtbl.replace blocks 0 b0;
   let func = { Ir.name = "test_metrics_func"; cfg = { Ir.entry_id = 0; blocks } } in
-  let rep = Metrics.calculate_metrics
+  let rep = Protection_metrics.Metrics.calculate_metrics
     ~bytecode:[ 0xDEADBEEFCAFEBABEL; 0x0123456789ABCDEFL ]
     ~func
     ~decoy_count:10
     ~total_handlers:50
     ~mba_nodes:20 in
-  let drs = Metrics.devirtualization_resistance_score rep in
+  let drs = Protection_metrics.Metrics.devirtualization_resistance_score rep in
   Alcotest.(check bool) "drs in valid range" true (drs >= 0.0 && drs <= 100.0);
-  Alcotest.(check int) "cyclomatic complexity >= 1" 1 (Metrics.cyclomatic_complexity rep);
-  Alcotest.(check int) "flattening depth 1" 1 (Metrics.flattening_depth rep);
-  Alcotest.(check int) "mba node count 20" 20 (Metrics.mba_node_count rep);
-  let rep_str = Metrics.report_to_string rep in
+  Alcotest.(check int) "cyclomatic complexity >= 1" 1 (Protection_metrics.Metrics.cyclomatic_complexity rep);
+  Alcotest.(check int) "flattening depth 1" 1 (Protection_metrics.Metrics.flattening_depth rep);
+  Alcotest.(check int) "mba node count 20" 20 (Protection_metrics.Metrics.mba_node_count rep);
+  let rep_str = Protection_metrics.Metrics.report_to_string rep in
   Alcotest.(check bool) "report string contains header" true (String.contains rep_str '=');
   Alcotest.(check bool) "report string contains DRS" true (String.contains rep_str 'D' && String.contains rep_str 'R' && String.contains rep_str 'S')
 
@@ -89,7 +88,7 @@ let test_p3_independent_resilience_metrics () =
   let func = { Ir.name = "branchy_func"; cfg = { Ir.entry_id = 0; blocks } } in
   let bc = [ 0x1122334455667788L; 0x99AABBCCDDEEFF00L; 0x123456789ABCDEF0L ] in
 
-  let rep = Metrics.calculate_resilience_metrics
+  let rep = Protection_metrics.Metrics.calculate_resilience_metrics
     ~dynamic_key_active:true
     ~native_ir_ops:2
     ~differential_verified:true
@@ -101,41 +100,41 @@ let test_p3_independent_resilience_metrics () =
     () in
 
   (* 1. CFG Recovery Cost *)
-  let cfg = Metrics.cfg_recovery rep in
+  let cfg = Protection_metrics.Metrics.cfg_recovery rep in
   Alcotest.(check int) "dispatcher fanout >= 2" 2 cfg.dispatcher_fanout;
   Alcotest.(check bool) "symbolic unflatten cost > 0" true (cfg.symbolic_unflatten_cost > 0.0);
 
   (* 2. Static Decoding Ambiguity *)
-  let dec = Metrics.decoding_ambiguity rep in
+  let dec = Protection_metrics.Metrics.decoding_ambiguity rep in
   Alcotest.(check bool) "dynamic context dependency is 100%" true (dec.dynamic_context_dependency_ratio = 1.0);
   Alcotest.(check int) "key recovery depth equals flattening depth" 3 dec.key_recovery_depth;
   Alcotest.(check bool) "static decodability rate is 0%" true (dec.static_decodability_rate = 0.0);
 
   (* 3. Runtime Overhead Vector *)
-  let ovh = Metrics.runtime_overhead rep in
+  let ovh = Protection_metrics.Metrics.runtime_overhead rep in
   Alcotest.(check bool) "expansion ratio >= 1.5x" true (ovh.expansion_ratio >= 1.5);
   Alcotest.(check bool) "code bloat factor >= 2.0x" true (ovh.code_bloat_factor >= 2.0);
   Alcotest.(check bool) "estimated cycle overhead > 0" true (ovh.estimated_cycle_overhead > 0.0);
 
   (* 4. Code Size Footprint *)
-  let sz = Metrics.code_size rep in
+  let sz = Protection_metrics.Metrics.code_size rep in
   Alcotest.(check int) "bytecode bytes is 24" 24 sz.bytecode_bytes;
   Alcotest.(check int) "handler table is 256*8 = 2048" 2048 sz.handler_table_footprint_bytes;
 
   (* 5. Reproducibility & Golden Equivalence *)
-  let rep_rob = Metrics.reproducibility rep in
+  let rep_rob = Protection_metrics.Metrics.reproducibility rep in
   Alcotest.(check int) "seed entropy is 64 bits" 64 rep_rob.seed_entropy_bits;
   Alcotest.(check bool) "differential pass rate is 100%" true (rep_rob.differential_pass_rate = 1.0);
 
   (* 6. DRS v2 Resilience Vector *)
-  let v2 = Metrics.drs_v2 rep in
+  let v2 = Protection_metrics.Metrics.drs_v2 rep in
   Alcotest.(check bool) "R_SSA is 1.0" true (v2.r_ssa = 1.0);
   Alcotest.(check bool) "D_NL >= 2.0" true (v2.d_nl >= 2.0);
   Alcotest.(check bool) "E_CFG > 0" true (v2.e_cfg > 0.0);
   Alcotest.(check bool) "DRS v2 composite score > 0" true (v2.composite_score > 0.0);
 
   (* Structured Report String Verification *)
-  let summary = Metrics.report_to_string rep in
+  let summary = Protection_metrics.Metrics.report_to_string rep in
   Alcotest.(check bool) "summary has CFG Recovery section" true (String.contains summary 'C' && String.contains summary 'F' && String.contains summary 'G');
   Alcotest.(check bool) "summary has Decoding Ambiguity section" true (String.contains summary 'A' && String.contains summary 'm' && String.contains summary 'b');
   Alcotest.(check bool) "summary has Overhead Vector section" true (String.contains summary 'O' && String.contains summary 'v' && String.contains summary 'e');
@@ -154,7 +153,7 @@ let test_p3_drs_v2_vector () =
   let func = { Ir.name = "branchy_func"; cfg = { Ir.entry_id = 0; blocks } } in
   let bc = [ 0x1122334455667788L; 0x99AABBCCDDEEFF00L ] in
 
-  let rep = Metrics.calculate_resilience_metrics
+  let rep = Protection_metrics.Metrics.calculate_resilience_metrics
     ~data_flow_entangled:true
     ~taint_transitions_active:true
     ~bytecode:bc
@@ -163,13 +162,13 @@ let test_p3_drs_v2_vector () =
     ~total_handlers:256
     ~mba_nodes:30
     () in
-  let v2 = Metrics.drs_v2 rep in
+  let v2 = Protection_metrics.Metrics.drs_v2 rep in
   Alcotest.(check bool) "R_SSA is 1.0 (entangled)" true (v2.r_ssa = 1.0);
   Alcotest.(check bool) "D_NL > 2.0 (non-linear ring mixing)" true (v2.d_nl >= 2.0);
   Alcotest.(check bool) "E_CFG > 0 (symbolic branch entanglement)" true (v2.e_cfg > 0.0);
   Alcotest.(check bool) "composite DRS v2 score > 50" true (v2.composite_score >= 50.0);
 
-  let unentangled_rep = Metrics.calculate_resilience_metrics
+  let unentangled_rep = Protection_metrics.Metrics.calculate_resilience_metrics
     ~data_flow_entangled:false
     ~taint_transitions_active:false
     ~bytecode:bc
@@ -178,7 +177,7 @@ let test_p3_drs_v2_vector () =
     ~total_handlers:256
     ~mba_nodes:0
     () in
-  let un_v2 = Metrics.drs_v2 unentangled_rep in
+  let un_v2 = Protection_metrics.Metrics.drs_v2 unentangled_rep in
   Alcotest.(check bool) "unentangled R_SSA is 0.35" true (un_v2.r_ssa = 0.35);
   Alcotest.(check bool) "unentangled D_NL is 1.0" true (un_v2.d_nl = 1.0);
   Alcotest.(check bool) "entangled DRS v2 score exceeds unentangled" true (v2.composite_score > un_v2.composite_score)
@@ -197,7 +196,7 @@ let test_evaluate_drs_v2_report () =
     Mba_engine.Mba.Add (Mba_engine.Mba.Var "x", Mba_engine.Mba.Const 42L);
     Mba_engine.Mba.Xor (Mba_engine.Mba.Var "y", Mba_engine.Mba.Var "z");
   ] in
-  let rep = Metrics.evaluate_drs_v2 ~bytecode:bc ~ir_func:func ~mba_asts in
+  let rep = Protection_metrics.Metrics.evaluate_drs_v2 ~bytecode:bc ~ir_func:func ~mba_asts in
   Alcotest.(check bool) "shannon entropy > 0" true (rep.shannon_entropy > 0.0);
   Alcotest.(check bool) "aig clause estimate > 0" true (rep.aig_clause_estimate > 0);
   Alcotest.(check bool) "nonlinear mix depth >= 2" true (rep.nonlinear_mix_depth >= 2);

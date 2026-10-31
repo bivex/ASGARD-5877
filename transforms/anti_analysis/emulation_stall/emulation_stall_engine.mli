@@ -80,7 +80,7 @@ val simulate_two_adic_runtime :
   int64
 (** Simulates runtime 2-adic Newton-Hensel solver steps. *)
 
-val emit_comp_stall_cpp_header : unit -> string
+val emit_emulation_stall_cpp_header : unit -> string
 (** Emits the standalone C++20 header <asg_emulation_stall.hpp> as a rendered
     string using the typed EDSL (Cpp_dsl / Cpp_printer).
     The header provides:

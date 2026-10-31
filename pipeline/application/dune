@@ -1,5 +1,5 @@
 (library
  (name pipeline)
  (public_name random_visa.application)
- (libraries domain contracts stack_vm shadow_unwind dispatch_permutation trace_chaff emulation_stall
-  native_vm random_visa.macho watermark runtime_services))
+ (libraries domain contracts stack_vm
+  native_vm random_visa.macho watermark runtime_services protect_pipeline))

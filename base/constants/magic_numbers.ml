@@ -354,6 +354,11 @@ let jit_bytecode_magic = 0x58774A4954303031L
 
 (* Magic salt for Matula-Goebel nested VM topology digest (ASCII "NESTVM11"). *)
 let nested_topology_salt = 0x4E455354564D3131L
+
+(* Shared instruction cap per translated chunk.  The RD-JIT nano-arena and the
+   stack-VM chunker MUST split traces at the same granularity so that sealed
+   chunks and fuzz traces remain comparable across backends. *)
+let nano_chunk_instr_cap = 8
 (* --- Registry -------------------------------------------------------- *)
 
 type entry = {
@@ -364,6 +369,11 @@ type entry = {
 }
 
 let registry : entry list = [
+  { name = "nano_chunk_instr_cap";
+    value = 8L;
+    source = "design constant: instructions per translated chunk, shared by the RD-JIT nano-arena and the stack-VM chunker";
+    used_in = [ "backends/jit_vm/nano_jit_slot.ml"; "backends/stack_vm/stack_jit_chunker.ml";
+                "test/test_stack_jit_fuzz.ml" ] };
   { name = "golden_ratio_64";
     value = golden_ratio_64;
     source = "frac(phi^-1) * 2^64 - Knuth multiplicative hashing, xxHash PRIME64_1";

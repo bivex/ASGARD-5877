@@ -22,4 +22,6 @@
   yojson
   bos
   unix
-  runtime_services))
+  runtime_services
+  protection_config
+  protection_metrics))

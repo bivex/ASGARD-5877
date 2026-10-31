@@ -7,7 +7,7 @@ type vm_package = {
   bytecodes : (string * int64 list) list;
   cpp_runtime_source : string;
   runner_source : string;
-  metrics : Metrics.metrics_report;
+  metrics : Protection_metrics.Metrics.metrics_report;
 }
 
 let shuffle_array rng arr =
@@ -1191,7 +1191,7 @@ let compile_and_package_multi
     Array.fold_left (fun acc h -> if String.starts_with ~prefix:"H_DECOY" h then acc + 1 else acc) 0 opcode_to_handler
   in
   let mba_nodes = if enable_mba then mba_depth * 15 else 0 in
-  let metrics = Metrics.calculate_metrics
+  let metrics = Protection_metrics.Metrics.calculate_metrics
     ~bytecode:primary_bc
     ~func:primary_func
     ~decoy_count

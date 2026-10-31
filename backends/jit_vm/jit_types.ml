@@ -3,5 +3,5 @@ type jit_package = {
   runner_source : string;
   rns_moduli : int64 * int64 * int64 * int64;
   bytecode : int64 list;
-  metrics : Native_vm.Metrics.metrics_report;
+  metrics : Protection_metrics.Metrics.metrics_report;
 }
