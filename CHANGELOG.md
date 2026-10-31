@@ -17,7 +17,7 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Update README with the documented topology (layer table, dependency matrix, architectural invariants) and migrate the `docs/` path references to the new layout.
 
 ### Fixed
-- Repair the CLI integration E2E suite locator, which still searched for `bin/main.exe` after the `bin/` → `cli/` move.
+- Repair the CLI integration E2E suite locator, which still searched for `bin/main.exe` after the `bin/` → `cli/` move, and migrate the remaining stale locators to `cli/main.exe` (`README.md`, `build_license.sh`, `build_amplifier.sh`, `build_license_multivm.sh`, `eval_license.sh`, `scripts/`, `examples/`, `docs/PARALLELS_WINDOWS_DEBUGGING.md`); the license chain `build.sh && build_license.sh && check_license.sh` runs again.
 
 ## [0.4.0] - 2026-10-30
 

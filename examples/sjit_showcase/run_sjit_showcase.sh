@@ -18,9 +18,9 @@ echo "=================================================================="
 echo "🛡️  ASGARD-5877: Stack-JIT (SJIT) 19-Function Showcase Pipeline"
 echo "=================================================================="
 
-MAIN_EXE="${ROOT_DIR}/_build/default/bin/main.exe"
+MAIN_EXE="${ROOT_DIR}/_build/default/cli/main.exe"
 echo "[*] Compiling ASGARD-5877 toolchain via Dune..."
-(cd "${ROOT_DIR}" && /Users/password9090/.opam/default/bin/dune build bin/main.exe)
+(cd "${ROOT_DIR}" && /Users/password9090/.opam/default/bin/dune build cli/main.exe)
 
 BUILD_DIR="${SCRIPT_DIR}/build"
 rm -rf "${BUILD_DIR}"

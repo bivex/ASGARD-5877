@@ -43,10 +43,10 @@ echo "[*] Engine:              Stack-VM (All 10 Passes Active)"
 echo "------------------------------------------------------------------------------"
 
 # 1. Build ASGARD main executable if not present
-if [[ ! -f "${SCRIPT_DIR}/_build/default/bin/main.exe" ]]; then
+if [[ ! -f "${SCRIPT_DIR}/_build/default/cli/main.exe" ]]; then
     echo "[*] Building ASGARD compiler executable via Dune..."
     if command -v opam >/dev/null 2>&1; then eval "$(opam env --switch=default 2>/dev/null || true)"; fi
-    (cd "${SCRIPT_DIR}" && dune build bin/main.exe)
+    (cd "${SCRIPT_DIR}" && dune build cli/main.exe)
 fi
 
 # 2. Prepare clean dump directory
@@ -55,7 +55,7 @@ mkdir -p "${DUMP_DIR}" "${OUT_DIR}"
 
 # 3. Protect target with full 10-phase pipeline and dump JSON phases
 echo "[*] Step 1/2: Compiling & dumping all 10 Stack-VM pipeline phases..."
-ASGARD_DUMP_JSON_DIR="${DUMP_DIR}" "${SCRIPT_DIR}/_build/default/bin/main.exe" protect-arm64 \
+ASGARD_DUMP_JSON_DIR="${DUMP_DIR}" "${SCRIPT_DIR}/_build/default/cli/main.exe" protect-arm64 \
     -i "${TARGET}" \
     -o "${OUT_DIR}" \
     --engine=stack \

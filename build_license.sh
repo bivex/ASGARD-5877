@@ -9,7 +9,7 @@
 # seed, so the build is reproducible.
 set -euo pipefail
 
-_build/default/bin/main.exe protect-arm64 \
+_build/default/cli/main.exe protect-arm64 \
   -i examples/license_check.c \
   --engine=stack \
   --config samples/protection_config.full.json \

@@ -131,7 +131,7 @@ fi
 # to agree with __TEXT,__text and __TEXT,__unwind_info, otherwise the unwinder
 # reads foreign bytes while an exception crosses a protected frame.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UNWIND_CLI="${REPO_ROOT}/_build/default/bin/main.exe"
+UNWIND_CLI="${REPO_ROOT}/_build/default/cli/main.exe"
 if [[ -x "${UNWIND_CLI}" ]]; then
   unwind_report=$("${UNWIND_CLI}" macho-unwind --input "${BINARY}" 2>&1 || true)
   unwind_issues=$(printf '%s\n' "${unwind_report}" | sed -n 's/^issues: \([0-9]*\).*/\1/p' | head -1)

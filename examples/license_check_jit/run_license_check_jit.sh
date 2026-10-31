@@ -29,7 +29,7 @@ SALT=$((0x5877))
 MUL=42
 ADD=$((0x1337))
 
-MAIN_EXE="$ROOT/_build/default/bin/main.exe"
+MAIN_EXE="$ROOT/_build/default/cli/main.exe"
 
 echo "=========================================================="
 echo "[*] ASGARD-5877 RD-JIT License Validator"
@@ -40,7 +40,7 @@ echo "=========================================================="
 
 if [[ ! -x "$MAIN_EXE" ]]; then
     echo "[*] Building protector..."
-    (cd "$ROOT" && eval "$(opam env)" && dune build bin/main.exe)
+    (cd "$ROOT" && eval "$(opam env)" && dune build cli/main.exe)
 fi
 
 if [[ ! -x "$OUT_DIR/protected_runner" ]]; then

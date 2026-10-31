@@ -29,10 +29,10 @@ opam install dune menhir cmdliner alcotest qcheck qcheck-alcotest \
 ## Build
 
 ```bash
-dune build bin/main.exe
+dune build cli/main.exe
 ```
 
-The CLI lands in `_build/default/bin/main.exe`.
+The CLI lands in `_build/default/cli/main.exe`.
 
 ## Testing
 

@@ -12,7 +12,7 @@ echo "-------------------------------------------------------------------------"
 
 echo "[1/3] Building OCaml Pipeline CLI & Metal GPU Math Bridge..."
 cd "$ROOT_DIR"
-dune build bin/main.exe
+dune build cli/main.exe
 mkdir -p "$ROOT_DIR/binaries"
 clang++ -O3 -fobjc-arc -framework Metal -framework Foundation "$ROOT_DIR/lib/gpu_synth/asgard_gpu_math_bridge.mm" -o "$ROOT_DIR/binaries/asgard_gpu_math_bridge"
 

@@ -68,4 +68,4 @@ python3 examples/deobf_probe/dispatch_topology.py \
   --phase-json "/tmp/asg_probe/dumpA/phase_7-balance_(final).json" \
   --binary protected_arm64_out/protected_app
 
-Dependencies: Python 3 stdlib only; `nm` + `otool`/`llvm-objdump` for machine code analysis; `bin/main.exe` for VM protection.
+Dependencies: Python 3 stdlib only; `nm` + `otool`/`llvm-objdump` for machine code analysis; `cli/main.exe` for VM protection.

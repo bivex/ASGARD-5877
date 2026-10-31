@@ -22,9 +22,9 @@ echo "=================================================================="
 command -v clang++ >/dev/null 2>&1 || { echo >&2 "[-] clang++ is required but not found in PATH."; exit 1; }
 
 # 2. Build ASGARD-5877 CLI if needed
-if [[ ! -f "${ROOT_DIR}/_build/default/bin/main.exe" ]]; then
+if [[ ! -f "${ROOT_DIR}/_build/default/cli/main.exe" ]]; then
     echo "[*] Compiling ASGARD-5877 compiler toolchain via Dune..."
-    (cd "${ROOT_DIR}" && dune build bin/main.exe)
+    (cd "${ROOT_DIR}" && dune build cli/main.exe)
 fi
 
 BUILD_DIR="${SCRIPT_DIR}/build"
@@ -37,7 +37,7 @@ DYLIB_PATH="${BUILD_DIR}/${DYLIB_NAME}"
 
 # 3. Virtualize the library using ASGARD Protection Engine
 echo "[*] Step 1/3: Virtualizing C Library Routines via ASGARD Engine..."
-"${ROOT_DIR}/_build/default/bin/main.exe" protect-arm64 \
+"${ROOT_DIR}/_build/default/cli/main.exe" protect-arm64 \
     -i "${LIB_SRC}" \
     -o "${VM_OUT}" \
     --engine=threaded \

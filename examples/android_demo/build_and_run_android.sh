@@ -50,9 +50,9 @@ DEVICE_ABI=$("${ADB}" -s "${EMULATOR_DEVICE}" shell getprop ro.product.cpu.abi |
 echo "[+] Connected Device:    ${EMULATOR_DEVICE} (${DEVICE_ABI})"
 
 # 3. Build ASGARD CLI if needed
-if [[ ! -f "${ROOT_DIR}/_build/default/bin/main.exe" ]]; then
+if [[ ! -f "${ROOT_DIR}/_build/default/cli/main.exe" ]]; then
     echo "[*] Compiling ASGARD-5877 compiler toolchain via Dune..."
-    (cd "${ROOT_DIR}" && dune build bin/main.exe)
+    (cd "${ROOT_DIR}" && dune build cli/main.exe)
 fi
 
 BUILD_DIR="${SCRIPT_DIR}/build"
@@ -65,7 +65,7 @@ SO_PATH="${BUILD_DIR}/libasgard_security.so"
 # 4. Virtualize JNI logic using ASGARD Protection Engine
 echo ""
 echo "[*] Step 1/4: Virtualizing JNI Functions via ASGARD Engine..."
-"${ROOT_DIR}/_build/default/bin/main.exe" protect-arm64 \
+"${ROOT_DIR}/_build/default/cli/main.exe" protect-arm64 \
     -i "${JNI_SRC}" \
     -o "${VM_OUT}" \
     --engine=threaded \

@@ -14,7 +14,7 @@ mkdir -p "$CORPUS_DIR"
 
 # Ensure CLI is built
 cd "$ROOT_DIR"
-dune build bin/main.exe
+dune build cli/main.exe
 
 for i in $(seq 1 $BUILD_COUNT); do
     SEED=$((1000 * i + i * 1337 + 5877))
@@ -25,7 +25,7 @@ for i in $(seq 1 $BUILD_COUNT); do
     echo "[Build $i/$BUILD_COUNT] Compiling with Seed 0x$(printf '%08X' $SEED)..."
     
     # 1. Compile C project with full VM virtualization, CFF and MBA
-    dune exec bin/main.exe -- project \
+    dune exec cli/main.exe -- project \
         --src-dir "$ROOT_DIR/examples/multi_file_project/src" \
         -o "$TARGET_BIN" \
         --seed "$SEED" \

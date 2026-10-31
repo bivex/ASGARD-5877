@@ -23,9 +23,9 @@ echo "-------------------------------------------------------------------------"
 echo "[1/4] Building ASGARD-5877 Virtualization Toolchain..."
 cd "$ROOT_DIR"
 eval $(opam env 2>/dev/null || true)
-dune build bin/main.exe
+dune build cli/main.exe
 
-MAIN_EXE="$ROOT_DIR/_build/default/bin/main.exe"
+MAIN_EXE="$ROOT_DIR/_build/default/cli/main.exe"
 if [[ ! -x "$MAIN_EXE" ]]; then
     echo "[-] Error: main.exe not found at $MAIN_EXE"
     exit 1

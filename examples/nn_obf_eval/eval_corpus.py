@@ -47,7 +47,7 @@ def protect_and_audit_function(rel_path, seed=1337):
     os.makedirs(json_dir, exist_ok=True)
 
     cmd = [
-        os.path.join(REPO_ROOT, "_build/default/bin/main.exe"),
+        os.path.join(REPO_ROOT, "_build/default/cli/main.exe"),
         "protect-arm64",
         "-i", src_path,
         "-o", out_dir,

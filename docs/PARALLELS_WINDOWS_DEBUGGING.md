@@ -10,7 +10,7 @@ This guide explains how to cross-virtualize, compile, execute, and debug ASGARD-
 +-----------------------------------------------------------------------------------+
 | macOS Host (Apple Silicon ARM64)                                                  |
 |                                                                                   |
-|  - OCaml 5.4+ Toolchain: _build/default/bin/main.exe                              |
+|  - OCaml 5.4+ Toolchain: _build/default/cli/main.exe                              |
 |  - Workspace: /Volumes/External/Code/ASGARD-5877                                  |
 |  - Control Plane: prlctl CLI / Parallels MCP                                      |
 +-----------------------------------------+-----------------------------------------+
@@ -64,7 +64,7 @@ Inside the Windows 11 ARM64 VM:
 Run the ASGARD virtualization toolchain on the macOS host:
 ```bash
 eval $(opam env)
-_build/default/bin/main.exe protect-arm64 \
+_build/default/cli/main.exe protect-arm64 \
   -i examples/real_corpus/openssl_sha256.c \
   -o _build/real_corpus_bench/openssl/asgard_out \
   --flatten --mba

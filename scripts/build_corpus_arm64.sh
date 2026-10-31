@@ -13,7 +13,7 @@ CORPUS_DIR="$ROOT_DIR/binaries/corpus_build_arm64"
 mkdir -p "$CORPUS_DIR"
 
 cd "$ROOT_DIR"
-dune build bin/main.exe
+dune build cli/main.exe
 
 for i in $(seq 1 $BUILD_COUNT); do
     SEED=$((1000 * i + i * 1337 + 5877))
@@ -24,7 +24,7 @@ for i in $(seq 1 $BUILD_COUNT); do
     echo "[Build $i/$BUILD_COUNT] Compiling ARM64 with Seed 0x$(printf '%08X' $SEED)..."
     
     # Compile with ARM64 Lifter, CFF and Deep MBA (D=4)
-    dune exec bin/main.exe -- protect-arm64 \
+    dune exec cli/main.exe -- protect-arm64 \
         -i "$ROOT_DIR/examples/demo_c_app.c" \
         -o "$TARGET_DIR" \
         --seed "$SEED" \

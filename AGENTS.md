@@ -42,7 +42,7 @@ runtime, the register allocator, the protection pipeline) or before a release.
 Say so in the report when you do.
 
 Build the target you need instead of the default alias
-(`dune build test/run_tests.exe`): an unrelated scratch file under `bin/` can
+(`dune build test/run_tests.exe`): an unrelated scratch file under `cli/` can
 break the alias while the target you care about is fine.
 
 A change counts as verified only after the affected path has been exercised.

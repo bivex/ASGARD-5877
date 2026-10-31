@@ -19,7 +19,7 @@ APP_BIN="${BUILD_DIR}/protected_app"
 
 # Virtualize via protect-arm64
 echo "[*] Virtualizing functions via Per-ISA Threaded-VM..."
-"${ROOT_DIR}/_build/default/bin/main.exe" protect-arm64 \
+"${ROOT_DIR}/_build/default/cli/main.exe" protect-arm64 \
     -i "${SRC_FILE}" \
     -o "${BUILD_DIR}" \
     --engine=threaded \

@@ -161,7 +161,7 @@ To evaluate a real binary through all 10 Stack-VM pipeline phases:
 ```bash
 # 1. Protect the binary and dump intermediate JSON phases
 mkdir -p /tmp/my_license_json /tmp/my_license_out
-ASGARD_DUMP_JSON_DIR=/tmp/my_license_json _build/default/bin/main.exe protect-arm64 \
+ASGARD_DUMP_JSON_DIR=/tmp/my_license_json _build/default/cli/main.exe protect-arm64 \
   -i examples/license_check.c \
   -o /tmp/my_license_out \
   --engine=stack \

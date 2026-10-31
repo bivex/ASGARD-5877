@@ -16,8 +16,8 @@ TARGET="${REPO_ROOT}/examples/license_check.c"
 cd "${REPO_ROOT}"
 if command -v opam >/dev/null 2>&1; then eval "$(opam env 2>/dev/null || true)"; fi
 
-echo "[*] Building bin/main.exe ..."
-dune build bin/main.exe
+echo "[*] Building cli/main.exe ..."
+dune build cli/main.exe
 
 rm -rf "${OUT}"
 mkdir -p "${OUT}"
@@ -33,7 +33,7 @@ PY
 
 protect () { # $1 config $2 outdir $3 dumpdir
   echo "[*] Protecting ${TARGET} (config=$1 seed=${SEED}) ..."
-  ASGARD_DUMP_JSON_DIR="$3" "${REPO_ROOT}/_build/default/bin/main.exe" \
+  ASGARD_DUMP_JSON_DIR="$3" "${REPO_ROOT}/_build/default/cli/main.exe" \
     protect-arm64 -i "${TARGET}" -o "$2" --engine=stack \
     --config "$1" --cff --mba --mba-depth 4 --seed "${SEED}" \
     --compile=true 2>&1 | tail -3

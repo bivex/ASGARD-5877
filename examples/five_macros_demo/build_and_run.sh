@@ -18,9 +18,9 @@ echo "🛡️  ASGARD-5877: 5 Virtualized Macros Build & Execution Pipeline"
 echo "=================================================================="
 
 # 1. Build ASGARD compiler CLI if needed
-if [[ ! -f "${ROOT_DIR}/_build/default/bin/main.exe" ]]; then
+if [[ ! -f "${ROOT_DIR}/_build/default/cli/main.exe" ]]; then
     echo "[*] Compiling ASGARD-5877 compiler toolchain via Dune..."
-    (cd "${ROOT_DIR}" && dune build bin/main.exe)
+    (cd "${ROOT_DIR}" && dune build cli/main.exe)
 fi
 
 BUILD_DIR="${SCRIPT_DIR}/build"
@@ -31,7 +31,7 @@ APP_BIN="${BUILD_DIR}/protected_app"
 
 # 2. Run ASGARD protect-arm64
 echo "[*] Virtualizing all 5 marked routines via ASGARD Threaded-VM..."
-"${ROOT_DIR}/_build/default/bin/main.exe" protect-arm64 \
+"${ROOT_DIR}/_build/default/cli/main.exe" protect-arm64 \
     -i "${SRC_FILE}" \
     -o "${BUILD_DIR}" \
     --engine=threaded \

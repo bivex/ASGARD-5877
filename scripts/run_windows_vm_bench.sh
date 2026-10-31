@@ -42,12 +42,12 @@ fi
 echo "[1/4] Building ASGARD toolchain on macOS host..."
 cd "$ROOT_DIR"
 eval $(opam env 2>/dev/null || true)
-dune build bin/main.exe
+dune build cli/main.exe
 
 # 3. Generate Protected ARM64 C++
 echo "[2/4] Generating protected ARM64 C++ code..."
 mkdir -p "$OUT_DIR"
-_build/default/bin/main.exe protect-arm64 -i "$SRC_PATH" -o "$OUT_DIR" --flatten --mba
+_build/default/cli/main.exe protect-arm64 -i "$SRC_PATH" -o "$OUT_DIR" --flatten --mba
 
 # 4. Clean up any locked processes in VM
 prlctl exec "$VM_ID" --current-user cmd.exe /c \

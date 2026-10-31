@@ -9,7 +9,7 @@
 # To view phase-by-phase bytecode trace under protect-arm64:
 #   ASGARD_DUMP_BYTECODE=1 ./build_license.sh
 #   # or via CLI flag:
-#   _build/default/bin/main.exe protect-arm64 -i examples/license_check.c \
+#   _build/default/cli/main.exe protect-arm64 -i examples/license_check.c \
 #     --engine=stack --dump-bytecode 2>bytecode_trace.txt
 set -euo pipefail
 

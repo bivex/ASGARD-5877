@@ -16,15 +16,15 @@ echo "🛡️  ASGARD-5877: Native Swift Protection Pipeline (Engine Builtin)"
 echo "=================================================================="
 
 # 1. Build ASGARD CLI if needed
-if [[ ! -f "${ROOT_DIR}/_build/default/bin/main.exe" ]]; then
+if [[ ! -f "${ROOT_DIR}/_build/default/cli/main.exe" ]]; then
     echo "[*] Compiling ASGARD-5877 compiler toolchain via Dune..."
-    (cd "${ROOT_DIR}" && dune build bin/main.exe)
+    (cd "${ROOT_DIR}" && dune build cli/main.exe)
 fi
 
 OUT_DIR="${SCRIPT_DIR}/build"
 
 # 2. Invoke ASGARD protect-arm64 directly on the Swift source file!
-"${ROOT_DIR}/_build/default/bin/main.exe" protect-arm64 \
+"${ROOT_DIR}/_build/default/cli/main.exe" protect-arm64 \
     -i "${SCRIPT_DIR}/Sources/App/main.swift" \
     -o "${OUT_DIR}" \
     --engine=stack \

@@ -22,7 +22,7 @@ Or virtualize an individual workload manually:
 
 ```bash
 # From repository root:
-./_build/default/bin/main.exe protect-arm64 \
+./_build/default/cli/main.exe protect-arm64 \
     -i examples/real_corpus/openssl_sha256.c \
     -o /tmp/asgard_openssl \
     --flatten --mba
