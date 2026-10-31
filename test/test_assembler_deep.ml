@@ -1,5 +1,5 @@
 open Domain
-open Random_visa_assembler
+open Assembler
 
 let sample_spec () =
   let inst1 =

@@ -1,4 +1,4 @@
 (library
  (name random_visa_constants)
- (public_name random_visa.constants)
+ (public_name asgard.constants)
  (modules magic_numbers))

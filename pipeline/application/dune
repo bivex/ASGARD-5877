@@ -1,5 +1,5 @@
 (library
  (name pipeline)
- (public_name random_visa.application)
+ (public_name asgard.application)
  (libraries domain contracts stack_vm
-  native_vm random_visa.macho watermark runtime_services protect_pipeline))
+  native_vm asgard.macho watermark runtime_services protect_pipeline))

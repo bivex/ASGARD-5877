@@ -29,7 +29,7 @@ benchmark-arm64:
 diff-fuzz-libfuzzer:
 	@./examples/diff_fuzz/run_libfuzzer.sh
 
-# Differential fuzzing: full project pipeline via random_visa project
+# Differential fuzzing: full project pipeline via asgard project
 # (process-streaming; see run_diff_project.py --help)
 diff-fuzz-project:
 	@python3 ./examples/diff_fuzz/run_diff_project.py -n 10000

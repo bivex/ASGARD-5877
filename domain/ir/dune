@@ -1,4 +1,4 @@
 (library
  (name vm_ir)
- (public_name random_visa.vm_ir)
+ (public_name asgard.vm_ir)
  (libraries random_visa_constants))

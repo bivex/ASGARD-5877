@@ -2,11 +2,11 @@ open Cmdliner
 open Domain
 open Contracts
 open Pipeline
-open Random_visa_sail_export
-open Random_visa_sail_parser
-open Random_visa_cpp_emitter
-open Random_visa_compiler_adapter
-open Random_visa_assembler
+open Sail_export
+open Sail_parser
+open Cpp_emitter
+open Toolchain
+open Assembler
 
 let print_hw_report (report : Hw_cost.report) =
   Printf.printf "\n=== Hardware Cost Model Report ===\n";

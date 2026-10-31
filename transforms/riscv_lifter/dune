@@ -1,4 +1,4 @@
 (library
  (name riscv_lifter)
- (public_name random_visa.riscv_lifter)
+ (public_name asgard.riscv_lifter)
  (libraries vm_ir))

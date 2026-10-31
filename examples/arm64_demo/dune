@@ -5,6 +5,6 @@
   arm64_lifter
   vm_ir
   native_vm
-  random_visa.protect_pipeline
+  asgard.protect_pipeline
   contracts
   unix))

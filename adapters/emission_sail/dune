@@ -1,4 +1,4 @@
 (library
- (name random_visa_sail_export)
- (public_name random_visa.adapters.sail_export)
+ (name sail_export)
+ (public_name asgard.adapters.sail_export)
  (libraries domain contracts))

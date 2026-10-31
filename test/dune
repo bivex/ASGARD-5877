@@ -61,17 +61,17 @@
   protection_config
   protection_metrics
   pipeline
-  random_visa.protect_pipeline
-  random_visa_sail_export
-  random_visa_sail_parser
-  random_visa_cpp_emitter
-  random_visa_c11_emitter
-  random_visa_compiler_adapter
-  random_visa_assembler
+  asgard.protect_pipeline
+  sail_export
+  sail_parser
+  cpp_emitter
+  c11_emitter
+  toolchain
+  assembler
   bytecode_codec
   vm_ir
   random_visa_constants
-  random_visa.stack_vm
+  asgard.stack_vm
   x86_lifter
   arm64_lifter
   riscv_lifter
@@ -86,8 +86,8 @@
   shadow_unwind
   dispatch_permutation
   trace_chaff
-  random_visa.emulation_stall
-  random_visa.macho
+  asgard.emulation_stall
+  asgard.macho
   watermark
   alcotest
   qcheck
@@ -120,17 +120,17 @@
   isa_codegen
   protection_config
   protection_metrics
-  random_visa_compiler_adapter
+  toolchain
   vm_ir
   random_visa_constants
   native_vm
   nested_vm
-  random_visa.stack_vm
+  asgard.stack_vm
   jit_vm
   shadow_unwind
   bytecode_codec
-  random_visa_cpp_emitter
-  random_visa_c11_emitter
+  cpp_emitter
+  c11_emitter
   dispatch_permutation
   trace_chaff
   gpu_synth
@@ -141,7 +141,7 @@
  (name test_bytecode_amplifier)
  (modules test_bytecode_amplifier)
  (libraries
-  random_visa.stack_vm
+  asgard.stack_vm
   mba_engine
   vm_ir
   random_visa_constants
@@ -163,35 +163,35 @@
  (name test_pipeline_phase_guard)
  (modules test_pipeline_phase_guard)
  (libraries
-  random_visa.stack_vm
+  asgard.stack_vm
   alcotest))
 
 (test
  (name test_control_flow_key_coupling)
  (modules test_control_flow_key_coupling)
  (libraries
-  random_visa.stack_vm
+  asgard.stack_vm
   alcotest))
 
 (test
  (name test_mba_noise)
  (modules test_mba_noise)
  (libraries
-  random_visa.stack_vm
+  asgard.stack_vm
   alcotest))
 
 (test
  (name test_hw_binding)
  (modules test_hw_binding)
  (libraries
-  random_visa.stack_vm
+  asgard.stack_vm
   alcotest))
 
 (test
  (name test_key_feedback_consistency)
  (modules test_key_feedback_consistency)
  (libraries
-  random_visa.stack_vm
+  asgard.stack_vm
   mba_engine
   alcotest))
 
@@ -199,7 +199,7 @@
  (name test_mba_mod64_crosscheck)
  (modules test_mba_mod64_crosscheck)
  (libraries
-  random_visa.stack_vm
+  asgard.stack_vm
   mba_engine
   yojson
   alcotest)

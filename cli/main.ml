@@ -3,7 +3,7 @@ open Cmdliner
 (* ROOT CLI GROUP *)
 let main_cmd =
   let doc = "Random Vector ISA Synthesizer, Formal Sail Exporter, and VM-Protector in OCaml" in
-  let info = Cmd.info "random_visa" ~version:"0.2.0" ~doc in
+  let info = Cmd.info "asgard" ~version:"0.2.0" ~doc in
   Cmd.group info [
     Cli_isa.generate_cmd;
     Cli_isa.parse_cmd;

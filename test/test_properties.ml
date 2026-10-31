@@ -1,5 +1,5 @@
 open Domain
-open Random_visa_sail_parser
+open Sail_parser
 
 (** Property 1: For any random seed, synthesized ISA has strictly zero encoding collisions. *)
 let prop_no_encoding_collisions =

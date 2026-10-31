@@ -1,6 +1,6 @@
 (executable
- (public_name random_visa)
- (package random_visa)
+ (public_name asgard)
+ (package asgard)
  (name main)
  (modules main cli_isa cli_vanguard cli_protect cli_protect_arm64 cli_protect_riscv cli_project cli_macho cli_watermark)
  (libraries
@@ -10,12 +10,12 @@
   contracts
   runtime_services
   pipeline
-  random_visa_sail_export
-  random_visa_sail_parser
-  random_visa_cpp_emitter
-  random_visa_c11_emitter
-  random_visa_compiler_adapter
-  random_visa_assembler
+  sail_export
+  sail_parser
+  cpp_emitter
+  c11_emitter
+  toolchain
+  assembler
   bytecode_codec
   vm_ir
   x86_lifter
@@ -28,7 +28,7 @@
   native_vm
   c_macro_obf
   protect_pipeline
-  random_visa.macho
+  asgard.macho
   watermark
   bos
   fpath

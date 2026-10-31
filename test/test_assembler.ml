@@ -1,7 +1,7 @@
 open Domain
-open Random_visa_assembler
-open Random_visa_cpp_emitter
-open Random_visa_compiler_adapter
+open Assembler
+open Cpp_emitter
+open Toolchain
 
 let test_parse_register_operands () =
   Alcotest.(check bool) "v0 valid" true (Assembler_adapter.parse_reg "v0" = Ok 0);

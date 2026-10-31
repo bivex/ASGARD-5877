@@ -1,5 +1,5 @@
 (library
- (name random_visa_c11_emitter)
- (public_name random_visa.adapters.c11_emitter)
+ (name c11_emitter)
+ (public_name asgard.adapters.c11_emitter)
  (libraries domain contracts cpp_codegen))
 

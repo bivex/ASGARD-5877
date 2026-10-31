@@ -1,4 +1,4 @@
 (library
  (name macho)
- (public_name random_visa.macho)
+ (public_name asgard.macho)
  (modules macho_image macho_unwind))

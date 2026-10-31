@@ -1,6 +1,6 @@
 (library
  (name protect_pipeline)
- (public_name random_visa.protect_pipeline)
+ (public_name asgard.protect_pipeline)
  (libraries
   contracts
   vm_ir

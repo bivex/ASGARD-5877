@@ -1,5 +1,5 @@
 (library
  (name protection_config)
- (public_name random_visa.protection_config)
+ (public_name asgard.protection_config)
  (preprocess (pps ppx_deriving_yojson))
  (libraries mba_engine vm_ir yojson ppx_deriving_yojson.runtime random_visa_constants))

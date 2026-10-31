@@ -1,6 +1,6 @@
 (library
  (name gpu_synth)
- (public_name random_visa.gpu_synth)
+ (public_name asgard.gpu_synth)
  (libraries vm_ir mba_engine cpp_codegen)
  (foreign_stubs
   (language c)

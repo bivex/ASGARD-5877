@@ -1,4 +1,4 @@
 (library
  (name domain)
- (public_name random_visa.domain)
+ (public_name asgard.domain)
  (libraries random_visa_constants))

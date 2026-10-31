@@ -1,5 +1,5 @@
 open Domain
-open Random_visa_c11_emitter
+open C11_emitter
 
 let test_c11_fail_fast_on_widening () =
   let inst =

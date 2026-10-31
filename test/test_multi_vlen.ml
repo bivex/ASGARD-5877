@@ -1,6 +1,6 @@
 open Domain
-open Random_visa_cpp_emitter
-open Random_visa_compiler_adapter
+open Cpp_emitter
+open Toolchain
 
 let test_cpp_multi_vlen vlen =
   let rng = Random.State.make [| vlen |] in

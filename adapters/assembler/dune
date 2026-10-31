@@ -1,4 +1,4 @@
 (library
- (name random_visa_assembler)
- (public_name random_visa.adapters.assembler)
+ (name assembler)
+ (public_name asgard.adapters.assembler)
  (libraries domain contracts))

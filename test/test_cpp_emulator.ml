@@ -1,6 +1,6 @@
 open Domain
-open Random_visa_cpp_emitter
-open Random_visa_compiler_adapter
+open Cpp_emitter
+open Toolchain
 
 let test_cpp_emulator_compilation_and_execution () =
   let rng = Random.State.make [| 42 |] in

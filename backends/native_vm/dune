@@ -1,6 +1,6 @@
 (library
  (name native_vm)
- (public_name random_visa.native_vm)
+ (public_name asgard.native_vm)
  (preprocess (pps ppx_deriving_yojson))
  (modules_without_implementation runtime_probes)
  (libraries domain contracts vm_ir mba_engine control_flow yojson ppx_deriving_yojson.runtime domainslib gpu_synth cpp_codegen random_visa_constants isa_codegen runtime_services protection_metrics protection_config))

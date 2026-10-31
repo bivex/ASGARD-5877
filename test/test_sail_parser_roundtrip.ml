@@ -1,6 +1,6 @@
 open Domain
-open Random_visa_sail_export
-open Random_visa_sail_parser
+open Sail_export
+open Sail_parser
 
 let test_parse_manual_sail_snippet () =
   let snippet = {|

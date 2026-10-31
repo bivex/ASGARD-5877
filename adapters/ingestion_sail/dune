@@ -5,6 +5,6 @@
  (flags --explain))
 
 (library
- (name random_visa_sail_parser)
- (public_name random_visa.adapters.sail_parser)
+ (name sail_parser)
+ (public_name asgard.adapters.sail_parser)
  (libraries domain contracts))

@@ -1,6 +1,6 @@
 open Cmdliner
 open Domain
-open Random_visa_cpp_emitter
+open Cpp_emitter
 
 (* 6. VANGUARD COMMAND: Polymorphic Bytecode Protection and Native Emulation *)
 let run_vanguard out_dir seed num_insts =

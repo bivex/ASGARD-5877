@@ -1,5 +1,5 @@
 (library
- (name random_visa_cpp_emitter)
- (public_name random_visa.adapters.cpp_emitter)
+ (name cpp_emitter)
+ (public_name asgard.adapters.cpp_emitter)
  (libraries domain contracts cpp_codegen))
 

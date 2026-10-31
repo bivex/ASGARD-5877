@@ -1,5 +1,5 @@
 open Domain
-open Random_visa_cpp_emitter
+open Cpp_emitter
 
 let test_vanguard_emulator_integration () =
   let rng = Random.State.make [| 777 |] in

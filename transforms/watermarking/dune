@@ -1,4 +1,4 @@
 (library
  (name watermark)
- (public_name random_visa.watermark)
+ (public_name asgard.watermark)
  (libraries bytecode_crypto mba_engine yojson))

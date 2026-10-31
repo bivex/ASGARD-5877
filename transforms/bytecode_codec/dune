@@ -1,4 +1,4 @@
 (library
  (name bytecode_codec)
- (public_name vanguard-9292)
+ (public_name asgard.bytecode_codec)
  (libraries domain cpp_codegen random_visa_constants))
