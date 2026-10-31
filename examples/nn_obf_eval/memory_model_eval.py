@@ -235,12 +235,12 @@ def generate_memory_traces(
                 r_b = guest_regs[sub_rng.randint(0, 16)]
                 salt = sub_rng.randint(0, 2**32)
 
-                # compute_chaff_address matching lib/tech_2608/tech_2608_engine.ml
+                # compute_chaff_address matching lib/trace_chaff/tech_2608_engine.ml
                 chaff_addr = pool_base + ((r_a ^ salt) & (pool_size - 8) & ~7)
                 delta_addr = math.log2(1.0 + abs(chaff_addr - prev_addr)) / 32.0
                 prev_addr = chaff_addr
 
-                # compute_chaff_value matching lib/tech_2608/tech_2608_engine.ml
+                # compute_chaff_value matching lib/trace_chaff/tech_2608_engine.ml
                 term_a = (r_a * GOLDEN_RATIO_64) & MASK64
                 term_b = (r_b * SPLITMIX_GAMMA) & MASK64
                 chaff_val = (term_a + term_b + (rolling_key ^ salt)) & MASK64

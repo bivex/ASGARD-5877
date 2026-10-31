@@ -1,5 +1,5 @@
-open Random_visa_domain
-open Random_visa_ports
+open Domain
+open Contracts
 
 let to_string spec = Vector_isa_spec.to_sail_specification spec
 

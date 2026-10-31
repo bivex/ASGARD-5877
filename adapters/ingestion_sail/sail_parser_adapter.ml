@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 open Ast
 
 let rec conv_type = function

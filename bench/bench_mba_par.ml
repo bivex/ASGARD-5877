@@ -101,7 +101,7 @@ let () =
       time_it "MBA CPU Egraph + CFF (comparison)"  3 (fun () ->
         ignore (Vm_emitter.compile_and_package ~rng:(make_rng ()) ~config:cfg_cpu_egraph func));
 
-      Printf.printf "\nDomain count: %d\n%!" (Domain.recommended_domain_count ())
+      Printf.printf "\nDomain count: %d\n%!" (Stdlib.Domain.recommended_domain_count ())
 
 let () =
   let rng = Random.State.make [| 99 |] in

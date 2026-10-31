@@ -1,4 +1,4 @@
-open Random_visa_ports
+open Contracts
 
 let run_cpp (module E : Ports.Cpp_code_emitter) spec ~output_dir =
   E.emit_emulator_project spec ~output_dir

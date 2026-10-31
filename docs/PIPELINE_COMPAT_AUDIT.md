@@ -29,7 +29,7 @@ The audit makes those assumptions explicit and checkable:
 | `6-feedback` | state-feedback rolling key | `Stack_vm.Stack_feedback_pass` |
 | `7-balance` | stack balance repair | `Stack_vm.Stack_balance_pass` |
 
-The phase list is defined in `lib/adapters/protect_adapters/vm_packagers.ml` (module `Stack_vm_packager`).
+The phase list is defined in `lib/adapters/protect_pipeline/vm_packagers.ml` (module `Stack_vm_packager`).
 
 ## Requirements
 

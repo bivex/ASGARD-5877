@@ -112,7 +112,7 @@ let default : t = {
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
   watermark = { default_watermark with redundancy = 5 };
-  comp_stall = default_comp_stall;
+  emulation_stall = default_comp_stall;
   toolchain = { default_toolchain with opt_level = "-O1" };
 }
 
@@ -239,7 +239,7 @@ let max_security : t = {
   pipelined_dispatch = { default_pipelined_dispatch with chaff_slots = 8 };
   trampoline = default_trampoline;
   watermark = { default_watermark with redundancy = 11 };
-  comp_stall = default_comp_stall;
+  emulation_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -361,7 +361,7 @@ let stealth : t = {
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
   watermark = default_watermark;
-  comp_stall = default_comp_stall;
+  emulation_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -488,7 +488,7 @@ let edr_stealth : t = {
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
   watermark = default_watermark;
-  comp_stall = default_comp_stall;
+  emulation_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -615,7 +615,7 @@ let minimal : t = {
   pipelined_dispatch = { default_pipelined_dispatch with enabled = false };
   trampoline = default_trampoline;
   watermark = { default_watermark with redundancy = 3 };
-  comp_stall = default_comp_stall;
+  emulation_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 
@@ -733,7 +733,7 @@ let high : t = {
   pipelined_dispatch = default_pipelined_dispatch;
   trampoline = default_trampoline;
   watermark = default_watermark;
-  comp_stall = default_comp_stall;
+  emulation_stall = default_comp_stall;
   toolchain = default_toolchain;
 }
 

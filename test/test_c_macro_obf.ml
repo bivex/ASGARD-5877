@@ -459,7 +459,7 @@ void my_procedure(int x, const char* name) {
     printf("Hello %s: %d\n", name, x);
 }
 |} in
-    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+    Protect_pipeline.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_void ~bytecode:[ 0x1122334455667788L ] ~out_path:out_void ();
     let res_void = Test_helpers.read_file_string out_void in
     check bool "void function has no return expr" true (contains_sub res_void "asgard_vm_call(_active_bc");
@@ -474,7 +474,7 @@ char* get_buffer(size_t sz) {
     return NULL;
 }
 |} in
-    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+    Protect_pipeline.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_ptr ~bytecode:[ 0x1122334455667788L ] ~out_path:out_ptr ();
     let res_ptr = Test_helpers.read_file_string out_ptr in
     check bool "pointer function casts return type" true
@@ -490,7 +490,7 @@ uint64_t calculate_hash(
     return a ^ b;
 }
 |} in
-    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+    Protect_pipeline.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_u64 ~bytecode:[ 0x1122334455667788L ] ~out_path:out_u64 ();
     let res_u64 = Test_helpers.read_file_string out_u64 in
     check bool "u64 function does not truncate to int" true
@@ -504,7 +504,7 @@ __attribute__((noinline)) char* custom_alloc(size_t sz) {
     return (char*)0;
 }
 |} in
-    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+    Protect_pipeline.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_attr ~bytecode:[ 0x1122334455667788L ] ~out_path:out_attr ();
     let res_attr = Test_helpers.read_file_string out_attr in
     check bool "clean type stripped attribute in cast" true
@@ -530,7 +530,7 @@ uint64_t compute_xor(uint64_t x, uint64_t y) {
 |} in
     let bc_add = [ 0x1111L; 0x2222L ] in
     let bc_xor = [ 0x3333L; 0x4444L ] in
-    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+    Protect_pipeline.C_trampoline_adapter.embed_vm_trampoline
       ~c_src:c_multi
       ~bytecodes:[ ("compute_add", bc_add); ("compute_xor", bc_xor) ]
       ~bytecode:bc_add

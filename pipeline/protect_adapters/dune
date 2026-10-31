@@ -1,22 +1,22 @@
 (library
- (name protect_adapters)
- (public_name random_visa.protect_adapters)
+ (name protect_pipeline)
+ (public_name random_visa.protect_pipeline)
  (libraries
-  random_visa_ports
+  contracts
   vm_ir
   native_vm
   x86_lifter
   arm64_lifter
   riscv_lifter
   c_macro_obf
-  rd_jit_vm
-  multi_vm
+  jit_vm
+  nested_vm
   stack_vm
-  cff
-  tech_2601
-  tech_2603
-  tech_2608
-  comp_stall
+  control_flow
+  shadow_unwind
+  dispatch_permutation
+  trace_chaff
+  emulation_stall
   cpp_codegen
   random_visa_constants
   yojson

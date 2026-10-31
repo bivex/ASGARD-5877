@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let to_string (spec : Vector_isa_spec.t) =
   Vector_isa_spec.to_sail_specification spec

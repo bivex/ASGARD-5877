@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let test_golden_seed_42 () =
   let rng = Random.State.make [| 42 |] in

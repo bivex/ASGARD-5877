@@ -1,5 +1,5 @@
-open Random_visa_domain
-open Random_visa_ports
+open Domain
+open Contracts
 
 (** C++20 Emulator Code Emitter implementing [Ports.Cpp_code_emitter]. *)
 

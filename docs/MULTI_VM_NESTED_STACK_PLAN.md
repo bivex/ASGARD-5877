@@ -74,10 +74,10 @@ lockstep both directions.
 
 | Tier | Engine (existing module) | Role in the nest | State region |
 |---|---|---|---|
-| T0 | native trampoline host (`lib/adapters/protect_adapters/c_trampoline_adapter.ml`) | entry stub, no semantics | host stack |
+| T0 | native trampoline host (`lib/adapters/protect_pipeline/c_trampoline_adapter.ml`) | entry stub, no semantics | host stack |
 | T1 | threaded VM (`lib/native_vm`) | outer interpreter, hosts T2 payload | per-frame context |
 | T2 | stack VM / SJIT chunker (`lib/stack_vm/stack_jit_chunker.ml`) | bytecode tier, hosts T3 payload | window slots 12..15 + spill |
-| T3 | RD-JIT nano arena (`lib/rd_jit_vm`) | innermost native tier | Golomb slots, Padovan split |
+| T3 | RD-JIT nano arena (`lib/jit_vm`) | innermost native tier | Golomb slots, Padovan split |
 
 Nesting means: the sealed bytecode of tier `i+1` is an operand stream inside
 tier `i`. Execution brackets are explicit:
@@ -127,10 +127,10 @@ New sequences introduced by this plan. Constants go to
 | Sequence | Property used | Nesting application | Module |
 |---|---|---|---|
 | A000108 Catalan | Dyck words count well-nested brackets | Well-nestedness invariant of `EnterVM`/`ExitVM`; nesting checksum = rank of the Dyck word; forced early `ExitVM` breaks the rank | `lib/stack_vm/stack_ir.ml`, balance pass |
-| A004001 Hofstadter-Conway | `a(n) = a(a(n-1)) + a(n-a(n-1))`, `a(n) ~ n/2` | Self-referential tier dispatch: the tier interpreting step `n` is selected by the sequence's own past values; clustering near `n/2` keeps handoff fanout near 2 and depth growth logarithmic | `lib/multi_vm` dispatcher |
+| A004001 Hofstadter-Conway | `a(n) = a(a(n-1)) + a(n-a(n-1))`, `a(n) ~ n/2` | Self-referential tier dispatch: the tier interpreting step `n` is selected by the sequence's own past values; clustering near `n/2` keeps handoff fanout near 2 and depth growth logarithmic | `lib/nested_vm` dispatcher |
 | A005228 / A030124 Figure-Figure | Complementary pair R and S partition the integers | Table-free ownership split of the nested slot space into tier-owned and honeypot units; gaps grow non-linearly, harder to invert than the Beatty split | arena partitioning |
 | A061775 Matula-Goebel (relatives A184155, A198323) | Bijection between naturals and rooted trees | Encode the whole VM containment tree (which tier hosts which) as one 64-bit topology digest; any topology tamper changes the digest | topology integrity |
-| A287654, A249569 meta-Fibonacci | Chaotic nested recurrences | Inter-layer handoff jitter: decorrelates adjacent layers' traces so a single tracer cannot align tier boundaries | `lib/multi_vm` scheduling |
+| A287654, A249569 meta-Fibonacci | Chaotic nested recurrences | Inter-layer handoff jitter: decorrelates adjacent layers' traces so a single tracer cannot align tier boundaries | `lib/nested_vm` scheduling |
 
 Sequences already registered in the repository and reused per tier:
 
@@ -191,7 +191,7 @@ the decoy manifold.
 
 1. N1: bracket opcodes and Catalan checksum in `lib/stack_vm/stack_ir.ml`,
    enforced by `Stack_balance_pass`.
-2. N2: A004001 dispatch table and dispatcher hook in `lib/multi_vm`, behind a
+2. N2: A004001 dispatch table and dispatcher hook in `lib/nested_vm`, behind a
    config flag, default off.
 3. N3: figure-figure arena partition for nested slot ownership.
 4. N4: Matula topology digest computation and runtime comparison.

@@ -73,8 +73,8 @@ let with_memory_chaffing ?pool_size ?chaff_ratio enabled b =
   b
 
 let with_comp_stall ?n_iterations ?pow_difficulty ?variant ?seed enabled b =
-  let curr = !b.comp_stall in
-  let comp_stall = {
+  let curr = !b.emulation_stall in
+  let emulation_stall = {
     enabled;
     n_iterations = Option.value ~default:curr.n_iterations n_iterations;
     pow_difficulty = Option.value ~default:curr.pow_difficulty pow_difficulty;
@@ -83,7 +83,7 @@ let with_comp_stall ?n_iterations ?pow_difficulty ?variant ?seed enabled b =
     emu_quota_instrs = curr.emu_quota_instrs;
     seed = Option.value ~default:curr.seed seed;
   } in
-  b := { !b with comp_stall };
+  b := { !b with emulation_stall };
   b
 
 let with_seed seed b =

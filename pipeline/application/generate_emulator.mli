@@ -1,5 +1,5 @@
-open Random_visa_domain
-open Random_visa_ports
+open Domain
+open Contracts
 
 (** Use case: Generate C++ or C11 standalone emulator project from ISA spec. *)
 

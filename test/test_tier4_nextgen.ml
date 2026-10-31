@@ -4,8 +4,8 @@ module Bvip = Vm_ir.Branchless_vip
 module Cperm = Native_vm.Context_permutation
 module Ent = Native_vm.Variable_entangler
 module Omem = Native_vm.Oblivious_mem
-module Hbridge = Multi_vm.Homomorphic_bridge
-module Njit = Rd_jit_vm.Nano_jit_slot
+module Hbridge = Nested_vm.Homomorphic_bridge
+module Njit = Jit_vm.Nano_jit_slot
 module Ring = Mba_engine.Metamorphic_ring
 
 (* Test 0: Verification of the P0-01 hotfix (Cycle Decomposition for cycles of length >= 3) *)

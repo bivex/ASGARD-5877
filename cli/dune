@@ -5,28 +5,28 @@
  (modules main cli_isa cli_vanguard cli_protect cli_protect_arm64 cli_protect_riscv cli_project cli_macho cli_watermark)
  (libraries
   cmdliner
-  random_visa_domain
-  random_visa_ports
+  domain
+  contracts
   runtime_services
-  random_visa_application
+  pipeline
   random_visa_sail_export
   random_visa_sail_parser
   random_visa_cpp_emitter
   random_visa_c11_emitter
   random_visa_compiler_adapter
   random_visa_assembler
-  vanguard_9292
+  bytecode_codec
   vm_ir
   x86_lifter
   arm64_lifter
   riscv_lifter
-  multi_vm
-  rd_jit_vm
+  nested_vm
+  jit_vm
   mba_engine
-  cff
+  control_flow
   native_vm
   c_macro_obf
-  protect_adapters
+  protect_pipeline
   random_visa.macho
   watermark
   bos
@@ -41,12 +41,12 @@
   vm_ir
   x86_lifter
   arm64_lifter
-  multi_vm
+  nested_vm
   mba_engine
-  cff
+  control_flow
   native_vm
   c_macro_obf
-  protect_adapters
+  protect_pipeline
   bos
   fpath))
 
@@ -57,9 +57,9 @@
   vm_ir
   x86_lifter
   arm64_lifter
-  multi_vm
+  nested_vm
   mba_engine
-  cff
+  control_flow
   native_vm
   c_macro_obf))
 
@@ -70,8 +70,8 @@
   vm_ir
   x86_lifter
   arm64_lifter
-  multi_vm
+  nested_vm
   mba_engine
-  cff
+  control_flow
   native_vm
   c_macro_obf))

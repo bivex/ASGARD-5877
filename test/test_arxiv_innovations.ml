@@ -1,6 +1,6 @@
 (** ASGARD-5877 Test Suite: arXiv Innovations
     Tests for the 4 new OCaml modules from academic research:
-    1. Cff.Pop_coupler        (arXiv:1908.01549) - Path-Oriented Protections
+    1. Control_flow.Control_flow_engine.Pop_coupler        (arXiv:1908.01549) - Path-Oriented Protections
     2. Native_vm.Defuse_scrambler (arXiv:2601.12916) - Def-Use Chain Scrambler
     3. Mba_engine.Ncfg_synth  (arXiv:2506.23634) - NCFG Transformer-Resistant MBA
     4. Arm64_lifter.Literal_stitcher (arXiv:2407.08924) - ARM64 Disassembler Disrupter *)
@@ -15,15 +15,15 @@ open Mba_engine
 
 let test_pop_digest_determinism () =
   let seed = 0x5877CAFEBABE1337L in
-  let d1 = Cff.Pop_coupler.advance_digest seed 0 1L in
-  let d2 = Cff.Pop_coupler.advance_digest seed 0 1L in
+  let d1 = Control_flow.Control_flow_engine.Pop_coupler.advance_digest seed 0 1L in
+  let d2 = Control_flow.Control_flow_engine.Pop_coupler.advance_digest seed 0 1L in
   check int64 "POP advance_digest: same inputs → same digest" d1 d2
 
 let test_pop_digest_sensitivity () =
   let seed = 0x5877CAFEBABE1337L in
-  let d0 = Cff.Pop_coupler.advance_digest seed 0 1L in
-  let d1 = Cff.Pop_coupler.advance_digest seed 1 1L in
-  let d2 = Cff.Pop_coupler.advance_digest seed 0 2L in
+  let d0 = Control_flow.Control_flow_engine.Pop_coupler.advance_digest seed 0 1L in
+  let d1 = Control_flow.Control_flow_engine.Pop_coupler.advance_digest seed 1 1L in
+  let d2 = Control_flow.Control_flow_engine.Pop_coupler.advance_digest seed 0 2L in
   check bool "POP: different block IDs yield different digest" (d0 <> d1) true;
   check bool "POP: different cond_tags yield different digest" (d0 <> d2) true
 
@@ -34,7 +34,7 @@ let test_pop_ir_transform () =
     Ir.Ret;
   ] in
   let f = Ir.make_func ~name:"test_fn" ~entry_id:0 ~blocks:[b1] in
-  let f_pop = Cff.Pop_coupler.apply_pop_transform ~rng f in
+  let f_pop = Control_flow.Control_flow_engine.Pop_coupler.apply_pop_transform ~rng f in
   let b_out = Hashtbl.find f_pop.cfg.blocks 0 in
   check bool "POP transform: digest update prepended to entry block"
     (List.length b_out.instrs > 2) true

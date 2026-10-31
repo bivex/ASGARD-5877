@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 open Random_visa_assembler
 open Random_visa_cpp_emitter
 open Random_visa_compiler_adapter

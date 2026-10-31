@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let group_by_funct6 (instructions : Vector_instruction.t list) =
   let tbl = Hashtbl.create 16 in

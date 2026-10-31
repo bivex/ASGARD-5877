@@ -217,14 +217,14 @@ test_adapter:
     addi a0, zero, 42
     ret
 |} in
-  match Protect_adapters.Riscv_lifter_adapter.lift_source asm with
+  match Protect_pipeline.Riscv_lifter_adapter.lift_source asm with
   | Error err -> fail ("Riscv_lifter_adapter failed: " ^ err)
   | Ok (f, _consts) ->
-      check string "adapter arch_name" "riscv64" Protect_adapters.Riscv_lifter_adapter.arch_name;
-      (match Protect_adapters.Riscv_lifter_adapter.target_arch with
-       | Random_visa_ports.Protect_ports.Riscv64 -> ()
+      check string "adapter arch_name" "riscv64" Protect_pipeline.Riscv_lifter_adapter.arch_name;
+      (match Protect_pipeline.Riscv_lifter_adapter.target_arch with
+       | Contracts.Protect_ports.Riscv64 -> ()
        | _ -> fail "Wrong target arch");
-      let raw_f = Random_visa_ports.Protect_ports.unwrap_ir f in
+      let raw_f = Contracts.Protect_ports.unwrap_ir f in
       (match Reference_vm.evaluate raw_f with
        | Ok snap -> check int64 "adapter returns 42" 42L snap.final_rax
        | Error msg -> fail ("Reference VM evaluation error: " ^ msg))
@@ -245,10 +245,10 @@ fn_two:
     ret
     // ASGARD_MARKER_END
 |} in
-  match Protect_adapters.Riscv_lifter_adapter.lift_source asm with
+  match Protect_pipeline.Riscv_lifter_adapter.lift_source asm with
   | Error err -> fail ("Multi-region lift failed: " ^ err)
   | Ok (f, _) ->
-      let raw_funcs = Random_visa_ports.Protect_ports.unwrap_multi_ir f in
+      let raw_funcs = Contracts.Protect_ports.unwrap_multi_ir f in
       check int "lifted 2 functions" 2 (List.length raw_funcs);
       let (name1, f1) = List.nth raw_funcs 0 in
       let (name2, f2) = List.nth raw_funcs 1 in

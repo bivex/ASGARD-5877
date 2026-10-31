@@ -205,7 +205,7 @@ class AsgardBytecodeForm(PluginForm if HAS_GUI else object):
             os.path.join(bin_dir, "stack_vm_runtime.hpp"),
             os.path.join(bin_dir, "../protected_arm64_out/stack_vm_runtime.hpp"),
             "protected_arm64_out/stack_vm_runtime.hpp",
-            "examples/ida_demo/multi_vm_runtime.hpp"
+            "examples/ida_demo/nested_vm_runtime.hpp"
         ]
         hpp_path = next((c for c in candidates if os.path.exists(c)), None)
         if not hpp_path:

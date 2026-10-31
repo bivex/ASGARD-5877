@@ -1,5 +1,5 @@
-open Random_visa_domain
-open Random_visa_ports
+open Domain
+open Contracts
 
 (** Vector Assembler and Bytecode (.vbc) Compiler Adapter implementing [Ports.Assembler]. *)
 

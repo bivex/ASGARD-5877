@@ -4,7 +4,7 @@ open Ir
 open Stack_vm
 open Stack_ir
 open Stack_eval
-open Random_visa_ports
+open Contracts
 open Protect_ports
 
 let test_stack_ir_primitives () =
@@ -1532,11 +1532,11 @@ let test_real_license_check_macro_stack_vm_e2e () =
   in
 
   Test_helpers.with_temp_dir (fun tmp_dir ->
-    let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
-    let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
-    let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
-    let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
-    let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+    let module Arm64_adapter = Protect_pipeline.Arm64_lifter_adapter in
+    let module C_macro_adapter = Protect_pipeline.C_macro_obf_adapter in
+    let module Trampoline_adapter = Protect_pipeline.C_trampoline_adapter in
+    let module Toolchain_adapter = Protect_pipeline.Clang_toolchain_adapter in
+    let module Vm_packager_adapters = Protect_pipeline.Vm_packagers in
 
     let lifter = (module Arm64_adapter : Lifter) in
     let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
@@ -1546,10 +1546,10 @@ let test_real_license_check_macro_stack_vm_e2e () =
 
     let raw_cfg : Native_vm.Protection_config.t =
       { Native_vm.Protection_config.default with arch = `AArch64 } in
-    let cfg = Protect_adapters.Config_adapter.wrap raw_cfg in
+    let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 1337 |] in
     match
-      Random_visa_application.Protect_pipeline.run
+      Pipeline.Protect_orchestrator.run
         ~lifter
         ~c_macro_obfuscator
         ~vm_packager

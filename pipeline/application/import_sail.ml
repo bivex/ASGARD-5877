@@ -1,4 +1,4 @@
-open Random_visa_ports
+open Contracts
 
 let run (module P : Ports.Sail_parser) ?spec_name content =
   P.parse ?spec_name content

@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 module type Sail_spec_writer = sig
   val write_spec : Vector_isa_spec.t -> target_file_path:string -> (string, Errors.t) result

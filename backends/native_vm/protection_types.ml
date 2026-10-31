@@ -122,7 +122,7 @@ type cff_config = {
   (** Path-Oriented Protection: couple an ARX path digest register into the
       CFF state encoding and dispatcher decoding, making the digest
       load-bearing and immune to dead-code elimination. Uses the shared
-      [Cff.Pop_coupler.default_pop_config] register and seed. *)
+      [Control_flow.Control_flow_engine.Pop_coupler.default_pop_config] register and seed. *)
   pop_digest : bool [@default false];
   (** Insert red-herring (never-taken) state aliases when splitting hot
       states, inflating static state-count analysis. *)
@@ -590,7 +590,7 @@ type t = {
   eh_shadowing : eh_shadowing_config [@default default_eh_shadowing];
   anti_vpc : anti_vpc_config [@default default_anti_vpc];
   memory_chaffing : memory_chaffing_config [@default default_memory_chaffing];
-  comp_stall : comp_stall_config [@default default_comp_stall];
+  emulation_stall : comp_stall_config [@default default_comp_stall];
   spaghetti : spaghetti_config [@default default_spaghetti];
   braid : braid_config [@default default_braid];
   amplifier : amplifier_config [@default default_amplifier];
@@ -664,7 +664,7 @@ let memory_chaffing_enabled (config : t option) : bool =
 
 let comp_stall_enabled (config : t option) : bool =
   match config with
-  | Some c -> c.comp_stall.enabled
+  | Some c -> c.emulation_stall.enabled
   | None -> false
 
 let oblivious_memory_enabled (config : t option) : bool =

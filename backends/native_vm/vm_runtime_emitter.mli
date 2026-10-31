@@ -22,7 +22,7 @@ module Runtime_policy : sig
     oblivious_decoys : int;
   }
 
-  val of_config : ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t -> Protection_config.t option -> t
+  val of_config : ?runtime_profile:Domain.Vm_runtime_profile.t -> Protection_config.t option -> t
 end
 
 val generate_wbox_seed_derivation_decls :
@@ -66,7 +66,7 @@ val emit_native_runtime_hpp_decls :
   reg_perm:int array ->
   expected_hash:int64 ->
   ?expected_hashes:int64 list ->
-  ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t ->
+  ?runtime_profile:Domain.Vm_runtime_profile.t ->
   ?config:Protection_config.t ->
   ?external_symbols:string list ->
   ?constants:(string * string) list ->
@@ -81,7 +81,7 @@ val emit_cpp_threaded_header :
   reg_perm:int array ->
   expected_hash:int64 ->
   ?expected_hashes:int64 list ->
-  ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t ->
+  ?runtime_profile:Domain.Vm_runtime_profile.t ->
   ?config:Protection_config.t ->
   ?external_symbols:string list ->
   ?constants:(string * string) list ->

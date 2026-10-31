@@ -10,7 +10,7 @@ type vm_package = {
 
 val compile_and_package :
   rng:Random.State.t ->
-  ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t ->
+  ?runtime_profile:Domain.Vm_runtime_profile.t ->
   ?config:Protection_config.t ->
   ?enable_cff:bool ->
   ?enable_mba:bool ->
@@ -22,7 +22,7 @@ val compile_and_package :
 
 val compile_and_package_multi :
   rng:Random.State.t ->
-  ?runtime_profile:Random_visa_domain.Vm_runtime_profile.t ->
+  ?runtime_profile:Domain.Vm_runtime_profile.t ->
   ?config:Protection_config.t ->
   ?enable_cff:bool ->
   ?enable_mba:bool ->

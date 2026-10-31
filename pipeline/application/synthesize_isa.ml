@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let run ~rng ?(name = "RVV_Custom_ISA") ?(config = Vector_config.default) ?profile ~num_instructions () =
   let prof =

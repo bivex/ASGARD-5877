@@ -295,7 +295,7 @@ let check_translation ~(seed : int) ~(tag : string) (ops : stack_op list)
       let n_dummy_items =
         List.length (List.filter (fun (op, _, _, _) -> suffix op = "NOP") items)
       in
-      let cap = Rd_jit_vm.Nano_jit_slot.nano_max_chunk_instrs in
+      let cap = Jit_vm.Nano_jit_slot.nano_max_chunk_instrs in
       let chunk_bad =
         List.filter (fun c -> c = [] || List.length c > cap) tr.chunks
       in
@@ -420,7 +420,7 @@ let prop_program =
                      target_bad := (op, t) :: !target_bad
                | _ -> ())
             items;
-          let cap = Rd_jit_vm.Nano_jit_slot.nano_max_chunk_instrs in
+          let cap = Jit_vm.Nano_jit_slot.nano_max_chunk_instrs in
           let chunk_bad = List.filter (fun c -> c = [] || List.length c > cap) tr.chunks in
           verify ~seed ~ctx:"program"
             [ ( "jump-patch-targets",

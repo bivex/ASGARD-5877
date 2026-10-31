@@ -1,5 +1,5 @@
 (library
- (name tech_2608)
- (public_name random_visa.tech_2608)
+ (name trace_chaff)
+ (public_name random_visa.trace_chaff)
  (libraries bytecode_crypto vm_ir unix cpp_codegen))
 

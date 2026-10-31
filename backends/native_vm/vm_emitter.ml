@@ -205,32 +205,32 @@ let compile_and_package_multi
           match config with
           | Some c ->
               {
-                Cff.inject_opaque_predicates = c.cff.inject_opaque_predicates;
+                Control_flow.Control_flow_engine.inject_opaque_predicates = c.cff.inject_opaque_predicates;
                 obfuscate_states = c.cff.obfuscate_states;
                 input_tainted_transitions = c.cff.input_tainted_transitions;
                 split_rate = c.cff.split_rate;
                 hub_count = c.cff.hub_count;
                 pop_digest =
                   (if pop_enabled then
-                     Some (Cff.Pop_coupler.default_pop_config.digest_reg,
-                           Cff.Pop_coupler.default_pop_config.initial_seed)
+                     Some (Control_flow.Control_flow_engine.Pop_coupler.default_pop_config.digest_reg,
+                           Control_flow.Control_flow_engine.Pop_coupler.default_pop_config.initial_seed)
                    else None);
                 red_herring;
               }
           | None ->
-              { Cff.default_cff_options with
+              { Control_flow.Control_flow_engine.default_cff_options with
                 pop_digest =
                   (if pop_enabled then
-                     Some (Cff.Pop_coupler.default_pop_config.digest_reg,
-                           Cff.Pop_coupler.default_pop_config.initial_seed)
+                     Some (Control_flow.Control_flow_engine.Pop_coupler.default_pop_config.digest_reg,
+                           Control_flow.Control_flow_engine.Pop_coupler.default_pop_config.initial_seed)
                    else None);
                 red_herring;
               }
         in
         let pop_func =
-          if pop_enabled then Cff.Pop_coupler.apply_pop_transform ~rng func else func
+          if pop_enabled then Control_flow.Control_flow_engine.Pop_coupler.apply_pop_transform ~rng func else func
         in
-        match Cff.flatten_func ~options:cff_opts ~rng pop_func with
+        match Control_flow.Control_flow_engine.flatten_func ~options:cff_opts ~rng pop_func with
         | Ok f -> f
         | Error _ -> func
       else func

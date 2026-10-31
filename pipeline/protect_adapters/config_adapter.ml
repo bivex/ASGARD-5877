@@ -1,4 +1,4 @@
-open Random_visa_ports
+open Contracts
 open Protect_ports
 open Native_vm
 
@@ -84,7 +84,7 @@ let resolve_with_watermark
     | None -> raw.seed
   in
   let resolved_comp_stall =
-    let c = raw.comp_stall in
+    let c = raw.emulation_stall in
     let enabled = match enable_comp_stall with Some b -> b | None -> c.enabled in
     let n_iterations = match comp_stall_iterations with Some n -> n | None -> c.n_iterations in
     let variant = match comp_stall_variant with Some v -> v | None -> c.variant in
@@ -96,7 +96,7 @@ let resolve_with_watermark
     seed = resolved_seed;
     cff = { raw.cff with enabled = resolved_cff };
     mba = { raw.mba with enabled = resolved_mba; depth = resolved_mba_depth };
-    comp_stall = resolved_comp_stall;
+    emulation_stall = resolved_comp_stall;
   } in
   wrap ?watermark effective
 

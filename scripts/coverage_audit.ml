@@ -34,7 +34,7 @@ let () =
     ("ports (Interfaces)", [ "ports/ports.ml" ], "test_multi_vlen", 4, 98.0);
     
     (* Obfuscation & Vanguard *)
-    ("vanguard_9292 (Polymorphic)", [ "vanguard_9292/vanguard_9292.ml"; "vanguard_9292/vanguard_types.ml" ], "test_vanguard_9292 / test_vanguard_emulator_e2e", 7, 98.5);
+    ("bytecode_codec (Polymorphic)", [ "bytecode_codec/bytecode_codec.ml"; "bytecode_codec/vanguard_types.ml" ], "test_bytecode_codec / test_vanguard_emulator_e2e", 7, 98.5);
     ("vm_ir (IR, Flags & RNS)", [ "vm_ir/ir.ml"; "vm_ir/flags.ml"; "vm_ir/register.ml"; "vm_ir/rns.ml" ], "test_vm_ir / test_compiler_pipeline", 11, 99.1);
     ("x86_lifter & parser", [ "x86_lifter/x86_lifter.ml"; "x86_lifter/x86_parser.ml" ], "test_x86_lifter", 7, 96.3);
     ("arm64_lifter & parser", [ "arm64_lifter/arm64_lifter.ml"; "arm64_lifter/arm64_parser.ml"; "arm64_lifter/literal_stitcher.ml" ], "test_arm64_lifter", 4, 95.6);
@@ -45,9 +45,9 @@ let () =
     ("native_vm (Hardening & Tamper)", [ "native_vm/hardened_runtime.ml"; "native_vm/defuse_scrambler.ml"; "native_vm/metrics.ml" ], "test_anti_pushan / test_anti_tamper_smc", 5, 98.2);
     ("native_vm (Protection Config)", [ "native_vm/protection_config.ml"; "native_vm/protection_json.ml"; "native_vm/protection_presets.ml"; "native_vm/protection_types.ml" ], "test_protection_config", 4, 98.0);
     ("c_macro_obf (Nanomites/Sig)", [ "c_macro_obf/c_macro_obf.ml"; "c_macro_obf/c_macro_config.ml" ], "test_c_macro_obf", 7, 96.5);
-    ("multi_vm (Zero-Bridge GL16)", [ "multi_vm/bridge.ml"; "multi_vm/multi_vm.ml" ], "test_multi_vm", 5, 98.2);
+    ("nested_vm (Zero-Bridge GL16)", [ "nested_vm/bridge.ml"; "nested_vm/nested_vm.ml" ], "test_nested_vm", 5, 98.2);
     ("gpu_synth (Metal Compute)", [ "gpu_synth/gpu_synth.ml"; "gpu_synth/gpu_synth_stubs.c"; "gpu_synth/metal_runtime.cpp" ], "test_gpu_synth", 4, 94.0);
-    ("rd_jit_vm (Ephemeral W^X)", [ "rd_jit_vm/rd_jit_emitter.ml" ], "test_rd_jit_vm", 3, 96.8);
+    ("jit_vm (Ephemeral W^X)", [ "jit_vm/jit_emitter.ml" ], "test_jit_vm", 3, 96.8);
   ] in
 
   Printf.printf "  %-34s | %-6s | %-38s | %-5s | %-8s\n" "Subsystem Module" "LOC" "Associated Test Suite" "Tests" "Coverage";

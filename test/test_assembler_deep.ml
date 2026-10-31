@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 open Random_visa_assembler
 
 let sample_spec () =

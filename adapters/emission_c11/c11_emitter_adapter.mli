@@ -1,5 +1,5 @@
-open Random_visa_domain
-open Random_visa_ports
+open Domain
+open Contracts
 
 (** C11 Bare-metal Emulator Code Emitter implementing [Ports.C11_code_emitter]. *)
 

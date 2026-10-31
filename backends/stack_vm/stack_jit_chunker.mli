@@ -19,7 +19,7 @@ open Stack_ir
 
 type jit_item = string * int * int * int64
 (** (JIT_OP_* symbol, dst slot, src slot, immediate) consumed by
-    [Rd_jit_emitter.compile_and_package_chunked]. *)
+    [Jit_emitter.compile_and_package_chunked]. *)
 
 type translation = {
   chunks : jit_item list list; (** Kolakoski-fissioned, Thue-Morse padded *)

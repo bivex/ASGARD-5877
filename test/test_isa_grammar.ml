@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let test_catalog_has_families_for_every_supported_class () =
   List.iter

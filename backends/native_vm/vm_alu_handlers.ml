@@ -66,8 +66,8 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   in
 
   let synth_basis_add () =
-    let basis = Random_visa_domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
-    let (w1, w2, w_const) = Random_visa_domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Random_visa_domain.Isa_metamorphic_synth.StdAdd in
+    let basis = Domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
+    let (w1, w2, w_const) = Domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Domain.Isa_metamorphic_synth.StdAdd in
     let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi1.bias in
     let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi2.bias in
     let lin_res = (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const in
@@ -82,8 +82,8 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   in
 
   let synth_basis_sub () =
-    let basis = Random_visa_domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
-    let (w1, w2, w_const) = Random_visa_domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Random_visa_domain.Isa_metamorphic_synth.StdSub in
+    let basis = Domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
+    let (w1, w2, w_const) = Domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Domain.Isa_metamorphic_synth.StdSub in
     let not_src = bit_not reg_src in
     let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ not_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ not_src)) +~ u64 basis.psi1.bias in
     let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ not_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ not_src)) +~ u64 basis.psi2.bias in
@@ -96,8 +96,8 @@ let emit_alu_handlers b ~rng ~enable_egraph_expansion ?(enable_ephemeral_jit = f
   in
 
   let synth_basis_xor () =
-    let basis = Random_visa_domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
-    let (w1, w2, w_const) = Random_visa_domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Random_visa_domain.Isa_metamorphic_synth.StdXor in
+    let basis = Domain.Isa_metamorphic_synth.synth_orthogonal_alu_basis rng ~op1_id:0 ~op2_id:1 in
+    let (w1, w2, w_const) = Domain.Isa_metamorphic_synth.lower_std_op_to_basis basis Domain.Isa_metamorphic_synth.StdXor in
     let psi1_expr = (u64 basis.psi1.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi1.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi1.bias in
     let psi2_expr = (u64 basis.psi2.c_xor *~ (reg_dst ^~ reg_src)) +~ (u64 basis.psi2.c_and *~ (reg_dst &~ reg_src)) +~ u64 basis.psi2.bias in
     let lin_res = (u64 w1 *~ psi1_expr) +~ (u64 w2 *~ psi2_expr) +~ u64 w_const in

@@ -128,10 +128,10 @@ protected_out/
 ├── runner.cpp               # host program loading the bytecode
 ├── stack_vm_runtime.hpp     # generated Stack-VM runtime
 ├── jit_vm_runtime.hpp       # (engine=jit) Stack-JIT runtime
-├── asg_tech_2601.hpp        # exception-handling shadowing
-├── asg_tech_2603.hpp        # non-linear VPC dispatch
-├── asg_tech_2608.hpp        # chaff memory pools
-├── asg_comp_stall.hpp       # computational stalling
+├── asg_shadow_unwind.hpp        # exception-handling shadowing
+├── asg_dispatch_permutation.hpp        # non-linear VPC dispatch
+├── asg_trace_chaff.hpp        # chaff memory pools
+├── asg_emulation_stall.hpp       # computational stalling
 ├── asgard_obf.h             # marker macros
 └── protected.vanguard       # encrypted bytecode
 ```
@@ -212,7 +212,7 @@ examples/sjit_showcase/run_sjit_showcase.sh
 
 ### Multi-VM nested stack
 
-`--engine=multi` bridges two heterogeneous VMs through an affine zero-bridge. The nested stack architecture (`lib/multi_vm/nested_stack.ml`) uses:
+`--engine=multi` bridges two heterogeneous VMs through an affine zero-bridge. The nested stack architecture (`lib/nested_vm/nested_stack.ml`) uses:
 
 - OEIS A000108 Catalan Dyck word checksums for well-nestedness verification.
 - OEIS A004001 self-referential tier dispatch.
@@ -270,15 +270,15 @@ Applied automatically before lifting; also available standalone. Transforms the 
 |---|---|---|
 | CFG flattening, opaque predicates | `lib/cff/` | IR-level dispatcher flattening; 299-variant Z3-verified catalog |
 | MBA, E-graph equality saturation | `lib/mba_engine/` | Non-linear expansion, algebraic rewriting |
-| Tech-2601 exception shadowing | `lib/tech_2601/` | Sealed ABI unwind metadata |
-| Tech-2603 non-linear VPC dispatch | `lib/tech_2603/` | Removes monotonic VPC patterns |
-| Tech-2608 anti-trace synthesis | `lib/tech_2608/` | Chaff pools, decoy side effects |
-| Computational stalling | `lib/comp_stall/` | RSW time-lock puzzles, Chebyshev attractors, ergodic polynomials |
+| Tech-2601 exception shadowing | `lib/shadow_unwind/` | Sealed ABI unwind metadata |
+| Tech-2603 non-linear VPC dispatch | `lib/dispatch_permutation/` | Removes monotonic VPC patterns |
+| Tech-2608 anti-trace synthesis | `lib/trace_chaff/` | Chaff pools, decoy side effects |
+| Computational stalling | `lib/emulation_stall/` | RSW time-lock puzzles, Chebyshev attractors, ergodic polynomials |
 | Build-seed watermarking | `lib/watermark/` | Embedded per-build cryptographic watermarks |
 | Anti-tamper and SMC | `lib/native_vm/` | W^X dual mapping, section hashing, timing watchdogs |
 | Metamorphic handlers, domain salts | `lib/native_vm/` | Polymorphic handler bodies; simulated-annealing salt optimizer |
 | Metal GPU synthesis | `lib/gpu_synth/` | Parallel MBA synthesis, avalanche checks |
-| Vanguard-9292 codec | `lib/vanguard_9292/` | Polymorphic bytecode rolling-key codec |
+| Vanguard-9292 codec | `lib/bytecode_codec/` | Polymorphic bytecode rolling-key codec |
 
 ## Formal verification
 
@@ -346,18 +346,18 @@ asg-regs
 | `lib/riscv_lifter/` | RV64GC + RVV lifter |
 | `lib/stack_vm/` | Stack-VM engine: 32 passes, chunker, budget regulator, dead-code analyzer, BV verifier |
 | `lib/native_vm/` | Direct-threaded VM, metamorphic handlers, domain salt optimizer, anti-tamper |
-| `lib/multi_vm/` | Multi-VM zero-bridge, homomorphic bridge, nested stack (OEIS sequences) |
-| `lib/rd_jit_vm/` | Register-driven JIT: buffer, synthesizer, emitter, nano-JIT slots |
+| `lib/nested_vm/` | Multi-VM zero-bridge, homomorphic bridge, nested stack (OEIS sequences) |
+| `lib/jit_vm/` | Register-driven JIT: buffer, synthesizer, emitter, nano-JIT slots |
 | `lib/mba_engine/`, `lib/cff/` | MBA E-graph saturation, CFG flattening, opaque predicate catalog |
 | `lib/cpp_codegen/` | Typed C++20/C11 AST, EDSL combinators, printer, scrambler, pre-flight validator |
 | `lib/c_macro_obf/` | Macro obfuscator: stack strings, constant blinding, nanomites, MBA rewrites |
 | `lib/bytecode_crypto/` | SHA-256, HMAC-SHA256, Speck, SipHash-1-2, block key derivation |
-| `lib/tech_2601/`, `lib/tech_2603/`, `lib/tech_2608/` | Research passes: EH shadowing, VPC dispatch, anti-trace |
-| `lib/comp_stall/` | Computational stalling: RSW puzzles, Chebyshev, ergodic polynomials |
+| `lib/shadow_unwind/`, `lib/dispatch_permutation/`, `lib/trace_chaff/` | Research passes: EH shadowing, VPC dispatch, anti-trace |
+| `lib/emulation_stall/` | Computational stalling: RSW puzzles, Chebyshev, ergodic polynomials |
 | `lib/watermark/` | Build-seed watermark embed/extract |
 | `lib/macho/` | Mach-O reader with compact unwind and `LC_ROUTINES` support |
 | `lib/gpu_synth/` | Metal GPU MBA synthesis |
-| `lib/vanguard_9292/` | Polymorphic bytecode codec |
+| `lib/bytecode_codec/` | Polymorphic bytecode codec |
 | `lib/constants/` | Magic numbers registry (`magic_numbers.ml`) |
 | `lib/ports/` | Domainslib domain pool, parallel utilities |
 | `bin/` | CLI drivers |

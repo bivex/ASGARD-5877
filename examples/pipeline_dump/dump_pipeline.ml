@@ -1,7 +1,7 @@
 (** examples/pipeline_dump/dump_pipeline.ml
 
     Replays the exact 10-phase protection chain of the Stack VM packager
-    (lib/adapters/protect_adapters/vm_packagers.ml, module
+    (lib/adapters/protect_pipeline/vm_packagers.ml, module
     [Stack_vm_packager]) on a small synthetic program and writes one
     JSON file per phase.
 

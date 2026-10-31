@@ -1,14 +1,14 @@
 open Cmdliner
-open Random_visa_ports
+open Contracts
 open Protect_ports
-open Random_visa_application
+open Pipeline
 
 (* 7c. PROTECT-RISCV COMMAND (Automated RISC-V RV64GC Native Lifter & VM Pipeline via Hexagonal Architecture) *)
-let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile debug_symbols comp_stall comp_stall_iterations comp_stall_variant comp_stall_seed =
+let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile debug_symbols emulation_stall comp_stall_iterations comp_stall_variant comp_stall_seed =
   let resolved_engine =
     if enable_jit || engine = "jit" then "jit"
     else if engine = "stack" then "stack"
-    else if engine = "multi" || engine = "multi_vm" then "multi"
+    else if engine = "multi" || engine = "nested_vm" then "multi"
     else "threaded"
   in
   let comp_stall_seed_val =
@@ -18,22 +18,22 @@ let run_protect_riscv input_file out_dir seed config_file preset enable_cff enab
   in
   let effective_cfg =
     let resolved =
-      Protect_adapters.Config_adapter.resolve_with_watermark
+      Protect_pipeline.Config_adapter.resolve_with_watermark
         ~watermark:None
         ~config_file
         ~preset
         ~enable_cff
         ~enable_mba
         ~mba_depth
-        ?enable_comp_stall:comp_stall
+        ?enable_comp_stall:emulation_stall
         ?comp_stall_iterations
         ?comp_stall_variant
         ?comp_stall_seed:comp_stall_seed_val
         ~seed
         ()
     in
-    let raw = Protect_adapters.Config_adapter.unwrap resolved in
-    Protect_adapters.Config_adapter.wrap { raw with arch = `RISCV }
+    let raw = Protect_pipeline.Config_adapter.unwrap resolved in
+    Protect_pipeline.Config_adapter.wrap { raw with arch = `RISCV }
   in
   let rng =
     match Protect_ports.seed effective_cfg with
@@ -43,11 +43,11 @@ let run_protect_riscv input_file out_dir seed config_file preset enable_cff enab
         Random.State.make [| s |]
   in
 
-  let module Riscv_adapter = Protect_adapters.Riscv_lifter_adapter in
-  let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
-  let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
-  let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
-  let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+  let module Riscv_adapter = Protect_pipeline.Riscv_lifter_adapter in
+  let module C_macro_adapter = Protect_pipeline.C_macro_obf_adapter in
+  let module Trampoline_adapter = Protect_pipeline.C_trampoline_adapter in
+  let module Toolchain_adapter = Protect_pipeline.Clang_toolchain_adapter in
+  let module Vm_packager_adapters = Protect_pipeline.Vm_packagers in
 
   let lifter = (module Riscv_adapter : Lifter) in
   let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
@@ -58,12 +58,12 @@ let run_protect_riscv input_file out_dir seed config_file preset enable_cff enab
     match resolved_engine with
     | "jit" -> (module Vm_packager_adapters.Jit_vm_packager : Vm_packager)
     | "stack" -> (module Vm_packager_adapters.Stack_vm_packager : Vm_packager)
-    | "multi" -> (module Vm_packager_adapters.Multi_vm_packager : Vm_packager)
+    | "multi" -> (module Vm_packager_adapters.Nested_vm_packager : Vm_packager)
     | _ -> (module Vm_packager_adapters.Threaded_vm_packager : Vm_packager)
   in
 
   match
-    Protect_pipeline.run
+    Protect_orchestrator.run
       ~lifter
       ~c_macro_obfuscator
       ~vm_packager
@@ -134,7 +134,7 @@ let protect_riscv_cmd =
     let doc = "Preserve DWARF debug symbols and generate .dSYM for debugging/auditing in IDA" in
     Arg.(value & flag & info [ "g"; "debug-symbols" ] ~doc)
   in
-  let comp_stall =
+  let emulation_stall =
     let doc = "Enable Computational Stalling anti-emulation loop inside bytecode" in
     Arg.(value & opt (some bool) None & info [ "comp-stall" ] ~docv:"BOOL" ~doc)
   in
@@ -150,5 +150,5 @@ let protect_riscv_cmd =
     let doc = "Custom 64-bit seed for computational stalling key derivation (hex or decimal)" in
     Arg.(value & opt (some string) None & info [ "comp-stall-seed" ] ~docv:"SEED" ~doc)
   in
-  let term = Term.(ret (const run_protect_riscv $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ compile $ debug_symbols $ comp_stall $ comp_stall_iterations $ comp_stall_variant $ comp_stall_seed)) in
+  let term = Term.(ret (const run_protect_riscv $ input $ out_dir $ seed $ config_file $ preset $ cff $ mba $ mba_depth $ engine $ jit $ compile $ debug_symbols $ emulation_stall $ comp_stall_iterations $ comp_stall_variant $ comp_stall_seed)) in
   Cmd.v (Cmd.info "protect-riscv" ~doc) term

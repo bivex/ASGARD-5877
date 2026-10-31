@@ -1,6 +1,6 @@
 (* Metamorphic ISA decoder: C++20 header codegen (Input: Isa_metamorphic_synth spec+basis, Output: header text). *)
 (* Split out of domain/isa_metamorphic_synth.ml: emission never belonged to the pure domain layer. *)
-open Random_visa_domain.Isa_metamorphic_synth
+open Domain.Isa_metamorphic_synth
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 

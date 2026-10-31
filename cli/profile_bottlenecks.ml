@@ -13,7 +13,7 @@ let lm_nilpotent = Landmark.register "nilpotent_transforms"
 let lm_egraph = Landmark.register "egraph_saturation"
 let lm_rns = Landmark.register "rns_garner_crt"
 let lm_cff = Landmark.register "cff_flattening"
-let lm_bridge = Landmark.register "multi_vm_affine_bridge"
+let lm_bridge = Landmark.register "nested_vm_affine_bridge"
 
 (* End-to-end ARM64 Virtualization Pipeline *)
 let lm_e2e_pipeline = Landmark.register "arm64_e2e_pipeline"
@@ -142,19 +142,19 @@ let () =
   Landmark.enter lm_cff;
   let (t_cff, _) = time_it (fun () ->
     for _ = 1 to n_iters do
-      ignore (Cff.flatten_func ~rng sample_func)
+      ignore (Control_flow.Control_flow_engine.flatten_func ~rng sample_func)
     done
   ) in
   Landmark.exit lm_cff;
 
   (* 1.7 Multi-VM Affine State Morphing (GL16) *)
-  let bridge = Multi_vm.Bridge.generate_bridge rng in
+  let bridge = Nested_vm.Bridge.generate_bridge rng in
   let test_vec = Array.init 16 (fun _ -> Random.State.int64 rng 0x7FFFFFFFFFFFFFFFL) in
   Landmark.enter lm_bridge;
   let (t_bridge, _) = time_it (fun () ->
     for _ = 1 to n_iters do
-      let morphed = Multi_vm.Bridge.forward_morph bridge test_vec 0x13375877AABBCCDDL in
-      ignore (Multi_vm.Bridge.inverse_morph bridge morphed 0x13375877AABBCCDDL)
+      let morphed = Nested_vm.Bridge.forward_morph bridge test_vec 0x13375877AABBCCDDL in
+      ignore (Nested_vm.Bridge.inverse_morph bridge morphed 0x13375877AABBCCDDL)
     done
   ) in
   Landmark.exit lm_bridge;
@@ -254,7 +254,7 @@ let () =
       let c_src_content = really_input_string ic_c (in_channel_length ic_c) in
       close_in ic_c;
       let (ttr, _) = time_it (fun () ->
-        Protect_adapters.C_trampoline_adapter.embed_vm_trampoline ~c_src:c_src_content ~bytecode:pkg.bytecode ~out_path:virt_cpp_path ()
+        Protect_pipeline.C_trampoline_adapter.embed_vm_trampoline ~c_src:c_src_content ~bytecode:pkg.bytecode ~out_path:virt_cpp_path ()
       ) in
       Landmark.exit lm_e2e_trampoline;
 

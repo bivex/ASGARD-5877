@@ -1,0 +1,42 @@
+open Vm_ir
+
+type nested_vm_package = {
+  bridge : Bridge.affine_bridge;
+  partition : Partitioner.partition_report;
+  cpp_runtime_source : string;
+  runner_source : string;
+  bytecode : int64 list;
+  metrics : Native_vm.Metrics.metrics_report;
+}
+
+val emit_multi_vm_header_decls :
+  bridge_cpp:string ->
+  asgard_multi_vm_source:string ->
+  base_runtime_source:string ->
+  unit ->
+  Cpp_codegen.Cpp_ast.top_decl list
+
+val emit_multi_vm_header_source :
+  bridge_cpp:string ->
+  asgard_multi_vm_source:string ->
+  base_runtime_source:string ->
+  unit ->
+  string
+
+val emit_multi_vm_runner_main_def :
+  math_blocks:int ->
+  flow_blocks:int ->
+  inter_vm_transitions:int ->
+  unit ->
+  Cpp_codegen.Cpp_ast.top_decl
+
+val compile_and_package :
+  rng:Random.State.t ->
+  ?enable_cff:bool ->
+  ?enable_mba:bool ->
+  ?mba_depth:int ->
+  ?nested_config:Nested_stack.nested_config ->
+  ?config:Native_vm.Protection_config.t ->
+  ?constants:(string * string) list ->
+  Ir.func ->
+  nested_vm_package

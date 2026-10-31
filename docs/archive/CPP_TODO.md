@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The **ASGARD-5877** engine contains advanced code virtualization, algebraic obfuscation, and formal synthesis algorithms. While core features (Computed GOTO, CFF, basic MBA, and recently **RNS-4** and **Multi-VM Zero-Bridge**) are active in C++ code generation, several theoretical sub-engines implemented in OCaml are not yet fully piped into the native C++ runtime emitted by [`lib/native_vm`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm) and [`lib/multi_vm`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm).
+The **ASGARD-5877** engine contains advanced code virtualization, algebraic obfuscation, and formal synthesis algorithms. While core features (Computed GOTO, CFF, basic MBA, and recently **RNS-4** and **Multi-VM Zero-Bridge**) are active in C++ code generation, several theoretical sub-engines implemented in OCaml are not yet fully piped into the native C++ runtime emitted by [`lib/native_vm`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm) and [`lib/nested_vm`](file:///Volumes/External/Code/ASGARD-5877/lib/nested_vm).
 
 This roadmap tracks feature completion, architectural gaps, and implementation tasks required to achieve 100% feature parity between the OCaml core and the generated C++ binaries.
 
@@ -19,11 +19,11 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
 | # | Engine Subsystem | OCaml Module | C++ Status | Priority | Impact / Threat Model |
 |---|:---|:---|:---:|:---:|:---|
 | 1 | **Residue Number System (RNS-4)** | [`lib/vm_ir/rns.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rns.ml) | DONE | Complete | Breaks linear SMT solvers ($M > 2^{64}$) |
-| 2 | **Multi-VM Zero-Bridge** | [`lib/multi_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/multi_vm/) | DONE | Complete | $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ affine morphing in bytecode |
+| 2 | **Multi-VM Zero-Bridge** | [`lib/nested_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/nested_vm/) | DONE | Complete | $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ affine morphing in bytecode |
 | 3 | **Nanomites & Hardware Signal Dispatch** | [`lib/native_vm/hardened_runtime.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/hardened_runtime.ml) | DONE | Complete | Breaks static disassemblers & DSE branching |
 | 4 | **Anti-Pushan Dynamic Rolling Keys** | [`lib/vm_ir/rolling_key.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/vm_ir/rolling_key.ml) | DONE | Complete | Prevents replay attacks & opcode recording |
 | 5 | **Ephemeral Memory Bytecode Scrubbing** | [`lib/native_vm/vm_runtime_emitter.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/vm_runtime_emitter.ml) | DONE | Complete | Neutralizes RAM process dumpers |
-| 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/rd_jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/rd_jit_vm/) | DONE | Complete | Eliminates static handler jump tables |
+| 6 | **RD-JIT VM (Dynamic Native Code Synthesis)**| [`lib/jit_vm/`](file:///Volumes/External/Code/ASGARD-5877/lib/jit_vm/) | DONE | Complete | Eliminates static handler jump tables |
 | 7 | **Vector ISA (V-ISA / SIMD Handlers)** | [`lib/domain/vector_instruction.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/domain/vector_instruction.ml) | DONE | Complete | Hides scalar logic in NEON/AVX vectors |
 | 8 | **Direct Syscall Invocation (Bypass libc)** | [`lib/c_macro_obf/c_macro_guards.ml`](file:///Volumes/External/Code/ASGARD-5877/lib/c_macro_obf/c_macro_guards.ml) | DONE | Complete | Thwarts userspace hooks (Frida, DTrace) |
 | 9 | **GPU Metal Compute Acceleration** | [`lib/gpu_synth/`](file:///Volumes/External/Code/ASGARD-5877/lib/gpu_synth/) | REMOVED | — | Dropped from roadmap (commit `9b90920`); silent-fallback hazards tracked in `TODO.md` item 3 |
@@ -50,13 +50,13 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - Reconstructed back to 64-bit integer via Garner's algorithm in `H_RNS_RECONSTRUCT`.
 
 ### B. Multi-VM Zero-Bridge Dynamic Affine Morphing
-- **Status**: Fully Operational (`lib/multi_vm/`, `lib/native_vm/`)
+- **Status**: Fully Operational (`lib/nested_vm/`, `lib/native_vm/`)
 - **Mathematical Primitive**: Invertible affine transformation $y = A \cdot x + b \pmod{2^{64}}$ over $GL_{16}(\mathbb{Z}/2^{64}\mathbb{Z})$ coupled with non-linear Trace Digest $\text{Murmur3}(VIP \oplus \text{TraceKey})$.
 - **Implementation Details**:
   - Opcodes `OP_BRIDGE_TO_FLOW` (0x55) and `OP_BRIDGE_TO_MATH` (0x56) mapped to handlers `H_BRIDGE_TO_FLOW` and `H_BRIDGE_TO_MATH`.
-  - Bytecode emitted dynamically at engine boundary transitions (`inject_bridge_transitions` in `multi_vm_emitter.ml`).
+  - Bytecode emitted dynamically at engine boundary transitions (`inject_bridge_transitions` in `nested_vm_emitter.ml`).
   - In-place $16 \times 16$ affine register transformation executed in C++ `VMContext` (`in_place_morph_math_to_flow`, `in_place_morph_flow_to_math`), scrambling the entire register bank between functional VM partitions.
-  - Tested E2E with both standalone ARM64/x86_64 protected binaries and Dune test suite (`test/test_multi_vm.ml`).
+  - Tested E2E with both standalone ARM64/x86_64 protected binaries and Dune test suite (`test/test_nested_vm.ml`).
 
 ### C. Anti-Pushan Dynamic Rolling Keys in VM Dispatch Loop
 - **Status**: Fully Operational (`lib/vm_ir/rolling_key.ml`, `lib/native_vm/vm_emitter.ml`, `vm_runtime_emitter.ml`, `vm_handlers_emitter.ml`, `vm_context_emitter.ml`)
@@ -120,7 +120,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **Verified by Tests**: Verified in `test/test_anti_tamper_smc.ml` (`test_direct_syscalls_e2e`) verifying `sys_getpid`, `sys_check_debugger_present`, and `sys_write` under `clang++ -std=c++20 -O2`.
 
 ### G. RD-JIT VM (Register-Driven Dynamic Native Code Synthesis)
-- **Status**: Fully Operational (`lib/rd_jit_vm/rd_jit_emitter.ml`, `bin/cli_protect.ml`, `bin/cli_protect_arm64.ml`, `test/test_rd_jit_vm.ml`)
+- **Status**: Fully Operational (`lib/jit_vm/jit_emitter.ml`, `bin/cli_protect.ml`, `bin/cli_protect_arm64.ml`, `test/test_jit_vm.ml`)
 - **Academic Reference**: *Register-Driven Just-In-Time Virtualization & Ephemeral Code Synthesis*
 - **Mathematical & Architectural Primitive**: On-the-fly ephemeral machine code synthesis with zero static handler dispatch tables:
   - **Dual-Mapping W^X Memory Manager (`DualMappedJITBuffer`)**: Dual-mapped virtual memory architecture bypassing W^X protections:
@@ -132,7 +132,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
   - **RNS-4 Moduli Residue Synchronization**: Parallel modular channels ($M = \prod m_i > 2^{64}$) synchronized post-execution in `RD_JIT_Context` using Garner's CRT recovery.
   - **$O(1)$ Machine Code RAM Lifetime & Atomic Scrub**: Immediately upon block retirement, `atomic_zeroize` scrubs the write view with `volatile` wipes, leaving 0 trace of synthesized machine code in process RAM.
   - **CLI Integration**: Added CLI flags `--engine=jit` and `--jit` to `random_visa protect` and `random_visa protect-arm64`.
-  - **Verified by Tests**: Tested in `test/test_rd_jit_vm.ml` with E2E multi-op arithmetic execution under `clang++ -std=c++20 -O2`.
+  - **Verified by Tests**: Tested in `test/test_jit_vm.ml` with E2E multi-op arithmetic execution under `clang++ -std=c++20 -O2`.
 
 ---
 

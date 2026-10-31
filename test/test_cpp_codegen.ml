@@ -166,18 +166,18 @@ let () =
   Printf.printf "[PASS] Step 10: Stack_handlers_emitter emitted %d bytes using typed AST.\n" (String.length stack_code);
 
   (* 11. Test Multi-VM Typed Structures & Bridges AST emission *)
-  let multi_vm_code = Multi_vm.Multi_vm_context_emitter.emit_asgard_multi_vm_source () in
-  assert (String.length multi_vm_code > 500);
+  let nested_vm_code = Nested_vm.Nested_vm_context_emitter.emit_asgard_multi_vm_source () in
+  assert (String.length nested_vm_code > 500);
   List.iter (fun kw ->
     let rec find idx =
-      if idx + String.length kw > String.length multi_vm_code then false
-      else if String.sub multi_vm_code idx (String.length kw) = kw then true
+      if idx + String.length kw > String.length nested_vm_code then false
+      else if String.sub nested_vm_code idx (String.length kw) = kw then true
       else find (idx + 1)
     in
     if not (find 0) then failwith ("Missing Multi-VM keyword: " ^ kw)
   ) [ "namespace asgard_multi_vm"; "struct MathVMContext"; "struct FlowVMContext";
       "union SharedVMContext"; "bridge_switch_to_flow"; "bridge_switch_to_math" ];
-  Printf.printf "[PASS] Step 11: Multi_vm_context_emitter emitted %d bytes using typed AST.\n" (String.length multi_vm_code);
+  Printf.printf "[PASS] Step 11: Nested_vm_context_emitter emitted %d bytes using typed AST.\n" (String.length nested_vm_code);
 
   (* 12. Test C++ Pre-flight Syntax & Structural Validation *)
   let valid_cpp = {|
@@ -223,18 +223,18 @@ let () =
   Printf.printf "[PASS] Step 12: Pre-flight C++ syntax validation verified (structural & clang++).\n";
 
   (* 13. Test RD-JIT VM typed RNS & Context code generation *)
-  let rd_jit_hdr = Rd_jit_vm.Rd_jit_buffer.header () in
-  assert (String.length rd_jit_hdr > 1000);
+  let jit_hdr = Jit_vm.Jit_buffer.header () in
+  assert (String.length jit_hdr > 1000);
   List.iter (fun kw ->
     let rec find idx =
-      if idx + String.length kw > String.length rd_jit_hdr then false
-      else if String.sub rd_jit_hdr idx (String.length kw) = kw then true
+      if idx + String.length kw > String.length jit_hdr then false
+      else if String.sub jit_hdr idx (String.length kw) = kw then true
       else find (idx + 1)
     in
     if not (find 0) then failwith ("Missing RD-JIT keyword in header: " ^ kw)
   ) [ "struct RNS_Register"; "struct RD_JIT_Context"; "RNS_M1"; "RNS_M2"; "decode_crt"; "DualMappedJITBuffer" ];
 
-  let synth_hdr = Rd_jit_vm.Rd_jit_synth.header () in
+  let synth_hdr = Jit_vm.Jit_synth.header () in
   assert (String.length synth_hdr > 500);
   List.iter (fun kw ->
     let rec find idx =
@@ -262,13 +262,13 @@ let () =
    | Error err -> failwith ("Superops syntax validation failed: " ^ err));
 
   let rng = Random.State.make [| 42 |] in
-  (match Random_visa_domain.Isa_grammar.generate_isa ~rng ~name:"Vanguard_Test" ~num_instructions:4 () with
+  (match Domain.Isa_grammar.generate_isa ~rng ~name:"Vanguard_Test" ~num_instructions:4 () with
    | Error _ -> failwith "Failed to generate test ISA spec"
    | Ok spec ->
-       (match Vanguard_9292.of_isa_spec ~rng spec with
+       (match Bytecode_codec.of_isa_spec ~rng spec with
         | Error err -> failwith ("Failed to generate vanguard scheme: " ^ err)
         | Ok vanguard_scheme ->
-            let decoder_cpp = Vanguard_9292.emit_cpp_decoder vanguard_scheme spec in
+            let decoder_cpp = Bytecode_codec.emit_cpp_decoder vanguard_scheme spec in
             assert (String.length decoder_cpp > 1000);
             List.iter (fun kw ->
               let rec find idx =
@@ -315,7 +315,7 @@ let () =
   Printf.printf "[PASS] Step 16: Vector ISA C++ Emulator AST (VRegFile & EmulatorState) emitted.\n";
 
   (* 17. Tech-2603 NonLinearVPCDispatcher template struct AST *)
-  let vpc_dispatcher_code = render_top_decl (Tech_2603.Tech_2603_engine.emit_nonlinear_vpc_dispatcher_def ()) in
+  let vpc_dispatcher_code = render_top_decl (Dispatch_permutation.Dispatch_permutation_engine.emit_nonlinear_vpc_dispatcher_def ()) in
   (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax vpc_dispatcher_code with
    | Ok () -> ()
    | Error err -> failwith ("NonLinearVPCDispatcher syntax validation failed: " ^ err));
@@ -364,8 +364,8 @@ let () =
   Printf.printf "[PASS] Step 20: C Nanomite branch functions & auto-init constructor emitted using typed AST.\n";
 
   (* 21. Multi-VM Affine Bridge Matrices & Morphing AST *)
-  let bridge = Multi_vm.Bridge.generate_bridge rng in
-  let bridge_cpp = Multi_vm.Bridge.emit_cpp_bridge_code bridge in
+  let bridge = Nested_vm.Bridge.generate_bridge rng in
+  let bridge_cpp = Nested_vm.Bridge.emit_cpp_bridge_code bridge in
   (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax bridge_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Multi-VM Bridge syntax validation failed: " ^ err));
@@ -391,7 +391,7 @@ let () =
   Printf.printf "[PASS] Step 23: Residue Number System (RNS-4) Garner CRT emitted using typed AST.\n";
 
   (* 24. Tech-2603 Anti-VPC-Tracking C++20 Header AST *)
-  let tech_2603_cpp = Tech_2603.Tech_2603_engine.emit_tech_2603_cpp_header () in
+  let tech_2603_cpp = Dispatch_permutation.Dispatch_permutation_engine.emit_tech_2603_cpp_header () in
   (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax tech_2603_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2603 header syntax validation failed: " ^ err));
@@ -399,7 +399,7 @@ let () =
   Printf.printf "[PASS] Step 24: Tech-2603 Anti-VPC-Tracking runtime emitted using typed AST.\n";
 
   (* 25. Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pool C++20 Header AST *)
-  let tech_2608_cpp = Tech_2608.Tech_2608_engine.emit_tech_2608_cpp_header () in
+  let tech_2608_cpp = Trace_chaff.Trace_chaff_engine.emit_tech_2608_cpp_header () in
   (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax tech_2608_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2608 header syntax validation failed: " ^ err));
@@ -407,7 +407,7 @@ let () =
   Printf.printf "[PASS] Step 25: Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pool emitted using typed AST.\n";
 
   (* 26. Vector ISA C++ Emulator main.cpp and ISA constants AST *)
-  (match Random_visa_domain.Isa_grammar.generate_isa ~rng ~name:"Emulator_Test" ~num_instructions:4 () with
+  (match Domain.Isa_grammar.generate_isa ~rng ~name:"Emulator_Test" ~num_instructions:4 () with
    | Error _ -> failwith "Failed to generate test ISA spec"
    | Ok test_spec ->
        let isa_consts = Random_visa_cpp_emitter.Cpp_header_emitters.emit_isa_constants_defs test_spec in
@@ -420,7 +420,7 @@ let () =
        Printf.printf "[PASS] Step 26: Vector ISA C++ Emulator main.cpp & constants emitted using typed AST.\n");
 
   (* 27. RD-JIT VM runner main function AST *)
-  let rd_main_decl = Rd_jit_vm.Rd_jit_emitter.emit_rd_jit_main_def () in
+  let rd_main_decl = Jit_vm.Jit_emitter.emit_rd_jit_main_def () in
   let rd_main_cpp = render_top_decl rd_main_decl in
   (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax rd_main_cpp with
    | Ok () -> ()
@@ -462,13 +462,13 @@ let () =
   Printf.printf "[PASS] Step 29: Stack-VM runner & probe emitted using typed AST.\n";
 
   (* 30. Multi-VM runner main function & runner AST *)
-  let multi_vm_main_decl = Multi_vm.Multi_vm_emitter.emit_multi_vm_runner_main_def
+  let nested_vm_main_decl = Nested_vm.Nested_vm_emitter.emit_multi_vm_runner_main_def
     ~math_blocks:3 ~flow_blocks:2 ~inter_vm_transitions:4 () in
-  let multi_vm_main_cpp = render_top_decl multi_vm_main_decl in
-  (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax multi_vm_main_cpp with
+  let nested_vm_main_cpp = render_top_decl nested_vm_main_decl in
+  (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax nested_vm_main_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Multi-VM runner main function syntax validation failed: " ^ err));
-  assert (String.length multi_vm_main_cpp > 300);
+  assert (String.length nested_vm_main_cpp > 300);
   Printf.printf "[PASS] Step 30: Multi-VM runner main function & weak global linkage emitted using typed AST.\n";
 
   (* 31. Native VM external symbols & constants tables AST *)
@@ -560,16 +560,16 @@ let () =
   Printf.printf "[PASS] Step 35: Stack-VM block tables emitted using typed AST.\n";
 
   (* 36. Multi-VM header AST & source emission *)
-  let multi_vm_hdr_cpp = Multi_vm.Multi_vm_emitter.emit_multi_vm_header_source
+  let nested_vm_hdr_cpp = Nested_vm.Nested_vm_emitter.emit_multi_vm_header_source
     ~bridge_cpp:"// test bridge code\n"
     ~asgard_multi_vm_source:"namespace asgard_multi_vm { struct DummyCtx {}; }\n"
     ~base_runtime_source:"namespace vanguard_threaded_vm { struct BaseCtx {}; }\n"
     ()
   in
-  (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax multi_vm_hdr_cpp with
+  (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax nested_vm_hdr_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Multi-VM header syntax validation failed: " ^ err));
-  assert (contains_str multi_vm_hdr_cpp "ASGARD_MULTI_VM_ENABLED");
+  assert (contains_str nested_vm_hdr_cpp "ASGARD_MULTI_VM_ENABLED");
   Printf.printf "[PASS] Step 36: Multi-VM header emitted using typed EDSL without Jingoo.\n";
 
   (* 37. Core SDK Preproc directives, ComputedGoto, LabelAddr, DesignatedIndex/Range *)
@@ -726,25 +726,25 @@ let () =
   Printf.printf "[PASS] Step 41: C Macro Obfuscation pure typed EDSL AST and header emission validated.\n";
 
   (* 42. RD-JIT VM complete typed C++20 EDSL runtime emission & ClassDef DualMappedJITBuffer *)
-  let rd_jit_decls = Rd_jit_vm.Rd_jit_emitter.emit_rd_jit_runtime_decls ~external_symbols:["printf"; "malloc"] in
-  assert (List.length rd_jit_decls > 5);
-  let rd_jit_full_cpp = Cpp_codegen.Cpp_printer.render_top_decls rd_jit_decls in
-  assert (contains_str rd_jit_full_cpp "class DualMappedJITBuffer");
-  assert (contains_str rd_jit_full_cpp "struct RD_JIT_Context");
-  assert (contains_str rd_jit_full_cpp "struct RNS_Register");
-  assert (contains_str rd_jit_full_cpp "asgard_rd_jit_call_extern");
-  assert (contains_str rd_jit_full_cpp "synthesize_and_execute_block");
-  assert (contains_str rd_jit_full_cpp "execute_jit_function");
-  assert (contains_str rd_jit_full_cpp "namespace vanguard_threaded_vm");
-  assert (contains_str rd_jit_full_cpp "asgard_vm_call");
-  (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax rd_jit_full_cpp with
+  let jit_decls = Jit_vm.Jit_emitter.emit_rd_jit_runtime_decls ~external_symbols:["printf"; "malloc"] in
+  assert (List.length jit_decls > 5);
+  let jit_full_cpp = Cpp_codegen.Cpp_printer.render_top_decls jit_decls in
+  assert (contains_str jit_full_cpp "class DualMappedJITBuffer");
+  assert (contains_str jit_full_cpp "struct RD_JIT_Context");
+  assert (contains_str jit_full_cpp "struct RNS_Register");
+  assert (contains_str jit_full_cpp "asgard_rd_jit_call_extern");
+  assert (contains_str jit_full_cpp "synthesize_and_execute_block");
+  assert (contains_str jit_full_cpp "execute_jit_function");
+  assert (contains_str jit_full_cpp "namespace vanguard_threaded_vm");
+  assert (contains_str jit_full_cpp "asgard_vm_call");
+  (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax jit_full_cpp with
    | Ok () -> ()
    | Error err -> failwith ("RD-JIT runtime header syntax validation failed: " ^ err));
   (* 43. Tech-2601 complete typed C++20 EDSL runtime header emission & AST validation *)
-  let tech_2601_decls = Tech_2601.Tech_2601_emitter.runtime_header_decls () in
+  let tech_2601_decls = Shadow_unwind.Shadow_unwind_emitter.runtime_header_decls () in
   assert (List.length tech_2601_decls > 0);
-  let tech_2601_header_str = Tech_2601.Tech_2601_emitter.emit_runtime_header () in
-  assert (contains_str tech_2601_header_str "ASGARD_TECH_2601_HPP");
+  let tech_2601_header_str = Shadow_unwind.Shadow_unwind_emitter.emit_runtime_header () in
+  assert (contains_str tech_2601_header_str "ASGARD_SHADOW_UNWIND_HPP");
   assert (contains_str tech_2601_header_str "constant_time_memcmp");
   assert (contains_str tech_2601_header_str "class Sha256");
   assert (contains_str tech_2601_header_str "class HmacSha256");
@@ -763,8 +763,8 @@ let () =
   (match Random_visa_compiler_adapter.Cpp_validator.validate_cpp_syntax tech_2601_header_str with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2601 runtime header syntax validation failed: " ^ err));
-  (if Sys.file_exists "lib/tech_2601" then begin
-     let oc = open_out "lib/tech_2601/asg_tech_2601.hpp" in
+  (if Sys.file_exists "lib/shadow_unwind" then begin
+     let oc = open_out "lib/shadow_unwind/asg_shadow_unwind.hpp" in
      output_string oc tech_2601_header_str;
      close_out oc
    end);

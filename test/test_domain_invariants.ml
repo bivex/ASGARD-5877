@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let test_sew_values_and_properties () =
   Alcotest.(check int) "E8 bits" 8 (Types.Sew.to_bits Types.Sew.E8);

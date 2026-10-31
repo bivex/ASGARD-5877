@@ -1,4 +1,4 @@
-(* lib/rd_jit_vm/nano_jit_slot.ml
+(* lib/jit_vm/nano_jit_slot.ml
    ASGARD-5877: Sealed Nano-JIT Slot Arena & Inter-Chunk Hardening
 
    OEIS catalogue (docs/OEIS_MATHEMATICAL_SEQUENCES.md):

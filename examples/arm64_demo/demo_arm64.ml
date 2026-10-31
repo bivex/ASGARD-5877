@@ -1,4 +1,4 @@
-open Random_visa_ports
+open Contracts
 
 let write_file path content =
   let oc = open_out path in
@@ -162,7 +162,7 @@ let cpp_runner_body = {|
 |}
 
 let () =
-  let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
+  let module Arm64_adapter = Protect_pipeline.Arm64_lifter_adapter in
   Printf.printf "[1/4] Lifting ARM64 assembly with new instructions into ASGARD Micro-IR...\n%!";
   match Arm64_adapter.lift_source asm_source with
   | Error err ->

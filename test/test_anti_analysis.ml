@@ -115,7 +115,7 @@ let test_cff_flatten_fibonacci () =
   let orig_func = Ir.make_func ~name:"fib" ~entry_id:0 ~blocks:[ b0; b1; b2; b3 ] in
 
   (* Flatten control flow *)
-  match Cff.flatten_func ~rng orig_func with
+  match Control_flow.Control_flow_engine.flatten_func ~rng orig_func with
   | Error e -> Alcotest.fail e
   | Ok flattened_func ->
       (* Check that block count grew with dispatcher & entry *)
@@ -148,7 +148,7 @@ factorial:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok lifted_func -> (
-      match Cff.flatten_func ~rng lifted_func with
+      match Control_flow.Control_flow_engine.flatten_func ~rng lifted_func with
       | Error e -> Alcotest.fail e
       | Ok flattened_func ->
           let state = make_state () in
@@ -172,7 +172,7 @@ func_abs:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok lifted_func -> (
-      match Cff.flatten_func ~rng lifted_func with
+      match Control_flow.Control_flow_engine.flatten_func ~rng lifted_func with
       | Error e -> Alcotest.fail e
       | Ok flattened_func ->
           (* Test negative input *)
@@ -233,8 +233,8 @@ let test_cff_ocamlgraph_cfg_metrics () =
   let b3 = Ir.make_block ~id:3 ~label:"exit" ~instrs:[ Ir.Ret ] in
   let func = Ir.make_func ~name:"loop_test" ~entry_id:0 ~blocks:[ b0; b1; b2; b3 ] in
 
-  let cfg = Cff.build_cfg func in
-  let metrics = Cff.analyze_cfg ~entry_id:0 cfg in
+  let cfg = Control_flow.Control_flow_engine.build_cfg func in
+  let metrics = Control_flow.Control_flow_engine.analyze_cfg ~entry_id:0 cfg in
 
   Alcotest.(check int) "num_vertices = 4" 4 metrics.num_vertices;
   Alcotest.(check int) "num_edges = 4" 4 metrics.num_edges;
@@ -250,13 +250,13 @@ let test_cff_ocamlgraph_dot_and_reachability () =
   let b2 = Ir.make_block ~id:2 ~label:"dead_block" ~instrs:[ Ir.Ret ] in
   let func = Ir.make_func ~name:"reach_test" ~entry_id:0 ~blocks:[ b0; b1; b2 ] in
 
-  let cfg = Cff.build_cfg func in
-  let reachable = Cff.reachable_blocks ~entry_id:0 cfg in
+  let cfg = Control_flow.Control_flow_engine.build_cfg func in
+  let reachable = Control_flow.Control_flow_engine.reachable_blocks ~entry_id:0 cfg in
   Alcotest.(check bool) "entry reachable" true (List.mem 0 reachable);
   Alcotest.(check bool) "exit reachable" true (List.mem 1 reachable);
   Alcotest.(check bool) "dead_block not reachable" false (List.mem 2 reachable);
 
-  let dot = Cff.export_dot ~func cfg in
+  let dot = Control_flow.Control_flow_engine.export_dot ~func cfg in
   Alcotest.(check bool) "dot contains digraph" true (String.length dot > 0 && String.sub dot 0 7 = "digraph");
   Alcotest.(check bool) "dot contains node_0" true (String.contains dot '0')
 
@@ -345,9 +345,9 @@ let test_cff_flatten_with_opaque_predicates () =
   ] in
   let orig_func = Ir.make_func ~name:"fib_opaque" ~entry_id:0 ~blocks:[ b0; b1; b2; b3 ] in
 
-  let options = { Cff.default_cff_options with inject_opaque_predicates = true; obfuscate_states = true; input_tainted_transitions = true } in
+  let options = { Control_flow.Control_flow_engine.default_cff_options with inject_opaque_predicates = true; obfuscate_states = true; input_tainted_transitions = true } in
 
-  match Cff.flatten_func ~options ~rng orig_func with
+  match Control_flow.Control_flow_engine.flatten_func ~options ~rng orig_func with
   | Error e -> Alcotest.fail e
   | Ok flattened_func ->
       let state = make_state () in
@@ -439,8 +439,8 @@ func_taint_test:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok lifted_func ->
-      let options = { Cff.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
-      match Cff.flatten_func ~options ~rng lifted_func with
+      let options = { Control_flow.Control_flow_engine.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
+      match Control_flow.Control_flow_engine.flatten_func ~options ~rng lifted_func with
       | Error e -> Alcotest.fail e
       | Ok flattened_func ->
           (* Test standard 32-bit input with upper bits zero: 15L (> 10) *)
@@ -487,8 +487,8 @@ func_clobber_test:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok lifted_func ->
-      let options = { Cff.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
-      match Cff.flatten_func ~options ~rng lifted_func with
+      let options = { Control_flow.Control_flow_engine.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
+      match Control_flow.Control_flow_engine.flatten_func ~options ~rng lifted_func with
       | Error e -> Alcotest.fail e
       | Ok flattened_func ->
           let state1 = make_state () in
@@ -521,8 +521,8 @@ func_taint_test:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok lifted_func ->
-      let options = { Cff.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
-      match Cff.flatten_func ~options ~rng lifted_func with
+      let options = { Control_flow.Control_flow_engine.default_cff_options with inject_opaque_predicates = false; obfuscate_states = true; input_tainted_transitions = true } in
+      match Control_flow.Control_flow_engine.flatten_func ~options ~rng lifted_func with
       | Error e -> Alcotest.fail e
       | Ok flattened_func ->
           let ext_syms = Hashtbl.create 16 in
@@ -557,8 +557,8 @@ func_multi_hub:
   match Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok lifted_func ->
-      let options = { Cff.default_cff_options with hub_count = 3; split_rate = 50 } in
-      match Cff.flatten_func ~options ~rng lifted_func with
+      let options = { Control_flow.Control_flow_engine.default_cff_options with hub_count = 3; split_rate = 50 } in
+      match Control_flow.Control_flow_engine.flatten_func ~options ~rng lifted_func with
       | Error e -> Alcotest.fail e
       | Ok flattened_func ->
           let hub_count =
@@ -598,7 +598,7 @@ let test_cff_topological_fallthrough () =
     Ir.Ret;
   ] in
   let func = Ir.make_func ~name:"test_fallthrough" ~entry_id:10 ~blocks:[ b1; b2 ] in
-  match Cff.flatten_func ~rng func with
+  match Control_flow.Control_flow_engine.flatten_func ~rng func with
   | Error e -> Alcotest.fail e
   | Ok flattened_func ->
       let state = make_state () in
@@ -625,7 +625,7 @@ let test_select_pinned_reg_exhaustion () =
   ] in
   let b = Ir.make_block ~id:1 ~label:"entry" ~instrs in
   let func = Ir.make_func ~name:"test_exhaustion" ~entry_id:1 ~blocks:[ b ] in
-  let pinned = Cff.select_pinned_reg func in
+  let pinned = Control_flow.Control_flow_engine.select_pinned_reg func in
   Alcotest.(check bool) "pinned reg exhausted" true (pinned = None)
 let test_tmr_majority_truth_table () =
   (* Truth table for all 8 bit patterns *)
@@ -742,24 +742,24 @@ let test_red_herring_effort_asymmetry () =
   let monster_count = ref 0 in
   let modulated_count = ref 0 in
   for b = 0 to 99 do
-    match Cff.Red_herring.block_effort_tier ~seed ~block_id:b with
-    | Cff.Red_herring.StealthPlain ->
+    match Control_flow.Control_flow_engine.Red_herring.block_effort_tier ~seed ~block_id:b with
+    | Control_flow.Control_flow_engine.Red_herring.StealthPlain ->
         incr stealth_count;
         Alcotest.(check int) "stealth split rate is 0" 0
-          (Cff.Red_herring.modulate_split_rate ~base_rate:50 ~seed ~block_id:b);
+          (Control_flow.Control_flow_engine.Red_herring.modulate_split_rate ~base_rate:50 ~seed ~block_id:b);
         Alcotest.(check int) "stealth mba depth is 1" 1
-          (Cff.Red_herring.modulate_mba_depth ~base_depth:3 ~seed ~block_id:b);
+          (Control_flow.Control_flow_engine.Red_herring.modulate_mba_depth ~base_depth:3 ~seed ~block_id:b);
         Alcotest.(check int) "stealth ghost count is 0" 0
-          (Cff.Red_herring.modulate_ghost_count ~max_ghosts:8 ~seed ~block_id:b)
-    | Cff.Red_herring.RedHerringMonster ->
+          (Control_flow.Control_flow_engine.Red_herring.modulate_ghost_count ~max_ghosts:8 ~seed ~block_id:b)
+    | Control_flow.Control_flow_engine.Red_herring.RedHerringMonster ->
         incr monster_count;
         Alcotest.(check int) "monster split rate is 100" 100
-          (Cff.Red_herring.modulate_split_rate ~base_rate:50 ~seed ~block_id:b);
+          (Control_flow.Control_flow_engine.Red_herring.modulate_split_rate ~base_rate:50 ~seed ~block_id:b);
         Alcotest.(check bool) "monster mba depth amplified" true
-          (Cff.Red_herring.modulate_mba_depth ~base_depth:3 ~seed ~block_id:b >= 4);
+          (Control_flow.Control_flow_engine.Red_herring.modulate_mba_depth ~base_depth:3 ~seed ~block_id:b >= 4);
         Alcotest.(check int) "monster ghost count is max" 8
-          (Cff.Red_herring.modulate_ghost_count ~max_ghosts:8 ~seed ~block_id:b)
-    | Cff.Red_herring.Modulated ->
+          (Control_flow.Control_flow_engine.Red_herring.modulate_ghost_count ~max_ghosts:8 ~seed ~block_id:b)
+    | Control_flow.Control_flow_engine.Red_herring.Modulated ->
         incr modulated_count
   done;
   Alcotest.(check bool) "stealth tier populated (>15%)" true (!stealth_count > 15);
@@ -782,8 +782,8 @@ func_red_herring:
   match X86_lifter.Lifter.lift_function asm with
   | Error e -> Alcotest.fail e
   | Ok func ->
-      let options = { Cff.default_cff_options with red_herring = true; split_rate = 50 } in
-      match Cff.flatten_func ~options ~rng func with
+      let options = { Control_flow.Control_flow_engine.default_cff_options with red_herring = true; split_rate = 50 } in
+      match Control_flow.Control_flow_engine.flatten_func ~options ~rng func with
       | Error e -> Alcotest.fail e
       | Ok flat_func ->
           let run_with rdi_val =

@@ -1,4 +1,4 @@
-open Random_visa_ports
+open Contracts
 
 let run (module C : Ports.Compiler) ~project_dir =
   match C.compile ~project_dir with

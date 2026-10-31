@@ -1,4 +1,4 @@
-open Random_visa_ports
+open Contracts
 open Protect_ports
 open Native_vm
 
@@ -119,7 +119,7 @@ let make_native_pass_board (engine_name : string) (cfg : Protection_config.t) : 
       pass_switch "EH Shadowing" cfg.eh_shadowing.enabled "disabled in configuration";
       pass_switch "Anti-VPC Tracking" cfg.anti_vpc.enabled "disabled in configuration";
       pass_switch "Memory Chaffing" cfg.memory_chaffing.enabled "disabled in configuration";
-      pass_switch "Computational Stalling" cfg.comp_stall.enabled "disabled in configuration";
+      pass_switch "Computational Stalling" cfg.emulation_stall.enabled "disabled in configuration";
     ]
   in
   Printf.sprintf
@@ -146,15 +146,15 @@ let convert_metrics ?(engine_name = "Threaded-VM") ?config (m : Native_vm.Metric
 
 let inject_tech_2601 (config : Protection_config.t) (func_name : string) (cpp_source : string) : string =
   if config.eh_shadowing.enabled then
-    let dummy_meta : Tech_2601.Tech_2601_types.original_metadata = {
+    let dummy_meta : Shadow_unwind.Shadow_unwind_types.original_metadata = {
       func_name;
       code_start_pc = 0x1000L;
       code_size = 256;
       unwind_ops = [ AllocStack config.eh_shadowing.shadow_alloc_size ];
       lsdata = { scopes = []; dtors = [] };
     } in
-    let master_key = Bytes.of_string "ASGARD_TECH_2601_MASTER_KEY_32B!" in
-    let container = Tech_2601.Tech_2601_engine.seal_metadata
+    let master_key = Bytes.of_string "ASGARD_SHADOW_UNWIND_MASTER_KEY_32B!" in
+    let container = Shadow_unwind.Shadow_unwind_engine.seal_metadata
       ~master_key
       ~alloc_size:config.eh_shadowing.shadow_alloc_size
       ~interceptor_symbol:config.eh_shadowing.interceptor_symbol
@@ -163,7 +163,7 @@ let inject_tech_2601 (config : Protection_config.t) (func_name : string) (cpp_so
     let prefix = Printf.sprintf
       "// [ASGARD Tech-2601] ABI-Compliant Exception Handling Shadowing Active\n\
 // Shadow Allocation: %d bytes | Interceptor: %s\n\
-#include \"asg_tech_2601.hpp\"\n\n"
+#include \"asg_shadow_unwind.hpp\"\n\n"
       container.shadow.shadow_alloc_size
       container.shadow.interceptor_symbol
     in
@@ -176,19 +176,19 @@ let inject_pipeline_hardening (config : Protection_config.t) (func_name : string
   let s =
     if Protection_config.anti_vpc_enabled (Some config) then
       "// [ASGARD Tech-2603] Anti-VPC-Tracking & Non-Linear Dispatch Active\n\
-#include \"asg_tech_2603.hpp\"\n\n" ^ s
+#include \"asg_dispatch_permutation.hpp\"\n\n" ^ s
     else s
   in
   let s =
     if Protection_config.memory_chaffing_enabled (Some config) then
       "// [ASGARD Tech-2608] Anti-Trace-Synthesis & Memory Chaffing Active\n\
-#include \"asg_tech_2608.hpp\"\n\n" ^ s
+#include \"asg_trace_chaff.hpp\"\n\n" ^ s
     else s
   in
   let s =
     if Protection_config.comp_stall_enabled (Some config) then
       "// [ASGARD] Computational Stalling (Anti-Emulation) Active\n\
-#include \"asg_comp_stall.hpp\"\n\n" ^ s
+#include \"asg_emulation_stall.hpp\"\n\n" ^ s
     else s
   in
   s
@@ -263,8 +263,8 @@ module Threaded_vm_packager : Vm_packager = struct
         Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2603] Anti-VPC Tracking: non-linear dispatch active";
       if native_cfg.memory_chaffing.enabled then
         Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d)" native_cfg.memory_chaffing.pool_size;
-      if native_cfg.comp_stall.enabled then
-        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)" native_cfg.comp_stall.n_iterations native_cfg.comp_stall.pow_difficulty;
+      if native_cfg.emulation_stall.enabled then
+        Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)" native_cfg.emulation_stall.n_iterations native_cfg.emulation_stall.pow_difficulty;
       let ir : Vm_ir.Ir.func = transform_func ~rng raw_ir in
       let pkg = Native_vm.Vm_emitter.compile_and_package ~rng ~config:native_cfg ?constants ir in
       Runtime_services.Logger.infof ~loc:__LOC__ ~section:"PACKAGER" "  └─ Threaded-VM packaging complete: %d bytecode words" (List.length pkg.bytecode);
@@ -373,7 +373,7 @@ module Stack_jit_packager : Vm_packager = struct
     | Error reason ->
         Runtime_services.Logger.warnf ~section:"STACK_JIT" "Stack-JIT chunking unfeasible for '%s' (%s); compiling with RD-JIT" name reason;
         let jit_pkg =
-          Rd_jit_vm.Rd_jit_emitter.compile_and_package
+          Jit_vm.Jit_emitter.compile_and_package
             ~rng
             ?config:(Some native_cfg)
             ~enable_cff:false
@@ -385,7 +385,7 @@ module Stack_jit_packager : Vm_packager = struct
         (jit_pkg, name)
     | Ok tr ->
         let jit_pkg =
-          Rd_jit_vm.Rd_jit_emitter.compile_and_package_chunked
+          Jit_vm.Jit_emitter.compile_and_package_chunked
             ~rng
             ?config:(Some native_cfg)
             ~enable_cff:false
@@ -444,7 +444,7 @@ module Stack_jit_packager : Vm_packager = struct
         results_arr.(i) <- Some res
       );
       let results = Array.to_list (Array.map Option.get results_arr) in
-      let bytecodes = List.map (fun ((pkg : Rd_jit_vm.Rd_jit_emitter.rd_jit_package), name) -> (name, pkg.bytecode)) results in
+      let bytecodes = List.map (fun ((pkg : Jit_vm.Jit_emitter.jit_package), name) -> (name, pkg.bytecode)) results in
       let full_pkg = fst (List.hd (List.rev results)) in
       let first_name = snd (List.hd results) in
       {
@@ -476,7 +476,7 @@ module Jit_vm_packager : Vm_packager = struct
     Stack_jit_packager.package ~rng ~config ?constants func
 end
 
-module Multi_vm_packager : Vm_packager = struct
+module Nested_vm_packager : Vm_packager = struct
   let engine_kind = MultiVm
 
   let package ~rng ~config ?constants (func : ir_func) : package_result =
@@ -485,7 +485,7 @@ module Multi_vm_packager : Vm_packager = struct
     Runtime_services.Logger.infof ~section:"MULTI_VM" "Multi-VM: packaging function '%s' with affine zero-bridge (CFF=%b, MBA=%b)"
       ir.name native_cfg.cff.enabled native_cfg.mba.enabled;
     let mv_pkg =
-      Multi_vm.Multi_vm_emitter.compile_and_package
+      Nested_vm.Nested_vm_emitter.compile_and_package
         ~rng
         ~enable_cff:false
         ~enable_mba:native_cfg.mba.enabled
@@ -501,7 +501,7 @@ module Multi_vm_packager : Vm_packager = struct
       bytecode = mv_pkg.bytecode;
       bytecodes = [ (ir.name, mv_pkg.bytecode) ];
       metrics = convert_metrics ~engine_name:"Multi-VM" ~config:native_cfg mv_pkg.metrics;
-      header_name = "multi_vm_runtime.hpp";
+      header_name = "nested_vm_runtime.hpp";
       rebind_address = None;
     }
 end
@@ -634,7 +634,7 @@ let make_stack_metrics
         rec_pass "EH Shadowing" native_cfg.eh_shadowing.enabled "disabled in configuration";
         rec_pass "Anti-VPC Tracking" native_cfg.anti_vpc.enabled "disabled in configuration";
         rec_pass "Memory Chaffing" native_cfg.memory_chaffing.enabled "disabled in configuration";
-        rec_pass "Computational Stalling" native_cfg.comp_stall.enabled "disabled in configuration";
+        rec_pass "Computational Stalling" native_cfg.emulation_stall.enabled "disabled in configuration";
         Stack_vm.Stack_provenance.get_records tr
   in
   let passes_configured = List.length pass_records in
@@ -713,20 +713,20 @@ module Stack_vm_packager : Vm_packager = struct
     let target_func =
       if native_cfg.cff.enabled then
         let cff_opts = {
-          Cff.inject_opaque_predicates = native_cfg.cff.inject_opaque_predicates;
+          Control_flow.Control_flow_engine.inject_opaque_predicates = native_cfg.cff.inject_opaque_predicates;
           obfuscate_states = native_cfg.cff.obfuscate_states;
           input_tainted_transitions = native_cfg.cff.input_tainted_transitions;
           split_rate = native_cfg.cff.split_rate;
           hub_count = native_cfg.cff.hub_count;
           pop_digest =
             (if native_cfg.cff.pop_digest then
-               Some (Cff.Pop_coupler.default_pop_config.digest_reg,
-                     Cff.Pop_coupler.default_pop_config.initial_seed)
+               Some (Control_flow.Control_flow_engine.Pop_coupler.default_pop_config.digest_reg,
+                     Control_flow.Control_flow_engine.Pop_coupler.default_pop_config.initial_seed)
              else None);
           red_herring = native_cfg.cff.red_herring;
         } in
 
-        match Cff.flatten_func ~options:cff_opts ~rng ir with
+        match Control_flow.Control_flow_engine.flatten_func ~options:cff_opts ~rng ir with
         | Ok f -> f
         | Error _ -> ir
       else ir
@@ -746,19 +746,19 @@ module Stack_vm_packager : Vm_packager = struct
     let is_main = target_name = "main" || target_name = "_main" in
     (* Bytecode Computational Stalling: runs exclusively inside VM bytecode *)
     let prog =
-      if native_cfg.comp_stall.enabled && is_main then
+      if native_cfg.emulation_stall.enabled && is_main then
         let iters =
-          if native_cfg.comp_stall.n_iterations <= 0 then
+          if native_cfg.emulation_stall.n_iterations <= 0 then
             Native_vm.Protection_types.default_comp_stall.n_iterations
-          else native_cfg.comp_stall.n_iterations
+          else native_cfg.emulation_stall.n_iterations
         in
         let seed =
-          if native_cfg.comp_stall.seed <> 0L then native_cfg.comp_stall.seed
+          if native_cfg.emulation_stall.seed <> 0L then native_cfg.emulation_stall.seed
           else match native_cfg.seed with
                | Some s -> Int64.of_int s
                | None -> Random_visa_constants.Magic_numbers.comp_stall_chebyshev_salt
         in
-        let variant = native_cfg.comp_stall.variant in
+        let variant = native_cfg.emulation_stall.variant in
         Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM"
           "  ├─ [Bytecode-Stall] Injecting dynamical stall into bytecode (N=%d, variant=%s, seed=0x%016LX)"
           iters variant seed;
@@ -1906,9 +1906,9 @@ module Stack_vm_packager : Vm_packager = struct
     if native_cfg.memory_chaffing.enabled then
       Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Tech-2608] Memory Chaffing: anti-trace synthesis active (pool=%d, ratio=%.1f)"
         native_cfg.memory_chaffing.pool_size native_cfg.memory_chaffing.chaff_ratio;
-    if native_cfg.comp_stall.enabled then
+    if native_cfg.emulation_stall.enabled then
       Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM" "  ├─ [Comp-Stall] Computational Stalling: anti-emulation active (N=%d, D=%d)"
-        native_cfg.comp_stall.n_iterations native_cfg.comp_stall.pow_difficulty;
+        native_cfg.emulation_stall.n_iterations native_cfg.emulation_stall.pow_difficulty;
 
     let is_internal_sym name =
       (match constants with
@@ -2000,11 +2000,11 @@ module Stack_vm_packager : Vm_packager = struct
       ~status:(if native_cfg.anti_tamper.enabled && native_cfg.anti_tamper.nanomites then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration") ();
     rec_pass ~name:"Direct Syscalls" ~phase:"security"
       ~status:(if native_cfg.anti_tamper.enabled && native_cfg.anti_tamper.direct_syscalls then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration") ();
-    rec_pass ~name:"EH Shadowing" ~phase:"tech_2601"
+    rec_pass ~name:"EH Shadowing" ~phase:"shadow_unwind"
       ~status:(if native_cfg.eh_shadowing.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration") ();
-    rec_pass ~name:"Anti-VPC Tracking" ~phase:"tech_2603"
+    rec_pass ~name:"Anti-VPC Tracking" ~phase:"dispatch_permutation"
       ~status:(if native_cfg.anti_vpc.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration") ();
-    rec_pass ~name:"Memory Chaffing" ~phase:"tech_2608"
+    rec_pass ~name:"Memory Chaffing" ~phase:"trace_chaff"
       ~status:(if native_cfg.memory_chaffing.enabled then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration") ();
     rec_pass ~name:"Address Binding" ~phase:"security"
       ~status:(if enable_address_bound then Stack_vm.Stack_provenance.Applied else Stack_vm.Stack_provenance.Disabled "disabled in configuration") ();

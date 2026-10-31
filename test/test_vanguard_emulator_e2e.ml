@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 open Random_visa_cpp_emitter
 
 let test_vanguard_emulator_integration () =
@@ -13,12 +13,12 @@ let test_vanguard_emulator_integration () =
         | Ok _ -> ());
 
         (* 2. Generate Vanguard-9292 build-specific obfuscation scheme *)
-        let vanguard_res = Vanguard_9292.of_isa_spec ~rng spec in
+        let vanguard_res = Bytecode_codec.of_isa_spec ~rng spec in
         match vanguard_res with
         | Error err -> Alcotest.fail err
         | Ok vanguard_scheme ->
             (* 3. Emit vanguard_decoder.hpp *)
-            let decoder_cpp = Vanguard_9292.emit_cpp_decoder vanguard_scheme spec in
+            let decoder_cpp = Bytecode_codec.emit_cpp_decoder vanguard_scheme spec in
             let decoder_path = Filename.concat tmp_dir "vanguard_decoder.hpp" in
             Test_helpers.write_file_string decoder_path decoder_cpp;
 
@@ -64,11 +64,11 @@ int main(int argc, char** argv) {
             let inst1 = List.hd spec.instructions in
             let inst2 = List.nth spec.instructions 1 in
             let asm_src = Printf.sprintf "%s v3, v2, v1\n%s v4, v2, v1\n" inst1.mnemonic inst2.mnemonic in
-            (match Vanguard_9292.assemble_program vanguard_scheme spec asm_src with
+            (match Bytecode_codec.assemble_program vanguard_scheme spec asm_src with
             | Error err -> Alcotest.fail err
             | Ok words ->
                 let bytecode_path = Filename.concat tmp_dir "prog.vanguard" in
-                let _ = Vanguard_9292.write_bytecode_file words bytecode_path in
+                let _ = Bytecode_codec.write_bytecode_file words bytecode_path in
 
                 (* 7. Execute valid obfuscated bytecode in emulator *)
                 let run_cmd = Printf.sprintf "%s %s" bin_path bytecode_path in
@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
                 (* 8. Test Decoy/Junk Trap: corrupt the bytecode word *)
                 let bad_bytecode_path = Filename.concat tmp_dir "corrupt.vanguard" in
                 let bad_words = [ 0xDEADBEEFCAFE0000L ] in
-                let _ = Vanguard_9292.write_bytecode_file bad_words bad_bytecode_path in
+                let _ = Bytecode_codec.write_bytecode_file bad_words bad_bytecode_path in
                 let bad_cmd = Printf.sprintf "%s %s 2>/dev/null" bin_path bad_bytecode_path in
                 let bad_status = Sys.command bad_cmd in
                 Alcotest.(check bool) "trap causes exit code 2" true (bad_status <> 0)))

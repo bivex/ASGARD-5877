@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let test_dispatch_strategy_invariants () =
   let rng = Random.State.make [| 42 |] in

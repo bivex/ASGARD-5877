@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let parse_reg reg_str =
   let s = String.trim (String.lowercase_ascii reg_str) in

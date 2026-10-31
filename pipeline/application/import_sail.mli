@@ -1,5 +1,5 @@
-open Random_visa_domain
-open Random_visa_ports
+open Domain
+open Contracts
 
 (** Use case: Import Sail specification file or text into domain Vector ISA spec. *)
 

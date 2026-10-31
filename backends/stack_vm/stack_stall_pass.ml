@@ -25,7 +25,7 @@ let apply_stall ?ctx ?(config = default_config) (prog : program) : program =
   else
     let n_iters = config.n_iterations in
     let seed = config.seed in
-    let key_mat = Comp_stall.Comp_stall_engine.compute_ergodic_key ~seed ~n_iterations:n_iters in
+    let key_mat = Emulation_stall.Emulation_stall_engine.compute_ergodic_key ~seed ~n_iterations:n_iters in
     let c_const = key_mat.c_const in
     let x0 = key_mat.x0 in
     let x_n = key_mat.x_n in

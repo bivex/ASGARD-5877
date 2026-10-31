@@ -18,7 +18,9 @@ let global_pool () =
     match !pool_ref with
     | Some p -> p
     | None ->
-        let n = max 1 (Domain.recommended_domain_count () - 1) in
+        let n = max 1 (Stdlib.Domain.recommended_domain_count () - 1) in
+        (* Stdlib.Domain is qualified explicitly: the wrapper module of the
+           `domain` library shadows the OCaml standard-library Domain. *)
         let p = Domainslib.Task.setup_pool ~num_domains:n () in
         pool_ref := Some p;
         p
@@ -27,7 +29,7 @@ let global_pool () =
   p
 
 (** Pre-warm the pool so the first packaging call finds running workers.
-    Call once at program startup (e.g. from [Protect_pipeline.run]). *)
+    Call once at program startup (e.g. from [Protect_orchestrator.run]). *)
 let warm () = ignore (global_pool ())
 
 (** [parallel_for pool ~n body] dispatches [body] over [0..n-1] in parallel

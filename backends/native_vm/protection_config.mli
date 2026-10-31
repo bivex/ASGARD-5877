@@ -310,7 +310,7 @@ type t = {
   eh_shadowing : eh_shadowing_config;
   anti_vpc : anti_vpc_config;
   memory_chaffing : memory_chaffing_config;
-  comp_stall : comp_stall_config;
+  emulation_stall : comp_stall_config;
   spaghetti : spaghetti_config;
   braid : braid_config;
   amplifier : amplifier_config;
@@ -394,7 +394,7 @@ val memory_chaffing_enabled : t option -> bool
 (** Tech-2608 Anti-Trace-Synthesis gate: [true] when enabled in memory_chaffing config. *)
 
 val comp_stall_enabled : t option -> bool
-(** Computational Stalling (anti-emulation) gate: [true] when enabled in comp_stall config. *)
+(** Computational Stalling (anti-emulation) gate: [true] when enabled in emulation_stall config. *)
 
 val oblivious_memory_enabled : t option -> bool
 (** Oblivious Memory & Decoy Access gate: [true] when enabled in vm_runtime. *)

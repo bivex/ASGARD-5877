@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let ensure_dir dir =
   if not (Sys.file_exists dir) then

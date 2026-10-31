@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let generate ~seed ~n ?profile () =
   let rng = Random.State.make [| seed |] in

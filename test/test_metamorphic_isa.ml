@@ -1,5 +1,5 @@
 open Int64
-open Random_visa_domain
+open Domain
 
 (* Test suite for the metamorphic ISA, the homomorphic ring and hardening *)
 module Isa = Isa_metamorphic_synth

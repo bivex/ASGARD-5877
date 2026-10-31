@@ -6,7 +6,7 @@ open X86_lifter
 open Native_vm
 open Vm_ir
 open Test_helpers
-open Protect_adapters
+open Protect_pipeline
 
 let mk_pkg ~seed asm =
   let rng = Random.State.make [| seed |] in
@@ -220,13 +220,13 @@ int main(void) {
           ~seed:(Some 20260930)
       in
       let rng = Random.State.make [| 20260930 |] in
-      let lifter = (module Arm64_lifter_adapter : Random_visa_ports.Protect_ports.Lifter) in
-      let vm_packager = (module Vm_packagers.Threaded_vm_packager : Random_visa_ports.Protect_ports.Vm_packager) in
-      let trampoline = (module C_trampoline_adapter.C_trampoline_engine : Random_visa_ports.Protect_ports.Trampoline_engine) in
-      let toolchain = (module Clang_toolchain_adapter : Random_visa_ports.Protect_ports.Toolchain) in
-      let c_macro = (module C_macro_obf_adapter : Random_visa_ports.Protect_ports.C_macro_obfuscator) in
+      let lifter = (module Arm64_lifter_adapter : Contracts.Protect_ports.Lifter) in
+      let vm_packager = (module Vm_packagers.Threaded_vm_packager : Contracts.Protect_ports.Vm_packager) in
+      let trampoline = (module C_trampoline_adapter.C_trampoline_engine : Contracts.Protect_ports.Trampoline_engine) in
+      let toolchain = (module Clang_toolchain_adapter : Contracts.Protect_ports.Toolchain) in
+      let c_macro = (module C_macro_obf_adapter : Contracts.Protect_ports.C_macro_obfuscator) in
       match
-        Random_visa_application.Protect_pipeline.run
+        Pipeline.Protect_orchestrator.run
           ~lifter
           ~c_macro_obfuscator:c_macro
           ~vm_packager
@@ -300,13 +300,13 @@ int main(void) {
           ~seed:(Some 20261001)
       in
       let rng = Random.State.make [| 20261001 |] in
-      let lifter = (module Arm64_lifter_adapter : Random_visa_ports.Protect_ports.Lifter) in
-      let vm_packager = (module Vm_packagers.Threaded_vm_packager : Random_visa_ports.Protect_ports.Vm_packager) in
-      let trampoline = (module C_trampoline_adapter.C_trampoline_engine : Random_visa_ports.Protect_ports.Trampoline_engine) in
-      let toolchain = (module Clang_toolchain_adapter : Random_visa_ports.Protect_ports.Toolchain) in
-      let c_macro = (module C_macro_obf_adapter : Random_visa_ports.Protect_ports.C_macro_obfuscator) in
+      let lifter = (module Arm64_lifter_adapter : Contracts.Protect_ports.Lifter) in
+      let vm_packager = (module Vm_packagers.Threaded_vm_packager : Contracts.Protect_ports.Vm_packager) in
+      let trampoline = (module C_trampoline_adapter.C_trampoline_engine : Contracts.Protect_ports.Trampoline_engine) in
+      let toolchain = (module Clang_toolchain_adapter : Contracts.Protect_ports.Toolchain) in
+      let c_macro = (module C_macro_obf_adapter : Contracts.Protect_ports.C_macro_obfuscator) in
       match
-        Random_visa_application.Protect_pipeline.run
+        Pipeline.Protect_orchestrator.run
           ~lifter
           ~c_macro_obfuscator:c_macro
           ~vm_packager
@@ -403,7 +403,7 @@ int main(void) {
             | Ok (f, _) -> f
           in
           (* The marker region must actually contain B16 memory traffic. *)
-          let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+          let unwrapped : Ir.func = Contracts.Protect_ports.unwrap_ir func in
           let b16_ops = ref 0 in
           Hashtbl.iter
             (fun _ (b : Ir.basic_block) ->
@@ -416,7 +416,7 @@ int main(void) {
             unwrapped.cfg.blocks;
           Alcotest.(check bool) (name ^ ": lifted region contains B16 loads/stores") true (!b16_ops >= 4);
           let rng = Random.State.make [| 20260931 |] in
-          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let native_cfg : Protection_config.t = Contracts.Protect_ports.unwrap_config cfg in
           let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg unwrapped in
           run_custom_vm ~name tmp_dir pkg {|
     uint64_t r = vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 0x12349ABCULL);
@@ -511,7 +511,7 @@ int main(void) {
             | Error err -> Alcotest.fail (Printf.sprintf "%s: lift failed: %s" name err)
             | Ok (f, _) -> f
           in
-          let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+          let unwrapped : Ir.func = Contracts.Protect_ports.unwrap_ir func in
           let signed_ops = ref 0 in
           Hashtbl.iter
             (fun _ (b : Ir.basic_block) ->
@@ -523,7 +523,7 @@ int main(void) {
             unwrapped.cfg.blocks;
           Alcotest.(check bool) (name ^ ": lifted region contains signed loads") true (!signed_ops >= 3);
           let rng = Random.State.make [| 20260936 |] in
-          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let native_cfg : Protection_config.t = Contracts.Protect_ports.unwrap_config cfg in
           let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg unwrapped in
           run_custom_vm ~name tmp_dir pkg {|
     uint64_t r = vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)(-5LL), (uint64_t)(-300LL), (uint64_t)(-100000LL));
@@ -573,7 +573,7 @@ int32_t classify_range(int32_t x) {
             | Ok f -> f
           in
           let rng = Random.State.make [| 20261012 |] in
-          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let native_cfg : Protection_config.t = Contracts.Protect_ports.unwrap_config cfg in
           let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
           run_custom_vm ~name tmp_dir pkg {|
     int32_t r1 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, (uint64_t)(-500LL));
@@ -638,7 +638,7 @@ int64_t stack_sort(int64_t a, int64_t b, int64_t c, int64_t d) {
             | Ok f -> f
           in
           let rng = Random.State.make [| 20261013 |] in
-          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let native_cfg : Protection_config.t = Contracts.Protect_ports.unwrap_config cfg in
           let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
           run_custom_vm ~name tmp_dir pkg {|
     // Input: 40, 10, 30, 20 -> Sorted: 10, 20, 30, 40 -> Result: 10*1000 + 20*100 + 30*10 + 40 = 12340
@@ -696,7 +696,7 @@ int32_t dispatch_op(int32_t op, int32_t a, int32_t b) {
             | Ok f -> f
           in
           let rng = Random.State.make [| 20261014 |] in
-          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let native_cfg : Protection_config.t = Contracts.Protect_ports.unwrap_config cfg in
           let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
           run_custom_vm ~name tmp_dir pkg {|
     int32_t r0 = (int32_t)vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 0ULL, 10ULL, 20ULL);
@@ -755,7 +755,7 @@ int32_t dispatch_fn(binop_fn fn, int32_t a, int32_t b) {
             | Ok f -> f
           in
           let rng = Random.State.make [| 20261015 |] in
-          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let native_cfg : Protection_config.t = Contracts.Protect_ports.unwrap_config cfg in
           let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
           run_custom_vm ~name tmp_dir pkg {|
     typedef int32_t (*host_fn_t)(int32_t, int32_t);
@@ -824,7 +824,7 @@ uint64_t bit_test_func(uint64_t val, uint64_t mask) {
             | Ok f -> f
           in
           let rng = Random.State.make [| 20261016 |] in
-          let native_cfg : Protection_config.t = Random_visa_ports.Protect_ports.unwrap_config cfg in
+          let native_cfg : Protection_config.t = Contracts.Protect_ports.unwrap_config cfg in
           let pkg = Vm_emitter.compile_and_package ~rng ~config:native_cfg func in
           run_custom_vm ~name tmp_dir pkg {|
     uint64_t r1 = vanguard_threaded_vm::asgard_vm_call(embedded_bytecode, count, 0x04ULL, 0x04ULL);
@@ -946,7 +946,7 @@ let test_native_arm64_3addr_madd_msub_sdiv_bic () =
     | Error err -> Alcotest.fail ("lift failed: " ^ err)
     | Ok (f, _) -> f
   in
-  let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+  let unwrapped : Ir.func = Contracts.Protect_ports.unwrap_ir func in
   let rng = Random.State.make [| 20260938 |] in
   let pkg = Vm_emitter.compile_and_package ~rng unwrapped in
   with_temp_dir (fun tmp_dir ->
@@ -2252,7 +2252,7 @@ let test_native_arm64_movn_excl_fcvt_fccmp () =
     | Error err -> Alcotest.fail ("lift failed: " ^ err)
     | Ok (f, _) -> f
   in
-  let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+  let unwrapped : Ir.func = Contracts.Protect_ports.unwrap_ir func in
   let rng = Random.State.make [| 20261103 |] in
   let pkg = Vm_emitter.compile_and_package ~rng unwrapped in
   with_temp_dir (fun tmp_dir ->
@@ -2314,7 +2314,7 @@ let test_native_arm64_neon_lane_sat_fjcvtzs () =
     | Error err -> Alcotest.fail ("lift failed: " ^ err)
     | Ok (f, _) -> f
   in
-  let unwrapped : Ir.func = Random_visa_ports.Protect_ports.unwrap_ir func in
+  let unwrapped : Ir.func = Contracts.Protect_ports.unwrap_ir func in
   let rng = Random.State.make [| 20261104 |] in
   let pkg = Vm_emitter.compile_and_package ~rng unwrapped in
   with_temp_dir (fun tmp_dir ->

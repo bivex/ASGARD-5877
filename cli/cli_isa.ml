@@ -1,7 +1,7 @@
 open Cmdliner
-open Random_visa_domain
-open Random_visa_ports
-open Random_visa_application
+open Domain
+open Contracts
+open Pipeline
 open Random_visa_sail_export
 open Random_visa_sail_parser
 open Random_visa_cpp_emitter
@@ -43,7 +43,7 @@ let run_generate name n out_dir profile_name seed vlen compile_and_test =
   let compiler = (module Compiler_adapter : Ports.Compiler) in
 
   match
-    Pipeline.run
+    Pipeline_orchestrator.run
       ~sail_writer
       ~cpp_emitter
       ~compiler

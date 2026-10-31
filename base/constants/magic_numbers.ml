@@ -213,7 +213,7 @@ let block_id_multiplier = 0xB7E15163L
 (* "CAFE" + "5877": salt for deterministic decoy edge generation in Stack-IR dumps. *)
 let salt_dump_phase = 0x5CAFE5877L
 
-(* --- Computational Stalling (comp_stall) --------------------------------- *)
+(* --- Computational Stalling (emulation_stall) --------------------------------- *)
 
 (* LCG multiplier used to derive synthetic RSW prime candidates from a seed.
    Standard POSIX / java.util.Random LCG constant: a = 25214903917 = 0x5DEECE66D. *)
@@ -323,7 +323,7 @@ let honeypot_trap_word_arm64 = 0xD4200000D4200000L
 let honeypot_trap_word_x86 = 0xCCCCCCCCCCCCCCCCL
 
 (* RNS-4 moduli of the RD-JIT register file: the four largest primes below
-   2^32, pairwise coprime, product > 2^64 (lib/rd_jit_vm/rd_jit_buffer.ml). *)
+   2^32, pairwise coprime, product > 2^64 (lib/jit_vm/jit_buffer.ml). *)
 let rns_modulus_m1 = 4294967291L
 let rns_modulus_m2 = 4294967279L
 let rns_modulus_m3 = 4294967231L
@@ -347,7 +347,7 @@ let padovan_code_frac_64 = 0x3EC05656FD59CC00L (* floor(2^64 / psi^5) *)
 let padovan_meta_frac_64 = 0x5320B74ECA44AC00L (* floor(2^64 / psi^4) = floor((psi-1) * 2^64) *)
 
 (* Initial trace digest of the RD-JIT context (hex-speak sentinel). *)
-let rd_jit_trace_digest_init = 0x13375877AABBCCDDL
+let jit_trace_digest_init = 0x13375877AABBCCDDL
 
 (* Magic sentinel identifying serialized JIT sealed chunks in bytecode buffer ("\x77\x58JIT001"). *)
 let jit_bytecode_magic = 0x58774A4954303031L
@@ -371,7 +371,7 @@ let registry : entry list = [
                 "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
                 "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml";
                 "lib/stack_vm/pipelined_dispatch_pass.ml";
-                "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+                "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "sqrt2_fraction_64";
     value = sqrt2_fraction_64;
     source = "frac(sqrt(2)) * 2^64";
@@ -385,13 +385,13 @@ let registry : entry list = [
     source = "SplitMix64 finalizer increment 1 (Steele, Lea and Flood, OOPSLA 2014)";
     used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
                 "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml";
-                "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+                "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "splitmix64_mix";
     value = splitmix64_mix;
     source = "SplitMix64 finalizer increment 2 (Steele, Lea and Flood, OOPSLA 2014)";
     used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/stack_vm/stack_cff_pass.ml"; "lib/stack_vm/stack_mba_pass.ml";
                 "lib/stack_vm/stack_avid_pass.ml"; "lib/stack_vm/stack_multiplicity_pass.ml";
-                "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+                "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "fnv1a_64_prime";
     value = fnv1a_64_prime;
     source = "FNV-1a 64-bit prime, 2^40 + 2^8 + 0xB3";
@@ -418,8 +418,8 @@ let registry : entry list = [
     value = golden_ratio_32;
     source = "frac(phi^-1) * 2^32 - the 32-bit golden ratio";
     used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/native_vm/vm_context_emitter.ml";
-                "lib/stack_vm/context_allocator.ml"; "lib/vanguard_9292/vanguard_types.ml";
-                "lib/vanguard_9292/vanguard_decoder.ml" ] };
+                "lib/stack_vm/context_allocator.ml"; "lib/bytecode_codec/vanguard_types.ml";
+                "lib/bytecode_codec/vanguard_decoder.ml" ] };
   { name = "splitmix64_gamma_inverse";
     value = splitmix64_gamma_inverse;
     source = "modular inverse of splitmix64_gamma modulo 2^64 (fstar/Rolling_Key_Verified.fst)";
@@ -437,11 +437,11 @@ let registry : entry list = [
   { name = "sha256_iv_h0";
     value = sha256_iv_h0;
     source = "the initial hash of SHA-256 (FIPS 180-4); the value shown is its first word";
-    used_in = [ "lib/bytecode_crypto/sha256.ml"; "lib/tech_2601/tech_2601_emitter.ml" ] };
+    used_in = [ "lib/bytecode_crypto/sha256.ml"; "lib/shadow_unwind/tech_2601_emitter.ml" ] };
   { name = "sha256_k0";
     value = sha256_k0;
     source = "the round constants of SHA-256 (FIPS 180-4); the value shown is the first one";
-    used_in = [ "lib/bytecode_crypto/sha256.ml"; "lib/tech_2601/tech_2601_emitter.ml" ] };
+    used_in = [ "lib/bytecode_crypto/sha256.ml"; "lib/shadow_unwind/tech_2601_emitter.ml" ] };
   { name = "salt_xwcafe";
     value = salt_xwcafe;
     source = "hex-speak salt 'XWCAFE' - the bytecode payload magic";
@@ -453,7 +453,7 @@ let registry : entry list = [
     used_in = [ "lib/vm_ir/rolling_key.ml"; "lib/native_vm/vm_context_emitter.ml";
                 "lib/native_vm/vm_runtime_emitter.ml"; "lib/native_vm/vm_mem_handlers.ml";
                 "lib/native_vm/oblivious_mem.ml"; "lib/native_vm/decoy_synth.ml";
-                "lib/cff/cff.ml"; "lib/adapters/protect_adapters/c_trampoline_adapter.ml";
+                "lib/cff/cff.ml"; "lib/adapters/protect_pipeline/c_trampoline_adapter.ml";
                 "lib/native_vm/native_vm_templates.ml"; "lib/native_vm/runtime_ephemeral_jit.ml" ] };
   { name = "salt_xwcafe_cafebabe1337";
     value = salt_xwcafe_cafebabe1337;
@@ -468,8 +468,8 @@ let registry : entry list = [
     value = salt_leetbeef;
     source = "hex-speak salt 'LEETBEEF' - the handler-domain scrambler";
     used_in = [ "lib/native_vm/vm_alu_handlers.ml"; "lib/native_vm/vm_control_handlers.ml";
-                "lib/native_vm/vm_emitter.ml"; "lib/vanguard_9292/vanguard_types.ml";
-                "lib/vanguard_9292/vanguard_decoder.ml"; "lib/c_macro_obf/c_macro_config.ml" ] };
+                "lib/native_vm/vm_emitter.ml"; "lib/bytecode_codec/vanguard_types.ml";
+                "lib/bytecode_codec/vanguard_decoder.ml"; "lib/c_macro_obf/c_macro_config.ml" ] };
   { name = "salt_cafebabe_leet";
     value = salt_cafebabe_leet;
     source = "hex-speak salt 'CAFEBABE'+'13375877' - the VM context canary value";
@@ -510,7 +510,7 @@ let registry : entry list = [
     value = salt_deadbeef_cafebabe;
     source = "hex-speak scrub pattern 'DEADBEEF'+'CAFEBABE'";
     used_in = [ "lib/native_vm/vm_mem_handlers.ml"; "lib/native_vm/vm_runtime_emitter.ml";
-                "lib/adapters/protect_adapters/c_trampoline_adapter.ml" ] };
+                "lib/adapters/protect_pipeline/c_trampoline_adapter.ml" ] };
   { name = "salt_deadbeef_5877cafe";
     value = salt_deadbeef_5877cafe;
     source = "hex-speak scrub pattern 'DEADBEEF'+'5877CAFE'";
@@ -527,7 +527,7 @@ let registry : entry list = [
   { name = "salt_chunk_kdyn_seed";
     value = salt_chunk_kdyn_seed;
     source = "hex-speak salt 'XWCAFE'+'A56A'+'11223344' - chunk table key derivation";
-    used_in = [ "lib/adapters/protect_adapters/c_trampoline_adapter.ml" ] };
+    used_in = [ "lib/adapters/protect_pipeline/c_trampoline_adapter.ml" ] };
   { name = "salt_stack_vm_state";
     value = salt_stack_vm_state;
     source = "hex-speak salt 'XWCAFE'+'A564D00F' - Stack-VM state initialization";
@@ -535,7 +535,7 @@ let registry : entry list = [
   { name = "salt_bridge_vector_seed";
     value = salt_bridge_vector_seed;
     source = "hex-speak salt '13375877'+'AABBCCDD' - Multi-VM bridge morphing seed";
-    used_in = [ "bin/profile_bottlenecks.ml"; "test/test_multi_vm.ml" ] };
+    used_in = [ "bin/profile_bottlenecks.ml"; "test/test_nested_vm.ml" ] };
   { name = "salt_avid_block_mul";
     value = salt_avid_block_mul;
     source = "hex-speak 'LEET' - avid pass per-block seed multiplier";
@@ -579,31 +579,31 @@ let registry : entry list = [
   { name = "comp_stall_lcg_mul";
     value = comp_stall_lcg_mul;
     source = "POSIX/java.util.Random LCG multiplier a=25214903917; prime candidate generation in CompStall";
-    used_in = [ "lib/comp_stall/comp_stall_engine.ml" ] };
+    used_in = [ "lib/emulation_stall/comp_stall_engine.ml" ] };
   { name = "comp_stall_lcg_add";
     value = comp_stall_lcg_add;
     source = "POSIX LCG addend c=11; pair (a,c) satisfies Hull-Dobell theorem mod 2^k";
-    used_in = [ "lib/comp_stall/comp_stall_engine.ml" ] };
+    used_in = [ "lib/emulation_stall/comp_stall_engine.ml" ] };
   { name = "comp_stall_pow_gf_poly";
     value = comp_stall_pow_gf_poly;
     source = "MurmurHash3 64-bit mix1 / GF(2^64) reduction polynomial for PoW inner loop";
-    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+    used_in = [ "lib/emulation_stall/comp_stall_engine.ml"; "lib/emulation_stall/asg_emulation_stall.hpp" ] };
   { name = "comp_stall_chebyshev_salt";
     value = comp_stall_chebyshev_salt;
     source = "hex-speak 5877 + CHAOS + LEET: state seed salt for Chebyshev discrete chaotic map";
-    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+    used_in = [ "lib/emulation_stall/comp_stall_engine.ml"; "lib/emulation_stall/asg_emulation_stall.hpp" ] };
   { name = "comp_stall_ergodic_c";
     value = comp_stall_ergodic_c;
     source = "hex-speak 5877 + 1337 + CAFE + BEEF: odd constant for Rivest-Knuth ergodic cubic polynomial";
-    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+    used_in = [ "lib/emulation_stall/comp_stall_engine.ml"; "lib/emulation_stall/asg_emulation_stall.hpp" ] };
   { name = "comp_stall_two_adic_c3";
     value = comp_stall_two_adic_c3;
     source = "hex-speak 1337 + 5877 + DEAD + BEEF: degree 3 coefficient for 2-adic Hensel-Newton solver";
-    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+    used_in = [ "lib/emulation_stall/comp_stall_engine.ml"; "lib/emulation_stall/asg_emulation_stall.hpp" ] };
   { name = "comp_stall_two_adic_c2";
     value = comp_stall_two_adic_c2;
     source = "hex-speak CAFE + BABE + 01000002: degree 2 even coefficient for 2-adic Hensel-Newton solver";
-    used_in = [ "lib/comp_stall/comp_stall_engine.ml"; "lib/comp_stall/asg_comp_stall.hpp" ] };
+    used_in = [ "lib/emulation_stall/comp_stall_engine.ml"; "lib/emulation_stall/asg_emulation_stall.hpp" ] };
   { name = "mem_webbing_offset_mask";
     value = mem_webbing_offset_mask;
     source = "bitmask 0x38 (00111000b): bounds scratch offset to 0..56, strictly within one 64B L1D cache line";
@@ -751,11 +751,11 @@ let registry : entry list = [
   { name = "rule30_salt";
     value = rule30_salt;
     source = "0x5877A2691601337B: OEIS A269160 Wolfram Rule 30 cellular automaton PRNG salt";
-    used_in = [ "lib/stack_vm/stack_rule30_pass.ml"; "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/stack_vm/stack_rule30_pass.ml"; "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "rule30_init_key";
     value = rule30_init_key;
     source = "0x1337C0DE5877A269: initial seed for Wolfram Rule 30 keystream state slot";
-    used_in = [ "lib/stack_vm/stack_rule30_pass.ml"; "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/stack_vm/stack_rule30_pass.ml"; "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "native_interleave_salt";
     value = native_interleave_salt;
     source = "0x5877A17A1E5C0DE7: PRNG diversification salt for native micro-handler interleaving pass";
@@ -763,83 +763,83 @@ let registry : entry list = [
   { name = "golomb5_m0";
     value = golomb5_m0;
     source = "OEIS A003022: mark 0 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "golomb5_m1";
     value = golomb5_m1;
     source = "OEIS A003022: mark 1 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "golomb5_m2";
     value = golomb5_m2;
     source = "OEIS A003022: mark 2 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "golomb5_m3";
     value = golomb5_m3;
     source = "OEIS A003022: mark 3 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "golomb5_m4";
     value = golomb5_m4;
     source = "OEIS A003022: mark 4 of optimal 5-mark Golomb ruler {0, 1, 4, 9, 11}";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "honeypot_trap_word_arm64";
     value = honeypot_trap_word_arm64;
     source = "0xD4200000D4200000: ARM64 BRK #0 tiled to 64 bits - honeypot fill of Beatty (OEIS A001950) nano-arena units";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "honeypot_trap_word_x86";
     value = honeypot_trap_word_x86;
     source = "0xCCCCCCCCCCCCCCCC: x86-64 INT3 tiled to 64 bits - honeypot fill of Beatty (OEIS A001950) nano-arena units";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml" ] };
   { name = "rns_modulus_m1";
     value = rns_modulus_m1;
     source = "4294967291 = 2^32 - 5, largest prime below 2^32: RNS-4 modulus 1 of the RD-JIT register file";
-    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+    used_in = [ "lib/jit_vm/jit_buffer.ml" ] };
   { name = "rns_modulus_m2";
     value = rns_modulus_m2;
     source = "4294967279 = 2^32 - 17, prime: RNS-4 modulus 2 of the RD-JIT register file";
-    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+    used_in = [ "lib/jit_vm/jit_buffer.ml" ] };
   { name = "rns_modulus_m3";
     value = rns_modulus_m3;
     source = "4294967231 = 2^32 - 65, prime: RNS-4 modulus 3 of the RD-JIT register file";
-    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+    used_in = [ "lib/jit_vm/jit_buffer.ml" ] };
   { name = "rns_modulus_m4";
     value = rns_modulus_m4;
     source = "4294967197 = 2^32 - 99, prime: RNS-4 modulus 4 of the RD-JIT register file";
-    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+    used_in = [ "lib/jit_vm/jit_buffer.ml" ] };
   { name = "derangement16_rot1";
     value = derangement16_rot1;
     source = "OEIS A000166: fix-free permutation pi(i) = (i+1) mod 16 of the RD-JIT gprs file, nibble-packed";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml"; "lib/rd_jit_vm/rd_jit_emitter.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml"; "lib/jit_vm/jit_emitter.ml" ] };
   { name = "derangement16_rev";
     value = derangement16_rev;
     source = "OEIS A000166: fix-free permutation pi(i) = 15 - i of the RD-JIT gprs file, nibble-packed";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml"; "lib/rd_jit_vm/rd_jit_emitter.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml"; "lib/jit_vm/jit_emitter.ml" ] };
   { name = "derangement16_swap";
     value = derangement16_swap;
     source = "OEIS A000166: fix-free permutation pi(i) = i xor 1 of the RD-JIT gprs file, nibble-packed";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml"; "lib/rd_jit_vm/rd_jit_emitter.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml"; "lib/jit_vm/jit_emitter.ml" ] };
   { name = "derangement16_rot7";
     value = derangement16_rot7;
     source = "OEIS A000166: fix-free permutation pi(i) = (i+7) mod 16 of the RD-JIT gprs file, nibble-packed";
-    used_in = [ "lib/rd_jit_vm/nano_jit_slot.ml"; "lib/rd_jit_vm/rd_jit_emitter.ml" ] };
+    used_in = [ "lib/jit_vm/nano_jit_slot.ml"; "lib/jit_vm/jit_emitter.ml" ] };
   { name = "padovan_code_frac_64";
     value = padovan_code_frac_64;
     source = "OEIS A000931: floor(2^64 / psi^5) with psi the plastic constant - code-region fraction of the Padovan-dispersed JIT buffer";
-    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+    used_in = [ "lib/jit_vm/jit_buffer.ml" ] };
   { name = "padovan_meta_frac_64";
     value = padovan_meta_frac_64;
     source = "OEIS A000931: floor(2^64 / psi^4) = floor((psi-1) * 2^64) - metadata-region fraction of the Padovan-dispersed JIT buffer";
-    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
-  { name = "rd_jit_trace_digest_init";
-    value = rd_jit_trace_digest_init;
+    used_in = [ "lib/jit_vm/jit_buffer.ml" ] };
+  { name = "jit_trace_digest_init";
+    value = jit_trace_digest_init;
     source = "0x13375877AABBCCDD: hex-speak initial trace digest of the RD-JIT context";
-    used_in = [ "lib/rd_jit_vm/rd_jit_buffer.ml" ] };
+    used_in = [ "lib/jit_vm/jit_buffer.ml" ] };
   { name = "jit_bytecode_magic";
     value = jit_bytecode_magic;
     source = "0x58774A4954303031: ASCII 'wXJIT001' sentinel identifying serialized JIT sealed chunks in bytecode buffer";
-    used_in = [ "lib/rd_jit_vm/rd_jit_emitter.ml"; "lib/rd_jit_vm/rd_jit_synth.ml" ] };
+    used_in = [ "lib/jit_vm/jit_emitter.ml"; "lib/jit_vm/jit_synth.ml" ] };
   { name = "nested_topology_salt";
     value = nested_topology_salt;
     source = "0x4E455354564D3131: ASCII 'NESTVM11' 64-bit salt for Matula-Goebel nested VM topology digest";
-    used_in = [ "lib/multi_vm/nested_stack.ml" ] };
+    used_in = [ "lib/nested_vm/nested_stack.ml" ] };
 ]
 
 let entry_by_name (name : string) : entry option =

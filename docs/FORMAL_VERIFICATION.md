@@ -383,7 +383,7 @@ Module [`fstar/Cff_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fsta
 * **Parity Annihilation (`theorem_opaque_parity_is_zero`)**:
   $$\forall x \in \mathbb{U}_{64}, \quad (x \mathbin{\&} (x + 1)) \mathbin{\&} 1 \equiv 0$$
   *Proof*: For any 64-bit integer $x$, the least significant bit $\text{lsb}(x) \neq \text{lsb}(x + 1)$. Therefore $x \mathbin{\&} (x + 1)$ has a 0 in bit 0, and further masking with 1 yields strictly 0.
-  *Soundness Guarantee*: In `Cff.inject_opaque_predicate`, the conditional branch `jne trap_block` is mathematically unreachable; execution unconditionally proceeds along the valid target edge.
+  *Soundness Guarantee*: In `Control_flow.Control_flow_engine.inject_opaque_predicate`, the conditional branch `jne trap_block` is mathematically unreachable; execution unconditionally proceeds along the valid target edge.
 
 ### 11.2 Dispatcher Soundness & Step Bisimulation
 1. **Dispatcher Target Soundness (`theorem_dispatch_finds_target`)**:

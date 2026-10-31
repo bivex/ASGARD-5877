@@ -1,5 +1,5 @@
 open Cmdliner
-open Random_visa_domain
+open Domain
 open Random_visa_cpp_emitter
 
 (* 6. VANGUARD COMMAND: Polymorphic Bytecode Protection and Native Emulation *)
@@ -18,10 +18,10 @@ let run_vanguard out_dir seed num_insts =
       (match Cpp_emitter_adapter.emit_emulator_project spec ~output_dir:out_dir with
       | Error err -> `Error (false, Errors.to_string err)
       | Ok _ -> (
-          match Vanguard_9292.of_isa_spec ~rng spec with
+          match Bytecode_codec.of_isa_spec ~rng spec with
           | Error err -> `Error (false, err)
           | Ok scheme ->
-              let decoder_cpp = Vanguard_9292.emit_cpp_decoder scheme spec in
+              let decoder_cpp = Bytecode_codec.emit_cpp_decoder scheme spec in
               let decoder_path = Filename.concat out_dir "vanguard_decoder.hpp" in
               let oc = open_out decoder_path in
               output_string oc decoder_cpp;
@@ -80,8 +80,8 @@ int main(int argc, char** argv) {
                 Printf.printf "  Rolling key seed:     0x%08lX\n" scheme.key_seed;
                 Printf.printf "  Junk decoy ratio:     %.1f%%\n" (scheme.junk_ratio *. 100.0);
                 Printf.printf "  Bitfield layout:      ";
-                List.iter (fun (f : Vanguard_9292.field_layout) ->
-                  Printf.printf "[%s: offset %d, %db] " (Vanguard_9292.field_kind_to_string f.kind) f.bit_offset f.bit_width)
+                List.iter (fun (f : Bytecode_codec.field_layout) ->
+                  Printf.printf "[%s: offset %d, %db] " (Bytecode_codec.field_kind_to_string f.kind) f.bit_offset f.bit_width)
                   scheme.layout.fields;
                 Printf.printf "\n===================================================\n";
 
@@ -97,10 +97,10 @@ int main(int argc, char** argv) {
                 in
                 let prog_src = String.concat "\n" prog_lines in
                 let prog_vanguard = Filename.concat out_dir "program.vanguard" in
-                match Vanguard_9292.assemble_program scheme spec prog_src with
+                match Bytecode_codec.assemble_program scheme spec prog_src with
                 | Error err -> `Error (false, err)
                 | Ok words ->
-                    let _ = Vanguard_9292.write_bytecode_file words prog_vanguard in
+                    let _ = Bytecode_codec.write_bytecode_file words prog_vanguard in
                     Printf.printf "Assembled %d protected instructions to %s\n" (List.length words) prog_vanguard;
 
                     Printf.printf "\n--- Launching Vanguard Protected Binary in Emulator ---\n";

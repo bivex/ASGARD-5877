@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 open Random_visa_sail_export
 open Random_visa_sail_parser
 

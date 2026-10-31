@@ -1,4 +1,4 @@
 (library
  (name runtime_services)
  (public_name random_visa.runtime_services)
- (libraries random_visa_ports unix domainslib))
+ (libraries contracts unix domainslib))

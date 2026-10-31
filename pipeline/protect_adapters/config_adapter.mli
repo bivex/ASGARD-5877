@@ -1,4 +1,4 @@
-open Random_visa_ports
+open Contracts
 open Protect_ports
 
 val wrap : ?watermark:int64 -> Native_vm.Protection_config.t -> protection_config

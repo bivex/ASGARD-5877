@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 (** Use case: Synthesize a randomized V-ISA specification under a given profile. *)
 

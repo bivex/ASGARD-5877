@@ -416,7 +416,7 @@ let make_invalidation_schedule (n : int) : int array =
 
 (* ---- translation ------------------------------------------------ *)
 
-let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
+let translate_trace ?(scale = Jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     ?(allow_branches = false)
     ?(allow_spill = false)
     ?(entry_depth = 0)
@@ -834,7 +834,7 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     let acc = ref [] in
     List.iter
       (fun item ->
-        if Rd_jit_vm.Nano_jit_slot.thue_morse !pos then begin
+        if Jit_vm.Nano_jit_slot.thue_morse !pos then begin
           acc := nop_item :: !acc;
           incr pos
         end;
@@ -845,8 +845,8 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
   in
   let dummies = List.length padded - List.length real in
   (* OEIS A000002: chunk targets are Kolakoski run lengths scaled by 2. *)
-  let kolakoski_word = Rd_jit_vm.Nano_jit_slot.kolakoski 256 in
-  let cap = Rd_jit_vm.Nano_jit_slot.nano_max_chunk_instrs in
+  let kolakoski_word = Jit_vm.Nano_jit_slot.kolakoski 256 in
+  let cap = Jit_vm.Nano_jit_slot.nano_max_chunk_instrs in
   let chunks =
     let run_idx = ref 0 in
     let cur = ref [] in
@@ -873,7 +873,7 @@ let translate_trace ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
        Ok { chunks; final_depth = !vdepth; max_depth = !max_depth;
        real_instrs = List.length real; dummy_instrs = dummies;
        invalidation_schedule = make_invalidation_schedule n_chunks }
-let translate_program ?(scale = Rd_jit_vm.Nano_jit_slot.nano_kolakoski_scale)
+let translate_program ?(scale = Jit_vm.Nano_jit_slot.nano_kolakoski_scale)
     ?(allow_spill = true) ()
     (prog : Stack_ir.program) : (translation, string) result =
   let ( let* ) = Result.bind in

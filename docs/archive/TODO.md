@@ -65,7 +65,7 @@
 
 ## 3. Future Directions (Stage 3 Backlog)
 
-- [ ] **JIT Engine (`rd_jit_vm`)**:
+- [ ] **JIT Engine (`jit_vm`)**:
   - [ ] Extend JIT emitter to support vector and atomic instructions in native runtime execution.
   - [ ] Optimize hot loops via dynamic devirtualization and host machine code compilation.
 - [ ] **E2E Benchmarks and Stress Testing**:

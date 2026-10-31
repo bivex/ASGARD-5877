@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let spec_with ?(vlen = 128) ?(elen = 64) ?(sew = Types.Sew.E32) ?(lmul = Types.Lmul.M1) insts =
   match Vector_config.make ~vlen ~elen ~default_sew:sew ~default_lmul:lmul () with

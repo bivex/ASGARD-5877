@@ -1,4 +1,4 @@
 (library
- (name cff)
- (public_name random_visa.cff)
+ (name control_flow)
+ (public_name random_visa.control_flow)
  (libraries vm_ir ocamlgraph random_visa_constants))

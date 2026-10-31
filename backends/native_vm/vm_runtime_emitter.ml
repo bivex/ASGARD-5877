@@ -151,7 +151,7 @@ module Runtime_policy = struct
       | Some c -> max 1 c.vm_runtime.num_dispatch_domains
       | None ->
           (match runtime_profile with
-           | Some (p : Random_visa_domain.Vm_runtime_profile.t) -> p.dispatch.num_domains
+           | Some (p : Domain.Vm_runtime_profile.t) -> p.dispatch.num_domains
            | None -> 4)
     in
     {
@@ -363,7 +363,7 @@ let emit_native_runtime_hpp_decls
     ~reg_perm
     ~expected_hash
     ?expected_hashes
-    ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option)
+    ?(runtime_profile : Domain.Vm_runtime_profile.t option)
     ?(config : Protection_config.t option)
     ?(external_symbols = [])
     ?(constants = [])
@@ -373,7 +373,7 @@ let emit_native_runtime_hpp_decls
 
   let profile = match runtime_profile with
     | Some p -> p
-    | None -> Random_visa_domain.Vm_runtime_profile.generate ~seed:(Int64.of_int32 key_seed) ~total_opcodes:256 ()
+    | None -> Domain.Vm_runtime_profile.generate ~seed:(Int64.of_int32 key_seed) ~total_opcodes:256 ()
   in
   let stride = profile.dispatch.context_layout.affine_a in
   let offset = profile.dispatch.context_layout.affine_b in
@@ -1113,7 +1113,7 @@ let emit_cpp_threaded_header
     ~reg_perm
     ~expected_hash
     ?expected_hashes
-    ?(runtime_profile : Random_visa_domain.Vm_runtime_profile.t option)
+    ?(runtime_profile : Domain.Vm_runtime_profile.t option)
     ?(config : Protection_config.t option)
     ?(external_symbols = [])
     ?(constants = [])

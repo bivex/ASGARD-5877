@@ -16,7 +16,7 @@ reuses.
 |---|---|---|
 | Stack IR + 25 protection passes (`lib/stack_vm/`) | exists | front end, trace source |
 | Superoperator fusion pass | exists | trace candidates |
-| RD-JIT sealed chunk runtime (`lib/rd_jit_vm/`) | exists | native tier: arena, sealing, wipe, transfers |
+| RD-JIT sealed chunk runtime (`lib/jit_vm/`) | exists | native tier: arena, sealing, wipe, transfers |
 | Stack chunker (fission, balancing, dummies) | prototype | tier-1 lowering, this document |
 | Isabelle verification entry | plan | section 7 |
 
@@ -61,7 +61,7 @@ such a bisimulation proves and what it does not.
 | [A000931](https://oeis.org/A000931) Padovan | Defining identity `psi^3 = psi + 1` | Region spacing | The identity is elementary and *proves nothing about dispersion*; the non-harmonic-spacing benefit is a heuristic claim, same class as other cache/TLB arguments |
 
 All constants are registered in `lib/constants/magic_numbers.ml` per
-`AGENTS.md` Rule 3; the generators live in `lib/rd_jit_vm/nano_jit_slot.ml`
+`AGENTS.md` Rule 3; the generators live in `lib/jit_vm/nano_jit_slot.ml`
 and are reused verbatim.
 
 ## 4. Architecture

@@ -498,7 +498,7 @@ int check_license(const char* key) {
 |} in
     let out_virt = Filename.concat tmp_dir "virt.cpp" in
     let real_bc = [ 0x1111L; 0x2222L; 0x3333L ] in
-    Protect_adapters.C_trampoline_adapter.embed_vm_trampoline
+    Protect_pipeline.C_trampoline_adapter.embed_vm_trampoline
       ~c_src
       ~bytecode:real_bc
       ~decoy_bytecode:decoy_bc

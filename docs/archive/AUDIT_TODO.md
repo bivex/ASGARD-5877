@@ -85,7 +85,7 @@
 
 ### 9. Emitter Silently Dropping `src1 ≠ dst` on RR-ALU — COMPLETED 2026-09-24
 
-- **Prior Issue**: `lib/native_vm/vm_emitter.ml` and `lib/rd_jit_vm/rd_jit_emitter.ml` — branches matching `Alu { op; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s }` encoded only `(d, s)` and ignored `src1`. Native handlers evaluate `dst = dst OP src`, requiring `src1 = dst`.
+- **Prior Issue**: `lib/native_vm/vm_emitter.ml` and `lib/jit_vm/jit_emitter.ml` — branches matching `Alu { op; dst = d; src1 = Ir.Reg _; src2 = Ir.Reg s }` encoded only `(d, s)` and ignored `src1`. Native handlers evaluate `dst = dst OP src`, requiring `src1 = dst`.
 - **Implementation**:
   - Implemented normalization pass `canonicalize_3addr_alu` in `lib/native_vm/vm_transform.ml`:
     - When `src1 = dst`: no change (standard 2-address canonical form).
@@ -96,9 +96,9 @@
         - Commutative ops (`Add`, `Imul`, `Mul`, `Xor`, `And`, `Or`): operand swap `Alu dst, dst, src1` — zero additional instructions, preserves flags.
         - Non-commutative ops (`Sub`, `Div`, `Idiv`, shifts): preserves old `dst` in scratch register (`vtmp0`/`vtmp1`/`vtmp2`), loads `dst := src1`, evaluates `Alu dst, dst, scratch`.
       - For `Unary`: `Mov dst, src` + `Unary dst, dst`.
-  - Integrated into `vm_emitter.ml` (prior to `fuse_block_instructions` and after MBA; enabling `Mov + Alu` sequences to fuse into super-operators `Fused_Mov_Add`) and `rd_jit_emitter.ml`.
+  - Integrated into `vm_emitter.ml` (prior to `fuse_block_instructions` and after MBA; enabling `Mov + Alu` sequences to fuse into super-operators `Fused_Mov_Add`) and `jit_emitter.ml`.
   - Added strict assertion `assert_src1_eq_dst`: unnormalized 3-address operations trigger an immediate compile-time exception instead of silent bytecode corruption.
-  - Supported opcode `Ir.Mul` (alongside `Ir.Imul`) in `vm_emitter.ml`, `rd_jit_emitter.ml`, and `arm64_common.ml`.
+  - Supported opcode `Ir.Mul` (alongside `Ir.Imul`) in `vm_emitter.ml`, `jit_emitter.ml`, and `arm64_common.ml`.
   - Fixed bug in `arm64_alu.ml` for `bic/bics/orn/eon`: `src2` operand is explicitly copied to `vtmp1` prior to bitwise `Not` inversion.
 - **Tests**:
   - Unit `canonicalize_3addr_alu_unit` in `test_native_semantics.ml`: verifies all lowering branches (distinct registers, commutative hazard swap, non-commutative scratch preservation, immediate).

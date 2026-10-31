@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 open Random_visa_c11_emitter
 
 let test_c11_fail_fast_on_widening () =

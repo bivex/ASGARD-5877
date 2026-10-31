@@ -1,4 +1,4 @@
 (library
  (name isa_codegen)
  (public_name random_visa.isa_codegen)
- (libraries vm_ir random_visa_domain cpp_codegen))
+ (libraries vm_ir domain cpp_codegen))

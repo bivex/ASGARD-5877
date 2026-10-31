@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 
 let get_compiler_cmd () =
   match Sys.getenv_opt "CXX" with

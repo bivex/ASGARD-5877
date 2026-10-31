@@ -1,4 +1,4 @@
-open Random_visa_domain
+open Domain
 open Random_visa_sail_parser
 
 (** Property 1: For any random seed, synthesized ISA has strictly zero encoding collisions. *)

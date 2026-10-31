@@ -1,9 +1,9 @@
 open Alcotest
 open Stack_vm
 open Stack_ir
-open Rd_jit_vm
+open Jit_vm
 open Vm_ir
-open Random_visa_ports
+open Contracts
 open Protect_ports
 
 let contains_sub (s : string) (sub : string) : bool =
@@ -167,7 +167,7 @@ let test_stack_jit_div_rem_hardware_e2e () =
        | Ok tr ->
            let rng = Random.State.make [| 99991111 |] in
            let pkg =
-             Rd_jit_emitter.compile_and_package_chunked
+             Jit_emitter.compile_and_package_chunked
                ~rng
                ~enable_cff:false
                ~enable_mba:false
@@ -209,7 +209,7 @@ let test_stack_jit_e2e_compilation () =
        | Ok tr ->
            let rng = Random.State.make [| 58771337 |] in
            let pkg =
-             Rd_jit_emitter.compile_and_package_chunked
+             Jit_emitter.compile_and_package_chunked
                ~rng
                ~enable_cff:false
                ~enable_mba:false
@@ -253,21 +253,21 @@ int main() {
     if Sys.file_exists orig_hdr then
       Test_helpers.write_file_string obf_hdr (Test_helpers.read_file_string orig_hdr);
     let out_dir = Filename.concat temp_dir "out" in
-    let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
-    let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
-    let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
-    let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
-    let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+    let module Arm64_adapter = Protect_pipeline.Arm64_lifter_adapter in
+    let module C_macro_adapter = Protect_pipeline.C_macro_obf_adapter in
+    let module Trampoline_adapter = Protect_pipeline.C_trampoline_adapter in
+    let module Toolchain_adapter = Protect_pipeline.Clang_toolchain_adapter in
+    let module Vm_packager_adapters = Protect_pipeline.Vm_packagers in
     let lifter = (module Arm64_adapter : Lifter) in
     let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
     let trampoline_engine = (module Trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
     let toolchain = (module Toolchain_adapter : Toolchain) in
     let vm_packager = (module Vm_packager_adapters.Stack_jit_packager : Vm_packager) in
-    let raw_cfg = Protect_adapters.Config_adapter.unwrap Protect_adapters.Config_adapter.default in
-    let cfg = Protect_adapters.Config_adapter.wrap raw_cfg in
+    let raw_cfg = Protect_pipeline.Config_adapter.unwrap Protect_pipeline.Config_adapter.default in
+    let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 5877 |] in
     match
-      Random_visa_application.Protect_pipeline.run
+      Pipeline.Protect_orchestrator.run
         ~lifter
         ~c_macro_obfuscator
         ~vm_packager
@@ -316,21 +316,21 @@ int main() {
     if Sys.file_exists orig_hdr then
       Test_helpers.write_file_string obf_hdr (Test_helpers.read_file_string orig_hdr);
     let out_dir = Filename.concat temp_dir "out" in
-    let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
-    let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
-    let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
-    let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
-    let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+    let module Arm64_adapter = Protect_pipeline.Arm64_lifter_adapter in
+    let module C_macro_adapter = Protect_pipeline.C_macro_obf_adapter in
+    let module Trampoline_adapter = Protect_pipeline.C_trampoline_adapter in
+    let module Toolchain_adapter = Protect_pipeline.Clang_toolchain_adapter in
+    let module Vm_packager_adapters = Protect_pipeline.Vm_packagers in
     let lifter = (module Arm64_adapter : Lifter) in
     let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
     let trampoline_engine = (module Trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
     let toolchain = (module Toolchain_adapter : Toolchain) in
     let vm_packager = (module Vm_packager_adapters.Stack_jit_packager : Vm_packager) in
-    let raw_cfg = Protect_adapters.Config_adapter.unwrap Protect_adapters.Config_adapter.default in
-    let cfg = Protect_adapters.Config_adapter.wrap raw_cfg in
+    let raw_cfg = Protect_pipeline.Config_adapter.unwrap Protect_pipeline.Config_adapter.default in
+    let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 5877 |] in
     match
-      Random_visa_application.Protect_pipeline.run
+      Pipeline.Protect_orchestrator.run
         ~lifter
         ~c_macro_obfuscator
         ~vm_packager
@@ -513,21 +513,21 @@ int main() {
     if Sys.file_exists orig_hdr then
       Test_helpers.write_file_string obf_hdr (Test_helpers.read_file_string orig_hdr);
     let out_dir = Filename.concat temp_dir "out" in
-    let module Arm64_adapter = Protect_adapters.Arm64_lifter_adapter in
-    let module C_macro_adapter = Protect_adapters.C_macro_obf_adapter in
-    let module Trampoline_adapter = Protect_adapters.C_trampoline_adapter in
-    let module Toolchain_adapter = Protect_adapters.Clang_toolchain_adapter in
-    let module Vm_packager_adapters = Protect_adapters.Vm_packagers in
+    let module Arm64_adapter = Protect_pipeline.Arm64_lifter_adapter in
+    let module C_macro_adapter = Protect_pipeline.C_macro_obf_adapter in
+    let module Trampoline_adapter = Protect_pipeline.C_trampoline_adapter in
+    let module Toolchain_adapter = Protect_pipeline.Clang_toolchain_adapter in
+    let module Vm_packager_adapters = Protect_pipeline.Vm_packagers in
     let lifter = (module Arm64_adapter : Lifter) in
     let c_macro_obfuscator = (module C_macro_adapter : C_macro_obfuscator) in
     let trampoline_engine = (module Trampoline_adapter.C_trampoline_engine : Trampoline_engine) in
     let toolchain = (module Toolchain_adapter : Toolchain) in
     let vm_packager = (module Vm_packager_adapters.Stack_jit_packager : Vm_packager) in
-    let raw_cfg = Protect_adapters.Config_adapter.unwrap Protect_adapters.Config_adapter.default in
-    let cfg = Protect_adapters.Config_adapter.wrap raw_cfg in
+    let raw_cfg = Protect_pipeline.Config_adapter.unwrap Protect_pipeline.Config_adapter.default in
+    let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 5877 |] in
     match
-      Random_visa_application.Protect_pipeline.run
+      Pipeline.Protect_orchestrator.run
         ~lifter
         ~c_macro_obfuscator
         ~vm_packager
