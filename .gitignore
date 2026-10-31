@@ -38,6 +38,40 @@ gemini-code-1791925199080.sh
 .promts/
 random_visa
 
+# IDE / editor local state
+.idea/
+.vscode/
+.vs/
+*.sublime-*
+*.swp
+*~
+
+# OS / env local files
+Thumbs.db
+.env.local
+.env.*.local
+
+# Logs, dumps, temp, caches
+*.log
+*.dump
+*.dSYM
+tmp/
+.cache/
+coverage/
+.nyc_output/
+
+# Compiled objects and package dirs
+*.o
+*.a
+*.so
+*.dylib
+node_modules/
+target/
+dist/
+obj/
+.gradle/
+.terraform/
+
 # Differential fuzzing example: generated artifacts only
 examples/diff_fuzz/vm_out/
 examples/diff_fuzz/build/
