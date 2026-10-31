@@ -14,7 +14,7 @@ set(SOURCES
 
 # Custom Target invoking ASGARD Project Builder
 add_custom_target(asgard_protect ALL
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../../random_visa project -d ${CMAKE_CURRENT_SOURCE_DIR}/src -o ${CMAKE_CURRENT_BINARY_DIR}/secure_app --cff --mba -s 42
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../../asgard project -d ${CMAKE_CURRENT_SOURCE_DIR}/src -o ${CMAKE_CURRENT_BINARY_DIR}/secure_app --cff --mba -s 42
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Building Hardened Binary via ASGARD-5877 VM Protector..."
 )

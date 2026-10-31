@@ -115,7 +115,7 @@ let test_location_formatting () =
   set_level Info;
 
   check string "parse raw __LOC__" "foo.ml:42"
-    (format_loc "File \"lib/application/foo.ml\", line 42, characters 10-20");
+    (format_loc "File \"pipeline/application/foo.ml\", line 42, characters 10-20");
   check string "passthrough file:line" "bar.ml:100" (format_loc "bar.ml:100");
 
   let messages = ref [] in

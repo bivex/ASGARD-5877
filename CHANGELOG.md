@@ -6,6 +6,19 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+- Reorganize the repository into an explicit pipeline topology (`base/` → `domain/` → `contracts/` → `transforms/` → `backends/` → `adapters/` → `pipeline/` → `cli/`): every library moved by layer (`git mv`, no semantic change), `bin/` renamed to `cli/`, `fstar/` to `formal/`.
+- Sever all illegal cross-layer dependency edges: the pure domain and the VM IR no longer emit C++ (RNS, branchless-VIP and metamorphic-ISA header emission split out into the new `backends/isa_codegen` library); the contracts layer no longer depends on Unix or Domainslib (Domainslib pool and logger moved to `adapters/runtime_services`, the C++ validator to `adapters/toolchain`); the typed C++ EDSL is dependency-free.
+- Enforce backend independence: the stack chunker draws Kolakoski/Thue-Morse chunk boundaries from the new `base/sequences` library and the shared chunk cap from the magic-number registry (`nano_chunk_instr_cap`) instead of importing the JIT backend; the protection metrics report moved from `native_vm` to the new `metrics` (public `asgard.protection_metrics`) library; protection-config vocabulary (types, presets, JSON, facade) moved to `contracts/protection_config`.
+- Move orchestration out of the adapter layer: anti-analysis runtime headers are emitted through the new `pipeline/protect_adapters/anti_analysis_headers.ml` adapter by both the protect orchestrator and `cli project`; protection presets no longer probe for a GPU at module initialization — the deterministic presets gained the `with_gpu_mba_engine` hook applied by the wiring layer.
+- Rename every opaquely named library and module to Input→Output names: `tech_2601`→`shadow_unwind`, `tech_2603`→`dispatch_permutation`, `tech_2608`→`trace_chaff`, `comp_stall`→`emulation_stall`, `cff`→`control_flow` (engine module `Control_flow_engine`), `vanguard_9292`→`bytecode_codec`, `rd_jit_vm`→`jit_vm`, `multi_vm`→`nested_vm`, `random_visa_domain`→`domain`, `random_visa_ports`→`contracts`, `random_visa_application`→`pipeline` (orchestrator module `Pipeline_orchestrator`), `protect_adapters`→`protect_pipeline`; corresponding test modules, suite labels, header guards (`ASGARD_SHADOW_UNWIND_HPP` a. o.) and emitted header names (`asg_shadow_unwind.hpp` a. o.) follow.
+- Migrate the public opam namespace from `random_visa.*` to `asgard.*`: project and package renamed to `asgard`, the `vanguard-9292` package consolidated into it (`asgard.bytecode_codec`), the CLI binary renamed to `asgard`, `asgard.opam` regenerated. Breaking change for opam consumers of the old names.
+- Move the crackme generators from `bin/` to `tools/generators/` and the bottleneck profiler to `tools/profiling.ml`; `cli/` now contains only the product drivers.
+- Update README with the documented topology (layer table, dependency matrix, architectural invariants) and migrate the `docs/` path references to the new layout.
+
+### Fixed
+- Repair the CLI integration E2E suite locator, which still searched for `bin/main.exe` after the `bin/` → `cli/` move.
+
 ## [0.4.0] - 2026-10-30
 
 ### Fixed

@@ -10,7 +10,7 @@ The ten passes of `Stack_vm_packager` rewrite the same program ten times: fusion
 
 The audit makes those assumptions explicit and checkable:
 
-- Every phase is checked against the runtime invariants of `lib/stack_vm/stack_invariants.ml`.
+- Every phase is checked against the runtime invariants of `backends/stack_vm/stack_invariants.ml`.
 - Every transition is checked for semantic preservation: the register writes, the stack contents and the outcome of every flag consumer must be identical before and after the pass.
 - The result is a compatibility matrix that localizes an incompatibility to a specific pass.
 
@@ -29,7 +29,7 @@ The audit makes those assumptions explicit and checkable:
 | `6-feedback` | state-feedback rolling key | `Stack_vm.Stack_feedback_pass` |
 | `7-balance` | stack balance repair | `Stack_vm.Stack_balance_pass` |
 
-The phase list is defined in `lib/adapters/protect_pipeline/vm_packagers.ml` (module `Stack_vm_packager`).
+The phase list is defined in `adapters/protect_pipeline/vm_packagers.ml` (module `Stack_vm_packager`).
 
 ## Requirements
 
@@ -90,7 +90,7 @@ The protector writes the same JSON dumps when `ASGARD_DUMP_JSON_DIR` is set:
 ```bash
 eval "$(opam env)"
 ASGARD_DUMP_JSON_DIR=binaries/protected_dump \
-  dune exec bin/main.exe -- protect-arm64 --input ./app.s --output-dir ./out \
+  dune exec cli/main.exe -- protect-arm64 --input ./app.s --output-dir ./out \
     --engine stack --compile false --seed 1337
 ```
 
@@ -101,7 +101,7 @@ For a fully reproducible run, use the tracked assembly corpus under `examples/co
 ```bash
 eval "$(opam env)"
 ASGARD_DUMP_JSON_DIR=binaries/x86_dump \
-  dune exec bin/main.exe -- protect --input examples/corpus/fn01_murmur_hash.s \
+  dune exec cli/main.exe -- protect --input examples/corpus/fn01_murmur_hash.s \
     --output-dir ./out --engine stack --compile false --seed 1337
 octave --no-gui -q scripts/run_pipeline_compat.m binaries/x86_dump
 ```
@@ -126,7 +126,7 @@ The ARM64 path needs a program the ARM64 lifter accepts: a generated `.s` (the o
 The human-readable listing of the same phases is available through the `--dump-bytecode` flag or the `ASGARD_DUMP_BYTECODE=1` environment variable:
 
 ```bash
-ASGARD_DUMP_BYTECODE=1 dune exec bin/main.exe -- protect-arm64 --input ./app.s --output-dir ./out
+ASGARD_DUMP_BYTECODE=1 dune exec cli/main.exe -- protect-arm64 --input ./app.s --output-dir ./out
 ```
 
 Both views describe the same program state: the JSON dump is written next to the listing at each phase boundary.
@@ -225,7 +225,7 @@ The matrix is the answer to "which pass breaks which invariant of the previous p
   key_coherent           H    H    H    H    H    H    H    H    H
 ```
 
-The checked invariants are the runtime invariants of `lib/stack_vm/stack_invariants.ml`: stack underflow, zero exit delta, equal depth at merge points, a present entry block, existing jump targets, a terminator in every block, context slots within range, and a coherent rolling key at merge points.
+The checked invariants are the runtime invariants of `backends/stack_vm/stack_invariants.ml`: stack underflow, zero exit delta, equal depth at merge points, a present entry block, existing jump targets, a terminator in every block, context slots within range, and a coherent rolling key at merge points.
 
 ### Section 4: summary
 
@@ -289,7 +289,7 @@ The audit was pointed at a directory without `phase_*.json` files. Generate the 
 
 ### `Invalid_argument: block N: KeyFeedback expects ctx[M] = 0x...`
 
-The encoder refuses to encrypt a program whose state-feedback coupling is not reproducible. The runtime hashes the live register on a `KeyFeedback`, while the encryptor can only hash a static constant, so the coupled value must be statically known: either the feedback immediately follows the write of that value into the slot, or the entry context is declared with `~initial_ctx`. See the module documentation of `lib/stack_vm/stack_encoder.ml`.
+The encoder refuses to encrypt a program whose state-feedback coupling is not reproducible. The runtime hashes the live register on a `KeyFeedback`, while the encryptor can only hash a static constant, so the coupled value must be statically known: either the feedback immediately follows the write of that value into the slot, or the entry context is declared with `~initial_ctx`. See the module documentation of `backends/stack_vm/stack_encoder.ml`.
 
 ### The audit reports a violation that the runtime does not report
 

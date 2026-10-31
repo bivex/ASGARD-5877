@@ -12,7 +12,7 @@ To provide **mathematical certainty** that transformations preserve original pro
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│            F* Source (fstar/Mba_Verified.fst)          │
+│            F* Source (formal/Mba_Verified.fst)          │
 │  - Bit-extensionality lemmas (FStar.UInt.nth_lemma)    │
 │  - Two's complement algebraic cancellation lemmas      │
 │  - Refinement types (forall env. eval e' == eval e)    │
@@ -27,14 +27,14 @@ To provide **mathematical certainty** that transformations preserve original pro
                             │
                             ▼ (fstar.exe --codegen OCaml)
 ┌────────────────────────────────────────────────────────┐
-│          Extracted OCaml (fstar/Mba_Verified.ml)       │
+│          Extracted OCaml (formal/Mba_Verified.ml)       │
 │  - Proof erasure: all lemmas and ghost types stripped │
 │  - Pure, high-performance OCaml AST rewriter          │
 └───────────────────────────┬────────────────────────────┘
                             │
                             ▼ (Native Integration)
 ┌────────────────────────────────────────────────────────┐
-│     Native VM Protector Library (lib/mba_engine/)      │
+│     Native VM Protector Library (transforms/mba/)      │
 │  - rewrite_verified & rewrite_demorgan                 │
 │  - 31 verified E-graph equality saturation rules       │
 │  - Verified opaque polynomial zero invariants          │
@@ -43,7 +43,7 @@ To provide **mathematical certainty** that transformations preserve original pro
 
 ---
 
-## 2. Formally Proven MBA Identities (`fstar/Mba_Verified.fst`)
+## 2. Formally Proven MBA Identities (`formal/Mba_Verified.fst`)
 
 All MBA identities are verified over 64-bit modular arithmetic (`uint_t 64`) using bit-extensionality:
 
@@ -137,7 +137,7 @@ Proves that recursive De Morgan dualization ($a \land b \mapsto \sim(\sim a \lor
 
 ---
 
-## 4. OCaml Integration in `lib/mba_engine/`
+## 4. OCaml Integration in `transforms/mba/`
 
 The formally verified proofs directly back the obfuscation pipeline in ASGARD-5877:
 
@@ -163,11 +163,11 @@ The formally verified proofs directly back the obfuscation pipeline in ASGARD-58
      $$\text{Cost}_{\text{ALU}} = \alpha \cdot \text{Area} + \beta \cdot \text{Latency} + \gamma \cdot \text{Energy}$$
 ---
 
-## 5. Formally Verified Lazy Flags & Branch Conditions (`fstar/Flags_Verified.fst`)
+## 5. Formally Verified Lazy Flags & Branch Conditions (`formal/Flags_Verified.fst`)
 
 In binary virtualization, CPU flags (Carry, Zero, Sign, Overflow) determine all conditional branch decisions (`jcc`). ASGARD-5877 calculates flags lazily using optimized 64-bit bitwise expressions.
 
-Module [`fstar/Flags_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Flags_Verified.fst) formally proves that these lazy expressions are **100% equivalent** to architectural x86_64 / ARM64 hardware specifications under all $2^{64} \times 2^{64}$ inputs.
+Module [`formal/Flags_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Flags_Verified.fst) formally proves that these lazy expressions are **100% equivalent** to architectural x86_64 / ARM64 hardware specifications under all $2^{64} \times 2^{64}$ inputs.
 
 ### 5.1 Arithmetic Flags Theorems
 
@@ -207,13 +207,13 @@ ASGARD-5877 formally proves the fundamental equivalence theorems of computer arc
 
 ---
 
-## 6. Formally Verified Residue Number System & CRT (`fstar/Rns_Verified.fst`)
+## 6. Formally Verified Residue Number System & CRT (`formal/Rns_Verified.fst`)
 
 ASGARD-5877 uses a 4-channel Residue Number System (RNS-4) to split 64-bit integer calculations into carry-free parallel modular channels ($m_1, m_2, m_3, m_4$), obscuring arithmetic dataflow against symbolic deobfuscation and SMT synthesis attacks.
 
 Reconstruction of the original integer uses the **Garner Mixed-Radix Conversion algorithm** (a constructive Chinese Remainder Theorem implementation).
 
-Module [`fstar/Rns_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rns_Verified.fst) formally proves:
+Module [`formal/Rns_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Rns_Verified.fst) formally proves:
 
 ### 6.1 Moduli and Dynamic Range
 * $m_1 = 65537$ ($2^{16} + 1$, Fermat prime)
@@ -245,11 +245,11 @@ Proven theorems:
 
 ---
 
-## 7. Formally Verified Stack-VM Balance & Underflow Freedom (`fstar/Stack_Balance_Verified.fst`)
+## 7. Formally Verified Stack-VM Balance & Underflow Freedom (`formal/Stack_Balance_Verified.fst`)
 
 In bytecode virtualization, basic blocks execute stack pushes and pops. Any stack imbalance across join points or negative stack underflow leads to fatal VM crashes (unmapped host stack reads or register context corruption).
 
-Module [`fstar/Stack_Balance_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Stack_Balance_Verified.fst) formally models all 37 Stack-VM opcodes, their push/pop weights, and proves the correctness of the balance analysis and repair pass.
+Module [`formal/Stack_Balance_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Stack_Balance_Verified.fst) formally models all 37 Stack-VM opcodes, their push/pop weights, and proves the correctness of the balance analysis and repair pass.
 
 ### 7.1 Core Stack Delta Algebra
 * **Delta Homomorphism (`lemma_sum_delta_append`)**:
@@ -284,11 +284,11 @@ Module [`fstar/Stack_Balance_Verified.fst`](file:///Volumes/External/Code/ASGARD
 
 ---
 
-## 8. Formally Verified Instruction Codec & Total Parser Safety (`fstar/Codec_Verified.fst`)
+## 8. Formally Verified Instruction Codec & Total Parser Safety (`formal/Codec_Verified.fst`)
 
 Vanguard-9292 uses randomized bitfield layout permutation and rolling key XOR stream encryption for all instruction words. A critical vulnerability in binary interpreters is parser panics / out-of-bounds crashes when encountering corrupted bytes, junk opcodes, or adversarial payloads.
 
-Module [`fstar/Codec_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Codec_Verified.fst) formally specifies bitfield slices and rolling key encryption, proving roundtrip fidelity and total parser safety.
+Module [`formal/Codec_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Codec_Verified.fst) formally specifies bitfield slices and rolling key encryption, proving roundtrip fidelity and total parser safety.
 
 ### 8.1 Disjoint Slice Packing & Extraction
 * **Prefix / Suffix / Nested Invariants (`lemma_slice_prefix`, `lemma_slice_suffix`, `lemma_slice_nested`)**:
@@ -315,11 +315,11 @@ Module [`fstar/Codec_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fs
 
 ---
 
-## 9. Formally Verified Degree-5 Null-Polynomials over $\mathbb{Z}_{2^{64}}$ (`fstar/Poly_Verified.fst`)
+## 9. Formally Verified Degree-5 Null-Polynomials over $\mathbb{Z}_{2^{64}}$ (`formal/Poly_Verified.fst`)
 
 ASGARD-5877 uses degree-5 opaque polynomial zero invariants in Control Flow Flattening (CFF) and dead-code generator passes to create branch conditions that are algebraically impossible to evaluate to non-zero, defeating symbolic execution solvers and heuristic deobfuscators.
 
-Module [`fstar/Poly_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Poly_Verified.fst) formally proves:
+Module [`formal/Poly_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Poly_Verified.fst) formally proves:
 
 ### 9.1 Divisibility by $2^3 = 8$
 * **Parity Division Step (`lemma_consecutive_even`, `lemma_even_step2_div8`, `lemma_odd_step2_div8`)**:
@@ -343,11 +343,11 @@ Module [`fstar/Poly_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fst
 
 ---
 
-## 10. Formally Verified Anti-Pushan Rolling Keys & Cryptographic Bijectivity (`fstar/Rolling_Key_Verified.fst`)
+## 10. Formally Verified Anti-Pushan Rolling Keys & Cryptographic Bijectivity (`formal/Rolling_Key_Verified.fst`)
 
 In ASGARD-5877, instruction execution history dynamically mutates a 64-bit running cryptographic key via the `advance_key_step` state evolution primitive. To ensure that the keystream space never collapses, degrades into fixed points, or loses entropy across execution depth, the transition mapping must be mathematically bijective (one-to-one and onto).
 
-Module [`fstar/Rolling_Key_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Rolling_Key_Verified.fst) formally proves:
+Module [`formal/Rolling_Key_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Rolling_Key_Verified.fst) formally proves:
 
 ### 10.1 Modular Inverse & Cyclic Rotations
 * **Bézout Multiplier Inverse (`theorem_multiplier_inverse`, `lemma_mul_inverse_cancel`)**:
@@ -372,12 +372,12 @@ Module [`fstar/Rolling_Key_Verified.fst`](file:///Volumes/External/Code/ASGARD-5
 
 ---
 
-## 11. Formally Verified Control Flow Flattening (CFF) & Opaque Predicates (`fstar/Cff_Verified.fst`)
+## 11. Formally Verified Control Flow Flattening (CFF) & Opaque Predicates (`formal/Cff_Verified.fst`)
 
 In control flow obfuscation, ASGARD-5877 flattens control flow graphs into centralized dispatcher state ladders and inserts opaque predicates to defeat symbolic execution and decompiler CFG recovery.
 A critical soundness requirement is that the dispatcher must faithfully preserve original CFG edge semantics and that opaque predicate traps must never be triggered on valid execution paths.
 
-Module [`fstar/Cff_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Cff_Verified.fst) formally proves:
+Module [`formal/Cff_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Cff_Verified.fst) formally proves:
 
 ### 11.1 Opaque Parity Invariant
 * **Parity Annihilation (`theorem_opaque_parity_is_zero`)**:
@@ -401,11 +401,11 @@ Module [`fstar/Cff_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fsta
 
 ---
 
-## 12. Formally Verified Instruction Lifter & Simulation Equivalence (`fstar/Lifter_Verified.fst`)
+## 12. Formally Verified Instruction Lifter & Simulation Equivalence (`formal/Lifter_Verified.fst`)
 
 The instruction lifter frontend translates architectural x86_64 instructions into VM-IR instructions. Any semantic discrepancy or register clobbering across lowering corrupts application logic.
 
-Module [`fstar/Lifter_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Lifter_Verified.fst) formally specifies the architectural x86_64 operational semantics, the VM-IR execution semantics, and proves strict forward simulation:
+Module [`formal/Lifter_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Lifter_Verified.fst) formally specifies the architectural x86_64 operational semantics, the VM-IR execution semantics, and proves strict forward simulation:
 
 ### 12.1 Primitive ALU & Unary Equivalence
 * **ALU Equivalence (`theorem_lift_alu_equiv`)**:
@@ -437,12 +437,12 @@ Module [`fstar/Lifter_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/f
 
 ---
 
-## 13. Formally Verified Multi-VM Invertible Affine Bridge (`fstar/Bridge_Verified.fst`)
+## 13. Formally Verified Multi-VM Invertible Affine Bridge (`formal/Bridge_Verified.fst`)
 
 In ASGARD-5877, complex functions are partitioned across heterogeneous virtual machines (Native-VM and Stack-VM). Crossing VM boundaries requires morphing register context through an invertible affine transformation masked by a cumulative execution trace digest:
 $$V_{\text{dst}} = (M_{\text{fwd}} \cdot V_{\text{src}}) \oplus \text{TraceDigest}$$
 
-Module [`fstar/Bridge_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Bridge_Verified.fst) formally proves:
+Module [`formal/Bridge_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Bridge_Verified.fst) formally proves:
 
 ### 13.1 Quadratic Newton-Raphson Inversion
 * **Hensel Lifting Error Contraction (`lemma_nr_formula`)**:
@@ -466,11 +466,11 @@ Module [`fstar/Bridge_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/f
 
 ---
 
-## 14. Formally Verified Stack-VM Superoperator Fusion Pass (`fstar/Superop_Verified.fst`)
+## 14. Formally Verified Stack-VM Superoperator Fusion Pass (`formal/Superop_Verified.fst`)
 
 In Stack-VM virtualization, Phase 2a fuses recurring multi-dispatch bytecode sequences into specialized superoperators (`AddImmImm`, `SubImmImm`, `AddRegImm`, `SetRegImm`, `AddImm`, `SubImm`).
 
-Module [`fstar/Superop_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/fstar/Superop_Verified.fst) formally proves:
+Module [`formal/Superop_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/formal/Superop_Verified.fst) formally proves:
 
 ### 14.1 Stack Delta Invariance
 * **Delta Preservation Theorems (`theorem_delta_add_imm_imm` .. `theorem_delta_sub_imm`)**:
@@ -491,8 +491,8 @@ Module [`fstar/Superop_Verified.fst`](file:///Volumes/External/Code/ASGARD-5877/
 ## 15. How to Run the Formal Proofs & Codegen
 
 ### Prerequisites
-* `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/bin/fstar.exe`)
-* `z3` 5.0.0 (installed at `/opt/homebrew/bin/z3`)
+* `fstar.exe` 2026.08.23 (installed at `/opt/homebrew/cli/fstar.exe`)
+* `z3` 5.0.0 (installed at `/opt/homebrew/cli/z3`)
 
 ### Verification Commands
 To verify the complete formal specifications with 100% conditions discharged:
@@ -513,7 +513,7 @@ for f in \
   Bridge_Verified.fst \
   Superop_Verified.fst; do
   fstar.exe \
-    --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+    --include "/opt/homebrew/opt/formal/formal/lib/fstar" \
     --cache_checked_modules \
     --cache_dir . \
     "$f"
@@ -563,7 +563,7 @@ for f in \
   Bridge_Verified \
   Superop_Verified; do
   fstar.exe \
-    --include "/opt/homebrew/opt/fstar/fstar/lib/fstar" \
+    --include "/opt/homebrew/opt/formal/formal/lib/fstar" \
     --codegen OCaml \
     --extract "$f" \
     --cache_checked_modules \
@@ -573,7 +573,7 @@ for f in \
 done
 ```
 
-The resulting `.ml` files in [`fstar/`](file:///Volumes/External/Code/ASGARD-5877/fstar/) contain pure OCaml code with all proofs erased.
+The resulting `.ml` files in [`formal/`](file:///Volumes/External/Code/ASGARD-5877/formal/) contain pure OCaml code with all proofs erased.
 
 
 

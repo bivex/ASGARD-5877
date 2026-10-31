@@ -1,6 +1,6 @@
 CC ?= clang
 CFLAGS = -Iinclude -I.. -O3
-ASGARD = ../../random_visa
+ASGARD = ../../asgard
 
 all: protect
 

@@ -8,7 +8,7 @@
 #                                └─> asgard_fuzz_compute      (ASGARD VM)
 #
 #  Build stages:
-#    [1/4] random_visa project on proj_src/ (macro-obf + CFF + MBA + VM lift)
+#    [1/4] asgard project on proj_src/ (macro-obf + CFF + MBA + VM lift)
 #    [2/4] native golden TU      (plain clang++, markers inert, -D rename)
 #    [3/4] VM trampoline TU      (.asgard_build/compute_core_virtualized.cpp)
 #    [4/4] link everything with -fsanitize=fuzzer and run the campaign
@@ -43,7 +43,7 @@ mkdir -p "$VM_OUT" "$BUILD_DIR" "$CORPUS_DIR" "$ARTIFACT_DIR"
 
 # --------------------------------------------------------------------------
 echo "== [1/4] ASGARD project-mode protection (macro-obf + CFF + MBA + VM) =="
-PROTECT_CMD=(dune exec -- random_visa project
+PROTECT_CMD=(dune exec -- asgard project
     -d "$SCRIPT_DIR/proj_src"
     -o "$VM_OUT/protected_proj"
     --run=false)

@@ -93,14 +93,14 @@ ldp q0, q1, [sp, #32]
 - **Fix**: Extended `stp`/`ldp` lifters to accept `OpVec` operands in addition to `OpReg` GPRs. Adjusted the memory displacement stride from a fixed 8 bytes to `bits / 8` (16 bytes per 128-bit vector register).
 
 ### 3.3 VM Emitter 128-Bit Register Width Propagation (`vm_emitter.ml`)
-- **Fix**: Corrected the `Mov` handler emission in `lib/native_vm/vm_emitter.ml`. Register width was previously hardcoded to `64L` for floating-point/vector registers. The emitter now dynamically consults `Register.width_to_bytes w * 8`, guaranteeing correct byte lengths for 128-bit SIMD registers during VM register file updates.
+- **Fix**: Corrected the `Mov` handler emission in `backends/native_vm/vm_emitter.ml`. Register width was previously hardcoded to `64L` for floating-point/vector registers. The emitter now dynamically consults `Register.width_to_bytes w * 8`, guaranteeing correct byte lengths for 128-bit SIMD registers during VM register file updates.
 
 ### 3.4 MBA Stack Pointer Protection (`mba_engine/`)
 - **Fix**: Non-linear MBA expansions ($D=4,5$) rewriting stack pointer increments/decrements caused frame misalignment and memory corruption. Stack pointer manipulation (`RSP`, `SP`, or frame-relative offsets) is now strictly isolated and preserved from algebraic rewriting.
 
 ### 3.5 C Preprocessor Obfuscator Keyword Exemption (`c_macro_obf.ml`)
 The C macro obfuscator encrypts string literals on the stack using `ASG_STR(...)`. When source code contained `extern "C"` blocks or `#pragma GCC visibility`, the argument strings were mistakenly encrypted, leading to invalid syntax such as `extern ASG_STR(...)` or `visibility(ASG_STR(...))`.
-- **Fix**: Extended `is_exempt()` in `lib/c_macro_obf/c_macro_obf.ml` to skip string literal encryption following `extern`, `visibility`, `__visibility__`, `asm`, and `__asm__`.
+- **Fix**: Extended `is_exempt()` in `transforms/c_macro_obf/c_macro_obf.ml` to skip string literal encryption following `extern`, `visibility`, `__visibility__`, `asm`, and `__asm__`.
 - In corpus sources, `#pragma GCC visibility push(default)` and `extern "C"` wrappers ensure exported helper symbols remain discoverable via runtime `dlsym`.
 
 ### 3.6 Subroutine Inlining inside Virtualized Regions
@@ -212,7 +212,7 @@ Execute the dedicated runner script from the repository root:
 ```
 
 The script performs the following stages automatically:
-1. Rebuilds the ASGARD-5877 CLI toolchain (`dune build bin/main.exe`).
+1. Rebuilds the ASGARD-5877 CLI toolchain (`dune build cli/main.exe`).
 2. Compiles each native reference with `clang -O3` and executes verification test vectors.
 3. Invokes `asgard protect-arm64 --flatten --mba` to virtualize each workload.
 4. Executes the virtualized binaries and verifies matching outputs.
@@ -224,10 +224,10 @@ To virtualize a single target manually (e.g., OpenSSL SHA-256):
 
 ```bash
 # 1. Build toolchain
-dune build bin/main.exe
+dune build cli/main.exe
 
 # 2. Virtualize target
-./_build/default/bin/main.exe protect-arm64 \
+./_build/default/cli/main.exe protect-arm64 \
     -i examples/real_corpus/openssl_sha256.c \
     -o /tmp/asgard_openssl \
     --flatten --mba

@@ -23,7 +23,7 @@ By integrating combinatorial and non-linear sequences cataloged in OEIS, ASGARD-
 ## 2. Engineering Policy & Offline Determinism
 
 * **Offline Invariant**: The ASGARD compiler and VM packaging pipeline (`main.exe protect-...`) **MUST NEVER** perform dynamic network calls to `oeis.org` during protected binary compilation. Builds must remain 100% air-gapped, reproducible, and deterministic.
-* **Constant Registry Rule**: Any scalar constant, mask, polynomial coefficient, or table derived from OEIS must be registered in `lib/constants/magic_numbers.ml` with its canonical sequence ID (e.g., `OEIS A003022`) and mathematical provenance (per `AGENTS.md` Rule 3).
+* **Constant Registry Rule**: Any scalar constant, mask, polynomial coefficient, or table derived from OEIS must be registered in `base/constants/magic_numbers.ml` with its canonical sequence ID (e.g., `OEIS A003022`) and mathematical provenance (per `AGENTS.md` Rule 3).
 * **Formal Verification**: Any algebraic identity or invariant constructed using OEIS sequences must be verified in Z3 SMT `QF_BV` in `test/test_stack_vm.ml`.
 
 ---
@@ -171,14 +171,14 @@ flowchart TD
 
 ### 3.8 Fractal Tiered Invalidation: Ruler Function (RD-JIT)
 * **OEIS Identifier**: [A001511](https://oeis.org/A001511) — the 2-adic valuation $v_2(2n)$: $1, 2, 1, 3, 1, 2, 1, 4, \dots$
-* **Application**: After execution step $t$, the sealed nano-arena always wipes the active slot and re-wipes every slot of fractal level $\le \mathrm{A001511}(t) = 1 + \mathrm{ctz}(t)$ with a fresh Rule 30 gamma (`lib/jit_vm/nano_jit_slot.ml`, `arena_after_chunk`).
+* **Application**: After execution step $t$, the sealed nano-arena always wipes the active slot and re-wipes every slot of fractal level $\le \mathrm{A001511}(t) = 1 + \mathrm{ctz}(t)$ with a fresh Rule 30 gamma (`backends/jit_vm/nano_jit_slot.ml`, `arena_after_chunk`).
 * **Defense**: Level-1 slots are wiped every step, level-2 every 2nd, level-3 every 4th: a process snapshot at any $t$ retains only a fractal fragment of the executed code, and hot loops never accumulate whole in memory.
 
 ---
 
 ### 3.9 Kolakoski Self-Describing Fission (RD-JIT)
 * **OEIS Identifier**: [A000002](https://oeis.org/A000002) — the Kolakoski word $1, 2, 2, 1, 1, 2, 1, 2, 2, 1, \dots$ whose run lengths equal the word itself.
-* **Application**: The RD-JIT emitter splits the virtual-opcode stream into native chunks whose target sizes are Kolakoski run lengths scaled by 2 (2 or 4 instructions per chunk, `lib/jit_vm/jit_emitter.ml`).
+* **Application**: The RD-JIT emitter splits the virtual-opcode stream into native chunks whose target sizes are Kolakoski run lengths scaled by 2 (2 or 4 instructions per chunk, `backends/jit_vm/jit_emitter.ml`).
 * **Defense**: Chunk boundaries are self-descriptive but aperiodic: disassemblers and diff tools find no fixed micro-handler size to align on.
 
 ---

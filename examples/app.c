@@ -7,7 +7,7 @@
  * Wrapped with ASGARD-5877 VMProtect-style delimiters.
  * 
  * When protected with:
- *   ./random_visa protect -i examples/app.c -o ./dist --cff --mba --compile true
+ *   ./asgard protect -i examples/app.c -o ./dist --cff --mba --compile true
  * 
  * The marked region is automatically extracted, compiled to IR,
  * flattened with Control-Flow Flattening (CFF), scrambled with MBA,

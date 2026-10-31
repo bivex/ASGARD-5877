@@ -764,8 +764,8 @@ let () =
   (match Toolchain.Cpp_validator.validate_cpp_syntax tech_2601_header_str with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2601 runtime header syntax validation failed: " ^ err));
-  (if Sys.file_exists "lib/shadow_unwind" then begin
-     let oc = open_out "lib/shadow_unwind/asg_shadow_unwind.hpp" in
+  (if Sys.file_exists "transforms/anti_analysis/shadow_unwind" then begin
+     let oc = open_out "transforms/anti_analysis/shadow_unwind/asg_shadow_unwind.hpp" in
      output_string oc tech_2601_header_str;
      close_out oc
    end);

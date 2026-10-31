@@ -13,7 +13,7 @@ However, naive injection of synthetic instructions creates significant attack su
    Any instruction cluster that does not contribute transitively to a sink is pruned, collapsing millions of obfuscated instructions down to the original unhardened logic.
 3. **Peephole & Algebraic Normalization (Threat Model Tiers 1–3)**: Constant-folding rules, structural inverses (e.g., $\operatorname{Swap} \circ \operatorname{Swap} = \operatorname{id}$), and neutral arithmetic elements ($x + 0$, $x \cdot 1$, $x - x = 0$) are collapsed by local pattern-matching passes.
 
-The **Stack-VM Dead Code Causality Analyzer** (`lib/stack_vm/stack_dead_code_analyzer.ml`, `lib/stack_vm/stack_dead_code_analyzer.mli`) is the formal diagnostic and verification engine of ASGARD-5877. It statically models program dataflow, context-slot def-use chains, CFG reachability, flag lifecycles, and backward slicing dependencies to detect, classify, and pinpoint the exact architectural cause of dead code emergence across every compilation phase.
+The **Stack-VM Dead Code Causality Analyzer** (`backends/stack_vm/stack_dead_code_analyzer.ml`, `backends/stack_vm/stack_dead_code_analyzer.mli`) is the formal diagnostic and verification engine of ASGARD-5877. It statically models program dataflow, context-slot def-use chains, CFG reachability, flag lifecycles, and backward slicing dependencies to detect, classify, and pinpoint the exact architectural cause of dead code emergence across every compilation phase.
 
 ---
 

@@ -22,7 +22,7 @@ The fuzzer feeds identical pseudorandom and mutated inputs $x$ into both impleme
 ### A. Register Preservation & Bit-Width Truncation
 * **Scenario**: SIB indirect memory addressing of the form `[base + index * scale]`.
 * **Root Cause Found**: During lowering of `movzx r9d, byte ptr [rsi + rax]`, the scratch address register inherited the 32-bit width of `r9d`. The 64-bit base address `rsi + rax` was truncated to 32 bits, causing an immediate segmentation fault (`SIGSEGV`).
-* **Fix**: In `lib/native_vm/vm_transform.ml`, memory scratch registers are strictly enforced to `Register.B64`.
+* **Fix**: In `backends/native_vm/vm_transform.ml`, memory scratch registers are strictly enforced to `Register.B64`.
 
 ### B. Type Errors in MBA Obfuscation (Floating-Point Taint)
 * **Scenario**: Source code performing floating-point addition: `double q2 = q + p.d;`.
@@ -60,7 +60,7 @@ ASGARD provides two complementary fuzzing harnesses:
                     │  proj_src/main_driver.cpp   (--fuzz main)│
                     └───────────────┬──────────────────────────┘
               ┌─────────────────────┴──────────────────────┐
-     native clang++ (golden)                    random_visa project
+     native clang++ (golden)                    asgard project
      markers = inert no-ops                     macro-obf + CFF + MBA + VM
               │                                              │
    ┌──────────┴──────────┐                       ┌───────────┴───────────┐
@@ -79,7 +79,7 @@ ASGARD provides two complementary fuzzing harnesses:
 * **Automated Minimization**: Divergences or faults invoke `__builtin_trap()`, prompting libFuzzer to persist the minimal crash reproduction input to `artifacts/crash-*`.
 
 ### Option 2: Python Project Runner (`run_diff_project.py`)
-* **Mechanism**: Compiles two distinct binaries (`app_native` and `protected_proj`) via the `random_visa project` command-line interface.
+* **Mechanism**: Compiles two distinct binaries (`app_native` and `protected_proj`) via the `asgard project` command-line interface.
 * **Full Pipeline Verification**: Validates not only instruction virtualization, but also Makefile generation, header dependencies, symbol stripping, and linking.
 * **Granular Diagnostics**: On divergence, prints a structured payload dump, comparing golden versus VM values along with an XOR bitmask of differences.
 

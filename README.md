@@ -10,7 +10,7 @@ An OCaml 5 toolchain for two related jobs:
 - **vISA synthesizer** — randomizes a RISC-V-style vector ISA, exports a formal Sail model, and generates a C++/C11 emulator together with a hardware cost estimate.
 - **VM-Protector** — lifts native ARM64, x86_64 and RISC-V code into a virtualized C++20 runtime and applies obfuscation passes to the result.
 
-Both are exposed through one CLI, `random_visa`, over a hexagonal (ports and adapters) codebase.
+Both are exposed through one CLI, `asgard`, over a hexagonal (ports and adapters) codebase.
 
 ## Requirements
 
@@ -82,7 +82,7 @@ Suites are matched by regex against the suite name. Per the rules in `AGENTS.md`
 | `init-config` | Write an annotated JSON protection configuration |
 | `macho-unwind` | Inspect and repair the compact unwind information of a Mach-O image |
 
-`dune exec random_visa -- <command> --help=plain` lists every flag.
+`dune exec asgard -- <command> --help=plain` lists every flag.
 
 ### Protecting code
 
@@ -108,7 +108,7 @@ int64_t verify_license(int64_t hwid, int64_t serial) {
 Markers: `ASGARD_BEGIN_VIRTUALIZE`, `ASGARD_BEGIN_ULTRA`, `ASGARD_BEGIN_MUTATION`, `ASGARD_END`.
 
 ```bash
-dune exec random_visa -- protect-arm64 \
+dune exec asgard -- protect-arm64 \
   -i examples/license_check.c \
   -o ./protected_out \
   --engine=stack \
@@ -139,7 +139,7 @@ protected_out/
 Whole projects are protected in one pass:
 
 ```bash
-dune exec random_visa -- project \
+dune exec asgard -- project \
   --dir ./examples/multi_file_project/src \
   --output ./protected_app \
   --cff --mba --seed 42
@@ -223,7 +223,7 @@ examples/sjit_showcase/run_sjit_showcase.sh
 ### Configuration
 
 ```bash
-dune exec random_visa -- init-config --output asgard.json --preset max
+dune exec asgard -- init-config --output asgard.json --preset max
 ```
 
 Presets: `min`, `light`, `default`, `high`, `max`, `stealth`. JSON overrides CLI flags; `samples/protection_config.full.json` is a complete annotated example.
@@ -335,39 +335,45 @@ asg-regs
 
 ## Repository layout
 
-| Path | Contents |
-|---|---|
-| `lib/domain/` | vISA domain model, hardware cost model, Sail AST |
-| `lib/ports/`, `lib/adapters/` | Sail export/parse, assemblers, C/C++ emitters, lifter adapters |
-| `lib/application/` | Use-case pipelines and protection orchestrator |
-| `lib/vm_ir/` | Shared VM IR, lazy flags, ring codec, rolling key, opaque predicates |
-| `lib/arm64_lifter/` | ARM64 with NEON/FP/atomics/PAC/LSE lifter |
-| `lib/x86_lifter/` | x86_64 lifter (scalar, SSE, AVX, x87) |
-| `lib/riscv_lifter/` | RV64GC + RVV lifter |
-| `lib/stack_vm/` | Stack-VM engine: 32 passes, chunker, budget regulator, dead-code analyzer, BV verifier |
-| `lib/native_vm/` | Direct-threaded VM, metamorphic handlers, domain salt optimizer, anti-tamper |
-| `lib/nested_vm/` | Multi-VM zero-bridge, homomorphic bridge, nested stack (OEIS sequences) |
-| `lib/jit_vm/` | Register-driven JIT: buffer, synthesizer, emitter, nano-JIT slots |
-| `lib/mba_engine/`, `lib/cff/` | MBA E-graph saturation, CFG flattening, opaque predicate catalog |
-| `lib/cpp_codegen/` | Typed C++20/C11 AST, EDSL combinators, printer, scrambler, pre-flight validator |
-| `lib/c_macro_obf/` | Macro obfuscator: stack strings, constant blinding, nanomites, MBA rewrites |
-| `lib/bytecode_crypto/` | SHA-256, HMAC-SHA256, Speck, SipHash-1-2, block key derivation |
-| `lib/shadow_unwind/`, `lib/dispatch_permutation/`, `lib/trace_chaff/` | Research passes: EH shadowing, VPC dispatch, anti-trace |
-| `lib/emulation_stall/` | Computational stalling: RSW puzzles, Chebyshev, ergodic polynomials |
-| `lib/watermark/` | Build-seed watermark embed/extract |
-| `lib/macho/` | Mach-O reader with compact unwind and `LC_ROUTINES` support |
-| `lib/gpu_synth/` | Metal GPU MBA synthesis |
-| `lib/bytecode_codec/` | Polymorphic bytecode codec |
-| `lib/constants/` | Magic numbers registry (`magic_numbers.ml`) |
-| `lib/ports/` | Domainslib domain pool, parallel utilities |
-| `bin/` | CLI drivers |
-| `test/` | ~671 test cases across all suites |
-| `fstar/` | 15 F* proof theories + OCaml extractions |
-| `examples/` | License check, SJIT showcase, multi-VM, JIT, fuzzing corpora |
-| `tools/` | LLDB plugin, IDA Pro plugin, VM fuzzer, tamper fuzzer |
-| `scripts/` | Z3 synthesizers, benchmarks, audit runners |
-| `docs/` | Architecture specs, threat model, OEIS sequence catalog |
-| `samples/` | Annotated configuration presets |
+The tree mirrors the pipeline dataflow. Dependencies point strictly downward:
+a layer may import only the layers above it in the table.
+
+| Path | Layer | Contents |
+|---|---|---|
+| `base/constants/` | L0 base | Magic numbers registry (`Magic_numbers`) — single source of every hash constant |
+| `base/macho/` | L0 base | Mach-O reader with compact unwind and `LC_ROUTINES` support |
+| `base/sequences/` | L0 base | Cross-backend integer sequences (Kolakoski, Thue-Morse) |
+| `domain/` | L1 domain | Pure vISA domain model, hardware cost model, Sail AST, Mealy automata — no emitters, no I/O |
+| `domain/ir/` | L1 domain | Shared VM IR, lazy flags, ring codec, rolling key, opaque predicates |
+| `contracts/` | L2 contracts | Hexagonal ports (`Ports`, `Protect_ports`) and the protection-config vocabulary (`Protection_types`, `Protection_presets`, `Protection_json`) — no Unix, no thread pools |
+| `transforms/` | L3 transforms | Pure `IR → IR` passes: `mba/` (E-graph saturation), `control_flow/` (flattening, opaque catalog), `crypto_binding/`, `c_macro_obf/`, `watermarking/`, `bytecode_codec/`, `x86_lifter/`, `arm64_lifter/`, `riscv_lifter/`, `anti_analysis/` (`shadow_unwind`, `dispatch_permutation`, `trace_chaff`, `emulation_stall`) |
+| `backends/` | L4 backends | IR → artifact emitters: `cpp_edsl/` (typed C++20/C11 EDSL + printer), `stack_vm/` (32 passes, chunker, BV verifier), `native_vm/` (threaded VM, anti-tamper), `jit_vm/` (nano-JIT arena), `nested_vm/` (VM-in-VM), `gpu/` (Metal MBA synthesis), `isa_codegen/` (RNS/branchless-VIP/metamorphic-ISA headers) |
+| `adapters/` | L5 adapters | Implementations with side effects: `ingestion_sail/`, `ingestion_macho/`, `emission_sail/`, `emission_cpp/`, `emission_c11/`, `assembler/`, `toolchain/` (clang invocation + C++ validator), `runtime_services/` (Domainslib pool, logger) |
+| `metrics/` | L3 | Protection metrics report shared by all backends |
+| `pipeline/` | L6 orchestration | `application/` (`Pipeline_orchestrator`, `protect_orchestrator`) + `protect_adapters/` (port implementations: lifter/c_macro/trampoline/packager/toolchain adapters) |
+| `cli/` | L7 CLI | cmdliner drivers (`asgard` binary); composition root wiring adapters into the pipeline |
+| `formal/` | proofs | 15 F* proof theories + OCaml extractions |
+| `test/` | — | ~671 test cases across all suites |
+| `examples/`, `tools/`, `scripts/`, `samples/`, `docs/` | — | Demos, IDA/LLDB/fuzz tooling, generators (`tools/generators`), profiler (`tools/profiling`), Z3 synthesizers, presets, specs |
+
+### Dependency rules
+
+| Layer | May import | Must not import |
+|---|---|---|
+| `base` | — | anything |
+| `domain` | `base` | contracts, transforms, backends, adapters, pipeline, emitters, Unix |
+| `contracts` | `domain` | implementations, Unix, Domainslib |
+| `transforms`, `metrics` | `domain`, `base` | each other's internals, contracts, backends, adapters, pipeline |
+| `backends` | `domain`, `base`, `transforms` | other backends, contracts, pipeline |
+| `adapters` | `contracts`, `domain`, `base` | pipeline, cli, other adapters |
+| `pipeline` | `contracts`, `backends` (wiring), `adapters` | cli internals |
+| `cli` | `pipeline`, adapters (composition root only) | — |
+| `test` | everything | — |
+
+Invariants enforced by review: the domain never emits C++ (all emission lives in
+`backends/`), contracts never touch the filesystem or thread pools (all I/O lives
+in `adapters/`), presets never probe hardware (`with_gpu_mba_engine` is applied by
+the wiring layer), and no backend imports another backend.
 
 ## Audits and benchmarks
 
@@ -376,7 +382,7 @@ scripts/audit_protected_binary.sh <binary> [bytecode]
 scripts/run_real_world_benchmarks.sh    # OpenSSL, Coreutils, SQLite, WireGuard, zstd
 scripts/run_benchmark_arm64.sh          # entropy, SMT recovery, avalanche, divergence
 scripts/build_corpus_arm64.sh           # eight-seed polymorphic corpus
-dune exec random_visa -- macho-unwind --input ./protected_app
+dune exec asgard -- macho-unwind --input ./protected_app
 ```
 
 `audit_protected_binary.sh` checks for leftover symbols/strings, parasitic imports, and decompiler resilience; exits non-zero on any finding.

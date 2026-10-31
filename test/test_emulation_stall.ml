@@ -122,7 +122,7 @@ let string_contains haystack needle =
 let test_cpp_header_emission () =
   let hdr = emit_emulation_stall_cpp_header () in
   (try
-     let oc = open_out "lib/emulation_stall/asg_emulation_stall.hpp" in
+     let oc = open_out "transforms/anti_analysis/emulation_stall/asg_emulation_stall.hpp" in
      output_string oc hdr;
      close_out oc
    with _ -> ());

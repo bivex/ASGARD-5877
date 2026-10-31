@@ -6,7 +6,7 @@ ASGARD-5877 Differential Fuzzer (project mode)
 Compiles the SAME multi-file project (proj_src/) two ways:
 
   1. app_native    : plain clang++            -> Golden Reference
-  2. protected_proj: random_visa project      -> macro-obf + CFF + MBA + VM
+  2. protected_proj: asgard project      -> macro-obf + CFF + MBA + VM
 
 Then streams thousands of test vectors through both binaries in --fuzz
 mode and reports the first divergence with a full input dump.
@@ -61,7 +61,7 @@ def build_protected(seed, enable_cff, enable_mba):
     protected_bin = os.path.join(VM_OUT, "protected_proj")
     os.makedirs(VM_OUT, exist_ok=True)
     cmd = [
-        "dune", "exec", "--", "random_visa", "project",
+        "dune", "exec", "--", "asgard", "project",
         "-d", PROJ_SRC,
         "-o", protected_bin,
         "--run=false",

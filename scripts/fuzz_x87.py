@@ -511,12 +511,12 @@ int main() {{
 
 
 def run_asgard_vm_case(asm_path: str, tc: TestCase) -> Tuple[bool, int, float, str]:
-    """Protects assembly with random_visa threaded engine and runs through ASGARD VM."""
+    """Protects assembly with asgard threaded engine and runs through ASGARD VM."""
     vm_out_dir = asm_path.replace(".s", "_vm_out")
     os.makedirs(vm_out_dir, exist_ok=True)
 
     cmd_protect = [
-        "dune", "exec", "--", "random_visa", "protect",
+        "dune", "exec", "--", "asgard", "protect",
         "-i", asm_path,
         "-o", vm_out_dir,
         "--engine=threaded",

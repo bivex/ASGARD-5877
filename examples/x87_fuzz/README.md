@@ -14,7 +14,7 @@ Differential fuzzing framework for legacy x87 FPU instructions, comparing native
                ┌──────────────────────┼──────────────────────┐
                ▼                      ▼                      ▼
       Hardware Reference      ASGARD VM Pipeline       Python Oracle
-     (Rosetta x86-64 /       (random_visa protect    (IEEE-754 Shadow
+     (Rosetta x86-64 /       (asgard protect    (IEEE-754 Shadow
       Native Intel x86)      --engine=threaded)       Stack Model)
                │                      │                      │
                ▼                      ▼                      ▼
@@ -90,6 +90,6 @@ When a divergence or error is detected, the fuzzer automatically preserves the e
 # Inspect the failing case
 cat examples/x87_fuzz/artifacts/case_7_58779292.s
 
-# Replay through random_visa
-dune exec -- random_visa protect -i examples/x87_fuzz/artifacts/case_7_58779292.s -o /tmp/repro --engine=threaded
+# Replay through asgard
+dune exec -- asgard protect -i examples/x87_fuzz/artifacts/case_7_58779292.s -o /tmp/repro --engine=threaded
 ```

@@ -131,7 +131,7 @@ This roadmap tracks feature completion, architectural gaps, and implementation t
     - x86_64: dynamic generation of REX-prefixed `MOV`, `ADD`, `SUB`, `IMUL`, `XOR`, `AND`, `OR`, and `RET` (`0xc3`).
   - **RNS-4 Moduli Residue Synchronization**: Parallel modular channels ($M = \prod m_i > 2^{64}$) synchronized post-execution in `RD_JIT_Context` using Garner's CRT recovery.
   - **$O(1)$ Machine Code RAM Lifetime & Atomic Scrub**: Immediately upon block retirement, `atomic_zeroize` scrubs the write view with `volatile` wipes, leaving 0 trace of synthesized machine code in process RAM.
-  - **CLI Integration**: Added CLI flags `--engine=jit` and `--jit` to `random_visa protect` and `random_visa protect-arm64`.
+  - **CLI Integration**: Added CLI flags `--engine=jit` and `--jit` to `asgard protect` and `asgard protect-arm64`.
   - **Verified by Tests**: Tested in `test/test_jit_vm.ml` with E2E multi-op arithmetic execution under `clang++ -std=c++20 -O2`.
 
 ---

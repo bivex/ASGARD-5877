@@ -10,27 +10,27 @@ The lifecycle of an instruction spans six distinct stages, from raw assembly par
 
 ```
 ┌─────────────────────────────────────────┐
-│ 1. Frontend Lifter                      │  lib/<arch>_lifter/
+│ 1. Frontend Lifter                      │  transforms/<arch>_lifter/
 │    Assembly text -> Micro-IR            │
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
-│ 2. Micro-IR & Pipeline Passes           │  lib/vm_ir/
+│ 2. Micro-IR & Pipeline Passes           │  domain/ir/
 │    ir.mli, allocator, evaluator         │
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
-│ 3. Canonicalization                     │  lib/native_vm/vm_transform.ml
+│ 3. Canonicalization                     │  backends/native_vm/vm_transform.ml
 │    2-address forms, scratch registers   │
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
-│ 4. Bytecode Word Encoding               │  lib/native_vm/vm_emitter.ml
+│ 4. Bytecode Word Encoding               │  backends/native_vm/vm_emitter.ml
 │    64-bit instruction word packaging    │
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
-│ 5. Runtime Handler                      │  lib/native_vm/vm_*_handlers.ml
+│ 5. Runtime Handler                      │  backends/native_vm/vm_*_handlers.ml
 │    C++20 Direct Threaded Code (&&label) │
 └────────────────────┬────────────────────┘
                      │
@@ -44,13 +44,13 @@ The lifecycle of an instruction spans six distinct stages, from raw assembly par
 
 ## 2. Step-by-Step Implementation Guide
 
-### Step 1: Micro-IR Definition (`lib/vm_ir/`)
+### Step 1: Micro-IR Definition (`domain/ir/`)
 
-1. **`lib/vm_ir/ir.mli` and `lib/vm_ir/ir.ml`**:
+1. **`domain/ir/ir.mli` and `domain/ir/ir.ml`**:
    - Add a new variant to `Ir.instr` (and any auxiliary opcode types if grouping instructions like `sha_op`, `atomic_op`, or `fp_conv_op`):
 
      ```ocaml
-     (* lib/vm_ir/ir.mli *)
+     (* domain/ir/ir.mli *)
      type my_op = MyOp1 | MyOp2
 
      type instr =
@@ -64,24 +64,24 @@ The lifecycle of an instruction spans six distinct stages, from raw assembly par
 
 2. **Exhaustive Pattern Matching Across IR Passes**:
    OCaml compiler warning 8 (partial-match) enforces that all transformation passes handle the new instruction:
-   - `lib/vm_ir/register_allocator.ml` (`remap_instr`): remap all input and output registers so allocated context slots remain coherent across basic blocks.
-   - `lib/vm_ir/superoperator.ml` (`of_instr` / `reads_flags` / `writes_flags`): track register dependencies and flag consumption to prevent illegal superoperator fusion across barrier boundaries.
-   - `lib/vm_ir/subreg_write.ml`: handle sub-register truncation or zero-extension semantics for narrow writes (`B32`, `B16`, `B8`).
-   - `lib/cff/cff.ml` (`is_reg_read_in_op`): track register reads for Control-Flow Flattening state dispatchers.
+   - `domain/ir/register_allocator.ml` (`remap_instr`): remap all input and output registers so allocated context slots remain coherent across basic blocks.
+   - `domain/ir/superoperator.ml` (`of_instr` / `reads_flags` / `writes_flags`): track register dependencies and flag consumption to prevent illegal superoperator fusion across barrier boundaries.
+   - `domain/ir/subreg_write.ml`: handle sub-register truncation or zero-extension semantics for narrow writes (`B32`, `B16`, `B8`).
+   - `transforms/control_flow/cff.ml` (`is_reg_read_in_op`): track register reads for Control-Flow Flattening state dispatchers.
 
-3. **Software Oracle in the Reference VM (`lib/vm_ir/vm_eval.ml`)**:
+3. **Software Oracle in the Reference VM (`domain/ir/vm_eval.ml`)**:
    - Implement the instruction's exact mathematical semantics in `eval_instr`.
-   - For complex round algorithms (e.g. SHA-NI hashing, AES rounds), isolate the pure logic into a dedicated submodule (e.g. `lib/vm_ir/sha_ni.ml`).
+   - For complex round algorithms (e.g. SHA-NI hashing, AES rounds), isolate the pure logic into a dedicated submodule (e.g. `domain/ir/sha_ni.ml`).
    - *Requirement*: The Reference VM serves as the authoritative mathematical oracle for differential fuzzing and Stage-7 Equivalence Verification.
 
 ---
 
-### Step 2: Frontend Lifter Integration (`lib/<arch>_lifter/`)
+### Step 2: Frontend Lifter Integration (`transforms/<arch>_lifter/`)
 
 Implement mnemonic recognition and operand parsing in the corresponding architecture lifter:
-- **x86-64**: `lib/x86_lifter/lifter.ml`
-- **ARM64**: `lib/arm64_lifter/arm64_alu.ml`, `arm64_mem.ml`, `arm64_branch.ml`
-- **RISC-V**: `lib/riscv_lifter/riscv_lifter.ml`
+- **x86-64**: `transforms/x86_lifter/lifter.ml`
+- **ARM64**: `transforms/arm64_lifter/arm64_alu.ml`, `arm64_mem.ml`, `arm64_branch.ml`
+- **RISC-V**: `transforms/riscv_lifter/riscv_lifter.ml`
 
 #### Lifter Rules:
 1. **Implicit Registers**:
@@ -93,7 +93,7 @@ Implement mnemonic recognition and operand parsing in the corresponding architec
 
 ---
 
-### Step 3: Canonicalization & Hazard Prevention (`lib/native_vm/vm_transform.ml`)
+### Step 3: Canonicalization & Hazard Prevention (`backends/native_vm/vm_transform.ml`)
 
 Before bytecode packaging, every basic block passes through `canonicalize_instr`.
 
@@ -113,9 +113,9 @@ Handle the instruction in `canonicalize_instr` if:
 
 ---
 
-### Step 4: Opcode Registration & Bytecode Packaging (`lib/native_vm/`)
+### Step 4: Opcode Registration & Bytecode Packaging (`backends/native_vm/`)
 
-1. **`lib/native_vm/vm_transform.mli` and `lib/native_vm/vm_transform.ml`**:
+1. **`backends/native_vm/vm_transform.mli` and `backends/native_vm/vm_transform.ml`**:
    - Register the opcode in the `opcode` variant:
      ```ocaml
      | OP_MY_OP
@@ -126,7 +126,7 @@ Handle the instruction in `canonicalize_instr` if:
      ```
    - Append `OP_MY_OP` to `all_opcodes`.
 
-2. **Bytecode Emission (`lib/native_vm/vm_emitter.ml`)**:
+2. **Bytecode Emission (`backends/native_vm/vm_emitter.ml`)**:
    In `compile_and_package_multi`, add an emission rule:
    ```ocaml
    | Ir.My_instr { op; dst; src } ->
@@ -143,7 +143,7 @@ Handle the instruction in `canonicalize_instr` if:
 
 ---
 
-### Step 5: Direct-Threaded C++ Runtime Handler (`lib/native_vm/vm_*_handlers.ml`)
+### Step 5: Direct-Threaded C++ Runtime Handler (`backends/native_vm/vm_*_handlers.ml`)
 
 Implement the runtime handler in the appropriate category module:
 - `vm_alu_handlers.ml` — Arithmetic, logic, bit manipulations, flags.
@@ -176,10 +176,10 @@ H_MY_OP: {
 
 ---
 
-### Step 6: Stack-VM Engine Lowering (`lib/stack_vm/ir_to_stack.ml`)
+### Step 6: Stack-VM Engine Lowering (`backends/stack_vm/ir_to_stack.ml`)
 
 If the instruction is supported by the universal logic Stack-VM:
-- Map `Ir.instr -> stack_op list` in `lib/stack_vm/ir_to_stack.ml`.
+- Map `Ir.instr -> stack_op list` in `backends/stack_vm/ir_to_stack.ml`.
 - If unsupported (e.g. 128-bit SIMD or SHA-NI extensions), terminate execution explicitly:
   ```ocaml
   | Vec_sha _ -> [Exit]
@@ -222,7 +222,7 @@ _build/default/test/run_tests.exe test "x86_64 Lifter & CFG"
 ## 4. Pre-Commit Checklist
 
 - [ ] New `Ir.instr` variant declared; `.mli` interfaces updated.
-- [ ] Pattern matching covered across all passes in `lib/vm_ir/` (zero compiler warnings).
+- [ ] Pattern matching covered across all passes in `domain/ir/` (zero compiler warnings).
 - [ ] Reference VM (`vm_eval.ml`) implements correct mathematical semantics.
 - [ ] Opcode registered in `vm_transform.ml` and included in `all_opcodes`.
 - [ ] Canonicalization handles oversized immediates and register hazards.

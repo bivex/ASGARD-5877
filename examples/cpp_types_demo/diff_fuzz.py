@@ -41,7 +41,7 @@ def build_targets(engine="threaded", enable_cff=True, enable_mba=True):
     os.makedirs(vm_out_dir, exist_ok=True)
     
     protect_cmd = [
-        "dune", "exec", "--", "random_visa", "protect",
+        "dune", "exec", "--", "asgard", "protect",
         "-i", os.path.join(SCRIPT_DIR, "test.cpp"),
         "-o", vm_out_dir,
         f"--engine={engine}"

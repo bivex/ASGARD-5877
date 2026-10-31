@@ -551,7 +551,7 @@ Observational equivalence $\operatorname{Obs}(C(P), x) \equiv \operatorname{Obs}
 
 ---
 
-## 6. Zero-Native Caller Assimilation & Trampolines (`lib/adapters/`)
+## 6. Zero-Native Caller Assimilation & Trampolines (`adapters/`)
 
 To prevent reverse engineers from placing breakpoints at function boundaries:
 1. **Zero-Native Dispatch**: The original function body is excised and replaced with a 56-byte inline assembly trampoline.

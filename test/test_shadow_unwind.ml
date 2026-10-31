@@ -184,15 +184,15 @@ let test_exception_resolution_fsm () =
 let test_cpp_runtime_e2e () =
   let header_dir =
     let candidates = [
-      "lib/shadow_unwind";
-      "../lib/shadow_unwind";
-      "../../lib/shadow_unwind";
-      "../../../lib/shadow_unwind";
-      "/Volumes/External/Code/ASGARD-5877/lib/shadow_unwind";
+      "transforms/anti_analysis/shadow_unwind";
+      "../transforms/anti_analysis/shadow_unwind";
+      "../../transforms/anti_analysis/shadow_unwind";
+      "../../../transforms/anti_analysis/shadow_unwind";
+      "/Volumes/External/Code/ASGARD-5877/transforms/anti_analysis/shadow_unwind";
     ] in
     match List.find_opt (fun d -> Sys.file_exists (Filename.concat d "asg_shadow_unwind.hpp")) candidates with
     | Some d -> d
-    | None -> failwith "Could not locate lib/shadow_unwind/asg_shadow_unwind.hpp"
+    | None -> failwith "Could not locate transforms/anti_analysis/shadow_unwind/asg_shadow_unwind.hpp"
   in
   let master_key = Bytes.of_string "TECH_2601_CPP_MASTER_KEY_32_BYTE" in
   let meta = {

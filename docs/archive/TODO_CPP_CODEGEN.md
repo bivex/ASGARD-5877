@@ -290,7 +290,7 @@ Elimination of string concatenation vulnerabilities (`Printf.sprintf`, `Buffer.a
     - Retained static header strings (`platform_compat_header`, `crypto_primitives_header`, `sanitization_header`).
 - [x] Complete elimination of `jingoo` from repository dependencies:
   - Removed `jingoo` library from [`lib/native_vm/dune`](file:///Volumes/External/Code/ASGARD-5877/lib/native_vm/dune).
-  - Removed `jingoo` dependency from [`dune-project`](file:///Volumes/External/Code/ASGARD-5877/dune-project) and [`random_visa.opam`](file:///Volumes/External/Code/ASGARD-5877/random_visa.opam).
+  - Removed `jingoo` dependency from [`dune-project`](file:///Volumes/External/Code/ASGARD-5877/dune-project) and [`asgard.opam`](file:///Volumes/External/Code/ASGARD-5877/asgard.opam).
   - Zero Jingoo calls or dependencies remain anywhere in the project.
 - [x] Verification:
   - Added Step 40 to [`test/test_cpp_codegen.ml`](file:///Volumes/External/Code/ASGARD-5877/test/test_cpp_codegen.ml) — all 40/40 steps 100% PASS.

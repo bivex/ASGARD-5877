@@ -1,6 +1,6 @@
 # C/C++ Macro-Based Source Code Obfuscator
 
-This document details the **C/C++ Preprocessor Macro Obfuscation Engine (`lib/c_macro_obf/`)** and `random_visa c-obf` CLI tool in ASGARD-5877.
+This document details the **C/C++ Preprocessor Macro Obfuscation Engine (`transforms/c_macro_obf/`)** and `asgard c-obf` CLI tool in ASGARD-5877.
 
 ---
 
@@ -20,7 +20,7 @@ The **C Macro Obfuscator** provides compile-time and source-level protection by 
 │      Original C Source     │ (main.c: strings, math, constants)
 └──────────────┬─────────────┘
                │
-               ▼ (random_visa c-obf)
+               ▼ (asgard c-obf)
 ┌──────────────┴─────────────┬──────────────────────────────┐
 │  Obfuscated Source (.c)    │  Polymorphic Header (.h)     │
 │  - Replaces "..." with     │  - asgard_obf.h              │
@@ -85,11 +85,11 @@ ASG_CFF_END();
 
 ---
 
-## 3. CLI Usage Guide (`random_visa c-obf`)
+## 3. CLI Usage Guide (`asgard c-obf`)
 
 ```bash
 # Obfuscate a C source file and generate companion header
-random_visa c-obf \
+asgard c-obf \
   -i examples/demo_c_app.c \
   -o ./protected_c/main.c \
   --header ./protected_c/asgard_obf.h \

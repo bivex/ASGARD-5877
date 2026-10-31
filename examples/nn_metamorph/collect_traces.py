@@ -52,8 +52,8 @@ ALL_SEEDS = [1001, 2002]
 
 
 def build(config: str, seed: int, binpath: str) -> str:
-    """random_visa project -> protected binary; returns the vm hpp path."""
-    cmd = (f"eval $(opam env) && dune exec -- random_visa project "
+    """asgard project -> protected binary; returns the vm hpp path."""
+    cmd = (f"eval $(opam env) && dune exec -- asgard project "
            f"-d {PROJ_SRC} -o {binpath} -s {seed} --run=false "
            f"{' '.join(CONFIG_FLAGS[config])}")
     res = subprocess.run(["/bin/zsh", "-c", cmd], cwd=REPO_ROOT,

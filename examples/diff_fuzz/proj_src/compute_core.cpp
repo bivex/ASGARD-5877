@@ -6,7 +6,7 @@
 /*    1. NATIVE GOLDEN : plain clang++ compile. The ASGARD marker macros     */
 /*       expand to an inert `jmp` over an .ascii blob, so the function       */
 /*       executes as ordinary native code.                                   */
-/*    2. PROTECTED VM  : `random_visa project -d proj_src --cff --mba`       */
+/*    2. PROTECTED VM  : `asgard project -d proj_src --cff --mba`       */
 /*       lifts the marked region to VM bytecode behind a C trampoline.       */
 /*                                                                           */
 /*  Writing rules for the kernels (important - they keep the comparison     */

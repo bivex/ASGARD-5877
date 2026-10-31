@@ -10,7 +10,7 @@ For in-depth background on target bug classes, verification methodology, and fuz
                     │  proj_src/main_driver.cpp   (--fuzz main)│
                     └───────────────┬──────────────────────────┘
               ┌─────────────────────┴──────────────────────┐
-     native clang++ (golden)                    random_visa project
+     native clang++ (golden)                    asgard project
      markers = inert no-ops                     macro-obf + CFF + MBA + VM
               │                                              │
    ┌──────────┴──────────┐                       ┌───────────┴───────────┐
@@ -55,7 +55,7 @@ python3 examples/diff_fuzz/run_diff_project.py -n 50000 --seed 5877 --keep-going
 python3 examples/diff_fuzz/run_diff_project.py --skip-build     # Reuse previously compiled binaries
 ```
 
-Builds `vm_out/app_native` (golden) and `vm_out/protected_proj` (`random_visa project -d proj_src --cff --mba`), streams test payloads through both processes in `--fuzz` mode, and prints tabular diagnostic dumps with XOR discrepancy bitmasks upon divergence.
+Builds `vm_out/app_native` (golden) and `vm_out/protected_proj` (`asgard project -d proj_src --cff --mba`), streams test payloads through both processes in `--fuzz` mode, and prints tabular diagnostic dumps with XOR discrepancy bitmasks upon divergence.
 
 ## Makefile Targets
 
@@ -68,7 +68,7 @@ make diff-fuzz-project      # Option 2: Python runner (N=10,000)
 
 - **Floating-Point Parity**: Both native golden and virtualized routines evaluate floating-point math against x86 baseline semantics: add and mul operations are kept isolated, and golden routines compile with `-ffp-contract=off` (preventing Apple Silicon / ARM64 hardware FMA contraction from triggering false-positive rounding mismatches).
 - **Out-of-Range Casts**: `static_cast<int64_t>(double)` on out-of-range values is undefined behavior in abstract C++, but maps to deterministic `cvttsd2si` hardware saturation on both sides. NaN and Inf are filtered unless `ASG_FUZZ_ALLOW_NAN=1` is specified.
-- **Engine Support**: `random_visa project` exercises the threaded VM engine. For Stack-VM or RD-JIT validation, use `examples/cpp_types_demo/diff_fuzz.py`.
+- **Engine Support**: `asgard project` exercises the threaded VM engine. For Stack-VM or RD-JIT validation, use `examples/cpp_types_demo/diff_fuzz.py`.
 - **Source Layout**: Functions under protection must be located directly in the compiled source file (scanned by the AST trampoline adapter), making `compute_core.cpp` the canonical source for both harnesses.
 
 ## File Directory Structure
