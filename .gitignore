@@ -35,7 +35,7 @@ profile_results.json
 *.tar.gz
 backup/
 gemini-code-1791925199080.sh
-.promts/audit.md
+.promts/
 random_visa
 
 # Differential fuzzing example: generated artifacts only
