@@ -107,7 +107,7 @@
     "chaff_ratio": 1.0
   },
   "comp_stall": {
-    "enabled": true,
+    "enabled": false,
     "variant": "ergodic",
     "n_iterations": 20000,
     "pow_difficulty": 20,
