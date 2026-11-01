@@ -15,7 +15,7 @@ The lifecycle of an instruction spans six distinct stages, from raw assembly par
 └────────────────────┬────────────────────┘
                      │
 ┌────────────────────▼────────────────────┐
-│ 2. Micro-IR & Pipeline Passes           │  domain/ir/
+│ 2. Micro-IR & Pipeline Passes           │  domain/vm_ir/
 │    ir.mli, allocator, evaluator         │
 └────────────────────┬────────────────────┘
                      │
@@ -44,13 +44,13 @@ The lifecycle of an instruction spans six distinct stages, from raw assembly par
 
 ## 2. Step-by-Step Implementation Guide
 
-### Step 1: Micro-IR Definition (`domain/ir/`)
+### Step 1: Micro-IR Definition (`domain/vm_ir/`)
 
-1. **`domain/ir/ir.mli` and `domain/ir/ir.ml`**:
+1. **`domain/vm_ir/ir.mli` and `domain/vm_ir/ir.ml`**:
    - Add a new variant to `Ir.instr` (and any auxiliary opcode types if grouping instructions like `sha_op`, `atomic_op`, or `fp_conv_op`):
 
      ```ocaml
-     (* domain/ir/ir.mli *)
+     (* domain/vm_ir/ir.mli *)
      type my_op = MyOp1 | MyOp2
 
      type instr =
@@ -64,14 +64,14 @@ The lifecycle of an instruction spans six distinct stages, from raw assembly par
 
 2. **Exhaustive Pattern Matching Across IR Passes**:
    OCaml compiler warning 8 (partial-match) enforces that all transformation passes handle the new instruction:
-   - `domain/ir/register_allocator.ml` (`remap_instr`): remap all input and output registers so allocated context slots remain coherent across basic blocks.
-   - `domain/ir/superoperator.ml` (`of_instr` / `reads_flags` / `writes_flags`): track register dependencies and flag consumption to prevent illegal superoperator fusion across barrier boundaries.
-   - `domain/ir/subreg_write.ml`: handle sub-register truncation or zero-extension semantics for narrow writes (`B32`, `B16`, `B8`).
+   - `domain/vm_ir/register_allocator.ml` (`remap_instr`): remap all input and output registers so allocated context slots remain coherent across basic blocks.
+   - `domain/vm_ir/superoperator.ml` (`of_instr` / `reads_flags` / `writes_flags`): track register dependencies and flag consumption to prevent illegal superoperator fusion across barrier boundaries.
+   - `domain/vm_ir/subreg_write.ml`: handle sub-register truncation or zero-extension semantics for narrow writes (`B32`, `B16`, `B8`).
    - `transforms/control_flow/cff.ml` (`is_reg_read_in_op`): track register reads for Control-Flow Flattening state dispatchers.
 
-3. **Software Oracle in the Reference VM (`domain/ir/vm_eval.ml`)**:
+3. **Software Oracle in the Reference VM (`domain/vm_ir/vm_eval.ml`)**:
    - Implement the instruction's exact mathematical semantics in `eval_instr`.
-   - For complex round algorithms (e.g. SHA-NI hashing, AES rounds), isolate the pure logic into a dedicated submodule (e.g. `domain/ir/sha_ni.ml`).
+   - For complex round algorithms (e.g. SHA-NI hashing, AES rounds), isolate the pure logic into a dedicated submodule (e.g. `domain/vm_ir/sha_ni.ml`).
    - *Requirement*: The Reference VM serves as the authoritative mathematical oracle for differential fuzzing and Stage-7 Equivalence Verification.
 
 ---
@@ -222,7 +222,7 @@ _build/default/test/run_tests.exe test "x86_64 Lifter & CFG"
 ## 4. Pre-Commit Checklist
 
 - [ ] New `Ir.instr` variant declared; `.mli` interfaces updated.
-- [ ] Pattern matching covered across all passes in `domain/ir/` (zero compiler warnings).
+- [ ] Pattern matching covered across all passes in `domain/vm_ir/` (zero compiler warnings).
 - [ ] Reference VM (`vm_eval.ml`) implements correct mathematical semantics.
 - [ ] Opcode registered in `vm_transform.ml` and included in `all_opcodes`.
 - [ ] Canonicalization handles oversized immediates and register hazards.

@@ -8,6 +8,8 @@
 # configuration turns on every remaining protection feature and pins the
 # seed, so the build is reproducible.
 set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO_ROOT"
 
 _build/default/cli/main.exe protect-arm64 \
   -i examples/license_check.c \

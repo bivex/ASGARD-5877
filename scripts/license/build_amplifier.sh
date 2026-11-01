@@ -7,11 +7,13 @@
 #   ./build_amplifier.sh clean    # dune clean
 #
 # To view phase-by-phase bytecode trace under protect-arm64:
-#   ASGARD_DUMP_BYTECODE=1 ./build_license.sh
+#   ASGARD_DUMP_BYTECODE=1 ./scripts/license/build_license.sh
 #   # or via CLI flag:
 #   _build/default/cli/main.exe protect-arm64 -i examples/license_check.c \
 #     --engine=stack --dump-bytecode 2>bytecode_trace.txt
 set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO_ROOT"
 
 # Activate opam environment (dune resides in ~/.opam/default/bin)
 if command -v opam &>/dev/null; then

@@ -10,5 +10,5 @@ if [[ $# -ge 1 && -d "$1" ]]; then
     python3 "${SCRIPT_DIR}/eval_obfuscation.py" "$1"
 else
     echo "[*] No pre-existing dump directory provided. Launching full one-click license evaluation..."
-    "${REPO_ROOT}/eval_license.sh"
+    "${REPO_ROOT}/scripts/license/eval_license.sh"
 fi

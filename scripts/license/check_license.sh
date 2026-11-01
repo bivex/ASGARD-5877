@@ -2,14 +2,15 @@
 # License key checker for ASGARD-5877 protected app
 
 set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 VALID_KEY="ASGARD-5877-GOLD"
 BAD_KEY="INVALID-KEY-BAD0"
-PROTECTED_APP="${1:-/Volumes/External/Code/ASGARD-5877/protected_arm64_out/protected_app}"
+PROTECTED_APP="${1:-${REPO_ROOT}/protected_arm64_out/protected_app}"
 
 if [[ ! -f "$PROTECTED_APP" ]]; then
     echo "[!] Protected app not found at: $PROTECTED_APP"
-    echo "    Build it first with: ./eval_license.sh examples/license_check.c 1337 /tmp/license_eval_json"
+    echo "    Build it first with: ./scripts/license/eval_license.sh examples/license_check.c 1337 /tmp/license_eval_json"
     exit 1
 fi
 

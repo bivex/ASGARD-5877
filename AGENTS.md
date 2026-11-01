@@ -57,7 +57,7 @@ C and C++ code in this repository is **not** assembled with `Buffer.add_string`,
 `Printf.sprintf` concatenation, or raw text templates. Every C/C++ artifact -
 VM runtimes, handler tables, headers, trampolines, shims, macro headers - is
 built as a typed AST and printed by the EDSL that the engine implements in
-`lib/cpp_codegen/`:
+`base/cpp_codegen/`:
 
 | Module | Role |
 |---|---|
@@ -65,7 +65,7 @@ built as a typed AST and printed by the EDSL that the engine implements in
 | `cpp_dsl.ml` | the combinators: `func_decl`, `let_u64`, `:=`, `if_then_else`, `call`, `preproc_if`, ... |
 | `cpp_printer.ml` | the renderer: `render_top_decls`, `render_header_unit`, `render_top_decl` |
 | `cpp_ast_obf.ml` | the scrambler; every new AST node needs a traversal case here |
-| `cpp_validator.ml` | structural and compiler validation of the rendered text |
+| `cpp_validator.ml` | structural and compiler validation of the rendered text (lives in `adapters/compiler_adapter/`) |
 
 - Build the declarations with the `Cpp_dsl` combinators and render them with
   `Cpp_printer.render_top_decls` (or `render_header_unit` for a header unit).
@@ -84,7 +84,7 @@ built as a typed AST and printed by the EDSL that the engine implements in
 - The rule governs C/C++ emission only. Ordinary OCaml text - reports, metric
   tables, log lines, test fixtures - may still use `Buffer.add_string`.
 - Call sites that still concatenate C++ into a `Buffer` (for example
-  `lib/native_vm/vm_mem_handlers.ml`) are known debt: when you touch such a
+  `backends/native_vm/vm_mem_handlers.ml`) are known debt: when you touch such a
   file, convert the C++ part to the EDSL instead of extending the string path.
 - After extending the EDSL, run its suite:
 
@@ -98,7 +98,7 @@ built as a typed AST and printed by the EDSL that the engine implements in
 A magic number is a numeric literal whose value cannot be guessed from the code
 that uses it: a hash or PRNG constant, a key-derivation salt, a bit mask, a
 sentinel. Such a literal is **not** written inline at the call site. It belongs
-in `lib/constants/magic_numbers.ml`, the single registry of the magic numbers
+in `base/constants/magic_numbers.ml`, the single registry of the magic numbers
 of the engine.
 
 - Declare the constant there, under a name that states its provenance
@@ -121,7 +121,8 @@ not magic numbers and stay where they are.
 - Update `CHANGELOG.md` under `## [Unreleased]` for every user-visible change:
   `### Added` for new behaviour, `### Fixed` for corrections, `### Changed` for
   changes in the behaviour of something that already existed. One bullet per
-  change, in the past tense, stating what changed, where (`lib/...`) and why.
+  change, in the past tense, stating what changed, where (`transforms/...`,
+  `backends/...`) and why.
   Extend the existing bullet of a topic instead of adding a second one for the
   same topic.
 - Commit the change. The history uses Conventional Commits with the area as

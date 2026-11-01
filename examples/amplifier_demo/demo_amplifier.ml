@@ -1,6 +1,6 @@
 (** examples/amplifier_demo/demo_amplifier.ml
     Standalone smoke-demo for Bytecode_amplifier.
-    Built via build_amplifier.sh; no dependencies on the
+    Built via scripts/license/build_amplifier.sh; no dependencies on the
     test framework — only Stack_vm + Mba_synthesis.
 
     Program:

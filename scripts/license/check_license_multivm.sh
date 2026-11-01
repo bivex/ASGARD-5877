@@ -2,14 +2,15 @@
 # License key checker for ASGARD-5877 Multi-VM Nested Stack protected app
 
 set -euo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 VALID_KEY="ASGARD-5877-GOLD"
 BAD_KEY="INVALID-KEY-BAD0"
-PROTECTED_APP="${1:-/Volumes/External/Code/ASGARD-5877/protected_multivm_out/protected_app}"
+PROTECTED_APP="${1:-${REPO_ROOT}/protected_multivm_out/protected_app}"
 
 if [[ ! -f "$PROTECTED_APP" ]]; then
     echo "[!] Protected Multi-VM app not found at: $PROTECTED_APP"
-    echo "    Build it first with: ./build_license_multivm.sh"
+    echo "    Build it first with: ./scripts/license/build_license_multivm.sh"
     exit 1
 fi
 

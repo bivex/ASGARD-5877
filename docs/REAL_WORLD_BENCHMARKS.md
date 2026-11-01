@@ -95,7 +95,7 @@ ldp q0, q1, [sp, #32]
 ### 3.3 VM Emitter 128-Bit Register Width Propagation (`vm_emitter.ml`)
 - **Fix**: Corrected the `Mov` handler emission in `backends/native_vm/vm_emitter.ml`. Register width was previously hardcoded to `64L` for floating-point/vector registers. The emitter now dynamically consults `Register.width_to_bytes w * 8`, guaranteeing correct byte lengths for 128-bit SIMD registers during VM register file updates.
 
-### 3.4 MBA Stack Pointer Protection (`mba_engine/`)
+### 3.4 MBA Stack Pointer Protection (`transforms/mba_synthesis/`)
 - **Fix**: Non-linear MBA expansions ($D=4,5$) rewriting stack pointer increments/decrements caused frame misalignment and memory corruption. Stack pointer manipulation (`RSP`, `SP`, or frame-relative offsets) is now strictly isolated and preserved from algebraic rewriting.
 
 ### 3.5 C Preprocessor Obfuscator Keyword Exemption (`c_macro_obf.ml`)

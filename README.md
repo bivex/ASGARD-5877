@@ -212,7 +212,7 @@ examples/sjit_showcase/run_sjit_showcase.sh
 
 ### Multi-VM nested stack
 
-`--engine=multi` bridges two heterogeneous VMs through an affine zero-bridge. The nested stack architecture (`lib/nested_vm/nested_stack.ml`) uses:
+`--engine=multi` bridges two heterogeneous VMs through an affine zero-bridge. The nested stack architecture (`backends/nested_vm/nested_stack.ml`) uses:
 
 - OEIS A000108 Catalan Dyck word checksums for well-nestedness verification.
 - OEIS A004001 self-referential tier dispatch.
@@ -268,21 +268,21 @@ Applied automatically before lifting; also available standalone. Transforms the 
 
 | Pass | Location | Purpose |
 |---|---|---|
-| CFG flattening, opaque predicates | `lib/cff/` | IR-level dispatcher flattening; 299-variant Z3-verified catalog |
-| MBA, E-graph equality saturation | `lib/mba_engine/` | Non-linear expansion, algebraic rewriting |
-| Tech-2601 exception shadowing | `lib/shadow_unwind/` | Sealed ABI unwind metadata |
-| Tech-2603 non-linear VPC dispatch | `lib/dispatch_permutation/` | Removes monotonic VPC patterns |
-| Tech-2608 anti-trace synthesis | `lib/trace_chaff/` | Chaff pools, decoy side effects |
-| Computational stalling | `lib/emulation_stall/` | RSW time-lock puzzles, Chebyshev attractors, ergodic polynomials |
-| Build-seed watermarking | `lib/watermark/` | Embedded per-build cryptographic watermarks |
-| Anti-tamper and SMC | `lib/native_vm/` | W^X dual mapping, section hashing, timing watchdogs |
-| Metamorphic handlers, domain salts | `lib/native_vm/` | Polymorphic handler bodies; simulated-annealing salt optimizer |
-| Metal GPU synthesis | `lib/gpu_synth/` | Parallel MBA synthesis, avalanche checks |
-| Vanguard-9292 codec | `lib/bytecode_codec/` | Polymorphic bytecode rolling-key codec |
+| CFG flattening, opaque predicates | `transforms/control_flow/` | IR-level dispatcher flattening; 299-variant Z3-verified catalog |
+| MBA, E-graph equality saturation | `transforms/mba_synthesis/` | Non-linear expansion, algebraic rewriting |
+| Tech-2601 exception shadowing | `transforms/anti_analysis/shadow_unwind/` | Sealed ABI unwind metadata |
+| Tech-2603 non-linear VPC dispatch | `transforms/anti_analysis/dispatch_permutation/` | Removes monotonic VPC patterns |
+| Tech-2608 anti-trace synthesis | `transforms/anti_analysis/trace_chaff/` | Chaff pools, decoy side effects |
+| Computational stalling | `transforms/anti_analysis/emulation_stall/` | RSW time-lock puzzles, Chebyshev attractors, ergodic polynomials |
+| Build-seed watermarking | `transforms/watermark/` | Embedded per-build cryptographic watermarks |
+| Anti-tamper and SMC | `backends/native_vm/` | W^X dual mapping, section hashing, timing watchdogs |
+| Metamorphic handlers, domain salts | `backends/native_vm/` | Polymorphic handler bodies; simulated-annealing salt optimizer |
+| Metal GPU synthesis | `backends/gpu_synth/` | Parallel MBA synthesis, avalanche checks |
+| Vanguard-9292 codec | `transforms/bytecode_codec/` | Polymorphic bytecode rolling-key codec |
 
 ## Formal verification
 
-F* proofs in `fstar/` are extracted to OCaml and linked into the build:
+F* proofs live in `formal/proofs/`; their OCaml extractions in `formal/extracted/` are regenerated artifacts, not compiled by dune:
 
 | Theory | Verifies |
 |---|---|
@@ -336,25 +336,34 @@ asg-regs
 ## Repository layout
 
 The tree mirrors the pipeline dataflow. Dependencies point strictly downward:
-a layer may import only the layers above it in the table.
+a layer may import only the layers below it in the table. Every directory,
+library and public name coincide (`dir == lib == public suffix`).
+
+```text
+base → domain → contracts → infra → transforms → analysis → backends
+     → adapters → pipeline → cli
+```
 
 | Path | Layer | Contents |
 |---|---|---|
 | `base/constants/` | L0 base | Magic numbers registry (`Magic_numbers`) — single source of every hash constant |
 | `base/macho/` | L0 base | Mach-O reader with compact unwind and `LC_ROUTINES` support |
 | `base/sequences/` | L0 base | Cross-backend integer sequences (Kolakoski, Thue-Morse) |
+| `base/cpp_codegen/` | L0 base | Typed C++20/C11 EDSL (`cpp_ast`, `cpp_dsl`, `cpp_printer`, `cpp_ast_obf`) — dependency-free emission substrate shared by every emitting layer |
 | `domain/` | L1 domain | Pure vISA domain model, hardware cost model, Sail AST, Mealy automata — no emitters, no I/O |
-| `domain/ir/` | L1 domain | Shared VM IR, lazy flags, ring codec, rolling key, opaque predicates |
-| `contracts/` | L2 contracts | Hexagonal ports (`Ports`, `Protect_ports`) and the protection-config vocabulary (`Protection_types`, `Protection_presets`, `Protection_json`) — no Unix, no thread pools |
-| `transforms/` | L3 transforms | Pure `IR → IR` passes: `mba/` (E-graph saturation), `control_flow/` (flattening, opaque catalog), `crypto_binding/`, `c_macro_obf/`, `watermarking/`, `bytecode_codec/`, `x86_lifter/`, `arm64_lifter/`, `riscv_lifter/`, `anti_analysis/` (`shadow_unwind`, `dispatch_permutation`, `trace_chaff`, `emulation_stall`) |
-| `backends/` | L4 backends | IR → artifact emitters: `cpp_edsl/` (typed C++20/C11 EDSL + printer), `stack_vm/` (32 passes, chunker, BV verifier), `native_vm/` (threaded VM, anti-tamper), `jit_vm/` (nano-JIT arena), `nested_vm/` (VM-in-VM), `gpu/` (Metal MBA synthesis), `isa_codegen/` (RNS/branchless-VIP/metamorphic-ISA headers) |
-| `adapters/` | L5 adapters | Implementations with side effects: `ingestion_sail/`, `ingestion_macho/`, `emission_sail/`, `emission_cpp/`, `emission_c11/`, `assembler/`, `toolchain/` (clang invocation + C++ validator), `runtime_services/` (Domainslib pool, logger) |
-| `metrics/` | L3 | Protection metrics report shared by all backends |
-| `pipeline/` | L6 orchestration | `application/` (`Pipeline_orchestrator`, `protect_orchestrator`) + `protect_adapters/` (port implementations: lifter/c_macro/trampoline/packager/toolchain adapters) |
-| `cli/` | L7 CLI | cmdliner drivers (`asgard` binary); composition root wiring adapters into the pipeline |
-| `formal/` | proofs | 15 F* proof theories + OCaml extractions |
+| `domain/vm_ir/` | L1 domain | Shared VM IR, lazy flags, ring codec, rolling key, opaque predicates |
+| `contracts/` | L2 contracts | Hexagonal ports (`Ports`, `Protect_ports`) and the protection-config vocabulary (`protection_config/`: types, presets, JSON) — no Unix, no thread pools |
+| `infra/` | L3 infra | `runtime_services/`: Domainslib pool + stderr logger — process services consumed by the layers above |
+| `transforms/` | L4 transforms | Pure `IR → IR` passes: `mba_synthesis/` (E-graph saturation), `control_flow/` (flattening, opaque catalog), `bytecode_crypto/`, `c_macro_obf/`, `watermark/`, `bytecode_codec/`, `x86_lifter/`, `arm64_lifter/`, `riscv_lifter/`, `anti_analysis/` (`shadow_unwind`, `dispatch_permutation`, `trace_chaff`, `emulation_stall`, `runtime_probes`) |
+| `analysis/` | L5 analysis | `protection_metrics/`: IR → measurements (cross-seed metrics, DRS scoring), no emission |
+| `backends/` | L6 backends | IR → runtime code: `stack_vm/` (28-pass hardening pipeline), `native_vm/` (threaded VM, anti-tamper), `jit_vm/` (nano-JIT arena), `nested_vm/` (VM-in-VM), `gpu_synth/` (Metal MBA synthesis), `isa_codegen/` (RNS/branchless-VIP/metamorphic-ISA headers) |
+| `adapters/` | L7 adapters | Side-effecting boundaries: `sail_parser/`, `sail_export/`, `assembler/`, `cpp_emitter/`, `c11_emitter/`, `compiler_adapter/` (clang invocation + C++ validator) |
+| `pipeline/` | L8 orchestration | `application/` (`Pipeline_orchestrator`, `protect_orchestrator`) + `protect_pipeline/` (lifter/c_macro/trampoline/packager adapters, artifact packaging) |
+| `cli/` | L9 CLI | cmdliner drivers (`asgard` binary); composition root wiring adapters into the pipeline |
+| `formal/proofs/` | proofs | 15 F* proof theories (OCaml extractions in `formal/extracted/`, regenerated, not compiled) |
+| `assets/vanguard_runtime/` | assets | Verbatim C++ support headers shipped into protected outputs (optional; the emitters inline fallback copies) |
 | `test/` | — | ~671 test cases across all suites |
-| `examples/`, `tools/`, `scripts/`, `samples/`, `docs/` | — | Demos, IDA/LLDB/fuzz tooling, generators (`tools/generators`), profiler (`tools/profiling`), Z3 synthesizers, presets, specs |
+| `examples/`, `tools/`, `scripts/`, `samples/`, `docs/`, `bench/` | — | Demos, IDA/LLDB/fuzz tooling, generators, Z3 synthesizers, license chain (`scripts/license/`), presets, specs |
 
 ### Dependency rules
 
@@ -362,18 +371,22 @@ a layer may import only the layers above it in the table.
 |---|---|---|
 | `base` | — | anything |
 | `domain` | `base` | contracts, transforms, backends, adapters, pipeline, emitters, Unix |
-| `contracts` | `domain` | implementations, Unix, Domainslib |
-| `transforms`, `metrics` | `domain`, `base` | each other's internals, contracts, backends, adapters, pipeline |
-| `backends` | `domain`, `base`, `transforms` | other backends, contracts, pipeline |
-| `adapters` | `contracts`, `domain`, `base` | pipeline, cli, other adapters |
-| `pipeline` | `contracts`, `backends` (wiring), `adapters` | cli internals |
-| `cli` | `pipeline`, adapters (composition root only) | — |
-| `test` | everything | — |
+| `contracts` | `base`, `domain` | implementations, transforms, Unix, Domainslib |
+| `infra` | `base` | domain semantics, everything above |
+| `transforms` | `base`, `domain`, `infra` | each other's internals, contracts, analysis, backends, adapters, pipeline |
+| `analysis` | `base`, `domain`, `transforms` | backends, adapters, pipeline |
+| `backends` | `base` … `analysis` | other backends, adapters, pipeline |
+| `adapters` | `base` … `backends` | pipeline, cli, other adapters |
+| `pipeline` | `base` … `adapters` | cli internals |
+| `cli` | everything below | — |
+| `test`, `tools`, `bench`, `examples` | everything | — |
 
-Invariants enforced by review: the domain never emits C++ (all emission lives in
-`backends/`), contracts never touch the filesystem or thread pools (all I/O lives
-in `adapters/`), presets never probe hardware (`with_gpu_mba_engine` is applied by
-the wiring layer), and no backend imports another backend.
+Invariants enforced by review and by `make layer-check` (phase gate): the domain
+never emits C++ (all emission goes through the `base/cpp_codegen` substrate),
+contracts never touch the filesystem or thread pools (process services live in
+`infra/`, all other I/O in `adapters/` and `pipeline/`), transforms never import
+backends, no backend imports another backend, and presets never probe hardware
+(`with_gpu_mba_engine` is applied by the wiring layer).
 
 ## Audits and benchmarks
 
