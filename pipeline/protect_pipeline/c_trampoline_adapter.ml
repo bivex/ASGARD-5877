@@ -518,6 +518,24 @@ let embed_vm_trampoline
             ];
             expr_stmt (call "fclose" [var "_fp_stat"]);
           ];
+        ]);
+        ("defined(_WIN32) || defined(_WIN64)", [
+          if_then (call "IsDebuggerPresent" []) [
+            (var "_penalty" ^= u64 0x5877A55A13370001L);
+          ];
+          raw
+            ("CONTEXT _ctx = {}; _ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;\n" ^
+             "if (GetThreadContext(GetCurrentThread(), &_ctx)) {\n" ^
+             "#if defined(_M_ARM64) || defined(__aarch64__)\n" ^
+             "    for (size_t _i = 0; _i < sizeof(_ctx.Bcr)/sizeof(_ctx.Bcr[0]); ++_i) {\n" ^
+             "        if (_ctx.Bcr[_i] & 1) { _penalty ^= 0x5877a55a13370001ULL; break; }\n" ^
+             "    }\n" ^
+             "#elif defined(_M_X64) || defined(_M_IX86)\n" ^
+             "    if (_ctx.Dr0 || _ctx.Dr1 || _ctx.Dr2 || _ctx.Dr3 || (_ctx.Dr7 & 0xFF)) {\n" ^
+             "        _penalty ^= 0x5877a55a13370001ULL;\n" ^
+             "    }\n" ^
+             "#endif\n" ^
+             "}");
         ])
       ]
     in
