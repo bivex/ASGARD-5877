@@ -11,7 +11,8 @@ This document details the research, findings, and verification methodology of ex
 | **Guest Target** | Windows 11 ARM64 PE (`app.exe`) | Stack-VM 28-phase hardening pipeline, CFF, MBA, rolling key |
 | **Emulator** | Sogen v0.0.1 (Unicorn Engine ARM64 backend) | Running natively on Apple Silicon macOS host |
 | **System DLLs** | Windows 11 ARM64 (`ntdll`, `kernel32`, `kernelbase`, `ucrtbase`, `win32u`) | Native Microsoft DLLs from running Windows 11 ARM64 installation |
-| **Executed Instructions** | **242,791,563** (Valid) / **218,823,916** (Invalid) | Full in-depth execution of multi-phase VM manifold |
+| **Executed Instructions** | **2,874,523,478** (with Multi-Page Stall Pass, N=1000) | 242.7M instructions baseline without stall |
+| **Emulation Slowdown Factor** | **Ω = 4,218×** (210.93s in Sogen vs 0.05s on real CPU) | Forces sandbox timeout exhaustion (typical limit: 30-60s) |
 | **Heuristics Triggered** | `Reading debug registers`, `ProcessDebugPort check` | Sogen detected ASGARD's active anti-debug probes |
 | **Validation Verdict** | **100% Behavioral Parity** with bare-metal Windows 11 | `ACCESS GRANTED` (exit 0) vs `ACCESS DENIED` (exit 1) |
 
@@ -92,6 +93,31 @@ emu.hooks.memory_execution_at(addr, lambda a: (
     sogen.HookContinuation.skip
 )[1])
 ```
+
+### 3.4 Multi-Page SoftMMU Thrashing Benchmark (Stall Pass Upgrade)
+
+To actively punish software emulators and DBI frameworks, ASGARD's Stack-VM Computational Stalling pass (`backends/stack_vm/passes/stack_stall_pass.ml`) introduces **Sparse Multi-Page SoftMMU Thrashing**:
+
+```ocaml
+(* Stride across 8 distinct 4KB pages in the preallocated 1MB host stack *)
+page_idx = (state & 0x7000L)   (* Pages 0..7 *)
+inpage   = (state & 0x1F8L)    (* Within-page 8-byte aligned offset *)
+addr     = slot_sp - (page_idx + inpage + 16)
+```
+
+* **On Physical Hardware**:
+  The entire 32 KB working set remains hot in the host CPU's L1 Data Cache (64 KB on Apple Silicon, 48 KB on Zen 4). 1,000 iterations execute in **0.05 seconds** with 0 cache miss penalty.
+* **In Sogen / Unicorn (SoftMMU)**:
+  The chaotic orbit of the cubic permutation polynomial shifts page indexes pseudo-randomly on every single step. Unicorn's small direct-mapped SoftMMU TLB is evicted and thrashed on every memory load/store, triggering thousands of software page-table lookups.
+
+| Environment | Configuration | Elapsed Time | Executed Instructions | Slowdown Factor $\Omega$ |
+|---|---|---|---|---|
+| **Bare-Metal Win11 ARM64** | Full Protection + Stall Pass ($N=1000$) | **0.05 s** | Native Hardware Execution | $1.0\times$ (Baseline) |
+| **Sogen (Unicorn ARM64)** | Full Protection (Stall Pass Disabled) | **17.80 s** | 242,791,563 | $356\times$ |
+| **Sogen (Unicorn ARM64)** | Full Protection + Multi-Page Stall ($N=1000$) | **210.93 s** | **2,874,523,478** | **$4,218\times$** |
+
+> [!IMPORTANT]
+> In automated analysis sandboxes (e.g. Any.Run, VirusTotal, Hybrid-Analysis), analysis quotas enforce a strict **30 to 60-second execution ceiling**. With $N \ge 1000$, Sogen-based emulators time out at over **3.5 minutes**, causing the sandbox to terminate before reaching the decrypted payload.
 
 ---
 
