@@ -83,9 +83,11 @@ built as a typed AST and printed by the EDSL that the engine implements in
   `preproc_ifndef` declarations for preprocessor blocks.
 - The rule governs C/C++ emission only. Ordinary OCaml text - reports, metric
   tables, log lines, test fixtures - may still use `Buffer.add_string`.
-- Call sites that still concatenate C++ into a `Buffer` (for example
-  `backends/native_vm/vm_mem_handlers.ml`) are known debt: when you touch such a
-  file, convert the C++ part to the EDSL instead of extending the string path.
+- Call sites that still concatenate C++ into a `Buffer` (the native-VM
+ dispatch chain: `backends/native_vm/handlers/{vm_alu,vm_mem,vm_control}_handlers.ml`
+ and `backends/native_vm/handlers/vm_handlers_emitter.ml`, whose per-domain
+ label cloning is a text-level transform) are known debt: when you touch such
+ a file, convert the C++ part to the EDSL instead of extending the string path.
 - After extending the EDSL, run its suite:
 
   ```bash

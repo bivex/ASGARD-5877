@@ -1,3 +1,4 @@
+(include_subdirs unqualified)
 (library
  (name stack_vm)
  (public_name asgard.stack_vm)
