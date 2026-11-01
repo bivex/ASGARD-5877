@@ -1717,7 +1717,7 @@ let generate_c_runtime
      mixed into the decryption key, so the header has to carry it. *)
   let hw_binding_header =
     if cfg.enable_hw_binding then
-      Cpp_codegen.Runtime_probes.emit_anti_emulation_probes ()
+      Runtime_probes.emit_anti_emulation_probes ()
     else ""
   in
   (* The probe namespace has to come FIRST: the runtime body calls
