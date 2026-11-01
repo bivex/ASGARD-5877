@@ -2,4 +2,4 @@
  (name application)
  (public_name asgard.application)
  (libraries domain contracts stack_vm
-  native_vm asgard.macho watermark runtime_services protect_pipeline))
+  native_vm macho watermark runtime_services protect_pipeline))

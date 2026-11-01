@@ -1,4 +1,4 @@
-.PHONY: all build test clean corpus corpus-arm64 benchmark benchmark-arm64 coverage backup backup-zip backup-all diff-fuzz-libfuzzer diff-fuzz-project diff-fuzz-cpp-types
+.PHONY: all build test layer-check clean corpus corpus-arm64 benchmark benchmark-arm64 coverage backup backup-zip backup-all diff-fuzz-libfuzzer diff-fuzz-project diff-fuzz-cpp-types
 
 all: build
 
@@ -7,6 +7,9 @@ build:
 
 test:
 	@dune runtest
+
+layer-check:
+	@python3 scripts/check_layer_graph.py
 
 coverage:
 	@./scripts/coverage.sh
