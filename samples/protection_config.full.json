@@ -109,9 +109,9 @@
   "comp_stall": {
     "enabled": true,
     "variant": "ergodic",
-    "n_iterations": 100,
-    "pow_difficulty": 10,
-    "tau_ux_sec": 0.1,
+    "n_iterations": 20000,
+    "pow_difficulty": 20,
+    "tau_ux_sec": 1.0,
     "emu_quota_instrs": 1000000,
     "seed": 1337
   },

@@ -310,7 +310,7 @@ let emit_rsw_run_body () : stmt list =
     for_range "i" (u64 0L) (var "N")
       [
         (* We use Raw for the __uint128_t squaring since the AST has no 128-bit type. *)
-        Raw "x = static_cast<uint64_t>((static_cast<__uint128_t>(x) * x) % M);";
+        Raw "x = ASG_MUL_MOD(x, x, M);";
       ];
     ret (var "x");
   ]
@@ -571,4 +571,4 @@ let emit_emulation_stall_cpp_header () : string =
       emit_comp_stall_guard_def ();
     ];
   ] in
-  "#pragma once\n" ^ render_top_decls decls
+  "#pragma once\n" ^ Cpp_codegen.Cpp_compat.preamble ^ render_top_decls decls

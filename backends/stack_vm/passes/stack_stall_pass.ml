@@ -15,7 +15,7 @@ type stall_config = {
 }
 
 let default_config = {
-  n_iterations = 500;
+  n_iterations = 20_000;
   seed = comp_stall_chebyshev_salt;
   variant = "ergodic";
 }

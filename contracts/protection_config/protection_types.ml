@@ -544,9 +544,9 @@ let default_memory_chaffing = {
 type comp_stall_config = {
   enabled          : bool   [@default false];
   variant          : string [@default "ergodic"];  (* "ergodic" | "time_lock" | "pow" *)
-  n_iterations     : int    [@default 50_000];
+  n_iterations     : int    [@default 20_000];
   pow_difficulty   : int    [@default 20];
-  tau_ux_sec       : (float [@of_yojson float_of_yojson] [@to_yojson float_to_yojson]) [@default 0.5];
+  tau_ux_sec       : (float [@of_yojson float_of_yojson] [@to_yojson float_to_yojson]) [@default 1.0];
   emu_quota_instrs : int    [@default 10_000_000];
   seed             : int64  [@default 0L];
 } [@@deriving yojson]
@@ -554,9 +554,9 @@ type comp_stall_config = {
 let default_comp_stall = {
   enabled = false;
   variant = "ergodic";
-  n_iterations = 50_000;
+  n_iterations = 20_000;
   pow_difficulty = 20;
-  tau_ux_sec = 0.5;
+  tau_ux_sec = 1.0;
   emu_quota_instrs = 10_000_000;
   seed = 0L;
 }
