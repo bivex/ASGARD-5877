@@ -332,6 +332,9 @@ type encrypted_bytecode = {
   bytes : bytes;
   block_offsets : (int, int) Hashtbl.t;
   block_keys : (int, int64) Hashtbl.t;
+  (* Block the encoded program enters at (prog.entry_id); the reference
+     evaluator and the C++ runtime both start execution here. *)
+  entry_id : int;
   seed_key : int64;
   op_map : opcode_map;
   layout : field_layout;
@@ -752,7 +755,9 @@ let encode_program ?(seed_key = 0x5877A564D00FL) ?op_map ?layout ?(polymorphic =
   { bytes = cipher;
     block_offsets;
     block_keys = stored_keys;
+    entry_id = prog.entry_id;
     seed_key = Int64.logxor seed_key addr_mask;
+
     op_map = resolved_op_map;
     layout = resolved_layout;
     addr_mask;

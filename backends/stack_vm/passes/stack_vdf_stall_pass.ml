@@ -8,9 +8,10 @@
     1. VDF Squaring mod p = 0xFFFFFFFB (sequential, non-parallelizable)
     2. Non-monotonic chaotic Collatz/attractor loop scheduling (breaks DSE / loop detection)
     3. Sparse 16-page SoftMMU thrashing (forces QEMU/Unicorn/Sogen soft-TLB re-walks)
-    4. Dual-rail termination coupling: delta_x * golden_ratio_64 XOR'd into ctx[0],
-       delta_s * splitmix64_gamma XOR'd into ctx[1] independently — no linear
-       cancellation (delta_x = -delta_s) can simultaneously zero both rails. *)
+    4. Dual-rail conditional deraille: the exit block re-derives both rails
+       (slot_x == x_n, slot_s == s_n) and jumps into an endless trap block on
+       any mismatch — a patched counter skips the loop but never reaches the
+       original entry, so the sandbox burns its whole budget. *)
 
 open Stack_ir
 open Vm_ir
@@ -75,7 +76,8 @@ let apply_vdf_stall ?ctx ?(config = default_config) (prog : program) : program =
     let vdf_split_id     = max_id + 3 in
     let vdf_body_even_id = max_id + 4 in
     let vdf_body_odd_id  = max_id + 5 in
-    let vdf_exit_id      = max_id + 6 in
+    let vdf_exit_id     = max_id + 6 in
+    let vdf_trap_id     = max_id + 7 in
 
     (* Allocate scratch context slots *)
     let slot_counter, slot_x, slot_s, slot_tmp_a, slot_tmp_b, slot_sp, new_context_slots =
@@ -264,56 +266,47 @@ let apply_vdf_stall ?ctx ?(config = default_config) (prog : program) : program =
       ops = body_odd_ops;
     } in
 
-    (* 6. Exit block: dual-rail independent multiplicative mixing.
-       Rail A: delta_x  * golden_ratio_64  XOR'd into ctx[0]
-       Rail B: delta_s  * splitmix64_gamma XOR'd into ctx[1]
-       The two deltas are mixed into *separate* slots with *different* constants,
-       so no (delta_x = -delta_s) cancellation can zero both rails simultaneously. *)
-    let exit_ops =
-      (* ── Rail A: ctx[0] ^= (slot_x - x_n) * golden_ratio_64 ── *)
-      [ PushReg slot_x;
-        PushImm x_n;
-        Sub;                            (* delta_x *)
-        PushImm golden_ratio_64;
-        Mul;                            (* M_x = delta_x * phi64 *)
-        PopReg slot_tmp_a;              (* save M_x *)
-        PushReg 0;
-        PopReg slot_tmp_b;              (* save ctx[0] *)
-        (* XOR via (A|B) - (A&B) *)
-        PushReg slot_tmp_a;
-        PushReg slot_tmp_b;
-        Nor; Dup; Nor;                  (* A | B *)
-        PushReg slot_tmp_a;
-        PushReg slot_tmp_b;
-        Nand; Dup; Nand;               (* A & B *)
-        Sub;                            (* M_x XOR ctx[0] *)
-        PopReg 0;                       (* ctx[0] = ctx[0] XOR M_x *)
-      ]
-      (* ── Rail B: ctx[1] ^= (slot_s - s_n) * splitmix64_gamma ── *)
-      @ [ PushReg slot_s;
-          PushImm s_n;
-          Sub;                          (* delta_s *)
-          PushImm splitmix64_gamma;
-          Mul;                          (* M_s = delta_s * gamma *)
-          PopReg slot_tmp_a;            (* save M_s *)
-          PushReg 1;
-          PopReg slot_tmp_b;            (* save ctx[1] *)
-          PushReg slot_tmp_a;
-          PushReg slot_tmp_b;
-          Nor; Dup; Nor;               (* M_s | ctx[1] *)
-          PushReg slot_tmp_a;
-          PushReg slot_tmp_b;
-          Nand; Dup; Nand;             (* M_s & ctx[1] *)
-          Sub;                          (* M_s XOR ctx[1] *)
-          PopReg 1;                     (* ctx[1] = ctx[1] XOR M_s *)
-          JmpRel orig_entry;
-        ]
-    in
+    (* 6. Exit blocks: dual-rail conditional deraille, ONE conditional per
+       block (the encoder supports at most one JccRel per block — a second
+       JccRel in the same block mis-resolves its target at bytecode level).
+       Rail A: (slot_x - x_n) == 0 else trap;  then fall into rail B block.
+       Rail B: (slot_s - s_n) == 0 else trap;  then jump to the original entry. *)
+    let exit_ops = [
+      (* delta_x = slot_x - x_n *)
+      PushReg slot_x;
+      PushImm x_n;
+      Sub;
+      (* delta_s = slot_s - s_n *)
+      PushReg slot_s;
+      PushImm s_n;
+      Sub;
+      (* combined = delta_x | delta_s  (OR: no cancellation, nonzero iff any
+         rail mismatches).  Nor pops both rails and pushes ~(dx|ds); Dup+Nor
+         push dx|ds — net effect: the two rails collapse to their OR. *)
+      Nor;
+      Dup;
+      Nor;
+      PushImm 0L;
+      Cmp;
+      JccRel (vdf_trap_id, NE);
+      JmpRel orig_entry;
+    ] in
     let exit_block = {
       id = vdf_exit_id;
       label = Printf.sprintf "vdf_exit_%d" vdf_exit_id;
       ops = exit_ops;
     } in
+
+    (* 7. Trap block: jumps back into the check block, closing the cycle
+       check → exit → trap → check → … — an endless op-burning loop with no
+       self-referencing block (self-target JmpRel is not encodable). *)
+    let trap_block = {
+      id = vdf_trap_id;
+      label = Printf.sprintf "vdf_trap_%d" vdf_trap_id;
+      ops = [ JmpRel vdf_check_id ];
+    } in
+
+
 
     let new_blocks = Hashtbl.copy prog.blocks in
     Hashtbl.replace new_blocks vdf_init_id init_block;
@@ -322,6 +315,7 @@ let apply_vdf_stall ?ctx ?(config = default_config) (prog : program) : program =
     Hashtbl.replace new_blocks vdf_body_even_id body_even_block;
     Hashtbl.replace new_blocks vdf_body_odd_id body_odd_block;
     Hashtbl.replace new_blocks vdf_exit_id exit_block;
+    Hashtbl.replace new_blocks vdf_trap_id trap_block;
 
     {
       entry_id = vdf_init_id;

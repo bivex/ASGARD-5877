@@ -418,7 +418,7 @@ let step_op state = function
 
 let run_program ?(max_steps = 100000) ?initial_ctx prog =
   let state = create_state ?initial_ctx () in
-  state.current_block_id <- prog.entry_id;
+  state.current_block_id <- prog.Stack_ir.entry_id;
   let steps = ref 0 in
   while not state.halted && !steps < max_steps do
     match Hashtbl.find_opt prog.blocks state.current_block_id with
@@ -445,7 +445,8 @@ let run_bytecode ?(max_steps = 100000) ?initial_ctx enc =
      enc.block_keys[entry_id], NOT the global effective_seed_key. *)
   let eff = Stack_encoder.(effective_seed_key enc) in
   let state = create_state ~seed_key:eff ?initial_ctx () in
-  let entry_id = state.current_block_id in  (* set to prog.entry_id above *)
+  let entry_id = enc.entry_id in
+  state.current_block_id <- entry_id;
   (* Look up the entry block's SipHash-derived key and offset *)
   let init_pos, init_key =
     match Hashtbl.find_opt enc.block_offsets entry_id,

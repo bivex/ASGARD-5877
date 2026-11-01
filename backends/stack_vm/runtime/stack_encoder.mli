@@ -66,6 +66,10 @@ type encrypted_bytecode = {
   bytes : bytes;
   block_offsets : (int, int) Hashtbl.t;
   block_keys : (int, int64) Hashtbl.t;
+  (** Block the encoded program enters at — [prog.entry_id] of the encoded
+      program. The reference evaluator starts here; passes that redirect the
+      entry (e.g. the VDF stall pass) rely on it being honored. *)
+  entry_id : int;
   seed_key : int64;
   op_map : opcode_map;
   layout : field_layout;
