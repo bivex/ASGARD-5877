@@ -8,7 +8,9 @@
     1. VDF Squaring mod p = 0xFFFFFFFB (sequential, non-parallelizable)
     2. Non-monotonic chaotic Collatz/attractor loop scheduling (breaks DSE / loop detection)
     3. Sparse 16-page SoftMMU thrashing (forces QEMU/Unicorn/Sogen soft-TLB re-walks)
-    4. Dual-rail termination coupling (tampering desynchronizes both ctx[0] and slot_sp). *)
+    4. Dual-rail termination coupling: delta_x * golden_ratio_64 XOR'd into ctx[0],
+       delta_s * splitmix64_gamma XOR'd into ctx[1] independently — no linear
+       cancellation (delta_x = -delta_s) can simultaneously zero both rails. *)
 
 open Stack_ir
 open Vm_ir
@@ -22,7 +24,7 @@ type vdf_stall_config = {
 }
 
 let default_config = {
-  n_iterations = 20_000;
+  n_iterations = 28_475;   (* calibrated: 1.000 hr in Sogen @ 0.1258 s/iter *)
   seed = comp_stall_chebyshev_salt;
   sparse_pages = 16;
 }
@@ -262,24 +264,51 @@ let apply_vdf_stall ?ctx ?(config = default_config) (prog : program) : program =
       ops = body_odd_ops;
     } in
 
-    (* 6. Exit block: verifies slot_x == x_n and slot_s == s_n *)
-    let exit_ops = [
-      PushReg slot_x;
-      PushImm x_n;
-      Sub;
-      PushReg slot_s;
-      PushImm s_n;
-      Sub;
-      Add;                      (* total_delta *)
-      Dup;
-      PushReg 0;
-      Add;
-      PopReg 0;                 (* ctx[0] += total_delta *)
-      PushReg slot_sp;
-      Add;
-      PopReg slot_sp;           (* slot_sp += total_delta *)
-      JmpRel orig_entry;
-    ] in
+    (* 6. Exit block: dual-rail independent multiplicative mixing.
+       Rail A: delta_x  * golden_ratio_64  XOR'd into ctx[0]
+       Rail B: delta_s  * splitmix64_gamma XOR'd into ctx[1]
+       The two deltas are mixed into *separate* slots with *different* constants,
+       so no (delta_x = -delta_s) cancellation can zero both rails simultaneously. *)
+    let exit_ops =
+      (* ── Rail A: ctx[0] ^= (slot_x - x_n) * golden_ratio_64 ── *)
+      [ PushReg slot_x;
+        PushImm x_n;
+        Sub;                            (* delta_x *)
+        PushImm golden_ratio_64;
+        Mul;                            (* M_x = delta_x * phi64 *)
+        PopReg slot_tmp_a;              (* save M_x *)
+        PushReg 0;
+        PopReg slot_tmp_b;              (* save ctx[0] *)
+        (* XOR via (A|B) - (A&B) *)
+        PushReg slot_tmp_a;
+        PushReg slot_tmp_b;
+        Nor; Dup; Nor;                  (* A | B *)
+        PushReg slot_tmp_a;
+        PushReg slot_tmp_b;
+        Nand; Dup; Nand;               (* A & B *)
+        Sub;                            (* M_x XOR ctx[0] *)
+        PopReg 0;                       (* ctx[0] = ctx[0] XOR M_x *)
+      ]
+      (* ── Rail B: ctx[1] ^= (slot_s - s_n) * splitmix64_gamma ── *)
+      @ [ PushReg slot_s;
+          PushImm s_n;
+          Sub;                          (* delta_s *)
+          PushImm splitmix64_gamma;
+          Mul;                          (* M_s = delta_s * gamma *)
+          PopReg slot_tmp_a;            (* save M_s *)
+          PushReg 1;
+          PopReg slot_tmp_b;            (* save ctx[1] *)
+          PushReg slot_tmp_a;
+          PushReg slot_tmp_b;
+          Nor; Dup; Nor;               (* M_s | ctx[1] *)
+          PushReg slot_tmp_a;
+          PushReg slot_tmp_b;
+          Nand; Dup; Nand;             (* M_s & ctx[1] *)
+          Sub;                          (* M_s XOR ctx[1] *)
+          PopReg 1;                     (* ctx[1] = ctx[1] XOR M_s *)
+          JmpRel orig_entry;
+        ]
+    in
     let exit_block = {
       id = vdf_exit_id;
       label = Printf.sprintf "vdf_exit_%d" vdf_exit_id;
