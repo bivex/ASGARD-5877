@@ -419,6 +419,7 @@ dune exec asgard -- macho-unwind --input ./protected_app
 - [`docs/DEAD_CODE_ANALYSIS.md`](docs/DEAD_CODE_ANALYSIS.md) — Stack-VM dead code causality analyzer.
 - [`docs/DIFFERENTIAL_FUZZING_GUIDE.md`](docs/DIFFERENTIAL_FUZZING_GUIDE.md) — Fuzzer setup and known bug classes.
 - [`docs/PARALLELS_WINDOWS_DEBUGGING.md`](docs/PARALLELS_WINDOWS_DEBUGGING.md) — Running under Parallels/Windows ARM64.
+- [`docs/SOGEN_EMULATION_RESEARCH.md`](docs/SOGEN_EMULATION_RESEARCH.md) — Sogen Windows user-mode emulation research and verification.
 - [`CHANGELOG.md`](CHANGELOG.md)
 
 ## License
