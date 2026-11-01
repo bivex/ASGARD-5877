@@ -1,5 +1,5 @@
 (library
  (name trace_chaff)
  (public_name asgard.trace_chaff)
- (libraries bytecode_crypto vm_ir unix cpp_codegen))
+ (libraries bytecode_crypto vm_ir cpp_codegen))
 

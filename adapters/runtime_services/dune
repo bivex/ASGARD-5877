@@ -1,4 +1,4 @@
 (library
  (name runtime_services)
  (public_name asgard.runtime_services)
- (libraries contracts unix domainslib))
+ (libraries unix domainslib))

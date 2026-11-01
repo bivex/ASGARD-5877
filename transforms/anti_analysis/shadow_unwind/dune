@@ -1,4 +1,4 @@
 (library
  (name shadow_unwind)
  (public_name asgard.shadow_unwind)
- (libraries cpp_codegen bytecode_crypto vm_ir unix random_visa_constants))
+ (libraries cpp_codegen bytecode_crypto vm_ir random_visa_constants))

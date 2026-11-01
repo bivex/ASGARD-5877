@@ -1,5 +1,5 @@
 (library
  (name dispatch_permutation)
  (public_name asgard.dispatch_permutation)
- (libraries bytecode_crypto vm_ir unix cpp_codegen))
+ (libraries bytecode_crypto vm_ir cpp_codegen))
 
