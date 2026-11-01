@@ -3,7 +3,6 @@
 
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
-open Cpp_codegen.Cpp_printer
 open Constants.Magic_numbers
 
 let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
@@ -244,6 +243,3 @@ let emit_base_macro_decls ?(emit_api_hash = true) ~p () : top_decl list =
   @ region_protection
   @ api_hash_decls
 
-let emit_base_macros ?(emit_api_hash = true) b ~p =
-  let decls = emit_base_macro_decls ~emit_api_hash ~p () in
-  Buffer.add_string b (render_top_decls decls ^ "\n")

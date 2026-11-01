@@ -603,7 +603,7 @@ let emit_stack_dispatch_stmts
       )
     in
     let init_loop =
-      if_then (call "__builtin_expect" [ log_not (var "dispatch_ready"); i32 0 ])
+      if_then (call "ASG_EXPECT" [ log_not (var "dispatch_ready"); i32 0 ])
         (table_init_stmts @ [ var "dispatch_ready" := bool_lit true ])
     in
     let handler_blocks =
@@ -961,6 +961,8 @@ let emit_stack_runtime_hpp_decls
     ] ~else_decls:[
       preproc_if "defined(_WIN32) || defined(_WIN64)" [
         include_sys "windows.h";
+        include_sys "cstdlib";
+        include_sys "ctime";
         preproc_if "defined(_MSC_VER) && !defined(__clang__)" [
           preproc_ifndef "__attribute__" [
             macro_def "__attribute__(x)";
@@ -997,7 +999,7 @@ let emit_stack_runtime_hpp_decls
             if (c->hash == hash ||
                 (alt_hash != 0 && c->hash == alt_hash) ||
                 (c->alt_hash != 0 && (c->alt_hash == hash || c->alt_hash == alt_hash))) {
-                if (__builtin_expect(!c->ready, 0)) {
+                if (ASG_EXPECT(!c->ready, 0)) {
                     for (size_t j = 0; j < c->size; ++j) {
                         uint8_t k = (uint8_t)(((c->xor_key >> ((j & 3) * 8)) ^ (j * 0x5D + 0x33)) & 0xFF);
                         c->dec_data[j] = (uint8_t)(c->enc_data[j] ^ k);
@@ -1172,6 +1174,33 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
     }
 #elif defined(_WIN32) || defined(_WIN64)
     if (!sym_ptr) {
+        static FILE* asg_win_stdin = stdin;
+        static FILE* asg_win_stdout = stdout;
+        static FILE* asg_win_stderr = stderr;
+        struct { const char* n; void* p; } asg_crt_tab[] = {
+            {"printf", (void*)printf}, {"fprintf", (void*)fprintf}, {"snprintf", (void*)snprintf},
+            {"putchar", (void*)putchar}, {"puts", (void*)puts}, {"scanf", (void*)scanf},
+            {"sscanf", (void*)sscanf}, {"fgets", (void*)fgets}, {"fputs", (void*)fputs},
+            {"fgetc", (void*)fgetc}, {"getchar", (void*)getchar},
+            {"fflush", (void*)fflush}, {"malloc", (void*)malloc}, {"free", (void*)free},
+            {"memcpy", (void*)memcpy}, {"memmove", (void*)memmove}, {"memset", (void*)memset},
+            {"strlen", (void*)strlen}, {"strcmp", (void*)strcmp}, {"strncmp", (void*)strncmp},
+            {"fopen", (void*)fopen}, {"fclose", (void*)fclose},
+            {"fread", (void*)fread}, {"fwrite", (void*)fwrite},
+            {"exit", (void*)exit}, {"time", (void*)time},
+            {"rand", (void*)rand}, {"srand", (void*)srand},
+            {"___stdoutp", (void*)&asg_win_stdout}, {"__stdoutp", (void*)&asg_win_stdout}, {"stdout", (void*)&asg_win_stdout},
+            {"___stdinp", (void*)&asg_win_stdin}, {"__stdinp", (void*)&asg_win_stdin}, {"stdin", (void*)&asg_win_stdin},
+            {"___stderrp", (void*)&asg_win_stderr}, {"__stderrp", (void*)&asg_win_stderr}, {"stderr", (void*)&asg_win_stderr},
+        };
+        for (size_t ti = 0; ti < sizeof(asg_crt_tab) / sizeof(asg_crt_tab[0]); ++ti) {
+            if (strcmp(dec_name, asg_crt_tab[ti].n) == 0 ||
+                (dec_name[0] == '_' && strcmp(dec_name + 1, asg_crt_tab[ti].n) == 0)) {
+                sym_ptr = asg_crt_tab[ti].p; break;
+            }
+        }
+    }
+    if (!sym_ptr) {
         HMODULE hMain = GetModuleHandleA(NULL);
         sym_ptr = (void*)GetProcAddress(hMain, dec_name);
         if (!sym_ptr && dec_name[0] == '_') sym_ptr = (void*)GetProcAddress(hMain, dec_name + 1);
@@ -1180,6 +1209,13 @@ static void* asgard_resolve_sym_idx(int32_t sym_idx) {
             alt[0] = '_';
             memcpy(alt + 1, dec_name, sym->len + 1);
             sym_ptr = (void*)GetProcAddress(hMain, alt);
+        }
+    }
+    if (!sym_ptr) {
+        HMODULE hCrt = LoadLibraryA("ucrtbase.dll");
+        if (hCrt) {
+            sym_ptr = (void*)GetProcAddress(hCrt, dec_name);
+            if (!sym_ptr && dec_name[0] == '_') sym_ptr = (void*)GetProcAddress(hCrt, dec_name + 1);
         }
     }
 #else
@@ -1531,7 +1567,7 @@ static void h_native_escape(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip
 #if defined(__APPLE__) && defined(__aarch64__)
     pthread_jit_write_protect_np(1);
 #endif
-    __builtin___clear_cache((char*)win, (char*)win + stub_len);
+    ASG_CLEAR_CACHE(win, stub_len);
     ((void (*)(void*))win)((void*)vm);
 }
 |};
@@ -1545,7 +1581,7 @@ static void h_native_escape(stack_vm_t *vm, const uint8_t *bytecode, size_t *vip
     &h_add_imm, &h_sub_imm, &h_add_ii, &h_sub_ii, &h_set_reg_imm, &h_add_reg_imm,
     &h_key_feedback, &h_native_escape
 };
-__attribute__((always_inline))
+ASG_FORCEINLINE
 static inline uint64_t verify_handler_integrity(void) {
     uint64_t penalty = 0;
     const uintptr_t base = (uintptr_t)&h_push_imm;
@@ -1553,13 +1589,13 @@ static inline uint64_t verify_handler_integrity(void) {
     for (size_t i = 0; i < n; ++i) {
         uintptr_t p = (uintptr_t)g_stack_handler_table[i];
         uintptr_t diff = (p > base) ? (p - base) : (base - p);
-        if (__builtin_expect(p == 0 || diff > 0x400000, 0)) {
+        if (ASG_EXPECT(p == 0 || diff > 0x400000, 0)) {
             penalty ^= (uint64_t)(p ^ UINT64_C(0x%016LX));
         }
     }
     return penalty;
 }
-__attribute__((noinline))
+ASG_NOINLINE
 static uint64_t derive_addr_key(void) {
     const size_t n = sizeof(g_stack_handler_table) / sizeof(g_stack_handler_table[0]);
     uint64_t acc = UINT64_C(0x9E3779B97F4A7C15);
@@ -1723,7 +1759,8 @@ let generate_c_runtime
   (* The probe namespace has to come FIRST: the runtime body calls
      evaluate_emulation_differential() while initialising the key. *)
   let raw =
-    (if hw_binding_header = "" then "" else hw_binding_header ^ "\n")
+    Cpp_codegen.Cpp_compat.preamble
+    ^ (if hw_binding_header = "" then "" else hw_binding_header ^ "\n")
     ^ Cpp_codegen.Cpp_printer.render_top_decls decls
   in
   if obfuscate_runtime then

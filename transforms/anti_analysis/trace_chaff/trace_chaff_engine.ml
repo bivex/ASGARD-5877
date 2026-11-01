@@ -234,5 +234,5 @@ let emit_trace_chaff_cpp_header () : string =
       emit_chaff_memory_pool_def ();
     ];
   ] in
-  "#pragma once\n" ^ render_top_decls decls
+  "#pragma once\n" ^ Cpp_codegen.Cpp_compat.preamble ^ render_top_decls decls
 

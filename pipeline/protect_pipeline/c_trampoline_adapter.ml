@@ -568,7 +568,7 @@ let embed_vm_trampoline
       if is_void then [ expr_stmt call_expr; ret_void ]
       else if is_main then [
         let_u64 "_r" call_expr;
-        if_then (call "__builtin_expect" [ var "asgard_stack_vm::g_last_auth_failed"; i32 0 ]) [
+        if_then (call "ASG_EXPECT" [ var "asgard_stack_vm::g_last_auth_failed"; i32 0 ]) [
           ret (i32 1);
         ];
         ret (c_cast (StructType ret_type) (var "_r"));
@@ -614,8 +614,10 @@ let embed_vm_trampoline
     in
     let init_decl =
       preproc_ifdef "ASGARD_HAS_LOCAL_RESOLVER" [
-        func_decl ~attrs:[StaticFn; Constructor] Void "_asgard_init_local_resolver" []
-          [ expr_stmt (call "asgard_set_local_resolver" [ var "asgard_resolve_local_func" ]) ]
+        (* MSVC has no __attribute__((constructor)); a namespace-scope dynamic
+           initializer registers the resolver before main on every toolchain. *)
+        raw_top "static const bool _asgard_local_resolver_installed =
+    (asgard_set_local_resolver(&asgard_resolve_local_func), true);"
       ]
     in
     [ extern_c [ fn_decl ]; init_decl ]

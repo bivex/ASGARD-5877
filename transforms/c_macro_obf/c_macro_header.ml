@@ -62,4 +62,5 @@ let emit_header_ast ?(config = default_config) ?source () : Cpp_codegen.Cpp_ast.
   ]
 
 let generate_header ?(config = default_config) ?source () : string =
-  Cpp_codegen.Cpp_printer.render_top_decls (emit_header_ast ~config ?source ())
+  Cpp_codegen.Cpp_compat.preamble
+  ^ Cpp_codegen.Cpp_printer.render_top_decls (emit_header_ast ~config ?source ())

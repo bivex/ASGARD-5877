@@ -3,7 +3,6 @@
 
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
-open Cpp_codegen.Cpp_printer
 
 let emit_guards_macro_decls ?(emit_timing = true) ?(emit_anti_debug = true) ?(emit_signal = true) ?(emit_nanomites = true) ~p () : top_decl list =
   let timing_decls =
@@ -175,6 +174,3 @@ let emit_guards_macro_decls ?(emit_timing = true) ?(emit_anti_debug = true) ?(em
   @ signal_decls
   @ nanomites_decls
 
-let emit_guards_macros ?(emit_timing = true) ?(emit_anti_debug = true) ?(emit_signal = true) ?(emit_nanomites = true) b ~p =
-  let decls = emit_guards_macro_decls ~emit_timing ~emit_anti_debug ~emit_signal ~emit_nanomites ~p () in
-  Buffer.add_string b (render_top_decls decls ^ "\n")

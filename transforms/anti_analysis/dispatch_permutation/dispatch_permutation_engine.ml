@@ -369,4 +369,4 @@ let emit_dispatch_permutation_cpp_header () : string =
       emit_nonlinear_vpc_dispatcher_def ();
     ];
   ] in
-  "#pragma once\n" ^ render_top_decls decls
+  "#pragma once\n" ^ Cpp_codegen.Cpp_compat.preamble ^ render_top_decls decls

@@ -20,7 +20,7 @@ let emit_anti_emulation_probes () =
 
 namespace asgard_anti_emulation {
 
-static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differential() noexcept {
+static inline ASG_FORCEINLINE uint64_t evaluate_emulation_differential() noexcept {
     uint64_t penalty = 0;
 
 #if defined(__x86_64__) || defined(_M_X64)
@@ -143,7 +143,7 @@ static inline __attribute__((always_inline)) uint64_t evaluate_emulation_differe
 // separate from evaluate_emulation_differential() because a penalty
 // there is mixed into the decryption key, and a hypervisor would then
 // break every licensed VM.
-static inline __attribute__((always_inline)) uint64_t evaluate_hypervisor_bit() noexcept {
+static inline ASG_FORCEINLINE uint64_t evaluate_hypervisor_bit() noexcept {
     uint64_t penalty = 0;
 #if defined(__x86_64__) || defined(_M_X64)
 #if defined(_MSC_VER)
@@ -194,7 +194,7 @@ let emit_memory_integrity_scanner_header () =
 
 namespace asgard_mem_integrity {
 
-static inline __attribute__((always_inline)) uint64_t compute_section_integrity_hash() noexcept {
+static inline ASG_FORCEINLINE uint64_t compute_section_integrity_hash() noexcept {
     uint64_t h = 0x5877CAFE1337BEEFULL;
 
 #if defined(__APPLE__)
@@ -278,7 +278,7 @@ static inline __attribute__((always_inline)) uint64_t compute_section_integrity_
 }
 
 // MEM-SBOM Style Memory Forensics & Injection Scanner
-static inline __attribute__((always_inline)) uint64_t evaluate_memory_integrity() noexcept {
+static inline ASG_FORCEINLINE uint64_t evaluate_memory_integrity() noexcept {
     uint64_t penalty = 0;
 
     // 1. Executable Section Dynamic Drift Check

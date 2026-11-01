@@ -201,3 +201,42 @@ For automated execution, use [`scripts/run_windows_vm_bench.sh`](file:///Volumes
 # Run GNU Coreutils CRC-32 benchmark
 ./scripts/run_windows_vm_bench.sh coreutils_crc32.c coreutils 50
 ```
+
+## 8. License Demo (Stack Engine) on Windows
+
+The emitted stack-engine artifacts (`stack_vm_runtime.hpp`, the anti-analysis
+headers, `asgard_obf.h`, the virtualized TU) are MSVC-clean: every generated
+file carries the bilingual portability preamble from `base/cpp_codegen/cpp_compat.ml`
+(`ASG_EXPECT`, `ASG_FORCEINLINE`, `ASG_NOINLINE`, `ASG_CLEAR_CACHE`), Windows
+symbol resolution goes through a static CRT table plus a `ucrtbase.dll`
+fallback, and the trampoline local resolver registers via a portable dynamic
+initializer (MSVC maps `__attribute__((constructor))` to an empty macro).
+
+```bash
+# 1. generate the protected sources on macOS (compile=false: the VM compiles)
+dune exec asgard -- protect-arm64 -i examples/license_check.c \
+  -o _build/license_win/asgard_out --engine=stack \
+  --config samples/protection_config.full.json \
+  --cff --mba --mba-depth 4 --seed 1337 --compile=false
+
+# 2. compile and link with MSVC in the VM (repo share is W:\Code\ASGARD-5877)
+prlctl exec "$VM_ID" --current-user cmd.exe /c \
+  "call \"C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Auxiliary\Build\vcvarsall.bat\" arm64 && \
+   cd /d W:\Code\ASGARD-5877\_build\license_win\asgard_out && \
+   cl /std:c++20 /O2 app_virtualized.cpp /Fe:app.exe"
+
+# 3. verify — use /v:on with !errorlevel! (a plain %errorlevel% expands at
+    parse time, before app.exe runs, and reports stale values)
+prlctl exec "$VM_ID" --current-user cmd.exe /v:on /c \
+  "cd /d W:\Code\ASGARD-5877\_build\license_win\asgard_out && \
+   (echo ASGARD-5877-GOLD| app.exe) & echo VALID: !errorlevel!"
+```
+
+Expected: valid key prints `ACCESS GRANTED` and exits 0; an invalid key prints
+`ACCESS DENIED` and exits 1.
+
+Known platform gap: cross-function `static` context of the protected source
+(the demo's runtime token value) resolves through `dlsym(RTLD_DEFAULT)` on
+macOS, but PE does not export TU-local symbols, so nested VM instances do not
+share lifted statics on Windows yet — the lifter must emit them as
+resolver-visible globals.

@@ -262,7 +262,10 @@ let test_runtime_synthesis () =
   let prog = make_program 0 [b] 16 in
   let c_code = Stack_runtime.generate_c_runtime cfg prog in
   Alcotest.(check bool) "c runtime contains stack_vm_run" true
-    (String.length c_code > 0 && (String.starts_with ~prefix:"#include <stdint.h" c_code || String.starts_with ~prefix:"#pragma once" c_code));
+    (String.length c_code > 0
+     && (String.starts_with ~prefix:"#ifndef ASGARD_PORTABILITY_PREAMBLE" c_code
+         || String.starts_with ~prefix:"#include <stdint.h" c_code
+         || String.starts_with ~prefix:"#pragma once" c_code));
   let runner_cpp = Stack_runtime.emit_runner_cpp [0x1234567890ABCDEFL] in
   Alcotest.(check bool) "runner cpp generated" true (String.length runner_cpp > 0)
 

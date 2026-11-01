@@ -14,7 +14,9 @@ let contains_sub s sub =
 
 let test_header_generation () =
   let hdr = generate_header () in
-  check bool "contains header guard" true (String.starts_with ~prefix:"/*" hdr);
+  check bool "contains header guard" true
+    (String.starts_with ~prefix:"/*" hdr
+     || String.starts_with ~prefix:"#ifndef ASGARD_PORTABILITY_PREAMBLE" hdr);
   check bool "contains ASG_STR" true (String.length hdr > 500);
   check bool "contains ASG_MBA_ADD" true (contains_sub hdr "ASG_MBA_ADD");
   check bool "contains ASG_OPAQUE_TRUE" true (contains_sub hdr "ASG_OPAQUE_TRUE");

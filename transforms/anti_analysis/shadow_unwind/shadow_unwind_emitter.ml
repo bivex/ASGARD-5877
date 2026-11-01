@@ -673,4 +673,4 @@ let runtime_header_decls () : top_decl list = [
 ]
 
 let emit_runtime_header () : string =
-  render_header_unit (runtime_header_decls ())
+  Cpp_codegen.Cpp_compat.preamble ^ render_header_unit (runtime_header_decls ())

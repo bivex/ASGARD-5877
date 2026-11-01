@@ -230,8 +230,8 @@ and pp_stmt_list fmt stmts =
   pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n") pp_stmt fmt stmts
 
 let pp_attr fmt = function
-  | AlwaysInline -> fprintf fmt "__attribute__((always_inline)) inline "
-  | NoInline     -> fprintf fmt "__attribute__((noinline)) "
+  | AlwaysInline -> fprintf fmt "ASG_FORCEINLINE inline "
+  | NoInline     -> fprintf fmt "ASG_NOINLINE "
   | InlineFn     -> fprintf fmt "inline "
   | Nodiscard    -> fprintf fmt "[[nodiscard]] "
   | NoExcept     -> ()
