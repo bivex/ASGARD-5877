@@ -396,6 +396,9 @@ scripts/run_real_world_benchmarks.sh    # OpenSSL, Coreutils, SQLite, WireGuard,
 scripts/run_benchmark_arm64.sh          # entropy, SMT recovery, avalanche, divergence
 scripts/build_corpus_arm64.sh           # eight-seed polymorphic corpus
 dune exec asgard -- macho-unwind --input ./protected_app
+./build.sh && ./scripts/license/build_license.sh && ./scripts/license/check_license.sh
+                                       # protect examples/license_check.c with every
+                                       # pass enabled and verify the protected binary
 ```
 
 `audit_protected_binary.sh` checks for leftover symbols/strings, parasitic imports, and decompiler resilience; exits non-zero on any finding.
