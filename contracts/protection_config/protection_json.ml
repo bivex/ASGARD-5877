@@ -1,14 +1,28 @@
 open Protection_types
 
+let normalize_json (json : Yojson.Safe.t) : Yojson.Safe.t =
+  match json with
+  | `Assoc fields ->
+      let has_comp_stall = List.mem_assoc "comp_stall" fields in
+      let has_emu_stall = List.mem_assoc "emulation_stall" fields in
+      let fields' =
+        if has_comp_stall && not has_emu_stall then
+          let stall_val = List.assoc "comp_stall" fields in
+          ("emulation_stall", stall_val) :: fields
+        else fields
+      in
+      `Assoc fields'
+  | other -> other
+
 let from_yojson (json : Yojson.Basic.t) : (t, string) result =
-  Protection_types.of_yojson (json :> Yojson.Safe.t)
+  Protection_types.of_yojson (normalize_json (json :> Yojson.Safe.t))
 
 let to_yojson (cfg : t) : Yojson.Basic.t =
   Yojson.Safe.to_basic (Protection_types.to_yojson cfg)
 
 let from_json_string str =
   try
-    let json = Yojson.Safe.from_string str in
+    let json = normalize_json (Yojson.Safe.from_string str) in
     Protection_types.of_yojson json
   with exn ->
     Error (Printf.sprintf "JSON parse error: %s" (Printexc.to_string exn))
@@ -18,7 +32,7 @@ let from_file path =
     Error (Printf.sprintf "Configuration file not found: %s" path)
   else
     try
-      let json = Yojson.Safe.from_file path in
+      let json = normalize_json (Yojson.Safe.from_file path) in
       Protection_types.of_yojson json
     with exn ->
       Error (Printf.sprintf "Failed to read configuration file %s: %s" path (Printexc.to_string exn))

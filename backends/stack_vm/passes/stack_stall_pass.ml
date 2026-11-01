@@ -123,13 +123,22 @@ let apply_stall ?ctx ?(config = default_config) (prog : program) : program =
       Add;                      (* [x_next] *)
       PopReg slot_state;        (* [] *)
 
-      (* 2. Memory touch in L1 stack frame: slot_sp (RSP) - offset - 16 *)
+      (* 2. Sparse Multi-Page SoftMMU Thrashing:
+            Stride across 8 distinct 4KB memory pages in the preallocated 1MB host stack:
+            page_idx = (state & 0x7000L), inpage = (state & 0x1F8L)
+            addr = slot_sp - (page_idx + inpage + 16) *)
       PushReg slot_sp;
+      PushReg slot_state;
+      PushImm 0x7000L;
+      Nand;
+      Dup;
+      Nand;
       PushReg slot_state;
       PushImm 0x1F8L;
       Nand;
       Dup;
       Nand;
+      Add;
       PushImm 16L;
       Add;
       Sub;                      (* [addr] *)
@@ -181,13 +190,22 @@ let apply_stall ?ctx ?(config = default_config) (prog : program) : program =
       Add;                      (* [c + x*(1 + x*(4*x + 2))] = x_next *)
       PopReg slot_state;        (* [] *)
 
-      (* 2. Memory touch in L1 stack frame: slot_sp (RSP) - offset - 16 *)
+      (* 2. Sparse Multi-Page SoftMMU Thrashing:
+            Stride across 8 distinct 4KB memory pages in the preallocated 1MB host stack:
+            page_idx = (state & 0x7000L), inpage = (state & 0x1F8L)
+            addr = slot_sp - (page_idx + inpage + 16) *)
       PushReg slot_sp;
+      PushReg slot_state;
+      PushImm 0x7000L;
+      Nand;
+      Dup;
+      Nand;
       PushReg slot_state;
       PushImm 0x1F8L;
       Nand;
       Dup;
       Nand;
+      Add;
       PushImm 16L;
       Add;
       Sub;                      (* [addr] *)
@@ -220,13 +238,21 @@ let apply_stall ?ctx ?(config = default_config) (prog : program) : program =
     } in
 
     (* 5. Exit block: verifies slot_state == x_n and adds (slot_state - x_n) to ctx[0] *)
+    (* 5. Exit block: verifies slot_state == x_n.
+          If valid: (slot_state - x_n) == 0.
+          If tampered/skipped: delta != 0.
+          Corrupts both ctx[0] AND slot_sp (stack pointer) with delta. *)
     let exit_ops = [
       PushReg slot_state;
       PushImm x_n;
-      Sub;                      (* [slot_state - x_n] -> 0 if valid *)
-      PushReg 0;                (* [ctx[0], delta] *)
-      Add;                      (* [ctx[0] + delta] *)
-      PopReg 0;                 (* ctx[0] updated *)
+      Sub;                      (* [delta] *)
+      Dup;                      (* [delta, delta] *)
+      PushReg 0;                (* [ctx[0], delta, delta] *)
+      Add;                      (* [ctx[0] + delta, delta] *)
+      PopReg 0;                 (* [delta] *)
+      PushReg slot_sp;          (* [slot_sp, delta] *)
+      Add;                      (* [slot_sp + delta] *)
+      PopReg slot_sp;           (* slot_sp updated: desynchronizes stack if tampered *)
       JmpRel orig_entry;
     ] in
     let exit_block = {
