@@ -39,7 +39,7 @@
 *)
 
 open Stack_ir
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 (* ── SplitMix64 PRNG ─────────────────────────────────────────────────── *)
 let splitmix64 s =
@@ -84,25 +84,25 @@ let emit_mba_anchored_zero r k =
   let rng = Random.State.make [| Int64.to_int (Int64.logand k 0x7FFFFFFFL); r |] in
   Stack_zero_knots.emit_zero_knot ~rng ~reg:r ~salt:k ()
 
-let rec lower_mba_to_stack ?anchor (e : Mba_engine.Mba.expr) : stack_op list =
+let rec lower_mba_to_stack ?anchor (e : Mba_synthesis.Mba.expr) : stack_op list =
   match e with
-  | Mba_engine.Mba.Const c ->
+  | Mba_synthesis.Mba.Const c ->
       (match anchor with
        | Some r ->
            let a = salt_egraph_scrambler in
            let b = Int64.sub c a in
            [ PushImm a; PushImm b; Add ] @ emit_mba_anchored_zero r salt_xwcafe_leetbeef @ [ Add ]
        | None -> [ PushImm c ])
-  | Mba_engine.Mba.Var _      -> [ PushImm 0L ]
-  | Mba_engine.Mba.Add (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Add ]
-  | Mba_engine.Mba.Sub (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Sub ]
-  | Mba_engine.Mba.Mul (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Mul ]
-  | Mba_engine.Mba.And (a, b) -> lower_and ?anchor a b
-  | Mba_engine.Mba.Or  (a, b) -> lower_or  ?anchor a b
-  | Mba_engine.Mba.Xor (a, b) -> lower_xor ?anchor a b
-  | Mba_engine.Mba.Not a ->
+  | Mba_synthesis.Mba.Var _      -> [ PushImm 0L ]
+  | Mba_synthesis.Mba.Add (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Add ]
+  | Mba_synthesis.Mba.Sub (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Sub ]
+  | Mba_synthesis.Mba.Mul (a, b) -> lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor b @ [ Mul ]
+  | Mba_synthesis.Mba.And (a, b) -> lower_and ?anchor a b
+  | Mba_synthesis.Mba.Or  (a, b) -> lower_or  ?anchor a b
+  | Mba_synthesis.Mba.Xor (a, b) -> lower_xor ?anchor a b
+  | Mba_synthesis.Mba.Not a ->
       lower_mba_to_stack ?anchor a @ lower_mba_to_stack ?anchor a @ [ Nor ]
-  | Mba_engine.Mba.Neg a ->
+  | Mba_synthesis.Mba.Neg a ->
       (match anchor with
        | Some r -> emit_mba_anchored_zero r salt_xwcafe_leetbeef @ lower_mba_to_stack ?anchor a @ [ Sub ]
        | None -> [ PushImm 0L ] @ lower_mba_to_stack ?anchor a @ [ Sub ])
@@ -127,14 +127,14 @@ and lower_xor ?anchor a b =
 (* ── E-graph budget for per-constant expansion ───────────────────────── *)
 (** Tight budget: constants are ground terms; we just want enough saturation
     to produce 1–3 alternation switches without blowing the time budget. *)
-let egraph_const_config : Mba_engine.Egraph.config = {
+let egraph_const_config : Mba_synthesis.Egraph.config = {
   node_limit    = 120;
   time_budget_s = 0.08;
   iter_limit    = 5;
 }
 
 let egraph_config_of ~node_limit ~time_budget_ms ~iter_limit = {
-  Mba_engine.Egraph.
+  Mba_synthesis.Egraph.
   node_limit;
   time_budget_s = float_of_int time_budget_ms /. 1000.0;
   iter_limit;
@@ -149,11 +149,11 @@ let synthesize_egraph ?anchor ?(budget = egraph_const_config) rng c =
   let seed_word = Int64.to_int (Int64.logxor rng.state salt_egraph_scrambler) in
   let _ = next_int64 rng in  (* advance so next call gets a different seed *)
   let eg_rng = Random.State.make [| seed_word |] in
-  let expr = Mba_engine.Egraph.expand
+  let expr = Mba_synthesis.Egraph.expand
     ~rng:eg_rng ~config:budget
-    (Mba_engine.Mba.Const c) in
+    (Mba_synthesis.Mba.Const c) in
   match expr with
-  | Mba_engine.Mba.Const _ ->
+  | Mba_synthesis.Mba.Const _ ->
       let not_c = Int64.lognot c in
       (match anchor with
        | Some r -> PushImm not_c :: emit_mba_anchored_zero r salt_egraph_scrambler @ [ Nor ]

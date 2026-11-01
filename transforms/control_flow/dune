@@ -1,4 +1,4 @@
 (library
  (name control_flow)
  (public_name asgard.control_flow)
- (libraries vm_ir ocamlgraph random_visa_constants))
+ (libraries vm_ir ocamlgraph constants))

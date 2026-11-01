@@ -18,7 +18,7 @@
   trace_chaff
   emulation_stall
   cpp_codegen
-  random_visa_constants
+  constants
   yojson
   bos
   unix

@@ -193,8 +193,8 @@ let test_evaluate_drs_v2_report () =
   let func = { Ir.name = "drs2_func"; cfg = { Ir.entry_id = 0; blocks } } in
   let bc = [ 0x1122334455667788L; 0x99AABBCCDDEEFF00L; 0xCAFEBABE58771337L ] in
   let mba_asts = [
-    Mba_engine.Mba.Add (Mba_engine.Mba.Var "x", Mba_engine.Mba.Const 42L);
-    Mba_engine.Mba.Xor (Mba_engine.Mba.Var "y", Mba_engine.Mba.Var "z");
+    Mba_synthesis.Mba.Add (Mba_synthesis.Mba.Var "x", Mba_synthesis.Mba.Const 42L);
+    Mba_synthesis.Mba.Xor (Mba_synthesis.Mba.Var "y", Mba_synthesis.Mba.Var "z");
   ] in
   let rep = Protection_metrics.Metrics.evaluate_drs_v2 ~bytecode:bc ~ir_func:func ~mba_asts in
   Alcotest.(check bool) "shannon entropy > 0" true (rep.shannon_entropy > 0.0);

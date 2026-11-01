@@ -1,4 +1,4 @@
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let rotr x n =
   let open Int32 in

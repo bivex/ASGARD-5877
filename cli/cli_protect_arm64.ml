@@ -1,7 +1,7 @@
 open Cmdliner
 open Contracts
 open Protect_ports
-open Pipeline
+open Application
 
 (* 7b. PROTECT-ARM64 COMMAND (Automated ARM64 Native Lifter & VM Pipeline via Hexagonal Architecture) *)
 let run_protect_arm64 input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit enable_ephemeral_jit compile debug_symbols dump_bytecode watermark emulation_stall comp_stall_iterations comp_stall_variant comp_stall_seed =

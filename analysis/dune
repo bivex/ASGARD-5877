@@ -1,4 +1,4 @@
 (library
  (name protection_metrics)
  (public_name asgard.protection_metrics)
- (libraries vm_ir mba_engine random_visa_constants))
+ (libraries vm_ir mba_synthesis constants))

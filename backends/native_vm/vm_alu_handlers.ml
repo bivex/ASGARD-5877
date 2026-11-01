@@ -1,7 +1,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let emit_probes b ~enable_timing_probes =
   if enable_timing_probes then begin

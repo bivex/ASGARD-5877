@@ -1,4 +1,4 @@
-(** Mba_engine — Non-Linear Mixed Boolean-Arithmetic (NLMBA) & Polynomial Invariant Rewriter.
+(** Mba_synthesis — Non-Linear Mixed Boolean-Arithmetic (NLMBA) & Polynomial Invariant Rewriter.
 
     Incorporates cutting-edge academic techniques from arXiv literature:
     1. SiMBA & GAMBA resistance (Reichenwallner et al., Skees 2024):
@@ -10,7 +10,7 @@
 *)
 
 open Vm_ir
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type expr =
   | Var of string

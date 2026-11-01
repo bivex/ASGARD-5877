@@ -1549,7 +1549,7 @@ let test_real_license_check_macro_stack_vm_e2e () =
     let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 1337 |] in
     match
-      Pipeline.Protect_orchestrator.run
+      Application.Protect_orchestrator.run
         ~lifter
         ~c_macro_obfuscator
         ~vm_packager
@@ -2725,10 +2725,10 @@ let test_crt_split_path () =
   let (x1, x2, x3, x4) = Stack_crt_pass.split_val x in
   let (y1, y2, y3, y4) = Stack_crt_pass.split_val y in
   let open Int64 in
-  let z1 = unsigned_rem (add x1 y1) Random_visa_constants.Magic_numbers.crt_m1 in
-  let z2 = unsigned_rem (add x2 y2) Random_visa_constants.Magic_numbers.crt_m2 in
-  let z3 = unsigned_rem (add x3 y3) Random_visa_constants.Magic_numbers.crt_m3 in
-  let z4 = unsigned_rem (add x4 y4) Random_visa_constants.Magic_numbers.crt_m4 in
+  let z1 = unsigned_rem (add x1 y1) Constants.Magic_numbers.crt_m1 in
+  let z2 = unsigned_rem (add x2 y2) Constants.Magic_numbers.crt_m2 in
+  let z3 = unsigned_rem (add x3 y3) Constants.Magic_numbers.crt_m3 in
+  let z4 = unsigned_rem (add x4 y4) Constants.Magic_numbers.crt_m4 in
   let sum_rec = Stack_crt_pass.reconstruct_val (z1, z2, z3, z4) in
   Alcotest.(check int64) "CRT exact 64-bit overflow addition roundtrip (0xFF..FF + 1 == 0)"
     0L sum_rec

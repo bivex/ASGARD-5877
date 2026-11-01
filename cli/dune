@@ -9,12 +9,12 @@
   domain
   contracts
   runtime_services
-  pipeline
+  application
   sail_export
   sail_parser
   cpp_emitter
   c11_emitter
-  toolchain
+  compiler_adapter
   assembler
   bytecode_codec
   vm_ir
@@ -23,12 +23,12 @@
   riscv_lifter
   nested_vm
   jit_vm
-  mba_engine
+  mba_synthesis
   control_flow
   native_vm
   c_macro_obf
   protect_pipeline
-  asgard.macho
+  macho
   watermark
   bos
   fpath

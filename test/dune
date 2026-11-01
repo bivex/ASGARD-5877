@@ -60,25 +60,25 @@
   isa_codegen
   protection_config
   protection_metrics
-  pipeline
-  asgard.protect_pipeline
+  application
+  protect_pipeline
   sail_export
   sail_parser
   cpp_emitter
   c11_emitter
-  toolchain
+  compiler_adapter
   assembler
   bytecode_codec
   vm_ir
-  random_visa_constants
-  asgard.stack_vm
+  constants
+  stack_vm
   x86_lifter
   arm64_lifter
   riscv_lifter
   nested_vm
   gpu_synth
   jit_vm
-  mba_engine
+  mba_synthesis
   control_flow
   native_vm
   c_macro_obf
@@ -86,8 +86,8 @@
   shadow_unwind
   dispatch_permutation
   trace_chaff
-  asgard.emulation_stall
-  asgard.macho
+  emulation_stall
+  macho
   watermark
   alcotest
   qcheck
@@ -105,11 +105,11 @@
  (modules test_tier4_nextgen)
  (libraries
   vm_ir
-  random_visa_constants
+  constants
   native_vm
   nested_vm
   jit_vm
-  mba_engine
+  mba_synthesis
   alcotest))
 
 (test
@@ -120,12 +120,12 @@
   isa_codegen
   protection_config
   protection_metrics
-  toolchain
+  compiler_adapter
   vm_ir
-  random_visa_constants
+  constants
   native_vm
   nested_vm
-  asgard.stack_vm
+  stack_vm
   jit_vm
   shadow_unwind
   bytecode_codec
@@ -141,10 +141,10 @@
  (name test_bytecode_amplifier)
  (modules test_bytecode_amplifier)
  (libraries
-  asgard.stack_vm
-  mba_engine
+  stack_vm
+  mba_synthesis
   vm_ir
-  random_visa_constants
+  constants
   alcotest
   qcheck
   qcheck-alcotest))
@@ -163,44 +163,44 @@
  (name test_pipeline_phase_guard)
  (modules test_pipeline_phase_guard)
  (libraries
-  asgard.stack_vm
+  stack_vm
   alcotest))
 
 (test
  (name test_control_flow_key_coupling)
  (modules test_control_flow_key_coupling)
  (libraries
-  asgard.stack_vm
+  stack_vm
   alcotest))
 
 (test
  (name test_mba_noise)
  (modules test_mba_noise)
  (libraries
-  asgard.stack_vm
+  stack_vm
   alcotest))
 
 (test
  (name test_hw_binding)
  (modules test_hw_binding)
  (libraries
-  asgard.stack_vm
+  stack_vm
   alcotest))
 
 (test
  (name test_key_feedback_consistency)
  (modules test_key_feedback_consistency)
  (libraries
-  asgard.stack_vm
-  mba_engine
+  stack_vm
+  mba_synthesis
   alcotest))
 
 (test
  (name test_mba_mod64_crosscheck)
  (modules test_mba_mod64_crosscheck)
  (libraries
-  asgard.stack_vm
-  mba_engine
+  stack_vm
+  mba_synthesis
   yojson
   alcotest)
  (deps data/mba_mod64_golden.json))

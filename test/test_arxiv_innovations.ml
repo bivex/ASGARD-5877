@@ -2,12 +2,12 @@
     Tests for the 4 new OCaml modules from academic research:
     1. Control_flow.Control_flow_engine.Pop_coupler        (arXiv:1908.01549) - Path-Oriented Protections
     2. Native_vm.Defuse_scrambler (arXiv:2601.12916) - Def-Use Chain Scrambler
-    3. Mba_engine.Ncfg_synth  (arXiv:2506.23634) - NCFG Transformer-Resistant MBA
+    3. Mba_synthesis.Ncfg_synth  (arXiv:2506.23634) - NCFG Transformer-Resistant MBA
     4. Arm64_lifter.Literal_stitcher (arXiv:2407.08924) - ARM64 Disassembler Disrupter *)
 
 open Alcotest
 open Vm_ir
-open Mba_engine
+open Mba_synthesis
 
 (* -------------------------------------------------------------------------- *)
 (* 1. POP Path Coupler (arXiv:1908.01549)                                     *)

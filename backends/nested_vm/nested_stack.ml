@@ -169,11 +169,11 @@ let rec matula_number = function
             acc * p)
           1 children
 
-let topology_digest ?(salt = Random_visa_constants.Magic_numbers.nested_topology_salt)
+let topology_digest ?(salt = Constants.Magic_numbers.nested_topology_salt)
     (t : topology) : int64 =
   let m = matula_number t in
-  let z = logxor (of_int m) (mul salt Random_visa_constants.Magic_numbers.splitmix64_gamma) in
-  let z = mul (logxor z (shift_right_logical z 30)) Random_visa_constants.Magic_numbers.splitmix64_mix in
+  let z = logxor (of_int m) (mul salt Constants.Magic_numbers.splitmix64_gamma) in
+  let z = mul (logxor z (shift_right_logical z 30)) Constants.Magic_numbers.splitmix64_mix in
   let z = mul (logxor z (shift_right_logical z 27)) 0x94D049BB133111EBL in
   logxor z (shift_right_logical z 31)
 
@@ -210,5 +210,5 @@ type nested_config = {
 let default_nested_config = {
   enabled = false;
   max_depth = 4;
-  salt = Random_visa_constants.Magic_numbers.nested_topology_salt;
+  salt = Constants.Magic_numbers.nested_topology_salt;
 }

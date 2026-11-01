@@ -5,7 +5,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let constant_time_memcmp_decl () : top_decl =
   func_decl ~attrs:[InlineFn] Bool "constant_time_memcmp"

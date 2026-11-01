@@ -282,7 +282,7 @@ let code_size r = r.code_size
 let reproducibility r = r.reproducibility
 let drs_v2 r = r.drs_v2
 
-let rec count_mba_nodes (e : Mba_engine.Mba.expr) =
+let rec count_mba_nodes (e : Mba_synthesis.Mba.expr) =
   match e with
   | Var _ | Const _ -> 1
   | Not a | Neg a -> 1 + count_mba_nodes a

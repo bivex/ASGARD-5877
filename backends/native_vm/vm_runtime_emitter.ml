@@ -1,4 +1,4 @@
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 let generate_wbox_seed_derivation_decls ~rng (key_seed : int32) : Cpp_codegen.Cpp_ast.top_decl list =
   let rotl32 x n =
     let n = n land 31 in

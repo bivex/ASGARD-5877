@@ -37,7 +37,7 @@
 open Stack_ir
 open Vm_ir
 open Flags
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 (* ── SplitMix64 ───────────────────────────────────────────────────────── *)
 let splitmix64 s =

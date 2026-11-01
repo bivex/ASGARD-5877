@@ -69,14 +69,14 @@ let derive_chaff_salt seed =
   (* Per-build salt: one splitmix64 step over the seed, golden-ratio
      incremented (both constants from the magic-number registry). *)
   let open Int64 in
-  let module M = Random_visa_constants.Magic_numbers in
+  let module M = Constants.Magic_numbers in
   let z = add seed M.golden_ratio_64 in
   logxor z (shift_right_logical z 32)
 
 (** Per-build affine mask pair for the dispatch table. *)
 let derive_mask_pair seed =
   let open Int64 in
-  let module M = Random_visa_constants.Magic_numbers in
+  let module M = Constants.Magic_numbers in
   let a = derive_chaff_salt (logxor seed M.cbrt3_fraction_64) in
   let b = derive_chaff_salt (logxor seed M.salt_stack_dispatch_blind) in
   (logor a 1L (* odd: bijective over Z_2^64 *), b)

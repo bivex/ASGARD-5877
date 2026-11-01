@@ -1,4 +1,4 @@
 (library
- (name toolchain)
+ (name compiler_adapter)
  (public_name asgard.adapters.compiler_adapter)
  (libraries domain contracts unix))

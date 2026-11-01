@@ -1,6 +1,6 @@
 open Domain
 open Cpp_emitter
-open Toolchain
+open Compiler_adapter
 
 let test_cpp_emulator_compilation_and_execution () =
   let rng = Random.State.make [| 42 |] in
@@ -16,11 +16,11 @@ let test_cpp_emulator_compilation_and_execution () =
               (fun path -> Alcotest.(check bool) (Printf.sprintf "file exists %s" path) true (Sys.file_exists path))
               emitted_files);
 
-        (match Compiler_adapter.compile ~project_dir:tmp_dir with
+        (match Cpp_compiler.compile ~project_dir:tmp_dir with
         | Error err -> Alcotest.fail (Errors.to_string err)
         | Ok () -> ());
 
-        (match Compiler_adapter.run_tests ~project_dir:tmp_dir with
+        (match Cpp_compiler.run_tests ~project_dir:tmp_dir with
         | Error err -> Alcotest.fail (Errors.to_string err)
         | Ok output ->
             Alcotest.(check bool) "contains ALL EMULATOR TESTS PASSED" true

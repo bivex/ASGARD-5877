@@ -1,5 +1,5 @@
 open Vm_ir
-open Mba_engine
+open Mba_synthesis
 open Vm_eval
 
 (** Tests for [Egraph] — Scrambler-style Equality Expansion (arXiv:2603.03624):

@@ -114,17 +114,17 @@ let embed_into_nullspace_zero
     ~(rng : Random.State.t)
     ~(terms_count : int)
     ~(fragment : int64)
-    ~(bit_width : int) : Mba_engine.Nullspace_mba.minterm_term list * int =
-  let terms = Mba_engine.Nullspace_mba.synth_minterm_zero ~rng ~terms_count:(Stdlib.max terms_count 4) in
+    ~(bit_width : int) : Mba_synthesis.Nullspace_mba.minterm_term list * int =
+  let terms = Mba_synthesis.Nullspace_mba.synth_minterm_zero ~rng ~terms_count:(Stdlib.max terms_count 4) in
   (* Term table representation: bfunc_id -> coeff *)
   let term_table = Hashtbl.create 16 in
-  List.iter (fun (t : Mba_engine.Nullspace_mba.minterm_term) ->
+  List.iter (fun (t : Mba_synthesis.Nullspace_mba.minterm_term) ->
     Hashtbl.replace term_table t.bfunc_id t.coeff
   ) terms;
 
   (* Pick a candidate term with non-trivial boolean function not in pure basis {1, 2, 4, 8} *)
   let candidates =
-    List.filter (fun (t : Mba_engine.Nullspace_mba.minterm_term) ->
+    List.filter (fun (t : Mba_synthesis.Nullspace_mba.minterm_term) ->
       t.bfunc_id <> 1 && t.bfunc_id <> 2 && t.bfunc_id <> 4 && t.bfunc_id <> 8 && t.bfunc_id <> 0 && t.bfunc_id <> 15
     ) terms
   in
@@ -172,10 +172,10 @@ let embed_into_nullspace_zero
 
   let final_terms =
     Hashtbl.fold (fun id coeff acc ->
-      if coeff <> 0L then { Mba_engine.Nullspace_mba.bfunc_id = id; coeff } :: acc
+      if coeff <> 0L then { Mba_synthesis.Nullspace_mba.bfunc_id = id; coeff } :: acc
       else acc
     ) term_table []
   in
   (* Verify that the compensated expression is still identically zero *)
-  assert (Mba_engine.Nullspace_mba.verify_minterm_zero final_terms);
+  assert (Mba_synthesis.Nullspace_mba.verify_minterm_zero final_terms);
   (final_terms, target_id)

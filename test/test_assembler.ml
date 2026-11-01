@@ -1,7 +1,7 @@
 open Domain
 open Assembler
 open Cpp_emitter
-open Toolchain
+open Compiler_adapter
 
 let test_parse_register_operands () =
   Alcotest.(check bool) "v0 valid" true (Assembler_adapter.parse_reg "v0" = Ok 0);
@@ -174,7 +174,7 @@ let test_bytecode_execution_on_cpp_emulator () =
         (match Cpp_emitter_adapter.emit_emulator_project spec ~output_dir:tmp_dir with
         | Error err -> Alcotest.fail (Errors.to_string err)
         | Ok _ -> ());
-        (match Compiler_adapter.compile ~project_dir:tmp_dir with
+        (match Cpp_compiler.compile ~project_dir:tmp_dir with
         | Error err -> Alcotest.fail (Errors.to_string err)
         | Ok () -> ());
 

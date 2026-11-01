@@ -3,5 +3,5 @@
  (modules demo_amplifier)
  (libraries
   vm_ir
-  mba_engine
+  mba_synthesis
   stack_vm))

@@ -3,7 +3,7 @@
    advance_key_step) and the FETCH_NEXT dispatch macro. Both sides must agree
    bit-for-bit; test/test_anti_pushan.ml pins the correspondence. *)
 
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 (* SplitMix64-style positional PRF, mirrored from the emitted key64_for_offset. *)
 let key64_for_offset (seed : int32) (offset : int) : int64 =

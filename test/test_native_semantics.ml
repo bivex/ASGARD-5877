@@ -226,7 +226,7 @@ int main(void) {
       let toolchain = (module Clang_toolchain_adapter : Contracts.Protect_ports.Toolchain) in
       let c_macro = (module C_macro_obf_adapter : Contracts.Protect_ports.C_macro_obfuscator) in
       match
-        Pipeline.Protect_orchestrator.run
+        Application.Protect_orchestrator.run
           ~lifter
           ~c_macro_obfuscator:c_macro
           ~vm_packager
@@ -306,7 +306,7 @@ int main(void) {
       let toolchain = (module Clang_toolchain_adapter : Contracts.Protect_ports.Toolchain) in
       let c_macro = (module C_macro_obf_adapter : Contracts.Protect_ports.C_macro_obfuscator) in
       match
-        Pipeline.Protect_orchestrator.run
+        Application.Protect_orchestrator.run
           ~lifter
           ~c_macro_obfuscator:c_macro
           ~vm_packager

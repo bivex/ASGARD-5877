@@ -1,5 +1,5 @@
 open Stack_ir
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type amplification_profile = {
   horner_degree       : int;
@@ -147,24 +147,24 @@ let emit_ring_twist (rng : Random.State.t) : stack_op list =
   | 0 ->
       (* Standard odd-twist with flag-neutral stack permutation *)
       let k_odd = Int64.logor (rand_u64 rng) 1L in
-      let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
+      let k_inv = Mba_synthesis.Metamorphic_ring.inv_mod_2_64 k_odd in
       [ PushImm k_odd; Mul; PushImm k_inv; Swap; Mul ]
   | 1 ->
       (* Two-stage coprime cascade with flag-neutral stack permutation *)
       let k1 = Int64.logor (rand_u64 rng) 1L in
       let k2 = Int64.logor (rand_u64 rng) 1L in
       let k_prod = Int64.mul k1 k2 in
-      let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_prod in
+      let k_inv = Mba_synthesis.Metamorphic_ring.inv_mod_2_64 k_prod in
       [ PushImm k1; Mul; PushImm k2; Mul; PushImm k_inv; Swap; Mul ]
   | 2 ->
       (* Swap-interleaved inverse scaling *)
       let k_odd = Int64.logor (rand_u64 rng) 1L in
-      let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
+      let k_inv = Mba_synthesis.Metamorphic_ring.inv_mod_2_64 k_odd in
       [ PushImm k_inv; PushImm k_odd; Swap; Mul; Mul ]
   | _ ->
       (* Inverted evaluation order with split factors *)
       let k_odd = Int64.logor (rand_u64 rng) 1L in
-      let k_inv = Mba_engine.Metamorphic_ring.inv_mod_2_64 k_odd in
+      let k_inv = Mba_synthesis.Metamorphic_ring.inv_mod_2_64 k_odd in
       [ PushImm k_odd; PushImm k_inv; Swap; Mul; Mul ]
 (* ------------------------------------------------------------------ *)
 (* Minterm basis (bridge to Nullspace_mba): NOR/NAND representations

@@ -756,7 +756,7 @@ module Stack_vm_packager : Vm_packager = struct
           if native_cfg.emulation_stall.seed <> 0L then native_cfg.emulation_stall.seed
           else match native_cfg.seed with
                | Some s -> Int64.of_int s
-               | None -> Random_visa_constants.Magic_numbers.comp_stall_chebyshev_salt
+               | None -> Constants.Magic_numbers.comp_stall_chebyshev_salt
         in
         let variant = native_cfg.emulation_stall.variant in
         Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM"

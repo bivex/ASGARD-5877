@@ -74,7 +74,7 @@ let enforce_alias_barriers ~(scratch_slot : int) (b : block) : block =
     | [] -> List.rev acc
     | (WriteMem _ as wm) :: rest_ops ->
         let flags_live = if idx + 1 < Array.length liveness then liveness.(idx + 1) else false in
-        let k = Random_visa_constants.Magic_numbers.mem_webbing_offset_mask in
+        let k = Constants.Magic_numbers.mem_webbing_offset_mask in
         let zero_knot = [
           PushReg scratch_slot;
           PushImm k;

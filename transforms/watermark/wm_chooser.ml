@@ -41,7 +41,7 @@ let make
     ~(entropy_rng : Random.State.t)
     ?(carrier_rate = 0.35)
     ?recorded_points
-    () : Mba_engine.Egraph_extract.chooser =
+    () : Mba_synthesis.Egraph_extract.chooser =
   fun ~eligible_count ~site_tag ->
     if eligible_count <= 1 then 0
     else

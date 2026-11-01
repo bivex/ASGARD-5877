@@ -1,6 +1,6 @@
 open Domain
 open Cpp_emitter
-open Toolchain
+open Compiler_adapter
 
 let test_cpp_multi_vlen vlen =
   let rng = Random.State.make [| vlen |] in
@@ -15,11 +15,11 @@ let test_cpp_multi_vlen vlen =
             | Error err -> Alcotest.fail (Errors.to_string err)
             | Ok _ -> ());
 
-            (match Compiler_adapter.compile ~project_dir:tmp_dir with
+            (match Cpp_compiler.compile ~project_dir:tmp_dir with
             | Error err -> Alcotest.fail (Errors.to_string err)
             | Ok () -> ());
 
-            (match Compiler_adapter.run_tests ~project_dir:tmp_dir with
+            (match Cpp_compiler.run_tests ~project_dir:tmp_dir with
             | Error err -> Alcotest.fail (Errors.to_string err)
             | Ok out ->
                 Alcotest.(check bool) "tests passed" true

@@ -1,6 +1,6 @@
 (library
  (name nested_vm)
  (public_name asgard.nested_vm)
- (libraries mba_engine vm_ir native_vm cpp_codegen ocamlgraph random_visa_constants protection_metrics protection_config))
+ (libraries mba_synthesis vm_ir native_vm cpp_codegen ocamlgraph constants protection_metrics protection_config))
 
 

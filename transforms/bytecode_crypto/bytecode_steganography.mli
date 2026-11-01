@@ -50,4 +50,4 @@ val embed_into_nullspace_zero :
   terms_count:int ->
   fragment:int64 ->
   bit_width:int ->
-  Mba_engine.Nullspace_mba.minterm_term list * int
+  Mba_synthesis.Nullspace_mba.minterm_term list * int

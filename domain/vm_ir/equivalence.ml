@@ -1,6 +1,6 @@
 open Ir
 
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type discrepancy_kind =
   | RegMismatch of { reg : Register.t; expected : int64; actual : int64 }

@@ -6,7 +6,7 @@
     the Decoy VM under analysis pressure. *)
 
 open Vm_ir
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let synth_decoy_validator_func ~(seed : int64) ~(name : string) : Ir.func =
   let c1 = Int64.logxor seed salt_xwcafe_leetbeef in

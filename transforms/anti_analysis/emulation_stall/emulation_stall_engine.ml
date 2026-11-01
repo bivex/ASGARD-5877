@@ -5,7 +5,7 @@ open Emulation_stall_types
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
-module Magic_numbers = Random_visa_constants.Magic_numbers
+module Magic_numbers = Constants.Magic_numbers
 
 (* ── SplitMix64 PRNG (same finaliser as trace_chaff/dispatch_permutation) ────────────── *)
 (* State threading: returns (new_state, output).  The increment

@@ -13,7 +13,7 @@
 [@@@warning "-21"]
 
 module Amp = Stack_vm.Bytecode_amplifier
-module Ring = Mba_engine.Metamorphic_ring
+module Ring = Mba_synthesis.Metamorphic_ring
 
 let fail fmt = Printf.ksprintf (fun s -> Alcotest.fail s) fmt
 

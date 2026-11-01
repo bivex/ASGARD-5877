@@ -163,10 +163,10 @@ let test_nullspace_zero_embedding_and_compensation () =
     in
     (* 1. Verify the polynomial is STILL identically zero over all 64-bit inputs *)
     check bool (Printf.sprintf "Sample #%d nullspace zero invariant holds" sample)
-      true (Mba_engine.Nullspace_mba.verify_minterm_zero terms);
+      true (Mba_synthesis.Nullspace_mba.verify_minterm_zero terms);
 
     (* 2. Find carrier term and verify lowest 11 bits match fragment *)
-    let carrier = List.find (fun (t : Mba_engine.Nullspace_mba.minterm_term) -> t.bfunc_id = target_id) terms in
+    let carrier = List.find (fun (t : Mba_synthesis.Nullspace_mba.minterm_term) -> t.bfunc_id = target_id) terms in
     let mask = 0x7FFL in
     let extracted = Int64.logand carrier.coeff mask in
     check int64 (Printf.sprintf "Sample #%d fragment match" sample) fragment extracted

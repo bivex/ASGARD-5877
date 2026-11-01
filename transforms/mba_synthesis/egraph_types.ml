@@ -1,5 +1,5 @@
 open Mba
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let mask_even = even_bit_mask
 let mask_odd = odd_bit_mask (* 0xAAAAAAAAAAAAAAAA in two's complement *)

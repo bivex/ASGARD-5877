@@ -1,11 +1,11 @@
 open Cmdliner
 open Domain
 open Contracts
-open Pipeline
+open Application
 open Sail_export
 open Sail_parser
 open Cpp_emitter
-open Toolchain
+open Compiler_adapter
 open Assembler
 
 let print_hw_report (report : Hw_cost.report) =
@@ -40,7 +40,7 @@ let run_generate name n out_dir profile_name seed vlen compile_and_test =
   in
   let sail_writer = (module Sail_export_adapter : Ports.Sail_spec_writer) in
   let cpp_emitter = (module Cpp_emitter_adapter : Ports.Cpp_code_emitter) in
-  let compiler = (module Compiler_adapter : Ports.Compiler) in
+  let compiler = (module Cpp_compiler : Ports.Compiler) in
 
   match
     Pipeline_orchestrator.run

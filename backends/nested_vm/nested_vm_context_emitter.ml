@@ -110,7 +110,7 @@ let emit_nested_topology_salt () : top_decl =
   global_var ~is_static:true ~is_const:true
     UInt64
     "g_nested_topology_salt"
-    ~init:(u64 Random_visa_constants.Magic_numbers.nested_topology_salt)
+    ~init:(u64 Constants.Magic_numbers.nested_topology_salt)
 
 let emit_nested_topology_digest () : top_decl =
   func_decl
@@ -119,8 +119,8 @@ let emit_nested_topology_digest () : top_decl =
     "nested_topology_digest"
     [(UInt32, "matula_num"); (UInt64, "salt")]
     [
-      let_u64 "z" ((cast UInt64 (var "matula_num")) ^~ ((var "salt") *~ (u64 Random_visa_constants.Magic_numbers.splitmix64_gamma)));
-      var "z" := ((var "z") ^~ ((var "z") >>~ (u64 30L))) *~ (u64 Random_visa_constants.Magic_numbers.splitmix64_mix);
+      let_u64 "z" ((cast UInt64 (var "matula_num")) ^~ ((var "salt") *~ (u64 Constants.Magic_numbers.splitmix64_gamma)));
+      var "z" := ((var "z") ^~ ((var "z") >>~ (u64 30L))) *~ (u64 Constants.Magic_numbers.splitmix64_mix);
       var "z" := ((var "z") ^~ ((var "z") >>~ (u64 27L))) *~ (u64 0x94D049BB133111EBL);
       ret ((var "z") ^~ ((var "z") >>~ (u64 31L)));
     ]

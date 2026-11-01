@@ -3,7 +3,7 @@ include Jit_types
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
-module Magic_numbers = Random_visa_constants.Magic_numbers
+module Magic_numbers = Constants.Magic_numbers
 
 
 let emit_rd_jit_runtime_decls ~external_symbols =

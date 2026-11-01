@@ -1,5 +1,5 @@
 open Vm_ir
-open Mba_engine.Mba
+open Mba_synthesis.Mba
 
 type gpu_mba_pool = {
   solutions : int64 array;

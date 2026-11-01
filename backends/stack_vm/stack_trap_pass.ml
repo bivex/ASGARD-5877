@@ -20,7 +20,7 @@
 *)
 
 open Stack_ir
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type trap_config = {
   enabled : bool;

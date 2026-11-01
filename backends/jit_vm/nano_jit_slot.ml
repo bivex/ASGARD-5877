@@ -16,7 +16,7 @@
    them at run time.  Every constant is shared through Magic_numbers. *)
 
 open Int64
-module Magic_numbers = Random_visa_constants.Magic_numbers
+module Magic_numbers = Constants.Magic_numbers
 
 let nano_slot_bytes = 128
 let nano_slot_words = 16

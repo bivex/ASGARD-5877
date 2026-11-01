@@ -38,7 +38,7 @@ val make :
   ?carrier_rate:float ->
   ?recorded_points:carrier_point list ref ->
   unit ->
-  Mba_engine.Egraph_extract.chooser
+  Mba_synthesis.Egraph_extract.chooser
 
 val manifest_to_json : manifest -> Yojson.Safe.t
 val manifest_of_json : Yojson.Safe.t -> (manifest, string) result

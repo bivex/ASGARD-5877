@@ -1,5 +1,5 @@
 (library
- (name pipeline)
+ (name application)
  (public_name asgard.application)
  (libraries domain contracts stack_vm
   native_vm asgard.macho watermark runtime_services protect_pipeline))

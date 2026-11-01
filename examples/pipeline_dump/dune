@@ -3,7 +3,7 @@
  (modules dump_pipeline)
  (libraries
   vm_ir
-  mba_engine
+  mba_synthesis
   stack_vm
   yojson
   unix))

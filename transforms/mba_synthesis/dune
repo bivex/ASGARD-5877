@@ -1,0 +1,4 @@
+(library
+ (name mba_synthesis)
+ (public_name asgard.mba_synthesis)
+ (libraries vm_ir constants))

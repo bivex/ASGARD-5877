@@ -1,5 +1,5 @@
 (library
  (name emulation_stall)
  (public_name asgard.emulation_stall)
- (libraries cpp_codegen random_visa_constants))
+ (libraries cpp_codegen constants))
 

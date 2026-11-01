@@ -1,7 +1,7 @@
 open Vm_ir
 open Stack_ir
 open Flags
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type opcode_map = {
   op_push_imm : int;

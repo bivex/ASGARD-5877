@@ -1,7 +1,7 @@
 open Register
 open Flags
 open Ir
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type state = {
   vregs : (Register.t, int64) Hashtbl.t;

@@ -1,7 +1,7 @@
 open Cmdliner
 open Contracts
 open Protect_ports
-open Pipeline
+open Application
 
 (* 7c. PROTECT-RISCV COMMAND (Automated RISC-V RV64GC Native Lifter & VM Pipeline via Hexagonal Architecture) *)
 let run_protect_riscv input_file out_dir seed config_file preset enable_cff enable_mba mba_depth engine enable_jit compile debug_symbols emulation_stall comp_stall_iterations comp_stall_variant comp_stall_seed =

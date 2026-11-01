@@ -1,7 +1,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let emit_context_decls ?(context_epochs = 4) ~key_seed ~reg_perm ~stride ~offset ~enable_running_key ~enable_stack_scramble ~enable_mem_sanitize () : top_decl list =
   ignore enable_running_key;

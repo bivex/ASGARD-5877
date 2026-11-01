@@ -1,5 +1,5 @@
 open Vm_ir
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type t = {
   reg_to_slot : (Register.t, int) Hashtbl.t;

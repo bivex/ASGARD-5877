@@ -1,6 +1,6 @@
 open Vm_ir
 open X86_lifter
-open Mba_engine
+open Mba_synthesis
 open Vm_eval
 
 let test_mba_eval_and_soundness () =
@@ -629,19 +629,19 @@ let test_select_pinned_reg_exhaustion () =
   Alcotest.(check bool) "pinned reg exhausted" true (pinned = None)
 let test_tmr_majority_truth_table () =
   (* Truth table for all 8 bit patterns *)
-  Alcotest.(check int64) "000 -> 0" 0L (Mba_engine.Tmr_guard.evaluate_tmr_majority 0L 0L 0L);
-  Alcotest.(check int64) "001 -> 0" 0L (Mba_engine.Tmr_guard.evaluate_tmr_majority 0L 0L 1L);
-  Alcotest.(check int64) "010 -> 0" 0L (Mba_engine.Tmr_guard.evaluate_tmr_majority 0L 1L 0L);
-  Alcotest.(check int64) "011 -> 1" 1L (Mba_engine.Tmr_guard.evaluate_tmr_majority 0L 1L 1L);
-  Alcotest.(check int64) "100 -> 0" 0L (Mba_engine.Tmr_guard.evaluate_tmr_majority 1L 0L 0L);
-  Alcotest.(check int64) "101 -> 1" 1L (Mba_engine.Tmr_guard.evaluate_tmr_majority 1L 0L 1L);
-  Alcotest.(check int64) "110 -> 1" 1L (Mba_engine.Tmr_guard.evaluate_tmr_majority 1L 1L 0L);
-  Alcotest.(check int64) "111 -> 1" 1L (Mba_engine.Tmr_guard.evaluate_tmr_majority 1L 1L 1L);
+  Alcotest.(check int64) "000 -> 0" 0L (Mba_synthesis.Tmr_guard.evaluate_tmr_majority 0L 0L 0L);
+  Alcotest.(check int64) "001 -> 0" 0L (Mba_synthesis.Tmr_guard.evaluate_tmr_majority 0L 0L 1L);
+  Alcotest.(check int64) "010 -> 0" 0L (Mba_synthesis.Tmr_guard.evaluate_tmr_majority 0L 1L 0L);
+  Alcotest.(check int64) "011 -> 1" 1L (Mba_synthesis.Tmr_guard.evaluate_tmr_majority 0L 1L 1L);
+  Alcotest.(check int64) "100 -> 0" 0L (Mba_synthesis.Tmr_guard.evaluate_tmr_majority 1L 0L 0L);
+  Alcotest.(check int64) "101 -> 1" 1L (Mba_synthesis.Tmr_guard.evaluate_tmr_majority 1L 0L 1L);
+  Alcotest.(check int64) "110 -> 1" 1L (Mba_synthesis.Tmr_guard.evaluate_tmr_majority 1L 1L 0L);
+  Alcotest.(check int64) "111 -> 1" 1L (Mba_synthesis.Tmr_guard.evaluate_tmr_majority 1L 1L 1L);
   (* Full 64-bit word majority *)
   let w1 = 0xAAAA_5555_AAAA_5555L in
   let w2 = 0xCCCC_3333_CCCC_3333L in
   let w3 = 0xF0F0_0F0F_F0F0_0F0FL in
-  let maj = Mba_engine.Tmr_guard.evaluate_tmr_majority w1 w2 w3 in
+  let maj = Mba_synthesis.Tmr_guard.evaluate_tmr_majority w1 w2 w3 in
   for bit = 0 to 63 do
     let b1 = Int64.logand (Int64.shift_right_logical w1 bit) 1L in
     let b2 = Int64.logand (Int64.shift_right_logical w2 bit) 1L in
@@ -655,7 +655,7 @@ let test_tmr_majority_truth_table () =
 let test_tmr_triplet_synthesis () =
   let rng = Random.State.make [| 9999 |] in
   let expr = Mba.Add (Mba.Var "x", Mba.Const 42L) in
-  let (e1, e2, e3) = Mba_engine.Tmr_synth.synth_triplet_from_expr ~rng expr in
+  let (e1, e2, e3) = Mba_synthesis.Tmr_synth.synth_triplet_from_expr ~rng expr in
   (* Test mathematical equivalence across 20 randomized inputs *)
   for sample = 1 to 20 do
     let x_val = Int64.of_int (sample * 1337 + 7) in
@@ -672,12 +672,12 @@ let test_tmr_triplet_synthesis () =
 let test_tmr_silent_anti_patching () =
   let rng = Random.State.make [| 8888 |] in
   let expr = Mba.Add (Mba.Var "a", Mba.Const 42L) in
-  let (e1, e2, e3) = Mba_engine.Tmr_synth.synth_triplet_from_expr ~rng expr in
+  let (e1, e2, e3) = Mba_synthesis.Tmr_synth.synth_triplet_from_expr ~rng expr in
   let env = [ ("a", Ir.Reg Register.rdi) ] in
 
   (* 1. Normal unpatched execution *)
   let instrs =
-    Mba_engine.Tmr_guard.emit_tmr_evaluation
+    Mba_synthesis.Tmr_guard.emit_tmr_evaluation
       ~e1 ~e2 ~e3 ~env
       ~dst:Register.rax
       ~r1:Register.vx19
@@ -701,7 +701,7 @@ let test_tmr_silent_anti_patching () =
     @ [ Ir.Mov { dst = Ir.Reg Register.vx19; src = Ir.Imm 0xDEADBEEFL } ] (* attacker patch! *)
     @ (Mba.lower_to_ir ~dst:Register.vx20 ~env e2)
     @ (Mba.lower_to_ir ~dst:Register.vx21 ~env e3)
-    @ (Mba_engine.Tmr_guard.emit_tmr_majority
+    @ (Mba_synthesis.Tmr_guard.emit_tmr_majority
          ~r1:Register.vx19 ~r2:Register.vx20 ~r3:Register.vx21
          ~dst:Register.rax ~scratch1:Register.vtmp0 ~scratch2:Register.vtmp1)
     @ [ Ir.Ret ]
@@ -722,7 +722,7 @@ let test_tmr_silent_anti_patching () =
     @ (Mba.lower_to_ir ~dst:Register.vx20 ~env e2)
     @ [ Ir.Mov { dst = Ir.Reg Register.vx20; src = Ir.Imm 0L } ] (* attacker patch! *)
     @ (Mba.lower_to_ir ~dst:Register.vx21 ~env e3)
-    @ (Mba_engine.Tmr_guard.emit_tmr_majority
+    @ (Mba_synthesis.Tmr_guard.emit_tmr_majority
          ~r1:Register.vx19 ~r2:Register.vx20 ~r3:Register.vx21
          ~dst:Register.rax ~scratch1:Register.vtmp0 ~scratch2:Register.vtmp1)
     @ [ Ir.Ret ]

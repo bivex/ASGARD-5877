@@ -1,5 +1,5 @@
 open Int64
-open Mba_engine.Metamorphic_ring
+open Mba_synthesis.Metamorphic_ring
 
 type transition_morphism = {
   scale : int64;

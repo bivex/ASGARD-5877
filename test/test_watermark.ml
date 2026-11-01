@@ -1,7 +1,7 @@
 (* ASGARD-5877: Build-Seed Watermarking Test Suite *)
 
 open Watermark
-open Mba_engine
+open Mba_synthesis
 
 let test_hkdf_derivation () =
   let seed1 = 0x1337_5877_CAFE_BABEL in
@@ -96,9 +96,9 @@ let test_egraph_watermark_roundtrip () =
 
   (* Expand an ALU expression using the e-graph with watermarking chooser *)
   let expr = Mba.Add (Mba.Var "x", Mba.Const 42L) in
-  let expanded = Mba_engine.Egraph.expand ~rng ~chooser ~config:Mba_engine.Egraph.default_config expr in
+  let expanded = Mba_synthesis.Egraph.expand ~rng ~chooser ~config:Mba_synthesis.Egraph.default_config expr in
 
-  Alcotest.(check bool) "expanded expression generated" (Mba_engine.Egraph.ast_size expanded > 5) true;
+  Alcotest.(check bool) "expanded expression generated" (Mba_synthesis.Egraph.ast_size expanded > 5) true;
   Alcotest.(check bool) "carrier points recorded" (List.length !recorded_points > 0) true;
 
   (* Verify offline extraction *)
@@ -147,9 +147,9 @@ let test_watermark_stealth () =
 
   (* Run A: Pure RNG baseline *)
   let rng_a = Random.State.make [| 100 |] in
-  let ast_a = Mba_engine.Egraph.expand ~rng:rng_a expr in
-  let size_a = Mba_engine.Egraph.ast_size ast_a in
-  let alt_a = Mba_engine.Egraph.alternation ast_a in
+  let ast_a = Mba_synthesis.Egraph.expand ~rng:rng_a expr in
+  let size_a = Mba_synthesis.Egraph.ast_size ast_a in
+  let alt_a = Mba_synthesis.Egraph.alternation ast_a in
 
   (* Run B: Watermarked with Payload 1 *)
   let rng_b = Random.State.make [| 100 |] in
@@ -162,9 +162,9 @@ let test_watermark_stealth () =
       ~entropy_rng:rng_b
       ()
   in
-  let ast_b = Mba_engine.Egraph.expand ~rng:rng_b ~chooser:chooser_b expr in
-  let size_b = Mba_engine.Egraph.ast_size ast_b in
-  let alt_b = Mba_engine.Egraph.alternation ast_b in
+  let ast_b = Mba_synthesis.Egraph.expand ~rng:rng_b ~chooser:chooser_b expr in
+  let size_b = Mba_synthesis.Egraph.ast_size ast_b in
+  let alt_b = Mba_synthesis.Egraph.alternation ast_b in
 
   (* Run C: Watermarked with Payload 2 *)
   let rng_c = Random.State.make [| 100 |] in
@@ -177,9 +177,9 @@ let test_watermark_stealth () =
       ~entropy_rng:rng_c
       ()
   in
-  let ast_c = Mba_engine.Egraph.expand ~rng:rng_c ~chooser:chooser_c expr in
-  let size_c = Mba_engine.Egraph.ast_size ast_c in
-  let alt_c = Mba_engine.Egraph.alternation ast_c in
+  let ast_c = Mba_synthesis.Egraph.expand ~rng:rng_c ~chooser:chooser_c expr in
+  let size_c = Mba_synthesis.Egraph.ast_size ast_c in
+  let alt_c = Mba_synthesis.Egraph.alternation ast_c in
 
   (* Stealth Assertion: AST size and alternation metrics must remain in identical tier *)
   Alcotest.(check bool) "stealth size b vs a" (abs (size_b - size_a) < 15) true;

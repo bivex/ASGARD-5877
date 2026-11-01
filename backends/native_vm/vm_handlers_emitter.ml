@@ -1,4 +1,4 @@
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let split_rng rng tag =
   let s = Random.State.int rng 0x3FFFFFFF in

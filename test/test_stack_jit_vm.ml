@@ -267,7 +267,7 @@ int main() {
     let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 5877 |] in
     match
-      Pipeline.Protect_orchestrator.run
+      Application.Protect_orchestrator.run
         ~lifter
         ~c_macro_obfuscator
         ~vm_packager
@@ -330,7 +330,7 @@ int main() {
     let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 5877 |] in
     match
-      Pipeline.Protect_orchestrator.run
+      Application.Protect_orchestrator.run
         ~lifter
         ~c_macro_obfuscator
         ~vm_packager
@@ -527,7 +527,7 @@ int main() {
     let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
     let rng = Random.State.make [| 5877 |] in
     match
-      Pipeline.Protect_orchestrator.run
+      Application.Protect_orchestrator.run
         ~lifter
         ~c_macro_obfuscator
         ~vm_packager

@@ -194,30 +194,30 @@ let () =
         };
     }
   |} in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax valid_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax valid_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Expected valid C++ to pass, but failed: " ^ err));
 
   (* Validate that unclosed bracket is caught *)
   let invalid_bracket = "int main() { if (1) { return 0; } " in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax invalid_bracket with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax invalid_bracket with
    | Error _ -> ()
    | Ok () -> failwith "Expected unclosed bracket to fail validation");
 
   (* Validate that mismatched delimiter is caught *)
   let mismatched_bracket = "int main() { return (int)5]; }" in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax mismatched_bracket with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax mismatched_bracket with
    | Error _ -> ()
    | Ok () -> failwith "Expected mismatched bracket to fail validation");
 
   (* Validate that leftover Jingoo template tag is caught *)
   let leftover_template = "int x = {{ my_var }};" in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax leftover_template with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax leftover_template with
    | Error _ -> ()
    | Ok () -> failwith "Expected leftover template marker to fail validation");
 
   (* Validate that compiler check passes for valid simple C++ *)
-  (match Toolchain.Cpp_validator.validate_cpp_syntax ~use_compiler:true "int add(int a, int b) { return a + b; }" with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax ~use_compiler:true "int add(int a, int b) { return a + b; }" with
    | Ok () -> ()
    | Error err -> failwith ("Compiler syntax check failed: " ^ err));
 
@@ -258,7 +258,7 @@ let () =
     in
     if not (find 0) then failwith ("Missing Stack-VM superoperator: " ^ kw)
   ) [ "h_cmp"; "h_test"; "h_add_imm"; "h_sub_imm"; "h_add_ii"; "h_sub_ii" ];
-  (match Toolchain.Cpp_validator.validate_cpp_syntax superops with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax superops with
    | Ok () -> ()
    | Error err -> failwith ("Superops syntax validation failed: " ^ err));
 
@@ -279,7 +279,7 @@ let () =
               in
               if not (find 0) then failwith ("Missing Vanguard decoder keyword: " ^ kw)
             ) [ "struct RollingKey"; "struct VanguardDecoder"; "decode_and_execute"; "next64" ];
-            (match Toolchain.Cpp_validator.validate_cpp_syntax decoder_cpp with
+            (match Compiler_adapter.Cpp_validator.validate_cpp_syntax decoder_cpp with
              | Ok () -> ()
              | Error err -> failwith ("Vanguard decoder syntax validation failed: " ^ err))));
   Printf.printf "[PASS] Step 14: Stack-VM superoperators & Vanguard 9292 decoder emitted using typed AST.\n";
@@ -300,7 +300,7 @@ let () =
     if not (find ctrl_handlers 0 || find cond_handlers 0 || find reg_imm_handlers 0) then
       failwith ("Missing Stack-VM handler: " ^ kw)
   ) [ "h_jmp_rel"; "h_jcc_rel"; "h_key_adjust"; "h_exit"; "h_resolve_sym"; "h_setcc"; "h_cmov"; "h_set_reg_imm"; "h_add_reg_imm"; "h_key_feedback" ];
-  (match Toolchain.Cpp_validator.validate_cpp_syntax (ctrl_handlers ^ "\n" ^ cond_handlers ^ "\n" ^ reg_imm_handlers) with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax (ctrl_handlers ^ "\n" ^ cond_handlers ^ "\n" ^ reg_imm_handlers) with
    | Ok () -> ()
    | Error err -> failwith ("Control/Cond/RegImm handlers syntax validation failed: " ^ err));
   Printf.printf "[PASS] Step 15: Stack-VM control, cond & reg_imm handlers emitted using typed AST.\n";
@@ -308,7 +308,7 @@ let () =
   (* 16. Vector ISA C++ Emulator AST (VRegFile, EmulatorState, Decoder, InstructionExecutor) *)
   let vreg_file_code = render_top_decl (Cpp_emitter.Cpp_header_emitters.emit_vreg_file_def ()) in
   let emu_state_code = render_top_decl (Cpp_emitter.Cpp_header_emitters.emit_emulator_state_def ()) in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax (vreg_file_code ^ "\n" ^ emu_state_code) with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax (vreg_file_code ^ "\n" ^ emu_state_code) with
    | Ok () -> ()
    | Error err -> failwith ("Vector ISA State syntax validation failed: " ^ err));
   assert (String.length vreg_file_code > 500);
@@ -317,7 +317,7 @@ let () =
 
   (* 17. Tech-2603 NonLinearVPCDispatcher template struct AST *)
   let vpc_dispatcher_code = render_top_decl (Dispatch_permutation.Dispatch_permutation_engine.emit_nonlinear_vpc_dispatcher_def ()) in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax vpc_dispatcher_code with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax vpc_dispatcher_code with
    | Ok () -> ()
    | Error err -> failwith ("NonLinearVPCDispatcher syntax validation failed: " ^ err));
   assert (String.length vpc_dispatcher_code > 300);
@@ -339,7 +339,7 @@ let () =
   let mat = Gpu_synth.Gpu_matrix.generate ~dim:16 ~rng () in
   let mat_ast_decls = Gpu_synth.Gpu_matrix.emit_cpp_constants_ast mat in
   let mat_cpp = render_top_decls mat_ast_decls in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax mat_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax mat_cpp with
    | Ok () -> ()
    | Error err -> failwith ("GPU MBA Matrix syntax validation failed: " ^ err));
   assert (String.length mat_cpp > 100);
@@ -358,7 +358,7 @@ let () =
   } in
   let nano_ast_decls = C_macro_obf.C_nanomites.emit_nanomite_preamble_ast [ nano_site ] in
   let nano_cpp = render_top_decls nano_ast_decls in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax nano_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax nano_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Nanomite preamble syntax validation failed: " ^ err));
   assert (String.length nano_cpp > 100);
@@ -367,7 +367,7 @@ let () =
   (* 21. Multi-VM Affine Bridge Matrices & Morphing AST *)
   let bridge = Nested_vm.Bridge.generate_bridge rng in
   let bridge_cpp = Nested_vm.Bridge.emit_cpp_bridge_code bridge in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax bridge_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax bridge_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Multi-VM Bridge syntax validation failed: " ^ err));
   assert (String.length bridge_cpp > 500);
@@ -375,7 +375,7 @@ let () =
 
   (* 22. Native VM Whitebox Seed Derivation AST *)
   let wbox_cpp = Native_vm.Vm_runtime_emitter.generate_wbox_seed_derivation ~rng 0x5877CAFEl in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax wbox_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax wbox_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Whitebox seed derivation syntax validation failed: " ^ err));
   assert (String.length wbox_cpp > 500);
@@ -384,7 +384,7 @@ let () =
   (* 23. Residue Number System (RNS-4) Garner CRT AST *)
   let rns_ast = Isa_codegen.Rns_codegen.emit_cpp_rns_ast () in
   let rns_cpp = Isa_codegen.Rns_codegen.emit_cpp_rns_header () in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax rns_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax rns_cpp with
    | Ok () -> ()
    | Error err -> failwith ("RNS Garner CRT syntax validation failed: " ^ err));
   assert (List.length rns_ast > 0);
@@ -393,7 +393,7 @@ let () =
 
   (* 24. Tech-2603 Anti-VPC-Tracking C++20 Header AST *)
   let tech_2603_cpp = Dispatch_permutation.Dispatch_permutation_engine.emit_dispatch_permutation_cpp_header () in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax tech_2603_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax tech_2603_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2603 header syntax validation failed: " ^ err));
   assert (String.length tech_2603_cpp > 300);
@@ -401,7 +401,7 @@ let () =
 
   (* 25. Tech-2608 Anti-Trace-Synthesis & Chaff Memory Pool C++20 Header AST *)
   let tech_2608_cpp = Trace_chaff.Trace_chaff_engine.emit_trace_chaff_cpp_header () in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax tech_2608_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax tech_2608_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2608 header syntax validation failed: " ^ err));
   assert (String.length tech_2608_cpp > 300);
@@ -413,7 +413,7 @@ let () =
    | Ok test_spec ->
        let isa_consts = Cpp_emitter.Cpp_header_emitters.emit_isa_constants_defs test_spec in
        let main_cpp = Cpp_emitter.Cpp_emitter_adapter.emit_main_cpp test_spec in
-       (match Toolchain.Cpp_validator.validate_cpp_syntax main_cpp with
+       (match Compiler_adapter.Cpp_validator.validate_cpp_syntax main_cpp with
         | Ok () -> ()
         | Error err -> failwith ("Vector ISA main.cpp syntax validation failed: " ^ err));
        assert (List.length isa_consts = 4);
@@ -423,7 +423,7 @@ let () =
   (* 27. RD-JIT VM runner main function AST *)
   let rd_main_decl = Jit_vm.Jit_emitter.emit_rd_jit_main_def () in
   let rd_main_cpp = render_top_decl rd_main_decl in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax rd_main_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax rd_main_cpp with
    | Ok () -> ()
    | Error err -> failwith ("RD-JIT main function syntax validation failed: " ^ err));
   assert (String.length rd_main_cpp > 200);
@@ -432,10 +432,10 @@ let () =
   (* 28. Native VM runner main function & full runner AST *)
   let native_main_decl = Native_vm.Vm_runtime_emitter.emit_native_runner_main_def () in
   let native_runner_cpp = Native_vm.Vm_runtime_emitter.emit_runner_cpp ~reg_perm:[|0;1;2;3|] [0x123456789ABCDEF0L; 0xDEADBEEFCAFEBABEL] in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax (render_top_decl native_main_decl) with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax (render_top_decl native_main_decl) with
    | Ok () -> ()
    | Error err -> failwith ("Native VM main function syntax validation failed: " ^ err));
-  (match Toolchain.Cpp_validator.validate_cpp_syntax native_runner_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax native_runner_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Native VM runner.cpp syntax validation failed: " ^ err));
   assert (String.length native_runner_cpp > 400);
@@ -446,16 +446,16 @@ let () =
   let stack_probe_decl = Stack_vm.Stack_runtime.emit_stack_probe_main_def () in
   let stack_runner_cpp = Stack_vm.Stack_runtime.emit_runner_cpp [0x1111222233334444L; 0x5555666677778888L] in
   let stack_probe_cpp = Stack_vm.Stack_runtime.emit_probe_cpp () in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax (render_top_decl stack_runner_decl) with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax (render_top_decl stack_runner_decl) with
    | Ok () -> ()
    | Error err -> failwith ("Stack-VM runner main function syntax validation failed: " ^ err));
-  (match Toolchain.Cpp_validator.validate_cpp_syntax (render_top_decl stack_probe_decl) with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax (render_top_decl stack_probe_decl) with
    | Ok () -> ()
    | Error err -> failwith ("Stack-VM probe main function syntax validation failed: " ^ err));
-  (match Toolchain.Cpp_validator.validate_cpp_syntax stack_runner_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax stack_runner_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Stack-VM runner.cpp syntax validation failed: " ^ err));
-  (match Toolchain.Cpp_validator.validate_cpp_syntax stack_probe_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax stack_probe_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Stack-VM probe.cpp syntax validation failed: " ^ err));
   assert (String.length stack_runner_cpp > 300);
@@ -466,7 +466,7 @@ let () =
   let nested_vm_main_decl = Nested_vm.Nested_vm_emitter.emit_multi_vm_runner_main_def
     ~math_blocks:3 ~flow_blocks:2 ~inter_vm_transitions:4 () in
   let nested_vm_main_cpp = render_top_decl nested_vm_main_decl in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax nested_vm_main_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax nested_vm_main_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Multi-VM runner main function syntax validation failed: " ^ err));
   assert (String.length nested_vm_main_cpp > 300);
@@ -477,10 +477,10 @@ let () =
   let native_consts_decls = Native_vm.Vm_runtime_emitter.emit_constants_tables_ast ~rng [ ("hello", "world"); ("sec", "\x01\x02\x03\x04") ] in
   let native_ext_syms_cpp = render_top_decl native_ext_syms_decl in
   let native_consts_cpp = render_top_decls native_consts_decls in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax native_ext_syms_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax native_ext_syms_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Native VM external symbols table syntax validation failed: " ^ err));
-  (match Toolchain.Cpp_validator.validate_cpp_syntax native_consts_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax native_consts_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Native VM constants tables syntax validation failed: " ^ err));
   assert (String.length native_ext_syms_cpp > 50);
@@ -492,10 +492,10 @@ let () =
   let stack_consts_decls = Stack_vm.Stack_runtime.emit_stack_constants_tables_ast [ ("cfg", "alpha_beta"); ("key", "12345678") ] in
   let stack_ext_syms_cpp = render_top_decl stack_ext_syms_decl in
   let stack_consts_cpp = render_top_decls stack_consts_decls in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax stack_ext_syms_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax stack_ext_syms_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Stack-VM external symbols table syntax validation failed: " ^ err));
-  (match Toolchain.Cpp_validator.validate_cpp_syntax stack_consts_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax stack_consts_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Stack-VM constants tables syntax validation failed: " ^ err));
   assert (String.length stack_ext_syms_cpp > 50);
@@ -514,7 +514,7 @@ let () =
     ret_void;
   ] in
   let sdk_cpp = render_top_decls [ pragma_decl; macro_decl1; macro_decl2; dowhile_fn ] in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax sdk_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax sdk_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Core SDK pragma/macro/dowhile validation failed: " ^ err));
   assert (String.contains sdk_cpp '#');
@@ -524,7 +524,7 @@ let () =
   let spans = [ (0, 32); (32, 64); (96, 48) ] in
   let native_spans_decls = Native_vm.Vm_runtime_emitter.emit_block_spans_tables_ast spans in
   let native_spans_cpp = render_top_decls native_spans_decls in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax native_spans_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax native_spans_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Native VM block spans tables validation failed: " ^ err));
   assert (contains_str native_spans_cpp "g_num_blocks");
@@ -551,7 +551,7 @@ let () =
       ()
   in
   let stack_tables_cpp = render_top_decls stack_tables_decls in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax stack_tables_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax stack_tables_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Stack-VM block tables validation failed: " ^ err));
   assert (contains_str stack_tables_cpp "g_stack_block_offsets_0");
@@ -567,7 +567,7 @@ let () =
     ~base_runtime_source:"namespace vanguard_threaded_vm { struct BaseCtx {}; }\n"
     ()
   in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax nested_vm_hdr_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax nested_vm_hdr_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Multi-VM header syntax validation failed: " ^ err));
   assert (contains_str nested_vm_hdr_cpp "ASGARD_MULTI_VM_ENABLED");
@@ -604,7 +604,7 @@ let () =
     ]
   in
   let preproc_test_cpp = render_top_decls [ preproc_test_decl ] in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax preproc_test_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax preproc_test_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Core SDK Preproc and ComputedGoto validation failed: " ^ err));
   assert (contains_str preproc_test_cpp "#ifndef TEST_GUARD");
@@ -699,7 +699,7 @@ let () =
   assert (contains_str native_runtime_cpp "execute_threaded");
   assert (contains_str native_runtime_cpp "asgard_vm_call");
   assert (contains_str native_runtime_cpp "vanguard/platform_compat.hpp");
-  (match Toolchain.Cpp_validator.validate_cpp_syntax native_runtime_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax native_runtime_cpp with
    | Ok () -> ()
    | Error err -> failwith ("Native runtime header syntax validation failed: " ^ err));
   Printf.printf "[PASS] Step 40: Native Threaded VM pure typed EDSL AST and header emission validated.\n";
@@ -738,7 +738,7 @@ let () =
   assert (contains_str jit_full_cpp "execute_jit_function");
   assert (contains_str jit_full_cpp "namespace vanguard_threaded_vm");
   assert (contains_str jit_full_cpp "asgard_vm_call");
-  (match Toolchain.Cpp_validator.validate_cpp_syntax jit_full_cpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax jit_full_cpp with
    | Ok () -> ()
    | Error err -> failwith ("RD-JIT runtime header syntax validation failed: " ^ err));
   (* 43. Tech-2601 complete typed C++20 EDSL runtime header emission & AST validation *)
@@ -761,7 +761,7 @@ let () =
   assert (contains_str tech_2601_header_str "compute_container_mac");
   assert (contains_str tech_2601_header_str "tech_2601_unseal");
   assert (contains_str tech_2601_header_str "tech_2601_resolve_exception");
-  (match Toolchain.Cpp_validator.validate_cpp_syntax tech_2601_header_str with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax tech_2601_header_str with
    | Ok () -> ()
    | Error err -> failwith ("Tech-2601 runtime header syntax validation failed: " ^ err));
   (if Sys.file_exists "transforms/anti_analysis/shadow_unwind" then begin
@@ -864,7 +864,7 @@ let () =
     }
   ] in
   let rendered_unit = render_header_unit full_unit in
-  (match Toolchain.Cpp_validator.validate_cpp_syntax rendered_unit with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax rendered_unit with
    | Ok () -> ()
    | Error err -> failwith ("Preproc test header syntax validation failed: " ^ err));
   Printf.printf "[PASS] Step 44: First-class preprocessor EDSL combinators (#if, #elif, #else, #endif, #define) verified without garbage.\n";
@@ -894,7 +894,7 @@ let () =
   assert (contains_str obf_mem_hpp "oblivious_load_u64");
   assert (contains_str obf_mem_hpp "oblivious_store_u64");
   assert (contains_str obf_mem_hpp "namespace asgard::oblivious_mem");
-  (match Toolchain.Cpp_validator.validate_cpp_syntax obf_mem_hpp with
+  (match Compiler_adapter.Cpp_validator.validate_cpp_syntax obf_mem_hpp with
    | Ok () -> ()
    | Error err -> failwith ("Oblivious memory header C++ syntax validation failed: " ^ err));
 

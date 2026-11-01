@@ -1,6 +1,6 @@
 open Vm_ir
 open Vm_transform
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type vm_package = {
   bytecode : int64 list;
@@ -295,7 +295,7 @@ let compile_and_package_multi
           max 1 (min mba_max_depth (mba_depth + jitter))
         in
         let ir_eg_cfg =
-          { Mba_engine.Egraph.
+          { Mba_synthesis.Egraph.
             node_limit = ir_eg_nodes;
             time_budget_s = float_of_int ir_eg_ms /. 1000.0;
             iter_limit = block_mba_depth }
@@ -320,14 +320,14 @@ let compile_and_package_multi
                       try
                         match mba_engine with
                         | `Egraph ->
-                            Mba_engine.Egraph.obfuscate_alu ~config:ir_eg_cfg ~rng:brng ~dst ~src1 ~src2 op
-                        | `Poly   -> Mba_engine.Mba.obfuscate_alu ~rng:brng ~depth:block_mba_depth ~dst ~src1 ~src2 op
-                        | `Ncfg   -> Mba_engine.Ncfg_synth.obfuscate_alu ~rng:brng ~depth:block_mba_depth ~dst ~src1 ~src2 op
-                        | `Nullspace -> Mba_engine.Nullspace_synth.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
+                            Mba_synthesis.Egraph.obfuscate_alu ~config:ir_eg_cfg ~rng:brng ~dst ~src1 ~src2 op
+                        | `Poly   -> Mba_synthesis.Mba.obfuscate_alu ~rng:brng ~depth:block_mba_depth ~dst ~src1 ~src2 op
+                        | `Ncfg   -> Mba_synthesis.Ncfg_synth.obfuscate_alu ~rng:brng ~depth:block_mba_depth ~dst ~src1 ~src2 op
+                        | `Nullspace -> Mba_synthesis.Nullspace_synth.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op
                         | `Gpu_metal -> (
                             match gpu_mba_pool with
                             | Some gpool -> Gpu_synth.Gpu_mba.obfuscate_alu ~pool:gpool ~rng:brng ~dst ~src1 ~src2 op
-                            | None -> Mba_engine.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op)
+                            | None -> Mba_synthesis.Egraph.obfuscate_alu ~rng:brng ~dst ~src1 ~src2 op)
                       with _ ->
                         [ Ir.Alu { op; dst; src1; src2; set_flags = false } ])
                 | other -> [ other ])

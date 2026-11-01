@@ -104,7 +104,7 @@ val report_to_string : metrics_report -> string
 val evaluate_drs_v2 :
   bytecode:int64 list ->
   ir_func:Vm_ir.Ir.func ->
-  mba_asts:Mba_engine.Mba.expr list ->
+  mba_asts:Mba_synthesis.Mba.expr list ->
   drs_v2_report
 
 

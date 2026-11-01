@@ -1,4 +1,4 @@
 (library
  (name bytecode_crypto)
  (public_name asgard.bytecode_crypto)
- (libraries vm_ir mba_engine random_visa_constants))
+ (libraries vm_ir mba_synthesis constants))

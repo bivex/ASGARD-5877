@@ -3,7 +3,7 @@
     directly into the encoded registers of the called VM (Callee, codec \phi_2)
     without decrypting them into plaintext and without exiting to the native ABI (VM_EXIT). *)
 
-open Mba_engine.Metamorphic_ring
+open Mba_synthesis.Metamorphic_ring
 
 type transition_morphism = {
   scale : int64;  (** M = a_callee * a_caller^{-1} mod 2^64 *)

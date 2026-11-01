@@ -112,7 +112,7 @@ let () =
   let n = 1000 in
   let t0 = Unix.gettimeofday () in
   for _ = 1 to n do
-    ignore (Mba_engine.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 Ir.Add)
+    ignore (Mba_synthesis.Egraph.obfuscate_alu ~rng ~dst ~src1 ~src2 Ir.Add)
   done;
   let t1 = Unix.gettimeofday () in
   Printf.printf "\n1 Egraph.obfuscate_alu ADD: %.2f µs avg (n=%d)\n%!"

@@ -1,4 +1,0 @@
-(library
- (name mba_engine)
- (public_name asgard.mba_engine)
- (libraries vm_ir random_visa_constants))

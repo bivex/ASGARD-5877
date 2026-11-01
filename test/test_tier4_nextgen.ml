@@ -6,7 +6,7 @@ module Ent = Native_vm.Variable_entangler
 module Omem = Native_vm.Oblivious_mem
 module Hbridge = Nested_vm.Homomorphic_bridge
 module Njit = Jit_vm.Nano_jit_slot
-module Ring = Mba_engine.Metamorphic_ring
+module Ring = Mba_synthesis.Metamorphic_ring
 
 (* Test 0: Verification of the P0-01 hotfix (Cycle Decomposition for cycles of length >= 3) *)
 let test_p0_cycle_permutation_fix () =

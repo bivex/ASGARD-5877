@@ -4,8 +4,8 @@
     1. Horner Polynomial Constant Synthesis (destruction of explicit constants):
        PushImm C → polynomial of degree horner_degree with t_0 masking.
     2. Carry-Chain Add/Sub: two-stage ripple via the minterm basis
-       NOR/NAND (bridge to Mba_engine.Nullspace_mba) + ring twist
-       k_odd * k_inv (Mba_engine.Metamorphic_ring). With live flags the
+       NOR/NAND (bridge to Mba_synthesis.Nullspace_mba) + ring twist
+       k_odd * k_inv (Mba_synthesis.Metamorphic_ring). With live flags the
        replacement ends with a hidden re-definition of CC_OP_ADD/SUB on the
        saved operands (sx, sy) — a PushFlags wrapper is
        incorrect here (it would restore the pre-command flags).

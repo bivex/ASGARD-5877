@@ -3,8 +3,8 @@ open Domain
 
 (* Test suite for the metamorphic ISA, the homomorphic ring and hardening *)
 module Isa = Isa_metamorphic_synth
-module Ring = Mba_engine.Metamorphic_ring
-module Nullspace = Mba_engine.Nullspace_mba
+module Ring = Mba_synthesis.Metamorphic_ring
+module Nullspace = Mba_synthesis.Nullspace_mba
 module Perm = Native_vm.Context_permutation
 
 let test_mixed_radix_roundtrip () =

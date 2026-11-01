@@ -1,5 +1,5 @@
 open Int64
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type frame_scrambler = {
   n_slots   : int;

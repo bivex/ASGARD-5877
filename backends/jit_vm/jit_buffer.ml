@@ -3,7 +3,7 @@
    Typed C++20 / C11 EDSL Declarations *)
 
 open Cpp_codegen.Cpp_ast
-module Magic_numbers = Random_visa_constants.Magic_numbers
+module Magic_numbers = Constants.Magic_numbers
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
 

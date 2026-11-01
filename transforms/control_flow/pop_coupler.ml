@@ -1,5 +1,5 @@
 open Vm_ir
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 type pop_config = {
   digest_reg : Register.t;

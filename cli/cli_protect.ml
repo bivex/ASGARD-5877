@@ -1,7 +1,7 @@
 open Cmdliner
 open Contracts
 open Protect_ports
-open Pipeline
+open Application
 
 (* 7. PROTECT COMMAND (Automated x86_64 & C/C++ VM-Protector Pipeline via Hexagonal Architecture) *)
 let run_protect input_file out_dir seed config_file preset enable_cff enable_mba mba_depth enable_multi_vm engine enable_jit compile debug_symbols dump_bytecode watermark emulation_stall comp_stall_iterations comp_stall_variant comp_stall_seed =

@@ -1,7 +1,7 @@
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
 open Cpp_codegen.Cpp_printer
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let emit_handler_ast b label (stmts : stmt list) =
   Buffer.add_string b (Printf.sprintf "    %s: {\n" label);

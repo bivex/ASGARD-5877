@@ -2,7 +2,7 @@ open Domain
 open Codec_types
 open Cpp_codegen.Cpp_ast
 open Cpp_codegen.Cpp_dsl
-open Random_visa_constants.Magic_numbers
+open Constants.Magic_numbers
 
 let emit_cpp_decoder (t : t) (spec : Vector_isa_spec.t) =
   let find_field kind =

@@ -29,7 +29,7 @@
 open Stack_vm
 open Stack_ir
 open Vm_ir
-module Magic_numbers = Random_visa_constants.Magic_numbers
+module Magic_numbers = Constants.Magic_numbers
 
 module C = Stack_jit_chunker
 

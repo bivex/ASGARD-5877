@@ -21,7 +21,7 @@
 
 open Stack_ir
 open Vm_ir
-module Magic_numbers = Random_visa_constants.Magic_numbers
+module Magic_numbers = Constants.Magic_numbers
 
 type jit_item = string * int * int * int64
 (* (JIT_OP_* symbol, dst slot, src slot, immediate) *)

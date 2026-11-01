@@ -2,5 +2,5 @@
  (name native_vm)
  (public_name asgard.native_vm)
  (preprocess (pps ppx_deriving_yojson))
- (libraries domain contracts vm_ir mba_engine control_flow yojson ppx_deriving_yojson.runtime domainslib gpu_synth cpp_codegen random_visa_constants isa_codegen runtime_services runtime_probes protection_metrics protection_config))
+ (libraries domain contracts vm_ir mba_synthesis control_flow yojson ppx_deriving_yojson.runtime domainslib gpu_synth cpp_codegen constants isa_codegen runtime_services runtime_probes protection_metrics protection_config))
 
