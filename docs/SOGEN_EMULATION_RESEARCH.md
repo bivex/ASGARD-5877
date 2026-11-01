@@ -232,3 +232,37 @@ While Sogen successfully replicates Windows user-mode DLL environments, several 
    * Instructions such as `dc cvau` or `mrs` that fail under Unicorn user-mode can be used as canary probes: if an illegal instruction exception (`STATUS_ILLEGAL_INSTRUCTION`) is raised, execution is routed directly into the decoy manifold.
 3. **Synthetic Process Environment Discrepancies**:
    * Checking memory mapping tags of standard shared memory areas (e.g. `KUSER_SHARED_DATA` at `0x7FFE0000`) for missing fields populated exclusively by real Windows NT kernels.
+
+---
+
+## 6. Academic Foundations of the VDF Stalling Pass (arXiv Research)
+
+To fundamentally neutralize emulation and automated dynamic symbolic deobfuscation (DSE), ASGARD-5877 integrates the dedicated **`Stack_vdf_stall_pass`** (`backends/stack_vm/passes/stack_vdf_stall_pass.ml`) based on academic research:
+
+### 6.1 Academic References
+
+1. **Verifiable Delay Functions (VDF) & Sequential Squaring**:
+   * *Souvik Sur. "Single Squaring Verifiable Delay Function from Time-lock Puzzle in the Group of Known Order"*, [arXiv:2211.08162](https://arxiv.org/abs/2211.08162), 2023.
+   * Eliminates parallelization shortcuts on multi-threaded CPUs/GPUs via inherently sequential squaring:
+     $$x_{k+1} = (x_k \times x_k) \pmod P \quad \text{where } P = \mathtt{0xFFFFFFFB} \ (4,294,967,291)$$
+   * Because $P < 2^{32}$, squaring $x^2 < 2^{64}$ executes in standard 64-bit integer registers without 128-bit overflow.
+
+2. **Emulator Architectural Inconsistencies & SoftMMU Thrashing**:
+   * *Muhui Jiang et al. "Automatically Locating ARM Instructions Deviation between Real Devices and CPU Emulators"*, [arXiv:2105.14273](https://arxiv.org/abs/2105.14273), 2021.
+   * Emulators (Unicorn, QEMU, Sogen) systematically deviate on memory page translation, unhandled user-mode system registers (`mrs`), and user-mode cache clears (`dc cvau`).
+   * Sparse 16-page memory thrashing across the 1MB preallocated host stack forces Unicorn SoftMMU to continuously miss its software TLB lines.
+
+3. **Non-Monotonic Data-Coupled Stalling (Anti-Loop-Detection)**:
+   * *Christopher Kruegel, Engin Kirat, Giovanni Vigna. "The Power of Procrastination: Detection and Mitigation of Execution-Stalling Malicious Code"*, ACM CCS 2011.
+   * Automated sandboxes detect linear decrementing counters (`dec counter; jnz loop`) via induction variable analysis.
+   * `Stack_vdf_stall_pass` replaces linear counters with a non-monotonic Collatz-style chaotic orbit:
+     $$\text{even: } s_{k+1} = (s_k \gg 1) \oplus x_{k+1} \qquad \text{odd: } s_{k+1} = (3 \times s_k + \mathtt{0x5877L}) \pmod{2^{64}}$$
+   * Sandboxes and SMT solvers cannot identify loop bounds statically.
+
+### 6.2 Dual-Rail Termination Coupling
+
+Termination states $(x_N, s_N)$ are precomputed at compile time. At runtime, the pass computes:
+$$\Delta = (x_N^{\text{runtime}} - x_N^{\text{expected}}) + (s_N^{\text{runtime}} - s_N^{\text{expected}})$$
+If the loop is skipped or fast-forwarded:
+$$\Delta \ne 0 \implies \mathtt{ctx[0]} \mathrel{+}= \Delta \quad \text{and} \quad \mathtt{vSP} \mathrel{+}= \Delta$$
+The guest register and stack pointer are desynchronized, guaranteeing an immediate crash upon leaving the stall block.

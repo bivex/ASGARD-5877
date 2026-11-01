@@ -233,6 +233,7 @@ let comp_stall_chebyshev_salt = 0x5877C4E051C11337L
 let comp_stall_ergodic_c = 0x58771337CAFEBEEFL
 let comp_stall_two_adic_c3 = 0x13375877DEADBEEFL
 let comp_stall_two_adic_c2 = 0xCAFEBABE01000002L
+let comp_stall_vdf_prime = 0xFFFFFFFBL
 
 (* Memory-Address Entanglement constants: 8-byte aligned scratch offset window within 64B cache line *)
 let mem_webbing_offset_mask = 0x38L
@@ -614,6 +615,10 @@ let registry : entry list = [
     value = comp_stall_two_adic_c2;
     source = "hex-speak CAFE + BABE + 01000002: degree 2 even coefficient for 2-adic Hensel-Newton solver";
     used_in = [ "lib/emulation_stall/comp_stall_engine.ml"; "lib/emulation_stall/asg_emulation_stall.hpp" ] };
+  { name = "comp_stall_vdf_prime";
+    value = comp_stall_vdf_prime;
+    source = "Largest 32-bit prime modulus p = 4294967291 for single-word 64-bit VDF squaring without 128-bit overflow (arXiv:2211.08162)";
+    used_in = [ "backends/stack_vm/passes/stack_vdf_stall_pass.ml" ] };
   { name = "mem_webbing_offset_mask";
     value = mem_webbing_offset_mask;
     source = "bitmask 0x38 (00111000b): bounds scratch offset to 0..56, strictly within one 64B L1D cache line";

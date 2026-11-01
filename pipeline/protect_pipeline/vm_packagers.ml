@@ -762,7 +762,12 @@ module Stack_vm_packager : Vm_packager = struct
         Runtime_services.Logger.infof ~loc:__LOC__ ~section:"STACK_VM"
           "  ├─ [Bytecode-Stall] Injecting dynamical stall into bytecode (N=%d, variant=%s, seed=0x%016LX)"
           iters variant seed;
-        let prog_stalled = Stack_vm.Stack_stall_pass.apply_stall ~ctx ~config:{ n_iterations = iters; seed; variant } prog in
+        let prog_stalled =
+          if variant = "vdf" || variant = "vdf_chaotic" then
+            Stack_vm.Stack_vdf_stall_pass.apply_vdf_stall ~ctx ~config:{ n_iterations = iters; seed; sparse_pages = 16 } prog
+          else
+            Stack_vm.Stack_stall_pass.apply_stall ~ctx ~config:{ n_iterations = iters; seed; variant } prog
+        in
         Stack_vm.Stack_provenance.record_pass tracker
           ~name:"Computational Stalling"
           ~phase:"0-stall"

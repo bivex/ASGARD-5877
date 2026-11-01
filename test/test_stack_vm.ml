@@ -2395,6 +2395,20 @@ let test_bytecode_stall_execution () =
   Alcotest.(check int64) "Original entry executed (ctx[1]=42)" 42L (get_reg st 1);
   Alcotest.(check int64) "ctx[0] untouched (0)" 0L (get_reg st 0)
 
+let test_bytecode_vdf_stall_execution () =
+  let orig_prog = make_program 0 [
+    make_block 0 "entry" [
+      PushImm 77L; PopReg 1; Exit
+    ]
+  ] 4 in
+  let stalled = Stack_vdf_stall_pass.apply_vdf_stall ~config:{ n_iterations = 100; seed = 0x13375877CAFEBABEL; sparse_pages = 16 } orig_prog in
+  let st = run_program stalled in
+  let x_n, s_n = Stack_vdf_stall_pass.compute_vdf_key ~seed:0x13375877CAFEBABEL ~n_iterations:100 in
+  Alcotest.(check bool) "VDF key material computed" true (x_n <> 0L && s_n <> 0L);
+  Alcotest.(check bool) "VDF Stalled program halted" true st.halted;
+  Alcotest.(check int64) "Original entry executed (ctx[1]=77)" 77L (get_reg st 1);
+  Alcotest.(check int64) "ctx[0] untouched (0)" 0L (get_reg st 0)
+
 let test_avid_junk_operands () =
   let ctx = Context_allocator.create () in
   let b0 = make_block 0 "entry" [
@@ -3654,6 +3668,7 @@ let tests = [
   ("Stack Budget Regulator", `Quick, test_stack_budget_regulator);
   ("Stack IR Primitives", `Quick, test_stack_ir_primitives);
   ("Bytecode Stall Execution", `Quick, test_bytecode_stall_execution);
+  ("Bytecode VDF Stall Execution", `Quick, test_bytecode_vdf_stall_execution);
   ("Atomic_mem & Fp_conv Stack-VM Lowering", `Quick, test_atomic_mem_and_fp_conv_stack);
   ("Dup2 & Rot Semantics, Invariants & Codec", `Quick, test_dup2_rot_eval_and_encoder);
   ("Context Allocator & Randomization", `Quick, test_context_allocator);
