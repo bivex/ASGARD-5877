@@ -8,7 +8,8 @@ let normalize_json (json : Yojson.Safe.t) : Yojson.Safe.t =
       let fields' =
         if has_comp_stall && not has_emu_stall then
           let stall_val = List.assoc "comp_stall" fields in
-          ("emulation_stall", stall_val) :: fields
+          let remaining = List.remove_assoc "comp_stall" fields in
+          ("emulation_stall", stall_val) :: remaining
         else fields
       in
       `Assoc fields'

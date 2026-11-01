@@ -84,7 +84,7 @@ let apply_vdf_stall ?ctx ?(config = default_config) (prog : program) : program =
           let ss = Context_allocator.alloc_scratch c in
           let ta = Context_allocator.alloc_scratch c in
           let tb = Context_allocator.alloc_scratch c in
-          let sp = Context_allocator.slot_of_reg c Vm_ir.Register.rsp in
+          let sp = 4 in
           (sc, sx, ss, ta, tb, sp, max prog.context_slots (Context_allocator.total_slots c))
       | None ->
           let base = max 6 prog.context_slots in
@@ -144,7 +144,7 @@ let apply_vdf_stall ?ctx ?(config = default_config) (prog : program) : program =
     let mem_touch_ops = [
       PushReg slot_sp;
       PushReg slot_s;
-      PushImm 0xF000L;
+      PushImm 0x7000L;
       Nand;
       Dup;
       Nand;
