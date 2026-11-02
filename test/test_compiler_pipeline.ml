@@ -221,6 +221,73 @@ let test_equivalence_catches_flags_mismatch () =
   | Error { kind = Equivalence.FlagsMismatch _; _ } -> ()
   | Error disc -> fail ("Expected FlagsMismatch error, got: " ^ disc.details)
   | Ok () -> fail "Expected equivalence failure when flags differ"
+let test_real_corpus_openssl_diversification_equivalence () =
+  (* Reproduces the failure behind scripts/run_real_world_benchmarks.sh target
+     "openssl" (2026-11-02): the protected binary crashed with SIGSEGV and its
+     self-verification printed FAIL, while the packager had logged
+     "Stage 7 (Differential Equivalence Assertion) Failed ... (retrying with
+     unverified pipeline)".  This test runs the exact front half of that
+     pipeline - clang -S (arm64) over examples/real_corpus/openssl_sha256.c,
+     marker lift to VM-IR - and requires Ir_pipeline.compile to produce a
+     diversification that is differentially equivalent to the original for a
+     spread of seeds.  It must fail at the miscompiling stage itself, before
+     Threaded_vm_packager.transform_func can swallow the error and ship the
+     unverified func. *)
+  let candidates =
+    [ "openssl_sha256.c";
+      "examples/real_corpus/openssl_sha256.c";
+      "../examples/real_corpus/openssl_sha256.c" ]
+  in
+  let src = match List.find_opt Sys.file_exists candidates with
+    | Some p -> p
+    | None ->
+        fail (Printf.sprintf
+                "examples/real_corpus/openssl_sha256.c not found (CWD=%s)"
+                (Sys.getcwd ()))
+  in
+  let f =
+    Test_helpers.with_temp_dir (fun tmp_dir ->
+      let asm_path = Filename.concat tmp_dir "app_arm64.s" in
+      (* asgard_obf.h ships one level above the corpus dir (examples/). *)
+      let inc_dir =
+        Filename.dirname (Filename.dirname src) ^ ":" ^ Filename.dirname src
+      in
+      (match Protect_pipeline.Clang_toolchain_adapter.compile_to_asm
+              ~arch:Contracts.Protect_ports.Arm64
+              ~c_source:src
+              ~out_asm:asm_path
+              ~include_dir:inc_dir with
+       | Error err -> fail ("clang -S failed: " ^ err)
+       | Ok () -> ());
+      let asm_text = Test_helpers.read_file_string asm_path in
+      match Protect_pipeline.Arm64_lifter_adapter.lift_source asm_text with
+      | Error err -> fail ("arm64 lift failed: " ^ err)
+      | Ok (ir_func, _constants) ->
+          let lifted : Ir.func = Contracts.Protect_ports.unwrap_ir ir_func in
+          check string "lifted corpus function name"
+            "openssl_sha256_transform" lifted.name;
+          lifted)
+  in
+  let master_seeds =
+    [ 0x1L; 0x2L; 0x3L; 0x5877L;
+      0xCAFE13375877AABBL; 0x9999888877776666L;
+      0xDEADBEEFCAFEBABEL; 0x58771337CAFEBABEL ]
+  in
+  List.iter (fun master ->
+      match Ir_pipeline.compile
+              ~seed:(Seed.create ~master_seed:master ())
+              ~verify_equivalence:true f with
+      | Ok res ->
+          check bool
+            (Printf.sprintf "seed 0x%016Lx: equivalence verified" master)
+            true res.equivalence_verified
+      | Error msg ->
+          fail (Printf.sprintf
+                  "seed 0x%016Lx: IR diversification is NOT equivalent to the \
+                   lifted original - this is the miscompilation that the \
+                   benchmark ships through the unverified-pipeline fallback: %s"
+                  master msg))
+    master_seeds
 
 let tests = [
   ("Seed Determinism", `Quick, test_seed_determinism);
@@ -236,5 +303,6 @@ let tests = [
   ("Equivalence Catches Callee-Saved Clobber", `Quick, test_equivalence_catches_callee_saved_clobber);
   ("Equivalence Catches Memory Mismatch", `Quick, test_equivalence_catches_memory_mismatch);
   ("Equivalence Catches Flags Mismatch", `Quick, test_equivalence_catches_flags_mismatch);
+  ("Real-Corpus OpenSSL Diversification Equivalence", `Slow, test_real_corpus_openssl_diversification_equivalence);
 ]
 

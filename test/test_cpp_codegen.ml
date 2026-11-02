@@ -910,6 +910,38 @@ let () =
   } in
   assert (not (Protection_types.oblivious_memory_enabled (Some disabled_cfg)));
   Printf.printf "[PASS] Step 45: Oblivious Memory layout and Decoy Access Engine verified with crash-safe boundary loads and dual stores.\n"
+;
+
+  (* ========================================================================= *)
+  (* Step 46: Emitted threaded-VM header must be self-contained                *)
+  (*                                                                          *)
+  (* Regression (2026-11-02): Cpp_printer renders the AlwaysInline / NoInline *)
+  (* attributes as the ASG_FORCEINLINE / ASG_NOINLINE macros, but            *)
+  (* emit_cpp_threaded_header never defined them, so any consumer that does   *)
+  (* not prepend Cpp_compat.preamble (runner.cpp written next to the header,  *)
+  (* Test_helpers.compile_and_prepare_vm, the "Native Threaded VM" suite)     *)
+  (* failed with "unknown type name 'ASG_FORCEINLINE'".                       *)
+  (* ========================================================================= *)
+  let sc_rng = Random.State.make [| 0x5877; 0xFEED |] in
+  let sc_opcodes = Array.make 256 "H_NOP" in
+  let self_contained_hdr =
+    Native_vm.Vm_runtime_emitter.emit_cpp_threaded_header
+      ~rng:sc_rng ~key_seed:0x5877CAFEl ~reg_perm ~expected_hash:0x1234567890ABCDEFL
+      sc_opcodes
+  in
+  assert (contains_str self_contained_hdr "ASG_FORCEINLINE");
+  assert (contains_str self_contained_hdr "#define ASG_FORCEINLINE");
+  let sc_hdr_path = Filename.temp_file "asgard_selfcontained" ".hpp" in
+  let oc_sc = open_out sc_hdr_path in
+  output_string oc_sc self_contained_hdr;
+  close_out oc_sc;
+  let sc_syntax_st =
+    Sys.command (Printf.sprintf "clang++ -std=c++20 -fsyntax-only %s" sc_hdr_path)
+  in
+  Sys.remove sc_hdr_path;
+  if sc_syntax_st <> 0 then
+    failwith "Step 46: emitted threaded_vm.hpp does not compile standalone (ASG_* macros undefined)";
+  Printf.printf "[PASS] Step 46: emitted threaded-VM header is self-contained (defines ASG_* and compiles standalone).\n"
 
 
 

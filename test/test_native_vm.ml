@@ -539,6 +539,90 @@ let test_domain_salt_optimizer () =
   Alcotest.(check bool) "optimized salts flatten slot frequency variance" true
     (optimized_var < unpermuted_var)
 
+(* ── Regression: full threaded-VM protection of the OpenSSL corpus target ──
+
+   End-to-end repro of scripts/run_real_world_benchmarks.sh target "openssl":
+   protect-arm64 (CFF + MBA, threaded engine) over
+   examples/real_corpus/openssl_sha256.c, then execute the protected binary.
+   Status 2026-11-02: the protected binary dies with SIGSEGV (shell status
+   139) inside H_LOAD_32 -> oblivious_load_u32 with a garbage base register,
+   because Threaded_vm_packager ships the Stage-7-unverified diversification
+   (see the "Real-Corpus OpenSSL Diversification Equivalence" case in the
+   Compiler Pipeline suite).  It must instead run to completion and print
+   "Verification: PASS". *)
+let test_threaded_vm_openssl_corpus_e2e () =
+  let candidates =
+    [ "openssl_sha256.c";
+      "examples/real_corpus/openssl_sha256.c";
+      "../examples/real_corpus/openssl_sha256.c" ]
+  in
+  let example_c = match List.find_opt Sys.file_exists candidates with
+    | Some p -> p
+    | None ->
+        Alcotest.fail (Printf.sprintf
+            "examples/real_corpus/openssl_sha256.c not found (CWD=%s)"
+            (Sys.getcwd ()))
+  in
+  with_temp_dir (fun tmp_dir ->
+      let module Arm64_adapter = Protect_pipeline.Arm64_lifter_adapter in
+      let module C_macro_adapter = Protect_pipeline.C_macro_obf_adapter in
+      let module Trampoline_adapter = Protect_pipeline.C_trampoline_adapter in
+      let module Toolchain_adapter = Protect_pipeline.Clang_toolchain_adapter in
+      let module Vm_packager_adapters = Protect_pipeline.Vm_packagers in
+
+      let lifter = (module Arm64_adapter : Contracts.Protect_ports.Lifter) in
+      let c_macro_obfuscator =
+        (module C_macro_adapter : Contracts.Protect_ports.C_macro_obfuscator) in
+      let trampoline_engine =
+        (module Trampoline_adapter.C_trampoline_engine : Contracts.Protect_ports.Trampoline_engine) in
+      let toolchain = (module Toolchain_adapter : Contracts.Protect_ports.Toolchain) in
+      let vm_packager =
+        (module Vm_packager_adapters.Threaded_vm_packager : Contracts.Protect_ports.Vm_packager) in
+
+      let raw_cfg : Protection_config.t =
+        { Protection_config.default with arch = `AArch64 }
+      in
+      let cfg = Protect_pipeline.Config_adapter.wrap raw_cfg in
+      let rng = Random.State.make [| 0x5877; 0xCAFE |] in
+      match
+        Application.Protect_orchestrator.run
+          ~lifter
+          ~c_macro_obfuscator
+          ~vm_packager
+          ~trampoline_engine
+          ~toolchain
+          ~rng
+          ~config:cfg
+          ~input_file:example_c
+          ~out_dir:tmp_dir
+          ~compile_and_run:false
+          ()
+      with
+      | Error err -> Alcotest.fail ("pipeline failed: " ^ err)
+      | Ok _res ->
+          let virt_cpp = Filename.concat tmp_dir "app_virtualized.cpp" in
+          Alcotest.(check bool) "app_virtualized.cpp exists" true
+            (Sys.file_exists virt_cpp);
+          (* -O0: identical VM semantics, but seconds of clang++ time instead
+             of the minute that -O3 needs for the ~1.5 MB runtime header. *)
+          let bin_path = Filename.concat tmp_dir "protected_openssl_app" in
+          let comp_cmd =
+            Printf.sprintf
+              "clang++ -std=c++20 -O0 -Wno-format-security -fno-rtti \
+               -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables \
+               -I%s %s -o %s"
+              tmp_dir virt_cpp bin_path
+          in
+          Alcotest.(check int) "clang++ build succeeds" 0 (Sys.command comp_cmd);
+          let status, out_str =
+            run_command_capture (Printf.sprintf "%s 1 2>&1" bin_path)
+          in
+          Alcotest.(check bool)
+            "protected binary runs to completion (no SIGSEGV)"
+            true (status = Unix.WEXITED 0);
+          Alcotest.(check bool) "protected binary self-verifies"
+            true (string_contains out_str "Verification: PASS"))
+
 
 
 let tests = [
@@ -558,4 +642,5 @@ let tests = [
   Alcotest.test_case "self_escalating_pressure_manifold" `Slow test_self_escalating_pressure_manifold;
   Alcotest.test_case "decoy_synth_and_manifold_routing" `Quick test_decoy_synth_and_manifold_routing;
   Alcotest.test_case "domain_salt_optimizer" `Quick test_domain_salt_optimizer;
+  Alcotest.test_case "threaded_vm_openssl_corpus_e2e" `Slow test_threaded_vm_openssl_corpus_e2e;
 ]
