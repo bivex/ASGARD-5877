@@ -255,22 +255,8 @@ let poly_unhash64_dyn hparams y =
   unshift_xor_right w0 hparams.s1
 
 let emit_poly_hash64 ?(rng = None) ~hparams ~dst ~src ~scratch () =
-  let jitter () =
-    match rng with
-    | None -> []
-    | Some r ->
-        match Random.State.int r 4 with
-        | 0 -> []
-        | 1 -> [
-            Ir.Alu { op = Ir.Xor; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Reg scratch; set_flags = false }
-          ]
-        | 2 -> [
-            Ir.Alu { op = Ir.Rol; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 7L; set_flags = false }
-          ]
-        | _ -> [
-            Ir.Alu { op = Ir.Add; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 0x1337L; set_flags = false }
-          ]
-  in
+  let _ = rng in
+  let jitter () = [] in
   [
     Ir.Mov { dst = Ir.Reg dst; src = Ir.Reg src };
     Ir.Mov { dst = Ir.Reg scratch; src = Ir.Reg dst };
@@ -607,25 +593,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         let right_target = build_tree (mid + 1) high in
         let node_id = !next_fresh_id in
         incr next_fresh_id;
-        let jitter =
-          match Random.State.int rng 6 with
-          | 0 -> []
-          | 1 -> [
-              Ir.Alu { op = Ir.Xor; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Reg Register.vtmp0; set_flags = false };
-            ]
-          | 2 -> [
-              Ir.Alu { op = Ir.Add; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 0x1337L; set_flags = false };
-            ]
-          | 3 -> [
-              Ir.Unary { op = Ir.Not; dst = Register.vx26; src = Ir.Reg Register.vx26; set_flags = false };
-            ]
-          | 4 -> [
-              Ir.Alu { op = Ir.Rol; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 7L; set_flags = false };
-            ]
-          | _ -> [
-              Ir.Alu { op = Ir.Or; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 0x5877L; set_flags = false };
-            ]
-        in
+        let jitter = [] in
         let cmp_instr, cond, target_true, target_false =
           match Random.State.int rng 4 with
           | 0 ->
@@ -650,17 +618,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
         Ir.BlockId node_id
     in
 
-    let entry_jitter =
-      match Random.State.int rng 3 with
-      | 0 -> []
-      | 1 -> [
-          Ir.Alu { op = Ir.Xor; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Reg Register.vkey; set_flags = false };
-        ]
-      | _ -> [
-          Ir.Alu { op = Ir.Add; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Reg Register.vkey; set_flags = false };
-          Ir.Alu { op = Ir.Rol; dst = Register.vx26; src1 = Ir.Reg Register.vx26; src2 = Ir.Imm 13L; set_flags = false };
-        ]
-    in
+    let entry_jitter = [] in
 
     (* Dispatcher Hub Blocks: each hub handles its subrange of slots with dedicated entry block and tree *)
     let hub_blocks = ref [] in
@@ -755,7 +713,7 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                 | Ir.Jcc { cond; target_true = Ir.BlockId t_id; target_false = Ir.BlockId f_id } ->
                     let state_true, hub_true = get_target_info t_id in
                     let state_false, hub_false = get_target_info f_id in
-                    if hub_true = hub_false then
+                    if false && hub_true = hub_false then
                       let setup_states =
                         (if is_tainted then
                            (emit_poly_hash64 ~hparams ~dst:Register.vtmp2 ~src:pinned_reg ~scratch:Register.vtmp0 ())
@@ -782,15 +740,30 @@ let flatten_func ?(options = default_cff_options) ~rng (func : Ir.func) =
                           Ir.Jmp (Ir.BlockId hub_true);
                         ]
                       in
+                      let uses_setup_regs = function
+                        | Ir.Reg r ->
+                            let cv = Vtmp_liveness.canonical_vtmp r in
+                            cv = Some Register.vtmp0 || cv = Some Register.vtmp1
+                            || (is_tainted && cv = Some Register.vtmp2)
+                        | _ -> false
+                      in
                       (match body_rev with
-                      | Ir.Cmp { src1 = Ir.Reg _ as src1; src2 = Ir.Reg _ as src2 } :: prev_body_rev ->
-                          emit_direct_cmp src1 src2 prev_body_rev
-                      | Ir.Cmp { src1 = Ir.Reg _ as src1; src2 = Ir.Imm imm as src2 } :: prev_body_rev
-                        when imm >= -2147483648L && imm <= 2147483647L ->
-                          emit_direct_cmp src1 src2 prev_body_rev
+                      | Ir.Cmp { src1; src2 } :: prev_body_rev
+                        when not (uses_setup_regs src1) && not (uses_setup_regs src2) -> (
+                          match (src1, src2) with
+                          | (Ir.Reg _, Ir.Reg _) -> emit_direct_cmp src1 src2 prev_body_rev
+                          | (Ir.Reg _, Ir.Imm imm) when imm >= -2147483648L && imm <= 2147483647L ->
+                              emit_direct_cmp src1 src2 prev_body_rev
+                          | _ ->
+                              body @ [ Ir.Get_flags Register.vx26 ] @ setup_states @ [
+                                Ir.Set_flags (Ir.Reg Register.vx26);
+                                Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
+                                Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
+                                Ir.Jmp (Ir.BlockId hub_true);
+                              ])
                       | _ ->
-                          body @ [ Ir.Get_flags Register.vtmp3 ] @ setup_states @ [
-                            Ir.Set_flags (Ir.Reg Register.vtmp3);
+                          body @ [ Ir.Get_flags Register.vx26 ] @ setup_states @ [
+                            Ir.Set_flags (Ir.Reg Register.vx26);
                             Ir.Cmov { cond; dst = Register.vtmp1; src = Ir.Reg Register.vtmp0 };
                             Ir.Mov { dst = Ir.Reg Register.vkey; src = Ir.Reg Register.vtmp1 };
                             Ir.Jmp (Ir.BlockId hub_true);

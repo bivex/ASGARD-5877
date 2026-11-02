@@ -109,10 +109,10 @@ let build_diamond_2way ~max_id ~rng ~gpr ~target_id ~func_name =
   let len0 = Random.State.int rng 3 + 1 in
   let len1 = Random.State.int rng 4 + 2 in
   let selector_instrs = [
-    Mov { dst = Reg Register.vtmp3; src = Reg gpr };
-    Alu { op = Shr; dst = Register.vtmp3; src1 = Reg Register.vtmp3; src2 = Imm (Int64.of_int shift); set_flags = false };
-    Alu { op = And; dst = Register.vtmp3; src1 = Reg Register.vtmp3; src2 = Imm 1L; set_flags = false };
-    Cmp { src1 = Reg Register.vtmp3; src2 = Imm 0L };
+    Mov { dst = Reg Register.vx26; src = Reg gpr };
+    Alu { op = Shr; dst = Register.vx26; src1 = Reg Register.vx26; src2 = Imm (Int64.of_int shift); set_flags = false };
+    Alu { op = And; dst = Register.vx26; src1 = Reg Register.vx26; src2 = Imm 1L; set_flags = false };
+    Cmp { src1 = Reg Register.vx26; src2 = Imm 0L };
     Jcc { cond = Flags.E; target_true = BlockId junk0_id; target_false = BlockId junk1_id };
   ] in
   let junk0_block = {
@@ -148,10 +148,10 @@ let build_diamond_4way ~max_id ~rng ~gpr ~target_id ~func_name =
   let len3 = Random.State.int rng 4 + 2 in
 
   let selector_instrs = [
-    Mov { dst = Reg Register.vtmp3; src = Reg gpr };
-    Alu { op = Shr; dst = Register.vtmp3; src1 = Reg Register.vtmp3; src2 = Imm (Int64.of_int shift); set_flags = false };
-    Alu { op = And; dst = Register.vtmp3; src1 = Reg Register.vtmp3; src2 = Imm 3L; set_flags = false };
-    Cmp { src1 = Reg Register.vtmp3; src2 = Imm 1L };
+    Mov { dst = Reg Register.vx26; src = Reg gpr };
+    Alu { op = Shr; dst = Register.vx26; src1 = Reg Register.vx26; src2 = Imm (Int64.of_int shift); set_flags = false };
+    Alu { op = And; dst = Register.vx26; src1 = Reg Register.vx26; src2 = Imm 3L; set_flags = false };
+    Cmp { src1 = Reg Register.vx26; src2 = Imm 1L };
     Jcc { cond = Flags.LE; target_true = BlockId mid_left_id; target_false = BlockId mid_right_id };
   ] in
 
@@ -159,7 +159,7 @@ let build_diamond_4way ~max_id ~rng ~gpr ~target_id ~func_name =
     id = mid_left_id;
     label = Printf.sprintf "%s_dkml_%d" func_name mid_left_id;
     instrs = [
-      Cmp { src1 = Reg Register.vtmp3; src2 = Imm 0L };
+      Cmp { src1 = Reg Register.vx26; src2 = Imm 0L };
       Jcc { cond = Flags.E; target_true = BlockId junk0_id; target_false = BlockId junk1_id };
     ];
   } in
@@ -167,7 +167,7 @@ let build_diamond_4way ~max_id ~rng ~gpr ~target_id ~func_name =
     id = mid_right_id;
     label = Printf.sprintf "%s_dkmr_%d" func_name mid_right_id;
     instrs = [
-      Cmp { src1 = Reg Register.vtmp3; src2 = Imm 2L };
+      Cmp { src1 = Reg Register.vx26; src2 = Imm 2L };
       Jcc { cond = Flags.E; target_true = BlockId junk2_id; target_false = BlockId junk3_id };
     ];
   } in
@@ -195,7 +195,7 @@ let build_diamond_4way ~max_id ~rng ~gpr ~target_id ~func_name =
 
   (selector_instrs, [ mid_left_block; mid_right_block; junk0_block; junk1_block; junk2_block; junk3_block ])
 
-let transform ?(density = 0.75) ?(split_blocks = true) ~rng (f : func) : func =
+let transform ?(density = 0.75) ?(split_blocks = false) ~rng (f : func) : func =
   let max_id = ref 0 in
   Hashtbl.iter (fun id _ -> if id > !max_id then max_id := id) f.cfg.blocks;
   let all_gprs = extract_func_gprs f in

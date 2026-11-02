@@ -4,6 +4,7 @@
 
 val fuse_and_interleave_block :
   rng:Random.State.t ->
+  live_out:Register.t list ->
   Ir.basic_block ->
   Ir.basic_block
 

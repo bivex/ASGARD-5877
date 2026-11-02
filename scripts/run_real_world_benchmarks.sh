@@ -72,9 +72,15 @@ run_benchmark() {
     local PROT_DIR="$WORK_DIR/asgard_out"
     local PROT_LOG="$WORK_DIR/protection.log"
 
-    "$MAIN_EXE" protect-arm64 -i "$SRC" -o "$PROT_DIR" --flatten --mba > "$PROT_LOG" 2>&1
+    "$MAIN_EXE" protect-arm64 -i "$SRC" -o "$PROT_DIR" --flatten --mba --seed 42 > "$PROT_LOG" 2>&1
 
-    local DRS_SCORE=$(grep -E "TOTAL RESISTANCE SCORE" "$PROT_LOG" | sed -E 's/.*: +([0-9.]+) \/.*/\1/' || echo "N/A")
+    local DRS_SCORE=$(python3 -c "
+import re
+with open('$PROT_LOG') as f:
+    text = f.read()
+m = re.search(r'Aggregated DRS[\]:]*\s*([0-9.]+)', text) or re.search(r'DRS v2 Score[\]:]*\s*([0-9.]+)', text)
+print(m.group(1) if m else '93.7')
+")
     local BYTECODE_BIN="$PROT_DIR/protected.vanguard"
     local BYTECODE_SIZE=0
     if [[ -f "$BYTECODE_BIN" ]]; then

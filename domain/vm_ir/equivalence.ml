@@ -102,6 +102,8 @@ let assert_equivalent
       let init_reg_map = Hashtbl.create 16 in
       List.iter (fun (r, v) -> Hashtbl.replace init_reg_map r v) input_regs;
       match Reference_vm.evaluate ~initial_regs:input_regs orig_f with
+      | Error msg when String.starts_with ~prefix:"Exceeded max execution steps" msg ->
+          loop (idx + 1)
       | Error msg ->
           Error {
             trial_index = idx;

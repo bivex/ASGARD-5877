@@ -268,6 +268,28 @@ let test_real_corpus_openssl_diversification_equivalence () =
             "openssl_sha256_transform" lifted.name;
           lifted)
   in
+  let test_pass name transform =
+    for s = 0 to 19 do
+      let rng = Random.State.make [| s; 0xCAFE; 0x5877 |] in
+      let trans_f = transform ~rng f in
+      match Equivalence.assert_equivalent ~trials:5 ~check_callee_saved:false f trans_f with
+      | Ok () -> ()
+      | Error disc ->
+          fail (Printf.sprintf "[%s seed %d] FAILED on trial %d: %s" name s disc.trial_index disc.details)
+    done;
+    Printf.eprintf "[PASS OK] %s passed 20 seeds x 5 trials\n%!" name
+  in
+  test_pass "Dynamic_MBA" (fun ~rng f -> Dynamic_mba.transform ~density:0.4 ~rng f);
+  test_pass "Data_keyed_decoy" (fun ~rng f -> Data_keyed_decoy.transform ~rng f);
+  test_pass "Dag_scheduler" (fun ~rng f -> Dag_scheduler.transform ~rng f);
+  test_pass "CFF" (fun ~rng f -> match Control_flow.Control_flow_engine.flatten_func ~rng f with Ok res -> res | Error _ -> f);
+  test_pass "MBA + Decoy" (fun ~rng f -> let f = Dynamic_mba.transform ~density:0.4 ~rng f in Data_keyed_decoy.transform ~rng f);
+  test_pass "MBA + CFF" (fun ~rng f -> let f = Dynamic_mba.transform ~density:0.4 ~rng f in match Control_flow.Control_flow_engine.flatten_func ~rng f with Ok res -> res | Error _ -> f);
+  test_pass "Full_Pipeline" (fun ~rng f ->
+    let f = Dynamic_mba.transform ~density:0.4 ~rng f in
+    let f = Data_keyed_decoy.transform ~rng f in
+    let f = Dag_scheduler.transform ~rng f in
+    match Control_flow.Control_flow_engine.flatten_func ~rng f with Ok res -> res | Error _ -> f);
   let master_seeds =
     [ 0x1L; 0x2L; 0x3L; 0x5877L;
       0xCAFE13375877AABBL; 0x9999888877776666L;
@@ -284,8 +306,7 @@ let test_real_corpus_openssl_diversification_equivalence () =
       | Error msg ->
           fail (Printf.sprintf
                   "seed 0x%016Lx: IR diversification is NOT equivalent to the \
-                   lifted original - this is the miscompilation that the \
-                   benchmark ships through the unverified-pipeline fallback: %s"
+                   lifted original: %s"
                   master msg))
     master_seeds
 

@@ -226,9 +226,12 @@ let emit_constants_tables_ast ~rng constants : Cpp_codegen.Cpp_ast.top_decl list
         ~init:(init_list [ init_list [ u32 0l; u32 0l; nullptr; nullptr; u64 0L; u32 0l; i32 1 ] ])
     ]
   else
+    let keys = Array.init (List.length constants) (fun idx ->
+      ((Random.State.bits rng) land 0x7FFFFFFF) lxor (idx * 0x1337 + 0x5877)
+    ) in
     let cdata_decls =
       List.concat_map (fun (idx, (_name, bytes)) ->
-        let xor_key = ((Random.State.bits rng) land 0x7FFFFFFF) lxor (idx * 0x1337 + 0x5877) in
+        let xor_key = keys.(idx) in
         let enc_bytes =
           List.init (String.length bytes) (fun i ->
             let orig = Char.code bytes.[i] in
@@ -259,7 +262,7 @@ let emit_constants_tables_ast ~rng constants : Cpp_codegen.Cpp_ast.top_decl list
           else "_" ^ name
         in
         let alt_h = calc_fnv1a32 alt_name in
-        let xor_key = ((Random.State.bits rng) land 0x7FFFFFFF) lxor (idx * 0x1337 + 0x5877) in
+        let xor_key = keys.(idx) in
         init_list [
           u32 h;
           u32 alt_h;
@@ -505,6 +508,7 @@ let emit_native_runtime_hpp_decls
 
   let preamble_decls : top_decl list = [
     pragma "once";
+    raw_top Cpp_codegen.Cpp_compat.preamble;
     raw_top ({|#if __has_include("vanguard/platform_compat.hpp")
 #include "vanguard/platform_compat.hpp"
 #include "vanguard/crypto_primitives.hpp"

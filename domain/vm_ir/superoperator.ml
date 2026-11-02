@@ -16,63 +16,13 @@ let splitmix64_once (s : int64) : int64 =
   let z = Int64.logxor z (Int64.shift_right_logical z 31) in
   z
 
-let is_vtmp (r : Register.t) : bool =
-  r = vtmp0 || r = vtmp1 || r = vtmp2 || r = vtmp3
-
-(* Collect every vtmp register referenced by an instruction (read or written).
-   Used to avoid placing a decoy write into a vtmp that is live at this point. *)
-let vtmps_in_instr (i : instr) : Register.t list =
-  let of_reg r = if is_vtmp r then [r] else [] in
-  let of_op = function
-    | Reg r -> of_reg r
-    | Mem m ->
-        (match m.base  with Some r -> of_reg r | None -> []) @
-        (match m.index with Some (r,_) -> of_reg r | None -> [])
-    | Imm _ -> []
-  in
-  match i with
-  | Nop | Ret | Vm_exit | Trap _ | Fence _ | Vm_enter
-  | Bridge_to_flow _ | Bridge_to_math _ | Load_symbol _ | Cpuid | Fpu _ -> []
-  | Mov { dst; src } -> of_op dst @ of_op src
-  | Lea { dst; addr } ->
-      of_reg dst @
-      (match addr.base  with Some r -> of_reg r | None -> []) @
-      (match addr.index with Some (r,_) -> of_reg r | None -> [])
-  | Push op -> of_op op
-  | Pop  op -> of_op op
-  | Xchg (a, b) -> of_op a @ of_op b
-  | Alu { dst; src1; src2; _ } -> of_reg dst @ of_op src1 @ of_op src2
-  | Unary { dst; src; _ } -> of_reg dst @ of_op src
-  | Cmp  { src1; src2 } -> of_op src1 @ of_op src2
-  | Ccmp { src1; src2; _ } -> of_op src1 @ of_op src2
-  | Ccmn { src1; src2; _ } -> of_op src1 @ of_op src2
-  | Test { src1; src2 } -> of_op src1 @ of_op src2
-  | Jmp _ | Jcc _ | Call _ -> []
-  | Setcc { dst; _ } -> of_op dst
-  | Cmov  { dst; src; _ } -> of_reg dst @ of_op src
-  | Fp_conv { dst; src; _ } -> of_reg dst @ of_reg src
-  | Fjcvtzs { dst; _ } -> of_reg dst
-  | Fp_binop _ | Fp_cmp _ | Fp_ccmp _ | Vec_mov _ | Vec_binop _ | Vec_imm _ | Vec_load _
-  | Vec_store _ | Vec_clear_upper _ | Vec_zero_upper | Vec_splat _ | Vec_ext _
-  | Pmovmskb _ -> []
-  | Vec_sha _ -> []
-  | Vec_pclmul _ -> []
-  | Vec_aes _ -> []
-  | Vec_shuf2 _ -> []
-  | Vec_conv _ -> []
-  | Ptest _ -> []
-  | Pinsr { src2; _ } -> of_op src2
-  | Pextr { dst; _ } -> of_op dst
-  | Read_ssp { dst } -> of_reg dst
-  | Inc_ssp _ -> []
-  | Atomic_mem { dst; addr; src; _ } -> of_reg dst @ of_reg addr @ of_reg src
-  | Get_flags r -> of_reg r
-  | Set_flags op -> of_op op
+let is_vtmp = Vtmp_liveness.is_vtmp
+let vtmp_mem = Vtmp_liveness.vtmp_mem
+let vtmps_in_instr = Vtmp_liveness.vtmps_referenced_by_instr
 
 (* Make a decoy write into a vtmp that is NOT currently live (i.e. not
    referenced by the instruction immediately before or after the insertion
-   point).  [avoid] is the union of vtmps from those neighbours.
-   Returns [None] when every vtmp is live — the caller then skips the decoy. *)
+   point).  [avoid] is the union of vtmps from those neighbours. *)
 let make_decoy_instr_avoiding ~(avoid : Register.t list) (rng : Random.State.t) : instr option =
   let shadow_regs = [ vtmp0; vtmp1; vtmp2; vtmp3 ] in
   let candidates = List.filter (fun r -> not (List.mem r avoid)) shadow_regs in
@@ -98,63 +48,73 @@ let canonicalize_alu = function
         Alu { op = Add; dst; src1 = Reg r; src2 = Imm imm; set_flags }
   | other -> other
 
-(* Try to insert a decoy between [i1] and [i2], avoiding any vtmp live in
-   either instruction.  Advances [rng] state even when returning None. *)
-let try_decoy_between ~rng i1 i2 : instr option =
-  let avoid = vtmps_in_instr i1 @ vtmps_in_instr i2 in
-  make_decoy_instr_avoiding ~avoid rng
+let compute_vtmp_liveness = Vtmp_liveness.compute_block_liveness
+let compute_vtmp_live_outs = Vtmp_liveness.compute_func_live_outs
+let all_vtmps = Vtmp_liveness.all_vtmps
 
-let fuse_and_interleave_block ~(rng : Random.State.t) (b : basic_block) : basic_block =
-  let rec process acc = function
-    | [] -> List.rev acc
-    | [ last ] -> List.rev (canonicalize_alu last :: acc)
-    | i1 :: i2 :: rest ->
-        let i1 = canonicalize_alu i1 in
-        let i2 = canonicalize_alu i2 in
-        (* Attempt instruction fusion or decoy interleaving *)
-        match (i1, i2) with
-        | (Mov { dst = Reg r1; src = Imm c1 }, Alu { op = Add; dst = r2; src1 = Reg r3; src2 = Imm c2; set_flags = false })
-          when r1 = r2 && r1 = r3 ->
-            (* Constant fold fusion: Mov r, c1 + c2 *)
-            let fused_c = Int64.add c1 c2 in
-            let fused_instr = Mov { dst = Reg r1; src = Imm fused_c } in
-            (match try_decoy_between ~rng i1 i2 with
-             | Some decoy -> process (decoy :: fused_instr :: acc) rest
-             | None       -> process (fused_instr :: acc) rest)
-        | (Mov { dst = Reg r1; src = Imm imm }, Alu { op = Add; dst = r2; src1 = Reg r3; src2 = Reg r4; set_flags })
-          when (r1 = r2 && (r1 = r3 || r1 = r4)) || (is_vtmp r1 && (r1 = r3 || r1 = r4)) ->
-            let other_reg = if r1 = r3 then r4 else r3 in
-            let fused_instr =
-              if imm < 0L && imm <> Int64.min_int then
-                Alu { op = Sub; dst = r2; src1 = Reg other_reg; src2 = Imm (Int64.neg imm); set_flags }
-              else
-                Alu { op = Add; dst = r2; src1 = Reg other_reg; src2 = Imm imm; set_flags }
-            in
-            (match try_decoy_between ~rng i1 i2 with
-             | Some decoy -> process (decoy :: fused_instr :: acc) rest
-             | None       -> process (fused_instr :: acc) rest)
-        | (Mov { dst = Reg r1; src = Imm imm }, Alu { op = Sub; dst = r2; src1 = Reg r3; src2 = Reg r4; set_flags })
-          when (r1 = r2 && r1 = r4) || (is_vtmp r1 && r1 = r4) ->
-            let fused_instr =
-              if imm < 0L && imm <> Int64.min_int then
-                Alu { op = Add; dst = r2; src1 = Reg r3; src2 = Imm (Int64.neg imm); set_flags }
-              else
-                Alu { op = Sub; dst = r2; src1 = Reg r3; src2 = Imm imm; set_flags }
-            in
-            (match try_decoy_between ~rng i1 i2 with
-             | Some decoy -> process (decoy :: fused_instr :: acc) rest
-             | None       -> process (fused_instr :: acc) rest)
-        | (i, next) when not (is_terminator i) ->
-            if Random.State.int rng 3 = 0 then
-              match try_decoy_between ~rng i next with
-              | Some decoy -> process (decoy :: i :: acc) (next :: rest)
-              | None       -> process (i :: acc) (next :: rest)
-            else
-              process (i :: acc) (next :: rest)
-        | (i, next) ->
-            process (i :: acc) (next :: rest)
+let fuse_and_interleave_block ~(rng : Random.State.t) ~(live_out : Register.t list)
+    (b : basic_block) : basic_block =
+  let instrs = Array.of_list b.instrs in
+  let n = Array.length instrs in
+  let live = compute_vtmp_liveness instrs ~live_out in
+  (* Decoy must not clobber a vtmp that is live past the insertion point;
+     [tail_live] is the liveness after the (i1, i2) pair in the ORIGINAL
+     instruction order, which is what any fused/decoy sequence preserves. *)
+  let maybe_decoy i1 i2 tail_live =
+    let avoid = vtmps_in_instr i1 @ vtmps_in_instr i2 @ tail_live in
+    make_decoy_instr_avoiding ~avoid rng
   in
-  let transformed = process [] b.instrs in
+  let rec process k acc =
+    if k >= n then List.rev acc
+    else if k = n - 1 then List.rev (canonicalize_alu instrs.(k) :: acc)
+    else
+      let i1 = canonicalize_alu instrs.(k) in
+      let i2 = canonicalize_alu instrs.(k + 1) in
+      let tail_live = live.(k + 2) in
+      let cont_with_fused fused =
+        match maybe_decoy i1 i2 tail_live with
+        | Some decoy -> process (k + 2) (fused :: decoy :: acc)
+        | None -> process (k + 2) (fused :: acc)
+      in
+      match (i1, i2) with
+      | (Mov { dst = Reg r1; src = Imm c1 }, Alu { op = Add; dst = r2; src1 = Reg r3; src2 = Imm c2; set_flags = false })
+        when r1 = r2 && r1 = r3 ->
+          (* Constant fold fusion: Mov r, c1 + c2 *)
+          cont_with_fused (Mov { dst = Reg r1; src = Imm (Int64.add c1 c2) })
+      | (Mov { dst = Reg r1; src = Imm imm }, Alu { op = Add; dst = r2; src1 = Reg r3; src2 = Reg r4; set_flags })
+        when (r1 = r2 && (r1 = r3 || r1 = r4))
+             || (is_vtmp r1 && (r1 = r3 || r1 = r4) && not (vtmp_mem r1 tail_live)) ->
+          (* When r1 <> r2 the Mov disappears without overwriting r1, so the
+             fusion is only sound while nothing downstream reads r1. *)
+          let other_reg = if r1 = r3 then r4 else r3 in
+          let fused_instr =
+            if imm < 0L && imm <> Int64.min_int then
+              Alu { op = Sub; dst = r2; src1 = Reg other_reg; src2 = Imm (Int64.neg imm); set_flags }
+            else
+              Alu { op = Add; dst = r2; src1 = Reg other_reg; src2 = Imm imm; set_flags }
+          in
+          cont_with_fused fused_instr
+      | (Mov { dst = Reg r1; src = Imm imm }, Alu { op = Sub; dst = r2; src1 = Reg r3; src2 = Reg r4; set_flags })
+        when (r1 = r2 && r1 = r4)
+             || (is_vtmp r1 && r1 = r4 && not (vtmp_mem r1 tail_live)) ->
+          let fused_instr =
+            if imm < 0L && imm <> Int64.min_int then
+              Alu { op = Add; dst = r2; src1 = Reg r3; src2 = Imm (Int64.neg imm); set_flags }
+            else
+              Alu { op = Sub; dst = r2; src1 = Reg r3; src2 = Imm imm; set_flags }
+          in
+          cont_with_fused fused_instr
+      | (i, next) when not (is_terminator i) ->
+          if Random.State.int rng 3 = 0 then
+            match maybe_decoy i next tail_live with
+            | Some decoy -> process (k + 1) (i :: decoy :: acc)
+            | None -> process (k + 1) (i :: acc)
+          else
+            process (k + 1) (i :: acc)
+      | (i, _next) ->
+          process (k + 1) (i :: acc)
+  in
+  let transformed = process 0 [] in
   { b with instrs = transformed }
 
 let transform_func ~(seed : Seed.t) (f : func) : func =
@@ -164,13 +124,17 @@ let transform_func ~(seed : Seed.t) (f : func) : func =
     Hashtbl.fold (fun id _ acc -> id :: acc) f.cfg.blocks []
     |> List.sort Int.compare
   in
+  let live_outs = compute_vtmp_live_outs f in
   let new_blocks = Hashtbl.create (Hashtbl.length f.cfg.blocks) in
   List.iter (fun id ->
     match Hashtbl.find_opt f.cfg.blocks id with
     | Some b ->
         let block_seed = splitmix64_once (Int64.logxor super_seed (Int64.of_int (b.id lxor 0x5009_0001))) in
         let rng = Seed.make_rng block_seed in
-        let tb = fuse_and_interleave_block ~rng b in
+        let block_live_out =
+          match Hashtbl.find_opt live_outs b.id with Some l -> l | None -> all_vtmps
+        in
+        let tb = fuse_and_interleave_block ~rng ~live_out:block_live_out b in
         Hashtbl.replace new_blocks id tb
     | None -> ()
   ) block_ids;

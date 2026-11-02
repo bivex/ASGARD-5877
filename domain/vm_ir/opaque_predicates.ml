@@ -176,8 +176,6 @@ let generate_zero_predicate ~rng ~scratch ~target_true ~target_decoy : instr lis
          no intervening writes.  We implement this at the IR level as a Push/Pop
          pair, which the VM realises as actual stack memory operations. *)
       [
-        Push (Reg scratch);      (* store scratch to stack memory *)
-        Pop  (Reg scratch);      (* reload into scratch *)
         Alu { op = Or;  dst = scratch; src1 = Reg scratch;
               src2 = Imm 1L; set_flags = false };   (* o = scratch | 1 *)
         Alu { op = Mul; dst = scratch; src1 = Reg scratch;
@@ -186,7 +184,9 @@ let generate_zero_predicate ~rng ~scratch ~target_true ~target_decoy : instr lis
               src2 = Imm 1L; set_flags = false };   (* o^2 - 1 *)
         Alu { op = And; dst = scratch; src1 = Reg scratch;
               src2 = Imm 7L; set_flags = false };   (* & 7 == 0 *)
-        Jcc { cond = Flags.E; target_true; target_false = target_decoy };
+        Cmp { src1 = Reg scratch; src2 = Imm 0L };
+        directed_jcc cond ~zero_target:target_true ~nonzero_target:target_decoy
+          ~target_true ~target_decoy;
       ]
 
   | _ (* 6 *) ->

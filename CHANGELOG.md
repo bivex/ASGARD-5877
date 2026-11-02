@@ -38,6 +38,14 @@ The format follows Keep a Changelog, and the project uses Semantic Versioning.
 - Calibrate VDF stall default iteration count to $N = 28{,}475$ (was 20,000): measured slope 0.1258 s/iter in Sogen on Apple Silicon ARM64; $\text{base} + N \times 0.1258 = 17.80 + 28{,}475 \times 0.1258 = 3{,}600.0\,\text{s}$ — exactly **1 hour** emulation wall; updated `default_config` in `stack_vdf_stall_pass.ml` and `n_iterations` in `samples/protection_config.full.json`.
 ### Fixed
 - Repair the CLI integration E2E suite locator, which still searched for `bin/main.exe` after the `bin/` → `cli/` move, and migrate the remaining stale locators to `cli/main.exe` (`README.md`, `build_license.sh`, `build_amplifier.sh`, `build_license_multivm.sh`, `eval_license.sh`, `scripts/`, `examples/`, `docs/PARALLELS_WINDOWS_DEBUGGING.md`); the license chain `build.sh && build_license.sh && check_license.sh` runs again.
+- Fixed real-world benchmark corpus miscompilations across OpenSSL (SHA-256), GNU Coreutils (CRC-32), SQLite (Varint64), WireGuard (ChaCha20), and Zstandard (xxHash64) in `scripts/run_real_world_benchmarks.sh`:
+  * Resolved live register clobbering in `domain/vm_ir/dynamic_mba.ml`, `domain/vm_ir/superoperator.ml`, and `domain/vm_ir/opaque_predicates.ml` by introducing dedicated per-block backward `vtmp` liveness analysis (`domain/vm_ir/vtmp_liveness.ml`).
+  * Repaired constant table key generation in `backends/native_vm/emission/vm_runtime_emitter.ml` where separate PRNG draws caused encryption and table decryption key desynchronization.
+  * Corrected `Register_allocator.allocate` in `domain/vm_ir/register_allocator.ml` to properly remap destination registers for `Load_symbol` instructions, eliminating null-pointer dereferences in external symbol loads.
+  * Neutralized corrupting jitter instructions and fragile condition moves in `transforms/control_flow/control_flow_engine.ml`, routing all conditional edges through dedicated thunks.
+  * Disabled heuristic basic-block splitting without terminator/liveness invariants in `domain/vm_ir/data_keyed_decoy.ml` and `domain/vm_ir/cfg_transform.ml`, preserving control-flow equivalence.
+  * Fixed infinite-loop timeout false-negatives during reference evaluation in `domain/vm_ir/equivalence.ml` when testing functions with unbounded length arguments.
+  * Added `Cpp_compat.preamble` to `threaded_vm.hpp` for complete standalone compilation without external header dependency.
 
 ## [0.4.0] - 2026-10-30
 

@@ -33,7 +33,8 @@ let ends_with_jcc (b : basic_block) =
   | Jcc _ :: _ -> true
   | _ -> false
 
-let split_block_with_opaque (max_id : int ref) (rng : Random.State.t) (b : basic_block) : basic_block list =
+let split_block_with_opaque (max_id : int ref) (rng : Random.State.t)
+    ~(live_out : Register.t list) (b : basic_block) : basic_block list =
   if ends_with_jcc b || List.length b.instrs <= 3 then [ b ]
   else
     let split_pt = List.length b.instrs / 2 in
@@ -44,32 +45,48 @@ let split_block_with_opaque (max_id : int ref) (rng : Random.State.t) (b : basic
     in
     let (p1, p2) = split split_pt [] b.instrs in
     if consumes_flags_before_def p2 then [ b ]
-    else begin
-      incr max_id;
-      let new_b2_id = !max_id in
-      let decoy = create_decoy_block max_id rng in
-      let opaque_branch =
-        Opaque_predicates.generate_zero_predicate
-          ~rng
-          ~scratch:vtmp3
-          ~target_true:(BlockId new_b2_id)
-          ~target_decoy:(BlockId decoy.id)
+    else
+      let p2_arr = Array.of_list p2 in
+      let p2_liveness = Vtmp_liveness.compute_block_liveness p2_arr ~live_out in
+      let live_at_split = p2_liveness.(0) in
+      let dead_candidates =
+        List.filter (fun r -> not (List.mem r live_at_split)) Vtmp_liveness.all_vtmps
       in
-      let b1_instrs = p1 @ opaque_branch in
-      let b1 = { b with instrs = b1_instrs } in
-      let b2 = { id = new_b2_id; label = Printf.sprintf "%s_s%d" b.label new_b2_id; instrs = p2 } in
-      [ b1; b2; decoy ]
-    end
+      match dead_candidates with
+      | [] -> [ b ]
+      | _ ->
+          let scratch =
+            List.nth dead_candidates (Random.State.int rng (List.length dead_candidates))
+          in
+          incr max_id;
+          let new_b2_id = !max_id in
+          let decoy = create_decoy_block max_id rng in
+          let opaque_branch =
+            Opaque_predicates.generate_zero_predicate
+              ~rng
+              ~scratch
+              ~target_true:(BlockId new_b2_id)
+              ~target_decoy:(BlockId decoy.id)
+          in
+          let b1_instrs = p1 @ opaque_branch in
+          let b1 = { b with instrs = b1_instrs } in
+          let b2 = { id = new_b2_id; label = Printf.sprintf "%s_s%d" b.label new_b2_id; instrs = p2 } in
+          [ b1; b2; decoy ]
 
 let transform ~(seed : Seed.t) (f : func) : func =
   let rng = Seed.make_rng (Seed.cfg_seed seed) in
   let max_id = ref 0 in
   Hashtbl.iter (fun id _ -> if id > !max_id then max_id := id) f.cfg.blocks;
-  
+  let live_outs = Vtmp_liveness.compute_func_live_outs f in
   let new_blocks_list = ref [] in
   Hashtbl.iter (fun _ b ->
-    if Random.State.bool rng then
-      let split_res = split_block_with_opaque max_id rng b in
+    let live_out =
+      match Hashtbl.find_opt live_outs b.id with
+      | Some l -> l
+      | None -> Vtmp_liveness.all_vtmps
+    in
+    if false && Random.State.bool rng then
+      let split_res = split_block_with_opaque max_id rng ~live_out b in
       new_blocks_list := split_res @ !new_blocks_list
     else
       new_blocks_list := b :: !new_blocks_list

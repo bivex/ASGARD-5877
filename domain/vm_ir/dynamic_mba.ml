@@ -162,25 +162,34 @@ let make_single_block_variants ~rng op dst s1 src2 =
 
 let transform ?(density = 0.5) ~rng (f : func) : func =
   let threshold = int_of_float (density *. 100.0) in
+  let live_outs = Vtmp_liveness.compute_func_live_outs f in
   let new_blocks = Hashtbl.create (Hashtbl.length f.cfg.blocks) in
   Hashtbl.iter (fun id (b : basic_block) ->
-    let rec process_instrs instrs_acc = function
+    let live_out =
+      match Hashtbl.find_opt live_outs b.id with
+      | Some l -> l
+      | None -> Vtmp_liveness.all_vtmps
+    in
+    let b_arr = Array.of_list b.instrs in
+    let b_liveness = Vtmp_liveness.compute_block_liveness b_arr ~live_out in
+    let rec process_instrs k instrs_acc = function
       | [] -> List.rev instrs_acc
       | (Alu { op; dst; src1 = Reg s1; src2; set_flags = false } as alu_instr) :: rest
         when is_transformable_gpr dst && is_transformable_gpr s1
              && not (is_vtmp dst) && not (is_vtmp s1)
              && (match src2 with Reg r -> is_transformable_gpr r && not (is_vtmp r) | Imm _ -> true | _ -> false)
              && not (has_later_flag_consumer rest)
+             && b_liveness.(k) = []
              && Random.State.int rng 100 < threshold ->
           (match make_single_block_variants ~rng op dst s1 src2 with
            | Some expansion ->
-               process_instrs (List.rev_append expansion instrs_acc) rest
+               process_instrs (k + 1) (List.rev_append expansion instrs_acc) rest
            | None ->
-               process_instrs (alu_instr :: instrs_acc) rest)
+               process_instrs (k + 1) (alu_instr :: instrs_acc) rest)
       | instr :: rest ->
-          process_instrs (instr :: instrs_acc) rest
+          process_instrs (k + 1) (instr :: instrs_acc) rest
     in
-    let transformed_instrs = process_instrs [] b.instrs in
+    let transformed_instrs = process_instrs 0 [] b.instrs in
     Hashtbl.replace new_blocks id { b with instrs = transformed_instrs }
   ) f.cfg.blocks;
   { f with cfg = { f.cfg with blocks = new_blocks } }
